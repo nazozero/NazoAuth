@@ -16,7 +16,8 @@ mod views;
 
 pub(crate) use access_requests::*;
 pub(crate) use avatars::*;
-pub(crate) use config::*;
+pub(crate) use config::random_urlsafe_token;
+pub use config::{ConfigSource, normalize_database_url};
 pub(crate) use cookies::*;
 pub(crate) use dpop::*;
 pub(crate) use keyset::*;

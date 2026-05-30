@@ -8,6 +8,10 @@
 .env
 .env.*
 !.env.example
+env.yaml
+env.yml
+!env.yaml.example
+!env.yml.example
 
 # Editor and operating-system metadata
 .idea/

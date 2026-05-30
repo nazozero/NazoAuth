@@ -64,7 +64,9 @@ Nazo OAuth Server 是一个基于 Actix Web 的 OAuth/OIDC 服务，提供用户
 
 ## 配置
 
-服务通过环境变量配置。
+服务启动时会读取 `env.yaml`、`env.yml` 和 `.env`，也支持直接使用进程环境变量。优先级为：进程环境变量高于 `.env`，`.env` 高于 `env.yaml` / `env.yml`，配置文件未提供时使用内置默认值；配置文件存在但不可读、格式错误或字段类型错误时启动失败。
+
+`env.yaml` 支持顶层键值形式；数组值会按逗号合并，适合 `CORS_ALLOWED_ORIGINS` 这类列表配置。`.env` 支持 `KEY=value` 形式，适合本地密钥或临时覆盖。仓库提供 `.env.example` 和 `env.yaml.example` 作为字段参考，真实配置文件不应提交。
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
