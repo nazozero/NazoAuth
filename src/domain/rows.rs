@@ -84,6 +84,8 @@ pub(crate) struct TokenRow {
     pub(crate) revoked_at: Option<DateTime<Utc>>,
     #[diesel(sql_type = diesel::sql_types::VarChar)]
     pub(crate) subject: String,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
+    pub(crate) dpop_jkt: Option<String>,
 }
 
 /// 当前用户已授权应用列表行。
