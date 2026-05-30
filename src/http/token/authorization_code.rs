@@ -5,14 +5,29 @@ use crate::http::prelude::*;
 
 pub(crate) async fn token_authorization_code(
     state: &AppState,
+    req: &HttpRequest,
     client: &ClientRow,
     form: &TokenForm,
 ) -> HttpResponse {
+    let dpop_jkt = match validate_dpop_proof(state, req, None, None).await {
+        Ok(value) => value,
+        Err(error) => return dpop_error_response(error),
+    };
     let Some(code) = &form.code else {
         return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "缺少 code.");
     };
     let key = format!("oauth:auth_code:{code}");
-    let raw = valkey_getdel(&state.valkey, &key).await.unwrap_or(None);
+    let raw = match valkey_getdel(&state.valkey, &key).await {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(%error, "failed to consume authorization code");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权码校验失败.",
+            );
+        }
+    };
     let Some(payload) = raw.and_then(|v| serde_json::from_str::<CodePayload>(&v).ok()) else {
         return oauth_error(
             StatusCode::BAD_REQUEST,
@@ -61,6 +76,7 @@ pub(crate) async fn token_authorization_code(
             nonce: payload.nonce,
             include_refresh: true,
             rotation: None,
+            dpop_jkt,
         },
     )
     .await

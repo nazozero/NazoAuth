@@ -64,7 +64,11 @@ Nazo OAuth Server 是一个基于 Actix Web 的 OAuth/OIDC 服务，提供用户
 
 ## 配置
 
-服务通过环境变量配置。
+服务启动时只读取当前工作目录下的 `.env.yaml`。不支持 `.env`，也不从进程环境变量读取运行配置；如果 `.env` 存在，或 `.env.yaml` 未提供、不可读、格式错误、字段类型错误，服务会拒绝启动。表格中的默认值只适用于 `.env.yaml` 已存在但省略了对应字段的情况。
+
+`.env.yaml` 支持顶层键值形式；数组值会按逗号合并，适合 `CORS_ALLOWED_ORIGINS` 这类列表配置。仓库提供 `.env.yaml.example` 作为字段参考，真实配置文件不应提交。
+
+`.env.yaml.example` 默认面向 `compose.yml`，因此 `DATABASE_URL` 和 `VALKEY_URL` 使用 Docker service 名称。直接在宿主机运行二进制时，应在本地 `.env.yaml` 中改为宿主机可访问的地址。
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -84,6 +88,17 @@ Nazo OAuth Server 是一个基于 Actix Web 的 OAuth/OIDC 服务，提供用户
 | `REFRESH_TOKEN_TTL_SECONDS` | `2592000` | refresh token 有效期，单位为秒 |
 | `AVATAR_MAX_BYTES` | `2097152` | 头像最大字节数 |
 | `CLIENT_DELIVERY_TTL_SECONDS` | `86400` | 客户端接入信息投递有效期，单位为秒 |
+| `EMAIL_DELIVERY` | `disabled` | 邮件投递方式；`smtp` 启用真实 SMTP 投递，`disabled` 时 `/auth/send-code` 返回服务不可用 |
+| `EMAIL_CODE_TTL_SECONDS` | `900` | 注册邮箱验证码有效期，单位为秒 |
+| `EMAIL_CODE_SEND_COOLDOWN_SECONDS` | `60` | 同一邮箱验证码发送冷却时间，单位为秒 |
+| `EMAIL_CODE_PEER_COOLDOWN_SECONDS` | `5` | 同一来源地址验证码发送冷却时间，单位为秒 |
+| `EMAIL_SMTP_HOST` | 无 | SMTP 主机；`EMAIL_DELIVERY=smtp` 时必填 |
+| `EMAIL_SMTP_PORT` | `587` | SMTP 端口 |
+| `EMAIL_SMTP_TLS` | `starttls` | SMTP TLS 模式，可选 `starttls`、`implicit`、`none` |
+| `EMAIL_SMTP_USERNAME` | 无 | SMTP 用户名；如需认证，应与 `EMAIL_SMTP_PASSWORD` 同时配置 |
+| `EMAIL_SMTP_PASSWORD` | 无 | SMTP 密码；如需认证，应与 `EMAIL_SMTP_USERNAME` 同时配置 |
+| `EMAIL_FROM` | 无 | 发件人邮箱；`EMAIL_DELIVERY=smtp` 时必填，支持 `Name <mail@example.com>` 格式 |
+| `EMAIL_CODE_DEV_RESPONSE_ENABLED` | `false` | 仅 debug 构建可用；邮件成功投递后，响应包含注册验证码，便于本地开发 |
 | `AVATAR_STORAGE_DIR` | `runtime/avatars` | 头像存储目录 |
 | `JWK_KEYS_DIR` | `runtime/keys` | Ed25519 keyset 存储目录 |
 
@@ -103,16 +118,12 @@ target/release/nazo-oauth-migrate
 ## 数据库迁移
 
 ```sh
-DATABASE_URL="<postgres-url>" cargo run --bin nazo-oauth-migrate
+cargo run --bin nazo-oauth-migrate
 ```
 
 ## 运行服务
 
 ```sh
-DATABASE_URL="<postgres-url>" \
-VALKEY_URL="<valkey-url>" \
-ISSUER="<issuer-url>" \
-FRONTEND_BASE_URL="<frontend-url>" \
 cargo run --bin nazo-oauth-server
 ```
 
@@ -134,7 +145,7 @@ docker build -f Containerfile -t nazo-oauth-server .
 
 ```sh
 docker run --rm \
-  -e DATABASE_URL="<postgres-url>" \
+  -v "$PWD/.env.yaml:/app/.env.yaml:ro" \
   nazo-oauth-server \
   nazo-oauth-migrate
 ```
@@ -144,15 +155,15 @@ docker run --rm \
 ```sh
 docker run --rm \
   -p 8000:8000 \
-  -e BIND="0.0.0.0:8000" \
-  -e DATABASE_URL="<postgres-url>" \
-  -e VALKEY_URL="<valkey-url>" \
-  -e ISSUER="<issuer-url>" \
-  -e FRONTEND_BASE_URL="<frontend-url>" \
+  -v "$PWD/.env.yaml:/app/.env.yaml:ro" \
   nazo-oauth-server
 ```
 
-项目提供 `compose.yml`，用于启动包含 PostgreSQL、Valkey、迁移任务和服务进程的本地集成环境：
+项目提供 `compose.yml`，用于启动包含 PostgreSQL、Valkey、迁移任务和服务进程的本地集成环境。运行前应先创建 `.env.yaml`：
+
+```sh
+cp .env.yaml.example .env.yaml
+```
 
 ```sh
 docker compose up -d nazo_oauth_server

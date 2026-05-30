@@ -33,13 +33,24 @@ pub(crate) fn blake3_hex(value: &str) -> String {
     blake3::hash(value.as_bytes()).to_hex().to_string()
 }
 
-pub(crate) fn pkce_s256(verifier: &str) -> String {
-    URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
+pub(crate) fn random_urlsafe_token() -> String {
+    URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>())
 }
 
-pub(crate) fn bearer_token(headers: &HeaderMap) -> Option<String> {
-    let raw = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
-    raw.strip_prefix("Bearer ").map(ToOwned::to_owned)
+pub(crate) fn random_numeric_code() -> String {
+    const RANGE: u32 = 1_000_000;
+    const LIMIT: u32 = u32::MAX - (u32::MAX % RANGE);
+
+    loop {
+        let value = u32::from_be_bytes(rand::random::<[u8; 4]>());
+        if value < LIMIT {
+            return format!("{:06}", value % RANGE);
+        }
+    }
+}
+
+pub(crate) fn pkce_s256(verifier: &str) -> String {
+    URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
 }
 
 pub(crate) fn extract_client_credentials(
@@ -71,28 +82,36 @@ pub(crate) fn extract_client_credentials(
     }
 }
 
+pub(crate) struct AccessTokenJwtInput<'a> {
+    pub(crate) subject: &'a str,
+    pub(crate) subject_type: &'a str,
+    pub(crate) client_id: &'a str,
+    pub(crate) audience: &'a str,
+    pub(crate) scopes: &'a [String],
+    pub(crate) ttl: i64,
+    pub(crate) dpop_jkt: Option<&'a str>,
+}
+
 pub(crate) fn make_jwt(
     state: &AppState,
-    subject: &str,
-    subject_type: &str,
-    client_id: &str,
-    audience: &str,
-    scopes: &[String],
-    ttl: i64,
+    input: AccessTokenJwtInput<'_>,
 ) -> jsonwebtoken::errors::Result<String> {
     let now = Utc::now().timestamp();
     let claims = Claims {
         iss: state.settings.issuer.clone(),
-        sub: subject.to_string(),
-        subject_type: subject_type.to_string(),
-        aud: audience.to_string(),
-        client_id: client_id.to_string(),
-        scope: sorted_scope_string(scopes),
+        sub: input.subject.to_string(),
+        subject_type: input.subject_type.to_string(),
+        aud: input.audience.to_string(),
+        client_id: input.client_id.to_string(),
+        scope: sorted_scope_string(input.scopes),
         token_use: "access".into(),
         jti: Uuid::now_v7().to_string(),
         iat: now,
         nbf: now,
-        exp: now + ttl,
+        exp: now + input.ttl,
+        cnf: input.dpop_jkt.map(|jkt| ConfirmationClaims {
+            jkt: jkt.to_owned(),
+        }),
     };
     let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::EdDSA);
     header.typ = Some("at+jwt".to_string());
@@ -153,4 +172,17 @@ pub(crate) fn decode_access_claims(state: &AppState, token: &str) -> Option<Clai
         return None;
     }
     Some(token_data.claims)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn numeric_code_is_six_ascii_digits() {
+        let code = random_numeric_code();
+
+        assert_eq!(code.len(), 6);
+        assert!(code.chars().all(|value| value.is_ascii_digit()));
+    }
 }

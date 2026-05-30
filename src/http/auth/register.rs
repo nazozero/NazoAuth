@@ -14,25 +14,44 @@ pub(crate) async fn register(
     state: Data<AppState>,
     Json(payload): Json<RegisterRequest>,
 ) -> HttpResponse {
-    let email = payload.email.trim().to_lowercase();
+    let Ok(email) = normalize_email_address(&payload.email) else {
+        return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "邮箱格式无效.");
+    };
+    let code = payload.verification_code.trim().to_string();
+    match find_user_by_email(&state.diesel_db, &email).await {
+        Ok(Some(_)) => {
+            return oauth_error(StatusCode::CONFLICT, "invalid_request", "该邮箱已注册.");
+        }
+        Ok(None) => {}
+        Err(_) => {
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "数据库连接失败.",
+            );
+        }
+    }
+
     let key = format!("oauth:email_verify:code:{email}");
-    let stored = valkey_get(&state.valkey, &key).await.unwrap_or(None);
-    if stored.as_deref() != Some(payload.verification_code.as_str()) {
+    let stored = match valkey_get(&state.valkey, &key).await {
+        Ok(value) => value,
+        Err(_) => {
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "验证码校验失败.",
+            );
+        }
+    };
+    if !stored
+        .as_deref()
+        .is_some_and(|stored| verify_password(&code, stored))
+    {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
             "验证码错误或已过期.",
         );
-    }
-
-    let _ = valkey_del(&state.valkey, &key).await;
-    if find_user_by_email(&state.diesel_db, &email)
-        .await
-        .ok()
-        .flatten()
-        .is_some()
-    {
-        return oauth_error(StatusCode::CONFLICT, "invalid_request", "该邮箱已注册.");
     }
 
     let password_hash = match hash_password(&payload.password) {
@@ -60,7 +79,7 @@ pub(crate) async fn register(
     let row = diesel::insert_into(users::table)
         .values((
             users::username.eq(username),
-            users::email.eq(email),
+            users::email.eq(&email),
             users::password_hash.eq(password_hash),
             users::email_verified.eq(true),
         ))
@@ -68,10 +87,27 @@ pub(crate) async fn register(
         .get_result::<UserRow>(&mut conn)
         .await;
     match row {
-        Ok(user) => json_response_status(
-            StatusCode::CREATED,
-            json!({"id": user.id, "email": user.email}),
-        ),
-        Err(_) => oauth_error(StatusCode::CONFLICT, "invalid_request", "该邮箱已注册."),
+        Ok(user) => {
+            let _ = valkey_del(&state.valkey, &key).await;
+            json_response_status(
+                StatusCode::CREATED,
+                json!({"id": user.id, "email": user.email}),
+            )
+        }
+        Err(diesel::result::Error::DatabaseError(
+            diesel::result::DatabaseErrorKind::UniqueViolation,
+            _,
+        )) => {
+            let _ = valkey_del(&state.valkey, &key).await;
+            oauth_error(StatusCode::CONFLICT, "invalid_request", "该邮箱已注册.")
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to create user");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "用户创建失败.",
+            )
+        }
     }
 }

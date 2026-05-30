@@ -27,7 +27,8 @@ pub(crate) async fn discovery(state: Data<AppState>) -> Json<Value> {
         "scopes_supported": ["openid", "profile", "offline_access"],
         "claims_supported": ["sub", "preferred_username"],
         "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
-        "dpop_signing_alg_values_supported": ["ES256", "EdDSA"]
+        "code_challenge_methods_supported": ["S256"],
+        "dpop_signing_alg_values_supported": ["EdDSA"]
     }))
 }
 

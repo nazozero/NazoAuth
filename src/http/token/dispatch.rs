@@ -60,9 +60,9 @@ pub(crate) async fn token(
         }
     }
     match form.grant_type.as_str() {
-        "authorization_code" => token_authorization_code(&state, &client, &form).await,
-        "refresh_token" => token_refresh(&state, &client, &form).await,
-        "client_credentials" => token_client_credentials(&state, &client, &form).await,
+        "authorization_code" => token_authorization_code(&state, &req, &client, &form).await,
+        "refresh_token" => token_refresh(&state, &req, &client, &form).await,
+        "client_credentials" => token_client_credentials(&state, &req, &client, &form).await,
         _ => oauth_error(
             StatusCode::BAD_REQUEST,
             "unsupported_grant_type",

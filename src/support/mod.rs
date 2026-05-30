@@ -2,8 +2,10 @@
 // 子模块按职责拆分；外部仍通过 crate::support::* 使用稳定入口。
 mod access_requests;
 mod avatars;
-mod config;
 mod cookies;
+mod dpop;
+mod email;
+mod email_templates;
 mod keyset;
 mod oauth;
 mod repositories;
@@ -15,8 +17,9 @@ mod views;
 
 pub(crate) use access_requests::*;
 pub(crate) use avatars::*;
-pub(crate) use config::*;
 pub(crate) use cookies::*;
+pub(crate) use dpop::*;
+pub(crate) use email::*;
 pub(crate) use keyset::*;
 pub(crate) use oauth::*;
 pub(crate) use repositories::*;
@@ -45,7 +48,7 @@ pub(crate) mod prelude {
     pub(crate) use diesel_async::RunQueryDsl;
     pub(crate) use ed25519_dalek::SigningKey;
     pub(crate) use fred::prelude::{
-        Client as ValkeyClient, Error as ValkeyError, Expiration, KeysInterface,
+        Client as ValkeyClient, Error as ValkeyError, Expiration, KeysInterface, SetOptions,
     };
     pub(crate) use password_hash::{SaltString, rand_core::OsRng};
     pub(crate) use serde::Serialize;
@@ -55,12 +58,13 @@ pub(crate) mod prelude {
 
     pub(crate) use crate::db::{DbPool, get_conn};
     pub(crate) use crate::domain::{
-        AccessRequestRow, AccessRequestStatus, AppState, Claims, ClientRow, Keyset, Settings,
-        UserRow,
+        AccessRequestRow, AccessRequestStatus, AppState, Claims, ClientRow, ConfirmationClaims,
+        Keyset, UserRow,
     };
     pub(crate) use crate::schema::{
         client_access_requests, oauth_clients, user_client_grants, users,
     };
+    pub(crate) use crate::settings::Settings;
 
     pub(crate) use super::{
         clear_cookie, constant_time_eq, cookie_value, find_client, find_user_by_id,

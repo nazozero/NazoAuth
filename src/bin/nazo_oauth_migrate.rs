@@ -1,16 +1,17 @@
 #![forbid(unsafe_code)]
 
-use std::env;
-
 use diesel::{Connection, PgConnection};
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
+use nazo_oauth_server::{config::ConfigSource, database_config::normalize_database_url};
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
 
 fn main() -> anyhow::Result<()> {
-    let database_url = env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgresql://postgres:postgres@127.0.0.1:5432/oauth".into())
-        .replace("postgresql+psycopg://", "postgresql://");
+    let config = ConfigSource::load()?;
+    let database_url = normalize_database_url(&config.string(
+        "DATABASE_URL",
+        "postgresql://postgres:postgres@127.0.0.1:5432/oauth",
+    ));
     let mut connection = PgConnection::establish(&database_url)?;
     connection
         .run_pending_migrations(MIGRATIONS)

@@ -4,7 +4,7 @@
 use actix_cors::Cors;
 use actix_web::http::header;
 
-use crate::domain::Settings;
+use crate::settings::Settings;
 
 pub(crate) fn build(settings: &Settings) -> Cors {
     let mut cors = Cors::default()

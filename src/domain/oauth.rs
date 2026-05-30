@@ -4,6 +4,12 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// RFC 9449/RFC 7800 confirmation claim，当前用于 DPoP JWK thumbprint 绑定。
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub(crate) struct ConfirmationClaims {
+    pub(crate) jkt: String,
+}
+
 /// Access token 中的 JWT claims。
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct Claims {
@@ -18,6 +24,8 @@ pub(crate) struct Claims {
     pub(crate) iat: i64,
     pub(crate) nbf: i64,
     pub(crate) exp: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) cnf: Option<ConfirmationClaims>,
 }
 
 /// 用户待确认的授权请求快照。
@@ -61,4 +69,5 @@ pub(crate) struct TokenIssue {
     pub(crate) nonce: Option<String>,
     pub(crate) include_refresh: bool,
     pub(crate) rotation: Option<(Uuid, Option<Uuid>)>,
+    pub(crate) dpop_jkt: Option<String>,
 }

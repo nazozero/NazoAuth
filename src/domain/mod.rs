@@ -3,13 +3,11 @@
 mod keyset;
 mod oauth;
 mod rows;
-mod settings;
 mod state;
 mod status;
 
 pub(crate) use keyset::*;
 pub(crate) use oauth::*;
 pub(crate) use rows::*;
-pub(crate) use settings::*;
 pub(crate) use state::*;
 pub(crate) use status::*;

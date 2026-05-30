@@ -7,7 +7,7 @@
 # Local environment overrides
 .env
 .env.*
-!.env.example
+!.env.yaml.example
 
 # Editor and operating-system metadata
 .idea/

@@ -10,16 +10,19 @@ pub(crate) async fn issue_token_response(
     let now = Utc::now();
     let access_token = match make_jwt(
         state,
-        &issue.subject,
-        if issue.user_id.is_some() {
-            "user"
-        } else {
-            "client"
+        AccessTokenJwtInput {
+            subject: &issue.subject,
+            subject_type: if issue.user_id.is_some() {
+                "user"
+            } else {
+                "client"
+            },
+            client_id: &client.client_id,
+            audience: &issue.audience,
+            scopes: &issue.scopes,
+            ttl: state.settings.access_token_ttl_seconds,
+            dpop_jkt: issue.dpop_jkt.as_deref(),
         },
-        &client.client_id,
-        &issue.audience,
-        &issue.scopes,
-        state.settings.access_token_ttl_seconds,
     ) {
         Ok(v) => v,
         Err(_) => {
@@ -30,9 +33,14 @@ pub(crate) async fn issue_token_response(
             );
         }
     };
+    let token_type = if issue.dpop_jkt.is_some() {
+        "DPoP"
+    } else {
+        "Bearer"
+    };
     let mut body = json!({
         "access_token": access_token,
-        "token_type": "Bearer",
+        "token_type": token_type,
         "expires_in": state.settings.access_token_ttl_seconds,
         "scope": issue.scopes.join(" ")
     });
@@ -46,36 +54,59 @@ pub(crate) async fn issue_token_response(
         let family = issue.rotation.map(|r| r.0).unwrap_or_else(Uuid::now_v7);
         let rotated_from = issue.rotation.and_then(|r| r.1);
         let expires_at = now + Duration::seconds(state.settings.refresh_token_ttl_seconds);
-        if let Ok(mut conn) = get_conn(&state.diesel_db).await {
-            let _ = diesel::insert_into(oauth_tokens::table)
-                .values((
-                    oauth_tokens::refresh_token_blake3.eq(blake3_hex(&raw_refresh)),
-                    oauth_tokens::token_family_id.eq(family),
-                    oauth_tokens::rotated_from_id.eq(rotated_from),
-                    oauth_tokens::client_id.eq(client.id),
-                    oauth_tokens::user_id.eq(issue.user_id),
-                    oauth_tokens::scopes.eq(json!(issue.scopes)),
-                    oauth_tokens::issued_at.eq(now),
-                    oauth_tokens::expires_at.eq(expires_at),
-                    oauth_tokens::subject.eq(issue.subject.clone()),
-                    oauth_tokens::dpop_jkt.eq(Option::<String>::None),
-                ))
-                .execute(&mut conn)
-                .await;
+        let mut conn = match get_conn(&state.diesel_db).await {
+            Ok(conn) => conn,
+            Err(_) => {
+                return oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "refresh token 持久化失败.",
+                );
+            }
+        };
+        if diesel::insert_into(oauth_tokens::table)
+            .values((
+                oauth_tokens::refresh_token_blake3.eq(blake3_hex(&raw_refresh)),
+                oauth_tokens::token_family_id.eq(family),
+                oauth_tokens::rotated_from_id.eq(rotated_from),
+                oauth_tokens::client_id.eq(client.id),
+                oauth_tokens::user_id.eq(issue.user_id),
+                oauth_tokens::scopes.eq(json!(issue.scopes)),
+                oauth_tokens::issued_at.eq(now),
+                oauth_tokens::expires_at.eq(expires_at),
+                oauth_tokens::subject.eq(issue.subject.clone()),
+                oauth_tokens::dpop_jkt.eq(issue.dpop_jkt.clone()),
+            ))
+            .execute(&mut conn)
+            .await
+            .is_err()
+        {
+            return oauth_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "server_error",
+                "refresh token 持久化失败.",
+            );
         }
         body["refresh_token"] = json!(raw_refresh);
     }
     if issue.scopes.iter().any(|s| s == "openid") {
-        body["id_token"] = json!(
-            make_id_token(
-                state,
-                &issue.subject,
-                &client.client_id,
-                issue.nonce,
-                state.settings.id_token_ttl_seconds
-            )
-            .unwrap_or_default()
-        );
+        let id_token = match make_id_token(
+            state,
+            &issue.subject,
+            &client.client_id,
+            issue.nonce,
+            state.settings.id_token_ttl_seconds,
+        ) {
+            Ok(token) => token,
+            Err(_) => {
+                return oauth_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "server_error",
+                    "id_token 签发失败.",
+                );
+            }
+        };
+        body["id_token"] = json!(id_token);
     }
     json_response(body)
 }
