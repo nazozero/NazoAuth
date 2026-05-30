@@ -116,7 +116,7 @@ pub(crate) async fn validate_dpop_proof(
     }
 
     let jkt = jwk_thumbprint(&header.jwk)?;
-    if expected_jkt.is_some_and(|expected| expected != jkt) {
+    if expected_jkt.is_some_and(|expected| expected != jkt.as_str()) {
         return Err(DpopError::BindingMismatch);
     }
     verify_eddsa_dpop_signature(&header.jwk, signing_input.as_bytes(), &signature)?;
@@ -186,7 +186,8 @@ fn verify_eddsa_dpop_signature(
         .try_into()
         .map_err(|_| DpopError::MalformedProof)?;
     let signature = Signature::from_slice(signature).map_err(|_| DpopError::MalformedProof)?;
-    let verifying_key = VerifyingKey::from_bytes(&key_bytes).map_err(|_| DpopError::MalformedProof)?;
+    let verifying_key =
+        VerifyingKey::from_bytes(&key_bytes).map_err(|_| DpopError::MalformedProof)?;
     verifying_key
         .verify(signing_input, &signature)
         .map_err(|_| DpopError::InvalidProof)
