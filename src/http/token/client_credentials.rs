@@ -5,9 +5,14 @@ use crate::http::prelude::*;
 
 pub(crate) async fn token_client_credentials(
     state: &AppState,
+    req: &HttpRequest,
     client: &ClientRow,
     form: &TokenForm,
 ) -> HttpResponse {
+    let dpop_jkt = match validate_dpop_proof(state, req, None, None).await {
+        Ok(value) => value,
+        Err(error) => return dpop_error_response(error),
+    };
     let requested = parse_scope(form.scope.as_deref().unwrap_or(""));
     let allowed = json_array_to_strings(&client.scopes);
     if !requested.is_empty() && !is_subset(&requested, &allowed) {
@@ -44,6 +49,7 @@ pub(crate) async fn token_client_credentials(
             nonce: None,
             include_refresh: false,
             rotation: None,
+            dpop_jkt,
         },
     )
     .await
