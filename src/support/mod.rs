@@ -4,6 +4,7 @@ mod access_requests;
 mod avatars;
 mod config;
 mod cookies;
+mod dpop;
 mod keyset;
 mod oauth;
 mod repositories;
@@ -17,6 +18,7 @@ pub(crate) use access_requests::*;
 pub(crate) use avatars::*;
 pub(crate) use config::*;
 pub(crate) use cookies::*;
+pub(crate) use dpop::*;
 pub(crate) use keyset::*;
 pub(crate) use oauth::*;
 pub(crate) use repositories::*;
@@ -55,8 +57,8 @@ pub(crate) mod prelude {
 
     pub(crate) use crate::db::{DbPool, get_conn};
     pub(crate) use crate::domain::{
-        AccessRequestRow, AccessRequestStatus, AppState, Claims, ClientRow, Keyset, Settings,
-        UserRow,
+        AccessRequestRow, AccessRequestStatus, AppState, Claims, ClientRow, ConfirmationClaims,
+        Keyset, Settings, UserRow,
     };
     pub(crate) use crate::schema::{
         client_access_requests, oauth_clients, user_client_grants, users,
