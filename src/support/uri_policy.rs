@@ -89,8 +89,11 @@ pub(crate) fn oauth_redirect_uri_matches(
         && is_loopback_host(&registered)
         && is_loopback_host(&requested)
         && registered.host_str() == requested.host_str()
+        && registered.username() == requested.username()
+        && registered.password() == requested.password()
         && registered.path() == requested.path()
         && registered.query() == requested.query()
+        && registered.fragment() == requested.fragment()
 }
 
 pub(crate) fn is_loopback_http_url(value: &str) -> bool {
@@ -171,6 +174,16 @@ mod tests {
             "public",
             "http://127.0.0.1:3000/callback?x=1",
             "http://127.0.0.1:49152/callback?x=2"
+        ));
+        assert!(!oauth_redirect_uri_matches(
+            "public",
+            "http://127.0.0.1:3000/callback",
+            "http://user@127.0.0.1:49152/callback"
+        ));
+        assert!(!oauth_redirect_uri_matches(
+            "public",
+            "http://127.0.0.1:3000/callback",
+            "http://127.0.0.1:49152/callback#frag"
         ));
         assert!(!oauth_redirect_uri_matches(
             "confidential",
