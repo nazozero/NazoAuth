@@ -18,6 +18,7 @@ pub(crate) fn build(settings: &Settings) -> Cors {
         .expose_headers(vec![
             header::WWW_AUTHENTICATE,
             header::HeaderName::from_static("dpop-nonce"),
+            header::RETRY_AFTER,
         ])
         .supports_credentials()
         .max_age(3600);

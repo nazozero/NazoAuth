@@ -76,6 +76,11 @@ def expect_json(response: requests.Response) -> dict[str, Any]:
     raise AssertionError("unreachable")
 
 
+def comma_header_values(response: requests.Response, name: str) -> set[str]:
+    raw = response.headers.get(name, "")
+    return {value.strip().lower() for value in raw.split(",") if value.strip()}
+
+
 def b64url(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
 
@@ -214,7 +219,36 @@ class SmtpSink:
         raise AssertionError("unreachable")
 
 
+def assert_destructive_targets_are_e2e() -> None:
+    database = urlparse(DATABASE_URL)
+    valkey = urlparse(VALKEY_URL)
+    base = urlparse(BASE_URL)
+
+    expected = {
+        "database_host": "nazo-oauth-e2e-postgres",
+        "database_name": "oauth",
+        "valkey_host": "nazo-oauth-e2e-valkey",
+        "valkey_db": "/0",
+        "base_host": "nazo-oauth-e2e-server",
+    }
+    actual = {
+        "database_host": database.hostname,
+        "database_name": database.path.lstrip("/"),
+        "valkey_host": valkey.hostname,
+        "valkey_db": valkey.path or "/0",
+        "base_host": base.hostname,
+    }
+    mismatches = {
+        key: {"expected": value, "actual": actual[key]}
+        for key, value in expected.items()
+        if actual[key] != value
+    }
+    if mismatches:
+        fail(f"refusing destructive seed outside Docker E2E targets: {mismatches}")
+
+
 def seed_prerequisites() -> None:
+    assert_destructive_targets_are_e2e()
     password_hash = PasswordHasher().hash(ADMIN_PASSWORD)
     with psycopg.connect(DATABASE_URL) as conn:
         with conn.cursor() as cur:
@@ -439,6 +473,18 @@ def run() -> None:
         check(
             "CORS allow origin",
             cors.headers.get("access-control-allow-origin") == "http://frontend.example",
+        )
+        cors_actual = anonymous.get(
+            f"{BASE_URL}/health",
+            headers={"Origin": "http://frontend.example"},
+            timeout=10,
+        )
+        expect_status("GET /health CORS actual", cors_actual, 200)
+        exposed_headers = comma_header_values(cors_actual, "access-control-expose-headers")
+        check(
+            "CORS exposes retry-after",
+            "retry-after" in exposed_headers,
+            cors_actual.headers,
         )
 
         anonymous_redirect = anonymous.get(
