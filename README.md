@@ -1,13 +1,14 @@
 # Nazo OAuth Server
 
-Nazo OAuth Server 是一个基于 Actix Web 的 OAuth/OIDC 服务，提供用户认证、授权码流程、token 签发与轮换、JWKS、userinfo、客户端管理、授权记录管理、接入申请管理和头像管理能力。
+Nazo OAuth Server 是一个基于 Actix Web 的 OAuth 2.1 / OIDC 服务，提供用户认证、授权码流程、token 签发与轮换、JWKS、userinfo、客户端管理、授权记录管理、接入申请管理和头像管理能力。
 
 ## 特性
 
-- OAuth 2.0 authorization code、refresh token、client credentials 流程
+- OAuth 2.1 authorization code + PKCE、refresh token、client credentials 流程
 - OpenID Connect discovery、JWKS、userinfo
 - Ed25519 JWT 签名
 - refresh token 轮换与复用检测
+- 精确 redirect URI 匹配、S256 PKCE、敏感 token 响应 no-store
 - 基于 Cookie 的用户会话和 CSRF 防护
 - 管理端用户、客户端、授权记录和接入申请接口
 - PostgreSQL 持久化与 Rust 原生数据库迁移
@@ -179,7 +180,7 @@ docker compose up -d nazo_oauth_server
 | `GET` | `/authorize` | OAuth 授权请求入口 |
 | `GET` | `/authorize/consent` | 授权确认页数据 |
 | `POST` | `/authorize/decision` | 提交授权同意或拒绝 |
-| `POST` | `/token` | token 签发、刷新、client credentials |
+| `POST` | `/token` | OAuth 2.1 token 签发、刷新、client credentials |
 | `POST` | `/revoke` | token 撤销 |
 | `POST` | `/introspect` | token introspection |
 | `GET` | `/.well-known/openid-configuration` | OIDC discovery |

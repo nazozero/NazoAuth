@@ -13,6 +13,26 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest) -> HttpRes
             "访问令牌无效或已过期.",
         );
     };
+    let revoked = match get_conn(&state.diesel_db).await {
+        Ok(mut conn) => access_token_revocations::table
+            .filter(access_token_revocations::access_token_jti_blake3.eq(blake3_hex(&claims.jti)))
+            .select(count_star())
+            .first::<i64>(&mut conn)
+            .await
+            .map(|count| count > 0)
+            .unwrap_or(false),
+        Err(error) => {
+            tracing::warn!(%error, "failed to check userinfo token revocation");
+            return oauth_bearer_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "userinfo 查询失败.",
+            );
+        }
+    };
+    if revoked {
+        return oauth_bearer_error(StatusCode::UNAUTHORIZED, "invalid_token", "访问令牌已撤销.");
+    }
     match (scheme, claims.cnf.as_ref()) {
         (AccessTokenAuthScheme::DPoP, Some(cnf)) => {
             if let Err(error) =
@@ -33,6 +53,7 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest) -> HttpRes
         .scope
         .split_whitespace()
         .any(|scope| scope == "openid")
+        || claims.subject_type != "user"
     {
         return oauth_bearer_error(
             StatusCode::FORBIDDEN,

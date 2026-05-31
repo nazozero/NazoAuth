@@ -27,10 +27,11 @@ pub(crate) async fn token_refresh(
     form: &TokenForm,
 ) -> HttpResponse {
     let Some(refresh_token) = &form.refresh_token else {
-        return oauth_error(
+        return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "缺少 refresh_token.",
+            false,
         );
     };
     let hash = blake3_hex(refresh_token);
@@ -45,49 +46,55 @@ pub(crate) async fn token_refresh(
             Ok(value) => value,
             Err(error) => {
                 tracing::warn!(%error, "failed to load refresh token");
-                return oauth_error(
+                return oauth_token_error(
                     StatusCode::SERVICE_UNAVAILABLE,
                     "server_error",
                     "refresh_token 校验失败.",
+                    false,
                 );
             }
         },
         Err(error) => {
             tracing::warn!(%error, "failed to get database connection for refresh token lookup");
-            return oauth_error(
+            return oauth_token_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
                 "refresh_token 校验失败.",
+                false,
             );
         }
     };
     let Some(token) = token else {
-        return oauth_error(
+        return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
             "refresh_token 无效.",
+            false,
         );
     };
     if token.client_id != client.id || token.expires_at <= Utc::now() {
-        return oauth_error(
+        return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
             "refresh_token 无效或已撤销.",
+            false,
         );
     }
     if token.revoked_at.is_some() {
         if let Err(error) = mark_token_family_reuse(state, token.token_family_id).await {
             tracing::warn!(%error, "failed to mark refresh token family reuse");
-            return oauth_error(
+            return oauth_token_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
                 "refresh_token 复用处理失败.",
+                false,
             );
         }
-        return oauth_error(
+        return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
             "refresh_token 无效或已撤销.",
+            false,
         );
     }
     let dpop_jkt = if let Some(expected_jkt) = token.dpop_jkt.clone() {
@@ -114,46 +121,66 @@ pub(crate) async fn token_refresh(
             Ok(count) => count,
             Err(error) => {
                 tracing::warn!(%error, "failed to rotate refresh token");
-                return oauth_error(
+                return oauth_token_error(
                     StatusCode::SERVICE_UNAVAILABLE,
                     "server_error",
                     "refresh_token 轮换失败.",
+                    false,
                 );
             }
         },
         Err(error) => {
             tracing::warn!(%error, "failed to get database connection for refresh token rotation");
-            return oauth_error(
+            return oauth_token_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
                 "refresh_token 轮换失败.",
+                false,
             );
         }
     };
     if rotated == 0 {
         if let Err(error) = mark_token_family_reuse(state, token.token_family_id).await {
             tracing::warn!(%error, "failed to mark refresh token family reuse");
-            return oauth_error(
+            return oauth_token_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
                 "refresh_token 复用处理失败.",
+                false,
             );
         }
-        return oauth_error(
+        return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
             "refresh_token 无效或已撤销.",
+            false,
         );
     }
+    let original_scopes = json_array_to_strings(&token.scopes);
+    let requested_scopes = form.scope.as_deref().map(parse_scope);
+    let scopes = match requested_scopes {
+        Some(requested) if requested.is_empty() => original_scopes,
+        Some(requested) if is_subset(&requested, &original_scopes) => requested,
+        Some(_) => {
+            return oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_scope",
+                "请求的作用域超出 refresh_token 原始授权范围.",
+                false,
+            );
+        }
+        None => original_scopes,
+    };
     let audience = form
         .audience
         .clone()
         .unwrap_or_else(|| state.settings.default_audience.clone());
     if !audience_allowed(client, &audience) {
-        return oauth_error(
+        return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_target",
             "请求的 audience 不在客户端允许范围内.",
+            false,
         );
     }
     issue_token_response(
@@ -162,7 +189,7 @@ pub(crate) async fn token_refresh(
         TokenIssue {
             user_id: token.user_id,
             subject: token.subject,
-            scopes: json_array_to_strings(&token.scopes),
+            scopes,
             audience,
             nonce: None,
             include_refresh: true,

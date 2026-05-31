@@ -8,6 +8,26 @@ pub(crate) async fn authorize(
     req: HttpRequest,
     Query(q): Query<HashMap<String, String>>,
 ) -> HttpResponse {
+    if has_duplicate_oauth_parameter(
+        req.query_string(),
+        &[
+            "response_type",
+            "client_id",
+            "redirect_uri",
+            "scope",
+            "state",
+            "code_challenge",
+            "code_challenge_method",
+            "nonce",
+        ],
+    ) {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "OAuth 参数不能重复.",
+        );
+    }
+
     let Some(user) = current_user(&state, &req).await else {
         let query = q
             .iter()
@@ -26,32 +46,11 @@ pub(crate) async fn authorize(
         ));
     };
 
-    if q.get("response_type").map(String::as_str) != Some("code") {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "unsupported_response_type",
-            "仅支持 response_type=code.",
-        );
-    }
     let Some(client_id) = q.get("client_id") else {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "缺少 client_id.",
-        );
-    };
-    let Some(redirect_uri) = q.get("redirect_uri") else {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "缺少 redirect_uri.",
-        );
-    };
-    let Some(code_challenge) = q.get("code_challenge") else {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "缺少 code_challenge.",
         );
     };
 
@@ -66,21 +65,82 @@ pub(crate) async fn authorize(
             "客户端不存在或已停用.",
         );
     };
-    if !client.is_active || !json_array_to_strings(&client.redirect_uris).contains(redirect_uri) {
+    if !client.is_active {
+        return oauth_error(
+            StatusCode::UNAUTHORIZED,
+            "unauthorized_client",
+            "客户端不存在或已停用.",
+        );
+    }
+    if !client_supports_grant(&client, "authorization_code") {
         return oauth_error(
             StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "redirect_uri 与客户端注册信息不匹配.",
+            "unauthorized_client",
+            "该客户端未启用 authorization_code 授权类型.",
         );
+    }
+    let redirect_uri =
+        match registered_redirect_uri(&client, q.get("redirect_uri").map(String::as_str)) {
+            Ok(value) => value,
+            Err(RedirectUriError::Missing) => {
+                return oauth_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_request",
+                    "缺少 redirect_uri.",
+                );
+            }
+            Err(RedirectUriError::Invalid) => {
+                return oauth_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_request",
+                    "redirect_uri 与客户端注册信息不匹配.",
+                );
+            }
+        };
+
+    if q.get("response_type").map(String::as_str) != Some("code") {
+        return redirect_found(append_query(
+            &redirect_uri,
+            &[
+                ("error", "unsupported_response_type"),
+                ("state", q.get("state").map(String::as_str).unwrap_or("")),
+                ("iss", state.settings.issuer.as_str()),
+            ],
+        ));
+    }
+    let Some(code_challenge) = q.get("code_challenge") else {
+        return redirect_found(append_query(
+            &redirect_uri,
+            &[
+                ("error", "invalid_request"),
+                ("state", q.get("state").map(String::as_str).unwrap_or("")),
+                ("iss", state.settings.issuer.as_str()),
+            ],
+        ));
+    };
+    if q.get("code_challenge_method").map(String::as_str) != Some("S256")
+        || !is_valid_pkce_value(code_challenge)
+    {
+        return redirect_found(append_query(
+            &redirect_uri,
+            &[
+                ("error", "invalid_request"),
+                ("state", q.get("state").map(String::as_str).unwrap_or("")),
+                ("iss", state.settings.issuer.as_str()),
+            ],
+        ));
     }
 
     let requested_scopes = parse_scope(q.get("scope").map(String::as_str).unwrap_or(""));
     if !is_subset(&requested_scopes, &json_array_to_strings(&client.scopes)) {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_scope",
-            "请求的作用域超出客户端允许范围.",
-        );
+        return redirect_found(append_query(
+            &redirect_uri,
+            &[
+                ("error", "invalid_scope"),
+                ("state", q.get("state").map(String::as_str).unwrap_or("")),
+                ("iss", state.settings.issuer.as_str()),
+            ],
+        ));
     }
 
     let now = Utc::now();
@@ -101,13 +161,21 @@ pub(crate) async fn authorize(
     };
     let key = format!("oauth:consent:{request_id}");
     let body = serde_json::to_string(&payload).unwrap();
-    let _ = valkey_set_ex(
+    if let Err(error) = valkey_set_ex(
         &state.valkey,
         key,
         body,
         state.settings.auth_code_ttl_seconds,
     )
-    .await;
+    .await
+    {
+        tracing::warn!(%error, "failed to persist consent request");
+        return oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "授权请求创建失败.",
+        );
+    }
 
     redirect_found(format!(
         "{}/consent?request_id={request_id}",

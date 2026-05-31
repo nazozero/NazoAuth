@@ -9,6 +9,14 @@ pub(crate) async fn token_client_credentials(
     client: &ClientRow,
     form: &TokenForm,
 ) -> HttpResponse {
+    if client.client_type != "confidential" {
+        return oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "unauthorized_client",
+            "client_credentials 只允许机密客户端使用.",
+            false,
+        );
+    }
     let dpop_jkt = match validate_dpop_proof(state, req, None, None).await {
         Ok(value) => value,
         Err(error) => return dpop_error_response(error),
@@ -16,10 +24,11 @@ pub(crate) async fn token_client_credentials(
     let requested = parse_scope(form.scope.as_deref().unwrap_or(""));
     let allowed = json_array_to_strings(&client.scopes);
     if !requested.is_empty() && !is_subset(&requested, &allowed) {
-        return oauth_error(
+        return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_scope",
             "请求的作用域超出客户端允许范围.",
+            false,
         );
     }
     let scopes = if requested.is_empty() {
@@ -32,10 +41,11 @@ pub(crate) async fn token_client_credentials(
         .clone()
         .unwrap_or_else(|| state.settings.default_audience.clone());
     if !audience_allowed(client, &audience) {
-        return oauth_error(
+        return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_target",
             "请求的 audience 不在客户端允许范围内.",
+            false,
         );
     }
     issue_token_response(
