@@ -14,55 +14,96 @@ pub(crate) async fn token_authorization_code(
         Err(error) => return dpop_error_response(error),
     };
     let Some(code) = &form.code else {
-        return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "缺少 code.");
+        return oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "缺少 code.",
+            false,
+        );
     };
     let key = format!("oauth:auth_code:{code}");
-    let raw = match valkey_getdel(&state.valkey, &key).await {
+    let raw = match valkey_get(&state.valkey, &key).await {
         Ok(value) => value,
         Err(error) => {
             tracing::warn!(%error, "failed to consume authorization code");
-            return oauth_error(
+            return oauth_token_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
                 "授权码校验失败.",
+                false,
             );
         }
     };
     let Some(payload) = raw.and_then(|v| serde_json::from_str::<CodePayload>(&v).ok()) else {
-        return oauth_error(
+        return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
             "授权码无效或已过期.",
+            false,
         );
     };
     if payload.client_id != client.client_id
-        || form.redirect_uri.as_deref() != Some(payload.redirect_uri.as_str())
+        || form
+            .redirect_uri
+            .as_deref()
+            .is_some_and(|value| value != payload.redirect_uri)
     {
-        return oauth_error(
+        return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
             "授权码与客户端或 redirect_uri 不匹配.",
+            false,
         );
     }
     let Some(verifier) = &form.code_verifier else {
-        return oauth_error(
+        return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "缺少 code_verifier.",
+            false,
         );
     };
-    if pkce_s256(verifier) != payload.code_challenge {
-        return oauth_error(StatusCode::BAD_REQUEST, "invalid_grant", "PKCE 校验失败.");
+    if payload.code_challenge_method != "S256"
+        || !is_valid_pkce_value(verifier)
+        || pkce_s256(verifier) != payload.code_challenge
+    {
+        return oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "PKCE 校验失败.",
+            false,
+        );
+    }
+    match valkey_getdel(&state.valkey, &key).await {
+        Ok(Some(_)) => {}
+        Ok(None) => {
+            return oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_grant",
+                "授权码无效或已过期.",
+                false,
+            );
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to consume authorization code");
+            return oauth_token_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权码校验失败.",
+                false,
+            );
+        }
     }
     let audience = form
         .audience
         .clone()
         .unwrap_or_else(|| state.settings.default_audience.clone());
     if !audience_allowed(client, &audience) {
-        return oauth_error(
+        return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_target",
             "请求的 audience 不在客户端允许范围内.",
+            false,
         );
     }
     issue_token_response(

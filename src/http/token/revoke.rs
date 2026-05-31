@@ -59,6 +59,7 @@ pub(crate) async fn revoke(
     };
     if updated == 0
         && let Some(claims) = decode_access_claims(&state, &form.token)
+        && claims.client_id == client.client_id
         && let (Some(expires_at), Ok(mut conn)) = (
             DateTime::<Utc>::from_timestamp(claims.exp, 0),
             get_conn(&state.diesel_db).await,

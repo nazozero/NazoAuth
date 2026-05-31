@@ -63,6 +63,24 @@ pub(crate) async fn admin_patch_client(
             .unwrap_or_else(|| json_array_to_strings(&current.grant_types))
     );
     let new_is_active = payload.is_active.unwrap_or(current.is_active);
+    let new_redirect_uri_values = json_array_to_strings(&new_redirect_uris);
+    let new_scope_values = json_array_to_strings(&new_scopes);
+    let new_audience_values = json_array_to_strings(&new_allowed_audiences);
+    let new_grant_type_values = json_array_to_strings(&new_grant_types);
+    if let Err(error) = validate_client_metadata(
+        &current.client_type,
+        &new_redirect_uri_values,
+        &new_scope_values,
+        &new_audience_values,
+        &new_grant_type_values,
+        &current.token_endpoint_auth_method,
+    ) {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            &format!("客户端更新失败: {error}"),
+        );
+    }
     let row: Result<ClientRow, String> = match get_conn(&state.diesel_db).await {
         Ok(mut conn) => diesel::update(
             oauth_clients::table.filter(oauth_clients::client_id.eq(&current.client_id)),
