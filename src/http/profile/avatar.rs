@@ -1,13 +1,127 @@
 //! 当前用户头像接口。
 // 只处理头像上传、读取和删除的 HTTP 细节。
+use std::{
+    io,
+    path::{Path, PathBuf},
+};
+
 use crate::http::prelude::*;
 
-async fn remove_avatar_file_if_exists(path: std::path::PathBuf) -> std::io::Result<()> {
+struct AvatarPromotion {
+    avatar_file_path: PathBuf,
+    avatar_meta_file_path: PathBuf,
+    avatar_backup_path: PathBuf,
+    avatar_meta_backup_path: PathBuf,
+    avatar_backup_exists: bool,
+    avatar_meta_backup_exists: bool,
+}
+
+async fn remove_avatar_file_if_exists(path: PathBuf) -> io::Result<()> {
     match tokio::fs::remove_file(path).await {
         Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error),
     }
+}
+
+async fn rename_avatar_file_if_exists(source: &Path, target: &Path) -> io::Result<bool> {
+    match tokio::fs::rename(source, target).await {
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+async fn cleanup_avatar_temps(avatar_tmp_path: &Path, avatar_meta_tmp_path: &Path) {
+    let _ = tokio::fs::remove_file(avatar_tmp_path).await;
+    let _ = tokio::fs::remove_file(avatar_meta_tmp_path).await;
+}
+
+async fn restore_avatar_backup(backup_path: &Path, final_path: &Path, backup_exists: bool) {
+    if backup_exists
+        && let Err(error) = tokio::fs::rename(backup_path, final_path).await
+        && error.kind() != io::ErrorKind::NotFound
+    {
+        tracing::warn!(%error, "failed to restore previous avatar file");
+    }
+}
+
+async fn rollback_avatar_promotion(promotion: &AvatarPromotion) {
+    let _ = tokio::fs::remove_file(&promotion.avatar_file_path).await;
+    let _ = tokio::fs::remove_file(&promotion.avatar_meta_file_path).await;
+    restore_avatar_backup(
+        &promotion.avatar_backup_path,
+        &promotion.avatar_file_path,
+        promotion.avatar_backup_exists,
+    )
+    .await;
+    restore_avatar_backup(
+        &promotion.avatar_meta_backup_path,
+        &promotion.avatar_meta_file_path,
+        promotion.avatar_meta_backup_exists,
+    )
+    .await;
+}
+
+async fn finish_avatar_promotion(promotion: &AvatarPromotion) {
+    let _ = tokio::fs::remove_file(&promotion.avatar_backup_path).await;
+    let _ = tokio::fs::remove_file(&promotion.avatar_meta_backup_path).await;
+}
+
+async fn rollback_avatar_promotion_attempt(
+    avatar_tmp_path: &Path,
+    avatar_meta_tmp_path: &Path,
+    promotion: &AvatarPromotion,
+) {
+    cleanup_avatar_temps(avatar_tmp_path, avatar_meta_tmp_path).await;
+    rollback_avatar_promotion(promotion).await;
+}
+
+async fn promote_avatar_files(
+    avatar_tmp_path: &Path,
+    avatar_meta_tmp_path: &Path,
+    avatar_file_path: PathBuf,
+    avatar_meta_file_path: PathBuf,
+    version: &str,
+) -> io::Result<AvatarPromotion> {
+    let avatar_backup_path = avatar_file_path.with_file_name(format!("avatar-{version}.bak"));
+    let avatar_meta_backup_path =
+        avatar_meta_file_path.with_file_name(format!("meta-{version}.bak"));
+    let avatar_backup_exists =
+        rename_avatar_file_if_exists(&avatar_file_path, &avatar_backup_path).await?;
+    let avatar_meta_backup_exists = match rename_avatar_file_if_exists(
+        &avatar_meta_file_path,
+        &avatar_meta_backup_path,
+    )
+    .await
+    {
+        Ok(value) => value,
+        Err(error) => {
+            restore_avatar_backup(&avatar_backup_path, &avatar_file_path, avatar_backup_exists)
+                .await;
+            cleanup_avatar_temps(avatar_tmp_path, avatar_meta_tmp_path).await;
+            return Err(error);
+        }
+    };
+    let promotion = AvatarPromotion {
+        avatar_file_path,
+        avatar_meta_file_path,
+        avatar_backup_path,
+        avatar_meta_backup_path,
+        avatar_backup_exists,
+        avatar_meta_backup_exists,
+    };
+    if let Err(error) = tokio::fs::rename(avatar_tmp_path, &promotion.avatar_file_path).await {
+        rollback_avatar_promotion_attempt(avatar_tmp_path, avatar_meta_tmp_path, &promotion).await;
+        return Err(error);
+    }
+    if let Err(error) =
+        tokio::fs::rename(avatar_meta_tmp_path, &promotion.avatar_meta_file_path).await
+    {
+        rollback_avatar_promotion_attempt(avatar_tmp_path, avatar_meta_tmp_path, &promotion).await;
+        return Err(error);
+    }
+    Ok(promotion)
 }
 
 fn avatar_url_version(avatar_url: &str) -> Option<&str> {
@@ -91,6 +205,7 @@ pub(crate) async fn upload_avatar(
             .await
             .is_err()
         {
+            cleanup_avatar_temps(&avatar_tmp_path, &avatar_meta_tmp_path).await;
             return oauth_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "server_error",
@@ -110,6 +225,25 @@ pub(crate) async fn upload_avatar(
                 );
             }
         };
+        let promotion = match promote_avatar_files(
+            &avatar_tmp_path,
+            &avatar_meta_tmp_path,
+            avatar_file_path,
+            avatar_meta_file_path,
+            &version,
+        )
+        .await
+        {
+            Ok(promotion) => promotion,
+            Err(error) => {
+                tracing::warn!(%error, "failed to promote uploaded avatar files");
+                return oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "头像保存失败.",
+                );
+            }
+        };
         let user = match diesel::update(users::table.find(user.id))
             .set((
                 users::avatar_url.eq(Some(format!("/auth/me/avatar?v={version}"))),
@@ -122,8 +256,7 @@ pub(crate) async fn upload_avatar(
             Ok(user) => user,
             Err(error) => {
                 tracing::warn!(%error, "failed to persist avatar metadata");
-                let _ = tokio::fs::remove_file(&avatar_tmp_path).await;
-                let _ = tokio::fs::remove_file(&avatar_meta_tmp_path).await;
+                rollback_avatar_promotion(&promotion).await;
                 return oauth_error(
                     StatusCode::SERVICE_UNAVAILABLE,
                     "server_error",
@@ -131,26 +264,7 @@ pub(crate) async fn upload_avatar(
                 );
             }
         };
-        if let Err(error) = tokio::fs::rename(&avatar_tmp_path, &avatar_file_path).await {
-            tracing::warn!(%error, "failed to promote uploaded avatar file");
-            let _ = tokio::fs::remove_file(&avatar_tmp_path).await;
-            let _ = tokio::fs::remove_file(&avatar_meta_tmp_path).await;
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "头像保存失败.",
-            );
-        }
-        if let Err(error) = tokio::fs::rename(&avatar_meta_tmp_path, &avatar_meta_file_path).await {
-            tracing::warn!(%error, "failed to promote uploaded avatar metadata file");
-            let _ = tokio::fs::remove_file(&avatar_tmp_path).await;
-            let _ = tokio::fs::remove_file(&avatar_meta_tmp_path).await;
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "头像保存失败.",
-            );
-        }
+        finish_avatar_promotion(&promotion).await;
         return match auth_me_json(&state, &user).await {
             Ok(body) => json_response(body),
             Err(error) => {
@@ -351,5 +465,76 @@ pub(crate) async fn delete_avatar(state: Data<AppState>, req: HttpRequest) -> Ht
                 "当前用户资料查询失败.",
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn avatar_promotion_can_restore_previous_files() {
+        let dir = temp_avatar_dir("rollback");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let avatar = dir.join("avatar.bin");
+        let meta = dir.join("meta.json");
+        let avatar_tmp = dir.join("avatar-new.tmp");
+        let meta_tmp = dir.join("meta-new.tmp");
+        tokio::fs::write(&avatar, b"old-avatar").await.unwrap();
+        tokio::fs::write(&meta, b"old-meta").await.unwrap();
+        tokio::fs::write(&avatar_tmp, b"new-avatar").await.unwrap();
+        tokio::fs::write(&meta_tmp, b"new-meta").await.unwrap();
+
+        let promotion =
+            promote_avatar_files(&avatar_tmp, &meta_tmp, avatar.clone(), meta.clone(), "v1")
+                .await
+                .unwrap();
+        assert_eq!(tokio::fs::read(&avatar).await.unwrap(), b"new-avatar");
+        assert_eq!(tokio::fs::read(&meta).await.unwrap(), b"new-meta");
+
+        rollback_avatar_promotion(&promotion).await;
+        assert_eq!(tokio::fs::read(&avatar).await.unwrap(), b"old-avatar");
+        assert_eq!(tokio::fs::read(&meta).await.unwrap(), b"old-meta");
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn avatar_promotion_finish_removes_backup_files() {
+        let dir = temp_avatar_dir("finish");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let avatar = dir.join("avatar.bin");
+        let meta = dir.join("meta.json");
+        let avatar_tmp = dir.join("avatar-new.tmp");
+        let meta_tmp = dir.join("meta-new.tmp");
+        tokio::fs::write(&avatar, b"old-avatar").await.unwrap();
+        tokio::fs::write(&meta, b"old-meta").await.unwrap();
+        tokio::fs::write(&avatar_tmp, b"new-avatar").await.unwrap();
+        tokio::fs::write(&meta_tmp, b"new-meta").await.unwrap();
+
+        let promotion =
+            promote_avatar_files(&avatar_tmp, &meta_tmp, avatar.clone(), meta.clone(), "v1")
+                .await
+                .unwrap();
+        finish_avatar_promotion(&promotion).await;
+        let avatar_backup_exists = tokio::fs::try_exists(&promotion.avatar_backup_path)
+            .await
+            .unwrap();
+        let meta_backup_exists = tokio::fs::try_exists(&promotion.avatar_meta_backup_path)
+            .await
+            .unwrap();
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+
+        assert!(!avatar_backup_exists);
+        assert!(!meta_backup_exists);
+    }
+
+    fn temp_avatar_dir(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "nazo_avatar_{label}_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
     }
 }

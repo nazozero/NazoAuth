@@ -203,6 +203,9 @@ pub(crate) fn validate_client_jwks(jwks: &Value) -> anyhow::Result<()> {
         if kty != "OKP" || crv != "Ed25519" || !valid_public_key {
             anyhow::bail!("jwks 只接受 Ed25519 OKP 公钥");
         }
+        if key.get("d").is_some() {
+            anyhow::bail!("jwks 不能包含私钥材料");
+        }
         if let Some(alg) = key.get("alg").and_then(Value::as_str)
             && alg != "EdDSA"
         {
@@ -464,5 +467,20 @@ mod tests {
             ]
         });
         assert!(validate_client_jwks(&duplicate_kid).is_err());
+    }
+
+    #[test]
+    fn client_jwks_rejects_private_key_material() {
+        let private_jwk = json!({
+            "keys": [{
+                "kty": "OKP",
+                "crv": "Ed25519",
+                "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+                "d": URL_SAFE_NO_PAD.encode([8u8; 32]),
+                "kid": "key-1"
+            }]
+        });
+
+        assert!(validate_client_jwks(&private_jwk).is_err());
     }
 }

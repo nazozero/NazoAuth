@@ -22,6 +22,10 @@ fn parse_authorization_decision(value: &str) -> Option<AuthorizationDecision> {
     }
 }
 
+fn parse_consent_payload(raw: Option<String>) -> Option<ConsentPayload> {
+    raw.and_then(|value| serde_json::from_str::<ConsentPayload>(&value).ok())
+}
+
 /// 处理用户对授权请求的同意或拒绝。
 pub(crate) async fn authorize_decision(
     state: Data<AppState>,
@@ -40,7 +44,7 @@ pub(crate) async fn authorize_decision(
     };
 
     let key = format!("oauth:consent:{}", form.request_id);
-    let raw = match valkey_getdel(&state.valkey, &key).await {
+    let raw = match valkey_get(&state.valkey, &key).await {
         Ok(value) => value,
         Err(error) => {
             tracing::warn!(%error, "failed to read authorization consent state");
@@ -51,7 +55,32 @@ pub(crate) async fn authorize_decision(
             );
         }
     };
-    let Some(payload) = raw.and_then(|v| serde_json::from_str::<ConsentPayload>(&v).ok()) else {
+    let Some(payload) = parse_consent_payload(raw) else {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "授权请求不存在或已过期,请重新发起授权.",
+        );
+    };
+    if payload.user_id != user.id {
+        return oauth_error(
+            StatusCode::FORBIDDEN,
+            "access_denied",
+            "当前会话与授权请求不匹配.",
+        );
+    }
+    let raw = match valkey_getdel(&state.valkey, &key).await {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(%error, "failed to consume authorization consent state");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权请求读取失败.",
+            );
+        }
+    };
+    let Some(payload) = parse_consent_payload(raw) else {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -151,5 +180,11 @@ mod tests {
             Some(AuthorizationDecision::Deny)
         ));
         assert!(parse_authorization_decision("anything-else").is_none());
+    }
+
+    #[test]
+    fn missing_or_malformed_consent_payload_is_rejected() {
+        assert!(parse_consent_payload(None).is_none());
+        assert!(parse_consent_payload(Some("not-json".to_owned())).is_none());
     }
 }

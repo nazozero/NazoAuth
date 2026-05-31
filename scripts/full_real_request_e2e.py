@@ -452,6 +452,7 @@ def run() -> None:
             "discovery_metadata",
             "private_key_jwt" in discovery["token_endpoint_auth_methods_supported"]
             and "private_key_jwt" in discovery["introspection_endpoint_auth_methods_supported"]
+            and discovery["revocation_endpoint_auth_signing_alg_values_supported"] == ["EdDSA"]
             and "email_verified" in discovery["claims_supported"],
         )
         oauth_metadata = expect_json(
@@ -702,6 +703,35 @@ def run() -> None:
             timeout=10,
         )
         expect_status("POST /admin/clients private_key_jwt jwks kid required", jwks_without_kid, 400)
+
+        jwk_with_private_material = ed25519_public_jwk(private_key, "private-key-material-e2e")
+        jwk_with_private_material["d"] = b64url(
+            private_key.private_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PrivateFormat.Raw,
+                encryption_algorithm=serialization.NoEncryption(),
+            )
+        )
+        private_jwk_response = admin.post(
+            f"{BASE_URL}/admin/clients",
+            json={
+                "client_name": "Private Material JWKS Full E2E",
+                "client_type": "confidential",
+                "redirect_uris": [],
+                "scopes": ["profile"],
+                "allowed_audiences": [DEFAULT_AUDIENCE],
+                "grant_types": ["client_credentials"],
+                "token_endpoint_auth_method": "private_key_jwt",
+                "jwks": {"keys": [jwk_with_private_material]},
+            },
+            headers=csrf_header(admin),
+            timeout=10,
+        )
+        expect_status(
+            "POST /admin/clients private_key_jwt private jwk rejected",
+            private_jwk_response,
+            400,
+        )
 
         private_client = create_client(
             admin,

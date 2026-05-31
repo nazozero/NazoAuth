@@ -28,6 +28,7 @@ fn authorization_server_metadata_value(state: &AppState) -> Value {
         "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "private_key_jwt", "none"],
         "token_endpoint_auth_signing_alg_values_supported": ["EdDSA"],
         "revocation_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "private_key_jwt", "none"],
+        "revocation_endpoint_auth_signing_alg_values_supported": ["EdDSA"],
         "introspection_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "private_key_jwt"],
         "introspection_endpoint_auth_signing_alg_values_supported": ["EdDSA"],
         "scopes_supported": ["openid", "profile", "email", "offline_access"],

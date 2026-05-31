@@ -47,7 +47,10 @@ pub(crate) async fn try_load_keyset(
             .and_then(Value::as_str)
             .ok_or_else(|| anyhow!("keyset entry missing kid"))?;
         let is_active = kid == active_kid;
-        if !is_active && key_entry_is_retired(entry) {
+        if key_entry_is_retired(entry) {
+            if is_active {
+                anyhow::bail!("keyset.json active key {kid} is retired");
+            }
             continue;
         }
 
@@ -327,6 +330,42 @@ mod tests {
 
         assert_eq!(keyset.active_kid, "active");
         assert_eq!(keyset.verification_keys.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn retired_active_key_entry_is_rejected() {
+        let keys_dir = temp_keys_dir("retired_active");
+        tokio::fs::create_dir_all(&keys_dir).await.unwrap();
+        let active_der = ed25519_pkcs8_private_der(&[1u8; 32]);
+        tokio::fs::write(
+            keys_dir.join("active.pem"),
+            der_to_pem(&active_der, "PRIVATE KEY"),
+        )
+        .await
+        .unwrap();
+        tokio::fs::write(
+            keys_dir.join("keyset.json"),
+            serde_json::to_string_pretty(&json!({
+                "active_kid": "active",
+                "keys": [
+                    {
+                        "kid": "active",
+                        "file": "active.pem",
+                        "retire_at": "2000-01-01T00:00:00Z"
+                    }
+                ]
+            }))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        let settings = test_settings(keys_dir.clone());
+        let keyset_path = keys_dir.join("keyset.json");
+
+        let result = try_load_keyset(&settings, &keyset_path).await;
+        let _ = tokio::fs::remove_dir_all(&keys_dir).await;
+
+        assert!(result.is_err());
     }
 
     fn temp_keys_dir(label: &str) -> PathBuf {
