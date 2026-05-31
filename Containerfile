@@ -22,6 +22,7 @@ WORKDIR /app
 
 COPY --from=builder /app/target/release/nazo-oauth-server /usr/local/bin/nazo-oauth-server
 COPY --from=builder /app/target/release/nazo-oauth-migrate /usr/local/bin/nazo-oauth-migrate
+COPY --from=builder /app/target/release/nazo-oauth-keyctl /usr/local/bin/nazo-oauth-keyctl
 
 EXPOSE 8000
 

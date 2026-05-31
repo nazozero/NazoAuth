@@ -1,5 +1,5 @@
-//! Runtime configuration file loading.
-// Configuration is read once at startup from .env.yaml.
+//! Runtime configuration loading.
+// Configuration is read once at startup from defaults, .env.yaml, and whitelisted environment variables.
 
 use std::{collections::HashMap, fs::File, path::Path};
 
@@ -8,18 +8,70 @@ use yaml_serde::Value as YamlValue;
 
 const CONFIG_FILE: &str = ".env.yaml";
 const UNSUPPORTED_DOTENV_FILE: &str = ".env";
+const ENV_CONFIG_KEYS: &[&str] = &[
+    "ACCESS_TOKEN_TTL_SECONDS",
+    "AUTH_CODE_TTL_SECONDS",
+    "AUTH_RATE_LIMIT_MAX_REQUESTS",
+    "AVATAR_MAX_BYTES",
+    "AVATAR_STORAGE_DIR",
+    "BIND",
+    "CLIENT_DELIVERY_TTL_SECONDS",
+    "CLIENT_IP_HEADER_MODE",
+    "COOKIE_SECURE",
+    "CORS_ALLOWED_ORIGINS",
+    "CSRF_COOKIE_NAME",
+    "DATABASE_URL",
+    "DEFAULT_AUDIENCE",
+    "EMAIL_CODE_DEV_RESPONSE_ENABLED",
+    "EMAIL_CODE_PEER_COOLDOWN_SECONDS",
+    "EMAIL_CODE_SEND_COOLDOWN_SECONDS",
+    "EMAIL_CODE_TTL_SECONDS",
+    "EMAIL_DELIVERY",
+    "EMAIL_FROM",
+    "EMAIL_SMTP_HOST",
+    "EMAIL_SMTP_PASSWORD",
+    "EMAIL_SMTP_PORT",
+    "EMAIL_SMTP_TLS",
+    "EMAIL_SMTP_USERNAME",
+    "FRONTEND_BASE_URL",
+    "ID_TOKEN_TTL_SECONDS",
+    "ISSUER",
+    "JWK_KEYS_DIR",
+    "PAIRWISE_SUBJECT_SECRET",
+    "PAR_TTL_SECONDS",
+    "RATE_LIMIT_WINDOW_SECONDS",
+    "REFRESH_TOKEN_TTL_SECONDS",
+    "REQUIRE_PUSHED_AUTHORIZATION_REQUESTS",
+    "RUST_LOG",
+    "SESSION_COOKIE_NAME",
+    "SESSION_TTL_SECONDS",
+    "SUBJECT_TYPE",
+    "TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS",
+    "TOKEN_RATE_LIMIT_MAX_REQUESTS",
+    "TRUSTED_PROXY_CIDRS",
+    "VALKEY_URL",
+];
 
 #[derive(Clone, Debug, Default)]
 pub struct ConfigSource {
     file_values: HashMap<String, String>,
+    env_values: HashMap<String, String>,
 }
 
 impl ConfigSource {
     pub fn load() -> anyhow::Result<Self> {
-        Self::load_from_dir(".")
+        Self::load_from_dir_with_env(".", std::env::vars())
     }
 
+    #[cfg(test)]
     fn load_from_dir(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+        Self::load_from_dir_with_env(path, std::iter::empty::<(String, String)>())
+    }
+
+    fn load_from_dir_with_env(
+        path: impl AsRef<Path>,
+        env: impl IntoIterator<Item = (String, String)>,
+    ) -> anyhow::Result<Self> {
         let path = path.as_ref();
         let dotenv_path = path.join(UNSUPPORTED_DOTENV_FILE);
         if dotenv_path.exists() {
@@ -27,7 +79,11 @@ impl ConfigSource {
         }
 
         let mut source = Self::default();
-        source.merge_yaml_file(path.join(CONFIG_FILE))?;
+        let config_path = path.join(CONFIG_FILE);
+        if config_path.exists() {
+            source.merge_yaml_file(config_path)?;
+        }
+        source.merge_env(env)?;
         Ok(source)
     }
 
@@ -49,7 +105,10 @@ impl ConfigSource {
     }
 
     pub fn get(&self, key: &str) -> Option<String> {
-        self.file_values.get(key).cloned()
+        self.env_values
+            .get(key)
+            .or_else(|| self.file_values.get(key))
+            .cloned()
     }
 
     pub fn string(&self, key: &str, default: &str) -> String {
@@ -94,6 +153,19 @@ impl ConfigSource {
             };
             let value = yaml_value_to_string(key, &value)?;
             self.file_values.insert(key.to_owned(), value);
+        }
+        Ok(())
+    }
+
+    fn merge_env(&mut self, env: impl IntoIterator<Item = (String, String)>) -> anyhow::Result<()> {
+        for (key, value) in env {
+            if !ENV_CONFIG_KEYS.contains(&key.as_str()) {
+                continue;
+            }
+            if key.trim().is_empty() {
+                bail!("environment config key must not be empty");
+            }
+            self.env_values.insert(key, value);
         }
         Ok(())
     }
@@ -184,9 +256,9 @@ mod tests {
     }
 
     #[test]
-    fn missing_config_file_is_rejected() {
+    fn missing_config_file_can_be_replaced_by_whitelisted_environment() {
         let path = std::env::temp_dir().join(format!(
-            "nazo_config_missing_{}",
+            "nazo_config_env_only_{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -194,9 +266,49 @@ mod tests {
         ));
         std::fs::create_dir_all(&path).unwrap();
 
-        let result = ConfigSource::load_from_dir(&path);
+        let result = ConfigSource::load_from_dir_with_env(
+            &path,
+            [
+                ("ISSUER".to_owned(), "https://issuer.example".to_owned()),
+                (
+                    "FRONTEND_BASE_URL".to_owned(),
+                    "https://frontend.example".to_owned(),
+                ),
+            ],
+        );
         let _ = std::fs::remove_dir_all(&path);
 
-        assert!(result.is_err());
+        let source = result.unwrap();
+        assert_eq!(
+            source.required_string("ISSUER").unwrap(),
+            "https://issuer.example"
+        );
+    }
+
+    #[test]
+    fn environment_overrides_yaml_by_allowlist() {
+        let mut source = ConfigSource::default();
+        source
+            .file_values
+            .insert("ISSUER".to_owned(), "https://yaml.example".to_owned());
+        source
+            .merge_env([
+                ("ISSUER".to_owned(), "https://env.example".to_owned()),
+                ("UNKNOWN_ENV".to_owned(), "ignored".to_owned()),
+            ])
+            .unwrap();
+
+        assert_eq!(source.string("ISSUER", ""), "https://env.example");
+        assert!(source.get("UNKNOWN_ENV").is_none());
+    }
+
+    #[test]
+    fn invalid_environment_type_is_error() {
+        let mut source = ConfigSource::default();
+        source
+            .merge_env([("SESSION_TTL_SECONDS".to_owned(), "soon".to_owned())])
+            .unwrap();
+
+        assert!(source.parse::<u64>("SESSION_TTL_SECONDS", 28_800).is_err());
     }
 }

@@ -2,6 +2,25 @@
 //! 只从已授权 scope 和本地用户事实源生成声明，不为缺失字段写入 null。
 
 use super::prelude::*;
+use crate::settings::SubjectType;
+
+pub(crate) fn oidc_subject(settings: &Settings, user_id: Uuid, redirect_uri: &str) -> String {
+    match settings.subject_type {
+        SubjectType::Public => user_id.to_string(),
+        SubjectType::Pairwise => {
+            let sector = url::Url::parse(redirect_uri)
+                .ok()
+                .and_then(|url| url.host_str().map(ToOwned::to_owned))
+                .unwrap_or_else(|| redirect_uri.to_owned());
+            let secret = settings
+                .pairwise_subject_secret
+                .as_deref()
+                .unwrap_or_default();
+            let material = format!("{secret}\x1f{sector}\x1f{user_id}");
+            URL_SAFE_NO_PAD.encode(Sha256::digest(material.as_bytes()))
+        }
+    }
+}
 
 pub(crate) fn oidc_user_claims(user: &UserRow, scopes: &[String], subject: &str) -> Value {
     let mut claims = json!({"sub": subject});
@@ -24,6 +43,7 @@ pub(crate) fn oidc_user_claims(user: &UserRow, scopes: &[String], subject: &str)
         {
             claims["picture"] = json!(picture);
         }
+        claims["updated_at"] = json!(user.updated_at.timestamp());
     }
 
     if scopes.iter().any(|scope| scope == "email") {
@@ -37,8 +57,11 @@ pub(crate) fn oidc_user_claims(user: &UserRow, scopes: &[String], subject: &str)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::{EmailDelivery, EmailSettings, RateLimitSettings};
+    use crate::support::ClientIpHeaderMode;
 
     fn user() -> UserRow {
+        let now = Utc::now();
         UserRow {
             id: Uuid::now_v7(),
             username: "alice".to_owned(),
@@ -50,7 +73,48 @@ mod tests {
             email_verified: true,
             password_hash: "hash".to_owned(),
             is_active: true,
-            created_at: Utc::now(),
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    fn settings() -> Settings {
+        Settings {
+            issuer: "https://issuer.example".to_owned(),
+            frontend_base_url: "https://frontend.example".to_owned(),
+            cors_allowed_origins: vec!["https://frontend.example".to_owned()],
+            default_audience: "resource://default".to_owned(),
+            session_cookie_name: "session".to_owned(),
+            csrf_cookie_name: "csrf".to_owned(),
+            cookie_secure: true,
+            session_ttl_seconds: 28_800,
+            auth_code_ttl_seconds: 300,
+            access_token_ttl_seconds: 300,
+            id_token_ttl_seconds: 600,
+            refresh_token_ttl_seconds: 2_592_000,
+            avatar_max_bytes: 2_097_152,
+            client_delivery_ttl_seconds: 86_400,
+            rate_limit: RateLimitSettings {
+                window_seconds: 60,
+                auth_max_requests: 30,
+                token_max_requests: 60,
+                token_management_max_requests: 120,
+            },
+            email: EmailSettings {
+                delivery: EmailDelivery::Disabled,
+                code_ttl_seconds: 900,
+                send_cooldown_seconds: 60,
+                send_peer_cooldown_seconds: 5,
+            },
+            email_code_dev_response_enabled: false,
+            avatar_storage_dir: std::env::temp_dir().join("unused-avatars"),
+            jwk_keys_dir: std::env::temp_dir().join("unused-keys"),
+            trusted_proxy_cidrs: Vec::new(),
+            client_ip_header_mode: ClientIpHeaderMode::None,
+            subject_type: SubjectType::Public,
+            pairwise_subject_secret: None,
+            par_ttl_seconds: 90,
+            require_pushed_authorization_requests: false,
         }
     }
 
@@ -85,5 +149,21 @@ mod tests {
         assert!(claims.get("picture").is_none());
         assert!(claims.get("email").is_none());
         assert!(claims.get("email_verified").is_none());
+    }
+
+    #[test]
+    fn pairwise_subject_is_stable_within_sector_and_distinct_across_sectors() {
+        let user_id = Uuid::now_v7();
+        let mut settings = settings();
+        settings.subject_type = SubjectType::Pairwise;
+        settings.pairwise_subject_secret = Some("secret".to_owned());
+
+        let first = oidc_subject(&settings, user_id, "https://client.example/callback");
+        let second = oidc_subject(&settings, user_id, "https://client.example/other");
+        let third = oidc_subject(&settings, user_id, "https://other.example/callback");
+
+        assert_eq!(first, second);
+        assert_ne!(first, third);
+        assert_ne!(first, user_id.to_string());
     }
 }

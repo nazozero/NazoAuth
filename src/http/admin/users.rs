@@ -163,7 +163,19 @@ pub(crate) async fn admin_patch_user(
         }
     };
     match updated {
-        Some(user) => json_response(admin_user_json(user)),
+        Some(user) => {
+            audit_event(
+                "admin_user_updated",
+                audit_fields(&[
+                    ("user_id", json!(user.id)),
+                    (
+                        "source_ip_hash",
+                        json!(blake3_hex(&client_ip(&req, &state.settings))),
+                    ),
+                ]),
+            );
+            json_response(admin_user_json(user))
+        }
         None => oauth_error(StatusCode::NOT_FOUND, "invalid_request", "未找到该用户."),
     }
 }

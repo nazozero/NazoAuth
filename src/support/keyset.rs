@@ -2,6 +2,7 @@
 // 负责加载、生成和编码 OAuth/OIDC 签名密钥。
 
 use std::io::ErrorKind;
+use std::path::Path;
 
 use anyhow::{Context, anyhow};
 
@@ -92,7 +93,7 @@ pub(crate) async fn create_new_keyset(settings: &Settings) -> anyhow::Result<Key
     let kid = format!("ed25519-{}", Uuid::now_v7());
     let file_name = format!("{kid}.pem");
     let pem = der_to_pem(&private_pkcs8_der, "PRIVATE KEY");
-    tokio::fs::write(settings.jwk_keys_dir.join(&file_name), pem).await?;
+    write_private_key_pem_atomic(&settings.jwk_keys_dir.join(&file_name), &pem).await?;
     let now = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     let payload = json!({
         "active_kid": kid,
@@ -103,16 +104,59 @@ pub(crate) async fn create_new_keyset(settings: &Settings) -> anyhow::Result<Key
             "retire_at": null
         }]
     });
-    tokio::fs::write(
-        settings.jwk_keys_dir.join("keyset.json"),
-        serde_json::to_string_pretty(&payload)?,
-    )
-    .await?;
+    write_json_atomic(&settings.jwk_keys_dir.join("keyset.json"), &payload).await?;
     keyset_from_der(
         payload["active_kid"].as_str().unwrap_or_default(),
         private_pkcs8_der,
     )
     .ok_or_else(|| anyhow::anyhow!("failed to build generated Ed25519 keyset"))
+}
+
+pub(crate) async fn write_json_atomic(path: &Path, value: &Value) -> anyhow::Result<()> {
+    let body = serde_json::to_string_pretty(value)?;
+    write_file_atomic(path, body.as_bytes()).await
+}
+
+pub(crate) async fn write_private_key_pem_atomic(path: &Path, pem: &str) -> anyhow::Result<()> {
+    write_file_atomic(path, pem.as_bytes()).await?;
+    set_private_key_permissions(path).await
+}
+
+async fn write_file_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow!("target file must have a parent directory"))?;
+    tokio::fs::create_dir_all(parent).await?;
+    let tmp_path = parent.join(format!(
+        ".{}.{}.tmp",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("keyset"),
+        Uuid::now_v7()
+    ));
+    tokio::fs::write(&tmp_path, bytes).await?;
+    tokio::fs::rename(&tmp_path, path).await.with_context(|| {
+        format!(
+            "failed to atomically rename {} to {}",
+            tmp_path.display(),
+            path.display()
+        )
+    })?;
+    Ok(())
+}
+
+#[cfg(unix)]
+async fn set_private_key_permissions(path: &Path) -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let permissions = std::fs::Permissions::from_mode(0o600);
+    tokio::fs::set_permissions(path, permissions).await?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+async fn set_private_key_permissions(_path: &Path) -> anyhow::Result<()> {
+    Ok(())
 }
 
 pub(crate) fn keyset_from_der(active_kid: &str, private_pkcs8_der: Vec<u8>) -> Option<Keyset> {
@@ -215,6 +259,7 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::settings::{EmailDelivery, EmailSettings, RateLimitSettings};
+    use crate::support::ClientIpHeaderMode;
 
     #[test]
     fn jwks_publishes_active_and_previous_verification_keys() {
@@ -456,6 +501,12 @@ mod tests {
             email_code_dev_response_enabled: false,
             avatar_storage_dir: jwk_keys_dir.join("avatars"),
             jwk_keys_dir,
+            trusted_proxy_cidrs: Vec::new(),
+            client_ip_header_mode: ClientIpHeaderMode::None,
+            subject_type: crate::settings::SubjectType::Public,
+            pairwise_subject_secret: None,
+            par_ttl_seconds: 90,
+            require_pushed_authorization_requests: false,
         }
     }
 }

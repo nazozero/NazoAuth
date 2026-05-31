@@ -32,6 +32,8 @@ pub(crate) struct UserRow {
     pub(crate) is_active: bool,
     #[diesel(sql_type = diesel::sql_types::Timestamptz)]
     pub(crate) created_at: DateTime<Utc>,
+    #[diesel(sql_type = diesel::sql_types::Timestamptz)]
+    pub(crate) updated_at: DateTime<Utc>,
 }
 
 /// oauth_clients 表完整客户端行。

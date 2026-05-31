@@ -57,6 +57,8 @@ pub(crate) async fn token_client_credentials(
             scopes,
             audience,
             nonce: None,
+            auth_time: None,
+            amr: Vec::new(),
             include_refresh: false,
             rotation: None,
             dpop_jkt,

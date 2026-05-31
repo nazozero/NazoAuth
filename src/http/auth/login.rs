@@ -22,6 +22,16 @@ pub(crate) async fn login(
     let user = match find_user_by_email(&state.diesel_db, &email).await {
         Ok(Some(user)) => user,
         Ok(None) => {
+            audit_event(
+                "login_failure",
+                audit_fields(&[
+                    ("email_hash", json!(blake3_hex(&email))),
+                    (
+                        "source_ip_hash",
+                        json!(blake3_hex(&client_ip(&req, &state.settings))),
+                    ),
+                ]),
+            );
             return oauth_error(StatusCode::UNAUTHORIZED, "access_denied", "邮箱或密码错误.");
         }
         Err(error) => {
@@ -34,16 +44,43 @@ pub(crate) async fn login(
         }
     };
     if !user.is_active || !verify_password(&payload.password, &user.password_hash) {
+        audit_event(
+            "login_failure",
+            audit_fields(&[
+                ("user_id", json!(user.id)),
+                ("email_hash", json!(blake3_hex(&email))),
+                (
+                    "source_ip_hash",
+                    json!(blake3_hex(&client_ip(&req, &state.settings))),
+                ),
+            ]),
+        );
         return oauth_error(StatusCode::UNAUTHORIZED, "access_denied", "邮箱或密码错误.");
     }
 
     let session_id = random_urlsafe_token();
     let csrf_token = random_urlsafe_token();
     let key = format!("oauth:session:{session_id}");
+    let session = SessionPayload {
+        user_id: user.id,
+        auth_time: Utc::now().timestamp(),
+        amr: vec!["password".to_owned()],
+    };
+    let session_body = match serde_json::to_string(&session) {
+        Ok(body) => body,
+        Err(error) => {
+            tracing::warn!(%error, "failed to serialize session");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "会话写入失败.",
+            );
+        }
+    };
     if valkey_set_ex(
         &state.valkey,
         key,
-        user.id.to_string(),
+        session_body,
         state.settings.session_ttl_seconds,
     )
     .await
@@ -55,6 +92,18 @@ pub(crate) async fn login(
             "会话写入失败.",
         );
     }
+
+    audit_event(
+        "login_success",
+        audit_fields(&[
+            ("user_id", json!(user.id)),
+            (
+                "source_ip_hash",
+                json!(blake3_hex(&client_ip(&req, &state.settings))),
+            ),
+            ("amr", json!(session.amr)),
+        ]),
+    );
 
     let body = json!({
         "session_id": session_id,

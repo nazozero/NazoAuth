@@ -2,7 +2,7 @@
 // 安全相关算法集中在这里，调用方只关心验证或签发结果。
 
 use super::prelude::*;
-use super::valkey_set_ex_nx;
+use super::{audit_event, audit_fields, valkey_set_ex_nx};
 
 pub(crate) fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
     if left.len() != right.len() {
@@ -220,7 +220,17 @@ pub(crate) async fn validate_private_key_jwt(
     );
     match valkey_set_ex_nx(&state.valkey, replay_key, "1", ttl_seconds).await {
         Ok(true) => Ok(()),
-        Ok(false) => Err(ClientAssertionError::ReplayDetected),
+        Ok(false) => {
+            audit_event(
+                "client_assertion_replay_detected",
+                audit_fields(&[
+                    ("client_id", json!(client.client_id)),
+                    ("jti_hash", json!(blake3_hex(&claims.jti))),
+                    ("kid", json!(kid)),
+                ]),
+            );
+            Err(ClientAssertionError::ReplayDetected)
+        }
         Err(error) => {
             tracing::warn!(%error, "failed to store private_key_jwt jti");
             Err(ClientAssertionError::StoreUnavailable)
@@ -235,7 +245,7 @@ fn unverified_client_assertion_client_id(assertion: &str) -> Option<String> {
     (claims.iss == claims.sub && !claims.sub.trim().is_empty()).then_some(claims.sub)
 }
 
-fn client_assertion_public_key(client: &ClientRow, kid: &str) -> Option<[u8; 32]> {
+pub(crate) fn client_assertion_public_key(client: &ClientRow, kid: &str) -> Option<[u8; 32]> {
     let keys = client.jwks.as_ref()?.get("keys")?.as_array()?;
     let key = keys
         .iter()
@@ -294,6 +304,7 @@ fn valid_client_assertion_jti(jti: &str) -> bool {
 
 pub(crate) struct AccessTokenJwtInput<'a> {
     pub(crate) subject: &'a str,
+    pub(crate) user_id: Option<Uuid>,
     pub(crate) subject_type: &'a str,
     pub(crate) client_id: &'a str,
     pub(crate) audience: &'a str,
@@ -318,6 +329,7 @@ pub(crate) fn make_jwt(
     let claims = Claims {
         iss: state.settings.issuer.clone(),
         sub: input.subject.to_string(),
+        user_id: input.user_id.map(|id| id.to_string()),
         subject_type: input.subject_type.to_string(),
         aud: input.audience.to_string(),
         client_id: input.client_id.to_string(),
@@ -342,31 +354,52 @@ pub(crate) fn make_jwt(
     Ok(IssuedAccessToken { token, jti, exp })
 }
 
+pub(crate) struct IdTokenInput<'a> {
+    pub(crate) subject: &'a str,
+    pub(crate) client_id: &'a str,
+    pub(crate) nonce: Option<String>,
+    pub(crate) auth_time: Option<i64>,
+    pub(crate) amr: &'a [String],
+    pub(crate) extra_claims: Option<&'a Value>,
+    pub(crate) ttl: i64,
+}
+
 pub(crate) fn make_id_token(
     state: &AppState,
-    subject: &str,
-    client_id: &str,
-    nonce: Option<String>,
-    extra_claims: Option<&Value>,
-    ttl: i64,
+    input: IdTokenInput<'_>,
 ) -> jsonwebtoken::errors::Result<String> {
     let now = Utc::now().timestamp();
     let mut claims = serde_json::Map::new();
     claims.insert("iss".to_owned(), json!(state.settings.issuer));
-    claims.insert("sub".to_owned(), json!(subject));
-    claims.insert("aud".to_owned(), json!(client_id));
+    claims.insert("sub".to_owned(), json!(input.subject));
+    claims.insert("aud".to_owned(), json!(input.client_id));
     claims.insert("iat".to_owned(), json!(now));
     claims.insert("nbf".to_owned(), json!(now));
-    claims.insert("exp".to_owned(), json!(now + ttl));
+    claims.insert("exp".to_owned(), json!(now + input.ttl));
     claims.insert("jti".to_owned(), json!(Uuid::now_v7().to_string()));
-    if let Some(nonce) = nonce {
+    if let Some(nonce) = input.nonce {
         claims.insert("nonce".to_owned(), json!(nonce));
     }
-    if let Some(extra_claims) = extra_claims.and_then(Value::as_object) {
+    if let Some(auth_time) = input.auth_time {
+        claims.insert("auth_time".to_owned(), json!(auth_time));
+    }
+    if !input.amr.is_empty() {
+        claims.insert("amr".to_owned(), json!(input.amr));
+    }
+    if let Some(extra_claims) = input.extra_claims.and_then(Value::as_object) {
         for (key, value) in extra_claims {
             if !matches!(
                 key.as_str(),
-                "iss" | "sub" | "aud" | "iat" | "nbf" | "exp" | "jti" | "nonce"
+                "iss"
+                    | "sub"
+                    | "aud"
+                    | "iat"
+                    | "nbf"
+                    | "exp"
+                    | "jti"
+                    | "nonce"
+                    | "auth_time"
+                    | "amr"
             ) {
                 claims.insert(key.clone(), value.clone());
             }

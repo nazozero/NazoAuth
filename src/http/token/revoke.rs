@@ -128,5 +128,17 @@ pub(crate) async fn revoke(
             );
         }
     }
+    audit_event(
+        "token_revoked",
+        audit_fields(&[
+            ("client_id", json!(client.client_id)),
+            ("token_hash", json!(blake3_hex(&form.token))),
+            ("updated", json!(updated)),
+            (
+                "source_ip_hash",
+                json!(blake3_hex(&client_ip(&req, &state.settings))),
+            ),
+        ]),
+    );
     json_response_no_store(json!({"result": "已处理"}))
 }

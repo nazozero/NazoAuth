@@ -3,6 +3,38 @@
 use crate::http::prelude::*;
 use diesel_async::{AsyncConnection, AsyncPgConnection};
 
+const MARK_CONSUMED_AUTHORIZATION_CODE_SCRIPT: &str = r#"
+local raw = redis.call('GET', KEYS[1])
+if not raw then
+  return 'missing'
+end
+local ok, state = pcall(cjson.decode, raw)
+if not ok or type(state) ~= 'table' or type(state.status) ~= 'string' then
+  return 'malformed'
+end
+if state.status ~= 'consuming' then
+  return state.status
+end
+redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+return 'ok'
+"#;
+
+const MARK_FAILED_AUTHORIZATION_CODE_SCRIPT: &str = r#"
+local raw = redis.call('GET', KEYS[1])
+if not raw then
+  return 'missing'
+end
+local ok, state = pcall(cjson.decode, raw)
+if not ok or type(state) ~= 'table' or type(state.status) ~= 'string' then
+  return 'malformed'
+end
+if state.status ~= 'consuming' then
+  return state.status
+end
+redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+return 'ok'
+"#;
+
 enum RefreshPersistResult {
     Inserted,
     RotationConflict,
@@ -108,20 +140,66 @@ async fn persist_consumed_authorization_code(
         refresh_token_family_id,
         consumed_at: Utc::now(),
     };
-    let body = serde_json::to_string(&payload)?;
+    let body = serde_json::to_string(&AuthorizationCodeState::Consumed { marker: payload })?;
     let ttl_seconds = if refresh_token_family_id.is_some() {
         state.settings.refresh_token_ttl_seconds
     } else {
         state.settings.access_token_ttl_seconds
     };
-    valkey_set_ex(
+    let ttl_seconds = if ttl_seconds <= 0 {
+        1
+    } else {
+        ttl_seconds as u64
+    };
+    let result = valkey_eval_string(
         &state.valkey,
-        consumed_authorization_code_key_from_hash(code_hash),
-        body,
-        u64::try_from(ttl_seconds.max(1)).unwrap_or(1),
+        MARK_CONSUMED_AUTHORIZATION_CODE_SCRIPT,
+        vec![authorization_code_key_from_hash(code_hash)],
+        vec![body, ttl_seconds.to_string()],
     )
     .await?;
+    if result != "ok" {
+        anyhow::bail!("authorization code state is {result}, expected consuming");
+    }
     Ok(())
+}
+
+pub(super) async fn mark_failed_authorization_code(
+    state: &AppState,
+    code_hash: &str,
+    error_code: &str,
+) -> anyhow::Result<()> {
+    let body = serde_json::to_string(&AuthorizationCodeState::Failed {
+        failed_at: Utc::now(),
+        error: error_code.to_owned(),
+    })?;
+    let result = valkey_eval_string(
+        &state.valkey,
+        MARK_FAILED_AUTHORIZATION_CODE_SCRIPT,
+        vec![authorization_code_key_from_hash(code_hash)],
+        vec![
+            body,
+            state.settings.auth_code_ttl_seconds.max(1).to_string(),
+        ],
+    )
+    .await?;
+    if matches!(result.as_str(), "ok" | "missing" | "failed" | "consumed") {
+        Ok(())
+    } else {
+        anyhow::bail!("authorization code state is {result}, expected consuming");
+    }
+}
+
+async fn mark_failed_authorization_code_if_needed(
+    state: &AppState,
+    code_hash: Option<&str>,
+    error_code: &str,
+) {
+    if let Some(code_hash) = code_hash
+        && let Err(error) = mark_failed_authorization_code(state, code_hash, error_code).await
+    {
+        tracing::warn!(%error, "failed to mark authorization code exchange as failed");
+    }
 }
 
 pub(super) async fn revoke_issued_authorization_code_tokens(
@@ -165,10 +243,27 @@ pub(crate) async fn issue_token_response(
     issue: TokenIssue,
 ) -> HttpResponse {
     let now = Utc::now();
+    let next_dpop_nonce = if issue.dpop_jkt.is_some() {
+        match issue_dpop_nonce(state).await {
+            Ok(nonce) => Some(nonce),
+            Err(error) => {
+                mark_failed_authorization_code_if_needed(
+                    state,
+                    issue.authorization_code_hash.as_deref(),
+                    "dpop_next_nonce_failed",
+                )
+                .await;
+                return dpop_error_response(error, DpopErrorContext::TokenEndpoint);
+            }
+        }
+    } else {
+        None
+    };
     let issued_access_token = match make_jwt(
         state,
         AccessTokenJwtInput {
             subject: &issue.subject,
+            user_id: issue.user_id,
             subject_type: if issue.user_id.is_some() {
                 "user"
             } else {
@@ -183,6 +278,12 @@ pub(crate) async fn issue_token_response(
     ) {
         Ok(v) => v,
         Err(_) => {
+            mark_failed_authorization_code_if_needed(
+                state,
+                issue.authorization_code_hash.as_deref(),
+                "access_token_signing_failed",
+            )
+            .await;
             return oauth_token_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "server_error",
@@ -210,6 +311,12 @@ pub(crate) async fn issue_token_response(
                     Some(oidc_user_claims(&user, &issue.scopes, &issue.subject))
                 }
                 Ok(_) => {
+                    mark_failed_authorization_code_if_needed(
+                        state,
+                        issue.authorization_code_hash.as_deref(),
+                        "id_token_subject_invalid",
+                    )
+                    .await;
                     return oauth_token_error(
                         StatusCode::BAD_REQUEST,
                         "invalid_grant",
@@ -219,6 +326,12 @@ pub(crate) async fn issue_token_response(
                 }
                 Err(error) => {
                     tracing::warn!(%error, "failed to load id_token subject");
+                    mark_failed_authorization_code_if_needed(
+                        state,
+                        issue.authorization_code_hash.as_deref(),
+                        "id_token_subject_load_failed",
+                    )
+                    .await;
                     return oauth_token_error(
                         StatusCode::SERVICE_UNAVAILABLE,
                         "server_error",
@@ -231,14 +344,24 @@ pub(crate) async fn issue_token_response(
         };
         let id_token = match make_id_token(
             state,
-            &issue.subject,
-            &client.client_id,
-            issue.nonce.clone(),
-            user_claims.as_ref(),
-            state.settings.id_token_ttl_seconds,
+            IdTokenInput {
+                subject: &issue.subject,
+                client_id: &client.client_id,
+                nonce: issue.nonce.clone(),
+                auth_time: issue.auth_time,
+                amr: &issue.amr,
+                extra_claims: user_claims.as_ref(),
+                ttl: state.settings.id_token_ttl_seconds,
+            },
         ) {
             Ok(token) => token,
             Err(_) => {
+                mark_failed_authorization_code_if_needed(
+                    state,
+                    issue.authorization_code_hash.as_deref(),
+                    "id_token_signing_failed",
+                )
+                .await;
                 return oauth_token_error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "server_error",
@@ -263,6 +386,12 @@ pub(crate) async fn issue_token_response(
                 refresh_token_family_id = Some(refresh.family);
             }
             Ok(RefreshPersistResult::RotationConflict) => {
+                mark_failed_authorization_code_if_needed(
+                    state,
+                    issue.authorization_code_hash.as_deref(),
+                    "refresh_rotation_conflict",
+                )
+                .await;
                 return oauth_token_error(
                     StatusCode::BAD_REQUEST,
                     "invalid_grant",
@@ -272,6 +401,12 @@ pub(crate) async fn issue_token_response(
             }
             Err(error) => {
                 tracing::warn!(%error, "failed to persist refresh token");
+                mark_failed_authorization_code_if_needed(
+                    state,
+                    issue.authorization_code_hash.as_deref(),
+                    "refresh_persist_failed",
+                )
+                .await;
                 let description = if refresh.rotated_from.is_some() {
                     "refresh_token 轮换失败."
                 } else {
@@ -316,7 +451,37 @@ pub(crate) async fn issue_token_response(
             false,
         );
     }
-    json_response_no_store(body)
+    audit_event(
+        "token_issued",
+        audit_fields(&[
+            ("client_id", json!(client.client_id)),
+            ("user_id", json!(issue.user_id)),
+            ("subject_hash", json!(blake3_hex(&issue.subject))),
+            ("scope", json!(issue.scopes.join(" "))),
+            ("audience", json!(issue.audience)),
+            ("access_token_jti", json!(issued_access_token.jti)),
+            ("refresh_token_family_id", json!(refresh_token_family_id)),
+        ]),
+    );
+    if let Some((family_id, rotated_from_id)) = issue.rotation {
+        audit_event(
+            "refresh_rotated",
+            audit_fields(&[
+                ("client_id", json!(client.client_id)),
+                ("token_family_id", json!(family_id)),
+                ("rotated_from_id", json!(rotated_from_id)),
+            ]),
+        );
+    }
+    let mut response = json_response_no_store(body);
+    if let Some(nonce) = next_dpop_nonce
+        && let Ok(value) = HeaderValue::from_str(&nonce)
+    {
+        response
+            .headers_mut()
+            .insert(header::HeaderName::from_static("dpop-nonce"), value);
+    }
+    response
 }
 
 #[cfg(test)]

@@ -11,6 +11,10 @@ path = "src/main.rs"
 name = "nazo-oauth-migrate"
 path = "src/bin/nazo_oauth_migrate.rs"
 
+[[bin]]
+name = "nazo-oauth-keyctl"
+path = "src/bin/nazo_oauth_keyctl.rs"
+
 [dependencies]
 actix-cors = "0.7.1"
 actix-multipart = "0.7.2"
@@ -24,7 +28,7 @@ diesel = { version = "2.3.9", features = ["postgres", "uuid", "chrono", "serde_j
 diesel-async = { version = "0.9.0", features = ["postgres", "deadpool"] }
 diesel_migrations = "2.3.2"
 ed25519-dalek = "2.2"
-fred = "10.1.0"
+fred = { version = "10.1.0", features = ["i-scripts"] }
 futures-util = "0.3.32"
 jsonwebtoken = { version = "10.4.0", features = ["rust_crypto"] }
 lettre = { version = "0.11.22", default-features = false, features = ["builder", "smtp-transport", "tokio1", "tokio1-native-tls"] }
