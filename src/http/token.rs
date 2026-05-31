@@ -1,6 +1,7 @@
 //! OAuth/OIDC token 相关 HTTP handler 聚合模块。
 // 子模块按 grant type 或端点职责拆分，路由层通过本模块 re-export。
 mod authorization_code;
+mod client_auth;
 mod client_credentials;
 mod dispatch;
 mod forms;

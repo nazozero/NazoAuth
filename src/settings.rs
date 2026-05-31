@@ -25,10 +25,19 @@ pub(crate) struct Settings {
     pub(crate) refresh_token_ttl_seconds: i64,
     pub(crate) avatar_max_bytes: usize,
     pub(crate) client_delivery_ttl_seconds: u64,
+    pub(crate) rate_limit: RateLimitSettings,
     pub(crate) email: EmailSettings,
     pub(crate) email_code_dev_response_enabled: bool,
     pub(crate) avatar_storage_dir: PathBuf,
     pub(crate) jwk_keys_dir: PathBuf,
+}
+
+#[derive(Clone)]
+pub(crate) struct RateLimitSettings {
+    pub(crate) window_seconds: u64,
+    pub(crate) auth_max_requests: u64,
+    pub(crate) token_max_requests: u64,
+    pub(crate) token_management_max_requests: u64,
 }
 
 #[derive(Clone)]
@@ -93,6 +102,7 @@ impl Settings {
             refresh_token_ttl_seconds: config.parse("REFRESH_TOKEN_TTL_SECONDS", 2_592_000)?,
             avatar_max_bytes: config.parse("AVATAR_MAX_BYTES", 2_097_152)?,
             client_delivery_ttl_seconds: config.parse("CLIENT_DELIVERY_TTL_SECONDS", 86_400)?,
+            rate_limit: RateLimitSettings::from_config(config)?,
             email: EmailSettings::from_config(config)?,
             email_code_dev_response_enabled: config
                 .bool("EMAIL_CODE_DEV_RESPONSE_ENABLED", false)?,
@@ -101,6 +111,28 @@ impl Settings {
             ),
             jwk_keys_dir: PathBuf::from(config.string("JWK_KEYS_DIR", "runtime/keys")),
         })
+    }
+}
+
+impl RateLimitSettings {
+    fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
+        let settings = Self {
+            window_seconds: config.parse("RATE_LIMIT_WINDOW_SECONDS", 60)?,
+            auth_max_requests: config.parse("AUTH_RATE_LIMIT_MAX_REQUESTS", 30)?,
+            token_max_requests: config.parse("TOKEN_RATE_LIMIT_MAX_REQUESTS", 60)?,
+            token_management_max_requests: config
+                .parse("TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS", 120)?,
+        };
+        if settings.window_seconds == 0 {
+            bail!("RATE_LIMIT_WINDOW_SECONDS must be greater than 0");
+        }
+        if settings.auth_max_requests == 0
+            || settings.token_max_requests == 0
+            || settings.token_management_max_requests == 0
+        {
+            bail!("rate limit request caps must be greater than 0");
+        }
+        Ok(settings)
     }
 }
 

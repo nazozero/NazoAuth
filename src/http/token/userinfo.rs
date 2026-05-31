@@ -61,22 +61,34 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest) -> HttpRes
             "userinfo 需要 openid scope.",
         );
     }
-    let preferred_username = match Uuid::parse_str(&claims.sub) {
-        Ok(user_id) => match find_user_by_id(&state.diesel_db, user_id).await {
-            Ok(user) => user.map(|user| user.email),
-            Err(error) => {
-                tracing::warn!(%error, "failed to load userinfo subject");
-                return oauth_bearer_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "userinfo 查询失败.",
-                );
-            }
-        },
-        Err(_) => None,
+    let scopes = parse_scope(&claims.scope);
+    let user_id = match Uuid::parse_str(&claims.sub) {
+        Ok(user_id) => user_id,
+        Err(_) => {
+            return oauth_bearer_error(
+                StatusCode::UNAUTHORIZED,
+                "invalid_token",
+                "访问令牌主体无效.",
+            );
+        }
     };
-    json_response(json!({
-        "sub": claims.sub,
-        "preferred_username": preferred_username
-    }))
+    let user = match find_user_by_id(&state.diesel_db, user_id).await {
+        Ok(Some(user)) if user.is_active => user,
+        Ok(_) => {
+            return oauth_bearer_error(
+                StatusCode::UNAUTHORIZED,
+                "invalid_token",
+                "访问令牌主体不存在或已停用.",
+            );
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to load userinfo subject");
+            return oauth_bearer_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "userinfo 查询失败.",
+            );
+        }
+    };
+    json_response(oidc_user_claims(&user, &scopes, &claims.sub))
 }

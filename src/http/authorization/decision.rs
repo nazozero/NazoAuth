@@ -57,6 +57,7 @@ pub(crate) async fn authorize_decision(
         user_id: payload.user_id,
         client_id: payload.client_id.clone(),
         redirect_uri: payload.redirect_uri.clone(),
+        redirect_uri_was_supplied: payload.redirect_uri_was_supplied,
         scopes: payload.scopes.clone(),
         nonce: payload.nonce,
         code_challenge: payload.code_challenge,

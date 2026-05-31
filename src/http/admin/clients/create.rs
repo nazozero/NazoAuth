@@ -11,6 +11,7 @@ pub(crate) struct CreateClientRequest {
     pub(crate) allowed_audiences: Vec<String>,
     pub(crate) grant_types: Vec<String>,
     pub(crate) token_endpoint_auth_method: String,
+    pub(crate) jwks: Option<Value>,
 }
 
 /// 创建 OAuth 客户端。
@@ -55,7 +56,12 @@ pub(crate) async fn insert_client_row(
     let client_id = format!("client-{}", Uuid::now_v7());
     let mut issued_secret = None;
     let mut secret_hash = None;
-    if payload.client_type == "confidential" {
+    if payload.client_type == "confidential"
+        && matches!(
+            payload.token_endpoint_auth_method.as_str(),
+            "client_secret_basic" | "client_secret_post"
+        )
+    {
         let secret = random_urlsafe_token();
         secret_hash = Some(
             hash_password(&secret)
@@ -76,6 +82,7 @@ pub(crate) async fn insert_client_row(
             oauth_clients::allowed_audiences.eq(json!(payload.allowed_audiences)),
             oauth_clients::grant_types.eq(json!(payload.grant_types)),
             oauth_clients::token_endpoint_auth_method.eq(payload.token_endpoint_auth_method),
+            oauth_clients::jwks.eq(payload.jwks),
             oauth_clients::is_active.eq(true),
         ))
         .returning(ClientRow::as_returning())
@@ -93,5 +100,6 @@ fn validate_client_payload(payload: &CreateClientRequest) -> anyhow::Result<()> 
         &payload.allowed_audiences,
         &payload.grant_types,
         &payload.token_endpoint_auth_method,
+        payload.jwks.as_ref(),
     )
 }

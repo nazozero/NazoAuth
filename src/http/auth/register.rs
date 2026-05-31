@@ -12,8 +12,13 @@ pub(crate) struct RegisterRequest {
 /// 使用邮箱验证码创建本地用户。
 pub(crate) async fn register(
     state: Data<AppState>,
+    req: HttpRequest,
     Json(payload): Json<RegisterRequest>,
 ) -> HttpResponse {
+    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
+        return response;
+    }
+
     let Ok(email) = normalize_email_address(&payload.email) else {
         return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "邮箱格式无效.");
     };

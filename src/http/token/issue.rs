@@ -16,8 +16,9 @@ struct PendingRefreshToken {
     expires_at: DateTime<Utc>,
 }
 
-pub(crate) fn should_issue_refresh_token(scopes: &[String]) -> bool {
-    scopes.iter().any(|scope| scope == "offline_access")
+pub(crate) fn should_issue_refresh_token(client: &ClientRow, scopes: &[String]) -> bool {
+    client_supports_grant(client, "refresh_token")
+        && scopes.iter().any(|scope| scope == "offline_access")
 }
 
 async fn mark_token_family_reuse(
@@ -136,11 +137,37 @@ pub(crate) async fn issue_token_response(
         "scope": issue.scopes.join(" ")
     });
     if issue.scopes.iter().any(|s| s == "openid") {
+        let user_claims = match issue.user_id {
+            Some(user_id) => match find_user_by_id(&state.diesel_db, user_id).await {
+                Ok(Some(user)) if user.is_active => {
+                    Some(oidc_user_claims(&user, &issue.scopes, &issue.subject))
+                }
+                Ok(_) => {
+                    return oauth_token_error(
+                        StatusCode::BAD_REQUEST,
+                        "invalid_grant",
+                        "授权用户不存在或已停用.",
+                        false,
+                    );
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "failed to load id_token subject");
+                    return oauth_token_error(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "server_error",
+                        "id_token 用户声明加载失败.",
+                        false,
+                    );
+                }
+            },
+            None => None,
+        };
         let id_token = match make_id_token(
             state,
             &issue.subject,
             &client.client_id,
             issue.nonce.clone(),
+            user_claims.as_ref(),
             state.settings.id_token_ttl_seconds,
         ) {
             Ok(token) => token,
@@ -155,7 +182,7 @@ pub(crate) async fn issue_token_response(
         };
         body["id_token"] = json!(id_token);
     }
-    if issue.include_refresh && should_issue_refresh_token(&issue.scopes) {
+    if issue.include_refresh && should_issue_refresh_token(client, &issue.scopes) {
         let refresh = PendingRefreshToken {
             raw: format!("{}.{}", random_urlsafe_token(), random_urlsafe_token()),
             family: issue.rotation.map(|r| r.0).unwrap_or_else(Uuid::now_v7),
@@ -198,12 +225,33 @@ pub(crate) async fn issue_token_response(
 mod tests {
     use super::*;
 
+    fn client_with_grants(grant_types: &[&str]) -> ClientRow {
+        ClientRow {
+            id: Uuid::now_v7(),
+            client_id: "client-1".to_owned(),
+            client_name: "Client".to_owned(),
+            client_type: "public".to_owned(),
+            client_secret_argon2_hash: None,
+            redirect_uris: json!(["https://client.example/callback"]),
+            scopes: json!(["openid", "offline_access"]),
+            allowed_audiences: json!(["resource://default"]),
+            grant_types: json!(grant_types),
+            token_endpoint_auth_method: "none".to_owned(),
+            is_active: true,
+            jwks: None,
+        }
+    }
+
     #[test]
-    fn refresh_token_requires_offline_access_scope() {
+    fn refresh_token_requires_offline_access_scope_and_client_grant() {
+        let client = client_with_grants(&["authorization_code", "refresh_token"]);
         let scopes = vec!["openid".to_owned(), "profile".to_owned()];
-        assert!(!should_issue_refresh_token(&scopes));
+        assert!(!should_issue_refresh_token(&client, &scopes));
 
         let scopes = vec!["openid".to_owned(), "offline_access".to_owned()];
-        assert!(should_issue_refresh_token(&scopes));
+        assert!(should_issue_refresh_token(&client, &scopes));
+
+        let client = client_with_grants(&["authorization_code"]);
+        assert!(!should_issue_refresh_token(&client, &scopes));
     }
 }

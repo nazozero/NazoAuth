@@ -109,7 +109,7 @@ pub(crate) async fn token_refresh(
         None
     };
     let original_scopes = json_array_to_strings(&token.scopes);
-    if !should_issue_refresh_token(&original_scopes) {
+    if !should_issue_refresh_token(client, &original_scopes) {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",

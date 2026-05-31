@@ -151,6 +151,7 @@ pub(crate) async fn authorize(
         client_id: client.client_id,
         client_name: client.client_name,
         redirect_uri: redirect_uri.clone(),
+        redirect_uri_was_supplied: q.contains_key("redirect_uri"),
         scopes: requested_scopes,
         state: q.get("state").cloned(),
         nonce: q.get("nonce").cloned(),

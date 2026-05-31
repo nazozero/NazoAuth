@@ -11,8 +11,13 @@ pub(crate) struct LoginRequest {
 /// 校验邮箱密码并创建会话。
 pub(crate) async fn login(
     state: Data<AppState>,
+    req: HttpRequest,
     Json(payload): Json<LoginRequest>,
 ) -> HttpResponse {
+    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
+        return response;
+    }
+
     let email = payload.email.trim().to_lowercase();
     let Some(user) = find_user_by_email(&state.diesel_db, &email)
         .await
@@ -25,7 +30,7 @@ pub(crate) async fn login(
         return oauth_error(StatusCode::UNAUTHORIZED, "access_denied", "邮箱或密码错误.");
     }
 
-    let session_id = Uuid::now_v7().to_string();
+    let session_id = random_urlsafe_token();
     let csrf_token = random_urlsafe_token();
     let key = format!("oauth:session:{session_id}");
     if valkey_set_ex(

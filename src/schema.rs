@@ -40,6 +40,7 @@ diesel::table! {
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
         allowed_audiences -> Jsonb,
+        jwks -> Nullable<Jsonb>,
     }
 }
 

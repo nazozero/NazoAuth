@@ -7,8 +7,11 @@ Nazo OAuth Server 是一个基于 Actix Web 的 OAuth 2.1 / OIDC 服务，提供
 - OAuth 2.1 authorization code + PKCE、refresh token、client credentials 流程
 - OpenID Connect discovery、JWKS、userinfo
 - Ed25519 JWT 签名
+- `client_secret_basic`、`client_secret_post`、`private_key_jwt` 和 public client 认证
 - refresh token 轮换与复用检测
-- 精确 redirect URI 匹配、S256 PKCE、敏感 token 响应 no-store
+- 精确 redirect URI 匹配、S256 PKCE、DPoP proof 与 nonce、敏感 token 响应 no-store
+- active + previous JWKS 发布与 access token 验签
+- 基于 Valkey 的登录、注册、token、introspection 和 revoke 限流
 - 基于 Cookie 的用户会话和 CSRF 防护
 - 管理端用户、客户端、授权记录和接入申请接口
 - PostgreSQL 持久化与 Rust 原生数据库迁移
@@ -90,6 +93,10 @@ Nazo OAuth Server 是一个基于 Actix Web 的 OAuth 2.1 / OIDC 服务，提供
 | `REFRESH_TOKEN_TTL_SECONDS` | `2592000` | refresh token 有效期，单位为秒 |
 | `AVATAR_MAX_BYTES` | `2097152` | 头像最大字节数 |
 | `CLIENT_DELIVERY_TTL_SECONDS` | `86400` | 客户端接入信息投递有效期，单位为秒 |
+| `RATE_LIMIT_WINDOW_SECONDS` | `60` | 固定窗口限流窗口长度，单位为秒 |
+| `AUTH_RATE_LIMIT_MAX_REQUESTS` | `30` | 单个连接来源在一个窗口内可调用登录、注册和验证码发送接口的最大次数 |
+| `TOKEN_RATE_LIMIT_MAX_REQUESTS` | `60` | 单个连接来源在一个窗口内可调用 `/token` 的最大次数 |
+| `TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS` | `120` | 单个连接来源在一个窗口内可调用 `/introspect` 和 `/revoke` 的最大次数 |
 | `EMAIL_DELIVERY` | `disabled` | 邮件投递方式；`smtp` 启用真实 SMTP 投递，`disabled` 时 `/auth/send-code` 返回服务不可用 |
 | `EMAIL_CODE_TTL_SECONDS` | `900` | 注册邮箱验证码有效期，单位为秒 |
 | `EMAIL_CODE_SEND_COOLDOWN_SECONDS` | `60` | 同一邮箱验证码发送冷却时间，单位为秒 |
@@ -186,9 +193,11 @@ docker compose up -d nazo_oauth_server
 | `POST` | `/introspect` | token introspection |
 | `GET` | `/.well-known/openid-configuration` | OIDC discovery |
 | `GET` | `/jwks.json` | JWKS |
-| `GET` | `/userinfo` | OIDC userinfo |
+| `GET` | `/userinfo` | OIDC userinfo；根据 access token scope 返回 `sub`、`preferred_username`、`profile` 和 `email` 对应 claims |
 
-`/token` 仅在授权范围包含 `offline_access` 时签发和轮换 refresh token。
+`/token` 仅在授权范围包含 `offline_access` 且客户端启用 `refresh_token` grant 时签发和轮换 refresh token。
+
+`private_key_jwt` 客户端必须在客户端元数据中配置公开 `jwks`，当前支持 Ed25519 / EdDSA 公钥。DPoP proof 若缺少或使用过期 nonce，服务端返回 `use_dpop_nonce` 并通过 `DPoP-Nonce` 响应头提供新的 nonce。
 
 ### 认证与当前用户
 

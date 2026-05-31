@@ -4,7 +4,9 @@ use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::Deserialize;
 
 use super::prelude::*;
-use super::{oauth_error, valkey_set_ex_nx};
+use super::{
+    blake3_hex, oauth_error, random_urlsafe_token, valkey_getdel, valkey_set_ex, valkey_set_ex_nx,
+};
 
 const DPOP_TTL_SECONDS: i64 = 300;
 const DPOP_CLOCK_SKEW_SECONDS: i64 = 30;
@@ -24,6 +26,8 @@ pub(crate) enum DpopError {
     ReplayDetected,
     BindingMismatch,
     TokenNotBound,
+    UseNonce(String),
+    NonceStoreUnavailable,
 }
 
 #[derive(Deserialize)]
@@ -40,29 +44,42 @@ struct DpopClaims {
     iat: i64,
     jti: String,
     ath: Option<String>,
+    nonce: Option<String>,
 }
 
 pub(crate) fn dpop_error_response(error: DpopError) -> HttpResponse {
-    let description = match error {
+    let description = match &error {
         DpopError::MissingProof => "DPoP proof is required.",
         DpopError::MalformedProof => "DPoP proof is malformed.",
         DpopError::InvalidProof => "DPoP proof validation failed.",
         DpopError::ReplayDetected => "DPoP proof jti has already been used.",
         DpopError::BindingMismatch => "DPoP binding mismatch.",
         DpopError::TokenNotBound => "Token is not DPoP-bound.",
+        DpopError::UseNonce(_) => "Authorization server requires nonce in DPoP proof.",
+        DpopError::NonceStoreUnavailable => "DPoP nonce validation is unavailable.",
     };
-    let mut response = oauth_error(
-        if matches!(error, DpopError::MissingProof) {
-            StatusCode::UNAUTHORIZED
-        } else {
-            StatusCode::BAD_REQUEST
-        },
-        "invalid_dpop_proof",
-        description,
-    );
+    let status = match &error {
+        DpopError::MissingProof => StatusCode::UNAUTHORIZED,
+        DpopError::NonceStoreUnavailable => StatusCode::SERVICE_UNAVAILABLE,
+        _ => StatusCode::BAD_REQUEST,
+    };
+    let error_code = match &error {
+        DpopError::UseNonce(_) => "use_dpop_nonce",
+        DpopError::NonceStoreUnavailable => "server_error",
+        _ => "invalid_dpop_proof",
+    };
+    let mut response = oauth_error(status, error_code, description);
+    if let DpopError::UseNonce(nonce) = error
+        && let Ok(value) = HeaderValue::from_str(&nonce)
+    {
+        response
+            .headers_mut()
+            .insert(header::HeaderName::from_static("dpop-nonce"), value);
+    }
     response.headers_mut().insert(
         header::WWW_AUTHENTICATE,
-        HeaderValue::from_static("DPoP error=\"invalid_dpop_proof\""),
+        HeaderValue::from_str(&format!("DPoP error=\"{error_code}\""))
+            .unwrap_or_else(|_| HeaderValue::from_static("DPoP")),
     );
     response
 }
@@ -125,6 +142,7 @@ pub(crate) async fn validate_dpop_proof(
         &claims,
         token_for_ath,
     )?;
+    validate_dpop_nonce(state, claims.nonce.as_deref()).await?;
 
     let replay_key = format!("oauth:dpop:jti:{jkt}:{}", claims.jti);
     if !valkey_set_ex_nx(&state.valkey, replay_key, "1", DPOP_TTL_SECONDS as u64)
@@ -134,6 +152,41 @@ pub(crate) async fn validate_dpop_proof(
         return Err(DpopError::ReplayDetected);
     }
     Ok(Some(jkt))
+}
+
+async fn validate_dpop_nonce(state: &AppState, nonce: Option<&str>) -> Result<(), DpopError> {
+    let Some(nonce) = nonce else {
+        return Err(DpopError::UseNonce(issue_dpop_nonce(state).await?));
+    };
+    let key = dpop_nonce_key(nonce);
+    match valkey_getdel(&state.valkey, key).await {
+        Ok(Some(_)) => Ok(()),
+        Ok(None) => Err(DpopError::UseNonce(issue_dpop_nonce(state).await?)),
+        Err(error) => {
+            tracing::warn!(%error, "failed to consume dpop nonce");
+            Err(DpopError::NonceStoreUnavailable)
+        }
+    }
+}
+
+async fn issue_dpop_nonce(state: &AppState) -> Result<String, DpopError> {
+    let nonce = random_urlsafe_token();
+    valkey_set_ex(
+        &state.valkey,
+        dpop_nonce_key(&nonce),
+        "1",
+        DPOP_TTL_SECONDS as u64,
+    )
+    .await
+    .map_err(|error| {
+        tracing::warn!(%error, "failed to issue dpop nonce");
+        DpopError::NonceStoreUnavailable
+    })?;
+    Ok(nonce)
+}
+
+fn dpop_nonce_key(nonce: &str) -> String {
+    format!("oauth:dpop:nonce:{}", blake3_hex(nonce))
 }
 
 fn dpop_proof_header(req: &HttpRequest) -> Option<&str> {
@@ -323,6 +376,7 @@ mod tests {
             Utc::now().timestamp(),
             "proof-1",
             Some(access_token),
+            Some("nonce-1"),
         );
 
         let (header, claims, signing_input, signature) = decode_proof(&proof).unwrap();
@@ -348,6 +402,7 @@ mod tests {
             Utc::now().timestamp(),
             "proof-2",
             Some("bound-token"),
+            Some("nonce-2"),
         );
         let (_, claims, _, _) = decode_proof(&proof).unwrap();
 
@@ -378,6 +433,7 @@ mod tests {
         iat: i64,
         jti: &str,
         token_for_ath: Option<&str>,
+        nonce: Option<&str>,
     ) -> String {
         let public_key = URL_SAFE_NO_PAD.encode(signing_key.verifying_key().to_bytes());
         let header = json!({
@@ -397,6 +453,9 @@ mod tests {
         });
         if let Some(token) = token_for_ath {
             claims["ath"] = json!(URL_SAFE_NO_PAD.encode(Sha256::digest(token.as_bytes())));
+        }
+        if let Some(nonce) = nonce {
+            claims["nonce"] = json!(nonce);
         }
 
         let encoded_header = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header).unwrap());

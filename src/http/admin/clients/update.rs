@@ -9,6 +9,7 @@ pub(crate) struct PatchClientRequest {
     scopes: Option<Vec<String>>,
     allowed_audiences: Option<Vec<String>>,
     grant_types: Option<Vec<String>>,
+    jwks: Option<Value>,
     is_active: Option<bool>,
 }
 
@@ -62,6 +63,7 @@ pub(crate) async fn admin_patch_client(
             .grant_types
             .unwrap_or_else(|| json_array_to_strings(&current.grant_types))
     );
+    let new_jwks = payload.jwks.or_else(|| current.jwks.clone());
     let new_is_active = payload.is_active.unwrap_or(current.is_active);
     let new_redirect_uri_values = json_array_to_strings(&new_redirect_uris);
     let new_scope_values = json_array_to_strings(&new_scopes);
@@ -74,6 +76,7 @@ pub(crate) async fn admin_patch_client(
         &new_audience_values,
         &new_grant_type_values,
         &current.token_endpoint_auth_method,
+        new_jwks.as_ref(),
     ) {
         return oauth_error(
             StatusCode::BAD_REQUEST,
@@ -91,6 +94,7 @@ pub(crate) async fn admin_patch_client(
             oauth_clients::scopes.eq(new_scopes),
             oauth_clients::allowed_audiences.eq(new_allowed_audiences),
             oauth_clients::grant_types.eq(new_grant_types),
+            oauth_clients::jwks.eq(new_jwks),
             oauth_clients::is_active.eq(new_is_active),
             oauth_clients::updated_at.eq(diesel_now),
         ))

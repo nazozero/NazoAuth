@@ -3,6 +3,18 @@
 use super::{TokenForm, issue_token_response};
 use crate::http::prelude::*;
 
+fn redirect_uri_matches_authorization_request(
+    payload: &CodePayload,
+    token_redirect_uri: Option<&str>,
+) -> bool {
+    match (payload.redirect_uri_was_supplied, token_redirect_uri) {
+        (true, Some(value)) => value == payload.redirect_uri.as_str(),
+        (true, None) => false,
+        (false, Some(value)) => value == payload.redirect_uri.as_str(),
+        (false, None) => true,
+    }
+}
+
 pub(crate) async fn token_authorization_code(
     state: &AppState,
     req: &HttpRequest,
@@ -43,10 +55,7 @@ pub(crate) async fn token_authorization_code(
         );
     };
     if payload.client_id != client.client_id
-        || form
-            .redirect_uri
-            .as_deref()
-            .is_some_and(|value| value != payload.redirect_uri)
+        || !redirect_uri_matches_authorization_request(&payload, form.redirect_uri.as_deref())
     {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
@@ -121,4 +130,56 @@ pub(crate) async fn token_authorization_code(
         },
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn code_payload(redirect_uri_was_supplied: bool) -> CodePayload {
+        let now = Utc::now();
+        CodePayload {
+            code_id: "code-1".to_owned(),
+            user_id: Uuid::now_v7(),
+            client_id: "client-1".to_owned(),
+            redirect_uri: "https://client.example/callback".to_owned(),
+            redirect_uri_was_supplied,
+            scopes: vec!["openid".to_owned()],
+            nonce: None,
+            code_challenge: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ".to_owned(),
+            code_challenge_method: "S256".to_owned(),
+            issued_at: now,
+            expires_at: now + Duration::seconds(300),
+        }
+    }
+
+    #[test]
+    fn token_redirect_uri_is_required_when_authorize_request_supplied_it() {
+        let payload = code_payload(true);
+
+        assert!(!redirect_uri_matches_authorization_request(&payload, None));
+        assert!(redirect_uri_matches_authorization_request(
+            &payload,
+            Some("https://client.example/callback")
+        ));
+        assert!(!redirect_uri_matches_authorization_request(
+            &payload,
+            Some("https://client.example/callback/")
+        ));
+    }
+
+    #[test]
+    fn token_redirect_uri_may_be_omitted_when_authorize_request_used_single_registered_uri() {
+        let payload = code_payload(false);
+
+        assert!(redirect_uri_matches_authorization_request(&payload, None));
+        assert!(redirect_uri_matches_authorization_request(
+            &payload,
+            Some("https://client.example/callback")
+        ));
+        assert!(!redirect_uri_matches_authorization_request(
+            &payload,
+            Some("https://client.example/callback/")
+        ));
+    }
 }

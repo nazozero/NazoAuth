@@ -57,7 +57,8 @@ pub(crate) fn client_json(client: ClientRow) -> Value {
         "allowed_audiences": json_array_to_strings(&client.allowed_audiences),
         "grant_types": json_array_to_strings(&client.grant_types),
         "token_endpoint_auth_method": client.token_endpoint_auth_method,
-        "is_active": client.is_active
+        "is_active": client.is_active,
+        "jwks": client.jwks
     })
 }
 

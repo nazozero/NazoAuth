@@ -1,6 +1,6 @@
 //! token introspection 端点。
 // 只处理 access/refresh token 活跃性查询。
-use super::TokenOnlyForm;
+use super::{TokenOnlyForm, authenticate_token_management_client};
 use crate::http::prelude::*;
 
 pub(crate) async fn introspect(
@@ -8,19 +8,41 @@ pub(crate) async fn introspect(
     req: HttpRequest,
     Form(form): Form<TokenOnlyForm>,
 ) -> HttpResponse {
-    let (client_id, client_secret, method) = extract_client_credentials(
+    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await
+    {
+        return response;
+    }
+
+    let has_basic = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.trim_start().starts_with("Basic "));
+    let has_assertion = form.client_assertion_type.is_some() || form.client_assertion.is_some();
+    if has_basic && (form.client_id.is_some() || form.client_secret.is_some() || has_assertion)
+        || has_assertion && form.client_secret.is_some()
+    {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "同一请求不能同时使用多种客户端认证方式.",
+        );
+    }
+    let credentials = extract_client_credentials(
         req.headers(),
         form.client_id.as_deref(),
         form.client_secret.as_deref(),
+        form.client_assertion_type.as_deref(),
+        form.client_assertion.as_deref(),
     );
-    let Some(client_id) = client_id else {
+    let Some(client_id) = credentials.client_id.as_deref() else {
         return oauth_error(
             StatusCode::UNAUTHORIZED,
             "invalid_client",
             "客户端认证失败.",
         );
     };
-    let Some(client) = find_client(&state.diesel_db, &client_id)
+    let Some(client) = find_client(&state.diesel_db, client_id)
         .await
         .ok()
         .flatten()
@@ -31,13 +53,7 @@ pub(crate) async fn introspect(
             "客户端认证失败.",
         );
     };
-    if client.client_type == "confidential"
-        && (method != client.token_endpoint_auth_method
-            || !verify_password(
-                client_secret.as_deref().unwrap_or(""),
-                client.client_secret_argon2_hash.as_deref().unwrap_or(""),
-            ))
-    {
+    if !authenticate_token_management_client(&state, &req, &client, &credentials).await {
         return oauth_error(
             StatusCode::UNAUTHORIZED,
             "invalid_client",
