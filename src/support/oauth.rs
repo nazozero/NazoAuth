@@ -1,7 +1,11 @@
 //! OAuth 作用域、audience 与授权关系工具。
 // 只处理 OAuth 语义中的集合判断和授权记录 upsert。
 
-use super::prelude::*;
+use super::{
+    prelude::*,
+    security::blake3_hex,
+    uri_policy::{oauth_redirect_uri_matches, validate_oauth_redirect_uri},
+};
 
 const SUPPORTED_GRANT_TYPES: &[&str] =
     &["authorization_code", "refresh_token", "client_credentials"];
@@ -78,7 +82,7 @@ pub(crate) fn registered_redirect_uri(
     if let Some(value) = requested_redirect_uri {
         return registered
             .iter()
-            .any(|registered| registered == value)
+            .any(|registered| oauth_redirect_uri_matches(&client.client_type, registered, value))
             .then(|| value.to_owned())
             .ok_or(RedirectUriError::Invalid);
     }
@@ -167,7 +171,7 @@ pub(crate) fn validate_client_metadata(
         anyhow::bail!("authorization_code 客户端必须注册 redirect_uri");
     }
     for redirect_uri in redirect_uris {
-        validate_redirect_uri(redirect_uri)?;
+        validate_oauth_redirect_uri(client_type, redirect_uri)?;
     }
     Ok(())
 }
@@ -227,18 +231,16 @@ fn validate_unique_non_empty(name: &str, values: &[String]) -> anyhow::Result<()
     Ok(())
 }
 
-fn validate_redirect_uri(value: &str) -> anyhow::Result<()> {
-    if value.contains('*') {
-        anyhow::bail!("redirect_uri 不支持通配符");
-    }
-    let uri = url::Url::parse(value).map_err(|_| anyhow::anyhow!("redirect_uri 必须是绝对 URI"))?;
-    if uri.scheme().is_empty() || uri.has_host() && uri.host_str().is_none() {
-        anyhow::bail!("redirect_uri 必须是绝对 URI");
-    }
-    if uri.fragment().is_some() {
-        anyhow::bail!("redirect_uri 不能包含 fragment");
-    }
-    Ok(())
+pub(crate) fn authorization_code_key(code: &str) -> String {
+    format!("oauth:auth_code:{}", blake3_hex(code))
+}
+
+pub(crate) fn consumed_authorization_code_key(code: &str) -> String {
+    consumed_authorization_code_key_from_hash(&blake3_hex(code))
+}
+
+pub(crate) fn consumed_authorization_code_key_from_hash(code_hash: &str) -> String {
+    format!("oauth:auth_code_consumed:{code_hash}")
 }
 
 pub(crate) async fn upsert_grant(
@@ -315,6 +317,16 @@ mod tests {
     }
 
     #[test]
+    fn public_loopback_redirect_uri_allows_runtime_port() {
+        let client = client_with_redirects(&["http://127.0.0.1:3000/callback"]);
+
+        assert_eq!(
+            registered_redirect_uri(&client, Some("http://127.0.0.1:49152/callback")).unwrap(),
+            "http://127.0.0.1:49152/callback"
+        );
+    }
+
+    #[test]
     fn pkce_values_follow_rfc7636_length_and_charset() {
         assert!(is_valid_pkce_value(
             "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"
@@ -333,6 +345,21 @@ mod tests {
             &["openid".to_owned()],
             &["resource://default".to_owned()],
             &["password".to_owned()],
+            "none",
+            None,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn client_metadata_rejects_non_loopback_http_redirect_uri() {
+        let result = validate_client_metadata(
+            "public",
+            &["http://client.example/callback".to_owned()],
+            &["openid".to_owned()],
+            &["resource://default".to_owned()],
+            &["authorization_code".to_owned()],
             "none",
             None,
         );

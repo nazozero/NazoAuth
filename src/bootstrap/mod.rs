@@ -6,7 +6,7 @@ mod routes;
 
 use std::{net::SocketAddr, sync::Arc};
 
-use actix_web::{App, HttpServer, web};
+use actix_web::{App, HttpServer, http::header, middleware::DefaultHeaders, web};
 use anyhow::Context;
 use fred::{
     interfaces::ClientLike,
@@ -61,6 +61,16 @@ pub async fn run() -> anyhow::Result<()> {
 
     HttpServer::new(move || {
         App::new()
+            .wrap(
+                DefaultHeaders::new()
+                    .add((header::X_FRAME_OPTIONS, "DENY"))
+                    .add((
+                        "Content-Security-Policy",
+                        "frame-ancestors 'none'; base-uri 'none'; object-src 'none'",
+                    ))
+                    .add(("Referrer-Policy", "no-referrer"))
+                    .add(("X-Content-Type-Options", "nosniff")),
+            )
             .wrap(cors::build(&state.settings))
             .app_data(state.clone())
             .configure(routes::configure)

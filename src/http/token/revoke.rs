@@ -1,6 +1,6 @@
 //! token revoke 端点。
 // 只处理 refresh token 撤销和 access token jti 黑名单写入。
-use super::{TokenOnlyForm, authenticate_token_management_client, token_management_auth_error};
+use super::{TokenOnlyForm, authenticate_revocation_client, token_management_auth_error};
 use crate::http::prelude::*;
 
 pub(crate) async fn revoke(
@@ -56,9 +56,7 @@ pub(crate) async fn revoke(
             );
         }
     };
-    if let Err(error) =
-        authenticate_token_management_client(&state, &req, &client, &credentials).await
-    {
+    if let Err(error) = authenticate_revocation_client(&state, &req, &client, &credentials).await {
         return token_management_auth_error(error);
     }
     let refresh_hash = blake3_hex(&form.token);
@@ -130,5 +128,5 @@ pub(crate) async fn revoke(
             );
         }
     }
-    json_response(json!({"result": "已处理"}))
+    json_response_no_store(json!({"result": "已处理"}))
 }

@@ -9,6 +9,19 @@ pub(crate) struct DecisionForm {
     csrf_token: Option<String>,
 }
 
+enum AuthorizationDecision {
+    Approve,
+    Deny,
+}
+
+fn parse_authorization_decision(value: &str) -> Option<AuthorizationDecision> {
+    match value {
+        "approve" => Some(AuthorizationDecision::Approve),
+        "deny" => Some(AuthorizationDecision::Deny),
+        _ => None,
+    }
+}
+
 /// 处理用户对授权请求的同意或拒绝。
 pub(crate) async fn authorize_decision(
     state: Data<AppState>,
@@ -18,6 +31,9 @@ pub(crate) async fn authorize_decision(
     if !has_valid_csrf_token(&state, &req, form.csrf_token.as_deref()) {
         return csrf_error();
     }
+    let Some(decision) = parse_authorization_decision(&form.decision) else {
+        return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "授权决策无效.");
+    };
     let user = match current_user_or_login_required(&state, &req).await {
         Ok(user) => user,
         Err(response) => return response,
@@ -50,15 +66,18 @@ pub(crate) async fn authorize_decision(
         );
     }
 
-    if form.decision == "deny" {
-        return redirect_found(append_query(
-            &payload.redirect_uri,
-            &[
-                ("error", "access_denied"),
-                ("state", payload.state.as_deref().unwrap_or("")),
-                ("iss", state.settings.issuer.as_str()),
-            ],
-        ));
+    match decision {
+        AuthorizationDecision::Deny => {
+            return redirect_found(append_query(
+                &payload.redirect_uri,
+                &[
+                    ("error", "access_denied"),
+                    ("state", payload.state.as_deref().unwrap_or("")),
+                    ("iss", state.settings.issuer.as_str()),
+                ],
+            ));
+        }
+        AuthorizationDecision::Approve => {}
     }
 
     let now = Utc::now();
@@ -77,7 +96,7 @@ pub(crate) async fn authorize_decision(
         expires_at: now + Duration::seconds(state.settings.auth_code_ttl_seconds as i64),
     };
     let body = serde_json::to_string(&code_payload).unwrap();
-    let code_key = format!("oauth:auth_code:{code}");
+    let code_key = authorization_code_key(&code);
     if let Err(error) = valkey_set_ex(
         &state.valkey,
         code_key.clone(),
@@ -115,4 +134,22 @@ pub(crate) async fn authorize_decision(
             ("iss", state.settings.issuer.as_str()),
         ],
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn authorization_decision_is_explicit_allowlist() {
+        assert!(matches!(
+            parse_authorization_decision("approve"),
+            Some(AuthorizationDecision::Approve)
+        ));
+        assert!(matches!(
+            parse_authorization_decision("deny"),
+            Some(AuthorizationDecision::Deny)
+        ));
+        assert!(parse_authorization_decision("anything-else").is_none());
+    }
 }

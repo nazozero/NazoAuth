@@ -155,6 +155,7 @@ pub(crate) async fn token_refresh(
             include_refresh: true,
             rotation: Some((token.token_family_id, Some(token.id))),
             dpop_jkt,
+            authorization_code_hash: None,
         },
     )
     .await

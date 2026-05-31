@@ -105,5 +105,5 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest) -> HttpRes
             );
         }
     };
-    json_response(oidc_user_claims(&user, &scopes, &claims.sub))
+    json_response_no_store(oidc_user_claims(&user, &scopes, &claims.sub))
 }

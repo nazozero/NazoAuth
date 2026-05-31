@@ -12,9 +12,9 @@ pub(crate) async fn captcha_config() -> Json<Value> {
     }))
 }
 
-pub(crate) async fn discovery(state: Data<AppState>) -> Json<Value> {
+fn authorization_server_metadata_value(state: &AppState) -> Value {
     let issuer = state.settings.issuer.trim_end_matches('/');
-    Json(json!({
+    json!({
         "issuer": issuer,
         "authorization_endpoint": format!("{issuer}/authorize"),
         "token_endpoint": format!("{issuer}/token"),
@@ -27,13 +27,24 @@ pub(crate) async fn discovery(state: Data<AppState>) -> Json<Value> {
         "id_token_signing_alg_values_supported": ["EdDSA"],
         "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "private_key_jwt", "none"],
         "token_endpoint_auth_signing_alg_values_supported": ["EdDSA"],
+        "revocation_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "private_key_jwt", "none"],
+        "introspection_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "private_key_jwt"],
+        "introspection_endpoint_auth_signing_alg_values_supported": ["EdDSA"],
         "scopes_supported": ["openid", "profile", "email", "offline_access"],
         "claims_supported": ["sub", "preferred_username", "name", "email", "email_verified", "picture"],
         "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
         "authorization_response_iss_parameter_supported": true,
         "code_challenge_methods_supported": ["S256"],
         "dpop_signing_alg_values_supported": ["EdDSA"]
-    }))
+    })
+}
+
+pub(crate) async fn discovery(state: Data<AppState>) -> Json<Value> {
+    Json(authorization_server_metadata_value(&state))
+}
+
+pub(crate) async fn oauth_authorization_server_metadata(state: Data<AppState>) -> Json<Value> {
+    Json(authorization_server_metadata_value(&state))
 }
 
 pub(crate) async fn jwks(state: Data<AppState>) -> Json<Value> {

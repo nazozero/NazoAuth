@@ -306,11 +306,19 @@ pub(crate) struct AccessTokenJwtInput<'a> {
     pub(crate) dpop_jkt: Option<&'a str>,
 }
 
+pub(crate) struct IssuedAccessToken {
+    pub(crate) token: String,
+    pub(crate) jti: String,
+    pub(crate) exp: i64,
+}
+
 pub(crate) fn make_jwt(
     state: &AppState,
     input: AccessTokenJwtInput<'_>,
-) -> jsonwebtoken::errors::Result<String> {
+) -> jsonwebtoken::errors::Result<IssuedAccessToken> {
     let now = Utc::now().timestamp();
+    let jti = Uuid::now_v7().to_string();
+    let exp = now + input.ttl;
     let claims = Claims {
         iss: state.settings.issuer.clone(),
         sub: input.subject.to_string(),
@@ -319,10 +327,10 @@ pub(crate) fn make_jwt(
         client_id: input.client_id.to_string(),
         scope: sorted_scope_string(input.scopes),
         token_use: "access".into(),
-        jti: Uuid::now_v7().to_string(),
+        jti: jti.clone(),
         iat: now,
         nbf: now,
-        exp: now + input.ttl,
+        exp,
         cnf: input.dpop_jkt.map(|jkt| ConfirmationClaims {
             jkt: jkt.to_owned(),
         }),
@@ -330,11 +338,12 @@ pub(crate) fn make_jwt(
     let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::EdDSA);
     header.typ = Some("at+jwt".to_string());
     header.kid = Some(state.keyset.active_kid.clone());
-    jsonwebtoken::encode(
+    let token = jsonwebtoken::encode(
         &header,
         &claims,
         &jsonwebtoken::EncodingKey::from_ed_der(&state.keyset.active_private_pkcs8_der),
-    )
+    )?;
+    Ok(IssuedAccessToken { token, jti, exp })
 }
 
 pub(crate) fn make_id_token(

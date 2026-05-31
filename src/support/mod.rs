@@ -14,6 +14,7 @@ mod repositories;
 mod responses;
 mod security;
 mod sessions;
+mod uri_policy;
 mod valkey;
 mod views;
 
@@ -30,6 +31,7 @@ pub(crate) use repositories::*;
 pub(crate) use responses::*;
 pub(crate) use security::*;
 pub(crate) use sessions::*;
+pub(crate) use uri_policy::*;
 pub(crate) use valkey::*;
 pub(crate) use views::*;
 

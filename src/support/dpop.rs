@@ -152,7 +152,7 @@ pub(crate) async fn validate_dpop_proof(
     )?;
     validate_dpop_nonce(state, claims.nonce.as_deref()).await?;
 
-    let replay_key = format!("oauth:dpop:jti:{jkt}:{}", claims.jti);
+    let replay_key = format!("oauth:dpop:jti:{jkt}:{}", blake3_hex(&claims.jti));
     if !valkey_set_ex_nx(&state.valkey, replay_key, "1", DPOP_TTL_SECONDS as u64)
         .await
         .map_err(|_| DpopError::InvalidProof)?

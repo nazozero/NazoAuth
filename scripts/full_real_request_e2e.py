@@ -36,12 +36,13 @@ DATABASE_URL = os.environ.get(
     "postgresql://postgres:postgres@nazo-oauth-e2e-postgres:5432/oauth",
 )
 VALKEY_URL = os.environ.get("E2E_VALKEY_URL", "redis://nazo-oauth-e2e-valkey:6379/0")
+E2E_CORS_ORIGIN = os.environ.get("E2E_CORS_ORIGIN", "http://127.0.0.1:3000")
 
 ADMIN_EMAIL = "admin-full-e2e@example.com"
 ADMIN_PASSWORD = "AdminPassword-2026"
 USER_EMAIL = "user-full-e2e@example.com"
 USER_PASSWORD = "UserPassword-2026"
-CLIENT_REDIRECT_URI = "http://client.example/callback"
+CLIENT_REDIRECT_URI = "https://client.example/callback"
 DEFAULT_AUDIENCE = "resource://default"
 CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 
@@ -224,13 +225,6 @@ def assert_destructive_targets_are_e2e() -> None:
     valkey = urlparse(VALKEY_URL)
     base = urlparse(BASE_URL)
 
-    expected = {
-        "database_host": "nazo-oauth-e2e-postgres",
-        "database_name": "oauth",
-        "valkey_host": "nazo-oauth-e2e-valkey",
-        "valkey_db": "/0",
-        "base_host": "nazo-oauth-e2e-server",
-    }
     actual = {
         "database_host": database.hostname,
         "database_name": database.path.lstrip("/"),
@@ -238,13 +232,27 @@ def assert_destructive_targets_are_e2e() -> None:
         "valkey_db": valkey.path or "/0",
         "base_host": base.hostname,
     }
-    mismatches = {
-        key: {"expected": value, "actual": actual[key]}
-        for key, value in expected.items()
-        if actual[key] != value
-    }
-    if mismatches:
-        fail(f"refusing destructive seed outside Docker E2E targets: {mismatches}")
+    allowed_targets = [
+        {
+            "database_host": "nazo-oauth-e2e-postgres",
+            "database_name": "oauth",
+            "valkey_host": "nazo-oauth-e2e-valkey",
+            "valkey_db": "/0",
+            "base_host": "nazo-oauth-e2e-server",
+        }
+    ]
+    if os.environ.get("E2E_ALLOW_SAME_CONTAINER_LOOPBACK") == "1":
+        allowed_targets.append(
+            {
+                "database_host": "postgres",
+                "database_name": "oauth",
+                "valkey_host": "valkey",
+                "valkey_db": "/0",
+                "base_host": "127.0.0.1",
+            }
+        )
+    if actual not in allowed_targets:
+        fail(f"refusing destructive seed outside Docker E2E targets: {actual}")
 
 
 def seed_prerequisites() -> None:
@@ -443,7 +451,20 @@ def run() -> None:
         check(
             "discovery_metadata",
             "private_key_jwt" in discovery["token_endpoint_auth_methods_supported"]
+            and "private_key_jwt" in discovery["introspection_endpoint_auth_methods_supported"]
             and "email_verified" in discovery["claims_supported"],
+        )
+        oauth_metadata = expect_json(
+            expect_status(
+                "GET /.well-known/oauth-authorization-server",
+                anonymous.get(f"{BASE_URL}/.well-known/oauth-authorization-server", timeout=10),
+                200,
+            )
+        )
+        check(
+            "oauth_authorization_server_metadata",
+            oauth_metadata["issuer"] == discovery["issuer"]
+            and oauth_metadata["authorization_endpoint"] == discovery["authorization_endpoint"],
         )
 
         jwks = expect_json(
@@ -463,7 +484,7 @@ def run() -> None:
         cors = anonymous.options(
             f"{BASE_URL}/token",
             headers={
-                "Origin": "http://frontend.example",
+                "Origin": E2E_CORS_ORIGIN,
                 "Access-Control-Request-Method": "POST",
                 "Access-Control-Request-Headers": "authorization,content-type,dpop,x-csrf-token",
             },
@@ -472,11 +493,11 @@ def run() -> None:
         check("OPTIONS /token CORS", cors.status_code < 400, cors.text)
         check(
             "CORS allow origin",
-            cors.headers.get("access-control-allow-origin") == "http://frontend.example",
+            cors.headers.get("access-control-allow-origin") == E2E_CORS_ORIGIN,
         )
         cors_actual = anonymous.get(
             f"{BASE_URL}/health",
-            headers={"Origin": "http://frontend.example"},
+            headers={"Origin": E2E_CORS_ORIGIN},
             timeout=10,
         )
         expect_status("GET /health CORS actual", cors_actual, 200)
@@ -697,6 +718,16 @@ def run() -> None:
             "POST /admin/clients private_key_jwt",
         )
         private_client_id = private_client["client_id"]
+
+        expect_status(
+            "POST /introspect public client rejected",
+            requests.post(
+                f"{BASE_URL}/introspect",
+                data={"token": "dummy-token", "client_id": public_client_id},
+                timeout=10,
+            ),
+            401,
+        )
 
         lower_basic = "basic " + base64.b64encode(
             f"{secret_client_id}:{secret_client_secret}".encode("utf-8")
@@ -943,7 +974,11 @@ def run() -> None:
                 "POST /introspect active",
                 requests.post(
                     f"{BASE_URL}/introspect",
-                    data={"token": refreshed_access_token, "client_id": public_client_id},
+                    data={
+                        "token": refreshed_access_token,
+                        "client_id": secret_client_id,
+                        "client_secret": secret_client_secret,
+                    },
                     timeout=10,
                 ),
                 200,
@@ -965,13 +1000,125 @@ def run() -> None:
                 "POST /introspect inactive",
                 requests.post(
                     f"{BASE_URL}/introspect",
-                    data={"token": refreshed_access_token, "client_id": public_client_id},
+                    data={
+                        "token": refreshed_access_token,
+                        "client_id": secret_client_id,
+                        "client_secret": secret_client_secret,
+                    },
                     timeout=10,
                 ),
                 200,
             )
         )
         check("introspect_inactive_after_revoke", introspected_after_revoke.get("active") is False)
+
+        replay_request_id, replay_verifier = authorize_request(
+            user, public_client_id, state="code-replay-flow"
+        )
+        replay_code, replay_verifier = approve_authorization(
+            user, replay_request_id, replay_verifier, state="code-replay-flow"
+        )
+        replay_key = ed25519.Ed25519PrivateKey.generate()
+        replay_form = {
+            "grant_type": "authorization_code",
+            "client_id": public_client_id,
+            "code": replay_code,
+            "code_verifier": replay_verifier,
+            "redirect_uri": CLIENT_REDIRECT_URI,
+        }
+        replay_nonce = request_dpop_nonce(replay_form, replay_key)
+        replay_tokens = token_with_dpop(
+            replay_form,
+            replay_key,
+            replay_nonce,
+            "POST /token authorization_code replay baseline",
+        )
+        replay_access_token = replay_tokens["access_token"]
+        replay_refresh_form = {
+            "grant_type": "refresh_token",
+            "client_id": public_client_id,
+            "refresh_token": replay_tokens["refresh_token"],
+        }
+        replay_refresh_nonce = request_dpop_nonce(replay_refresh_form, replay_key)
+        replay_userinfo_nonce_response = requests.get(
+            f"{BASE_URL}/userinfo",
+            headers={
+                "Authorization": f"DPoP {replay_access_token}",
+                "DPoP": dpop_proof(
+                    "GET",
+                    f"{BASE_URL}/userinfo",
+                    replay_key,
+                    access_token=replay_access_token,
+                ),
+            },
+            timeout=10,
+        )
+        expect_status(
+            "GET /userinfo replay token nonce challenge",
+            replay_userinfo_nonce_response,
+            401,
+        )
+        replay_userinfo_nonce = replay_userinfo_nonce_response.headers.get("DPoP-Nonce")
+        check("userinfo_replay_token_nonce_header", bool(replay_userinfo_nonce))
+        replay_nonce = request_dpop_nonce(replay_form, replay_key)
+        replay_response = requests.post(
+            f"{BASE_URL}/token",
+            data=replay_form,
+            headers={"DPoP": dpop_proof("POST", f"{BASE_URL}/token", replay_key, nonce=replay_nonce)},
+            timeout=10,
+        )
+        expect_status("POST /token authorization_code replay rejected", replay_response, 400)
+        check(
+            "authorization_code_replay_error",
+            expect_json(replay_response).get("error") == "invalid_grant",
+        )
+        replay_userinfo_after_revoke = expect_json(
+            expect_status(
+                "GET /userinfo access token revoked after code replay",
+                requests.get(
+                    f"{BASE_URL}/userinfo",
+                    headers={
+                        "Authorization": f"DPoP {replay_access_token}",
+                        "DPoP": dpop_proof(
+                            "GET",
+                            f"{BASE_URL}/userinfo",
+                            replay_key,
+                            nonce=replay_userinfo_nonce,
+                            access_token=replay_access_token,
+                        ),
+                    },
+                    timeout=10,
+                ),
+                401,
+            )
+        )
+        check(
+            "userinfo_revoked_after_code_replay_error",
+            replay_userinfo_after_revoke.get("error") == "invalid_token",
+        )
+        replay_refresh_after_revoke = expect_json(
+            expect_status(
+                "POST /token refresh token revoked after code replay",
+                requests.post(
+                    f"{BASE_URL}/token",
+                    data=replay_refresh_form,
+                    headers={
+                        "DPoP": dpop_proof(
+                            "POST",
+                            f"{BASE_URL}/token",
+                            replay_key,
+                            nonce=replay_refresh_nonce,
+                        )
+                    },
+                    timeout=10,
+                ),
+                400,
+            )
+        )
+        check(
+            "refresh_token_revoked_after_code_replay_error",
+            replay_refresh_after_revoke.get("error") == "invalid_grant",
+        )
 
         secret_cc = expect_json(
             expect_status(

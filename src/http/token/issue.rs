@@ -93,13 +93,79 @@ async fn persist_refresh_token(
     Ok(result)
 }
 
+async fn persist_consumed_authorization_code(
+    state: &AppState,
+    code_hash: &str,
+    client_id: Uuid,
+    access_token_jti: String,
+    access_token_expires_at: i64,
+    refresh_token_family_id: Option<Uuid>,
+) -> anyhow::Result<()> {
+    let payload = ConsumedAuthorizationCode {
+        client_id,
+        access_token_jti,
+        access_token_expires_at,
+        refresh_token_family_id,
+        consumed_at: Utc::now(),
+    };
+    let body = serde_json::to_string(&payload)?;
+    let ttl_seconds = if refresh_token_family_id.is_some() {
+        state.settings.refresh_token_ttl_seconds
+    } else {
+        state.settings.access_token_ttl_seconds
+    };
+    valkey_set_ex(
+        &state.valkey,
+        consumed_authorization_code_key_from_hash(code_hash),
+        body,
+        u64::try_from(ttl_seconds.max(1)).unwrap_or(1),
+    )
+    .await?;
+    Ok(())
+}
+
+pub(super) async fn revoke_issued_authorization_code_tokens(
+    state: &AppState,
+    client_id: Uuid,
+    access_token_jti: &str,
+    access_token_expires_at: i64,
+    refresh_token_family_id: Option<Uuid>,
+) -> anyhow::Result<()> {
+    let mut conn = get_conn(&state.diesel_db).await?;
+    if let Some(expires_at) = DateTime::<Utc>::from_timestamp(access_token_expires_at, 0) {
+        diesel::insert_into(access_token_revocations::table)
+            .values((
+                access_token_revocations::access_token_jti_blake3.eq(blake3_hex(access_token_jti)),
+                access_token_revocations::client_id.eq(client_id),
+                access_token_revocations::revoked_at.eq(Utc::now()),
+                access_token_revocations::expires_at.eq(expires_at),
+            ))
+            .on_conflict(access_token_revocations::access_token_jti_blake3)
+            .do_nothing()
+            .execute(&mut conn)
+            .await?;
+    }
+    if let Some(family_id) = refresh_token_family_id {
+        diesel::update(
+            oauth_tokens::table
+                .filter(oauth_tokens::client_id.eq(client_id))
+                .filter(oauth_tokens::token_family_id.eq(family_id))
+                .filter(oauth_tokens::revoked_at.is_null()),
+        )
+        .set(oauth_tokens::revoked_at.eq(diesel_now))
+        .execute(&mut conn)
+        .await?;
+    }
+    Ok(())
+}
+
 pub(crate) async fn issue_token_response(
     state: &AppState,
     client: &ClientRow,
     issue: TokenIssue,
 ) -> HttpResponse {
     let now = Utc::now();
-    let access_token = match make_jwt(
+    let issued_access_token = match make_jwt(
         state,
         AccessTokenJwtInput {
             subject: &issue.subject,
@@ -131,11 +197,12 @@ pub(crate) async fn issue_token_response(
         "Bearer"
     };
     let mut body = json!({
-        "access_token": access_token,
+        "access_token": issued_access_token.token,
         "token_type": token_type,
         "expires_in": state.settings.access_token_ttl_seconds,
         "scope": issue.scopes.join(" ")
     });
+    let mut refresh_token_family_id = None;
     if issue.scopes.iter().any(|s| s == "openid") {
         let user_claims = match issue.user_id {
             Some(user_id) => match find_user_by_id(&state.diesel_db, user_id).await {
@@ -193,6 +260,7 @@ pub(crate) async fn issue_token_response(
         match persist_refresh_token(state, client, &issue, &refresh).await {
             Ok(RefreshPersistResult::Inserted) => {
                 body["refresh_token"] = json!(refresh.raw);
+                refresh_token_family_id = Some(refresh.family);
             }
             Ok(RefreshPersistResult::RotationConflict) => {
                 return oauth_token_error(
@@ -217,6 +285,36 @@ pub(crate) async fn issue_token_response(
                 );
             }
         }
+    }
+    if let Some(code_hash) = issue.authorization_code_hash.as_deref()
+        && let Err(error) = persist_consumed_authorization_code(
+            state,
+            code_hash,
+            client.id,
+            issued_access_token.jti.clone(),
+            issued_access_token.exp,
+            refresh_token_family_id,
+        )
+        .await
+    {
+        tracing::warn!(%error, "failed to persist consumed authorization code marker");
+        if let Err(revoke_error) = revoke_issued_authorization_code_tokens(
+            state,
+            client.id,
+            &issued_access_token.jti,
+            issued_access_token.exp,
+            refresh_token_family_id,
+        )
+        .await
+        {
+            tracing::warn!(%revoke_error, "failed to revoke tokens after authorization code marker failure");
+        }
+        return oauth_token_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "授权码兑换状态写入失败.",
+            false,
+        );
     }
     json_response_no_store(body)
 }

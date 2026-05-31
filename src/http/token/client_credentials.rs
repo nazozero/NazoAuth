@@ -60,6 +60,7 @@ pub(crate) async fn token_client_credentials(
             include_refresh: false,
             rotation: None,
             dpop_jkt,
+            authorization_code_hash: None,
         },
     )
     .await

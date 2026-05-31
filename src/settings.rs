@@ -7,6 +7,9 @@ use anyhow::{Context, bail};
 use lettre::message::Mailbox;
 
 use crate::config::ConfigSource;
+use crate::support::{
+    is_loopback_http_url, validate_cors_origin, validate_frontend_base_url, validate_issuer_url,
+};
 
 /// OAuth service runtime parameters.
 #[derive(Clone)]
@@ -75,26 +78,37 @@ impl Settings {
     /// Builds settings from the startup configuration source.
     pub(crate) fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
         let issuer = config.string("ISSUER", "http://127.0.0.1:8000");
+        validate_issuer_url(&issuer)?;
+        let frontend_base_url = config.string("FRONTEND_BASE_URL", "http://127.0.0.1:3000");
+        validate_frontend_base_url(&frontend_base_url)?;
+        let cors_allowed_origins = config
+            .get("CORS_ALLOWED_ORIGINS")
+            .map(|value| {
+                value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(ToOwned::to_owned)
+                    .collect()
+            })
+            .filter(|values: &Vec<String>| !values.is_empty())
+            .unwrap_or_else(|| vec!["http://127.0.0.1:3000".into()]);
+        for origin in &cors_allowed_origins {
+            validate_cors_origin(origin)?;
+        }
         let default_cookie_secure = issuer.starts_with("https://");
+        let cookie_secure = config.bool("COOKIE_SECURE", default_cookie_secure)?;
+        if !cookie_secure && !is_loopback_http_url(&issuer) {
+            bail!("COOKIE_SECURE=false 只允许用于 loopback HTTP 本地开发 issuer");
+        }
         Ok(Self {
             issuer,
-            frontend_base_url: config.string("FRONTEND_BASE_URL", "http://127.0.0.1:3000"),
-            cors_allowed_origins: config
-                .get("CORS_ALLOWED_ORIGINS")
-                .map(|value| {
-                    value
-                        .split(',')
-                        .map(str::trim)
-                        .filter(|value| !value.is_empty())
-                        .map(ToOwned::to_owned)
-                        .collect()
-                })
-                .filter(|values: &Vec<String>| !values.is_empty())
-                .unwrap_or_else(|| vec!["http://127.0.0.1:3000".into()]),
+            frontend_base_url,
+            cors_allowed_origins,
             default_audience: config.string("DEFAULT_AUDIENCE", "resource://default"),
             session_cookie_name: config.string("SESSION_COOKIE_NAME", "nazo_oauth_session"),
             csrf_cookie_name: config.string("CSRF_COOKIE_NAME", "nazo_oauth_csrf"),
-            cookie_secure: config.bool("COOKIE_SECURE", default_cookie_secure)?,
+            cookie_secure,
             session_ttl_seconds: config.parse("SESSION_TTL_SECONDS", 28_800)?,
             auth_code_ttl_seconds: config.parse("AUTH_CODE_TTL_SECONDS", 300)?,
             access_token_ttl_seconds: config.parse("ACCESS_TOKEN_TTL_SECONDS", 300)?,

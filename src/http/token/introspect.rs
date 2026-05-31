@@ -1,6 +1,6 @@
 //! token introspection 端点。
 // 只处理 access/refresh token 活跃性查询。
-use super::{TokenOnlyForm, authenticate_token_management_client, token_management_auth_error};
+use super::{TokenOnlyForm, authenticate_introspection_client, token_management_auth_error};
 use crate::http::prelude::*;
 
 pub(crate) async fn introspect(
@@ -56,14 +56,13 @@ pub(crate) async fn introspect(
             );
         }
     };
-    if let Err(error) =
-        authenticate_token_management_client(&state, &req, &client, &credentials).await
+    if let Err(error) = authenticate_introspection_client(&state, &req, &client, &credentials).await
     {
         return token_management_auth_error(error);
     }
     if let Some(claims) = decode_access_claims(&state, &form.token) {
-        if claims.client_id != client.client_id {
-            return json_response(json!({"active": false}));
+        if claims.client_id != client.client_id && !audience_allowed(&client, &claims.aud) {
+            return json_response_no_store(json!({"active": false}));
         }
         let revoked = match get_conn(&state.diesel_db).await {
             Ok(mut conn) => match access_token_revocations::table
@@ -94,7 +93,10 @@ pub(crate) async fn introspect(
             }
         };
         let active = !revoked && claims.exp > Utc::now().timestamp();
-        return json_response(json!({
+        if !active {
+            return json_response_no_store(json!({"active": false}));
+        }
+        return json_response_no_store(json!({
             "active": active,
             "scope": claims.scope,
             "client_id": claims.client_id,
@@ -137,10 +139,14 @@ pub(crate) async fn introspect(
         }
     };
     if let Some(token) = token {
-        let active = token.client_id == client.id
-            && token.revoked_at.is_none()
-            && token.expires_at > Utc::now();
-        return json_response(json!({
+        if token.client_id != client.id {
+            return json_response_no_store(json!({"active": false}));
+        }
+        let active = token.revoked_at.is_none() && token.expires_at > Utc::now();
+        if !active {
+            return json_response_no_store(json!({"active": false}));
+        }
+        return json_response_no_store(json!({
             "active": active,
             "scope": json_array_to_strings(&token.scopes).join(" "),
             "client_id": client.client_id,
@@ -150,5 +156,5 @@ pub(crate) async fn introspect(
             "sub": token.subject
         }));
     }
-    json_response(json!({"active": false}))
+    json_response_no_store(json!({"active": false}))
 }

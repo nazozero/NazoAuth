@@ -7,47 +7,67 @@ pub(crate) enum TokenManagementClientAuthError {
     StoreUnavailable,
 }
 
-pub(crate) async fn authenticate_token_management_client(
+async fn authenticate_confidential_client(
+    state: &AppState,
+    req: &HttpRequest,
+    client: &ClientRow,
+    credentials: &ClientCredentials,
+) -> Result<(), TokenManagementClientAuthError> {
+    if client.client_type != "confidential"
+        || credentials.method != client.token_endpoint_auth_method
+    {
+        return Err(TokenManagementClientAuthError::InvalidClient);
+    }
+
+    match client.token_endpoint_auth_method.as_str() {
+        "private_key_jwt" => {
+            let Some(assertion) = credentials.client_assertion.as_deref() else {
+                return Err(TokenManagementClientAuthError::InvalidClient);
+            };
+            validate_private_key_jwt(state, req, client, assertion)
+                .await
+                .map_err(|error| match error {
+                    ClientAssertionError::StoreUnavailable => {
+                        TokenManagementClientAuthError::StoreUnavailable
+                    }
+                    ClientAssertionError::Invalid | ClientAssertionError::ReplayDetected => {
+                        TokenManagementClientAuthError::InvalidClient
+                    }
+                })
+        }
+        "client_secret_basic" | "client_secret_post" => {
+            let valid_secret = credentials.client_secret.as_deref().is_some_and(|secret| {
+                verify_password(
+                    secret,
+                    client.client_secret_argon2_hash.as_deref().unwrap_or(""),
+                )
+            });
+            valid_secret
+                .then_some(())
+                .ok_or(TokenManagementClientAuthError::InvalidClient)
+        }
+        _ => Err(TokenManagementClientAuthError::InvalidClient),
+    }
+}
+
+pub(crate) async fn authenticate_introspection_client(
+    state: &AppState,
+    req: &HttpRequest,
+    client: &ClientRow,
+    credentials: &ClientCredentials,
+) -> Result<(), TokenManagementClientAuthError> {
+    authenticate_confidential_client(state, req, client, credentials).await
+}
+
+pub(crate) async fn authenticate_revocation_client(
     state: &AppState,
     req: &HttpRequest,
     client: &ClientRow,
     credentials: &ClientCredentials,
 ) -> Result<(), TokenManagementClientAuthError> {
     if client.client_type == "confidential" {
-        if credentials.method != client.token_endpoint_auth_method {
-            return Err(TokenManagementClientAuthError::InvalidClient);
-        }
-        return match client.token_endpoint_auth_method.as_str() {
-            "private_key_jwt" => {
-                let Some(assertion) = credentials.client_assertion.as_deref() else {
-                    return Err(TokenManagementClientAuthError::InvalidClient);
-                };
-                validate_private_key_jwt(state, req, client, assertion)
-                    .await
-                    .map_err(|error| match error {
-                        ClientAssertionError::StoreUnavailable => {
-                            TokenManagementClientAuthError::StoreUnavailable
-                        }
-                        ClientAssertionError::Invalid | ClientAssertionError::ReplayDetected => {
-                            TokenManagementClientAuthError::InvalidClient
-                        }
-                    })
-            }
-            "client_secret_basic" | "client_secret_post" => {
-                let valid_secret = credentials.client_secret.as_deref().is_some_and(|secret| {
-                    verify_password(
-                        secret,
-                        client.client_secret_argon2_hash.as_deref().unwrap_or(""),
-                    )
-                });
-                valid_secret
-                    .then_some(())
-                    .ok_or(TokenManagementClientAuthError::InvalidClient)
-            }
-            _ => Err(TokenManagementClientAuthError::InvalidClient),
-        };
+        return authenticate_confidential_client(state, req, client, credentials).await;
     }
-
     (credentials.method == "none"
         && credentials.client_secret.is_none()
         && credentials.client_assertion.is_none())
