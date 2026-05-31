@@ -46,11 +46,7 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
             );
         }
     };
-    let has_basic = req
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.trim_start().starts_with("Basic "));
+    let has_basic = has_basic_authorization_scheme(req.headers());
     let has_assertion = form.client_assertion_type.is_some() || form.client_assertion.is_some();
     if has_basic && (form.client_id.is_some() || form.client_secret.is_some() || has_assertion) {
         return oauth_token_error(

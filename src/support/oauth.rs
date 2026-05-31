@@ -180,14 +180,22 @@ pub(crate) fn validate_client_jwks(jwks: &Value) -> anyhow::Result<()> {
     if keys.is_empty() {
         anyhow::bail!("jwks.keys 不能为空");
     }
+    let mut seen_kids = std::collections::HashSet::new();
     for key in keys {
         let kty = key.get("kty").and_then(Value::as_str).unwrap_or_default();
         let crv = key.get("crv").and_then(Value::as_str).unwrap_or_default();
+        let kid = key.get("kid").and_then(Value::as_str).unwrap_or_default();
         let x = key.get("x").and_then(Value::as_str).unwrap_or_default();
         let valid_public_key = URL_SAFE_NO_PAD
             .decode(x)
             .ok()
             .is_some_and(|bytes| bytes.len() == 32);
+        if kid.trim().is_empty() {
+            anyhow::bail!("jwks Ed25519 公钥必须包含 kid");
+        }
+        if !seen_kids.insert(kid) {
+            anyhow::bail!("jwks kid 不能重复: {kid}");
+        }
         if kty != "OKP" || crv != "Ed25519" || !valid_public_key {
             anyhow::bail!("jwks 只接受 Ed25519 OKP 公钥");
         }
@@ -397,5 +405,41 @@ mod tests {
             Some(&jwks),
         );
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn client_jwks_requires_non_empty_unique_kids() {
+        let missing_kid = json!({
+            "keys": [{
+                "kty": "OKP",
+                "crv": "Ed25519",
+                "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+                "alg": "EdDSA",
+                "use": "sig"
+            }]
+        });
+        assert!(validate_client_jwks(&missing_kid).is_err());
+
+        let duplicate_kid = json!({
+            "keys": [
+                {
+                    "kty": "OKP",
+                    "crv": "Ed25519",
+                    "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+                    "alg": "EdDSA",
+                    "use": "sig",
+                    "kid": "key-1"
+                },
+                {
+                    "kty": "OKP",
+                    "crv": "Ed25519",
+                    "x": URL_SAFE_NO_PAD.encode([8u8; 32]),
+                    "alg": "EdDSA",
+                    "use": "sig",
+                    "kid": "key-1"
+                }
+            ]
+        });
+        assert!(validate_client_jwks(&duplicate_kid).is_err());
     }
 }

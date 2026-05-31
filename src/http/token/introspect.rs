@@ -1,6 +1,6 @@
 //! token introspection 端点。
 // 只处理 access/refresh token 活跃性查询。
-use super::{TokenOnlyForm, authenticate_token_management_client};
+use super::{TokenOnlyForm, authenticate_token_management_client, token_management_auth_error};
 use crate::http::prelude::*;
 
 pub(crate) async fn introspect(
@@ -13,11 +13,7 @@ pub(crate) async fn introspect(
         return response;
     }
 
-    let has_basic = req
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.trim_start().starts_with("Basic "));
+    let has_basic = has_basic_authorization_scheme(req.headers());
     let has_assertion = form.client_assertion_type.is_some() || form.client_assertion.is_some();
     if has_basic && (form.client_id.is_some() || form.client_secret.is_some() || has_assertion)
         || has_assertion && form.client_secret.is_some()
@@ -53,12 +49,10 @@ pub(crate) async fn introspect(
             "客户端认证失败.",
         );
     };
-    if !authenticate_token_management_client(&state, &req, &client, &credentials).await {
-        return oauth_error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_client",
-            "客户端认证失败.",
-        );
+    if let Err(error) =
+        authenticate_token_management_client(&state, &req, &client, &credentials).await
+    {
+        return token_management_auth_error(error);
     }
     if let Some(claims) = decode_access_claims(&state, &form.token) {
         if claims.client_id != client.client_id {

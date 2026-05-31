@@ -12,6 +12,7 @@ mod revoke;
 mod userinfo;
 
 pub(crate) use authorization_code::*;
+pub(crate) use client_auth::*;
 pub(crate) use client_credentials::*;
 pub(crate) use dispatch::*;
 pub(crate) use forms::*;

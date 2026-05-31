@@ -1,3 +1,8 @@
+UPDATE oauth_clients
+SET token_endpoint_auth_method = 'client_secret_post',
+    jwks = NULL
+WHERE token_endpoint_auth_method = 'private_key_jwt';
+
 ALTER TABLE oauth_clients
     DROP CONSTRAINT IF EXISTS ck_oauth_clients_token_endpoint_auth_method_value,
     ADD CONSTRAINT ck_oauth_clients_token_endpoint_auth_method_value CHECK (

@@ -4,12 +4,10 @@
 use super::prelude::*;
 
 pub(crate) fn oidc_user_claims(user: &UserRow, scopes: &[String], subject: &str) -> Value {
-    let mut claims = json!({
-        "sub": subject,
-        "preferred_username": user.username
-    });
+    let mut claims = json!({"sub": subject});
 
     if scopes.iter().any(|scope| scope == "profile") {
+        claims["preferred_username"] = json!(user.username);
         if let Some(name) = user
             .display_name
             .as_deref()
@@ -83,6 +81,7 @@ mod tests {
         let claims = oidc_user_claims(&user, &["openid".to_owned()], "subject-1");
 
         assert!(claims.get("name").is_none());
+        assert!(claims.get("preferred_username").is_none());
         assert!(claims.get("picture").is_none());
         assert!(claims.get("email").is_none());
         assert!(claims.get("email_verified").is_none());

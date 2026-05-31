@@ -67,6 +67,10 @@ pub(crate) struct ClientCredentials {
     pub(crate) method: String,
 }
 
+pub(crate) fn has_basic_authorization_scheme(headers: &HeaderMap) -> bool {
+    basic_authorization_credentials(headers).is_some()
+}
+
 pub(crate) fn extract_client_credentials(
     headers: &HeaderMap,
     form_client_id: Option<&str>,
@@ -85,10 +89,7 @@ pub(crate) fn extract_client_credentials(
             method: "private_key_jwt".to_owned(),
         };
     }
-    if let Some((id, secret)) = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|auth| auth.strip_prefix("Basic "))
+    if let Some((id, secret)) = basic_authorization_credentials(headers)
         .and_then(|raw| STANDARD.decode(raw).ok())
         .and_then(|decoded| String::from_utf8(decoded).ok())
         .and_then(|text| {
@@ -123,6 +124,21 @@ pub(crate) fn extract_client_credentials(
             method: "none".to_owned(),
         },
     }
+}
+
+fn basic_authorization_credentials(headers: &HeaderMap) -> Option<&str> {
+    let raw = headers
+        .get(header::AUTHORIZATION)?
+        .to_str()
+        .ok()?
+        .trim_start();
+    let mut parts = raw.splitn(2, char::is_whitespace);
+    let scheme = parts.next()?;
+    let credentials = parts.next()?.trim();
+    (scheme.eq_ignore_ascii_case("Basic")
+        && !credentials.is_empty()
+        && credentials.split_whitespace().count() == 1)
+        .then_some(credentials)
 }
 
 #[derive(serde::Deserialize)]
@@ -389,5 +405,37 @@ mod tests {
                 .chars()
                 .all(|value| value.is_ascii_alphanumeric() || value == '-' || value == '_')
         );
+    }
+
+    #[test]
+    fn basic_client_credentials_scheme_is_case_insensitive() {
+        let mut headers = HeaderMap::new();
+        let encoded = STANDARD.encode("client-1:secret-1");
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_str(&format!("basic {encoded}")).unwrap(),
+        );
+
+        assert!(has_basic_authorization_scheme(&headers));
+        let credentials = extract_client_credentials(&headers, None, None, None, None);
+
+        assert_eq!(credentials.method, "client_secret_basic");
+        assert_eq!(credentials.client_id.as_deref(), Some("client-1"));
+        assert_eq!(credentials.client_secret.as_deref(), Some("secret-1"));
+    }
+
+    #[test]
+    fn malformed_basic_authorization_is_not_treated_as_basic_credentials() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_static("Basic not-base64 with-space"),
+        );
+
+        assert!(!has_basic_authorization_scheme(&headers));
+        let credentials =
+            extract_client_credentials(&headers, Some("client-1"), Some("secret-1"), None, None);
+
+        assert_eq!(credentials.method, "client_secret_post");
     }
 }

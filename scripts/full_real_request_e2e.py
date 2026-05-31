@@ -619,6 +619,23 @@ def run() -> None:
         secret_client_secret = secret_client["client_secret"]
 
         private_key = ed25519.Ed25519PrivateKey.generate()
+        jwks_without_kid = admin.post(
+            f"{BASE_URL}/admin/clients",
+            json={
+                "client_name": "Invalid JWKS Full E2E",
+                "client_type": "confidential",
+                "redirect_uris": [],
+                "scopes": ["profile"],
+                "allowed_audiences": [DEFAULT_AUDIENCE],
+                "grant_types": ["client_credentials"],
+                "token_endpoint_auth_method": "private_key_jwt",
+                "jwks": {"keys": [ed25519_public_jwk(private_key)]},
+            },
+            headers=csrf_header(admin),
+            timeout=10,
+        )
+        expect_status("POST /admin/clients private_key_jwt jwks kid required", jwks_without_kid, 400)
+
         private_client = create_client(
             admin,
             {
@@ -634,6 +651,45 @@ def run() -> None:
             "POST /admin/clients private_key_jwt",
         )
         private_client_id = private_client["client_id"]
+
+        lower_basic = "basic " + base64.b64encode(
+            f"{secret_client_id}:{secret_client_secret}".encode("utf-8")
+        ).decode("ascii")
+        expect_status(
+            "POST /token lowercase basic plus body credential rejected",
+            requests.post(
+                f"{BASE_URL}/token",
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": secret_client_id,
+                    "client_secret": secret_client_secret,
+                    "scope": "profile",
+                },
+                headers={"Authorization": lower_basic},
+                timeout=10,
+            ),
+            400,
+        )
+        expect_status(
+            "POST /introspect lowercase basic plus body credential rejected",
+            requests.post(
+                f"{BASE_URL}/introspect",
+                data={"token": "dummy-token", "client_id": secret_client_id},
+                headers={"Authorization": lower_basic},
+                timeout=10,
+            ),
+            400,
+        )
+        expect_status(
+            "POST /revoke lowercase basic plus body credential rejected",
+            requests.post(
+                f"{BASE_URL}/revoke",
+                data={"token": "dummy-token", "client_id": secret_client_id},
+                headers={"Authorization": lower_basic},
+                timeout=10,
+            ),
+            400,
+        )
 
         admin_clients = expect_json(
             expect_status(
