@@ -46,8 +46,14 @@ pub(crate) fn login_required_response(state: &AppState) -> HttpResponse {
             "会话不存在或已过期,请重新登录.",
         ),
         &[
-            clear_cookie(&state.settings.session_cookie_name),
-            clear_cookie(&state.settings.csrf_cookie_name),
+            clear_cookie(
+                &state.settings.session_cookie_name,
+                state.settings.cookie_secure,
+            ),
+            clear_cookie(
+                &state.settings.csrf_cookie_name,
+                state.settings.cookie_secure,
+            ),
         ],
     )
 }

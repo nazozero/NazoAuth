@@ -57,12 +57,14 @@ pub(crate) async fn login(
                 &session_id,
                 true,
                 state.settings.session_ttl_seconds,
+                state.settings.cookie_secure,
             ),
             make_cookie(
                 &state.settings.csrf_cookie_name,
                 &csrf_token,
                 false,
                 state.settings.session_ttl_seconds,
+                state.settings.cookie_secure,
             ),
         ],
     )

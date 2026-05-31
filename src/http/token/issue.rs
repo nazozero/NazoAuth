@@ -1,6 +1,96 @@
 //! 令牌签发响应构造。
 // 统一 access_token、refresh_token 和 id_token 的响应形状。
 use crate::http::prelude::*;
+use diesel_async::{AsyncConnection, AsyncPgConnection};
+
+enum RefreshPersistResult {
+    Inserted,
+    RotationConflict,
+}
+
+struct PendingRefreshToken {
+    raw: String,
+    family: Uuid,
+    rotated_from: Option<Uuid>,
+    issued_at: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
+}
+
+pub(crate) fn should_issue_refresh_token(scopes: &[String]) -> bool {
+    scopes.iter().any(|scope| scope == "offline_access")
+}
+
+async fn mark_token_family_reuse(
+    conn: &mut AsyncPgConnection,
+    token_family_id: Uuid,
+) -> diesel::QueryResult<()> {
+    diesel::update(oauth_tokens::table.filter(oauth_tokens::token_family_id.eq(token_family_id)))
+        .set(oauth_tokens::reuse_detected_at.eq(diesel_now))
+        .execute(conn)
+        .await?;
+    diesel::update(
+        oauth_tokens::table
+            .filter(oauth_tokens::token_family_id.eq(token_family_id))
+            .filter(oauth_tokens::revoked_at.is_null()),
+    )
+    .set(oauth_tokens::revoked_at.eq(diesel_now))
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+async fn insert_refresh_token(
+    conn: &mut AsyncPgConnection,
+    client_id: Uuid,
+    issue: &TokenIssue,
+    refresh: &PendingRefreshToken,
+) -> diesel::QueryResult<usize> {
+    diesel::insert_into(oauth_tokens::table)
+        .values((
+            oauth_tokens::refresh_token_blake3.eq(blake3_hex(&refresh.raw)),
+            oauth_tokens::token_family_id.eq(refresh.family),
+            oauth_tokens::rotated_from_id.eq(refresh.rotated_from),
+            oauth_tokens::client_id.eq(client_id),
+            oauth_tokens::user_id.eq(issue.user_id),
+            oauth_tokens::scopes.eq(json!(issue.scopes)),
+            oauth_tokens::issued_at.eq(refresh.issued_at),
+            oauth_tokens::expires_at.eq(refresh.expires_at),
+            oauth_tokens::subject.eq(issue.subject.clone()),
+            oauth_tokens::dpop_jkt.eq(issue.dpop_jkt.clone()),
+        ))
+        .execute(conn)
+        .await
+}
+
+async fn persist_refresh_token(
+    state: &AppState,
+    client: &ClientRow,
+    issue: &TokenIssue,
+    refresh: &PendingRefreshToken,
+) -> anyhow::Result<RefreshPersistResult> {
+    let mut conn = get_conn(&state.diesel_db).await?;
+    let result = conn
+        .transaction::<RefreshPersistResult, diesel::result::Error, _>(async |conn| {
+            if let Some(rotated_from) = refresh.rotated_from {
+                let rotated = diesel::update(
+                    oauth_tokens::table
+                        .filter(oauth_tokens::id.eq(rotated_from))
+                        .filter(oauth_tokens::revoked_at.is_null()),
+                )
+                .set(oauth_tokens::revoked_at.eq(diesel_now))
+                .execute(conn)
+                .await?;
+                if rotated == 0 {
+                    mark_token_family_reuse(conn, refresh.family).await?;
+                    return Ok(RefreshPersistResult::RotationConflict);
+                }
+            }
+            insert_refresh_token(conn, client.id, issue, refresh).await?;
+            Ok(RefreshPersistResult::Inserted)
+        })
+        .await?;
+    Ok(result)
+}
 
 pub(crate) async fn issue_token_response(
     state: &AppState,
@@ -45,59 +135,12 @@ pub(crate) async fn issue_token_response(
         "expires_in": state.settings.access_token_ttl_seconds,
         "scope": issue.scopes.join(" ")
     });
-    if issue.include_refresh
-        && issue
-            .scopes
-            .iter()
-            .any(|s| s == "offline_access" || s == "openid" || s == "profile")
-    {
-        let raw_refresh = format!("{}.{}", random_urlsafe_token(), random_urlsafe_token());
-        let family = issue.rotation.map(|r| r.0).unwrap_or_else(Uuid::now_v7);
-        let rotated_from = issue.rotation.and_then(|r| r.1);
-        let expires_at = now + Duration::seconds(state.settings.refresh_token_ttl_seconds);
-        let mut conn = match get_conn(&state.diesel_db).await {
-            Ok(conn) => conn,
-            Err(_) => {
-                return oauth_token_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "refresh token 持久化失败.",
-                    false,
-                );
-            }
-        };
-        if diesel::insert_into(oauth_tokens::table)
-            .values((
-                oauth_tokens::refresh_token_blake3.eq(blake3_hex(&raw_refresh)),
-                oauth_tokens::token_family_id.eq(family),
-                oauth_tokens::rotated_from_id.eq(rotated_from),
-                oauth_tokens::client_id.eq(client.id),
-                oauth_tokens::user_id.eq(issue.user_id),
-                oauth_tokens::scopes.eq(json!(issue.scopes)),
-                oauth_tokens::issued_at.eq(now),
-                oauth_tokens::expires_at.eq(expires_at),
-                oauth_tokens::subject.eq(issue.subject.clone()),
-                oauth_tokens::dpop_jkt.eq(issue.dpop_jkt.clone()),
-            ))
-            .execute(&mut conn)
-            .await
-            .is_err()
-        {
-            return oauth_token_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "server_error",
-                "refresh token 持久化失败.",
-                false,
-            );
-        }
-        body["refresh_token"] = json!(raw_refresh);
-    }
     if issue.scopes.iter().any(|s| s == "openid") {
         let id_token = match make_id_token(
             state,
             &issue.subject,
             &client.client_id,
-            issue.nonce,
+            issue.nonce.clone(),
             state.settings.id_token_ttl_seconds,
         ) {
             Ok(token) => token,
@@ -112,5 +155,55 @@ pub(crate) async fn issue_token_response(
         };
         body["id_token"] = json!(id_token);
     }
+    if issue.include_refresh && should_issue_refresh_token(&issue.scopes) {
+        let refresh = PendingRefreshToken {
+            raw: format!("{}.{}", random_urlsafe_token(), random_urlsafe_token()),
+            family: issue.rotation.map(|r| r.0).unwrap_or_else(Uuid::now_v7),
+            rotated_from: issue.rotation.and_then(|r| r.1),
+            issued_at: now,
+            expires_at: now + Duration::seconds(state.settings.refresh_token_ttl_seconds),
+        };
+        match persist_refresh_token(state, client, &issue, &refresh).await {
+            Ok(RefreshPersistResult::Inserted) => {
+                body["refresh_token"] = json!(refresh.raw);
+            }
+            Ok(RefreshPersistResult::RotationConflict) => {
+                return oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    "refresh_token 无效或已撤销.",
+                    false,
+                );
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to persist refresh token");
+                let description = if refresh.rotated_from.is_some() {
+                    "refresh_token 轮换失败."
+                } else {
+                    "refresh token 持久化失败."
+                };
+                return oauth_token_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    description,
+                    false,
+                );
+            }
+        }
+    }
     json_response_no_store(body)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn refresh_token_requires_offline_access_scope() {
+        let scopes = vec!["openid".to_owned(), "profile".to_owned()];
+        assert!(!should_issue_refresh_token(&scopes));
+
+        let scopes = vec!["openid".to_owned(), "offline_access".to_owned()];
+        assert!(should_issue_refresh_token(&scopes));
+    }
 }
