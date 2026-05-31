@@ -23,7 +23,17 @@ pub(crate) async fn authorize_decision(
     };
 
     let key = format!("oauth:consent:{}", form.request_id);
-    let raw = valkey_getdel(&state.valkey, &key).await.unwrap_or(None);
+    let raw = match valkey_getdel(&state.valkey, &key).await {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(%error, "failed to read authorization consent state");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权请求读取失败.",
+            );
+        }
+    };
     let Some(payload) = raw.and_then(|v| serde_json::from_str::<ConsentPayload>(&v).ok()) else {
         return oauth_error(
             StatusCode::BAD_REQUEST,
@@ -66,9 +76,10 @@ pub(crate) async fn authorize_decision(
         expires_at: now + Duration::seconds(state.settings.auth_code_ttl_seconds as i64),
     };
     let body = serde_json::to_string(&code_payload).unwrap();
+    let code_key = format!("oauth:auth_code:{code}");
     if let Err(error) = valkey_set_ex(
         &state.valkey,
-        format!("oauth:auth_code:{code}"),
+        code_key.clone(),
         body,
         state.settings.auth_code_ttl_seconds,
     )
@@ -81,9 +92,19 @@ pub(crate) async fn authorize_decision(
             "授权码创建失败.",
         );
     }
-    upsert_grant(&state, payload.user_id, &payload.client_id, &payload.scopes)
-        .await
-        .ok();
+    if let Err(error) =
+        upsert_grant(&state, payload.user_id, &payload.client_id, &payload.scopes).await
+    {
+        tracing::warn!(%error, "failed to persist user client grant");
+        if let Err(cleanup_error) = valkey_del(&state.valkey, &code_key).await {
+            tracing::warn!(%cleanup_error, "failed to remove authorization code after grant failure");
+        }
+        return oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "授权记录写入失败.",
+        );
+    }
 
     redirect_found(append_query(
         &payload.redirect_uri,

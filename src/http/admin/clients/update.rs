@@ -32,12 +32,19 @@ pub(crate) async fn admin_patch_client(
         );
     }
 
-    let Some(current) = find_client(&state.diesel_db, &client_id)
-        .await
-        .ok()
-        .flatten()
-    else {
-        return oauth_error(StatusCode::NOT_FOUND, "invalid_request", "未找到该客户端.");
+    let current = match find_client(&state.diesel_db, &client_id).await {
+        Ok(Some(client)) => client,
+        Ok(None) => {
+            return oauth_error(StatusCode::NOT_FOUND, "invalid_request", "未找到该客户端.");
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to query oauth client for admin update");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "客户端查询失败.",
+            );
+        }
     };
 
     let new_client_name = payload
@@ -84,33 +91,44 @@ pub(crate) async fn admin_patch_client(
             &format!("客户端更新失败: {error}"),
         );
     }
-    let row: Result<ClientRow, String> = match get_conn(&state.diesel_db).await {
-        Ok(mut conn) => diesel::update(
-            oauth_clients::table.filter(oauth_clients::client_id.eq(&current.client_id)),
-        )
-        .set((
-            oauth_clients::client_name.eq(new_client_name),
-            oauth_clients::redirect_uris.eq(new_redirect_uris),
-            oauth_clients::scopes.eq(new_scopes),
-            oauth_clients::allowed_audiences.eq(new_allowed_audiences),
-            oauth_clients::grant_types.eq(new_grant_types),
-            oauth_clients::jwks.eq(new_jwks),
-            oauth_clients::is_active.eq(new_is_active),
-            oauth_clients::updated_at.eq(diesel_now),
-        ))
-        .returning(ClientRow::as_returning())
-        .get_result::<ClientRow>(&mut conn)
-        .await
-        .map_err(|error| error.to_string()),
-        Err(error) => Err(error.to_string()),
+    let mut conn = match get_conn(&state.diesel_db).await {
+        Ok(conn) => conn,
+        Err(error) => {
+            tracing::warn!(%error, "failed to get database connection for client update");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "客户端更新失败.",
+            );
+        }
+    };
+    let client = match diesel::update(
+        oauth_clients::table.filter(oauth_clients::client_id.eq(&current.client_id)),
+    )
+    .set((
+        oauth_clients::client_name.eq(new_client_name),
+        oauth_clients::redirect_uris.eq(new_redirect_uris),
+        oauth_clients::scopes.eq(new_scopes),
+        oauth_clients::allowed_audiences.eq(new_allowed_audiences),
+        oauth_clients::grant_types.eq(new_grant_types),
+        oauth_clients::jwks.eq(new_jwks),
+        oauth_clients::is_active.eq(new_is_active),
+        oauth_clients::updated_at.eq(diesel_now),
+    ))
+    .returning(ClientRow::as_returning())
+    .get_result::<ClientRow>(&mut conn)
+    .await
+    {
+        Ok(client) => client,
+        Err(error) => {
+            tracing::warn!(%error, "failed to update oauth client");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "客户端更新失败.",
+            );
+        }
     };
 
-    match row {
-        Ok(client) => json_response(client_json(client)),
-        Err(e) => oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            &format!("客户端更新失败: {e}"),
-        ),
-    }
+    json_response(client_json(client))
 }

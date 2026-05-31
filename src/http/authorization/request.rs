@@ -54,16 +54,23 @@ pub(crate) async fn authorize(
         );
     };
 
-    let Some(client) = find_client(&state.diesel_db, client_id)
-        .await
-        .ok()
-        .flatten()
-    else {
-        return oauth_error(
-            StatusCode::UNAUTHORIZED,
-            "unauthorized_client",
-            "客户端不存在或已停用.",
-        );
+    let client = match find_client(&state.diesel_db, client_id).await {
+        Ok(Some(client)) => client,
+        Ok(None) => {
+            return oauth_error(
+                StatusCode::UNAUTHORIZED,
+                "unauthorized_client",
+                "客户端不存在或已停用.",
+            );
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to query oauth client");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "客户端查询失败.",
+            );
+        }
     };
     if !client.is_active {
         return oauth_error(

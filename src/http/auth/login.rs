@@ -19,12 +19,19 @@ pub(crate) async fn login(
     }
 
     let email = payload.email.trim().to_lowercase();
-    let Some(user) = find_user_by_email(&state.diesel_db, &email)
-        .await
-        .ok()
-        .flatten()
-    else {
-        return oauth_error(StatusCode::UNAUTHORIZED, "access_denied", "邮箱或密码错误.");
+    let user = match find_user_by_email(&state.diesel_db, &email).await {
+        Ok(Some(user)) => user,
+        Ok(None) => {
+            return oauth_error(StatusCode::UNAUTHORIZED, "access_denied", "邮箱或密码错误.");
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to query user for login");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "用户查询失败.",
+            );
+        }
     };
     if !user.is_active || !verify_password(&payload.password, &user.password_hash) {
         return oauth_error(StatusCode::UNAUTHORIZED, "access_denied", "邮箱或密码错误.");

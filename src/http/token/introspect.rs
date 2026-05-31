@@ -38,16 +38,23 @@ pub(crate) async fn introspect(
             "客户端认证失败.",
         );
     };
-    let Some(client) = find_client(&state.diesel_db, client_id)
-        .await
-        .ok()
-        .flatten()
-    else {
-        return oauth_error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_client",
-            "客户端认证失败.",
-        );
+    let client = match find_client(&state.diesel_db, client_id).await {
+        Ok(Some(client)) => client,
+        Ok(None) => {
+            return oauth_error(
+                StatusCode::UNAUTHORIZED,
+                "invalid_client",
+                "客户端认证失败.",
+            );
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to query oauth client for token introspection");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "客户端查询失败.",
+            );
+        }
     };
     if let Err(error) =
         authenticate_token_management_client(&state, &req, &client, &credentials).await
@@ -59,16 +66,32 @@ pub(crate) async fn introspect(
             return json_response(json!({"active": false}));
         }
         let revoked = match get_conn(&state.diesel_db).await {
-            Ok(mut conn) => access_token_revocations::table
+            Ok(mut conn) => match access_token_revocations::table
                 .filter(
                     access_token_revocations::access_token_jti_blake3.eq(blake3_hex(&claims.jti)),
                 )
                 .select(count_star())
                 .first::<i64>(&mut conn)
                 .await
-                .map(|count| count > 0)
-                .unwrap_or(false),
-            Err(_) => false,
+            {
+                Ok(count) => count > 0,
+                Err(error) => {
+                    tracing::warn!(%error, "failed to query access token revocation state");
+                    return oauth_error(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "server_error",
+                        "token 状态查询失败.",
+                    );
+                }
+            },
+            Err(error) => {
+                tracing::warn!(%error, "failed to get database connection for introspection");
+                return oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "token 状态查询失败.",
+                );
+            }
         };
         let active = !revoked && claims.exp > Utc::now().timestamp();
         return json_response(json!({
@@ -87,15 +110,31 @@ pub(crate) async fn introspect(
     }
     let hash = blake3_hex(&form.token);
     let token = match get_conn(&state.diesel_db).await {
-        Ok(mut conn) => oauth_tokens::table
+        Ok(mut conn) => match oauth_tokens::table
             .filter(oauth_tokens::refresh_token_blake3.eq(hash))
             .select(TokenRow::as_select())
             .first::<TokenRow>(&mut conn)
             .await
             .optional()
-            .ok()
-            .flatten(),
-        Err(_) => None,
+        {
+            Ok(value) => value,
+            Err(error) => {
+                tracing::warn!(%error, "failed to query refresh token introspection state");
+                return oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "token 状态查询失败.",
+                );
+            }
+        },
+        Err(error) => {
+            tracing::warn!(%error, "failed to get database connection for introspection");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "token 状态查询失败.",
+            );
+        }
     };
     if let Some(token) = token {
         let active = token.client_id == client.id

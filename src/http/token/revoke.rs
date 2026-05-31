@@ -38,16 +38,23 @@ pub(crate) async fn revoke(
             "客户端认证失败.",
         );
     };
-    let Some(client) = find_client(&state.diesel_db, client_id)
-        .await
-        .ok()
-        .flatten()
-    else {
-        return oauth_error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_client",
-            "客户端认证失败.",
-        );
+    let client = match find_client(&state.diesel_db, client_id).await {
+        Ok(Some(client)) => client,
+        Ok(None) => {
+            return oauth_error(
+                StatusCode::UNAUTHORIZED,
+                "invalid_client",
+                "客户端认证失败.",
+            );
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to query oauth client for token revocation");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "客户端查询失败.",
+            );
+        }
     };
     if let Err(error) =
         authenticate_token_management_client(&state, &req, &client, &credentials).await
@@ -56,7 +63,7 @@ pub(crate) async fn revoke(
     }
     let refresh_hash = blake3_hex(&form.token);
     let updated = match get_conn(&state.diesel_db).await {
-        Ok(mut conn) => diesel::update(
+        Ok(mut conn) => match diesel::update(
             oauth_tokens::table
                 .filter(oauth_tokens::refresh_token_blake3.eq(&refresh_hash))
                 .filter(oauth_tokens::client_id.eq(client.id)),
@@ -64,18 +71,46 @@ pub(crate) async fn revoke(
         .set(oauth_tokens::revoked_at.eq(diesel_now))
         .execute(&mut conn)
         .await
-        .unwrap_or(0),
-        Err(_) => 0,
+        {
+            Ok(updated) => updated,
+            Err(error) => {
+                tracing::warn!(%error, "failed to revoke refresh token");
+                return oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "token 撤销失败.",
+                );
+            }
+        },
+        Err(error) => {
+            tracing::warn!(%error, "failed to get database connection for token revocation");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "token 撤销失败.",
+            );
+        }
     };
     if updated == 0
         && let Some(claims) = decode_access_claims(&state, &form.token)
         && claims.client_id == client.client_id
-        && let (Some(expires_at), Ok(mut conn)) = (
-            DateTime::<Utc>::from_timestamp(claims.exp, 0),
-            get_conn(&state.diesel_db).await,
-        )
+        && let Some(expires_at) = DateTime::<Utc>::from_timestamp(claims.exp, 0)
     {
-        let _ = diesel::insert_into(access_token_revocations::table)
+        let mut conn = match get_conn(&state.diesel_db).await {
+            Ok(conn) => conn,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    "failed to get database connection for access token revocation"
+                );
+                return oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "token 撤销失败.",
+                );
+            }
+        };
+        if let Err(error) = diesel::insert_into(access_token_revocations::table)
             .values((
                 access_token_revocations::access_token_jti_blake3.eq(blake3_hex(&claims.jti)),
                 access_token_revocations::client_id.eq(client.id),
@@ -85,7 +120,15 @@ pub(crate) async fn revoke(
             .on_conflict(access_token_revocations::access_token_jti_blake3)
             .do_nothing()
             .execute(&mut conn)
-            .await;
+            .await
+        {
+            tracing::warn!(%error, "failed to revoke access token");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "token 撤销失败.",
+            );
+        }
     }
     json_response(json!({"result": "已处理"}))
 }

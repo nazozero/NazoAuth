@@ -79,17 +79,25 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
             has_basic,
         );
     };
-    let Some(client) = find_client(&state.diesel_db, client_id)
-        .await
-        .ok()
-        .flatten()
-    else {
-        return oauth_token_error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_client",
-            "客户端不存在或已停用.",
-            has_basic,
-        );
+    let client = match find_client(&state.diesel_db, client_id).await {
+        Ok(Some(client)) => client,
+        Ok(None) => {
+            return oauth_token_error(
+                StatusCode::UNAUTHORIZED,
+                "invalid_client",
+                "客户端不存在或已停用.",
+                has_basic,
+            );
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to query oauth client for token request");
+            return oauth_token_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "客户端查询失败.",
+                false,
+            );
+        }
     };
     if !client.is_active || !json_array_to_strings(&client.grant_types).contains(&form.grant_type) {
         return oauth_token_error(

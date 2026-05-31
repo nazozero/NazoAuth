@@ -247,11 +247,7 @@ pub(crate) async fn upsert_grant(
     client_id: &str,
     scopes: &[String],
 ) -> anyhow::Result<()> {
-    let Some(client) = find_client(&state.diesel_db, client_id)
-        .await
-        .ok()
-        .flatten()
-    else {
+    let Some(client) = find_client(&state.diesel_db, client_id).await? else {
         return Ok(());
     };
     let now = Utc::now();
