@@ -9,8 +9,14 @@ pub(crate) async fn logout(state: Data<AppState>, req: HttpRequest) -> HttpRespo
     with_cookie_headers(
         json_response(json!({"success": true})),
         &[
-            clear_cookie(&state.settings.session_cookie_name),
-            clear_cookie(&state.settings.csrf_cookie_name),
+            clear_cookie(
+                &state.settings.session_cookie_name,
+                state.settings.cookie_secure,
+            ),
+            clear_cookie(
+                &state.settings.csrf_cookie_name,
+                state.settings.cookie_secure,
+            ),
         ],
     )
 }

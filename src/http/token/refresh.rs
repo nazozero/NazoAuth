@@ -1,6 +1,6 @@
 //! refresh_token grant 处理。
-// 只处理 refresh token 轮换、复用检测和 family 撤销。
-use super::{TokenForm, issue_token_response};
+// 只处理 refresh token 校验、复用检测和轮换前置约束。
+use super::{TokenForm, issue_token_response, should_issue_refresh_token};
 use crate::http::prelude::*;
 
 async fn mark_token_family_reuse(state: &AppState, token_family_id: Uuid) -> anyhow::Result<()> {
@@ -108,55 +108,15 @@ pub(crate) async fn token_refresh(
         }
         None
     };
-    let rotated = match get_conn(&state.diesel_db).await {
-        Ok(mut conn) => match diesel::update(
-            oauth_tokens::table
-                .filter(oauth_tokens::id.eq(token.id))
-                .filter(oauth_tokens::revoked_at.is_null()),
-        )
-        .set(oauth_tokens::revoked_at.eq(diesel_now))
-        .execute(&mut conn)
-        .await
-        {
-            Ok(count) => count,
-            Err(error) => {
-                tracing::warn!(%error, "failed to rotate refresh token");
-                return oauth_token_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "refresh_token 轮换失败.",
-                    false,
-                );
-            }
-        },
-        Err(error) => {
-            tracing::warn!(%error, "failed to get database connection for refresh token rotation");
-            return oauth_token_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "refresh_token 轮换失败.",
-                false,
-            );
-        }
-    };
-    if rotated == 0 {
-        if let Err(error) = mark_token_family_reuse(state, token.token_family_id).await {
-            tracing::warn!(%error, "failed to mark refresh token family reuse");
-            return oauth_token_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "refresh_token 复用处理失败.",
-                false,
-            );
-        }
+    let original_scopes = json_array_to_strings(&token.scopes);
+    if !should_issue_refresh_token(&original_scopes) {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
-            "refresh_token 无效或已撤销.",
+            "refresh_token 不具备离线访问授权.",
             false,
         );
     }
-    let original_scopes = json_array_to_strings(&token.scopes);
     let requested_scopes = form.scope.as_deref().map(parse_scope);
     let scopes = match requested_scopes {
         Some(requested) if requested.is_empty() => original_scopes,

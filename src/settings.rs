@@ -17,6 +17,7 @@ pub(crate) struct Settings {
     pub(crate) default_audience: String,
     pub(crate) session_cookie_name: String,
     pub(crate) csrf_cookie_name: String,
+    pub(crate) cookie_secure: bool,
     pub(crate) session_ttl_seconds: u64,
     pub(crate) auth_code_ttl_seconds: u64,
     pub(crate) access_token_ttl_seconds: i64,
@@ -64,8 +65,10 @@ pub(crate) enum SmtpTlsMode {
 impl Settings {
     /// Builds settings from the startup configuration source.
     pub(crate) fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
+        let issuer = config.string("ISSUER", "http://127.0.0.1:8000");
+        let default_cookie_secure = issuer.starts_with("https://");
         Ok(Self {
-            issuer: config.string("ISSUER", "http://127.0.0.1:8000"),
+            issuer,
             frontend_base_url: config.string("FRONTEND_BASE_URL", "http://127.0.0.1:3000"),
             cors_allowed_origins: config
                 .get("CORS_ALLOWED_ORIGINS")
@@ -82,6 +85,7 @@ impl Settings {
             default_audience: config.string("DEFAULT_AUDIENCE", "resource://default"),
             session_cookie_name: config.string("SESSION_COOKIE_NAME", "nazo_oauth_session"),
             csrf_cookie_name: config.string("CSRF_COOKIE_NAME", "nazo_oauth_csrf"),
+            cookie_secure: config.bool("COOKIE_SECURE", default_cookie_secure)?,
             session_ttl_seconds: config.parse("SESSION_TTL_SECONDS", 28_800)?,
             auth_code_ttl_seconds: config.parse("AUTH_CODE_TTL_SECONDS", 300)?,
             access_token_ttl_seconds: config.parse("ACCESS_TOKEN_TTL_SECONDS", 300)?,

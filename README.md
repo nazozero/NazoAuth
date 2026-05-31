@@ -82,6 +82,7 @@ Nazo OAuth Server 是一个基于 Actix Web 的 OAuth 2.1 / OIDC 服务，提供
 | `DEFAULT_AUDIENCE` | `resource://default` | 默认 access token audience |
 | `SESSION_COOKIE_NAME` | `nazo_oauth_session` | 会话 cookie 名 |
 | `CSRF_COOKIE_NAME` | `nazo_oauth_csrf` | CSRF cookie 名 |
+| `COOKIE_SECURE` | HTTPS issuer 时为 `true`，否则为 `false` | 是否给会话和 CSRF cookie 设置 `Secure` 属性 |
 | `SESSION_TTL_SECONDS` | `28800` | 会话有效期，单位为秒 |
 | `AUTH_CODE_TTL_SECONDS` | `300` | 授权码有效期，单位为秒 |
 | `ACCESS_TOKEN_TTL_SECONDS` | `300` | access token 有效期，单位为秒 |
@@ -186,6 +187,8 @@ docker compose up -d nazo_oauth_server
 | `GET` | `/.well-known/openid-configuration` | OIDC discovery |
 | `GET` | `/jwks.json` | JWKS |
 | `GET` | `/userinfo` | OIDC userinfo |
+
+`/token` 仅在授权范围包含 `offline_access` 时签发和轮换 refresh token。
 
 ### 认证与当前用户
 

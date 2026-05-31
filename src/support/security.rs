@@ -185,4 +185,16 @@ mod tests {
         assert_eq!(code.len(), 6);
         assert!(code.chars().all(|value| value.is_ascii_digit()));
     }
+
+    #[test]
+    fn random_urlsafe_token_is_256_bit_opaque_value() {
+        let token = random_urlsafe_token();
+
+        assert_eq!(token.len(), 43);
+        assert!(
+            token
+                .chars()
+                .all(|value| value.is_ascii_alphanumeric() || value == '-' || value == '_')
+        );
+    }
 }

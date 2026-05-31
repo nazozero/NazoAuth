@@ -51,7 +51,7 @@ pub(crate) async fn authorize_decision(
     }
 
     let now = Utc::now();
-    let code = Uuid::now_v7().to_string();
+    let code = random_urlsafe_token();
     let code_payload = CodePayload {
         code_id: Uuid::now_v7().to_string(),
         user_id: payload.user_id,

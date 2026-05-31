@@ -16,6 +16,7 @@ pub(crate) async fn csrf(state: Data<AppState>, req: HttpRequest) -> HttpRespons
             &csrf_token,
             false,
             state.settings.session_ttl_seconds,
+            state.settings.cookie_secure,
         )],
     )
 }
