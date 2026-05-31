@@ -39,6 +39,7 @@ pub(crate) async fn try_load_keyset(
         .and_then(Value::as_array)
         .ok_or_else(|| anyhow!("keyset.json missing keys array"))?;
     let mut active_private_pkcs8_der = None;
+    let mut seen_kids = std::collections::HashSet::new();
     let mut verification_keys = Vec::new();
 
     for entry in keys {
@@ -46,6 +47,9 @@ pub(crate) async fn try_load_keyset(
             .get("kid")
             .and_then(Value::as_str)
             .ok_or_else(|| anyhow!("keyset entry missing kid"))?;
+        if !seen_kids.insert(kid) {
+            anyhow::bail!("keyset.json contains duplicate kid {kid}");
+        }
         let is_active = kid == active_kid;
         if key_entry_is_retired(entry) {
             if is_active {
@@ -256,6 +260,49 @@ mod tests {
         let _ = tokio::fs::remove_dir_all(&keys_dir).await;
 
         assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn duplicate_keyset_kids_are_rejected() {
+        let keys_dir = temp_keys_dir("duplicate_kid");
+        tokio::fs::create_dir_all(&keys_dir).await.unwrap();
+        let first_der = ed25519_pkcs8_private_der(&[1u8; 32]);
+        let second_der = ed25519_pkcs8_private_der(&[2u8; 32]);
+        tokio::fs::write(
+            keys_dir.join("first.pem"),
+            der_to_pem(&first_der, "PRIVATE KEY"),
+        )
+        .await
+        .unwrap();
+        tokio::fs::write(
+            keys_dir.join("second.pem"),
+            der_to_pem(&second_der, "PRIVATE KEY"),
+        )
+        .await
+        .unwrap();
+        tokio::fs::write(
+            keys_dir.join("keyset.json"),
+            serde_json::to_string_pretty(&json!({
+                "active_kid": "duplicate",
+                "keys": [
+                    {"kid": "duplicate", "file": "first.pem", "retire_at": null},
+                    {"kid": "duplicate", "file": "second.pem", "retire_at": null}
+                ]
+            }))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        let settings = test_settings(keys_dir.clone());
+        let keyset_path = keys_dir.join("keyset.json");
+
+        let result = try_load_keyset(&settings, &keyset_path).await;
+        let _ = tokio::fs::remove_dir_all(&keys_dir).await;
+
+        match result {
+            Ok(_) => panic!("duplicate keyset kid should be rejected"),
+            Err(error) => assert!(format!("{error:#}").contains("duplicate kid duplicate")),
+        }
     }
 
     #[tokio::test]

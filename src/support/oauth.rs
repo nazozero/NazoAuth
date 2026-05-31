@@ -129,13 +129,16 @@ pub(crate) fn validate_client_metadata(
     if client_type == "confidential" && token_endpoint_auth_method == "none" {
         anyhow::bail!("confidential 客户端必须使用机密认证方式");
     }
+    if let Some(jwks) = jwks {
+        validate_client_jwks(jwks)?;
+    }
     if token_endpoint_auth_method == "private_key_jwt" {
         if client_type != "confidential" {
             anyhow::bail!("private_key_jwt 只适用于 confidential 客户端");
         }
-        validate_client_jwks(
-            jwks.ok_or_else(|| anyhow::anyhow!("private_key_jwt 客户端必须配置 jwks"))?,
-        )?;
+        if jwks.is_none() {
+            anyhow::bail!("private_key_jwt 客户端必须配置 jwks");
+        }
     }
     if client_type == "public"
         && grant_types
@@ -429,6 +432,41 @@ mod tests {
             &["authorization_code".to_owned()],
             "private_key_jwt",
             Some(&jwks),
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn client_metadata_validates_optional_jwks_for_all_auth_methods() {
+        let private_jwk = json!({
+            "keys": [{
+                "kty": "OKP",
+                "crv": "Ed25519",
+                "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+                "d": URL_SAFE_NO_PAD.encode([8u8; 32]),
+                "kid": "key-1"
+            }]
+        });
+
+        let result = validate_client_metadata(
+            "confidential",
+            &["https://client.example/callback".to_owned()],
+            &["openid".to_owned()],
+            &["resource://default".to_owned()],
+            &["authorization_code".to_owned()],
+            "client_secret_basic",
+            Some(&private_jwk),
+        );
+        assert!(result.is_err());
+
+        let result = validate_client_metadata(
+            "confidential",
+            &["https://client.example/callback".to_owned()],
+            &["openid".to_owned()],
+            &["resource://default".to_owned()],
+            &["authorization_code".to_owned()],
+            "client_secret_basic",
+            None,
         );
         assert!(result.is_ok());
     }

@@ -223,7 +223,7 @@ fn validate_dpop_claims(
     claims: &DpopClaims,
     token_for_ath: Option<&str>,
 ) -> Result<(), DpopError> {
-    let expected_htu = format!("{}{}", issuer.trim_end_matches('/'), path);
+    let expected_htu = format!("{issuer}{path}");
     let actual_htu = normalize_htu(&claims.htu)?;
     if actual_htu != expected_htu || !claims.htm.eq_ignore_ascii_case(method) {
         return Err(DpopError::InvalidProof);

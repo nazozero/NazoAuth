@@ -257,11 +257,7 @@ fn client_assertion_public_key(client: &ClientRow, kid: &str) -> Option<[u8; 32]
 }
 
 fn endpoint_url(settings: &Settings, req: &HttpRequest) -> String {
-    format!(
-        "{}{}",
-        settings.issuer.trim_end_matches('/'),
-        req.uri().path()
-    )
+    format!("{}{}", settings.issuer, req.uri().path())
 }
 
 fn audience_matches(aud: &Value, expected: &str) -> bool {

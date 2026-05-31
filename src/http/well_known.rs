@@ -13,7 +13,7 @@ pub(crate) async fn captcha_config() -> Json<Value> {
 }
 
 fn authorization_server_metadata_value(state: &AppState) -> Value {
-    let issuer = state.settings.issuer.trim_end_matches('/');
+    let issuer = state.settings.issuer.as_str();
     json!({
         "issuer": issuer,
         "authorization_endpoint": format!("{issuer}/authorize"),

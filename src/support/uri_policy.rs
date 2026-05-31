@@ -10,6 +10,9 @@ pub(crate) fn validate_issuer_url(value: &str) -> anyhow::Result<()> {
     if !url.has_host() {
         bail!("issuer 必须包含 host");
     }
+    if value.ends_with('/') {
+        bail!("issuer 不能以 / 结尾");
+    }
     reject_url_credentials("issuer", &url)?;
     if url.query().is_some() || url.fragment().is_some() {
         bail!("issuer 不能包含 query 或 fragment");
@@ -146,6 +149,8 @@ mod tests {
         assert!(validate_issuer_url("https://auth.example").is_ok());
         assert!(validate_issuer_url("http://127.0.0.1:8000").is_ok());
         assert!(validate_issuer_url("http://auth.example").is_err());
+        assert!(validate_issuer_url("https://auth.example/").is_err());
+        assert!(validate_issuer_url("https://auth.example/oauth/").is_err());
         assert!(validate_issuer_url("https://auth.example?x=1").is_err());
         assert!(validate_issuer_url("https://user:pass@auth.example").is_err());
         assert!(validate_frontend_base_url("https://frontend.example/app?x=1").is_err());
