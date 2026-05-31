@@ -18,6 +18,8 @@ pub(crate) async fn discovery(state: Data<AppState>) -> Json<Value> {
         "issuer": issuer,
         "authorization_endpoint": format!("{issuer}/authorize"),
         "token_endpoint": format!("{issuer}/token"),
+        "revocation_endpoint": format!("{issuer}/revoke"),
+        "introspection_endpoint": format!("{issuer}/introspect"),
         "userinfo_endpoint": format!("{issuer}/userinfo"),
         "jwks_uri": format!("{issuer}/jwks.json"),
         "response_types_supported": ["code"],
@@ -27,6 +29,7 @@ pub(crate) async fn discovery(state: Data<AppState>) -> Json<Value> {
         "scopes_supported": ["openid", "profile", "offline_access"],
         "claims_supported": ["sub", "preferred_username"],
         "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
+        "authorization_response_iss_parameter_supported": true,
         "code_challenge_methods_supported": ["S256"],
         "dpop_signing_alg_values_supported": ["EdDSA"]
     }))

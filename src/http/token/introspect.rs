@@ -45,6 +45,9 @@ pub(crate) async fn introspect(
         );
     }
     if let Some(claims) = decode_access_claims(&state, &form.token) {
+        if claims.client_id != client.client_id {
+            return json_response(json!({"active": false}));
+        }
         let revoked = match get_conn(&state.diesel_db).await {
             Ok(mut conn) => access_token_revocations::table
                 .filter(

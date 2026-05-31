@@ -26,10 +26,11 @@ pub(crate) async fn issue_token_response(
     ) {
         Ok(v) => v,
         Err(_) => {
-            return oauth_error(
+            return oauth_token_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "server_error",
                 "令牌签发失败.",
+                false,
             );
         }
     };
@@ -57,10 +58,11 @@ pub(crate) async fn issue_token_response(
         let mut conn = match get_conn(&state.diesel_db).await {
             Ok(conn) => conn,
             Err(_) => {
-                return oauth_error(
+                return oauth_token_error(
                     StatusCode::SERVICE_UNAVAILABLE,
                     "server_error",
                     "refresh token 持久化失败.",
+                    false,
                 );
             }
         };
@@ -81,10 +83,11 @@ pub(crate) async fn issue_token_response(
             .await
             .is_err()
         {
-            return oauth_error(
+            return oauth_token_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "server_error",
                 "refresh token 持久化失败.",
+                false,
             );
         }
         body["refresh_token"] = json!(raw_refresh);
@@ -99,14 +102,15 @@ pub(crate) async fn issue_token_response(
         ) {
             Ok(token) => token,
             Err(_) => {
-                return oauth_error(
+                return oauth_token_error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "server_error",
                     "id_token 签发失败.",
+                    false,
                 );
             }
         };
         body["id_token"] = json!(id_token);
     }
-    json_response(body)
+    json_response_no_store(body)
 }

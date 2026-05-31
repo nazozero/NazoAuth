@@ -10,6 +10,22 @@ pub(crate) fn oauth_error(status: StatusCode, error: &str, description: &str) ->
     )
 }
 
+pub(crate) fn oauth_token_error(
+    status: StatusCode,
+    error: &str,
+    description: &str,
+    basic_challenge: bool,
+) -> HttpResponse {
+    let mut response = no_store(oauth_error(status, error, description));
+    if basic_challenge {
+        response.headers_mut().insert(
+            header::WWW_AUTHENTICATE,
+            HeaderValue::from_static(r#"Basic realm="nazo-oauth""#),
+        );
+    }
+    response
+}
+
 pub(crate) fn oauth_bearer_error(
     status: StatusCode,
     error: &str,
@@ -92,6 +108,23 @@ where
     T: Serialize,
 {
     HttpResponse::build(status).json(body)
+}
+
+pub(crate) fn json_response_no_store<T>(body: T) -> HttpResponse
+where
+    T: Serialize,
+{
+    no_store(json_response(body))
+}
+
+fn no_store(mut response: HttpResponse) -> HttpResponse {
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+        .headers_mut()
+        .insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
+    response
 }
 
 pub(crate) fn bytes_response(body: Vec<u8>) -> HttpResponse {

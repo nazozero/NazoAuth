@@ -86,22 +86,12 @@ pub(crate) async fn insert_client_row(
 
 /// 校验客户端注册请求的协议约束。
 fn validate_client_payload(payload: &CreateClientRequest) -> anyhow::Result<()> {
-    if !matches!(payload.client_type.as_str(), "public" | "confidential") {
-        anyhow::bail!("客户端类型无效");
-    }
-    if payload
-        .grant_types
-        .iter()
-        .any(|grant| grant == "client_credentials")
-        && payload.scopes.iter().any(|scope| scope == "openid")
-    {
-        anyhow::bail!("client_credentials 客户端不能申请 openid 作用域");
-    }
-    if payload.client_type == "public" && payload.token_endpoint_auth_method != "none" {
-        anyhow::bail!("public 客户端只能使用 none 认证方式");
-    }
-    if payload.client_type == "confidential" && payload.token_endpoint_auth_method == "none" {
-        anyhow::bail!("confidential 客户端必须使用机密认证方式");
-    }
-    Ok(())
+    validate_client_metadata(
+        &payload.client_type,
+        &payload.redirect_uris,
+        &payload.scopes,
+        &payload.allowed_audiences,
+        &payload.grant_types,
+        &payload.token_endpoint_auth_method,
+    )
 }

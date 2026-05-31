@@ -45,6 +45,7 @@ pub(crate) async fn authorize_decision(
             &[
                 ("error", "access_denied"),
                 ("state", payload.state.as_deref().unwrap_or("")),
+                ("iss", state.settings.issuer.as_str()),
             ],
         ));
     }
@@ -64,13 +65,21 @@ pub(crate) async fn authorize_decision(
         expires_at: now + Duration::seconds(state.settings.auth_code_ttl_seconds as i64),
     };
     let body = serde_json::to_string(&code_payload).unwrap();
-    let _ = valkey_set_ex(
+    if let Err(error) = valkey_set_ex(
         &state.valkey,
         format!("oauth:auth_code:{code}"),
         body,
         state.settings.auth_code_ttl_seconds,
     )
-    .await;
+    .await
+    {
+        tracing::warn!(%error, "failed to persist authorization code");
+        return oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "授权码创建失败.",
+        );
+    }
     upsert_grant(&state, payload.user_id, &payload.client_id, &payload.scopes)
         .await
         .ok();
@@ -80,6 +89,7 @@ pub(crate) async fn authorize_decision(
         &[
             ("code", &code),
             ("state", payload.state.as_deref().unwrap_or("")),
+            ("iss", state.settings.issuer.as_str()),
         ],
     ))
 }

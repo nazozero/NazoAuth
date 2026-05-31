@@ -22,6 +22,7 @@ pub(crate) mod prelude {
             StatusCode,
             header::{self, HeaderValue},
         },
+        web::Bytes,
         web::{Data, Form, Json, Query},
     };
     pub(crate) use chrono::{DateTime, Duration, Utc};
