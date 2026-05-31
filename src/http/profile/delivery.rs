@@ -7,18 +7,25 @@ pub(crate) async fn access_delivery(
     req: HttpRequest,
     Query(q): Query<HashMap<String, String>>,
 ) -> HttpResponse {
-    let Some(user) = current_user(&state, &req).await else {
-        return oauth_error(
-            StatusCode::UNAUTHORIZED,
-            "login_required",
-            "会话不存在或已过期,请重新登录.",
-        );
+    let user = match current_user_or_login_required(&state, &req).await {
+        Ok(user) => user,
+        Err(response) => return response,
     };
     let Some(token) = q.get("token") else {
         return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "缺少 token.");
     };
     let key = format!("oauth:client_delivery:{}:{token}", user.id);
-    let raw = valkey_getdel(&state.valkey, &key).await.unwrap_or(None);
+    let raw = match valkey_getdel(&state.valkey, &key).await {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(%error, "failed to read client delivery payload");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "凭据读取失败.",
+            );
+        }
+    };
     let Some(raw) = raw else {
         return oauth_error(
             StatusCode::NOT_FOUND,

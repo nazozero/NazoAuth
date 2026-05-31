@@ -72,7 +72,6 @@ pub(crate) mod prelude {
 
     pub(crate) use super::{
         clear_cookie, constant_time_eq, cookie_value, find_client, find_user_by_id,
-        json_array_to_strings, read_avatar_version, sorted_scope_string, valkey_get,
-        with_cookie_headers,
+        json_array_to_strings, sorted_scope_string, valkey_get, with_cookie_headers,
     };
 }

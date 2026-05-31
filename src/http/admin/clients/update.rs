@@ -24,12 +24,8 @@ pub(crate) async fn admin_patch_client(
     if !has_valid_csrf_token(&state, &req, None) {
         return csrf_error();
     }
-    if require_admin(&state, &req).await.is_none() {
-        return oauth_error(
-            StatusCode::FORBIDDEN,
-            "access_denied",
-            "当前账号无管理权限.",
-        );
+    if let Err(response) = require_admin_or_forbidden(&state, &req).await {
+        return response;
     }
 
     let current = match find_client(&state.diesel_db, &client_id).await {

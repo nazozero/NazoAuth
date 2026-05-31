@@ -13,10 +13,8 @@ pub(crate) async fn access_request_count(
     db: &DbPool,
     search: Option<&str>,
     status: Option<AccessRequestStatus>,
-) -> i64 {
-    let Ok(mut conn) = get_conn(db).await else {
-        return 0;
-    };
+) -> anyhow::Result<i64> {
+    let mut conn = get_conn(db).await?;
     let mut query = client_access_requests::table
         .inner_join(users::table.on(users::id.eq(client_access_requests::user_id)))
         .into_boxed();
@@ -35,7 +33,7 @@ pub(crate) async fn access_request_count(
         .select(count(client_access_requests::id))
         .first::<i64>(&mut conn)
         .await
-        .unwrap_or(0)
+        .map_err(Into::into)
 }
 
 pub(crate) async fn access_request_rows(
@@ -44,10 +42,8 @@ pub(crate) async fn access_request_rows(
     offset: i32,
     search: Option<&str>,
     status: Option<AccessRequestStatus>,
-) -> Vec<Value> {
-    let Ok(mut conn) = get_conn(db).await else {
-        return Vec::new();
-    };
+) -> anyhow::Result<Vec<Value>> {
+    let mut conn = get_conn(db).await?;
     let mut query = client_access_requests::table
         .inner_join(users::table.on(users::id.eq(client_access_requests::user_id)))
         .into_boxed();
@@ -62,7 +58,7 @@ pub(crate) async fn access_request_rows(
                 .or(client_access_requests::site_url.ilike(pattern)),
         );
     }
-    query
+    let rows = query
         .select((
             client_access_requests::id,
             client_access_requests::user_id,
@@ -80,16 +76,16 @@ pub(crate) async fn access_request_rows(
         .limit(limit as i64)
         .offset(offset as i64)
         .load::<AccessRequestRow>(&mut conn)
-        .await
-        .unwrap_or_default()
+        .await?
         .into_iter()
         .map(access_request_json)
-        .collect()
+        .collect::<Vec<_>>();
+    Ok(rows)
 }
 
-pub(crate) async fn access_request_by_id(db: &DbPool, id: Uuid) -> Option<Value> {
-    let mut conn = get_conn(db).await.ok()?;
-    client_access_requests::table
+pub(crate) async fn access_request_by_id(db: &DbPool, id: Uuid) -> anyhow::Result<Option<Value>> {
+    let mut conn = get_conn(db).await?;
+    Ok(client_access_requests::table
         .inner_join(users::table.on(users::id.eq(client_access_requests::user_id)))
         .filter(client_access_requests::id.eq(id))
         .select((
@@ -107,10 +103,8 @@ pub(crate) async fn access_request_by_id(db: &DbPool, id: Uuid) -> Option<Value>
         ))
         .first::<AccessRequestRow>(&mut conn)
         .await
-        .optional()
-        .ok()
-        .flatten()
-        .map(access_request_json)
+        .optional()?
+        .map(access_request_json))
 }
 
 pub(crate) fn access_request_json(row: AccessRequestRow) -> Value {

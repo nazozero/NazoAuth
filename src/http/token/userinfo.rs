@@ -14,13 +14,22 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest) -> HttpRes
         );
     };
     let revoked = match get_conn(&state.diesel_db).await {
-        Ok(mut conn) => access_token_revocations::table
+        Ok(mut conn) => match access_token_revocations::table
             .filter(access_token_revocations::access_token_jti_blake3.eq(blake3_hex(&claims.jti)))
             .select(count_star())
             .first::<i64>(&mut conn)
             .await
-            .map(|count| count > 0)
-            .unwrap_or(false),
+        {
+            Ok(count) => count > 0,
+            Err(error) => {
+                tracing::warn!(%error, "failed to query userinfo token revocation state");
+                return oauth_bearer_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "userinfo 查询失败.",
+                );
+            }
+        },
         Err(error) => {
             tracing::warn!(%error, "failed to check userinfo token revocation");
             return oauth_bearer_error(

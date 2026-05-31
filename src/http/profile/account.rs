@@ -3,10 +3,21 @@
 use crate::http::prelude::*;
 
 pub(crate) async fn me(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
-    let Some(user) = current_user(&state, &req).await else {
-        return login_required_response(&state);
+    let user = match current_user_or_login_required(&state, &req).await {
+        Ok(user) => user,
+        Err(response) => return response,
     };
-    json_response(auth_me_json(&state, &user).await)
+    match auth_me_json(&state, &user).await {
+        Ok(body) => json_response(body),
+        Err(error) => {
+            tracing::warn!(%error, "failed to build auth me response");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "当前用户资料查询失败.",
+            )
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -22,8 +33,9 @@ pub(crate) async fn update_me(
     if !has_valid_csrf_token(&state, &req, None) {
         return csrf_error();
     }
-    let Some(user) = current_user(&state, &req).await else {
-        return login_required_response(&state);
+    let user = match current_user_or_login_required(&state, &req).await {
+        Ok(user) => user,
+        Err(response) => return response,
     };
     let display_name = payload
         .display_name
@@ -48,11 +60,24 @@ pub(crate) async fn update_me(
         .get_result::<UserRow>(&mut conn)
         .await;
     match updated {
-        Ok(user) => json_response(auth_me_json(&state, &user).await),
-        Err(_) => oauth_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "server_error",
-            "资料更新失败.",
-        ),
+        Ok(user) => match auth_me_json(&state, &user).await {
+            Ok(body) => json_response(body),
+            Err(error) => {
+                tracing::warn!(%error, "failed to build updated auth me response");
+                oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "当前用户资料查询失败.",
+                )
+            }
+        },
+        Err(error) => {
+            tracing::warn!(%error, "failed to update profile");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "资料更新失败.",
+            )
+        }
     }
 }

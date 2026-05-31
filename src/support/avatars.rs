@@ -31,40 +31,14 @@ pub(crate) fn detect_avatar_content_type(bytes: &[u8]) -> Option<&'static str> {
     None
 }
 
-pub(crate) async fn read_avatar_meta(state: &AppState, user_id: Uuid) -> Option<Value> {
-    let raw = tokio::fs::read_to_string(avatar_meta_path(state, user_id))
-        .await
-        .ok()?;
-    serde_json::from_str(&raw).ok()
-}
-
-pub(crate) async fn read_avatar_content_type(
+pub(crate) async fn read_avatar_meta(
     state: &AppState,
     user_id: Uuid,
-) -> Option<&'static str> {
-    match read_avatar_meta(state, user_id)
-        .await?
-        .get("content_type")?
-        .as_str()?
-    {
-        "image/png" => Some("image/png"),
-        "image/jpeg" => Some("image/jpeg"),
-        "image/webp" => Some("image/webp"),
-        _ => None,
-    }
-}
-
-pub(crate) async fn read_avatar_version(state: &AppState, user_id: Uuid) -> Option<String> {
-    if !tokio::fs::try_exists(avatar_path(state, user_id))
-        .await
-        .ok()?
-    {
-        return None;
-    }
-    read_avatar_meta(state, user_id)
-        .await?
-        .get("version")?
-        .as_str()
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
+) -> anyhow::Result<Option<Value>> {
+    let raw = match tokio::fs::read_to_string(avatar_meta_path(state, user_id)).await {
+        Ok(raw) => raw,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    Ok(Some(serde_json::from_str(&raw)?))
 }

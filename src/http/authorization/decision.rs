@@ -18,8 +18,9 @@ pub(crate) async fn authorize_decision(
     if !has_valid_csrf_token(&state, &req, form.csrf_token.as_deref()) {
         return csrf_error();
     }
-    let Some(user) = current_user(&state, &req).await else {
-        return login_required_response(&state);
+    let user = match current_user_or_login_required(&state, &req).await {
+        Ok(user) => user,
+        Err(response) => return response,
     };
 
     let key = format!("oauth:consent:{}", form.request_id);
