@@ -3,15 +3,12 @@
 use crate::http::prelude::*;
 
 pub(crate) async fn my_applications(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
-    let Some(user) = current_user(&state, &req).await else {
-        return oauth_error(
-            StatusCode::UNAUTHORIZED,
-            "login_required",
-            "会话不存在或已过期,请重新登录.",
-        );
+    let user = match current_user_or_login_required(&state, &req).await {
+        Ok(user) => user,
+        Err(response) => return response,
     };
     let rows = match get_conn(&state.diesel_db).await {
-        Ok(mut conn) => user_client_grants::table
+        Ok(mut conn) => match user_client_grants::table
             .inner_join(
                 oauth_clients::table.on(oauth_clients::id.eq(user_client_grants::client_id)),
             )
@@ -26,8 +23,25 @@ pub(crate) async fn my_applications(state: Data<AppState>, req: HttpRequest) -> 
             .order(user_client_grants::last_authorized_at.desc())
             .load::<MyApplicationRow>(&mut conn)
             .await
-            .unwrap_or_default(),
-        Err(_) => Vec::new(),
+        {
+            Ok(rows) => rows,
+            Err(error) => {
+                tracing::warn!(%error, "failed to load user applications");
+                return oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "授权应用查询失败.",
+                );
+            }
+        },
+        Err(error) => {
+            tracing::warn!(%error, "failed to get database connection for user applications");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权应用查询失败.",
+            );
+        }
     };
     let items: Vec<Value> = rows
         .into_iter()

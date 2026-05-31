@@ -36,6 +36,7 @@ pub(crate) struct ConsentPayload {
     pub(crate) client_id: String,
     pub(crate) client_name: String,
     pub(crate) redirect_uri: String,
+    pub(crate) redirect_uri_was_supplied: bool,
     pub(crate) scopes: Vec<String>,
     pub(crate) state: Option<String>,
     pub(crate) nonce: Option<String>,
@@ -52,12 +53,23 @@ pub(crate) struct CodePayload {
     pub(crate) user_id: Uuid,
     pub(crate) client_id: String,
     pub(crate) redirect_uri: String,
+    pub(crate) redirect_uri_was_supplied: bool,
     pub(crate) scopes: Vec<String>,
     pub(crate) nonce: Option<String>,
     pub(crate) code_challenge: String,
     pub(crate) code_challenge_method: String,
     pub(crate) issued_at: DateTime<Utc>,
     pub(crate) expires_at: DateTime<Utc>,
+}
+
+/// 已成功兑换的授权码索引，用于发现授权码重放后撤销前次签发的令牌。
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub(crate) struct ConsumedAuthorizationCode {
+    pub(crate) client_id: Uuid,
+    pub(crate) access_token_jti: String,
+    pub(crate) access_token_expires_at: i64,
+    pub(crate) refresh_token_family_id: Option<Uuid>,
+    pub(crate) consumed_at: DateTime<Utc>,
 }
 
 /// token 签发函数所需的归一化输入。
@@ -70,4 +82,5 @@ pub(crate) struct TokenIssue {
     pub(crate) include_refresh: bool,
     pub(crate) rotation: Option<(Uuid, Option<Uuid>)>,
     pub(crate) dpop_jkt: Option<String>,
+    pub(crate) authorization_code_hash: Option<String>,
 }

@@ -60,6 +60,8 @@ pub(crate) struct ClientRow {
     pub(crate) token_endpoint_auth_method: String,
     #[diesel(sql_type = diesel::sql_types::Bool)]
     pub(crate) is_active: bool,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Jsonb>)]
+    pub(crate) jwks: Option<Value>,
 }
 
 /// oauth_tokens 表 token 行。

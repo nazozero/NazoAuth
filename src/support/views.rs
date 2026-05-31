@@ -3,28 +3,26 @@
 
 use super::prelude::*;
 
-pub(crate) async fn auth_me_json(state: &AppState, user: &UserRow) -> Value {
+pub(crate) async fn auth_me_json(state: &AppState, user: &UserRow) -> anyhow::Result<Value> {
     let count = match get_conn(&state.diesel_db).await {
-        Ok(mut conn) => user_client_grants::table
-            .filter(user_client_grants::user_id.eq(user.id))
-            .select(count(user_client_grants::client_id).aggregate_distinct())
-            .first::<i64>(&mut conn)
-            .await
-            .unwrap_or(0),
-        Err(_) => 0,
+        Ok(mut conn) => {
+            user_client_grants::table
+                .filter(user_client_grants::user_id.eq(user.id))
+                .select(count(user_client_grants::client_id).aggregate_distinct())
+                .first::<i64>(&mut conn)
+                .await?
+        }
+        Err(error) => return Err(error),
     };
-    let avatar_url = read_avatar_version(state, user.id)
-        .await
-        .map(|version| format!("/auth/me/avatar?v={version}"));
-    json!({
+    Ok(json!({
         "id": user.id,
         "email": user.email,
         "display_name": user.display_name,
-        "avatar_url": avatar_url,
+        "avatar_url": user.avatar_url,
         "role": user.role,
         "admin_level": user.admin_level,
         "authorized_app_count": count
-    })
+    }))
 }
 
 pub(crate) fn is_cross_site_fetch(headers: &HeaderMap) -> bool {
@@ -57,7 +55,8 @@ pub(crate) fn client_json(client: ClientRow) -> Value {
         "allowed_audiences": json_array_to_strings(&client.allowed_audiences),
         "grant_types": json_array_to_strings(&client.grant_types),
         "token_endpoint_auth_method": client.token_endpoint_auth_method,
-        "is_active": client.is_active
+        "is_active": client.is_active,
+        "jwks": client.jwks
     })
 }
 

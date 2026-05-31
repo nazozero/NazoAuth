@@ -8,12 +8,23 @@ pub(crate) async fn authorize_consent(
     req: HttpRequest,
     Query(q): Query<HashMap<String, String>>,
 ) -> HttpResponse {
-    let Some(user) = current_user(&state, &req).await else {
-        return oauth_error(
-            StatusCode::UNAUTHORIZED,
-            "login_required",
-            "授权前必须先登录.",
-        );
+    let user = match current_user(&state, &req).await {
+        Ok(Some(user)) => user,
+        Ok(None) => {
+            return oauth_error(
+                StatusCode::UNAUTHORIZED,
+                "login_required",
+                "授权前必须先登录.",
+            );
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to resolve authorization consent user");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "会话查询失败.",
+            );
+        }
     };
     let Some(request_id) = q.get("request_id") else {
         return oauth_error(
@@ -23,9 +34,17 @@ pub(crate) async fn authorize_consent(
         );
     };
 
-    let raw = valkey_get(&state.valkey, format!("oauth:consent:{request_id}"))
-        .await
-        .unwrap_or(None);
+    let raw = match valkey_get(&state.valkey, format!("oauth:consent:{request_id}")).await {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(%error, "failed to read authorization consent state");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权请求读取失败.",
+            );
+        }
+    };
     let Some(payload) = raw.and_then(|v| serde_json::from_str::<ConsentPayload>(&v).ok()) else {
         return oauth_error(
             StatusCode::BAD_REQUEST,

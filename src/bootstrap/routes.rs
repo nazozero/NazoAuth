@@ -17,6 +17,10 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig) {
             "/.well-known/openid-configuration",
             web::get().to(discovery),
         )
+        .route(
+            "/.well-known/oauth-authorization-server",
+            web::get().to(oauth_authorization_server_metadata),
+        )
         .route("/jwks.json", web::get().to(jwks))
         .route("/userinfo", web::get().to(userinfo))
         .service(

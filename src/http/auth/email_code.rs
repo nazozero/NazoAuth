@@ -12,6 +12,10 @@ pub(crate) async fn send_code(
     req: HttpRequest,
     Json(payload): Json<SendCodeRequest>,
 ) -> HttpResponse {
+    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
+        return response;
+    }
+
     let Ok(recipient) = parse_email_recipient(&payload.email) else {
         return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "邮箱格式无效.");
     };

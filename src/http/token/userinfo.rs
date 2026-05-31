@@ -14,13 +14,22 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest) -> HttpRes
         );
     };
     let revoked = match get_conn(&state.diesel_db).await {
-        Ok(mut conn) => access_token_revocations::table
+        Ok(mut conn) => match access_token_revocations::table
             .filter(access_token_revocations::access_token_jti_blake3.eq(blake3_hex(&claims.jti)))
             .select(count_star())
             .first::<i64>(&mut conn)
             .await
-            .map(|count| count > 0)
-            .unwrap_or(false),
+        {
+            Ok(count) => count > 0,
+            Err(error) => {
+                tracing::warn!(%error, "failed to query userinfo token revocation state");
+                return oauth_bearer_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "userinfo 查询失败.",
+                );
+            }
+        },
         Err(error) => {
             tracing::warn!(%error, "failed to check userinfo token revocation");
             return oauth_bearer_error(
@@ -38,14 +47,20 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest) -> HttpRes
             if let Err(error) =
                 validate_dpop_proof(&state, &req, Some(&token), Some(&cnf.jkt)).await
             {
-                return dpop_error_response(error);
+                return dpop_error_response(error, DpopErrorContext::ProtectedResource);
             }
         }
         (AccessTokenAuthScheme::DPoP, None) => {
-            return dpop_error_response(DpopError::TokenNotBound);
+            return dpop_error_response(
+                DpopError::TokenNotBound,
+                DpopErrorContext::ProtectedResource,
+            );
         }
         (AccessTokenAuthScheme::Bearer, Some(_)) => {
-            return dpop_error_response(DpopError::MissingProof);
+            return dpop_error_response(
+                DpopError::MissingProof,
+                DpopErrorContext::ProtectedResource,
+            );
         }
         (AccessTokenAuthScheme::Bearer, None) => {}
     }
@@ -61,22 +76,34 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest) -> HttpRes
             "userinfo 需要 openid scope.",
         );
     }
-    let preferred_username = match Uuid::parse_str(&claims.sub) {
-        Ok(user_id) => match find_user_by_id(&state.diesel_db, user_id).await {
-            Ok(user) => user.map(|user| user.email),
-            Err(error) => {
-                tracing::warn!(%error, "failed to load userinfo subject");
-                return oauth_bearer_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "userinfo 查询失败.",
-                );
-            }
-        },
-        Err(_) => None,
+    let scopes = parse_scope(&claims.scope);
+    let user_id = match Uuid::parse_str(&claims.sub) {
+        Ok(user_id) => user_id,
+        Err(_) => {
+            return oauth_bearer_error(
+                StatusCode::UNAUTHORIZED,
+                "invalid_token",
+                "访问令牌主体无效.",
+            );
+        }
     };
-    json_response(json!({
-        "sub": claims.sub,
-        "preferred_username": preferred_username
-    }))
+    let user = match find_user_by_id(&state.diesel_db, user_id).await {
+        Ok(Some(user)) if user.is_active => user,
+        Ok(_) => {
+            return oauth_bearer_error(
+                StatusCode::UNAUTHORIZED,
+                "invalid_token",
+                "访问令牌主体不存在或已停用.",
+            );
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to load userinfo subject");
+            return oauth_bearer_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "userinfo 查询失败.",
+            );
+        }
+    };
+    json_response_no_store(oidc_user_claims(&user, &scopes, &claims.sub))
 }

@@ -7,6 +7,9 @@ use anyhow::{Context, bail};
 use lettre::message::Mailbox;
 
 use crate::config::ConfigSource;
+use crate::support::{
+    is_loopback_http_url, validate_cors_origin, validate_frontend_base_url, validate_issuer_url,
+};
 
 /// OAuth service runtime parameters.
 #[derive(Clone)]
@@ -25,10 +28,19 @@ pub(crate) struct Settings {
     pub(crate) refresh_token_ttl_seconds: i64,
     pub(crate) avatar_max_bytes: usize,
     pub(crate) client_delivery_ttl_seconds: u64,
+    pub(crate) rate_limit: RateLimitSettings,
     pub(crate) email: EmailSettings,
     pub(crate) email_code_dev_response_enabled: bool,
     pub(crate) avatar_storage_dir: PathBuf,
     pub(crate) jwk_keys_dir: PathBuf,
+}
+
+#[derive(Clone)]
+pub(crate) struct RateLimitSettings {
+    pub(crate) window_seconds: u64,
+    pub(crate) auth_max_requests: u64,
+    pub(crate) token_max_requests: u64,
+    pub(crate) token_management_max_requests: u64,
 }
 
 #[derive(Clone)]
@@ -66,26 +78,37 @@ impl Settings {
     /// Builds settings from the startup configuration source.
     pub(crate) fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
         let issuer = config.string("ISSUER", "http://127.0.0.1:8000");
+        validate_issuer_url(&issuer)?;
+        let frontend_base_url = config.string("FRONTEND_BASE_URL", "http://127.0.0.1:3000");
+        validate_frontend_base_url(&frontend_base_url)?;
+        let cors_allowed_origins = config
+            .get("CORS_ALLOWED_ORIGINS")
+            .map(|value| {
+                value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(ToOwned::to_owned)
+                    .collect()
+            })
+            .filter(|values: &Vec<String>| !values.is_empty())
+            .unwrap_or_else(|| vec!["http://127.0.0.1:3000".into()]);
+        for origin in &cors_allowed_origins {
+            validate_cors_origin(origin)?;
+        }
         let default_cookie_secure = issuer.starts_with("https://");
+        let cookie_secure = config.bool("COOKIE_SECURE", default_cookie_secure)?;
+        if !cookie_secure && !is_loopback_http_url(&issuer) {
+            bail!("COOKIE_SECURE=false 只允许用于 loopback HTTP 本地开发 issuer");
+        }
         Ok(Self {
             issuer,
-            frontend_base_url: config.string("FRONTEND_BASE_URL", "http://127.0.0.1:3000"),
-            cors_allowed_origins: config
-                .get("CORS_ALLOWED_ORIGINS")
-                .map(|value| {
-                    value
-                        .split(',')
-                        .map(str::trim)
-                        .filter(|value| !value.is_empty())
-                        .map(ToOwned::to_owned)
-                        .collect()
-                })
-                .filter(|values: &Vec<String>| !values.is_empty())
-                .unwrap_or_else(|| vec!["http://127.0.0.1:3000".into()]),
+            frontend_base_url,
+            cors_allowed_origins,
             default_audience: config.string("DEFAULT_AUDIENCE", "resource://default"),
             session_cookie_name: config.string("SESSION_COOKIE_NAME", "nazo_oauth_session"),
             csrf_cookie_name: config.string("CSRF_COOKIE_NAME", "nazo_oauth_csrf"),
-            cookie_secure: config.bool("COOKIE_SECURE", default_cookie_secure)?,
+            cookie_secure,
             session_ttl_seconds: config.parse("SESSION_TTL_SECONDS", 28_800)?,
             auth_code_ttl_seconds: config.parse("AUTH_CODE_TTL_SECONDS", 300)?,
             access_token_ttl_seconds: config.parse("ACCESS_TOKEN_TTL_SECONDS", 300)?,
@@ -93,6 +116,7 @@ impl Settings {
             refresh_token_ttl_seconds: config.parse("REFRESH_TOKEN_TTL_SECONDS", 2_592_000)?,
             avatar_max_bytes: config.parse("AVATAR_MAX_BYTES", 2_097_152)?,
             client_delivery_ttl_seconds: config.parse("CLIENT_DELIVERY_TTL_SECONDS", 86_400)?,
+            rate_limit: RateLimitSettings::from_config(config)?,
             email: EmailSettings::from_config(config)?,
             email_code_dev_response_enabled: config
                 .bool("EMAIL_CODE_DEV_RESPONSE_ENABLED", false)?,
@@ -101,6 +125,28 @@ impl Settings {
             ),
             jwk_keys_dir: PathBuf::from(config.string("JWK_KEYS_DIR", "runtime/keys")),
         })
+    }
+}
+
+impl RateLimitSettings {
+    fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
+        let settings = Self {
+            window_seconds: config.parse("RATE_LIMIT_WINDOW_SECONDS", 60)?,
+            auth_max_requests: config.parse("AUTH_RATE_LIMIT_MAX_REQUESTS", 30)?,
+            token_max_requests: config.parse("TOKEN_RATE_LIMIT_MAX_REQUESTS", 60)?,
+            token_management_max_requests: config
+                .parse("TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS", 120)?,
+        };
+        if settings.window_seconds == 0 {
+            bail!("RATE_LIMIT_WINDOW_SECONDS must be greater than 0");
+        }
+        if settings.auth_max_requests == 0
+            || settings.token_max_requests == 0
+            || settings.token_management_max_requests == 0
+        {
+            bail!("rate limit request caps must be greater than 0");
+        }
+        Ok(settings)
     }
 }
 

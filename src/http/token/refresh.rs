@@ -100,16 +100,16 @@ pub(crate) async fn token_refresh(
     let dpop_jkt = if let Some(expected_jkt) = token.dpop_jkt.clone() {
         match validate_dpop_proof(state, req, None, Some(&expected_jkt)).await {
             Ok(_) => Some(expected_jkt),
-            Err(error) => return dpop_error_response(error),
+            Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
         }
     } else {
         if dpop_proof_present(req) {
-            return dpop_error_response(DpopError::TokenNotBound);
+            return dpop_error_response(DpopError::TokenNotBound, DpopErrorContext::TokenEndpoint);
         }
         None
     };
     let original_scopes = json_array_to_strings(&token.scopes);
-    if !should_issue_refresh_token(&original_scopes) {
+    if !should_issue_refresh_token(client, &original_scopes) {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
@@ -155,6 +155,7 @@ pub(crate) async fn token_refresh(
             include_refresh: true,
             rotation: Some((token.token_family_id, Some(token.id))),
             dpop_jkt,
+            authorization_code_hash: None,
         },
     )
     .await

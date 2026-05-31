@@ -9,6 +9,23 @@ pub(crate) struct DecisionForm {
     csrf_token: Option<String>,
 }
 
+enum AuthorizationDecision {
+    Approve,
+    Deny,
+}
+
+fn parse_authorization_decision(value: &str) -> Option<AuthorizationDecision> {
+    match value {
+        "approve" => Some(AuthorizationDecision::Approve),
+        "deny" => Some(AuthorizationDecision::Deny),
+        _ => None,
+    }
+}
+
+fn parse_consent_payload(raw: Option<String>) -> Option<ConsentPayload> {
+    raw.and_then(|value| serde_json::from_str::<ConsentPayload>(&value).ok())
+}
+
 /// 处理用户对授权请求的同意或拒绝。
 pub(crate) async fn authorize_decision(
     state: Data<AppState>,
@@ -18,13 +35,52 @@ pub(crate) async fn authorize_decision(
     if !has_valid_csrf_token(&state, &req, form.csrf_token.as_deref()) {
         return csrf_error();
     }
-    let Some(user) = current_user(&state, &req).await else {
-        return login_required_response(&state);
+    let Some(decision) = parse_authorization_decision(&form.decision) else {
+        return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "授权决策无效.");
+    };
+    let user = match current_user_or_login_required(&state, &req).await {
+        Ok(user) => user,
+        Err(response) => return response,
     };
 
     let key = format!("oauth:consent:{}", form.request_id);
-    let raw = valkey_getdel(&state.valkey, &key).await.unwrap_or(None);
-    let Some(payload) = raw.and_then(|v| serde_json::from_str::<ConsentPayload>(&v).ok()) else {
+    let raw = match valkey_get(&state.valkey, &key).await {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(%error, "failed to read authorization consent state");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权请求读取失败.",
+            );
+        }
+    };
+    let Some(payload) = parse_consent_payload(raw) else {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "授权请求不存在或已过期,请重新发起授权.",
+        );
+    };
+    if payload.user_id != user.id {
+        return oauth_error(
+            StatusCode::FORBIDDEN,
+            "access_denied",
+            "当前会话与授权请求不匹配.",
+        );
+    }
+    let raw = match valkey_getdel(&state.valkey, &key).await {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(%error, "failed to consume authorization consent state");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权请求读取失败.",
+            );
+        }
+    };
+    let Some(payload) = parse_consent_payload(raw) else {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -39,15 +95,18 @@ pub(crate) async fn authorize_decision(
         );
     }
 
-    if form.decision == "deny" {
-        return redirect_found(append_query(
-            &payload.redirect_uri,
-            &[
-                ("error", "access_denied"),
-                ("state", payload.state.as_deref().unwrap_or("")),
-                ("iss", state.settings.issuer.as_str()),
-            ],
-        ));
+    match decision {
+        AuthorizationDecision::Deny => {
+            return redirect_found(append_query(
+                &payload.redirect_uri,
+                &[
+                    ("error", "access_denied"),
+                    ("state", payload.state.as_deref().unwrap_or("")),
+                    ("iss", state.settings.issuer.as_str()),
+                ],
+            ));
+        }
+        AuthorizationDecision::Approve => {}
     }
 
     let now = Utc::now();
@@ -57,6 +116,7 @@ pub(crate) async fn authorize_decision(
         user_id: payload.user_id,
         client_id: payload.client_id.clone(),
         redirect_uri: payload.redirect_uri.clone(),
+        redirect_uri_was_supplied: payload.redirect_uri_was_supplied,
         scopes: payload.scopes.clone(),
         nonce: payload.nonce,
         code_challenge: payload.code_challenge,
@@ -65,9 +125,10 @@ pub(crate) async fn authorize_decision(
         expires_at: now + Duration::seconds(state.settings.auth_code_ttl_seconds as i64),
     };
     let body = serde_json::to_string(&code_payload).unwrap();
+    let code_key = authorization_code_key(&code);
     if let Err(error) = valkey_set_ex(
         &state.valkey,
-        format!("oauth:auth_code:{code}"),
+        code_key.clone(),
         body,
         state.settings.auth_code_ttl_seconds,
     )
@@ -80,9 +141,19 @@ pub(crate) async fn authorize_decision(
             "授权码创建失败.",
         );
     }
-    upsert_grant(&state, payload.user_id, &payload.client_id, &payload.scopes)
-        .await
-        .ok();
+    if let Err(error) =
+        upsert_grant(&state, payload.user_id, &payload.client_id, &payload.scopes).await
+    {
+        tracing::warn!(%error, "failed to persist user client grant");
+        if let Err(cleanup_error) = valkey_del(&state.valkey, &code_key).await {
+            tracing::warn!(%cleanup_error, "failed to remove authorization code after grant failure");
+        }
+        return oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "授权记录写入失败.",
+        );
+    }
 
     redirect_found(append_query(
         &payload.redirect_uri,
@@ -92,4 +163,28 @@ pub(crate) async fn authorize_decision(
             ("iss", state.settings.issuer.as_str()),
         ],
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn authorization_decision_is_explicit_allowlist() {
+        assert!(matches!(
+            parse_authorization_decision("approve"),
+            Some(AuthorizationDecision::Approve)
+        ));
+        assert!(matches!(
+            parse_authorization_decision("deny"),
+            Some(AuthorizationDecision::Deny)
+        ));
+        assert!(parse_authorization_decision("anything-else").is_none());
+    }
+
+    #[test]
+    fn missing_or_malformed_consent_payload_is_rejected() {
+        assert!(parse_consent_payload(None).is_none());
+        assert!(parse_consent_payload(Some("not-json".to_owned())).is_none());
+    }
 }

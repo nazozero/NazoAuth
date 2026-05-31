@@ -39,9 +39,9 @@ pub(crate) mod prelude {
 
     pub(crate) use crate::db::get_conn;
     pub(crate) use crate::domain::{
-        AccessRequestStatus, AppState, ClientRow, CodePayload, ConsentPayload, GrantRow,
-        MyApplicationRow, PendingAccessRequestRow, TokenIssue, TokenRow, UserAccessRequestRow,
-        UserRow,
+        AccessRequestStatus, AppState, ClientRow, CodePayload, ConsentPayload,
+        ConsumedAuthorizationCode, GrantRow, MyApplicationRow, PendingAccessRequestRow, TokenIssue,
+        TokenRow, UserAccessRequestRow, UserRow,
     };
     pub(crate) use crate::schema::{
         access_token_revocations, client_access_requests, oauth_clients, oauth_tokens,

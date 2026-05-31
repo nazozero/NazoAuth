@@ -4,9 +4,9 @@ use crate::http::prelude::*;
 
 /// 为当前会话生成新的 CSRF token。
 pub(crate) async fn csrf(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
-    if current_user(&state, &req).await.is_none() {
-        return login_required_response(&state);
-    }
+    if let Err(response) = current_user_or_login_required(&state, &req).await {
+        return response;
+    };
 
     let csrf_token = random_urlsafe_token();
     with_cookie_headers(

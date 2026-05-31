@@ -7,8 +7,11 @@ Nazo OAuth Server 是一个基于 Actix Web 的 OAuth 2.1 / OIDC 服务，提供
 - OAuth 2.1 authorization code + PKCE、refresh token、client credentials 流程
 - OpenID Connect discovery、JWKS、userinfo
 - Ed25519 JWT 签名
+- `client_secret_basic`、`client_secret_post`、`private_key_jwt` 和 public client 认证
 - refresh token 轮换与复用检测
-- 精确 redirect URI 匹配、S256 PKCE、敏感 token 响应 no-store
+- HTTPS / loopback / native redirect URI 门禁、S256 PKCE、授权码重放撤销、DPoP proof 与 nonce、敏感 token 响应 no-store
+- active + previous JWKS 发布与 access token 验签
+- 基于 Valkey 的登录、注册、token、introspection 和 revoke 限流
 - 基于 Cookie 的用户会话和 CSRF 防护
 - 管理端用户、客户端、授权记录和接入申请接口
 - PostgreSQL 持久化与 Rust 原生数据库迁移
@@ -76,13 +79,13 @@ Nazo OAuth Server 是一个基于 Actix Web 的 OAuth 2.1 / OIDC 服务，提供
 | `BIND` | `0.0.0.0:8000` | HTTP 监听地址 |
 | `DATABASE_URL` | `postgresql://postgres:postgres@127.0.0.1:5432/oauth` | PostgreSQL 连接串 |
 | `VALKEY_URL` | `redis://127.0.0.1:6379/0` | Valkey 连接串 |
-| `ISSUER` | `http://127.0.0.1:8000` | OAuth/OIDC issuer |
-| `FRONTEND_BASE_URL` | `http://127.0.0.1:3000` | 前端地址，用于登录和授权确认跳转 |
-| `CORS_ALLOWED_ORIGINS` | `http://127.0.0.1:3000` | 允许的 CORS origin，多个值用逗号分隔 |
+| `ISSUER` | `http://127.0.0.1:8000` | OAuth/OIDC issuer；生产环境必须使用 HTTPS，本地开发仅允许 loopback HTTP；不能以 `/` 结尾 |
+| `FRONTEND_BASE_URL` | `http://127.0.0.1:3000` | 前端地址，用于登录和授权确认跳转；生产环境必须使用 HTTPS，本地开发仅允许 loopback HTTP |
+| `CORS_ALLOWED_ORIGINS` | `http://127.0.0.1:3000` | 允许的 CORS origin，多个值用逗号分隔；只接受 HTTPS origin 或 loopback HTTP origin |
 | `DEFAULT_AUDIENCE` | `resource://default` | 默认 access token audience |
 | `SESSION_COOKIE_NAME` | `nazo_oauth_session` | 会话 cookie 名 |
 | `CSRF_COOKIE_NAME` | `nazo_oauth_csrf` | CSRF cookie 名 |
-| `COOKIE_SECURE` | HTTPS issuer 时为 `true`，否则为 `false` | 是否给会话和 CSRF cookie 设置 `Secure` 属性 |
+| `COOKIE_SECURE` | HTTPS issuer 时为 `true`，否则为 `false` | 是否给会话和 CSRF cookie 设置 `Secure` 属性；生产环境不能关闭 |
 | `SESSION_TTL_SECONDS` | `28800` | 会话有效期，单位为秒 |
 | `AUTH_CODE_TTL_SECONDS` | `300` | 授权码有效期，单位为秒 |
 | `ACCESS_TOKEN_TTL_SECONDS` | `300` | access token 有效期，单位为秒 |
@@ -90,6 +93,10 @@ Nazo OAuth Server 是一个基于 Actix Web 的 OAuth 2.1 / OIDC 服务，提供
 | `REFRESH_TOKEN_TTL_SECONDS` | `2592000` | refresh token 有效期，单位为秒 |
 | `AVATAR_MAX_BYTES` | `2097152` | 头像最大字节数 |
 | `CLIENT_DELIVERY_TTL_SECONDS` | `86400` | 客户端接入信息投递有效期，单位为秒 |
+| `RATE_LIMIT_WINDOW_SECONDS` | `60` | 固定窗口限流窗口长度，单位为秒 |
+| `AUTH_RATE_LIMIT_MAX_REQUESTS` | `30` | 单个连接来源在一个窗口内可调用登录、注册和验证码发送接口的最大次数 |
+| `TOKEN_RATE_LIMIT_MAX_REQUESTS` | `60` | 单个连接来源在一个窗口内可调用 `/token` 的最大次数 |
+| `TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS` | `120` | 单个连接来源在一个窗口内可调用 `/introspect` 和 `/revoke` 的最大次数 |
 | `EMAIL_DELIVERY` | `disabled` | 邮件投递方式；`smtp` 启用真实 SMTP 投递，`disabled` 时 `/auth/send-code` 返回服务不可用 |
 | `EMAIL_CODE_TTL_SECONDS` | `900` | 注册邮箱验证码有效期，单位为秒 |
 | `EMAIL_CODE_SEND_COOLDOWN_SECONDS` | `60` | 同一邮箱验证码发送冷却时间，单位为秒 |
@@ -185,10 +192,15 @@ docker compose up -d nazo_oauth_server
 | `POST` | `/revoke` | token 撤销 |
 | `POST` | `/introspect` | token introspection |
 | `GET` | `/.well-known/openid-configuration` | OIDC discovery |
+| `GET` | `/.well-known/oauth-authorization-server` | OAuth Authorization Server Metadata |
 | `GET` | `/jwks.json` | JWKS |
-| `GET` | `/userinfo` | OIDC userinfo |
+| `GET` | `/userinfo` | OIDC userinfo；根据 access token scope 返回 `sub`、`preferred_username`、`profile` 和 `email` 对应 claims |
 
-`/token` 仅在授权范围包含 `offline_access` 时签发和轮换 refresh token。
+`/token` 仅在授权范围包含 `offline_access` 且客户端启用 `refresh_token` grant 时签发和轮换 refresh token。
+
+`private_key_jwt` 客户端必须在客户端元数据中配置公开 `jwks`，当前支持 Ed25519 / EdDSA 公钥。DPoP proof 若缺少或使用过期 nonce，服务端返回 `use_dpop_nonce` 并通过 `DPoP-Nonce` 响应头提供新的 nonce。
+
+`/introspect` 只接受机密客户端认证，并按 access token audience 或客户端自身 token 归属返回 active metadata；非 active token 只返回 `{"active": false}`。public client 可调用 `/revoke` 撤销属于自身的 token，但不能读取 introspection metadata。
 
 ### 认证与当前用户
 

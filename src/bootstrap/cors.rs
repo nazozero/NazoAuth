@@ -15,6 +15,11 @@ pub(crate) fn build(settings: &Settings) -> Cors {
             header::HeaderName::from_static("dpop"),
             header::HeaderName::from_static("x-csrf-token"),
         ])
+        .expose_headers(vec![
+            header::WWW_AUTHENTICATE,
+            header::HeaderName::from_static("dpop-nonce"),
+            header::RETRY_AFTER,
+        ])
         .supports_credentials()
         .max_age(3600);
 

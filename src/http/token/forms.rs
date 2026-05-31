@@ -11,6 +11,8 @@ pub(crate) struct TokenForm {
     pub(crate) scope: Option<String>,
     pub(crate) client_id: Option<String>,
     pub(crate) client_secret: Option<String>,
+    pub(crate) client_assertion_type: Option<String>,
+    pub(crate) client_assertion: Option<String>,
     pub(crate) audience: Option<String>,
 }
 
@@ -19,6 +21,8 @@ pub(crate) struct TokenOnlyForm {
     pub(crate) token: String,
     pub(crate) client_id: Option<String>,
     pub(crate) client_secret: Option<String>,
+    pub(crate) client_assertion_type: Option<String>,
+    pub(crate) client_assertion: Option<String>,
 }
 
 #[derive(Debug)]
@@ -57,6 +61,8 @@ pub(crate) fn parse_token_form(
         scope: None,
         client_id: None,
         client_secret: None,
+        client_assertion_type: None,
+        client_assertion: None,
         audience: None,
     };
 
@@ -72,6 +78,8 @@ pub(crate) fn parse_token_form(
                 | "scope"
                 | "client_id"
                 | "client_secret"
+                | "client_assertion_type"
+                | "client_assertion"
                 | "audience"
         ) {
             continue;
@@ -89,6 +97,8 @@ pub(crate) fn parse_token_form(
             "scope" => form.scope = non_empty(value),
             "client_id" => form.client_id = non_empty(value),
             "client_secret" => form.client_secret = non_empty(value),
+            "client_assertion_type" => form.client_assertion_type = non_empty(value),
+            "client_assertion" => form.client_assertion = non_empty(value),
             "audience" => form.audience = non_empty(value),
             _ => {}
         }

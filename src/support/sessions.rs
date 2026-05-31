@@ -1,23 +1,64 @@
 //! 会话用户与权限解析。
 // 只处理从请求 Cookie 到当前用户/管理员身份的解析。
 
-use super::prelude::*;
+use super::{login_required_response, oauth_error, prelude::*};
 
-pub(crate) async fn current_user(state: &AppState, req: &HttpRequest) -> Option<UserRow> {
-    let sid = cookie_value(req, &state.settings.session_cookie_name)?;
-    let user_id = valkey_get(&state.valkey, format!("oauth:session:{sid}"))
-        .await
-        .ok()?;
-    let id = Uuid::parse_str(user_id.as_deref()?).ok()?;
-    find_user_by_id(&state.diesel_db, id)
-        .await
-        .ok()
-        .flatten()
-        .filter(|u| u.is_active)
+pub(crate) async fn current_user(
+    state: &AppState,
+    req: &HttpRequest,
+) -> anyhow::Result<Option<UserRow>> {
+    let Some(sid) = cookie_value(req, &state.settings.session_cookie_name) else {
+        return Ok(None);
+    };
+    let Some(user_id) = valkey_get(&state.valkey, format!("oauth:session:{sid}")).await? else {
+        return Ok(None);
+    };
+    let id = Uuid::parse_str(&user_id)?;
+    Ok(find_user_by_id(&state.diesel_db, id)
+        .await?
+        .filter(|u| u.is_active))
 }
 
-pub(crate) async fn require_admin(state: &AppState, req: &HttpRequest) -> Option<UserRow> {
-    current_user(state, req)
-        .await
-        .filter(|u| u.role == "admin" && u.admin_level > 0)
+pub(crate) async fn require_admin(
+    state: &AppState,
+    req: &HttpRequest,
+) -> anyhow::Result<Option<UserRow>> {
+    Ok(current_user(state, req)
+        .await?
+        .filter(|u| u.role == "admin" && u.admin_level > 0))
+}
+
+pub(crate) async fn current_user_or_login_required(
+    state: &AppState,
+    req: &HttpRequest,
+) -> Result<UserRow, HttpResponse> {
+    match current_user(state, req).await {
+        Ok(Some(user)) => Ok(user),
+        Ok(None) => Err(login_required_response(state)),
+        Err(error) => Err(session_lookup_error_response(error)),
+    }
+}
+
+pub(crate) async fn require_admin_or_forbidden(
+    state: &AppState,
+    req: &HttpRequest,
+) -> Result<UserRow, HttpResponse> {
+    match require_admin(state, req).await {
+        Ok(Some(user)) => Ok(user),
+        Ok(None) => Err(oauth_error(
+            StatusCode::FORBIDDEN,
+            "access_denied",
+            "当前账号无管理权限.",
+        )),
+        Err(error) => Err(session_lookup_error_response(error)),
+    }
+}
+
+fn session_lookup_error_response(error: anyhow::Error) -> HttpResponse {
+    tracing::warn!(%error, "failed to resolve current session user");
+    oauth_error(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "server_error",
+        "会话查询失败.",
+    )
 }

@@ -1,20 +1,20 @@
 //! 管理端客户端接入申请接口。
 // 申请审批会创建客户端，因此显式依赖 clients 模块的创建逻辑。
-use super::clients::{CreateClientRequest, insert_client_row};
+use super::clients::{
+    CreateClientRequest, insert_client_error_response, insert_prepared_client,
+    prepare_client_insert,
+};
 use crate::http::prelude::*;
+use diesel_async::AsyncConnection;
 
 pub(crate) async fn admin_access_requests(
     state: Data<AppState>,
     req: HttpRequest,
     Query(q): Query<HashMap<String, String>>,
 ) -> HttpResponse {
-    if require_admin(&state, &req).await.is_none() {
-        return oauth_error(
-            StatusCode::FORBIDDEN,
-            "access_denied",
-            "当前账号无管理权限.",
-        );
-    }
+    if let Err(response) = require_admin_or_forbidden(&state, &req).await {
+        return response;
+    };
     let (page, page_size, offset) = pagination(&q);
     let status = match q
         .get("status")
@@ -38,8 +38,29 @@ pub(crate) async fn admin_access_requests(
         None => None,
     };
     let search = q.get("q").map(String::as_str);
-    let total = access_request_count(&state.diesel_db, search, status).await;
-    let rows = access_request_rows(&state.diesel_db, page_size, offset, search, status).await;
+    let total = match access_request_count(&state.diesel_db, search, status).await {
+        Ok(total) => total,
+        Err(error) => {
+            tracing::warn!(%error, "failed to count access requests");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "接入申请查询失败.",
+            );
+        }
+    };
+    let rows = match access_request_rows(&state.diesel_db, page_size, offset, search, status).await
+    {
+        Ok(rows) => rows,
+        Err(error) => {
+            tracing::warn!(%error, "failed to load access requests");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "接入申请查询失败.",
+            );
+        }
+    };
     json_response(json!({"total": total, "page": page, "page_size": page_size, "items": rows}))
 }
 
@@ -53,15 +74,12 @@ pub(crate) async fn admin_approve_access_request(
     if !has_valid_csrf_token(&state, &req, None) {
         return csrf_error();
     }
-    let Some(admin) = require_admin(&state, &req).await else {
-        return oauth_error(
-            StatusCode::FORBIDDEN,
-            "access_denied",
-            "当前账号无管理权限.",
-        );
+    let admin = match require_admin_or_forbidden(&state, &req).await {
+        Ok(admin) => admin,
+        Err(response) => return response,
     };
-    let Some(pending_request) = (match get_conn(&state.diesel_db).await {
-        Ok(mut conn) => client_access_requests::table
+    let pending_request = match get_conn(&state.diesel_db).await {
+        Ok(mut conn) => match client_access_requests::table
             .filter(client_access_requests::id.eq(request_id))
             .filter(client_access_requests::status.eq(AccessRequestStatus::Pending.code()))
             .select((
@@ -71,68 +89,138 @@ pub(crate) async fn admin_approve_access_request(
             .first::<PendingAccessRequestRow>(&mut conn)
             .await
             .optional()
-            .ok()
-            .flatten(),
-        Err(_) => None,
-    }) else {
-        return oauth_error(
-            StatusCode::CONFLICT,
-            "invalid_request",
-            "该申请已处理,不可重复审批.",
-        );
+        {
+            Ok(Some(row)) => row,
+            Ok(None) => {
+                return oauth_error(
+                    StatusCode::CONFLICT,
+                    "invalid_request",
+                    "该申请已处理,不可重复审批.",
+                );
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to query pending access request");
+                return oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "接入申请查询失败.",
+                );
+            }
+        },
+        Err(error) => {
+            tracing::warn!(%error, "failed to get database connection for access request approval");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "接入申请查询失败.",
+            );
+        }
     };
     let request_user_id = pending_request.user_id;
     let site_name = pending_request.site_name;
-    match insert_client_row(&state, payload).await {
-        Ok((client, issued_secret)) => {
-            if let Ok(mut conn) = get_conn(&state.diesel_db).await {
-                let _ = diesel::update(client_access_requests::table.find(request_id))
-                    .set((
-                        client_access_requests::status.eq(AccessRequestStatus::Approved.code()),
-                        client_access_requests::resolved_by_user_id.eq(admin.id),
-                        client_access_requests::approved_client_id.eq(client.id),
-                        client_access_requests::resolved_at.eq(diesel_now),
-                        client_access_requests::updated_at.eq(diesel_now),
-                    ))
-                    .execute(&mut conn)
-                    .await;
-            }
-            let token = Uuid::now_v7().to_string();
-            let expires_at =
-                Utc::now() + Duration::seconds(state.settings.client_delivery_ttl_seconds as i64);
-            let payload = json!({
-                "request_id": request_id,
-                "user_id": request_user_id,
-                "client_id": client.client_id,
-                "client_name": client.client_name,
-                "client_type": client.client_type,
-                "client_secret": issued_secret,
-                "redirect_uris": json_array_to_strings(&client.redirect_uris),
-                "scopes": json_array_to_strings(&client.scopes),
-                "grant_types": json_array_to_strings(&client.grant_types),
-                "token_endpoint_auth_method": client.token_endpoint_auth_method,
-                "site_name": site_name,
-                "created_at": Utc::now(),
-                "expires_at": expires_at
-            });
-            let _ = valkey_set_ex(
-                &state.valkey,
-                format!("oauth:client_delivery:{request_user_id}:{token}"),
-                payload.to_string(),
-                state.settings.client_delivery_ttl_seconds,
-            )
-            .await;
-        }
-        Err(e) => {
+    let prepared = match prepare_client_insert(payload) {
+        Ok(prepared) => prepared,
+        Err(error) => return insert_client_error_response(error),
+    };
+    let token = random_urlsafe_token();
+    let delivery_key = format!("oauth:client_delivery:{request_user_id}:{token}");
+    let expires_at =
+        Utc::now() + Duration::seconds(state.settings.client_delivery_ttl_seconds as i64);
+    let delivery_payload = json!({
+        "request_id": request_id,
+        "user_id": request_user_id,
+        "client_id": &prepared.client_id,
+        "client_name": &prepared.client_name,
+        "client_type": &prepared.client_type,
+        "client_secret": prepared.issued_secret.as_deref(),
+        "redirect_uris": &prepared.redirect_uris,
+        "scopes": &prepared.scopes,
+        "grant_types": &prepared.grant_types,
+        "token_endpoint_auth_method": &prepared.token_endpoint_auth_method,
+        "site_name": site_name,
+        "created_at": Utc::now(),
+        "expires_at": expires_at
+    });
+    if let Err(error) = valkey_set_ex(
+        &state.valkey,
+        &delivery_key,
+        delivery_payload.to_string(),
+        state.settings.client_delivery_ttl_seconds,
+    )
+    .await
+    {
+        tracing::warn!(%error, "failed to persist client delivery payload");
+        return oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "客户端凭据交付创建失败.",
+        );
+    }
+
+    let mut conn = match get_conn(&state.diesel_db).await {
+        Ok(conn) => conn,
+        Err(error) => {
+            tracing::warn!(%error, "failed to get database connection for access request approval");
+            let _ = valkey_del(&state.valkey, &delivery_key).await;
             return oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                &format!("客户端创建失败: {e}"),
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "接入申请审批失败.",
             );
         }
+    };
+    let approval = conn
+        .transaction::<(), diesel::result::Error, _>(async |conn| {
+            let client = insert_prepared_client(conn, &prepared).await?;
+            let updated =
+                diesel::update(client_access_requests::table.find(request_id).filter(
+                    client_access_requests::status.eq(AccessRequestStatus::Pending.code()),
+                ))
+                .set((
+                    client_access_requests::status.eq(AccessRequestStatus::Approved.code()),
+                    client_access_requests::resolved_by_user_id.eq(admin.id),
+                    client_access_requests::approved_client_id.eq(client.id),
+                    client_access_requests::resolved_at.eq(diesel_now),
+                    client_access_requests::updated_at.eq(diesel_now),
+                ))
+                .execute(conn)
+                .await?;
+            if updated == 0 {
+                return Err(diesel::result::Error::NotFound);
+            }
+            Ok(())
+        })
+        .await;
+    if let Err(error) = approval {
+        if let Err(cleanup_error) = valkey_del(&state.valkey, &delivery_key).await {
+            tracing::warn!(%cleanup_error, "failed to remove client delivery payload");
+        }
+        if matches!(error, diesel::result::Error::NotFound) {
+            return oauth_error(
+                StatusCode::CONFLICT,
+                "invalid_request",
+                "该申请已处理,不可重复审批.",
+            );
+        }
+        tracing::warn!(%error, "failed to approve access request");
+        return oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "接入申请审批失败.",
+        );
     }
-    let rows = access_request_by_id(&state.diesel_db, request_id).await;
-    json_response(rows.unwrap_or_else(|| json!({"id": request_id})))
+    match access_request_by_id(&state.diesel_db, request_id).await {
+        Ok(Some(row)) => json_response(row),
+        Ok(None) => json_response(json!({"id": request_id})),
+        Err(error) => {
+            tracing::warn!(%error, "failed to load approved access request");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "接入申请查询失败.",
+            )
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -150,15 +238,12 @@ pub(crate) async fn admin_reject_access_request(
     if !has_valid_csrf_token(&state, &req, None) {
         return csrf_error();
     }
-    let Some(admin) = require_admin(&state, &req).await else {
-        return oauth_error(
-            StatusCode::FORBIDDEN,
-            "access_denied",
-            "当前账号无管理权限.",
-        );
+    let admin = match require_admin_or_forbidden(&state, &req).await {
+        Ok(admin) => admin,
+        Err(response) => return response,
     };
     let updated = match get_conn(&state.diesel_db).await {
-        Ok(mut conn) => diesel::update(
+        Ok(mut conn) => match diesel::update(
             client_access_requests::table
                 .find(request_id)
                 .filter(client_access_requests::status.eq(AccessRequestStatus::Pending.code())),
@@ -172,8 +257,25 @@ pub(crate) async fn admin_reject_access_request(
         ))
         .execute(&mut conn)
         .await
-        .unwrap_or(0),
-        Err(_) => 0,
+        {
+            Ok(updated) => updated,
+            Err(error) => {
+                tracing::warn!(%error, "failed to reject access request");
+                return oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "接入申请拒绝失败.",
+                );
+            }
+        },
+        Err(error) => {
+            tracing::warn!(%error, "failed to get database connection for access request rejection");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "接入申请拒绝失败.",
+            );
+        }
     };
     if updated == 0 {
         return oauth_error(
@@ -182,9 +284,16 @@ pub(crate) async fn admin_reject_access_request(
             "该申请已处理,不可重复拒绝.",
         );
     }
-    json_response(
-        access_request_by_id(&state.diesel_db, request_id)
-            .await
-            .unwrap_or_else(|| json!({"id": request_id})),
-    )
+    match access_request_by_id(&state.diesel_db, request_id).await {
+        Ok(Some(row)) => json_response(row),
+        Ok(None) => json_response(json!({"id": request_id})),
+        Err(error) => {
+            tracing::warn!(%error, "failed to load rejected access request");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "接入申请查询失败.",
+            )
+        }
+    }
 }

@@ -1,12 +1,20 @@
 //! OAuth 作用域、audience 与授权关系工具。
 // 只处理 OAuth 语义中的集合判断和授权记录 upsert。
 
-use super::prelude::*;
+use super::{
+    prelude::*,
+    security::blake3_hex,
+    uri_policy::{oauth_redirect_uri_matches, validate_oauth_redirect_uri},
+};
 
 const SUPPORTED_GRANT_TYPES: &[&str] =
     &["authorization_code", "refresh_token", "client_credentials"];
-const SUPPORTED_TOKEN_AUTH_METHODS: &[&str] =
-    &["none", "client_secret_basic", "client_secret_post"];
+const SUPPORTED_TOKEN_AUTH_METHODS: &[&str] = &[
+    "none",
+    "client_secret_basic",
+    "client_secret_post",
+    "private_key_jwt",
+];
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum RedirectUriError {
@@ -74,7 +82,7 @@ pub(crate) fn registered_redirect_uri(
     if let Some(value) = requested_redirect_uri {
         return registered
             .iter()
-            .any(|registered| registered == value)
+            .any(|registered| oauth_redirect_uri_matches(&client.client_type, registered, value))
             .then(|| value.to_owned())
             .ok_or(RedirectUriError::Invalid);
     }
@@ -99,6 +107,7 @@ pub(crate) fn validate_client_metadata(
     allowed_audiences: &[String],
     grant_types: &[String],
     token_endpoint_auth_method: &str,
+    jwks: Option<&Value>,
 ) -> anyhow::Result<()> {
     if !matches!(client_type, "public" | "confidential") {
         anyhow::bail!("客户端类型无效");
@@ -119,6 +128,17 @@ pub(crate) fn validate_client_metadata(
     }
     if client_type == "confidential" && token_endpoint_auth_method == "none" {
         anyhow::bail!("confidential 客户端必须使用机密认证方式");
+    }
+    if let Some(jwks) = jwks {
+        validate_client_jwks(jwks)?;
+    }
+    if token_endpoint_auth_method == "private_key_jwt" {
+        if client_type != "confidential" {
+            anyhow::bail!("private_key_jwt 只适用于 confidential 客户端");
+        }
+        if jwks.is_none() {
+            anyhow::bail!("private_key_jwt 客户端必须配置 jwks");
+        }
     }
     if client_type == "public"
         && grant_types
@@ -141,6 +161,11 @@ pub(crate) fn validate_client_metadata(
     {
         anyhow::bail!("refresh_token 授权类型必须与 authorization_code 一起启用");
     }
+    if scopes.iter().any(|scope| scope == "offline_access")
+        && !grant_types.iter().any(|grant| grant == "refresh_token")
+    {
+        anyhow::bail!("offline_access 作用域必须与 refresh_token 授权类型一起启用");
+    }
     if grant_types
         .iter()
         .any(|grant| grant == "authorization_code")
@@ -149,7 +174,51 @@ pub(crate) fn validate_client_metadata(
         anyhow::bail!("authorization_code 客户端必须注册 redirect_uri");
     }
     for redirect_uri in redirect_uris {
-        validate_redirect_uri(redirect_uri)?;
+        validate_oauth_redirect_uri(client_type, redirect_uri)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_client_jwks(jwks: &Value) -> anyhow::Result<()> {
+    let keys = jwks
+        .get("keys")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow::anyhow!("jwks 必须包含 keys 数组"))?;
+    if keys.is_empty() {
+        anyhow::bail!("jwks.keys 不能为空");
+    }
+    let mut seen_kids = std::collections::HashSet::new();
+    for key in keys {
+        let kty = key.get("kty").and_then(Value::as_str).unwrap_or_default();
+        let crv = key.get("crv").and_then(Value::as_str).unwrap_or_default();
+        let kid = key.get("kid").and_then(Value::as_str).unwrap_or_default();
+        let x = key.get("x").and_then(Value::as_str).unwrap_or_default();
+        let valid_public_key = URL_SAFE_NO_PAD
+            .decode(x)
+            .ok()
+            .is_some_and(|bytes| bytes.len() == 32);
+        if kid.trim().is_empty() {
+            anyhow::bail!("jwks Ed25519 公钥必须包含 kid");
+        }
+        if !seen_kids.insert(kid) {
+            anyhow::bail!("jwks kid 不能重复: {kid}");
+        }
+        if kty != "OKP" || crv != "Ed25519" || !valid_public_key {
+            anyhow::bail!("jwks 只接受 Ed25519 OKP 公钥");
+        }
+        if key.get("d").is_some() {
+            anyhow::bail!("jwks 不能包含私钥材料");
+        }
+        if let Some(alg) = key.get("alg").and_then(Value::as_str)
+            && alg != "EdDSA"
+        {
+            anyhow::bail!("jwks Ed25519 公钥 alg 必须为 EdDSA");
+        }
+        if let Some(use_) = key.get("use").and_then(Value::as_str)
+            && use_ != "sig"
+        {
+            anyhow::bail!("jwks 公钥 use 必须为 sig");
+        }
     }
     Ok(())
 }
@@ -168,18 +237,16 @@ fn validate_unique_non_empty(name: &str, values: &[String]) -> anyhow::Result<()
     Ok(())
 }
 
-fn validate_redirect_uri(value: &str) -> anyhow::Result<()> {
-    if value.contains('*') {
-        anyhow::bail!("redirect_uri 不支持通配符");
-    }
-    let uri = url::Url::parse(value).map_err(|_| anyhow::anyhow!("redirect_uri 必须是绝对 URI"))?;
-    if uri.scheme().is_empty() || uri.has_host() && uri.host_str().is_none() {
-        anyhow::bail!("redirect_uri 必须是绝对 URI");
-    }
-    if uri.fragment().is_some() {
-        anyhow::bail!("redirect_uri 不能包含 fragment");
-    }
-    Ok(())
+pub(crate) fn authorization_code_key(code: &str) -> String {
+    format!("oauth:auth_code:{}", blake3_hex(code))
+}
+
+pub(crate) fn consumed_authorization_code_key(code: &str) -> String {
+    consumed_authorization_code_key_from_hash(&blake3_hex(code))
+}
+
+pub(crate) fn consumed_authorization_code_key_from_hash(code_hash: &str) -> String {
+    format!("oauth:auth_code_consumed:{code_hash}")
 }
 
 pub(crate) async fn upsert_grant(
@@ -188,11 +255,7 @@ pub(crate) async fn upsert_grant(
     client_id: &str,
     scopes: &[String],
 ) -> anyhow::Result<()> {
-    let Some(client) = find_client(&state.diesel_db, client_id)
-        .await
-        .ok()
-        .flatten()
-    else {
+    let Some(client) = find_client(&state.diesel_db, client_id).await? else {
         return Ok(());
     };
     let now = Utc::now();
@@ -235,6 +298,7 @@ mod tests {
             grant_types: json!(["authorization_code"]),
             token_endpoint_auth_method: "none".to_owned(),
             is_active: true,
+            jwks: None,
         }
     }
 
@@ -259,6 +323,16 @@ mod tests {
     }
 
     #[test]
+    fn public_loopback_redirect_uri_allows_runtime_port() {
+        let client = client_with_redirects(&["http://127.0.0.1:3000/callback"]);
+
+        assert_eq!(
+            registered_redirect_uri(&client, Some("http://127.0.0.1:49152/callback")).unwrap(),
+            "http://127.0.0.1:49152/callback"
+        );
+    }
+
+    #[test]
     fn pkce_values_follow_rfc7636_length_and_charset() {
         assert!(is_valid_pkce_value(
             "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"
@@ -278,8 +352,173 @@ mod tests {
             &["resource://default".to_owned()],
             &["password".to_owned()],
             "none",
+            None,
         );
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn client_metadata_rejects_non_loopback_http_redirect_uri() {
+        let result = validate_client_metadata(
+            "public",
+            &["http://client.example/callback".to_owned()],
+            &["openid".to_owned()],
+            &["resource://default".to_owned()],
+            &["authorization_code".to_owned()],
+            "none",
+            None,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn client_metadata_requires_refresh_grant_for_offline_access() {
+        let result = validate_client_metadata(
+            "public",
+            &["https://client.example/callback".to_owned()],
+            &["openid".to_owned(), "offline_access".to_owned()],
+            &["resource://default".to_owned()],
+            &["authorization_code".to_owned()],
+            "none",
+            None,
+        );
+
+        assert!(result.is_err());
+
+        let result = validate_client_metadata(
+            "public",
+            &["https://client.example/callback".to_owned()],
+            &["openid".to_owned(), "offline_access".to_owned()],
+            &["resource://default".to_owned()],
+            &["authorization_code".to_owned(), "refresh_token".to_owned()],
+            "none",
+            None,
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn client_metadata_requires_public_jwks_for_private_key_jwt() {
+        let jwks = json!({
+            "keys": [{
+                "kty": "OKP",
+                "crv": "Ed25519",
+                "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+                "alg": "EdDSA",
+                "use": "sig",
+                "kid": "key-1"
+            }]
+        });
+
+        let result = validate_client_metadata(
+            "confidential",
+            &["https://client.example/callback".to_owned()],
+            &["openid".to_owned()],
+            &["resource://default".to_owned()],
+            &["authorization_code".to_owned()],
+            "private_key_jwt",
+            None,
+        );
+        assert!(result.is_err());
+
+        let result = validate_client_metadata(
+            "confidential",
+            &["https://client.example/callback".to_owned()],
+            &["openid".to_owned()],
+            &["resource://default".to_owned()],
+            &["authorization_code".to_owned()],
+            "private_key_jwt",
+            Some(&jwks),
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn client_metadata_validates_optional_jwks_for_all_auth_methods() {
+        let private_jwk = json!({
+            "keys": [{
+                "kty": "OKP",
+                "crv": "Ed25519",
+                "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+                "d": URL_SAFE_NO_PAD.encode([8u8; 32]),
+                "kid": "key-1"
+            }]
+        });
+
+        let result = validate_client_metadata(
+            "confidential",
+            &["https://client.example/callback".to_owned()],
+            &["openid".to_owned()],
+            &["resource://default".to_owned()],
+            &["authorization_code".to_owned()],
+            "client_secret_basic",
+            Some(&private_jwk),
+        );
+        assert!(result.is_err());
+
+        let result = validate_client_metadata(
+            "confidential",
+            &["https://client.example/callback".to_owned()],
+            &["openid".to_owned()],
+            &["resource://default".to_owned()],
+            &["authorization_code".to_owned()],
+            "client_secret_basic",
+            None,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn client_jwks_requires_non_empty_unique_kids() {
+        let missing_kid = json!({
+            "keys": [{
+                "kty": "OKP",
+                "crv": "Ed25519",
+                "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+                "alg": "EdDSA",
+                "use": "sig"
+            }]
+        });
+        assert!(validate_client_jwks(&missing_kid).is_err());
+
+        let duplicate_kid = json!({
+            "keys": [
+                {
+                    "kty": "OKP",
+                    "crv": "Ed25519",
+                    "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+                    "alg": "EdDSA",
+                    "use": "sig",
+                    "kid": "key-1"
+                },
+                {
+                    "kty": "OKP",
+                    "crv": "Ed25519",
+                    "x": URL_SAFE_NO_PAD.encode([8u8; 32]),
+                    "alg": "EdDSA",
+                    "use": "sig",
+                    "kid": "key-1"
+                }
+            ]
+        });
+        assert!(validate_client_jwks(&duplicate_kid).is_err());
+    }
+
+    #[test]
+    fn client_jwks_rejects_private_key_material() {
+        let private_jwk = json!({
+            "keys": [{
+                "kty": "OKP",
+                "crv": "Ed25519",
+                "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+                "d": URL_SAFE_NO_PAD.encode([8u8; 32]),
+                "kid": "key-1"
+            }]
+        });
+
+        assert!(validate_client_jwks(&private_jwk).is_err());
     }
 }
