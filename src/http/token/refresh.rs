@@ -100,11 +100,11 @@ pub(crate) async fn token_refresh(
     let dpop_jkt = if let Some(expected_jkt) = token.dpop_jkt.clone() {
         match validate_dpop_proof(state, req, None, Some(&expected_jkt)).await {
             Ok(_) => Some(expected_jkt),
-            Err(error) => return dpop_error_response(error),
+            Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
         }
     } else {
         if dpop_proof_present(req) {
-            return dpop_error_response(DpopError::TokenNotBound);
+            return dpop_error_response(DpopError::TokenNotBound, DpopErrorContext::TokenEndpoint);
         }
         None
     };

@@ -38,14 +38,20 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest) -> HttpRes
             if let Err(error) =
                 validate_dpop_proof(&state, &req, Some(&token), Some(&cnf.jkt)).await
             {
-                return dpop_error_response(error);
+                return dpop_error_response(error, DpopErrorContext::ProtectedResource);
             }
         }
         (AccessTokenAuthScheme::DPoP, None) => {
-            return dpop_error_response(DpopError::TokenNotBound);
+            return dpop_error_response(
+                DpopError::TokenNotBound,
+                DpopErrorContext::ProtectedResource,
+            );
         }
         (AccessTokenAuthScheme::Bearer, Some(_)) => {
-            return dpop_error_response(DpopError::MissingProof);
+            return dpop_error_response(
+                DpopError::MissingProof,
+                DpopErrorContext::ProtectedResource,
+            );
         }
         (AccessTokenAuthScheme::Bearer, None) => {}
     }

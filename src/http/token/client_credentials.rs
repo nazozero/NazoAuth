@@ -19,7 +19,7 @@ pub(crate) async fn token_client_credentials(
     }
     let dpop_jkt = match validate_dpop_proof(state, req, None, None).await {
         Ok(value) => value,
-        Err(error) => return dpop_error_response(error),
+        Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
     };
     let requested = parse_scope(form.scope.as_deref().unwrap_or(""));
     let allowed = json_array_to_strings(&client.scopes);

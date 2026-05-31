@@ -736,6 +736,42 @@ def run() -> None:
             ),
             400,
         )
+        malformed_basic = "Basic not-base64 with-space"
+        expect_status(
+            "POST /token malformed basic plus body credential rejected",
+            requests.post(
+                f"{BASE_URL}/token",
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": secret_client_id,
+                    "client_secret": secret_client_secret,
+                    "scope": "profile",
+                },
+                headers={"Authorization": malformed_basic},
+                timeout=10,
+            ),
+            400,
+        )
+        expect_status(
+            "POST /introspect malformed basic plus body credential rejected",
+            requests.post(
+                f"{BASE_URL}/introspect",
+                data={"token": "dummy-token", "client_id": secret_client_id},
+                headers={"Authorization": malformed_basic},
+                timeout=10,
+            ),
+            400,
+        )
+        expect_status(
+            "POST /revoke malformed basic plus body credential rejected",
+            requests.post(
+                f"{BASE_URL}/revoke",
+                data={"token": "dummy-token", "client_id": secret_client_id},
+                headers={"Authorization": malformed_basic},
+                timeout=10,
+            ),
+            400,
+        )
 
         admin_clients = expect_json(
             expect_status(
@@ -845,9 +881,14 @@ def run() -> None:
             },
             timeout=10,
         )
-        expect_status("GET /userinfo DPoP nonce challenge", userinfo_no_nonce, 400)
+        expect_status("GET /userinfo DPoP nonce challenge", userinfo_no_nonce, 401)
         userinfo_nonce = userinfo_no_nonce.headers.get("DPoP-Nonce")
         check("userinfo_nonce_header", bool(userinfo_nonce))
+        check(
+            "userinfo_nonce_www_authenticate",
+            'error="use_dpop_nonce"' in userinfo_no_nonce.headers.get("WWW-Authenticate", ""),
+            userinfo_no_nonce.headers,
+        )
         userinfo = expect_json(
             expect_status(
                 "GET /userinfo",

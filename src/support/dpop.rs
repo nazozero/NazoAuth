@@ -30,6 +30,11 @@ pub(crate) enum DpopError {
     NonceStoreUnavailable,
 }
 
+pub(crate) enum DpopErrorContext {
+    TokenEndpoint,
+    ProtectedResource,
+}
+
 #[derive(Deserialize)]
 struct DpopHeader {
     alg: String,
@@ -47,7 +52,7 @@ struct DpopClaims {
     nonce: Option<String>,
 }
 
-pub(crate) fn dpop_error_response(error: DpopError) -> HttpResponse {
+pub(crate) fn dpop_error_response(error: DpopError, context: DpopErrorContext) -> HttpResponse {
     let description = match &error {
         DpopError::MissingProof => "DPoP proof is required.",
         DpopError::MalformedProof => "DPoP proof is malformed.",
@@ -60,6 +65,9 @@ pub(crate) fn dpop_error_response(error: DpopError) -> HttpResponse {
     };
     let status = match &error {
         DpopError::MissingProof => StatusCode::UNAUTHORIZED,
+        DpopError::UseNonce(_) if matches!(context, DpopErrorContext::ProtectedResource) => {
+            StatusCode::UNAUTHORIZED
+        }
         DpopError::NonceStoreUnavailable => StatusCode::SERVICE_UNAVAILABLE,
         _ => StatusCode::BAD_REQUEST,
     };
@@ -347,6 +355,34 @@ mod tests {
 
         assert!(matches!(scheme, AccessTokenAuthScheme::Bearer));
         assert_eq!(token, "token");
+    }
+
+    #[test]
+    fn token_endpoint_nonce_challenge_uses_bad_request() {
+        let response = dpop_error_response(
+            DpopError::UseNonce("nonce-1".to_owned()),
+            DpopErrorContext::TokenEndpoint,
+        );
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response.headers().get("dpop-nonce").unwrap(),
+            HeaderValue::from_static("nonce-1")
+        );
+    }
+
+    #[test]
+    fn protected_resource_nonce_challenge_uses_unauthorized() {
+        let response = dpop_error_response(
+            DpopError::UseNonce("nonce-1".to_owned()),
+            DpopErrorContext::ProtectedResource,
+        );
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response.headers().get(header::WWW_AUTHENTICATE).unwrap(),
+            HeaderValue::from_static(r#"DPoP error="use_dpop_nonce""#)
+        );
     }
 
     #[test]

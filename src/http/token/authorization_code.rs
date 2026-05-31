@@ -23,7 +23,7 @@ pub(crate) async fn token_authorization_code(
 ) -> HttpResponse {
     let dpop_jkt = match validate_dpop_proof(state, req, None, None).await {
         Ok(value) => value,
-        Err(error) => return dpop_error_response(error),
+        Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
     };
     let Some(code) = &form.code else {
         return oauth_token_error(

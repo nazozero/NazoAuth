@@ -1,38 +1,67 @@
 //! Ed25519 JWK/PEM 密钥管理。
 // 负责加载、生成和编码 OAuth/OIDC 签名密钥。
 
+use std::io::ErrorKind;
+
+use anyhow::{Context, anyhow};
+
 use super::prelude::*;
 
 pub(crate) async fn load_or_create_keyset(settings: &Settings) -> anyhow::Result<Keyset> {
     tokio::fs::create_dir_all(&settings.jwk_keys_dir).await?;
     let keyset_path = settings.jwk_keys_dir.join("keyset.json");
-    if let Some(keyset) = try_load_keyset(settings, &keyset_path).await {
-        return Ok(keyset);
+    if let Some(keyset) = try_load_keyset(settings, &keyset_path).await? {
+        Ok(keyset)
+    } else {
+        create_new_keyset(settings).await
     }
-    create_new_keyset(settings).await
 }
 
-pub(crate) async fn try_load_keyset(settings: &Settings, keyset_path: &PathBuf) -> Option<Keyset> {
-    let raw = tokio::fs::read_to_string(keyset_path).await.ok()?;
-    let payload = serde_json::from_str::<Value>(&raw).ok()?;
-    let active_kid = payload.get("active_kid").and_then(Value::as_str)?;
-    let keys = payload.get("keys").and_then(Value::as_array)?;
+pub(crate) async fn try_load_keyset(
+    settings: &Settings,
+    keyset_path: &PathBuf,
+) -> anyhow::Result<Option<Keyset>> {
+    let raw = match tokio::fs::read_to_string(keyset_path).await {
+        Ok(raw) => raw,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(error).with_context(|| format!("failed to read {}", keyset_path.display()));
+        }
+    };
+    let payload = serde_json::from_str::<Value>(&raw)
+        .with_context(|| format!("failed to parse {}", keyset_path.display()))?;
+    let active_kid = payload
+        .get("active_kid")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("keyset.json missing active_kid"))?;
+    let keys = payload
+        .get("keys")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("keyset.json missing keys array"))?;
     let mut active_private_pkcs8_der = None;
     let mut verification_keys = Vec::new();
 
     for entry in keys {
-        let kid = entry.get("kid").and_then(Value::as_str)?;
+        let kid = entry
+            .get("kid")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("keyset entry missing kid"))?;
         let is_active = kid == active_kid;
         if !is_active && key_entry_is_retired(entry) {
             continue;
         }
 
-        let file_name = entry.get("file").and_then(Value::as_str)?;
+        let file_name = entry
+            .get("file")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("keyset entry {kid} missing file"))?;
         let raw_key = tokio::fs::read_to_string(settings.jwk_keys_dir.join(file_name))
             .await
-            .ok()?;
-        let der = pem_to_der(&raw_key)?;
-        let public_key = public_key_from_private_der(&der)?;
+            .with_context(|| format!("failed to read keyset entry {kid} from {file_name}"))?;
+        let der =
+            pem_to_der(&raw_key).with_context(|| format!("keyset entry {kid} is not valid PEM"))?;
+        let public_key = public_key_from_private_der(&der)
+            .with_context(|| format!("keyset entry {kid} is not an Ed25519 private key"))?;
         if is_active {
             active_private_pkcs8_der = Some(der);
         }
@@ -42,11 +71,12 @@ pub(crate) async fn try_load_keyset(settings: &Settings, keyset_path: &PathBuf) 
         });
     }
 
-    Some(Keyset {
+    Ok(Some(Keyset {
         active_kid: active_kid.to_owned(),
-        active_private_pkcs8_der: active_private_pkcs8_der?,
+        active_private_pkcs8_der: active_private_pkcs8_der
+            .ok_or_else(|| anyhow!("keyset.json active_kid does not reference a live key"))?,
         verification_keys,
-    })
+    }))
 }
 
 pub(crate) async fn create_new_keyset(settings: &Settings) -> anyhow::Result<Keyset> {
@@ -175,6 +205,9 @@ impl Keyset {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
+    use crate::settings::{EmailDelivery, EmailSettings, RateLimitSettings};
 
     #[test]
     fn jwks_publishes_active_and_previous_verification_keys() {
@@ -207,5 +240,136 @@ mod tests {
 
         assert!(key_entry_is_retired(&retired));
         assert!(!key_entry_is_retired(&live));
+    }
+
+    #[tokio::test]
+    async fn missing_keyset_file_allows_initial_creation() {
+        let keys_dir = temp_keys_dir("missing");
+        tokio::fs::create_dir_all(&keys_dir).await.unwrap();
+        let settings = test_settings(keys_dir.clone());
+        let keyset_path = keys_dir.join("keyset.json");
+
+        let result = try_load_keyset(&settings, &keyset_path).await.unwrap();
+        let _ = tokio::fs::remove_dir_all(&keys_dir).await;
+
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn live_previous_key_entry_must_load_successfully() {
+        let keys_dir = temp_keys_dir("missing_previous");
+        tokio::fs::create_dir_all(&keys_dir).await.unwrap();
+        let active_der = ed25519_pkcs8_private_der(&[1u8; 32]);
+        tokio::fs::write(
+            keys_dir.join("active.pem"),
+            der_to_pem(&active_der, "PRIVATE KEY"),
+        )
+        .await
+        .unwrap();
+        tokio::fs::write(
+            keys_dir.join("keyset.json"),
+            serde_json::to_string_pretty(&json!({
+                "active_kid": "active",
+                "keys": [
+                    {"kid": "active", "file": "active.pem", "retire_at": null},
+                    {"kid": "previous", "file": "missing.pem", "retire_at": null}
+                ]
+            }))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        let settings = test_settings(keys_dir.clone());
+        let keyset_path = keys_dir.join("keyset.json");
+
+        let result = try_load_keyset(&settings, &keyset_path).await;
+        let _ = tokio::fs::remove_dir_all(&keys_dir).await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn retired_previous_key_entry_is_skipped() {
+        let keys_dir = temp_keys_dir("retired_previous");
+        tokio::fs::create_dir_all(&keys_dir).await.unwrap();
+        let active_der = ed25519_pkcs8_private_der(&[1u8; 32]);
+        tokio::fs::write(
+            keys_dir.join("active.pem"),
+            der_to_pem(&active_der, "PRIVATE KEY"),
+        )
+        .await
+        .unwrap();
+        tokio::fs::write(
+            keys_dir.join("keyset.json"),
+            serde_json::to_string_pretty(&json!({
+                "active_kid": "active",
+                "keys": [
+                    {"kid": "active", "file": "active.pem", "retire_at": null},
+                    {
+                        "kid": "previous",
+                        "file": "missing.pem",
+                        "retire_at": "2000-01-01T00:00:00Z"
+                    }
+                ]
+            }))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        let settings = test_settings(keys_dir.clone());
+        let keyset_path = keys_dir.join("keyset.json");
+
+        let keyset = try_load_keyset(&settings, &keyset_path)
+            .await
+            .unwrap()
+            .unwrap();
+        let _ = tokio::fs::remove_dir_all(&keys_dir).await;
+
+        assert_eq!(keyset.active_kid, "active");
+        assert_eq!(keyset.verification_keys.len(), 1);
+    }
+
+    fn temp_keys_dir(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "nazo_keyset_{label}_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    fn test_settings(jwk_keys_dir: PathBuf) -> Settings {
+        Settings {
+            issuer: "https://issuer.example".to_owned(),
+            frontend_base_url: "https://frontend.example".to_owned(),
+            cors_allowed_origins: vec!["https://frontend.example".to_owned()],
+            default_audience: "resource://default".to_owned(),
+            session_cookie_name: "session".to_owned(),
+            csrf_cookie_name: "csrf".to_owned(),
+            cookie_secure: true,
+            session_ttl_seconds: 28_800,
+            auth_code_ttl_seconds: 300,
+            access_token_ttl_seconds: 300,
+            id_token_ttl_seconds: 600,
+            refresh_token_ttl_seconds: 2_592_000,
+            avatar_max_bytes: 2_097_152,
+            client_delivery_ttl_seconds: 86_400,
+            rate_limit: RateLimitSettings {
+                window_seconds: 60,
+                auth_max_requests: 30,
+                token_max_requests: 60,
+                token_management_max_requests: 120,
+            },
+            email: EmailSettings {
+                delivery: EmailDelivery::Disabled,
+                code_ttl_seconds: 900,
+                send_cooldown_seconds: 60,
+                send_peer_cooldown_seconds: 5,
+            },
+            email_code_dev_response_enabled: false,
+            avatar_storage_dir: jwk_keys_dir.join("avatars"),
+            jwk_keys_dir,
+        }
     }
 }
