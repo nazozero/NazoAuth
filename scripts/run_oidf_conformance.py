@@ -11,6 +11,7 @@ import signal
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 OIDCC_CONFIG_FILE = "oidf-oidcc-plan-config.json"
@@ -42,6 +43,53 @@ def validate_config_file_name(file_name: str) -> None:
         fail("--config-file-name must be a file name, not a path")
 
 
+def issuer_from_discovery_url(discovery_url: str) -> str | None:
+    suffix = "/.well-known/openid-configuration"
+    if not discovery_url.endswith(suffix):
+        return None
+    issuer = discovery_url[: -len(suffix)].rstrip("/")
+    if not issuer:
+        return None
+    parsed = urlparse(issuer)
+    if parsed.scheme not in {"https", "http"} or not parsed.netloc:
+        return None
+    return issuer
+
+
+def validate_browser_automation(config_name: str, config_value: dict[str, object]) -> None:
+    server = config_value.get("server")
+    if not isinstance(server, dict):
+        return
+    discovery_url = server.get("discoveryUrl")
+    if not isinstance(discovery_url, str):
+        return
+    issuer = issuer_from_discovery_url(discovery_url)
+    if issuer is None:
+        return
+
+    browser = config_value.get("browser")
+    if not isinstance(browser, list) or not browser:
+        fail(
+            f"{config_name} must include browser automation for {issuer}/authorize; "
+            "OIDF OP modules otherwise remain in WAITING until they time out"
+        )
+
+    authorization_prefix = f"{issuer}/authorize"
+    for entry in browser:
+        if not isinstance(entry, dict):
+            continue
+        match = entry.get("match")
+        if not isinstance(match, str):
+            continue
+        if match.startswith(authorization_prefix) or "/authorize" in match:
+            return
+
+    fail(
+        f"{config_name} browser automation must match the authorization endpoint "
+        f"{authorization_prefix}; matching only frontend pages does not start OIDF OP modules"
+    )
+
+
 def write_plan_configs(suite_scripts: Path, file_name: str, env_name: str) -> set[str]:
     validate_config_file_name(file_name)
     raw_config = non_empty_env(env_name)
@@ -54,6 +102,7 @@ def write_plan_configs(suite_scripts: Path, file_name: str, env_name: str) -> se
 
     configs = parsed.get("configs")
     if configs is None:
+        validate_browser_automation(file_name, parsed)
         target = suite_scripts / file_name
         target.write_text(json.dumps(parsed, indent=2, sort_keys=True), encoding="utf-8")
         return {file_name}
@@ -68,6 +117,7 @@ def write_plan_configs(suite_scripts: Path, file_name: str, env_name: str) -> se
         validate_config_file_name(config_name)
         if not isinstance(config_value, dict):
             fail(f"{env_name}.configs.{config_name} must contain a JSON object")
+        validate_browser_automation(config_name, config_value)
         target = suite_scripts / config_name
         target.write_text(json.dumps(config_value, indent=2, sort_keys=True), encoding="utf-8")
         written.add(config_name)
