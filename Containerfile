@@ -2,7 +2,13 @@ FROM docker.io/library/rust:1.96-slim AS builder
 
 WORKDIR /app
 
-RUN apt-get update \
+RUN sed -i \
+        -e 's|http://deb.debian.org/debian|https://mirrors.cloud.tencent.com/debian|g' \
+        -e 's|http://deb.debian.org/debian-security|https://mirrors.cloud.tencent.com/debian-security|g' \
+        /etc/apt/sources.list.d/debian.sources \
+    && mkdir -p /usr/local/cargo \
+    && printf '[source.crates-io]\nreplace-with = "rsproxy"\n\n[source.rsproxy]\nregistry = "sparse+https://rsproxy.cn/index/"\n' > /usr/local/cargo/config.toml \
+    && apt-get update \
     && apt-get install -y --no-install-recommends pkg-config libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -14,7 +20,11 @@ RUN cargo build --release
 
 FROM docker.io/library/debian:trixie-slim
 
-RUN apt-get update \
+RUN sed -i \
+        -e 's|http://deb.debian.org/debian|https://mirrors.cloud.tencent.com/debian|g' \
+        -e 's|http://deb.debian.org/debian-security|https://mirrors.cloud.tencent.com/debian-security|g' \
+        /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
