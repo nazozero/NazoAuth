@@ -238,15 +238,11 @@ fn validate_unique_non_empty(name: &str, values: &[String]) -> anyhow::Result<()
 }
 
 pub(crate) fn authorization_code_key(code: &str) -> String {
-    format!("oauth:auth_code:{}", blake3_hex(code))
+    authorization_code_key_from_hash(&blake3_hex(code))
 }
 
-pub(crate) fn consumed_authorization_code_key(code: &str) -> String {
-    consumed_authorization_code_key_from_hash(&blake3_hex(code))
-}
-
-pub(crate) fn consumed_authorization_code_key_from_hash(code_hash: &str) -> String {
-    format!("oauth:auth_code_consumed:{code_hash}")
+pub(crate) fn authorization_code_key_from_hash(code_hash: &str) -> String {
+    format!("oauth:auth_code:{code_hash}")
 }
 
 pub(crate) async fn upsert_grant(

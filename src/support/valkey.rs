@@ -2,6 +2,7 @@
 // 这里保留最小 Redis 协议操作，业务 key 仍由调用方决定。
 
 use super::prelude::*;
+use fred::prelude::LuaInterface;
 
 pub(crate) async fn valkey_set_ex(
     valkey: &ValkeyClient,
@@ -57,4 +58,13 @@ pub(crate) async fn valkey_del(
     key: impl Into<String>,
 ) -> Result<i64, ValkeyError> {
     valkey.del::<i64, _>(key.into()).await
+}
+
+pub(crate) async fn valkey_eval_string(
+    valkey: &ValkeyClient,
+    script: &'static str,
+    keys: Vec<String>,
+    args: Vec<String>,
+) -> Result<String, ValkeyError> {
+    valkey.eval::<String, _, _, _>(script, keys, args).await
 }

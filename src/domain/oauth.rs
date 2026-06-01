@@ -15,6 +15,8 @@ pub(crate) struct ConfirmationClaims {
 pub(crate) struct Claims {
     pub(crate) iss: String,
     pub(crate) sub: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) user_id: Option<String>,
     pub(crate) subject_type: String,
     pub(crate) aud: String,
     pub(crate) client_id: String,
@@ -40,8 +42,18 @@ pub(crate) struct ConsentPayload {
     pub(crate) scopes: Vec<String>,
     pub(crate) state: Option<String>,
     pub(crate) nonce: Option<String>,
+    pub(crate) auth_time: i64,
+    pub(crate) amr: Vec<String>,
     pub(crate) code_challenge: String,
     pub(crate) code_challenge_method: String,
+    pub(crate) issued_at: DateTime<Utc>,
+    pub(crate) expires_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub(crate) struct PushedAuthorizationRequest {
+    pub(crate) client_id: String,
+    pub(crate) params: std::collections::HashMap<String, String>,
     pub(crate) issued_at: DateTime<Utc>,
     pub(crate) expires_at: DateTime<Utc>,
 }
@@ -56,10 +68,32 @@ pub(crate) struct CodePayload {
     pub(crate) redirect_uri_was_supplied: bool,
     pub(crate) scopes: Vec<String>,
     pub(crate) nonce: Option<String>,
+    pub(crate) auth_time: i64,
+    pub(crate) amr: Vec<String>,
     pub(crate) code_challenge: String,
     pub(crate) code_challenge_method: String,
     pub(crate) issued_at: DateTime<Utc>,
     pub(crate) expires_at: DateTime<Utc>,
+}
+
+/// 授权码在 Valkey 中的完整生命周期状态。
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub(crate) enum AuthorizationCodeState {
+    Pending {
+        payload: CodePayload,
+    },
+    Consuming {
+        payload: CodePayload,
+        consuming_at: DateTime<Utc>,
+    },
+    Consumed {
+        marker: ConsumedAuthorizationCode,
+    },
+    Failed {
+        failed_at: DateTime<Utc>,
+        error: String,
+    },
 }
 
 /// 已成功兑换的授权码索引，用于发现授权码重放后撤销前次签发的令牌。
@@ -79,6 +113,8 @@ pub(crate) struct TokenIssue {
     pub(crate) scopes: Vec<String>,
     pub(crate) audience: String,
     pub(crate) nonce: Option<String>,
+    pub(crate) auth_time: Option<i64>,
+    pub(crate) amr: Vec<String>,
     pub(crate) include_refresh: bool,
     pub(crate) rotation: Option<(Uuid, Option<Uuid>)>,
     pub(crate) dpop_jkt: Option<String>,

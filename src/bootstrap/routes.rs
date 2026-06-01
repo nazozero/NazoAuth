@@ -10,6 +10,7 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig) {
         .route("/authorize", web::get().to(authorize))
         .route("/authorize/consent", web::get().to(authorize_consent))
         .route("/authorize/decision", web::post().to(authorize_decision))
+        .route("/par", web::post().to(par))
         .route("/token", web::post().to(token))
         .route("/revoke", web::post().to(revoke))
         .route("/introspect", web::post().to(introspect))

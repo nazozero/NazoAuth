@@ -5,7 +5,8 @@ use serde::Deserialize;
 
 use super::prelude::*;
 use super::{
-    blake3_hex, oauth_error, random_urlsafe_token, valkey_getdel, valkey_set_ex, valkey_set_ex_nx,
+    audit_event, audit_fields, blake3_hex, oauth_error, random_urlsafe_token, valkey_getdel,
+    valkey_set_ex, valkey_set_ex_nx,
 };
 
 const DPOP_TTL_SECONDS: i64 = 300;
@@ -157,6 +158,13 @@ pub(crate) async fn validate_dpop_proof(
         .await
         .map_err(|_| DpopError::InvalidProof)?
     {
+        audit_event(
+            "dpop_replay_detected",
+            audit_fields(&[
+                ("jti_hash", json!(blake3_hex(&claims.jti))),
+                ("kid", json!(header.jwk.get("kid").and_then(Value::as_str))),
+            ]),
+        );
         return Err(DpopError::ReplayDetected);
     }
     Ok(Some(jkt))
@@ -177,7 +185,7 @@ async fn validate_dpop_nonce(state: &AppState, nonce: Option<&str>) -> Result<()
     }
 }
 
-async fn issue_dpop_nonce(state: &AppState) -> Result<String, DpopError> {
+pub(crate) async fn issue_dpop_nonce(state: &AppState) -> Result<String, DpopError> {
     let nonce = random_urlsafe_token();
     valkey_set_ex(
         &state.valkey,

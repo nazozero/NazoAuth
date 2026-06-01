@@ -126,5 +126,15 @@ pub(crate) async fn admin_patch_client(
         }
     };
 
+    audit_event(
+        "client_updated",
+        audit_fields(&[
+            ("client_id", json!(client.client_id)),
+            (
+                "source_ip_hash",
+                json!(blake3_hex(&client_ip(&req, &state.settings))),
+            ),
+        ]),
+    );
     json_response(client_json(client))
 }

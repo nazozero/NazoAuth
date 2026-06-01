@@ -170,7 +170,7 @@ pub(crate) async fn admin_approve_access_request(
         }
     };
     let approval = conn
-        .transaction::<(), diesel::result::Error, _>(async |conn| {
+        .transaction::<ClientRow, diesel::result::Error, _>(async |conn| {
             let client = insert_prepared_client(conn, &prepared).await?;
             let updated =
                 diesel::update(client_access_requests::table.find(request_id).filter(
@@ -188,27 +188,42 @@ pub(crate) async fn admin_approve_access_request(
             if updated == 0 {
                 return Err(diesel::result::Error::NotFound);
             }
-            Ok(())
+            Ok(client)
         })
         .await;
-    if let Err(error) = approval {
-        if let Err(cleanup_error) = valkey_del(&state.valkey, &delivery_key).await {
-            tracing::warn!(%cleanup_error, "failed to remove client delivery payload");
-        }
-        if matches!(error, diesel::result::Error::NotFound) {
+    let client = match approval {
+        Ok(client) => client,
+        Err(error) => {
+            if let Err(cleanup_error) = valkey_del(&state.valkey, &delivery_key).await {
+                tracing::warn!(%cleanup_error, "failed to remove client delivery payload");
+            }
+            if matches!(error, diesel::result::Error::NotFound) {
+                return oauth_error(
+                    StatusCode::CONFLICT,
+                    "invalid_request",
+                    "该申请已处理,不可重复审批.",
+                );
+            }
+            tracing::warn!(%error, "failed to approve access request");
             return oauth_error(
-                StatusCode::CONFLICT,
-                "invalid_request",
-                "该申请已处理,不可重复审批.",
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "接入申请审批失败.",
             );
         }
-        tracing::warn!(%error, "failed to approve access request");
-        return oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "接入申请审批失败.",
-        );
-    }
+    };
+    audit_event(
+        "client_created",
+        audit_fields(&[
+            ("client_id", json!(client.client_id)),
+            ("request_id", json!(request_id)),
+            ("admin_user_id", json!(admin.id)),
+            (
+                "source_ip_hash",
+                json!(blake3_hex(&client_ip(&req, &state.settings))),
+            ),
+        ]),
+    );
     match access_request_by_id(&state.diesel_db, request_id).await {
         Ok(Some(row)) => json_response(row),
         Ok(None) => json_response(json!({"id": request_id})),

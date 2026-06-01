@@ -42,6 +42,7 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest) -> HttpRes
     if revoked {
         return oauth_bearer_error(StatusCode::UNAUTHORIZED, "invalid_token", "访问令牌已撤销.");
     }
+    let mut next_dpop_nonce = None;
     match (scheme, claims.cnf.as_ref()) {
         (AccessTokenAuthScheme::DPoP, Some(cnf)) => {
             if let Err(error) =
@@ -49,6 +50,12 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest) -> HttpRes
             {
                 return dpop_error_response(error, DpopErrorContext::ProtectedResource);
             }
+            next_dpop_nonce = match issue_dpop_nonce(&state).await {
+                Ok(nonce) => Some(nonce),
+                Err(error) => {
+                    return dpop_error_response(error, DpopErrorContext::ProtectedResource);
+                }
+            };
         }
         (AccessTokenAuthScheme::DPoP, None) => {
             return dpop_error_response(
@@ -77,7 +84,8 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest) -> HttpRes
         );
     }
     let scopes = parse_scope(&claims.scope);
-    let user_id = match Uuid::parse_str(&claims.sub) {
+    let user_identifier = claims.user_id.as_deref().unwrap_or(&claims.sub);
+    let user_id = match Uuid::parse_str(user_identifier) {
         Ok(user_id) => user_id,
         Err(_) => {
             return oauth_bearer_error(
@@ -105,5 +113,13 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest) -> HttpRes
             );
         }
     };
-    json_response_no_store(oidc_user_claims(&user, &scopes, &claims.sub))
+    let mut response = json_response_no_store(oidc_user_claims(&user, &scopes, &claims.sub));
+    if let Some(nonce) = next_dpop_nonce
+        && let Ok(value) = HeaderValue::from_str(&nonce)
+    {
+        response
+            .headers_mut()
+            .insert(header::HeaderName::from_static("dpop-nonce"), value);
+    }
+    response
 }

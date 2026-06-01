@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use diesel::{Connection, PgConnection};
+use diesel::{Connection, PgConnection, RunQueryDsl};
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use nazo_oauth_server::{config::ConfigSource, database_config::normalize_database_url};
 
@@ -16,5 +16,7 @@ fn main() -> anyhow::Result<()> {
     connection
         .run_pending_migrations(MIGRATIONS)
         .map_err(|error| anyhow::anyhow!("database migration failed: {error}"))?;
+    diesel::sql_query("SELECT * FROM nazo_oauth_cleanup_expired_security_state()")
+        .execute(&mut connection)?;
     Ok(())
 }

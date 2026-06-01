@@ -49,6 +49,16 @@ pub(crate) async fn admin_create_client(
 
     match insert_client_row(&state, payload).await {
         Ok((client, issued_secret)) => {
+            audit_event(
+                "client_created",
+                audit_fields(&[
+                    ("client_id", json!(client.client_id)),
+                    (
+                        "source_ip_hash",
+                        json!(blake3_hex(&client_ip(&req, &state.settings))),
+                    ),
+                ]),
+            );
             let mut body = client_json(client);
             if let Some(secret) = issued_secret {
                 body["client_secret"] = json!(secret);

@@ -16,6 +16,7 @@ import re
 import secrets
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from email import message_from_bytes
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -31,6 +32,7 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 
 
 BASE_URL = os.environ.get("E2E_BASE_URL", "http://nazo-oauth-e2e-server:8000")
+ISSUER_URL = os.environ.get("E2E_ISSUER_URL", BASE_URL)
 DATABASE_URL = os.environ.get(
     "E2E_DATABASE_URL",
     "postgresql://postgres:postgres@nazo-oauth-e2e-postgres:5432/oauth",
@@ -45,6 +47,7 @@ USER_PASSWORD = "UserPassword-2026"
 CLIENT_REDIRECT_URI = "https://client.example/callback"
 DEFAULT_AUDIENCE = "resource://default"
 CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+SESSION_COOKIE_NAME = "nazo_oauth_session"
 
 
 checks: list[str] = []
@@ -146,11 +149,12 @@ def client_assertion(
     key: ed25519.Ed25519PrivateKey,
     *,
     jti: str | None = None,
+    audience_path: str = "/token",
 ) -> str:
     claims = {
         "iss": client_id,
         "sub": client_id,
-        "aud": f"{BASE_URL}/token",
+        "aud": f"{ISSUER_URL}{audience_path}",
         "iat": now(),
         "exp": now() + 120,
         "jti": jti or str(uuid.uuid4()),
@@ -160,6 +164,44 @@ def client_assertion(
         ed25519_private_pem(key),
         algorithm="EdDSA",
         headers={"typ": "JWT", "kid": "private-key-jwt-e2e"},
+    )
+
+
+def authorization_request_object(
+    client_id: str,
+    key: ed25519.Ed25519PrivateKey,
+    *,
+    code_challenge: str,
+    scope: str = "openid profile email",
+    state: str = "jar-flow",
+    audience: str | None = None,
+    jti: str | None = None,
+    algorithm: str = "EdDSA",
+) -> str:
+    claims = {
+        "iss": client_id,
+        "sub": client_id,
+        "client_id": client_id,
+        "aud": audience or ISSUER_URL,
+        "exp": now() + 120,
+        "nbf": now() - 5,
+        "iat": now(),
+        "jti": jti or str(uuid.uuid4()),
+        "response_type": "code",
+        "redirect_uri": CLIENT_REDIRECT_URI,
+        "scope": scope,
+        "state": state,
+        "nonce": f"nonce-{state}",
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+    }
+    if algorithm == "none":
+        return jwt.encode(claims, key="", algorithm="none", headers={"typ": "oauth-authz-req+jwt"})
+    return jwt.encode(
+        claims,
+        ed25519_private_pem(key),
+        algorithm=algorithm,
+        headers={"typ": "oauth-authz-req+jwt", "kid": "private-key-jwt-e2e"},
     )
 
 
@@ -390,16 +432,29 @@ def approve_authorization(
     return code, verifier
 
 
+def consent_request_from_redirect(response: requests.Response, check_name: str) -> str:
+    request_id = location_query(response).get("request_id", [None])[0]
+    check(f"{check_name}_request_id", bool(request_id))
+    return request_id or ""
+
+
+def token_plain(form: dict[str, str], check_name: str) -> dict[str, Any]:
+    response = requests.post(f"{BASE_URL}/token", data=form, timeout=10)
+    expect_status(check_name, response, 200)
+    return expect_json(response)
+
+
 def request_dpop_nonce(
     form: dict[str, str],
     key: ed25519.Ed25519PrivateKey,
     path: str = "/token",
 ) -> str:
     url = f"{BASE_URL}{path}"
+    proof_url = f"{ISSUER_URL}{path}"
     response = requests.post(
         url,
         data=form,
-        headers={"DPoP": dpop_proof("POST", url, key)},
+        headers={"DPoP": dpop_proof("POST", proof_url, key)},
         timeout=10,
     )
     expect_status(f"dpop_nonce_challenge_{path}_{len(checks)}", response, 400)
@@ -419,7 +474,7 @@ def token_with_dpop(
     response = requests.post(
         f"{BASE_URL}/token",
         data=form,
-        headers={"DPoP": dpop_proof("POST", f"{BASE_URL}/token", key, nonce=nonce)},
+        headers={"DPoP": dpop_proof("POST", f"{ISSUER_URL}/token", key, nonce=nonce)},
         timeout=10,
     )
     expect_status(check_name, response, 200)
@@ -515,7 +570,11 @@ def run() -> None:
             allow_redirects=False,
             timeout=10,
         )
-        expect_status("GET /authorize anonymous redirect", anonymous_redirect, 302)
+        expect_status("GET /authorize missing client rejected before login", anonymous_redirect, 401)
+        check(
+            "authorize_missing_client_unauthorized_client",
+            expect_json(anonymous_redirect).get("error") == "unauthorized_client",
+        )
 
         duplicate = anonymous.get(
             f"{BASE_URL}/authorize?client_id=a&client_id=b",
@@ -554,6 +613,21 @@ def run() -> None:
             expect_status("GET /auth/me", user.get(f"{BASE_URL}/auth/me", timeout=10), 200)
         )
         check("auth_me_user", me["id"] == user_id and me["email"] == USER_EMAIL)
+
+        valkey_client = redis.Redis.from_url(VALKEY_URL, decode_responses=True)
+        malformed_session = requests.Session()
+        malformed_sid = secrets.token_urlsafe(32)
+        valkey_client.set(f"oauth:session:{malformed_sid}", "not-json", ex=300)
+        malformed_session.cookies.set(SESSION_COOKIE_NAME, malformed_sid)
+        expect_status(
+            "GET /auth/me malformed session is unauthenticated",
+            malformed_session.get(f"{BASE_URL}/auth/me", timeout=10),
+            401,
+        )
+        check(
+            "malformed_session_deleted",
+            valkey_client.get(f"oauth:session:{malformed_sid}") is None,
+        )
 
         csrf = expect_json(
             expect_status("GET /auth/csrf", user.get(f"{BASE_URL}/auth/csrf", timeout=10), 200)
@@ -749,6 +823,310 @@ def run() -> None:
         )
         private_client_id = private_client["client_id"]
 
+        private_auth_client = create_client(
+            admin,
+            {
+                "client_name": "Private JWT Auth Code Full E2E",
+                "client_type": "confidential",
+                "redirect_uris": [CLIENT_REDIRECT_URI],
+                "scopes": ["openid", "profile", "email"],
+                "allowed_audiences": [DEFAULT_AUDIENCE],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "private_key_jwt",
+                "jwks": {"keys": [ed25519_public_jwk(private_key, "private-key-jwt-e2e")]},
+            },
+            "POST /admin/clients private_key_jwt authorization_code",
+        )
+        private_auth_client_id = private_auth_client["client_id"]
+
+        par_confidential_unauthenticated = requests.post(
+            f"{BASE_URL}/par",
+            data={
+                "response_type": "code",
+                "client_id": secret_client_id,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "scope": "profile",
+                "code_challenge": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ",
+                "code_challenge_method": "S256",
+            },
+            timeout=10,
+        )
+        expect_status("POST /par confidential unauthenticated rejected", par_confidential_unauthenticated, 401)
+
+        par_with_request_uri = requests.post(
+            f"{BASE_URL}/par",
+            data={
+                "response_type": "code",
+                "client_id": public_client_id,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "scope": "openid",
+                "state": "par-request-uri",
+                "request_uri": "urn:ietf:params:oauth:request_uri:external",
+                "code_challenge": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ",
+                "code_challenge_method": "S256",
+            },
+            timeout=10,
+        )
+        expect_status("POST /par request_uri rejected", par_with_request_uri, 400)
+
+        par_unknown = requests.post(
+            f"{BASE_URL}/par",
+            data={
+                "response_type": "code",
+                "client_id": public_client_id,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "scope": "openid",
+                "state": "par-unknown",
+                "unexpected": "value",
+                "code_challenge": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ",
+                "code_challenge_method": "S256",
+            },
+            timeout=10,
+        )
+        expect_status("POST /par unsupported parameter rejected", par_unknown, 400)
+
+        par_verifier, par_challenge = pkce_pair()
+        par = expect_json(
+            expect_status(
+                "POST /par public",
+                requests.post(
+                    f"{BASE_URL}/par",
+                    data={
+                        "response_type": "code",
+                        "client_id": public_client_id,
+                        "redirect_uri": CLIENT_REDIRECT_URI,
+                        "scope": "openid profile email offline_access",
+                        "state": "par-flow",
+                        "nonce": "nonce-par-flow",
+                        "code_challenge": par_challenge,
+                        "code_challenge_method": "S256",
+                    },
+                    timeout=10,
+                ),
+                201,
+            )
+        )
+        check("par_request_uri_shape", par["request_uri"].startswith("urn:ietf:params:oauth:request_uri:"))
+        par_conflict = user.get(
+            f"{BASE_URL}/authorize",
+            params={
+                "client_id": public_client_id,
+                "request_uri": par["request_uri"],
+                "scope": "openid",
+            },
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status("GET /authorize PAR parameter override rejected", par_conflict, 400)
+        par = expect_json(
+            expect_status(
+                "POST /par public second",
+                requests.post(
+                    f"{BASE_URL}/par",
+                    data={
+                        "response_type": "code",
+                        "client_id": public_client_id,
+                        "redirect_uri": CLIENT_REDIRECT_URI,
+                        "scope": "openid profile email offline_access",
+                        "state": "par-flow",
+                        "nonce": "nonce-par-flow",
+                        "code_challenge": par_challenge,
+                        "code_challenge_method": "S256",
+                    },
+                    timeout=10,
+                ),
+                201,
+            )
+        )
+        par_authorize = user.get(
+            f"{BASE_URL}/authorize",
+            params={"client_id": public_client_id, "request_uri": par["request_uri"]},
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status("GET /authorize PAR", par_authorize, 302)
+        par_request_id = consent_request_from_redirect(par_authorize, "GET /authorize PAR")
+        par_code, par_verifier = approve_authorization(user, par_request_id, par_verifier, state="par-flow")
+        par_tokens = token_plain(
+            {
+                "grant_type": "authorization_code",
+                "client_id": public_client_id,
+                "code": par_code,
+                "code_verifier": par_verifier,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+            },
+            "POST /token PAR authorization_code",
+        )
+        check("par_token_issued", bool(par_tokens.get("access_token")) and bool(par_tokens.get("id_token")))
+        par_reuse = user.get(
+            f"{BASE_URL}/authorize",
+            params={"client_id": public_client_id, "request_uri": par["request_uri"]},
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status("GET /authorize PAR request_uri read once", par_reuse, 400)
+
+        jar_verifier, jar_challenge = pkce_pair()
+        jar_token = authorization_request_object(
+            private_auth_client_id,
+            private_key,
+            code_challenge=jar_challenge,
+            state="jar-flow",
+        )
+        jar_authorize = user.get(
+            f"{BASE_URL}/authorize",
+            params={"request": jar_token},
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status("GET /authorize JAR", jar_authorize, 302)
+        jar_request_id = consent_request_from_redirect(jar_authorize, "GET /authorize JAR")
+        jar_code, jar_verifier = approve_authorization(user, jar_request_id, jar_verifier, state="jar-flow")
+        jar_tokens = token_plain(
+            {
+                "grant_type": "authorization_code",
+                "code": jar_code,
+                "code_verifier": jar_verifier,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "client_assertion_type": CLIENT_ASSERTION_TYPE,
+                "client_assertion": client_assertion(private_auth_client_id, private_key),
+            },
+            "POST /token JAR authorization_code private_key_jwt",
+        )
+        check("jar_token_issued", bool(jar_tokens.get("access_token")) and bool(jar_tokens.get("id_token")))
+        jar_replay = user.get(
+            f"{BASE_URL}/authorize",
+            params={"request": jar_token},
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status("GET /authorize JAR jti replay rejected", jar_replay, 400)
+
+        jar_none = authorization_request_object(
+            private_auth_client_id,
+            private_key,
+            code_challenge=jar_challenge,
+            state="jar-none",
+            algorithm="none",
+        )
+        expect_status(
+            "GET /authorize JAR alg none rejected",
+            user.get(
+                f"{BASE_URL}/authorize",
+                params={"request": jar_none},
+                allow_redirects=False,
+                timeout=10,
+            ),
+            400,
+        )
+        jar_bad_aud = authorization_request_object(
+            private_auth_client_id,
+            private_key,
+            code_challenge=jar_challenge,
+            state="jar-bad-aud",
+            audience="https://wrong-audience.example",
+        )
+        expect_status(
+            "GET /authorize JAR audience mismatch rejected",
+            user.get(
+                f"{BASE_URL}/authorize",
+                params={"request": jar_bad_aud},
+                allow_redirects=False,
+                timeout=10,
+            ),
+            400,
+        )
+
+        jar_conflict_verifier, jar_conflict_challenge = pkce_pair()
+        jar_conflict_jti = str(uuid.uuid4())
+        jar_conflict = authorization_request_object(
+            private_auth_client_id,
+            private_key,
+            code_challenge=jar_conflict_challenge,
+            state="jar-conflict",
+            jti=jar_conflict_jti,
+        )
+        expect_status(
+            "GET /authorize JAR outer conflict rejected",
+            user.get(
+                f"{BASE_URL}/authorize",
+                params={"request": jar_conflict, "state": "conflicting-outer-state"},
+                allow_redirects=False,
+                timeout=10,
+            ),
+            400,
+        )
+        jar_conflict_reuse = user.get(
+            f"{BASE_URL}/authorize",
+            params={"request": jar_conflict},
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status("GET /authorize JAR conflict does not consume jti", jar_conflict_reuse, 302)
+        jar_conflict_request_id = consent_request_from_redirect(
+            jar_conflict_reuse,
+            "GET /authorize JAR conflict retry",
+        )
+        _jar_conflict_code, _jar_conflict_verifier = approve_authorization(
+            user,
+            jar_conflict_request_id,
+            jar_conflict_verifier,
+            state="jar-conflict",
+        )
+
+        par_jar_verifier, par_jar_challenge = pkce_pair()
+        par_jar = authorization_request_object(
+            private_auth_client_id,
+            private_key,
+            code_challenge=par_jar_challenge,
+            state="par-jar-flow",
+        )
+        par_jar_response = expect_json(
+            expect_status(
+                "POST /par JAR private_key_jwt",
+                requests.post(
+                    f"{BASE_URL}/par",
+                    data={
+                        "request": par_jar,
+                        "client_assertion_type": CLIENT_ASSERTION_TYPE,
+                        "client_assertion": client_assertion(
+                            private_auth_client_id,
+                            private_key,
+                            audience_path="/par",
+                        ),
+                    },
+                    timeout=10,
+                ),
+                201,
+            )
+        )
+        par_jar_authorize = user.get(
+            f"{BASE_URL}/authorize",
+            params={"request_uri": par_jar_response["request_uri"]},
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status("GET /authorize PAR JAR", par_jar_authorize, 302)
+        par_jar_request_id = consent_request_from_redirect(par_jar_authorize, "GET /authorize PAR JAR")
+        par_jar_code, par_jar_verifier = approve_authorization(
+            user,
+            par_jar_request_id,
+            par_jar_verifier,
+            state="par-jar-flow",
+        )
+        par_jar_tokens = token_plain(
+            {
+                "grant_type": "authorization_code",
+                "code": par_jar_code,
+                "code_verifier": par_jar_verifier,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "client_assertion_type": CLIENT_ASSERTION_TYPE,
+                "client_assertion": client_assertion(private_auth_client_id, private_key),
+            },
+            "POST /token PAR JAR authorization_code private_key_jwt",
+        )
+        check("par_jar_token_issued", bool(par_jar_tokens.get("access_token")))
+
         expect_status(
             "POST /introspect public client rejected",
             requests.post(
@@ -862,6 +1240,72 @@ def run() -> None:
         )
         check("admin_patch_client_shape", patched_client["client_name"] == "Public Full E2E Updated")
 
+        _prompt_verifier, prompt_challenge = pkce_pair()
+        prompt_none = requests.get(
+            f"{BASE_URL}/authorize",
+            params={
+                "response_type": "code",
+                "client_id": public_client_id,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "scope": "openid",
+                "state": "prompt-none",
+                "prompt": "none",
+                "code_challenge": prompt_challenge,
+                "code_challenge_method": "S256",
+            },
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status("GET /authorize prompt=none unauthenticated", prompt_none, 302)
+        check("prompt_none_login_required", location_query(prompt_none).get("error") == ["login_required"])
+
+        prompt_login = user.get(
+            f"{BASE_URL}/authorize",
+            params={
+                "response_type": "code",
+                "client_id": public_client_id,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "scope": "openid",
+                "state": "prompt-login",
+                "prompt": "login",
+                "code_challenge": prompt_challenge,
+                "code_challenge_method": "S256",
+            },
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status("GET /authorize prompt=login", prompt_login, 302)
+        prompt_login_location = prompt_login.headers.get("Location", "")
+        check(
+            "prompt_login_redirects_to_frontend_auth",
+            prompt_login_location.startswith("http://127.0.0.1:3000/auth?next=")
+            and "prompt%3Dlogin" not in prompt_login_location,
+            prompt_login_location,
+        )
+
+        time.sleep(1)
+        max_age = user.get(
+            f"{BASE_URL}/authorize",
+            params={
+                "response_type": "code",
+                "client_id": public_client_id,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "scope": "openid",
+                "state": "max-age",
+                "max_age": "0",
+                "code_challenge": prompt_challenge,
+                "code_challenge_method": "S256",
+            },
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status("GET /authorize max_age expired", max_age, 302)
+        check(
+            "max_age_redirects_to_frontend_auth",
+            max_age.headers.get("Location", "").startswith("http://127.0.0.1:3000/auth?next="),
+            max_age.headers.get("Location"),
+        )
+
         bad_response_type = user.get(
             f"{BASE_URL}/authorize",
             params={
@@ -898,21 +1342,29 @@ def run() -> None:
         expect_status("POST /authorize/decision deny", deny_response, 302)
         check("authorize_deny_error", location_query(deny_response).get("error") == ["access_denied"])
 
-        request_id, verifier = authorize_request(user, public_client_id, state="approve-flow")
-        code, verifier = approve_authorization(user, request_id, verifier, state="approve-flow")
-
         dpop_key = ed25519.Ed25519PrivateKey.generate()
+        missing_request_id, missing_verifier = authorize_request(
+            user,
+            public_client_id,
+            state="missing-redirect-flow",
+        )
+        missing_code, missing_verifier = approve_authorization(
+            user,
+            missing_request_id,
+            missing_verifier,
+            state="missing-redirect-flow",
+        )
         missing_redirect_form = {
             "grant_type": "authorization_code",
             "client_id": public_client_id,
-            "code": code,
-            "code_verifier": verifier,
+            "code": missing_code,
+            "code_verifier": missing_verifier,
         }
         nonce = request_dpop_nonce(missing_redirect_form, dpop_key)
         missing_redirect_response = requests.post(
             f"{BASE_URL}/token",
             data=missing_redirect_form,
-            headers={"DPoP": dpop_proof("POST", f"{BASE_URL}/token", dpop_key, nonce=nonce)},
+            headers={"DPoP": dpop_proof("POST", f"{ISSUER_URL}/token", dpop_key, nonce=nonce)},
             timeout=10,
         )
         expect_status("POST /token redirect_uri required", missing_redirect_response, 400)
@@ -921,11 +1373,20 @@ def run() -> None:
             expect_json(missing_redirect_response).get("error") == "invalid_grant",
         )
 
+        request_id, verifier = authorize_request(user, public_client_id, state="approve-flow")
+        code, verifier = approve_authorization(user, request_id, verifier, state="approve-flow")
+        token_form = {
+            "grant_type": "authorization_code",
+            "client_id": public_client_id,
+            "code": code,
+            "code_verifier": verifier,
+            "redirect_uri": CLIENT_REDIRECT_URI,
+        }
         nonce = request_dpop_nonce(
-            {**missing_redirect_form, "redirect_uri": CLIENT_REDIRECT_URI}, dpop_key
+            token_form, dpop_key
         )
         token_response = token_with_dpop(
-            {**missing_redirect_form, "redirect_uri": CLIENT_REDIRECT_URI},
+            token_form,
             dpop_key,
             nonce,
             "POST /token authorization_code DPoP",
@@ -938,7 +1399,7 @@ def run() -> None:
             f"{BASE_URL}/userinfo",
             headers={
                 "Authorization": f"DPoP {access_token}",
-                "DPoP": dpop_proof("GET", f"{BASE_URL}/userinfo", dpop_key, access_token=access_token),
+                "DPoP": dpop_proof("GET", f"{ISSUER_URL}/userinfo", dpop_key, access_token=access_token),
             },
             timeout=10,
         )
@@ -959,7 +1420,7 @@ def run() -> None:
                         "Authorization": f"DPoP {access_token}",
                         "DPoP": dpop_proof(
                             "GET",
-                            f"{BASE_URL}/userinfo",
+                            f"{ISSUER_URL}/userinfo",
                             dpop_key,
                             nonce=userinfo_nonce,
                             access_token=access_token,
@@ -1076,7 +1537,7 @@ def run() -> None:
                 "Authorization": f"DPoP {replay_access_token}",
                 "DPoP": dpop_proof(
                     "GET",
-                    f"{BASE_URL}/userinfo",
+                    f"{ISSUER_URL}/userinfo",
                     replay_key,
                     access_token=replay_access_token,
                 ),
@@ -1094,7 +1555,7 @@ def run() -> None:
         replay_response = requests.post(
             f"{BASE_URL}/token",
             data=replay_form,
-            headers={"DPoP": dpop_proof("POST", f"{BASE_URL}/token", replay_key, nonce=replay_nonce)},
+            headers={"DPoP": dpop_proof("POST", f"{ISSUER_URL}/token", replay_key, nonce=replay_nonce)},
             timeout=10,
         )
         expect_status("POST /token authorization_code replay rejected", replay_response, 400)
@@ -1111,7 +1572,7 @@ def run() -> None:
                         "Authorization": f"DPoP {replay_access_token}",
                         "DPoP": dpop_proof(
                             "GET",
-                            f"{BASE_URL}/userinfo",
+                            f"{ISSUER_URL}/userinfo",
                             replay_key,
                             nonce=replay_userinfo_nonce,
                             access_token=replay_access_token,
@@ -1135,7 +1596,7 @@ def run() -> None:
                     headers={
                         "DPoP": dpop_proof(
                             "POST",
-                            f"{BASE_URL}/token",
+                            f"{ISSUER_URL}/token",
                             replay_key,
                             nonce=replay_refresh_nonce,
                         )
@@ -1148,6 +1609,70 @@ def run() -> None:
         check(
             "refresh_token_revoked_after_code_replay_error",
             replay_refresh_after_revoke.get("error") == "invalid_grant",
+        )
+
+        concurrent_request_id, concurrent_verifier = authorize_request(
+            user,
+            public_client_id,
+            state="concurrent-code-flow",
+            nonce=None,
+        )
+        concurrent_code, concurrent_verifier = approve_authorization(
+            user,
+            concurrent_request_id,
+            concurrent_verifier,
+            state="concurrent-code-flow",
+        )
+        concurrent_form = {
+            "grant_type": "authorization_code",
+            "client_id": public_client_id,
+            "code": concurrent_code,
+            "code_verifier": concurrent_verifier,
+            "redirect_uri": CLIENT_REDIRECT_URI,
+        }
+
+        def redeem_concurrent_code() -> tuple[int, dict[str, Any]]:
+            response = requests.post(f"{BASE_URL}/token", data=concurrent_form, timeout=10)
+            try:
+                return response.status_code, response.json()
+            except ValueError:
+                return response.status_code, {"raw": response.text}
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            concurrent_results = list(pool.map(lambda _: redeem_concurrent_code(), range(2)))
+        success_results = [body for status, body in concurrent_results if status == 200]
+        rejected_results = [body for status, body in concurrent_results if status == 400]
+        check(
+            "near_concurrent_authorization_code_single_success",
+            len(success_results) == 1 and len(rejected_results) == 1,
+            concurrent_results,
+        )
+        check(
+            "near_concurrent_authorization_code_busy_invalid_grant",
+            rejected_results[0].get("error") == "invalid_grant",
+            rejected_results,
+        )
+        concurrent_access_token = success_results[0]["access_token"]
+        replay_after_concurrent = requests.post(
+            f"{BASE_URL}/token",
+            data=concurrent_form,
+            timeout=10,
+        )
+        expect_status("POST /token authorization_code post-success replay rejected", replay_after_concurrent, 400)
+        concurrent_userinfo_after_replay = expect_json(
+            expect_status(
+                "GET /userinfo revoked after post-success code replay",
+                requests.get(
+                    f"{BASE_URL}/userinfo",
+                    headers={"Authorization": f"Bearer {concurrent_access_token}"},
+                    timeout=10,
+                ),
+                401,
+            )
+        )
+        check(
+            "post_success_code_replay_revoked_access_token",
+            concurrent_userinfo_after_replay.get("error") == "invalid_token",
         )
 
         secret_cc = expect_json(

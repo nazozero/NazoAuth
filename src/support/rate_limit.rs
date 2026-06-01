@@ -2,7 +2,7 @@
 //! 限流主体默认取连接来源地址，不信任可伪造的转发头。
 
 use super::prelude::*;
-use super::{blake3_hex, oauth_error, valkey_set_ex_nx};
+use super::{blake3_hex, client_ip, oauth_error, valkey_set_ex_nx};
 
 #[derive(Clone, Copy)]
 pub(crate) enum RateLimitPolicy {
@@ -37,7 +37,7 @@ pub(crate) async fn enforce_rate_limit(
     let settings = &state.settings.rate_limit;
     let window_seconds = settings.window_seconds;
     let max_requests = policy.max_requests(&state.settings);
-    let key = rate_limit_key(policy, &rate_limit_subject(req));
+    let key = rate_limit_key(policy, &rate_limit_subject(req, &state.settings));
 
     valkey_set_ex_nx(&state.valkey, key.clone(), "0", window_seconds)
         .await
@@ -64,10 +64,8 @@ pub(crate) async fn enforce_rate_limit(
     Ok(())
 }
 
-fn rate_limit_subject(req: &HttpRequest) -> String {
-    req.peer_addr()
-        .map(|addr| addr.ip().to_string())
-        .unwrap_or_else(|| "unknown".to_owned())
+fn rate_limit_subject(req: &HttpRequest, settings: &Settings) -> String {
+    client_ip(req, settings)
 }
 
 fn rate_limit_key(policy: RateLimitPolicy, subject: &str) -> String {

@@ -90,6 +90,17 @@ pub(crate) async fn token_refresh(
                 false,
             );
         }
+        audit_event(
+            "refresh_reuse_detected",
+            audit_fields(&[
+                ("client_id", json!(client.client_id)),
+                ("token_family_id", json!(token.token_family_id)),
+                (
+                    "source_ip_hash",
+                    json!(blake3_hex(&client_ip(req, &state.settings))),
+                ),
+            ]),
+        );
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
@@ -152,6 +163,8 @@ pub(crate) async fn token_refresh(
             scopes,
             audience,
             nonce: None,
+            auth_time: None,
+            amr: Vec::new(),
             include_refresh: true,
             rotation: Some((token.token_family_id, Some(token.id))),
             dpop_jkt,

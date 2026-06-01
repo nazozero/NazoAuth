@@ -1,7 +1,9 @@
 //! 跨 HTTP handler 复用的领域支撑模块。
 // 子模块按职责拆分；外部仍通过 crate::support::* 使用稳定入口。
 mod access_requests;
+mod audit;
 mod avatars;
+mod client_ip;
 mod cookies;
 mod dpop;
 mod email;
@@ -19,7 +21,9 @@ mod valkey;
 mod views;
 
 pub(crate) use access_requests::*;
+pub(crate) use audit::*;
 pub(crate) use avatars::*;
+pub(crate) use client_ip::*;
 pub(crate) use cookies::*;
 pub(crate) use dpop::*;
 pub(crate) use email::*;
@@ -57,7 +61,7 @@ pub(crate) mod prelude {
         Client as ValkeyClient, Error as ValkeyError, Expiration, KeysInterface, SetOptions,
     };
     pub(crate) use password_hash::{SaltString, rand_core::OsRng};
-    pub(crate) use serde::Serialize;
+    pub(crate) use serde::{Deserialize, Serialize};
     pub(crate) use serde_json::{Value, json};
     pub(crate) use sha2::{Digest, Sha256};
     pub(crate) use uuid::Uuid;

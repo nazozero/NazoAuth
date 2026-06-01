@@ -97,6 +97,18 @@ pub(crate) async fn authorize_decision(
 
     match decision {
         AuthorizationDecision::Deny => {
+            audit_event(
+                "authorization_denied",
+                audit_fields(&[
+                    ("user_id", json!(payload.user_id)),
+                    ("client_id", json!(payload.client_id)),
+                    ("scope", json!(payload.scopes.join(" "))),
+                    (
+                        "source_ip_hash",
+                        json!(blake3_hex(&client_ip(&req, &state.settings))),
+                    ),
+                ]),
+            );
             return redirect_found(append_query(
                 &payload.redirect_uri,
                 &[
@@ -119,12 +131,26 @@ pub(crate) async fn authorize_decision(
         redirect_uri_was_supplied: payload.redirect_uri_was_supplied,
         scopes: payload.scopes.clone(),
         nonce: payload.nonce,
+        auth_time: payload.auth_time,
+        amr: payload.amr,
         code_challenge: payload.code_challenge,
         code_challenge_method: payload.code_challenge_method,
         issued_at: now,
         expires_at: now + Duration::seconds(state.settings.auth_code_ttl_seconds as i64),
     };
-    let body = serde_json::to_string(&code_payload).unwrap();
+    let body = match serde_json::to_string(&AuthorizationCodeState::Pending {
+        payload: code_payload,
+    }) {
+        Ok(body) => body,
+        Err(error) => {
+            tracing::warn!(%error, "failed to serialize authorization code state");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权码创建失败.",
+            );
+        }
+    };
     let code_key = authorization_code_key(&code);
     if let Err(error) = valkey_set_ex(
         &state.valkey,
@@ -154,6 +180,19 @@ pub(crate) async fn authorize_decision(
             "授权记录写入失败.",
         );
     }
+
+    audit_event(
+        "authorization_approved",
+        audit_fields(&[
+            ("user_id", json!(payload.user_id)),
+            ("client_id", json!(payload.client_id)),
+            ("scope", json!(payload.scopes.join(" "))),
+            (
+                "source_ip_hash",
+                json!(blake3_hex(&client_ip(&req, &state.settings))),
+            ),
+        ]),
+    );
 
     redirect_found(append_query(
         &payload.redirect_uri,

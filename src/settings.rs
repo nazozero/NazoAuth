@@ -8,7 +8,8 @@ use lettre::message::Mailbox;
 
 use crate::config::ConfigSource;
 use crate::support::{
-    is_loopback_http_url, validate_cors_origin, validate_frontend_base_url, validate_issuer_url,
+    ClientIpHeaderMode, IpCidr, is_loopback_http_url, parse_trusted_proxy_cidrs,
+    validate_cors_origin, validate_frontend_base_url, validate_issuer_url,
 };
 
 /// OAuth service runtime parameters.
@@ -33,6 +34,18 @@ pub(crate) struct Settings {
     pub(crate) email_code_dev_response_enabled: bool,
     pub(crate) avatar_storage_dir: PathBuf,
     pub(crate) jwk_keys_dir: PathBuf,
+    pub(crate) trusted_proxy_cidrs: Vec<IpCidr>,
+    pub(crate) client_ip_header_mode: ClientIpHeaderMode,
+    pub(crate) subject_type: SubjectType,
+    pub(crate) pairwise_subject_secret: Option<String>,
+    pub(crate) par_ttl_seconds: u64,
+    pub(crate) require_pushed_authorization_requests: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SubjectType {
+    Public,
+    Pairwise,
 }
 
 #[derive(Clone)]
@@ -101,6 +114,12 @@ impl Settings {
         if !cookie_secure && !is_loopback_http_url(&issuer) {
             bail!("COOKIE_SECURE=false 只允许用于 loopback HTTP 本地开发 issuer");
         }
+        let subject_type = SubjectType::from_config(config)?;
+        let pairwise_subject_secret = config.optional_string("PAIRWISE_SUBJECT_SECRET");
+        if subject_type == SubjectType::Pairwise && pairwise_subject_secret.is_none() {
+            bail!("PAIRWISE_SUBJECT_SECRET is required when SUBJECT_TYPE=pairwise");
+        }
+
         Ok(Self {
             issuer,
             frontend_base_url,
@@ -124,7 +143,38 @@ impl Settings {
                 config.string("AVATAR_STORAGE_DIR", "runtime/avatars"),
             ),
             jwk_keys_dir: PathBuf::from(config.string("JWK_KEYS_DIR", "runtime/keys")),
+            trusted_proxy_cidrs: parse_trusted_proxy_cidrs(config.get("TRUSTED_PROXY_CIDRS"))?,
+            client_ip_header_mode: ClientIpHeaderMode::parse(
+                &config.string("CLIENT_IP_HEADER_MODE", "none"),
+            )?,
+            subject_type,
+            pairwise_subject_secret,
+            par_ttl_seconds: config.parse("PAR_TTL_SECONDS", 90)?,
+            require_pushed_authorization_requests: config
+                .bool("REQUIRE_PUSHED_AUTHORIZATION_REQUESTS", false)?,
         })
+    }
+}
+
+impl SubjectType {
+    fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
+        match config
+            .string("SUBJECT_TYPE", "public")
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "public" => Ok(Self::Public),
+            "pairwise" => Ok(Self::Pairwise),
+            value => bail!("SUBJECT_TYPE must be public or pairwise, got {value}"),
+        }
+    }
+
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Public => "public",
+            Self::Pairwise => "pairwise",
+        }
     }
 }
 
