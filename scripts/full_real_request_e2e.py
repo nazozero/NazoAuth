@@ -935,6 +935,83 @@ def run() -> None:
         )
         private_auth_client_id = private_auth_client["client_id"]
 
+        secret_auth_client = create_client(
+            admin,
+            {
+                "client_name": "Secret Auth Code Full E2E",
+                "client_type": "confidential",
+                "redirect_uris": [CLIENT_REDIRECT_URI],
+                "scopes": ["openid", "profile", "email"],
+                "allowed_audiences": [DEFAULT_AUDIENCE],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "client_secret_basic",
+                "jwks": None,
+            },
+            "POST /admin/clients client_secret_basic authorization_code",
+        )
+        secret_auth_client_id = secret_auth_client["client_id"]
+        secret_auth_client_secret = secret_auth_client["client_secret"]
+
+        public_without_pkce = user.get(
+            f"{BASE_URL}/authorize",
+            params={
+                "response_type": "code",
+                "client_id": public_client_id,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "scope": "openid",
+                "state": "public-missing-pkce",
+            },
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status("GET /authorize public missing PKCE", public_without_pkce, 302)
+        check(
+            "public_missing_pkce_invalid_request",
+            location_query(public_without_pkce).get("error") == ["invalid_request"],
+        )
+
+        confidential_without_pkce = user.get(
+            f"{BASE_URL}/authorize",
+            params={
+                "response_type": "code",
+                "client_id": secret_auth_client_id,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "scope": "openid profile email",
+                "state": "confidential-no-pkce",
+                "nonce": "confidential-no-pkce-nonce",
+            },
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status("GET /authorize confidential without PKCE", confidential_without_pkce, 302)
+        confidential_no_pkce_request_id = consent_request_from_redirect(
+            confidential_without_pkce,
+            "GET /authorize confidential without PKCE",
+        )
+        confidential_no_pkce_code, _ = approve_authorization(
+            user,
+            confidential_no_pkce_request_id,
+            "",
+            state="confidential-no-pkce",
+        )
+        confidential_no_pkce_token = requests.post(
+            f"{BASE_URL}/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": confidential_no_pkce_code,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+            },
+            auth=(secret_auth_client_id, secret_auth_client_secret),
+            timeout=10,
+        )
+        expect_status("POST /token confidential authorization_code without PKCE", confidential_no_pkce_token, 200)
+        confidential_no_pkce_body = expect_json(confidential_no_pkce_token)
+        check(
+            "confidential_no_pkce_tokens_issued",
+            bool(confidential_no_pkce_body.get("access_token"))
+            and bool(confidential_no_pkce_body.get("id_token")),
+        )
+
         par_confidential_unauthenticated = requests.post(
             f"{BASE_URL}/par",
             data={

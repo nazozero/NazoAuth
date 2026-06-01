@@ -216,26 +216,37 @@ pub(crate) async fn token_authorization_code(
             false,
         );
     }
-    let Some(verifier) = &form.code_verifier else {
-        mark_failed_authorization_code(state, &code_hash, "missing_code_verifier").await;
-        return oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "缺少 code_verifier.",
-            false,
-        );
-    };
-    if payload.code_challenge_method != "S256"
-        || !is_valid_pkce_value(verifier)
-        || pkce_s256(verifier) != payload.code_challenge
-    {
-        mark_failed_authorization_code(state, &code_hash, "pkce_failed").await;
-        return oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_grant",
-            "PKCE 校验失败.",
-            false,
-        );
+    match (&payload.code_challenge, &payload.code_challenge_method) {
+        (Some(code_challenge), Some(method)) if method == "S256" => {
+            let Some(verifier) = &form.code_verifier else {
+                mark_failed_authorization_code(state, &code_hash, "missing_code_verifier").await;
+                return oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_request",
+                    "缺少 code_verifier.",
+                    false,
+                );
+            };
+            if !is_valid_pkce_value(verifier) || pkce_s256(verifier) != *code_challenge {
+                mark_failed_authorization_code(state, &code_hash, "pkce_failed").await;
+                return oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    "PKCE 校验失败.",
+                    false,
+                );
+            }
+        }
+        (None, None) if client.client_type == "confidential" => {}
+        _ => {
+            mark_failed_authorization_code(state, &code_hash, "pkce_state_invalid").await;
+            return oauth_token_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权码 PKCE 状态无效.",
+                false,
+            );
+        }
     }
     let audience = form
         .audience
@@ -292,8 +303,8 @@ mod tests {
             nonce: None,
             auth_time: now.timestamp(),
             amr: vec!["password".to_owned()],
-            code_challenge: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ".to_owned(),
-            code_challenge_method: "S256".to_owned(),
+            code_challenge: Some("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ".to_owned()),
+            code_challenge_method: Some("S256".to_owned()),
             issued_at: now,
             expires_at: now + Duration::seconds(300),
         }

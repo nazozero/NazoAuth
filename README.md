@@ -267,6 +267,8 @@ public PKCE client：
 GET /authorize?response_type=code&client_id=public-client&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&scope=openid%20profile&code_challenge=<s256>&code_challenge_method=S256
 ```
 
+Public authorization code client 必须使用 S256 PKCE。Confidential client 可以执行 OIDC Core authorization code flow；若请求携带 PKCE，服务端同样要求 `code_challenge_method=S256` 并在 token endpoint 校验 `code_verifier`。FAPI、PAR/JAR 安全 profile 和 OAuth 2.1 集成应始终发送 PKCE。
+
 confidential `client_secret_basic` token 请求：
 
 ```sh
