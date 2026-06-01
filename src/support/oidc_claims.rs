@@ -27,22 +27,18 @@ pub(crate) fn oidc_user_claims(user: &UserRow, scopes: &[String], subject: &str)
 
     if scopes.iter().any(|scope| scope == "profile") {
         claims["preferred_username"] = json!(user.username);
-        if let Some(name) = user
-            .display_name
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            claims["name"] = json!(name);
-        }
-        if let Some(picture) = user
-            .avatar_url
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            claims["picture"] = json!(picture);
-        }
+        optional_string_claim(&mut claims, "name", user.display_name.as_deref());
+        optional_string_claim(&mut claims, "given_name", user.given_name.as_deref());
+        optional_string_claim(&mut claims, "family_name", user.family_name.as_deref());
+        optional_string_claim(&mut claims, "middle_name", user.middle_name.as_deref());
+        optional_string_claim(&mut claims, "nickname", user.nickname.as_deref());
+        optional_string_claim(&mut claims, "profile", user.profile_url.as_deref());
+        optional_string_claim(&mut claims, "picture", user.avatar_url.as_deref());
+        optional_string_claim(&mut claims, "website", user.website_url.as_deref());
+        optional_string_claim(&mut claims, "gender", user.gender.as_deref());
+        optional_string_claim(&mut claims, "birthdate", user.birthdate.as_deref());
+        optional_string_claim(&mut claims, "zoneinfo", user.zoneinfo.as_deref());
+        optional_string_claim(&mut claims, "locale", user.locale.as_deref());
         claims["updated_at"] = json!(user.updated_at.timestamp());
     }
 
@@ -52,6 +48,12 @@ pub(crate) fn oidc_user_claims(user: &UserRow, scopes: &[String], subject: &str)
     }
 
     claims
+}
+
+fn optional_string_claim(claims: &mut Value, name: &str, value: Option<&str>) {
+    if let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) {
+        claims[name] = json!(value);
+    }
 }
 
 pub(crate) fn oidc_id_token_user_claims(user: &UserRow, scopes: &[String], subject: &str) -> Value {
@@ -77,6 +79,16 @@ mod tests {
             email: "alice@example.com".to_owned(),
             display_name: Some("Alice Example".to_owned()),
             avatar_url: Some("https://cdn.example/alice.png".to_owned()),
+            given_name: Some("Alice".to_owned()),
+            family_name: Some("Example".to_owned()),
+            middle_name: Some("Quinn".to_owned()),
+            nickname: Some("ally".to_owned()),
+            profile_url: Some("https://profiles.example/alice".to_owned()),
+            website_url: Some("https://alice.example".to_owned()),
+            gender: Some("female".to_owned()),
+            birthdate: Some("1990-01-02".to_owned()),
+            zoneinfo: Some("Asia/Shanghai".to_owned()),
+            locale: Some("zh-CN".to_owned()),
             role: "user".to_owned(),
             admin_level: 0,
             email_verified: true,
@@ -143,7 +155,17 @@ mod tests {
         assert_eq!(claims["sub"], "subject-1");
         assert_eq!(claims["preferred_username"], "alice");
         assert_eq!(claims["name"], "Alice Example");
+        assert_eq!(claims["given_name"], "Alice");
+        assert_eq!(claims["family_name"], "Example");
+        assert_eq!(claims["middle_name"], "Quinn");
+        assert_eq!(claims["nickname"], "ally");
+        assert_eq!(claims["profile"], "https://profiles.example/alice");
         assert_eq!(claims["picture"], "https://cdn.example/alice.png");
+        assert_eq!(claims["website"], "https://alice.example");
+        assert_eq!(claims["gender"], "female");
+        assert_eq!(claims["birthdate"], "1990-01-02");
+        assert_eq!(claims["zoneinfo"], "Asia/Shanghai");
+        assert_eq!(claims["locale"], "zh-CN");
         assert_eq!(claims["email"], "alice@example.com");
         assert_eq!(claims["email_verified"], true);
     }
@@ -154,8 +176,18 @@ mod tests {
         let claims = oidc_user_claims(&user, &["openid".to_owned()], "subject-1");
 
         assert!(claims.get("name").is_none());
+        assert!(claims.get("given_name").is_none());
+        assert!(claims.get("family_name").is_none());
+        assert!(claims.get("middle_name").is_none());
+        assert!(claims.get("nickname").is_none());
+        assert!(claims.get("profile").is_none());
         assert!(claims.get("preferred_username").is_none());
         assert!(claims.get("picture").is_none());
+        assert!(claims.get("website").is_none());
+        assert!(claims.get("gender").is_none());
+        assert!(claims.get("birthdate").is_none());
+        assert!(claims.get("zoneinfo").is_none());
+        assert!(claims.get("locale").is_none());
         assert!(claims.get("email").is_none());
         assert!(claims.get("email_verified").is_none());
     }

@@ -35,7 +35,7 @@ fn authorization_server_metadata_value(state: &AppState) -> Value {
         "introspection_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "private_key_jwt"],
         "introspection_endpoint_auth_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS,
         "scopes_supported": ["openid", "profile", "email", "offline_access"],
-        "claims_supported": ["sub", "auth_time", "amr", "nonce", "preferred_username", "name", "email", "email_verified", "picture", "updated_at"],
+        "claims_supported": ["sub", "auth_time", "amr", "nonce", "preferred_username", "name", "given_name", "family_name", "middle_name", "nickname", "profile", "picture", "website", "gender", "birthdate", "zoneinfo", "locale", "email", "email_verified", "updated_at"],
         "prompt_values_supported": ["login", "none"],
         "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
         "authorization_response_iss_parameter_supported": true,
