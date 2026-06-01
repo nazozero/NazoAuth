@@ -152,15 +152,6 @@ async fn authorize_request(
     }
 
     if let Some(request_uri) = q.get("request_uri").cloned() {
-        if q.keys()
-            .any(|key| key != "request_uri" && key != "client_id")
-        {
-            return oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "request_uri 请求不能被外层参数覆盖.",
-            );
-        }
         let raw = match valkey_getdel(
             &state.valkey,
             pushed_authorization_request_key(&request_uri),
@@ -202,6 +193,13 @@ async fn authorize_request(
                 StatusCode::BAD_REQUEST,
                 "invalid_request",
                 "request_uri 与 client_id 不匹配.",
+            );
+        }
+        if !outer_request_uri_parameters_match_pushed(q, &pushed.params) {
+            return oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "request_uri 请求不能被外层参数覆盖.",
             );
         }
         *q = pushed.params;
@@ -457,6 +455,18 @@ async fn authorize_request(
     ))
 }
 
+fn outer_request_uri_parameters_match_pushed(
+    outer: &HashMap<String, String>,
+    pushed: &HashMap<String, String>,
+) -> bool {
+    outer.iter().all(|(key, outer_value)| {
+        if key == "request_uri" || key == "client_id" {
+            return true;
+        }
+        pushed.get(key) == Some(outer_value)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -515,6 +525,43 @@ mod tests {
     fn malformed_claims_parameter_is_invalid() {
         assert!(requested_claims(&query(&[("claims", "not-json")])).is_err());
         assert!(requested_claims(&query(&[("claims", r#"{"userinfo":[]}"#)])).is_err());
+    }
+
+    #[test]
+    fn request_uri_allows_outer_parameters_only_when_equal_to_pushed_values() {
+        let pushed = query(&[
+            ("client_id", "client-1"),
+            ("redirect_uri", "https://client.example/callback"),
+            ("response_type", "code"),
+            ("scope", "openid profile"),
+        ]);
+
+        assert!(outer_request_uri_parameters_match_pushed(
+            &query(&[
+                ("client_id", "client-1"),
+                ("request_uri", "urn:ietf:params:oauth:request_uri:abc"),
+                ("redirect_uri", "https://client.example/callback"),
+                ("response_type", "code"),
+                ("scope", "openid profile"),
+            ]),
+            &pushed,
+        ));
+        assert!(!outer_request_uri_parameters_match_pushed(
+            &query(&[
+                ("client_id", "client-1"),
+                ("request_uri", "urn:ietf:params:oauth:request_uri:abc"),
+                ("redirect_uri", "https://attacker.example/callback"),
+            ]),
+            &pushed,
+        ));
+        assert!(!outer_request_uri_parameters_match_pushed(
+            &query(&[
+                ("client_id", "client-1"),
+                ("request_uri", "urn:ietf:params:oauth:request_uri:abc"),
+                ("state", "outer-state"),
+            ]),
+            &pushed,
+        ));
     }
 
     #[test]
