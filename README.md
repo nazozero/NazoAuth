@@ -6,7 +6,7 @@ Nazo OAuth Server 是一个 lightweight self-hosted OAuth 2.1 draft-compatible /
 
 - OAuth 2.1 authorization code + PKCE、refresh token、client credentials、PAR、JAR 流程
 - OpenID Connect discovery、OAuth Authorization Server Metadata、JWKS、userinfo
-- 服务端 access token / ID token 使用 Ed25519 / EdDSA 签名；客户端 `private_key_jwt`、JAR request object 和 DPoP proof 支持 EdDSA、RS256、ES256、PS256
+- 服务端 access token / ID token keyset 支持 EdDSA、RS256、ES256、PS256；客户端 `private_key_jwt`、JAR request object 和 DPoP proof 支持 EdDSA、RS256、ES256、PS256
 - `client_secret_basic`、`client_secret_post`、`private_key_jwt` 和 public client 认证
 - refresh token 轮换与复用检测
 - HTTPS / loopback / native redirect URI 门禁、S256 PKCE、授权码原子消费与重放撤销、DPoP proof 与一次性 nonce、敏感 token 响应 no-store
@@ -27,7 +27,7 @@ Nazo OAuth Server 是一个 lightweight self-hosted OAuth 2.1 draft-compatible /
 | 数据库 | PostgreSQL |
 | ORM | Diesel / diesel-async |
 | 缓存与临时状态 | Valkey |
-| JWT | Ed25519 / EdDSA 服务端签发；EdDSA、RS256、ES256、PS256 客户端 proof 验签 |
+| JWT | EdDSA、RS256、ES256、PS256 服务端签发与客户端 proof 验签 |
 | 密码哈希 | Argon2 |
 | JSON | serde / serde_json |
 | ID | UUIDv7 |
@@ -66,7 +66,7 @@ Nazo OAuth Server 是一个 lightweight self-hosted OAuth 2.1 draft-compatible /
 | --- | --- |
 | `nazo-oauth-server` | HTTP 服务 |
 | `nazo-oauth-migrate` | 数据库迁移命令 |
-| `nazo-oauth-keyctl` | Ed25519 keyset 轮换命令 |
+| `nazo-oauth-keyctl` | JWT keyset 轮换命令 |
 
 ## 配置
 
@@ -117,7 +117,7 @@ Nazo OAuth Server 是一个 lightweight self-hosted OAuth 2.1 draft-compatible /
 | `EMAIL_FROM` | 无 | 发件人邮箱；`EMAIL_DELIVERY=smtp` 时必填，支持 `Name <mail@example.com>` 格式 |
 | `EMAIL_CODE_DEV_RESPONSE_ENABLED` | `false` | 仅 debug 构建可用；邮件成功投递后，响应包含注册验证码，便于本地开发 |
 | `AVATAR_STORAGE_DIR` | `runtime/avatars` | 头像存储目录 |
-| `JWK_KEYS_DIR` | `runtime/keys` | Ed25519 keyset 存储目录 |
+| `JWK_KEYS_DIR` | `runtime/keys` | JWT keyset 存储目录 |
 
 ## 构建
 
@@ -143,10 +143,13 @@ cargo run --bin nazo-oauth-migrate
 
 ## Key Rotation
 
-生成新 key：
+生成新 key。默认生成 EdDSA；可通过 `--alg` 指定 `EdDSA`、`RS256`、`ES256` 或 `PS256`。首次启动时如不存在 keyset，服务会生成 RS256 active key，以满足 OpenID Connect Core 对 RS256 ID token 签名能力的互操作要求。
 
 ```sh
 nazo-oauth-keyctl generate
+nazo-oauth-keyctl generate --alg RS256
+nazo-oauth-keyctl generate --alg ES256
+nazo-oauth-keyctl generate --alg PS256
 ```
 
 部署新私钥文件和更新后的 `keyset.json` 后，发布 `/jwks.json`，再激活新 key：
@@ -167,7 +170,7 @@ nazo-oauth-keyctl retire <old-kid> --at 2026-06-01T00:00:00Z
 nazo-oauth-keyctl validate
 ```
 
-`keyset.json` 采用临时文件加 rename 写入；Unix 平台私钥 PEM 权限设置为 `0600`。active key 不允许退役，已退役 key 不发布到 JWKS。
+`keyset.json` 的每个 key entry 使用 `alg` 记录签名算法；未写 `alg` 的既有条目按 `EdDSA` 读取。`keyset.json` 采用临时文件加 rename 写入；Unix 平台私钥 PEM 权限设置为 `0600`。active key 不允许退役，已退役 key 不发布到 JWKS。
 
 ## 运行服务
 

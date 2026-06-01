@@ -1,10 +1,14 @@
-//! Ed25519 JWK/PEM 密钥管理。
+//! JWT JWK/PEM 密钥管理。
 // 负责加载、生成和编码 OAuth/OIDC 签名密钥。
 
 use std::io::ErrorKind;
 use std::path::Path;
 
 use anyhow::{Context, anyhow};
+use jsonwebtoken::jwk::{Jwk, PublicKeyUse};
+use p256::elliptic_curve::pkcs8::EncodePrivateKey as EncodeEcPrivateKey;
+use rand_core::OsRng;
+use rsa::RsaPrivateKey;
 
 use super::prelude::*;
 
@@ -40,6 +44,7 @@ pub(crate) async fn try_load_keyset(
         .and_then(Value::as_array)
         .ok_or_else(|| anyhow!("keyset.json missing keys array"))?;
     let mut active_private_pkcs8_der = None;
+    let mut active_alg = None;
     let mut seen_kids = std::collections::HashSet::new();
     let mut verification_keys = Vec::new();
 
@@ -66,21 +71,27 @@ pub(crate) async fn try_load_keyset(
         let raw_key = tokio::fs::read_to_string(settings.jwk_keys_dir.join(file_name))
             .await
             .with_context(|| format!("failed to read keyset entry {kid} from {file_name}"))?;
+        let alg = key_entry_algorithm(entry)
+            .with_context(|| format!("keyset entry {kid} has unsupported alg"))?;
         let der =
             pem_to_der(&raw_key).with_context(|| format!("keyset entry {kid} is not valid PEM"))?;
-        let public_key = public_key_from_private_der(&der)
-            .with_context(|| format!("keyset entry {kid} is not an Ed25519 private key"))?;
+        let public_jwk = public_jwk_from_private_der(kid, alg, &der)
+            .with_context(|| format!("keyset entry {kid} private key does not match alg"))?;
         if is_active {
             active_private_pkcs8_der = Some(der);
+            active_alg = Some(alg);
         }
         verification_keys.push(VerificationKey {
             kid: kid.to_owned(),
-            public_key,
+            alg,
+            public_jwk,
         });
     }
 
     Ok(Some(Keyset {
         active_kid: active_kid.to_owned(),
+        active_alg: active_alg
+            .ok_or_else(|| anyhow!("keyset.json active_kid does not reference a live key"))?,
         active_private_pkcs8_der: active_private_pkcs8_der
             .ok_or_else(|| anyhow!("keyset.json active_kid does not reference a live key"))?,
         verification_keys,
@@ -88,9 +99,9 @@ pub(crate) async fn try_load_keyset(
 }
 
 pub(crate) async fn create_new_keyset(settings: &Settings) -> anyhow::Result<Keyset> {
-    let seed: [u8; 32] = rand::random();
-    let private_pkcs8_der = ed25519_pkcs8_private_der(&seed);
-    let kid = format!("ed25519-{}", Uuid::now_v7());
+    let generated = generate_key_material(jsonwebtoken::Algorithm::RS256)?;
+    let private_pkcs8_der = generated.private_pkcs8_der;
+    let kid = format!("rs256-{}", Uuid::now_v7());
     let file_name = format!("{kid}.pem");
     let pem = der_to_pem(&private_pkcs8_der, "PRIVATE KEY");
     write_private_key_pem_atomic(&settings.jwk_keys_dir.join(&file_name), &pem).await?;
@@ -99,17 +110,25 @@ pub(crate) async fn create_new_keyset(settings: &Settings) -> anyhow::Result<Key
         "active_kid": kid,
         "keys": [{
             "kid": kid,
+            "alg": "RS256",
             "file": file_name,
             "created_at": now,
             "retire_at": null
         }]
     });
     write_json_atomic(&settings.jwk_keys_dir.join("keyset.json"), &payload).await?;
-    keyset_from_der(
-        payload["active_kid"].as_str().unwrap_or_default(),
-        private_pkcs8_der,
-    )
-    .ok_or_else(|| anyhow::anyhow!("failed to build generated Ed25519 keyset"))
+    let public_jwk =
+        public_jwk_from_private_der(&kid, jsonwebtoken::Algorithm::RS256, &private_pkcs8_der)?;
+    Ok(Keyset {
+        active_kid: kid.clone(),
+        active_alg: jsonwebtoken::Algorithm::RS256,
+        active_private_pkcs8_der: private_pkcs8_der,
+        verification_keys: vec![VerificationKey {
+            kid,
+            alg: jsonwebtoken::Algorithm::RS256,
+            public_jwk,
+        }],
+    })
 }
 
 pub(crate) async fn write_json_atomic(path: &Path, value: &Value) -> anyhow::Result<()> {
@@ -159,21 +178,111 @@ async fn set_private_key_permissions(_path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub(crate) fn keyset_from_der(active_kid: &str, private_pkcs8_der: Vec<u8>) -> Option<Keyset> {
-    let public_key = public_key_from_private_der(&private_pkcs8_der)?;
-    Some(Keyset {
-        active_kid: active_kid.to_string(),
-        active_private_pkcs8_der: private_pkcs8_der,
-        verification_keys: vec![VerificationKey {
-            kid: active_kid.to_string(),
-            public_key,
-        }],
-    })
+pub(crate) struct GeneratedKeyMaterial {
+    pub(crate) private_pkcs8_der: Vec<u8>,
 }
 
-fn public_key_from_private_der(private_pkcs8_der: &[u8]) -> Option<[u8; 32]> {
+pub(crate) fn generate_key_material(
+    alg: jsonwebtoken::Algorithm,
+) -> anyhow::Result<GeneratedKeyMaterial> {
+    let private_pkcs8_der = match alg {
+        jsonwebtoken::Algorithm::EdDSA => {
+            let seed: [u8; 32] = rand::random();
+            ed25519_pkcs8_private_der(&seed)
+        }
+        jsonwebtoken::Algorithm::RS256 | jsonwebtoken::Algorithm::PS256 => {
+            let private_key = RsaPrivateKey::new(&mut OsRng, 2048)?;
+            private_key.to_pkcs8_der()?.as_bytes().to_vec()
+        }
+        jsonwebtoken::Algorithm::ES256 => {
+            let secret_key = p256::SecretKey::random(&mut OsRng);
+            secret_key.to_pkcs8_der()?.as_bytes().to_vec()
+        }
+        _ => anyhow::bail!("unsupported server signing alg"),
+    };
+    Ok(GeneratedKeyMaterial { private_pkcs8_der })
+}
+
+fn public_key_from_ed_private_der(private_pkcs8_der: &[u8]) -> Option<[u8; 32]> {
     let seed = ed25519_seed_from_pkcs8(private_pkcs8_der)?;
     Some(SigningKey::from_bytes(&seed).verifying_key().to_bytes())
+}
+
+fn public_jwk_from_private_der(
+    kid: &str,
+    alg: jsonwebtoken::Algorithm,
+    private_pkcs8_der: &[u8],
+) -> anyhow::Result<Value> {
+    let mut jwk = match alg {
+        jsonwebtoken::Algorithm::EdDSA => {
+            let public_key = public_key_from_ed_private_der(private_pkcs8_der)
+                .ok_or_else(|| anyhow!("invalid Ed25519 private key"))?;
+            json!({
+                "kty": "OKP",
+                "crv": "Ed25519",
+                "x": URL_SAFE_NO_PAD.encode(public_key),
+                "use": "sig",
+                "alg": "EdDSA",
+                "kid": kid
+            })
+        }
+        jsonwebtoken::Algorithm::RS256 | jsonwebtoken::Algorithm::PS256 => {
+            public_jwk_from_encoding_key(
+                kid,
+                alg,
+                &jsonwebtoken::EncodingKey::from_rsa_der(private_pkcs8_der),
+            )?
+        }
+        jsonwebtoken::Algorithm::ES256 => public_jwk_from_encoding_key(
+            kid,
+            alg,
+            &jsonwebtoken::EncodingKey::from_ec_der(private_pkcs8_der),
+        )?,
+        _ => anyhow::bail!("unsupported server signing alg"),
+    };
+    jwk["kid"] = json!(kid);
+    jwk["use"] = json!("sig");
+    Ok(jwk)
+}
+
+fn public_jwk_from_encoding_key(
+    kid: &str,
+    alg: jsonwebtoken::Algorithm,
+    encoding_key: &jsonwebtoken::EncodingKey,
+) -> anyhow::Result<Value> {
+    let mut jwk = Jwk::from_encoding_key(encoding_key, alg)?;
+    jwk.common.key_id = Some(kid.to_owned());
+    jwk.common.public_key_use = Some(PublicKeyUse::Signature);
+    Ok(serde_json::to_value(jwk)?)
+}
+
+pub(crate) fn signing_algorithm_name(alg: jsonwebtoken::Algorithm) -> Option<&'static str> {
+    match alg {
+        jsonwebtoken::Algorithm::EdDSA => Some("EdDSA"),
+        jsonwebtoken::Algorithm::RS256 => Some("RS256"),
+        jsonwebtoken::Algorithm::ES256 => Some("ES256"),
+        jsonwebtoken::Algorithm::PS256 => Some("PS256"),
+        _ => None,
+    }
+}
+
+pub(crate) fn signing_algorithm_from_name(value: &str) -> Option<jsonwebtoken::Algorithm> {
+    match value {
+        "EdDSA" => Some(jsonwebtoken::Algorithm::EdDSA),
+        "RS256" => Some(jsonwebtoken::Algorithm::RS256),
+        "ES256" => Some(jsonwebtoken::Algorithm::ES256),
+        "PS256" => Some(jsonwebtoken::Algorithm::PS256),
+        _ => None,
+    }
+}
+
+fn key_entry_algorithm(entry: &Value) -> anyhow::Result<jsonwebtoken::Algorithm> {
+    entry
+        .get("alg")
+        .and_then(Value::as_str)
+        .map(signing_algorithm_from_name)
+        .unwrap_or(Some(jsonwebtoken::Algorithm::EdDSA))
+        .ok_or_else(|| anyhow!("unsupported signing alg"))
 }
 
 fn key_entry_is_retired(entry: &Value) -> bool {
@@ -232,16 +341,7 @@ impl Keyset {
         let keys = self
             .verification_keys
             .iter()
-            .map(|key| {
-                json!({
-                    "kty": "OKP",
-                    "crv": "Ed25519",
-                    "x": URL_SAFE_NO_PAD.encode(key.public_key),
-                    "use": "sig",
-                    "alg": "EdDSA",
-                    "kid": key.kid
-                })
-            })
+            .map(|key| key.public_jwk.clone())
             .collect::<Vec<_>>();
         json!({
             "keys": keys
@@ -250,6 +350,32 @@ impl Keyset {
 
     pub(crate) fn verification_key(&self, kid: &str) -> Option<&VerificationKey> {
         self.verification_keys.iter().find(|key| key.kid == kid)
+    }
+
+    pub(crate) fn active_encoding_key(&self) -> jsonwebtoken::EncodingKey {
+        match self.active_alg {
+            jsonwebtoken::Algorithm::EdDSA => {
+                jsonwebtoken::EncodingKey::from_ed_der(&self.active_private_pkcs8_der)
+            }
+            jsonwebtoken::Algorithm::RS256 | jsonwebtoken::Algorithm::PS256 => {
+                jsonwebtoken::EncodingKey::from_rsa_der(&self.active_private_pkcs8_der)
+            }
+            jsonwebtoken::Algorithm::ES256 => {
+                jsonwebtoken::EncodingKey::from_ec_der(&self.active_private_pkcs8_der)
+            }
+            _ => unreachable!("active signing algorithm is validated during keyset loading"),
+        }
+    }
+
+    pub(crate) fn signing_alg_values_supported(&self) -> Vec<&'static str> {
+        let mut values = self
+            .verification_keys
+            .iter()
+            .filter_map(|key| signing_algorithm_name(key.alg))
+            .collect::<Vec<_>>();
+        values.sort_unstable();
+        values.dedup();
+        values
     }
 }
 
@@ -267,15 +393,28 @@ mod tests {
         let previous_der = ed25519_pkcs8_private_der(&[2u8; 32]);
         let keyset = Keyset {
             active_kid: "active".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_private_pkcs8_der: active_der.clone(),
             verification_keys: vec![
                 VerificationKey {
                     kid: "active".to_owned(),
-                    public_key: public_key_from_private_der(&active_der).unwrap(),
+                    alg: jsonwebtoken::Algorithm::EdDSA,
+                    public_jwk: public_jwk_from_private_der(
+                        "active",
+                        jsonwebtoken::Algorithm::EdDSA,
+                        &active_der,
+                    )
+                    .unwrap(),
                 },
                 VerificationKey {
                     kid: "previous".to_owned(),
-                    public_key: public_key_from_private_der(&previous_der).unwrap(),
+                    alg: jsonwebtoken::Algorithm::EdDSA,
+                    public_jwk: public_jwk_from_private_der(
+                        "previous",
+                        jsonwebtoken::Algorithm::EdDSA,
+                        &previous_der,
+                    )
+                    .unwrap(),
                 },
             ],
         };

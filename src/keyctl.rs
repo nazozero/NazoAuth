@@ -1,4 +1,4 @@
-//! Ed25519 key rotation CLI implementation.
+//! JWT key rotation CLI implementation.
 
 use std::path::PathBuf;
 
@@ -10,8 +10,8 @@ use uuid::Uuid;
 use crate::config::ConfigSource;
 use crate::settings::Settings;
 use crate::support::{
-    create_new_keyset, der_to_pem, ed25519_pkcs8_private_der, try_load_keyset, write_json_atomic,
-    write_private_key_pem_atomic,
+    der_to_pem, generate_key_material, signing_algorithm_from_name, signing_algorithm_name,
+    try_load_keyset, write_json_atomic, write_private_key_pem_atomic,
 };
 
 pub async fn run(args: impl IntoIterator<Item = String>) -> anyhow::Result<()> {
@@ -24,7 +24,10 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> anyhow::Result<()> {
     let settings = Settings::from_config(&config)?;
     match command.as_str() {
         "list" => list_keys(&settings).await,
-        "generate" => generate_key(&settings).await,
+        "generate" => {
+            let alg = parse_generate_alg(args.collect::<Vec<_>>())?;
+            generate_key(&settings, alg).await
+        }
         "activate" => {
             let kid = args
                 .next()
@@ -57,6 +60,7 @@ async fn list_keys(settings: &Settings) -> anyhow::Result<()> {
     let keys = keys_array(&keyset)?;
     for key in keys {
         let kid = key.get("kid").and_then(Value::as_str).unwrap_or("");
+        let alg = key.get("alg").and_then(Value::as_str).unwrap_or("EdDSA");
         let file = key.get("file").and_then(Value::as_str).unwrap_or("");
         let retire_at = key.get("retire_at").and_then(Value::as_str).unwrap_or("");
         let status = if kid == active_kid {
@@ -66,26 +70,30 @@ async fn list_keys(settings: &Settings) -> anyhow::Result<()> {
         } else {
             "previous"
         };
-        println!("{kid}\t{status}\t{file}\t{retire_at}");
+        println!("{kid}\t{status}\t{alg}\t{file}\t{retire_at}");
     }
     Ok(())
 }
 
-async fn generate_key(settings: &Settings) -> anyhow::Result<()> {
-    if !keyset_path(settings).exists() {
-        let keyset = create_new_keyset(settings).await?;
-        println!("{}", keyset.active_kid);
-        return Ok(());
-    }
-
-    let mut keyset = load_keyset_json(settings).await?;
-    let kid = format!("ed25519-{}", Uuid::now_v7());
+async fn generate_key(settings: &Settings, alg: jsonwebtoken::Algorithm) -> anyhow::Result<()> {
+    let alg_name =
+        signing_algorithm_name(alg).ok_or_else(|| anyhow::anyhow!("unsupported signing alg"))?;
+    let kid = format!("{}-{}", alg_name.to_ascii_lowercase(), Uuid::now_v7());
     let file_name = format!("{kid}.pem");
-    let private_pkcs8_der = ed25519_pkcs8_private_der(&rand::random());
+    let private_pkcs8_der = generate_key_material(alg)?.private_pkcs8_der;
     let pem = der_to_pem(&private_pkcs8_der, "PRIVATE KEY");
     write_private_key_pem_atomic(&settings.jwk_keys_dir.join(&file_name), &pem).await?;
+    let mut keyset = if keyset_path(settings).exists() {
+        load_keyset_json(settings).await?
+    } else {
+        json!({
+            "active_kid": kid,
+            "keys": []
+        })
+    };
     let entry = json!({
         "kid": kid,
+        "alg": alg_name,
         "file": file_name,
         "created_at": Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
         "retire_at": null
@@ -167,6 +175,10 @@ fn validate_keyset_json(value: &Value) -> anyhow::Result<()> {
         if key.get("file").and_then(Value::as_str).is_none() {
             bail!("key {kid} missing file");
         }
+        let alg = key.get("alg").and_then(Value::as_str).unwrap_or("EdDSA");
+        if signing_algorithm_from_name(alg).is_none() {
+            bail!("key {kid} has unsupported alg {alg}");
+        }
         if kid == active {
             active_exists = true;
             if key_is_retired(key) {
@@ -178,6 +190,15 @@ fn validate_keyset_json(value: &Value) -> anyhow::Result<()> {
         bail!("active key {active} does not exist");
     }
     Ok(())
+}
+
+fn parse_generate_alg(args: Vec<String>) -> anyhow::Result<jsonwebtoken::Algorithm> {
+    match args.as_slice() {
+        [] => Ok(jsonwebtoken::Algorithm::EdDSA),
+        [flag, value] if flag == "--alg" => signing_algorithm_from_name(value)
+            .ok_or_else(|| anyhow::anyhow!("unsupported signing alg {value}")),
+        _ => bail!("usage: nazo-oauth-keyctl generate [--alg EdDSA|RS256|ES256|PS256]"),
+    }
 }
 
 fn keyset_path(settings: &Settings) -> PathBuf {

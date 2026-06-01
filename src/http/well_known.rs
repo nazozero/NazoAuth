@@ -27,7 +27,7 @@ fn authorization_server_metadata_value(state: &AppState) -> Value {
         "jwks_uri": format!("{issuer}/jwks.json"),
         "response_types_supported": ["code"],
         "subject_types_supported": [state.settings.subject_type.as_str()],
-        "id_token_signing_alg_values_supported": ["EdDSA"],
+        "id_token_signing_alg_values_supported": state.keyset.signing_alg_values_supported(),
         "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "private_key_jwt", "none"],
         "token_endpoint_auth_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS,
         "revocation_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "private_key_jwt", "none"],

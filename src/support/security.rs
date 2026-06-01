@@ -2,7 +2,7 @@
 // 安全相关算法集中在这里，调用方只关心验证或签发结果。
 
 use super::prelude::*;
-use super::{audit_event, audit_fields, valkey_set_ex_nx};
+use super::{audit_event, audit_fields, signing_algorithm_name, valkey_set_ex_nx};
 
 pub(crate) fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
     if left.len() != right.len() {
@@ -197,7 +197,10 @@ pub(crate) async fn validate_private_key_jwt(
     let now = Utc::now().timestamp();
     if claims.iss != client.client_id
         || claims.sub != client.client_id
-        || !audience_matches(&claims.aud, &endpoint_url(&state.settings, req))
+        || !audience_matches(
+            &claims.aud,
+            &client_assertion_audiences(&state.settings, req),
+        )
         || !valid_client_assertion_times(&claims, now)
         || !valid_client_assertion_jti(&claims.jti)
     {
@@ -338,14 +341,27 @@ pub(crate) fn jwt_decoding_key_from_jwk(
     }
 }
 
-fn endpoint_url(settings: &Settings, req: &HttpRequest) -> String {
-    format!("{}{}", settings.issuer, req.uri().path())
+fn client_assertion_audiences(settings: &Settings, req: &HttpRequest) -> Vec<String> {
+    let endpoint = format!("{}{}", settings.issuer, req.uri().path());
+    if req.uri().path() == "/par" {
+        vec![
+            settings.issuer.clone(),
+            format!("{}/token", settings.issuer),
+            endpoint,
+        ]
+    } else {
+        vec![endpoint]
+    }
 }
 
-fn audience_matches(aud: &Value, expected: &str) -> bool {
+fn audience_matches(aud: &Value, expected: &[String]) -> bool {
     match aud {
-        Value::String(value) => value == expected,
-        Value::Array(values) => values.iter().any(|value| value.as_str() == Some(expected)),
+        Value::String(value) => expected.iter().any(|candidate| candidate == value),
+        Value::Array(values) => values.iter().any(|value| {
+            value
+                .as_str()
+                .is_some_and(|audience| expected.iter().any(|candidate| candidate == audience))
+        }),
         _ => false,
     }
 }
@@ -415,14 +431,10 @@ pub(crate) fn make_jwt(
             jkt: jkt.to_owned(),
         }),
     };
-    let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::EdDSA);
+    let mut header = jsonwebtoken::Header::new(state.keyset.active_alg);
     header.typ = Some("at+jwt".to_string());
     header.kid = Some(state.keyset.active_kid.clone());
-    let token = jsonwebtoken::encode(
-        &header,
-        &claims,
-        &jsonwebtoken::EncodingKey::from_ed_der(&state.keyset.active_private_pkcs8_der),
-    )?;
+    let token = jsonwebtoken::encode(&header, &claims, &state.keyset.active_encoding_key())?;
     Ok(IssuedAccessToken { token, jti, exp })
 }
 
@@ -477,31 +489,23 @@ pub(crate) fn make_id_token(
             }
         }
     }
-    let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::EdDSA);
+    let mut header = jsonwebtoken::Header::new(state.keyset.active_alg);
     header.typ = Some("JWT".to_string());
     header.kid = Some(state.keyset.active_kid.clone());
-    jsonwebtoken::encode(
-        &header,
-        &claims,
-        &jsonwebtoken::EncodingKey::from_ed_der(&state.keyset.active_private_pkcs8_der),
-    )
+    jsonwebtoken::encode(&header, &claims, &state.keyset.active_encoding_key())
 }
 
 pub(crate) fn decode_access_claims(state: &AppState, token: &str) -> Option<Claims> {
     let header = jsonwebtoken::decode_header(token).ok()?;
-    if header.alg != jsonwebtoken::Algorithm::EdDSA || header.typ.as_deref() != Some("at+jwt") {
+    if header.typ.as_deref() != Some("at+jwt") || signing_algorithm_name(header.alg).is_none() {
         return None;
     }
     let verification_key = state.keyset.verification_key(header.kid.as_deref()?)?;
-    let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::EdDSA);
+    let decoding_key = jwt_decoding_key_from_jwk(&verification_key.public_jwk, header.alg)?;
+    let mut validation = jsonwebtoken::Validation::new(header.alg);
     validation.validate_aud = false;
     validation.set_issuer(&[state.settings.issuer.as_str()]);
-    let token_data = jsonwebtoken::decode::<Claims>(
-        token,
-        &jsonwebtoken::DecodingKey::from_ed_der(&verification_key.public_key),
-        &validation,
-    )
-    .ok()?;
+    let token_data = jsonwebtoken::decode::<Claims>(token, &decoding_key, &validation).ok()?;
     if token_data.claims.token_use != "access" {
         return None;
     }
@@ -573,6 +577,32 @@ mod tests {
         assert_eq!(credentials.method, "none");
         assert!(credentials.client_id.is_none());
         assert!(credentials.client_secret.is_none());
+    }
+
+    #[test]
+    fn par_client_assertion_accepts_rfc9126_audiences() {
+        let expected = vec![
+            "https://issuer.example".to_owned(),
+            "https://issuer.example/token".to_owned(),
+            "https://issuer.example/par".to_owned(),
+        ];
+
+        assert!(audience_matches(
+            &json!("https://issuer.example"),
+            &expected
+        ));
+        assert!(audience_matches(
+            &json!("https://issuer.example/token"),
+            &expected
+        ));
+        assert!(audience_matches(
+            &json!(["https://other.example", "https://issuer.example/par"]),
+            &expected
+        ));
+        assert!(!audience_matches(
+            &json!("https://issuer.example/introspect"),
+            &expected
+        ));
     }
 
     #[test]
