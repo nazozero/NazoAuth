@@ -2,6 +2,7 @@
 // 统一 OAuth 错误响应、JSON 响应和重定向响应的形状。
 
 use super::prelude::*;
+use std::borrow::Cow;
 
 pub(crate) fn oauth_error(status: StatusCode, error: &str, description: &str) -> HttpResponse {
     json_response_status(
@@ -16,7 +17,8 @@ pub(crate) fn oauth_token_error(
     description: &str,
     basic_challenge: bool,
 ) -> HttpResponse {
-    let mut response = no_store(oauth_error(status, error, description));
+    let description = oauth_token_error_description(description);
+    let mut response = no_store(oauth_error(status, error, &description));
     if basic_challenge {
         response.headers_mut().insert(
             header::WWW_AUTHENTICATE,
@@ -24,6 +26,21 @@ pub(crate) fn oauth_token_error(
         );
     }
     response
+}
+
+fn oauth_token_error_description(description: &str) -> Cow<'_, str> {
+    if description.bytes().all(is_oauth_error_description_byte) {
+        Cow::Borrowed(description)
+    } else {
+        Cow::Borrowed("Request failed.")
+    }
+}
+
+fn is_oauth_error_description_byte(byte: u8) -> bool {
+    matches!(
+        byte,
+        0x09 | 0x0A | 0x0D | 0x20..=0x21 | 0x23..=0x5B | 0x5D..=0x7E
+    )
 }
 
 pub(crate) fn oauth_bearer_error(
@@ -139,4 +156,29 @@ pub(crate) fn bytes_response(body: Vec<u8>) -> HttpResponse {
 
 pub(crate) fn empty_response(status: StatusCode) -> HttpResponse {
     HttpResponse::build(status).finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn oauth_token_error_description_keeps_rfc_allowed_ascii() {
+        assert_eq!(
+            oauth_token_error_description("Authorization code has already been used.").as_ref(),
+            "Authorization code has already been used."
+        );
+    }
+
+    #[test]
+    fn oauth_token_error_description_replaces_disallowed_text() {
+        assert_eq!(
+            oauth_token_error_description("授权码已被使用.").as_ref(),
+            "Request failed."
+        );
+        assert_eq!(
+            oauth_token_error_description("invalid\\request").as_ref(),
+            "Request failed."
+        );
+    }
 }

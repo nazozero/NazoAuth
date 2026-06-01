@@ -14,6 +14,7 @@ pub(crate) const AUTHORIZED_REQUEST_PARAMETERS: &[&str] = &[
     "code_challenge",
     "code_challenge_method",
     "nonce",
+    "acr_values",
     "prompt",
     "max_age",
     "request_uri",
@@ -36,11 +37,82 @@ fn authorization_pkce(
     }
 }
 
+fn requested_acr(q: &HashMap<String, String>) -> Option<String> {
+    q.get("acr_values").and_then(|value| {
+        value
+            .split_whitespace()
+            .find(|value| !value.is_empty())
+            .map(str::to_owned)
+    })
+}
+
 /// 校验 OAuth authorize 参数并创建待确认授权请求。
-pub(crate) async fn authorize(
+pub(crate) async fn authorize_get(
     state: Data<AppState>,
     req: HttpRequest,
     Query(mut q): Query<HashMap<String, String>>,
+) -> HttpResponse {
+    authorize_request(state, req, &mut q).await
+}
+
+pub(crate) async fn authorize_post(
+    state: Data<AppState>,
+    req: HttpRequest,
+    body: Bytes,
+) -> HttpResponse {
+    let content_type = req
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    if !content_type.split(';').next().is_some_and(|value| {
+        value
+            .trim()
+            .eq_ignore_ascii_case("application/x-www-form-urlencoded")
+    }) {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "authorization request must use application/x-www-form-urlencoded.",
+        );
+    }
+    let raw = match std::str::from_utf8(&body) {
+        Ok(raw) => raw,
+        Err(_) => {
+            return oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "authorization request form is invalid.",
+            );
+        }
+    };
+    if has_duplicate_oauth_parameter(req.query_string(), AUTHORIZED_REQUEST_PARAMETERS) {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "OAuth 参数不能重复.",
+        );
+    }
+    let mut q = HashMap::new();
+    let mut seen = std::collections::HashSet::new();
+    for (key, value) in url::form_urlencoded::parse(raw.as_bytes()) {
+        let key = key.into_owned();
+        if AUTHORIZED_REQUEST_PARAMETERS.contains(&key.as_str()) && !seen.insert(key.clone()) {
+            return oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "OAuth 参数不能重复.",
+            );
+        }
+        q.insert(key, value.into_owned());
+    }
+    authorize_request(state, req, &mut q).await
+}
+
+async fn authorize_request(
+    state: Data<AppState>,
+    req: HttpRequest,
+    q: &mut HashMap<String, String>,
 ) -> HttpResponse {
     if has_duplicate_oauth_parameter(req.query_string(), AUTHORIZED_REQUEST_PARAMETERS) {
         return oauth_error(
@@ -103,7 +175,7 @@ pub(crate) async fn authorize(
                 "request_uri 与 client_id 不匹配.",
             );
         }
-        q = pushed.params;
+        *q = pushed.params;
     } else if state.settings.require_pushed_authorization_requests {
         return oauth_error(
             StatusCode::BAD_REQUEST,
@@ -159,7 +231,7 @@ pub(crate) async fn authorize(
             "该客户端未启用 authorization_code 授权类型.",
         );
     }
-    if let Err(response) = apply_request_object(&state, &mut q, &client).await {
+    if let Err(response) = apply_request_object(&state, q, &client).await {
         return response;
     }
     let redirect_uri =
@@ -191,7 +263,7 @@ pub(crate) async fn authorize(
             ],
         ));
     }
-    let (code_challenge, code_challenge_method) = match authorization_pkce(&client, &q) {
+    let (code_challenge, code_challenge_method) = match authorization_pkce(&client, q) {
         Ok(value) => value,
         Err(()) => {
             return redirect_found(append_query(
@@ -257,7 +329,7 @@ pub(crate) async fn authorize(
                 ],
             ));
         }
-        return redirect_found(authorization_login_url(&state, &q, prompt == Some("login")));
+        return redirect_found(authorization_login_url(&state, q, prompt == Some("login")));
     };
     if prompt == Some("login")
         || max_age.is_some_and(|max_age| Utc::now().timestamp() - session.auth_time > max_age)
@@ -272,7 +344,7 @@ pub(crate) async fn authorize(
                 ],
             ));
         }
-        return redirect_found(authorization_login_url(&state, &q, prompt == Some("login")));
+        return redirect_found(authorization_login_url(&state, q, prompt == Some("login")));
     }
 
     let requested_scopes = parse_scope(q.get("scope").map(String::as_str).unwrap_or(""));
@@ -301,6 +373,7 @@ pub(crate) async fn authorize(
         nonce: q.get("nonce").cloned(),
         auth_time: session.auth_time,
         amr: session.amr,
+        acr: requested_acr(q),
         code_challenge,
         code_challenge_method,
         issued_at: now,
@@ -371,6 +444,15 @@ mod tests {
             .iter()
             .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
             .collect()
+    }
+
+    #[test]
+    fn first_acr_value_is_used_for_id_token_acr() {
+        assert_eq!(
+            requested_acr(&query(&[("acr_values", "urn:one urn:two")])),
+            Some("urn:one".to_owned())
+        );
+        assert_eq!(requested_acr(&query(&[("acr_values", "   ")])), None);
     }
 
     #[test]

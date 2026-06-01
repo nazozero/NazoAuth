@@ -133,6 +133,7 @@ pub(crate) async fn authorize_decision(
         nonce: payload.nonce,
         auth_time: payload.auth_time,
         amr: payload.amr,
+        acr: payload.acr,
         code_challenge: payload.code_challenge,
         code_challenge_method: payload.code_challenge_method,
         issued_at: now,

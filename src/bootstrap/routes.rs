@@ -7,7 +7,11 @@ use crate::http::*;
 
 pub(crate) fn configure(cfg: &mut web::ServiceConfig) {
     cfg.route("/health", web::get().to(health))
-        .route("/authorize", web::get().to(authorize))
+        .service(
+            web::resource("/authorize")
+                .route(web::get().to(authorize_get))
+                .route(web::post().to(authorize_post)),
+        )
         .route("/authorize/consent", web::get().to(authorize_consent))
         .route("/authorize/decision", web::post().to(authorize_decision))
         .route("/par", web::post().to(par))

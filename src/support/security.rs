@@ -444,6 +444,7 @@ pub(crate) struct IdTokenInput<'a> {
     pub(crate) nonce: Option<String>,
     pub(crate) auth_time: Option<i64>,
     pub(crate) amr: &'a [String],
+    pub(crate) acr: Option<&'a str>,
     pub(crate) extra_claims: Option<&'a Value>,
     pub(crate) ttl: i64,
 }
@@ -470,6 +471,9 @@ pub(crate) fn make_id_token(
     if !input.amr.is_empty() {
         claims.insert("amr".to_owned(), json!(input.amr));
     }
+    if let Some(acr) = input.acr {
+        claims.insert("acr".to_owned(), json!(acr));
+    }
     if let Some(extra_claims) = input.extra_claims.and_then(Value::as_object) {
         for (key, value) in extra_claims {
             if !matches!(
@@ -484,6 +488,7 @@ pub(crate) fn make_id_token(
                     | "nonce"
                     | "auth_time"
                     | "amr"
+                    | "acr"
             ) {
                 claims.insert(key.clone(), value.clone());
             }

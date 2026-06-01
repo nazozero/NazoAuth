@@ -93,6 +93,10 @@ def now() -> int:
     return int(time.time())
 
 
+def decode_jwt_unverified(token: str) -> dict[str, Any]:
+    return jwt.decode(token, options={"verify_signature": False, "verify_aud": False})
+
+
 def ed25519_private_pem(key: ed25519.Ed25519PrivateKey) -> bytes:
     return key.private_bytes(
         encoding=serialization.Encoding.PEM,
@@ -414,6 +418,8 @@ def authorize_request(
     *,
     state: str,
     nonce: str | None = "nonce-e2e",
+    extra_params: dict[str, str] | None = None,
+    method: str = "GET",
 ) -> tuple[str, str]:
     verifier, challenge = pkce_pair()
     params = {
@@ -427,7 +433,12 @@ def authorize_request(
     }
     if nonce is not None:
         params["nonce"] = nonce
-    response = user.get(f"{BASE_URL}/authorize", params=params, allow_redirects=False, timeout=10)
+    if extra_params:
+        params.update(extra_params)
+    if method == "POST":
+        response = user.post(f"{BASE_URL}/authorize", data=params, allow_redirects=False, timeout=10)
+    else:
+        response = user.get(f"{BASE_URL}/authorize", params=params, allow_redirects=False, timeout=10)
     expect_status(f"authorize_{state}", response, 302)
     request_id = location_query(response).get("request_id", [None])[0]
     if not request_id:
@@ -1011,6 +1022,34 @@ def run() -> None:
             bool(confidential_no_pkce_body.get("access_token"))
             and bool(confidential_no_pkce_body.get("id_token")),
         )
+
+        post_authorize_request_id, post_authorize_verifier = authorize_request(
+            user,
+            public_client_id,
+            state="post-authorize-acr",
+            nonce="post-authorize-acr-nonce",
+            extra_params={"acr_values": "urn:nazo:acr:password urn:nazo:acr:mfa"},
+            method="POST",
+        )
+        post_authorize_code, post_authorize_verifier = approve_authorization(
+            user,
+            post_authorize_request_id,
+            post_authorize_verifier,
+            state="post-authorize-acr",
+        )
+        post_authorize_token = token_plain(
+            {
+                "grant_type": "authorization_code",
+                "client_id": public_client_id,
+                "code": post_authorize_code,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "code_verifier": post_authorize_verifier,
+            },
+            "POST /token authorization_code after POST /authorize",
+        )
+        post_authorize_id_token = decode_jwt_unverified(post_authorize_token["id_token"])
+        check("post_authorize_id_token_acr", post_authorize_id_token.get("acr") == "urn:nazo:acr:password")
+        check("post_authorize_id_token_nonce", post_authorize_id_token.get("nonce") == "post-authorize-acr-nonce")
 
         par_confidential_unauthenticated = requests.post(
             f"{BASE_URL}/par",
