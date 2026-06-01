@@ -342,16 +342,17 @@ pub(crate) fn jwt_decoding_key_from_jwk(
 }
 
 fn client_assertion_audiences(settings: &Settings, req: &HttpRequest) -> Vec<String> {
-    let endpoint = format!("{}{}", settings.issuer, req.uri().path());
-    if req.uri().path() == "/par" {
-        vec![
-            settings.issuer.clone(),
-            format!("{}/token", settings.issuer),
-            endpoint,
-        ]
-    } else {
-        vec![endpoint]
+    client_assertion_audience_candidates(&settings.issuer, req.uri().path())
+}
+
+fn client_assertion_audience_candidates(issuer: &str, path: &str) -> Vec<String> {
+    let endpoint = format!("{issuer}{path}");
+    let token_endpoint = format!("{issuer}/token");
+    let mut candidates = vec![issuer.to_owned(), endpoint];
+    if path == "/par" && !candidates.iter().any(|value| value == &token_endpoint) {
+        candidates.push(token_endpoint);
     }
+    candidates
 }
 
 fn audience_matches(aud: &Value, expected: &[String]) -> bool {
@@ -588,11 +589,7 @@ mod tests {
 
     #[test]
     fn par_client_assertion_accepts_rfc9126_audiences() {
-        let expected = vec![
-            "https://issuer.example".to_owned(),
-            "https://issuer.example/token".to_owned(),
-            "https://issuer.example/par".to_owned(),
-        ];
+        let expected = client_assertion_audience_candidates("https://issuer.example", "/par");
 
         assert!(audience_matches(
             &json!("https://issuer.example"),
@@ -608,6 +605,24 @@ mod tests {
         ));
         assert!(!audience_matches(
             &json!("https://issuer.example/introspect"),
+            &expected
+        ));
+    }
+
+    #[test]
+    fn token_client_assertion_accepts_issuer_and_token_endpoint_audience() {
+        let expected = client_assertion_audience_candidates("https://issuer.example", "/token");
+
+        assert!(audience_matches(
+            &json!("https://issuer.example"),
+            &expected
+        ));
+        assert!(audience_matches(
+            &json!("https://issuer.example/token"),
+            &expected
+        ));
+        assert!(!audience_matches(
+            &json!("https://issuer.example/par"),
             &expected
         ));
     }

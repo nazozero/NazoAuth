@@ -47,6 +47,35 @@ fn requested_acr(q: &HashMap<String, String>) -> Option<String> {
     })
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct PromptDirectives {
+    login: bool,
+    consent: bool,
+    select_account: bool,
+    none: bool,
+}
+
+fn requested_prompt(q: &HashMap<String, String>) -> Result<PromptDirectives, ()> {
+    let Some(raw) = q.get("prompt") else {
+        return Ok(PromptDirectives::default());
+    };
+    let mut directives = PromptDirectives::default();
+    for value in raw.split_whitespace() {
+        match value {
+            "login" => directives.login = true,
+            "consent" => directives.consent = true,
+            "select_account" => directives.select_account = true,
+            "none" => directives.none = true,
+            "" => {}
+            _ => return Err(()),
+        }
+    }
+    if directives.none && (directives.login || directives.consent || directives.select_account) {
+        return Err(());
+    }
+    Ok(directives)
+}
+
 fn requested_claims(q: &HashMap<String, String>) -> Result<(Vec<String>, Vec<String>), ()> {
     let Some(raw_claims) = q.get("claims") else {
         return Ok((Vec::new(), Vec::new()));
@@ -304,19 +333,19 @@ async fn authorize_request(
         }
     };
 
-    let prompt = q.get("prompt").map(String::as_str);
-    if let Some(prompt) = prompt
-        && !matches!(prompt, "login" | "none")
-    {
-        return redirect_found(append_query(
-            &redirect_uri,
-            &[
-                ("error", "invalid_request"),
-                ("state", q.get("state").map(String::as_str).unwrap_or("")),
-                ("iss", state.settings.issuer.as_str()),
-            ],
-        ));
-    }
+    let prompt = match requested_prompt(q) {
+        Ok(prompt) => prompt,
+        Err(()) => {
+            return redirect_found(append_query(
+                &redirect_uri,
+                &[
+                    ("error", "invalid_request"),
+                    ("state", q.get("state").map(String::as_str).unwrap_or("")),
+                    ("iss", state.settings.issuer.as_str()),
+                ],
+            ));
+        }
+    };
     let max_age = match q.get("max_age") {
         Some(value) => match value.parse::<i64>() {
             Ok(value) if value >= 0 => Some(value),
@@ -359,7 +388,7 @@ async fn authorize_request(
         }
     };
     let Some(session) = session else {
-        if prompt == Some("none") {
+        if prompt.none {
             return redirect_found(append_query(
                 &redirect_uri,
                 &[
@@ -369,12 +398,17 @@ async fn authorize_request(
                 ],
             ));
         }
-        return redirect_found(authorization_login_url(&state, q, prompt == Some("login")));
+        return redirect_found(authorization_login_url(
+            &state,
+            q,
+            prompt.login || prompt.select_account,
+        ));
     };
-    if prompt == Some("login")
+    if prompt.login
+        || prompt.select_account
         || max_age.is_some_and(|max_age| Utc::now().timestamp() - session.auth_time > max_age)
     {
-        if prompt == Some("none") {
+        if prompt.none {
             return redirect_found(append_query(
                 &redirect_uri,
                 &[
@@ -384,7 +418,11 @@ async fn authorize_request(
                 ],
             ));
         }
-        return redirect_found(authorization_login_url(&state, q, prompt == Some("login")));
+        return redirect_found(authorization_login_url(
+            &state,
+            q,
+            prompt.login || prompt.select_account,
+        ));
     }
 
     let requested_scopes = parse_scope(q.get("scope").map(String::as_str).unwrap_or(""));
@@ -562,6 +600,26 @@ mod tests {
             ]),
             &pushed,
         ));
+    }
+
+    #[test]
+    fn prompt_parsing_accepts_oidc_values_and_rejects_invalid_combinations() {
+        let directives =
+            requested_prompt(&query(&[("prompt", "login consent select_account")])).unwrap();
+        assert!(directives.login);
+        assert!(directives.consent);
+        assert!(directives.select_account);
+        assert!(!directives.none);
+
+        assert_eq!(
+            requested_prompt(&query(&[("prompt", "none")])).unwrap(),
+            PromptDirectives {
+                none: true,
+                ..PromptDirectives::default()
+            }
+        );
+        assert!(requested_prompt(&query(&[("prompt", "none consent")])).is_err());
+        assert!(requested_prompt(&query(&[("prompt", "unsupported")])).is_err());
     }
 
     #[test]
