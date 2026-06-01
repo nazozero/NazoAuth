@@ -14,6 +14,7 @@ pub(crate) const AUTHORIZED_REQUEST_PARAMETERS: &[&str] = &[
     "code_challenge",
     "code_challenge_method",
     "nonce",
+    "claims",
     "acr_values",
     "prompt",
     "max_age",
@@ -44,6 +45,34 @@ fn requested_acr(q: &HashMap<String, String>) -> Option<String> {
             .find(|value| !value.is_empty())
             .map(str::to_owned)
     })
+}
+
+fn requested_claims(q: &HashMap<String, String>) -> Result<(Vec<String>, Vec<String>), ()> {
+    let Some(raw_claims) = q.get("claims") else {
+        return Ok((Vec::new(), Vec::new()));
+    };
+    let claims: Value = serde_json::from_str(raw_claims).map_err(|_| ())?;
+    let userinfo = requested_claim_names(claims.get("userinfo"))?;
+    let id_token = requested_claim_names(claims.get("id_token"))?;
+    Ok((userinfo, id_token))
+}
+
+fn requested_claim_names(value: Option<&Value>) -> Result<Vec<String>, ()> {
+    let Some(value) = value else {
+        return Ok(Vec::new());
+    };
+    let Some(object) = value.as_object() else {
+        return Err(());
+    };
+    let mut names = Vec::new();
+    for name in object.keys() {
+        if supported_user_claim(name) {
+            names.push(name.clone());
+        }
+    }
+    names.sort();
+    names.dedup();
+    Ok(names)
 }
 
 /// 校验 OAuth authorize 参数并创建待确认授权请求。
@@ -238,17 +267,17 @@ async fn authorize_request(
         match registered_redirect_uri(&client, q.get("redirect_uri").map(String::as_str)) {
             Ok(value) => value,
             Err(RedirectUriError::Missing) => {
-                return oauth_error(
+                return authorization_error_page(
                     StatusCode::BAD_REQUEST,
                     "invalid_request",
-                    "缺少 redirect_uri.",
+                    "redirect_uri is required for this authorization request.",
                 );
             }
             Err(RedirectUriError::Invalid) => {
-                return oauth_error(
+                return authorization_error_page(
                     StatusCode::BAD_REQUEST,
                     "invalid_request",
-                    "redirect_uri 与客户端注册信息不匹配.",
+                    "redirect_uri is not registered for this client.",
                 );
             }
         };
@@ -305,6 +334,19 @@ async fn authorize_request(
             }
         },
         None => None,
+    };
+    let (userinfo_claims, id_token_claims) = match requested_claims(q) {
+        Ok(value) => value,
+        Err(()) => {
+            return redirect_found(append_query(
+                &redirect_uri,
+                &[
+                    ("error", "invalid_request"),
+                    ("state", q.get("state").map(String::as_str).unwrap_or("")),
+                    ("iss", state.settings.issuer.as_str()),
+                ],
+            ));
+        }
     };
 
     let session = match current_session(&state, &req).await {
@@ -374,6 +416,8 @@ async fn authorize_request(
         auth_time: session.auth_time,
         amr: session.amr,
         acr: requested_acr(q),
+        userinfo_claims,
+        id_token_claims,
         code_challenge,
         code_challenge_method,
         issued_at: now,
@@ -453,6 +497,24 @@ mod tests {
             Some("urn:one".to_owned())
         );
         assert_eq!(requested_acr(&query(&[("acr_values", "   ")])), None);
+    }
+
+    #[test]
+    fn claims_parameter_extracts_supported_user_claim_names() {
+        let (userinfo, id_token) = requested_claims(&query(&[(
+            "claims",
+            r#"{"userinfo":{"name":{"essential":true},"unknown":null},"id_token":{"email":{"essential":true}}}"#,
+        )]))
+        .unwrap();
+
+        assert_eq!(userinfo, vec!["name".to_owned()]);
+        assert_eq!(id_token, vec!["email".to_owned()]);
+    }
+
+    #[test]
+    fn malformed_claims_parameter_is_invalid() {
+        assert!(requested_claims(&query(&[("claims", "not-json")])).is_err());
+        assert!(requested_claims(&query(&[("claims", r#"{"userinfo":[]}"#)])).is_err());
     }
 
     #[test]

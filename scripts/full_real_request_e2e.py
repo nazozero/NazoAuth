@@ -963,6 +963,26 @@ def run() -> None:
         secret_auth_client_id = secret_auth_client["client_id"]
         secret_auth_client_secret = secret_auth_client["client_secret"]
 
+        invalid_redirect = user.get(
+            f"{BASE_URL}/authorize",
+            params={
+                "response_type": "code",
+                "client_id": public_client_id,
+                "redirect_uri": "https://attacker.example/callback",
+                "scope": "openid",
+                "state": "invalid-redirect-uri",
+                "nonce": "invalid-redirect-uri-nonce",
+                "code_challenge": pkce_pair()[1],
+                "code_challenge_method": "S256",
+            },
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status("GET /authorize invalid redirect_uri error page", invalid_redirect, 400)
+        check("authorize_invalid_redirect_no_location", "Location" not in invalid_redirect.headers)
+        check("authorize_invalid_redirect_html", "text/html" in invalid_redirect.headers.get("Content-Type", ""))
+        check("authorize_invalid_redirect_marker", 'id="oidf_conformance_interaction"' in invalid_redirect.text)
+
         public_without_pkce = user.get(
             f"{BASE_URL}/authorize",
             params={
@@ -1731,6 +1751,44 @@ def run() -> None:
             and userinfo.get("email") == USER_EMAIL
             and userinfo.get("email_verified") is True,
         )
+        claims_request_id, claims_verifier = authorize_request(
+            user,
+            public_client_id,
+            state="claims-essential",
+            nonce="claims-essential-nonce",
+            extra_params={
+                "scope": "openid",
+                "claims": json.dumps({"userinfo": {"name": {"essential": True}}}, separators=(",", ":")),
+            },
+        )
+        claims_code, claims_verifier = approve_authorization(
+            user,
+            claims_request_id,
+            claims_verifier,
+            state="claims-essential",
+        )
+        claims_token_response = token_plain(
+            {
+                "grant_type": "authorization_code",
+                "client_id": public_client_id,
+                "code": claims_code,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "code_verifier": claims_verifier,
+            },
+            "POST /token claims essential",
+        )
+        claims_userinfo = expect_json(
+            expect_status(
+                "GET /userinfo claims essential",
+                requests.get(
+                    f"{BASE_URL}/userinfo",
+                    headers={"Authorization": f"Bearer {claims_token_response['access_token']}"},
+                    timeout=10,
+                ),
+                200,
+            )
+        )
+        check("userinfo_claims_essential_name", claims_userinfo.get("name") == "Full E2E User")
         userinfo_post_no_nonce = requests.post(
             f"{BASE_URL}/userinfo",
             headers={

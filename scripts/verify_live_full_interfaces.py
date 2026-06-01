@@ -658,6 +658,28 @@ def run():
     access_token = bearer_tokens["access_token"]
     refresh_token = bearer_tokens["refresh_token"]
     request(public, "GET", "/userinfo", expected={200}, name="userinfo bearer", headers={"authorization": f"Bearer {access_token}"})
+    invalid_redirect = user_session.get(
+        f"{BASE_URL}/authorize",
+        params={
+            "client_id": public_client["client_id"],
+            "redirect_uri": "https://attacker.example/callback",
+            "response_type": "code",
+            "scope": "openid",
+            "state": secrets.token_urlsafe(12),
+            "nonce": secrets.token_urlsafe(12),
+            "code_challenge": pkce_pair()[1],
+            "code_challenge_method": "S256",
+        },
+        allow_redirects=False,
+        timeout=15,
+    )
+    expect_status("authorize invalid redirect_uri error page", invalid_redirect, 400)
+    if invalid_redirect.headers.get("location"):
+        checks.fail("authorize invalid redirect_uri error page", "unexpected redirect")
+    if "text/html" not in invalid_redirect.headers.get("content-type", ""):
+        checks.fail("authorize invalid redirect_uri content type", invalid_redirect.headers.get("content-type"))
+    if 'id="oidf_conformance_interaction"' not in invalid_redirect.text:
+        checks.fail("authorize invalid redirect_uri screenshot marker", invalid_redirect.text[:200])
 
     post_code, post_verifier = auth_code_flow(
         user_session,
@@ -671,6 +693,28 @@ def run():
     post_id_token = decode_jwt_unverified(post_tokens["id_token"])
     if post_id_token.get("acr") != "urn:nazo:acr:password":
         checks.fail("POST authorize with acr", json.dumps(post_id_token, ensure_ascii=False))
+
+    claims_code, claims_verifier = auth_code_flow(
+        user_session,
+        public_client["client_id"],
+        "https://client.example/callback",
+        name="authorize claims essential",
+        extra_params={
+            "scope": "openid",
+            "claims": json.dumps({"userinfo": {"name": {"essential": True}}}, separators=(",", ":")),
+        },
+    )
+    claims_tokens = token_public(public_client["client_id"], claims_code, claims_verifier).json()
+    claims_userinfo = request(
+        public,
+        "GET",
+        "/userinfo",
+        expected={200},
+        name="userinfo essential name claim",
+        headers={"authorization": f"Bearer {claims_tokens['access_token']}"},
+    ).json()
+    if claims_userinfo.get("name") != f"{RUN_ID} User":
+        checks.fail("userinfo essential name claim", json.dumps(claims_userinfo, ensure_ascii=False))
 
     replay_code, replay_verifier = auth_code_flow(
         user_session,

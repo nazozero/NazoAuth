@@ -34,7 +34,7 @@ return 'malformed'
 "#;
 
 enum AuthorizationCodeConsumption {
-    Consuming(CodePayload),
+    Consuming(Box<CodePayload>),
     Busy,
     Consumed(ConsumedAuthorizationCode),
     Failed,
@@ -79,7 +79,7 @@ async fn begin_authorization_code_consumption(
     };
     if let Some(raw) = response.strip_prefix("consuming|") {
         return match serde_json::from_str::<CodePayload>(raw) {
-            Ok(payload) => Ok(AuthorizationCodeConsumption::Consuming(payload)),
+            Ok(payload) => Ok(AuthorizationCodeConsumption::Consuming(Box::new(payload))),
             Err(error) => {
                 tracing::warn!(%error, "authorization code pending payload is malformed");
                 Ok(AuthorizationCodeConsumption::Malformed)
@@ -205,6 +205,7 @@ pub(crate) async fn token_authorization_code(
         }
         Err(response) => return response,
     };
+    let payload = *payload;
     if payload.client_id != client.client_id
         || !redirect_uri_matches_authorization_request(&payload, form.redirect_uri.as_deref())
     {
@@ -273,6 +274,8 @@ pub(crate) async fn token_authorization_code(
             auth_time: Some(payload.auth_time),
             amr: payload.amr,
             acr: payload.acr,
+            userinfo_claims: payload.userinfo_claims,
+            id_token_claims: payload.id_token_claims,
             include_refresh: true,
             rotation: None,
             dpop_jkt,
@@ -305,6 +308,8 @@ mod tests {
             auth_time: now.timestamp(),
             amr: vec!["password".to_owned()],
             acr: None,
+            userinfo_claims: Vec::new(),
+            id_token_claims: Vec::new(),
             code_challenge: Some("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ".to_owned()),
             code_challenge_method: Some("S256".to_owned()),
             issued_at: now,
