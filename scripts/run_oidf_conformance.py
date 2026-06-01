@@ -12,13 +12,16 @@ import sys
 from pathlib import Path
 
 
+OIDCC_CONFIG_FILE = "oidf-oidcc-plan-config.json"
+FAPI_CONFIG_FILE = "oidf-fapi-plan-config.json"
+
 DEFAULT_PLAN_EXPRESSIONS = [
-    "oidcc-basic-certification-test-plan oidf-plan-config.json",
-    "oidcc-config-certification-test-plan oidf-plan-config.json",
-    "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=unsigned][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] oidf-plan-config.json",
-    "fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] oidf-plan-config.json",
-    "fapi2-security-profile-id2-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=unsigned][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] oidf-plan-config.json",
-    "fapi2-message-signing-id1-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] oidf-plan-config.json",
+    f"oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] {OIDCC_CONFIG_FILE}",
+    f"oidcc-config-certification-test-plan[server_metadata=discovery][client_registration=static_client] {OIDCC_CONFIG_FILE}",
+    f"fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=unsigned][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] {FAPI_CONFIG_FILE}",
+    f"fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] {FAPI_CONFIG_FILE}",
+    f"fapi2-security-profile-id2-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=unsigned][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] {FAPI_CONFIG_FILE}",
+    f"fapi2-message-signing-id1-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] {FAPI_CONFIG_FILE}",
 ]
 
 
@@ -33,9 +36,13 @@ def non_empty_env(name: str) -> str:
     return value
 
 
-def write_plan_config(suite_scripts: Path, file_name: str, env_name: str) -> Path:
+def validate_config_file_name(file_name: str) -> None:
     if Path(file_name).name != file_name:
         fail("--config-file-name must be a file name, not a path")
+
+
+def write_plan_configs(suite_scripts: Path, file_name: str, env_name: str) -> set[str]:
+    validate_config_file_name(file_name)
     raw_config = non_empty_env(env_name)
     try:
         parsed = json.loads(raw_config)
@@ -43,12 +50,46 @@ def write_plan_config(suite_scripts: Path, file_name: str, env_name: str) -> Pat
         fail(f"{env_name} is not valid JSON: {exc}")
     if not isinstance(parsed, dict):
         fail(f"{env_name} must contain a JSON object")
-    target = suite_scripts / file_name
-    target.write_text(json.dumps(parsed, indent=2, sort_keys=True), encoding="utf-8")
-    return target
+
+    configs = parsed.get("configs")
+    if configs is None:
+        target = suite_scripts / file_name
+        target.write_text(json.dumps(parsed, indent=2, sort_keys=True), encoding="utf-8")
+        return {file_name}
+
+    if not isinstance(configs, dict) or not configs:
+        fail(f"{env_name}.configs must contain a non-empty JSON object")
+
+    written: set[str] = set()
+    for config_name, config_value in configs.items():
+        if not isinstance(config_name, str) or not config_name.strip():
+            fail(f"{env_name}.configs contains an invalid file name")
+        validate_config_file_name(config_name)
+        if not isinstance(config_value, dict):
+            fail(f"{env_name}.configs.{config_name} must contain a JSON object")
+        target = suite_scripts / config_name
+        target.write_text(json.dumps(config_value, indent=2, sort_keys=True), encoding="utf-8")
+        written.add(config_name)
+    return written
 
 
-def plan_expressions(raw_expression: str, env_name: str, config_name: str) -> list[str]:
+def default_plan_expressions(config_names: set[str], fallback_config_name: str) -> list[str]:
+    if {OIDCC_CONFIG_FILE, FAPI_CONFIG_FILE}.issubset(config_names):
+        return DEFAULT_PLAN_EXPRESSIONS
+    return [
+        expression.replace(OIDCC_CONFIG_FILE, fallback_config_name).replace(
+            FAPI_CONFIG_FILE, fallback_config_name
+        )
+        for expression in DEFAULT_PLAN_EXPRESSIONS
+    ]
+
+
+def plan_expressions(
+    raw_expression: str,
+    env_name: str,
+    config_names: set[str],
+    fallback_config_name: str,
+) -> list[str]:
     raw_plan_set = os.environ.get(env_name, "").strip()
     if raw_plan_set:
         try:
@@ -61,7 +102,7 @@ def plan_expressions(raw_expression: str, env_name: str, config_name: str) -> li
     elif raw_expression.strip():
         expressions = [raw_expression.strip()]
     else:
-        expressions = DEFAULT_PLAN_EXPRESSIONS
+        expressions = default_plan_expressions(config_names, fallback_config_name)
 
     if not expressions:
         fail("at least one OIDF plan expression is required")
@@ -69,8 +110,11 @@ def plan_expressions(raw_expression: str, env_name: str, config_name: str) -> li
         parts = shlex.split(expression)
         if not parts:
             fail("OIDF plan expression must not be empty")
-        if config_name not in parts:
-            fail(f"OIDF plan expression must reference {config_name}: {expression}")
+        if not any(config_name in parts for config_name in config_names):
+            fail(
+                "OIDF plan expression must reference one of "
+                f"{sorted(config_names)}: {expression}"
+            )
     return expressions
 
 
@@ -100,8 +144,13 @@ def main() -> int:
     if not runner.is_file():
         fail(f"official runner not found: {runner}")
 
-    config_path = write_plan_config(suite_scripts, args.config_file_name, args.config_env)
-    expressions = plan_expressions(args.plan_expression, args.plan_set_env, config_path.name)
+    config_names = write_plan_configs(suite_scripts, args.config_file_name, args.config_env)
+    expressions = plan_expressions(
+        args.plan_expression,
+        args.plan_set_env,
+        config_names,
+        args.config_file_name,
+    )
 
     env = os.environ.copy()
     env["CONFORMANCE_SERVER"] = args.conformance_server
