@@ -9,7 +9,7 @@ jobs:
     env:
       CONFORMANCE_SERVER: ${{ vars.OIDF_CONFORMANCE_SERVER || 'https://www.certification.openid.net/' }}
       OIDF_REF: ${{ vars.OIDF_CONFORMANCE_SUITE_REF || 'master' }}
-      PLAN_EXPRESSION: ${{ vars.OIDF_PLAN_EXPRESSION || 'oidcc-server[client_auth_type=client_secret_basic][response_type=code][response_mode=default] oidf-plan-config.json' }}
+      PLAN_EXPRESSION: ${{ vars.OIDF_PLAN_EXPRESSION || '' }}
       EXPORT_RESULTS: ${{ vars.OIDF_EXPORT_RESULTS || 'true' }}
       VERBOSE: ${{ vars.OIDF_VERBOSE || 'true' }}
       DISABLE_SSL_VERIFY: ${{ vars.OIDF_DISABLE_SSL_VERIFY || 'false' }}
@@ -49,6 +49,7 @@ jobs:
         env:
           OIDF_CONFORMANCE_TOKEN: ${{ secrets.OIDF_CONFORMANCE_TOKEN }}
           OIDF_PLAN_CONFIG_JSON: ${{ secrets.OIDF_PLAN_CONFIG_JSON }}
+          OIDF_PLAN_SET_JSON: ${{ secrets.OIDF_PLAN_SET_JSON || vars.OIDF_PLAN_SET_JSON }}
 
       - name: Upload OIDF result archive
         if: always() && vars.OIDF_EXPORT_RESULTS != 'false'
