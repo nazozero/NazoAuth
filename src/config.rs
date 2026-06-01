@@ -49,6 +49,7 @@ const ENV_CONFIG_KEYS: &[&str] = &[
     "TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS",
     "TOKEN_RATE_LIMIT_MAX_REQUESTS",
     "TRUSTED_PROXY_CIDRS",
+    "VALKEY_COMMAND_TIMEOUT_MS",
     "VALKEY_URL",
 ];
 
@@ -294,11 +295,13 @@ mod tests {
         source
             .merge_env([
                 ("ISSUER".to_owned(), "https://env.example".to_owned()),
+                ("VALKEY_COMMAND_TIMEOUT_MS".to_owned(), "1000".to_owned()),
                 ("UNKNOWN_ENV".to_owned(), "ignored".to_owned()),
             ])
             .unwrap();
 
         assert_eq!(source.string("ISSUER", ""), "https://env.example");
+        assert_eq!(source.string("VALKEY_COMMAND_TIMEOUT_MS", ""), "1000");
         assert!(source.get("UNKNOWN_ENV").is_none());
     }
 

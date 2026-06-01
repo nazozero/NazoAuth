@@ -39,6 +39,7 @@ jobs:
           BIND: "0.0.0.0:8000"
           DATABASE_URL: "postgresql://postgres:postgres@nazo-oauth-e2e-postgres:5432/oauth"
           VALKEY_URL: "redis://nazo-oauth-e2e-valkey:6379/0"
+          VALKEY_COMMAND_TIMEOUT_MS: 1000
           ISSUER: "http://127.0.0.1:8000"
           FRONTEND_BASE_URL: "http://127.0.0.1:3000"
           CORS_ALLOWED_ORIGINS:
@@ -122,6 +123,13 @@ jobs:
             -e LOAD_REQUESTS=400 \
             -e LOAD_CONCURRENCY=32 \
             python:3.13-slim sh -lc 'pip install --no-cache-dir requests psycopg[binary] argon2-cffi >/tmp/pip.log && python scripts/full_real_request_load.py'
+      - name: Run Valkey outage injection
+        run: |
+          docker stop nazo-oauth-e2e-valkey
+          docker run --rm --name nazo-oauth-e2e-runner --network nazo-oauth-e2e-net \
+            -v "$PWD:/app" -w /app \
+            -e E2E_BASE_URL=http://nazo-oauth-e2e-server:8000 \
+            python:3.13-slim sh -lc 'pip install --no-cache-dir requests >/tmp/pip.log && python scripts/valkey_failure_injection.py'
       - name: Cleanup
         if: always()
         run: |
