@@ -9,6 +9,7 @@ use jsonwebtoken::jwk::{Jwk, PublicKeyUse};
 use p256::elliptic_curve::pkcs8::EncodePrivateKey as EncodeEcPrivateKey;
 use rand_core::OsRng;
 use rsa::RsaPrivateKey;
+use rsa::pkcs1::EncodeRsaPrivateKey;
 
 use super::prelude::*;
 
@@ -192,7 +193,7 @@ pub(crate) fn generate_key_material(
         }
         jsonwebtoken::Algorithm::RS256 | jsonwebtoken::Algorithm::PS256 => {
             let private_key = RsaPrivateKey::new(&mut OsRng, 2048)?;
-            private_key.to_pkcs8_der()?.as_bytes().to_vec()
+            private_key.to_pkcs1_der()?.as_bytes().to_vec()
         }
         jsonwebtoken::Algorithm::ES256 => {
             let secret_key = p256::SecretKey::random(&mut OsRng);
