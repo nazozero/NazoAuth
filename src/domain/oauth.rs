@@ -28,6 +28,8 @@ pub(crate) struct Claims {
     pub(crate) exp: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) cnf: Option<ConfirmationClaims>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) userinfo_claims: Vec<String>,
 }
 
 /// 用户待确认的授权请求快照。
@@ -46,6 +48,10 @@ pub(crate) struct ConsentPayload {
     pub(crate) amr: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) acr: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) userinfo_claims: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) id_token_claims: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) code_challenge: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -76,6 +82,10 @@ pub(crate) struct CodePayload {
     pub(crate) amr: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) acr: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) userinfo_claims: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) id_token_claims: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) code_challenge: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -124,6 +134,8 @@ pub(crate) struct TokenIssue {
     pub(crate) auth_time: Option<i64>,
     pub(crate) amr: Vec<String>,
     pub(crate) acr: Option<String>,
+    pub(crate) userinfo_claims: Vec<String>,
+    pub(crate) id_token_claims: Vec<String>,
     pub(crate) include_refresh: bool,
     pub(crate) rotation: Option<(Uuid, Option<Uuid>)>,
     pub(crate) dpop_jkt: Option<String>,

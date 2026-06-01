@@ -150,6 +150,7 @@ fn request_object_params(
             let value = match value {
                 Value::String(value) => value.clone(),
                 Value::Number(value) => value.to_string(),
+                Value::Object(_) if *key == "claims" => value.to_string(),
                 _ => {
                     return Err(oauth_error(
                         StatusCode::BAD_REQUEST,

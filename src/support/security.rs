@@ -397,6 +397,7 @@ pub(crate) struct AccessTokenJwtInput<'a> {
     pub(crate) client_id: &'a str,
     pub(crate) audience: &'a str,
     pub(crate) scopes: &'a [String],
+    pub(crate) userinfo_claims: &'a [String],
     pub(crate) ttl: i64,
     pub(crate) dpop_jkt: Option<&'a str>,
 }
@@ -430,6 +431,7 @@ pub(crate) fn make_jwt(
         cnf: input.dpop_jkt.map(|jkt| ConfirmationClaims {
             jkt: jkt.to_owned(),
         }),
+        userinfo_claims: input.userinfo_claims.to_vec(),
     };
     let mut header = jsonwebtoken::Header::new(state.keyset.active_alg);
     header.typ = Some("at+jwt".to_string());

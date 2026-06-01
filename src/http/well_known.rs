@@ -39,6 +39,7 @@ fn authorization_server_metadata_value(state: &AppState) -> Value {
         "prompt_values_supported": ["login", "none"],
         "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
         "authorization_response_iss_parameter_supported": true,
+        "claims_parameter_supported": true,
         "code_challenge_methods_supported": ["S256"],
         "dpop_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS,
         "request_object_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS

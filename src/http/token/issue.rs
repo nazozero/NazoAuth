@@ -272,6 +272,7 @@ pub(crate) async fn issue_token_response(
             client_id: &client.client_id,
             audience: &issue.audience,
             scopes: &issue.scopes,
+            userinfo_claims: &issue.userinfo_claims,
             ttl: state.settings.access_token_ttl_seconds,
             dpop_jkt: issue.dpop_jkt.as_deref(),
         },
@@ -311,6 +312,7 @@ pub(crate) async fn issue_token_response(
                     &user,
                     &issue.scopes,
                     &issue.subject,
+                    &issue.id_token_claims,
                 )),
                 Ok(_) => {
                     mark_failed_authorization_code_if_needed(

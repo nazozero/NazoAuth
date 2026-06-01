@@ -166,6 +166,8 @@ pub(crate) async fn token_refresh(
             auth_time: None,
             amr: Vec::new(),
             acr: None,
+            userinfo_claims: Vec::new(),
+            id_token_claims: Vec::new(),
             include_refresh: true,
             rotation: Some((token.token_family_id, Some(token.id))),
             dpop_jkt,

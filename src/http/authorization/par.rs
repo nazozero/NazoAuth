@@ -13,6 +13,7 @@ const PAR_AUTHORIZATION_PARAMETERS: &[&str] = &[
     "code_challenge",
     "code_challenge_method",
     "nonce",
+    "claims",
     "acr_values",
     "prompt",
     "max_age",

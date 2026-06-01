@@ -22,28 +22,86 @@ pub(crate) fn oidc_subject(settings: &Settings, user_id: Uuid, redirect_uri: &st
     }
 }
 
-pub(crate) fn oidc_user_claims(user: &UserRow, scopes: &[String], subject: &str) -> Value {
-    let mut claims = json!({"sub": subject});
+const PROFILE_CLAIMS: &[&str] = &[
+    "preferred_username",
+    "name",
+    "given_name",
+    "family_name",
+    "middle_name",
+    "nickname",
+    "profile",
+    "picture",
+    "website",
+    "gender",
+    "birthdate",
+    "zoneinfo",
+    "locale",
+    "updated_at",
+];
 
-    if scopes.iter().any(|scope| scope == "profile") {
+const EMAIL_CLAIMS: &[&str] = &["email", "email_verified"];
+
+pub(crate) fn supported_user_claim(name: &str) -> bool {
+    PROFILE_CLAIMS.contains(&name) || EMAIL_CLAIMS.contains(&name)
+}
+
+pub(crate) fn oidc_user_claims(
+    user: &UserRow,
+    scopes: &[String],
+    subject: &str,
+    requested_claims: &[String],
+) -> Value {
+    let mut claims = json!({"sub": subject});
+    let has_profile_scope = scopes.iter().any(|scope| scope == "profile");
+    let has_email_scope = scopes.iter().any(|scope| scope == "email");
+
+    if has_profile_scope || requested_claim(requested_claims, "preferred_username") {
         claims["preferred_username"] = json!(user.username);
-        optional_string_claim(&mut claims, "name", user.display_name.as_deref());
+    }
+    if has_profile_scope || requested_claim(requested_claims, "name") {
+        claims["name"] = json!(user_display_name(user));
+    }
+    if has_profile_scope || requested_claim(requested_claims, "given_name") {
         optional_string_claim(&mut claims, "given_name", user.given_name.as_deref());
+    }
+    if has_profile_scope || requested_claim(requested_claims, "family_name") {
         optional_string_claim(&mut claims, "family_name", user.family_name.as_deref());
+    }
+    if has_profile_scope || requested_claim(requested_claims, "middle_name") {
         optional_string_claim(&mut claims, "middle_name", user.middle_name.as_deref());
+    }
+    if has_profile_scope || requested_claim(requested_claims, "nickname") {
         optional_string_claim(&mut claims, "nickname", user.nickname.as_deref());
+    }
+    if has_profile_scope || requested_claim(requested_claims, "profile") {
         optional_string_claim(&mut claims, "profile", user.profile_url.as_deref());
+    }
+    if has_profile_scope || requested_claim(requested_claims, "picture") {
         optional_string_claim(&mut claims, "picture", user.avatar_url.as_deref());
+    }
+    if has_profile_scope || requested_claim(requested_claims, "website") {
         optional_string_claim(&mut claims, "website", user.website_url.as_deref());
+    }
+    if has_profile_scope || requested_claim(requested_claims, "gender") {
         optional_string_claim(&mut claims, "gender", user.gender.as_deref());
+    }
+    if has_profile_scope || requested_claim(requested_claims, "birthdate") {
         optional_string_claim(&mut claims, "birthdate", user.birthdate.as_deref());
+    }
+    if has_profile_scope || requested_claim(requested_claims, "zoneinfo") {
         optional_string_claim(&mut claims, "zoneinfo", user.zoneinfo.as_deref());
+    }
+    if has_profile_scope || requested_claim(requested_claims, "locale") {
         optional_string_claim(&mut claims, "locale", user.locale.as_deref());
+    }
+    if has_profile_scope || requested_claim(requested_claims, "updated_at") {
         claims["updated_at"] = json!(user.updated_at.timestamp());
     }
 
-    if scopes.iter().any(|scope| scope == "email") {
+    if has_email_scope || requested_claim(requested_claims, "email") {
         claims["email"] = json!(user.email);
+    }
+    if has_email_scope || requested_claim(requested_claims, "email_verified") {
         claims["email_verified"] = json!(user.email_verified);
     }
 
@@ -56,11 +114,32 @@ fn optional_string_claim(claims: &mut Value, name: &str, value: Option<&str>) {
     }
 }
 
-pub(crate) fn oidc_id_token_user_claims(user: &UserRow, scopes: &[String], subject: &str) -> Value {
-    let mut claims = oidc_user_claims(user, scopes, subject);
+fn requested_claim(requested_claims: &[String], name: &str) -> bool {
+    requested_claims.iter().any(|claim| claim == name)
+}
+
+fn user_display_name(user: &UserRow) -> &str {
+    user.display_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(&user.username)
+}
+
+pub(crate) fn oidc_id_token_user_claims(
+    user: &UserRow,
+    scopes: &[String],
+    subject: &str,
+    requested_claims: &[String],
+) -> Value {
+    let mut claims = oidc_user_claims(user, scopes, subject, requested_claims);
     if let Some(object) = claims.as_object_mut() {
-        object.remove("email");
-        object.remove("email_verified");
+        if !requested_claim(requested_claims, "email") {
+            object.remove("email");
+        }
+        if !requested_claim(requested_claims, "email_verified") {
+            object.remove("email_verified");
+        }
     }
     claims
 }
@@ -150,6 +229,7 @@ mod tests {
                 "email".to_owned(),
             ],
             "subject-1",
+            &[],
         );
 
         assert_eq!(claims["sub"], "subject-1");
@@ -173,7 +253,7 @@ mod tests {
     #[test]
     fn userinfo_claims_omit_unrequested_profile_and_email() {
         let user = user();
-        let claims = oidc_user_claims(&user, &["openid".to_owned()], "subject-1");
+        let claims = oidc_user_claims(&user, &["openid".to_owned()], "subject-1", &[]);
 
         assert!(claims.get("name").is_none());
         assert!(claims.get("given_name").is_none());
@@ -203,12 +283,29 @@ mod tests {
                 "email".to_owned(),
             ],
             "subject-1",
+            &[],
         );
 
         assert_eq!(claims["sub"], "subject-1");
         assert_eq!(claims["preferred_username"], "alice");
         assert!(claims.get("email").is_none());
         assert!(claims.get("email_verified").is_none());
+    }
+
+    #[test]
+    fn requested_userinfo_claims_are_returned_without_profile_scope() {
+        let mut user = user();
+        user.display_name = None;
+        let claims = oidc_user_claims(
+            &user,
+            &["openid".to_owned()],
+            "subject-1",
+            &["name".to_owned()],
+        );
+
+        assert_eq!(claims["sub"], "subject-1");
+        assert_eq!(claims["name"], "alice");
+        assert!(claims.get("preferred_username").is_none());
     }
 
     #[test]

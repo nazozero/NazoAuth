@@ -60,6 +60,8 @@ pub(crate) async fn token_client_credentials(
             auth_time: None,
             amr: Vec::new(),
             acr: None,
+            userinfo_claims: Vec::new(),
+            id_token_claims: Vec::new(),
             include_refresh: false,
             rotation: None,
             dpop_jkt,
