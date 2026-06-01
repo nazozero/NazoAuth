@@ -3,8 +3,8 @@ FROM docker.io/library/rust:1.96-slim AS builder
 WORKDIR /app
 
 RUN sed -i \
-        -e 's|http://deb.debian.org/debian|http://mirrors.cloud.tencent.com/debian|g' \
-        -e 's|http://deb.debian.org/debian-security|http://mirrors.cloud.tencent.com/debian-security|g' \
+        -e 's|http://deb.debian.org/debian|http://mirrors.ustc.edu.cn/debian|g' \
+        -e 's|http://deb.debian.org/debian-security|http://mirrors.ustc.edu.cn/debian-security|g' \
         /etc/apt/sources.list.d/debian.sources \
     && mkdir -p /usr/local/cargo \
     && printf '[source.crates-io]\nreplace-with = "rsproxy"\n\n[source.rsproxy]\nregistry = "sparse+https://rsproxy.cn/index/"\n' > /usr/local/cargo/config.toml \
@@ -21,8 +21,8 @@ RUN cargo build --release
 FROM docker.io/library/debian:trixie-slim
 
 RUN sed -i \
-        -e 's|http://deb.debian.org/debian|http://mirrors.cloud.tencent.com/debian|g' \
-        -e 's|http://deb.debian.org/debian-security|http://mirrors.cloud.tencent.com/debian-security|g' \
+        -e 's|http://deb.debian.org/debian|http://mirrors.ustc.edu.cn/debian|g' \
+        -e 's|http://deb.debian.org/debian-security|http://mirrors.ustc.edu.cn/debian-security|g' \
         /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates libpq5 \
