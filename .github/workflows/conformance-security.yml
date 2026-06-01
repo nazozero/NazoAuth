@@ -84,11 +84,17 @@ jobs:
           docker network create nazo-oauth-e2e-net
           docker run -d --name nazo-oauth-e2e-postgres --network nazo-oauth-e2e-net -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=oauth postgres:18-alpine
           docker run -d --name nazo-oauth-e2e-valkey --network nazo-oauth-e2e-net valkey/valkey:9-alpine
+          ready=false
           for i in $(seq 1 60); do
-            docker exec nazo-oauth-e2e-postgres pg_isready -U postgres -d oauth && exit 0
+            if docker run --rm --network nazo-oauth-e2e-net -e PGPASSWORD=postgres postgres:18-alpine \
+              sh -lc 'pg_isready -h nazo-oauth-e2e-postgres -U postgres -d oauth && psql -h nazo-oauth-e2e-postgres -U postgres -d oauth -c "select 1" >/dev/null'
+            then
+              ready=true
+              break
+            fi
             sleep 2
           done
-          exit 1
+          [ "$ready" = "true" ]
       - name: Migrate and start server
         run: |
           docker run --rm --name nazo-oauth-e2e-migrate --network nazo-oauth-e2e-net \
