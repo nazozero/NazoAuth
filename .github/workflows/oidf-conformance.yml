@@ -6,6 +6,7 @@ on:
 jobs:
   oidf-conformance:
     runs-on: ubuntu-latest
+    timeout-minutes: 360
     env:
       CONFORMANCE_SERVER: ${{ vars.OIDF_CONFORMANCE_SERVER || 'https://www.certification.openid.net/' }}
       OIDF_REF: ${{ vars.OIDF_CONFORMANCE_SUITE_REF || 'master' }}
@@ -14,6 +15,8 @@ jobs:
       VERBOSE: ${{ vars.OIDF_VERBOSE || 'true' }}
       DISABLE_SSL_VERIFY: ${{ vars.OIDF_DISABLE_SSL_VERIFY || 'false' }}
       NO_PARALLEL: ${{ vars.OIDF_NO_PARALLEL || 'true' }}
+      RUN_TIMEOUT_SECONDS: ${{ vars.OIDF_RUN_TIMEOUT_SECONDS || '10800' }}
+      PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -36,6 +39,7 @@ jobs:
             --suite-dir oidf-conformance-suite
             --conformance-server "$CONFORMANCE_SERVER"
             --plan-expression "$PLAN_EXPRESSION"
+            --timeout-seconds "$RUN_TIMEOUT_SECONDS"
           )
           if [ "$EXPORT_RESULTS" = "true" ]; then
             args+=(--export-dir "$GITHUB_WORKSPACE/oidf-results")
@@ -49,7 +53,7 @@ jobs:
           if [ "$NO_PARALLEL" = "true" ]; then
             args+=(--no-parallel)
           fi
-          python scripts/run_oidf_conformance.py "${args[@]}"
+          python -u scripts/run_oidf_conformance.py "${args[@]}"
         env:
           OIDF_CONFORMANCE_TOKEN: ${{ secrets.OIDF_CONFORMANCE_TOKEN }}
           OIDF_PLAN_CONFIG_JSON: ${{ secrets.OIDF_PLAN_CONFIG_JSON }}

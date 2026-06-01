@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import shlex
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -133,8 +134,65 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--disable-ssl-verify", action="store_true")
     parser.add_argument("--no-parallel", action="store_true")
+    parser.add_argument(
+        "--timeout-seconds",
+        type=int,
+        default=10_800,
+        help="maximum runtime for the official conformance runner",
+    )
     parser.add_argument("--list", action="store_true", help="list selected plans without running them")
     return parser.parse_args()
+
+
+def run_official_runner(
+    command: list[str],
+    expressions: list[str],
+    suite_scripts: Path,
+    env: dict[str, str],
+    timeout_seconds: int,
+) -> int:
+    if timeout_seconds <= 0:
+        fail("--timeout-seconds must be greater than zero")
+
+    print("OIDF selected plan expressions:", flush=True)
+    for index, expression in enumerate(expressions, start=1):
+        print(f"  {index}. {expression}", flush=True)
+    print("OIDF official runner argv:", flush=True)
+    for index, argument in enumerate(command):
+        print(f"  argv[{index}]: {argument}", flush=True)
+    print(f"OIDF official runner timeout: {timeout_seconds} seconds", flush=True)
+
+    process = subprocess.Popen(
+        command,
+        cwd=suite_scripts,
+        env=env,
+        start_new_session=True,
+    )
+    try:
+        return process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        print("OIDF official runner timed out; terminating process group", flush=True)
+        terminate_runner(process)
+        return 124
+
+
+def terminate_runner(process: subprocess.Popen[bytes]) -> None:
+    if hasattr(os, "killpg"):
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+            process.wait(timeout=15)
+            return
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+            return
+
+    process.terminate()
+    try:
+        process.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
 
 
 def main() -> int:
@@ -173,8 +231,7 @@ def main() -> int:
     for expression in expressions:
         command.extend(shlex.split(expression))
 
-    completed = subprocess.run(command, cwd=suite_scripts, env=env, check=False)
-    return completed.returncode
+    return run_official_runner(command, expressions, suite_scripts, env, args.timeout_seconds)
 
 
 if __name__ == "__main__":
