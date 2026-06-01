@@ -35,13 +35,13 @@ pub(crate) async fn apply_request_object(
             "request object 无效.",
         )
     })?;
-    if header.alg != jsonwebtoken::Algorithm::EdDSA {
+    let Some(_algorithm_name) = supported_client_jwt_algorithm_name(header.alg) else {
         return Err(oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request_object",
-            "request object 只支持 EdDSA.",
+            "request object 签名算法无效.",
         ));
-    }
+    };
     let Some(kid) = header.kid.as_deref() else {
         return Err(oauth_error(
             StatusCode::BAD_REQUEST,
@@ -49,28 +49,25 @@ pub(crate) async fn apply_request_object(
             "request object 缺少 kid.",
         ));
     };
-    let Some(public_key) = client_assertion_public_key(client, kid) else {
+    let Some(decoding_key) = client_jwt_decoding_key(client, kid, header.alg) else {
         return Err(oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request_object",
             "request object 签名密钥无效.",
         ));
     };
-    let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::EdDSA);
+    let mut validation = jsonwebtoken::Validation::new(header.alg);
     validation.validate_aud = false;
     validation.set_issuer(&[client.client_id.as_str()]);
-    let token_data = jsonwebtoken::decode::<RequestObjectClaims>(
-        &request_object,
-        &jsonwebtoken::DecodingKey::from_ed_der(&public_key),
-        &validation,
-    )
-    .map_err(|_| {
-        oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request_object",
-            "request object 验签失败.",
-        )
-    })?;
+    let token_data =
+        jsonwebtoken::decode::<RequestObjectClaims>(&request_object, &decoding_key, &validation)
+            .map_err(|_| {
+                oauth_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_request_object",
+                    "request object 验签失败.",
+                )
+            })?;
     let claims = token_data.claims;
     let now = Utc::now().timestamp();
     if claims.iss != client.client_id

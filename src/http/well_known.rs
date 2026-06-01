@@ -1,5 +1,7 @@
 use super::prelude::*;
 
+const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
+
 pub(crate) async fn health() -> Json<Value> {
     Json(json!({"status": "正常"}))
 }
@@ -27,19 +29,19 @@ fn authorization_server_metadata_value(state: &AppState) -> Value {
         "subject_types_supported": [state.settings.subject_type.as_str()],
         "id_token_signing_alg_values_supported": ["EdDSA"],
         "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "private_key_jwt", "none"],
-        "token_endpoint_auth_signing_alg_values_supported": ["EdDSA"],
+        "token_endpoint_auth_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS,
         "revocation_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "private_key_jwt", "none"],
-        "revocation_endpoint_auth_signing_alg_values_supported": ["EdDSA"],
+        "revocation_endpoint_auth_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS,
         "introspection_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "private_key_jwt"],
-        "introspection_endpoint_auth_signing_alg_values_supported": ["EdDSA"],
+        "introspection_endpoint_auth_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS,
         "scopes_supported": ["openid", "profile", "email", "offline_access"],
         "claims_supported": ["sub", "auth_time", "amr", "nonce", "preferred_username", "name", "email", "email_verified", "picture", "updated_at"],
         "prompt_values_supported": ["login", "none"],
         "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
         "authorization_response_iss_parameter_supported": true,
         "code_challenge_methods_supported": ["S256"],
-        "dpop_signing_alg_values_supported": ["EdDSA"],
-        "request_object_signing_alg_values_supported": ["EdDSA"]
+        "dpop_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS,
+        "request_object_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS
     })
 }
 

@@ -3,7 +3,10 @@
 
 use super::{
     prelude::*,
-    security::blake3_hex,
+    security::{
+        SUPPORTED_CLIENT_JWT_SIGNING_ALGS, blake3_hex, client_jwt_algorithm_from_name,
+        jwt_decoding_key_from_jwk, supported_client_jwt_algorithm_name,
+    },
     uri_policy::{oauth_redirect_uri_matches, validate_oauth_redirect_uri},
 };
 
@@ -189,35 +192,34 @@ pub(crate) fn validate_client_jwks(jwks: &Value) -> anyhow::Result<()> {
     }
     let mut seen_kids = std::collections::HashSet::new();
     for key in keys {
-        let kty = key.get("kty").and_then(Value::as_str).unwrap_or_default();
-        let crv = key.get("crv").and_then(Value::as_str).unwrap_or_default();
         let kid = key.get("kid").and_then(Value::as_str).unwrap_or_default();
-        let x = key.get("x").and_then(Value::as_str).unwrap_or_default();
-        let valid_public_key = URL_SAFE_NO_PAD
-            .decode(x)
-            .ok()
-            .is_some_and(|bytes| bytes.len() == 32);
         if kid.trim().is_empty() {
-            anyhow::bail!("jwks Ed25519 公钥必须包含 kid");
+            anyhow::bail!("jwks 公钥必须包含 kid");
         }
         if !seen_kids.insert(kid) {
             anyhow::bail!("jwks kid 不能重复: {kid}");
         }
-        if kty != "OKP" || crv != "Ed25519" || !valid_public_key {
-            anyhow::bail!("jwks 只接受 Ed25519 OKP 公钥");
-        }
         if key.get("d").is_some() {
             anyhow::bail!("jwks 不能包含私钥材料");
-        }
-        if let Some(alg) = key.get("alg").and_then(Value::as_str)
-            && alg != "EdDSA"
-        {
-            anyhow::bail!("jwks Ed25519 公钥 alg 必须为 EdDSA");
         }
         if let Some(use_) = key.get("use").and_then(Value::as_str)
             && use_ != "sig"
         {
             anyhow::bail!("jwks 公钥 use 必须为 sig");
+        }
+        let Some(alg) = key.get("alg").and_then(Value::as_str) else {
+            anyhow::bail!("jwks 公钥必须声明 alg");
+        };
+        let Some(algorithm) = client_jwt_algorithm_from_name(alg) else {
+            anyhow::bail!(
+                "jwks alg 必须是 {}",
+                SUPPORTED_CLIENT_JWT_SIGNING_ALGS.join(", ")
+            );
+        };
+        if supported_client_jwt_algorithm_name(algorithm) != Some(alg)
+            || jwt_decoding_key_from_jwk(key, algorithm).is_none()
+        {
+            anyhow::bail!("jwks 公钥材料与 alg 不匹配");
         }
     }
     Ok(())
@@ -510,11 +512,71 @@ mod tests {
                 "kty": "OKP",
                 "crv": "Ed25519",
                 "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+                "alg": "EdDSA",
                 "d": URL_SAFE_NO_PAD.encode([8u8; 32]),
                 "kid": "key-1"
             }]
         });
 
         assert!(validate_client_jwks(&private_jwk).is_err());
+    }
+
+    #[test]
+    fn client_jwks_accepts_supported_public_key_algorithms() {
+        let jwks = json!({
+            "keys": [
+                {
+                    "kty": "OKP",
+                    "crv": "Ed25519",
+                    "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+                    "alg": "EdDSA",
+                    "use": "sig",
+                    "kid": "ed-key"
+                },
+                {
+                    "kty": "RSA",
+                    "n": URL_SAFE_NO_PAD.encode([0x91u8; 256]),
+                    "e": URL_SAFE_NO_PAD.encode([0x01u8, 0x00, 0x01]),
+                    "alg": "RS256",
+                    "use": "sig",
+                    "kid": "rs-key"
+                },
+                {
+                    "kty": "EC",
+                    "crv": "P-256",
+                    "x": "w7JAoU_gJbZJvV-zCOvU9yFJq0FNC_edCMRM78P8eQQ",
+                    "y": "wQg1EytcsEmGrM70Gb53oluoDbVhCZ3Uq3hHMslHVb4",
+                    "alg": "ES256",
+                    "use": "sig",
+                    "kid": "es-key"
+                },
+                {
+                    "kty": "RSA",
+                    "n": URL_SAFE_NO_PAD.encode([0x92u8; 256]),
+                    "e": URL_SAFE_NO_PAD.encode([0x01u8, 0x00, 0x01]),
+                    "alg": "PS256",
+                    "use": "sig",
+                    "kid": "ps-key"
+                }
+            ]
+        });
+
+        assert!(validate_client_jwks(&jwks).is_ok());
+    }
+
+    #[test]
+    fn client_jwks_rejects_algorithm_key_type_mismatch() {
+        let jwks = json!({
+            "keys": [{
+                "kty": "OKP",
+                "crv": "Ed25519",
+                "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+                "alg": "RS256",
+                "use": "sig",
+                "kid": "wrong-alg"
+            }]
+        });
+
+        assert!(validate_client_jwks(&jwks).is_err());
     }
 }

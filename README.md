@@ -6,7 +6,7 @@ Nazo OAuth Server 是一个 lightweight self-hosted OAuth 2.1 draft-compatible /
 
 - OAuth 2.1 authorization code + PKCE、refresh token、client credentials、PAR、JAR 流程
 - OpenID Connect discovery、OAuth Authorization Server Metadata、JWKS、userinfo
-- Ed25519 JWT 签名
+- 服务端 access token / ID token 使用 Ed25519 / EdDSA 签名；客户端 `private_key_jwt`、JAR request object 和 DPoP proof 支持 EdDSA、RS256、ES256、PS256
 - `client_secret_basic`、`client_secret_post`、`private_key_jwt` 和 public client 认证
 - refresh token 轮换与复用检测
 - HTTPS / loopback / native redirect URI 门禁、S256 PKCE、授权码原子消费与重放撤销、DPoP proof 与一次性 nonce、敏感 token 响应 no-store
@@ -27,7 +27,7 @@ Nazo OAuth Server 是一个 lightweight self-hosted OAuth 2.1 draft-compatible /
 | 数据库 | PostgreSQL |
 | ORM | Diesel / diesel-async |
 | 缓存与临时状态 | Valkey |
-| JWT | Ed25519 |
+| JWT | Ed25519 / EdDSA 服务端签发；EdDSA、RS256、ES256、PS256 客户端 proof 验签 |
 | 密码哈希 | Argon2 |
 | JSON | serde / serde_json |
 | ID | UUIDv7 |
@@ -238,11 +238,22 @@ docker compose up -d nazo_oauth_server
 
 `/token` 仅在授权范围包含 `offline_access` 且客户端启用 `refresh_token` grant 时签发和轮换 refresh token。
 
-`private_key_jwt` 客户端必须在客户端元数据中配置公开 `jwks`，当前支持 Ed25519 / EdDSA 公钥。DPoP proof 若缺少或使用过期 nonce，服务端返回 `use_dpop_nonce` 并通过 `DPoP-Nonce` 响应头提供新的 nonce；DPoP token 和 DPoP-bound userinfo 成功响应也返回下一次 nonce。
+`private_key_jwt` 客户端必须在客户端元数据中配置公开 `jwks`。客户端 JWKS 只接受公开签名密钥，必须包含 `kid`、`alg` 和 `use=sig`；`alg` 支持 `EdDSA`、`RS256`、`ES256`、`PS256`。DPoP proof 使用同一组签名算法；若缺少或使用过期 nonce，服务端返回 `use_dpop_nonce` 并通过 `DPoP-Nonce` 响应头提供新的 nonce；DPoP token 和 DPoP-bound userinfo 成功响应也返回下一次 nonce。
 
-PAR 使用 `POST /par` 提交授权请求参数，成功后返回一次性 `request_uri`。`/authorize` 使用 `request_uri` 时拒绝外层参数覆盖。JAR 使用 `request=<jwt>`，只接受 EdDSA 签名请求对象，使用客户端 JWKS 验签，并校验 `iss`、`sub`、`client_id`、`aud`、`exp`、`nbf`、`iat`、`jti` 和防重放状态。
+PAR 使用 `POST /par` 提交授权请求参数，成功后返回一次性 `request_uri`。`/authorize` 使用 `request_uri` 时拒绝外层参数覆盖。JAR 使用 `request=<jwt>`，接受 `EdDSA`、`RS256`、`ES256`、`PS256` 签名请求对象，使用客户端 JWKS 验签，并校验 `iss`、`sub`、`client_id`、`aud`、`exp`、`nbf`、`iat`、`jti` 和防重放状态。
 
 `/introspect` 只接受机密客户端认证，并按 access token audience 或客户端自身 token 归属返回 active metadata；非 active token 只返回 `{"active": false}`。public client 可调用 `/revoke` 撤销属于自身的 token，但不能读取 introspection metadata。
+
+### 资源服务器集成模式
+
+资源服务器可以选择两种 access token 验证模式：
+
+| 模式 | 行为 | 适用边界 |
+| --- | --- | --- |
+| 在线 introspection | 每次或按短缓存周期调用 `/introspect`，服务端会检查 access token revocation 表、audience 和客户端权限；撤销可被资源服务器感知 | 需要撤销实时生效、权限变化敏感或风险较高的 API |
+| 离线 JWKS 验签 | 资源服务器只读取 `/jwks.json` 验证 JWT 签名、`iss`、`aud`、`exp`、`nbf`、`scope` 和 DPoP `cnf`；不会读取 revocation 表 | 可接受 access token 在过期前保持有效的低延迟场景 |
+
+JWT access token 是自包含凭据；离线 JWKS 验签不能感知 `/revoke`、authorization code replay revocation 或服务端黑名单状态。需要撤销实时语义时，资源服务器应使用 `/introspect` 或将离线验签缓存窗口限制在 access token TTL 内的很短周期。
 
 ### 请求示例
 
@@ -277,7 +288,7 @@ curl -u "confidential-client:<secret>" \
   https://issuer.example/par
 ```
 
-JAR：客户端用已注册 JWKS 对 request object 进行 EdDSA 签名，然后传入 `/authorize?request=<jwt>` 或 `/par` 的 `request=<jwt>` 字段。
+JAR：客户端用已注册 JWKS 对 request object 进行 `EdDSA`、`RS256`、`ES256` 或 `PS256` 签名，然后传入 `/authorize?request=<jwt>` 或 `/par` 的 `request=<jwt>` 字段。
 
 ### 认证与当前用户
 
@@ -323,6 +334,15 @@ cargo check
 cargo clippy -- -D warnings
 cargo test --locked
 ```
+
+安全与协议流水线：
+
+```sh
+python scripts/full_real_request_e2e.py
+python scripts/full_real_request_load.py
+```
+
+GitHub Actions 中的 `conformance-security` workflow 会运行 Rust gate、真实 HTTP E2E、压测、PAR/JAR/DPoP/JWT/JWK 负面路径、重复参数校验、并发授权码兑换和 refresh token 复用检测。OpenID Foundation Conformance Suite 适合对公网或可回调测试环境执行；本项目的客户端注册、issuer、redirect URI、JWKS、PAR、JAR、DPoP 与 introspection 行为应按该 suite 的 plan 配置进入认证测试。
 
 容器构建检查：
 
