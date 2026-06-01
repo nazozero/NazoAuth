@@ -673,7 +673,11 @@ def run():
         allow_redirects=False,
         timeout=15,
     )
-    expect_status("authorize invalid redirect_uri error page", invalid_redirect, 400)
+    if invalid_redirect.status_code != 400:
+        checks.fail(
+            "authorize invalid redirect_uri error page",
+            f"expected 400 got {invalid_redirect.status_code}: {invalid_redirect.text[:200]}",
+        )
     if invalid_redirect.headers.get("location"):
         checks.fail("authorize invalid redirect_uri error page", "unexpected redirect")
     if "text/html" not in invalid_redirect.headers.get("content-type", ""):
