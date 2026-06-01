@@ -4,13 +4,15 @@
 mod cors;
 mod routes;
 
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use actix_web::{App, HttpServer, http::header, middleware::DefaultHeaders, web};
 use anyhow::Context;
 use fred::{
     interfaces::ClientLike,
-    prelude::{Builder as ValkeyBuilder, Config as ValkeyConfig},
+    prelude::{
+        Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
+    },
 };
 
 use crate::config::ConfigSource;
@@ -36,10 +38,24 @@ pub async fn run() -> anyhow::Result<()> {
         "postgresql://postgres:postgres@127.0.0.1:5432/oauth",
     ));
     let valkey_url = config.string("VALKEY_URL", "redis://127.0.0.1:6379/0");
+    let valkey_command_timeout_ms = config.parse::<u64>("VALKEY_COMMAND_TIMEOUT_MS", 1_000)?;
+    if valkey_command_timeout_ms == 0 {
+        anyhow::bail!("VALKEY_COMMAND_TIMEOUT_MS must be greater than zero");
+    }
+    let valkey_command_timeout = Duration::from_millis(valkey_command_timeout_ms);
 
     // 数据库和 Valkey 客户端在 server factory 外创建，避免每个 worker 重复初始化。
     let diesel_db = create_pool(database_url.clone(), 32)?;
-    let valkey = ValkeyBuilder::from_config(ValkeyConfig::from_url(&valkey_url)?).build()?;
+    let mut valkey_builder = ValkeyBuilder::from_config(ValkeyConfig::from_url(&valkey_url)?);
+    valkey_builder.with_performance_config(|performance: &mut PerformanceConfig| {
+        performance.default_command_timeout = valkey_command_timeout;
+    });
+    valkey_builder.with_connection_config(|connection: &mut ConnectionConfig| {
+        connection.connection_timeout = valkey_command_timeout;
+        connection.internal_command_timeout = valkey_command_timeout;
+        connection.max_command_attempts = 1;
+    });
+    let valkey = valkey_builder.build()?;
     valkey.init().await?;
 
     let settings = Arc::new(Settings::from_config(&config)?);

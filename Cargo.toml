@@ -48,6 +48,9 @@ urlencoding = "2.1.3"
 uuid = { version = "1.23.2", features = ["v7", "serde"] }
 yaml_serde = "0.10.4"
 
+[dev-dependencies]
+proptest = "1"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

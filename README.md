@@ -81,6 +81,7 @@ Nazo OAuth Server 是一个 lightweight self-hosted OAuth 2.1 draft-compatible /
 | `BIND` | `0.0.0.0:8000` | HTTP 监听地址 |
 | `DATABASE_URL` | `postgresql://postgres:postgres@127.0.0.1:5432/oauth` | PostgreSQL 连接串 |
 | `VALKEY_URL` | `redis://127.0.0.1:6379/0` | Valkey 连接串 |
+| `VALKEY_COMMAND_TIMEOUT_MS` | `1000` | Valkey 单次命令、连接和内部命令超时，单位为毫秒；依赖不可用时敏感接口返回 `server_error` |
 | `ISSUER` | `http://127.0.0.1:8000` | OAuth/OIDC issuer；生产环境必须使用 HTTPS，本地开发仅允许 loopback HTTP；不能以 `/` 结尾 |
 | `FRONTEND_BASE_URL` | `http://127.0.0.1:3000` | 前端地址，用于登录和授权确认跳转；生产环境必须使用 HTTPS，本地开发仅允许 loopback HTTP |
 | `CORS_ALLOWED_ORIGINS` | `http://127.0.0.1:3000` | 允许的 CORS origin，多个值用逗号分隔；只接受 HTTPS origin 或 loopback HTTP origin |
