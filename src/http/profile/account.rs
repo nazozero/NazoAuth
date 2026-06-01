@@ -23,6 +23,16 @@ pub(crate) async fn me(state: Data<AppState>, req: HttpRequest) -> HttpResponse 
 #[derive(Deserialize)]
 pub(crate) struct UpdateProfileRequest {
     display_name: Option<String>,
+    given_name: Option<String>,
+    family_name: Option<String>,
+    middle_name: Option<String>,
+    nickname: Option<String>,
+    profile_url: Option<String>,
+    website_url: Option<String>,
+    gender: Option<String>,
+    birthdate: Option<String>,
+    zoneinfo: Option<String>,
+    locale: Option<String>,
 }
 
 pub(crate) async fn update_me(
@@ -37,10 +47,50 @@ pub(crate) async fn update_me(
         Ok(user) => user,
         Err(response) => return response,
     };
-    let display_name = payload
-        .display_name
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty());
+    let display_name = match profile_text(payload.display_name, 80, "display_name") {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let given_name = match profile_text(payload.given_name, 80, "given_name") {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let family_name = match profile_text(payload.family_name, 80, "family_name") {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let middle_name = match profile_text(payload.middle_name, 80, "middle_name") {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let nickname = match profile_text(payload.nickname, 80, "nickname") {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let profile_url = match normalize_profile_url(payload.profile_url, "profile_url") {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let website_url = match normalize_profile_url(payload.website_url, "website_url") {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let gender = match profile_text(payload.gender, 40, "gender") {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let birthdate = match profile_text(payload.birthdate, 10, "birthdate") {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let zoneinfo = match profile_text(payload.zoneinfo, 64, "zoneinfo") {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let locale = match profile_text(payload.locale, 35, "locale") {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
     let mut conn = match get_conn(&state.diesel_db).await {
         Ok(conn) => conn,
         Err(_) => {
@@ -54,6 +104,16 @@ pub(crate) async fn update_me(
     let updated = diesel::update(users::table.find(user.id))
         .set((
             users::display_name.eq(display_name),
+            users::given_name.eq(given_name),
+            users::family_name.eq(family_name),
+            users::middle_name.eq(middle_name),
+            users::nickname.eq(nickname),
+            users::profile_url.eq(profile_url),
+            users::website_url.eq(website_url),
+            users::gender.eq(gender),
+            users::birthdate.eq(birthdate),
+            users::zoneinfo.eq(zoneinfo),
+            users::locale.eq(locale),
             users::updated_at.eq(diesel_now),
         ))
         .returning(UserRow::as_returning())
@@ -80,4 +140,49 @@ pub(crate) async fn update_me(
             )
         }
     }
+}
+
+fn profile_text(
+    value: Option<String>,
+    max_bytes: usize,
+    field: &str,
+) -> Result<Option<String>, HttpResponse> {
+    let Some(value) = value
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(None);
+    };
+    if value.len() > max_bytes {
+        return Err(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            &format!("{field} 超出长度限制."),
+        ));
+    }
+    Ok(Some(value))
+}
+
+fn normalize_profile_url(
+    value: Option<String>,
+    field: &str,
+) -> Result<Option<String>, HttpResponse> {
+    let Some(value) = profile_text(value, 512, field)? else {
+        return Ok(None);
+    };
+    let Ok(url) = url::Url::parse(&value) else {
+        return Err(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            &format!("{field} 必须是绝对 URL."),
+        ));
+    };
+    if !matches!(url.scheme(), "https" | "http") || url.cannot_be_a_base() {
+        return Err(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            &format!("{field} 必须是 http 或 https URL."),
+        ));
+    }
+    Ok(Some(value))
 }
