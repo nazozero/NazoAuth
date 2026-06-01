@@ -132,6 +132,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--export-dir", default="")
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--disable-ssl-verify", action="store_true")
+    parser.add_argument("--no-parallel", action="store_true")
     parser.add_argument("--list", action="store_true", help="list selected plans without running them")
     return parser.parse_args()
 
@@ -161,6 +162,8 @@ def main() -> int:
     command = [sys.executable, str(runner)]
     if args.list:
         command.append("--list")
+    if args.no_parallel:
+        command.append("--no-parallel")
     if args.export_dir:
         export_dir = Path(args.export_dir).resolve()
         export_dir.mkdir(parents=True, exist_ok=True)

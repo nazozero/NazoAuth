@@ -13,6 +13,7 @@ jobs:
       EXPORT_RESULTS: ${{ vars.OIDF_EXPORT_RESULTS || 'true' }}
       VERBOSE: ${{ vars.OIDF_VERBOSE || 'true' }}
       DISABLE_SSL_VERIFY: ${{ vars.OIDF_DISABLE_SSL_VERIFY || 'false' }}
+      NO_PARALLEL: ${{ vars.OIDF_NO_PARALLEL || 'true' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -44,6 +45,9 @@ jobs:
           fi
           if [ "$DISABLE_SSL_VERIFY" = "true" ]; then
             args+=(--disable-ssl-verify)
+          fi
+          if [ "$NO_PARALLEL" = "true" ]; then
+            args+=(--no-parallel)
           fi
           python scripts/run_oidf_conformance.py "${args[@]}"
         env:
