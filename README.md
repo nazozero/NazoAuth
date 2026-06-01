@@ -6,7 +6,7 @@ Nazo OAuth Server 是一个 lightweight self-hosted OAuth 2.1 draft-compatible /
 
 - OAuth 2.1 authorization code + PKCE、refresh token、client credentials、PAR、JAR 流程
 - OpenID Connect discovery、OAuth Authorization Server Metadata、JWKS、userinfo
-- Ed25519 JWT 签名
+- 服务端 access token / ID token 使用 Ed25519 / EdDSA 签名；客户端 `private_key_jwt`、JAR request object 和 DPoP proof 支持 EdDSA、RS256、ES256、PS256
 - `client_secret_basic`、`client_secret_post`、`private_key_jwt` 和 public client 认证
 - refresh token 轮换与复用检测
 - HTTPS / loopback / native redirect URI 门禁、S256 PKCE、授权码原子消费与重放撤销、DPoP proof 与一次性 nonce、敏感 token 响应 no-store
@@ -27,7 +27,7 @@ Nazo OAuth Server 是一个 lightweight self-hosted OAuth 2.1 draft-compatible /
 | 数据库 | PostgreSQL |
 | ORM | Diesel / diesel-async |
 | 缓存与临时状态 | Valkey |
-| JWT | Ed25519 |
+| JWT | Ed25519 / EdDSA 服务端签发；EdDSA、RS256、ES256、PS256 客户端 proof 验签 |
 | 密码哈希 | Argon2 |
 | JSON | serde / serde_json |
 | ID | UUIDv7 |
@@ -238,11 +238,22 @@ docker compose up -d nazo_oauth_server
 
 `/token` 仅在授权范围包含 `offline_access` 且客户端启用 `refresh_token` grant 时签发和轮换 refresh token。
 
-`private_key_jwt` 客户端必须在客户端元数据中配置公开 `jwks`，当前支持 Ed25519 / EdDSA 公钥。DPoP proof 若缺少或使用过期 nonce，服务端返回 `use_dpop_nonce` 并通过 `DPoP-Nonce` 响应头提供新的 nonce；DPoP token 和 DPoP-bound userinfo 成功响应也返回下一次 nonce。
+`private_key_jwt` 客户端必须在客户端元数据中配置公开 `jwks`。客户端 JWKS 只接受公开签名密钥，必须包含 `kid`、`alg` 和 `use=sig`；`alg` 支持 `EdDSA`、`RS256`、`ES256`、`PS256`。DPoP proof 使用同一组签名算法；若缺少或使用过期 nonce，服务端返回 `use_dpop_nonce` 并通过 `DPoP-Nonce` 响应头提供新的 nonce；DPoP token 和 DPoP-bound userinfo 成功响应也返回下一次 nonce。
 
-PAR 使用 `POST /par` 提交授权请求参数，成功后返回一次性 `request_uri`。`/authorize` 使用 `request_uri` 时拒绝外层参数覆盖。JAR 使用 `request=<jwt>`，只接受 EdDSA 签名请求对象，使用客户端 JWKS 验签，并校验 `iss`、`sub`、`client_id`、`aud`、`exp`、`nbf`、`iat`、`jti` 和防重放状态。
+PAR 使用 `POST /par` 提交授权请求参数，成功后返回一次性 `request_uri`。`/authorize` 使用 `request_uri` 时拒绝外层参数覆盖。JAR 使用 `request=<jwt>`，接受 `EdDSA`、`RS256`、`ES256`、`PS256` 签名请求对象，使用客户端 JWKS 验签，并校验 `iss`、`sub`、`client_id`、`aud`、`exp`、`nbf`、`iat`、`jti` 和防重放状态。
 
 `/introspect` 只接受机密客户端认证，并按 access token audience 或客户端自身 token 归属返回 active metadata；非 active token 只返回 `{"active": false}`。public client 可调用 `/revoke` 撤销属于自身的 token，但不能读取 introspection metadata。
+
+### 资源服务器集成模式
+
+资源服务器可以选择两种 access token 验证模式：
+
+| 模式 | 行为 | 适用边界 |
+| --- | --- | --- |
+| 在线 introspection | 每次或按短缓存周期调用 `/introspect`，服务端会检查 access token revocation 表、audience 和客户端权限；撤销可被资源服务器感知 | 需要撤销实时生效、权限变化敏感或风险较高的 API |
+| 离线 JWKS 验签 | 资源服务器只读取 `/jwks.json` 验证 JWT 签名、`iss`、`aud`、`exp`、`nbf`、`scope` 和 DPoP `cnf`；不会读取 revocation 表 | 可接受 access token 在过期前保持有效的低延迟场景 |
+
+JWT access token 是自包含凭据；离线 JWKS 验签不能感知 `/revoke`、authorization code replay revocation 或服务端黑名单状态。需要撤销实时语义时，资源服务器应使用 `/introspect` 或将离线验签缓存窗口限制在 access token TTL 内的很短周期。
 
 ### 请求示例
 
@@ -277,7 +288,7 @@ curl -u "confidential-client:<secret>" \
   https://issuer.example/par
 ```
 
-JAR：客户端用已注册 JWKS 对 request object 进行 EdDSA 签名，然后传入 `/authorize?request=<jwt>` 或 `/par` 的 `request=<jwt>` 字段。
+JAR：客户端用已注册 JWKS 对 request object 进行 `EdDSA`、`RS256`、`ES256` 或 `PS256` 签名，然后传入 `/authorize?request=<jwt>` 或 `/par` 的 `request=<jwt>` 字段。
 
 ### 认证与当前用户
 
@@ -323,6 +334,55 @@ cargo check
 cargo clippy -- -D warnings
 cargo test --locked
 ```
+
+安全与协议流水线：
+
+```sh
+python scripts/full_real_request_e2e.py
+python scripts/full_real_request_load.py
+```
+
+GitHub Actions 中的 `conformance-security` workflow 会运行 Rust gate、真实 HTTP E2E、压测、PAR/JAR/DPoP/JWT/JWK 负面路径、重复参数校验、并发授权码兑换和 refresh token 复用检测。
+
+### OpenID Foundation Conformance Suite
+
+官方 OpenID Foundation Conformance Suite 仓库为 `https://gitlab.com/openid/conformance-suite/`。本项目提供 `oidf-conformance` workflow，通过该仓库的官方 `scripts/run-test-plan.py` 执行测试计划。该 workflow 适用于对公网或具备 suite 回调能力的 HTTPS 测试环境，不替代每个 PR 都运行的本地确定性安全矩阵。
+
+运行前需要在 GitHub Actions 中配置一次：
+
+- GitHub Secret `OIDF_CONFORMANCE_TOKEN`：OpenID Foundation conformance suite API token。
+- GitHub Secret `OIDF_PLAN_CONFIG_JSON`：传给 suite 的 plan config JSON 对象，内容应包含被测 issuer discovery URL、预注册 client、scope、client authentication、redirect URI、浏览器自动化步骤等 plan 所需字段。
+- 可选 GitHub Secret 或 Repository Variable `OIDF_PLAN_SET_JSON`：conformance plan expression 字符串数组；secret 优先级高于 variable。
+- 可选 Repository Variable `OIDF_CONFORMANCE_SERVER`，默认 `https://www.certification.openid.net/`。
+- 可选 Repository Variable `OIDF_CONFORMANCE_SUITE_REF`，默认 `master`。
+- 可选 Repository Variable `OIDF_PLAN_EXPRESSION`：仅运行单个 plan expression；未设置 `OIDF_PLAN_SET_JSON` 且该项为空时，workflow 使用内置综合计划集合。
+- 可选 Repository Variable `OIDF_EXPORT_RESULTS`，默认 `true`。
+- 可选 Repository Variable `OIDF_VERBOSE`，默认 `true`。
+- 可选 Repository Variable `OIDF_DISABLE_SSL_VERIFY`，默认 `false`。
+- 被测环境的 `ISSUER` 必须与 discovery 文档一致，并且 conformance suite 可以访问授权端点、token 端点、JWKS、userinfo、PAR、introspection、revocation 等公开端点。
+- OAuth client 的 redirect URI 必须与 suite plan config 生成或声明的 callback 地址一致。
+
+`oidf-conformance` workflow 手动触发时不需要填写参数；workflow 会从 repository variables 和 secrets 自动读取配置。未设置 `OIDF_PLAN_SET_JSON` 和 `OIDF_PLAN_EXPRESSION` 时，默认综合计划集合覆盖：
+
+- OIDC Basic OP certification plan
+- OIDC Config OP certification plan
+- FAPI2 Security Profile Final，`private_key_jwt` + PAR + DPoP + OpenID Connect
+- FAPI2 Message Signing Final，`private_key_jwt` + signed request object/JAR + PAR + DPoP + OpenID Connect
+- FAPI2 Security Profile ID2，`private_key_jwt` + PAR + DPoP + OpenID Connect
+- FAPI2 Message Signing ID1，`private_key_jwt` + signed request object/JAR + PAR + DPoP + OpenID Connect
+
+如需覆盖更多 ecosystem profile 或认证组合，应调整 `OIDF_PLAN_SET_JSON`，并提供与这些 plan 匹配的 `OIDF_PLAN_CONFIG_JSON`。例如：
+
+```json
+[
+  "oidcc-basic-certification-test-plan oidf-plan-config.json",
+  "oidcc-config-certification-test-plan oidf-plan-config.json",
+  "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=unsigned][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] oidf-plan-config.json",
+  "fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] oidf-plan-config.json"
+]
+```
+
+workflow 会导出 suite 结果归档作为 artifact。通过该 workflow 表示项目已接入官方 conformance 测试入口；是否达到某个 OpenID Foundation 认证 profile，以对应 plan 的完整通过结果和认证流程为准。
 
 容器构建检查：
 

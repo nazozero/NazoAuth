@@ -28,7 +28,7 @@ import requests
 from aiosmtpd.controller import Controller
 from argon2 import PasswordHasher
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ed25519
+from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
 
 
 BASE_URL = os.environ.get("E2E_BASE_URL", "http://nazo-oauth-e2e-server:8000")
@@ -101,6 +101,14 @@ def ed25519_private_pem(key: ed25519.Ed25519PrivateKey) -> bytes:
     )
 
 
+def private_key_pem(key: Any) -> bytes:
+    return key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+
+
 def ed25519_public_jwk(key: ed25519.Ed25519PrivateKey, kid: str | None = None) -> dict[str, Any]:
     raw_public = key.public_key().public_bytes(
         encoding=serialization.Encoding.Raw,
@@ -118,11 +126,38 @@ def ed25519_public_jwk(key: ed25519.Ed25519PrivateKey, kid: str | None = None) -
     return jwk
 
 
+def rsa_public_jwk(key: rsa.RSAPrivateKey, kid: str, algorithm: str) -> dict[str, Any]:
+    public_numbers = key.public_key().public_numbers()
+    return {
+        "kty": "RSA",
+        "n": b64url(public_numbers.n.to_bytes((public_numbers.n.bit_length() + 7) // 8, "big")),
+        "e": b64url(public_numbers.e.to_bytes((public_numbers.e.bit_length() + 7) // 8, "big")),
+        "alg": algorithm,
+        "use": "sig",
+        "kid": kid,
+    }
+
+
+def ec_public_jwk(key: ec.EllipticCurvePrivateKey, kid: str) -> dict[str, Any]:
+    public_numbers = key.public_key().public_numbers()
+    return {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": b64url(public_numbers.x.to_bytes(32, "big")),
+        "y": b64url(public_numbers.y.to_bytes(32, "big")),
+        "alg": "ES256",
+        "use": "sig",
+        "kid": kid,
+    }
+
+
 def dpop_proof(
     method: str,
     url: str,
-    key: ed25519.Ed25519PrivateKey,
+    key: Any,
     *,
+    algorithm: str = "EdDSA",
+    public_jwk: dict[str, Any] | None = None,
     nonce: str | None = None,
     access_token: str | None = None,
 ) -> str:
@@ -138,18 +173,20 @@ def dpop_proof(
         claims["ath"] = b64url(hashlib.sha256(access_token.encode("utf-8")).digest())
     return jwt.encode(
         claims,
-        ed25519_private_pem(key),
-        algorithm="EdDSA",
-        headers={"typ": "dpop+jwt", "jwk": ed25519_public_jwk(key)},
+        private_key_pem(key),
+        algorithm=algorithm,
+        headers={"typ": "dpop+jwt", "jwk": public_jwk or ed25519_public_jwk(key)},
     )
 
 
 def client_assertion(
     client_id: str,
-    key: ed25519.Ed25519PrivateKey,
+    key: Any,
     *,
     jti: str | None = None,
     audience_path: str = "/token",
+    algorithm: str = "EdDSA",
+    kid: str = "private-key-jwt-e2e",
 ) -> str:
     claims = {
         "iss": client_id,
@@ -161,15 +198,15 @@ def client_assertion(
     }
     return jwt.encode(
         claims,
-        ed25519_private_pem(key),
-        algorithm="EdDSA",
-        headers={"typ": "JWT", "kid": "private-key-jwt-e2e"},
+        private_key_pem(key),
+        algorithm=algorithm,
+        headers={"typ": "JWT", "kid": kid},
     )
 
 
 def authorization_request_object(
     client_id: str,
-    key: ed25519.Ed25519PrivateKey,
+    key: Any,
     *,
     code_challenge: str,
     scope: str = "openid profile email",
@@ -177,6 +214,7 @@ def authorization_request_object(
     audience: str | None = None,
     jti: str | None = None,
     algorithm: str = "EdDSA",
+    kid: str = "private-key-jwt-e2e",
 ) -> str:
     claims = {
         "iss": client_id,
@@ -199,9 +237,9 @@ def authorization_request_object(
         return jwt.encode(claims, key="", algorithm="none", headers={"typ": "oauth-authz-req+jwt"})
     return jwt.encode(
         claims,
-        ed25519_private_pem(key),
+        private_key_pem(key),
         algorithm=algorithm,
-        headers={"typ": "oauth-authz-req+jwt", "kid": "private-key-jwt-e2e"},
+        headers={"typ": "oauth-authz-req+jwt", "kid": kid},
     )
 
 
@@ -446,15 +484,26 @@ def token_plain(form: dict[str, str], check_name: str) -> dict[str, Any]:
 
 def request_dpop_nonce(
     form: dict[str, str],
-    key: ed25519.Ed25519PrivateKey,
+    key: Any,
     path: str = "/token",
+    *,
+    algorithm: str = "EdDSA",
+    public_jwk: dict[str, Any] | None = None,
 ) -> str:
     url = f"{BASE_URL}{path}"
     proof_url = f"{ISSUER_URL}{path}"
     response = requests.post(
         url,
         data=form,
-        headers={"DPoP": dpop_proof("POST", proof_url, key)},
+        headers={
+            "DPoP": dpop_proof(
+                "POST",
+                proof_url,
+                key,
+                algorithm=algorithm,
+                public_jwk=public_jwk,
+            )
+        },
         timeout=10,
     )
     expect_status(f"dpop_nonce_challenge_{path}_{len(checks)}", response, 400)
@@ -467,14 +516,26 @@ def request_dpop_nonce(
 
 def token_with_dpop(
     form: dict[str, str],
-    key: ed25519.Ed25519PrivateKey,
+    key: Any,
     nonce: str,
     check_name: str,
+    *,
+    algorithm: str = "EdDSA",
+    public_jwk: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     response = requests.post(
         f"{BASE_URL}/token",
         data=form,
-        headers={"DPoP": dpop_proof("POST", f"{ISSUER_URL}/token", key, nonce=nonce)},
+        headers={
+            "DPoP": dpop_proof(
+                "POST",
+                f"{ISSUER_URL}/token",
+                key,
+                algorithm=algorithm,
+                public_jwk=public_jwk,
+                nonce=nonce,
+            )
+        },
         timeout=10,
     )
     expect_status(check_name, response, 200)
@@ -507,7 +568,12 @@ def run() -> None:
             "discovery_metadata",
             "private_key_jwt" in discovery["token_endpoint_auth_methods_supported"]
             and "private_key_jwt" in discovery["introspection_endpoint_auth_methods_supported"]
-            and discovery["revocation_endpoint_auth_signing_alg_values_supported"] == ["EdDSA"]
+            and set(discovery["revocation_endpoint_auth_signing_alg_values_supported"])
+            == {"EdDSA", "RS256", "ES256", "PS256"}
+            and set(discovery["request_object_signing_alg_values_supported"])
+            == {"EdDSA", "RS256", "ES256", "PS256"}
+            and set(discovery["dpop_signing_alg_values_supported"])
+            == {"EdDSA", "RS256", "ES256", "PS256"}
             and "email_verified" in discovery["claims_supported"],
         )
         oauth_metadata = expect_json(
@@ -761,6 +827,9 @@ def run() -> None:
         secret_client_secret = secret_client["client_secret"]
 
         private_key = ed25519.Ed25519PrivateKey.generate()
+        rsa_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        ps_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        ec_key = ec.generate_private_key(ec.SECP256R1())
         jwks_without_kid = admin.post(
             f"{BASE_URL}/admin/clients",
             json={
@@ -823,6 +892,28 @@ def run() -> None:
         )
         private_client_id = private_client["client_id"]
 
+        multi_alg_private_client = create_client(
+            admin,
+            {
+                "client_name": "Private JWT Multi Alg Full E2E",
+                "client_type": "confidential",
+                "redirect_uris": [],
+                "scopes": ["profile"],
+                "allowed_audiences": [DEFAULT_AUDIENCE],
+                "grant_types": ["client_credentials"],
+                "token_endpoint_auth_method": "private_key_jwt",
+                "jwks": {
+                    "keys": [
+                        rsa_public_jwk(rsa_key, "private-key-jwt-rs256-e2e", "RS256"),
+                        ec_public_jwk(ec_key, "private-key-jwt-es256-e2e"),
+                        rsa_public_jwk(ps_key, "private-key-jwt-ps256-e2e", "PS256"),
+                    ]
+                },
+            },
+            "POST /admin/clients private_key_jwt RS256 ES256 PS256",
+        )
+        multi_alg_private_client_id = multi_alg_private_client["client_id"]
+
         private_auth_client = create_client(
             admin,
             {
@@ -833,7 +924,12 @@ def run() -> None:
                 "allowed_audiences": [DEFAULT_AUDIENCE],
                 "grant_types": ["authorization_code"],
                 "token_endpoint_auth_method": "private_key_jwt",
-                "jwks": {"keys": [ed25519_public_jwk(private_key, "private-key-jwt-e2e")]},
+                "jwks": {
+                    "keys": [
+                        ed25519_public_jwk(private_key, "private-key-jwt-e2e"),
+                        rsa_public_jwk(rsa_key, "private-key-jwt-rs256-e2e", "RS256"),
+                    ]
+                },
             },
             "POST /admin/clients private_key_jwt authorization_code",
         )
@@ -958,6 +1054,47 @@ def run() -> None:
             "POST /token PAR authorization_code",
         )
         check("par_token_issued", bool(par_tokens.get("access_token")) and bool(par_tokens.get("id_token")))
+        refresh_race_form = {
+            "grant_type": "refresh_token",
+            "client_id": public_client_id,
+            "refresh_token": par_tokens["refresh_token"],
+        }
+
+        def redeem_refresh_race() -> tuple[int, dict[str, Any]]:
+            response = requests.post(f"{BASE_URL}/token", data=refresh_race_form, timeout=10)
+            try:
+                return response.status_code, response.json()
+            except ValueError:
+                return response.status_code, {"raw": response.text}
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            refresh_race_results = list(pool.map(lambda _: redeem_refresh_race(), range(2)))
+        refresh_successes = [body for status, body in refresh_race_results if status == 200]
+        refresh_rejections = [body for status, body in refresh_race_results if status == 400]
+        check(
+            "refresh_token_reuse_race_single_success",
+            len(refresh_successes) == 1 and len(refresh_rejections) == 1,
+            refresh_race_results,
+        )
+        check(
+            "refresh_token_reuse_race_invalid_grant",
+            refresh_rejections[0].get("error") == "invalid_grant",
+            refresh_rejections,
+        )
+        refresh_after_race = requests.post(
+            f"{BASE_URL}/token",
+            data={
+                "grant_type": "refresh_token",
+                "client_id": public_client_id,
+                "refresh_token": refresh_successes[0]["refresh_token"],
+            },
+            timeout=10,
+        )
+        expect_status("POST /token refresh family revoked after reuse race", refresh_after_race, 400)
+        check(
+            "refresh_token_reuse_race_revokes_family",
+            expect_json(refresh_after_race).get("error") == "invalid_grant",
+        )
         par_reuse = user.get(
             f"{BASE_URL}/authorize",
             params={"client_id": public_client_id, "request_uri": par["request_uri"]},
@@ -1001,6 +1138,47 @@ def run() -> None:
             timeout=10,
         )
         expect_status("GET /authorize JAR jti replay rejected", jar_replay, 400)
+
+        jar_rs_verifier, jar_rs_challenge = pkce_pair()
+        jar_rs_token = authorization_request_object(
+            private_auth_client_id,
+            rsa_key,
+            code_challenge=jar_rs_challenge,
+            state="jar-rs256-flow",
+            algorithm="RS256",
+            kid="private-key-jwt-rs256-e2e",
+        )
+        jar_rs_authorize = user.get(
+            f"{BASE_URL}/authorize",
+            params={"request": jar_rs_token},
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status("GET /authorize JAR RS256", jar_rs_authorize, 302)
+        jar_rs_request_id = consent_request_from_redirect(jar_rs_authorize, "GET /authorize JAR RS256")
+        jar_rs_code, jar_rs_verifier = approve_authorization(
+            user,
+            jar_rs_request_id,
+            jar_rs_verifier,
+            state="jar-rs256-flow",
+        )
+        jar_rs_tokens = token_plain(
+            {
+                "grant_type": "authorization_code",
+                "code": jar_rs_code,
+                "code_verifier": jar_rs_verifier,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "client_assertion_type": CLIENT_ASSERTION_TYPE,
+                "client_assertion": client_assertion(
+                    private_auth_client_id,
+                    rsa_key,
+                    algorithm="RS256",
+                    kid="private-key-jwt-rs256-e2e",
+                ),
+            },
+            "POST /token JAR RS256 authorization_code private_key_jwt",
+        )
+        check("jar_rs256_token_issued", bool(jar_rs_tokens.get("access_token")))
 
         jar_none = authorization_request_object(
             private_auth_client_id,
@@ -1693,6 +1871,33 @@ def run() -> None:
         )
         check("client_secret_post_access_token", bool(secret_cc.get("access_token")))
 
+        for algorithm, key, public_jwk in [
+            ("RS256", rsa_key, rsa_public_jwk(rsa_key, "dpop-rs256-e2e", "RS256")),
+            ("ES256", ec_key, ec_public_jwk(ec_key, "dpop-es256-e2e")),
+            ("PS256", ps_key, rsa_public_jwk(ps_key, "dpop-ps256-e2e", "PS256")),
+        ]:
+            dpop_client_credentials_form = {
+                "grant_type": "client_credentials",
+                "client_id": secret_client_id,
+                "client_secret": secret_client_secret,
+                "scope": "profile",
+            }
+            nonce = request_dpop_nonce(
+                dpop_client_credentials_form,
+                key,
+                algorithm=algorithm,
+                public_jwk=public_jwk,
+            )
+            alg_dpop_token = token_with_dpop(
+                dpop_client_credentials_form,
+                key,
+                nonce,
+                f"POST /token client_credentials DPoP {algorithm}",
+                algorithm=algorithm,
+                public_jwk=public_jwk,
+            )
+            check(f"dpop_{algorithm.lower()}_access_token", bool(alg_dpop_token.get("access_token")))
+
         assertion_jti = str(uuid.uuid4())
         assertion = client_assertion(private_client_id, private_key, jti=assertion_jti)
         private_cc = expect_json(
@@ -1723,6 +1928,34 @@ def run() -> None:
             timeout=10,
         )
         expect_status("POST /token private_key_jwt replay rejected", replay, 401)
+
+        for algorithm, key, kid in [
+            ("RS256", rsa_key, "private-key-jwt-rs256-e2e"),
+            ("ES256", ec_key, "private-key-jwt-es256-e2e"),
+            ("PS256", ps_key, "private-key-jwt-ps256-e2e"),
+        ]:
+            alg_response = expect_json(
+                expect_status(
+                    f"POST /token private_key_jwt {algorithm}",
+                    requests.post(
+                        f"{BASE_URL}/token",
+                        data={
+                            "grant_type": "client_credentials",
+                            "client_assertion_type": CLIENT_ASSERTION_TYPE,
+                            "client_assertion": client_assertion(
+                                multi_alg_private_client_id,
+                                key,
+                                algorithm=algorithm,
+                                kid=kid,
+                            ),
+                            "scope": "profile",
+                        },
+                        timeout=10,
+                    ),
+                    200,
+                )
+            )
+            check(f"private_key_jwt_{algorithm.lower()}_access_token", bool(alg_response.get("access_token")))
 
         applications = expect_json(
             expect_status(

@@ -1,0 +1,60 @@
+name: oidf-conformance
+
+on:
+  workflow_dispatch:
+
+jobs:
+  oidf-conformance:
+    runs-on: ubuntu-latest
+    env:
+      CONFORMANCE_SERVER: ${{ vars.OIDF_CONFORMANCE_SERVER || 'https://www.certification.openid.net/' }}
+      OIDF_REF: ${{ vars.OIDF_CONFORMANCE_SUITE_REF || 'master' }}
+      PLAN_EXPRESSION: ${{ vars.OIDF_PLAN_EXPRESSION || '' }}
+      EXPORT_RESULTS: ${{ vars.OIDF_EXPORT_RESULTS || 'true' }}
+      VERBOSE: ${{ vars.OIDF_VERBOSE || 'true' }}
+      DISABLE_SSL_VERIFY: ${{ vars.OIDF_DISABLE_SSL_VERIFY || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Clone official conformance suite
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "$OIDF_REF" https://gitlab.com/openid/conformance-suite.git oidf-conformance-suite
+
+      - name: Install official runner dependencies
+        run: python -m pip install --upgrade -r oidf-conformance-suite/scripts/requirements.txt
+
+      - name: Run OIDF conformance plan
+        run: |
+          set -euo pipefail
+          args=(
+            --suite-dir oidf-conformance-suite
+            --conformance-server "$CONFORMANCE_SERVER"
+            --plan-expression "$PLAN_EXPRESSION"
+          )
+          if [ "$EXPORT_RESULTS" = "true" ]; then
+            args+=(--export-dir "$GITHUB_WORKSPACE/oidf-results")
+          fi
+          if [ "$VERBOSE" = "true" ]; then
+            args+=(--verbose)
+          fi
+          if [ "$DISABLE_SSL_VERIFY" = "true" ]; then
+            args+=(--disable-ssl-verify)
+          fi
+          python scripts/run_oidf_conformance.py "${args[@]}"
+        env:
+          OIDF_CONFORMANCE_TOKEN: ${{ secrets.OIDF_CONFORMANCE_TOKEN }}
+          OIDF_PLAN_CONFIG_JSON: ${{ secrets.OIDF_PLAN_CONFIG_JSON }}
+          OIDF_PLAN_SET_JSON: ${{ secrets.OIDF_PLAN_SET_JSON || vars.OIDF_PLAN_SET_JSON }}
+
+      - name: Upload OIDF result archive
+        if: always() && vars.OIDF_EXPORT_RESULTS != 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: oidf-conformance-results
+          path: oidf-results
+          if-no-files-found: ignore

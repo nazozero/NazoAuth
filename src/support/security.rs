@@ -59,6 +59,7 @@ pub(crate) const CLIENT_ASSERTION_TYPE_JWT_BEARER: &str =
 const CLIENT_ASSERTION_MAX_TTL_SECONDS: i64 = 300;
 const CLIENT_ASSERTION_CLOCK_SKEW_SECONDS: i64 = 30;
 const MAX_CLIENT_ASSERTION_JTI_BYTES: usize = 128;
+pub(crate) const SUPPORTED_CLIENT_JWT_SIGNING_ALGS: &[&str] = &["EdDSA", "RS256", "ES256", "PS256"];
 
 pub(crate) struct ClientCredentials {
     pub(crate) client_id: Option<String>,
@@ -182,22 +183,16 @@ pub(crate) async fn validate_private_key_jwt(
 ) -> Result<(), ClientAssertionError> {
     let header =
         jsonwebtoken::decode_header(assertion).map_err(|_| ClientAssertionError::Invalid)?;
-    if header.alg != jsonwebtoken::Algorithm::EdDSA {
-        return Err(ClientAssertionError::Invalid);
-    }
     let kid = header.kid.as_deref().ok_or(ClientAssertionError::Invalid)?;
-    let public_key =
-        client_assertion_public_key(client, kid).ok_or(ClientAssertionError::Invalid)?;
+    let decoding_key =
+        client_jwt_decoding_key(client, kid, header.alg).ok_or(ClientAssertionError::Invalid)?;
 
-    let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::EdDSA);
+    let mut validation = jsonwebtoken::Validation::new(header.alg);
     validation.validate_aud = false;
     validation.set_issuer(&[client.client_id.as_str()]);
-    let token_data = jsonwebtoken::decode::<ClientAssertionClaims>(
-        assertion,
-        &jsonwebtoken::DecodingKey::from_ed_der(&public_key),
-        &validation,
-    )
-    .map_err(|_| ClientAssertionError::Invalid)?;
+    let token_data =
+        jsonwebtoken::decode::<ClientAssertionClaims>(assertion, &decoding_key, &validation)
+            .map_err(|_| ClientAssertionError::Invalid)?;
     let claims = token_data.claims;
     let now = Utc::now().timestamp();
     if claims.iss != client.client_id
@@ -245,25 +240,102 @@ fn unverified_client_assertion_client_id(assertion: &str) -> Option<String> {
     (claims.iss == claims.sub && !claims.sub.trim().is_empty()).then_some(claims.sub)
 }
 
-pub(crate) fn client_assertion_public_key(client: &ClientRow, kid: &str) -> Option<[u8; 32]> {
+pub(crate) fn supported_client_jwt_algorithm_name(
+    alg: jsonwebtoken::Algorithm,
+) -> Option<&'static str> {
+    match alg {
+        jsonwebtoken::Algorithm::EdDSA => Some("EdDSA"),
+        jsonwebtoken::Algorithm::RS256 => Some("RS256"),
+        jsonwebtoken::Algorithm::ES256 => Some("ES256"),
+        jsonwebtoken::Algorithm::PS256 => Some("PS256"),
+        _ => None,
+    }
+}
+
+pub(crate) fn client_jwt_algorithm_from_name(value: &str) -> Option<jsonwebtoken::Algorithm> {
+    match value {
+        "EdDSA" => Some(jsonwebtoken::Algorithm::EdDSA),
+        "RS256" => Some(jsonwebtoken::Algorithm::RS256),
+        "ES256" => Some(jsonwebtoken::Algorithm::ES256),
+        "PS256" => Some(jsonwebtoken::Algorithm::PS256),
+        _ => None,
+    }
+}
+
+pub(crate) fn client_jwt_decoding_key(
+    client: &ClientRow,
+    kid: &str,
+    alg: jsonwebtoken::Algorithm,
+) -> Option<jsonwebtoken::DecodingKey> {
     let keys = client.jwks.as_ref()?.get("keys")?.as_array()?;
     let key = keys
         .iter()
         .find(|key| key.get("kid").and_then(Value::as_str) == Some(kid))?;
-    if key.get("kty").and_then(Value::as_str) != Some("OKP")
-        || key.get("crv").and_then(Value::as_str) != Some("Ed25519")
+    jwt_decoding_key_from_jwk(key, alg)
+}
+
+pub(crate) fn jwt_decoding_key_from_jwk(
+    key: &Value,
+    alg: jsonwebtoken::Algorithm,
+) -> Option<jsonwebtoken::DecodingKey> {
+    let expected_alg = supported_client_jwt_algorithm_name(alg)?;
+    if let Some(key_alg) = key.get("alg").and_then(Value::as_str)
+        && key_alg != expected_alg
     {
         return None;
     }
-    if let Some(alg) = key.get("alg").and_then(Value::as_str)
-        && alg != "EdDSA"
+    if key.get("d").is_some() {
+        return None;
+    }
+    if let Some(use_) = key.get("use").and_then(Value::as_str)
+        && use_ != "sig"
     {
         return None;
     }
-    let bytes = URL_SAFE_NO_PAD
-        .decode(key.get("x").and_then(Value::as_str)?)
-        .ok()?;
-    bytes.try_into().ok()
+    match alg {
+        jsonwebtoken::Algorithm::EdDSA => {
+            if key.get("kty").and_then(Value::as_str) != Some("OKP")
+                || key.get("crv").and_then(Value::as_str) != Some("Ed25519")
+            {
+                return None;
+            }
+            let x = key.get("x").and_then(Value::as_str)?;
+            let bytes = URL_SAFE_NO_PAD.decode(x).ok()?;
+            if bytes.len() != 32 {
+                return None;
+            }
+            jsonwebtoken::DecodingKey::from_ed_components(x).ok()
+        }
+        jsonwebtoken::Algorithm::RS256 | jsonwebtoken::Algorithm::PS256 => {
+            if key.get("kty").and_then(Value::as_str) != Some("RSA") {
+                return None;
+            }
+            let n = key.get("n").and_then(Value::as_str)?;
+            let e = key.get("e").and_then(Value::as_str)?;
+            let modulus = URL_SAFE_NO_PAD.decode(n).ok()?;
+            let exponent = URL_SAFE_NO_PAD.decode(e).ok()?;
+            if modulus.len() < 256 || exponent.is_empty() {
+                return None;
+            }
+            jsonwebtoken::DecodingKey::from_rsa_components(n, e).ok()
+        }
+        jsonwebtoken::Algorithm::ES256 => {
+            if key.get("kty").and_then(Value::as_str) != Some("EC")
+                || key.get("crv").and_then(Value::as_str) != Some("P-256")
+            {
+                return None;
+            }
+            let x = key.get("x").and_then(Value::as_str)?;
+            let y = key.get("y").and_then(Value::as_str)?;
+            let x_bytes = URL_SAFE_NO_PAD.decode(x).ok()?;
+            let y_bytes = URL_SAFE_NO_PAD.decode(y).ok()?;
+            if x_bytes.len() != 32 || y_bytes.len() != 32 {
+                return None;
+            }
+            jsonwebtoken::DecodingKey::from_ec_components(x, y).ok()
+        }
+        _ => None,
+    }
 }
 
 fn endpoint_url(settings: &Settings, req: &HttpRequest) -> String {

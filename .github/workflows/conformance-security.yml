@@ -1,0 +1,129 @@
+name: conformance-security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  rust-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.96.0
+        with:
+          components: rustfmt, clippy
+      - name: Install native dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev
+      - name: Format
+        run: cargo fmt --check
+      - name: Check
+        run: cargo check
+      - name: Clippy
+        run: cargo clippy -- -D warnings
+      - name: Test
+        run: cargo test --locked
+
+  real-http-security-matrix:
+    runs-on: ubuntu-latest
+    needs: rust-gate
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build service image
+        run: docker build -f Containerfile -t nazo-oauth-e2e:latest .
+      - name: Prepare isolated runtime config
+        run: |
+          mkdir -p runtime/e2e/keys runtime/e2e/avatars
+          cat > runtime/e2e/.env.yaml <<'YAML'
+          BIND: "0.0.0.0:8000"
+          DATABASE_URL: "postgresql://postgres:postgres@nazo-oauth-e2e-postgres:5432/oauth"
+          VALKEY_URL: "redis://nazo-oauth-e2e-valkey:6379/0"
+          ISSUER: "http://127.0.0.1:8000"
+          FRONTEND_BASE_URL: "http://127.0.0.1:3000"
+          CORS_ALLOWED_ORIGINS:
+            - "http://127.0.0.1:3000"
+          DEFAULT_AUDIENCE: "resource://default"
+          SESSION_COOKIE_NAME: "nazo_oauth_session"
+          CSRF_COOKIE_NAME: "nazo_oauth_csrf"
+          COOKIE_SECURE: false
+          SESSION_TTL_SECONDS: 28800
+          AUTH_CODE_TTL_SECONDS: 300
+          ACCESS_TOKEN_TTL_SECONDS: 300
+          ID_TOKEN_TTL_SECONDS: 600
+          REFRESH_TOKEN_TTL_SECONDS: 2592000
+          AVATAR_MAX_BYTES: 2097152
+          CLIENT_DELIVERY_TTL_SECONDS: 86400
+          RATE_LIMIT_WINDOW_SECONDS: 60
+          AUTH_RATE_LIMIT_MAX_REQUESTS: 100000
+          TOKEN_RATE_LIMIT_MAX_REQUESTS: 100000
+          TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS: 100000
+          TRUSTED_PROXY_CIDRS: ""
+          CLIENT_IP_HEADER_MODE: "none"
+          SUBJECT_TYPE: "public"
+          PAIRWISE_SUBJECT_SECRET: ""
+          PAR_TTL_SECONDS: 90
+          REQUIRE_PUSHED_AUTHORIZATION_REQUESTS: false
+          EMAIL_DELIVERY: "smtp"
+          EMAIL_CODE_TTL_SECONDS: 900
+          EMAIL_CODE_SEND_COOLDOWN_SECONDS: 1
+          EMAIL_CODE_PEER_COOLDOWN_SECONDS: 1
+          EMAIL_SMTP_HOST: "nazo-oauth-e2e-runner"
+          EMAIL_SMTP_PORT: 1025
+          EMAIL_SMTP_TLS: "none"
+          EMAIL_SMTP_USERNAME: ""
+          EMAIL_SMTP_PASSWORD: ""
+          EMAIL_FROM: "Nazo OAuth <no-reply@example.com>"
+          EMAIL_CODE_DEV_RESPONSE_ENABLED: false
+          AVATAR_STORAGE_DIR: "/var/lib/nazo_oauth/avatars"
+          JWK_KEYS_DIR: "/var/lib/nazo_oauth/keys"
+          RUST_LOG: "info"
+          YAML
+      - name: Start PostgreSQL and Valkey
+        run: |
+          docker network create nazo-oauth-e2e-net
+          docker run -d --name nazo-oauth-e2e-postgres --network nazo-oauth-e2e-net -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=oauth postgres:18-alpine
+          docker run -d --name nazo-oauth-e2e-valkey --network nazo-oauth-e2e-net valkey/valkey:9-alpine
+          ready=false
+          for i in $(seq 1 60); do
+            if docker run --rm --network nazo-oauth-e2e-net -e PGPASSWORD=postgres postgres:18-alpine \
+              sh -lc 'pg_isready -h nazo-oauth-e2e-postgres -U postgres -d oauth && psql -h nazo-oauth-e2e-postgres -U postgres -d oauth -c "select 1" >/dev/null'
+            then
+              ready=true
+              break
+            fi
+            sleep 2
+          done
+          [ "$ready" = "true" ]
+      - name: Migrate and start server
+        run: |
+          docker run --rm --name nazo-oauth-e2e-migrate --network nazo-oauth-e2e-net \
+            -v "$PWD/runtime/e2e/.env.yaml:/app/.env.yaml:ro" \
+            -v "$PWD/runtime/e2e/keys:/var/lib/nazo_oauth/keys" \
+            -v "$PWD/runtime/e2e/avatars:/var/lib/nazo_oauth/avatars" \
+            nazo-oauth-e2e:latest nazo-oauth-migrate
+          docker run -d --name nazo-oauth-e2e-server --network nazo-oauth-e2e-net \
+            -v "$PWD/runtime/e2e/.env.yaml:/app/.env.yaml:ro" \
+            -v "$PWD/runtime/e2e/keys:/var/lib/nazo_oauth/keys" \
+            -v "$PWD/runtime/e2e/avatars:/var/lib/nazo_oauth/avatars" \
+            nazo-oauth-e2e:latest nazo-oauth-server
+      - name: Run full real HTTP E2E
+        run: |
+          docker run --rm --name nazo-oauth-e2e-runner --network nazo-oauth-e2e-net \
+            -v "$PWD:/app" -w /app \
+            -e E2E_BASE_URL=http://nazo-oauth-e2e-server:8000 \
+            -e E2E_ISSUER_URL=http://127.0.0.1:8000 \
+            python:3.13-slim sh -lc 'pip install --no-cache-dir requests psycopg[binary] redis argon2-cffi pyjwt cryptography aiosmtpd >/tmp/pip.log && python scripts/full_real_request_e2e.py'
+      - name: Run load and race gate
+        run: |
+          docker run --rm --name nazo-oauth-e2e-runner --network nazo-oauth-e2e-net \
+            -v "$PWD:/app" -w /app \
+            -e E2E_BASE_URL=http://nazo-oauth-e2e-server:8000 \
+            -e LOAD_REQUESTS=400 \
+            -e LOAD_CONCURRENCY=32 \
+            python:3.13-slim sh -lc 'pip install --no-cache-dir requests psycopg[binary] argon2-cffi >/tmp/pip.log && python scripts/full_real_request_load.py'
+      - name: Cleanup
+        if: always()
+        run: |
+          docker rm -f nazo-oauth-e2e-runner nazo-oauth-e2e-server nazo-oauth-e2e-postgres nazo-oauth-e2e-valkey 2>/dev/null || true
+          docker network rm nazo-oauth-e2e-net 2>/dev/null || true

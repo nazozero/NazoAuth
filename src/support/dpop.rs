@@ -1,12 +1,10 @@
-use std::convert::TryInto;
-
-use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::Deserialize;
 
 use super::prelude::*;
 use super::{
-    audit_event, audit_fields, blake3_hex, oauth_error, random_urlsafe_token, valkey_getdel,
-    valkey_set_ex, valkey_set_ex_nx,
+    audit_event, audit_fields, blake3_hex, client_jwt_algorithm_from_name,
+    jwt_decoding_key_from_jwk, oauth_error, random_urlsafe_token, valkey_getdel, valkey_set_ex,
+    valkey_set_ex_nx,
 };
 
 const DPOP_TTL_SECONDS: i64 = 300;
@@ -131,11 +129,11 @@ pub(crate) async fn validate_dpop_proof(
     };
 
     let (header, claims, signing_input, signature) = decode_proof(raw)?;
-    if header.alg != "EdDSA"
-        || !header
-            .typ
-            .as_deref()
-            .is_some_and(|value| value.eq_ignore_ascii_case("dpop+jwt"))
+    let algorithm = client_jwt_algorithm_from_name(&header.alg).ok_or(DpopError::InvalidProof)?;
+    if !header
+        .typ
+        .as_deref()
+        .is_some_and(|value| value.eq_ignore_ascii_case("dpop+jwt"))
     {
         return Err(DpopError::InvalidProof);
     }
@@ -143,7 +141,7 @@ pub(crate) async fn validate_dpop_proof(
     if expected_jkt.is_some_and(|expected| expected != jkt.as_str()) {
         return Err(DpopError::BindingMismatch);
     }
-    verify_signature(&header.jwk, signing_input.as_bytes(), &signature)?;
+    verify_signature(&header.jwk, algorithm, signing_input.as_bytes(), &signature)?;
     validate_dpop_claims(
         &state.settings.issuer,
         req.method().as_str(),
@@ -253,7 +251,7 @@ fn valid_jti(jti: &str) -> bool {
     !trimmed.is_empty() && trimmed.len() <= MAX_DPOP_JTI_BYTES
 }
 
-fn decode_proof(raw: &str) -> Result<(DpopHeader, DpopClaims, String, Vec<u8>), DpopError> {
+fn decode_proof(raw: &str) -> Result<(DpopHeader, DpopClaims, String, String), DpopError> {
     let mut parts = raw.split('.');
     let encoded_header = parts.next().ok_or(DpopError::MalformedProof)?;
     let encoded_payload = parts.next().ok_or(DpopError::MalformedProof)?;
@@ -267,7 +265,7 @@ fn decode_proof(raw: &str) -> Result<(DpopHeader, DpopClaims, String, Vec<u8>), 
     let payload_bytes = URL_SAFE_NO_PAD
         .decode(encoded_payload)
         .map_err(|_| DpopError::MalformedProof)?;
-    let signature = URL_SAFE_NO_PAD
+    URL_SAFE_NO_PAD
         .decode(encoded_signature)
         .map_err(|_| DpopError::MalformedProof)?;
     let header = serde_json::from_slice::<DpopHeader>(&header_bytes)
@@ -278,7 +276,7 @@ fn decode_proof(raw: &str) -> Result<(DpopHeader, DpopClaims, String, Vec<u8>), 
         header,
         claims,
         format!("{encoded_header}.{encoded_payload}"),
-        signature,
+        encoded_signature.to_owned(),
     ))
 }
 
@@ -287,38 +285,70 @@ fn jwk_thumbprint(jwk: &Value) -> Result<String, DpopError> {
         .get("kty")
         .and_then(Value::as_str)
         .ok_or(DpopError::MalformedProof)?;
-    let crv = jwk
-        .get("crv")
-        .and_then(Value::as_str)
-        .ok_or(DpopError::MalformedProof)?;
-    let x = jwk
-        .get("x")
-        .and_then(Value::as_str)
-        .ok_or(DpopError::MalformedProof)?;
-    if kty != "OKP" || crv != "Ed25519" {
-        return Err(DpopError::InvalidProof);
-    }
-    let canonical = format!(r#"{{"crv":"{crv}","kty":"OKP","x":"{x}"}}"#);
+    let canonical = match kty {
+        "OKP" => {
+            let crv = jwk
+                .get("crv")
+                .and_then(Value::as_str)
+                .ok_or(DpopError::MalformedProof)?;
+            let x = jwk
+                .get("x")
+                .and_then(Value::as_str)
+                .ok_or(DpopError::MalformedProof)?;
+            if crv != "Ed25519" {
+                return Err(DpopError::InvalidProof);
+            }
+            format!(r#"{{"crv":"{crv}","kty":"OKP","x":"{x}"}}"#)
+        }
+        "EC" => {
+            let crv = jwk
+                .get("crv")
+                .and_then(Value::as_str)
+                .ok_or(DpopError::MalformedProof)?;
+            let x = jwk
+                .get("x")
+                .and_then(Value::as_str)
+                .ok_or(DpopError::MalformedProof)?;
+            let y = jwk
+                .get("y")
+                .and_then(Value::as_str)
+                .ok_or(DpopError::MalformedProof)?;
+            if crv != "P-256" {
+                return Err(DpopError::InvalidProof);
+            }
+            format!(r#"{{"crv":"{crv}","kty":"EC","x":"{x}","y":"{y}"}}"#)
+        }
+        "RSA" => {
+            let e = jwk
+                .get("e")
+                .and_then(Value::as_str)
+                .ok_or(DpopError::MalformedProof)?;
+            let n = jwk
+                .get("n")
+                .and_then(Value::as_str)
+                .ok_or(DpopError::MalformedProof)?;
+            format!(r#"{{"e":"{e}","kty":"RSA","n":"{n}"}}"#)
+        }
+        _ => return Err(DpopError::InvalidProof),
+    };
     Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(canonical.as_bytes())))
 }
 
-fn verify_signature(jwk: &Value, signing_input: &[u8], signature: &[u8]) -> Result<(), DpopError> {
-    let x = jwk
-        .get("x")
-        .and_then(Value::as_str)
-        .ok_or(DpopError::MalformedProof)?;
-    let key_bytes = URL_SAFE_NO_PAD
-        .decode(x)
-        .map_err(|_| DpopError::MalformedProof)?;
-    let key_bytes: [u8; 32] = key_bytes
-        .try_into()
-        .map_err(|_| DpopError::MalformedProof)?;
-    let signature = Signature::from_slice(signature).map_err(|_| DpopError::MalformedProof)?;
-    let verifying_key =
-        VerifyingKey::from_bytes(&key_bytes).map_err(|_| DpopError::MalformedProof)?;
-    verifying_key
-        .verify(signing_input, &signature)
-        .map_err(|_| DpopError::InvalidProof)
+fn verify_signature(
+    jwk: &Value,
+    algorithm: jsonwebtoken::Algorithm,
+    signing_input: &[u8],
+    signature: &str,
+) -> Result<(), DpopError> {
+    let decoding_key =
+        jwt_decoding_key_from_jwk(jwk, algorithm).ok_or(DpopError::MalformedProof)?;
+    if jsonwebtoken::crypto::verify(signature, signing_input, &decoding_key, algorithm)
+        .map_err(|_| DpopError::MalformedProof)?
+    {
+        Ok(())
+    } else {
+        Err(DpopError::InvalidProof)
+    }
 }
 
 fn normalize_htu(value: &str) -> Result<String, DpopError> {
@@ -424,7 +454,8 @@ mod tests {
         );
 
         let (header, claims, signing_input, signature) = decode_proof(&proof).unwrap();
-        verify_signature(&header.jwk, signing_input.as_bytes(), &signature).unwrap();
+        let algorithm = client_jwt_algorithm_from_name(&header.alg).unwrap();
+        verify_signature(&header.jwk, algorithm, signing_input.as_bytes(), &signature).unwrap();
         assert!(!jwk_thumbprint(&header.jwk).unwrap().is_empty());
         validate_dpop_claims(
             "https://issuer.example",
