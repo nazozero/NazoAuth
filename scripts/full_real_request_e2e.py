@@ -47,6 +47,7 @@ USER_PASSWORD = "UserPassword-2026"
 CLIENT_REDIRECT_URI = "https://client.example/callback"
 DEFAULT_AUDIENCE = "resource://default"
 CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+SESSION_COOKIE_NAME = "nazo_oauth_session"
 
 
 checks: list[str] = []
@@ -613,6 +614,21 @@ def run() -> None:
         )
         check("auth_me_user", me["id"] == user_id and me["email"] == USER_EMAIL)
 
+        valkey_client = redis.Redis.from_url(VALKEY_URL, decode_responses=True)
+        malformed_session = requests.Session()
+        malformed_sid = secrets.token_urlsafe(32)
+        valkey_client.set(f"oauth:session:{malformed_sid}", "not-json", ex=300)
+        malformed_session.cookies.set(SESSION_COOKIE_NAME, malformed_sid)
+        expect_status(
+            "GET /auth/me malformed session is unauthenticated",
+            malformed_session.get(f"{BASE_URL}/auth/me", timeout=10),
+            401,
+        )
+        check(
+            "malformed_session_deleted",
+            valkey_client.get(f"oauth:session:{malformed_sid}") is None,
+        )
+
         csrf = expect_json(
             expect_status("GET /auth/csrf", user.get(f"{BASE_URL}/auth/csrf", timeout=10), 200)
         )
@@ -837,6 +853,38 @@ def run() -> None:
         )
         expect_status("POST /par confidential unauthenticated rejected", par_confidential_unauthenticated, 401)
 
+        par_with_request_uri = requests.post(
+            f"{BASE_URL}/par",
+            data={
+                "response_type": "code",
+                "client_id": public_client_id,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "scope": "openid",
+                "state": "par-request-uri",
+                "request_uri": "urn:ietf:params:oauth:request_uri:external",
+                "code_challenge": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ",
+                "code_challenge_method": "S256",
+            },
+            timeout=10,
+        )
+        expect_status("POST /par request_uri rejected", par_with_request_uri, 400)
+
+        par_unknown = requests.post(
+            f"{BASE_URL}/par",
+            data={
+                "response_type": "code",
+                "client_id": public_client_id,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "scope": "openid",
+                "state": "par-unknown",
+                "unexpected": "value",
+                "code_challenge": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ",
+                "code_challenge_method": "S256",
+            },
+            timeout=10,
+        )
+        expect_status("POST /par unsupported parameter rejected", par_unknown, 400)
+
         par_verifier, par_challenge = pkce_pair()
         par = expect_json(
             expect_status(
@@ -987,6 +1035,43 @@ def run() -> None:
                 timeout=10,
             ),
             400,
+        )
+
+        jar_conflict_verifier, jar_conflict_challenge = pkce_pair()
+        jar_conflict_jti = str(uuid.uuid4())
+        jar_conflict = authorization_request_object(
+            private_auth_client_id,
+            private_key,
+            code_challenge=jar_conflict_challenge,
+            state="jar-conflict",
+            jti=jar_conflict_jti,
+        )
+        expect_status(
+            "GET /authorize JAR outer conflict rejected",
+            user.get(
+                f"{BASE_URL}/authorize",
+                params={"request": jar_conflict, "state": "conflicting-outer-state"},
+                allow_redirects=False,
+                timeout=10,
+            ),
+            400,
+        )
+        jar_conflict_reuse = user.get(
+            f"{BASE_URL}/authorize",
+            params={"request": jar_conflict},
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status("GET /authorize JAR conflict does not consume jti", jar_conflict_reuse, 302)
+        jar_conflict_request_id = consent_request_from_redirect(
+            jar_conflict_reuse,
+            "GET /authorize JAR conflict retry",
+        )
+        _jar_conflict_code, _jar_conflict_verifier = approve_authorization(
+            user,
+            jar_conflict_request_id,
+            jar_conflict_verifier,
+            state="jar-conflict",
         )
 
         par_jar_verifier, par_jar_challenge = pkce_pair()
@@ -1155,7 +1240,7 @@ def run() -> None:
         )
         check("admin_patch_client_shape", patched_client["client_name"] == "Public Full E2E Updated")
 
-        prompt_verifier, prompt_challenge = pkce_pair()
+        _prompt_verifier, prompt_challenge = pkce_pair()
         prompt_none = requests.get(
             f"{BASE_URL}/authorize",
             params={
@@ -1171,7 +1256,6 @@ def run() -> None:
             allow_redirects=False,
             timeout=10,
         )
-        check("prompt_none_verifier_allocated", bool(prompt_verifier))
         expect_status("GET /authorize prompt=none unauthenticated", prompt_none, 302)
         check("prompt_none_login_required", location_query(prompt_none).get("error") == ["login_required"])
 

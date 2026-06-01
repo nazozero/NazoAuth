@@ -1,11 +1,22 @@
 //! Pushed Authorization Request endpoint.
 
-use super::{
-    apply_request_object, request::AUTHORIZED_REQUEST_PARAMETERS,
-    unverified_request_object_client_id,
-};
+use super::{apply_request_object, unverified_request_object_client_id};
 use crate::http::prelude::*;
 use crate::http::{authenticate_introspection_client, token_management_auth_error};
+
+const PAR_AUTHORIZATION_PARAMETERS: &[&str] = &[
+    "response_type",
+    "client_id",
+    "redirect_uri",
+    "scope",
+    "state",
+    "code_challenge",
+    "code_challenge_method",
+    "nonce",
+    "prompt",
+    "max_age",
+    "request",
+];
 
 pub(crate) async fn par(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
     if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await
@@ -38,13 +49,24 @@ pub(crate) async fn par(state: Data<AppState>, req: HttpRequest, body: Bytes) ->
     let mut seen = std::collections::HashSet::new();
     for (key, value) in url::form_urlencoded::parse(raw.as_bytes()) {
         let key = key.into_owned();
-        if !AUTHORIZED_REQUEST_PARAMETERS.contains(&key.as_str())
+        if key == "request_uri" {
+            return oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "PAR 请求不能包含 request_uri.",
+            );
+        }
+        if !PAR_AUTHORIZATION_PARAMETERS.contains(&key.as_str())
             && !matches!(
                 key.as_str(),
                 "client_secret" | "client_assertion_type" | "client_assertion"
             )
         {
-            continue;
+            return oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "PAR 请求包含不支持的参数.",
+            );
         }
         if !seen.insert(key.clone()) {
             return oauth_error(

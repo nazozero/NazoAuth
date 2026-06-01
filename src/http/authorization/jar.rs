@@ -86,6 +86,19 @@ pub(crate) async fn apply_request_object(
             "request object claims 无效.",
         ));
     }
+    let mut request_params = request_object_params(&claims)?;
+    request_params.insert("client_id".to_owned(), claims.client_id);
+    for (key, value) in &request_params {
+        if let Some(outer_value) = outer.get(key)
+            && outer_value != value
+        {
+            return Err(oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "request object 与外层参数冲突.",
+            ));
+        }
+    }
     let ttl_seconds = claims
         .exp
         .saturating_sub(now)
@@ -110,20 +123,6 @@ pub(crate) async fn apply_request_object(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
                 "request object 防重放状态不可用.",
-            ));
-        }
-    }
-
-    let mut request_params = request_object_params(&claims)?;
-    request_params.insert("client_id".to_owned(), claims.client_id);
-    for (key, value) in &request_params {
-        if let Some(outer_value) = outer.get(key)
-            && outer_value != value
-        {
-            return Err(oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "request object 与外层参数冲突.",
             ));
         }
     }

@@ -1,7 +1,7 @@
 //! 会话用户与权限解析。
 // 只处理从请求 Cookie 到当前用户/管理员身份的解析。
 
-use super::{login_required_response, oauth_error, prelude::*};
+use super::{login_required_response, oauth_error, prelude::*, valkey_del};
 
 #[derive(Deserialize, Serialize)]
 pub(crate) struct SessionPayload {
@@ -32,14 +32,28 @@ pub(crate) async fn current_session(
     let Some(sid) = cookie_value(req, &state.settings.session_cookie_name) else {
         return Ok(None);
     };
-    let Some(raw) = valkey_get(&state.valkey, format!("oauth:session:{sid}")).await? else {
+    let session_key = format!("oauth:session:{sid}");
+    let Some(raw) = valkey_get(&state.valkey, &session_key).await? else {
         return Ok(None);
     };
-    let payload = serde_json::from_str::<SessionPayload>(&raw)?;
+    let payload = match serde_json::from_str::<SessionPayload>(&raw) {
+        Ok(payload) if payload.auth_time > 0 && !payload.amr.is_empty() => payload,
+        Ok(_) => {
+            tracing::warn!("session payload contains invalid authentication metadata");
+            let _ = valkey_del(&state.valkey, session_key).await;
+            return Ok(None);
+        }
+        Err(error) => {
+            tracing::warn!(%error, "session payload is malformed");
+            let _ = valkey_del(&state.valkey, session_key).await;
+            return Ok(None);
+        }
+    };
     let Some(user) = find_user_by_id(&state.diesel_db, payload.user_id)
         .await?
         .filter(|u| u.is_active)
     else {
+        let _ = valkey_del(&state.valkey, session_key).await;
         return Ok(None);
     };
     Ok(Some(CurrentSession {

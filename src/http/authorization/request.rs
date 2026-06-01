@@ -300,7 +300,17 @@ pub(crate) async fn authorize(
         expires_at: now + Duration::seconds(state.settings.auth_code_ttl_seconds as i64),
     };
     let key = format!("oauth:consent:{request_id}");
-    let body = serde_json::to_string(&payload).unwrap();
+    let body = match serde_json::to_string(&payload) {
+        Ok(body) => body,
+        Err(error) => {
+            tracing::warn!(%error, "failed to serialize consent request");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权请求创建失败.",
+            );
+        }
+    };
     if let Err(error) = valkey_set_ex(
         &state.valkey,
         key,
