@@ -23,7 +23,11 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig) {
             web::get().to(oauth_authorization_server_metadata),
         )
         .route("/jwks.json", web::get().to(jwks))
-        .route("/userinfo", web::get().to(userinfo))
+        .service(
+            web::resource("/userinfo")
+                .route(web::get().to(userinfo))
+                .route(web::post().to(userinfo)),
+        )
         .service(
             web::scope("/auth")
                 .route("/captcha-config", web::get().to(captcha_config))

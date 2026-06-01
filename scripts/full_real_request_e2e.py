@@ -1692,6 +1692,38 @@ def run() -> None:
             and userinfo.get("email") == USER_EMAIL
             and userinfo.get("email_verified") is True,
         )
+        userinfo_post_no_nonce = requests.post(
+            f"{BASE_URL}/userinfo",
+            headers={
+                "Authorization": f"DPoP {access_token}",
+                "DPoP": dpop_proof("POST", f"{ISSUER_URL}/userinfo", dpop_key, access_token=access_token),
+            },
+            timeout=10,
+        )
+        expect_status("POST /userinfo DPoP nonce challenge", userinfo_post_no_nonce, 401)
+        userinfo_post_nonce = userinfo_post_no_nonce.headers.get("DPoP-Nonce")
+        check("userinfo_post_nonce_header", bool(userinfo_post_nonce))
+        userinfo_post = expect_json(
+            expect_status(
+                "POST /userinfo DPoP",
+                requests.post(
+                    f"{BASE_URL}/userinfo",
+                    headers={
+                        "Authorization": f"DPoP {access_token}",
+                        "DPoP": dpop_proof(
+                            "POST",
+                            f"{ISSUER_URL}/userinfo",
+                            dpop_key,
+                            nonce=userinfo_post_nonce,
+                            access_token=access_token,
+                        ),
+                    },
+                    timeout=10,
+                ),
+                200,
+            )
+        )
+        check("userinfo_post_claims", userinfo_post.get("sub") == userinfo.get("sub"))
 
         nonce = request_dpop_nonce(
             {
