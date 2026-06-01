@@ -307,9 +307,11 @@ pub(crate) async fn issue_token_response(
     if issue.scopes.iter().any(|s| s == "openid") {
         let user_claims = match issue.user_id {
             Some(user_id) => match find_user_by_id(&state.diesel_db, user_id).await {
-                Ok(Some(user)) if user.is_active => {
-                    Some(oidc_user_claims(&user, &issue.scopes, &issue.subject))
-                }
+                Ok(Some(user)) if user.is_active => Some(oidc_id_token_user_claims(
+                    &user,
+                    &issue.scopes,
+                    &issue.subject,
+                )),
                 Ok(_) => {
                     mark_failed_authorization_code_if_needed(
                         state,

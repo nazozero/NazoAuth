@@ -1940,6 +1940,21 @@ def run() -> None:
             rejected_results,
         )
         concurrent_access_token = success_results[0]["access_token"]
+        concurrent_userinfo_post_body = expect_json(
+            expect_status(
+                "POST /userinfo bearer token in body",
+                requests.post(
+                    f"{BASE_URL}/userinfo",
+                    data={"access_token": concurrent_access_token},
+                    timeout=10,
+                ),
+                200,
+            )
+        )
+        check(
+            "userinfo_post_body_claims",
+            concurrent_userinfo_post_body.get("sub") == user_id,
+        )
         replay_after_concurrent = requests.post(
             f"{BASE_URL}/token",
             data=concurrent_form,

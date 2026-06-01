@@ -54,6 +54,15 @@ pub(crate) fn oidc_user_claims(user: &UserRow, scopes: &[String], subject: &str)
     claims
 }
 
+pub(crate) fn oidc_id_token_user_claims(user: &UserRow, scopes: &[String], subject: &str) -> Value {
+    let mut claims = oidc_user_claims(user, scopes, subject);
+    if let Some(object) = claims.as_object_mut() {
+        object.remove("email");
+        object.remove("email_verified");
+    }
+    claims
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,6 +156,25 @@ mod tests {
         assert!(claims.get("name").is_none());
         assert!(claims.get("preferred_username").is_none());
         assert!(claims.get("picture").is_none());
+        assert!(claims.get("email").is_none());
+        assert!(claims.get("email_verified").is_none());
+    }
+
+    #[test]
+    fn id_token_user_claims_do_not_expose_email_scope_claims() {
+        let user = user();
+        let claims = oidc_id_token_user_claims(
+            &user,
+            &[
+                "openid".to_owned(),
+                "profile".to_owned(),
+                "email".to_owned(),
+            ],
+            "subject-1",
+        );
+
+        assert_eq!(claims["sub"], "subject-1");
+        assert_eq!(claims["preferred_username"], "alice");
         assert!(claims.get("email").is_none());
         assert!(claims.get("email_verified").is_none());
     }
