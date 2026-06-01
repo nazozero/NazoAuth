@@ -44,8 +44,10 @@ pub(crate) struct ConsentPayload {
     pub(crate) nonce: Option<String>,
     pub(crate) auth_time: i64,
     pub(crate) amr: Vec<String>,
-    pub(crate) code_challenge: String,
-    pub(crate) code_challenge_method: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) code_challenge: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) code_challenge_method: Option<String>,
     pub(crate) issued_at: DateTime<Utc>,
     pub(crate) expires_at: DateTime<Utc>,
 }
@@ -70,8 +72,10 @@ pub(crate) struct CodePayload {
     pub(crate) nonce: Option<String>,
     pub(crate) auth_time: i64,
     pub(crate) amr: Vec<String>,
-    pub(crate) code_challenge: String,
-    pub(crate) code_challenge_method: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) code_challenge: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) code_challenge_method: Option<String>,
     pub(crate) issued_at: DateTime<Utc>,
     pub(crate) expires_at: DateTime<Utc>,
 }

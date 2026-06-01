@@ -20,6 +20,22 @@ pub(crate) const AUTHORIZED_REQUEST_PARAMETERS: &[&str] = &[
     "request",
 ];
 
+fn authorization_pkce(
+    client: &ClientRow,
+    q: &HashMap<String, String>,
+) -> Result<(Option<String>, Option<String>), ()> {
+    match (
+        q.get("code_challenge").map(String::as_str),
+        q.get("code_challenge_method").map(String::as_str),
+    ) {
+        (Some(code_challenge), Some("S256")) if is_valid_pkce_value(code_challenge) => {
+            Ok((Some(code_challenge.to_owned()), Some("S256".to_owned())))
+        }
+        (None, None) if client.client_type == "confidential" => Ok((None, None)),
+        _ => Err(()),
+    }
+}
+
 /// 校验 OAuth authorize 参数并创建待确认授权请求。
 pub(crate) async fn authorize(
     state: Data<AppState>,
@@ -175,28 +191,19 @@ pub(crate) async fn authorize(
             ],
         ));
     }
-    let Some(code_challenge) = q.get("code_challenge") else {
-        return redirect_found(append_query(
-            &redirect_uri,
-            &[
-                ("error", "invalid_request"),
-                ("state", q.get("state").map(String::as_str).unwrap_or("")),
-                ("iss", state.settings.issuer.as_str()),
-            ],
-        ));
+    let (code_challenge, code_challenge_method) = match authorization_pkce(&client, &q) {
+        Ok(value) => value,
+        Err(()) => {
+            return redirect_found(append_query(
+                &redirect_uri,
+                &[
+                    ("error", "invalid_request"),
+                    ("state", q.get("state").map(String::as_str).unwrap_or("")),
+                    ("iss", state.settings.issuer.as_str()),
+                ],
+            ));
+        }
     };
-    if q.get("code_challenge_method").map(String::as_str) != Some("S256")
-        || !is_valid_pkce_value(code_challenge)
-    {
-        return redirect_found(append_query(
-            &redirect_uri,
-            &[
-                ("error", "invalid_request"),
-                ("state", q.get("state").map(String::as_str).unwrap_or("")),
-                ("iss", state.settings.issuer.as_str()),
-            ],
-        ));
-    }
 
     let prompt = q.get("prompt").map(String::as_str);
     if let Some(prompt) = prompt
@@ -294,8 +301,8 @@ pub(crate) async fn authorize(
         nonce: q.get("nonce").cloned(),
         auth_time: session.auth_time,
         amr: session.amr,
-        code_challenge: code_challenge.clone(),
-        code_challenge_method: "S256".into(),
+        code_challenge,
+        code_challenge_method,
         issued_at: now,
         expires_at: now + Duration::seconds(state.settings.auth_code_ttl_seconds as i64),
     };
@@ -331,6 +338,102 @@ pub(crate) async fn authorize(
         "{}/consent?request_id={request_id}",
         state.settings.frontend_base_url.trim_end_matches('/')
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn client(client_type: &str) -> ClientRow {
+        ClientRow {
+            id: Uuid::now_v7(),
+            client_id: "client-1".to_owned(),
+            client_name: "Client".to_owned(),
+            client_type: client_type.to_owned(),
+            client_secret_argon2_hash: None,
+            redirect_uris: json!(["https://client.example/callback"]),
+            scopes: json!(["openid"]),
+            allowed_audiences: json!(["api"]),
+            grant_types: json!(["authorization_code"]),
+            token_endpoint_auth_method: if client_type == "confidential" {
+                "client_secret_basic".to_owned()
+            } else {
+                "none".to_owned()
+            },
+            is_active: true,
+            jwks: None,
+        }
+    }
+
+    fn query(values: &[(&str, &str)]) -> HashMap<String, String> {
+        values
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn public_authorization_request_requires_s256_pkce() {
+        assert!(authorization_pkce(&client("public"), &query(&[])).is_err());
+        assert!(
+            authorization_pkce(
+                &client("public"),
+                &query(&[
+                    (
+                        "code_challenge",
+                        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"
+                    ),
+                    ("code_challenge_method", "plain"),
+                ]),
+            )
+            .is_err()
+        );
+        assert!(
+            authorization_pkce(
+                &client("public"),
+                &query(&[
+                    (
+                        "code_challenge",
+                        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"
+                    ),
+                    ("code_challenge_method", "S256"),
+                ]),
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn confidential_authorization_request_may_use_oidc_core_without_pkce() {
+        assert!(authorization_pkce(&client("confidential"), &query(&[])).is_ok());
+        assert!(
+            authorization_pkce(
+                &client("confidential"),
+                &query(&[
+                    (
+                        "code_challenge",
+                        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"
+                    ),
+                    ("code_challenge_method", "S256"),
+                ]),
+            )
+            .is_ok()
+        );
+        assert!(
+            authorization_pkce(
+                &client("confidential"),
+                &query(&[
+                    (
+                        "code_challenge",
+                        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"
+                    ),
+                    ("code_challenge_method", "plain"),
+                ]),
+            )
+            .is_err()
+        );
+    }
 }
 
 fn authorization_login_url(
