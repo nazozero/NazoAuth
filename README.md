@@ -342,7 +342,26 @@ python scripts/full_real_request_e2e.py
 python scripts/full_real_request_load.py
 ```
 
-GitHub Actions 中的 `conformance-security` workflow 会运行 Rust gate、真实 HTTP E2E、压测、PAR/JAR/DPoP/JWT/JWK 负面路径、重复参数校验、并发授权码兑换和 refresh token 复用检测。OpenID Foundation Conformance Suite 适合对公网或可回调测试环境执行；本项目的客户端注册、issuer、redirect URI、JWKS、PAR、JAR、DPoP 与 introspection 行为应按该 suite 的 plan 配置进入认证测试。
+GitHub Actions 中的 `conformance-security` workflow 会运行 Rust gate、真实 HTTP E2E、压测、PAR/JAR/DPoP/JWT/JWK 负面路径、重复参数校验、并发授权码兑换和 refresh token 复用检测。
+
+### OpenID Foundation Conformance Suite
+
+官方 OpenID Foundation Conformance Suite 仓库为 `https://gitlab.com/openid/conformance-suite/`。本项目提供 `oidf-conformance` workflow，通过该仓库的官方 `scripts/run-test-plan.py` 执行测试计划。该 workflow 适用于对公网或具备 suite 回调能力的 HTTPS 测试环境，不替代每个 PR 都运行的本地确定性安全矩阵。
+
+运行前需要准备：
+
+- GitHub Secret `OIDF_CONFORMANCE_TOKEN`：OpenID Foundation conformance suite API token。
+- GitHub Secret `OIDF_PLAN_CONFIG_JSON`：传给 suite 的 plan config JSON 对象，内容应包含被测 issuer discovery URL、预注册 client、scope、client authentication、redirect URI、浏览器自动化步骤等 plan 所需字段。
+- 被测环境的 `ISSUER` 必须与 discovery 文档一致，并且 conformance suite 可以访问授权端点、token 端点、JWKS、userinfo、PAR、introspection、revocation 等公开端点。
+- OAuth client 的 redirect URI 必须与 suite plan config 生成或声明的 callback 地址一致。
+
+手动触发 `oidf-conformance` workflow 时，默认 plan expression 为：
+
+```text
+oidcc-server[client_auth_type=client_secret_basic][response_type=code][response_mode=default] oidf-plan-config.json
+```
+
+如需覆盖 PAR、JAR、DPoP、OAuth 2.1/BCP 或 FAPI profile，应在 workflow 输入中指定对应的官方 plan expression，并提供与该 plan 匹配的 `OIDF_PLAN_CONFIG_JSON`。workflow 会导出 suite 结果归档作为 artifact。通过该 workflow 表示项目已接入官方 conformance 测试入口；是否达到某个 OpenID Foundation 认证 profile，以对应 plan 的完整通过结果和认证流程为准。
 
 容器构建检查：
 

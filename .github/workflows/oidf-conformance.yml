@@ -1,0 +1,87 @@
+name: oidf-conformance
+
+on:
+  workflow_dispatch:
+    inputs:
+      conformance_server:
+        description: "OpenID Foundation conformance suite base URL"
+        required: true
+        default: "https://www.certification.openid.net/"
+      oidf_ref:
+        description: "conformance-suite branch or tag"
+        required: true
+        default: "master"
+      plan_expression:
+        description: "run-test-plan.py expression; it must reference oidf-plan-config.json"
+        required: true
+        default: "oidcc-server[client_auth_type=client_secret_basic][response_type=code][response_mode=default] oidf-plan-config.json"
+      export_results:
+        description: "Export HTML result archive"
+        required: true
+        default: true
+        type: boolean
+      verbose:
+        description: "Print detailed unexpected condition output"
+        required: true
+        default: true
+        type: boolean
+      disable_ssl_verify:
+        description: "Disable TLS verification for private conformance-suite endpoints"
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  oidf-conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Clone official conformance suite
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "$OIDF_REF" https://gitlab.com/openid/conformance-suite.git oidf-conformance-suite
+        env:
+          OIDF_REF: ${{ inputs.oidf_ref }}
+
+      - name: Install official runner dependencies
+        run: python -m pip install --upgrade -r oidf-conformance-suite/scripts/requirements.txt
+
+      - name: Run OIDF conformance plan
+        run: |
+          set -euo pipefail
+          args=(
+            --suite-dir oidf-conformance-suite
+            --conformance-server "$CONFORMANCE_SERVER"
+            --plan-expression "$PLAN_EXPRESSION"
+          )
+          if [ "$EXPORT_RESULTS" = "true" ]; then
+            args+=(--export-dir "$GITHUB_WORKSPACE/oidf-results")
+          fi
+          if [ "$VERBOSE" = "true" ]; then
+            args+=(--verbose)
+          fi
+          if [ "$DISABLE_SSL_VERIFY" = "true" ]; then
+            args+=(--disable-ssl-verify)
+          fi
+          python scripts/run_oidf_conformance.py "${args[@]}"
+        env:
+          CONFORMANCE_SERVER: ${{ inputs.conformance_server }}
+          PLAN_EXPRESSION: ${{ inputs.plan_expression }}
+          EXPORT_RESULTS: ${{ inputs.export_results }}
+          VERBOSE: ${{ inputs.verbose }}
+          DISABLE_SSL_VERIFY: ${{ inputs.disable_ssl_verify }}
+          OIDF_CONFORMANCE_TOKEN: ${{ secrets.OIDF_CONFORMANCE_TOKEN }}
+          OIDF_PLAN_CONFIG_JSON: ${{ secrets.OIDF_PLAN_CONFIG_JSON }}
+
+      - name: Upload OIDF result archive
+        if: always() && inputs.export_results
+        uses: actions/upload-artifact@v4
+        with:
+          name: oidf-conformance-results
+          path: oidf-results
+          if-no-files-found: ignore
