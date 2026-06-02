@@ -22,6 +22,9 @@ pub(crate) async fn token_client_credentials(
         Ok(value) => value,
         Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
     };
+    if client.require_dpop_bound_tokens && dpop_jkt.is_none() {
+        return dpop_error_response(DpopError::MissingProof, DpopErrorContext::TokenEndpoint);
+    }
     if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
         return response;
     }
