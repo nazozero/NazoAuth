@@ -432,7 +432,7 @@ def authorize_request(
     *,
     state: str,
     nonce: str | None = "nonce-e2e",
-    extra_params: dict[str, str] | None = None,
+    extra_params: dict[str, Any] | None = None,
     method: str = "GET",
 ) -> tuple[str, str]:
     verifier, challenge = pkce_pair()
@@ -979,6 +979,23 @@ def run() -> None:
         )
         private_auth_client_id = private_auth_client["client_id"]
 
+        dpop_required_private_auth_client = create_client(
+            admin,
+            {
+                "client_name": "Private JWT DPoP Required Full E2E",
+                "client_type": "confidential",
+                "redirect_uris": [CLIENT_REDIRECT_URI],
+                "scopes": ["openid", "profile", "email", "offline_access"],
+                "allowed_audiences": [DEFAULT_AUDIENCE],
+                "grant_types": ["authorization_code", "refresh_token"],
+                "token_endpoint_auth_method": "private_key_jwt",
+                "require_dpop_bound_tokens": True,
+                "jwks": {"keys": [ed25519_public_jwk(private_key, "private-key-jwt-e2e")]},
+            },
+            "POST /admin/clients private_key_jwt DPoP required authorization_code",
+        )
+        dpop_required_private_auth_client_id = dpop_required_private_auth_client["client_id"]
+
         secret_auth_client = create_client(
             admin,
             {
@@ -1227,11 +1244,41 @@ def run() -> None:
         par_dpop_key = ed25519.Ed25519PrivateKey.generate()
         par_dpop_jkt = jwk_thumbprint(ed25519_public_jwk(par_dpop_key))
         par_dpop_verifier, par_dpop_challenge = pkce_pair()
+        par_dpop_missing_binding = requests.post(
+            f"{BASE_URL}/par",
+            data={
+                "response_type": "code",
+                "client_id": dpop_required_private_auth_client_id,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "scope": "openid profile email",
+                "state": "par-dpop-missing-binding",
+                "nonce": "nonce-par-dpop-missing-binding",
+                "code_challenge": par_dpop_challenge,
+                "code_challenge_method": "S256",
+                "client_assertion_type": CLIENT_ASSERTION_TYPE,
+                "client_assertion": client_assertion(
+                    dpop_required_private_auth_client_id,
+                    private_key,
+                    jti="par-dpop-client-assertion-missing-binding",
+                    audience_path="",
+                ),
+            },
+            timeout=10,
+        )
+        expect_status(
+            "POST /par DPoP-required client missing binding rejected",
+            par_dpop_missing_binding,
+            400,
+        )
+        check(
+            "par_dpop_required_missing_binding_error",
+            expect_json(par_dpop_missing_binding).get("error") == "invalid_dpop_proof",
+        )
         par_dpop_form = {
             "response_type": "code",
-            "client_id": private_auth_client_id,
+            "client_id": dpop_required_private_auth_client_id,
             "redirect_uri": CLIENT_REDIRECT_URI,
-            "scope": "openid profile email",
+            "scope": "openid profile email offline_access",
             "state": "par-dpop-binding",
             "nonce": "nonce-par-dpop-binding",
             "code_challenge": par_dpop_challenge,
@@ -1239,7 +1286,7 @@ def run() -> None:
             "dpop_jkt": par_dpop_jkt,
             "client_assertion_type": CLIENT_ASSERTION_TYPE,
             "client_assertion": client_assertion(
-                private_auth_client_id,
+                dpop_required_private_auth_client_id,
                 private_key,
                 jti="par-dpop-client-assertion-retry",
                 audience_path="",
@@ -1251,7 +1298,7 @@ def run() -> None:
         par_mismatch_form["state"] = "par-dpop-mismatch"
         par_mismatch_form["nonce"] = "nonce-par-dpop-mismatch"
         par_mismatch_form["client_assertion"] = client_assertion(
-            private_auth_client_id,
+            dpop_required_private_auth_client_id,
             private_key,
             jti="par-dpop-client-assertion-mismatch",
             audience_path="",
@@ -1296,7 +1343,10 @@ def run() -> None:
         )
         par_dpop_authorize = user.get(
             f"{BASE_URL}/authorize",
-            params={"request_uri": par_dpop_response["request_uri"]},
+            params={
+                "client_id": dpop_required_private_auth_client_id,
+                "request_uri": par_dpop_response["request_uri"],
+            },
             allow_redirects=False,
             timeout=10,
         )
@@ -1318,7 +1368,7 @@ def run() -> None:
             "redirect_uri": CLIENT_REDIRECT_URI,
             "client_assertion_type": CLIENT_ASSERTION_TYPE,
             "client_assertion": client_assertion(
-                private_auth_client_id,
+                dpop_required_private_auth_client_id,
                 private_key,
                 jti="par-dpop-token-client-assertion-retry",
             ),
@@ -1348,6 +1398,35 @@ def run() -> None:
             "par_dpop_access_token_cnf",
             par_dpop_access_claims.get("cnf", {}).get("jkt") == par_dpop_jkt,
         )
+        par_dpop_refresh_nonce = request_dpop_nonce(
+            {
+                "grant_type": "refresh_token",
+                "refresh_token": par_dpop_tokens["refresh_token"],
+                "client_assertion_type": CLIENT_ASSERTION_TYPE,
+                "client_assertion": client_assertion(
+                    dpop_required_private_auth_client_id,
+                    private_key,
+                    jti="par-dpop-refresh-client-assertion",
+                ),
+            },
+            par_dpop_key,
+        )
+        par_dpop_refreshed = token_with_dpop(
+            {
+                "grant_type": "refresh_token",
+                "refresh_token": par_dpop_tokens["refresh_token"],
+                "client_assertion_type": CLIENT_ASSERTION_TYPE,
+                "client_assertion": client_assertion(
+                    dpop_required_private_auth_client_id,
+                    private_key,
+                    jti="par-dpop-refresh-client-assertion-retry",
+                ),
+            },
+            par_dpop_key,
+            par_dpop_refresh_nonce,
+            "POST /token PAR DPoP-required refresh correct key after nonce",
+        )
+        check("par_dpop_refresh_token_type", par_dpop_refreshed.get("token_type") == "DPoP")
         refresh_race_form = {
             "grant_type": "refresh_token",
             "client_id": public_client_id,
@@ -1891,6 +1970,29 @@ def run() -> None:
         access_token = token_response["access_token"]
         refresh_token = token_response["refresh_token"]
         check("id_token_issued", bool(token_response.get("id_token")))
+
+        bearer_request_id, bearer_verifier = authorize_request(
+            user,
+            public_client_id,
+            state="bearer-code-flow",
+        )
+        bearer_code, bearer_verifier = approve_authorization(
+            user,
+            bearer_request_id,
+            bearer_verifier,
+            state="bearer-code-flow",
+        )
+        bearer_response = token_plain(
+            {
+                "grant_type": "authorization_code",
+                "client_id": public_client_id,
+                "code": bearer_code,
+                "code_verifier": bearer_verifier,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+            },
+            "POST /token authorization_code Bearer without DPoP",
+        )
+        check("bearer_token_type", bearer_response.get("token_type") == "Bearer")
 
         holder_request_id, holder_verifier = authorize_request(
             user,

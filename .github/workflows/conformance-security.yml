@@ -64,7 +64,6 @@ jobs:
           SUBJECT_TYPE: "public"
           PAIRWISE_SUBJECT_SECRET: ""
           PAR_TTL_SECONDS: 90
-          REQUIRE_DPOP_BOUND_TOKENS: false
           REQUIRE_PUSHED_AUTHORIZATION_REQUESTS: false
           EMAIL_DELIVERY: "smtp"
           EMAIL_CODE_TTL_SECONDS: 900

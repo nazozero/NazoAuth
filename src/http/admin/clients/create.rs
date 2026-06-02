@@ -12,6 +12,8 @@ pub(crate) struct CreateClientRequest {
     pub(crate) allowed_audiences: Vec<String>,
     pub(crate) grant_types: Vec<String>,
     pub(crate) token_endpoint_auth_method: String,
+    #[serde(default)]
+    pub(crate) require_dpop_bound_tokens: bool,
     pub(crate) jwks: Option<Value>,
 }
 
@@ -29,6 +31,7 @@ pub(crate) struct PreparedClientInsert {
     pub(crate) allowed_audiences: Vec<String>,
     pub(crate) grant_types: Vec<String>,
     pub(crate) token_endpoint_auth_method: String,
+    pub(crate) require_dpop_bound_tokens: bool,
     pub(crate) jwks: Option<Value>,
     pub(crate) issued_secret: Option<String>,
     client_secret_argon2_hash: Option<String>,
@@ -132,6 +135,7 @@ pub(crate) fn prepare_client_insert(
         allowed_audiences: payload.allowed_audiences,
         grant_types: payload.grant_types,
         token_endpoint_auth_method: payload.token_endpoint_auth_method,
+        require_dpop_bound_tokens: payload.require_dpop_bound_tokens,
         jwks: payload.jwks,
         issued_secret,
         client_secret_argon2_hash: secret_hash,
@@ -153,6 +157,7 @@ pub(crate) async fn insert_prepared_client(
             oauth_clients::allowed_audiences.eq(json!(&prepared.allowed_audiences)),
             oauth_clients::grant_types.eq(json!(&prepared.grant_types)),
             oauth_clients::token_endpoint_auth_method.eq(&prepared.token_endpoint_auth_method),
+            oauth_clients::require_dpop_bound_tokens.eq(prepared.require_dpop_bound_tokens),
             oauth_clients::jwks.eq(&prepared.jwks),
             oauth_clients::is_active.eq(true),
         ))

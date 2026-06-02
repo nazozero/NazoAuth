@@ -176,7 +176,7 @@ pub(crate) async fn token_refresh(
             Ok(value) => value.or(token.dpop_jkt),
             Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
         }
-    } else if state.settings.require_dpop_bound_tokens || token.dpop_jkt.is_some() {
+    } else if token.dpop_jkt.is_some() {
         return dpop_error_response(DpopError::MissingProof, DpopErrorContext::TokenEndpoint);
     } else {
         None

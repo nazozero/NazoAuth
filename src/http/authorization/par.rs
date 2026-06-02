@@ -159,6 +159,9 @@ pub(crate) async fn par(state: Data<AppState>, req: HttpRequest, body: Bytes) ->
         return token_management_auth_error(error);
     }
     let dpop_jkt = request_dpop_jkt.or(header_dpop_jkt);
+    if client.require_dpop_bound_tokens && dpop_jkt.is_none() {
+        return dpop_error_response(DpopError::MissingProof, DpopErrorContext::TokenEndpoint);
+    }
 
     let now = Utc::now();
     let request_token = random_urlsafe_token();

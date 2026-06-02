@@ -105,7 +105,6 @@ Nazo OAuth Server 是一个 lightweight self-hosted OAuth 2.1 draft-compatible /
 | `SUBJECT_TYPE` | `public` | OIDC subject 类型，可选 `public`、`pairwise` |
 | `PAIRWISE_SUBJECT_SECRET` | 无 | pairwise subject 派生 secret；`SUBJECT_TYPE=pairwise` 时必填 |
 | `PAR_TTL_SECONDS` | `90` | pushed authorization request 有效期，单位为秒 |
-| `REQUIRE_DPOP_BOUND_TOKENS` | `false` | 是否要求授权码和 refresh token 换发的 access token 必须使用 DPoP sender constraint；FAPI DPoP 部署应启用 |
 | `REQUIRE_PUSHED_AUTHORIZATION_REQUESTS` | `false` | 是否要求授权请求必须通过 PAR 进入 |
 | `EMAIL_DELIVERY` | `disabled` | 邮件投递方式；`smtp` 启用真实 SMTP 投递，`disabled` 时 `/auth/send-code` 返回服务不可用 |
 | `EMAIL_CODE_TTL_SECONDS` | `900` | 注册邮箱验证码有效期，单位为秒 |
@@ -243,7 +242,7 @@ docker compose up -d nazo_oauth_server
 
 `/token` 仅在授权范围包含 `offline_access` 且客户端启用 `refresh_token` grant 时签发和轮换 refresh token。
 
-`private_key_jwt` 客户端必须在客户端元数据中配置公开 `jwks`。客户端 JWKS 只接受公开签名密钥，必须包含 `kid`、`alg` 和 `use=sig`；`alg` 支持 `EdDSA`、`RS256`、`ES256`、`PS256`。DPoP proof 使用同一组签名算法；若缺少或使用过期 nonce，服务端返回 `use_dpop_nonce` 并通过 `DPoP-Nonce` 响应头提供新的 nonce；DPoP token 和 DPoP-bound userinfo 成功响应也返回下一次 nonce。
+`private_key_jwt` 客户端必须在客户端元数据中配置公开 `jwks`。客户端 JWKS 只接受公开签名密钥，必须包含 `kid`、`alg` 和 `use=sig`；`alg` 支持 `EdDSA`、`RS256`、`ES256`、`PS256`。DPoP proof 使用同一组签名算法；若缺少或使用过期 nonce，服务端返回 `use_dpop_nonce` 并通过 `DPoP-Nonce` 响应头提供新的 nonce；DPoP token 和 DPoP-bound userinfo 成功响应也返回下一次 nonce。客户端元数据中的 `require_dpop_bound_tokens=true` 表示该客户端的授权码和 refresh token 签发路径必须形成 DPoP sender constraint；未显式要求时，普通 OIDC 授权码流程可签发 Bearer token。
 
 PAR 使用 `POST /par` 提交授权请求参数，成功后返回一次性 `request_uri`。`/authorize` 使用 `request_uri` 时拒绝外层参数覆盖。JAR 使用 `request=<jwt>`，接受 `EdDSA`、`RS256`、`ES256`、`PS256` 签名请求对象，使用客户端 JWKS 验签，并校验 `iss`、`sub`、`client_id`、`aud`、`exp`、`nbf`、`iat`、`jti` 和防重放状态。
 

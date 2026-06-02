@@ -36,6 +36,7 @@ diesel::table! {
         scopes -> Jsonb,
         grant_types -> Jsonb,
         token_endpoint_auth_method -> Varchar,
+        require_dpop_bound_tokens -> Bool,
         is_active -> Bool,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,

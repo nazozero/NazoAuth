@@ -39,7 +39,6 @@ pub(crate) struct Settings {
     pub(crate) subject_type: SubjectType,
     pub(crate) pairwise_subject_secret: Option<String>,
     pub(crate) par_ttl_seconds: u64,
-    pub(crate) require_dpop_bound_tokens: bool,
     pub(crate) require_pushed_authorization_requests: bool,
 }
 
@@ -151,7 +150,6 @@ impl Settings {
             subject_type,
             pairwise_subject_secret,
             par_ttl_seconds: config.parse("PAR_TTL_SECONDS", 90)?,
-            require_dpop_bound_tokens: config.bool("REQUIRE_DPOP_BOUND_TOKENS", false)?,
             require_pushed_authorization_requests: config
                 .bool("REQUIRE_PUSHED_AUTHORIZATION_REQUESTS", false)?,
         })
