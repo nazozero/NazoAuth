@@ -1,6 +1,9 @@
 //! authorization_code grant 处理。
 // 只消费授权码并转入统一令牌签发逻辑。
-use super::{TokenForm, issue_token_response, revoke_issued_authorization_code_tokens};
+use super::{
+    TokenForm, consume_token_client_assertion, issue_token_response,
+    revoke_issued_authorization_code_tokens,
+};
 use crate::http::prelude::*;
 
 const BEGIN_AUTHORIZATION_CODE_CONSUMPTION_SCRIPT: &str = r#"
@@ -40,6 +43,40 @@ enum AuthorizationCodeConsumption {
     Failed,
     Missing,
     Malformed,
+}
+
+async fn load_pending_authorization_code_payload(
+    state: &AppState,
+    code_hash: &str,
+) -> Result<Option<Box<CodePayload>>, HttpResponse> {
+    let raw = match valkey_get(&state.valkey, authorization_code_key_from_hash(code_hash)).await {
+        Ok(raw) => raw,
+        Err(error) => {
+            tracing::warn!(%error, "failed to read authorization code before dpop validation");
+            return Err(oauth_token_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权码校验失败.",
+                false,
+            ));
+        }
+    };
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    match serde_json::from_str::<AuthorizationCodeState>(&raw) {
+        Ok(AuthorizationCodeState::Pending { payload }) => Ok(Some(Box::new(payload))),
+        Ok(_) => Ok(None),
+        Err(error) => {
+            tracing::warn!(%error, "authorization code state is malformed before dpop validation");
+            Err(oauth_token_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权码状态无效.",
+                false,
+            ))
+        }
+    }
 }
 
 fn redirect_uri_matches_authorization_request(
@@ -135,11 +172,8 @@ pub(crate) async fn token_authorization_code(
     req: &HttpRequest,
     client: &ClientRow,
     form: &TokenForm,
+    client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
-    let dpop_jkt = match validate_dpop_proof(state, req, None, None).await {
-        Ok(value) => value,
-        Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
-    };
     let Some(code) = &form.code else {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
@@ -149,6 +183,18 @@ pub(crate) async fn token_authorization_code(
         );
     };
     let code_hash = blake3_hex(code);
+    let expected_dpop_jkt = match load_pending_authorization_code_payload(state, &code_hash).await {
+        Ok(Some(payload)) => payload.dpop_jkt,
+        Ok(None) => None,
+        Err(response) => return response,
+    };
+    let dpop_jkt = match validate_dpop_proof(state, req, None, expected_dpop_jkt.as_deref()).await {
+        Ok(value) => value.or(expected_dpop_jkt),
+        Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
+    };
+    if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
+        return response;
+    }
     let payload = match begin_authorization_code_consumption(state, &code_hash).await {
         Ok(AuthorizationCodeConsumption::Consuming(payload)) => payload,
         Ok(AuthorizationCodeConsumption::Consumed(marker)) => {
@@ -312,6 +358,7 @@ mod tests {
             id_token_claims: Vec::new(),
             code_challenge: Some("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ".to_owned()),
             code_challenge_method: Some("S256".to_owned()),
+            dpop_jkt: None,
             issued_at: now,
             expires_at: now + Duration::seconds(300),
         }

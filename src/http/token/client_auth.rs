@@ -13,6 +13,16 @@ async fn authenticate_confidential_client(
     client: &ClientRow,
     credentials: &ClientCredentials,
 ) -> Result<(), TokenManagementClientAuthError> {
+    let assertion = verify_confidential_client(state, req, client, credentials)?;
+    consume_token_management_client_assertion(state, client, assertion.as_ref()).await
+}
+
+pub(crate) fn verify_confidential_client(
+    state: &AppState,
+    req: &HttpRequest,
+    client: &ClientRow,
+    credentials: &ClientCredentials,
+) -> Result<Option<ValidatedClientAssertion>, TokenManagementClientAuthError> {
     if client.client_type != "confidential"
         || credentials.method != client.token_endpoint_auth_method
     {
@@ -24,16 +34,9 @@ async fn authenticate_confidential_client(
             let Some(assertion) = credentials.client_assertion.as_deref() else {
                 return Err(TokenManagementClientAuthError::InvalidClient);
             };
-            validate_private_key_jwt(state, req, client, assertion)
-                .await
-                .map_err(|error| match error {
-                    ClientAssertionError::StoreUnavailable => {
-                        TokenManagementClientAuthError::StoreUnavailable
-                    }
-                    ClientAssertionError::Invalid | ClientAssertionError::ReplayDetected => {
-                        TokenManagementClientAuthError::InvalidClient
-                    }
-                })
+            verify_private_key_jwt_claims(state, req, client, assertion)
+                .map(Some)
+                .map_err(token_management_client_assertion_error)
         }
         "client_secret_basic" | "client_secret_post" => {
             let valid_secret = credentials.client_secret.as_deref().is_some_and(|secret| {
@@ -43,7 +46,7 @@ async fn authenticate_confidential_client(
                 )
             });
             valid_secret
-                .then_some(())
+                .then_some(None)
                 .ok_or(TokenManagementClientAuthError::InvalidClient)
         }
         _ => Err(TokenManagementClientAuthError::InvalidClient),
@@ -88,4 +91,56 @@ pub(crate) fn token_management_auth_error(error: TokenManagementClientAuthError)
             "客户端认证状态存储不可用.",
         ),
     }
+}
+
+pub(crate) async fn consume_token_management_client_assertion(
+    state: &AppState,
+    client: &ClientRow,
+    assertion: Option<&ValidatedClientAssertion>,
+) -> Result<(), TokenManagementClientAuthError> {
+    let Some(assertion) = assertion else {
+        return Ok(());
+    };
+    consume_private_key_jwt(state, client, assertion)
+        .await
+        .map_err(token_management_client_assertion_error)
+}
+
+fn token_management_client_assertion_error(
+    error: ClientAssertionError,
+) -> TokenManagementClientAuthError {
+    match error {
+        ClientAssertionError::StoreUnavailable => TokenManagementClientAuthError::StoreUnavailable,
+        ClientAssertionError::Invalid | ClientAssertionError::ReplayDetected => {
+            TokenManagementClientAuthError::InvalidClient
+        }
+    }
+}
+
+pub(crate) async fn consume_token_client_assertion(
+    state: &AppState,
+    client: &ClientRow,
+    assertion: Option<&ValidatedClientAssertion>,
+) -> Result<(), HttpResponse> {
+    let Some(assertion) = assertion else {
+        return Ok(());
+    };
+    consume_private_key_jwt(state, client, assertion)
+        .await
+        .map_err(|error| match error {
+            ClientAssertionError::StoreUnavailable => oauth_token_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "客户端认证状态存储不可用.",
+                false,
+            ),
+            ClientAssertionError::Invalid | ClientAssertionError::ReplayDetected => {
+                oauth_token_error(
+                    StatusCode::UNAUTHORIZED,
+                    "invalid_client",
+                    "客户端认证失败.",
+                    false,
+                )
+            }
+        })
 }

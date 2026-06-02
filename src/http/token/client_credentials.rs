@@ -1,6 +1,6 @@
 //! client_credentials grant 处理。
 // 只为机密客户端签发无用户主体的访问令牌。
-use super::{TokenForm, issue_token_response};
+use super::{TokenForm, consume_token_client_assertion, issue_token_response};
 use crate::http::prelude::*;
 
 pub(crate) async fn token_client_credentials(
@@ -8,6 +8,7 @@ pub(crate) async fn token_client_credentials(
     req: &HttpRequest,
     client: &ClientRow,
     form: &TokenForm,
+    client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
     if client.client_type != "confidential" {
         return oauth_token_error(
@@ -21,6 +22,9 @@ pub(crate) async fn token_client_credentials(
         Ok(value) => value,
         Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
     };
+    if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
+        return response;
+    }
     let requested = parse_scope(form.scope.as_deref().unwrap_or(""));
     let allowed = json_array_to_strings(&client.scopes);
     if !requested.is_empty() && !is_subset(&requested, &allowed) {

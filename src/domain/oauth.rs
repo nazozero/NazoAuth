@@ -56,6 +56,8 @@ pub(crate) struct ConsentPayload {
     pub(crate) code_challenge: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) code_challenge_method: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) dpop_jkt: Option<String>,
     pub(crate) issued_at: DateTime<Utc>,
     pub(crate) expires_at: DateTime<Utc>,
 }
@@ -64,6 +66,8 @@ pub(crate) struct ConsentPayload {
 pub(crate) struct PushedAuthorizationRequest {
     pub(crate) client_id: String,
     pub(crate) params: std::collections::HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) dpop_jkt: Option<String>,
     pub(crate) issued_at: DateTime<Utc>,
     pub(crate) expires_at: DateTime<Utc>,
 }
@@ -90,6 +94,8 @@ pub(crate) struct CodePayload {
     pub(crate) code_challenge: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) code_challenge_method: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) dpop_jkt: Option<String>,
     pub(crate) issued_at: DateTime<Utc>,
     pub(crate) expires_at: DateTime<Utc>,
 }
