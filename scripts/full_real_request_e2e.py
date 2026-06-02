@@ -582,7 +582,7 @@ def run() -> None:
             and set(discovery["revocation_endpoint_auth_signing_alg_values_supported"])
             == {"EdDSA", "RS256", "ES256", "PS256"}
             and set(discovery["request_object_signing_alg_values_supported"])
-            == {"EdDSA", "RS256", "ES256", "PS256"}
+            == {"none", "EdDSA", "RS256", "ES256", "PS256"}
             and set(discovery["dpop_signing_alg_values_supported"])
             == {"EdDSA", "RS256", "ES256", "PS256"}
             and {"address", "phone"}.issubset(set(discovery["scopes_supported"]))
@@ -1342,16 +1342,35 @@ def run() -> None:
             state="jar-none",
             algorithm="none",
         )
-        expect_status(
-            "GET /authorize JAR alg none rejected",
-            user.get(
-                f"{BASE_URL}/authorize",
-                params={"request": jar_none},
-                allow_redirects=False,
-                timeout=10,
-            ),
-            400,
+        jar_none_authorize = user.get(
+            f"{BASE_URL}/authorize",
+            params={"request": jar_none},
+            allow_redirects=False,
+            timeout=10,
         )
+        expect_status("GET /authorize JAR alg none", jar_none_authorize, 302)
+        jar_none_request_id = consent_request_from_redirect(
+            jar_none_authorize,
+            "GET /authorize JAR alg none",
+        )
+        jar_none_code, jar_none_verifier = approve_authorization(
+            user,
+            jar_none_request_id,
+            jar_verifier,
+            state="jar-none",
+        )
+        jar_none_tokens = token_plain(
+            {
+                "grant_type": "authorization_code",
+                "code": jar_none_code,
+                "code_verifier": jar_none_verifier,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "client_assertion_type": CLIENT_ASSERTION_TYPE,
+                "client_assertion": client_assertion(private_auth_client_id, private_key),
+            },
+            "POST /token JAR alg none authorization_code private_key_jwt",
+        )
+        check("jar_alg_none_token_issued", bool(jar_none_tokens.get("access_token")))
         jar_bad_aud = authorization_request_object(
             private_auth_client_id,
             private_key,
@@ -1370,41 +1389,47 @@ def run() -> None:
             400,
         )
 
-        jar_conflict_verifier, jar_conflict_challenge = pkce_pair()
-        jar_conflict_jti = str(uuid.uuid4())
-        jar_conflict = authorization_request_object(
+        jar_client_conflict = authorization_request_object(
             private_auth_client_id,
             private_key,
-            code_challenge=jar_conflict_challenge,
-            state="jar-conflict",
-            jti=jar_conflict_jti,
+            code_challenge=jar_challenge,
+            state="jar-client-conflict",
+            jti=str(uuid.uuid4()),
         )
         expect_status(
-            "GET /authorize JAR outer conflict rejected",
+            "GET /authorize JAR outer client_id conflict rejected",
             user.get(
                 f"{BASE_URL}/authorize",
-                params={"request": jar_conflict, "state": "conflicting-outer-state"},
+                params={"request": jar_client_conflict, "client_id": public_client_id},
                 allow_redirects=False,
                 timeout=10,
             ),
             400,
         )
-        jar_conflict_reuse = user.get(
+
+        jar_override_verifier, jar_override_challenge = pkce_pair()
+        jar_override = authorization_request_object(
+            private_auth_client_id,
+            private_key,
+            code_challenge=jar_override_challenge,
+            state="jar-internal-state",
+        )
+        jar_override_authorize = user.get(
             f"{BASE_URL}/authorize",
-            params={"request": jar_conflict},
+            params={"request": jar_override, "state": "conflicting-outer-state"},
             allow_redirects=False,
             timeout=10,
         )
-        expect_status("GET /authorize JAR conflict does not consume jti", jar_conflict_reuse, 302)
-        jar_conflict_request_id = consent_request_from_redirect(
-            jar_conflict_reuse,
-            "GET /authorize JAR conflict retry",
+        expect_status("GET /authorize JAR request object overrides outer state", jar_override_authorize, 302)
+        jar_override_request_id = consent_request_from_redirect(
+            jar_override_authorize,
+            "GET /authorize JAR request object overrides outer state",
         )
-        _jar_conflict_code, _jar_conflict_verifier = approve_authorization(
+        _jar_override_code, _jar_override_verifier = approve_authorization(
             user,
-            jar_conflict_request_id,
-            jar_conflict_verifier,
-            state="jar-conflict",
+            jar_override_request_id,
+            jar_override_verifier,
+            state="jar-internal-state",
         )
 
         par_jar_verifier, par_jar_challenge = pkce_pair()

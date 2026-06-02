@@ -1,6 +1,7 @@
 use super::prelude::*;
 
 const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
+const REQUEST_OBJECT_SIGNING_ALGS: [&str; 5] = ["none", "EdDSA", "RS256", "ES256", "PS256"];
 const PROMPT_VALUES_SUPPORTED: [&str; 4] = ["login", "consent", "select_account", "none"];
 
 pub(crate) async fn health() -> Json<Value> {
@@ -45,7 +46,7 @@ fn authorization_server_metadata_value(state: &AppState) -> Value {
         "request_uri_parameter_supported": false,
         "code_challenge_methods_supported": ["S256"],
         "dpop_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS,
-        "request_object_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS
+        "request_object_signing_alg_values_supported": REQUEST_OBJECT_SIGNING_ALGS
     })
 }
 
