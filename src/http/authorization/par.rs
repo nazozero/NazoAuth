@@ -147,6 +147,12 @@ pub(crate) async fn par(state: Data<AppState>, req: HttpRequest, body: Bytes) ->
         Ok(value) => value,
         Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
     };
+    if let (Some(request_dpop_jkt), Some(header_dpop_jkt)) =
+        (request_dpop_jkt.as_deref(), header_dpop_jkt.as_deref())
+        && request_dpop_jkt != header_dpop_jkt
+    {
+        return dpop_error_response(DpopError::BindingMismatch, DpopErrorContext::TokenEndpoint);
+    }
     if let Err(error) =
         consume_token_management_client_assertion(&state, &client, client_assertion.as_ref()).await
     {

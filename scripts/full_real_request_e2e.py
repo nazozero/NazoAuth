@@ -1246,6 +1246,35 @@ def run() -> None:
             ),
         }
         par_dpop_nonce = request_dpop_nonce(par_dpop_form, par_dpop_key, path="/par")
+        par_mismatch_key = ed25519.Ed25519PrivateKey.generate()
+        par_mismatch_form = dict(par_dpop_form)
+        par_mismatch_form["state"] = "par-dpop-mismatch"
+        par_mismatch_form["nonce"] = "nonce-par-dpop-mismatch"
+        par_mismatch_form["client_assertion"] = client_assertion(
+            private_auth_client_id,
+            private_key,
+            jti="par-dpop-client-assertion-mismatch",
+            audience_path="",
+        )
+        par_mismatch_nonce = request_dpop_nonce(par_mismatch_form, par_mismatch_key, path="/par")
+        par_mismatch = requests.post(
+            f"{BASE_URL}/par",
+            data=par_mismatch_form,
+            headers={
+                "DPoP": dpop_proof(
+                    "POST",
+                    f"{ISSUER_URL}/par",
+                    par_mismatch_key,
+                    nonce=par_mismatch_nonce,
+                )
+            },
+            timeout=10,
+        )
+        expect_status("POST /par DPoP dpop_jkt mismatch rejected", par_mismatch, 400)
+        check(
+            "par_dpop_jkt_mismatch_error",
+            expect_json(par_mismatch).get("error") == "invalid_dpop_proof",
+        )
         par_dpop_response = expect_json(
             expect_status(
                 "POST /par DPoP-bound private_key_jwt after nonce",
@@ -1863,6 +1892,35 @@ def run() -> None:
         refresh_token = token_response["refresh_token"]
         check("id_token_issued", bool(token_response.get("id_token")))
 
+        holder_request_id, holder_verifier = authorize_request(
+            user,
+            public_client_id,
+            state="holder-of-key-required",
+            extra_params={"dpop_jkt": jwk_thumbprint(ed25519_public_jwk(dpop_key))},
+        )
+        holder_code, holder_verifier = approve_authorization(
+            user,
+            holder_request_id,
+            holder_verifier,
+            state="holder-of-key-required",
+        )
+        holder_missing_proof = requests.post(
+            f"{BASE_URL}/token",
+            data={
+                "grant_type": "authorization_code",
+                "client_id": public_client_id,
+                "code": holder_code,
+                "code_verifier": holder_verifier,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+            },
+            timeout=10,
+        )
+        expect_status("POST /token DPoP-bound code missing proof rejected", holder_missing_proof, 400)
+        check(
+            "holder_of_key_missing_proof_error",
+            expect_json(holder_missing_proof).get("error") == "invalid_dpop_proof",
+        )
+
         userinfo_no_nonce = requests.get(
             f"{BASE_URL}/userinfo",
             headers={
@@ -2001,6 +2059,51 @@ def run() -> None:
         rotated_refresh_token = refreshed["refresh_token"]
         refreshed_access_token = refreshed["access_token"]
         check("refresh_token_rotated", rotated_refresh_token != refresh_token)
+        wrong_refresh_key = ed25519.Ed25519PrivateKey.generate()
+        wrong_refresh = requests.post(
+            f"{BASE_URL}/token",
+            data={
+                "grant_type": "refresh_token",
+                "client_id": public_client_id,
+                "refresh_token": rotated_refresh_token,
+            },
+            headers={
+                "DPoP": dpop_proof(
+                    "POST",
+                    f"{ISSUER_URL}/token",
+                    wrong_refresh_key,
+                )
+            },
+            timeout=10,
+        )
+        expect_status("POST /token refresh_token DPoP wrong key rejected", wrong_refresh, 400)
+        check(
+            "refresh_token_dpop_wrong_key_error",
+            expect_json(wrong_refresh).get("error") == "invalid_dpop_proof",
+        )
+        time.sleep(31)
+        lost_response_nonce = request_dpop_nonce(
+            {
+                "grant_type": "refresh_token",
+                "client_id": public_client_id,
+                "refresh_token": refresh_token,
+            },
+            dpop_key,
+        )
+        lost_response_refresh = token_with_dpop(
+            {
+                "grant_type": "refresh_token",
+                "client_id": public_client_id,
+                "refresh_token": refresh_token,
+            },
+            dpop_key,
+            lost_response_nonce,
+            "POST /token previous refresh_token after lost response window",
+        )
+        check(
+            "refresh_token_lost_response_rotates_successor",
+            lost_response_refresh["refresh_token"] not in {refresh_token, rotated_refresh_token},
+        )
 
         introspected = expect_json(
             expect_status(

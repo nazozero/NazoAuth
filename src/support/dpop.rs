@@ -63,6 +63,9 @@ pub(crate) fn dpop_error_response(error: DpopError, context: DpopErrorContext) -
         DpopError::NonceStoreUnavailable => "DPoP nonce validation is unavailable.",
     };
     let status = match &error {
+        DpopError::MissingProof if matches!(context, DpopErrorContext::TokenEndpoint) => {
+            StatusCode::BAD_REQUEST
+        }
         DpopError::MissingProof => StatusCode::UNAUTHORIZED,
         DpopError::UseNonce(_) if matches!(context, DpopErrorContext::ProtectedResource) => {
             StatusCode::UNAUTHORIZED
@@ -436,6 +439,18 @@ mod tests {
         assert_eq!(
             response.headers().get(header::WWW_AUTHENTICATE).unwrap(),
             HeaderValue::from_static(r#"DPoP error="use_dpop_nonce""#)
+        );
+    }
+
+    #[test]
+    fn token_endpoint_missing_proof_uses_bad_request() {
+        let response =
+            dpop_error_response(DpopError::MissingProof, DpopErrorContext::TokenEndpoint);
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response.headers().get(header::WWW_AUTHENTICATE).unwrap(),
+            HeaderValue::from_static(r#"DPoP error="invalid_dpop_proof""#)
         );
     }
 

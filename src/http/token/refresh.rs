@@ -5,6 +5,8 @@ use super::{
 };
 use crate::http::prelude::*;
 
+const LOST_REFRESH_TOKEN_RETRY_SECONDS: i64 = 30;
+
 async fn mark_token_family_reuse(state: &AppState, token_family_id: Uuid) -> anyhow::Result<()> {
     let mut conn = get_conn(&state.diesel_db).await?;
     diesel::update(oauth_tokens::table.filter(oauth_tokens::token_family_id.eq(token_family_id)))
@@ -20,6 +22,48 @@ async fn mark_token_family_reuse(state: &AppState, token_family_id: Uuid) -> any
     .execute(&mut conn)
     .await?;
     Ok(())
+}
+
+async fn lost_refresh_token_successor(
+    state: &AppState,
+    token: &TokenRow,
+    client_id: Uuid,
+) -> anyhow::Result<Option<TokenRow>> {
+    let Some(revoked_at) = token.revoked_at else {
+        return Ok(None);
+    };
+    if Utc::now().signed_duration_since(revoked_at)
+        < Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS)
+    {
+        return Ok(None);
+    }
+
+    let mut conn = get_conn(&state.diesel_db).await?;
+    let reuse_count = oauth_tokens::table
+        .filter(oauth_tokens::token_family_id.eq(token.token_family_id))
+        .filter(oauth_tokens::reuse_detected_at.is_not_null())
+        .select(diesel::dsl::count_star())
+        .first::<i64>(&mut conn)
+        .await?;
+    if reuse_count != 0 {
+        return Ok(None);
+    }
+
+    let now = Utc::now();
+    let mut successors = oauth_tokens::table
+        .filter(oauth_tokens::rotated_from_id.eq(token.id))
+        .filter(oauth_tokens::token_family_id.eq(token.token_family_id))
+        .filter(oauth_tokens::client_id.eq(client_id))
+        .filter(oauth_tokens::revoked_at.is_null())
+        .filter(oauth_tokens::expires_at.gt(now))
+        .select(TokenRow::as_select())
+        .load::<TokenRow>(&mut conn)
+        .await?;
+    if successors.len() == 1 {
+        Ok(successors.pop())
+    } else {
+        Ok(None)
+    }
 }
 
 pub(crate) async fn token_refresh(
@@ -67,7 +111,7 @@ pub(crate) async fn token_refresh(
             );
         }
     };
-    let Some(token) = token else {
+    let Some(mut token) = token else {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
@@ -84,36 +128,52 @@ pub(crate) async fn token_refresh(
         );
     }
     if token.revoked_at.is_some() {
-        if let Err(error) = mark_token_family_reuse(state, token.token_family_id).await {
-            tracing::warn!(%error, "failed to mark refresh token family reuse");
-            return oauth_token_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "refresh_token 复用处理失败.",
-                false,
-            );
+        match lost_refresh_token_successor(state, &token, client.id).await {
+            Ok(Some(successor)) => {
+                token = successor;
+            }
+            Ok(None) => {
+                if let Err(error) = mark_token_family_reuse(state, token.token_family_id).await {
+                    tracing::warn!(%error, "failed to mark refresh token family reuse");
+                    return oauth_token_error(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "server_error",
+                        "refresh_token 复用处理失败.",
+                        false,
+                    );
+                }
+                audit_event(
+                    "refresh_reuse_detected",
+                    audit_fields(&[
+                        ("client_id", json!(client.client_id)),
+                        ("token_family_id", json!(token.token_family_id)),
+                        (
+                            "source_ip_hash",
+                            json!(blake3_hex(&client_ip(req, &state.settings))),
+                        ),
+                    ]),
+                );
+                return oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    "refresh_token 无效或已撤销.",
+                    false,
+                );
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to inspect rotated refresh token successor");
+                return oauth_token_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "refresh_token 校验失败.",
+                    false,
+                );
+            }
         }
-        audit_event(
-            "refresh_reuse_detected",
-            audit_fields(&[
-                ("client_id", json!(client.client_id)),
-                ("token_family_id", json!(token.token_family_id)),
-                (
-                    "source_ip_hash",
-                    json!(blake3_hex(&client_ip(req, &state.settings))),
-                ),
-            ]),
-        );
-        return oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_grant",
-            "refresh_token 无效或已撤销.",
-            false,
-        );
     }
     let dpop_jkt = if dpop_proof_present(req) {
-        match validate_dpop_proof(state, req, None, None).await {
-            Ok(value) => value,
+        match validate_dpop_proof(state, req, None, token.dpop_jkt.as_deref()).await {
+            Ok(value) => value.or(token.dpop_jkt),
             Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
         }
     } else if state.settings.require_dpop_bound_tokens || token.dpop_jkt.is_some() {
