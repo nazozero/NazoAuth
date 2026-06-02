@@ -10,6 +10,7 @@ import shlex
 import signal
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -26,6 +27,10 @@ FAPI_SECURITY_FINAL_CONFIG_FILE = "oidf-fapi-security-final-plan-config.json"
 FAPI_MESSAGE_FINAL_CONFIG_FILE = "oidf-fapi-message-final-plan-config.json"
 FAPI_SECURITY_ID2_CONFIG_FILE = "oidf-fapi-security-id2-plan-config.json"
 FAPI_MESSAGE_ID1_CONFIG_FILE = "oidf-fapi-message-id1-plan-config.json"
+OIDF_REVIEW_PLACEHOLDER_IMAGE = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+)
 
 DEFAULT_PLAN_EXPRESSIONS = [
     f"oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] {OIDCC_CONFIG_FILE}",
@@ -225,6 +230,158 @@ def is_runner_finalisation_error(payload: object | None) -> bool:
     return "runInBackground called after runFinalisationTaskInBackground()" in text
 
 
+def module_ids_from_plan(plan: dict[str, object]) -> set[str]:
+    modules = plan.get("modules")
+    if not isinstance(modules, list):
+        return set()
+
+    module_ids: set[str] = set()
+    for module in modules:
+        if not isinstance(module, dict):
+            continue
+        instances = module.get("instances")
+        if not isinstance(instances, list):
+            continue
+        for instance_id in instances:
+            if isinstance(instance_id, str) and instance_id:
+                module_ids.add(instance_id)
+    return module_ids
+
+
+def alias_plan_matches(alias: str, plan: object) -> bool:
+    if not isinstance(plan, dict):
+        return False
+    config = plan.get("config")
+    plan_alias = config.get("alias") if isinstance(config, dict) else None
+    return plan_alias == alias and plan.get("immutable") is not True
+
+
+def list_alias_module_ids(base_url: str, token: str, aliases: set[str]) -> set[str]:
+    if not aliases:
+        return set()
+
+    start = 0
+    length = 200
+    module_ids: set[str] = set()
+    while True:
+        _, payload = oidf_api_request(
+            "GET",
+            base_url,
+            "api/plan",
+            token,
+            query={"start": start, "length": length},
+            expected_statuses={200},
+        )
+        if not isinstance(payload, dict):
+            return module_ids
+
+        plans = payload.get("data")
+        if not isinstance(plans, list) or not plans:
+            return module_ids
+
+        for plan in plans:
+            if any(alias_plan_matches(alias, plan) for alias in aliases) and isinstance(plan, dict):
+                module_ids.update(module_ids_from_plan(plan))
+
+        start += len(plans)
+        total = payload.get("recordsTotal")
+        if isinstance(total, int) and start >= total:
+            return module_ids
+
+
+def module_waiting_for_review_placeholder(base_url: str, token: str, module_id: str) -> list[str]:
+    _, info = oidf_api_request(
+        "GET",
+        base_url,
+        f"api/info/{module_id}",
+        token,
+        expected_statuses={200, 404},
+    )
+    if not isinstance(info, dict) or info.get("status") != "WAITING":
+        return []
+
+    _, logs = oidf_api_request(
+        "GET",
+        base_url,
+        f"api/log/{module_id}",
+        token,
+        expected_statuses={200, 404},
+    )
+    if not isinstance(logs, list):
+        return []
+
+    placeholders: list[str] = []
+    for entry in logs:
+        if not isinstance(entry, dict):
+            continue
+        placeholder = entry.get("upload")
+        if entry.get("result") == "REVIEW" and isinstance(placeholder, str) and placeholder:
+            placeholders.append(placeholder)
+    return placeholders
+
+
+def oidf_api_upload_review_placeholder(
+    base_url: str,
+    token: str,
+    module_id: str,
+    placeholder: str,
+) -> bool:
+    request = urllib.request.Request(
+        api_url(base_url, f"api/log/{module_id}/images/{placeholder}"),
+        method="POST",
+        data=OIDF_REVIEW_PLACEHOLDER_IMAGE.encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+            "Content-Type": "text/plain; charset=utf-8",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            response.read()
+            return response.status == 200
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", "replace")[:300]
+        print(
+            "OIDF review placeholder upload failed for "
+            f"{module_id}/{placeholder}: HTTP {exc.code}: {body}",
+            flush=True,
+        )
+    except urllib.error.URLError as exc:
+        print(
+            f"OIDF review placeholder upload failed for {module_id}/{placeholder}: {exc}",
+            flush=True,
+        )
+    return False
+
+
+def monitor_review_placeholders(
+    base_url: str,
+    token: str,
+    aliases: set[str],
+    stop_event: threading.Event,
+    *,
+    poll_seconds: int = 5,
+) -> None:
+    filled: set[tuple[str, str]] = set()
+    while not stop_event.wait(poll_seconds):
+        try:
+            module_ids = list_alias_module_ids(base_url, token, aliases)
+            for module_id in module_ids:
+                for placeholder in module_waiting_for_review_placeholder(base_url, token, module_id):
+                    key = (module_id, placeholder)
+                    if key in filled:
+                        continue
+                    if oidf_api_upload_review_placeholder(base_url, token, module_id, placeholder):
+                        filled.add(key)
+                        print(
+                            f"Filled OIDF review placeholder {placeholder} for module {module_id}",
+                            flush=True,
+                        )
+        except Exception as exc:
+            print(f"OIDF review placeholder monitor skipped a poll: {exc}", flush=True)
+
+
 def cancel_plan_module_instances(base_url: str, token: str, plan: dict[str, object]) -> None:
     modules = plan.get("modules")
     if not isinstance(modules, list):
@@ -416,6 +573,8 @@ def run_official_runner(
     suite_scripts: Path,
     env: dict[str, str],
     timeout_seconds: int,
+    conformance_server: str,
+    aliases: set[str],
 ) -> int:
     if timeout_seconds <= 0:
         fail("--timeout-seconds must be greater than zero")
@@ -427,6 +586,18 @@ def run_official_runner(
     for index, argument in enumerate(command):
         print(f"  argv[{index}]: {argument}", flush=True)
     print(f"OIDF official runner timeout: {timeout_seconds} seconds", flush=True)
+
+    stop_monitor = threading.Event()
+    monitor_thread: threading.Thread | None = None
+    if aliases:
+        monitor_thread = threading.Thread(
+            target=monitor_review_placeholders,
+            args=(conformance_server, env["CONFORMANCE_TOKEN"], aliases, stop_monitor),
+            name="oidf-review-placeholder-monitor",
+            daemon=True,
+        )
+        monitor_thread.start()
+        print("OIDF review placeholder monitor started", flush=True)
 
     process = subprocess.Popen(
         command,
@@ -440,6 +611,10 @@ def run_official_runner(
         print("OIDF official runner timed out; terminating process group", flush=True)
         terminate_runner(process)
         return 124
+    finally:
+        stop_monitor.set()
+        if monitor_thread is not None:
+            monitor_thread.join(timeout=15)
 
 
 def terminate_runner(process: subprocess.Popen[bytes]) -> None:
@@ -500,7 +675,15 @@ def main() -> int:
     for expression in expressions:
         command.extend(shlex.split(expression))
 
-    return run_official_runner(command, expressions, suite_scripts, env, args.timeout_seconds)
+    return run_official_runner(
+        command,
+        expressions,
+        suite_scripts,
+        env,
+        args.timeout_seconds,
+        args.conformance_server,
+        set() if args.list else aliases,
+    )
 
 
 if __name__ == "__main__":
