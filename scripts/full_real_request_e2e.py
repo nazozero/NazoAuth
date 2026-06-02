@@ -93,6 +93,10 @@ def now() -> int:
     return int(time.time())
 
 
+def decode_jwt_unverified(token: str) -> dict[str, Any]:
+    return jwt.decode(token, options={"verify_signature": False, "verify_aud": False})
+
+
 def ed25519_private_pem(key: ed25519.Ed25519PrivateKey) -> bytes:
     return key.private_bytes(
         encoding=serialization.Encoding.PEM,
@@ -414,6 +418,8 @@ def authorize_request(
     *,
     state: str,
     nonce: str | None = "nonce-e2e",
+    extra_params: dict[str, str] | None = None,
+    method: str = "GET",
 ) -> tuple[str, str]:
     verifier, challenge = pkce_pair()
     params = {
@@ -427,7 +433,12 @@ def authorize_request(
     }
     if nonce is not None:
         params["nonce"] = nonce
-    response = user.get(f"{BASE_URL}/authorize", params=params, allow_redirects=False, timeout=10)
+    if extra_params:
+        params.update(extra_params)
+    if method == "POST":
+        response = user.post(f"{BASE_URL}/authorize", data=params, allow_redirects=False, timeout=10)
+    else:
+        response = user.get(f"{BASE_URL}/authorize", params=params, allow_redirects=False, timeout=10)
     expect_status(f"authorize_{state}", response, 302)
     request_id = location_query(response).get("request_id", [None])[0]
     if not request_id:
@@ -934,6 +945,131 @@ def run() -> None:
             "POST /admin/clients private_key_jwt authorization_code",
         )
         private_auth_client_id = private_auth_client["client_id"]
+
+        secret_auth_client = create_client(
+            admin,
+            {
+                "client_name": "Secret Auth Code Full E2E",
+                "client_type": "confidential",
+                "redirect_uris": [CLIENT_REDIRECT_URI],
+                "scopes": ["openid", "profile", "email"],
+                "allowed_audiences": [DEFAULT_AUDIENCE],
+                "grant_types": ["authorization_code"],
+                "token_endpoint_auth_method": "client_secret_basic",
+                "jwks": None,
+            },
+            "POST /admin/clients client_secret_basic authorization_code",
+        )
+        secret_auth_client_id = secret_auth_client["client_id"]
+        secret_auth_client_secret = secret_auth_client["client_secret"]
+
+        invalid_redirect = user.get(
+            f"{BASE_URL}/authorize",
+            params={
+                "response_type": "code",
+                "client_id": public_client_id,
+                "redirect_uri": "https://attacker.example/callback",
+                "scope": "openid",
+                "state": "invalid-redirect-uri",
+                "nonce": "invalid-redirect-uri-nonce",
+                "code_challenge": pkce_pair()[1],
+                "code_challenge_method": "S256",
+            },
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status("GET /authorize invalid redirect_uri error page", invalid_redirect, 400)
+        check("authorize_invalid_redirect_no_location", "Location" not in invalid_redirect.headers)
+        check("authorize_invalid_redirect_html", "text/html" in invalid_redirect.headers.get("Content-Type", ""))
+        check("authorize_invalid_redirect_marker", 'id="oidf_conformance_interaction"' in invalid_redirect.text)
+
+        public_without_pkce = user.get(
+            f"{BASE_URL}/authorize",
+            params={
+                "response_type": "code",
+                "client_id": public_client_id,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "scope": "openid",
+                "state": "public-missing-pkce",
+            },
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status("GET /authorize public missing PKCE", public_without_pkce, 302)
+        check(
+            "public_missing_pkce_invalid_request",
+            location_query(public_without_pkce).get("error") == ["invalid_request"],
+        )
+
+        confidential_without_pkce = user.get(
+            f"{BASE_URL}/authorize",
+            params={
+                "response_type": "code",
+                "client_id": secret_auth_client_id,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "scope": "openid profile email",
+                "state": "confidential-no-pkce",
+                "nonce": "confidential-no-pkce-nonce",
+            },
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status("GET /authorize confidential without PKCE", confidential_without_pkce, 302)
+        confidential_no_pkce_request_id = consent_request_from_redirect(
+            confidential_without_pkce,
+            "GET /authorize confidential without PKCE",
+        )
+        confidential_no_pkce_code, _ = approve_authorization(
+            user,
+            confidential_no_pkce_request_id,
+            "",
+            state="confidential-no-pkce",
+        )
+        confidential_no_pkce_token = requests.post(
+            f"{BASE_URL}/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": confidential_no_pkce_code,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+            },
+            auth=(secret_auth_client_id, secret_auth_client_secret),
+            timeout=10,
+        )
+        expect_status("POST /token confidential authorization_code without PKCE", confidential_no_pkce_token, 200)
+        confidential_no_pkce_body = expect_json(confidential_no_pkce_token)
+        check(
+            "confidential_no_pkce_tokens_issued",
+            bool(confidential_no_pkce_body.get("access_token"))
+            and bool(confidential_no_pkce_body.get("id_token")),
+        )
+
+        post_authorize_request_id, post_authorize_verifier = authorize_request(
+            user,
+            public_client_id,
+            state="post-authorize-acr",
+            nonce="post-authorize-acr-nonce",
+            extra_params={"acr_values": "urn:nazo:acr:password urn:nazo:acr:mfa"},
+            method="POST",
+        )
+        post_authorize_code, post_authorize_verifier = approve_authorization(
+            user,
+            post_authorize_request_id,
+            post_authorize_verifier,
+            state="post-authorize-acr",
+        )
+        post_authorize_token = token_plain(
+            {
+                "grant_type": "authorization_code",
+                "client_id": public_client_id,
+                "code": post_authorize_code,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "code_verifier": post_authorize_verifier,
+            },
+            "POST /token authorization_code after POST /authorize",
+        )
+        post_authorize_id_token = decode_jwt_unverified(post_authorize_token["id_token"])
+        check("post_authorize_id_token_acr", post_authorize_id_token.get("acr") == "urn:nazo:acr:password")
+        check("post_authorize_id_token_nonce", post_authorize_id_token.get("nonce") == "post-authorize-acr-nonce")
 
         par_confidential_unauthenticated = requests.post(
             f"{BASE_URL}/par",
@@ -1615,6 +1751,76 @@ def run() -> None:
             and userinfo.get("email") == USER_EMAIL
             and userinfo.get("email_verified") is True,
         )
+        claims_request_id, claims_verifier = authorize_request(
+            user,
+            public_client_id,
+            state="claims-essential",
+            nonce="claims-essential-nonce",
+            extra_params={
+                "scope": "openid",
+                "claims": json.dumps({"userinfo": {"name": {"essential": True}}}, separators=(",", ":")),
+            },
+        )
+        claims_code, claims_verifier = approve_authorization(
+            user,
+            claims_request_id,
+            claims_verifier,
+            state="claims-essential",
+        )
+        claims_token_response = token_plain(
+            {
+                "grant_type": "authorization_code",
+                "client_id": public_client_id,
+                "code": claims_code,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "code_verifier": claims_verifier,
+            },
+            "POST /token claims essential",
+        )
+        claims_userinfo = expect_json(
+            expect_status(
+                "GET /userinfo claims essential",
+                requests.get(
+                    f"{BASE_URL}/userinfo",
+                    headers={"Authorization": f"Bearer {claims_token_response['access_token']}"},
+                    timeout=10,
+                ),
+                200,
+            )
+        )
+        check("userinfo_claims_essential_name", claims_userinfo.get("name") == "Full E2E User")
+        userinfo_post_no_nonce = requests.post(
+            f"{BASE_URL}/userinfo",
+            headers={
+                "Authorization": f"DPoP {access_token}",
+                "DPoP": dpop_proof("POST", f"{ISSUER_URL}/userinfo", dpop_key, access_token=access_token),
+            },
+            timeout=10,
+        )
+        expect_status("POST /userinfo DPoP nonce challenge", userinfo_post_no_nonce, 401)
+        userinfo_post_nonce = userinfo_post_no_nonce.headers.get("DPoP-Nonce")
+        check("userinfo_post_nonce_header", bool(userinfo_post_nonce))
+        userinfo_post = expect_json(
+            expect_status(
+                "POST /userinfo DPoP",
+                requests.post(
+                    f"{BASE_URL}/userinfo",
+                    headers={
+                        "Authorization": f"DPoP {access_token}",
+                        "DPoP": dpop_proof(
+                            "POST",
+                            f"{ISSUER_URL}/userinfo",
+                            dpop_key,
+                            nonce=userinfo_post_nonce,
+                            access_token=access_token,
+                        ),
+                    },
+                    timeout=10,
+                ),
+                200,
+            )
+        )
+        check("userinfo_post_claims", userinfo_post.get("sub") == userinfo.get("sub"))
 
         nonce = request_dpop_nonce(
             {
@@ -1831,6 +2037,21 @@ def run() -> None:
             rejected_results,
         )
         concurrent_access_token = success_results[0]["access_token"]
+        concurrent_userinfo_post_body = expect_json(
+            expect_status(
+                "POST /userinfo bearer token in body",
+                requests.post(
+                    f"{BASE_URL}/userinfo",
+                    data={"access_token": concurrent_access_token},
+                    timeout=10,
+                ),
+                200,
+            )
+        )
+        check(
+            "userinfo_post_body_claims",
+            concurrent_userinfo_post_body.get("sub") == user_id,
+        )
         replay_after_concurrent = requests.post(
             f"{BASE_URL}/token",
             data=concurrent_form,

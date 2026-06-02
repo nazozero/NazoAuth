@@ -32,6 +32,10 @@ def b64u(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
 
 
+def decode_jwt_unverified(token: str) -> dict:
+    return jwt.decode(token, options={"verify_signature": False, "verify_aud": False})
+
+
 def int_b64u(value: int) -> str:
     width = max(1, (value.bit_length() + 7) // 8)
     return b64u(value.to_bytes(width, "big"))
@@ -300,14 +304,17 @@ def pkce_pair():
     return verifier, challenge
 
 
-def authorize_to_consent(session, params: dict, name: str) -> str:
-    response = request(
-        session,
-        "GET",
-        "/authorize?" + urllib.parse.urlencode(params),
-        expected={302},
-        name=name,
-    )
+def authorize_to_consent(session, params: dict, name: str, *, method: str = "GET") -> str:
+    if method == "POST":
+        response = request(session, "POST", "/authorize", expected={302}, name=name, data=params)
+    else:
+        response = request(
+            session,
+            "GET",
+            "/authorize?" + urllib.parse.urlencode(params),
+            expected={302},
+            name=name,
+        )
     location = response.headers["location"]
     parsed = urllib.parse.urlparse(location)
     query = urllib.parse.parse_qs(parsed.query)
@@ -336,7 +343,17 @@ def consent(session, request_id: str, decision: str, name: str) -> str:
     return response.headers["location"]
 
 
-def auth_code_flow(session, client_id: str, redirect_uri: str, *, name: str, request_object=None, request_uri=None):
+def auth_code_flow(
+    session,
+    client_id: str,
+    redirect_uri: str,
+    *,
+    name: str,
+    request_object=None,
+    request_uri=None,
+    extra_params: dict | None = None,
+    method: str = "GET",
+):
     verifier, challenge = pkce_pair()
     state = secrets.token_urlsafe(12)
     expected_state = state
@@ -357,7 +374,9 @@ def auth_code_flow(session, client_id: str, redirect_uri: str, *, name: str, req
             "code_challenge": challenge,
             "code_challenge_method": "S256",
         }
-    request_id = authorize_to_consent(session, params, f"{name} authorize")
+    if extra_params:
+        params.update(extra_params)
+    request_id = authorize_to_consent(session, params, f"{name} authorize", method=method)
     location = consent(session, request_id, "approve", name)
     query = urllib.parse.parse_qs(urllib.parse.urlparse(location).query)
     if expected_state is not None and query.get("state", [state])[0] != expected_state:
@@ -639,6 +658,94 @@ def run():
     access_token = bearer_tokens["access_token"]
     refresh_token = bearer_tokens["refresh_token"]
     request(public, "GET", "/userinfo", expected={200}, name="userinfo bearer", headers={"authorization": f"Bearer {access_token}"})
+    invalid_redirect = user_session.get(
+        f"{BASE_URL}/authorize",
+        params={
+            "client_id": public_client["client_id"],
+            "redirect_uri": "https://attacker.example/callback",
+            "response_type": "code",
+            "scope": "openid",
+            "state": secrets.token_urlsafe(12),
+            "nonce": secrets.token_urlsafe(12),
+            "code_challenge": pkce_pair()[1],
+            "code_challenge_method": "S256",
+        },
+        allow_redirects=False,
+        timeout=15,
+    )
+    if invalid_redirect.status_code != 400:
+        checks.fail(
+            "authorize invalid redirect_uri error page",
+            f"expected 400 got {invalid_redirect.status_code}: {invalid_redirect.text[:200]}",
+        )
+    if invalid_redirect.headers.get("location"):
+        checks.fail("authorize invalid redirect_uri error page", "unexpected redirect")
+    if "text/html" not in invalid_redirect.headers.get("content-type", ""):
+        checks.fail("authorize invalid redirect_uri content type", invalid_redirect.headers.get("content-type"))
+    if 'id="oidf_conformance_interaction"' not in invalid_redirect.text:
+        checks.fail("authorize invalid redirect_uri screenshot marker", invalid_redirect.text[:200])
+    checks.ok("authorize invalid redirect_uri error page", "GET /authorize invalid redirect_uri -> 400 HTML")
+
+    post_code, post_verifier = auth_code_flow(
+        user_session,
+        public_client["client_id"],
+        "https://client.example/callback",
+        name="POST authorize with acr",
+        extra_params={"acr_values": "urn:nazo:acr:password urn:nazo:acr:mfa"},
+        method="POST",
+    )
+    post_tokens = token_public(public_client["client_id"], post_code, post_verifier).json()
+    post_id_token = decode_jwt_unverified(post_tokens["id_token"])
+    if post_id_token.get("acr") != "urn:nazo:acr:password":
+        checks.fail("POST authorize with acr", json.dumps(post_id_token, ensure_ascii=False))
+
+    claims_code, claims_verifier = auth_code_flow(
+        user_session,
+        public_client["client_id"],
+        "https://client.example/callback",
+        name="authorize claims essential",
+        extra_params={
+            "scope": "openid",
+            "claims": json.dumps({"userinfo": {"name": {"essential": True}}}, separators=(",", ":")),
+        },
+    )
+    claims_tokens = token_public(public_client["client_id"], claims_code, claims_verifier).json()
+    claims_userinfo = request(
+        public,
+        "GET",
+        "/userinfo",
+        expected={200},
+        name="userinfo essential name claim",
+        headers={"authorization": f"Bearer {claims_tokens['access_token']}"},
+    ).json()
+    if claims_userinfo.get("name") != f"{RUN_ID} User":
+        checks.fail("userinfo essential name claim", json.dumps(claims_userinfo, ensure_ascii=False))
+
+    replay_code, replay_verifier = auth_code_flow(
+        user_session,
+        public_client["client_id"],
+        "https://client.example/callback",
+        name="authorization code replay",
+    )
+    request(public, "POST", "/token", expected={200}, name="token before authorization code replay", data={
+        "grant_type": "authorization_code",
+        "client_id": public_client["client_id"],
+        "code": replay_code,
+        "redirect_uri": "https://client.example/callback",
+        "code_verifier": replay_verifier,
+    })
+    replay_response = request(public, "POST", "/token", expected={400}, name="authorization code replay rejected", data={
+        "grant_type": "authorization_code",
+        "client_id": public_client["client_id"],
+        "code": replay_code,
+        "redirect_uri": "https://client.example/callback",
+        "code_verifier": replay_verifier,
+    }).json()
+    if replay_response.get("error") != "invalid_grant":
+        checks.fail("authorization code replay rejected", json.dumps(replay_response, ensure_ascii=False))
+    if any(ord(ch) > 0x7E or ch == "\\" for ch in replay_response.get("error_description", "")):
+        checks.fail("authorization code replay error_description charset", replay_response.get("error_description"))
+
     introspect_form = {
         "token": access_token,
         "client_id": secret_client["client_id"],

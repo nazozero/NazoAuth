@@ -272,6 +272,7 @@ pub(crate) async fn issue_token_response(
             client_id: &client.client_id,
             audience: &issue.audience,
             scopes: &issue.scopes,
+            userinfo_claims: &issue.userinfo_claims,
             ttl: state.settings.access_token_ttl_seconds,
             dpop_jkt: issue.dpop_jkt.as_deref(),
         },
@@ -307,9 +308,12 @@ pub(crate) async fn issue_token_response(
     if issue.scopes.iter().any(|s| s == "openid") {
         let user_claims = match issue.user_id {
             Some(user_id) => match find_user_by_id(&state.diesel_db, user_id).await {
-                Ok(Some(user)) if user.is_active => {
-                    Some(oidc_user_claims(&user, &issue.scopes, &issue.subject))
-                }
+                Ok(Some(user)) if user.is_active => Some(oidc_id_token_user_claims(
+                    &user,
+                    &issue.scopes,
+                    &issue.subject,
+                    &issue.id_token_claims,
+                )),
                 Ok(_) => {
                     mark_failed_authorization_code_if_needed(
                         state,
@@ -350,6 +354,7 @@ pub(crate) async fn issue_token_response(
                 nonce: issue.nonce.clone(),
                 auth_time: issue.auth_time,
                 amr: &issue.amr,
+                acr: issue.acr.as_deref(),
                 extra_claims: user_claims.as_ref(),
                 ttl: state.settings.id_token_ttl_seconds,
             },

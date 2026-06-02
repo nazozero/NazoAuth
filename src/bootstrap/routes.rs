@@ -7,7 +7,11 @@ use crate::http::*;
 
 pub(crate) fn configure(cfg: &mut web::ServiceConfig) {
     cfg.route("/health", web::get().to(health))
-        .route("/authorize", web::get().to(authorize))
+        .service(
+            web::resource("/authorize")
+                .route(web::get().to(authorize_get))
+                .route(web::post().to(authorize_post)),
+        )
         .route("/authorize/consent", web::get().to(authorize_consent))
         .route("/authorize/decision", web::post().to(authorize_decision))
         .route("/par", web::post().to(par))
@@ -23,7 +27,11 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig) {
             web::get().to(oauth_authorization_server_metadata),
         )
         .route("/jwks.json", web::get().to(jwks))
-        .route("/userinfo", web::get().to(userinfo))
+        .service(
+            web::resource("/userinfo")
+                .route(web::get().to(userinfo))
+                .route(web::post().to(userinfo)),
+        )
         .service(
             web::scope("/auth")
                 .route("/captcha-config", web::get().to(captcha_config))

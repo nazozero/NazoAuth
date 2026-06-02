@@ -2,8 +2,8 @@
 // 根据 Bearer/DPoP access token 返回用户声明；DPoP-bound token 必须携带有效 proof。
 use crate::http::prelude::*;
 
-pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
-    let Some((scheme, token)) = authorization_access_token(req.headers()) else {
+pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
+    let Some((scheme, token)) = userinfo_access_token(&req, &body) else {
         return oauth_bearer_error(StatusCode::UNAUTHORIZED, "invalid_token", "缺少访问令牌.");
     };
     let Some(claims) = decode_access_claims(&state, &token) else {
@@ -113,7 +113,12 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest) -> HttpRes
             );
         }
     };
-    let mut response = json_response_no_store(oidc_user_claims(&user, &scopes, &claims.sub));
+    let mut response = json_response_no_store(oidc_user_claims(
+        &user,
+        &scopes,
+        &claims.sub,
+        &claims.userinfo_claims,
+    ));
     if let Some(nonce) = next_dpop_nonce
         && let Ok(value) = HeaderValue::from_str(&nonce)
     {
@@ -122,4 +127,57 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest) -> HttpRes
             .insert(header::HeaderName::from_static("dpop-nonce"), value);
     }
     response
+}
+
+fn userinfo_access_token(
+    req: &HttpRequest,
+    body: &Bytes,
+) -> Option<(AccessTokenAuthScheme, String)> {
+    if let Some((scheme, token)) = authorization_access_token(req.headers()) {
+        return Some((scheme, token));
+    }
+    if req.method() != actix_web::http::Method::POST || body.is_empty() {
+        return None;
+    }
+    let mut access_token = None;
+    for (key, value) in url::form_urlencoded::parse(body) {
+        if key == "access_token" {
+            if access_token.is_some() {
+                return None;
+            }
+            let token = value.into_owned();
+            if token.trim().is_empty() {
+                return None;
+            }
+            access_token = Some(token);
+        }
+    }
+    access_token.map(|token| (AccessTokenAuthScheme::Bearer, token))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn post_body_access_token_accepts_single_value() {
+        let req = actix_web::test::TestRequest::post().to_http_request();
+        let token = userinfo_access_token(&req, &Bytes::from_static(b"access_token=token-1"));
+
+        let Some((AccessTokenAuthScheme::Bearer, token)) = token else {
+            panic!("expected bearer token from form body");
+        };
+        assert_eq!(token, "token-1");
+    }
+
+    #[test]
+    fn post_body_access_token_rejects_duplicate_value() {
+        let req = actix_web::test::TestRequest::post().to_http_request();
+        let token = userinfo_access_token(
+            &req,
+            &Bytes::from_static(b"access_token=token-1&access_token=token-2"),
+        );
+
+        assert!(token.is_none());
+    }
 }

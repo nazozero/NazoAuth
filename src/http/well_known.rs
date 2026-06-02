@@ -1,6 +1,7 @@
 use super::prelude::*;
 
 const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
+const PROMPT_VALUES_SUPPORTED: [&str; 4] = ["login", "consent", "select_account", "none"];
 
 pub(crate) async fn health() -> Json<Value> {
     Json(json!({"status": "正常"}))
@@ -35,10 +36,11 @@ fn authorization_server_metadata_value(state: &AppState) -> Value {
         "introspection_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "private_key_jwt"],
         "introspection_endpoint_auth_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS,
         "scopes_supported": ["openid", "profile", "email", "offline_access"],
-        "claims_supported": ["sub", "auth_time", "amr", "nonce", "preferred_username", "name", "email", "email_verified", "picture", "updated_at"],
-        "prompt_values_supported": ["login", "none"],
+        "claims_supported": ["sub", "auth_time", "amr", "nonce", "preferred_username", "name", "given_name", "family_name", "middle_name", "nickname", "profile", "picture", "website", "gender", "birthdate", "zoneinfo", "locale", "email", "email_verified", "updated_at"],
+        "prompt_values_supported": PROMPT_VALUES_SUPPORTED,
         "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
         "authorization_response_iss_parameter_supported": true,
+        "claims_parameter_supported": true,
         "code_challenge_methods_supported": ["S256"],
         "dpop_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS,
         "request_object_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS
@@ -55,4 +57,17 @@ pub(crate) async fn oauth_authorization_server_metadata(state: Data<AppState>) -
 
 pub(crate) async fn jwks(state: Data<AppState>) -> Json<Value> {
     Json(state.keyset.jwks())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn discovery_prompt_values_match_authorization_request_parser() {
+        assert_eq!(
+            PROMPT_VALUES_SUPPORTED,
+            ["login", "consent", "select_account", "none"]
+        );
+    }
 }

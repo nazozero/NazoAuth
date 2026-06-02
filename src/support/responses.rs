@@ -2,11 +2,30 @@
 // 统一 OAuth 错误响应、JSON 响应和重定向响应的形状。
 
 use super::prelude::*;
+use std::borrow::Cow;
 
 pub(crate) fn oauth_error(status: StatusCode, error: &str, description: &str) -> HttpResponse {
     json_response_status(
         status,
         json!({"error": error, "error_description": description}),
+    )
+}
+
+pub(crate) fn authorization_error_page(
+    status: StatusCode,
+    error: &str,
+    description: &str,
+) -> HttpResponse {
+    let body = format!(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>{}</title></head><body><main id=\"oidf_conformance_interaction\"><h1>{}</h1><p>{}</p></main></body></html>",
+        html_escape_text(error),
+        html_escape_text(error),
+        html_escape_text(description)
+    );
+    no_store(
+        HttpResponse::build(status)
+            .content_type("text/html; charset=utf-8")
+            .body(body),
     )
 }
 
@@ -16,7 +35,8 @@ pub(crate) fn oauth_token_error(
     description: &str,
     basic_challenge: bool,
 ) -> HttpResponse {
-    let mut response = no_store(oauth_error(status, error, description));
+    let description = oauth_token_error_description(description);
+    let mut response = no_store(oauth_error(status, error, &description));
     if basic_challenge {
         response.headers_mut().insert(
             header::WWW_AUTHENTICATE,
@@ -24,6 +44,36 @@ pub(crate) fn oauth_token_error(
         );
     }
     response
+}
+
+fn oauth_token_error_description(description: &str) -> Cow<'_, str> {
+    if description.bytes().all(is_oauth_error_description_byte) {
+        Cow::Borrowed(description)
+    } else {
+        Cow::Borrowed("Request failed.")
+    }
+}
+
+fn is_oauth_error_description_byte(byte: u8) -> bool {
+    matches!(
+        byte,
+        0x09 | 0x0A | 0x0D | 0x20..=0x21 | 0x23..=0x5B | 0x5D..=0x7E
+    )
+}
+
+fn html_escape_text(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&#39;"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
 }
 
 pub(crate) fn oauth_bearer_error(
@@ -139,4 +189,48 @@ pub(crate) fn bytes_response(body: Vec<u8>) -> HttpResponse {
 
 pub(crate) fn empty_response(status: StatusCode) -> HttpResponse {
     HttpResponse::build(status).finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn oauth_token_error_description_keeps_rfc_allowed_ascii() {
+        assert_eq!(
+            oauth_token_error_description("Authorization code has already been used.").as_ref(),
+            "Authorization code has already been used."
+        );
+    }
+
+    #[test]
+    fn oauth_token_error_description_replaces_disallowed_text() {
+        assert_eq!(
+            oauth_token_error_description("授权码已被使用.").as_ref(),
+            "Request failed."
+        );
+        assert_eq!(
+            oauth_token_error_description("invalid\\request").as_ref(),
+            "Request failed."
+        );
+    }
+
+    #[test]
+    fn authorization_error_page_is_html_and_no_store() {
+        let response = authorization_error_page(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "redirect_uri is invalid.",
+        );
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            "no-store"
+        );
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "text/html; charset=utf-8"
+        );
+    }
 }
