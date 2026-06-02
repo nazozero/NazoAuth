@@ -319,13 +319,6 @@ async fn authorize_request(
         (Some(pushed), _) => Some(pushed),
         (None, requested) => requested,
     };
-    if client.require_dpop_bound_tokens && dpop_jkt.is_none() {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "该客户端要求 DPoP sender constraint.",
-        );
-    }
     preserve_verified_dpop_binding(q, dpop_jkt.as_deref());
     let redirect_uri =
         match registered_redirect_uri(&client, q.get("redirect_uri").map(String::as_str)) {

@@ -1244,35 +1244,82 @@ def run() -> None:
         par_dpop_key = ed25519.Ed25519PrivateKey.generate()
         par_dpop_jkt = jwk_thumbprint(ed25519_public_jwk(par_dpop_key))
         par_dpop_verifier, par_dpop_challenge = pkce_pair()
-        par_dpop_missing_binding = requests.post(
-            f"{BASE_URL}/par",
-            data={
-                "response_type": "code",
+        par_dpop_unbound_verifier, par_dpop_unbound_challenge = pkce_pair()
+        par_dpop_unbound = expect_json(
+            expect_status(
+                "POST /par DPoP-required client without early binding",
+                requests.post(
+                    f"{BASE_URL}/par",
+                    data={
+                        "response_type": "code",
+                        "client_id": dpop_required_private_auth_client_id,
+                        "redirect_uri": CLIENT_REDIRECT_URI,
+                        "scope": "openid profile email",
+                        "state": "par-dpop-unbound",
+                        "nonce": "nonce-par-dpop-unbound",
+                        "code_challenge": par_dpop_unbound_challenge,
+                        "code_challenge_method": "S256",
+                        "client_assertion_type": CLIENT_ASSERTION_TYPE,
+                        "client_assertion": client_assertion(
+                            dpop_required_private_auth_client_id,
+                            private_key,
+                            jti="par-dpop-client-assertion-unbound-par",
+                            audience_path="",
+                        ),
+                    },
+                    timeout=10,
+                ),
+                201,
+            )
+        )
+        par_dpop_unbound_authorize = user.get(
+            f"{BASE_URL}/authorize",
+            params={
                 "client_id": dpop_required_private_auth_client_id,
+                "request_uri": par_dpop_unbound["request_uri"],
+            },
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status(
+            "GET /authorize PAR DPoP-required without early binding",
+            par_dpop_unbound_authorize,
+            302,
+        )
+        par_dpop_unbound_request_id = consent_request_from_redirect(
+            par_dpop_unbound_authorize,
+            "GET /authorize PAR DPoP-required without early binding",
+        )
+        par_dpop_unbound_code, par_dpop_unbound_verifier = approve_authorization(
+            user,
+            par_dpop_unbound_request_id,
+            par_dpop_unbound_verifier,
+            state="par-dpop-unbound",
+        )
+        par_dpop_unbound_token = requests.post(
+            f"{BASE_URL}/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": par_dpop_unbound_code,
+                "code_verifier": par_dpop_unbound_verifier,
                 "redirect_uri": CLIENT_REDIRECT_URI,
-                "scope": "openid profile email",
-                "state": "par-dpop-missing-binding",
-                "nonce": "nonce-par-dpop-missing-binding",
-                "code_challenge": par_dpop_challenge,
-                "code_challenge_method": "S256",
                 "client_assertion_type": CLIENT_ASSERTION_TYPE,
                 "client_assertion": client_assertion(
                     dpop_required_private_auth_client_id,
                     private_key,
-                    jti="par-dpop-client-assertion-missing-binding",
-                    audience_path="",
+                    jti="par-dpop-client-assertion-unbound-token",
                 ),
             },
             timeout=10,
         )
         expect_status(
-            "POST /par DPoP-required client missing binding rejected",
-            par_dpop_missing_binding,
+            "POST /token DPoP-required client without proof rejected",
+            par_dpop_unbound_token,
             400,
         )
         check(
-            "par_dpop_required_missing_binding_error",
-            expect_json(par_dpop_missing_binding).get("error") == "invalid_dpop_proof",
+            "par_dpop_required_token_missing_proof_error",
+            expect_json(par_dpop_unbound_token).get("error") == "invalid_dpop_proof",
         )
         par_dpop_form = {
             "response_type": "code",
