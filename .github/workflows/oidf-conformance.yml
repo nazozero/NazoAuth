@@ -57,7 +57,7 @@ jobs:
         env:
           OIDF_CONFORMANCE_TOKEN: ${{ secrets.OIDF_CONFORMANCE_TOKEN }}
           OIDF_PLAN_CONFIG_JSON: ${{ secrets.OIDF_PLAN_CONFIG_JSON }}
-          OIDF_PLAN_SET_JSON: ${{ secrets.OIDF_PLAN_SET_JSON || vars.OIDF_PLAN_SET_JSON }}
+          OIDF_PLAN_SET_JSON: ${{ vars.OIDF_PLAN_SET_JSON }}
 
       - name: Upload OIDF result archive
         if: always() && vars.OIDF_EXPORT_RESULTS != 'false'
