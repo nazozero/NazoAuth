@@ -44,6 +44,22 @@ pub(crate) struct UserRow {
     pub(crate) role: String,
     #[diesel(sql_type = diesel::sql_types::Int4)]
     pub(crate) admin_level: i32,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
+    pub(crate) address_formatted: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
+    pub(crate) address_street_address: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
+    pub(crate) address_locality: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
+    pub(crate) address_region: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
+    pub(crate) address_postal_code: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
+    pub(crate) address_country: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
+    pub(crate) phone_number: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Bool)]
+    pub(crate) phone_number_verified: bool,
     #[diesel(sql_type = diesel::sql_types::Bool)]
     pub(crate) email_verified: bool,
     #[diesel(sql_type = diesel::sql_types::VarChar)]

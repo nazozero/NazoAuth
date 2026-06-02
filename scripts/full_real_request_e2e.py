@@ -426,7 +426,7 @@ def authorize_request(
         "response_type": "code",
         "client_id": client_id,
         "redirect_uri": CLIENT_REDIRECT_URI,
-        "scope": "openid profile email offline_access",
+        "scope": "openid profile email address phone offline_access",
         "state": state,
         "code_challenge": challenge,
         "code_challenge_method": "S256",
@@ -585,7 +585,11 @@ def run() -> None:
             == {"EdDSA", "RS256", "ES256", "PS256"}
             and set(discovery["dpop_signing_alg_values_supported"])
             == {"EdDSA", "RS256", "ES256", "PS256"}
-            and "email_verified" in discovery["claims_supported"],
+            and {"address", "phone"}.issubset(set(discovery["scopes_supported"]))
+            and "email_verified" in discovery["claims_supported"]
+            and {"address", "phone_number", "phone_number_verified"}.issubset(
+                set(discovery["claims_supported"])
+            ),
         )
         oauth_metadata = expect_json(
             expect_status(
@@ -716,14 +720,29 @@ def run() -> None:
                 "PATCH /auth/me",
                 user.patch(
                     f"{BASE_URL}/auth/me",
-                    json={"display_name": "Full E2E User"},
+                    json={
+                        "display_name": "Full E2E User",
+                        "address_formatted": "100 Universal City Plaza\nUniversal City, CA 91608\nUS",
+                        "address_street_address": "100 Universal City Plaza",
+                        "address_locality": "Universal City",
+                        "address_region": "CA",
+                        "address_postal_code": "91608",
+                        "address_country": "US",
+                        "phone_number": "+15555550000",
+                    },
                     headers=csrf_header(user),
                     timeout=10,
                 ),
                 200,
             )
         )
-        check("profile_updated", updated_me["display_name"] == "Full E2E User")
+        check(
+            "profile_updated",
+            updated_me["display_name"] == "Full E2E User"
+            and updated_me["address_country"] == "US"
+            and updated_me["phone_number"] == "+15555550000"
+            and updated_me["phone_number_verified"] is False,
+        )
 
         png_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
         avatar_upload = expect_json(
@@ -810,7 +829,7 @@ def run() -> None:
                 "client_name": "Public Full E2E",
                 "client_type": "public",
                 "redirect_uris": [CLIENT_REDIRECT_URI],
-                "scopes": ["openid", "profile", "email", "offline_access"],
+                "scopes": ["openid", "profile", "email", "address", "phone", "offline_access"],
                 "allowed_audiences": [DEFAULT_AUDIENCE],
                 "grant_types": ["authorization_code", "refresh_token"],
                 "token_endpoint_auth_method": "none",
@@ -1127,7 +1146,7 @@ def run() -> None:
                         "response_type": "code",
                         "client_id": public_client_id,
                         "redirect_uri": CLIENT_REDIRECT_URI,
-                        "scope": "openid profile email offline_access",
+                        "scope": "openid profile email address phone offline_access",
                         "state": "par-flow",
                         "nonce": "nonce-par-flow",
                         "code_challenge": par_challenge,
@@ -1749,7 +1768,11 @@ def run() -> None:
             "userinfo_claims",
             userinfo.get("sub") == user_id
             and userinfo.get("email") == USER_EMAIL
-            and userinfo.get("email_verified") is True,
+            and userinfo.get("email_verified") is True
+            and userinfo.get("address", {}).get("country") == "US"
+            and userinfo.get("address", {}).get("street_address") == "100 Universal City Plaza"
+            and userinfo.get("phone_number") == "+15555550000"
+            and userinfo.get("phone_number_verified") is False,
         )
         claims_request_id, claims_verifier = authorize_request(
             user,

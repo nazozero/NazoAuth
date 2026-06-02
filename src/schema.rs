@@ -99,6 +99,14 @@ diesel::table! {
         locale -> Nullable<Varchar>,
         role -> Text,
         admin_level -> Int4,
+        address_formatted -> Nullable<Varchar>,
+        address_street_address -> Nullable<Varchar>,
+        address_locality -> Nullable<Varchar>,
+        address_region -> Nullable<Varchar>,
+        address_postal_code -> Nullable<Varchar>,
+        address_country -> Nullable<Varchar>,
+        phone_number -> Nullable<Varchar>,
+        phone_number_verified -> Bool,
     }
 }
 

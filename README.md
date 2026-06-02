@@ -238,7 +238,7 @@ docker compose up -d nazo_oauth_server
 | `GET` | `/.well-known/openid-configuration` | OIDC discovery |
 | `GET` | `/.well-known/oauth-authorization-server` | OAuth Authorization Server Metadata |
 | `GET` | `/jwks.json` | JWKS |
-| `GET` | `/userinfo` | OIDC userinfo；根据 access token scope 返回 `sub`、`preferred_username`、`profile` 和 `email` 对应 claims |
+| `GET` | `/userinfo` | OIDC userinfo；根据 access token scope 返回 `sub`、`profile`、`email`、`address` 和 `phone` 对应 claims |
 
 `/token` 仅在授权范围包含 `offline_access` 且客户端启用 `refresh_token` grant 时签发和轮换 refresh token。
 

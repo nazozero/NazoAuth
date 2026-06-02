@@ -1,0 +1,9 @@
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS address_formatted VARCHAR(512),
+    ADD COLUMN IF NOT EXISTS address_street_address VARCHAR(256),
+    ADD COLUMN IF NOT EXISTS address_locality VARCHAR(128),
+    ADD COLUMN IF NOT EXISTS address_region VARCHAR(128),
+    ADD COLUMN IF NOT EXISTS address_postal_code VARCHAR(64),
+    ADD COLUMN IF NOT EXISTS address_country VARCHAR(64),
+    ADD COLUMN IF NOT EXISTS phone_number VARCHAR(32),
+    ADD COLUMN IF NOT EXISTS phone_number_verified BOOLEAN NOT NULL DEFAULT FALSE;

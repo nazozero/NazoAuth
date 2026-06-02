@@ -33,6 +33,13 @@ pub(crate) struct UpdateProfileRequest {
     birthdate: Option<String>,
     zoneinfo: Option<String>,
     locale: Option<String>,
+    address_formatted: Option<String>,
+    address_street_address: Option<String>,
+    address_locality: Option<String>,
+    address_region: Option<String>,
+    address_postal_code: Option<String>,
+    address_country: Option<String>,
+    phone_number: Option<String>,
 }
 
 pub(crate) async fn update_me(
@@ -91,6 +98,41 @@ pub(crate) async fn update_me(
         Ok(value) => value,
         Err(response) => return response,
     };
+    let address_formatted = match profile_text(payload.address_formatted, 512, "address_formatted")
+    {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let address_street_address = match profile_text(
+        payload.address_street_address,
+        256,
+        "address_street_address",
+    ) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let address_locality = match profile_text(payload.address_locality, 128, "address_locality") {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let address_region = match profile_text(payload.address_region, 128, "address_region") {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let address_postal_code =
+        match profile_text(payload.address_postal_code, 64, "address_postal_code") {
+            Ok(value) => value,
+            Err(response) => return response,
+        };
+    let address_country = match profile_text(payload.address_country, 64, "address_country") {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let phone_number = match profile_text(payload.phone_number, 32, "phone_number") {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let phone_number_verified = user.phone_number_verified && user.phone_number == phone_number;
     let mut conn = match get_conn(&state.diesel_db).await {
         Ok(conn) => conn,
         Err(_) => {
@@ -114,6 +156,14 @@ pub(crate) async fn update_me(
             users::birthdate.eq(birthdate),
             users::zoneinfo.eq(zoneinfo),
             users::locale.eq(locale),
+            users::address_formatted.eq(address_formatted),
+            users::address_street_address.eq(address_street_address),
+            users::address_locality.eq(address_locality),
+            users::address_region.eq(address_region),
+            users::address_postal_code.eq(address_postal_code),
+            users::address_country.eq(address_country),
+            users::phone_number.eq(phone_number),
+            users::phone_number_verified.eq(phone_number_verified),
             users::updated_at.eq(diesel_now),
         ))
         .returning(UserRow::as_returning())

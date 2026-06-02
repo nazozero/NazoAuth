@@ -40,9 +40,14 @@ const PROFILE_CLAIMS: &[&str] = &[
 ];
 
 const EMAIL_CLAIMS: &[&str] = &["email", "email_verified"];
+const ADDRESS_CLAIMS: &[&str] = &["address"];
+const PHONE_CLAIMS: &[&str] = &["phone_number", "phone_number_verified"];
 
 pub(crate) fn supported_user_claim(name: &str) -> bool {
-    PROFILE_CLAIMS.contains(&name) || EMAIL_CLAIMS.contains(&name)
+    PROFILE_CLAIMS.contains(&name)
+        || EMAIL_CLAIMS.contains(&name)
+        || ADDRESS_CLAIMS.contains(&name)
+        || PHONE_CLAIMS.contains(&name)
 }
 
 pub(crate) fn oidc_user_claims(
@@ -54,6 +59,8 @@ pub(crate) fn oidc_user_claims(
     let mut claims = json!({"sub": subject});
     let has_profile_scope = scopes.iter().any(|scope| scope == "profile");
     let has_email_scope = scopes.iter().any(|scope| scope == "email");
+    let has_address_scope = scopes.iter().any(|scope| scope == "address");
+    let has_phone_scope = scopes.iter().any(|scope| scope == "phone");
 
     if has_profile_scope || requested_claim(requested_claims, "preferred_username") {
         claims["preferred_username"] = json!(user.username);
@@ -104,8 +111,38 @@ pub(crate) fn oidc_user_claims(
     if has_email_scope || requested_claim(requested_claims, "email_verified") {
         claims["email_verified"] = json!(user.email_verified);
     }
+    if has_address_scope || requested_claim(requested_claims, "address") {
+        optional_address_claim(&mut claims, user);
+    }
+    if has_phone_scope || requested_claim(requested_claims, "phone_number") {
+        optional_string_claim(&mut claims, "phone_number", user.phone_number.as_deref());
+    }
+    if has_phone_scope || requested_claim(requested_claims, "phone_number_verified") {
+        claims["phone_number_verified"] = json!(user.phone_number_verified);
+    }
 
     claims
+}
+
+fn optional_address_claim(claims: &mut Value, user: &UserRow) {
+    let mut address = json!({});
+    optional_string_claim(&mut address, "formatted", user.address_formatted.as_deref());
+    optional_string_claim(
+        &mut address,
+        "street_address",
+        user.address_street_address.as_deref(),
+    );
+    optional_string_claim(&mut address, "locality", user.address_locality.as_deref());
+    optional_string_claim(&mut address, "region", user.address_region.as_deref());
+    optional_string_claim(
+        &mut address,
+        "postal_code",
+        user.address_postal_code.as_deref(),
+    );
+    optional_string_claim(&mut address, "country", user.address_country.as_deref());
+    if address.as_object().is_some_and(|object| !object.is_empty()) {
+        claims["address"] = address;
+    }
 }
 
 fn optional_string_claim(claims: &mut Value, name: &str, value: Option<&str>) {
@@ -140,6 +177,15 @@ pub(crate) fn oidc_id_token_user_claims(
         if !requested_claim(requested_claims, "email_verified") {
             object.remove("email_verified");
         }
+        if !requested_claim(requested_claims, "address") {
+            object.remove("address");
+        }
+        if !requested_claim(requested_claims, "phone_number") {
+            object.remove("phone_number");
+        }
+        if !requested_claim(requested_claims, "phone_number_verified") {
+            object.remove("phone_number_verified");
+        }
     }
     claims
 }
@@ -170,6 +216,16 @@ mod tests {
             locale: Some("zh-CN".to_owned()),
             role: "user".to_owned(),
             admin_level: 0,
+            address_formatted: Some(
+                "100 Universal City Plaza\nUniversal City, CA 91608\nUS".to_owned(),
+            ),
+            address_street_address: Some("100 Universal City Plaza".to_owned()),
+            address_locality: Some("Universal City".to_owned()),
+            address_region: Some("CA".to_owned()),
+            address_postal_code: Some("91608".to_owned()),
+            address_country: Some("US".to_owned()),
+            phone_number: Some("+15555550000".to_owned()),
+            phone_number_verified: true,
             email_verified: true,
             password_hash: "hash".to_owned(),
             is_active: true,
@@ -227,6 +283,8 @@ mod tests {
                 "openid".to_owned(),
                 "profile".to_owned(),
                 "email".to_owned(),
+                "address".to_owned(),
+                "phone".to_owned(),
             ],
             "subject-1",
             &[],
@@ -248,6 +306,20 @@ mod tests {
         assert_eq!(claims["locale"], "zh-CN");
         assert_eq!(claims["email"], "alice@example.com");
         assert_eq!(claims["email_verified"], true);
+        assert_eq!(
+            claims["address"]["formatted"],
+            "100 Universal City Plaza\nUniversal City, CA 91608\nUS"
+        );
+        assert_eq!(
+            claims["address"]["street_address"],
+            "100 Universal City Plaza"
+        );
+        assert_eq!(claims["address"]["locality"], "Universal City");
+        assert_eq!(claims["address"]["region"], "CA");
+        assert_eq!(claims["address"]["postal_code"], "91608");
+        assert_eq!(claims["address"]["country"], "US");
+        assert_eq!(claims["phone_number"], "+15555550000");
+        assert_eq!(claims["phone_number_verified"], true);
     }
 
     #[test]
@@ -270,6 +342,9 @@ mod tests {
         assert!(claims.get("locale").is_none());
         assert!(claims.get("email").is_none());
         assert!(claims.get("email_verified").is_none());
+        assert!(claims.get("address").is_none());
+        assert!(claims.get("phone_number").is_none());
+        assert!(claims.get("phone_number_verified").is_none());
     }
 
     #[test]
@@ -290,6 +365,9 @@ mod tests {
         assert_eq!(claims["preferred_username"], "alice");
         assert!(claims.get("email").is_none());
         assert!(claims.get("email_verified").is_none());
+        assert!(claims.get("address").is_none());
+        assert!(claims.get("phone_number").is_none());
+        assert!(claims.get("phone_number_verified").is_none());
     }
 
     #[test]
@@ -306,6 +384,25 @@ mod tests {
         assert_eq!(claims["sub"], "subject-1");
         assert_eq!(claims["name"], "alice");
         assert!(claims.get("preferred_username").is_none());
+    }
+
+    #[test]
+    fn requested_contact_claims_are_returned_without_contact_scopes() {
+        let user = user();
+        let claims = oidc_user_claims(
+            &user,
+            &["openid".to_owned()],
+            "subject-1",
+            &[
+                "address".to_owned(),
+                "phone_number".to_owned(),
+                "phone_number_verified".to_owned(),
+            ],
+        );
+
+        assert_eq!(claims["address"]["country"], "US");
+        assert_eq!(claims["phone_number"], "+15555550000");
+        assert_eq!(claims["phone_number_verified"], true);
     }
 
     #[test]

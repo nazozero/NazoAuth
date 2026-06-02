@@ -25,7 +25,7 @@ RUN_ID = f"live-full-{int(time.time())}-{secrets.token_hex(3)}"
 PASSWORD = f"{RUN_ID}-Passw0rd!"
 CSRF_COOKIE = "nazo_oauth_csrf"
 DEFAULT_AUDIENCE = "resource://default"
-OPENID_SCOPES = "openid profile email offline_access"
+OPENID_SCOPES = "openid profile email address phone offline_access"
 
 
 def b64u(raw: bytes) -> str:
@@ -290,7 +290,7 @@ def client_payload(client_name: str, client_type: str, method: str, *, jwks=None
         "client_name": client_name,
         "client_type": client_type,
         "redirect_uris": ["https://client.example/callback"],
-        "scopes": scopes or ["openid", "profile", "email", "offline_access"],
+        "scopes": scopes or ["openid", "profile", "email", "address", "phone", "offline_access"],
         "allowed_audiences": [DEFAULT_AUDIENCE, f"{BASE_URL}/userinfo"],
         "grant_types": grants or ["authorization_code", "refresh_token"],
         "token_endpoint_auth_method": method,
@@ -541,7 +541,16 @@ def run():
         "/auth/me",
         expected={200},
         name="profile patch",
-        json={"display_name": f"{RUN_ID} User"},
+        json={
+            "display_name": f"{RUN_ID} User",
+            "address_formatted": "100 Universal City Plaza\nUniversal City, CA 91608\nUS",
+            "address_street_address": "100 Universal City Plaza",
+            "address_locality": "Universal City",
+            "address_region": "CA",
+            "address_postal_code": "91608",
+            "address_country": "US",
+            "phone_number": "+15555550000",
+        },
         headers=csrf_headers(user_session),
     )
     png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=")
@@ -657,7 +666,21 @@ def run():
     bearer_tokens = token_response.json()
     access_token = bearer_tokens["access_token"]
     refresh_token = bearer_tokens["refresh_token"]
-    request(public, "GET", "/userinfo", expected={200}, name="userinfo bearer", headers={"authorization": f"Bearer {access_token}"})
+    userinfo_bearer = request(
+        public,
+        "GET",
+        "/userinfo",
+        expected={200},
+        name="userinfo bearer",
+        headers={"authorization": f"Bearer {access_token}"},
+    ).json()
+    if (
+        userinfo_bearer.get("address", {}).get("country") != "US"
+        or userinfo_bearer.get("address", {}).get("street_address") != "100 Universal City Plaza"
+        or userinfo_bearer.get("phone_number") != "+15555550000"
+        or userinfo_bearer.get("phone_number_verified") is not False
+    ):
+        checks.fail("userinfo contact claims", json.dumps(userinfo_bearer, ensure_ascii=False))
     invalid_redirect = user_session.get(
         f"{BASE_URL}/authorize",
         params={
