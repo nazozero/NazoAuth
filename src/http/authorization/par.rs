@@ -143,11 +143,10 @@ pub(crate) async fn par(state: Data<AppState>, req: HttpRequest, body: Bytes) ->
         }
         None => None,
     };
-    let header_dpop_jkt =
-        match validate_dpop_proof(&state, &req, None, request_dpop_jkt.as_deref()).await {
-            Ok(value) => value,
-            Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
-        };
+    let header_dpop_jkt = match validate_dpop_proof(&state, &req, None, None).await {
+        Ok(value) => value,
+        Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
+    };
     if let Err(error) =
         consume_token_management_client_assertion(&state, &client, client_assertion.as_ref()).await
     {

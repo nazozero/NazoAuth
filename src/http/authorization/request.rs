@@ -105,6 +105,14 @@ fn requested_claim_names(value: Option<&Value>) -> Result<Vec<String>, ()> {
     Ok(names)
 }
 
+fn preserve_verified_dpop_binding(q: &mut HashMap<String, String>, dpop_jkt: Option<&str>) {
+    if let Some(dpop_jkt) = dpop_jkt
+        && !q.contains_key("dpop_jkt")
+    {
+        q.insert("dpop_jkt".to_owned(), dpop_jkt.to_owned());
+    }
+}
+
 /// 校验 OAuth authorize 参数并创建待确认授权请求。
 pub(crate) async fn authorize_get(
     state: Data<AppState>,
@@ -311,6 +319,7 @@ async fn authorize_request(
         (Some(pushed), _) => Some(pushed),
         (None, requested) => requested,
     };
+    preserve_verified_dpop_binding(q, dpop_jkt.as_deref());
     let redirect_uri =
         match registered_redirect_uri(&client, q.get("redirect_uri").map(String::as_str)) {
             Ok(value) => value,
@@ -622,6 +631,31 @@ mod tests {
             ]),
             &pushed,
         ));
+    }
+
+    #[test]
+    fn preserve_verified_dpop_binding_adds_missing_authorization_parameter() {
+        let mut q = query(&[("client_id", "client-1")]);
+        let dpop_jkt = "w7JAoU_gJbZJvV-zCOvU9yFJq0FNC_edCMRM78P8eQQ";
+
+        preserve_verified_dpop_binding(&mut q, Some(dpop_jkt));
+
+        assert_eq!(q.get("dpop_jkt").map(String::as_str), Some(dpop_jkt));
+    }
+
+    #[test]
+    fn preserve_verified_dpop_binding_keeps_explicit_authorization_parameter() {
+        let mut q = query(&[
+            ("client_id", "client-1"),
+            ("dpop_jkt", "w7JAoU_gJbZJvV-zCOvU9yFJq0FNC_edCMRM78P8eQQ"),
+        ]);
+
+        preserve_verified_dpop_binding(&mut q, Some("Vx6mH6nGWV2DnuqEbuGX4Xw_Dc0p0AQxnKpEG7o5YS8"));
+
+        assert_eq!(
+            q.get("dpop_jkt").map(String::as_str),
+            Some("w7JAoU_gJbZJvV-zCOvU9yFJq0FNC_edCMRM78P8eQQ")
+        );
     }
 
     #[test]

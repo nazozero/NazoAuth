@@ -665,6 +665,7 @@ mod tests {
             subject_type: crate::settings::SubjectType::Public,
             pairwise_subject_secret: None,
             par_ttl_seconds: 90,
+            require_dpop_bound_tokens: false,
             require_pushed_authorization_requests: false,
         }
     }

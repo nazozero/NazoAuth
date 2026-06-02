@@ -111,7 +111,8 @@ pub(crate) fn authorization_access_token(
 }
 
 pub(crate) fn dpop_proof_present(req: &HttpRequest) -> bool {
-    dpop_proof_header(req).is_some()
+    req.headers()
+        .contains_key(header::HeaderName::from_static("dpop"))
 }
 
 pub(crate) fn is_valid_dpop_jkt(value: &str) -> bool {
@@ -127,7 +128,7 @@ pub(crate) async fn validate_dpop_proof(
     token_for_ath: Option<&str>,
     expected_jkt: Option<&str>,
 ) -> Result<Option<String>, DpopError> {
-    let Some(raw) = dpop_proof_header(req) else {
+    let Some(raw) = dpop_proof_header(req)? else {
         return if expected_jkt.is_some() {
             Err(DpopError::MissingProof)
         } else {
@@ -210,12 +211,20 @@ fn dpop_nonce_key(nonce: &str) -> String {
     format!("oauth:dpop:nonce:{}", blake3_hex(nonce))
 }
 
-fn dpop_proof_header(req: &HttpRequest) -> Option<&str> {
-    req.headers()
-        .get(header::HeaderName::from_static("dpop"))
-        .and_then(|value| value.to_str().ok())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+fn dpop_proof_header(req: &HttpRequest) -> Result<Option<&str>, DpopError> {
+    let name = header::HeaderName::from_static("dpop");
+    let mut values = req.headers().get_all(name);
+    let Some(value) = values.next() else {
+        return Ok(None);
+    };
+    if values.next().is_some() {
+        return Err(DpopError::MalformedProof);
+    }
+    let value = value
+        .to_str()
+        .map_err(|_| DpopError::MalformedProof)?
+        .trim();
+    Ok((!value.is_empty()).then_some(value))
 }
 
 fn dpop_iat_within_window(iat: i64, now: i64) -> bool {
@@ -454,6 +463,19 @@ mod tests {
         assert!(!is_valid_dpop_jkt("short"));
         assert!(!is_valid_dpop_jkt(
             "w7JAoU/gJbZJvV+zCOvU9yFJq0FNC+edCMRM78P8eQQ"
+        ));
+    }
+
+    #[test]
+    fn dpop_header_rejects_multiple_proofs() {
+        let req = actix_web::test::TestRequest::get()
+            .insert_header(("DPoP", "proof-1"))
+            .append_header(("DPoP", "proof-2"))
+            .to_http_request();
+
+        assert!(matches!(
+            dpop_proof_header(&req),
+            Err(DpopError::MalformedProof)
         ));
     }
 

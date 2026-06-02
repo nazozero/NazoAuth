@@ -90,7 +90,7 @@ Nazo OAuth Server 是一个 lightweight self-hosted OAuth 2.1 draft-compatible /
 | `CSRF_COOKIE_NAME` | `nazo_oauth_csrf` | CSRF cookie 名 |
 | `COOKIE_SECURE` | HTTPS issuer 时为 `true`，否则为 `false` | 是否给会话和 CSRF cookie 设置 `Secure` 属性；生产环境不能关闭 |
 | `SESSION_TTL_SECONDS` | `28800` | 会话有效期，单位为秒 |
-| `AUTH_CODE_TTL_SECONDS` | `300` | 授权码有效期，单位为秒 |
+| `AUTH_CODE_TTL_SECONDS` | `60` | 授权码有效期，单位为秒 |
 | `ACCESS_TOKEN_TTL_SECONDS` | `300` | access token 有效期，单位为秒 |
 | `ID_TOKEN_TTL_SECONDS` | `600` | ID token 有效期，单位为秒 |
 | `REFRESH_TOKEN_TTL_SECONDS` | `2592000` | refresh token 有效期，单位为秒 |
@@ -105,6 +105,7 @@ Nazo OAuth Server 是一个 lightweight self-hosted OAuth 2.1 draft-compatible /
 | `SUBJECT_TYPE` | `public` | OIDC subject 类型，可选 `public`、`pairwise` |
 | `PAIRWISE_SUBJECT_SECRET` | 无 | pairwise subject 派生 secret；`SUBJECT_TYPE=pairwise` 时必填 |
 | `PAR_TTL_SECONDS` | `90` | pushed authorization request 有效期，单位为秒 |
+| `REQUIRE_DPOP_BOUND_TOKENS` | `false` | 是否要求授权码和 refresh token 换发的 access token 必须使用 DPoP sender constraint；FAPI DPoP 部署应启用 |
 | `REQUIRE_PUSHED_AUTHORIZATION_REQUESTS` | `false` | 是否要求授权请求必须通过 PAR 进入 |
 | `EMAIL_DELIVERY` | `disabled` | 邮件投递方式；`smtp` 启用真实 SMTP 投递，`disabled` 时 `/auth/send-code` 返回服务不可用 |
 | `EMAIL_CODE_TTL_SECONDS` | `900` | 注册邮箱验证码有效期，单位为秒 |

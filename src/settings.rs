@@ -39,6 +39,7 @@ pub(crate) struct Settings {
     pub(crate) subject_type: SubjectType,
     pub(crate) pairwise_subject_secret: Option<String>,
     pub(crate) par_ttl_seconds: u64,
+    pub(crate) require_dpop_bound_tokens: bool,
     pub(crate) require_pushed_authorization_requests: bool,
 }
 
@@ -129,7 +130,7 @@ impl Settings {
             csrf_cookie_name: config.string("CSRF_COOKIE_NAME", "nazo_oauth_csrf"),
             cookie_secure,
             session_ttl_seconds: config.parse("SESSION_TTL_SECONDS", 28_800)?,
-            auth_code_ttl_seconds: config.parse("AUTH_CODE_TTL_SECONDS", 300)?,
+            auth_code_ttl_seconds: config.parse("AUTH_CODE_TTL_SECONDS", 60)?,
             access_token_ttl_seconds: config.parse("ACCESS_TOKEN_TTL_SECONDS", 300)?,
             id_token_ttl_seconds: config.parse("ID_TOKEN_TTL_SECONDS", 600)?,
             refresh_token_ttl_seconds: config.parse("REFRESH_TOKEN_TTL_SECONDS", 2_592_000)?,
@@ -150,6 +151,7 @@ impl Settings {
             subject_type,
             pairwise_subject_secret,
             par_ttl_seconds: config.parse("PAR_TTL_SECONDS", 90)?,
+            require_dpop_bound_tokens: config.bool("REQUIRE_DPOP_BOUND_TOKENS", false)?,
             require_pushed_authorization_requests: config
                 .bool("REQUIRE_PUSHED_AUTHORIZATION_REQUESTS", false)?,
         })

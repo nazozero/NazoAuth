@@ -192,6 +192,9 @@ pub(crate) async fn token_authorization_code(
         Ok(value) => value.or(expected_dpop_jkt),
         Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
     };
+    if state.settings.require_dpop_bound_tokens && dpop_jkt.is_none() {
+        return dpop_error_response(DpopError::MissingProof, DpopErrorContext::TokenEndpoint);
+    }
     if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
         return response;
     }
@@ -269,7 +272,7 @@ pub(crate) async fn token_authorization_code(
                 mark_failed_authorization_code(state, &code_hash, "missing_code_verifier").await;
                 return oauth_token_error(
                     StatusCode::BAD_REQUEST,
-                    "invalid_request",
+                    "invalid_grant",
                     "缺少 code_verifier.",
                     false,
                 );

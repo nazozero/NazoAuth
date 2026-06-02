@@ -111,15 +111,14 @@ pub(crate) async fn token_refresh(
             false,
         );
     }
-    let dpop_jkt = if let Some(expected_jkt) = token.dpop_jkt.clone() {
-        match validate_dpop_proof(state, req, None, Some(&expected_jkt)).await {
-            Ok(_) => Some(expected_jkt),
+    let dpop_jkt = if dpop_proof_present(req) {
+        match validate_dpop_proof(state, req, None, None).await {
+            Ok(value) => value,
             Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
         }
+    } else if state.settings.require_dpop_bound_tokens || token.dpop_jkt.is_some() {
+        return dpop_error_response(DpopError::MissingProof, DpopErrorContext::TokenEndpoint);
     } else {
-        if dpop_proof_present(req) {
-            return dpop_error_response(DpopError::TokenNotBound, DpopErrorContext::TokenEndpoint);
-        }
         None
     };
     if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
