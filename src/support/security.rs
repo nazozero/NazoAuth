@@ -175,17 +175,23 @@ pub(crate) enum ClientAssertionError {
     StoreUnavailable,
 }
 
-pub(crate) async fn validate_private_key_jwt(
+pub(crate) struct ValidatedClientAssertion {
+    jti: String,
+    exp: i64,
+    kid: String,
+}
+
+pub(crate) fn verify_private_key_jwt_claims(
     state: &AppState,
     req: &HttpRequest,
     client: &ClientRow,
     assertion: &str,
-) -> Result<(), ClientAssertionError> {
+) -> Result<ValidatedClientAssertion, ClientAssertionError> {
     let header =
         jsonwebtoken::decode_header(assertion).map_err(|_| ClientAssertionError::Invalid)?;
-    let kid = header.kid.as_deref().ok_or(ClientAssertionError::Invalid)?;
+    let kid = header.kid.ok_or(ClientAssertionError::Invalid)?;
     let decoding_key =
-        client_jwt_decoding_key(client, kid, header.alg).ok_or(ClientAssertionError::Invalid)?;
+        client_jwt_decoding_key(client, &kid, header.alg).ok_or(ClientAssertionError::Invalid)?;
 
     let mut validation = jsonwebtoken::Validation::new(header.alg);
     validation.validate_aud = false;
@@ -207,14 +213,27 @@ pub(crate) async fn validate_private_key_jwt(
         return Err(ClientAssertionError::Invalid);
     }
 
-    let ttl_seconds = claims
+    Ok(ValidatedClientAssertion {
+        jti: claims.jti,
+        exp: claims.exp,
+        kid,
+    })
+}
+
+pub(crate) async fn consume_private_key_jwt(
+    state: &AppState,
+    client: &ClientRow,
+    assertion: &ValidatedClientAssertion,
+) -> Result<(), ClientAssertionError> {
+    let now = Utc::now().timestamp();
+    let ttl_seconds = assertion
         .exp
         .saturating_sub(now)
         .clamp(1, CLIENT_ASSERTION_MAX_TTL_SECONDS) as u64;
     let replay_key = format!(
         "oauth:client_assertion:jti:{}:{}",
         blake3_hex(&client.client_id),
-        blake3_hex(&claims.jti)
+        blake3_hex(&assertion.jti)
     );
     match valkey_set_ex_nx(&state.valkey, replay_key, "1", ttl_seconds).await {
         Ok(true) => Ok(()),
@@ -223,8 +242,8 @@ pub(crate) async fn validate_private_key_jwt(
                 "client_assertion_replay_detected",
                 audit_fields(&[
                     ("client_id", json!(client.client_id)),
-                    ("jti_hash", json!(blake3_hex(&claims.jti))),
-                    ("kid", json!(kid)),
+                    ("jti_hash", json!(blake3_hex(&assertion.jti))),
+                    ("kid", json!(assertion.kid)),
                 ]),
             );
             Err(ClientAssertionError::ReplayDetected)
@@ -346,23 +365,15 @@ fn client_assertion_audiences(settings: &Settings, req: &HttpRequest) -> Vec<Str
 }
 
 fn client_assertion_audience_candidates(issuer: &str, path: &str) -> Vec<String> {
-    let endpoint = format!("{issuer}{path}");
-    let token_endpoint = format!("{issuer}/token");
-    let mut candidates = vec![issuer.to_owned(), endpoint];
-    if path == "/par" && !candidates.iter().any(|value| value == &token_endpoint) {
-        candidates.push(token_endpoint);
+    if path == "/par" {
+        return vec![issuer.to_owned()];
     }
-    candidates
+    vec![issuer.to_owned(), format!("{issuer}{path}")]
 }
 
 fn audience_matches(aud: &Value, expected: &[String]) -> bool {
     match aud {
         Value::String(value) => expected.iter().any(|candidate| candidate == value),
-        Value::Array(values) => values.iter().any(|value| {
-            value
-                .as_str()
-                .is_some_and(|audience| expected.iter().any(|candidate| candidate == audience))
-        }),
         _ => false,
     }
 }
@@ -588,23 +599,23 @@ mod tests {
     }
 
     #[test]
-    fn par_client_assertion_accepts_rfc9126_audiences() {
+    fn par_client_assertion_accepts_only_issuer_audience() {
         let expected = client_assertion_audience_candidates("https://issuer.example", "/par");
 
         assert!(audience_matches(
             &json!("https://issuer.example"),
             &expected
         ));
-        assert!(audience_matches(
-            &json!("https://issuer.example/token"),
-            &expected
-        ));
-        assert!(audience_matches(
-            &json!(["https://other.example", "https://issuer.example/par"]),
+        assert!(!audience_matches(
+            &json!("https://issuer.example/par"),
             &expected
         ));
         assert!(!audience_matches(
-            &json!("https://issuer.example/introspect"),
+            &json!("https://issuer.example/token"),
+            &expected
+        ));
+        assert!(!audience_matches(
+            &json!(["https://issuer.example"]),
             &expected
         ));
     }
@@ -623,6 +634,10 @@ mod tests {
         ));
         assert!(!audience_matches(
             &json!("https://issuer.example/par"),
+            &expected
+        ));
+        assert!(!audience_matches(
+            &json!(["https://issuer.example"]),
             &expected
         ));
     }

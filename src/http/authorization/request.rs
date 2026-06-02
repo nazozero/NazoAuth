@@ -18,6 +18,7 @@ pub(crate) const AUTHORIZED_REQUEST_PARAMETERS: &[&str] = &[
     "acr_values",
     "prompt",
     "max_age",
+    "dpop_jkt",
     "request_uri",
     "request",
 ];
@@ -180,6 +181,7 @@ async fn authorize_request(
         );
     }
 
+    let mut pushed_dpop_jkt = None;
     if let Some(request_uri) = q.get("request_uri").cloned() {
         let raw = match valkey_getdel(
             &state.valkey,
@@ -231,6 +233,7 @@ async fn authorize_request(
                 "request_uri 请求不能被外层参数覆盖.",
             );
         }
+        pushed_dpop_jkt = pushed.dpop_jkt;
         *q = pushed.params;
     } else if state.settings.require_pushed_authorization_requests {
         return oauth_error(
@@ -290,6 +293,24 @@ async fn authorize_request(
     if let Err(response) = apply_request_object(&state, q, &client).await {
         return response;
     }
+    let request_dpop_jkt = match q.get("dpop_jkt") {
+        Some(value) if is_valid_dpop_jkt(value) => Some(value.clone()),
+        Some(_) => {
+            return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "dpop_jkt 无效.");
+        }
+        None => None,
+    };
+    let dpop_jkt = match (pushed_dpop_jkt, request_dpop_jkt) {
+        (Some(pushed), Some(requested)) if pushed != requested => {
+            return oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "dpop_jkt 与 PAR 绑定不匹配.",
+            );
+        }
+        (Some(pushed), _) => Some(pushed),
+        (None, requested) => requested,
+    };
     let redirect_uri =
         match registered_redirect_uri(&client, q.get("redirect_uri").map(String::as_str)) {
             Ok(value) => value,
@@ -456,6 +477,7 @@ async fn authorize_request(
         id_token_claims,
         code_challenge,
         code_challenge_method,
+        dpop_jkt,
         issued_at: now,
         expires_at: now + Duration::seconds(state.settings.auth_code_ttl_seconds as i64),
     };

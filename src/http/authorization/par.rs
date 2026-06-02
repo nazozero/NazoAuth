@@ -2,7 +2,10 @@
 
 use super::{apply_request_object, unverified_request_object_client_id};
 use crate::http::prelude::*;
-use crate::http::{authenticate_introspection_client, token_management_auth_error};
+use crate::http::{
+    consume_token_management_client_assertion, token_management_auth_error,
+    verify_confidential_client,
+};
 
 const PAR_AUTHORIZATION_PARAMETERS: &[&str] = &[
     "response_type",
@@ -17,6 +20,7 @@ const PAR_AUTHORIZATION_PARAMETERS: &[&str] = &[
     "acr_values",
     "prompt",
     "max_age",
+    "dpop_jkt",
     "request",
 ];
 
@@ -117,12 +121,14 @@ pub(crate) async fn par(state: Data<AppState>, req: HttpRequest, body: Bytes) ->
         params.get("client_assertion_type").map(String::as_str),
         params.get("client_assertion").map(String::as_str),
     );
-    if client.client_type != "public"
-        && let Err(error) =
-            authenticate_introspection_client(&state, &req, &client, &credentials).await
-    {
-        return token_management_auth_error(error);
-    }
+    let client_assertion = if client.client_type == "public" {
+        None
+    } else {
+        match verify_confidential_client(&state, &req, &client, &credentials) {
+            Ok(assertion) => assertion,
+            Err(error) => return token_management_auth_error(error),
+        }
+    };
     params.remove("client_secret");
     params.remove("client_assertion_type");
     params.remove("client_assertion");
@@ -130,6 +136,24 @@ pub(crate) async fn par(state: Data<AppState>, req: HttpRequest, body: Bytes) ->
         return response;
     }
     params.remove("request");
+    let request_dpop_jkt = match params.get("dpop_jkt") {
+        Some(value) if is_valid_dpop_jkt(value) => Some(value.clone()),
+        Some(_) => {
+            return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "dpop_jkt 无效.");
+        }
+        None => None,
+    };
+    let header_dpop_jkt =
+        match validate_dpop_proof(&state, &req, None, request_dpop_jkt.as_deref()).await {
+            Ok(value) => value,
+            Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
+        };
+    if let Err(error) =
+        consume_token_management_client_assertion(&state, &client, client_assertion.as_ref()).await
+    {
+        return token_management_auth_error(error);
+    }
+    let dpop_jkt = request_dpop_jkt.or(header_dpop_jkt);
 
     let now = Utc::now();
     let request_token = random_urlsafe_token();
@@ -137,6 +161,7 @@ pub(crate) async fn par(state: Data<AppState>, req: HttpRequest, body: Bytes) ->
     let payload = PushedAuthorizationRequest {
         client_id,
         params,
+        dpop_jkt,
         issued_at: now,
         expires_at: now + Duration::seconds(state.settings.par_ttl_seconds as i64),
     };

@@ -1,6 +1,8 @@
 //! refresh_token grant 处理。
 // 只处理 refresh token 校验、复用检测和轮换前置约束。
-use super::{TokenForm, issue_token_response, should_issue_refresh_token};
+use super::{
+    TokenForm, consume_token_client_assertion, issue_token_response, should_issue_refresh_token,
+};
 use crate::http::prelude::*;
 
 async fn mark_token_family_reuse(state: &AppState, token_family_id: Uuid) -> anyhow::Result<()> {
@@ -25,6 +27,7 @@ pub(crate) async fn token_refresh(
     req: &HttpRequest,
     client: &ClientRow,
     form: &TokenForm,
+    client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
     let Some(refresh_token) = &form.refresh_token else {
         return oauth_token_error(
@@ -119,6 +122,9 @@ pub(crate) async fn token_refresh(
         }
         None
     };
+    if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
+        return response;
+    }
     let original_scopes = json_array_to_strings(&token.scopes);
     if !should_issue_refresh_token(client, &original_scopes) {
         return oauth_token_error(

@@ -138,6 +138,7 @@ pub(crate) async fn authorize_decision(
         id_token_claims: payload.id_token_claims,
         code_challenge: payload.code_challenge,
         code_challenge_method: payload.code_challenge_method,
+        dpop_jkt: payload.dpop_jkt,
         issued_at: now,
         expires_at: now + Duration::seconds(state.settings.auth_code_ttl_seconds as i64),
     };

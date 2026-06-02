@@ -107,6 +107,7 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
             false,
         );
     }
+    let mut client_assertion = None;
     if client.client_type == "confidential" {
         if credentials.method != client.token_endpoint_auth_method {
             return oauth_token_error(
@@ -126,20 +127,28 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
                         false,
                     );
                 };
-                if let Err(error) = validate_private_key_jwt(&state, &req, &client, assertion).await
-                {
-                    let store_unavailable = matches!(error, ClientAssertionError::StoreUnavailable);
-                    let status = if store_unavailable {
-                        StatusCode::SERVICE_UNAVAILABLE
-                    } else {
-                        StatusCode::UNAUTHORIZED
-                    };
-                    let oauth_error_code = if store_unavailable {
-                        "server_error"
-                    } else {
-                        "invalid_client"
-                    };
-                    return oauth_token_error(status, oauth_error_code, "客户端认证失败.", false);
+                match verify_private_key_jwt_claims(&state, &req, &client, assertion) {
+                    Ok(assertion) => client_assertion = Some(assertion),
+                    Err(error) => {
+                        let store_unavailable =
+                            matches!(error, ClientAssertionError::StoreUnavailable);
+                        let status = if store_unavailable {
+                            StatusCode::SERVICE_UNAVAILABLE
+                        } else {
+                            StatusCode::UNAUTHORIZED
+                        };
+                        let oauth_error_code = if store_unavailable {
+                            "server_error"
+                        } else {
+                            "invalid_client"
+                        };
+                        return oauth_token_error(
+                            status,
+                            oauth_error_code,
+                            "客户端认证失败.",
+                            false,
+                        );
+                    }
                 }
             }
             "client_secret_basic" | "client_secret_post" => {
@@ -184,9 +193,15 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
         );
     }
     match form.grant_type.as_str() {
-        "authorization_code" => token_authorization_code(&state, &req, &client, &form).await,
-        "refresh_token" => token_refresh(&state, &req, &client, &form).await,
-        "client_credentials" => token_client_credentials(&state, &req, &client, &form).await,
+        "authorization_code" => {
+            token_authorization_code(&state, &req, &client, &form, client_assertion.as_ref()).await
+        }
+        "refresh_token" => {
+            token_refresh(&state, &req, &client, &form, client_assertion.as_ref()).await
+        }
+        "client_credentials" => {
+            token_client_credentials(&state, &req, &client, &form, client_assertion.as_ref()).await
+        }
         _ => oauth_token_error(
             StatusCode::BAD_REQUEST,
             "unsupported_grant_type",

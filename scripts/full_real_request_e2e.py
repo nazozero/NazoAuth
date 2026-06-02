@@ -183,6 +183,20 @@ def dpop_proof(
     )
 
 
+def jwk_thumbprint(jwk: dict[str, Any]) -> str:
+    kty = jwk["kty"]
+    if kty == "OKP":
+        canonical = {"crv": jwk["crv"], "kty": "OKP", "x": jwk["x"]}
+    elif kty == "EC":
+        canonical = {"crv": jwk["crv"], "kty": "EC", "x": jwk["x"], "y": jwk["y"]}
+    elif kty == "RSA":
+        canonical = {"e": jwk["e"], "kty": "RSA", "n": jwk["n"]}
+    else:
+        fail(f"unsupported dpop jwk kty: {kty}")
+    raw = json.dumps(canonical, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return b64url(hashlib.sha256(raw).digest())
+
+
 def client_assertion(
     client_id: str,
     key: Any,
@@ -1209,6 +1223,102 @@ def run() -> None:
             "POST /token PAR authorization_code",
         )
         check("par_token_issued", bool(par_tokens.get("access_token")) and bool(par_tokens.get("id_token")))
+
+        par_dpop_key = ed25519.Ed25519PrivateKey.generate()
+        par_dpop_jkt = jwk_thumbprint(ed25519_public_jwk(par_dpop_key))
+        par_dpop_verifier, par_dpop_challenge = pkce_pair()
+        par_dpop_form = {
+            "response_type": "code",
+            "client_id": private_auth_client_id,
+            "redirect_uri": CLIENT_REDIRECT_URI,
+            "scope": "openid profile email",
+            "state": "par-dpop-binding",
+            "nonce": "nonce-par-dpop-binding",
+            "code_challenge": par_dpop_challenge,
+            "code_challenge_method": "S256",
+            "dpop_jkt": par_dpop_jkt,
+            "client_assertion_type": CLIENT_ASSERTION_TYPE,
+            "client_assertion": client_assertion(
+                private_auth_client_id,
+                private_key,
+                jti="par-dpop-client-assertion-retry",
+                audience_path="",
+            ),
+        }
+        par_dpop_nonce = request_dpop_nonce(par_dpop_form, par_dpop_key, path="/par")
+        par_dpop_response = expect_json(
+            expect_status(
+                "POST /par DPoP-bound private_key_jwt after nonce",
+                requests.post(
+                    f"{BASE_URL}/par",
+                    data=par_dpop_form,
+                    headers={
+                        "DPoP": dpop_proof(
+                            "POST",
+                            f"{ISSUER_URL}/par",
+                            par_dpop_key,
+                            nonce=par_dpop_nonce,
+                        )
+                    },
+                    timeout=10,
+                ),
+                201,
+            )
+        )
+        par_dpop_authorize = user.get(
+            f"{BASE_URL}/authorize",
+            params={"request_uri": par_dpop_response["request_uri"]},
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status("GET /authorize PAR DPoP-bound", par_dpop_authorize, 302)
+        par_dpop_request_id = consent_request_from_redirect(
+            par_dpop_authorize,
+            "GET /authorize PAR DPoP-bound",
+        )
+        par_dpop_code, par_dpop_verifier = approve_authorization(
+            user,
+            par_dpop_request_id,
+            par_dpop_verifier,
+            state="par-dpop-binding",
+        )
+        par_dpop_token_form = {
+            "grant_type": "authorization_code",
+            "code": par_dpop_code,
+            "code_verifier": par_dpop_verifier,
+            "redirect_uri": CLIENT_REDIRECT_URI,
+            "client_assertion_type": CLIENT_ASSERTION_TYPE,
+            "client_assertion": client_assertion(
+                private_auth_client_id,
+                private_key,
+                jti="par-dpop-token-client-assertion-retry",
+            ),
+        }
+        wrong_dpop_key = ed25519.Ed25519PrivateKey.generate()
+        par_dpop_wrong_key = requests.post(
+            f"{BASE_URL}/token",
+            data=par_dpop_token_form,
+            headers={"DPoP": dpop_proof("POST", f"{ISSUER_URL}/token", wrong_dpop_key)},
+            timeout=10,
+        )
+        expect_status("POST /token PAR DPoP-bound wrong key rejected", par_dpop_wrong_key, 400)
+        check(
+            "par_dpop_wrong_key_error",
+            expect_json(par_dpop_wrong_key).get("error") == "invalid_dpop_proof",
+        )
+        par_dpop_token_nonce = request_dpop_nonce(par_dpop_token_form, par_dpop_key)
+        par_dpop_tokens = token_with_dpop(
+            par_dpop_token_form,
+            par_dpop_key,
+            par_dpop_token_nonce,
+            "POST /token PAR DPoP-bound correct key after nonce",
+        )
+        par_dpop_access_claims = decode_jwt_unverified(par_dpop_tokens["access_token"])
+        check("par_dpop_token_type", par_dpop_tokens.get("token_type") == "DPoP")
+        check(
+            "par_dpop_access_token_cnf",
+            par_dpop_access_claims.get("cnf", {}).get("jkt") == par_dpop_jkt,
+        )
         refresh_race_form = {
             "grant_type": "refresh_token",
             "client_id": public_client_id,
@@ -1450,7 +1560,7 @@ def run() -> None:
                         "client_assertion": client_assertion(
                             private_auth_client_id,
                             private_key,
-                            audience_path="/par",
+                            audience_path="",
                         ),
                     },
                     timeout=10,

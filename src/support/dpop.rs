@@ -114,6 +114,13 @@ pub(crate) fn dpop_proof_present(req: &HttpRequest) -> bool {
     dpop_proof_header(req).is_some()
 }
 
+pub(crate) fn is_valid_dpop_jkt(value: &str) -> bool {
+    value.len() == 43
+        && URL_SAFE_NO_PAD
+            .decode(value)
+            .is_ok_and(|bytes| bytes.len() == 32)
+}
+
 pub(crate) async fn validate_dpop_proof(
     state: &AppState,
     req: &HttpRequest,
@@ -436,6 +443,17 @@ mod tests {
         assert!(!dpop_iat_within_window(
             now + DPOP_CLOCK_SKEW_SECONDS + 1,
             now
+        ));
+    }
+
+    #[test]
+    fn dpop_jkt_uses_base64url_sha256_thumbprint_shape() {
+        assert!(is_valid_dpop_jkt(
+            "w7JAoU_gJbZJvV-zCOvU9yFJq0FNC_edCMRM78P8eQQ"
+        ));
+        assert!(!is_valid_dpop_jkt("short"));
+        assert!(!is_valid_dpop_jkt(
+            "w7JAoU/gJbZJvV+zCOvU9yFJq0FNC+edCMRM78P8eQQ"
         ));
     }
 
