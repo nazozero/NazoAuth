@@ -211,6 +211,20 @@ def oidf_api_request(
         return status, None
 
 
+def is_runner_finalisation_error(payload: object | None) -> bool:
+    if not isinstance(payload, dict):
+        return False
+
+    fields = [
+        payload.get("message"),
+        payload.get("error"),
+        payload.get("exception"),
+        payload.get("trace"),
+    ]
+    text = "\n".join(value for value in fields if isinstance(value, str))
+    return "runInBackground called after runFinalisationTaskInBackground()" in text
+
+
 def cancel_plan_module_instances(base_url: str, token: str, plan: dict[str, object]) -> None:
     modules = plan.get("modules")
     if not isinstance(modules, list):
@@ -224,15 +238,23 @@ def cancel_plan_module_instances(base_url: str, token: str, plan: dict[str, obje
         for instance_id in instances:
             if not isinstance(instance_id, str) or not instance_id:
                 continue
-            status, _ = oidf_api_request(
+            status, payload = oidf_api_request(
                 "DELETE",
                 base_url,
                 f"api/runner/{instance_id}",
                 token,
-                expected_statuses={200, 404},
+                expected_statuses={200, 404, 500},
             )
             if status == 200:
                 print(f"Cancelled stale OIDF module instance {instance_id}", flush=True)
+            elif status == 500:
+                if not is_runner_finalisation_error(payload):
+                    fail(f"OIDF API DELETE api/runner/{instance_id} failed with unexpected HTTP 500")
+                print(
+                    "Skipped stale OIDF module instance "
+                    f"{instance_id}: conformance suite rejected runner cancellation",
+                    flush=True,
+                )
 
 
 def cleanup_existing_alias_plans(base_url: str, token: str, aliases: set[str]) -> None:
