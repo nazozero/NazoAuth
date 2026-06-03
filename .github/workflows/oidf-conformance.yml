@@ -17,6 +17,7 @@ jobs:
       NO_PARALLEL: ${{ vars.OIDF_NO_PARALLEL || 'true' }}
       RUN_TIMEOUT_SECONDS: ${{ vars.OIDF_RUN_TIMEOUT_SECONDS || '10800' }}
       MONITOR_INTERVAL_SECONDS: ${{ vars.OIDF_MONITOR_INTERVAL_SECONDS || '60' }}
+      RERUN: ${{ vars.OIDF_RERUN || '' }}
       PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v4
@@ -54,6 +55,9 @@ jobs:
           fi
           if [ "$NO_PARALLEL" = "true" ]; then
             args+=(--no-parallel)
+          fi
+          if [ -n "$RERUN" ]; then
+            args+=(--rerun "$RERUN")
           fi
           python -u scripts/run_oidf_conformance.py "${args[@]}"
         env:

@@ -31,6 +31,9 @@ FAPI_MESSAGE_ID1_CONFIG_FILE = "oidf-fapi-message-id1-plan-config.json"
 FAPI_SECURITY_FINAL_USER_REJECTS_AUTHENTICATION = (
     "fapi2-security-profile-final-user-rejects-authentication"
 )
+FAPI_SECURITY_FINAL_PAR_REUSE_BEFORE_AUTH = (
+    "fapi2-security-profile-final-par-ensure-reused-request-uri-prior-to-auth-completion-succeeds"
+)
 OIDCC_SECOND_LOGIN_SCREENSHOT_MODULES = (
     "oidcc-prompt-login",
     "oidcc-max-age-1",
@@ -154,7 +157,7 @@ def nazo_user_reject_browser_automation() -> list[dict[str, object]]:
     return [
         {
             "comment": (
-                "Nazo OAuth hosted conformance UI signs in automatically, "
+                "Nazo OAuth hosted conformance UI signs in after an explicit browser click, "
                 "then lets this negative module choose deny before the default approval."
             ),
             "match": "https://oauth.nazo.run/authorize*",
@@ -171,6 +174,7 @@ def nazo_user_reject_browser_automation() -> list[dict[str, object]]:
                             5,
                             "OIDF conformance login page",
                         ],
+                        ["click", "id", "oidf_conformance_login"],
                         ["wait", "contains", "/ui/consent", 30],
                     ],
                 },
@@ -212,6 +216,62 @@ def authorization_error_page_task() -> dict[str, object]:
     }
 
 
+def login_page_wait_command(command: object) -> bool:
+    return (
+        isinstance(command, list)
+        and len(command) >= 5
+        and command[:5]
+        == [
+            "wait",
+            "id",
+            "oidf_conformance_interaction",
+            5,
+            "OIDF conformance login page",
+        ]
+    )
+
+
+def login_page_click_command(command: object) -> bool:
+    return (
+        isinstance(command, list)
+        and len(command) >= 3
+        and command[:3] == ["click", "id", "oidf_conformance_login"]
+    )
+
+
+def add_login_page_click(task: object) -> None:
+    if not isinstance(task, dict):
+        return
+    commands = task.get("commands")
+    if not isinstance(commands, list):
+        return
+    if any(login_page_click_command(command) for command in commands):
+        return
+
+    for index, command in enumerate(commands):
+        if login_page_wait_command(command):
+            commands.insert(index + 1, ["click", "id", "oidf_conformance_login"])
+            return
+
+
+def add_login_page_clicks(config_value: dict[str, object]) -> None:
+    browser = config_value.get("browser")
+    if not isinstance(browser, list):
+        return
+
+    for entry in browser:
+        if not isinstance(entry, dict):
+            continue
+        match = entry.get("match")
+        if not (isinstance(match, str) and match.startswith("https://oauth.nazo.run/authorize")):
+            continue
+        tasks = entry.get("tasks")
+        if not isinstance(tasks, list):
+            continue
+        for task in tasks:
+            add_login_page_click(task)
+
+
 def add_authorization_error_page_capture(config_value: dict[str, object]) -> None:
     browser = config_value.get("browser")
     if not isinstance(browser, list):
@@ -244,13 +304,7 @@ def remove_login_page_placeholder_update(task: object) -> None:
     for command in commands:
         if not isinstance(command, list) or len(command) < 6:
             continue
-        if command[:5] != [
-            "wait",
-            "id",
-            "oidf_conformance_interaction",
-            5,
-            "OIDF conformance login page",
-        ]:
+        if not login_page_wait_command(command):
             continue
         if command[5] == "update-image-placeholder-optional":
             command.pop(5)
@@ -284,7 +338,7 @@ def mark_login_page_wait_as_placeholder_update(task: object) -> None:
     for command in commands:
         if not isinstance(command, list) or len(command) < 5:
             continue
-        if command[:3] != ["wait", "id", "oidf_conformance_interaction"]:
+        if not login_page_wait_command(command):
             continue
         if len(command) == 5:
             command.append("update-image-placeholder-optional")
@@ -321,6 +375,51 @@ def browser_automation_with_second_login_placeholder(
     return automation
 
 
+def first_login_observation_automation(browser: list[object]) -> list[object]:
+    automation: list[object] = []
+    for entry in browser:
+        if not isinstance(entry, dict):
+            automation.append(copy.deepcopy(entry))
+            continue
+
+        match = entry.get("match")
+        if not (isinstance(match, str) and match.startswith("https://oauth.nazo.run/authorize")):
+            automation.append(copy.deepcopy(entry))
+            continue
+
+        first_authorization = {
+            "comment": (
+                "This module requires the first authorization endpoint visit to stop at "
+                "the login page without authenticating."
+            ),
+            "match": match,
+            "match-limit": 1,
+            "tasks": [
+                {
+                    "task": "Observe first login page without authentication",
+                    "match": "https://oauth.nazo.run/ui/auth*",
+                    "commands": [
+                        [
+                            "wait",
+                            "id",
+                            "oidf_conformance_interaction",
+                            5,
+                            "OIDF conformance login page",
+                            "update-image-placeholder-optional",
+                        ]
+                    ],
+                }
+            ],
+        }
+        automation.append(first_authorization)
+
+        second_authorization = copy.deepcopy(entry)
+        second_authorization.pop("match-limit", None)
+        automation.append(second_authorization)
+
+    return automation
+
+
 def add_nazo_second_login_placeholder_overrides(config_value: dict[str, object]) -> None:
     if not config_uses_nazo_hosted_conformance_ui(config_value):
         return
@@ -338,6 +437,24 @@ def add_nazo_second_login_placeholder_overrides(config_value: dict[str, object])
         override.setdefault(module_name, {"browser": copy.deepcopy(browser_override)})
 
 
+def add_nazo_par_reuse_before_auth_override(config_value: dict[str, object]) -> None:
+    if not config_uses_nazo_hosted_conformance_ui(config_value):
+        return
+
+    browser = config_value.get("browser")
+    if not isinstance(browser, list):
+        return
+
+    override = config_value.setdefault("override", {})
+    if not isinstance(override, dict):
+        fail("OIDF plan config override must be a JSON object when present")
+
+    override.setdefault(
+        FAPI_SECURITY_FINAL_PAR_REUSE_BEFORE_AUTH,
+        {"browser": first_login_observation_automation(browser)},
+    )
+
+
 def add_nazo_user_reject_override(config_value: dict[str, object]) -> None:
     if not config_uses_nazo_hosted_conformance_ui(config_value):
         return
@@ -353,8 +470,10 @@ def add_nazo_user_reject_override(config_value: dict[str, object]) -> None:
 
 def add_nazo_browser_overrides(config_value: dict[str, object]) -> None:
     remove_default_login_page_placeholder_updates(config_value)
+    add_login_page_clicks(config_value)
     add_authorization_error_page_capture(config_value)
     add_nazo_second_login_placeholder_overrides(config_value)
+    add_nazo_par_reuse_before_auth_override(config_value)
     add_nazo_user_reject_override(config_value)
 
 

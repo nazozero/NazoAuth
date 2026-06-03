@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nazo OAuth Conformance Login</title>
+</head>
+<body>
+<div id="oidf_conformance_interaction">OIDF conformance login page</div>
+<button id="oidf_conformance_login" type="button">Sign in</button>
+<script>
+(function () {
+  function queryParam(name) {
+    var query = window.location.search.replace(/^\?/, '').split('&');
+    for (var i = 0; i < query.length; i++) {
+      if (!query[i]) { continue; }
+      var pair = query[i].split('=');
+      if (decodeURIComponent(pair[0].replace(/\+/g, ' ')) === name) {
+        return decodeURIComponent((pair.slice(1).join('=') || '').replace(/\+/g, ' '));
+      }
+    }
+    return null;
+  }
+
+  function fail(message) {
+    document.body.textContent = message;
+  }
+
+  function signIn() {
+    var next = queryParam('next') || '/';
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/auth/login', false);
+    xhr.withCredentials = true;
+    xhr.setRequestHeader('content-type', 'application/json');
+    try {
+      xhr.send(JSON.stringify({
+        email: __OIDF_USER_EMAIL_JSON__,
+        password: __OIDF_USER_PASSWORD_JSON__
+      }));
+    } catch (error) {
+      fail('login request failed: ' + String(error));
+      return;
+    }
+    if (xhr.status < 200 || xhr.status >= 300) {
+      fail('login failed: ' + xhr.status);
+      return;
+    }
+    window.setTimeout(function () { window.location.assign(next); }, 1500);
+  }
+
+  document.getElementById('oidf_conformance_login').addEventListener('click', signIn);
+}());
+</script>
+</body>
+</html>
