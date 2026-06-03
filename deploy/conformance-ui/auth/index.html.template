@@ -45,7 +45,7 @@
       fail('login failed: ' + xhr.status);
       return;
     }
-    window.setTimeout(function () { window.location.assign(next); }, 1500);
+    window.setTimeout(function () { window.location.assign(next); }, 0);
   }
 
   document.getElementById('oidf_conformance_login').addEventListener('click', signIn);
