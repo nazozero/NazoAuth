@@ -366,7 +366,11 @@ fn client_assertion_audiences(settings: &Settings, req: &HttpRequest) -> Vec<Str
 
 fn client_assertion_audience_candidates(issuer: &str, path: &str) -> Vec<String> {
     if path == "/par" {
-        return vec![issuer.to_owned()];
+        return vec![
+            issuer.to_owned(),
+            format!("{issuer}/par"),
+            format!("{issuer}/token"),
+        ];
     }
     vec![issuer.to_owned(), format!("{issuer}{path}")]
 }
@@ -374,6 +378,7 @@ fn client_assertion_audience_candidates(issuer: &str, path: &str) -> Vec<String>
 fn audience_matches(aud: &Value, expected: &[String]) -> bool {
     match aud {
         Value::String(value) => expected.iter().any(|candidate| candidate == value),
+        Value::Array(values) => values.iter().any(|value| audience_matches(value, expected)),
         _ => false,
     }
 }
@@ -599,23 +604,31 @@ mod tests {
     }
 
     #[test]
-    fn par_client_assertion_accepts_only_issuer_audience() {
+    fn par_client_assertion_accepts_issuer_par_and_token_endpoint_audience() {
         let expected = client_assertion_audience_candidates("https://issuer.example", "/par");
 
         assert!(audience_matches(
             &json!("https://issuer.example"),
             &expected
         ));
-        assert!(!audience_matches(
+        assert!(audience_matches(
             &json!("https://issuer.example/par"),
             &expected
         ));
-        assert!(!audience_matches(
+        assert!(audience_matches(
             &json!("https://issuer.example/token"),
             &expected
         ));
+        assert!(audience_matches(
+            &json!(["https://issuer.example", "https://unexpected.example"]),
+            &expected
+        ));
         assert!(!audience_matches(
-            &json!(["https://issuer.example"]),
+            &json!("https://issuer.example/authorize"),
+            &expected
+        ));
+        assert!(!audience_matches(
+            &json!(["https://unexpected.example"]),
             &expected
         ));
     }
@@ -636,8 +649,12 @@ mod tests {
             &json!("https://issuer.example/par"),
             &expected
         ));
+        assert!(audience_matches(
+            &json!(["https://issuer.example", "https://unexpected.example"]),
+            &expected
+        ));
         assert!(!audience_matches(
-            &json!(["https://issuer.example"]),
+            &json!(["https://unexpected.example"]),
             &expected
         ));
     }
