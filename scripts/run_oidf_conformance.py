@@ -11,6 +11,7 @@ import shlex
 import signal
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -35,6 +36,14 @@ OIDCC_SECOND_LOGIN_SCREENSHOT_MODULES = (
     "oidcc-max-age-1",
 )
 NAZO_AUTHORIZATION_ERROR_PAGE_TASK = "Capture authorization error page"
+OIDF_BAD_FINAL_RESULTS = {"FAILED", "SKIPPED", "INTERRUPTED", "WARNING"}
+OIDF_BAD_STATUS_VALUES = {"FAILED", "SKIPPED", "INTERRUPTED"}
+OIDF_BAD_LOG_RESULTS = {"FAILURE", "WARNING"}
+OIDF_ALLOWED_REVIEW_MODULES = {
+    "oidcc-prompt-login",
+    "oidcc-max-age-1",
+    "oidcc-ensure-registered-redirect-uri",
+}
 
 DEFAULT_PLAN_EXPRESSIONS = [
     f"oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] {OIDCC_CONFIG_FILE}",
@@ -436,6 +445,204 @@ def module_ids_from_plan(plan: dict[str, object]) -> set[str]:
     return module_ids
 
 
+def value_as_upper(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value.strip().upper()
+
+
+def module_name_without_variant(test_name: str) -> str:
+    return test_name.split("[", 1)[0]
+
+
+def is_allowed_review_module(test_name: str) -> bool:
+    return module_name_without_variant(test_name) in OIDF_ALLOWED_REVIEW_MODULES
+
+
+def oidf_module_failure(info: object) -> str | None:
+    if not isinstance(info, dict):
+        return None
+
+    module_id = info.get("_id") or info.get("testId") or info.get("id") or "<unknown>"
+    test_name_value = info.get("testName") or info.get("name") or "<unknown>"
+    test_name = test_name_value if isinstance(test_name_value, str) else "<unknown>"
+    status = value_as_upper(info.get("status"))
+    result = value_as_upper(info.get("result"))
+    error = info.get("error")
+
+    if isinstance(error, str) and error.strip():
+        return f"{test_name} {module_id} reported error: {error.strip()[:300]}"
+    if isinstance(error, dict) and error:
+        return f"{test_name} {module_id} reported a structured error"
+    if status in OIDF_BAD_STATUS_VALUES:
+        return f"{test_name} {module_id} status {status}"
+    if result in OIDF_BAD_FINAL_RESULTS:
+        return f"{test_name} {module_id} result {result}"
+    if result == "REVIEW" and not is_allowed_review_module(test_name):
+        return f"{test_name} {module_id} result REVIEW"
+
+    return None
+
+
+def oidf_log_failure(module_id: str, logs: object) -> str | None:
+    if not isinstance(logs, list):
+        return None
+
+    for entry in logs:
+        if not isinstance(entry, dict):
+            continue
+        result = value_as_upper(entry.get("result"))
+        if result not in OIDF_BAD_LOG_RESULTS:
+            continue
+        src = entry.get("src")
+        msg = entry.get("msg")
+        src_text = src if isinstance(src, str) and src else "<unknown>"
+        msg_text = msg if isinstance(msg, str) and msg else "<no message>"
+        return f"{module_id} log {result} at {src_text}: {msg_text[:300]}"
+    return None
+
+
+def fetch_alias_plans(base_url: str, token: str, aliases: set[str]) -> list[dict[str, object]]:
+    if not aliases:
+        return []
+
+    start = 0
+    length = 200
+    matched: list[dict[str, object]] = []
+    while True:
+        _, payload = oidf_api_request(
+            "GET",
+            base_url,
+            "api/plan",
+            token,
+            query={"start": start, "length": length},
+            expected_statuses={200},
+        )
+        if not isinstance(payload, dict):
+            return matched
+
+        plans = payload.get("data")
+        if not isinstance(plans, list) or not plans:
+            return matched
+
+        for plan in plans:
+            if not isinstance(plan, dict):
+                continue
+            config = plan.get("config")
+            alias = config.get("alias") if isinstance(config, dict) else None
+            if alias in aliases:
+                matched.append(plan)
+
+        start += len(plans)
+        total = payload.get("recordsTotal")
+        if isinstance(total, int) and start >= total:
+            return matched
+
+
+def inspect_oidf_state(
+    base_url: str,
+    token: str,
+    aliases: set[str],
+    *,
+    final: bool,
+) -> str | None:
+    plans = fetch_alias_plans(base_url, token, aliases)
+    if not plans:
+        return "OIDF monitor found no plan for current aliases" if final else None
+
+    module_ids: set[str] = set()
+    for plan in plans:
+        module_ids.update(module_ids_from_plan(plan))
+
+    if not module_ids:
+        return "OIDF monitor found no module instances for current plan" if final else None
+
+    for module_id in sorted(module_ids):
+        status_code, info = oidf_api_request(
+            "GET",
+            base_url,
+            f"api/info/{module_id}",
+            token,
+            expected_statuses={200, 404},
+        )
+        if status_code == 200 and info is not None:
+            failure = oidf_module_failure(info)
+            if failure:
+                return failure
+            status = value_as_upper(info.get("status")) if isinstance(info, dict) else ""
+            if final and status and status != "FINISHED":
+                return f"{module_id} ended with non-final status {status}"
+
+        status_code, logs = oidf_api_request(
+            "GET",
+            base_url,
+            f"api/log/{module_id}",
+            token,
+            expected_statuses={200, 404},
+        )
+        if status_code == 200:
+            failure = oidf_log_failure(module_id, logs)
+            if failure:
+                return failure
+
+    return None
+
+
+def cancel_alias_plan_instances(base_url: str, token: str, aliases: set[str]) -> None:
+    for plan in fetch_alias_plans(base_url, token, aliases):
+        cancel_plan_module_instances(base_url, token, plan)
+
+
+class OidfEarlyStopMonitor:
+    def __init__(
+        self,
+        base_url: str,
+        token: str,
+        aliases: set[str],
+        interval_seconds: int,
+    ) -> None:
+        self.base_url = base_url
+        self.token = token
+        self.aliases = aliases
+        self.interval_seconds = interval_seconds
+        self.stop_requested = threading.Event()
+        self.failure_message: str | None = None
+        self.consecutive_errors = 0
+
+    def run(self, process: subprocess.Popen[bytes]) -> None:
+        while not self.stop_requested.wait(self.interval_seconds):
+            if process.poll() is not None:
+                return
+
+            try:
+                failure = inspect_oidf_state(
+                    self.base_url,
+                    self.token,
+                    self.aliases,
+                    final=False,
+                )
+                self.consecutive_errors = 0
+            except SystemExit as exc:
+                self.consecutive_errors += 1
+                print(f"OIDF early-stop monitor API error: {exc}", flush=True)
+                if self.consecutive_errors < 3:
+                    continue
+                failure = "OIDF early-stop monitor could not read suite state after 3 attempts"
+
+            if failure:
+                self.failure_message = failure
+                print(f"OIDF early stop: {failure}", flush=True)
+                terminate_runner(process)
+                try:
+                    cancel_alias_plan_instances(self.base_url, self.token, self.aliases)
+                except SystemExit as exc:
+                    print(f"OIDF early-stop cleanup error: {exc}", flush=True)
+                return
+
+    def stop(self) -> None:
+        self.stop_requested.set()
+
+
 def alias_plan_matches(alias: str, plan: object) -> bool:
     if not isinstance(plan, dict):
         return False
@@ -630,6 +837,12 @@ def parse_args() -> argparse.Namespace:
         default=10_800,
         help="maximum runtime for the official conformance runner",
     )
+    parser.add_argument(
+        "--monitor-interval-seconds",
+        type=int,
+        default=60,
+        help="poll OIDF APIs at this interval and stop early on failed module state",
+    )
     parser.add_argument("--list", action="store_true", help="list selected plans without running them")
     return parser.parse_args()
 
@@ -642,9 +855,13 @@ def run_official_runner(
     timeout_seconds: int,
     conformance_server: str,
     aliases: set[str],
+    token: str,
+    monitor_interval_seconds: int,
 ) -> int:
     if timeout_seconds <= 0:
         fail("--timeout-seconds must be greater than zero")
+    if monitor_interval_seconds <= 0:
+        fail("--monitor-interval-seconds must be greater than zero")
 
     print("OIDF selected plan expressions:", flush=True)
     for index, expression in enumerate(expressions, start=1):
@@ -660,12 +877,54 @@ def run_official_runner(
         env=env,
         start_new_session=True,
     )
+    monitor: OidfEarlyStopMonitor | None = None
+    monitor_thread: threading.Thread | None = None
+    if aliases:
+        monitor = OidfEarlyStopMonitor(
+            conformance_server,
+            token,
+            aliases,
+            monitor_interval_seconds,
+        )
+        monitor_thread = threading.Thread(
+            target=monitor.run,
+            args=(process,),
+            name="oidf-early-stop-monitor",
+            daemon=True,
+        )
+        print(
+            f"OIDF early-stop monitor interval: {monitor_interval_seconds} seconds",
+            flush=True,
+        )
+        monitor_thread.start()
+
     try:
-        return process.wait(timeout=timeout_seconds)
+        exit_code = process.wait(timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
         print("OIDF official runner timed out; terminating process group", flush=True)
         terminate_runner(process)
         return 124
+    finally:
+        if monitor is not None:
+            monitor.stop()
+        if monitor_thread is not None:
+            monitor_thread.join(timeout=5)
+
+    if monitor is not None and monitor.failure_message:
+        return 1
+
+    if aliases:
+        final_failure = inspect_oidf_state(
+            conformance_server,
+            token,
+            aliases,
+            final=exit_code == 0,
+        )
+        if final_failure:
+            print(f"OIDF final state check failed: {final_failure}", flush=True)
+            return 1
+
+    return exit_code
 
 
 def terminate_runner(process: subprocess.Popen[bytes]) -> None:
@@ -736,6 +995,8 @@ def main() -> int:
         args.timeout_seconds,
         args.conformance_server,
         set() if args.list else aliases,
+        env["CONFORMANCE_TOKEN"],
+        args.monitor_interval_seconds,
     )
 
 
