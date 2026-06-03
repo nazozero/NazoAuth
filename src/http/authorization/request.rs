@@ -186,11 +186,13 @@ async fn authorize_request(
         );
     }
 
+    let original_authorization_query = q.clone();
     let mut pushed_dpop_jkt = None;
     let mut consumed_request_uri_error: Option<&'static str> = None;
     let mut used_pushed_authorization_request = false;
+    let mut pending_pushed_request_uri = None;
     if let Some(request_uri) = q.get("request_uri").cloned() {
-        let raw = match valkey_getdel(
+        let raw = match valkey_get(
             &state.valkey,
             pushed_authorization_request_key(&request_uri),
         )
@@ -202,7 +204,7 @@ async fn authorize_request(
                 String::new()
             }
             Err(error) => {
-                tracing::warn!(%error, "failed to consume PAR request_uri");
+                tracing::warn!(%error, "failed to read PAR request_uri");
                 return oauth_error(
                     StatusCode::SERVICE_UNAVAILABLE,
                     "server_error",
@@ -231,6 +233,7 @@ async fn authorize_request(
             } else {
                 pushed_dpop_jkt = pushed.dpop_jkt;
                 used_pushed_authorization_request = true;
+                pending_pushed_request_uri = Some(request_uri);
                 *q = pushed.params;
             }
         }
@@ -413,7 +416,11 @@ async fn authorize_request(
         }
         return redirect_found(authorization_login_url(
             &state,
-            q,
+            authorization_login_query(
+                q,
+                &original_authorization_query,
+                pending_pushed_request_uri.as_ref(),
+            ),
             prompt.login || prompt.select_account,
         ));
     };
@@ -433,7 +440,11 @@ async fn authorize_request(
         }
         return redirect_found(authorization_login_url(
             &state,
-            q,
+            authorization_login_query(
+                q,
+                &original_authorization_query,
+                pending_pushed_request_uri.as_ref(),
+            ),
             prompt.login || prompt.select_account,
         ));
     }
@@ -441,6 +452,11 @@ async fn authorize_request(
     let requested_scopes = parse_scope(q.get("scope").map(String::as_str).unwrap_or(""));
     if !is_subset(&requested_scopes, &json_array_to_strings(&client.scopes)) {
         return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_scope", q);
+    }
+    if let Some(request_uri) = pending_pushed_request_uri.as_ref()
+        && let Err(response) = consume_pushed_authorization_request(&state, request_uri).await
+    {
+        return response;
     }
 
     let now = Utc::now();
@@ -512,6 +528,40 @@ fn outer_request_uri_parameters_match_pushed(
     })
 }
 
+async fn consume_pushed_authorization_request(
+    state: &AppState,
+    request_uri: &str,
+) -> Result<(), HttpResponse> {
+    let raw =
+        match valkey_getdel(&state.valkey, pushed_authorization_request_key(request_uri)).await {
+            Ok(Some(raw)) => raw,
+            Ok(None) => {
+                return Err(oauth_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_request_uri",
+                    "request_uri 无效或已过期.",
+                ));
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to consume PAR request_uri");
+                return Err(oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "request_uri 读取失败.",
+                ));
+            }
+        };
+    if let Err(error) = serde_json::from_str::<PushedAuthorizationRequest>(&raw) {
+        tracing::warn!(%error, "PAR payload is malformed");
+        return Err(oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "request_uri 状态无效.",
+        ));
+    }
+    Ok(())
+}
+
 fn authorization_oauth_error_redirect(
     state: &AppState,
     redirect_uri: &str,
@@ -540,6 +590,18 @@ fn oauth_json_error(response: &HttpResponse) -> Option<String> {
     extensions
         .get::<OAuthJsonErrorFields>()
         .map(|fields| fields.error.clone())
+}
+
+fn authorization_login_query<'a>(
+    expanded: &'a HashMap<String, String>,
+    original: &'a HashMap<String, String>,
+    request_uri: Option<&String>,
+) -> &'a HashMap<String, String> {
+    if request_uri.is_some() {
+        original
+    } else {
+        expanded
+    }
 }
 
 #[cfg(test)]

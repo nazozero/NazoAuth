@@ -19,7 +19,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from email import message_from_bytes
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import jwt
 import psycopg
@@ -1294,6 +1294,72 @@ def run() -> None:
             )
         )
         check("par_request_uri_shape", par["request_uri"].startswith("urn:ietf:params:oauth:request_uri:"))
+        par_login_verifier, par_login_challenge = pkce_pair()
+        par_login = expect_json(
+            expect_status(
+                "POST /par public login roundtrip",
+                requests.post(
+                    f"{BASE_URL}/par",
+                    data={
+                        "response_type": "code",
+                        "client_id": public_client_id,
+                        "redirect_uri": CLIENT_REDIRECT_URI,
+                        "scope": "openid profile email offline_access",
+                        "state": "par-login-roundtrip",
+                        "nonce": "nonce-par-login-roundtrip",
+                        "code_challenge": par_login_challenge,
+                        "code_challenge_method": "S256",
+                    },
+                    timeout=10,
+                ),
+                201,
+            )
+        )
+        par_login_user = requests.Session()
+        par_login_start = par_login_user.get(
+            f"{BASE_URL}/authorize",
+            params={"client_id": public_client_id, "request_uri": par_login["request_uri"]},
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status("GET /authorize PAR unauthenticated", par_login_start, 302)
+        login_next = parse_qs(urlparse(par_login_start.headers.get("Location", "")).query).get(
+            "next",
+            [""],
+        )[0]
+        check(
+            "par_login_next_preserves_request_uri",
+            "request_uri=" in unquote(login_next) and "code_challenge" not in unquote(login_next),
+            login_next,
+        )
+        login(par_login_user, USER_EMAIL, USER_PASSWORD, "POST /auth/login PAR roundtrip")
+        par_login_resume = par_login_user.get(
+            f"{BASE_URL}{login_next}",
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status("GET /authorize PAR after login", par_login_resume, 302)
+        par_login_request_id = consent_request_from_redirect(
+            par_login_resume,
+            "GET /authorize PAR after login",
+        )
+        par_login_code, par_login_verifier = approve_authorization(
+            par_login_user,
+            par_login_request_id,
+            par_login_verifier,
+            state="par-login-roundtrip",
+        )
+        par_login_tokens = token_plain(
+            {
+                "grant_type": "authorization_code",
+                "client_id": public_client_id,
+                "code": par_login_code,
+                "code_verifier": par_login_verifier,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+            },
+            "POST /token PAR after login",
+        )
+        check("par_login_token_issued", bool(par_login_tokens.get("access_token")))
         par_conflict = user.get(
             f"{BASE_URL}/authorize",
             params={
