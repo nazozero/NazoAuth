@@ -32,8 +32,22 @@ FAPI_MESSAGE_ID1_CONFIG_FILE = "oidf-fapi-message-id1-plan-config.json"
 FAPI_SECURITY_FINAL_USER_REJECTS_AUTHENTICATION = (
     "fapi2-security-profile-final-user-rejects-authentication"
 )
+FAPI_SECURITY_ID2_USER_REJECTS_AUTHENTICATION = (
+    "fapi2-security-profile-id2-user-rejects-authentication"
+)
 FAPI_SECURITY_FINAL_PAR_REUSE_BEFORE_AUTH = (
     "fapi2-security-profile-final-par-ensure-reused-request-uri-prior-to-auth-completion-succeeds"
+)
+FAPI_SECURITY_ID2_PAR_REUSE_BEFORE_AUTH = (
+    "fapi2-security-profile-id2-par-ensure-reused-request-uri-prior-to-auth-completion-succeeds"
+)
+FAPI_SECURITY_USER_REJECTS_AUTHENTICATION_MODULES = (
+    FAPI_SECURITY_FINAL_USER_REJECTS_AUTHENTICATION,
+    FAPI_SECURITY_ID2_USER_REJECTS_AUTHENTICATION,
+)
+FAPI_SECURITY_PAR_REUSE_BEFORE_AUTH_MODULES = (
+    FAPI_SECURITY_FINAL_PAR_REUSE_BEFORE_AUTH,
+    FAPI_SECURITY_ID2_PAR_REUSE_BEFORE_AUTH,
 )
 OIDCC_SECOND_LOGIN_SCREENSHOT_MODULES = (
     "oidcc-prompt-login",
@@ -502,10 +516,9 @@ def add_nazo_par_reuse_before_auth_override(config_value: dict[str, object]) -> 
     if not isinstance(override, dict):
         fail("OIDF plan config override must be a JSON object when present")
 
-    override.setdefault(
-        FAPI_SECURITY_FINAL_PAR_REUSE_BEFORE_AUTH,
-        {"browser": first_login_observation_automation(browser)},
-    )
+    browser_override = first_login_observation_automation(browser)
+    for module_name in FAPI_SECURITY_PAR_REUSE_BEFORE_AUTH_MODULES:
+        override.setdefault(module_name, {"browser": copy.deepcopy(browser_override)})
 
 
 def add_nazo_user_reject_override(config_value: dict[str, object]) -> None:
@@ -515,10 +528,9 @@ def add_nazo_user_reject_override(config_value: dict[str, object]) -> None:
     override = config_value.setdefault("override", {})
     if not isinstance(override, dict):
         fail("OIDF plan config override must be a JSON object when present")
-    override.setdefault(
-        FAPI_SECURITY_FINAL_USER_REJECTS_AUTHENTICATION,
-        {"browser": nazo_user_reject_browser_automation()},
-    )
+    browser_override = nazo_user_reject_browser_automation()
+    for module_name in FAPI_SECURITY_USER_REJECTS_AUTHENTICATION_MODULES:
+        override.setdefault(module_name, {"browser": copy.deepcopy(browser_override)})
 
 
 def add_nazo_browser_overrides(config_value: dict[str, object]) -> None:
