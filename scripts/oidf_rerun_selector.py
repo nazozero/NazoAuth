@@ -38,14 +38,19 @@ def token_from_env_or_file(env_name: str, env_file: Path) -> str:
     fail(f"{env_name} is not set in the environment or {env_file}")
 
 
-def latest_alias_plan(base_url: str, token: str, alias: str) -> dict[str, object]:
+def alias_plans(base_url: str, token: str, alias: str) -> list[dict[str, object]]:
     plans = fetch_alias_plans(base_url, token, {alias})
     if not plans:
         fail(f"no OIDF plan found for alias {alias}")
-    return max(
+    return sorted(
         plans,
         key=lambda plan: str(plan.get("started") or plan.get("created") or ""),
+        reverse=True,
     )
+
+
+def latest_alias_plan(base_url: str, token: str, alias: str) -> dict[str, object]:
+    return alias_plans(base_url, token, alias)[0]
 
 
 def plan_by_id(base_url: str, token: str, plan_id: str) -> dict[str, object]:
@@ -117,20 +122,55 @@ def instance_needs_rerun(base_url: str, token: str, instance_id: str) -> tuple[b
     return False, f"{instance_id}: PASSED"
 
 
+def module_instances_need_rerun(
+    base_url: str,
+    token: str,
+    instances: list[str],
+) -> tuple[bool, str]:
+    reasons: list[str] = []
+    needs_rerun = False
+    for instance_id in instances:
+        instance_needs, reason = instance_needs_rerun(base_url, token, instance_id)
+        reasons.append(reason)
+        needs_rerun = needs_rerun or instance_needs
+    return needs_rerun, "; ".join(reasons)
+
+
+def plan_modules(plan: dict[str, object]) -> list[object]:
+    modules = plan.get("modules")
+    if not isinstance(modules, list) or not modules:
+        fail("selected OIDF plan has no module list")
+    return modules
+
+
 def rerun_selectors(
     base_url: str,
     token: str,
     plan: dict[str, object],
     runner_plan_number: int,
 ) -> list[tuple[str, str, str]]:
-    modules = plan.get("modules")
-    if not isinstance(modules, list) or not modules:
-        fail("selected OIDF plan has no module list")
+    return rerun_selectors_from_plans(
+        base_url,
+        token,
+        [plan],
+        runner_plan_number,
+    )
 
+def rerun_selectors_from_plans(
+    base_url: str,
+    token: str,
+    plans: list[dict[str, object]],
+    runner_plan_number: int,
+) -> list[tuple[str, str, str]]:
+    if not plans:
+        fail("no OIDF plans selected")
+
+    modules = plan_modules(plans[0])
     instantiated_indexes = [
         index
-        for index, module in enumerate(modules, start=1)
-        if module_instances(module)
+        for plan in plans
+        for index, module in enumerate(plan_modules(plan), start=1)
+        if index <= len(modules) and module_instances(module)
     ]
     first_instantiated_index = min(instantiated_indexes, default=1)
 
@@ -138,21 +178,28 @@ def rerun_selectors(
     for module_index, module in enumerate(modules, start=1):
         selector = f"{runner_plan_number}:{module_index}"
         name = module_name(module)
-        instances = module_instances(module)
-        if not instances:
-            if module_index < first_instantiated_index:
+        reason = ""
+        for plan in plans:
+            plan_id = plan.get("_id")
+            plan_modules_value = plan_modules(plan)
+            if module_index > len(plan_modules_value):
                 continue
-            selected.append((selector, name, "not started"))
-            continue
-
-        reasons: list[str] = []
-        needs_rerun = False
-        for instance_id in instances:
-            instance_needs, reason = instance_needs_rerun(base_url, token, instance_id)
-            reasons.append(reason)
-            needs_rerun = needs_rerun or instance_needs
-        if needs_rerun:
-            selected.append((selector, name, "; ".join(reasons)))
+            instances = module_instances(plan_modules_value[module_index - 1])
+            if not instances:
+                continue
+            needs_rerun, instance_reason = module_instances_need_rerun(
+                base_url,
+                token,
+                instances,
+            )
+            plan_label = plan_id if isinstance(plan_id, str) and plan_id else "<unknown plan>"
+            reason = f"{plan_label}: {instance_reason}"
+            if needs_rerun:
+                selected.append((selector, name, reason))
+            break
+        else:
+            if module_index >= first_instantiated_index:
+                selected.append((selector, name, "not started"))
 
     return selected
 
@@ -202,19 +249,20 @@ def main() -> int:
         fail("--runner-plan-number must be positive")
 
     token = token_from_env_or_file(args.token_env, Path(args.env_file))
-    plan = (
-        plan_by_id(args.conformance_server, token, args.plan_id)
+    plans = (
+        [plan_by_id(args.conformance_server, token, args.plan_id)]
         if args.plan_id
-        else latest_alias_plan(args.conformance_server, token, args.alias)
+        else alias_plans(args.conformance_server, token, args.alias)
     )
+    plan = plans[0]
     plan_id = plan.get("_id")
     if not isinstance(plan_id, str) or not plan_id:
         fail("selected OIDF plan does not include an id")
 
-    selected = rerun_selectors(
+    selected = rerun_selectors_from_plans(
         args.conformance_server,
         token,
-        plan,
+        plans,
         args.runner_plan_number,
     )
     selector = ",".join(item[0] for item in selected)
