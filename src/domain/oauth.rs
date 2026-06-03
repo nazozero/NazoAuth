@@ -58,6 +58,8 @@ pub(crate) struct ConsentPayload {
     pub(crate) code_challenge_method: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) dpop_jkt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) pushed_request_uri: Option<String>,
     pub(crate) issued_at: DateTime<Utc>,
     pub(crate) expires_at: DateTime<Utc>,
 }

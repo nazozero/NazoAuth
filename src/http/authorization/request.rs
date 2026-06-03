@@ -462,12 +462,6 @@ async fn authorize_request(
     if !is_subset(&requested_scopes, &json_array_to_strings(&client.scopes)) {
         return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_scope", q);
     }
-    if let Some(request_uri) = pending_pushed_request_uri.as_ref()
-        && let Err(response) = consume_pushed_authorization_request(&state, request_uri).await
-    {
-        return response;
-    }
-
     let now = Utc::now();
     let request_id = Uuid::now_v7().to_string();
     let payload = ConsentPayload {
@@ -488,6 +482,7 @@ async fn authorize_request(
         code_challenge,
         code_challenge_method,
         dpop_jkt,
+        pushed_request_uri: pending_pushed_request_uri,
         issued_at: now,
         expires_at: now + Duration::seconds(state.settings.auth_code_ttl_seconds as i64),
     };
@@ -537,36 +532,31 @@ fn outer_request_uri_parameters_match_pushed(
     })
 }
 
-async fn consume_pushed_authorization_request(
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PushedAuthorizationRequestConsumeError {
+    Missing,
+    ReadFailed,
+    Malformed,
+}
+
+pub(crate) async fn consume_pushed_authorization_request(
     state: &AppState,
     request_uri: &str,
-) -> Result<(), HttpResponse> {
+) -> Result<(), PushedAuthorizationRequestConsumeError> {
     let raw =
         match valkey_getdel(&state.valkey, pushed_authorization_request_key(request_uri)).await {
             Ok(Some(raw)) => raw,
             Ok(None) => {
-                return Err(oauth_error(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_request_uri",
-                    "request_uri 无效或已过期.",
-                ));
+                return Err(PushedAuthorizationRequestConsumeError::Missing);
             }
             Err(error) => {
                 tracing::warn!(%error, "failed to consume PAR request_uri");
-                return Err(oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "request_uri 读取失败.",
-                ));
+                return Err(PushedAuthorizationRequestConsumeError::ReadFailed);
             }
         };
     if let Err(error) = serde_json::from_str::<PushedAuthorizationRequest>(&raw) {
         tracing::warn!(%error, "PAR payload is malformed");
-        return Err(oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "request_uri 状态无效.",
-        ));
+        return Err(PushedAuthorizationRequestConsumeError::Malformed);
     }
     Ok(())
 }

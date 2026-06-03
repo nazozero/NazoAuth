@@ -1395,6 +1395,26 @@ def run() -> None:
             "request_uri=" in unquote(login_next) and "code_challenge" not in unquote(login_next),
             login_next,
         )
+        par_login_reuse_before_auth = par_login_user.get(
+            f"{BASE_URL}/authorize",
+            params={"client_id": public_client_id, "request_uri": par_login["request_uri"]},
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status(
+            "GET /authorize PAR request_uri reusable before auth completion",
+            par_login_reuse_before_auth,
+            302,
+        )
+        par_login_reuse_next = parse_qs(
+            urlparse(par_login_reuse_before_auth.headers.get("Location", "")).query
+        ).get("next", [""])[0]
+        check(
+            "par_request_uri_reuse_before_auth_preserves_request_uri",
+            "request_uri=" in unquote(par_login_reuse_next)
+            and "code_challenge" not in unquote(par_login_reuse_next),
+            par_login_reuse_next,
+        )
         login(par_login_user, USER_EMAIL, USER_PASSWORD, "POST /auth/login PAR roundtrip")
         par_login_resume = par_login_user.get(
             f"{BASE_URL}{login_next}",

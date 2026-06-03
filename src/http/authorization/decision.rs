@@ -1,5 +1,6 @@
 //! 授权确认提交端点。
 // 同意时签发一次性授权码；拒绝时按 OAuth 规范把错误回传 redirect_uri。
+use super::{PushedAuthorizationRequestConsumeError, consume_pushed_authorization_request};
 use crate::http::prelude::*;
 
 #[derive(Deserialize)]
@@ -24,6 +25,43 @@ fn parse_authorization_decision(value: &str) -> Option<AuthorizationDecision> {
 
 fn parse_consent_payload(raw: Option<String>) -> Option<ConsentPayload> {
     raw.and_then(|value| serde_json::from_str::<ConsentPayload>(&value).ok())
+}
+
+async fn consume_pushed_request_uri_if_present(
+    state: &AppState,
+    payload: &ConsentPayload,
+) -> Result<(), HttpResponse> {
+    let Some(request_uri) = payload.pushed_request_uri.as_deref() else {
+        return Ok(());
+    };
+
+    match consume_pushed_authorization_request(state, request_uri).await {
+        Ok(()) => Ok(()),
+        Err(PushedAuthorizationRequestConsumeError::Missing) => Err(authorization_error_redirect(
+            state,
+            payload,
+            "invalid_request_uri",
+        )),
+        Err(PushedAuthorizationRequestConsumeError::ReadFailed)
+        | Err(PushedAuthorizationRequestConsumeError::Malformed) => {
+            Err(authorization_error_redirect(state, payload, "server_error"))
+        }
+    }
+}
+
+fn authorization_error_redirect(
+    state: &AppState,
+    payload: &ConsentPayload,
+    error: &str,
+) -> HttpResponse {
+    redirect_found(append_query(
+        &payload.redirect_uri,
+        &[
+            ("error", error),
+            ("state", payload.state.as_deref().unwrap_or("")),
+            ("iss", state.settings.issuer.as_str()),
+        ],
+    ))
 }
 
 /// 处理用户对授权请求的同意或拒绝。
@@ -93,6 +131,9 @@ pub(crate) async fn authorize_decision(
             "access_denied",
             "当前会话与授权请求不匹配.",
         );
+    }
+    if let Err(response) = consume_pushed_request_uri_if_present(&state, &payload).await {
+        return response;
     }
 
     match decision {
