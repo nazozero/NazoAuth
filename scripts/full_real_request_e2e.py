@@ -1422,6 +1422,29 @@ def run() -> None:
             "par_dpop_access_token_cnf",
             par_dpop_access_claims.get("cnf", {}).get("jkt") == par_dpop_jkt,
         )
+        par_dpop_missing_refresh_proof = requests.post(
+            f"{BASE_URL}/token",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": par_dpop_tokens["refresh_token"],
+                "client_assertion_type": CLIENT_ASSERTION_TYPE,
+                "client_assertion": client_assertion(
+                    dpop_required_private_auth_client_id,
+                    private_key,
+                    jti="par-dpop-refresh-client-assertion-missing-proof",
+                ),
+            },
+            timeout=10,
+        )
+        expect_status(
+            "POST /token PAR DPoP-required refresh missing proof rejected",
+            par_dpop_missing_refresh_proof,
+            400,
+        )
+        check(
+            "par_dpop_refresh_missing_proof_invalid_grant",
+            expect_json(par_dpop_missing_refresh_proof).get("error") == "invalid_grant",
+        )
         par_dpop_refresh_nonce = request_dpop_nonce(
             {
                 "grant_type": "refresh_token",
