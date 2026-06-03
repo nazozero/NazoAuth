@@ -2185,6 +2185,24 @@ def run() -> None:
         rotated_refresh_token = refreshed["refresh_token"]
         refreshed_access_token = refreshed["access_token"]
         check("refresh_token_rotated", rotated_refresh_token != refresh_token)
+        missing_refresh_proof = requests.post(
+            f"{BASE_URL}/token",
+            data={
+                "grant_type": "refresh_token",
+                "client_id": public_client_id,
+                "refresh_token": rotated_refresh_token,
+            },
+            timeout=10,
+        )
+        expect_status(
+            "POST /token refresh_token DPoP missing proof rejected",
+            missing_refresh_proof,
+            400,
+        )
+        check(
+            "refresh_token_dpop_missing_proof_invalid_grant",
+            expect_json(missing_refresh_proof).get("error") == "invalid_grant",
+        )
         wrong_refresh_key = ed25519.Ed25519PrivateKey.generate()
         wrong_refresh = requests.post(
             f"{BASE_URL}/token",

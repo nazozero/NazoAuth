@@ -177,7 +177,12 @@ pub(crate) async fn token_refresh(
             Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
         }
     } else if token.dpop_jkt.is_some() {
-        return dpop_error_response(DpopError::MissingProof, DpopErrorContext::TokenEndpoint);
+        return oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "refresh_token requires proof of possession.",
+            false,
+        );
     } else {
         None
     };
