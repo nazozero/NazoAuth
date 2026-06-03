@@ -673,6 +673,19 @@ def module_ids_from_plan(plan: dict[str, object]) -> set[str]:
     return module_ids
 
 
+def plan_id(plan: dict[str, object]) -> str | None:
+    value = plan.get("_id")
+    return value if isinstance(value, str) and value else None
+
+
+def plan_ids_from_aliases(base_url: str, token: str, aliases: set[str]) -> set[str]:
+    return {
+        value
+        for plan in fetch_alias_plans(base_url, token, aliases)
+        if (value := plan_id(plan)) is not None
+    }
+
+
 def value_as_upper(value: object) -> str:
     if not isinstance(value, str):
         return ""
@@ -773,8 +786,14 @@ def inspect_oidf_state(
     aliases: set[str],
     *,
     final: bool,
+    ignored_plan_ids: set[str] | None = None,
 ) -> str | None:
-    plans = fetch_alias_plans(base_url, token, aliases)
+    ignored = ignored_plan_ids or set()
+    plans = [
+        plan
+        for plan in fetch_alias_plans(base_url, token, aliases)
+        if plan_id(plan) not in ignored
+    ]
     if not plans:
         return "OIDF monitor found no plan for current aliases" if final else None
 
@@ -816,8 +835,16 @@ def inspect_oidf_state(
     return None
 
 
-def cancel_alias_plan_instances(base_url: str, token: str, aliases: set[str]) -> None:
+def cancel_alias_plan_instances(
+    base_url: str,
+    token: str,
+    aliases: set[str],
+    ignored_plan_ids: set[str] | None = None,
+) -> None:
+    ignored = ignored_plan_ids or set()
     for plan in fetch_alias_plans(base_url, token, aliases):
+        if plan_id(plan) in ignored:
+            continue
         cancel_plan_module_instances(base_url, token, plan)
 
 
@@ -828,11 +855,13 @@ class OidfEarlyStopMonitor:
         token: str,
         aliases: set[str],
         interval_seconds: int,
+        ignored_plan_ids: set[str],
     ) -> None:
         self.base_url = base_url
         self.token = token
         self.aliases = aliases
         self.interval_seconds = interval_seconds
+        self.ignored_plan_ids = ignored_plan_ids
         self.stop_requested = threading.Event()
         self.failure_message: str | None = None
         self.consecutive_errors = 0
@@ -848,6 +877,7 @@ class OidfEarlyStopMonitor:
                     self.token,
                     self.aliases,
                     final=False,
+                    ignored_plan_ids=self.ignored_plan_ids,
                 )
                 self.consecutive_errors = 0
             except SystemExit as exc:
@@ -862,7 +892,12 @@ class OidfEarlyStopMonitor:
                 print(f"OIDF early stop: {failure}", flush=True)
                 terminate_runner(process)
                 try:
-                    cancel_alias_plan_instances(self.base_url, self.token, self.aliases)
+                    cancel_alias_plan_instances(
+                        self.base_url,
+                        self.token,
+                        self.aliases,
+                        ignored_plan_ids=self.ignored_plan_ids,
+                    )
                 except SystemExit as exc:
                     print(f"OIDF early-stop cleanup error: {exc}", flush=True)
                 return
@@ -1121,6 +1156,7 @@ def run_official_runner(
         print(f"  argv[{index}]: {argument}", flush=True)
     print(f"OIDF official runner timeout: {timeout_seconds} seconds", flush=True)
 
+    ignored_plan_ids = plan_ids_from_aliases(conformance_server, token, aliases) if aliases else set()
     process = subprocess.Popen(
         command,
         cwd=suite_scripts,
@@ -1135,6 +1171,7 @@ def run_official_runner(
             token,
             aliases,
             monitor_interval_seconds,
+            ignored_plan_ids,
         )
         monitor_thread = threading.Thread(
             target=monitor.run,
@@ -1169,6 +1206,7 @@ def run_official_runner(
             token,
             aliases,
             final=exit_code == 0,
+            ignored_plan_ids=ignored_plan_ids,
         )
         if final_failure:
             print(f"OIDF final state check failed: {final_failure}", flush=True)
