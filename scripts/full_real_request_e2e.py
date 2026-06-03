@@ -1374,6 +1374,7 @@ def run() -> None:
             "GET /authorize PAR parameter override rejected",
             par_conflict,
             "invalid_request",
+            state="par-flow",
         )
         par = expect_json(
             expect_status(

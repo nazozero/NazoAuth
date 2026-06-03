@@ -230,6 +230,7 @@ async fn authorize_request(
                 consumed_request_uri_error = Some("invalid_request_uri");
             } else if !outer_request_uri_parameters_match_pushed(q, &pushed.params) {
                 consumed_request_uri_error = Some("invalid_request");
+                *q = pushed.params;
             } else {
                 pushed_dpop_jkt = pushed.dpop_jkt;
                 used_pushed_authorization_request = true;
