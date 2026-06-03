@@ -34,6 +34,7 @@ OIDCC_SECOND_LOGIN_SCREENSHOT_MODULES = (
     "oidcc-prompt-login",
     "oidcc-max-age-1",
 )
+NAZO_AUTHORIZATION_ERROR_PAGE_TASK = "Capture authorization error page"
 
 DEFAULT_PLAN_EXPRESSIONS = [
     f"oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] {OIDCC_CONFIG_FILE}",
@@ -182,6 +183,46 @@ def nazo_user_reject_browser_automation() -> list[dict[str, object]]:
     ]
 
 
+def authorization_error_page_task() -> dict[str, object]:
+    return {
+        "task": NAZO_AUTHORIZATION_ERROR_PAGE_TASK,
+        "optional": True,
+        "match": "https://oauth.nazo.run/authorize*",
+        "commands": [
+            [
+                "wait",
+                "id",
+                "oidf_conformance_interaction",
+                5,
+                ".*",
+                "update-image-placeholder-optional",
+            ]
+        ],
+    }
+
+
+def add_authorization_error_page_capture(config_value: dict[str, object]) -> None:
+    browser = config_value.get("browser")
+    if not isinstance(browser, list):
+        return
+
+    for entry in browser:
+        if not isinstance(entry, dict):
+            continue
+        match = entry.get("match")
+        if not (isinstance(match, str) and match.startswith("https://oauth.nazo.run/authorize")):
+            continue
+        tasks = entry.setdefault("tasks", [])
+        if not isinstance(tasks, list):
+            continue
+        if any(
+            isinstance(task, dict) and task.get("task") == NAZO_AUTHORIZATION_ERROR_PAGE_TASK
+            for task in tasks
+        ):
+            continue
+        tasks.insert(0, authorization_error_page_task())
+
+
 def mark_login_page_wait_as_placeholder_update(task: object) -> None:
     if not isinstance(task, dict):
         return
@@ -260,6 +301,7 @@ def add_nazo_user_reject_override(config_value: dict[str, object]) -> None:
 
 
 def add_nazo_browser_overrides(config_value: dict[str, object]) -> None:
+    add_authorization_error_page_capture(config_value)
     add_nazo_second_login_placeholder_overrides(config_value)
     add_nazo_user_reject_override(config_value)
 
