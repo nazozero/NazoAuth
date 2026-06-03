@@ -145,6 +145,13 @@ pub(crate) async fn par(state: Data<AppState>, req: HttpRequest, body: Bytes) ->
         return response;
     }
     params.remove("request");
+    if pushed_authorization_request_contains_request_uri(&params) {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request_object",
+            "PAR request object 不能包含 request_uri.",
+        );
+    }
     if let Err(response) = validate_pushed_authorization_request(&client, &params) {
         return response;
     }
@@ -245,6 +252,10 @@ fn pushed_authorization_request_requires_request_object(client: &ClientRow) -> b
     client.require_dpop_bound_tokens
 }
 
+fn pushed_authorization_request_contains_request_uri(params: &HashMap<String, String>) -> bool {
+    params.contains_key("request_uri")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,5 +286,19 @@ mod tests {
         assert!(pushed_authorization_request_requires_request_object(
             &client(true)
         ));
+    }
+
+    #[test]
+    fn par_rejects_request_uri_after_request_object_expansion() {
+        assert!(!pushed_authorization_request_contains_request_uri(
+            &HashMap::new()
+        ));
+
+        let mut params = HashMap::new();
+        params.insert(
+            "request_uri".to_owned(),
+            "urn:example:bwc4JK-ESC0w8acc191e-Y1LTC2".to_owned(),
+        );
+        assert!(pushed_authorization_request_contains_request_uri(&params));
     }
 }
