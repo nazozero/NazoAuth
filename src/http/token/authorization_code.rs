@@ -91,6 +91,10 @@ fn redirect_uri_matches_authorization_request(
     }
 }
 
+fn authorization_code_requires_pkce(client: &ClientRow, payload: &CodePayload) -> bool {
+    client.client_type == "public" || client.require_dpop_bound_tokens || payload.dpop_jkt.is_some()
+}
+
 async fn begin_authorization_code_consumption(
     state: &AppState,
     code_hash: &str,
@@ -287,6 +291,7 @@ pub(crate) async fn token_authorization_code(
                 );
             }
         }
+        (None, None) if !authorization_code_requires_pkce(client, &payload) => {}
         _ => {
             mark_failed_authorization_code(state, &code_hash, "pkce_state_invalid").await;
             return oauth_token_error(

@@ -546,6 +546,23 @@ def token_plain(form: dict[str, str], check_name: str) -> dict[str, Any]:
     return expect_json(response)
 
 
+def token_basic(
+    client_id: str,
+    client_secret: str,
+    form: dict[str, str],
+    check_name: str,
+) -> dict[str, Any]:
+    credentials = base64.b64encode(f"{client_id}:{client_secret}".encode("utf-8")).decode("ascii")
+    response = requests.post(
+        f"{BASE_URL}/token",
+        data=form,
+        headers={"Authorization": f"Basic {credentials}"},
+        timeout=10,
+    )
+    expect_status(check_name, response, 200)
+    return expect_json(response)
+
+
 def request_dpop_nonce(
     form: dict[str, str],
     key: Any,
@@ -1193,10 +1210,28 @@ def run() -> None:
             timeout=10,
         )
         expect_status("GET /authorize confidential without PKCE", confidential_without_pkce, 302)
-        check(
-            "confidential_missing_pkce_invalid_request",
-            location_query(confidential_without_pkce).get("error") == ["invalid_request"],
+        confidential_no_pkce_request_id = consent_request_from_redirect(
+            confidential_without_pkce,
+            "confidential_without_pkce",
         )
+        confidential_no_pkce_code, _ = approve_authorization(
+            user,
+            confidential_no_pkce_request_id,
+            "",
+            state="confidential-no-pkce",
+        )
+        confidential_no_pkce_tokens = token_basic(
+            secret_auth_client_id,
+            secret_auth_client_secret,
+            {
+                "grant_type": "authorization_code",
+                "code": confidential_no_pkce_code,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+            },
+            "POST /token confidential authorization_code without PKCE",
+        )
+        check("confidential_without_pkce_access_token", bool(confidential_no_pkce_tokens.get("access_token")))
+        check("confidential_without_pkce_id_token", bool(confidential_no_pkce_tokens.get("id_token")))
 
         post_authorize_request_id, post_authorize_verifier = authorize_request(
             user,

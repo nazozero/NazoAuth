@@ -29,11 +29,16 @@ fn authorization_pkce(q: &HashMap<String, String>) -> Result<(Option<String>, Op
         q.get("code_challenge").map(String::as_str),
         q.get("code_challenge_method").map(String::as_str),
     ) {
+        (None, None) => Ok((None, None)),
         (Some(code_challenge), Some("S256")) if is_valid_pkce_value(code_challenge) => {
             Ok((Some(code_challenge.to_owned()), Some("S256".to_owned())))
         }
         _ => Err(()),
     }
+}
+
+fn authorization_request_requires_pkce(client: &ClientRow) -> bool {
+    client.client_type == "public" || client.require_dpop_bound_tokens
 }
 
 fn requested_acr(q: &HashMap<String, String>) -> Option<String> {
@@ -365,6 +370,9 @@ async fn authorize_request(
             return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q);
         }
     };
+    if authorization_request_requires_pkce(&client) && code_challenge.is_none() {
+        return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q);
+    }
 
     let prompt = match requested_prompt(q) {
         Ok(prompt) => prompt,
@@ -726,8 +734,8 @@ mod tests {
     }
 
     #[test]
-    fn authorization_request_requires_s256_pkce() {
-        assert!(authorization_pkce(&query(&[])).is_err());
+    fn authorization_request_accepts_optional_pkce_but_rejects_invalid_pkce() {
+        assert_eq!(authorization_pkce(&query(&[])).unwrap(), (None, None));
         let valid_challenge = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ";
 
         assert!(
