@@ -1202,7 +1202,7 @@ def main() -> int:
     if args.disable_ssl_verify:
         env["DISABLE_SSL_VERIFY"] = "1"
 
-    if not args.list:
+    if not args.list and not args.rerun:
         cleanup_existing_alias_plans(args.conformance_server, env["CONFORMANCE_TOKEN"], aliases)
 
     command = [sys.executable, str(runner)]
