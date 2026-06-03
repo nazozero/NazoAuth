@@ -22,7 +22,7 @@ pub(crate) const AUTHORIZED_REQUEST_PARAMETERS: &[&str] = &[
     "request_uri",
     "request",
 ];
-const FAPI_NONCE_MAX_BYTES: usize = 256;
+const AUTHORIZATION_NONCE_MAX_BYTES: usize = 256;
 
 fn authorization_pkce(q: &HashMap<String, String>) -> Result<(Option<String>, Option<String>), ()> {
     match (
@@ -352,7 +352,7 @@ async fn authorize_request(
     {
         return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q);
     }
-    if client.require_dpop_bound_tokens && fapi_authorization_parameter_too_long(q) {
+    if authorization_nonce_too_long(q) {
         return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q);
     }
 
@@ -577,9 +577,9 @@ fn authorization_oauth_error_redirect(
     ))
 }
 
-fn fapi_authorization_parameter_too_long(q: &HashMap<String, String>) -> bool {
+fn authorization_nonce_too_long(q: &HashMap<String, String>) -> bool {
     q.get("nonce")
-        .is_some_and(|value| value.len() > FAPI_NONCE_MAX_BYTES)
+        .is_some_and(|value| value.len() > AUTHORIZATION_NONCE_MAX_BYTES)
 }
 
 fn oauth_json_error(response: &HttpResponse) -> Option<String> {
@@ -677,14 +677,14 @@ mod tests {
     }
 
     #[test]
-    fn fapi_length_check_allows_long_state_but_rejects_long_nonce() {
-        assert!(!fapi_authorization_parameter_too_long(&query(&[(
+    fn authorization_nonce_length_check_allows_long_state_but_rejects_long_nonce() {
+        assert!(!authorization_nonce_too_long(&query(&[(
             "state",
             &"s".repeat(1000),
         )])));
-        assert!(fapi_authorization_parameter_too_long(&query(&[(
+        assert!(authorization_nonce_too_long(&query(&[(
             "nonce",
-            &"n".repeat(FAPI_NONCE_MAX_BYTES + 1),
+            &"n".repeat(AUTHORIZATION_NONCE_MAX_BYTES + 1),
         )])));
     }
 
