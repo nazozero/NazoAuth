@@ -10,6 +10,7 @@ from pathlib import Path
 
 from run_oidf_conformance import (
     fetch_alias_plans,
+    is_allowed_review_module,
     oidf_api_request,
     value_as_upper,
 )
@@ -110,6 +111,8 @@ def instance_needs_rerun(base_url: str, token: str, instance_id: str) -> tuple[b
     status = value_as_upper(info.get("status"))
     result = value_as_upper(info.get("result"))
     error = info.get("error")
+    test_name_value = info.get("testName") or info.get("name") or ""
+    test_name = test_name_value if isinstance(test_name_value, str) else ""
 
     if isinstance(error, str) and error.strip():
         return True, f"{instance_id}: error"
@@ -117,6 +120,8 @@ def instance_needs_rerun(base_url: str, token: str, instance_id: str) -> tuple[b
         return True, f"{instance_id}: structured error"
     if status != "FINISHED":
         return True, f"{instance_id}: status {status or '<empty>'}"
+    if result == "REVIEW" and is_allowed_review_module(test_name):
+        return False, f"{instance_id}: allowed REVIEW"
     if result != "PASSED":
         return True, f"{instance_id}: result {result or '<empty>'}"
     return False, f"{instance_id}: PASSED"
