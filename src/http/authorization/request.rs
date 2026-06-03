@@ -22,7 +22,7 @@ pub(crate) const AUTHORIZED_REQUEST_PARAMETERS: &[&str] = &[
     "request_uri",
     "request",
 ];
-const FAPI_AUTHORIZATION_VALUE_MAX_BYTES: usize = 256;
+const FAPI_NONCE_MAX_BYTES: usize = 256;
 
 fn authorization_pkce(q: &HashMap<String, String>) -> Result<(Option<String>, Option<String>), ()> {
     match (
@@ -588,10 +588,8 @@ fn authorization_oauth_error_redirect(
 }
 
 fn fapi_authorization_parameter_too_long(q: &HashMap<String, String>) -> bool {
-    ["state", "nonce"].iter().any(|key| {
-        q.get(*key)
-            .is_some_and(|value| value.len() > FAPI_AUTHORIZATION_VALUE_MAX_BYTES)
-    })
+    q.get("nonce")
+        .is_some_and(|value| value.len() > FAPI_NONCE_MAX_BYTES)
 }
 
 fn oauth_json_error(response: &HttpResponse) -> Option<String> {
@@ -686,6 +684,18 @@ mod tests {
             ]),
             &pushed,
         ));
+    }
+
+    #[test]
+    fn fapi_length_check_allows_long_state_but_rejects_long_nonce() {
+        assert!(!fapi_authorization_parameter_too_long(&query(&[(
+            "state",
+            &"s".repeat(1000),
+        )])));
+        assert!(fapi_authorization_parameter_too_long(&query(&[(
+            "nonce",
+            &"n".repeat(FAPI_NONCE_MAX_BYTES + 1),
+        )])));
     }
 
     #[test]

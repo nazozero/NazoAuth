@@ -229,6 +229,7 @@ def authorization_request_object(
     code_challenge: str,
     scope: str = "openid profile email",
     state: str = "jar-flow",
+    nonce: str | None = None,
     audience: str | None = None,
     jti: str | None = None,
     algorithm: str = "EdDSA",
@@ -247,7 +248,7 @@ def authorization_request_object(
         "redirect_uri": CLIENT_REDIRECT_URI,
         "scope": scope,
         "state": state,
-        "nonce": f"nonce-{state}",
+        "nonce": nonce or f"nonce-{state}",
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
     }
@@ -1157,23 +1158,34 @@ def run() -> None:
         )
 
         dpop_required_long_jar_state_value = "j" * 1000
+        dpop_required_long_jar_state_verifier, dpop_required_long_jar_state_challenge = pkce_pair()
         dpop_required_long_jar_state = user.get(
             f"{BASE_URL}/authorize",
             params={
                 "request": authorization_request_object(
                     dpop_required_private_auth_client_id,
                     private_key,
-                    code_challenge=pkce_pair()[1],
+                    code_challenge=dpop_required_long_jar_state_challenge,
                     state=dpop_required_long_jar_state_value,
+                    nonce="nonce-dpop-required-long-jar-state",
                 ),
             },
             allow_redirects=False,
             timeout=10,
         )
-        expect_authorization_error_redirect(
+        expect_status(
             "GET /authorize DPoP-bound long JAR state",
             dpop_required_long_jar_state,
-            "invalid_request",
+            302,
+        )
+        dpop_required_long_jar_state_request_id = consent_request_from_redirect(
+            dpop_required_long_jar_state,
+            "GET /authorize DPoP-bound long JAR state",
+        )
+        approve_authorization(
+            user,
+            dpop_required_long_jar_state_request_id,
+            dpop_required_long_jar_state_verifier,
             state=dpop_required_long_jar_state_value,
         )
 
