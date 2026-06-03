@@ -170,7 +170,6 @@ def nazo_user_reject_browser_automation() -> list[dict[str, object]]:
                             "oidf_conformance_interaction",
                             5,
                             "OIDF conformance login page",
-                            "update-image-placeholder-optional",
                         ],
                         ["wait", "contains", "/ui/consent", 30],
                     ],
@@ -233,6 +232,46 @@ def add_authorization_error_page_capture(config_value: dict[str, object]) -> Non
         ):
             continue
         tasks.insert(0, authorization_error_page_task())
+
+
+def remove_login_page_placeholder_update(task: object) -> None:
+    if not isinstance(task, dict):
+        return
+    commands = task.get("commands")
+    if not isinstance(commands, list):
+        return
+
+    for command in commands:
+        if not isinstance(command, list) or len(command) < 6:
+            continue
+        if command[:5] != [
+            "wait",
+            "id",
+            "oidf_conformance_interaction",
+            5,
+            "OIDF conformance login page",
+        ]:
+            continue
+        if command[5] == "update-image-placeholder-optional":
+            command.pop(5)
+
+
+def remove_default_login_page_placeholder_updates(config_value: dict[str, object]) -> None:
+    browser = config_value.get("browser")
+    if not isinstance(browser, list):
+        return
+
+    for entry in browser:
+        if not isinstance(entry, dict):
+            continue
+        match = entry.get("match")
+        if not (isinstance(match, str) and match.startswith("https://oauth.nazo.run/authorize")):
+            continue
+        tasks = entry.get("tasks")
+        if not isinstance(tasks, list):
+            continue
+        for task in tasks:
+            remove_login_page_placeholder_update(task)
 
 
 def mark_login_page_wait_as_placeholder_update(task: object) -> None:
@@ -313,6 +352,7 @@ def add_nazo_user_reject_override(config_value: dict[str, object]) -> None:
 
 
 def add_nazo_browser_overrides(config_value: dict[str, object]) -> None:
+    remove_default_login_page_placeholder_updates(config_value)
     add_authorization_error_page_capture(config_value)
     add_nazo_second_login_placeholder_overrides(config_value)
     add_nazo_user_reject_override(config_value)
