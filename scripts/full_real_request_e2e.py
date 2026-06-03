@@ -1065,32 +1065,9 @@ def run() -> None:
             timeout=10,
         )
         expect_status("GET /authorize confidential without PKCE", confidential_without_pkce, 302)
-        confidential_no_pkce_request_id = consent_request_from_redirect(
-            confidential_without_pkce,
-            "GET /authorize confidential without PKCE",
-        )
-        confidential_no_pkce_code, _ = approve_authorization(
-            user,
-            confidential_no_pkce_request_id,
-            "",
-            state="confidential-no-pkce",
-        )
-        confidential_no_pkce_token = requests.post(
-            f"{BASE_URL}/token",
-            data={
-                "grant_type": "authorization_code",
-                "code": confidential_no_pkce_code,
-                "redirect_uri": CLIENT_REDIRECT_URI,
-            },
-            auth=(secret_auth_client_id, secret_auth_client_secret),
-            timeout=10,
-        )
-        expect_status("POST /token confidential authorization_code without PKCE", confidential_no_pkce_token, 200)
-        confidential_no_pkce_body = expect_json(confidential_no_pkce_token)
         check(
-            "confidential_no_pkce_tokens_issued",
-            bool(confidential_no_pkce_body.get("access_token"))
-            and bool(confidential_no_pkce_body.get("id_token")),
+            "confidential_missing_pkce_invalid_request",
+            location_query(confidential_without_pkce).get("error") == ["invalid_request"],
         )
 
         post_authorize_request_id, post_authorize_verifier = authorize_request(

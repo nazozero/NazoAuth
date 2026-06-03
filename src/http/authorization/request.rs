@@ -23,10 +23,7 @@ pub(crate) const AUTHORIZED_REQUEST_PARAMETERS: &[&str] = &[
     "request",
 ];
 
-fn authorization_pkce(
-    client: &ClientRow,
-    q: &HashMap<String, String>,
-) -> Result<(Option<String>, Option<String>), ()> {
+fn authorization_pkce(q: &HashMap<String, String>) -> Result<(Option<String>, Option<String>), ()> {
     match (
         q.get("code_challenge").map(String::as_str),
         q.get("code_challenge_method").map(String::as_str),
@@ -34,7 +31,6 @@ fn authorization_pkce(
         (Some(code_challenge), Some("S256")) if is_valid_pkce_value(code_challenge) => {
             Ok((Some(code_challenge.to_owned()), Some("S256".to_owned())))
         }
-        (None, None) if client.client_type == "confidential" => Ok((None, None)),
         _ => Err(()),
     }
 }
@@ -349,7 +345,7 @@ async fn authorize_request(
             ],
         ));
     }
-    let (code_challenge, code_challenge_method) = match authorization_pkce(&client, q) {
+    let (code_challenge, code_challenge_method) = match authorization_pkce(q) {
         Ok(value) => value,
         Err(()) => {
             return redirect_found(append_query(
@@ -539,29 +535,6 @@ fn outer_request_uri_parameters_match_pushed(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
-
-    fn client(client_type: &str) -> ClientRow {
-        ClientRow {
-            id: Uuid::now_v7(),
-            client_id: "client-1".to_owned(),
-            client_name: "Client".to_owned(),
-            client_type: client_type.to_owned(),
-            client_secret_argon2_hash: None,
-            redirect_uris: json!(["https://client.example/callback"]),
-            scopes: json!(["openid"]),
-            allowed_audiences: json!(["api"]),
-            grant_types: json!(["authorization_code"]),
-            token_endpoint_auth_method: if client_type == "confidential" {
-                "client_secret_basic".to_owned()
-            } else {
-                "none".to_owned()
-            },
-            require_dpop_bound_tokens: false,
-            is_active: true,
-            jwks: None,
-        }
-    }
 
     fn query(values: &[(&str, &str)]) -> HashMap<String, String> {
         values
@@ -680,64 +653,24 @@ mod tests {
     }
 
     #[test]
-    fn public_authorization_request_requires_s256_pkce() {
-        assert!(authorization_pkce(&client("public"), &query(&[])).is_err());
-        assert!(
-            authorization_pkce(
-                &client("public"),
-                &query(&[
-                    (
-                        "code_challenge",
-                        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"
-                    ),
-                    ("code_challenge_method", "plain"),
-                ]),
-            )
-            .is_err()
-        );
-        assert!(
-            authorization_pkce(
-                &client("public"),
-                &query(&[
-                    (
-                        "code_challenge",
-                        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"
-                    ),
-                    ("code_challenge_method", "S256"),
-                ]),
-            )
-            .is_ok()
-        );
-    }
+    fn authorization_request_requires_s256_pkce() {
+        assert!(authorization_pkce(&query(&[])).is_err());
+        let valid_challenge = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ";
 
-    #[test]
-    fn confidential_authorization_request_may_use_oidc_core_without_pkce() {
-        assert!(authorization_pkce(&client("confidential"), &query(&[])).is_ok());
         assert!(
-            authorization_pkce(
-                &client("confidential"),
-                &query(&[
-                    (
-                        "code_challenge",
-                        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"
-                    ),
-                    ("code_challenge_method", "S256"),
-                ]),
-            )
-            .is_ok()
-        );
-        assert!(
-            authorization_pkce(
-                &client("confidential"),
-                &query(&[
-                    (
-                        "code_challenge",
-                        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"
-                    ),
-                    ("code_challenge_method", "plain"),
-                ]),
-            )
+            authorization_pkce(&query(&[
+                ("code_challenge", valid_challenge),
+                ("code_challenge_method", "plain"),
+            ]))
             .is_err()
+        );
+        assert!(authorization_pkce(&query(&[("code_challenge", valid_challenge)])).is_err());
+        assert!(
+            authorization_pkce(&query(&[
+                ("code_challenge", valid_challenge),
+                ("code_challenge_method", "S256"),
+            ]))
+            .is_ok()
         );
     }
 }

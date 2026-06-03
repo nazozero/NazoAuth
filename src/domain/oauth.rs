@@ -145,5 +145,6 @@ pub(crate) struct TokenIssue {
     pub(crate) include_refresh: bool,
     pub(crate) rotation: Option<(Uuid, Option<Uuid>)>,
     pub(crate) dpop_jkt: Option<String>,
+    pub(crate) refresh_token_dpop_jkt: Option<String>,
     pub(crate) authorization_code_hash: Option<String>,
 }

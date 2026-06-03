@@ -287,7 +287,6 @@ pub(crate) async fn token_authorization_code(
                 );
             }
         }
-        (None, None) if client.client_type == "confidential" => {}
         _ => {
             mark_failed_authorization_code(state, &code_hash, "pkce_state_invalid").await;
             return oauth_token_error(
@@ -311,6 +310,11 @@ pub(crate) async fn token_authorization_code(
             false,
         );
     }
+    let refresh_token_dpop_jkt = if client.client_type == "public" {
+        dpop_jkt.clone()
+    } else {
+        None
+    };
     issue_token_response(
         state,
         client,
@@ -328,6 +332,7 @@ pub(crate) async fn token_authorization_code(
             include_refresh: true,
             rotation: None,
             dpop_jkt,
+            refresh_token_dpop_jkt,
             authorization_code_hash: Some(code_hash),
         },
     )

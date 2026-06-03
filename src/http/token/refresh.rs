@@ -173,7 +173,7 @@ pub(crate) async fn token_refresh(
     }
     let dpop_jkt = if dpop_proof_present(req) {
         match validate_dpop_proof(state, req, None, token.dpop_jkt.as_deref()).await {
-            Ok(value) => value.or(token.dpop_jkt),
+            Ok(value) => value.or(token.dpop_jkt.clone()),
             Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
         }
     } else if token.dpop_jkt.is_some() {
@@ -181,6 +181,9 @@ pub(crate) async fn token_refresh(
     } else {
         None
     };
+    if client.require_dpop_bound_tokens && dpop_jkt.is_none() {
+        return dpop_error_response(DpopError::MissingProof, DpopErrorContext::TokenEndpoint);
+    }
     if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
         return response;
     }
@@ -235,7 +238,8 @@ pub(crate) async fn token_refresh(
             id_token_claims: Vec::new(),
             include_refresh: true,
             rotation: Some((token.token_family_id, Some(token.id))),
-            dpop_jkt,
+            dpop_jkt: dpop_jkt.clone(),
+            refresh_token_dpop_jkt: token.dpop_jkt,
             authorization_code_hash: None,
         },
     )

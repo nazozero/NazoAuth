@@ -79,6 +79,14 @@ pub(crate) fn dpop_error_response(error: DpopError, context: DpopErrorContext) -
         _ => "invalid_dpop_proof",
     };
     let mut response = oauth_error(status, error_code, description);
+    if matches!(context, DpopErrorContext::TokenEndpoint) {
+        response
+            .headers_mut()
+            .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        response
+            .headers_mut()
+            .insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
+    }
     if let DpopError::UseNonce(nonce) = error
         && let Ok(value) = HeaderValue::from_str(&nonce)
     {

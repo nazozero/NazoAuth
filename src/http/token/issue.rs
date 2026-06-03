@@ -89,7 +89,7 @@ async fn insert_refresh_token(
             oauth_tokens::issued_at.eq(refresh.issued_at),
             oauth_tokens::expires_at.eq(refresh.expires_at),
             oauth_tokens::subject.eq(issue.subject.clone()),
-            oauth_tokens::dpop_jkt.eq(issue.dpop_jkt.clone()),
+            oauth_tokens::dpop_jkt.eq(issue.refresh_token_dpop_jkt.clone()),
         ))
         .execute(conn)
         .await
