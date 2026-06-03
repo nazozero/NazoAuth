@@ -7,6 +7,7 @@ import argparse
 import copy
 import json
 import os
+import re
 import shlex
 import signal
 import subprocess
@@ -50,6 +51,7 @@ OIDF_ALLOWED_REVIEW_MODULES = {
     "oidcc-max-age-1",
     "oidcc-ensure-registered-redirect-uri",
 }
+OIDF_CALLBACK_PATH_PATTERN = re.compile(r"/test/a/[^/]+/callback")
 
 DEFAULT_PLAN_EXPRESSIONS = [
     f"oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] {OIDCC_CONFIG_FILE}",
@@ -137,6 +139,44 @@ def config_alias(config_value: dict[str, object]) -> str | None:
     if isinstance(alias, str) and alias.strip():
         return alias.strip()
     return None
+
+
+def normalize_oidf_callback_waits(config_value: dict[str, object]) -> None:
+    alias = config_alias(config_value)
+    if alias is None:
+        return
+
+    browser = config_value.get("browser")
+    if not isinstance(browser, list):
+        return
+
+    expected_callback_path = f"/test/a/{alias}/callback"
+    for entry in browser:
+        normalize_oidf_callback_waits_in_value(entry, expected_callback_path)
+
+    override = config_value.get("override")
+    if isinstance(override, dict):
+        for override_value in override.values():
+            normalize_oidf_callback_waits_in_value(override_value, expected_callback_path)
+
+
+def normalize_oidf_callback_waits_in_value(value: object, expected_callback_path: str) -> None:
+    if isinstance(value, list):
+        if (
+            len(value) >= 3
+            and value[0] == "wait"
+            and value[1] == "contains"
+            and isinstance(value[2], str)
+        ):
+            value[2] = OIDF_CALLBACK_PATH_PATTERN.sub(
+                lambda _: expected_callback_path,
+                value[2],
+            )
+        for item in value:
+            normalize_oidf_callback_waits_in_value(item, expected_callback_path)
+    elif isinstance(value, dict):
+        for item in value.values():
+            normalize_oidf_callback_waits_in_value(item, expected_callback_path)
 
 
 def config_uses_nazo_hosted_conformance_ui(config_value: dict[str, object]) -> bool:
@@ -469,6 +509,7 @@ def add_nazo_user_reject_override(config_value: dict[str, object]) -> None:
 
 
 def add_nazo_browser_overrides(config_value: dict[str, object]) -> None:
+    normalize_oidf_callback_waits(config_value)
     remove_default_login_page_placeholder_updates(config_value)
     add_login_page_clicks(config_value)
     add_authorization_error_page_capture(config_value)
