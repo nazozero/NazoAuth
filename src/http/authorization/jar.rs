@@ -68,6 +68,13 @@ pub(crate) async fn apply_request_object(
                 RequestObjectMode::SignedJar,
             )
         };
+    if !request_object_mode_allowed(client, mode) {
+        return Err(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request_object",
+            "request object 签名要求无效.",
+        ));
+    }
     validate_request_object_claims_and_apply(state, outer, client, claims, mode).await
 }
 
@@ -136,6 +143,10 @@ fn request_object_uses_none_algorithm(
         ));
     }
     Ok(false)
+}
+
+fn request_object_mode_allowed(client: &ClientRow, mode: RequestObjectMode) -> bool {
+    !(client.require_dpop_bound_tokens && mode == RequestObjectMode::BasicOidc)
 }
 
 fn split_compact_jwt(token: &str) -> Option<(&str, &str, &str)> {
@@ -668,6 +679,44 @@ mod tests {
         assert!(!request_object_times_valid(
             &time_claims(Some(now + 60), Some(now + 60), None),
             now,
+            RequestObjectMode::SignedJar
+        ));
+    }
+
+    #[test]
+    fn dpop_bound_client_rejects_unsigned_request_objects() {
+        let mut client = ClientRow {
+            id: Uuid::now_v7(),
+            client_id: "client-a".to_owned(),
+            client_name: "Client A".to_owned(),
+            client_type: "confidential".to_owned(),
+            client_secret_argon2_hash: None,
+            redirect_uris: json!([]),
+            scopes: json!([]),
+            allowed_audiences: json!([]),
+            grant_types: json!([]),
+            token_endpoint_auth_method: "private_key_jwt".to_owned(),
+            require_dpop_bound_tokens: false,
+            is_active: true,
+            jwks: None,
+        };
+
+        assert!(request_object_mode_allowed(
+            &client,
+            RequestObjectMode::BasicOidc
+        ));
+        assert!(request_object_mode_allowed(
+            &client,
+            RequestObjectMode::SignedJar
+        ));
+
+        client.require_dpop_bound_tokens = true;
+        assert!(!request_object_mode_allowed(
+            &client,
+            RequestObjectMode::BasicOidc
+        ));
+        assert!(request_object_mode_allowed(
+            &client,
             RequestObjectMode::SignedJar
         ));
     }

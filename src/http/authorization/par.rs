@@ -132,6 +132,15 @@ pub(crate) async fn par(state: Data<AppState>, req: HttpRequest, body: Bytes) ->
     params.remove("client_secret");
     params.remove("client_assertion_type");
     params.remove("client_assertion");
+    if pushed_authorization_request_requires_request_object(&client)
+        && !params.contains_key("request")
+    {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "PAR 请求缺少 request object.",
+        );
+    }
     if let Err(response) = apply_request_object(&state, &mut params, &client).await {
         return response;
     }
@@ -230,4 +239,41 @@ fn validate_pushed_authorization_request(
                 "PAR 请求 redirect_uri 未注册.",
             ),
         })
+}
+
+fn pushed_authorization_request_requires_request_object(client: &ClientRow) -> bool {
+    client.require_dpop_bound_tokens
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn client(require_dpop_bound_tokens: bool) -> ClientRow {
+        ClientRow {
+            id: Uuid::now_v7(),
+            client_id: "client-a".to_owned(),
+            client_name: "Client A".to_owned(),
+            client_type: "confidential".to_owned(),
+            client_secret_argon2_hash: None,
+            redirect_uris: json!(["https://client.example/callback"]),
+            scopes: json!(["openid"]),
+            allowed_audiences: json!([]),
+            grant_types: json!(["authorization_code"]),
+            token_endpoint_auth_method: "private_key_jwt".to_owned(),
+            require_dpop_bound_tokens,
+            is_active: true,
+            jwks: None,
+        }
+    }
+
+    #[test]
+    fn dpop_bound_par_requires_request_object() {
+        assert!(!pushed_authorization_request_requires_request_object(
+            &client(false)
+        ));
+        assert!(pushed_authorization_request_requires_request_object(
+            &client(true)
+        ));
+    }
 }
