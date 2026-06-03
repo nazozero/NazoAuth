@@ -158,7 +158,8 @@ def nazo_user_reject_browser_automation() -> list[dict[str, object]]:
                             5,
                             "OIDF conformance login page",
                             "update-image-placeholder-optional",
-                        ]
+                        ],
+                        ["wait", "contains", "/ui/consent", 30],
                     ],
                 },
                 {
