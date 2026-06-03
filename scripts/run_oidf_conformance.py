@@ -100,7 +100,14 @@ def issuer_from_discovery_url(discovery_url: str) -> str | None:
     return issuer
 
 
+def config_requires_browser_automation(config_name: str) -> bool:
+    return config_name != OIDCC_CONFIG_CONFIG_FILE
+
+
 def validate_browser_automation(config_name: str, config_value: dict[str, object]) -> None:
+    if not config_requires_browser_automation(config_name):
+        return
+
     server = config_value.get("server")
     if not isinstance(server, dict):
         return
