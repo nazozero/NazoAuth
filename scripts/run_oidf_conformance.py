@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import shlex
@@ -28,6 +29,10 @@ FAPI_SECURITY_ID2_CONFIG_FILE = "oidf-fapi-security-id2-plan-config.json"
 FAPI_MESSAGE_ID1_CONFIG_FILE = "oidf-fapi-message-id1-plan-config.json"
 FAPI_SECURITY_FINAL_USER_REJECTS_AUTHENTICATION = (
     "fapi2-security-profile-final-user-rejects-authentication"
+)
+OIDCC_SECOND_LOGIN_SCREENSHOT_MODULES = (
+    "oidcc-prompt-login",
+    "oidcc-max-age-1",
 )
 
 DEFAULT_PLAN_EXPRESSIONS = [
@@ -177,6 +182,70 @@ def nazo_user_reject_browser_automation() -> list[dict[str, object]]:
     ]
 
 
+def mark_login_page_wait_as_placeholder_update(task: object) -> None:
+    if not isinstance(task, dict):
+        return
+    commands = task.get("commands")
+    if not isinstance(commands, list):
+        return
+
+    for command in commands:
+        if not isinstance(command, list) or len(command) < 5:
+            continue
+        if command[:3] != ["wait", "id", "oidf_conformance_interaction"]:
+            continue
+        if len(command) == 5:
+            command.append("update-image-placeholder-optional")
+        elif command[5] in {None, ""}:
+            command[5] = "update-image-placeholder-optional"
+
+
+def browser_automation_with_second_login_placeholder(
+    browser: list[object],
+) -> list[object]:
+    automation: list[object] = []
+    for entry in browser:
+        if not isinstance(entry, dict):
+            automation.append(copy.deepcopy(entry))
+            continue
+
+        match = entry.get("match")
+        if not (isinstance(match, str) and match.startswith("https://oauth.nazo.run/authorize")):
+            automation.append(copy.deepcopy(entry))
+            continue
+
+        first_authorization = copy.deepcopy(entry)
+        first_authorization["match-limit"] = 1
+        automation.append(first_authorization)
+
+        second_authorization = copy.deepcopy(entry)
+        second_authorization.pop("match-limit", None)
+        tasks = second_authorization.get("tasks")
+        if isinstance(tasks, list):
+            for task in tasks:
+                mark_login_page_wait_as_placeholder_update(task)
+        automation.append(second_authorization)
+
+    return automation
+
+
+def add_nazo_second_login_placeholder_overrides(config_value: dict[str, object]) -> None:
+    if not config_uses_nazo_hosted_conformance_ui(config_value):
+        return
+
+    browser = config_value.get("browser")
+    if not isinstance(browser, list):
+        return
+
+    override = config_value.setdefault("override", {})
+    if not isinstance(override, dict):
+        fail("OIDF plan config override must be a JSON object when present")
+
+    browser_override = browser_automation_with_second_login_placeholder(browser)
+    for module_name in OIDCC_SECOND_LOGIN_SCREENSHOT_MODULES:
+        override.setdefault(module_name, {"browser": copy.deepcopy(browser_override)})
+
+
 def add_nazo_user_reject_override(config_value: dict[str, object]) -> None:
     if not config_uses_nazo_hosted_conformance_ui(config_value):
         return
@@ -188,6 +257,11 @@ def add_nazo_user_reject_override(config_value: dict[str, object]) -> None:
         FAPI_SECURITY_FINAL_USER_REJECTS_AUTHENTICATION,
         {"browser": nazo_user_reject_browser_automation()},
     )
+
+
+def add_nazo_browser_overrides(config_value: dict[str, object]) -> None:
+    add_nazo_second_login_placeholder_overrides(config_value)
+    add_nazo_user_reject_override(config_value)
 
 
 def write_plan_configs(suite_scripts: Path, file_name: str, env_name: str) -> tuple[set[str], set[str]]:
@@ -202,7 +276,7 @@ def write_plan_configs(suite_scripts: Path, file_name: str, env_name: str) -> tu
 
     configs = parsed.get("configs")
     if configs is None:
-        add_nazo_user_reject_override(parsed)
+        add_nazo_browser_overrides(parsed)
         validate_browser_automation(file_name, parsed)
         target = suite_scripts / file_name
         target.write_text(json.dumps(parsed, indent=2, sort_keys=True), encoding="utf-8")
@@ -220,7 +294,7 @@ def write_plan_configs(suite_scripts: Path, file_name: str, env_name: str) -> tu
         validate_config_file_name(config_name)
         if not isinstance(config_value, dict):
             fail(f"{env_name}.configs.{config_name} must contain a JSON object")
-        add_nazo_user_reject_override(config_value)
+        add_nazo_browser_overrides(config_value)
         validate_browser_automation(config_name, config_value)
         alias = config_alias(config_value)
         if alias:
