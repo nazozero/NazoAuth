@@ -257,7 +257,10 @@ fn request_object_party_claims_valid(
         }
         RequestObjectMode::SignedJar => {
             claims.iss.as_deref() == Some(client.client_id.as_str())
-                && claims.sub.as_deref() == Some(client.client_id.as_str())
+                && claims
+                    .sub
+                    .as_deref()
+                    .is_none_or(|sub| sub == client.client_id)
         }
     }
 }
@@ -437,8 +440,7 @@ fn request_object_times_valid(
 fn request_object_jti_valid(claims: &RequestObjectClaims, mode: RequestObjectMode) -> bool {
     match (&claims.jti, mode) {
         (Some(jti), _) => is_valid_request_object_jti(jti),
-        (None, RequestObjectMode::BasicOidc) => true,
-        (None, RequestObjectMode::SignedJar) => false,
+        (None, _) => true,
     }
 }
 
@@ -536,7 +538,7 @@ mod tests {
     }
 
     #[test]
-    fn request_object_jti_policy_tracks_mode() {
+    fn request_object_jti_is_optional_but_validated_when_present() {
         assert!(is_valid_request_object_jti("abc"));
         assert!(!is_valid_request_object_jti(""));
         assert!(!is_valid_request_object_jti(&"a".repeat(129)));
@@ -556,8 +558,67 @@ mod tests {
             &basic,
             RequestObjectMode::BasicOidc
         ));
-        assert!(!request_object_jti_valid(
+        assert!(request_object_jti_valid(
             &basic,
+            RequestObjectMode::SignedJar
+        ));
+
+        let invalid = RequestObjectClaims {
+            jti: Some(String::new()),
+            ..basic
+        };
+        assert!(!request_object_jti_valid(
+            &invalid,
+            RequestObjectMode::SignedJar
+        ));
+    }
+
+    #[test]
+    fn signed_request_object_sub_is_optional_but_must_match_when_present() {
+        let mut claims = RequestObjectClaims {
+            client_id: "client-a".to_owned(),
+            iss: Some("client-a".to_owned()),
+            sub: None,
+            aud: None,
+            exp: None,
+            nbf: None,
+            iat: None,
+            jti: None,
+            params: HashMap::new(),
+        };
+        let client = ClientRow {
+            id: Uuid::now_v7(),
+            client_id: "client-a".to_owned(),
+            client_name: "Client A".to_owned(),
+            client_type: "confidential".to_owned(),
+            client_secret_argon2_hash: None,
+            redirect_uris: json!([]),
+            scopes: json!([]),
+            allowed_audiences: json!([]),
+            grant_types: json!([]),
+            token_endpoint_auth_method: "private_key_jwt".to_owned(),
+            require_dpop_bound_tokens: false,
+            is_active: true,
+            jwks: None,
+        };
+
+        assert!(request_object_party_claims_valid(
+            &claims,
+            &client,
+            RequestObjectMode::SignedJar
+        ));
+
+        claims.sub = Some("client-a".to_owned());
+        assert!(request_object_party_claims_valid(
+            &claims,
+            &client,
+            RequestObjectMode::SignedJar
+        ));
+
+        claims.sub = Some("client-b".to_owned());
+        assert!(!request_object_party_claims_valid(
+            &claims,
+            &client,
             RequestObjectMode::SignedJar
         ));
     }

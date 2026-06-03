@@ -244,7 +244,7 @@ docker compose up -d nazo_oauth_server
 
 `private_key_jwt` 客户端必须在客户端元数据中配置公开 `jwks`。客户端 JWKS 只接受公开签名密钥，必须包含 `kid`、`alg` 和 `use=sig`；`alg` 支持 `EdDSA`、`RS256`、`ES256`、`PS256`。DPoP proof 使用同一组签名算法；若缺少或使用过期 nonce，服务端返回 `use_dpop_nonce` 并通过 `DPoP-Nonce` 响应头提供新的 nonce；DPoP token 和 DPoP-bound userinfo 成功响应也返回下一次 nonce。客户端元数据中的 `require_dpop_bound_tokens=true` 表示该客户端的授权码和 refresh token 签发路径必须形成 DPoP sender constraint；未显式要求时，普通 OIDC 授权码流程可签发 Bearer token。
 
-PAR 使用 `POST /par` 提交授权请求参数，成功后返回一次性 `request_uri`。`/authorize` 使用 `request_uri` 时拒绝外层参数覆盖。JAR 使用 `request=<jwt>`，接受 `EdDSA`、`RS256`、`ES256`、`PS256` 签名请求对象，使用客户端 JWKS 验签，并校验 `iss`、`sub`、`client_id`、`aud`、`exp`、`nbf`、`iat`、`jti` 和防重放状态。
+PAR 使用 `POST /par` 提交授权请求参数，成功后返回一次性 `request_uri`。`/authorize` 使用 `request_uri` 时拒绝外层参数覆盖。JAR 使用 `request=<jwt>`，接受 `EdDSA`、`RS256`、`ES256`、`PS256` 签名请求对象，使用客户端 JWKS 验签，并校验 `iss`、`client_id`、`aud`、`exp`、`nbf`、`iat` 等 claims；`sub` 和 `jti` 为可选 claims，出现时必须有效，且 `jti` 出现时会写入防重放状态。
 
 `/introspect` 只接受机密客户端认证，并按 access token audience 或客户端自身 token 归属返回 active metadata；非 active token 只返回 `{"active": false}`。public client 可调用 `/revoke` 撤销属于自身的 token，但不能读取 introspection metadata。
 
