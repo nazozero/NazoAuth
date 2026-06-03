@@ -383,6 +383,14 @@ pub(crate) fn unverified_request_object_client_id(request_object: &str) -> Optio
 fn request_object_params(
     claims: &RequestObjectClaims,
 ) -> Result<HashMap<String, String>, HttpResponse> {
+    if claims.params.contains_key("request_uri") {
+        return Err(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request_object",
+            "request object 不能包含 request_uri.",
+        ));
+    }
+
     let mut params = HashMap::new();
     for key in AUTHORIZED_REQUEST_PARAMETERS {
         if matches!(*key, "request" | "request_uri" | "client_id") {
@@ -599,6 +607,35 @@ mod tests {
             &invalid,
             RequestObjectMode::SignedJar
         ));
+    }
+
+    #[test]
+    fn request_object_params_rejects_request_uri_claim() {
+        let mut claims = RequestObjectClaims {
+            client_id: "client-a".to_owned(),
+            iss: None,
+            sub: None,
+            aud: None,
+            exp: None,
+            nbf: None,
+            iat: None,
+            jti: None,
+            params: HashMap::from([
+                (
+                    "redirect_uri".to_owned(),
+                    json!("https://client.example/callback"),
+                ),
+                ("request_uri".to_owned(), json!("urn:example:bad")),
+            ]),
+        };
+        assert!(request_object_params(&claims).is_err());
+
+        claims.params.remove("request_uri");
+        let params = request_object_params(&claims).expect("valid request object params");
+        assert_eq!(
+            params.get("redirect_uri").map(String::as_str),
+            Some("https://client.example/callback")
+        );
     }
 
     fn time_claims(exp: Option<i64>, nbf: Option<i64>, iat: Option<i64>) -> RequestObjectClaims {
