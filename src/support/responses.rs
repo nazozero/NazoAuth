@@ -4,11 +4,20 @@
 use super::prelude::*;
 use std::borrow::Cow;
 
+#[derive(Clone)]
+pub(crate) struct OAuthJsonErrorFields {
+    pub(crate) error: String,
+}
+
 pub(crate) fn oauth_error(status: StatusCode, error: &str, description: &str) -> HttpResponse {
-    json_response_status(
+    let mut response = json_response_status(
         status,
         json!({"error": error, "error_description": description}),
-    )
+    );
+    response.extensions_mut().insert(OAuthJsonErrorFields {
+        error: error.to_owned(),
+    });
+    response
 }
 
 pub(crate) fn authorization_error_page(

@@ -27,6 +27,9 @@ FAPI_SECURITY_FINAL_CONFIG_FILE = "oidf-fapi-security-final-plan-config.json"
 FAPI_MESSAGE_FINAL_CONFIG_FILE = "oidf-fapi-message-final-plan-config.json"
 FAPI_SECURITY_ID2_CONFIG_FILE = "oidf-fapi-security-id2-plan-config.json"
 FAPI_MESSAGE_ID1_CONFIG_FILE = "oidf-fapi-message-id1-plan-config.json"
+FAPI_SECURITY_FINAL_USER_REJECTS_AUTHENTICATION = (
+    "fapi2-security-profile-final-user-rejects-authentication"
+)
 OIDF_REVIEW_PLACEHOLDER_IMAGE = (
     "data:image/png;base64,"
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
@@ -120,6 +123,78 @@ def config_alias(config_value: dict[str, object]) -> str | None:
     return None
 
 
+def config_uses_nazo_hosted_conformance_ui(config_value: dict[str, object]) -> bool:
+    browser = config_value.get("browser")
+    if not isinstance(browser, list):
+        return False
+
+    for entry in browser:
+        if not isinstance(entry, dict):
+            continue
+        match = entry.get("match")
+        if isinstance(match, str) and match.startswith("https://oauth.nazo.run/authorize"):
+            return True
+    return False
+
+
+def nazo_user_reject_browser_automation() -> list[dict[str, object]]:
+    return [
+        {
+            "comment": (
+                "Nazo OAuth hosted conformance UI signs in automatically, "
+                "then lets this negative module choose deny before the default approval."
+            ),
+            "match": "https://oauth.nazo.run/authorize*",
+            "tasks": [
+                {
+                    "task": "Complete login page",
+                    "optional": True,
+                    "match": "https://oauth.nazo.run/ui/auth*",
+                    "commands": [
+                        [
+                            "wait",
+                            "id",
+                            "oidf_conformance_interaction",
+                            5,
+                            "OIDF conformance login page",
+                            "update-image-placeholder-optional",
+                        ],
+                        ["wait", "contains", "/ui/consent", 30],
+                    ],
+                },
+                {
+                    "task": "Deny consent page",
+                    "match": "https://oauth.nazo.run/ui/consent*",
+                    "commands": [
+                        ["wait", "id", "oidf_conformance_deny", 10],
+                        ["click", "id", "oidf_conformance_deny"],
+                        ["wait", "contains", "/test/", 30],
+                        ["wait", "id", "submission_complete", 10],
+                    ],
+                },
+                {
+                    "task": "Verify callback completion",
+                    "match": "*/test/*/callback*",
+                    "commands": [["wait", "id", "submission_complete", 10]],
+                },
+            ],
+        }
+    ]
+
+
+def add_nazo_user_reject_override(config_value: dict[str, object]) -> None:
+    if not config_uses_nazo_hosted_conformance_ui(config_value):
+        return
+
+    override = config_value.setdefault("override", {})
+    if not isinstance(override, dict):
+        fail("OIDF plan config override must be a JSON object when present")
+    override.setdefault(
+        FAPI_SECURITY_FINAL_USER_REJECTS_AUTHENTICATION,
+        {"browser": nazo_user_reject_browser_automation()},
+    )
+
+
 def write_plan_configs(suite_scripts: Path, file_name: str, env_name: str) -> tuple[set[str], set[str]]:
     validate_config_file_name(file_name)
     raw_config = non_empty_env(env_name)
@@ -132,6 +207,7 @@ def write_plan_configs(suite_scripts: Path, file_name: str, env_name: str) -> tu
 
     configs = parsed.get("configs")
     if configs is None:
+        add_nazo_user_reject_override(parsed)
         validate_browser_automation(file_name, parsed)
         target = suite_scripts / file_name
         target.write_text(json.dumps(parsed, indent=2, sort_keys=True), encoding="utf-8")
@@ -149,6 +225,7 @@ def write_plan_configs(suite_scripts: Path, file_name: str, env_name: str) -> tu
         validate_config_file_name(config_name)
         if not isinstance(config_value, dict):
             fail(f"{env_name}.configs.{config_name} must contain a JSON object")
+        add_nazo_user_reject_override(config_value)
         validate_browser_automation(config_name, config_value)
         alias = config_alias(config_value)
         if alias:
@@ -515,7 +592,9 @@ def plan_expressions(
     fallback_config_name: str,
 ) -> list[str]:
     raw_plan_set = os.environ.get(env_name, "").strip()
-    if raw_plan_set:
+    if raw_expression.strip():
+        expressions = [raw_expression.strip()]
+    elif raw_plan_set:
         try:
             parsed = json.loads(raw_plan_set)
         except json.JSONDecodeError as exc:
@@ -523,8 +602,6 @@ def plan_expressions(
         if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
             fail(f"{env_name} must contain a JSON array of plan expression strings")
         expressions = [item.strip() for item in parsed if item.strip()]
-    elif raw_expression.strip():
-        expressions = [raw_expression.strip()]
     else:
         expressions = default_plan_expressions(config_names, fallback_config_name)
 
@@ -557,6 +634,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--disable-ssl-verify", action="store_true")
     parser.add_argument("--no-parallel", action="store_true")
+    parser.add_argument(
+        "--rerun",
+        default="",
+        help="pass through the official runner --rerun filter, for example 1 or 1:3 or 1,3",
+    )
     parser.add_argument(
         "--timeout-seconds",
         type=int,
@@ -666,6 +748,8 @@ def main() -> int:
         command.append("--list")
     if args.no_parallel:
         command.append("--no-parallel")
+    if args.rerun:
+        command.extend(["--rerun", args.rerun])
     if args.export_dir:
         export_dir = Path(args.export_dir).resolve()
         export_dir.mkdir(parents=True, exist_ok=True)

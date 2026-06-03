@@ -212,8 +212,28 @@ async fn validate_request_object_claims_and_apply(
             "request object 与外层 client_id 冲突.",
         ));
     }
+    if client.require_dpop_bound_tokens && mode == RequestObjectMode::SignedJar {
+        if !request_params.contains_key("redirect_uri") {
+            return Err(oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request_object",
+                "FAPI request object 缺少 redirect_uri.",
+            ));
+        }
+        if outer_authorization_params_conflict(outer, &request_params) {
+            return Err(oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request_object",
+                "request object 与外层授权参数冲突.",
+            ));
+        }
+    }
     store_request_object_replay_state(state, client, &claims, now, mode).await?;
-    outer.retain(|key, _| key == "request" || !request_params.contains_key(key));
+    if client.require_dpop_bound_tokens && mode == RequestObjectMode::SignedJar {
+        outer.retain(|key, _| matches!(key.as_str(), "request" | "client_id"));
+    } else {
+        outer.retain(|key, _| key == "request" || !request_params.contains_key(key));
+    }
     outer.extend(request_params);
     Ok(())
 }
@@ -257,6 +277,24 @@ fn outer_client_id_conflicts(outer: &HashMap<String, String>, client_id: &str) -
     outer
         .get("client_id")
         .is_some_and(|outer_value| outer_value != client_id)
+}
+
+fn outer_authorization_params_conflict(
+    outer: &HashMap<String, String>,
+    request_params: &HashMap<String, String>,
+) -> bool {
+    for key in AUTHORIZED_REQUEST_PARAMETERS {
+        if matches!(*key, "request" | "request_uri" | "client_id") {
+            continue;
+        }
+        if let (Some(outer_value), Some(request_value)) =
+            (outer.get(*key), request_params.get(*key))
+            && outer_value != request_value
+        {
+            return true;
+        }
+    }
+    false
 }
 
 async fn store_request_object_replay_state(

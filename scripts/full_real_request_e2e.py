@@ -261,6 +261,30 @@ def authorization_request_object(
     )
 
 
+def authorization_request_object_without_redirect_uri(
+    client_id: str,
+    key: Any,
+    *,
+    code_challenge: str,
+    state: str,
+) -> str:
+    token = authorization_request_object(
+        client_id,
+        key,
+        code_challenge=code_challenge,
+        state=state,
+    )
+    headers = jwt.get_unverified_header(token)
+    claims = jwt.decode(token, options={"verify_signature": False})
+    claims.pop("redirect_uri", None)
+    return jwt.encode(
+        claims,
+        private_key_pem(key),
+        algorithm=headers["alg"],
+        headers={"typ": "oauth-authz-req+jwt", "kid": headers["kid"]},
+    )
+
+
 def csrf_header(session: requests.Session) -> dict[str, str]:
     token = session.cookies.get("nazo_oauth_csrf")
     if not token:
@@ -499,6 +523,21 @@ def consent_request_from_redirect(response: requests.Response, check_name: str) 
     request_id = location_query(response).get("request_id", [None])[0]
     check(f"{check_name}_request_id", bool(request_id))
     return request_id or ""
+
+
+def expect_authorization_error_redirect(
+    check_name: str,
+    response: requests.Response,
+    error: str,
+    *,
+    state: str | None = None,
+) -> None:
+    expect_status(check_name, response, 302)
+    query = location_query(response)
+    check(f"{check_name}_error", query.get("error") == [error])
+    check(f"{check_name}_issuer", query.get("iss") == [ISSUER_URL])
+    if state is not None:
+        check(f"{check_name}_state", query.get("state") == [state])
 
 
 def token_plain(form: dict[str, str], check_name: str) -> dict[str, Any]:
@@ -1051,6 +1090,95 @@ def run() -> None:
             location_query(public_without_pkce).get("error") == ["invalid_request"],
         )
 
+        dpop_required_plain_authorize = user.get(
+            f"{BASE_URL}/authorize",
+            params={
+                "response_type": "code",
+                "client_id": dpop_required_private_auth_client_id,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "scope": "openid profile email",
+                "state": "dpop-required-plain",
+                "nonce": "nonce-dpop-required-plain",
+                "code_challenge": pkce_pair()[1],
+                "code_challenge_method": "S256",
+            },
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_authorization_error_redirect(
+            "GET /authorize DPoP-bound client without PAR or JAR",
+            dpop_required_plain_authorize,
+            "invalid_request",
+            state="dpop-required-plain",
+        )
+
+        dpop_required_long_state = user.get(
+            f"{BASE_URL}/authorize",
+            params={
+                "response_type": "code",
+                "client_id": dpop_required_private_auth_client_id,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "scope": "openid profile email",
+                "state": "s" * 1000,
+                "nonce": "nonce-dpop-required-long-state",
+                "code_challenge": pkce_pair()[1],
+                "code_challenge_method": "S256",
+                "request": authorization_request_object(
+                    dpop_required_private_auth_client_id,
+                    private_key,
+                    code_challenge=pkce_pair()[1],
+                    state="dpop-required-long-state-jar",
+                ),
+            },
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_authorization_error_redirect(
+            "GET /authorize DPoP-bound long outer state",
+            dpop_required_long_state,
+            "invalid_request_object",
+        )
+
+        dpop_required_long_jar_state_value = "j" * 1000
+        dpop_required_long_jar_state = user.get(
+            f"{BASE_URL}/authorize",
+            params={
+                "request": authorization_request_object(
+                    dpop_required_private_auth_client_id,
+                    private_key,
+                    code_challenge=pkce_pair()[1],
+                    state=dpop_required_long_jar_state_value,
+                ),
+            },
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_authorization_error_redirect(
+            "GET /authorize DPoP-bound long JAR state",
+            dpop_required_long_jar_state,
+            "invalid_request",
+            state=dpop_required_long_jar_state_value,
+        )
+
+        dpop_required_jar_missing_redirect = user.get(
+            f"{BASE_URL}/authorize",
+            params={
+                "request": authorization_request_object_without_redirect_uri(
+                    dpop_required_private_auth_client_id,
+                    private_key,
+                    code_challenge=pkce_pair()[1],
+                    state="dpop-required-missing-redirect",
+                ),
+            },
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_authorization_error_redirect(
+            "GET /authorize DPoP-bound JAR missing redirect_uri",
+            dpop_required_jar_missing_redirect,
+            "invalid_request_object",
+        )
+
         confidential_without_pkce = user.get(
             f"{BASE_URL}/authorize",
             params={
@@ -1176,7 +1304,11 @@ def run() -> None:
             allow_redirects=False,
             timeout=10,
         )
-        expect_status("GET /authorize PAR parameter override rejected", par_conflict, 400)
+        expect_authorization_error_redirect(
+            "GET /authorize PAR parameter override rejected",
+            par_conflict,
+            "invalid_request",
+        )
         par = expect_json(
             expect_status(
                 "POST /par public second",
@@ -1521,7 +1653,11 @@ def run() -> None:
             allow_redirects=False,
             timeout=10,
         )
-        expect_status("GET /authorize PAR request_uri read once", par_reuse, 400)
+        expect_authorization_error_redirect(
+            "GET /authorize PAR request_uri read once",
+            par_reuse,
+            "invalid_request_uri",
+        )
 
         jar_verifier, jar_challenge = pkce_pair()
         jar_token = authorization_request_object(
@@ -1557,7 +1693,11 @@ def run() -> None:
             allow_redirects=False,
             timeout=10,
         )
-        expect_status("GET /authorize JAR jti replay rejected", jar_replay, 400)
+        expect_authorization_error_redirect(
+            "GET /authorize JAR jti replay rejected",
+            jar_replay,
+            "invalid_request_object",
+        )
 
         jar_rs_verifier, jar_rs_challenge = pkce_pair()
         jar_rs_token = authorization_request_object(
@@ -1643,7 +1783,7 @@ def run() -> None:
             state="jar-bad-aud",
             audience="https://wrong-audience.example",
         )
-        expect_status(
+        expect_authorization_error_redirect(
             "GET /authorize JAR audience mismatch rejected",
             user.get(
                 f"{BASE_URL}/authorize",
@@ -1651,7 +1791,7 @@ def run() -> None:
                 allow_redirects=False,
                 timeout=10,
             ),
-            400,
+            "invalid_request_object",
         )
 
         jar_client_conflict = authorization_request_object(
@@ -1661,7 +1801,7 @@ def run() -> None:
             state="jar-client-conflict",
             jti=str(uuid.uuid4()),
         )
-        expect_status(
+        expect_authorization_error_redirect(
             "GET /authorize JAR outer client_id conflict rejected",
             user.get(
                 f"{BASE_URL}/authorize",
@@ -1669,7 +1809,7 @@ def run() -> None:
                 allow_redirects=False,
                 timeout=10,
             ),
-            400,
+            "invalid_request_object",
         )
 
         jar_override_verifier, jar_override_challenge = pkce_pair()

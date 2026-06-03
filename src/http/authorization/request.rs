@@ -22,6 +22,7 @@ pub(crate) const AUTHORIZED_REQUEST_PARAMETERS: &[&str] = &[
     "request_uri",
     "request",
 ];
+const FAPI_AUTHORIZATION_VALUE_MAX_BYTES: usize = 256;
 
 fn authorization_pkce(q: &HashMap<String, String>) -> Result<(Option<String>, Option<String>), ()> {
     match (
@@ -186,6 +187,8 @@ async fn authorize_request(
     }
 
     let mut pushed_dpop_jkt = None;
+    let mut consumed_request_uri_error: Option<&'static str> = None;
+    let mut used_pushed_authorization_request = false;
     if let Some(request_uri) = q.get("request_uri").cloned() {
         let raw = match valkey_getdel(
             &state.valkey,
@@ -195,11 +198,8 @@ async fn authorize_request(
         {
             Ok(Some(raw)) => raw,
             Ok(None) => {
-                return oauth_error(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_request_uri",
-                    "request_uri 无效或已过期.",
-                );
+                consumed_request_uri_error = Some("invalid_request_uri");
+                String::new()
             }
             Err(error) => {
                 tracing::warn!(%error, "failed to consume PAR request_uri");
@@ -210,35 +210,30 @@ async fn authorize_request(
                 );
             }
         };
-        let pushed = match serde_json::from_str::<PushedAuthorizationRequest>(&raw) {
-            Ok(pushed) => pushed,
-            Err(error) => {
-                tracing::warn!(%error, "PAR payload is malformed");
-                return oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "request_uri 状态无效.",
-                );
+        if consumed_request_uri_error.is_none() {
+            let pushed = match serde_json::from_str::<PushedAuthorizationRequest>(&raw) {
+                Ok(pushed) => pushed,
+                Err(error) => {
+                    tracing::warn!(%error, "PAR payload is malformed");
+                    return oauth_error(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "server_error",
+                        "request_uri 状态无效.",
+                    );
+                }
+            };
+            if q.get("client_id")
+                .is_some_and(|client_id| client_id != &pushed.client_id)
+            {
+                consumed_request_uri_error = Some("invalid_request_uri");
+            } else if !outer_request_uri_parameters_match_pushed(q, &pushed.params) {
+                consumed_request_uri_error = Some("invalid_request");
+            } else {
+                pushed_dpop_jkt = pushed.dpop_jkt;
+                used_pushed_authorization_request = true;
+                *q = pushed.params;
             }
-        };
-        if q.get("client_id")
-            .is_some_and(|client_id| client_id != &pushed.client_id)
-        {
-            return oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "request_uri 与 client_id 不匹配.",
-            );
         }
-        if !outer_request_uri_parameters_match_pushed(q, &pushed.params) {
-            return oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "request_uri 请求不能被外层参数覆盖.",
-            );
-        }
-        pushed_dpop_jkt = pushed.dpop_jkt;
-        *q = pushed.params;
     } else if state.settings.require_pushed_authorization_requests {
         return oauth_error(
             StatusCode::BAD_REQUEST,
@@ -294,9 +289,7 @@ async fn authorize_request(
             "该客户端未启用 authorization_code 授权类型.",
         );
     }
-    if let Err(response) = apply_request_object(&state, q, &client).await {
-        return response;
-    }
+    let request_object_error = apply_request_object(&state, q, &client).await.err();
     let request_dpop_jkt = match q.get("dpop_jkt") {
         Some(value) if is_valid_dpop_jkt(value) => Some(value.clone()),
         Some(_) => {
@@ -335,55 +328,56 @@ async fn authorize_request(
             }
         };
 
+    if let Some(error) = consumed_request_uri_error {
+        return authorization_oauth_error_redirect(&state, &redirect_uri, error, q);
+    }
+    if let Some(error_response) = request_object_error {
+        if let Some(error) = oauth_json_error(&error_response) {
+            return authorization_oauth_error_redirect(&state, &redirect_uri, &error, q);
+        }
+        return error_response;
+    }
+    if client.require_dpop_bound_tokens
+        && !used_pushed_authorization_request
+        && !q.contains_key("request")
+    {
+        return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q);
+    }
+    if client.require_dpop_bound_tokens && fapi_authorization_parameter_too_long(q) {
+        return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q);
+    }
+
     if q.get("response_type").map(String::as_str) != Some("code") {
-        return redirect_found(append_query(
+        return authorization_oauth_error_redirect(
+            &state,
             &redirect_uri,
-            &[
-                ("error", "unsupported_response_type"),
-                ("state", q.get("state").map(String::as_str).unwrap_or("")),
-                ("iss", state.settings.issuer.as_str()),
-            ],
-        ));
+            "unsupported_response_type",
+            q,
+        );
     }
     let (code_challenge, code_challenge_method) = match authorization_pkce(q) {
         Ok(value) => value,
         Err(()) => {
-            return redirect_found(append_query(
-                &redirect_uri,
-                &[
-                    ("error", "invalid_request"),
-                    ("state", q.get("state").map(String::as_str).unwrap_or("")),
-                    ("iss", state.settings.issuer.as_str()),
-                ],
-            ));
+            return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q);
         }
     };
 
     let prompt = match requested_prompt(q) {
         Ok(prompt) => prompt,
         Err(()) => {
-            return redirect_found(append_query(
-                &redirect_uri,
-                &[
-                    ("error", "invalid_request"),
-                    ("state", q.get("state").map(String::as_str).unwrap_or("")),
-                    ("iss", state.settings.issuer.as_str()),
-                ],
-            ));
+            return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q);
         }
     };
     let max_age = match q.get("max_age") {
         Some(value) => match value.parse::<i64>() {
             Ok(value) if value >= 0 => Some(value),
             _ => {
-                return redirect_found(append_query(
+                return authorization_oauth_error_redirect(
+                    &state,
                     &redirect_uri,
-                    &[
-                        ("error", "invalid_request"),
-                        ("state", q.get("state").map(String::as_str).unwrap_or("")),
-                        ("iss", state.settings.issuer.as_str()),
-                    ],
-                ));
+                    "invalid_request",
+                    q,
+                );
             }
         },
         None => None,
@@ -391,14 +385,7 @@ async fn authorize_request(
     let (userinfo_claims, id_token_claims) = match requested_claims(q) {
         Ok(value) => value,
         Err(()) => {
-            return redirect_found(append_query(
-                &redirect_uri,
-                &[
-                    ("error", "invalid_request"),
-                    ("state", q.get("state").map(String::as_str).unwrap_or("")),
-                    ("iss", state.settings.issuer.as_str()),
-                ],
-            ));
+            return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q);
         }
     };
 
@@ -453,14 +440,7 @@ async fn authorize_request(
 
     let requested_scopes = parse_scope(q.get("scope").map(String::as_str).unwrap_or(""));
     if !is_subset(&requested_scopes, &json_array_to_strings(&client.scopes)) {
-        return redirect_found(append_query(
-            &redirect_uri,
-            &[
-                ("error", "invalid_scope"),
-                ("state", q.get("state").map(String::as_str).unwrap_or("")),
-                ("iss", state.settings.issuer.as_str()),
-            ],
-        ));
+        return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_scope", q);
     }
 
     let now = Utc::now();
@@ -530,6 +510,36 @@ fn outer_request_uri_parameters_match_pushed(
         }
         pushed.get(key) == Some(outer_value)
     })
+}
+
+fn authorization_oauth_error_redirect(
+    state: &AppState,
+    redirect_uri: &str,
+    error: &str,
+    q: &HashMap<String, String>,
+) -> HttpResponse {
+    redirect_found(append_query(
+        redirect_uri,
+        &[
+            ("error", error),
+            ("state", q.get("state").map(String::as_str).unwrap_or("")),
+            ("iss", state.settings.issuer.as_str()),
+        ],
+    ))
+}
+
+fn fapi_authorization_parameter_too_long(q: &HashMap<String, String>) -> bool {
+    ["state", "nonce"].iter().any(|key| {
+        q.get(*key)
+            .is_some_and(|value| value.len() > FAPI_AUTHORIZATION_VALUE_MAX_BYTES)
+    })
+}
+
+fn oauth_json_error(response: &HttpResponse) -> Option<String> {
+    let extensions = response.extensions();
+    extensions
+        .get::<OAuthJsonErrorFields>()
+        .map(|fields| fields.error.clone())
 }
 
 #[cfg(test)]
