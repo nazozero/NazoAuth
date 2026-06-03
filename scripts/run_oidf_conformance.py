@@ -973,6 +973,25 @@ def plan_expressions(
     return expressions
 
 
+def validate_rerun_argument(value: str) -> None:
+    for item in value.split(","):
+        item = item.strip()
+        if not item:
+            fail("--rerun must contain comma-separated plan numbers or plan:module selectors")
+
+        if ":" not in item:
+            if not item.isdigit():
+                fail(f"--rerun selector must be a positive integer plan number: {item}")
+            continue
+
+        plan_number, module_number = item.split(":", 1)
+        if not plan_number.isdigit() or not module_number.isdigit():
+            fail(
+                "--rerun module selector must use the official plan:module syntax, "
+                f"for example 1:41; ranges such as {item} are not supported"
+            )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Execute the official OpenID Foundation conformance-suite runner."
@@ -991,7 +1010,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--rerun",
         default="",
-        help="pass through the official runner --rerun filter, for example 1 or 1:3 or 1,3",
+        help=(
+            "pass through the official runner --rerun filter; use plan numbers "
+            "or plan:module selectors, for example 1 or 1:41 or 1:41,1:42"
+        ),
     )
     parser.add_argument(
         "--timeout-seconds",
@@ -1110,6 +1132,9 @@ def terminate_runner(process: subprocess.Popen[bytes]) -> None:
 
 def main() -> int:
     args = parse_args()
+    if args.rerun:
+        validate_rerun_argument(args.rerun)
+
     suite_dir = Path(args.suite_dir).resolve()
     suite_scripts = suite_dir / "scripts"
     runner = suite_scripts / "run-test-plan.py"
