@@ -132,15 +132,6 @@ pub(crate) async fn par(state: Data<AppState>, req: HttpRequest, body: Bytes) ->
     params.remove("client_secret");
     params.remove("client_assertion_type");
     params.remove("client_assertion");
-    if pushed_authorization_request_requires_request_object(&client)
-        && !params.contains_key("request")
-    {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "PAR 请求缺少 request object.",
-        );
-    }
     if let Err(response) = apply_request_object(&state, &mut params, &client).await {
         return response;
     }
@@ -248,10 +239,6 @@ fn validate_pushed_authorization_request(
         })
 }
 
-fn pushed_authorization_request_requires_request_object(client: &ClientRow) -> bool {
-    client.require_dpop_bound_tokens
-}
-
 fn pushed_authorization_request_contains_request_uri(params: &HashMap<String, String>) -> bool {
     params.contains_key("request_uri")
 }
@@ -279,13 +266,14 @@ mod tests {
     }
 
     #[test]
-    fn dpop_bound_par_requires_request_object() {
-        assert!(!pushed_authorization_request_requires_request_object(
-            &client(false)
-        ));
-        assert!(pushed_authorization_request_requires_request_object(
-            &client(true)
-        ));
+    fn par_does_not_require_request_object_for_dpop_bound_clients() {
+        let mut params = HashMap::new();
+        params.insert(
+            "redirect_uri".to_owned(),
+            "https://client.example/callback".to_owned(),
+        );
+
+        assert!(validate_pushed_authorization_request(&client(true), &params).is_ok());
     }
 
     #[test]
