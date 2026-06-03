@@ -175,8 +175,14 @@ def normalize_oidf_callback_waits_in_value(value: object, expected_callback_path
         for item in value:
             normalize_oidf_callback_waits_in_value(item, expected_callback_path)
     elif isinstance(value, dict):
-        for item in value.values():
-            normalize_oidf_callback_waits_in_value(item, expected_callback_path)
+        for key, item in list(value.items()):
+            if isinstance(item, str):
+                value[key] = OIDF_CALLBACK_PATH_PATTERN.sub(
+                    lambda _: expected_callback_path,
+                    item,
+                )
+            else:
+                normalize_oidf_callback_waits_in_value(item, expected_callback_path)
 
 
 def config_uses_nazo_hosted_conformance_ui(config_value: dict[str, object]) -> bool:
