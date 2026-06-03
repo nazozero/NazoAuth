@@ -212,21 +212,22 @@ async fn validate_request_object_claims_and_apply(
             "request object 与外层 client_id 冲突.",
         ));
     }
-    if client.require_dpop_bound_tokens && mode == RequestObjectMode::SignedJar {
-        if !request_params.contains_key("redirect_uri") {
-            return Err(oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request_object",
-                "FAPI request object 缺少 redirect_uri.",
-            ));
-        }
-        if outer_authorization_params_conflict(outer, &request_params) {
-            return Err(oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request_object",
-                "request object 与外层授权参数冲突.",
-            ));
-        }
+    if mode == RequestObjectMode::SignedJar && !request_params.contains_key("redirect_uri") {
+        return Err(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request_object",
+            "signed request object 缺少 redirect_uri.",
+        ));
+    }
+    if client.require_dpop_bound_tokens
+        && mode == RequestObjectMode::SignedJar
+        && outer_authorization_params_conflict(outer, &request_params)
+    {
+        return Err(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request_object",
+            "request object 与外层授权参数冲突.",
+        ));
     }
     store_request_object_replay_state(state, client, &claims, now, mode).await?;
     if client.require_dpop_bound_tokens && mode == RequestObjectMode::SignedJar {

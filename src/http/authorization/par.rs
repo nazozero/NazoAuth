@@ -136,6 +136,9 @@ pub(crate) async fn par(state: Data<AppState>, req: HttpRequest, body: Bytes) ->
         return response;
     }
     params.remove("request");
+    if let Err(response) = validate_pushed_authorization_request(&client, &params) {
+        return response;
+    }
     let request_dpop_jkt = match params.get("dpop_jkt") {
         Some(value) if is_valid_dpop_jkt(value) => Some(value.clone()),
         Some(_) => {
@@ -207,4 +210,24 @@ pub(crate) async fn par(state: Data<AppState>, req: HttpRequest, body: Bytes) ->
 
 pub(crate) fn pushed_authorization_request_key(request_uri: &str) -> String {
     format!("oauth:par:{}", blake3_hex(request_uri))
+}
+
+fn validate_pushed_authorization_request(
+    client: &ClientRow,
+    params: &HashMap<String, String>,
+) -> Result<(), HttpResponse> {
+    registered_redirect_uri(client, params.get("redirect_uri").map(String::as_str))
+        .map(|_| ())
+        .map_err(|error| match error {
+            RedirectUriError::Missing => oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "PAR 请求缺少 redirect_uri.",
+            ),
+            RedirectUriError::Invalid => oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "PAR 请求 redirect_uri 未注册.",
+            ),
+        })
 }

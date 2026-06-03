@@ -1272,6 +1272,22 @@ def run() -> None:
         )
         expect_status("POST /par unsupported parameter rejected", par_unknown, 400)
 
+        par_bad_redirect = requests.post(
+            f"{BASE_URL}/par",
+            data={
+                "response_type": "code",
+                "client_id": public_client_id,
+                "redirect_uri": f"{CLIENT_REDIRECT_URI}/not-registered",
+                "scope": "openid",
+                "state": "par-bad-redirect",
+                "code_challenge": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ",
+                "code_challenge_method": "S256",
+            },
+            timeout=10,
+        )
+        expect_status("POST /par invalid redirect_uri rejected", par_bad_redirect, 400)
+        check("par_invalid_redirect_uri_error", expect_json(par_bad_redirect).get("error") == "invalid_request")
+
         par_verifier, par_challenge = pkce_pair()
         par = expect_json(
             expect_status(
@@ -1421,6 +1437,30 @@ def run() -> None:
         par_dpop_jkt = jwk_thumbprint(ed25519_public_jwk(par_dpop_key))
         par_dpop_verifier, par_dpop_challenge = pkce_pair()
         par_dpop_unbound_verifier, par_dpop_unbound_challenge = pkce_pair()
+        par_dpop_missing_redirect = requests.post(
+            f"{BASE_URL}/par",
+            data={
+                "request": authorization_request_object_without_redirect_uri(
+                    dpop_required_private_auth_client_id,
+                    private_key,
+                    code_challenge=par_dpop_unbound_challenge,
+                    state="par-dpop-missing-redirect",
+                ),
+                "client_assertion_type": CLIENT_ASSERTION_TYPE,
+                "client_assertion": client_assertion(
+                    dpop_required_private_auth_client_id,
+                    private_key,
+                    jti="par-dpop-client-assertion-missing-redirect",
+                    audience_path="",
+                ),
+            },
+            timeout=10,
+        )
+        expect_status("POST /par DPoP-required JAR missing redirect_uri rejected", par_dpop_missing_redirect, 400)
+        check(
+            "par_dpop_missing_redirect_error",
+            expect_json(par_dpop_missing_redirect).get("error") == "invalid_request_object",
+        )
         par_dpop_unbound = expect_json(
             expect_status(
                 "POST /par DPoP-required client without early binding",
