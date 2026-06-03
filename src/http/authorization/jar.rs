@@ -415,19 +415,36 @@ fn request_object_times_valid(
     now: i64,
     mode: RequestObjectMode,
 ) -> bool {
-    match claims.exp {
-        Some(exp) if exp <= now || exp > now.saturating_add(REQUEST_OBJECT_MAX_TTL_SECONDS) => {
-            return false;
-        }
+    let exp = match claims.exp {
+        Some(exp) if exp <= now => return false,
+        Some(exp) => exp,
         None if mode == RequestObjectMode::SignedJar => return false,
-        _ => {}
-    }
-    if claims
-        .nbf
-        .is_some_and(|nbf| nbf > now.saturating_add(REQUEST_OBJECT_CLOCK_SKEW_SECONDS))
-    {
+        None => now.saturating_add(REQUEST_OBJECT_MAX_TTL_SECONDS),
+    };
+
+    let nbf = match claims.nbf {
+        Some(nbf) => nbf,
+        None if mode == RequestObjectMode::SignedJar => return false,
+        None => now,
+    };
+
+    if nbf > now.saturating_add(REQUEST_OBJECT_CLOCK_SKEW_SECONDS) {
         return false;
     }
+    if mode == RequestObjectMode::SignedJar {
+        if now.saturating_sub(nbf) > REQUEST_OBJECT_MAX_TTL_SECONDS {
+            return false;
+        }
+        if exp <= nbf
+            || exp.saturating_sub(nbf)
+                > REQUEST_OBJECT_MAX_TTL_SECONDS.saturating_add(REQUEST_OBJECT_CLOCK_SKEW_SECONDS)
+        {
+            return false;
+        }
+    } else if exp > now.saturating_add(REQUEST_OBJECT_MAX_TTL_SECONDS) {
+        return false;
+    }
+
     if claims.iat.is_some_and(|iat| {
         iat > now.saturating_add(REQUEST_OBJECT_CLOCK_SKEW_SECONDS)
             || now.saturating_sub(iat) > REQUEST_OBJECT_MAX_TTL_SECONDS
@@ -569,6 +586,88 @@ mod tests {
         };
         assert!(!request_object_jti_valid(
             &invalid,
+            RequestObjectMode::SignedJar
+        ));
+    }
+
+    fn time_claims(exp: Option<i64>, nbf: Option<i64>, iat: Option<i64>) -> RequestObjectClaims {
+        RequestObjectClaims {
+            client_id: "client-a".to_owned(),
+            iss: None,
+            sub: None,
+            aud: None,
+            exp,
+            nbf,
+            iat,
+            jti: None,
+            params: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn signed_request_object_requires_exp_and_nbf() {
+        let now = 1_700_000_000;
+
+        assert!(!request_object_times_valid(
+            &time_claims(None, Some(now), None),
+            now,
+            RequestObjectMode::SignedJar
+        ));
+        assert!(!request_object_times_valid(
+            &time_claims(Some(now + 60), None, None),
+            now,
+            RequestObjectMode::SignedJar
+        ));
+        assert!(request_object_times_valid(
+            &time_claims(Some(now + 60), Some(now), None),
+            now,
+            RequestObjectMode::SignedJar
+        ));
+    }
+
+    #[test]
+    fn signed_request_object_rejects_invalid_nbf_window() {
+        let now = 1_700_000_000;
+
+        assert!(request_object_times_valid(
+            &time_claims(Some(now + 300), Some(now + 8), None),
+            now,
+            RequestObjectMode::SignedJar
+        ));
+        assert!(!request_object_times_valid(
+            &time_claims(Some(now + 300), Some(now + 31), None),
+            now,
+            RequestObjectMode::SignedJar
+        ));
+        assert!(!request_object_times_valid(
+            &time_claims(Some(now + 60), Some(now - 301), None),
+            now,
+            RequestObjectMode::SignedJar
+        ));
+    }
+
+    #[test]
+    fn signed_request_object_rejects_invalid_exp_window() {
+        let now = 1_700_000_000;
+
+        assert!(!request_object_times_valid(
+            &time_claims(Some(now), Some(now), None),
+            now,
+            RequestObjectMode::SignedJar
+        ));
+        assert!(request_object_times_valid(
+            &time_claims(Some(now + 301), Some(now), None),
+            now,
+            RequestObjectMode::SignedJar
+        ));
+        assert!(!request_object_times_valid(
+            &time_claims(Some(now + 331), Some(now), None),
+            now,
+            RequestObjectMode::SignedJar
+        ));
+        assert!(!request_object_times_valid(
+            &time_claims(Some(now + 60), Some(now + 60), None),
+            now,
             RequestObjectMode::SignedJar
         ));
     }
