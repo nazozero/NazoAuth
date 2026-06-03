@@ -36,6 +36,9 @@ OIDCC_SECOND_LOGIN_SCREENSHOT_MODULES = (
     "oidcc-max-age-1",
 )
 NAZO_AUTHORIZATION_ERROR_PAGE_TASK = "Capture authorization error page"
+NAZO_AUTHORIZATION_ERROR_PAGE_PATTERN = (
+    r"(invalid_request|invalid_request_object|access_denied|login_required|server_error)"
+)
 OIDF_BAD_FINAL_RESULTS = {"FAILED", "SKIPPED", "INTERRUPTED", "WARNING"}
 OIDF_BAD_STATUS_VALUES = {"FAILED", "SKIPPED", "INTERRUPTED"}
 OIDF_BAD_LOG_RESULTS = {"FAILURE", "WARNING"}
@@ -203,7 +206,7 @@ def authorization_error_page_task() -> dict[str, object]:
                 "id",
                 "oidf_conformance_interaction",
                 5,
-                ".*",
+                NAZO_AUTHORIZATION_ERROR_PAGE_PATTERN,
                 "update-image-placeholder-optional",
             ]
         ],
