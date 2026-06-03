@@ -95,6 +95,20 @@ fn authorization_code_requires_pkce(client: &ClientRow, payload: &CodePayload) -
     client.client_type == "public" || client.require_dpop_bound_tokens || payload.dpop_jkt.is_some()
 }
 
+fn authorization_code_dpop_error_response(error: DpopError) -> HttpResponse {
+    match error {
+        DpopError::UseNonce(_) | DpopError::NonceStoreUnavailable => {
+            dpop_error_response(error, DpopErrorContext::TokenEndpoint)
+        }
+        _ => oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "authorization code proof of possession validation failed.",
+            false,
+        ),
+    }
+}
+
 async fn begin_authorization_code_consumption(
     state: &AppState,
     code_hash: &str,
@@ -194,10 +208,10 @@ pub(crate) async fn token_authorization_code(
     };
     let dpop_jkt = match validate_dpop_proof(state, req, None, expected_dpop_jkt.as_deref()).await {
         Ok(value) => value.or(expected_dpop_jkt),
-        Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
+        Err(error) => return authorization_code_dpop_error_response(error),
     };
     if client.require_dpop_bound_tokens && dpop_jkt.is_none() {
-        return dpop_error_response(DpopError::MissingProof, DpopErrorContext::TokenEndpoint);
+        return authorization_code_dpop_error_response(DpopError::MissingProof);
     }
     if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
         return response;
@@ -405,5 +419,51 @@ mod tests {
             &payload,
             Some("https://client.example/callback/")
         ));
+    }
+
+    fn oauth_error_code(response: &HttpResponse) -> String {
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.clone())
+            .expect("OAuth error response should record its error code")
+    }
+
+    #[test]
+    fn authorization_code_dpop_holder_key_failures_use_invalid_grant() {
+        for error in [
+            DpopError::MissingProof,
+            DpopError::MalformedProof,
+            DpopError::InvalidProof,
+            DpopError::ReplayDetected,
+            DpopError::BindingMismatch,
+            DpopError::TokenNotBound,
+        ] {
+            let response = authorization_code_dpop_error_response(error);
+
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            assert_eq!(oauth_error_code(&response), "invalid_grant");
+            assert!(
+                response.headers().get(header::WWW_AUTHENTICATE).is_none(),
+                "authorization code holder-of-key failures are OAuth grant errors, not DPoP challenges"
+            );
+        }
+    }
+
+    #[test]
+    fn authorization_code_dpop_nonce_challenge_keeps_dpop_error() {
+        let response =
+            authorization_code_dpop_error_response(DpopError::UseNonce("nonce-1".to_owned()));
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(oauth_error_code(&response), "use_dpop_nonce");
+        assert_eq!(
+            response.headers().get("dpop-nonce").unwrap(),
+            HeaderValue::from_static("nonce-1")
+        );
+        assert_eq!(
+            response.headers().get(header::WWW_AUTHENTICATE).unwrap(),
+            HeaderValue::from_static(r#"DPoP error="use_dpop_nonce""#)
+        );
     }
 }
