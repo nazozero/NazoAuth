@@ -274,6 +274,7 @@ mod tests {
             token_endpoint_auth_method: "private_key_jwt".to_owned(),
             require_dpop_bound_tokens,
             allow_client_assertion_audience_array: false,
+            allow_client_assertion_endpoint_audience: false,
             require_par_request_object: false,
             is_active: true,
             jwks: None,
