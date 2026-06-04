@@ -367,7 +367,11 @@ fn client_assertion_audiences(settings: &Settings, req: &HttpRequest) -> Vec<Str
 
 fn client_assertion_audience_candidates(issuer: &str, path: &str) -> Vec<String> {
     if path == "/par" {
-        return vec![issuer.to_owned()];
+        return vec![
+            issuer.to_owned(),
+            format!("{issuer}/par"),
+            format!("{issuer}/token"),
+        ];
     }
     vec![issuer.to_owned(), format!("{issuer}{path}")]
 }
@@ -603,7 +607,7 @@ mod tests {
     }
 
     #[test]
-    fn par_client_assertion_accepts_only_issuer_audience_by_default() {
+    fn par_client_assertion_accepts_issuer_par_and_token_audiences() {
         let expected = client_assertion_audience_candidates("https://issuer.example", "/par");
 
         assert!(audience_matches(
@@ -611,12 +615,12 @@ mod tests {
             &expected,
             false
         ));
-        assert!(!audience_matches(
+        assert!(audience_matches(
             &json!("https://issuer.example/par"),
             &expected,
             false
         ));
-        assert!(!audience_matches(
+        assert!(audience_matches(
             &json!("https://issuer.example/token"),
             &expected,
             false
