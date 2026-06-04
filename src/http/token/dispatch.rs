@@ -13,6 +13,14 @@ fn pending_authorization_code_payload(raw: &str) -> Result<Option<CodePayload>, 
     }
 }
 
+fn token_request_has_client_auth_material(has_basic: bool, form: &TokenForm) -> bool {
+    has_basic
+        || form.client_id.is_some()
+        || form.client_secret.is_some()
+        || form.client_assertion_type.is_some()
+        || form.client_assertion.is_some()
+}
+
 async fn missing_client_authorization_code_holder_error(
     state: &AppState,
     form: &TokenForm,
@@ -117,6 +125,7 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
     };
     let has_basic = has_basic_authorization_scheme(req.headers());
     let has_assertion = form.client_assertion_type.is_some() || form.client_assertion.is_some();
+    let has_client_auth_material = token_request_has_client_auth_material(has_basic, &form);
     if has_basic && (form.client_id.is_some() || form.client_secret.is_some() || has_assertion) {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
@@ -141,7 +150,9 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
         form.client_assertion.as_deref(),
     );
     let Some(client_id) = credentials.client_id.as_deref() else {
-        if let Some(response) = missing_client_authorization_code_holder_error(&state, &form).await
+        if !has_client_auth_material
+            && let Some(response) =
+                missing_client_authorization_code_holder_error(&state, &form).await
         {
             return response;
         }
@@ -346,5 +357,43 @@ mod tests {
                 .expect("state should parse")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn token_request_auth_material_detects_assertion_even_without_client_id() {
+        let form = TokenForm {
+            grant_type: "authorization_code".to_owned(),
+            code: Some("code".to_owned()),
+            redirect_uri: None,
+            code_verifier: None,
+            refresh_token: None,
+            scope: None,
+            client_id: None,
+            client_secret: None,
+            client_assertion_type: None,
+            client_assertion: Some("malformed-or-missing-sub".to_owned()),
+            audience: None,
+        };
+
+        assert!(token_request_has_client_auth_material(false, &form));
+    }
+
+    #[test]
+    fn token_request_auth_material_allows_absent_client_credentials() {
+        let form = TokenForm {
+            grant_type: "authorization_code".to_owned(),
+            code: Some("code".to_owned()),
+            redirect_uri: None,
+            code_verifier: None,
+            refresh_token: None,
+            scope: None,
+            client_id: None,
+            client_secret: None,
+            client_assertion_type: None,
+            client_assertion: None,
+            audience: None,
+        };
+
+        assert!(!token_request_has_client_auth_material(false, &form));
     }
 }
