@@ -2380,8 +2380,8 @@ def run() -> None:
         )
         expect_status("POST /token DPoP-bound code missing proof rejected", holder_missing_proof, 400)
         check(
-            "holder_of_key_missing_proof_error",
-            expect_json(holder_missing_proof).get("error") == "invalid_dpop_proof",
+            "holder_of_key_missing_proof_invalid_grant",
+            expect_json(holder_missing_proof).get("error") == "invalid_grant",
         )
 
         userinfo_no_nonce = requests.get(
