@@ -734,6 +734,7 @@ mod tests {
             grant_types: json!([]),
             token_endpoint_auth_method: "private_key_jwt".to_owned(),
             require_dpop_bound_tokens: false,
+            allow_client_assertion_audience_array: false,
             is_active: true,
             jwks: None,
         };
@@ -783,6 +784,7 @@ mod tests {
             grant_types: json!([]),
             token_endpoint_auth_method: "private_key_jwt".to_owned(),
             require_dpop_bound_tokens: false,
+            allow_client_assertion_audience_array: false,
             is_active: true,
             jwks: None,
         };

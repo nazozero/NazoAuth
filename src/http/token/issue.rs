@@ -506,6 +506,7 @@ mod tests {
             grant_types: json!(grant_types),
             token_endpoint_auth_method: "none".to_owned(),
             require_dpop_bound_tokens: false,
+            allow_client_assertion_audience_array: false,
             is_active: true,
             jwks: None,
         }

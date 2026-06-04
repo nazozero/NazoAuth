@@ -206,6 +206,7 @@ pub(crate) fn verify_private_key_jwt_claims(
         || !audience_matches(
             &claims.aud,
             &client_assertion_audiences(&state.settings, req),
+            client.allow_client_assertion_audience_array,
         )
         || !valid_client_assertion_times(&claims, now)
         || !valid_client_assertion_jti(&claims.jti)
@@ -366,19 +367,17 @@ fn client_assertion_audiences(settings: &Settings, req: &HttpRequest) -> Vec<Str
 
 fn client_assertion_audience_candidates(issuer: &str, path: &str) -> Vec<String> {
     if path == "/par" {
-        return vec![
-            issuer.to_owned(),
-            format!("{issuer}/par"),
-            format!("{issuer}/token"),
-        ];
+        return vec![issuer.to_owned()];
     }
     vec![issuer.to_owned(), format!("{issuer}{path}")]
 }
 
-fn audience_matches(aud: &Value, expected: &[String]) -> bool {
+fn audience_matches(aud: &Value, expected: &[String], allow_array: bool) -> bool {
     match aud {
         Value::String(value) => expected.iter().any(|candidate| candidate == value),
-        Value::Array(values) => values.iter().any(|value| audience_matches(value, expected)),
+        Value::Array(values) if allow_array => values
+            .iter()
+            .any(|value| audience_matches(value, expected, allow_array)),
         _ => false,
     }
 }
@@ -604,32 +603,54 @@ mod tests {
     }
 
     #[test]
-    fn par_client_assertion_accepts_issuer_par_and_token_endpoint_audience() {
+    fn par_client_assertion_accepts_only_issuer_audience_by_default() {
         let expected = client_assertion_audience_candidates("https://issuer.example", "/par");
 
         assert!(audience_matches(
             &json!("https://issuer.example"),
-            &expected
+            &expected,
+            false
         ));
-        assert!(audience_matches(
+        assert!(!audience_matches(
             &json!("https://issuer.example/par"),
-            &expected
+            &expected,
+            false
         ));
-        assert!(audience_matches(
+        assert!(!audience_matches(
             &json!("https://issuer.example/token"),
-            &expected
+            &expected,
+            false
         ));
-        assert!(audience_matches(
+        assert!(!audience_matches(
             &json!(["https://issuer.example", "https://unexpected.example"]),
-            &expected
+            &expected,
+            false
         ));
         assert!(!audience_matches(
             &json!("https://issuer.example/authorize"),
-            &expected
+            &expected,
+            false
         ));
         assert!(!audience_matches(
             &json!(["https://unexpected.example"]),
-            &expected
+            &expected,
+            false
+        ));
+    }
+
+    #[test]
+    fn client_assertion_audience_arrays_require_explicit_client_policy() {
+        let expected = client_assertion_audience_candidates("https://issuer.example", "/par");
+
+        assert!(audience_matches(
+            &json!(["https://issuer.example", "https://unexpected.example"]),
+            &expected,
+            true
+        ));
+        assert!(!audience_matches(
+            &json!(["https://issuer.example", "https://unexpected.example"]),
+            &expected,
+            false
         ));
     }
 
@@ -639,23 +660,33 @@ mod tests {
 
         assert!(audience_matches(
             &json!("https://issuer.example"),
-            &expected
+            &expected,
+            false
         ));
         assert!(audience_matches(
             &json!("https://issuer.example/token"),
-            &expected
+            &expected,
+            false
         ));
         assert!(!audience_matches(
             &json!("https://issuer.example/par"),
-            &expected
+            &expected,
+            false
+        ));
+        assert!(!audience_matches(
+            &json!(["https://issuer.example", "https://unexpected.example"]),
+            &expected,
+            false
         ));
         assert!(audience_matches(
             &json!(["https://issuer.example", "https://unexpected.example"]),
-            &expected
+            &expected,
+            true
         ));
         assert!(!audience_matches(
             &json!(["https://unexpected.example"]),
-            &expected
+            &expected,
+            true
         ));
     }
 
