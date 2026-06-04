@@ -1,0 +1,88 @@
+name: oidf-conformance-full
+
+on:
+  workflow_dispatch:
+
+jobs:
+  oidf-conformance:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: oidcc-basic
+            plan_expression: "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] oidf-oidcc-basic-plan-config.json"
+            config_secret: OIDF_PLAN_CONFIG_OIDCC_BASIC_JSON
+          - name: oidcc-config
+            plan_expression: "oidcc-config-certification-test-plan oidf-oidcc-config-plan-config.json"
+            config_secret: OIDF_PLAN_CONFIG_OIDCC_CONFIG_JSON
+          - name: fapi-security-final
+            plan_expression: "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=dpop][openid=openid_connect] oidf-fapi-security-final-plan-config.json"
+            config_secret: OIDF_PLAN_CONFIG_FAPI_SECURITY_FINAL_JSON
+          - name: fapi-message-final
+            plan_expression: "fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] oidf-fapi-message-final-plan-config.json"
+            config_secret: OIDF_PLAN_CONFIG_FAPI_MESSAGE_FINAL_JSON
+          - name: fapi-security-id2
+            plan_expression: "fapi2-security-profile-id2-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=dpop][openid=openid_connect] oidf-fapi-security-id2-plan-config.json"
+            config_secret: OIDF_PLAN_CONFIG_FAPI_SECURITY_ID2_JSON
+          - name: fapi-message-id1
+            plan_expression: "fapi2-message-signing-id1-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] oidf-fapi-message-id1-plan-config.json"
+            config_secret: OIDF_PLAN_CONFIG_FAPI_MESSAGE_ID1_JSON
+    env:
+      CONFORMANCE_SERVER: ${{ vars.OIDF_CONFORMANCE_SERVER || 'https://www.certification.openid.net/' }}
+      OIDF_REF: ${{ vars.OIDF_CONFORMANCE_SUITE_REF || 'master' }}
+      EXPORT_RESULTS: ${{ vars.OIDF_EXPORT_RESULTS || 'true' }}
+      VERBOSE: ${{ vars.OIDF_VERBOSE || 'true' }}
+      DISABLE_SSL_VERIFY: ${{ vars.OIDF_DISABLE_SSL_VERIFY || 'false' }}
+      RUN_TIMEOUT_SECONDS: ${{ vars.OIDF_RUN_TIMEOUT_SECONDS || '10800' }}
+      MONITOR_INTERVAL_SECONDS: ${{ vars.OIDF_MONITOR_INTERVAL_SECONDS || '60' }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Clone official conformance suite
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "$OIDF_REF" https://gitlab.com/openid/conformance-suite.git oidf-conformance-suite
+
+      - name: Install official runner dependencies
+        run: python -m pip install --upgrade -r oidf-conformance-suite/scripts/requirements.txt
+
+      - name: Run OIDF conformance plan
+        run: |
+          set -euo pipefail
+          args=(
+            --suite-dir oidf-conformance-suite
+            --conformance-server "$CONFORMANCE_SERVER"
+            --plan-expression "$PLAN_EXPRESSION"
+            --timeout-seconds "$RUN_TIMEOUT_SECONDS"
+            --monitor-interval-seconds "$MONITOR_INTERVAL_SECONDS"
+          )
+          if [ "$EXPORT_RESULTS" = "true" ]; then
+            args+=(--export-dir "$GITHUB_WORKSPACE/oidf-results")
+          fi
+          if [ "$VERBOSE" = "true" ]; then
+            args+=(--verbose)
+          fi
+          if [ "$DISABLE_SSL_VERIFY" = "true" ]; then
+            args+=(--disable-ssl-verify)
+          fi
+          python -u scripts/run_oidf_conformance.py "${args[@]}"
+        env:
+          PLAN_EXPRESSION: ${{ matrix.plan_expression }}
+          OIDF_CONFORMANCE_TOKEN: ${{ secrets.OIDF_CONFORMANCE_TOKEN }}
+          OIDF_PLAN_CONFIG_JSON: ${{ secrets[matrix.config_secret] }}
+
+      - name: Upload OIDF result archive
+        if: always() && vars.OIDF_EXPORT_RESULTS != 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: oidf-conformance-results-${{ matrix.name }}
+          path: oidf-results
+          if-no-files-found: ignore
