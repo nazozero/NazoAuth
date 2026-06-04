@@ -97,7 +97,7 @@ fn authorization_code_requires_pkce(client: &ClientRow, payload: &CodePayload) -
 
 fn authorization_code_dpop_error_response(error: DpopError) -> HttpResponse {
     match error {
-        DpopError::MissingProof | DpopError::UseNonce(_) | DpopError::NonceStoreUnavailable => {
+        DpopError::UseNonce(_) | DpopError::NonceStoreUnavailable => {
             dpop_error_response(error, DpopErrorContext::TokenEndpoint)
         }
         _ => oauth_token_error(
@@ -430,15 +430,12 @@ mod tests {
     }
 
     #[test]
-    fn authorization_code_dpop_missing_proof_keeps_dpop_error() {
+    fn authorization_code_dpop_missing_proof_uses_invalid_grant() {
         let response = authorization_code_dpop_error_response(DpopError::MissingProof);
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        assert_eq!(oauth_error_code(&response), "invalid_dpop_proof");
-        assert_eq!(
-            response.headers().get(header::WWW_AUTHENTICATE).unwrap(),
-            HeaderValue::from_static(r#"DPoP error="invalid_dpop_proof""#)
-        );
+        assert_eq!(oauth_error_code(&response), "invalid_grant");
+        assert!(response.headers().get(header::WWW_AUTHENTICATE).is_none());
     }
 
     #[test]
