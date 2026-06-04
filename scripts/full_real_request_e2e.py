@@ -1713,7 +1713,7 @@ def run() -> None:
         expect_status("POST /token PAR DPoP-bound wrong key rejected", par_dpop_wrong_key, 400)
         check(
             "par_dpop_wrong_key_error",
-            expect_json(par_dpop_wrong_key).get("error") == "invalid_dpop_proof",
+            expect_json(par_dpop_wrong_key).get("error") == "invalid_grant",
         )
         par_dpop_token_nonce = request_dpop_nonce(par_dpop_token_form, par_dpop_key)
         par_dpop_tokens = token_with_dpop(
