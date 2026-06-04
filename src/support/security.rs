@@ -205,7 +205,7 @@ pub(crate) fn verify_private_key_jwt_claims(
         || claims.sub != client.client_id
         || !audience_matches(
             &claims.aud,
-            &client_assertion_audiences(&state.settings, req),
+            &client_assertion_audiences(&state.settings, req, client),
             client.allow_client_assertion_audience_array,
         )
         || !valid_client_assertion_times(&claims, now)
@@ -361,15 +361,34 @@ pub(crate) fn jwt_decoding_key_from_jwk(
     }
 }
 
-fn client_assertion_audiences(settings: &Settings, req: &HttpRequest) -> Vec<String> {
-    client_assertion_audience_candidates(&settings.issuer, req.uri().path())
+fn client_assertion_audiences(
+    settings: &Settings,
+    req: &HttpRequest,
+    client: &ClientRow,
+) -> Vec<String> {
+    client_assertion_audience_candidates(
+        &settings.issuer,
+        req.uri().path(),
+        client.allow_client_assertion_endpoint_audience,
+    )
 }
 
-fn client_assertion_audience_candidates(issuer: &str, path: &str) -> Vec<String> {
-    if path == "/par" {
-        return vec![issuer.to_owned()];
+fn client_assertion_audience_candidates(
+    issuer: &str,
+    path: &str,
+    allow_endpoint_audience: bool,
+) -> Vec<String> {
+    if path != "/par" {
+        return vec![issuer.to_owned(), format!("{issuer}{path}")];
     }
-    vec![issuer.to_owned(), format!("{issuer}{path}")]
+    if allow_endpoint_audience {
+        return vec![
+            issuer.to_owned(),
+            format!("{issuer}/par"),
+            format!("{issuer}/token"),
+        ];
+    }
+    vec![issuer.to_owned()]
 }
 
 fn audience_matches(aud: &Value, expected: &[String], allow_array: bool) -> bool {
@@ -604,7 +623,8 @@ mod tests {
 
     #[test]
     fn par_client_assertion_accepts_only_issuer_audience() {
-        let expected = client_assertion_audience_candidates("https://issuer.example", "/par");
+        let expected =
+            client_assertion_audience_candidates("https://issuer.example", "/par", false);
 
         assert!(audience_matches(
             &json!("https://issuer.example"),
@@ -639,8 +659,35 @@ mod tests {
     }
 
     #[test]
+    fn par_client_assertion_endpoint_audiences_require_client_policy() {
+        let expected = client_assertion_audience_candidates("https://issuer.example", "/par", true);
+
+        assert!(audience_matches(
+            &json!("https://issuer.example"),
+            &expected,
+            false
+        ));
+        assert!(audience_matches(
+            &json!("https://issuer.example/par"),
+            &expected,
+            false
+        ));
+        assert!(audience_matches(
+            &json!("https://issuer.example/token"),
+            &expected,
+            false
+        ));
+        assert!(!audience_matches(
+            &json!("https://issuer.example/authorize"),
+            &expected,
+            false
+        ));
+    }
+
+    #[test]
     fn client_assertion_audience_arrays_require_explicit_client_policy() {
-        let expected = client_assertion_audience_candidates("https://issuer.example", "/par");
+        let expected =
+            client_assertion_audience_candidates("https://issuer.example", "/par", false);
 
         assert!(audience_matches(
             &json!(["https://issuer.example", "https://unexpected.example"]),
@@ -656,7 +703,8 @@ mod tests {
 
     #[test]
     fn token_client_assertion_accepts_issuer_and_token_endpoint_audience() {
-        let expected = client_assertion_audience_candidates("https://issuer.example", "/token");
+        let expected =
+            client_assertion_audience_candidates("https://issuer.example", "/token", false);
 
         assert!(audience_matches(
             &json!("https://issuer.example"),

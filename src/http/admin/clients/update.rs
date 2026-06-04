@@ -11,6 +11,7 @@ pub(crate) struct PatchClientRequest {
     grant_types: Option<Vec<String>>,
     require_dpop_bound_tokens: Option<bool>,
     allow_client_assertion_audience_array: Option<bool>,
+    allow_client_assertion_endpoint_audience: Option<bool>,
     require_par_request_object: Option<bool>,
     jwks: Option<Value>,
     is_active: Option<bool>,
@@ -75,6 +76,9 @@ pub(crate) async fn admin_patch_client(
     let new_allow_client_assertion_audience_array = payload
         .allow_client_assertion_audience_array
         .unwrap_or(current.allow_client_assertion_audience_array);
+    let new_allow_client_assertion_endpoint_audience = payload
+        .allow_client_assertion_endpoint_audience
+        .unwrap_or(current.allow_client_assertion_endpoint_audience);
     let new_require_par_request_object = payload
         .require_par_request_object
         .unwrap_or(current.require_par_request_object);
@@ -122,6 +126,8 @@ pub(crate) async fn admin_patch_client(
         oauth_clients::require_dpop_bound_tokens.eq(new_require_dpop_bound_tokens),
         oauth_clients::allow_client_assertion_audience_array
             .eq(new_allow_client_assertion_audience_array),
+        oauth_clients::allow_client_assertion_endpoint_audience
+            .eq(new_allow_client_assertion_endpoint_audience),
         oauth_clients::require_par_request_object.eq(new_require_par_request_object),
         oauth_clients::jwks.eq(new_jwks),
         oauth_clients::is_active.eq(new_is_active),
