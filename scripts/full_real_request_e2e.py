@@ -1601,8 +1601,8 @@ def run() -> None:
             400,
         )
         check(
-            "par_dpop_required_token_missing_proof_error",
-            expect_json(par_dpop_unbound_token).get("error") == "invalid_dpop_proof",
+            "par_dpop_required_token_missing_proof_invalid_grant",
+            expect_json(par_dpop_unbound_token).get("error") == "invalid_grant",
         )
         par_dpop_form = {
             "response_type": "code",
