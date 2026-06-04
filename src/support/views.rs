@@ -93,6 +93,7 @@ pub(crate) fn client_json(client: ClientRow) -> Value {
         "token_endpoint_auth_method": client.token_endpoint_auth_method,
         "require_dpop_bound_tokens": client.require_dpop_bound_tokens,
         "allow_client_assertion_audience_array": client.allow_client_assertion_audience_array,
+        "require_par_request_object": client.require_par_request_object,
         "is_active": client.is_active,
         "jwks": client.jwks
     })

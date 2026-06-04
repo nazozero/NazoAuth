@@ -11,6 +11,7 @@ pub(crate) struct PatchClientRequest {
     grant_types: Option<Vec<String>>,
     require_dpop_bound_tokens: Option<bool>,
     allow_client_assertion_audience_array: Option<bool>,
+    require_par_request_object: Option<bool>,
     jwks: Option<Value>,
     is_active: Option<bool>,
 }
@@ -74,6 +75,9 @@ pub(crate) async fn admin_patch_client(
     let new_allow_client_assertion_audience_array = payload
         .allow_client_assertion_audience_array
         .unwrap_or(current.allow_client_assertion_audience_array);
+    let new_require_par_request_object = payload
+        .require_par_request_object
+        .unwrap_or(current.require_par_request_object);
     let new_jwks = payload.jwks.or_else(|| current.jwks.clone());
     let new_is_active = payload.is_active.unwrap_or(current.is_active);
     let new_redirect_uri_values = json_array_to_strings(&new_redirect_uris);
@@ -118,6 +122,7 @@ pub(crate) async fn admin_patch_client(
         oauth_clients::require_dpop_bound_tokens.eq(new_require_dpop_bound_tokens),
         oauth_clients::allow_client_assertion_audience_array
             .eq(new_allow_client_assertion_audience_array),
+        oauth_clients::require_par_request_object.eq(new_require_par_request_object),
         oauth_clients::jwks.eq(new_jwks),
         oauth_clients::is_active.eq(new_is_active),
         oauth_clients::updated_at.eq(diesel_now),

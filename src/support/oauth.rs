@@ -297,6 +297,7 @@ mod tests {
             token_endpoint_auth_method: "none".to_owned(),
             require_dpop_bound_tokens: false,
             allow_client_assertion_audience_array: false,
+            require_par_request_object: false,
             is_active: true,
             jwks: None,
         }

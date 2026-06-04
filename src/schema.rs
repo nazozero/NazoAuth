@@ -38,6 +38,7 @@ diesel::table! {
         token_endpoint_auth_method -> Varchar,
         require_dpop_bound_tokens -> Bool,
         allow_client_assertion_audience_array -> Bool,
+        require_par_request_object -> Bool,
         is_active -> Bool,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,

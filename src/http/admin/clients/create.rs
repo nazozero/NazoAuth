@@ -16,6 +16,8 @@ pub(crate) struct CreateClientRequest {
     pub(crate) require_dpop_bound_tokens: bool,
     #[serde(default)]
     pub(crate) allow_client_assertion_audience_array: bool,
+    #[serde(default)]
+    pub(crate) require_par_request_object: bool,
     pub(crate) jwks: Option<Value>,
 }
 
@@ -35,6 +37,7 @@ pub(crate) struct PreparedClientInsert {
     pub(crate) token_endpoint_auth_method: String,
     pub(crate) require_dpop_bound_tokens: bool,
     pub(crate) allow_client_assertion_audience_array: bool,
+    pub(crate) require_par_request_object: bool,
     pub(crate) jwks: Option<Value>,
     pub(crate) issued_secret: Option<String>,
     client_secret_argon2_hash: Option<String>,
@@ -140,6 +143,7 @@ pub(crate) fn prepare_client_insert(
         token_endpoint_auth_method: payload.token_endpoint_auth_method,
         require_dpop_bound_tokens: payload.require_dpop_bound_tokens,
         allow_client_assertion_audience_array: payload.allow_client_assertion_audience_array,
+        require_par_request_object: payload.require_par_request_object,
         jwks: payload.jwks,
         issued_secret,
         client_secret_argon2_hash: secret_hash,
@@ -164,6 +168,7 @@ pub(crate) async fn insert_prepared_client(
             oauth_clients::require_dpop_bound_tokens.eq(prepared.require_dpop_bound_tokens),
             oauth_clients::allow_client_assertion_audience_array
                 .eq(prepared.allow_client_assertion_audience_array),
+            oauth_clients::require_par_request_object.eq(prepared.require_par_request_object),
             oauth_clients::jwks.eq(&prepared.jwks),
             oauth_clients::is_active.eq(true),
         ))
