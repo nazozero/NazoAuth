@@ -6,10 +6,10 @@ use super::{
 };
 use crate::http::prelude::*;
 
-fn pending_authorization_code_is_dpop_bound(raw: &str) -> Result<bool, serde_json::Error> {
+fn pending_authorization_code_payload(raw: &str) -> Result<Option<CodePayload>, serde_json::Error> {
     match serde_json::from_str::<AuthorizationCodeState>(raw)? {
-        AuthorizationCodeState::Pending { payload } => Ok(payload.dpop_jkt.is_some()),
-        _ => Ok(false),
+        AuthorizationCodeState::Pending { payload } => Ok(Some(payload)),
+        _ => Ok(None),
     }
 }
 
@@ -34,20 +34,41 @@ async fn missing_client_authorization_code_holder_error(
             ));
         }
     };
-    match pending_authorization_code_is_dpop_bound(&raw) {
-        Ok(true) => Some(oauth_token_error(
+    let payload = match pending_authorization_code_payload(&raw) {
+        Ok(Some(payload)) => payload,
+        Ok(None) => return None,
+        Err(error) => {
+            tracing::warn!(%error, "authorization code state is malformed before client authentication");
+            return Some(oauth_token_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权码状态无效.",
+                false,
+            ));
+        }
+    };
+    if payload.dpop_jkt.is_some() {
+        return Some(oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "authorization code proof of possession validation failed.",
+            false,
+        ));
+    }
+    match find_client(&state.diesel_db, &payload.client_id).await {
+        Ok(Some(client)) if client.require_dpop_bound_tokens => Some(oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
             "authorization code proof of possession validation failed.",
             false,
         )),
-        Ok(false) => None,
+        Ok(_) => None,
         Err(error) => {
-            tracing::warn!(%error, "authorization code state is malformed before client authentication");
+            tracing::warn!(%error, "failed to query authorization code client before client authentication");
             Some(oauth_token_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
-                "授权码状态无效.",
+                "客户端查询失败.",
                 false,
             ))
         }
@@ -296,7 +317,11 @@ mod tests {
         })
         .expect("pending code should serialize");
 
-        assert!(pending_authorization_code_is_dpop_bound(&raw).expect("state should parse"));
+        assert!(
+            pending_authorization_code_payload(&raw)
+                .expect("state should parse")
+                .is_some_and(|payload| payload.dpop_jkt.is_some())
+        );
     }
 
     #[test]
@@ -311,7 +336,15 @@ mod tests {
         })
         .expect("failed code should serialize");
 
-        assert!(!pending_authorization_code_is_dpop_bound(&pending).expect("state should parse"));
-        assert!(!pending_authorization_code_is_dpop_bound(&failed).expect("state should parse"));
+        assert!(
+            pending_authorization_code_payload(&pending)
+                .expect("state should parse")
+                .is_some_and(|payload| payload.dpop_jkt.is_none())
+        );
+        assert!(
+            pending_authorization_code_payload(&failed)
+                .expect("state should parse")
+                .is_none()
+        );
     }
 }
