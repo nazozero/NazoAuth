@@ -250,7 +250,9 @@ mod tests {
             let requested_with_different_path = format!("http://127.0.0.1:{requested_port}{normalized_path}/changed{query_suffix}");
 
             prop_assert!(oauth_redirect_uri_matches("public", &registered, &requested));
-            prop_assert!(!oauth_redirect_uri_matches("confidential", &registered, &requested));
+            if registered_port != requested_port {
+                prop_assert!(!oauth_redirect_uri_matches("confidential", &registered, &requested));
+            }
             prop_assert!(!oauth_redirect_uri_matches("public", &registered, &requested_with_different_path));
         }
 
