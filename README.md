@@ -413,7 +413,35 @@ python3 scripts/run_oidf_conformance.py \
   --no-parallel
 ```
 
-通过门槛是所有 plan 跑到完成，并且 summary 中每个 plan 都是 `0 failures, 0 warnings`。`WAITING` 和 `NOT_STARTED` 在运行中不是失败；只在出现真实 `FAILED`、`WARNING` 或 `INTERRUPTED` 时停止等待并定位根因。最近一次本地远端证明是在 `2026-06-06 Asia/Shanghai` 对 `https://oauth-test.nazo.run` 完成 16 plans，所有计划均跑完，条件计数为 `0 failures, 0 warnings`。
+通过门槛是所有 plan 跑到完成，并且 summary 中每个 plan 都是 `0 failures, 0 warnings`。`WAITING` 和 `NOT_STARTED` 在运行中不是失败；只在出现真实 `FAILED`、`WARNING` 或 `INTERRUPTED` 时停止等待并定位根因。
+
+最近一次本地远端证明是在 `2026-06-06 Asia/Shanghai` 对 `https://oauth-test.nazo.run` 完成 16 plans，所有计划均跑完，条件计数为 `0 failures, 0 warnings`。随后官方 OpenID Foundation Conformance Suite workflow 也完成同一 16-plan 矩阵：
+
+- GitHub Actions run：`https://github.com/bymoye/oauth2_server/actions/runs/27026981094`
+- GitHub Actions job：`https://github.com/bymoye/oauth2_server/actions/runs/27026981094/job/79769369791`
+- 结果归档 artifact：`https://github.com/bymoye/oauth2_server/actions/runs/27026981094/artifacts/7443472204`
+- 官方 suite：`https://www.certification.openid.net/`
+- 运行时间：`2026-06-05T16:28:23Z` 至 `2026-06-05T18:04:44Z`
+- workflow 结论：`success`
+
+| # | Suite / profile | Client auth | Sender constraint | OAuth/OIDC mode | Variant / profile | 本地远端结果 | 官方结果 |
+|---|---|---|---|---|---|---|---|
+| 1 | OIDC Basic OP certification | static client | n/a | OpenID Connect | discovery | Passed, `0 failures`, `0 warnings` | [plan mt20oNp1MRktk](https://www.certification.openid.net/plan-detail.html?plan=mt20oNp1MRktk): 36 modules, 1821 successes, `0 failures`, `0 warnings` |
+| 2 | OIDC Config OP certification | n/a | n/a | OpenID Connect | server metadata | Passed, `0 failures`, `0 warnings` | [plan Ym4FrC3zvkaF1](https://www.certification.openid.net/plan-detail.html?plan=Ym4FrC3zvkaF1): 2 modules, 28 successes, `0 failures`, `0 warnings` |
+| 3 | FAPI2 Message Signing Final | `private_key_jwt` | `dpop` | `openid_connect` | `JARM` | Passed, `0 failures`, `0 warnings` | [plan xQjVfEphdXLhn](https://www.certification.openid.net/plan-detail.html?plan=xQjVfEphdXLhn): 71 modules, 6464 successes, `0 failures`, `0 warnings` |
+| 4 | FAPI2 Message Signing Final | `private_key_jwt` | `dpop` | `openid_connect` | `plain_response` / JAR | Passed, `0 failures`, `0 warnings` | [plan s9T9WDhXCuMIb](https://www.certification.openid.net/plan-detail.html?plan=s9T9WDhXCuMIb): 71 modules, 6018 successes, `0 failures`, `0 warnings` |
+| 5 | FAPI2 Security Profile Final | `mtls` | `dpop` | `openid_connect` | `plain_fapi` | Passed, `0 failures`, `0 warnings` | [plan rPOwPFlkiT0qd](https://www.certification.openid.net/plan-detail.html?plan=rPOwPFlkiT0qd): 47 modules, 4385 successes, `0 failures`, `0 warnings` |
+| 6 | FAPI2SP Client Credentials | `mtls` | `dpop` | `plain_oauth` | client credentials | Passed, `0 failures`, `0 warnings` | [plan JdBlFKQM52Rm3](https://www.certification.openid.net/plan-detail.html?plan=JdBlFKQM52Rm3): module/success totals partially masked in GitHub log, `0 failures`, `0 warnings` |
+| 7 | FAPI2 Security Profile Final | `mtls` | `dpop` | `plain_oauth` | `plain_fapi` | Passed, `0 failures`, `0 warnings` | [plan 98bKi1FSHCdFb](https://www.certification.openid.net/plan-detail.html?plan=98bKi1FSHCdFb): 41 modules, 3419 successes, `0 failures`, `0 warnings` |
+| 8 | FAPI2 Security Profile Final | `mtls` | `mtls` | `openid_connect` | `plain_fapi` | Passed, `0 failures`, `0 warnings` | [plan Up5XQYdTQyOCz](https://www.certification.openid.net/plan-detail.html?plan=Up5XQYdTQyOCz): 38 modules, 2388 successes, `0 failures`, `0 warnings` |
+| 9 | FAPI2SP Client Credentials | `mtls` | `mtls` | `plain_oauth` | client credentials | Passed, `0 failures`, `0 warnings` | [plan 2BqEA3Lpa0lal](https://www.certification.openid.net/plan-detail.html?plan=2BqEA3Lpa0lal): 6 modules, 188 successes, `0 failures`, `0 warnings` |
+| 10 | FAPI2 Security Profile Final | `mtls` | `mtls` | `plain_oauth` | `plain_fapi` | Passed, `0 failures`, `0 warnings` | [plan L9MskLtqkvoLl](https://www.certification.openid.net/plan-detail.html?plan=L9MskLtqkvoLl): 32 modules, 1656 successes, `0 failures`, `0 warnings` |
+| 11 | FAPI2 Security Profile Final | `private_key_jwt` | `dpop` | `openid_connect` | `plain_fapi` | Passed, `0 failures`, `0 warnings` | [plan 5wmbw6OxxtSMy](https://www.certification.openid.net/plan-detail.html?plan=5wmbw6OxxtSMy): 57 modules, 4963 successes, `0 failures`, `0 warnings` |
+| 12 | FAPI2SP Client Credentials | `private_key_jwt` | `dpop` | `plain_oauth` | client credentials | Passed, `0 failures`, `0 warnings` | [plan tnDO8MgpAlNNM](https://www.certification.openid.net/plan-detail.html?plan=tnDO8MgpAlNNM): 15 modules, 1159 successes, `0 failures`, `0 warnings` |
+| 13 | FAPI2 Security Profile Final | `private_key_jwt` | `dpop` | `plain_oauth` | `plain_fapi` | Passed, `0 failures`, `0 warnings` | [plan x2U4wb8C8LRDG](https://www.certification.openid.net/plan-detail.html?plan=x2U4wb8C8LRDG): 51 modules, 3914 successes, `0 failures`, `0 warnings` |
+| 14 | FAPI2 Security Profile Final | `private_key_jwt` | `mtls` | `openid_connect` | `plain_fapi` | Passed, `0 failures`, `0 warnings` | [plan CJUQ2lYZiu4Ng](https://www.certification.openid.net/plan-detail.html?plan=CJUQ2lYZiu4Ng): 48 modules, success total partially masked in GitHub log, `0 failures`, `0 warnings` |
+| 15 | FAPI2SP Client Credentials | `private_key_jwt` | `mtls` | `plain_oauth` | client credentials | Passed, `0 failures`, `0 warnings` | [plan 1fOWVZNbusm84](https://www.certification.openid.net/plan-detail.html?plan=1fOWVZNbusm84): 11 modules, 325 successes, `0 failures`, `0 warnings` |
+| 16 | FAPI2 Security Profile Final | `private_key_jwt` | `mtls` | `plain_oauth` | `plain_fapi` | Passed, `0 failures`, `0 warnings` | [plan KurwGspQVlBdQ](https://www.certification.openid.net/plan-detail.html?plan=KurwGspQVlBdQ): 42 modules, 2223 successes, `0 failures`, `0 warnings` |
 
 如需覆盖更多 ecosystem profile 或认证组合，应调整 `OIDF_PLAN_SET_JSON`，并提供与这些 plan 匹配的 `OIDF_PLAN_CONFIG_JSON`。例如：
 

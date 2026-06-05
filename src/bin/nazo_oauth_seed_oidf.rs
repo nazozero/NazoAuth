@@ -31,6 +31,25 @@ struct FapiClientSeed {
     tls_client_auth_cert_sha256: Option<String>,
 }
 
+struct ClientUpsert<'a> {
+    client_id: &'a str,
+    client_name: &'a str,
+    client_secret_hash: Option<&'a str>,
+    auth_method: &'a str,
+    redirect_uris: &'a Value,
+    scopes: &'a Value,
+    allowed_audiences: &'a Value,
+    grant_types: &'a Value,
+    require_dpop_bound_tokens: bool,
+    allow_client_assertion_audience_array: bool,
+    allow_client_assertion_endpoint_audience: bool,
+    require_par_request_object: bool,
+    require_mtls_bound_tokens: bool,
+    tls_client_auth_subject_dn: Option<&'a str>,
+    tls_client_auth_cert_sha256: Option<&'a str>,
+    jwks: Option<&'a Value>,
+}
+
 fn env_or(name: &str, default: &str) -> String {
     env::var(name)
         .ok()
@@ -144,25 +163,7 @@ fn upsert_user(
     Ok(())
 }
 
-fn upsert_client(
-    connection: &mut PgConnection,
-    client_id: &str,
-    client_name: &str,
-    client_secret_hash: Option<&str>,
-    auth_method: &str,
-    redirect_uris: &Value,
-    scopes: &Value,
-    allowed_audiences: &Value,
-    grant_types: &Value,
-    require_dpop_bound_tokens: bool,
-    allow_client_assertion_audience_array: bool,
-    allow_client_assertion_endpoint_audience: bool,
-    require_par_request_object: bool,
-    require_mtls_bound_tokens: bool,
-    tls_client_auth_subject_dn: Option<&str>,
-    tls_client_auth_cert_sha256: Option<&str>,
-    jwks: Option<&Value>,
-) -> anyhow::Result<()> {
+fn upsert_client(connection: &mut PgConnection, client: ClientUpsert<'_>) -> anyhow::Result<()> {
     sql_query(
         r#"
         INSERT INTO oauth_clients (
@@ -210,26 +211,26 @@ fn upsert_client(
             updated_at = CURRENT_TIMESTAMP
         "#,
     )
-    .bind::<diesel::sql_types::VarChar, _>(client_id)
-    .bind::<diesel::sql_types::VarChar, _>(client_name)
-    .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(client_secret_hash)
-    .bind::<diesel::sql_types::Jsonb, _>(redirect_uris)
-    .bind::<diesel::sql_types::Jsonb, _>(&scopes)
-    .bind::<diesel::sql_types::Jsonb, _>(&allowed_audiences)
-    .bind::<diesel::sql_types::Jsonb, _>(&grant_types)
-    .bind::<diesel::sql_types::VarChar, _>(auth_method)
-    .bind::<diesel::sql_types::Bool, _>(require_dpop_bound_tokens)
-    .bind::<diesel::sql_types::Bool, _>(require_mtls_bound_tokens)
+    .bind::<diesel::sql_types::VarChar, _>(client.client_id)
+    .bind::<diesel::sql_types::VarChar, _>(client.client_name)
+    .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(client.client_secret_hash)
+    .bind::<diesel::sql_types::Jsonb, _>(client.redirect_uris)
+    .bind::<diesel::sql_types::Jsonb, _>(client.scopes)
+    .bind::<diesel::sql_types::Jsonb, _>(client.allowed_audiences)
+    .bind::<diesel::sql_types::Jsonb, _>(client.grant_types)
+    .bind::<diesel::sql_types::VarChar, _>(client.auth_method)
+    .bind::<diesel::sql_types::Bool, _>(client.require_dpop_bound_tokens)
+    .bind::<diesel::sql_types::Bool, _>(client.require_mtls_bound_tokens)
     .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(
-        tls_client_auth_subject_dn,
+        client.tls_client_auth_subject_dn,
     )
     .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(
-        tls_client_auth_cert_sha256,
+        client.tls_client_auth_cert_sha256,
     )
-    .bind::<diesel::sql_types::Bool, _>(allow_client_assertion_audience_array)
-    .bind::<diesel::sql_types::Bool, _>(allow_client_assertion_endpoint_audience)
-    .bind::<diesel::sql_types::Bool, _>(require_par_request_object)
-    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Jsonb>, _>(jwks)
+    .bind::<diesel::sql_types::Bool, _>(client.allow_client_assertion_audience_array)
+    .bind::<diesel::sql_types::Bool, _>(client.allow_client_assertion_endpoint_audience)
+    .bind::<diesel::sql_types::Bool, _>(client.require_par_request_object)
+    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Jsonb>, _>(client.jwks)
     .execute(connection)?;
     Ok(())
 }
@@ -399,60 +400,66 @@ fn main() -> anyhow::Result<()> {
     upsert_user(&mut connection, &user_email, &user_password_hash)?;
     upsert_client(
         &mut connection,
-        "local-oidf-basic-client",
-        "Local OIDF Basic Client",
-        Some(&client_secret_hash),
-        "client_secret_basic",
-        &basic_redirect_uris,
-        &default_scopes,
-        &allowed_audiences,
-        &grant_types,
-        false,
-        false,
-        false,
-        false,
-        false,
-        None,
-        None,
-        None,
+        ClientUpsert {
+            client_id: "local-oidf-basic-client",
+            client_name: "Local OIDF Basic Client",
+            client_secret_hash: Some(&client_secret_hash),
+            auth_method: "client_secret_basic",
+            redirect_uris: &basic_redirect_uris,
+            scopes: &default_scopes,
+            allowed_audiences: &allowed_audiences,
+            grant_types: &grant_types,
+            require_dpop_bound_tokens: false,
+            allow_client_assertion_audience_array: false,
+            allow_client_assertion_endpoint_audience: false,
+            require_par_request_object: false,
+            require_mtls_bound_tokens: false,
+            tls_client_auth_subject_dn: None,
+            tls_client_auth_cert_sha256: None,
+            jwks: None,
+        },
     )?;
     upsert_client(
         &mut connection,
-        "local-oidf-basic-client-2",
-        "Local OIDF Basic Client 2",
-        Some(&client_secret_hash),
-        "client_secret_basic",
-        &basic_redirect_uris,
-        &default_scopes,
-        &allowed_audiences,
-        &grant_types,
-        false,
-        false,
-        false,
-        false,
-        false,
-        None,
-        None,
-        None,
+        ClientUpsert {
+            client_id: "local-oidf-basic-client-2",
+            client_name: "Local OIDF Basic Client 2",
+            client_secret_hash: Some(&client_secret_hash),
+            auth_method: "client_secret_basic",
+            redirect_uris: &basic_redirect_uris,
+            scopes: &default_scopes,
+            allowed_audiences: &allowed_audiences,
+            grant_types: &grant_types,
+            require_dpop_bound_tokens: false,
+            allow_client_assertion_audience_array: false,
+            allow_client_assertion_endpoint_audience: false,
+            require_par_request_object: false,
+            require_mtls_bound_tokens: false,
+            tls_client_auth_subject_dn: None,
+            tls_client_auth_cert_sha256: None,
+            jwks: None,
+        },
     )?;
     upsert_client(
         &mut connection,
-        "local-oidf-post-client",
-        "Local OIDF Post Client",
-        Some(&client_secret_hash),
-        "client_secret_post",
-        &basic_redirect_uris,
-        &default_scopes,
-        &allowed_audiences,
-        &grant_types,
-        false,
-        false,
-        false,
-        false,
-        false,
-        None,
-        None,
-        None,
+        ClientUpsert {
+            client_id: "local-oidf-post-client",
+            client_name: "Local OIDF Post Client",
+            client_secret_hash: Some(&client_secret_hash),
+            auth_method: "client_secret_post",
+            redirect_uris: &basic_redirect_uris,
+            scopes: &default_scopes,
+            allowed_audiences: &allowed_audiences,
+            grant_types: &grant_types,
+            require_dpop_bound_tokens: false,
+            allow_client_assertion_audience_array: false,
+            allow_client_assertion_endpoint_audience: false,
+            require_par_request_object: false,
+            require_mtls_bound_tokens: false,
+            tls_client_auth_subject_dn: None,
+            tls_client_auth_cert_sha256: None,
+            jwks: None,
+        },
     )?;
 
     let mut fapi_redirect_uris = BTreeSet::new();
@@ -497,24 +504,31 @@ fn main() -> anyhow::Result<()> {
         } else {
             grant_types.clone()
         };
+        let client_name = format!("Local OIDF FAPI Client {}", seed.client_id);
         upsert_client(
             &mut connection,
-            &seed.client_id,
-            &format!("Local OIDF FAPI Client {}", seed.client_id),
-            None,
-            seed.policy.auth_method,
-            &fapi_redirect_uris,
-            &seed.scopes,
-            &allowed_audiences,
-            &grant_types,
-            seed.policy.require_dpop_bound_tokens,
-            seed.policy.allow_client_assertion_audience_array,
-            seed.policy.allow_client_assertion_endpoint_audience,
-            seed.policy.require_par_request_object,
-            seed.policy.require_mtls_bound_tokens,
-            None,
-            seed.tls_client_auth_cert_sha256.as_deref(),
-            Some(&seed.jwks),
+            ClientUpsert {
+                client_id: &seed.client_id,
+                client_name: &client_name,
+                client_secret_hash: None,
+                auth_method: seed.policy.auth_method,
+                redirect_uris: &fapi_redirect_uris,
+                scopes: &seed.scopes,
+                allowed_audiences: &allowed_audiences,
+                grant_types: &grant_types,
+                require_dpop_bound_tokens: seed.policy.require_dpop_bound_tokens,
+                allow_client_assertion_audience_array: seed
+                    .policy
+                    .allow_client_assertion_audience_array,
+                allow_client_assertion_endpoint_audience: seed
+                    .policy
+                    .allow_client_assertion_endpoint_audience,
+                require_par_request_object: seed.policy.require_par_request_object,
+                require_mtls_bound_tokens: seed.policy.require_mtls_bound_tokens,
+                tls_client_auth_subject_dn: None,
+                tls_client_auth_cert_sha256: seed.tls_client_auth_cert_sha256.as_deref(),
+                jwks: Some(&seed.jwks),
+            },
         )?;
     }
 
