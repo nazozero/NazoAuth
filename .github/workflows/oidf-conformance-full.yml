@@ -55,12 +55,49 @@ jobs:
           ]
           JSON
 
+      - name: Write full OIDF matrix config
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64
+          import gzip
+          import os
+          from pathlib import Path
+
+          parts = []
+          for index in range(1, 21):
+              value = os.environ.get(f"OIDF_PLAN_CONFIG_JSON_GZ_B64_{index:02d}", "").strip()
+              if value:
+                  parts.append(value)
+          if parts:
+              decoded = base64.b64decode("".join(parts))
+              Path("oidf-plan-configs.json").write_bytes(gzip.decompress(decoded))
+          else:
+              value = os.environ.get("OIDF_PLAN_CONFIG_JSON", "").strip()
+              if not value:
+                  raise SystemExit("OIDF_PLAN_CONFIG_JSON or chunked OIDF_PLAN_CONFIG_JSON_GZ_B64_XX secrets are required")
+              Path("oidf-plan-configs.json").write_text(value, encoding="utf-8")
+          PY
+        env:
+          OIDF_PLAN_CONFIG_JSON: ${{ secrets.OIDF_PLAN_CONFIG_JSON }}
+          OIDF_PLAN_CONFIG_JSON_GZ_B64_01: ${{ secrets.OIDF_PLAN_CONFIG_JSON_GZ_B64_01 }}
+          OIDF_PLAN_CONFIG_JSON_GZ_B64_02: ${{ secrets.OIDF_PLAN_CONFIG_JSON_GZ_B64_02 }}
+          OIDF_PLAN_CONFIG_JSON_GZ_B64_03: ${{ secrets.OIDF_PLAN_CONFIG_JSON_GZ_B64_03 }}
+          OIDF_PLAN_CONFIG_JSON_GZ_B64_04: ${{ secrets.OIDF_PLAN_CONFIG_JSON_GZ_B64_04 }}
+          OIDF_PLAN_CONFIG_JSON_GZ_B64_05: ${{ secrets.OIDF_PLAN_CONFIG_JSON_GZ_B64_05 }}
+          OIDF_PLAN_CONFIG_JSON_GZ_B64_06: ${{ secrets.OIDF_PLAN_CONFIG_JSON_GZ_B64_06 }}
+          OIDF_PLAN_CONFIG_JSON_GZ_B64_07: ${{ secrets.OIDF_PLAN_CONFIG_JSON_GZ_B64_07 }}
+          OIDF_PLAN_CONFIG_JSON_GZ_B64_08: ${{ secrets.OIDF_PLAN_CONFIG_JSON_GZ_B64_08 }}
+          OIDF_PLAN_CONFIG_JSON_GZ_B64_09: ${{ secrets.OIDF_PLAN_CONFIG_JSON_GZ_B64_09 }}
+          OIDF_PLAN_CONFIG_JSON_GZ_B64_10: ${{ secrets.OIDF_PLAN_CONFIG_JSON_GZ_B64_10 }}
+
       - name: Run full OIDF matrix
         run: |
           set -euo pipefail
           args=(
             --suite-dir oidf-conformance-suite
             --conformance-server "$CONFORMANCE_SERVER"
+            --config-json-file oidf-plan-configs.json
             --plan-set-json-file oidf-full-plan-set.json
             --timeout-seconds "$RUN_TIMEOUT_SECONDS"
             --monitor-interval-seconds "$MONITOR_INTERVAL_SECONDS"
@@ -78,7 +115,6 @@ jobs:
           python -u scripts/run_oidf_conformance.py "${args[@]}"
         env:
           OIDF_CONFORMANCE_TOKEN: ${{ secrets.OIDF_CONFORMANCE_TOKEN }}
-          OIDF_PLAN_CONFIG_JSON: ${{ secrets.OIDF_PLAN_CONFIG_JSON }}
 
       - name: Upload OIDF result archive
         if: always() && vars.OIDF_EXPORT_RESULTS != 'false'
