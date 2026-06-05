@@ -90,6 +90,7 @@ async fn insert_refresh_token(
             oauth_tokens::expires_at.eq(refresh.expires_at),
             oauth_tokens::subject.eq(issue.subject.clone()),
             oauth_tokens::dpop_jkt.eq(issue.refresh_token_dpop_jkt.clone()),
+            oauth_tokens::mtls_x5t_s256.eq(issue.refresh_token_mtls_x5t_s256.clone()),
         ))
         .execute(conn)
         .await
@@ -275,6 +276,7 @@ pub(crate) async fn issue_token_response(
             userinfo_claims: &issue.userinfo_claims,
             ttl: state.settings.access_token_ttl_seconds,
             dpop_jkt: issue.dpop_jkt.as_deref(),
+            mtls_x5t_s256: issue.mtls_x5t_s256.as_deref(),
         },
     ) {
         Ok(v) => v,
@@ -506,6 +508,9 @@ mod tests {
             grant_types: json!(grant_types),
             token_endpoint_auth_method: "none".to_owned(),
             require_dpop_bound_tokens: false,
+            require_mtls_bound_tokens: false,
+            tls_client_auth_subject_dn: None,
+            tls_client_auth_cert_sha256: None,
             allow_client_assertion_audience_array: false,
             allow_client_assertion_endpoint_audience: false,
             require_par_request_object: false,

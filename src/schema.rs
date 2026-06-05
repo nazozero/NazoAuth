@@ -37,6 +37,9 @@ diesel::table! {
         grant_types -> Jsonb,
         token_endpoint_auth_method -> Varchar,
         require_dpop_bound_tokens -> Bool,
+        require_mtls_bound_tokens -> Bool,
+        tls_client_auth_subject_dn -> Nullable<Varchar>,
+        tls_client_auth_cert_sha256 -> Nullable<Varchar>,
         allow_client_assertion_audience_array -> Bool,
         allow_client_assertion_endpoint_audience -> Bool,
         require_par_request_object -> Bool,
@@ -63,6 +66,7 @@ diesel::table! {
         reuse_detected_at -> Nullable<Timestamptz>,
         subject -> Varchar,
         dpop_jkt -> Nullable<Varchar>,
+        mtls_x5t_s256 -> Nullable<Varchar>,
     }
 }
 

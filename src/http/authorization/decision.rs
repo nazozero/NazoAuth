@@ -1,6 +1,9 @@
 //! 授权确认提交端点。
 // 同意时签发一次性授权码；拒绝时按 OAuth 规范把错误回传 redirect_uri。
-use super::{PushedAuthorizationRequestConsumeError, consume_pushed_authorization_request};
+use super::{
+    PushedAuthorizationRequestConsumeError, authorization_response_redirect,
+    consume_pushed_authorization_request,
+};
 use crate::http::prelude::*;
 
 #[derive(Deserialize)]
@@ -54,14 +57,15 @@ fn authorization_error_redirect(
     payload: &ConsentPayload,
     error: &str,
 ) -> HttpResponse {
-    redirect_found(append_query(
+    authorization_response_redirect(
+        state,
         &payload.redirect_uri,
-        &[
-            ("error", error),
-            ("state", payload.state.as_deref().unwrap_or("")),
-            ("iss", state.settings.issuer.as_str()),
-        ],
-    ))
+        &payload.client_id,
+        payload.response_mode.as_deref(),
+        None,
+        Some(error),
+        payload.state.as_deref(),
+    )
 }
 
 /// 处理用户对授权请求的同意或拒绝。
@@ -150,14 +154,7 @@ pub(crate) async fn authorize_decision(
                     ),
                 ]),
             );
-            return redirect_found(append_query(
-                &payload.redirect_uri,
-                &[
-                    ("error", "access_denied"),
-                    ("state", payload.state.as_deref().unwrap_or("")),
-                    ("iss", state.settings.issuer.as_str()),
-                ],
-            ));
+            return authorization_error_redirect(&state, &payload, "access_denied");
         }
         AuthorizationDecision::Approve => {}
     }
@@ -180,6 +177,7 @@ pub(crate) async fn authorize_decision(
         code_challenge: payload.code_challenge,
         code_challenge_method: payload.code_challenge_method,
         dpop_jkt: payload.dpop_jkt,
+        mtls_x5t_s256: payload.mtls_x5t_s256,
         issued_at: now,
         expires_at: now + Duration::seconds(state.settings.auth_code_ttl_seconds as i64),
     };
@@ -239,14 +237,15 @@ pub(crate) async fn authorize_decision(
         ]),
     );
 
-    redirect_found(append_query(
+    authorization_response_redirect(
+        &state,
         &payload.redirect_uri,
-        &[
-            ("code", &code),
-            ("state", payload.state.as_deref().unwrap_or("")),
-            ("iss", state.settings.issuer.as_str()),
-        ],
-    ))
+        &payload.client_id,
+        payload.response_mode.as_deref(),
+        Some(&code),
+        None,
+        payload.state.as_deref(),
+    )
 }
 
 #[cfg(test)]

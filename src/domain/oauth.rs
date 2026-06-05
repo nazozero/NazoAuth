@@ -4,10 +4,13 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// RFC 9449/RFC 7800 confirmation claim，当前用于 DPoP JWK thumbprint 绑定。
+/// RFC 9449/RFC 7800 confirmation claim for proof-of-possession access tokens.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct ConfirmationClaims {
-    pub(crate) jkt: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) jkt: Option<String>,
+    #[serde(rename = "x5t#S256", default, skip_serializing_if = "Option::is_none")]
+    pub(crate) x5t_s256: Option<String>,
 }
 
 /// Access token 中的 JWT claims。
@@ -43,6 +46,8 @@ pub(crate) struct ConsentPayload {
     pub(crate) redirect_uri_was_supplied: bool,
     pub(crate) scopes: Vec<String>,
     pub(crate) state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) response_mode: Option<String>,
     pub(crate) nonce: Option<String>,
     pub(crate) auth_time: i64,
     pub(crate) amr: Vec<String>,
@@ -59,6 +64,8 @@ pub(crate) struct ConsentPayload {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) dpop_jkt: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) mtls_x5t_s256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) pushed_request_uri: Option<String>,
     pub(crate) issued_at: DateTime<Utc>,
     pub(crate) expires_at: DateTime<Utc>,
@@ -70,6 +77,8 @@ pub(crate) struct PushedAuthorizationRequest {
     pub(crate) params: std::collections::HashMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) dpop_jkt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) mtls_x5t_s256: Option<String>,
     pub(crate) issued_at: DateTime<Utc>,
     pub(crate) expires_at: DateTime<Utc>,
 }
@@ -98,6 +107,8 @@ pub(crate) struct CodePayload {
     pub(crate) code_challenge_method: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) dpop_jkt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) mtls_x5t_s256: Option<String>,
     pub(crate) issued_at: DateTime<Utc>,
     pub(crate) expires_at: DateTime<Utc>,
 }
@@ -148,5 +159,7 @@ pub(crate) struct TokenIssue {
     pub(crate) rotation: Option<(Uuid, Option<Uuid>)>,
     pub(crate) dpop_jkt: Option<String>,
     pub(crate) refresh_token_dpop_jkt: Option<String>,
+    pub(crate) mtls_x5t_s256: Option<String>,
+    pub(crate) refresh_token_mtls_x5t_s256: Option<String>,
     pub(crate) authorization_code_hash: Option<String>,
 }

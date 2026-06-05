@@ -237,6 +237,7 @@ mod tests {
     fn settings() -> Settings {
         Settings {
             issuer: "https://issuer.example".to_owned(),
+            mtls_endpoint_base_url: "https://issuer.example".to_owned(),
             frontend_base_url: "https://frontend.example".to_owned(),
             cors_allowed_origins: vec!["https://frontend.example".to_owned()],
             default_audience: "resource://default".to_owned(),

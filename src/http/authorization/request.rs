@@ -19,6 +19,7 @@ pub(crate) const AUTHORIZED_REQUEST_PARAMETERS: &[&str] = &[
     "prompt",
     "max_age",
     "dpop_jkt",
+    "response_mode",
     "request_uri",
     "request",
 ];
@@ -38,7 +39,17 @@ fn authorization_pkce(q: &HashMap<String, String>) -> Result<(Option<String>, Op
 }
 
 fn authorization_request_requires_pkce(client: &ClientRow) -> bool {
-    client.client_type == "public" || client.require_dpop_bound_tokens
+    client.client_type == "public"
+        || client.require_dpop_bound_tokens
+        || client.require_mtls_bound_tokens
+}
+
+fn authorization_response_mode(q: &HashMap<String, String>) -> Result<Option<String>, ()> {
+    match q.get("response_mode").map(String::as_str) {
+        None | Some("query") => Ok(None),
+        Some("jwt") => Ok(Some("jwt".to_owned())),
+        _ => Err(()),
+    }
 }
 
 fn requested_acr(q: &HashMap<String, String>) -> Option<String> {
@@ -193,6 +204,7 @@ async fn authorize_request(
 
     let original_authorization_query = q.clone();
     let mut pushed_dpop_jkt = None;
+    let mut pushed_mtls_x5t_s256 = None;
     let mut consumed_request_uri_error: Option<&'static str> = None;
     let mut used_pushed_authorization_request = false;
     let mut pending_pushed_request_uri = None;
@@ -238,6 +250,7 @@ async fn authorize_request(
                 *q = pushed.params;
             } else {
                 pushed_dpop_jkt = pushed.dpop_jkt;
+                pushed_mtls_x5t_s256 = pushed.mtls_x5t_s256;
                 used_pushed_authorization_request = true;
                 pending_pushed_request_uri = Some(request_uri);
                 *q = pushed.params;
@@ -318,6 +331,7 @@ async fn authorize_request(
         (None, requested) => requested,
     };
     preserve_verified_dpop_binding(q, dpop_jkt.as_deref());
+    let mtls_x5t_s256 = pushed_mtls_x5t_s256;
     let redirect_uri =
         match registered_redirect_uri(&client, q.get("redirect_uri").map(String::as_str)) {
             Ok(value) => value,
@@ -346,7 +360,7 @@ async fn authorize_request(
         }
         return error_response;
     }
-    if client.require_dpop_bound_tokens
+    if (client.require_dpop_bound_tokens || client.require_mtls_bound_tokens)
         && !used_pushed_authorization_request
         && !q.contains_key("request")
     {
@@ -364,6 +378,12 @@ async fn authorize_request(
             q,
         );
     }
+    let response_mode = match authorization_response_mode(q) {
+        Ok(value) => value,
+        Err(()) => {
+            return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q);
+        }
+    };
     let (code_challenge, code_challenge_method) = match authorization_pkce(q) {
         Ok(value) => value,
         Err(()) => {
@@ -414,14 +434,15 @@ async fn authorize_request(
     };
     let Some(session) = session else {
         if prompt.none {
-            return redirect_found(append_query(
+            return authorization_response_redirect(
+                &state,
                 &redirect_uri,
-                &[
-                    ("error", "login_required"),
-                    ("state", q.get("state").map(String::as_str).unwrap_or("")),
-                    ("iss", state.settings.issuer.as_str()),
-                ],
-            ));
+                q.get("client_id").map(String::as_str).unwrap_or(""),
+                q.get("response_mode").map(String::as_str),
+                None,
+                Some("login_required"),
+                q.get("state").map(String::as_str),
+            );
         }
         return redirect_found(authorization_login_url(
             &state,
@@ -438,14 +459,15 @@ async fn authorize_request(
         || max_age.is_some_and(|max_age| Utc::now().timestamp() - session.auth_time > max_age)
     {
         if prompt.none {
-            return redirect_found(append_query(
+            return authorization_response_redirect(
+                &state,
                 &redirect_uri,
-                &[
-                    ("error", "login_required"),
-                    ("state", q.get("state").map(String::as_str).unwrap_or("")),
-                    ("iss", state.settings.issuer.as_str()),
-                ],
-            ));
+                q.get("client_id").map(String::as_str).unwrap_or(""),
+                q.get("response_mode").map(String::as_str),
+                None,
+                Some("login_required"),
+                q.get("state").map(String::as_str),
+            );
         }
         return redirect_found(authorization_login_url(
             &state,
@@ -473,6 +495,7 @@ async fn authorize_request(
         redirect_uri_was_supplied: q.contains_key("redirect_uri"),
         scopes: requested_scopes,
         state: q.get("state").cloned(),
+        response_mode,
         nonce: q.get("nonce").cloned(),
         auth_time: session.auth_time,
         amr: session.amr,
@@ -482,6 +505,7 @@ async fn authorize_request(
         code_challenge,
         code_challenge_method,
         dpop_jkt,
+        mtls_x5t_s256,
         pushed_request_uri: pending_pushed_request_uri,
         issued_at: now,
         expires_at: now + Duration::seconds(state.settings.auth_code_ttl_seconds as i64),
@@ -561,17 +585,59 @@ pub(crate) async fn consume_pushed_authorization_request(
     Ok(())
 }
 
-fn authorization_oauth_error_redirect(
+pub(crate) fn authorization_oauth_error_redirect(
     state: &AppState,
     redirect_uri: &str,
     error: &str,
     q: &HashMap<String, String>,
 ) -> HttpResponse {
+    authorization_response_redirect(
+        state,
+        redirect_uri,
+        q.get("client_id").map(String::as_str).unwrap_or(""),
+        q.get("response_mode").map(String::as_str),
+        None,
+        Some(error),
+        q.get("state").map(String::as_str),
+    )
+}
+
+pub(crate) fn authorization_response_redirect(
+    state: &AppState,
+    redirect_uri: &str,
+    client_id: &str,
+    response_mode: Option<&str>,
+    code: Option<&str>,
+    error: Option<&str>,
+    state_value: Option<&str>,
+) -> HttpResponse {
+    if response_mode == Some("jwt") && !client_id.trim().is_empty() {
+        match make_authorization_response_jwt(
+            state,
+            AuthorizationResponseJwtInput {
+                client_id,
+                code,
+                error,
+                state: state_value,
+                ttl: state.settings.auth_code_ttl_seconds as i64,
+            },
+        ) {
+            Ok(response) => {
+                return redirect_found(append_query(redirect_uri, &[("response", &response)]));
+            }
+            Err(signing_error) => {
+                tracing::warn!(%signing_error, "failed to sign JARM authorization response");
+            }
+        }
+    }
+    let code_value = code.unwrap_or("");
+    let error_value = error.unwrap_or("");
     redirect_found(append_query(
         redirect_uri,
         &[
-            ("error", error),
-            ("state", q.get("state").map(String::as_str).unwrap_or("")),
+            ("code", code_value),
+            ("error", error_value),
+            ("state", state_value.unwrap_or("")),
             ("iss", state.settings.issuer.as_str()),
         ],
     ))

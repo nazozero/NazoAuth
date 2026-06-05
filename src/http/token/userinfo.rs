@@ -44,9 +44,9 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Byte
     }
     let mut next_dpop_nonce = None;
     match (scheme, claims.cnf.as_ref()) {
-        (AccessTokenAuthScheme::DPoP, Some(cnf)) => {
+        (AccessTokenAuthScheme::DPoP, Some(cnf)) if cnf.jkt.is_some() => {
             if let Err(error) =
-                validate_dpop_proof(&state, &req, Some(&token), Some(&cnf.jkt)).await
+                validate_dpop_proof(&state, &req, Some(&token), cnf.jkt.as_deref()).await
             {
                 return dpop_error_response(error, DpopErrorContext::ProtectedResource);
             }
@@ -57,11 +57,28 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Byte
                 }
             };
         }
-        (AccessTokenAuthScheme::DPoP, None) => {
+        (AccessTokenAuthScheme::DPoP, _) => {
             return dpop_error_response(
                 DpopError::TokenNotBound,
                 DpopErrorContext::ProtectedResource,
             );
+        }
+        (AccessTokenAuthScheme::Bearer, Some(cnf)) if cnf.x5t_s256.is_some() => {
+            let expected = cnf.x5t_s256.as_deref().unwrap_or_default();
+            let Some(actual) = request_mtls_thumbprint(&req) else {
+                return oauth_bearer_error(
+                    StatusCode::UNAUTHORIZED,
+                    "invalid_token",
+                    "mTLS-bound access token requires a verified client certificate.",
+                );
+            };
+            if !constant_time_eq(expected.as_bytes(), actual.as_bytes()) {
+                return oauth_bearer_error(
+                    StatusCode::UNAUTHORIZED,
+                    "invalid_token",
+                    "mTLS-bound access token certificate mismatch.",
+                );
+            }
         }
         (AccessTokenAuthScheme::Bearer, Some(_)) => {
             return dpop_error_response(

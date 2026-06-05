@@ -16,6 +16,7 @@ use crate::support::{
 #[derive(Clone)]
 pub(crate) struct Settings {
     pub(crate) issuer: String,
+    pub(crate) mtls_endpoint_base_url: String,
     pub(crate) frontend_base_url: String,
     pub(crate) cors_allowed_origins: Vec<String>,
     pub(crate) default_audience: String,
@@ -92,6 +93,10 @@ impl Settings {
     pub(crate) fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
         let issuer = config.string("ISSUER", "http://127.0.0.1:8000");
         validate_issuer_url(&issuer)?;
+        let mtls_endpoint_base_url = config
+            .optional_string("MTLS_ENDPOINT_BASE_URL")
+            .unwrap_or_else(|| issuer.clone());
+        validate_issuer_url(&mtls_endpoint_base_url)?;
         let frontend_base_url = config.string("FRONTEND_BASE_URL", "http://127.0.0.1:3000");
         validate_frontend_base_url(&frontend_base_url)?;
         let cors_allowed_origins = config
@@ -122,6 +127,7 @@ impl Settings {
 
         Ok(Self {
             issuer,
+            mtls_endpoint_base_url,
             frontend_base_url,
             cors_allowed_origins,
             default_audience: config.string("DEFAULT_AUDIENCE", "resource://default"),

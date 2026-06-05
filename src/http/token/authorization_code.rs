@@ -92,7 +92,11 @@ fn redirect_uri_matches_authorization_request(
 }
 
 fn authorization_code_requires_pkce(client: &ClientRow, payload: &CodePayload) -> bool {
-    client.client_type == "public" || client.require_dpop_bound_tokens || payload.dpop_jkt.is_some()
+    client.client_type == "public"
+        || client.require_dpop_bound_tokens
+        || client.require_mtls_bound_tokens
+        || payload.dpop_jkt.is_some()
+        || payload.mtls_x5t_s256.is_some()
 }
 
 fn authorization_code_dpop_error_response(error: DpopError) -> HttpResponse {
@@ -107,6 +111,24 @@ fn authorization_code_dpop_error_response(error: DpopError) -> HttpResponse {
             false,
         ),
     }
+}
+
+fn authorization_code_mtls_holder_error_response() -> HttpResponse {
+    oauth_token_error(
+        StatusCode::BAD_REQUEST,
+        "invalid_request",
+        "authorization code mTLS binding validation failed.",
+        false,
+    )
+}
+
+fn authorization_code_client_mismatch_response() -> HttpResponse {
+    oauth_token_error(
+        StatusCode::BAD_REQUEST,
+        "invalid_grant",
+        "授权码与客户端或 redirect_uri 不匹配.",
+        false,
+    )
 }
 
 async fn begin_authorization_code_consumption(
@@ -201,11 +223,22 @@ pub(crate) async fn token_authorization_code(
         );
     };
     let code_hash = blake3_hex(code);
-    let expected_dpop_jkt = match load_pending_authorization_code_payload(state, &code_hash).await {
-        Ok(Some(payload)) => payload.dpop_jkt,
-        Ok(None) => None,
+    let expected_payload = match load_pending_authorization_code_payload(state, &code_hash).await {
+        Ok(value) => value,
         Err(response) => return response,
     };
+    if expected_payload
+        .as_ref()
+        .is_some_and(|payload| payload.client_id != client.client_id)
+    {
+        return authorization_code_client_mismatch_response();
+    }
+    let expected_dpop_jkt = expected_payload
+        .as_ref()
+        .and_then(|payload| payload.dpop_jkt.clone());
+    let expected_mtls_x5t_s256 = expected_payload
+        .as_ref()
+        .and_then(|payload| payload.mtls_x5t_s256.clone());
     let dpop_jkt = match validate_dpop_proof(state, req, None, expected_dpop_jkt.as_deref()).await {
         Ok(value) => value.or(expected_dpop_jkt),
         Err(error) => return authorization_code_dpop_error_response(error),
@@ -213,6 +246,24 @@ pub(crate) async fn token_authorization_code(
     if client.require_dpop_bound_tokens && dpop_jkt.is_none() {
         return authorization_code_dpop_error_response(DpopError::MissingProof);
     }
+    let request_mtls_x5t_s256 = request_mtls_thumbprint(req);
+    let mtls_x5t_s256 = match (expected_mtls_x5t_s256, request_mtls_x5t_s256) {
+        (Some(expected), Some(actual))
+            if constant_time_eq(expected.as_bytes(), actual.as_bytes()) =>
+        {
+            Some(expected)
+        }
+        (Some(_), _) => {
+            return authorization_code_mtls_holder_error_response();
+        }
+        (None, actual) if client.require_mtls_bound_tokens => {
+            let Some(actual) = actual else {
+                return authorization_code_mtls_holder_error_response();
+            };
+            Some(actual)
+        }
+        (None, _) => None,
+    };
     if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
         return response;
     }
@@ -277,12 +328,7 @@ pub(crate) async fn token_authorization_code(
         || !redirect_uri_matches_authorization_request(&payload, form.redirect_uri.as_deref())
     {
         mark_failed_authorization_code(state, &code_hash, "client_or_redirect_uri_mismatch").await;
-        return oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_grant",
-            "授权码与客户端或 redirect_uri 不匹配.",
-            false,
-        );
+        return authorization_code_client_mismatch_response();
     }
     match (&payload.code_challenge, &payload.code_challenge_method) {
         (Some(code_challenge), Some(method)) if method == "S256" => {
@@ -334,6 +380,7 @@ pub(crate) async fn token_authorization_code(
     } else {
         None
     };
+    let refresh_token_mtls_x5t_s256 = mtls_x5t_s256.clone();
     issue_token_response(
         state,
         client,
@@ -352,6 +399,8 @@ pub(crate) async fn token_authorization_code(
             rotation: None,
             dpop_jkt,
             refresh_token_dpop_jkt,
+            mtls_x5t_s256,
+            refresh_token_mtls_x5t_s256,
             authorization_code_hash: Some(code_hash),
         },
     )
@@ -386,6 +435,7 @@ mod tests {
             code_challenge: Some("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ".to_owned()),
             code_challenge_method: Some("S256".to_owned()),
             dpop_jkt: None,
+            mtls_x5t_s256: None,
             issued_at: now,
             expires_at: now + Duration::seconds(300),
         }
@@ -473,5 +523,23 @@ mod tests {
             response.headers().get(header::WWW_AUTHENTICATE).unwrap(),
             HeaderValue::from_static(r#"DPoP error="use_dpop_nonce""#)
         );
+    }
+
+    #[test]
+    fn authorization_code_mtls_holder_key_failures_use_invalid_request() {
+        let response = authorization_code_mtls_holder_error_response();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(oauth_error_code(&response), "invalid_request");
+        assert!(response.headers().get(header::WWW_AUTHENTICATE).is_none());
+    }
+
+    #[test]
+    fn authorization_code_client_mismatch_uses_invalid_grant() {
+        let response = authorization_code_client_mismatch_response();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(oauth_error_code(&response), "invalid_grant");
+        assert!(response.headers().get(header::WWW_AUTHENTICATE).is_none());
     }
 }

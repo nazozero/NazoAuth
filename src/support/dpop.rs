@@ -162,7 +162,10 @@ pub(crate) async fn validate_dpop_proof(
     }
     verify_signature(&header.jwk, algorithm, signing_input.as_bytes(), &signature)?;
     validate_dpop_claims(
-        &state.settings.issuer,
+        &[
+            state.settings.issuer.as_str(),
+            state.settings.mtls_endpoint_base_url.as_str(),
+        ],
         req.method().as_str(),
         req.uri().path(),
         &claims,
@@ -250,15 +253,17 @@ fn dpop_iat_within_window(iat: i64, now: i64) -> bool {
 }
 
 fn validate_dpop_claims(
-    issuer: &str,
+    endpoint_bases: &[&str],
     method: &str,
     path: &str,
     claims: &DpopClaims,
     token_for_ath: Option<&str>,
 ) -> Result<(), DpopError> {
-    let expected_htu = format!("{issuer}{path}");
     let actual_htu = normalize_htu(&claims.htu)?;
-    if actual_htu != expected_htu || !claims.htm.eq_ignore_ascii_case(method) {
+    let htu_matches = endpoint_bases
+        .iter()
+        .any(|base| actual_htu == format!("{}{path}", base.trim_end_matches('/')));
+    if !htu_matches || !claims.htm.eq_ignore_ascii_case(method) {
         return Err(DpopError::InvalidProof);
     }
     if !dpop_iat_within_window(claims.iat, Utc::now().timestamp()) || !valid_jti(&claims.jti) {
@@ -521,7 +526,7 @@ mod tests {
         verify_signature(&header.jwk, algorithm, signing_input.as_bytes(), &signature).unwrap();
         assert!(!jwk_thumbprint(&header.jwk).unwrap().is_empty());
         validate_dpop_claims(
-            "https://issuer.example",
+            &["https://issuer.example"],
             "POST",
             "/token",
             &claims,
@@ -545,16 +550,22 @@ mod tests {
         let (_, claims, _, _) = decode_proof(&proof).unwrap();
 
         assert!(matches!(
-            validate_dpop_claims("https://issuer.example", "GET", "/token", &claims, None),
-            Err(DpopError::InvalidProof)
-        ));
-        assert!(matches!(
-            validate_dpop_claims("https://issuer.example", "POST", "/userinfo", &claims, None),
+            validate_dpop_claims(&["https://issuer.example"], "GET", "/token", &claims, None),
             Err(DpopError::InvalidProof)
         ));
         assert!(matches!(
             validate_dpop_claims(
-                "https://issuer.example",
+                &["https://issuer.example"],
+                "POST",
+                "/userinfo",
+                &claims,
+                None
+            ),
+            Err(DpopError::InvalidProof)
+        ));
+        assert!(matches!(
+            validate_dpop_claims(
+                &["https://issuer.example"],
                 "POST",
                 "/token",
                 &claims,
@@ -562,6 +573,30 @@ mod tests {
             ),
             Err(DpopError::InvalidProof)
         ));
+    }
+
+    #[test]
+    fn dpop_claim_validation_accepts_mtls_endpoint_base() {
+        let signing_key = SigningKey::from_bytes(&[11u8; 32]);
+        let proof = signed_test_proof(
+            &signing_key,
+            "POST",
+            "https://mtls.example/token",
+            Utc::now().timestamp(),
+            "proof-mtls",
+            None,
+            Some("nonce-mtls"),
+        );
+        let (_, claims, _, _) = decode_proof(&proof).unwrap();
+
+        validate_dpop_claims(
+            &["https://issuer.example", "https://mtls.example"],
+            "POST",
+            "/token",
+            &claims,
+            None,
+        )
+        .unwrap();
     }
 
     fn signed_test_proof(

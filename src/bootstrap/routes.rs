@@ -18,6 +18,11 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig) {
         .route("/token", web::post().to(token))
         .route("/revoke", web::post().to(revoke))
         .route("/introspect", web::post().to(introspect))
+        .service(
+            web::resource("/fapi/resource")
+                .route(web::get().to(fapi_resource))
+                .route(web::post().to(fapi_resource)),
+        )
         .route(
             "/.well-known/openid-configuration",
             web::get().to(discovery),

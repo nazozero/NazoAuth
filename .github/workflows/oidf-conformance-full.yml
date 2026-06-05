@@ -4,39 +4,16 @@ on:
   workflow_dispatch:
 
 jobs:
-  oidf-conformance:
-    name: ${{ matrix.name }}
+  oidf-conformance-full:
     runs-on: ubuntu-latest
     timeout-minutes: 360
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: oidcc-basic
-            plan_expression: "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] oidf-oidcc-basic-plan-config.json"
-            config_secret: OIDF_PLAN_CONFIG_OIDCC_BASIC_JSON
-          - name: oidcc-config
-            plan_expression: "oidcc-config-certification-test-plan oidf-oidcc-config-plan-config.json"
-            config_secret: OIDF_PLAN_CONFIG_OIDCC_CONFIG_JSON
-          - name: fapi-security-final
-            plan_expression: "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=dpop][openid=openid_connect] oidf-fapi-security-final-plan-config.json"
-            config_secret: OIDF_PLAN_CONFIG_FAPI_SECURITY_FINAL_JSON
-          - name: fapi-message-final
-            plan_expression: "fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] oidf-fapi-message-final-plan-config.json"
-            config_secret: OIDF_PLAN_CONFIG_FAPI_MESSAGE_FINAL_JSON
-          - name: fapi-security-id2
-            plan_expression: "fapi2-security-profile-id2-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=dpop][openid=openid_connect] oidf-fapi-security-id2-plan-config.json"
-            config_secret: OIDF_PLAN_CONFIG_FAPI_SECURITY_ID2_JSON
-          - name: fapi-message-id1
-            plan_expression: "fapi2-message-signing-id1-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] oidf-fapi-message-id1-plan-config.json"
-            config_secret: OIDF_PLAN_CONFIG_FAPI_MESSAGE_ID1_JSON
     env:
       CONFORMANCE_SERVER: ${{ vars.OIDF_CONFORMANCE_SERVER || 'https://www.certification.openid.net/' }}
       OIDF_REF: ${{ vars.OIDF_CONFORMANCE_SUITE_REF || 'master' }}
       EXPORT_RESULTS: ${{ vars.OIDF_EXPORT_RESULTS || 'true' }}
       VERBOSE: ${{ vars.OIDF_VERBOSE || 'true' }}
       DISABLE_SSL_VERIFY: ${{ vars.OIDF_DISABLE_SSL_VERIFY || 'false' }}
-      RUN_TIMEOUT_SECONDS: ${{ vars.OIDF_RUN_TIMEOUT_SECONDS || '10800' }}
+      RUN_TIMEOUT_SECONDS: ${{ vars.OIDF_RUN_TIMEOUT_SECONDS || '14400' }}
       MONITOR_INTERVAL_SECONDS: ${{ vars.OIDF_MONITOR_INTERVAL_SECONDS || '60' }}
       PYTHONUNBUFFERED: "1"
     steps:
@@ -54,15 +31,40 @@ jobs:
       - name: Install official runner dependencies
         run: python -m pip install --upgrade -r oidf-conformance-suite/scripts/requirements.txt
 
-      - name: Run OIDF conformance plan
+      - name: Write full OIDF matrix plan set
+        run: |
+          set -euo pipefail
+          cat > oidf-full-plan-set.json <<'JSON'
+          [
+            "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] oidf-oidcc-basic-plan-config.json",
+            "oidcc-config-certification-test-plan oidf-oidcc-config-plan-config.json",
+            "fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=jarm][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-jarm-plan-config.json",
+            "fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=plain_fapi][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-security-final-mtls-dpop-openid-connect-plain-fapi-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=fapi_client_credentials_grant][sender_constrain=dpop][openid=plain_oauth] oidf-fapi-matrix-security-final-mtls-dpop-plain-oauth-fapi-client-credentials-grant-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=plain_fapi][sender_constrain=dpop][openid=plain_oauth] oidf-fapi-matrix-security-final-mtls-dpop-plain-oauth-plain-fapi-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=plain_fapi][sender_constrain=mtls][openid=openid_connect] oidf-fapi-matrix-security-final-mtls-mtls-openid-connect-plain-fapi-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=fapi_client_credentials_grant][sender_constrain=mtls][openid=plain_oauth] oidf-fapi-matrix-security-final-mtls-mtls-plain-oauth-fapi-client-credentials-grant-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=plain_fapi][sender_constrain=mtls][openid=plain_oauth] oidf-fapi-matrix-security-final-mtls-mtls-plain-oauth-plain-fapi-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-security-final-private-key-jwt-dpop-openid-connect-plain-fapi-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=fapi_client_credentials_grant][sender_constrain=dpop][openid=plain_oauth] oidf-fapi-matrix-security-final-private-key-jwt-dpop-plain-oauth-fapi-client-credentials-grant-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=dpop][openid=plain_oauth] oidf-fapi-matrix-security-final-private-key-jwt-dpop-plain-oauth-plain-fapi-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=mtls][openid=openid_connect] oidf-fapi-matrix-security-final-private-key-jwt-mtls-openid-connect-plain-fapi-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=fapi_client_credentials_grant][sender_constrain=mtls][openid=plain_oauth] oidf-fapi-matrix-security-final-private-key-jwt-mtls-plain-oauth-fapi-client-credentials-grant-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=mtls][openid=plain_oauth] oidf-fapi-matrix-security-final-private-key-jwt-mtls-plain-oauth-plain-fapi-plain-response-plan-config.json"
+          ]
+          JSON
+
+      - name: Run full OIDF matrix
         run: |
           set -euo pipefail
           args=(
             --suite-dir oidf-conformance-suite
             --conformance-server "$CONFORMANCE_SERVER"
-            --plan-expression "$PLAN_EXPRESSION"
+            --plan-set-json-file oidf-full-plan-set.json
             --timeout-seconds "$RUN_TIMEOUT_SECONDS"
             --monitor-interval-seconds "$MONITOR_INTERVAL_SECONDS"
+            --no-parallel
           )
           if [ "$EXPORT_RESULTS" = "true" ]; then
             args+=(--export-dir "$GITHUB_WORKSPACE/oidf-results")
@@ -75,14 +77,13 @@ jobs:
           fi
           python -u scripts/run_oidf_conformance.py "${args[@]}"
         env:
-          PLAN_EXPRESSION: ${{ matrix.plan_expression }}
           OIDF_CONFORMANCE_TOKEN: ${{ secrets.OIDF_CONFORMANCE_TOKEN }}
-          OIDF_PLAN_CONFIG_JSON: ${{ secrets[matrix.config_secret] }}
+          OIDF_PLAN_CONFIG_JSON: ${{ secrets.OIDF_PLAN_CONFIG_JSON }}
 
       - name: Upload OIDF result archive
         if: always() && vars.OIDF_EXPORT_RESULTS != 'false'
         uses: actions/upload-artifact@v4
         with:
-          name: oidf-conformance-results-${{ matrix.name }}
+          name: oidf-conformance-results-full
           path: oidf-results
           if-no-files-found: ignore

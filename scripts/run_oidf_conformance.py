@@ -10,6 +10,7 @@ import os
 import re
 import shlex
 import signal
+import ssl
 import subprocess
 import sys
 import threading
@@ -66,6 +67,7 @@ OIDF_ALLOWED_REVIEW_MODULES = {
     "oidcc-ensure-registered-redirect-uri",
 }
 OIDF_CALLBACK_PATH_PATTERN = re.compile(r"/test/a/[^/]+/callback")
+OIDF_API_SSL_CONTEXT: ssl.SSLContext | None = None
 
 DEFAULT_PLAN_EXPRESSIONS = [
     f"oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] {OIDCC_CONFIG_FILE}",
@@ -93,6 +95,18 @@ def non_empty_env(name: str) -> str:
     value = os.environ.get(name)
     if value is None or value.strip() == "":
         fail(f"{name} is required")
+    return value
+
+
+def non_empty_file(path: str, label: str) -> str:
+    if not path.strip():
+        fail(f"{label} path must not be empty")
+    try:
+        value = Path(path).read_text(encoding="utf-8")
+    except OSError as exc:
+        fail(f"failed to read {label} {path}: {exc}")
+    if value.strip() == "":
+        fail(f"{label} {path} must not be empty")
     return value
 
 
@@ -541,17 +555,29 @@ def add_nazo_browser_overrides(config_value: dict[str, object]) -> None:
     add_nazo_second_login_placeholder_overrides(config_value)
     add_nazo_par_reuse_before_auth_override(config_value)
     add_nazo_user_reject_override(config_value)
+    config_value.pop("nazo", None)
 
 
-def write_plan_configs(suite_scripts: Path, file_name: str, env_name: str) -> tuple[set[str], set[str]]:
+def write_plan_configs(
+    suite_scripts: Path,
+    file_name: str,
+    env_name: str,
+    config_json_file: str,
+) -> tuple[set[str], set[str]]:
     validate_config_file_name(file_name)
-    raw_config = non_empty_env(env_name)
+    raw_config = (
+        non_empty_file(config_json_file, "--config-json-file")
+        if config_json_file
+        else non_empty_env(env_name)
+    )
     try:
         parsed = json.loads(raw_config)
     except json.JSONDecodeError as exc:
-        fail(f"{env_name} is not valid JSON: {exc}")
+        source = config_json_file if config_json_file else env_name
+        fail(f"{source} is not valid JSON: {exc}")
     if not isinstance(parsed, dict):
-        fail(f"{env_name} must contain a JSON object")
+        source = config_json_file if config_json_file else env_name
+        fail(f"{source} must contain a JSON object")
 
     configs = parsed.get("configs")
     if configs is None:
@@ -609,7 +635,11 @@ def oidf_api_request(
     last_error: Exception | None = None
     for attempt in range(1, attempts + 1):
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
+            with urllib.request.urlopen(
+                request,
+                timeout=30,
+                context=OIDF_API_SSL_CONTEXT,
+            ) as response:
                 status = response.status
                 body = response.read()
         except urllib.error.HTTPError as exc:
@@ -1003,6 +1033,17 @@ def cleanup_alias_plan(
         print(f"Skipping immutable OIDF plan {plan_id} for alias {alias}", flush=True)
         return False
 
+    status, _ = oidf_api_request(
+        "DELETE",
+        base_url,
+        f"api/plan/{plan_id}",
+        token,
+        expected_statuses={200, 204, 404, 405},
+    )
+    if status in {200, 204}:
+        print(f"Deleted stale mutable OIDF plan {plan_id} for alias {alias}", flush=True)
+        return True
+
     cancel_plan_module_instances(base_url, token, plan)
     status, _ = oidf_api_request(
         "DELETE",
@@ -1014,7 +1055,7 @@ def cleanup_alias_plan(
     if status in {200, 204}:
         print(f"Deleted stale mutable OIDF plan {plan_id} for alias {alias}", flush=True)
         return True
-    elif status == 405:
+    if status == 405:
         print(f"Skipped non-deletable OIDF plan {plan_id} for alias {alias}", flush=True)
     return False
 
@@ -1043,19 +1084,26 @@ def default_plan_expressions(config_names: set[str], fallback_config_name: str) 
 def plan_expressions(
     raw_expression: str,
     env_name: str,
+    plan_set_json_file: str,
     config_names: set[str],
     fallback_config_name: str,
 ) -> list[str]:
-    raw_plan_set = os.environ.get(env_name, "").strip()
+    raw_plan_set = (
+        non_empty_file(plan_set_json_file, "--plan-set-json-file")
+        if plan_set_json_file
+        else os.environ.get(env_name, "")
+    ).strip()
     if raw_expression.strip():
         expressions = [raw_expression.strip()]
     elif raw_plan_set:
         try:
             parsed = json.loads(raw_plan_set)
         except json.JSONDecodeError as exc:
-            fail(f"{env_name} is not valid JSON: {exc}")
+            source = plan_set_json_file if plan_set_json_file else env_name
+            fail(f"{source} is not valid JSON: {exc}")
         if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
-            fail(f"{env_name} must contain a JSON array of plan expression strings")
+            source = plan_set_json_file if plan_set_json_file else env_name
+            fail(f"{source} must contain a JSON array of plan expression strings")
         expressions = [item.strip() for item in parsed if item.strip()]
     else:
         expressions = default_plan_expressions(config_names, fallback_config_name)
@@ -1101,7 +1149,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--conformance-server", required=True, help="Base URL of the conformance suite")
     parser.add_argument("--plan-expression", default="", help="single run-test-plan.py plan expression")
     parser.add_argument("--plan-set-env", default="OIDF_PLAN_SET_JSON")
+    parser.add_argument(
+        "--plan-set-json-file",
+        default="",
+        help="read the JSON array of plan expressions from this file instead of --plan-set-env",
+    )
     parser.add_argument("--config-env", default="OIDF_PLAN_CONFIG_JSON")
+    parser.add_argument(
+        "--config-json-file",
+        default="",
+        help="read the plan configuration JSON object from this file instead of --config-env",
+    )
     parser.add_argument("--config-file-name", default="oidf-plan-config.json")
     parser.add_argument("--token-env", default="OIDF_CONFORMANCE_TOKEN")
     parser.add_argument("--export-dir", default="")
@@ -1235,9 +1293,12 @@ def terminate_runner(process: subprocess.Popen[bytes]) -> None:
 
 
 def main() -> int:
+    global OIDF_API_SSL_CONTEXT
     args = parse_args()
     if args.rerun:
         validate_rerun_argument(args.rerun)
+    if args.disable_ssl_verify:
+        OIDF_API_SSL_CONTEXT = ssl._create_unverified_context()
 
     suite_dir = Path(args.suite_dir).resolve()
     suite_scripts = suite_dir / "scripts"
@@ -1245,10 +1306,16 @@ def main() -> int:
     if not runner.is_file():
         fail(f"official runner not found: {runner}")
 
-    config_names, aliases = write_plan_configs(suite_scripts, args.config_file_name, args.config_env)
+    config_names, aliases = write_plan_configs(
+        suite_scripts,
+        args.config_file_name,
+        args.config_env,
+        args.config_json_file,
+    )
     expressions = plan_expressions(
         args.plan_expression,
         args.plan_set_env,
+        args.plan_set_json_file,
         config_names,
         args.config_file_name,
     )

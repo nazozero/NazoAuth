@@ -99,6 +99,12 @@ pub(crate) struct ClientRow {
     #[diesel(sql_type = diesel::sql_types::Bool)]
     pub(crate) require_dpop_bound_tokens: bool,
     #[diesel(sql_type = diesel::sql_types::Bool)]
+    pub(crate) require_mtls_bound_tokens: bool,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
+    pub(crate) tls_client_auth_subject_dn: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
+    pub(crate) tls_client_auth_cert_sha256: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Bool)]
     pub(crate) allow_client_assertion_audience_array: bool,
     #[diesel(sql_type = diesel::sql_types::Bool)]
     pub(crate) allow_client_assertion_endpoint_audience: bool,
@@ -134,6 +140,8 @@ pub(crate) struct TokenRow {
     pub(crate) subject: String,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
     pub(crate) dpop_jkt: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
+    pub(crate) mtls_x5t_s256: Option<String>,
 }
 
 /// 当前用户已授权应用列表行。

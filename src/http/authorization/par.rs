@@ -21,6 +21,7 @@ const PAR_AUTHORIZATION_PARAMETERS: &[&str] = &[
     "prompt",
     "max_age",
     "dpop_jkt",
+    "response_mode",
     "request",
 ];
 
@@ -178,6 +179,11 @@ pub(crate) async fn par(state: Data<AppState>, req: HttpRequest, body: Bytes) ->
         return token_management_auth_error(error);
     }
     let dpop_jkt = request_dpop_jkt.or(header_dpop_jkt);
+    let mtls_x5t_s256 = if client.require_mtls_bound_tokens {
+        request_mtls_thumbprint(&req)
+    } else {
+        None
+    };
 
     let now = Utc::now();
     let request_token = random_urlsafe_token();
@@ -186,6 +192,7 @@ pub(crate) async fn par(state: Data<AppState>, req: HttpRequest, body: Bytes) ->
         client_id,
         params,
         dpop_jkt,
+        mtls_x5t_s256,
         issued_at: now,
         expires_at: now + Duration::seconds(state.settings.par_ttl_seconds as i64),
     };
@@ -232,6 +239,13 @@ fn validate_pushed_authorization_request(
     client: &ClientRow,
     params: &HashMap<String, String>,
 ) -> Result<(), HttpResponse> {
+    if pushed_authorization_request_has_unsupported_response_type(params) {
+        return Err(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_response_type",
+            "PAR response_type is not supported.",
+        ));
+    }
     registered_redirect_uri(client, params.get("redirect_uri").map(String::as_str))
         .map(|_| ())
         .map_err(|error| match error {
@@ -246,6 +260,14 @@ fn validate_pushed_authorization_request(
                 "PAR 请求 redirect_uri 未注册.",
             ),
         })
+}
+
+fn pushed_authorization_request_has_unsupported_response_type(
+    params: &HashMap<String, String>,
+) -> bool {
+    params
+        .get("response_type")
+        .is_some_and(|response_type| response_type != "code")
 }
 
 fn pushed_authorization_request_contains_request_uri(params: &HashMap<String, String>) -> bool {
@@ -273,6 +295,9 @@ mod tests {
             grant_types: json!(["authorization_code"]),
             token_endpoint_auth_method: "private_key_jwt".to_owned(),
             require_dpop_bound_tokens,
+            require_mtls_bound_tokens: false,
+            tls_client_auth_subject_dn: None,
+            tls_client_auth_cert_sha256: None,
             allow_client_assertion_audience_array: false,
             allow_client_assertion_endpoint_audience: false,
             require_par_request_object: false,
@@ -317,5 +342,23 @@ mod tests {
             "urn:example:bwc4JK-ESC0w8acc191e-Y1LTC2".to_owned(),
         );
         assert!(pushed_authorization_request_contains_request_uri(&params));
+    }
+
+    #[test]
+    fn par_rejects_explicit_unsupported_response_type() {
+        assert!(!pushed_authorization_request_has_unsupported_response_type(
+            &HashMap::new()
+        ));
+
+        let mut params = HashMap::new();
+        params.insert("response_type".to_owned(), "code".to_owned());
+        assert!(!pushed_authorization_request_has_unsupported_response_type(
+            &params
+        ));
+
+        params.insert("response_type".to_owned(), "code id_token".to_owned());
+        assert!(pushed_authorization_request_has_unsupported_response_type(
+            &params
+        ));
     }
 }

@@ -8,6 +8,7 @@ import os
 import subprocess
 import copy
 import base64
+import hashlib
 import re
 from pathlib import Path
 
@@ -15,12 +16,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = ROOT / "runtime" / "oidf"
 ISSUER = os.environ.get("OIDF_LOCAL_ISSUER", "https://host.containers.internal:9443").rstrip("/")
+MTLS_ISSUER = os.environ.get("OIDF_LOCAL_MTLS_ISSUER", "https://host.containers.internal:9444").rstrip("/")
 SUITE_BASE_URL = os.environ.get("OIDF_LOCAL_SUITE_BASE_URL", "https://nginx:8443").rstrip("/")
 BASIC_ALIAS = os.environ.get("OIDF_LOCAL_BASIC_ALIAS", "local-nazo-oauth-oidf")
 USER_EMAIL = os.environ.get("OIDF_LOCAL_USER_EMAIL", "oidf-local@example.test")
 USER_PASSWORD = os.environ.get("OIDF_LOCAL_USER_PASSWORD", "oidf-local-password")
 CLIENT_SECRET = os.environ.get("OIDF_LOCAL_CLIENT_SECRET", "oidf-local-client-secret")
 FAPI_CLIENT_PREFIX = os.environ.get("OIDF_LOCAL_FAPI_CLIENT_PREFIX", "local-oidf-fapi")
+WRITE_ENV_YAML = os.environ.get("OIDF_LOCAL_WRITE_ENV_YAML", "1") != "0"
 OIDCC_SECOND_LOGIN_SCREENSHOT_MODULES = (
     "oidcc-prompt-login",
     "oidcc-max-age-1",
@@ -46,6 +49,9 @@ PLAN_CONFIG_FILES = (
     "oidf-fapi-security-id2-plan-config.json",
     "oidf-fapi-message-id1-plan-config.json",
 )
+FAPI_MATRIX_CLIENT_AUTHS = ("private_key_jwt", "mtls")
+FAPI_MATRIX_SENDER_CONSTRAINS = ("dpop", "mtls")
+FAPI_MATRIX_OPENID_MODES = ("plain_oauth", "openid_connect")
 
 
 def write_text(path: Path, body: str, mode: int | None = None) -> None:
@@ -87,6 +93,113 @@ def ensure_cert() -> None:
     key.chmod(0o600)
 
 
+def ensure_mtls_certs() -> None:
+    cert_dir = RUNTIME / "certs"
+    cert_dir.mkdir(parents=True, exist_ok=True)
+    ca_key = cert_dir / "mtls-ca.key"
+    ca_cert = cert_dir / "mtls-ca.crt"
+    if not ca_key.is_file() or not ca_cert.is_file():
+        subprocess.run(
+            [
+                "openssl",
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-nodes",
+                "-days",
+                "3650",
+                "-keyout",
+                str(ca_key),
+                "-out",
+                str(ca_cert),
+                "-subj",
+                "/CN=Nazo OAuth Local OIDF mTLS CA",
+            ],
+            check=True,
+            cwd=ROOT,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        ca_key.chmod(0o600)
+
+    for name in ("mtls-client-1", "mtls-client-2"):
+        ensure_mtls_client_cert(name)
+
+
+def ensure_mtls_client_cert(name: str) -> None:
+    cert_dir = RUNTIME / "certs"
+    ca_key = cert_dir / "mtls-ca.key"
+    ca_cert = cert_dir / "mtls-ca.crt"
+    key = cert_dir / f"{name}.key"
+    csr = cert_dir / f"{name}.csr"
+    cert = cert_dir / f"{name}.crt"
+    if key.is_file() and cert.is_file():
+        return
+    subprocess.run(
+        [
+            "openssl",
+            "req",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            str(key),
+            "-out",
+            str(csr),
+            "-subj",
+            f"/CN={name}",
+        ],
+        check=True,
+        cwd=ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    subprocess.run(
+        [
+            "openssl",
+            "x509",
+            "-req",
+            "-in",
+            str(csr),
+            "-CA",
+            str(ca_cert),
+            "-CAkey",
+            str(ca_key),
+            "-CAcreateserial",
+            "-days",
+            "3650",
+            "-out",
+            str(cert),
+        ],
+        check=True,
+        cwd=ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    key.chmod(0o600)
+    csr.unlink(missing_ok=True)
+
+
+def mtls_config(index: int) -> dict[str, str]:
+    return mtls_named_config(f"mtls-client-{index}")
+
+
+def mtls_client_cert_name(client_id: str) -> str:
+    digest = hashlib.sha256(client_id.encode("utf-8")).hexdigest()[:24]
+    return f"mtls-{digest}"
+
+
+def mtls_named_config(name: str) -> dict[str, str]:
+    ensure_mtls_client_cert(name)
+    cert_dir = RUNTIME / "certs"
+    return {
+        "cert": (cert_dir / f"{name}.crt").read_text(encoding="utf-8"),
+        "key": (cert_dir / f"{name}.key").read_text(encoding="utf-8"),
+        "ca": (cert_dir / "mtls-ca.crt").read_text(encoding="utf-8"),
+    }
+
+
 def write_env_yaml() -> None:
     write_text(
         ROOT / ".env.yaml",
@@ -94,6 +207,7 @@ def write_env_yaml() -> None:
 DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/oauth"
 VALKEY_URL: "redis://valkey:6379/0"
 ISSUER: "{ISSUER}"
+MTLS_ENDPOINT_BASE_URL: "{MTLS_ISSUER}"
 FRONTEND_BASE_URL: "{ISSUER}/ui"
 CORS_ALLOWED_ORIGINS:
   - "{ISSUER}"
@@ -140,6 +254,29 @@ http {
       proxy_set_header X-Forwarded-Proto https;
       proxy_set_header X-Forwarded-Host $host;
       proxy_set_header X-Forwarded-Port 9443;
+    }
+  }
+
+  server {
+    listen 9444 ssl;
+    server_name _;
+
+    ssl_certificate /etc/nginx/certs/oidf.crt;
+    ssl_certificate_key /etc/nginx/certs/oidf.key;
+    ssl_client_certificate /etc/nginx/certs/mtls-ca.crt;
+    ssl_verify_client optional;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers on;
+
+    location / {
+      proxy_pass http://nazo-oauth-server:8000;
+      proxy_set_header Host host.containers.internal:9443;
+      proxy_set_header X-Forwarded-Proto https;
+      proxy_set_header X-Forwarded-Host host.containers.internal;
+      proxy_set_header X-Forwarded-Port 9444;
+      proxy_set_header X-SSL-Client-Verify $ssl_client_verify;
+      proxy_set_header X-SSL-Client-Cert $ssl_client_escaped_cert;
     }
   }
 }
@@ -532,13 +669,21 @@ def write_basic_plan_config() -> None:
     return config
 
 
-def fapi_client_config(client_id: str, private_jwks: dict[str, object]) -> dict[str, object]:
+def fapi_client_config(client_id: str, private_jwks: dict[str, object], scope: str) -> dict[str, object]:
     return {
         "client_id": client_id,
         "jwks": private_jwks,
-        "scope": "openid profile email offline_access",
+        "scope": scope,
         "dpop_signing_alg": "ES256",
     }
+
+
+def fapi_scope(openid: str, fapi_profile: str) -> str:
+    if fapi_profile == "fapi_client_credentials_grant":
+        return "accounts"
+    if openid == "openid_connect":
+        return "openid profile email offline_access"
+    return "accounts offline_access"
 
 
 def write_oidcc_config_plan_config() -> dict[str, object]:
@@ -563,21 +708,84 @@ def fapi_plan_config(
     description: str,
     plan_slug: str,
     include_id2_overrides: bool,
+    *,
+    client_auth_type: str = "private_key_jwt",
+    sender_constrain: str = "dpop",
+    openid: str = "openid_connect",
+    fapi_profile: str = "plain_fapi",
+    fapi_response_mode: str = "plain_response",
+    fapi_request_method: str | None = None,
 ) -> dict[str, object]:
     browser = browser_automation()
     client1_id, client2_id = fapi_client_ids(plan_slug)
     client1_jwks = client_private_jwks(client1_id)
     client2_jwks = client_private_jwks(client2_id)
-    return {
+    scope = fapi_scope(openid, fapi_profile)
+    resource_base_url = MTLS_ISSUER if sender_constrain == "mtls" else ISSUER
+    config: dict[str, object] = {
         "alias": alias,
         "description": description,
         "server": {"discoveryUrl": f"{ISSUER}/.well-known/openid-configuration"},
-        "resource": {"resourceUrl": f"{ISSUER}/userinfo"},
-        "client": fapi_client_config(client1_id, client1_jwks),
-        "client2": fapi_client_config(client2_id, client2_jwks),
+        "resource": {
+            "resourceUrl": f"{resource_base_url}/fapi/resource",
+            "resourceMethod": "GET",
+            "resourceMediaType": "application/json",
+            "resourceRequestBody": "",
+        },
+        "client": fapi_client_config(client1_id, client1_jwks, scope),
+        "client2": fapi_client_config(client2_id, client2_jwks, scope),
+        "mtls": mtls_named_config(mtls_client_cert_name(client1_id)),
+        "mtls2": mtls_named_config(mtls_client_cert_name(client2_id)),
+        "nazo": {
+            "client_auth_type": client_auth_type,
+            "sender_constrain": sender_constrain,
+            "openid": openid,
+            "fapi_profile": fapi_profile,
+            "fapi_response_mode": fapi_response_mode,
+        },
         "browser": browser,
         "override": fapi_overrides(browser, include_id2_overrides),
     }
+    if fapi_request_method is not None:
+        config["nazo"]["fapi_request_method"] = fapi_request_method
+    return config
+
+
+def fapi_matrix_plan_config(
+    plan_kind: str,
+    client_auth_type: str,
+    sender_constrain: str,
+    openid: str,
+    *,
+    fapi_profile: str = "plain_fapi",
+    fapi_response_mode: str = "plain_response",
+    fapi_request_method: str | None = None,
+) -> tuple[str, dict[str, object]]:
+    slug = "-".join(
+        value.replace("_", "-")
+        for value in [
+            plan_kind,
+            client_auth_type,
+            sender_constrain,
+            openid,
+            fapi_profile,
+            fapi_response_mode,
+        ]
+    )
+    name = f"oidf-fapi-matrix-{slug}-plan-config.json"
+    config = fapi_plan_config(
+        f"local-nazo-oauth-oidf-{slug}",
+        f"Local Podman Nazo OAuth FAPI2 matrix {slug}",
+        slug,
+        False,
+        client_auth_type=client_auth_type,
+        sender_constrain=sender_constrain,
+        openid=openid,
+        fapi_profile=fapi_profile,
+        fapi_response_mode=fapi_response_mode,
+        fapi_request_method=fapi_request_method,
+    )
+    return name, config
 
 
 def write_fapi_plan_configs() -> dict[str, dict[str, object]]:
@@ -612,13 +820,67 @@ def write_fapi_plan_configs() -> dict[str, dict[str, object]]:
     return configs
 
 
+def write_fapi_matrix_plan_configs() -> dict[str, dict[str, object]]:
+    configs: dict[str, dict[str, object]] = {}
+    for client_auth_type in FAPI_MATRIX_CLIENT_AUTHS:
+        for sender_constrain in FAPI_MATRIX_SENDER_CONSTRAINS:
+            for openid in FAPI_MATRIX_OPENID_MODES:
+                name, config = fapi_matrix_plan_config(
+                    "security-final",
+                    client_auth_type,
+                    sender_constrain,
+                    openid,
+                )
+                configs[name] = config
+
+    for response_mode in ("plain_response", "jarm"):
+        name, config = fapi_matrix_plan_config(
+            "message-final",
+            "private_key_jwt",
+            "dpop",
+            "openid_connect",
+            fapi_response_mode=response_mode,
+            fapi_request_method="signed_non_repudiation",
+        )
+        configs[name] = config
+
+    for client_auth_type in FAPI_MATRIX_CLIENT_AUTHS:
+        for sender_constrain in FAPI_MATRIX_SENDER_CONSTRAINS:
+            name, config = fapi_matrix_plan_config(
+                "security-final",
+                client_auth_type,
+                sender_constrain,
+                "plain_oauth",
+                fapi_profile="fapi_client_credentials_grant",
+            )
+            configs[name] = config
+
+    for name, config in configs.items():
+        write_plan_config(name, config)
+    return configs
+
+
 def write_all_plan_configs() -> None:
     configs: dict[str, dict[str, object]] = {
         "oidf-oidcc-basic-plan-config.json": write_basic_plan_config(),
         "oidf-oidcc-config-plan-config.json": write_oidcc_config_plan_config(),
     }
     configs.update(write_fapi_plan_configs())
-    write_text(RUNTIME / "oidf-local.env", f"OIDF_PLAN_CONFIG_JSON={json.dumps({'configs': configs})}\n", 0o600)
+    configs.update(write_fapi_matrix_plan_configs())
+    plan_set = plan_expressions_for_configs(configs)
+    write_text(RUNTIME / "oidf-plan-configs.json", json.dumps({"configs": configs}, indent=2) + "\n", 0o600)
+    write_text(RUNTIME / "oidf-plan-set.json", json.dumps(plan_set, indent=2) + "\n", 0o600)
+    write_text(
+        RUNTIME / "oidf-local.env",
+        "\n".join(
+            [
+                f"OIDF_PLAN_CONFIG_JSON={json.dumps({'configs': configs})}",
+                f"OIDF_PLAN_SET_JSON={json.dumps(plan_set)}",
+                "",
+            ]
+        ),
+        0o600,
+    )
     callbacks = {
         name: callback_for(str(config["alias"]))
         for name, config in configs.items()
@@ -628,9 +890,36 @@ def write_all_plan_configs() -> None:
     write_text(RUNTIME / "callback.txt", callback_for(BASIC_ALIAS) + "\n")
 
 
+def plan_expressions_for_configs(configs: dict[str, dict[str, object]]) -> list[str]:
+    expressions = [
+        "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] "
+        "oidf-oidcc-basic-plan-config.json",
+        "oidcc-config-certification-test-plan oidf-oidcc-config-plan-config.json",
+    ]
+    for name, config in sorted(configs.items()):
+        if name.startswith("oidf-fapi-matrix-"):
+            nazo = config.get("nazo")
+            if not isinstance(nazo, dict):
+                continue
+            plan_kind = "fapi2-message-signing-final-test-plan" if "message-final" in name else "fapi2-security-profile-final-test-plan"
+            variants = [
+                f"client_auth_type={nazo['client_auth_type']}",
+                f"fapi_profile={nazo['fapi_profile']}",
+            ]
+            if plan_kind == "fapi2-message-signing-final-test-plan":
+                variants.append(f"fapi_request_method={nazo.get('fapi_request_method', 'signed_non_repudiation')}")
+                variants.append(f"fapi_response_mode={nazo['fapi_response_mode']}")
+            variants.append(f"sender_constrain={nazo['sender_constrain']}")
+            variants.append(f"openid={nazo['openid']}")
+            expressions.append(f"{plan_kind}[{']['.join(variants)}] {name}")
+    return expressions
+
+
 def main() -> int:
     ensure_cert()
-    write_env_yaml()
+    ensure_mtls_certs()
+    if WRITE_ENV_YAML:
+        write_env_yaml()
     write_nginx()
     write_ui()
     write_all_plan_configs()

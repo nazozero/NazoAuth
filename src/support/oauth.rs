@@ -17,6 +17,8 @@ const SUPPORTED_TOKEN_AUTH_METHODS: &[&str] = &[
     "client_secret_basic",
     "client_secret_post",
     "private_key_jwt",
+    "tls_client_auth",
+    "self_signed_tls_client_auth",
 ];
 
 #[derive(Debug, PartialEq, Eq)]
@@ -142,6 +144,13 @@ pub(crate) fn validate_client_metadata(
         if jwks.is_none() {
             anyhow::bail!("private_key_jwt 客户端必须配置 jwks");
         }
+    }
+    if matches!(
+        token_endpoint_auth_method,
+        "tls_client_auth" | "self_signed_tls_client_auth"
+    ) && client_type != "confidential"
+    {
+        anyhow::bail!("mTLS 客户端认证只适用于 confidential 客户端");
     }
     if client_type == "public"
         && grant_types
@@ -296,6 +305,9 @@ mod tests {
             grant_types: json!(["authorization_code"]),
             token_endpoint_auth_method: "none".to_owned(),
             require_dpop_bound_tokens: false,
+            require_mtls_bound_tokens: false,
+            tls_client_auth_subject_dn: None,
+            tls_client_auth_cert_sha256: None,
             allow_client_assertion_audience_array: false,
             allow_client_assertion_endpoint_audience: false,
             require_par_request_object: false,

@@ -12,3 +12,4 @@ services:
       nazo_oauth_net:
     ports:
       - "9443:9443"
+      - "9444:9444"

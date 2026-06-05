@@ -1,31 +1,34 @@
 #![forbid(unsafe_code)]
 
 use argon2::{Argon2, PasswordHasher};
+use base64::{
+    Engine,
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
+};
 use diesel::{Connection, PgConnection, RunQueryDsl, sql_query};
 use nazo_oauth_server::{config::ConfigSource, database_config::normalize_database_url};
 use password_hash::{SaltString, rand_core::OsRng};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::{collections::BTreeSet, env, fs, path::Path};
-
-const PLAN_CONFIG_FILES: &[&str] = &[
-    "oidf-oidcc-basic-plan-config.json",
-    "oidf-fapi-security-final-plan-config.json",
-    "oidf-fapi-message-final-plan-config.json",
-    "oidf-fapi-security-id2-plan-config.json",
-    "oidf-fapi-message-id1-plan-config.json",
-];
 
 #[derive(Clone, Copy)]
 struct FapiClientPolicy {
+    auth_method: &'static str,
+    require_dpop_bound_tokens: bool,
+    require_mtls_bound_tokens: bool,
     allow_client_assertion_audience_array: bool,
     allow_client_assertion_endpoint_audience: bool,
     require_par_request_object: bool,
+    client_credentials_only: bool,
 }
 
 struct FapiClientSeed {
     client_id: String,
     jwks: Value,
+    scopes: Value,
     policy: FapiClientPolicy,
+    tls_client_auth_cert_sha256: Option<String>,
 }
 
 fn env_or(name: &str, default: &str) -> String {
@@ -155,6 +158,9 @@ fn upsert_client(
     allow_client_assertion_audience_array: bool,
     allow_client_assertion_endpoint_audience: bool,
     require_par_request_object: bool,
+    require_mtls_bound_tokens: bool,
+    tls_client_auth_subject_dn: Option<&str>,
+    tls_client_auth_cert_sha256: Option<&str>,
     jwks: Option<&Value>,
 ) -> anyhow::Result<()> {
     sql_query(
@@ -170,6 +176,9 @@ fn upsert_client(
             grant_types,
             token_endpoint_auth_method,
             require_dpop_bound_tokens,
+            require_mtls_bound_tokens,
+            tls_client_auth_subject_dn,
+            tls_client_auth_cert_sha256,
             allow_client_assertion_audience_array,
             allow_client_assertion_endpoint_audience,
             require_par_request_object,
@@ -178,7 +187,7 @@ fn upsert_client(
         )
         VALUES (
             $1, $2, 'confidential', $3, $4, $5, $6, $7, $8,
-            $9, $10, $11, $12, $13, TRUE
+            $9, $10, $11, $12, $13, $14, $15, $16, TRUE
         )
         ON CONFLICT (client_id) DO UPDATE
         SET client_name = EXCLUDED.client_name,
@@ -190,6 +199,9 @@ fn upsert_client(
             grant_types = EXCLUDED.grant_types,
             token_endpoint_auth_method = EXCLUDED.token_endpoint_auth_method,
             require_dpop_bound_tokens = EXCLUDED.require_dpop_bound_tokens,
+            require_mtls_bound_tokens = EXCLUDED.require_mtls_bound_tokens,
+            tls_client_auth_subject_dn = EXCLUDED.tls_client_auth_subject_dn,
+            tls_client_auth_cert_sha256 = EXCLUDED.tls_client_auth_cert_sha256,
             allow_client_assertion_audience_array = EXCLUDED.allow_client_assertion_audience_array,
             allow_client_assertion_endpoint_audience = EXCLUDED.allow_client_assertion_endpoint_audience,
             require_par_request_object = EXCLUDED.require_par_request_object,
@@ -207,6 +219,13 @@ fn upsert_client(
     .bind::<diesel::sql_types::Jsonb, _>(&grant_types)
     .bind::<diesel::sql_types::VarChar, _>(auth_method)
     .bind::<diesel::sql_types::Bool, _>(require_dpop_bound_tokens)
+    .bind::<diesel::sql_types::Bool, _>(require_mtls_bound_tokens)
+    .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(
+        tls_client_auth_subject_dn,
+    )
+    .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(
+        tls_client_auth_cert_sha256,
+    )
     .bind::<diesel::sql_types::Bool, _>(allow_client_assertion_audience_array)
     .bind::<diesel::sql_types::Bool, _>(allow_client_assertion_endpoint_audience)
     .bind::<diesel::sql_types::Bool, _>(require_par_request_object)
@@ -243,12 +262,92 @@ fn public_jwks(jwks: &Value) -> anyhow::Result<Value> {
     Ok(json!({ "keys": public_keys }))
 }
 
-fn fapi_client_policy(file_name: &str) -> FapiClientPolicy {
+fn fapi_client_policy(file_name: &str, plan: &Value) -> FapiClientPolicy {
+    let nazo = plan.get("nazo").and_then(Value::as_object);
+    let client_auth_type = nazo
+        .and_then(|value| value.get("client_auth_type"))
+        .and_then(Value::as_str)
+        .unwrap_or("private_key_jwt");
+    let sender_constrain = nazo
+        .and_then(|value| value.get("sender_constrain"))
+        .and_then(Value::as_str)
+        .unwrap_or("dpop");
+    let fapi_profile = nazo
+        .and_then(|value| value.get("fapi_profile"))
+        .and_then(Value::as_str)
+        .unwrap_or("plain_fapi");
     FapiClientPolicy {
+        auth_method: match client_auth_type {
+            "mtls" => "tls_client_auth",
+            _ => "private_key_jwt",
+        },
+        require_dpop_bound_tokens: sender_constrain == "dpop",
+        require_mtls_bound_tokens: sender_constrain == "mtls",
         allow_client_assertion_audience_array: file_name.contains("-id"),
         allow_client_assertion_endpoint_audience: file_name.contains("-id"),
-        require_par_request_object: file_name.contains("-message-"),
+        require_par_request_object: file_name.contains("-message-")
+            || nazo
+                .and_then(|value| value.get("fapi_request_method"))
+                .and_then(Value::as_str)
+                .is_some(),
+        client_credentials_only: fapi_profile == "fapi_client_credentials_grant",
     }
+}
+
+fn plan_config_files(runtime_dir: &Path) -> anyhow::Result<Vec<String>> {
+    let mut names = Vec::new();
+    for entry in fs::read_dir(runtime_dir)? {
+        let entry = entry?;
+        let Some(name) = entry.file_name().to_str().map(ToOwned::to_owned) else {
+            continue;
+        };
+        if name.ends_with("-plan-config.json") {
+            names.push(name);
+        }
+    }
+    names.sort();
+    Ok(names)
+}
+
+fn certificate_pem_thumbprint(value: &str) -> anyhow::Result<String> {
+    let start = value
+        .find("-----BEGIN CERTIFICATE-----")
+        .ok_or_else(|| anyhow::anyhow!("mTLS certificate is missing BEGIN marker"))?;
+    let end = value
+        .find("-----END CERTIFICATE-----")
+        .ok_or_else(|| anyhow::anyhow!("mTLS certificate is missing END marker"))?;
+    let body_start = start + "-----BEGIN CERTIFICATE-----".len();
+    let body = value[body_start..end]
+        .chars()
+        .filter(|ch| !ch.is_ascii_whitespace())
+        .collect::<String>();
+    let der = STANDARD
+        .decode(body)
+        .map_err(|error| anyhow::anyhow!("mTLS certificate base64 decode failed: {error}"))?;
+    Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(&der)))
+}
+
+fn mtls_thumbprint(plan: &Value, key: &str) -> anyhow::Result<Option<String>> {
+    let mtls_key = if key == "client2" { "mtls2" } else { "mtls" };
+    let Some(cert) = plan
+        .get(mtls_key)
+        .and_then(|value| value.get("cert"))
+        .and_then(Value::as_str)
+    else {
+        return Ok(None);
+    };
+    Ok(Some(certificate_pem_thumbprint(cert)?))
+}
+
+fn client_scopes(client: &serde_json::Map<String, Value>) -> Value {
+    let scopes = client
+        .get("scope")
+        .and_then(Value::as_str)
+        .unwrap_or("openid profile email offline_access")
+        .split_whitespace()
+        .filter(|scope| !scope.is_empty())
+        .collect::<Vec<_>>();
+    json!(scopes)
 }
 
 fn callback_uri(suite_base_url: &str, alias: &str) -> String {
@@ -294,7 +393,6 @@ fn main() -> anyhow::Result<()> {
         "phone",
         "offline_access"
     ]);
-    let fapi_scopes = json!(["openid", "profile", "email", "offline_access"]);
     let allowed_audiences = json!(["resource://default", format!("{issuer}/userinfo")]);
     let grant_types = json!(["authorization_code", "refresh_token"]);
 
@@ -313,6 +411,9 @@ fn main() -> anyhow::Result<()> {
         false,
         false,
         false,
+        false,
+        None,
+        None,
         None,
     )?;
     upsert_client(
@@ -329,6 +430,9 @@ fn main() -> anyhow::Result<()> {
         false,
         false,
         false,
+        false,
+        None,
+        None,
         None,
     )?;
     upsert_client(
@@ -345,15 +449,19 @@ fn main() -> anyhow::Result<()> {
         false,
         false,
         false,
+        false,
+        None,
+        None,
         None,
     )?;
 
     let mut fapi_redirect_uris = BTreeSet::new();
     let mut fapi_clients = Vec::<FapiClientSeed>::new();
-    for file_name in PLAN_CONFIG_FILES {
+    let plan_config_files = plan_config_files(runtime_dir)?;
+    for file_name in &plan_config_files {
         let plan = read_plan_config(runtime_dir, file_name)?;
         let alias = string_value(&plan, "alias")?;
-        if *file_name != "oidf-oidcc-config-plan-config.json" {
+        if file_name != "oidf-oidcc-config-plan-config.json" {
             let callback = callback_uri(&suite_base_url, alias);
             fapi_redirect_uris.insert(callback.clone());
             fapi_redirect_uris.insert(format!("{callback}?dummy1=lorem&dummy2=ipsum"));
@@ -365,6 +473,7 @@ fn main() -> anyhow::Result<()> {
             let Some(jwks) = client.get("jwks") else {
                 continue;
             };
+            let policy = fapi_client_policy(file_name, &plan);
             let client_id = client
                 .get("client_id")
                 .and_then(Value::as_str)
@@ -373,7 +482,9 @@ fn main() -> anyhow::Result<()> {
             fapi_clients.push(FapiClientSeed {
                 client_id,
                 jwks: public_jwks(jwks)?,
-                policy: fapi_client_policy(file_name),
+                scopes: client_scopes(client),
+                policy,
+                tls_client_auth_cert_sha256: mtls_thumbprint(&plan, key)?,
             });
         }
     }
@@ -381,20 +492,28 @@ fn main() -> anyhow::Result<()> {
     fapi_clients.sort_by(|left, right| left.client_id.cmp(&right.client_id));
     fapi_clients.dedup_by(|left, right| left.client_id == right.client_id);
     for seed in &fapi_clients {
+        let grant_types = if seed.policy.client_credentials_only {
+            json!(["client_credentials"])
+        } else {
+            grant_types.clone()
+        };
         upsert_client(
             &mut connection,
             &seed.client_id,
             &format!("Local OIDF FAPI Client {}", seed.client_id),
             None,
-            "private_key_jwt",
+            seed.policy.auth_method,
             &fapi_redirect_uris,
-            &fapi_scopes,
+            &seed.scopes,
             &allowed_audiences,
             &grant_types,
-            true,
+            seed.policy.require_dpop_bound_tokens,
             seed.policy.allow_client_assertion_audience_array,
             seed.policy.allow_client_assertion_endpoint_audience,
             seed.policy.require_par_request_object,
+            seed.policy.require_mtls_bound_tokens,
+            None,
+            seed.tls_client_auth_cert_sha256.as_deref(),
             Some(&seed.jwks),
         )?;
     }

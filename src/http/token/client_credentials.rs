@@ -25,6 +25,21 @@ pub(crate) async fn token_client_credentials(
     if client.require_dpop_bound_tokens && dpop_jkt.is_none() {
         return dpop_error_response(DpopError::MissingProof, DpopErrorContext::TokenEndpoint);
     }
+    let mtls_x5t_s256 = if client.require_mtls_bound_tokens {
+        match request_mtls_thumbprint(req) {
+            Some(value) => Some(value),
+            None => {
+                return oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    "client_credentials requires mTLS sender constraint.",
+                    false,
+                );
+            }
+        }
+    } else {
+        None
+    };
     if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
         return response;
     }
@@ -73,6 +88,8 @@ pub(crate) async fn token_client_credentials(
             rotation: None,
             dpop_jkt,
             refresh_token_dpop_jkt: None,
+            mtls_x5t_s256,
+            refresh_token_mtls_x5t_s256: None,
             authorization_code_hash: None,
         },
     )

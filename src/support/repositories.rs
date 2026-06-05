@@ -35,3 +35,26 @@ pub(crate) async fn find_client(db: &DbPool, client_id: &str) -> anyhow::Result<
         .await
         .optional()?)
 }
+
+pub(crate) async fn find_active_mtls_client_by_thumbprint(
+    db: &DbPool,
+    thumbprint: &str,
+) -> anyhow::Result<Option<ClientRow>> {
+    let mut conn = db.get().await?;
+    let clients = oauth_clients::table
+        .filter(oauth_clients::tls_client_auth_cert_sha256.eq(thumbprint))
+        .filter(
+            oauth_clients::token_endpoint_auth_method
+                .eq_any(["tls_client_auth", "self_signed_tls_client_auth"]),
+        )
+        .filter(oauth_clients::client_type.eq("confidential"))
+        .filter(oauth_clients::is_active.eq(true))
+        .select(ClientRow::as_select())
+        .limit(2)
+        .load::<ClientRow>(&mut conn)
+        .await?;
+    Ok(match clients.as_slice() {
+        [client] => Some(client.clone()),
+        _ => None,
+    })
+}

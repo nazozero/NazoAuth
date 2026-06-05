@@ -194,6 +194,35 @@ pub(crate) async fn token_refresh(
             false,
         );
     }
+    let mtls_x5t_s256 = if let Some(expected) = token.mtls_x5t_s256.clone() {
+        match request_mtls_thumbprint(req) {
+            Some(actual) if constant_time_eq(expected.as_bytes(), actual.as_bytes()) => {
+                Some(expected)
+            }
+            _ => {
+                return oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    "refresh_token requires mTLS proof of possession.",
+                    false,
+                );
+            }
+        }
+    } else if client.require_mtls_bound_tokens {
+        match request_mtls_thumbprint(req) {
+            Some(actual) => Some(actual),
+            None => {
+                return oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    "refresh_token requires mTLS proof of possession.",
+                    false,
+                );
+            }
+        }
+    } else {
+        None
+    };
     if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
         return response;
     }
@@ -250,6 +279,8 @@ pub(crate) async fn token_refresh(
             rotation: Some((token.token_family_id, Some(token.id))),
             dpop_jkt: dpop_jkt.clone(),
             refresh_token_dpop_jkt: token.dpop_jkt,
+            mtls_x5t_s256: mtls_x5t_s256.clone(),
+            refresh_token_mtls_x5t_s256: mtls_x5t_s256,
             authorization_code_hash: None,
         },
     )

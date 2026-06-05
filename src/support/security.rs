@@ -2,7 +2,10 @@
 // 安全相关算法集中在这里，调用方只关心验证或签发结果。
 
 use super::prelude::*;
-use super::{audit_event, audit_fields, signing_algorithm_name, valkey_set_ex_nx};
+use super::{
+    audit_event, audit_fields, request_mtls_thumbprint_from_headers, signing_algorithm_name,
+    valkey_set_ex_nx,
+};
 
 pub(crate) fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
     if left.len() != right.len() {
@@ -126,6 +129,12 @@ pub(crate) fn extract_client_credentials(
             client_secret: form_secret.map(ToOwned::to_owned),
             client_assertion: None,
             method: "client_secret_post".to_owned(),
+        },
+        Some(id) if request_mtls_thumbprint_from_headers(headers).is_some() => ClientCredentials {
+            client_id: Some(id.to_string()),
+            client_secret: None,
+            client_assertion: None,
+            method: "tls_client_auth".to_owned(),
         },
         Some(id) => ClientCredentials {
             client_id: Some(id.to_string()),
@@ -435,6 +444,7 @@ pub(crate) struct AccessTokenJwtInput<'a> {
     pub(crate) userinfo_claims: &'a [String],
     pub(crate) ttl: i64,
     pub(crate) dpop_jkt: Option<&'a str>,
+    pub(crate) mtls_x5t_s256: Option<&'a str>,
 }
 
 pub(crate) struct IssuedAccessToken {
@@ -463,9 +473,17 @@ pub(crate) fn make_jwt(
         iat: now,
         nbf: now,
         exp,
-        cnf: input.dpop_jkt.map(|jkt| ConfirmationClaims {
-            jkt: jkt.to_owned(),
-        }),
+        cnf: match (input.dpop_jkt, input.mtls_x5t_s256) {
+            (Some(jkt), None) => Some(ConfirmationClaims {
+                jkt: Some(jkt.to_owned()),
+                x5t_s256: None,
+            }),
+            (None, Some(x5t_s256)) => Some(ConfirmationClaims {
+                jkt: None,
+                x5t_s256: Some(x5t_s256.to_owned()),
+            }),
+            _ => None,
+        },
         userinfo_claims: input.userinfo_claims.to_vec(),
     };
     let mut header = jsonwebtoken::Header::new(state.keyset.active_alg);
@@ -535,6 +553,45 @@ pub(crate) fn make_id_token(
     header.typ = Some("JWT".to_string());
     header.kid = Some(state.keyset.active_kid.clone());
     jsonwebtoken::encode(&header, &claims, &state.keyset.active_encoding_key())
+}
+
+pub(crate) struct AuthorizationResponseJwtInput<'a> {
+    pub(crate) client_id: &'a str,
+    pub(crate) code: Option<&'a str>,
+    pub(crate) error: Option<&'a str>,
+    pub(crate) state: Option<&'a str>,
+    pub(crate) ttl: i64,
+}
+
+pub(crate) fn make_authorization_response_jwt(
+    state: &AppState,
+    input: AuthorizationResponseJwtInput<'_>,
+) -> jsonwebtoken::errors::Result<String> {
+    let now = Utc::now().timestamp();
+    let mut claims = serde_json::Map::new();
+    claims.insert("iss".to_owned(), json!(state.settings.issuer));
+    claims.insert("aud".to_owned(), json!(input.client_id));
+    claims.insert("iat".to_owned(), json!(now));
+    claims.insert("nbf".to_owned(), json!(now));
+    claims.insert("exp".to_owned(), json!(now + input.ttl.max(1)));
+    claims.insert("jti".to_owned(), json!(Uuid::now_v7().to_string()));
+    if let Some(code) = input.code {
+        claims.insert("code".to_owned(), json!(code));
+    }
+    if let Some(error) = input.error {
+        claims.insert("error".to_owned(), json!(error));
+    }
+    if let Some(state_value) = input.state.filter(|value| !value.is_empty()) {
+        claims.insert("state".to_owned(), json!(state_value));
+    }
+    let mut header = jsonwebtoken::Header::new(state.keyset.active_alg);
+    header.typ = Some("oauth-authz-resp+jwt".to_string());
+    header.kid = Some(state.keyset.active_kid.clone());
+    jsonwebtoken::encode(
+        &header,
+        &Value::Object(claims),
+        &state.keyset.active_encoding_key(),
+    )
 }
 
 pub(crate) fn decode_access_claims(state: &AppState, token: &str) -> Option<Claims> {
