@@ -415,7 +415,7 @@ python3 scripts/run_oidf_conformance.py \
 
 通过门槛是所有 plan 跑到完成，并且 summary 中每个 plan 都是 `0 failures, 0 warnings`。`WAITING` 和 `NOT_STARTED` 在运行中不是失败；只在出现真实 `FAILED`、`WARNING` 或 `INTERRUPTED` 时停止等待并定位根因。
 
-最近一次官方 OpenID Foundation Conformance Suite workflow 是在 `2026-06-07 Asia/Shanghai` 对当前服务实现 commit `4e15e77d70749e3b01d29670d449b40ac834f206` 和 `https://oauth-test.nazo.run` 完成同一 16-plan 矩阵；当前 `main` 的后续 commit `73d1aafc902ab7caf401e081f1af7dbdeda27c40` 仅更新本证明记录。所有计划均跑完，条件计数为 `0 failures, 0 warnings`，workflow 上传了每个 plan 的结果归档：
+最近一次官方 OpenID Foundation Conformance Suite workflow 是在 `2026-06-07 Asia/Shanghai` 对服务实现 commit `4e15e77d70749e3b01d29670d449b40ac834f206` 和 `https://oauth-test.nazo.run` 完成同一 16-plan 矩阵；当前 `main` 在该实现基础上仅更新本证明记录。所有计划均跑完，条件计数为 `0 failures, 0 warnings`，workflow 上传了每个 plan 的结果归档：
 
 - GitHub Actions run：`https://github.com/bymoye/oauth2_server/actions/runs/27067936867`
 - GitHub Actions job：`https://github.com/bymoye/oauth2_server/actions/runs/27067936867/job/79891980678`
