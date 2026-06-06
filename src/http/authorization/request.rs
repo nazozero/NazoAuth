@@ -630,17 +630,39 @@ pub(crate) fn authorization_response_redirect(
             }
         }
     }
-    let code_value = code.unwrap_or("");
-    let error_value = error.unwrap_or("");
-    redirect_found(append_query(
+    redirect_found(append_authorization_response_query(
         redirect_uri,
-        &[
-            ("code", code_value),
-            ("error", error_value),
-            ("state", state_value.unwrap_or("")),
-            ("iss", state.settings.issuer.as_str()),
-        ],
+        state.settings.issuer.as_str(),
+        code,
+        error,
+        state_value,
     ))
+}
+
+fn append_authorization_response_query(
+    redirect_uri: &str,
+    issuer: &str,
+    code: Option<&str>,
+    error: Option<&str>,
+    state_value: Option<&str>,
+) -> String {
+    let Ok(mut url) = url::Url::parse(redirect_uri) else {
+        return redirect_uri.to_owned();
+    };
+    {
+        let mut query = url.query_pairs_mut();
+        if let Some(code) = code {
+            query.append_pair("code", code);
+        }
+        if let Some(error) = error {
+            query.append_pair("error", error);
+        }
+        if let Some(state_value) = state_value {
+            query.append_pair("state", state_value);
+        }
+        query.append_pair("iss", issuer);
+    }
+    url.to_string()
 }
 
 fn authorization_nonce_too_long(q: &HashMap<String, String>) -> bool {
@@ -752,6 +774,49 @@ mod tests {
             "nonce",
             &"n".repeat(AUTHORIZATION_NONCE_MAX_BYTES + 1),
         )])));
+    }
+
+    #[test]
+    fn authorization_response_query_preserves_explicit_empty_state() {
+        let location = append_authorization_response_query(
+            "https://client.example/callback",
+            "https://issuer.example",
+            Some("code-1"),
+            None,
+            Some(""),
+        );
+
+        let url = url::Url::parse(&location).unwrap();
+        let pairs = url.query_pairs().collect::<Vec<_>>();
+        assert_eq!(
+            pairs,
+            vec![
+                ("code".into(), "code-1".into()),
+                ("state".into(), "".into()),
+                ("iss".into(), "https://issuer.example".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn authorization_response_query_omits_absent_state_and_inapplicable_result() {
+        let location = append_authorization_response_query(
+            "https://client.example/callback",
+            "https://issuer.example",
+            None,
+            Some("invalid_request"),
+            None,
+        );
+
+        let url = url::Url::parse(&location).unwrap();
+        let pairs = url.query_pairs().collect::<Vec<_>>();
+        assert_eq!(
+            pairs,
+            vec![
+                ("error".into(), "invalid_request".into()),
+                ("iss".into(), "https://issuer.example".into()),
+            ]
+        );
     }
 
     #[test]

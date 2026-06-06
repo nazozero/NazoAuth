@@ -568,8 +568,24 @@ pub(crate) fn make_authorization_response_jwt(
     input: AuthorizationResponseJwtInput<'_>,
 ) -> jsonwebtoken::errors::Result<String> {
     let now = Utc::now().timestamp();
+    let claims = authorization_response_jwt_claims(&state.settings.issuer, &input, now);
+    let mut header = jsonwebtoken::Header::new(state.keyset.active_alg);
+    header.typ = Some("oauth-authz-resp+jwt".to_string());
+    header.kid = Some(state.keyset.active_kid.clone());
+    jsonwebtoken::encode(
+        &header,
+        &Value::Object(claims),
+        &state.keyset.active_encoding_key(),
+    )
+}
+
+fn authorization_response_jwt_claims(
+    issuer: &str,
+    input: &AuthorizationResponseJwtInput<'_>,
+    now: i64,
+) -> serde_json::Map<String, Value> {
     let mut claims = serde_json::Map::new();
-    claims.insert("iss".to_owned(), json!(state.settings.issuer));
+    claims.insert("iss".to_owned(), json!(issuer));
     claims.insert("aud".to_owned(), json!(input.client_id));
     claims.insert("iat".to_owned(), json!(now));
     claims.insert("nbf".to_owned(), json!(now));
@@ -581,17 +597,10 @@ pub(crate) fn make_authorization_response_jwt(
     if let Some(error) = input.error {
         claims.insert("error".to_owned(), json!(error));
     }
-    if let Some(state_value) = input.state.filter(|value| !value.is_empty()) {
+    if let Some(state_value) = input.state {
         claims.insert("state".to_owned(), json!(state_value));
     }
-    let mut header = jsonwebtoken::Header::new(state.keyset.active_alg);
-    header.typ = Some("oauth-authz-resp+jwt".to_string());
-    header.kid = Some(state.keyset.active_kid.clone());
-    jsonwebtoken::encode(
-        &header,
-        &Value::Object(claims),
-        &state.keyset.active_encoding_key(),
-    )
+    claims
 }
 
 pub(crate) fn decode_access_claims(state: &AppState, token: &str) -> Option<Claims> {
@@ -633,6 +642,38 @@ mod tests {
                 .chars()
                 .all(|value| value.is_ascii_alphanumeric() || value == '-' || value == '_')
         );
+    }
+
+    #[test]
+    fn authorization_response_jwt_preserves_explicit_empty_state() {
+        let input = AuthorizationResponseJwtInput {
+            client_id: "client-1",
+            code: Some("code-1"),
+            error: None,
+            state: Some(""),
+            ttl: 60,
+        };
+        let claims = authorization_response_jwt_claims("https://issuer.example", &input, 123);
+
+        assert_eq!(claims.get("state"), Some(&json!("")));
+        assert_eq!(claims.get("code"), Some(&json!("code-1")));
+        assert!(!claims.contains_key("error"));
+    }
+
+    #[test]
+    fn authorization_response_jwt_omits_absent_state_and_inapplicable_result() {
+        let input = AuthorizationResponseJwtInput {
+            client_id: "client-1",
+            code: None,
+            error: Some("invalid_request"),
+            state: None,
+            ttl: 60,
+        };
+        let claims = authorization_response_jwt_claims("https://issuer.example", &input, 123);
+
+        assert!(!claims.contains_key("state"));
+        assert!(!claims.contains_key("code"));
+        assert_eq!(claims.get("error"), Some(&json!("invalid_request")));
     }
 
     #[test]
