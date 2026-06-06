@@ -3,8 +3,18 @@
 use crate::http::prelude::*;
 
 pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
-    let Some((scheme, token)) = userinfo_access_token(&req, &body) else {
-        return oauth_bearer_error(StatusCode::UNAUTHORIZED, "invalid_token", "缺少访问令牌.");
+    let (scheme, token) = match userinfo_access_token(&req, &body) {
+        UserInfoAccessToken::Present(scheme, token) => (scheme, token),
+        UserInfoAccessToken::Missing => {
+            return oauth_bearer_error(StatusCode::UNAUTHORIZED, "invalid_token", "缺少访问令牌.");
+        }
+        UserInfoAccessToken::InvalidRequest => {
+            return oauth_bearer_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "Only one access token transport method may be used.",
+            );
+        }
     };
     let Some(claims) = decode_access_claims(&state, &token) else {
         return oauth_bearer_error(
@@ -146,47 +156,56 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Byte
     response
 }
 
-fn userinfo_access_token(
-    req: &HttpRequest,
-    body: &Bytes,
-) -> Option<(AccessTokenAuthScheme, String)> {
-    if let Some((scheme, token)) = authorization_access_token(req.headers()) {
-        return Some((scheme, token));
+enum UserInfoAccessToken {
+    Present(AccessTokenAuthScheme, String),
+    Missing,
+    InvalidRequest,
+}
+
+fn userinfo_access_token(req: &HttpRequest, body: &Bytes) -> UserInfoAccessToken {
+    let header_token = authorization_access_token(req.headers());
+    let body_token = userinfo_form_body_access_token(req, body);
+
+    match (header_token, body_token) {
+        (Some(_), FormBodyAccessToken::Present(_)) => UserInfoAccessToken::InvalidRequest,
+        (Some((scheme, token)), _) => UserInfoAccessToken::Present(scheme, token),
+        (None, FormBodyAccessToken::Present(token)) => {
+            UserInfoAccessToken::Present(AccessTokenAuthScheme::Bearer, token)
+        }
+        (None, FormBodyAccessToken::Missing) => UserInfoAccessToken::Missing,
+        (None, FormBodyAccessToken::InvalidRequest) => UserInfoAccessToken::InvalidRequest,
     }
-    if req.method() != actix_web::http::Method::POST || body.is_empty() {
-        return None;
-    }
-    if !request_uses_form_urlencoded(req) {
-        return None;
+}
+
+enum FormBodyAccessToken {
+    Present(String),
+    Missing,
+    InvalidRequest,
+}
+
+fn userinfo_form_body_access_token(req: &HttpRequest, body: &Bytes) -> FormBodyAccessToken {
+    if req.method() != actix_web::http::Method::POST
+        || body.is_empty()
+        || !request_uses_form_urlencoded(req)
+    {
+        return FormBodyAccessToken::Missing;
     }
     let mut access_token = None;
     for (key, value) in url::form_urlencoded::parse(body) {
         if key == "access_token" {
             if access_token.is_some() {
-                return None;
+                return FormBodyAccessToken::InvalidRequest;
             }
             let token = value.into_owned();
             if token.trim().is_empty() {
-                return None;
+                return FormBodyAccessToken::Missing;
             }
             access_token = Some(token);
         }
     }
-    access_token.map(|token| (AccessTokenAuthScheme::Bearer, token))
-}
-
-fn request_uses_form_urlencoded(req: &HttpRequest) -> bool {
-    req.headers()
-        .get(header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or("")
-        .split(';')
-        .next()
-        .is_some_and(|value| {
-            value
-                .trim()
-                .eq_ignore_ascii_case("application/x-www-form-urlencoded")
-        })
+    access_token
+        .map(FormBodyAccessToken::Present)
+        .unwrap_or(FormBodyAccessToken::Missing)
 }
 
 #[cfg(test)]
@@ -200,7 +219,7 @@ mod tests {
             .to_http_request();
         let token = userinfo_access_token(&req, &Bytes::from_static(b"access_token=token-1"));
 
-        let Some((AccessTokenAuthScheme::Bearer, token)) = token else {
+        let UserInfoAccessToken::Present(AccessTokenAuthScheme::Bearer, token) = token else {
             panic!("expected bearer token from form body");
         };
         assert_eq!(token, "token-1");
@@ -216,7 +235,7 @@ mod tests {
             .to_http_request();
         let token = userinfo_access_token(&req, &Bytes::from_static(b"access_token=token-1"));
 
-        let Some((AccessTokenAuthScheme::Bearer, token)) = token else {
+        let UserInfoAccessToken::Present(AccessTokenAuthScheme::Bearer, token) = token else {
             panic!("expected bearer token from form body");
         };
         assert_eq!(token, "token-1");
@@ -227,7 +246,7 @@ mod tests {
         let req = actix_web::test::TestRequest::post().to_http_request();
         let token = userinfo_access_token(&req, &Bytes::from_static(b"access_token=token-1"));
 
-        assert!(token.is_none());
+        assert!(matches!(token, UserInfoAccessToken::Missing));
     }
 
     #[test]
@@ -237,7 +256,7 @@ mod tests {
             .to_http_request();
         let token = userinfo_access_token(&req, &Bytes::from_static(b"access_token=token-1"));
 
-        assert!(token.is_none());
+        assert!(matches!(token, UserInfoAccessToken::Missing));
     }
 
     #[test]
@@ -250,6 +269,44 @@ mod tests {
             &Bytes::from_static(b"access_token=token-1&access_token=token-2"),
         );
 
-        assert!(token.is_none());
+        assert!(matches!(token, UserInfoAccessToken::InvalidRequest));
+    }
+
+    #[test]
+    fn authorization_header_access_token_accepts_single_value() {
+        let req = actix_web::test::TestRequest::get()
+            .insert_header((header::AUTHORIZATION, "Bearer header-token"))
+            .to_http_request();
+        let token = userinfo_access_token(&req, &Bytes::new());
+
+        let UserInfoAccessToken::Present(AccessTokenAuthScheme::Bearer, token) = token else {
+            panic!("expected bearer token from authorization header");
+        };
+        assert_eq!(token, "header-token");
+    }
+
+    #[test]
+    fn access_token_rejects_multiple_transport_methods() {
+        let req = actix_web::test::TestRequest::post()
+            .insert_header((header::AUTHORIZATION, "Bearer header-token"))
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+            .to_http_request();
+        let token = userinfo_access_token(&req, &Bytes::from_static(b"access_token=body-token"));
+
+        assert!(matches!(token, UserInfoAccessToken::InvalidRequest));
+    }
+
+    #[test]
+    fn authorization_header_ignores_non_form_body_access_token_field() {
+        let req = actix_web::test::TestRequest::post()
+            .insert_header((header::AUTHORIZATION, "Bearer header-token"))
+            .insert_header((header::CONTENT_TYPE, "application/json"))
+            .to_http_request();
+        let token = userinfo_access_token(&req, &Bytes::from_static(b"access_token=body-token"));
+
+        let UserInfoAccessToken::Present(AccessTokenAuthScheme::Bearer, token) = token else {
+            panic!("expected bearer token from authorization header");
+        };
+        assert_eq!(token, "header-token");
     }
 }

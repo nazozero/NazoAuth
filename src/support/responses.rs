@@ -97,6 +97,20 @@ pub(crate) fn oauth_bearer_error(
     response
 }
 
+pub(crate) fn request_uses_form_urlencoded(req: &HttpRequest) -> bool {
+    req.headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+        .split(';')
+        .next()
+        .is_some_and(|value| {
+            value
+                .trim()
+                .eq_ignore_ascii_case("application/x-www-form-urlencoded")
+        })
+}
+
 pub(crate) fn login_required_response(state: &AppState) -> HttpResponse {
     with_cookie_headers(
         oauth_error(

@@ -7,8 +7,18 @@ pub(crate) async fn fapi_resource(
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
-    let Some((scheme, token)) = resource_access_token(&req, &body) else {
-        return oauth_bearer_error(StatusCode::UNAUTHORIZED, "invalid_token", "缺少访问令牌.");
+    let (scheme, token) = match resource_access_token(&req, &body) {
+        ResourceAccessToken::Present(scheme, token) => (scheme, token),
+        ResourceAccessToken::Missing => {
+            return oauth_bearer_error(StatusCode::UNAUTHORIZED, "invalid_token", "缺少访问令牌.");
+        }
+        ResourceAccessToken::InvalidRequest => {
+            return oauth_bearer_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "Only one access token transport method may be used.",
+            );
+        }
     };
     let Some(claims) = decode_access_claims(&state, &token) else {
         return oauth_bearer_error(
@@ -106,28 +116,117 @@ async fn validate_access_token_binding(
     Ok(())
 }
 
-fn resource_access_token(
-    req: &HttpRequest,
-    body: &Bytes,
-) -> Option<(AccessTokenAuthScheme, String)> {
-    if let Some((scheme, token)) = authorization_access_token(req.headers()) {
-        return Some((scheme, token));
+enum ResourceAccessToken {
+    Present(AccessTokenAuthScheme, String),
+    Missing,
+    InvalidRequest,
+}
+
+fn resource_access_token(req: &HttpRequest, body: &Bytes) -> ResourceAccessToken {
+    let header_token = authorization_access_token(req.headers());
+    let body_token = resource_form_body_access_token(req, body);
+
+    match (header_token, body_token) {
+        (Some(_), ResourceFormBodyAccessToken::Present(_)) => ResourceAccessToken::InvalidRequest,
+        (Some((scheme, token)), _) => ResourceAccessToken::Present(scheme, token),
+        (None, ResourceFormBodyAccessToken::Present(token)) => {
+            ResourceAccessToken::Present(AccessTokenAuthScheme::Bearer, token)
+        }
+        (None, ResourceFormBodyAccessToken::Missing) => ResourceAccessToken::Missing,
+        (None, ResourceFormBodyAccessToken::InvalidRequest) => ResourceAccessToken::InvalidRequest,
     }
-    if req.method() != actix_web::http::Method::POST || body.is_empty() {
-        return None;
+}
+
+enum ResourceFormBodyAccessToken {
+    Present(String),
+    Missing,
+    InvalidRequest,
+}
+
+fn resource_form_body_access_token(req: &HttpRequest, body: &Bytes) -> ResourceFormBodyAccessToken {
+    if req.method() != actix_web::http::Method::POST
+        || body.is_empty()
+        || !request_uses_form_urlencoded(req)
+    {
+        return ResourceFormBodyAccessToken::Missing;
     }
     let mut access_token = None;
     for (key, value) in url::form_urlencoded::parse(body) {
         if key == "access_token" {
             if access_token.is_some() {
-                return None;
+                return ResourceFormBodyAccessToken::InvalidRequest;
             }
             let token = value.into_owned();
             if token.trim().is_empty() {
-                return None;
+                return ResourceFormBodyAccessToken::Missing;
             }
             access_token = Some(token);
         }
     }
-    access_token.map(|token| (AccessTokenAuthScheme::Bearer, token))
+    access_token
+        .map(ResourceFormBodyAccessToken::Present)
+        .unwrap_or(ResourceFormBodyAccessToken::Missing)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn post_body_access_token_accepts_single_form_value() {
+        let req = actix_web::test::TestRequest::post()
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+            .to_http_request();
+        let token = resource_access_token(&req, &Bytes::from_static(b"access_token=token-1"));
+
+        let ResourceAccessToken::Present(AccessTokenAuthScheme::Bearer, token) = token else {
+            panic!("expected bearer token from form body");
+        };
+        assert_eq!(token, "token-1");
+    }
+
+    #[test]
+    fn post_body_access_token_rejects_missing_content_type() {
+        let req = actix_web::test::TestRequest::post().to_http_request();
+        let token = resource_access_token(&req, &Bytes::from_static(b"access_token=token-1"));
+
+        assert!(matches!(token, ResourceAccessToken::Missing));
+    }
+
+    #[test]
+    fn post_body_access_token_rejects_duplicate_value() {
+        let req = actix_web::test::TestRequest::post()
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+            .to_http_request();
+        let token = resource_access_token(
+            &req,
+            &Bytes::from_static(b"access_token=token-1&access_token=token-2"),
+        );
+
+        assert!(matches!(token, ResourceAccessToken::InvalidRequest));
+    }
+
+    #[test]
+    fn authorization_header_access_token_accepts_single_value() {
+        let req = actix_web::test::TestRequest::get()
+            .insert_header((header::AUTHORIZATION, "DPoP header-token"))
+            .to_http_request();
+        let token = resource_access_token(&req, &Bytes::new());
+
+        let ResourceAccessToken::Present(AccessTokenAuthScheme::DPoP, token) = token else {
+            panic!("expected dpop token from authorization header");
+        };
+        assert_eq!(token, "header-token");
+    }
+
+    #[test]
+    fn access_token_rejects_multiple_transport_methods() {
+        let req = actix_web::test::TestRequest::post()
+            .insert_header((header::AUTHORIZATION, "Bearer header-token"))
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+            .to_http_request();
+        let token = resource_access_token(&req, &Bytes::from_static(b"access_token=body-token"));
+
+        assert!(matches!(token, ResourceAccessToken::InvalidRequest));
+    }
 }
