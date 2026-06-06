@@ -52,13 +52,22 @@ fn authorization_response_mode(q: &HashMap<String, String>) -> Result<Option<Str
     }
 }
 
-fn requested_acr(q: &HashMap<String, String>) -> Option<String> {
-    q.get("acr_values").and_then(|value| {
-        value
-            .split_whitespace()
-            .find(|value| !value.is_empty())
-            .map(str::to_owned)
-    })
+fn requested_acr(q: &HashMap<String, String>, claims_acr: Option<String>) -> Option<String> {
+    q.get("acr_values")
+        .and_then(|value| {
+            value
+                .split_whitespace()
+                .find(|value| !value.is_empty())
+                .map(str::to_owned)
+        })
+        .or(claims_acr)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct RequestedClaims {
+    userinfo: Vec<String>,
+    id_token: Vec<String>,
+    acr: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -90,14 +99,23 @@ fn requested_prompt(q: &HashMap<String, String>) -> Result<PromptDirectives, ()>
     Ok(directives)
 }
 
-fn requested_claims(q: &HashMap<String, String>) -> Result<(Vec<String>, Vec<String>), ()> {
+fn requested_claims(q: &HashMap<String, String>) -> Result<RequestedClaims, ()> {
     let Some(raw_claims) = q.get("claims") else {
-        return Ok((Vec::new(), Vec::new()));
+        return Ok(RequestedClaims {
+            userinfo: Vec::new(),
+            id_token: Vec::new(),
+            acr: None,
+        });
     };
     let claims: Value = serde_json::from_str(raw_claims).map_err(|_| ())?;
     let userinfo = requested_claim_names(claims.get("userinfo"))?;
     let id_token = requested_claim_names(claims.get("id_token"))?;
-    Ok((userinfo, id_token))
+    let acr = requested_acr_claim(claims.get("id_token"))?;
+    Ok(RequestedClaims {
+        userinfo,
+        id_token,
+        acr,
+    })
 }
 
 fn requested_claim_names(value: Option<&Value>) -> Result<Vec<String>, ()> {
@@ -116,6 +134,35 @@ fn requested_claim_names(value: Option<&Value>) -> Result<Vec<String>, ()> {
     names.sort();
     names.dedup();
     Ok(names)
+}
+
+fn requested_acr_claim(value: Option<&Value>) -> Result<Option<String>, ()> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let Some(object) = value.as_object() else {
+        return Err(());
+    };
+    let Some(acr) = object.get("acr") else {
+        return Ok(None);
+    };
+    let Some(acr) = acr.as_object() else {
+        return Err(());
+    };
+    if let Some(value) = acr.get("value") {
+        let value = value.as_str().ok_or(())?.trim();
+        return Ok((!value.is_empty()).then(|| value.to_owned()));
+    }
+    if let Some(values) = acr.get("values") {
+        let values = values.as_array().ok_or(())?;
+        for value in values {
+            let value = value.as_str().ok_or(())?.trim();
+            if !value.is_empty() {
+                return Ok(Some(value.to_owned()));
+            }
+        }
+    }
+    Ok(None)
 }
 
 fn preserve_verified_dpop_binding(q: &mut HashMap<String, String>, dpop_jkt: Option<&str>) {
@@ -414,7 +461,7 @@ async fn authorize_request(
         },
         None => None,
     };
-    let (userinfo_claims, id_token_claims) = match requested_claims(q) {
+    let requested_claims = match requested_claims(q) {
         Ok(value) => value,
         Err(()) => {
             return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q);
@@ -499,9 +546,9 @@ async fn authorize_request(
         nonce: q.get("nonce").cloned(),
         auth_time: session.auth_time,
         amr: session.amr,
-        acr: requested_acr(q),
-        userinfo_claims,
-        id_token_claims,
+        acr: requested_acr(q, requested_claims.acr),
+        userinfo_claims: requested_claims.userinfo,
+        id_token_claims: requested_claims.id_token,
         code_challenge,
         code_challenge_method,
         dpop_jkt,
@@ -720,28 +767,61 @@ mod tests {
     #[test]
     fn first_acr_value_is_used_for_id_token_acr() {
         assert_eq!(
-            requested_acr(&query(&[("acr_values", "urn:one urn:two")])),
+            requested_acr(&query(&[("acr_values", "urn:one urn:two")]), None),
             Some("urn:one".to_owned())
         );
-        assert_eq!(requested_acr(&query(&[("acr_values", "   ")])), None);
+        assert_eq!(
+            requested_acr(
+                &query(&[("acr_values", "urn:one urn:two")]),
+                Some("urn:claims".to_owned()),
+            ),
+            Some("urn:one".to_owned())
+        );
+        assert_eq!(
+            requested_acr(
+                &query(&[("acr_values", "   ")]),
+                Some("urn:claims".to_owned())
+            ),
+            Some("urn:claims".to_owned())
+        );
     }
 
     #[test]
     fn claims_parameter_extracts_supported_user_claim_names() {
-        let (userinfo, id_token) = requested_claims(&query(&[(
+        let requested = requested_claims(&query(&[(
             "claims",
-            r#"{"userinfo":{"name":{"essential":true},"unknown":null},"id_token":{"email":{"essential":true}}}"#,
+            r#"{"userinfo":{"name":{"essential":true},"unknown":null},"id_token":{"email":{"essential":true},"acr":{"value":"urn:acr:1"}}}"#,
         )]))
         .unwrap();
 
-        assert_eq!(userinfo, vec!["name".to_owned()]);
-        assert_eq!(id_token, vec!["email".to_owned()]);
+        assert_eq!(requested.userinfo, vec!["name".to_owned()]);
+        assert_eq!(requested.id_token, vec!["email".to_owned()]);
+        assert_eq!(requested.acr, Some("urn:acr:1".to_owned()));
     }
 
     #[test]
     fn malformed_claims_parameter_is_invalid() {
         assert!(requested_claims(&query(&[("claims", "not-json")])).is_err());
         assert!(requested_claims(&query(&[("claims", r#"{"userinfo":[]}"#)])).is_err());
+        assert!(requested_claims(&query(&[("claims", r#"{"id_token":{"acr":[]}}"#)])).is_err());
+        assert!(
+            requested_claims(&query(&[(
+                "claims",
+                r#"{"id_token":{"acr":{"values":"one"}}}"#
+            )]))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn claims_parameter_uses_first_non_empty_acr_values_entry() {
+        let requested = requested_claims(&query(&[(
+            "claims",
+            r#"{"id_token":{"acr":{"values":["","urn:acr:2","urn:acr:3"]}}}"#,
+        )]))
+        .unwrap();
+
+        assert_eq!(requested.acr, Some("urn:acr:2".to_owned()));
     }
 
     #[test]

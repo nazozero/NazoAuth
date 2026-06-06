@@ -4,6 +4,32 @@ use crate::domain::Keyset;
 const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
 const REQUEST_OBJECT_SIGNING_ALGS: [&str; 5] = ["none", "EdDSA", "RS256", "ES256", "PS256"];
 const PROMPT_VALUES_SUPPORTED: [&str; 4] = ["login", "consent", "select_account", "none"];
+const CLAIMS_SUPPORTED: [&str; 24] = [
+    "sub",
+    "auth_time",
+    "amr",
+    "acr",
+    "nonce",
+    "preferred_username",
+    "name",
+    "given_name",
+    "family_name",
+    "middle_name",
+    "nickname",
+    "profile",
+    "picture",
+    "website",
+    "gender",
+    "birthdate",
+    "zoneinfo",
+    "locale",
+    "email",
+    "email_verified",
+    "address",
+    "phone_number",
+    "phone_number_verified",
+    "updated_at",
+];
 const CLIENT_AUTH_METHODS: [&str; 6] = [
     "client_secret_basic",
     "client_secret_post",
@@ -59,7 +85,7 @@ fn authorization_server_metadata_value(state: &AppState) -> Value {
             "userinfo_endpoint": format!("{mtls_base}/userinfo")
         },
         "scopes_supported": ["openid", "profile", "email", "address", "phone", "offline_access"],
-        "claims_supported": ["sub", "auth_time", "amr", "nonce", "preferred_username", "name", "given_name", "family_name", "middle_name", "nickname", "profile", "picture", "website", "gender", "birthdate", "zoneinfo", "locale", "email", "email_verified", "address", "phone_number", "phone_number_verified", "updated_at"],
+        "claims_supported": CLAIMS_SUPPORTED,
         "prompt_values_supported": PROMPT_VALUES_SUPPORTED,
         "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
         "authorization_response_iss_parameter_supported": true,
@@ -109,6 +135,11 @@ mod tests {
             PROMPT_VALUES_SUPPORTED,
             ["login", "consent", "select_account", "none"]
         );
+    }
+
+    #[test]
+    fn discovery_claims_include_supported_id_token_acr() {
+        assert!(CLAIMS_SUPPORTED.contains(&"acr"));
     }
 
     #[test]
