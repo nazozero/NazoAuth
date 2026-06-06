@@ -557,6 +557,29 @@ async fn authorize_request(
         issued_at: now,
         expires_at: now + Duration::seconds(state.settings.auth_code_ttl_seconds as i64),
     };
+    if prompt.none {
+        match user_grant_covers_requested_scopes(
+            &state,
+            payload.user_id,
+            client.id,
+            &payload.scopes,
+        )
+        .await
+        {
+            Ok(true) => {
+                return issue_authorization_code_without_interaction(&state, &req, payload).await;
+            }
+            Ok(false) => {
+                return authorization_oauth_error_redirect(
+                    &state,
+                    &redirect_uri,
+                    "consent_required",
+                    q,
+                );
+            }
+            Err(response) => return response,
+        }
+    }
     let key = format!("oauth:consent:{request_id}");
     let body = match serde_json::to_string(&payload) {
         Ok(body) => body,
@@ -589,6 +612,160 @@ async fn authorize_request(
         "{}/consent?request_id={request_id}",
         state.settings.frontend_base_url.trim_end_matches('/')
     ))
+}
+
+async fn user_grant_covers_requested_scopes(
+    state: &AppState,
+    user_id: Uuid,
+    client_id: Uuid,
+    requested_scopes: &[String],
+) -> Result<bool, HttpResponse> {
+    let mut conn = match get_conn(&state.diesel_db).await {
+        Ok(conn) => conn,
+        Err(error) => {
+            tracing::warn!(%error, "failed to get database connection for authorization grant lookup");
+            return Err(oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权记录查询失败.",
+            ));
+        }
+    };
+    let stored_scopes = match user_client_grants::table
+        .filter(user_client_grants::user_id.eq(user_id))
+        .filter(user_client_grants::client_id.eq(client_id))
+        .select(user_client_grants::last_scopes)
+        .first::<Value>(&mut conn)
+        .await
+        .optional()
+    {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(%error, "failed to query authorization grant");
+            return Err(oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权记录查询失败.",
+            ));
+        }
+    };
+    Ok(stored_scopes
+        .as_ref()
+        .is_some_and(|scopes| stored_grant_covers_requested_scopes(scopes, requested_scopes)))
+}
+
+fn stored_grant_covers_requested_scopes(
+    stored_scopes: &Value,
+    requested_scopes: &[String],
+) -> bool {
+    is_subset(requested_scopes, &json_array_to_strings(stored_scopes))
+}
+
+async fn issue_authorization_code_without_interaction(
+    state: &AppState,
+    req: &HttpRequest,
+    payload: ConsentPayload,
+) -> HttpResponse {
+    if let Some(request_uri) = payload.pushed_request_uri.as_deref() {
+        match consume_pushed_authorization_request(state, request_uri).await {
+            Ok(()) => {}
+            Err(PushedAuthorizationRequestConsumeError::Missing) => {
+                return authorization_response_redirect(
+                    state,
+                    &payload.redirect_uri,
+                    &payload.client_id,
+                    payload.response_mode.as_deref(),
+                    None,
+                    Some("invalid_request_uri"),
+                    payload.state.as_deref(),
+                );
+            }
+            Err(PushedAuthorizationRequestConsumeError::ReadFailed)
+            | Err(PushedAuthorizationRequestConsumeError::Malformed) => {
+                return authorization_response_redirect(
+                    state,
+                    &payload.redirect_uri,
+                    &payload.client_id,
+                    payload.response_mode.as_deref(),
+                    None,
+                    Some("server_error"),
+                    payload.state.as_deref(),
+                );
+            }
+        }
+    }
+
+    let now = Utc::now();
+    let code = random_urlsafe_token();
+    let code_payload = CodePayload {
+        code_id: Uuid::now_v7().to_string(),
+        user_id: payload.user_id,
+        client_id: payload.client_id.clone(),
+        redirect_uri: payload.redirect_uri.clone(),
+        redirect_uri_was_supplied: payload.redirect_uri_was_supplied,
+        scopes: payload.scopes.clone(),
+        nonce: payload.nonce,
+        auth_time: payload.auth_time,
+        amr: payload.amr,
+        acr: payload.acr,
+        userinfo_claims: payload.userinfo_claims,
+        id_token_claims: payload.id_token_claims,
+        code_challenge: payload.code_challenge,
+        code_challenge_method: payload.code_challenge_method,
+        dpop_jkt: payload.dpop_jkt,
+        mtls_x5t_s256: payload.mtls_x5t_s256,
+        issued_at: now,
+        expires_at: now + Duration::seconds(state.settings.auth_code_ttl_seconds as i64),
+    };
+    let body = match serde_json::to_string(&AuthorizationCodeState::Pending {
+        payload: code_payload,
+    }) {
+        Ok(body) => body,
+        Err(error) => {
+            tracing::warn!(%error, "failed to serialize prompt=none authorization code state");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权码创建失败.",
+            );
+        }
+    };
+    if let Err(error) = valkey_set_ex(
+        &state.valkey,
+        authorization_code_key(&code),
+        body,
+        state.settings.auth_code_ttl_seconds,
+    )
+    .await
+    {
+        tracing::warn!(%error, "failed to persist prompt=none authorization code");
+        return oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "授权码创建失败.",
+        );
+    }
+    audit_event(
+        "authorization_prompt_none_approved",
+        audit_fields(&[
+            ("user_id", json!(payload.user_id)),
+            ("client_id", json!(payload.client_id)),
+            ("scope", json!(payload.scopes.join(" "))),
+            (
+                "source_ip_hash",
+                json!(blake3_hex(&client_ip(req, &state.settings))),
+            ),
+        ]),
+    );
+    authorization_response_redirect(
+        state,
+        &payload.redirect_uri,
+        &payload.client_id,
+        payload.response_mode.as_deref(),
+        Some(&code),
+        None,
+        payload.state.as_deref(),
+    )
 }
 
 fn outer_request_uri_parameters_match_pushed(
@@ -1009,6 +1186,26 @@ mod tests {
         );
         assert!(requested_prompt(&query(&[("prompt", "none consent")])).is_err());
         assert!(requested_prompt(&query(&[("prompt", "unsupported")])).is_err());
+    }
+
+    #[test]
+    fn stored_grant_covers_requested_scopes_when_request_is_subset() {
+        assert!(stored_grant_covers_requested_scopes(
+            &json!(["openid", "profile", "email"]),
+            &parse_scope("openid email"),
+        ));
+    }
+
+    #[test]
+    fn stored_grant_does_not_cover_new_or_malformed_scope_sets() {
+        assert!(!stored_grant_covers_requested_scopes(
+            &json!(["openid", "profile"]),
+            &parse_scope("openid email"),
+        ));
+        assert!(!stored_grant_covers_requested_scopes(
+            &json!({"scope": "openid"}),
+            &parse_scope("openid"),
+        ));
     }
 
     #[test]
