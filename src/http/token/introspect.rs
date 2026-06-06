@@ -152,15 +152,10 @@ pub(crate) async fn introspect(
         if !active {
             return json_response_no_store(json!({"active": false}));
         }
-        return json_response_no_store(json!({
-            "active": active,
-            "scope": json_array_to_strings(&token.scopes).join(" "),
-            "client_id": client.client_id,
-            "token_type": "refresh_token",
-            "exp": token.expires_at.timestamp(),
-            "iat": token.issued_at.timestamp(),
-            "sub": token.subject
-        }));
+        return json_response_no_store(active_refresh_token_introspection_body(
+            &token,
+            &client.client_id,
+        ));
     }
     json_response_no_store(json!({"active": false}))
 }
@@ -176,6 +171,17 @@ fn introspection_access_token_type(claims: &Claims) -> &'static str {
     } else {
         "Bearer"
     }
+}
+
+fn active_refresh_token_introspection_body(token: &TokenRow, client_id: &str) -> Value {
+    json!({
+        "active": true,
+        "scope": json_array_to_strings(&token.scopes).join(" "),
+        "client_id": client_id,
+        "exp": token.expires_at.timestamp(),
+        "iat": token.issued_at.timestamp(),
+        "sub": token.subject
+    })
 }
 
 #[cfg(test)]
@@ -228,5 +234,30 @@ mod tests {
         }));
 
         assert_eq!(introspection_access_token_type(&claims), "Bearer");
+    }
+
+    #[test]
+    fn refresh_token_introspection_metadata_omits_access_token_type() {
+        let issued_at = DateTime::<Utc>::from_timestamp(1_700_000_000, 0).unwrap();
+        let token = TokenRow {
+            id: Uuid::now_v7(),
+            token_family_id: Uuid::now_v7(),
+            client_id: Uuid::now_v7(),
+            user_id: None,
+            scopes: json!(["openid", "offline_access"]),
+            issued_at,
+            expires_at: issued_at + Duration::days(30),
+            revoked_at: None,
+            subject: "subject".to_owned(),
+            dpop_jkt: None,
+            mtls_x5t_s256: None,
+        };
+
+        let body = active_refresh_token_introspection_body(&token, "client-1");
+
+        assert_eq!(body.get("active"), Some(&json!(true)));
+        assert_eq!(body.get("client_id"), Some(&json!("client-1")));
+        assert_eq!(body.get("scope"), Some(&json!("openid offline_access")));
+        assert!(!body.as_object().unwrap().contains_key("token_type"));
     }
 }
