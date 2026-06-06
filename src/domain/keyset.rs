@@ -6,7 +6,6 @@ use serde_json::Value;
 #[derive(Clone)]
 pub(crate) struct VerificationKey {
     pub(crate) kid: String,
-    pub(crate) alg: jsonwebtoken::Algorithm,
     pub(crate) public_jwk: Value,
 }
 
