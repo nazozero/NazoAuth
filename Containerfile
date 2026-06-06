@@ -33,6 +33,7 @@ WORKDIR /app
 COPY --from=builder /app/target/release/nazo-oauth-server /usr/local/bin/nazo-oauth-server
 COPY --from=builder /app/target/release/nazo-oauth-migrate /usr/local/bin/nazo-oauth-migrate
 COPY --from=builder /app/target/release/nazo-oauth-keyctl /usr/local/bin/nazo-oauth-keyctl
+COPY --from=builder /app/target/release/nazo_oauth_seed_oidf /usr/local/bin/nazo-oauth-seed-oidf
 
 EXPOSE 8000
 

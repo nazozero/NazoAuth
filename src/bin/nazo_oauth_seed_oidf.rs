@@ -359,6 +359,30 @@ fn callback_uri(suite_base_url: &str, alias: &str) -> String {
     )
 }
 
+fn suite_base_urls(primary_suite_base_url: &str) -> Vec<String> {
+    let mut urls = BTreeSet::new();
+    urls.insert(primary_suite_base_url.trim_end_matches('/').to_owned());
+    urls.insert("https://www.certification.openid.net".to_owned());
+
+    if let Ok(extra_urls) = env::var("OIDF_LOCAL_EXTRA_SUITE_BASE_URLS") {
+        for url in extra_urls.split(',') {
+            let url = url.trim().trim_end_matches('/');
+            if !url.is_empty() {
+                urls.insert(url.to_owned());
+            }
+        }
+    }
+
+    urls.into_iter().collect()
+}
+
+fn callback_uris(suite_base_urls: &[String], alias: &str) -> Vec<String> {
+    suite_base_urls
+        .iter()
+        .map(|suite_base_url| callback_uri(suite_base_url, alias))
+        .collect()
+}
+
 fn read_plan_config(runtime_dir: &Path, file_name: &str) -> anyhow::Result<Value> {
     let path = runtime_dir.join(file_name);
     let body = fs::read_to_string(&path)
@@ -374,6 +398,7 @@ fn main() -> anyhow::Result<()> {
         "postgresql://postgres:postgres@127.0.0.1:5432/oauth",
     ));
     let suite_base_url = env_or("OIDF_LOCAL_SUITE_BASE_URL", "https://nginx:8443");
+    let suite_base_urls = suite_base_urls(&suite_base_url);
     let issuer = config.string("ISSUER", "https://host.containers.internal:9443");
     let runtime_dir = env_or("OIDF_LOCAL_RUNTIME_DIR", "runtime/oidf");
     let runtime_dir = Path::new(&runtime_dir);
@@ -381,7 +406,7 @@ fn main() -> anyhow::Result<()> {
     let user_email = env_or("OIDF_LOCAL_USER_EMAIL", "oidf-local@example.test");
     let user_password = env_or("OIDF_LOCAL_USER_PASSWORD", "oidf-local-password");
     let client_secret = env_or("OIDF_LOCAL_CLIENT_SECRET", "oidf-local-client-secret");
-    let basic_redirect_uris = json!([callback_uri(&suite_base_url, &alias)]);
+    let basic_redirect_uris = json!(callback_uris(&suite_base_urls, &alias));
 
     let user_password_hash = hash_password(&user_password)?;
     let client_secret_hash = hash_password(&client_secret)?;
@@ -469,9 +494,10 @@ fn main() -> anyhow::Result<()> {
         let plan = read_plan_config(runtime_dir, file_name)?;
         let alias = string_value(&plan, "alias")?;
         if file_name != "oidf-oidcc-config-plan-config.json" {
-            let callback = callback_uri(&suite_base_url, alias);
-            fapi_redirect_uris.insert(callback.clone());
-            fapi_redirect_uris.insert(format!("{callback}?dummy1=lorem&dummy2=ipsum"));
+            for callback in callback_uris(&suite_base_urls, alias) {
+                fapi_redirect_uris.insert(callback.clone());
+                fapi_redirect_uris.insert(format!("{callback}?dummy1=lorem&dummy2=ipsum"));
+            }
         }
         for key in ["client", "client2"] {
             let Some(client) = plan.get(key).and_then(Value::as_object) else {
@@ -534,10 +560,32 @@ fn main() -> anyhow::Result<()> {
 
     println!("Seeded local OIDF user, OIDC basic clients, and FAPI clients.");
     println!("OIDF_LOCAL_USER_EMAIL={user_email}");
+    println!("OIDF_LOCAL_SUITE_BASE_URLS={}", suite_base_urls.join(","));
     println!(
         "OIDF_LOCAL_BASIC_ALIAS={}",
         env_or("OIDF_LOCAL_BASIC_ALIAS", "local-nazo-oauth-oidf")
     );
     println!("OIDF_LOCAL_FAPI_CLIENT_COUNT={}", fapi_clients.len());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn callback_uris_include_local_and_official_suite_bases() {
+        let urls = suite_base_urls("https://nginx:8443/");
+
+        assert!(urls.contains(&"https://nginx:8443".to_owned()));
+        assert!(urls.contains(&"https://www.certification.openid.net".to_owned()));
+        let callbacks = callback_uris(&urls, "local-nazo-oauth-oidf");
+        assert!(
+            callbacks
+                .iter()
+                .any(|value| value == "https://nginx:8443/test/a/local-nazo-oauth-oidf/callback")
+        );
+        assert!(callbacks.iter().any(|value| value
+            == "https://www.certification.openid.net/test/a/local-nazo-oauth-oidf/callback"));
+    }
 }
