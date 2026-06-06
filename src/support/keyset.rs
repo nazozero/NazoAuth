@@ -84,7 +84,6 @@ pub(crate) async fn try_load_keyset(
         }
         verification_keys.push(VerificationKey {
             kid: kid.to_owned(),
-            alg,
             public_jwk,
         });
     }
@@ -100,9 +99,9 @@ pub(crate) async fn try_load_keyset(
 }
 
 pub(crate) async fn create_new_keyset(settings: &Settings) -> anyhow::Result<Keyset> {
-    let generated = generate_key_material(jsonwebtoken::Algorithm::PS256)?;
+    let generated = generate_key_material(jsonwebtoken::Algorithm::RS256)?;
     let private_pkcs8_der = generated.private_pkcs8_der;
-    let kid = format!("ps256-{}", Uuid::now_v7());
+    let kid = format!("rs256-{}", Uuid::now_v7());
     let file_name = format!("{kid}.pem");
     let pem = der_to_pem(&private_pkcs8_der, "PRIVATE KEY");
     write_private_key_pem_atomic(&settings.jwk_keys_dir.join(&file_name), &pem).await?;
@@ -111,7 +110,7 @@ pub(crate) async fn create_new_keyset(settings: &Settings) -> anyhow::Result<Key
         "active_kid": kid,
         "keys": [{
             "kid": kid,
-            "alg": "PS256",
+            "alg": "RS256",
             "file": file_name,
             "created_at": now,
             "retire_at": null
@@ -119,16 +118,12 @@ pub(crate) async fn create_new_keyset(settings: &Settings) -> anyhow::Result<Key
     });
     write_json_atomic(&settings.jwk_keys_dir.join("keyset.json"), &payload).await?;
     let public_jwk =
-        public_jwk_from_private_der(&kid, jsonwebtoken::Algorithm::PS256, &private_pkcs8_der)?;
+        public_jwk_from_private_der(&kid, jsonwebtoken::Algorithm::RS256, &private_pkcs8_der)?;
     Ok(Keyset {
         active_kid: kid.clone(),
-        active_alg: jsonwebtoken::Algorithm::PS256,
+        active_alg: jsonwebtoken::Algorithm::RS256,
         active_private_pkcs8_der: private_pkcs8_der,
-        verification_keys: vec![VerificationKey {
-            kid,
-            alg: jsonwebtoken::Algorithm::PS256,
-            public_jwk,
-        }],
+        verification_keys: vec![VerificationKey { kid, public_jwk }],
     })
 }
 
@@ -367,17 +362,6 @@ impl Keyset {
             _ => unreachable!("active signing algorithm is validated during keyset loading"),
         }
     }
-
-    pub(crate) fn signing_alg_values_supported(&self) -> Vec<&'static str> {
-        let mut values = self
-            .verification_keys
-            .iter()
-            .filter_map(|key| signing_algorithm_name(key.alg))
-            .collect::<Vec<_>>();
-        values.sort_unstable();
-        values.dedup();
-        values
-    }
 }
 
 #[cfg(test)]
@@ -399,7 +383,6 @@ mod tests {
             verification_keys: vec![
                 VerificationKey {
                     kid: "active".to_owned(),
-                    alg: jsonwebtoken::Algorithm::EdDSA,
                     public_jwk: public_jwk_from_private_der(
                         "active",
                         jsonwebtoken::Algorithm::EdDSA,
@@ -409,7 +392,6 @@ mod tests {
                 },
                 VerificationKey {
                     kid: "previous".to_owned(),
-                    alg: jsonwebtoken::Algorithm::EdDSA,
                     public_jwk: public_jwk_from_private_der(
                         "previous",
                         jsonwebtoken::Algorithm::EdDSA,
@@ -448,7 +430,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn created_keyset_uses_fapi_permitted_default_signing_alg() {
+    async fn created_keyset_uses_oidc_mandatory_default_signing_alg() {
         let keys_dir = temp_keys_dir("create_default_alg");
         tokio::fs::create_dir_all(&keys_dir).await.unwrap();
         let settings = test_settings(keys_dir.clone());
@@ -460,10 +442,10 @@ mod tests {
         let payload: Value = serde_json::from_str(&keyset_json).unwrap();
         let _ = tokio::fs::remove_dir_all(&keys_dir).await;
 
-        assert!(keyset.active_kid.starts_with("ps256-"));
-        assert_eq!(keyset.active_alg, jsonwebtoken::Algorithm::PS256);
-        assert_eq!(payload["keys"][0]["alg"], "PS256");
-        assert_eq!(keyset.jwks()["keys"][0]["alg"], "PS256");
+        assert!(keyset.active_kid.starts_with("rs256-"));
+        assert_eq!(keyset.active_alg, jsonwebtoken::Algorithm::RS256);
+        assert_eq!(payload["keys"][0]["alg"], "RS256");
+        assert_eq!(keyset.jwks()["keys"][0]["alg"], "RS256");
     }
 
     #[tokio::test]

@@ -1,4 +1,5 @@
 use super::prelude::*;
+use crate::domain::Keyset;
 
 const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
 const REQUEST_OBJECT_SIGNING_ALGS: [&str; 5] = ["none", "EdDSA", "RS256", "ES256", "PS256"];
@@ -27,7 +28,8 @@ pub(crate) async fn captcha_config() -> Json<Value> {
 fn authorization_server_metadata_value(state: &AppState) -> Value {
     let issuer = state.settings.issuer.as_str();
     let mtls_base = state.settings.mtls_endpoint_base_url.as_str();
-    let id_token_signing_algs = id_token_signing_alg_values_supported(state);
+    let id_token_signing_algs = id_token_signing_alg_values_supported(&state.keyset);
+    let authorization_signing_algs = active_signing_alg_values_supported(&state.keyset);
     json!({
         "issuer": issuer,
         "authorization_endpoint": format!("{issuer}/authorize"),
@@ -41,7 +43,7 @@ fn authorization_server_metadata_value(state: &AppState) -> Value {
         "response_modes_supported": ["query", "jwt"],
         "subject_types_supported": [state.settings.subject_type.as_str()],
         "id_token_signing_alg_values_supported": id_token_signing_algs,
-        "authorization_signing_alg_values_supported": state.keyset.signing_alg_values_supported(),
+        "authorization_signing_alg_values_supported": authorization_signing_algs,
         "token_endpoint_auth_methods_supported": CLIENT_AUTH_METHODS,
         "token_endpoint_auth_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS,
         "revocation_endpoint_auth_methods_supported": CLIENT_AUTH_METHODS,
@@ -70,8 +72,14 @@ fn authorization_server_metadata_value(state: &AppState) -> Value {
     })
 }
 
-fn id_token_signing_alg_values_supported(state: &AppState) -> Vec<&'static str> {
-    let mut values = state.keyset.signing_alg_values_supported();
+fn active_signing_alg_values_supported(keyset: &Keyset) -> Vec<&'static str> {
+    signing_algorithm_name(keyset.active_alg)
+        .map(|alg| vec![alg])
+        .unwrap_or_default()
+}
+
+fn id_token_signing_alg_values_supported(keyset: &Keyset) -> Vec<&'static str> {
+    let mut values = active_signing_alg_values_supported(keyset);
     values.push("RS256");
     values.sort_unstable();
     values.dedup();
@@ -93,6 +101,7 @@ pub(crate) async fn jwks(state: Data<AppState>) -> Json<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::VerificationKey;
 
     #[test]
     fn discovery_prompt_values_match_authorization_request_parser() {
@@ -100,5 +109,56 @@ mod tests {
             PROMPT_VALUES_SUPPORTED,
             ["login", "consent", "select_account", "none"]
         );
+    }
+
+    #[test]
+    fn discovery_id_token_algs_include_oidc_rs256_baseline() {
+        let keyset = Keyset {
+            active_kid: "active".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::RS256,
+            active_private_pkcs8_der: Vec::new(),
+            verification_keys: vec![VerificationKey {
+                kid: "active".to_owned(),
+                public_jwk: json!({"kty": "RSA", "kid": "active", "alg": "RS256", "use": "sig"}),
+            }],
+        };
+
+        assert_eq!(
+            id_token_signing_alg_values_supported(&keyset),
+            vec!["RS256"]
+        );
+    }
+
+    #[test]
+    fn discovery_id_token_algs_include_active_alg_and_rs256_baseline() {
+        let keyset = Keyset {
+            active_kid: "active".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::PS256,
+            active_private_pkcs8_der: Vec::new(),
+            verification_keys: vec![VerificationKey {
+                kid: "active".to_owned(),
+                public_jwk: json!({"kty": "RSA", "kid": "active", "alg": "PS256", "use": "sig"}),
+            }],
+        };
+
+        assert_eq!(
+            id_token_signing_alg_values_supported(&keyset),
+            vec!["PS256", "RS256"]
+        );
+    }
+
+    #[test]
+    fn discovery_authorization_response_algs_match_active_key_only() {
+        let keyset = Keyset {
+            active_kid: "active".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::PS256,
+            active_private_pkcs8_der: Vec::new(),
+            verification_keys: vec![VerificationKey {
+                kid: "active".to_owned(),
+                public_jwk: json!({"kty": "RSA", "kid": "active", "alg": "PS256", "use": "sig"}),
+            }],
+        };
+
+        assert_eq!(active_signing_alg_values_supported(&keyset), vec!["PS256"]);
     }
 }
