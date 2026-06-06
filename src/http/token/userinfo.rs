@@ -156,6 +156,9 @@ fn userinfo_access_token(
     if req.method() != actix_web::http::Method::POST || body.is_empty() {
         return None;
     }
+    if !request_uses_form_urlencoded(req) {
+        return None;
+    }
     let mut access_token = None;
     for (key, value) in url::form_urlencoded::parse(body) {
         if key == "access_token" {
@@ -172,13 +175,29 @@ fn userinfo_access_token(
     access_token.map(|token| (AccessTokenAuthScheme::Bearer, token))
 }
 
+fn request_uses_form_urlencoded(req: &HttpRequest) -> bool {
+    req.headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+        .split(';')
+        .next()
+        .is_some_and(|value| {
+            value
+                .trim()
+                .eq_ignore_ascii_case("application/x-www-form-urlencoded")
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn post_body_access_token_accepts_single_value() {
-        let req = actix_web::test::TestRequest::post().to_http_request();
+        let req = actix_web::test::TestRequest::post()
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+            .to_http_request();
         let token = userinfo_access_token(&req, &Bytes::from_static(b"access_token=token-1"));
 
         let Some((AccessTokenAuthScheme::Bearer, token)) = token else {
@@ -188,8 +207,44 @@ mod tests {
     }
 
     #[test]
-    fn post_body_access_token_rejects_duplicate_value() {
+    fn post_body_access_token_accepts_form_content_type_parameters() {
+        let req = actix_web::test::TestRequest::post()
+            .insert_header((
+                header::CONTENT_TYPE,
+                "application/x-www-form-urlencoded; charset=utf-8",
+            ))
+            .to_http_request();
+        let token = userinfo_access_token(&req, &Bytes::from_static(b"access_token=token-1"));
+
+        let Some((AccessTokenAuthScheme::Bearer, token)) = token else {
+            panic!("expected bearer token from form body");
+        };
+        assert_eq!(token, "token-1");
+    }
+
+    #[test]
+    fn post_body_access_token_rejects_missing_content_type() {
         let req = actix_web::test::TestRequest::post().to_http_request();
+        let token = userinfo_access_token(&req, &Bytes::from_static(b"access_token=token-1"));
+
+        assert!(token.is_none());
+    }
+
+    #[test]
+    fn post_body_access_token_rejects_non_form_content_type() {
+        let req = actix_web::test::TestRequest::post()
+            .insert_header((header::CONTENT_TYPE, "application/json"))
+            .to_http_request();
+        let token = userinfo_access_token(&req, &Bytes::from_static(b"access_token=token-1"));
+
+        assert!(token.is_none());
+    }
+
+    #[test]
+    fn post_body_access_token_rejects_duplicate_value() {
+        let req = actix_web::test::TestRequest::post()
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+            .to_http_request();
         let token = userinfo_access_token(
             &req,
             &Bytes::from_static(b"access_token=token-1&access_token=token-2"),
