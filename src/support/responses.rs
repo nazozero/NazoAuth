@@ -215,6 +215,10 @@ where
     no_store(json_response(body))
 }
 
+pub(crate) fn empty_response_no_store(status: StatusCode) -> HttpResponse {
+    no_store(empty_response(status))
+}
+
 fn no_store(mut response: HttpResponse) -> HttpResponse {
     response
         .headers_mut()
