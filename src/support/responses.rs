@@ -91,10 +91,29 @@ pub(crate) fn oauth_bearer_error(
     description: &str,
 ) -> HttpResponse {
     let mut response = oauth_error(status, error, description);
+    response.headers_mut().insert(
+        header::WWW_AUTHENTICATE,
+        bearer_challenge(error, description),
+    );
     response
-        .headers_mut()
-        .insert(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
-    response
+}
+
+fn bearer_challenge(error: &str, description: &str) -> HeaderValue {
+    let description = oauth_token_error_description(description);
+    HeaderValue::from_str(&format!(
+        r#"Bearer error="{}", error_description="{}""#,
+        oauth_challenge_param(error),
+        oauth_challenge_param(&description)
+    ))
+    .unwrap_or_else(|_| HeaderValue::from_static("Bearer"))
+}
+
+fn oauth_challenge_param(value: &str) -> Cow<'_, str> {
+    if value.bytes().all(is_oauth_error_description_byte) {
+        Cow::Borrowed(value)
+    } else {
+        Cow::Borrowed("Request failed.")
+    }
 }
 
 pub(crate) fn request_uses_form_urlencoded(req: &HttpRequest) -> bool {
@@ -235,6 +254,35 @@ mod tests {
         assert_eq!(
             oauth_token_error_description("invalid\\request").as_ref(),
             "Request failed."
+        );
+    }
+
+    #[test]
+    fn oauth_bearer_error_includes_rfc6750_challenge_fields() {
+        let response = oauth_bearer_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_token",
+            "Access token expired.",
+        );
+
+        assert_eq!(
+            response.headers().get(header::WWW_AUTHENTICATE).unwrap(),
+            HeaderValue::from_static(
+                r#"Bearer error="invalid_token", error_description="Access token expired.""#
+            )
+        );
+    }
+
+    #[test]
+    fn oauth_bearer_error_sanitizes_challenge_description() {
+        let response =
+            oauth_bearer_error(StatusCode::UNAUTHORIZED, "invalid_token", "访问令牌已失效.");
+
+        assert_eq!(
+            response.headers().get(header::WWW_AUTHENTICATE).unwrap(),
+            HeaderValue::from_static(
+                r#"Bearer error="invalid_token", error_description="Request failed.""#
+            )
         );
     }
 
