@@ -4,6 +4,7 @@ use super::{
     authenticate_introspection_client, parse_token_management_form, token_management_auth_error,
     token_management_form_error,
 };
+use crate::domain::Claims;
 use crate::http::prelude::*;
 
 pub(crate) async fn introspect(
@@ -107,7 +108,7 @@ pub(crate) async fn introspect(
             "active": active,
             "scope": claims.scope,
             "client_id": claims.client_id,
-            "token_type": "access_token",
+            "token_type": introspection_access_token_type(&claims),
             "exp": claims.exp,
             "iat": claims.iat,
             "nbf": claims.nbf,
@@ -164,4 +165,70 @@ pub(crate) async fn introspect(
         }));
     }
     json_response_no_store(json!({"active": false}))
+}
+
+fn introspection_access_token_type(claims: &Claims) -> &'static str {
+    if claims
+        .cnf
+        .as_ref()
+        .and_then(|cnf| cnf.jkt.as_ref())
+        .is_some()
+    {
+        "DPoP"
+    } else {
+        "Bearer"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::ConfirmationClaims;
+
+    fn access_claims(cnf: Option<ConfirmationClaims>) -> Claims {
+        Claims {
+            iss: "https://as.example".to_owned(),
+            sub: "subject".to_owned(),
+            user_id: None,
+            subject_type: "client".to_owned(),
+            aud: "resource://default".to_owned(),
+            client_id: "client-1".to_owned(),
+            scope: "openid".to_owned(),
+            token_use: "access".to_owned(),
+            jti: "jti-1".to_owned(),
+            iat: 1,
+            nbf: 1,
+            exp: 2,
+            cnf,
+            userinfo_claims: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn access_token_introspection_type_matches_issued_bearer_token_type() {
+        assert_eq!(
+            introspection_access_token_type(&access_claims(None)),
+            "Bearer"
+        );
+    }
+
+    #[test]
+    fn access_token_introspection_type_matches_issued_dpop_token_type() {
+        let claims = access_claims(Some(ConfirmationClaims {
+            jkt: Some("thumbprint".to_owned()),
+            x5t_s256: None,
+        }));
+
+        assert_eq!(introspection_access_token_type(&claims), "DPoP");
+    }
+
+    #[test]
+    fn mtls_bound_access_token_introspection_type_remains_bearer() {
+        let claims = access_claims(Some(ConfirmationClaims {
+            jkt: None,
+            x5t_s256: Some("certificate-thumbprint".to_owned()),
+        }));
+
+        assert_eq!(introspection_access_token_type(&claims), "Bearer");
+    }
 }
