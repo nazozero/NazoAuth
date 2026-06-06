@@ -18,6 +18,7 @@ pub(crate) struct TokenForm {
 
 pub(crate) struct TokenOnlyForm {
     pub(crate) token: String,
+    pub(crate) token_type_hint: Option<String>,
     pub(crate) client_id: Option<String>,
     pub(crate) client_secret: Option<String>,
     pub(crate) client_assertion_type: Option<String>,
@@ -169,6 +170,7 @@ pub(crate) fn parse_token_management_form(
     let mut seen = std::collections::HashSet::new();
     let mut form = TokenOnlyForm {
         token: String::new(),
+        token_type_hint: None,
         client_id: None,
         client_secret: None,
         client_assertion_type: None,
@@ -179,7 +181,12 @@ pub(crate) fn parse_token_management_form(
         let key = key.into_owned();
         if !matches!(
             key.as_str(),
-            "token" | "client_id" | "client_secret" | "client_assertion_type" | "client_assertion"
+            "token"
+                | "token_type_hint"
+                | "client_id"
+                | "client_secret"
+                | "client_assertion_type"
+                | "client_assertion"
         ) {
             continue;
         }
@@ -189,6 +196,7 @@ pub(crate) fn parse_token_management_form(
         let value = value.into_owned();
         match key.as_str() {
             "token" => form.token = value,
+            "token_type_hint" => form.token_type_hint = non_empty(value),
             "client_id" => form.client_id = non_empty(value),
             "client_secret" => form.client_secret = non_empty(value),
             "client_assertion_type" => form.client_assertion_type = non_empty(value),
@@ -254,6 +262,41 @@ mod tests {
             result,
             Err(TokenManagementFormError::DuplicateParameter)
         ));
+    }
+
+    #[test]
+    fn token_management_form_tracks_token_type_hint_duplicates() {
+        let req = TestRequest::default()
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+            .to_http_request();
+
+        let result = parse_token_management_form(
+            &req,
+            &Bytes::from_static(
+                b"token=token-1&token_type_hint=access_token&token_type_hint=refresh_token",
+            ),
+        );
+
+        assert!(matches!(
+            result,
+            Err(TokenManagementFormError::DuplicateParameter)
+        ));
+    }
+
+    #[test]
+    fn token_management_form_accepts_token_type_hint_without_requiring_known_value() {
+        let req = TestRequest::default()
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+            .to_http_request();
+
+        let form = parse_token_management_form(
+            &req,
+            &Bytes::from_static(b"token=token-1&token_type_hint=opaque_hint"),
+        )
+        .unwrap();
+
+        assert_eq!(form.token, "token-1");
+        assert_eq!(form.token_type_hint.as_deref(), Some("opaque_hint"));
     }
 
     #[test]
