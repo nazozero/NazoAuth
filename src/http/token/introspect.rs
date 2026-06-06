@@ -1,8 +1,8 @@
 //! token introspection 端点。
 // 只处理 access/refresh token 活跃性查询。
 use super::{
-    authenticate_introspection_client, parse_token_management_form, token_management_auth_error,
-    token_management_form_error,
+    TokenManagementClientAuthError, authenticate_introspection_client, parse_token_management_form,
+    token_management_client_auth_error, token_management_form_error,
 };
 use crate::domain::Claims;
 use crate::http::prelude::*;
@@ -40,19 +40,17 @@ pub(crate) async fn introspect(
         form.client_assertion.as_deref(),
     );
     let Some(client_id) = credentials.client_id.as_deref() else {
-        return oauth_error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_client",
-            "客户端认证失败.",
+        return token_management_client_auth_error(
+            TokenManagementClientAuthError::InvalidClient,
+            has_basic,
         );
     };
     let client = match find_client(&state.diesel_db, client_id).await {
         Ok(Some(client)) => client,
         Ok(None) => {
-            return oauth_error(
-                StatusCode::UNAUTHORIZED,
-                "invalid_client",
-                "客户端认证失败.",
+            return token_management_client_auth_error(
+                TokenManagementClientAuthError::InvalidClient,
+                has_basic,
             );
         }
         Err(error) => {
@@ -66,7 +64,7 @@ pub(crate) async fn introspect(
     };
     if let Err(error) = authenticate_introspection_client(&state, &req, &client, &credentials).await
     {
-        return token_management_auth_error(error);
+        return token_management_client_auth_error(error, has_basic);
     }
     if let Some(claims) = decode_access_claims(&state, &form.token) {
         if claims.client_id != client.client_id && !audience_allowed(&client, &claims.aud) {
