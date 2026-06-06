@@ -612,23 +612,19 @@ pub(crate) fn authorization_response_redirect(
     state_value: Option<&str>,
 ) -> HttpResponse {
     if response_mode == Some("jwt") && !client_id.trim().is_empty() {
-        match make_authorization_response_jwt(
-            state,
-            AuthorizationResponseJwtInput {
-                client_id,
-                code,
-                error,
-                state: state_value,
-                ttl: state.settings.auth_code_ttl_seconds as i64,
-            },
-        ) {
-            Ok(response) => {
-                return redirect_found(append_query(redirect_uri, &[("response", &response)]));
-            }
-            Err(signing_error) => {
-                tracing::warn!(%signing_error, "failed to sign JARM authorization response");
-            }
-        }
+        return authorization_response_jwt_result(
+            redirect_uri,
+            make_authorization_response_jwt(
+                state,
+                AuthorizationResponseJwtInput {
+                    client_id,
+                    code,
+                    error,
+                    state: state_value,
+                    ttl: state.settings.auth_code_ttl_seconds as i64,
+                },
+            ),
+        );
     }
     redirect_found(append_authorization_response_query(
         redirect_uri,
@@ -637,6 +633,27 @@ pub(crate) fn authorization_response_redirect(
         error,
         state_value,
     ))
+}
+
+fn authorization_response_jwt_result(
+    redirect_uri: &str,
+    result: jsonwebtoken::errors::Result<String>,
+) -> HttpResponse {
+    match result {
+        Ok(response) => authorization_response_jwt_redirect(redirect_uri, &response),
+        Err(signing_error) => {
+            tracing::warn!(%signing_error, "failed to sign JARM authorization response");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "authorization response signing failed.",
+            )
+        }
+    }
+}
+
+fn authorization_response_jwt_redirect(redirect_uri: &str, response: &str) -> HttpResponse {
+    redirect_found(append_query(redirect_uri, &[("response", response)]))
 }
 
 fn append_authorization_response_query(
@@ -816,6 +833,56 @@ mod tests {
                 ("error".into(), "invalid_request".into()),
                 ("iss".into(), "https://issuer.example".into()),
             ]
+        );
+    }
+
+    #[test]
+    fn authorization_response_jwt_redirect_uses_only_response_parameter() {
+        let response = authorization_response_jwt_redirect(
+            "https://client.example/callback?existing=1",
+            "signed-jarm",
+        );
+
+        assert_eq!(response.status(), StatusCode::FOUND);
+        let location = response
+            .headers()
+            .get(header::LOCATION)
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let url = url::Url::parse(location).unwrap();
+        let pairs = url.query_pairs().collect::<Vec<_>>();
+        assert_eq!(
+            pairs,
+            vec![
+                ("existing".into(), "1".into()),
+                ("response".into(), "signed-jarm".into()),
+            ]
+        );
+        assert!(
+            !pairs
+                .iter()
+                .any(|(key, _)| matches!(key.as_ref(), "code" | "error" | "state" | "iss"))
+        );
+    }
+
+    #[test]
+    fn authorization_response_jwt_signing_failure_does_not_fallback_to_query() {
+        let response = authorization_response_jwt_result(
+            "https://client.example/callback",
+            Err(jsonwebtoken::errors::new_error(
+                jsonwebtoken::errors::ErrorKind::Signing("test signing failure".to_owned()),
+            )),
+        );
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert!(response.headers().get(header::LOCATION).is_none());
+        assert_eq!(
+            response
+                .extensions()
+                .get::<OAuthJsonErrorFields>()
+                .map(|fields| fields.error.as_str()),
+            Some("server_error")
         );
     }
 
