@@ -2,7 +2,7 @@
 // 只处理 refresh token 撤销和 access token jti 黑名单写入。
 use super::{
     TokenManagementClientAuthError, authenticate_revocation_client, parse_token_management_form,
-    token_management_client_auth_error, token_management_form_error,
+    token_management_client_auth_error, token_management_form_error, token_management_oauth_error,
 };
 use crate::http::prelude::*;
 
@@ -21,7 +21,7 @@ pub(crate) async fn revoke(state: Data<AppState>, req: HttpRequest, body: Bytes)
     if has_basic && (form.client_id.is_some() || form.client_secret.is_some() || has_assertion)
         || has_assertion && form.client_secret.is_some()
     {
-        return oauth_error(
+        return token_management_oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "同一请求不能同时使用多种客户端认证方式.",
@@ -50,7 +50,7 @@ pub(crate) async fn revoke(state: Data<AppState>, req: HttpRequest, body: Bytes)
         }
         Err(error) => {
             tracing::warn!(%error, "failed to query oauth client for token revocation");
-            return oauth_error(
+            return token_management_oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
                 "客户端查询失败.",
@@ -74,7 +74,7 @@ pub(crate) async fn revoke(state: Data<AppState>, req: HttpRequest, body: Bytes)
             Ok(updated) => updated,
             Err(error) => {
                 tracing::warn!(%error, "failed to revoke refresh token");
-                return oauth_error(
+                return token_management_oauth_error(
                     StatusCode::SERVICE_UNAVAILABLE,
                     "server_error",
                     "token 撤销失败.",
@@ -83,7 +83,7 @@ pub(crate) async fn revoke(state: Data<AppState>, req: HttpRequest, body: Bytes)
         },
         Err(error) => {
             tracing::warn!(%error, "failed to get database connection for token revocation");
-            return oauth_error(
+            return token_management_oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
                 "token 撤销失败.",
@@ -102,7 +102,7 @@ pub(crate) async fn revoke(state: Data<AppState>, req: HttpRequest, body: Bytes)
                     %error,
                     "failed to get database connection for access token revocation"
                 );
-                return oauth_error(
+                return token_management_oauth_error(
                     StatusCode::SERVICE_UNAVAILABLE,
                     "server_error",
                     "token 撤销失败.",
@@ -122,7 +122,7 @@ pub(crate) async fn revoke(state: Data<AppState>, req: HttpRequest, body: Bytes)
             .await
         {
             tracing::warn!(%error, "failed to revoke access token");
-            return oauth_error(
+            return token_management_oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
                 "token 撤销失败.",

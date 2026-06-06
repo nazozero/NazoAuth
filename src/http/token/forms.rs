@@ -40,25 +40,33 @@ pub(crate) enum TokenManagementFormError {
     MissingToken,
 }
 
+pub(crate) fn token_management_oauth_error(
+    status: StatusCode,
+    error: &str,
+    description: &str,
+) -> HttpResponse {
+    oauth_token_error(status, error, description, false)
+}
+
 pub(crate) fn token_management_form_error(error: TokenManagementFormError) -> HttpResponse {
     match error {
-        TokenManagementFormError::InvalidContentType => oauth_error(
+        TokenManagementFormError::InvalidContentType => token_management_oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "token management 请求必须使用 application/x-www-form-urlencoded.",
         ),
-        TokenManagementFormError::InvalidEncoding => oauth_error(
+        TokenManagementFormError::InvalidEncoding => token_management_oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "token management 请求体必须使用 UTF-8 编码.",
         ),
-        TokenManagementFormError::DuplicateParameter => oauth_error(
+        TokenManagementFormError::DuplicateParameter => token_management_oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "OAuth 参数不能重复.",
         ),
         TokenManagementFormError::MissingToken => {
-            oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "缺少 token.")
+            token_management_oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "缺少 token.")
         }
     }
 }
@@ -274,5 +282,21 @@ mod tests {
             result,
             Err(TokenManagementFormError::MissingToken)
         ));
+    }
+
+    #[test]
+    fn token_management_form_error_is_not_cacheable() {
+        let response = token_management_form_error(TokenManagementFormError::MissingToken);
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            HeaderValue::from_static("no-store")
+        );
+        assert_eq!(
+            response.headers().get(header::PRAGMA).unwrap(),
+            HeaderValue::from_static("no-cache")
+        );
+        assert!(response.headers().get(header::WWW_AUTHENTICATE).is_none());
     }
 }

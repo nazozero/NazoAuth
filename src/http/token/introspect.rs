@@ -2,7 +2,7 @@
 // 只处理 access/refresh token 活跃性查询。
 use super::{
     TokenManagementClientAuthError, authenticate_introspection_client, parse_token_management_form,
-    token_management_client_auth_error, token_management_form_error,
+    token_management_client_auth_error, token_management_form_error, token_management_oauth_error,
 };
 use crate::domain::Claims;
 use crate::http::prelude::*;
@@ -26,7 +26,7 @@ pub(crate) async fn introspect(
     if has_basic && (form.client_id.is_some() || form.client_secret.is_some() || has_assertion)
         || has_assertion && form.client_secret.is_some()
     {
-        return oauth_error(
+        return token_management_oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "同一请求不能同时使用多种客户端认证方式.",
@@ -55,7 +55,7 @@ pub(crate) async fn introspect(
         }
         Err(error) => {
             tracing::warn!(%error, "failed to query oauth client for token introspection");
-            return oauth_error(
+            return token_management_oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
                 "客户端查询失败.",
@@ -82,7 +82,7 @@ pub(crate) async fn introspect(
                 Ok(count) => count > 0,
                 Err(error) => {
                     tracing::warn!(%error, "failed to query access token revocation state");
-                    return oauth_error(
+                    return token_management_oauth_error(
                         StatusCode::SERVICE_UNAVAILABLE,
                         "server_error",
                         "token 状态查询失败.",
@@ -91,7 +91,7 @@ pub(crate) async fn introspect(
             },
             Err(error) => {
                 tracing::warn!(%error, "failed to get database connection for introspection");
-                return oauth_error(
+                return token_management_oauth_error(
                     StatusCode::SERVICE_UNAVAILABLE,
                     "server_error",
                     "token 状态查询失败.",
@@ -128,7 +128,7 @@ pub(crate) async fn introspect(
             Ok(value) => value,
             Err(error) => {
                 tracing::warn!(%error, "failed to query refresh token introspection state");
-                return oauth_error(
+                return token_management_oauth_error(
                     StatusCode::SERVICE_UNAVAILABLE,
                     "server_error",
                     "token 状态查询失败.",
@@ -137,7 +137,7 @@ pub(crate) async fn introspect(
         },
         Err(error) => {
             tracing::warn!(%error, "failed to get database connection for introspection");
-            return oauth_error(
+            return token_management_oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
                 "token 状态查询失败.",
