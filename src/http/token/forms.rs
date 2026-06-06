@@ -16,7 +16,6 @@ pub(crate) struct TokenForm {
     pub(crate) audience: Option<String>,
 }
 
-#[derive(Deserialize)]
 pub(crate) struct TokenOnlyForm {
     pub(crate) token: String,
     pub(crate) client_id: Option<String>,
@@ -31,6 +30,37 @@ pub(crate) enum TokenFormError {
     InvalidEncoding,
     DuplicateParameter,
     MissingGrantType,
+}
+
+#[derive(Debug)]
+pub(crate) enum TokenManagementFormError {
+    InvalidContentType,
+    InvalidEncoding,
+    DuplicateParameter,
+    MissingToken,
+}
+
+pub(crate) fn token_management_form_error(error: TokenManagementFormError) -> HttpResponse {
+    match error {
+        TokenManagementFormError::InvalidContentType => oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "token management 请求必须使用 application/x-www-form-urlencoded.",
+        ),
+        TokenManagementFormError::InvalidEncoding => oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "token management 请求体必须使用 UTF-8 编码.",
+        ),
+        TokenManagementFormError::DuplicateParameter => oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "OAuth 参数不能重复.",
+        ),
+        TokenManagementFormError::MissingToken => {
+            oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "缺少 token.")
+        }
+    }
 }
 
 pub(crate) fn parse_token_form(
@@ -110,6 +140,61 @@ pub(crate) fn parse_token_form(
     Ok(form)
 }
 
+pub(crate) fn parse_token_management_form(
+    req: &HttpRequest,
+    body: &Bytes,
+) -> Result<TokenOnlyForm, TokenManagementFormError> {
+    let content_type = req
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    if !content_type.split(';').next().is_some_and(|value| {
+        value
+            .trim()
+            .eq_ignore_ascii_case("application/x-www-form-urlencoded")
+    }) {
+        return Err(TokenManagementFormError::InvalidContentType);
+    }
+
+    let raw = std::str::from_utf8(body).map_err(|_| TokenManagementFormError::InvalidEncoding)?;
+    let mut seen = std::collections::HashSet::new();
+    let mut form = TokenOnlyForm {
+        token: String::new(),
+        client_id: None,
+        client_secret: None,
+        client_assertion_type: None,
+        client_assertion: None,
+    };
+
+    for (key, value) in url::form_urlencoded::parse(raw.as_bytes()) {
+        let key = key.into_owned();
+        if !matches!(
+            key.as_str(),
+            "token" | "client_id" | "client_secret" | "client_assertion_type" | "client_assertion"
+        ) {
+            continue;
+        }
+        if !seen.insert(key.clone()) {
+            return Err(TokenManagementFormError::DuplicateParameter);
+        }
+        let value = value.into_owned();
+        match key.as_str() {
+            "token" => form.token = value,
+            "client_id" => form.client_id = non_empty(value),
+            "client_secret" => form.client_secret = non_empty(value),
+            "client_assertion_type" => form.client_assertion_type = non_empty(value),
+            "client_assertion" => form.client_assertion = non_empty(value),
+            _ => {}
+        }
+    }
+
+    if form.token.trim().is_empty() {
+        return Err(TokenManagementFormError::MissingToken);
+    }
+    Ok(form)
+}
+
 fn non_empty(value: String) -> Option<String> {
     (!value.is_empty()).then_some(value)
 }
@@ -146,5 +231,48 @@ mod tests {
         .unwrap();
 
         assert_eq!(form.grant_type, "client_credentials");
+    }
+
+    #[test]
+    fn token_management_form_rejects_duplicate_defined_parameters() {
+        let req = TestRequest::default()
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+            .to_http_request();
+
+        let result =
+            parse_token_management_form(&req, &Bytes::from_static(b"token=token-1&token=token-2"));
+
+        assert!(matches!(
+            result,
+            Err(TokenManagementFormError::DuplicateParameter)
+        ));
+    }
+
+    #[test]
+    fn token_management_form_requires_form_content_type() {
+        let req = TestRequest::default()
+            .insert_header((header::CONTENT_TYPE, "application/json"))
+            .to_http_request();
+
+        let result = parse_token_management_form(&req, &Bytes::from_static(b"token=token-1"));
+
+        assert!(matches!(
+            result,
+            Err(TokenManagementFormError::InvalidContentType)
+        ));
+    }
+
+    #[test]
+    fn token_management_form_requires_non_empty_token() {
+        let req = TestRequest::default()
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+            .to_http_request();
+
+        let result = parse_token_management_form(&req, &Bytes::from_static(b"token="));
+
+        assert!(matches!(
+            result,
+            Err(TokenManagementFormError::MissingToken)
+        ));
     }
 }

@@ -1,17 +1,24 @@
 //! token introspection 端点。
 // 只处理 access/refresh token 活跃性查询。
-use super::{TokenOnlyForm, authenticate_introspection_client, token_management_auth_error};
+use super::{
+    authenticate_introspection_client, parse_token_management_form, token_management_auth_error,
+    token_management_form_error,
+};
 use crate::http::prelude::*;
 
 pub(crate) async fn introspect(
     state: Data<AppState>,
     req: HttpRequest,
-    Form(form): Form<TokenOnlyForm>,
+    body: Bytes,
 ) -> HttpResponse {
     if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await
     {
         return response;
     }
+    let form = match parse_token_management_form(&req, &body) {
+        Ok(form) => form,
+        Err(error) => return token_management_form_error(error),
+    };
 
     let has_basic = has_basic_authorization_scheme(req.headers());
     let has_assertion = form.client_assertion_type.is_some() || form.client_assertion.is_some();
