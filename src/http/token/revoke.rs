@@ -1,8 +1,8 @@
 //! token revoke 端点。
 // 只处理 refresh token 撤销和 access token jti 黑名单写入。
 use super::{
-    authenticate_revocation_client, parse_token_management_form, token_management_auth_error,
-    token_management_form_error,
+    TokenManagementClientAuthError, authenticate_revocation_client, parse_token_management_form,
+    token_management_client_auth_error, token_management_form_error,
 };
 use crate::http::prelude::*;
 
@@ -35,19 +35,17 @@ pub(crate) async fn revoke(state: Data<AppState>, req: HttpRequest, body: Bytes)
         form.client_assertion.as_deref(),
     );
     let Some(client_id) = credentials.client_id.as_deref() else {
-        return oauth_error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_client",
-            "客户端认证失败.",
+        return token_management_client_auth_error(
+            TokenManagementClientAuthError::InvalidClient,
+            has_basic,
         );
     };
     let client = match find_client(&state.diesel_db, client_id).await {
         Ok(Some(client)) => client,
         Ok(None) => {
-            return oauth_error(
-                StatusCode::UNAUTHORIZED,
-                "invalid_client",
-                "客户端认证失败.",
+            return token_management_client_auth_error(
+                TokenManagementClientAuthError::InvalidClient,
+                has_basic,
             );
         }
         Err(error) => {
@@ -60,7 +58,7 @@ pub(crate) async fn revoke(state: Data<AppState>, req: HttpRequest, body: Bytes)
         }
     };
     if let Err(error) = authenticate_revocation_client(&state, &req, &client, &credentials).await {
-        return token_management_auth_error(error);
+        return token_management_client_auth_error(error, has_basic);
     }
     let refresh_hash = blake3_hex(&form.token);
     let updated = match get_conn(&state.diesel_db).await {
