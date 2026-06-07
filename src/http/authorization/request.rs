@@ -10,6 +10,7 @@ pub(crate) const AUTHORIZED_REQUEST_PARAMETERS: &[&str] = &[
     "client_id",
     "redirect_uri",
     "scope",
+    "authorization_details",
     "state",
     "code_challenge",
     "code_challenge_method",
@@ -632,6 +633,19 @@ async fn authorize_request(
     if !is_subset(&requested_scopes, &json_array_to_strings(&client.scopes)) {
         return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_scope", q).await;
     }
+    let authorization_details =
+        match parse_authorization_details(q.get("authorization_details").map(String::as_str)) {
+            Ok(value) => value,
+            Err(()) => {
+                return authorization_oauth_error_redirect(
+                    &state,
+                    &redirect_uri,
+                    "invalid_request",
+                    q,
+                )
+                .await;
+            }
+        };
     let now = Utc::now();
     let request_id = Uuid::now_v7().to_string();
     let payload = ConsentPayload {
@@ -642,6 +656,7 @@ async fn authorize_request(
         redirect_uri: redirect_uri.clone(),
         redirect_uri_was_supplied: q.contains_key("redirect_uri"),
         scopes: requested_scopes,
+        authorization_details,
         state: q.get("state").cloned(),
         response_mode,
         nonce: q.get("nonce").cloned(),
@@ -667,6 +682,7 @@ async fn authorize_request(
             payload.user_id,
             client.id,
             &payload.scopes,
+            &payload.authorization_details,
         )
         .await
         {
@@ -724,6 +740,7 @@ async fn user_grant_covers_requested_scopes(
     user_id: Uuid,
     client_id: Uuid,
     requested_scopes: &[String],
+    requested_authorization_details: &Value,
 ) -> Result<bool, HttpResponse> {
     let mut conn = match get_conn(&state.diesel_db).await {
         Ok(conn) => conn,
@@ -736,11 +753,14 @@ async fn user_grant_covers_requested_scopes(
             ));
         }
     };
-    let stored_scopes = match user_client_grants::table
+    let stored = match user_client_grants::table
         .filter(user_client_grants::user_id.eq(user_id))
         .filter(user_client_grants::client_id.eq(client_id))
-        .select(user_client_grants::last_scopes)
-        .first::<Value>(&mut conn)
+        .select((
+            user_client_grants::last_scopes,
+            user_client_grants::last_authorization_details,
+        ))
+        .first::<(Value, Value)>(&mut conn)
         .await
         .optional()
     {
@@ -754,16 +774,35 @@ async fn user_grant_covers_requested_scopes(
             ));
         }
     };
-    Ok(stored_scopes
+    Ok(stored
         .as_ref()
-        .is_some_and(|scopes| stored_grant_covers_requested_scopes(scopes, requested_scopes)))
+        .is_some_and(|(stored_scopes, stored_authorization_details)| {
+            stored_grant_covers_requested_authorization(
+                stored_scopes,
+                stored_authorization_details,
+                requested_scopes,
+                requested_authorization_details,
+            )
+        }))
 }
 
-fn stored_grant_covers_requested_scopes(
+fn stored_grant_covers_requested_authorization(
     stored_scopes: &Value,
+    stored_authorization_details: &Value,
     requested_scopes: &[String],
+    requested_authorization_details: &Value,
 ) -> bool {
-    is_subset(requested_scopes, &json_array_to_strings(stored_scopes))
+    if !is_subset(requested_scopes, &json_array_to_strings(stored_scopes)) {
+        return false;
+    }
+    if authorization_details_empty(requested_authorization_details) {
+        return true;
+    }
+    if high_risk_authorization_details(requested_authorization_details) {
+        return false;
+    }
+    canonical_authorization_details(stored_authorization_details).ok()
+        == canonical_authorization_details(requested_authorization_details).ok()
 }
 
 async fn issue_authorization_code_without_interaction(
@@ -811,6 +850,7 @@ async fn issue_authorization_code_without_interaction(
         redirect_uri: payload.redirect_uri.clone(),
         redirect_uri_was_supplied: payload.redirect_uri_was_supplied,
         scopes: payload.scopes.clone(),
+        authorization_details: payload.authorization_details,
         nonce: payload.nonce,
         auth_time: payload.auth_time,
         amr: payload.amr,
@@ -1443,22 +1483,56 @@ mod tests {
     }
 
     #[test]
-    fn stored_grant_covers_requested_scopes_when_request_is_subset() {
-        assert!(stored_grant_covers_requested_scopes(
+    fn stored_grant_covers_requested_authorization_when_scope_is_subset() {
+        assert!(stored_grant_covers_requested_authorization(
             &json!(["openid", "profile", "email"]),
+            &json!([]),
             &parse_scope("openid email"),
+            &json!([]),
         ));
     }
 
     #[test]
     fn stored_grant_does_not_cover_new_or_malformed_scope_sets() {
-        assert!(!stored_grant_covers_requested_scopes(
+        assert!(!stored_grant_covers_requested_authorization(
             &json!(["openid", "profile"]),
+            &json!([]),
             &parse_scope("openid email"),
+            &json!([]),
         ));
-        assert!(!stored_grant_covers_requested_scopes(
+        assert!(!stored_grant_covers_requested_authorization(
             &json!({"scope": "openid"}),
+            &json!([]),
             &parse_scope("openid"),
+            &json!([]),
+        ));
+    }
+
+    #[test]
+    fn stored_grant_requires_transaction_binding_for_authorization_details() {
+        let scopes = json!(["openid", "payments"]);
+        let read_details = json!([{"type":"account_information","actions":["read"]}]);
+        let different_read_details =
+            json!([{"type":"account_information","actions":["read"],"locations":["acct-2"]}]);
+        let payment_details = json!([{"type":"payment_initiation","actions":["write"],"instructedAmount":{"currency":"USD","amount":"10.00"}}]);
+
+        assert!(stored_grant_covers_requested_authorization(
+            &scopes,
+            &read_details,
+            &parse_scope("openid payments"),
+            &read_details,
+        ));
+        assert!(!stored_grant_covers_requested_authorization(
+            &scopes,
+            &read_details,
+            &parse_scope("openid payments"),
+            &different_read_details,
+        ));
+        assert!(!stored_grant_covers_requested_authorization(
+            &scopes,
+            &payment_details,
+            &parse_scope("openid payments"),
+            &payment_details,
         ));
     }
 

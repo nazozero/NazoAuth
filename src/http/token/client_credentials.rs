@@ -77,6 +77,7 @@ pub(crate) async fn token_client_credentials(
             user_id: None,
             subject: client.client_id.clone(),
             scopes,
+            authorization_details: json!([]),
             audience,
             nonce: None,
             auth_time: None,

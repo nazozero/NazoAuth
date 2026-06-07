@@ -80,7 +80,7 @@ The roadmap separates three concerns that must not be mixed:
 - [x] Complete OIDC `claims` request semantics for `essential`, `value`, and `values`.
 - [x] Strengthen `auth_time`, `max_age`, `acr_values`, `azp`, `sid`, and session-related ID Token behavior.
 - [x] Add an independent OIDC `sid` value to login sessions and propagate it to ID Tokens without exposing the HTTPOnly session cookie value.
-- [ ] Add consent and transaction-binding tests for high-risk `authorization_details`, especially payments or write APIs.
+- [x] Add consent and transaction-binding tests for high-risk `authorization_details`, especially payments or write APIs.
 - [ ] Expand RFC 8707 support from the current single-resource model to multi-resource handling when an ecosystem use case requires it.
 - [ ] Implement RFC 9396 Rich Authorization Requests when structured authorization is required.
 - [ ] Add OIDC RP-Initiated Logout and Back-Channel Logout.

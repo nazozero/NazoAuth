@@ -498,6 +498,7 @@ mod tests {
             redirect_uri: "https://client.example/callback".to_owned(),
             redirect_uri_was_supplied: true,
             scopes: vec!["openid".to_owned()],
+            authorization_details: json!([]),
             nonce: None,
             auth_time: 1,
             amr: vec!["pwd".to_owned()],

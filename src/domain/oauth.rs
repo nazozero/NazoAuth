@@ -37,6 +37,11 @@ pub(crate) struct Claims {
     pub(crate) aud: String,
     pub(crate) client_id: String,
     pub(crate) scope: String,
+    #[serde(
+        default,
+        skip_serializing_if = "crate::domain::authorization_details_empty"
+    )]
+    pub(crate) authorization_details: Value,
     pub(crate) token_use: String,
     pub(crate) jti: String,
     pub(crate) iat: i64,
@@ -60,6 +65,8 @@ pub(crate) struct ConsentPayload {
     pub(crate) redirect_uri: String,
     pub(crate) redirect_uri_was_supplied: bool,
     pub(crate) scopes: Vec<String>,
+    #[serde(default)]
+    pub(crate) authorization_details: Value,
     pub(crate) state: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) response_mode: Option<String>,
@@ -113,6 +120,8 @@ pub(crate) struct CodePayload {
     pub(crate) redirect_uri: String,
     pub(crate) redirect_uri_was_supplied: bool,
     pub(crate) scopes: Vec<String>,
+    #[serde(default)]
+    pub(crate) authorization_details: Value,
     pub(crate) nonce: Option<String>,
     pub(crate) auth_time: i64,
     pub(crate) amr: Vec<String>,
@@ -175,6 +184,7 @@ pub(crate) struct TokenIssue {
     pub(crate) user_id: Option<Uuid>,
     pub(crate) subject: String,
     pub(crate) scopes: Vec<String>,
+    pub(crate) authorization_details: Value,
     pub(crate) audience: String,
     pub(crate) nonce: Option<String>,
     pub(crate) auth_time: Option<i64>,

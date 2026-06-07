@@ -42,6 +42,7 @@ pub(crate) async fn admin_grants(
                     user_client_grants::last_authorized_at,
                     user_client_grants::authorization_count,
                     user_client_grants::last_scopes,
+                    user_client_grants::last_authorization_details,
                 ))
                 .order(user_client_grants::last_authorized_at.desc())
                 .limit(page_size as i64)
@@ -70,7 +71,7 @@ pub(crate) async fn admin_grants(
             );
         }
     };
-    let items: Vec<Value> = rows.into_iter().map(|r| json!({"user_id": r.user_id, "email": r.email, "client_id": r.client_id, "client_name": r.client_name, "last_authorized_at": r.last_authorized_at, "authorization_count": r.authorization_count, "last_scopes": json_array_to_strings(&r.last_scopes)})).collect();
+    let items: Vec<Value> = rows.into_iter().map(|r| json!({"user_id": r.user_id, "email": r.email, "client_id": r.client_id, "client_name": r.client_name, "last_authorized_at": r.last_authorized_at, "authorization_count": r.authorization_count, "last_scopes": json_array_to_strings(&r.last_scopes), "last_authorization_details": r.last_authorization_details})).collect();
     json_response(json!({"total": total, "page": page, "page_size": page_size, "items": items}))
 }
 

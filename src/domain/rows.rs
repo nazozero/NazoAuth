@@ -138,6 +138,8 @@ pub(crate) struct TokenRow {
     pub(crate) user_id: Option<Uuid>,
     #[diesel(sql_type = diesel::sql_types::Jsonb)]
     pub(crate) scopes: Value,
+    #[diesel(sql_type = diesel::sql_types::Jsonb)]
+    pub(crate) authorization_details: Value,
     #[diesel(sql_type = diesel::sql_types::Timestamptz)]
     pub(crate) issued_at: DateTime<Utc>,
     #[diesel(sql_type = diesel::sql_types::Timestamptz)]
@@ -234,6 +236,8 @@ pub(crate) struct GrantRow {
     pub(crate) authorization_count: i32,
     #[diesel(sql_type = diesel::sql_types::Jsonb)]
     pub(crate) last_scopes: Value,
+    #[diesel(sql_type = diesel::sql_types::Jsonb)]
+    pub(crate) last_authorization_details: Value,
 }
 
 /// 待处理访问申请去重查询行。

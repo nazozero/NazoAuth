@@ -64,6 +64,7 @@ diesel::table! {
         client_id -> Uuid,
         user_id -> Nullable<Uuid>,
         scopes -> Jsonb,
+        authorization_details -> Jsonb,
         issued_at -> Timestamptz,
         expires_at -> Timestamptz,
         revoked_at -> Nullable<Timestamptz>,
@@ -82,6 +83,7 @@ diesel::table! {
         first_authorized_at -> Timestamptz,
         last_authorized_at -> Timestamptz,
         last_scopes -> Jsonb,
+        last_authorization_details -> Jsonb,
         authorization_count -> Int4,
     }
 }

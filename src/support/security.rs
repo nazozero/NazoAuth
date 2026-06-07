@@ -477,6 +477,7 @@ pub(crate) struct AccessTokenJwtInput<'a> {
     pub(crate) client_id: &'a str,
     pub(crate) audience: &'a str,
     pub(crate) scopes: &'a [String],
+    pub(crate) authorization_details: &'a Value,
     pub(crate) userinfo_claims: &'a [String],
     pub(crate) userinfo_claim_requests: &'a [OidcClaimRequest],
     pub(crate) ttl: i64,
@@ -517,6 +518,7 @@ fn access_token_claims(
         aud: input.audience.to_string(),
         client_id: input.client_id.to_string(),
         scope: sorted_scope_string(input.scopes),
+        authorization_details: input.authorization_details.clone(),
         token_use: "access".into(),
         jti: jti.to_owned(),
         iat: now,
@@ -863,6 +865,7 @@ mod tests {
                 client_id: "client-1",
                 audience: "https://issuer.example/userinfo",
                 scopes: &scopes,
+                authorization_details: &json!([]),
                 userinfo_claims: &["email".to_owned()],
                 userinfo_claim_requests: &[],
                 ttl: 300,
@@ -906,6 +909,7 @@ mod tests {
                 client_id: "service-client",
                 audience: "resource://default",
                 scopes: &scopes,
+                authorization_details: &json!([{"type":"payment_initiation","actions":["write"]}]),
                 userinfo_claims: &[],
                 userinfo_claim_requests: &[],
                 ttl: 120,
@@ -921,6 +925,10 @@ mod tests {
         assert_eq!(claims.subject_type, "client");
         assert_eq!(claims.client_id, "service-client");
         assert_eq!(claims.scope, "read write");
+        assert_eq!(
+            claims.authorization_details,
+            json!([{"type":"payment_initiation","actions":["write"]}])
+        );
         let cnf = claims.cnf.expect("mTLS-bound token should carry cnf");
         assert!(cnf.jkt.is_none());
         assert_eq!(cnf.x5t_s256.as_deref(), Some("certificate-thumbprint"));

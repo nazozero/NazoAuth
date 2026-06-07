@@ -271,6 +271,7 @@ pub(crate) async fn token_refresh(
             user_id: token.user_id,
             subject: token.subject,
             scopes,
+            authorization_details: token.authorization_details,
             audience,
             nonce: None,
             auth_time: None,

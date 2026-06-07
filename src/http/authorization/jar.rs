@@ -403,6 +403,7 @@ fn request_object_params(
                 Value::String(value) => value.clone(),
                 Value::Number(value) => value.to_string(),
                 Value::Object(_) if *key == "claims" => value.to_string(),
+                Value::Array(_) if *key == "authorization_details" => value.to_string(),
                 _ => {
                     return Err(oauth_error(
                         StatusCode::BAD_REQUEST,

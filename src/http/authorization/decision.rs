@@ -167,6 +167,7 @@ pub(crate) async fn authorize_decision(
         redirect_uri: payload.redirect_uri.clone(),
         redirect_uri_was_supplied: payload.redirect_uri_was_supplied,
         scopes: payload.scopes.clone(),
+        authorization_details: payload.authorization_details.clone(),
         nonce: payload.nonce,
         auth_time: payload.auth_time,
         amr: payload.amr,
@@ -212,8 +213,14 @@ pub(crate) async fn authorize_decision(
             "授权码创建失败.",
         );
     }
-    if let Err(error) =
-        upsert_grant(&state, payload.user_id, &payload.client_id, &payload.scopes).await
+    if let Err(error) = upsert_grant(
+        &state,
+        payload.user_id,
+        &payload.client_id,
+        &payload.scopes,
+        &payload.authorization_details,
+    )
+    .await
     {
         tracing::warn!(%error, "failed to persist user client grant");
         if let Err(cleanup_error) = valkey_del(&state.valkey, &code_key).await {

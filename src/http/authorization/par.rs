@@ -12,6 +12,7 @@ const PAR_AUTHORIZATION_PARAMETERS: &[&str] = &[
     "client_id",
     "redirect_uri",
     "scope",
+    "authorization_details",
     "state",
     "code_challenge",
     "code_challenge_method",
