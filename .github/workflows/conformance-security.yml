@@ -114,6 +114,8 @@ jobs:
             -v "$PWD:/app" -w /app \
             -e E2E_BASE_URL=http://nazo-oauth-e2e-server:8000 \
             -e E2E_ISSUER_URL=http://127.0.0.1:8000 \
+            -e PIP_DISABLE_PIP_VERSION_CHECK=1 \
+            -e PIP_ROOT_USER_ACTION=ignore \
             python:3.13-slim sh -lc 'pip install --no-cache-dir requests psycopg[binary] redis argon2-cffi pyjwt cryptography aiosmtpd >/tmp/pip.log && python scripts/full_real_request_e2e.py'
       - name: Run load and race gate
         run: |
@@ -122,6 +124,8 @@ jobs:
             -e E2E_BASE_URL=http://nazo-oauth-e2e-server:8000 \
             -e LOAD_REQUESTS=400 \
             -e LOAD_CONCURRENCY=32 \
+            -e PIP_DISABLE_PIP_VERSION_CHECK=1 \
+            -e PIP_ROOT_USER_ACTION=ignore \
             python:3.13-slim sh -lc 'pip install --no-cache-dir requests psycopg[binary] argon2-cffi >/tmp/pip.log && python scripts/full_real_request_load.py'
       - name: Run Valkey outage injection
         run: |
@@ -129,6 +133,8 @@ jobs:
           docker run --rm --name nazo-oauth-e2e-runner --network nazo-oauth-e2e-net \
             -v "$PWD:/app" -w /app \
             -e E2E_BASE_URL=http://nazo-oauth-e2e-server:8000 \
+            -e PIP_DISABLE_PIP_VERSION_CHECK=1 \
+            -e PIP_ROOT_USER_ACTION=ignore \
             python:3.13-slim sh -lc 'pip install --no-cache-dir requests >/tmp/pip.log && python scripts/valkey_failure_injection.py'
       - name: Cleanup
         if: always()

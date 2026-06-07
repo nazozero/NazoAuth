@@ -2562,7 +2562,6 @@ def run() -> None:
             "refresh_token_dpop_wrong_key_error",
             expect_json(wrong_refresh).get("error") == "invalid_dpop_proof",
         )
-        time.sleep(31)
         lost_response_nonce = request_dpop_nonce(
             {
                 "grant_type": "refresh_token",
@@ -2579,7 +2578,7 @@ def run() -> None:
             },
             dpop_key,
             lost_response_nonce,
-            "POST /token previous refresh_token after lost response window",
+            "POST /token previous refresh_token inside lost response window",
         )
         check(
             "refresh_token_lost_response_rotates_successor",
