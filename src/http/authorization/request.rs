@@ -126,7 +126,8 @@ fn requested_claim_names(value: Option<&Value>) -> Result<Vec<String>, ()> {
         return Err(());
     };
     let mut names = Vec::new();
-    for name in object.keys() {
+    for (name, request) in object {
+        validate_claim_request(request)?;
         if supported_user_claim(name) {
             names.push(name.clone());
         }
@@ -146,8 +147,9 @@ fn requested_acr_claim(value: Option<&Value>) -> Result<Option<String>, ()> {
     let Some(acr) = object.get("acr") else {
         return Ok(None);
     };
+    validate_claim_request(acr)?;
     let Some(acr) = acr.as_object() else {
-        return Err(());
+        return Ok(None);
     };
     if let Some(value) = acr.get("value") {
         let value = value.as_str().ok_or(())?.trim();
@@ -163,6 +165,33 @@ fn requested_acr_claim(value: Option<&Value>) -> Result<Option<String>, ()> {
         }
     }
     Ok(None)
+}
+
+fn validate_claim_request(value: &Value) -> Result<(), ()> {
+    if value.is_null() {
+        return Ok(());
+    }
+    let Some(object) = value.as_object() else {
+        return Err(());
+    };
+    if object
+        .get("essential")
+        .is_some_and(|essential| !essential.is_boolean())
+    {
+        return Err(());
+    }
+    if object.contains_key("value") && object.contains_key("values") {
+        return Err(());
+    }
+    if let Some(values) = object.get("values") {
+        let Some(values) = values.as_array() else {
+            return Err(());
+        };
+        if values.is_empty() {
+            return Err(());
+        }
+    }
+    Ok(())
 }
 
 fn preserve_verified_dpop_binding(q: &mut HashMap<String, String>, dpop_jkt: Option<&str>) {
@@ -977,10 +1006,58 @@ mod tests {
     }
 
     #[test]
+    fn claims_parameter_accepts_value_values_and_null_requests() {
+        let requested = requested_claims(&query(&[(
+            "claims",
+            r#"{"userinfo":{"name":null,"email":{"value":"alice@example.com"},"phone_number":{"values":["+15555550000","+15555550001"]}},"id_token":{"email_verified":{"essential":false},"acr":{"values":["urn:acr:2"]}}}"#,
+        )]))
+        .unwrap();
+
+        assert_eq!(
+            requested.userinfo,
+            vec![
+                "email".to_owned(),
+                "name".to_owned(),
+                "phone_number".to_owned()
+            ]
+        );
+        assert_eq!(requested.id_token, vec!["email_verified".to_owned()]);
+        assert_eq!(requested.acr, Some("urn:acr:2".to_owned()));
+    }
+
+    #[test]
     fn malformed_claims_parameter_is_invalid() {
         assert!(requested_claims(&query(&[("claims", "not-json")])).is_err());
         assert!(requested_claims(&query(&[("claims", r#"{"userinfo":[]}"#)])).is_err());
         assert!(requested_claims(&query(&[("claims", r#"{"id_token":{"acr":[]}}"#)])).is_err());
+        assert!(
+            requested_claims(&query(&[(
+                "claims",
+                r#"{"userinfo":{"email":{"essential":"yes"}}}"#
+            )]))
+            .is_err()
+        );
+        assert!(
+            requested_claims(&query(&[(
+                "claims",
+                r#"{"userinfo":{"email":{"value":"a@example.com","values":["a@example.com"]}}}"#
+            )]))
+            .is_err()
+        );
+        assert!(
+            requested_claims(&query(&[(
+                "claims",
+                r#"{"userinfo":{"email":{"values":"a@example.com"}}}"#
+            )]))
+            .is_err()
+        );
+        assert!(
+            requested_claims(&query(&[(
+                "claims",
+                r#"{"userinfo":{"email":{"values":[]}}}"#
+            )]))
+            .is_err()
+        );
         assert!(
             requested_claims(&query(&[(
                 "claims",
