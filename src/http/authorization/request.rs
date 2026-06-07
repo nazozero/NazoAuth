@@ -39,12 +39,6 @@ fn authorization_pkce(q: &HashMap<String, String>) -> Result<(Option<String>, Op
     }
 }
 
-fn authorization_request_requires_pkce(client: &ClientRow) -> bool {
-    client.client_type == "public"
-        || client.require_dpop_bound_tokens
-        || client.require_mtls_bound_tokens
-}
-
 fn authorization_response_mode(q: &HashMap<String, String>) -> Result<Option<String>, ()> {
     match q.get("response_mode").map(String::as_str) {
         None | Some("query") => Ok(None),
@@ -535,7 +529,7 @@ async fn authorize_request(
                 .await;
         }
     };
-    if authorization_request_requires_pkce(&client) && code_challenge.is_none() {
+    if code_challenge.is_none() {
         return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q)
             .await;
     }
@@ -1538,7 +1532,7 @@ mod tests {
     }
 
     #[test]
-    fn authorization_request_accepts_optional_pkce_but_rejects_invalid_pkce() {
+    fn authorization_pkce_allows_absent_value_for_parse_layer_but_rejects_invalid_pkce() {
         assert_eq!(authorization_pkce(&query(&[])).unwrap(), (None, None));
         let valid_challenge = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ";
 

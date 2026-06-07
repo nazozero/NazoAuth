@@ -23,6 +23,7 @@ This matrix defines the project profiles separately from product hardening. A pr
 | Response types | `code` |
 | Client auth | `none`, `client_secret_basic`, `client_secret_post`, `private_key_jwt`, `tls_client_auth`, `self_signed_tls_client_auth` |
 | Token binding | Bearer, DPoP-bound, mTLS-bound |
+| PKCE | S256 required for every authorization code request |
 | PAR | Supported, not globally required by default |
 | JAR | Supported; unsigned request objects are baseline compatibility only |
 | JARM | Supported as `response_mode=jwt` when negotiated |
@@ -55,7 +56,8 @@ and negative conformance tests.
 | --- | --- |
 | Grants | Authorization code and client credentials; no implicit or password grants |
 | Response types | `code` only |
-| Client auth | Public clients must use PKCE; confidential clients must authenticate |
+| Client auth | Public clients use `none` with PKCE; confidential clients must authenticate |
+| PKCE | S256 required for every authorization code request |
 | Token binding | Sender-constrained tokens preferred for high-risk clients |
 | PAR | Recommended for high-risk clients |
 | JAR | Signed JAR recommended for high-risk clients |
