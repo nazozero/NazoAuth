@@ -194,7 +194,8 @@ pub(crate) fn oidc_id_token_user_claims(
 mod tests {
     use super::*;
     use crate::settings::{
-        AuthorizationServerProfile, EmailDelivery, EmailSettings, RateLimitSettings,
+        AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings,
+        RateLimitSettings,
     };
     use crate::support::ClientIpHeaderMode;
 
@@ -244,6 +245,7 @@ mod tests {
             cors_allowed_origins: vec!["https://frontend.example".to_owned()],
             default_audience: "resource://default".to_owned(),
             authorization_server_profile: AuthorizationServerProfile::Oauth2Baseline,
+            dpop_nonce_policy: DpopNoncePolicy::Required,
             session_cookie_name: "session".to_owned(),
             csrf_cookie_name: "csrf".to_owned(),
             cookie_secure: true,

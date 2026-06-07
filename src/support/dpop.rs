@@ -6,6 +6,7 @@ use super::{
     jwt_decoding_key_from_jwk, oauth_error, random_urlsafe_token, valkey_getdel, valkey_set_ex,
     valkey_set_ex_nx,
 };
+use crate::settings::DpopNoncePolicy;
 
 const DPOP_TTL_SECONDS: i64 = 300;
 const DPOP_CLOCK_SKEW_SECONDS: i64 = 30;
@@ -192,6 +193,9 @@ pub(crate) async fn validate_dpop_proof(
 
 async fn validate_dpop_nonce(state: &AppState, nonce: Option<&str>) -> Result<(), DpopError> {
     let Some(nonce) = nonce else {
+        if !dpop_nonce_required(state.settings.dpop_nonce_policy) {
+            return Ok(());
+        }
         return Err(DpopError::UseNonce(issue_dpop_nonce(state).await?));
     };
     let key = dpop_nonce_key(nonce);
@@ -203,6 +207,10 @@ async fn validate_dpop_nonce(state: &AppState, nonce: Option<&str>) -> Result<()
             Err(DpopError::NonceStoreUnavailable)
         }
     }
+}
+
+fn dpop_nonce_required(policy: DpopNoncePolicy) -> bool {
+    policy == DpopNoncePolicy::Required
 }
 
 pub(crate) async fn issue_dpop_nonce(state: &AppState) -> Result<String, DpopError> {
@@ -510,6 +518,12 @@ mod tests {
         assert!(!first.contains("proof-jti"));
         assert_ne!(first, other_key);
         assert_ne!(first, other_jti);
+    }
+
+    #[test]
+    fn dpop_nonce_policy_controls_missing_nonce_requirement() {
+        assert!(dpop_nonce_required(DpopNoncePolicy::Required));
+        assert!(!dpop_nonce_required(DpopNoncePolicy::Optional));
     }
 
     #[test]

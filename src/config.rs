@@ -23,6 +23,7 @@ const ENV_CONFIG_KEYS: &[&str] = &[
     "CSRF_COOKIE_NAME",
     "DATABASE_URL",
     "DEFAULT_AUDIENCE",
+    "DPOP_NONCE_POLICY",
     "EMAIL_CODE_DEV_RESPONSE_ENABLED",
     "EMAIL_CODE_PEER_COOLDOWN_SECONDS",
     "EMAIL_CODE_SEND_COOLDOWN_SECONDS",
@@ -64,6 +65,19 @@ pub struct ConfigSource {
 impl ConfigSource {
     pub fn load() -> anyhow::Result<Self> {
         Self::load_from_dir_with_env(".", std::env::vars())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_pairs_for_test(
+        values: impl IntoIterator<Item = (&'static str, &'static str)>,
+    ) -> Self {
+        Self {
+            file_values: values
+                .into_iter()
+                .map(|(key, value)| (key.to_owned(), value.to_owned()))
+                .collect(),
+            env_values: HashMap::new(),
+        }
     }
 
     #[cfg(test)]
@@ -297,12 +311,14 @@ mod tests {
         source
             .merge_env([
                 ("ISSUER".to_owned(), "https://env.example".to_owned()),
+                ("DPOP_NONCE_POLICY".to_owned(), "optional".to_owned()),
                 ("VALKEY_COMMAND_TIMEOUT_MS".to_owned(), "1000".to_owned()),
                 ("UNKNOWN_ENV".to_owned(), "ignored".to_owned()),
             ])
             .unwrap();
 
         assert_eq!(source.string("ISSUER", ""), "https://env.example");
+        assert_eq!(source.string("DPOP_NONCE_POLICY", ""), "optional");
         assert_eq!(source.string("VALKEY_COMMAND_TIMEOUT_MS", ""), "1000");
         assert!(source.get("UNKNOWN_ENV").is_none());
     }

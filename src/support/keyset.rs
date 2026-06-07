@@ -618,6 +618,7 @@ mod tests {
             default_audience: "resource://default".to_owned(),
             authorization_server_profile:
                 crate::settings::AuthorizationServerProfile::Oauth2Baseline,
+            dpop_nonce_policy: crate::settings::DpopNoncePolicy::Required,
             session_cookie_name: "session".to_owned(),
             csrf_cookie_name: "csrf".to_owned(),
             cookie_secure: true,
