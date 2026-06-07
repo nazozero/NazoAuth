@@ -169,6 +169,18 @@ fn token_issue_from_authorization_code(input: AuthorizationCodeIssueInput) -> To
     }
 }
 
+fn refresh_token_dpop_binding(
+    client: &ClientRow,
+    payload: &CodePayload,
+    dpop_jkt: Option<String>,
+) -> Option<String> {
+    if client.require_dpop_bound_tokens || payload.dpop_jkt.is_some() {
+        dpop_jkt
+    } else {
+        None
+    }
+}
+
 async fn begin_authorization_code_consumption(
     state: &AppState,
     code_hash: &str,
@@ -429,11 +441,7 @@ pub(crate) async fn token_authorization_code(
             false,
         );
     }
-    let refresh_token_dpop_jkt = if client.client_type == "public" {
-        dpop_jkt.clone()
-    } else {
-        None
-    };
+    let refresh_token_dpop_jkt = refresh_token_dpop_binding(client, &payload, dpop_jkt.clone());
     let refresh_token_mtls_x5t_s256 = mtls_x5t_s256.clone();
     let subject = oidc_subject(&state.settings, payload.user_id, &payload.redirect_uri);
     issue_token_response(
@@ -578,6 +586,35 @@ mod tests {
         assert_eq!(
             issue.refresh_token_mtls_x5t_s256.as_deref(),
             Some("refresh-mtls-thumbprint")
+        );
+    }
+
+    #[test]
+    fn confidential_dpop_client_binds_refresh_token_to_dpop_key() {
+        let mut client = pkce_policy_client();
+        client.client_type = "confidential".to_owned();
+        client.require_dpop_bound_tokens = true;
+        let mut payload = code_payload(true);
+        payload.dpop_jkt = Some("request-dpop-jkt".to_owned());
+
+        assert_eq!(
+            refresh_token_dpop_binding(&client, &payload, Some("verified-dpop-jkt".to_owned()))
+                .as_deref(),
+            Some("verified-dpop-jkt")
+        );
+    }
+
+    #[test]
+    fn bearer_confidential_client_does_not_bind_refresh_token_to_access_token_dpop() {
+        let mut client = pkce_policy_client();
+        client.client_type = "confidential".to_owned();
+        client.require_dpop_bound_tokens = false;
+        let mut payload = code_payload(true);
+        payload.dpop_jkt = None;
+
+        assert!(
+            refresh_token_dpop_binding(&client, &payload, Some("verified-dpop-jkt".to_owned()))
+                .is_none()
         );
     }
 

@@ -10,9 +10,12 @@ const LOST_REFRESH_TOKEN_RETRY_SECONDS: i64 = 30;
 
 fn refresh_token_policy_for_authorization_server_profile(
     profile: AuthorizationServerProfile,
+    client: &ClientRow,
     token: &TokenRow,
 ) -> RefreshTokenPolicy {
-    if profile.requires_fapi2_security() {
+    if profile.requires_fapi2_security()
+        || confidential_client_has_sender_constrained_refresh_token(client, token)
+    {
         RefreshTokenPolicy::PreserveExisting
     } else {
         RefreshTokenPolicy::Rotate {
@@ -22,9 +25,31 @@ fn refresh_token_policy_for_authorization_server_profile(
     }
 }
 
-fn refresh_token_policy_for_profile(settings: &Settings, token: &TokenRow) -> RefreshTokenPolicy {
+fn confidential_client_has_sender_constrained_refresh_token(
+    client: &ClientRow,
+    token: &TokenRow,
+) -> bool {
+    if client.client_type != "confidential"
+        || !matches!(
+            client.token_endpoint_auth_method.as_str(),
+            "private_key_jwt" | "tls_client_auth" | "self_signed_tls_client_auth"
+        )
+    {
+        return false;
+    }
+
+    (client.require_dpop_bound_tokens && token.dpop_jkt.is_some())
+        || (client.require_mtls_bound_tokens && token.mtls_x5t_s256.is_some())
+}
+
+fn refresh_token_policy_for_profile(
+    settings: &Settings,
+    client: &ClientRow,
+    token: &TokenRow,
+) -> RefreshTokenPolicy {
     refresh_token_policy_for_authorization_server_profile(
         settings.authorization_server_profile,
+        client,
         token,
     )
 }
@@ -301,7 +326,7 @@ pub(crate) async fn token_refresh(
             false,
         );
     }
-    let refresh_token_policy = refresh_token_policy_for_profile(&state.settings, &token);
+    let refresh_token_policy = refresh_token_policy_for_profile(&state.settings, client, &token);
     issue_token_response(
         state,
         client,
@@ -336,6 +361,41 @@ pub(crate) async fn token_refresh(
 mod tests {
     use super::*;
 
+    fn client_row() -> ClientRow {
+        ClientRow {
+            id: Uuid::now_v7(),
+            tenant_id: DEFAULT_TENANT_ID,
+            realm_id: DEFAULT_REALM_ID,
+            organization_id: DEFAULT_ORGANIZATION_ID,
+            client_id: "client-1".to_owned(),
+            client_name: "Client".to_owned(),
+            client_type: "confidential".to_owned(),
+            client_secret_argon2_hash: None,
+            redirect_uris: json!(["https://client.example/callback"]),
+            scopes: json!(["openid", "offline_access"]),
+            allowed_audiences: json!(["resource://default"]),
+            grant_types: json!(["authorization_code", "refresh_token"]),
+            token_endpoint_auth_method: "private_key_jwt".to_owned(),
+            require_dpop_bound_tokens: true,
+            require_mtls_bound_tokens: false,
+            tls_client_auth_subject_dn: None,
+            tls_client_auth_cert_sha256: None,
+            tls_client_auth_san_dns: json!([]),
+            tls_client_auth_san_uri: json!([]),
+            tls_client_auth_san_ip: json!([]),
+            tls_client_auth_san_email: json!([]),
+            allow_client_assertion_audience_array: false,
+            allow_client_assertion_endpoint_audience: false,
+            require_par_request_object: false,
+            allow_authorization_code_without_pkce: false,
+            is_active: true,
+            jwks: None,
+            post_logout_redirect_uris: json!([]),
+            backchannel_logout_uri: None,
+            backchannel_logout_session_required: true,
+        }
+    }
+
     fn token_row() -> TokenRow {
         TokenRow {
             id: Uuid::now_v7(),
@@ -357,25 +417,44 @@ mod tests {
     #[test]
     fn fapi_profiles_preserve_sender_constrained_refresh_tokens() {
         let token = token_row();
+        let client = client_row();
 
         for profile in [
             AuthorizationServerProfile::Fapi2Security,
             AuthorizationServerProfile::Fapi2MessageSigningAuthzRequest,
         ] {
             assert_eq!(
-                refresh_token_policy_for_authorization_server_profile(profile, &token),
+                refresh_token_policy_for_authorization_server_profile(profile, &client, &token),
                 RefreshTokenPolicy::PreserveExisting
             );
         }
     }
 
     #[test]
-    fn baseline_profile_rotates_refresh_tokens() {
+    fn baseline_profile_preserves_confidential_sender_constrained_refresh_tokens() {
         let token = token_row();
+        let client = client_row();
 
         assert_eq!(
             refresh_token_policy_for_authorization_server_profile(
                 AuthorizationServerProfile::Oauth2Baseline,
+                &client,
+                &token,
+            ),
+            RefreshTokenPolicy::PreserveExisting
+        );
+    }
+
+    #[test]
+    fn baseline_profile_rotates_unbound_refresh_tokens() {
+        let mut token = token_row();
+        token.dpop_jkt = None;
+        let client = client_row();
+
+        assert_eq!(
+            refresh_token_policy_for_authorization_server_profile(
+                AuthorizationServerProfile::Oauth2Baseline,
+                &client,
                 &token,
             ),
             RefreshTokenPolicy::Rotate {
