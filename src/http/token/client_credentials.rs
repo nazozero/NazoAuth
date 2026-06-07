@@ -58,11 +58,12 @@ pub(crate) async fn token_client_credentials(
     } else {
         requested
     };
-    let audience = form
-        .audience
-        .clone()
-        .unwrap_or_else(|| state.settings.default_audience.clone());
-    if !audience_allowed(client, &audience) {
+    let audiences = if form.audiences.is_empty() {
+        vec![state.settings.default_audience.clone()]
+    } else {
+        form.audiences.clone()
+    };
+    if !audiences_allowed(client, &audiences) {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_target",
@@ -78,7 +79,7 @@ pub(crate) async fn token_client_credentials(
             subject: client.client_id.clone(),
             scopes,
             authorization_details: json!([]),
-            audience,
+            audiences,
             nonce: None,
             auth_time: None,
             amr: Vec::new(),

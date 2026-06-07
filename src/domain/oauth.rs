@@ -34,7 +34,7 @@ pub(crate) struct Claims {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) user_id: Option<String>,
     pub(crate) subject_type: String,
-    pub(crate) aud: String,
+    pub(crate) aud: Value,
     pub(crate) client_id: String,
     pub(crate) scope: String,
     #[serde(
@@ -185,7 +185,7 @@ pub(crate) struct TokenIssue {
     pub(crate) subject: String,
     pub(crate) scopes: Vec<String>,
     pub(crate) authorization_details: Value,
-    pub(crate) audience: String,
+    pub(crate) audiences: Vec<String>,
     pub(crate) nonce: Option<String>,
     pub(crate) auth_time: Option<i64>,
     pub(crate) amr: Vec<String>,

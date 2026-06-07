@@ -362,11 +362,12 @@ pub(crate) async fn token_authorization_code(
             );
         }
     }
-    let audience = form
-        .audience
-        .clone()
-        .unwrap_or_else(|| state.settings.default_audience.clone());
-    if !audience_allowed(client, &audience) {
+    let audiences = if form.audiences.is_empty() {
+        vec![state.settings.default_audience.clone()]
+    } else {
+        form.audiences.clone()
+    };
+    if !audiences_allowed(client, &audiences) {
         mark_failed_authorization_code(state, &code_hash, "audience_not_allowed").await;
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
@@ -389,7 +390,7 @@ pub(crate) async fn token_authorization_code(
             subject: oidc_subject(&state.settings, payload.user_id, &payload.redirect_uri),
             scopes: payload.scopes,
             authorization_details: payload.authorization_details,
-            audience,
+            audiences,
             nonce: payload.nonce,
             auth_time: Some(payload.auth_time),
             amr: payload.amr,

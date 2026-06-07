@@ -272,7 +272,7 @@ pub(crate) async fn issue_token_response(
                 "client"
             },
             client_id: &client.client_id,
-            audience: &issue.audience,
+            audiences: &issue.audiences,
             scopes: &issue.scopes,
             authorization_details: &issue.authorization_details,
             userinfo_claims: &issue.userinfo_claims,
@@ -474,7 +474,7 @@ pub(crate) async fn issue_token_response(
             ("user_id", json!(issue.user_id)),
             ("subject_hash", json!(blake3_hex(&issue.subject))),
             ("scope", json!(issue.scopes.join(" "))),
-            ("audience", json!(issue.audience)),
+            ("audience", json!(issue.audiences)),
             ("access_token_jti", json!(issued_access_token.jti)),
             ("refresh_token_family_id", json!(refresh_token_family_id)),
         ]),

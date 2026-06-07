@@ -185,9 +185,10 @@ fn userinfo_access_token(req: &HttpRequest, body: &Bytes) -> UserInfoAccessToken
     }
 }
 
-fn userinfo_audience_allowed(settings: &Settings, audience: &str) -> bool {
+fn userinfo_audience_allowed(settings: &Settings, audience: &Value) -> bool {
     let userinfo_url = format!("{}/userinfo", settings.issuer.trim_end_matches('/'));
-    audience == settings.default_audience || audience == userinfo_url
+    token_audience_contains(audience, &settings.default_audience)
+        || token_audience_contains(audience, &userinfo_url)
 }
 
 enum FormBodyAccessToken {
@@ -245,16 +246,26 @@ mod tests {
         settings.issuer = "https://issuer.example".to_owned();
         settings.default_audience = "resource://default".to_owned();
 
-        assert!(userinfo_audience_allowed(&settings, "resource://default"));
         assert!(userinfo_audience_allowed(
             &settings,
-            "https://issuer.example/userinfo"
+            &json!("resource://default")
+        ));
+        assert!(userinfo_audience_allowed(
+            &settings,
+            &json!("https://issuer.example/userinfo")
+        ));
+        assert!(userinfo_audience_allowed(
+            &settings,
+            &json!(["resource://other", "https://issuer.example/userinfo"])
         ));
         assert!(!userinfo_audience_allowed(
             &settings,
-            "https://issuer.example/fapi/resource"
+            &json!("https://issuer.example/fapi/resource")
         ));
-        assert!(!userinfo_audience_allowed(&settings, "resource://other"));
+        assert!(!userinfo_audience_allowed(
+            &settings,
+            &json!(["resource://other", "https://issuer.example/fapi/resource"])
+        ));
     }
 
     #[test]

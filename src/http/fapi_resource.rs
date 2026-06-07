@@ -123,9 +123,10 @@ async fn validate_access_token_binding(
     Ok(())
 }
 
-fn fapi_resource_audience_allowed(settings: &Settings, audience: &str) -> bool {
+fn fapi_resource_audience_allowed(settings: &Settings, audience: &Value) -> bool {
     let resource_url = format!("{}/fapi/resource", settings.issuer.trim_end_matches('/'));
-    audience == settings.default_audience || audience == resource_url
+    token_audience_contains(audience, &settings.default_audience)
+        || token_audience_contains(audience, &resource_url)
 }
 
 enum ResourceAccessToken {
@@ -261,19 +262,23 @@ mod tests {
 
         assert!(fapi_resource_audience_allowed(
             &settings,
-            "resource://default"
+            &json!("resource://default")
         ));
         assert!(fapi_resource_audience_allowed(
             &settings,
-            "https://issuer.example/fapi/resource"
+            &json!("https://issuer.example/fapi/resource")
+        ));
+        assert!(fapi_resource_audience_allowed(
+            &settings,
+            &json!(["resource://other", "https://issuer.example/fapi/resource"])
         ));
         assert!(!fapi_resource_audience_allowed(
             &settings,
-            "https://issuer.example/userinfo"
+            &json!("https://issuer.example/userinfo")
         ));
         assert!(!fapi_resource_audience_allowed(
             &settings,
-            "resource://other"
+            &json!(["resource://other", "https://issuer.example/userinfo"])
         ));
     }
 }
