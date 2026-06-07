@@ -1,6 +1,6 @@
 # Resource Server Verifier
 
-Resource servers must not reuse authorization-server internals that deliberately skip audience validation for `/userinfo` or `/introspect`. The public verifier API in `src/resource_server.rs` is the stable core for Rust resource servers and future Actix Web, Axum/Tower, and tonic adapters.
+Resource servers must not reuse authorization-server internals that deliberately skip audience validation for `/userinfo` or `/introspect`. The public verifier API in `src/resource_server.rs` is the stable core for Rust resource servers and the Actix Web, Axum/Tower, and tonic adapters.
 
 ## Validation Contract
 
@@ -44,6 +44,53 @@ fn authorize(verifier: &ResourceServerVerifier, access_token: &str) {
 }
 ```
 
+## Framework Adapters
+
+The framework adapters use the same verifier and insert `VerifiedAccessToken` into request extensions only after issuer, audience, expiry, scope, token type, algorithm, key, and sender-constraint checks pass.
+
+Actix Web:
+
+```rust
+use actix_web::{get, web};
+use nazo_oauth_server::resource_server::{
+    ActixVerifiedAccessToken, ResourceServerVerifier,
+};
+
+#[get("/orders")]
+async fn orders(token: ActixVerifiedAccessToken) -> String {
+    token.0.subject
+}
+
+fn configure(cfg: &mut web::ServiceConfig, verifier: ResourceServerVerifier) {
+    cfg.app_data(web::Data::new(verifier)).service(orders);
+}
+```
+
+Tower and Axum:
+
+```rust
+use nazo_oauth_server::resource_server::{
+    ResourceServerVerifier, TowerResourceServerLayer,
+};
+
+fn layer(verifier: ResourceServerVerifier) -> TowerResourceServerLayer {
+    TowerResourceServerLayer::new(verifier)
+}
+```
+
+tonic:
+
+```rust
+use nazo_oauth_server::resource_server::{
+    authorize_tonic_request, ResourceServerVerifier,
+};
+
+fn guard<T>(verifier: &ResourceServerVerifier, request: &mut tonic::Request<T>) {
+    let claims = authorize_tonic_request(verifier, request).expect("gRPC token must be valid");
+    assert!(!claims.subject.is_empty());
+}
+```
+
 ## DPoP Boundary
 
 `ConfirmationPolicy::RequireDpopJkt(expected_jkt)` verifies the token binding material in the JWT access token. A full DPoP-protected resource request must also validate the DPoP proof JWT for:
@@ -55,13 +102,15 @@ fn authorize(verifier: &ResourceServerVerifier, access_token: &str) {
 - `ath` matching the presented access token
 - nonce policy when configured
 
-The verifier intentionally keeps these two checks separate so framework adapters can bind proof validation to the actual HTTP method, URI, headers, and replay store.
+The verifier intentionally keeps these two checks separate so framework adapters can bind proof validation to the actual HTTP method, URI, headers, and replay store. The adapters require a `SenderConstraintProof { dpop_jkt: Some(...) }` request extension before accepting a DPoP-bound access token. That extension must come from a DPoP proof validator that has already checked signature, `jti`, `htu`, `htm`, `ath`, and nonce policy.
 
 ## mTLS Boundary
 
 `ConfirmationPolicy::RequireMtlsThumbprint(expected_x5t_s256)` verifies the token binding material in the JWT access token. A full mTLS-protected resource request must also compare it with a verified client certificate thumbprint from the local TLS listener or from the trusted proxy boundary described in `docs/deployment.md`.
 
 Forwarded certificate metadata must only be accepted from trusted proxy CIDRs and after duplicate or conflicting forwarded certificate headers have been rejected.
+
+The adapters require a `SenderConstraintProof { mtls_x5t_s256: Some(...) }` request extension before accepting an mTLS-bound access token. That extension must come from the local TLS listener or a trusted proxy boundary after certificate metadata has been authenticated.
 
 ## Introspection Fallback
 
@@ -74,14 +123,14 @@ JWT validation is the local fast path. Resource servers may fall back to token i
 
 Fallback must not override a local protocol invariant failure such as wrong issuer, wrong audience, wrong `typ`, unsupported algorithm, or sender-constraint mismatch.
 
-## Framework Adapter Requirements
+## Framework Adapter Contract
 
-Future Actix Web, Axum/Tower, and tonic adapters must all call the same core verifier and preserve these invariants:
+Actix Web, Axum/Tower, and tonic adapters all call the same core verifier and preserve these invariants:
 
 - Reject query-string access tokens.
 - Reject requests that present multiple token transport methods.
 - Map missing or invalid tokens to `401` with `WWW-Authenticate`.
 - Map malformed requests to `400`.
-- Run DPoP proof validation before accepting DPoP-bound tokens.
-- Run mTLS certificate binding before accepting mTLS-bound tokens.
+- Require verified DPoP proof context before accepting DPoP-bound tokens.
+- Require verified mTLS certificate context before accepting mTLS-bound tokens.
 - Expose extension points only after issuer, audience, expiry, scope, and sender-constraint checks succeed.

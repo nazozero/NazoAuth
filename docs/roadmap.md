@@ -23,7 +23,7 @@ The roadmap separates three concerns that must not be mixed:
 | Sessions | Login response should not expose the session identifier in JSON. | Done |
 | Password hashing | Argon2 policy should be explicit and versioned. | Done |
 | Refresh policy | FAPI2 Security should not use rotation by default; non-FAPI rotation needs documented lost-response recovery semantics. | Done |
-| Resource servers | Provide verifier guidance and eventually Rust middleware so resource servers validate JWT access tokens correctly. | Core verifier done; framework middleware planned |
+| Resource servers | Provide verifier guidance and Rust middleware so resource servers validate JWT access tokens correctly. | Done |
 | Operations | HA, backups, observability, key lifecycle, SBOM/provenance, and security release process need production evidence. | Done for core deployment controls |
 
 ## P0: Normative Conformance
@@ -105,6 +105,6 @@ The roadmap separates three concerns that must not be mixed:
 ## P2: Rust Ecosystem
 
 - [x] Publish resource-server verifier core for Rust integrations. See `src/resource_server.rs` and `docs/resource-server-verifier.md`.
-- [ ] Publish framework-specific resource-server middleware for Actix Web, Axum/Tower, and tonic.
+- [x] Publish framework-specific resource-server middleware for Actix Web, Axum/Tower, and tonic. See `src/resource_server.rs` and `docs/resource-server-verifier.md`.
 - [x] Provide issuer/audience validation, scope guards, DPoP `cnf.jkt` checks, mTLS `cnf.x5t#S256` checks, and introspection fallback guidance. JWKS cache packaging remains a framework/crate follow-up. See `src/resource_server.rs` and `docs/resource-server-verifier.md`.
 - [x] Add policy and claims extension points without allowing extensions to bypass protocol invariants. The verifier returns claims only after protocol invariants pass; adapters must run extension hooks after verification.
