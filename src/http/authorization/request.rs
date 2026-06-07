@@ -26,6 +26,13 @@ pub(crate) const AUTHORIZED_REQUEST_PARAMETERS: &[&str] = &[
 ];
 const AUTHORIZATION_NONCE_MAX_BYTES: usize = 256;
 
+fn authorization_request_requires_pkce(client: &ClientRow) -> bool {
+    client.client_type == "public"
+        || client.require_dpop_bound_tokens
+        || client.require_mtls_bound_tokens
+        || !client.allow_authorization_code_without_pkce
+}
+
 fn authorization_pkce(q: &HashMap<String, String>) -> Result<(Option<String>, Option<String>), ()> {
     match (
         q.get("code_challenge").map(String::as_str),
@@ -529,7 +536,7 @@ async fn authorize_request(
                 .await;
         }
     };
-    if code_challenge.is_none() {
+    if code_challenge.is_none() && authorization_request_requires_pkce(&client) {
         return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q)
             .await;
     }
@@ -1114,6 +1121,41 @@ mod tests {
             .collect()
     }
 
+    fn pkce_policy_client() -> ClientRow {
+        ClientRow {
+            id: Uuid::now_v7(),
+            tenant_id: DEFAULT_TENANT_ID,
+            realm_id: DEFAULT_REALM_ID,
+            organization_id: DEFAULT_ORGANIZATION_ID,
+            client_id: "client-1".to_owned(),
+            client_name: "Client".to_owned(),
+            client_type: "confidential".to_owned(),
+            client_secret_argon2_hash: None,
+            redirect_uris: json!(["https://client.example/callback"]),
+            scopes: json!(["openid"]),
+            allowed_audiences: json!(["resource://default"]),
+            grant_types: json!(["authorization_code"]),
+            token_endpoint_auth_method: "client_secret_basic".to_owned(),
+            require_dpop_bound_tokens: false,
+            require_mtls_bound_tokens: false,
+            tls_client_auth_subject_dn: None,
+            tls_client_auth_cert_sha256: None,
+            tls_client_auth_san_dns: json!([]),
+            tls_client_auth_san_uri: json!([]),
+            tls_client_auth_san_ip: json!([]),
+            tls_client_auth_san_email: json!([]),
+            allow_client_assertion_audience_array: false,
+            allow_client_assertion_endpoint_audience: false,
+            require_par_request_object: false,
+            allow_authorization_code_without_pkce: false,
+            is_active: true,
+            jwks: None,
+            post_logout_redirect_uris: json!([]),
+            backchannel_logout_uri: None,
+            backchannel_logout_session_required: true,
+        }
+    }
+
     #[test]
     fn first_acr_value_is_used_for_id_token_acr() {
         assert_eq!(
@@ -1551,5 +1593,25 @@ mod tests {
             ]))
             .is_ok()
         );
+    }
+
+    #[test]
+    fn authorization_request_pkce_policy_allows_only_explicit_confidential_compatibility() {
+        let mut client = pkce_policy_client();
+        assert!(authorization_request_requires_pkce(&client));
+
+        client.allow_authorization_code_without_pkce = true;
+        assert!(!authorization_request_requires_pkce(&client));
+
+        client.client_type = "public".to_owned();
+        assert!(authorization_request_requires_pkce(&client));
+
+        client.client_type = "confidential".to_owned();
+        client.require_dpop_bound_tokens = true;
+        assert!(authorization_request_requires_pkce(&client));
+
+        client.require_dpop_bound_tokens = false;
+        client.require_mtls_bound_tokens = true;
+        assert!(authorization_request_requires_pkce(&client));
     }
 }

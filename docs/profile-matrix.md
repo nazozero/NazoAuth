@@ -23,7 +23,7 @@ This matrix defines the project profiles separately from product hardening. A pr
 | Response types | `code` |
 | Client auth | `none`, `client_secret_basic`, `client_secret_post`, `private_key_jwt`, `tls_client_auth`, `self_signed_tls_client_auth` |
 | Token binding | Bearer, DPoP-bound, mTLS-bound |
-| PKCE | S256 required for every authorization code request |
+| PKCE | S256 required by default for authorization code requests; explicit no-PKCE compatibility is limited to registered confidential OIDC Basic conformance clients |
 | PAR | Supported, not globally required by default |
 | JAR | Supported; unsigned request objects are baseline compatibility only |
 | JARM | Supported as `response_mode=jwt` when negotiated |
@@ -39,6 +39,7 @@ Negative tests:
 - duplicate OAuth parameters
 - unsafe redirect URI
 - non-S256 PKCE
+- omitted PKCE for clients without an explicit compatibility exception
 - mixed client authentication methods
 - invalid client assertion audience
 - access token transport ambiguity

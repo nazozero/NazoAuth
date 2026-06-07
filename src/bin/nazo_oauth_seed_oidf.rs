@@ -48,6 +48,7 @@ struct ClientUpsert<'a> {
     allow_client_assertion_audience_array: bool,
     allow_client_assertion_endpoint_audience: bool,
     require_par_request_object: bool,
+    allow_authorization_code_without_pkce: bool,
     require_mtls_bound_tokens: bool,
     tls_client_auth_subject_dn: Option<&'a str>,
     tls_client_auth_cert_sha256: Option<&'a str>,
@@ -199,13 +200,14 @@ fn upsert_client(connection: &mut PgConnection, client: ClientUpsert<'_>) -> any
             allow_client_assertion_audience_array,
             allow_client_assertion_endpoint_audience,
             require_par_request_object,
+            allow_authorization_code_without_pkce,
             jwks,
             is_active
         )
         VALUES (
             $17::uuid, $18::uuid, $19::uuid,
             $1, $2, 'confidential', $3, $4, $5, $6, $7, $8,
-            $9, $10, $11, $12, $13, $14, $15, $16, TRUE
+            $9, $10, $11, $12, $13, $14, $15, $20, $16, TRUE
         )
         ON CONFLICT (tenant_id, client_id) DO UPDATE
         SET client_name = EXCLUDED.client_name,
@@ -223,6 +225,7 @@ fn upsert_client(connection: &mut PgConnection, client: ClientUpsert<'_>) -> any
             allow_client_assertion_audience_array = EXCLUDED.allow_client_assertion_audience_array,
             allow_client_assertion_endpoint_audience = EXCLUDED.allow_client_assertion_endpoint_audience,
             require_par_request_object = EXCLUDED.require_par_request_object,
+            allow_authorization_code_without_pkce = EXCLUDED.allow_authorization_code_without_pkce,
             jwks = EXCLUDED.jwks,
             is_active = TRUE,
             updated_at = CURRENT_TIMESTAMP
@@ -251,6 +254,7 @@ fn upsert_client(connection: &mut PgConnection, client: ClientUpsert<'_>) -> any
     .bind::<diesel::sql_types::VarChar, _>(DEFAULT_TENANT_ID)
     .bind::<diesel::sql_types::VarChar, _>(DEFAULT_REALM_ID)
     .bind::<diesel::sql_types::VarChar, _>(DEFAULT_ORGANIZATION_ID)
+    .bind::<diesel::sql_types::Bool, _>(client.allow_authorization_code_without_pkce)
     .execute(connection)?;
     Ok(())
 }
@@ -458,6 +462,7 @@ fn main() -> anyhow::Result<()> {
             allow_client_assertion_audience_array: false,
             allow_client_assertion_endpoint_audience: false,
             require_par_request_object: false,
+            allow_authorization_code_without_pkce: true,
             require_mtls_bound_tokens: false,
             tls_client_auth_subject_dn: None,
             tls_client_auth_cert_sha256: None,
@@ -479,6 +484,7 @@ fn main() -> anyhow::Result<()> {
             allow_client_assertion_audience_array: false,
             allow_client_assertion_endpoint_audience: false,
             require_par_request_object: false,
+            allow_authorization_code_without_pkce: true,
             require_mtls_bound_tokens: false,
             tls_client_auth_subject_dn: None,
             tls_client_auth_cert_sha256: None,
@@ -500,6 +506,7 @@ fn main() -> anyhow::Result<()> {
             allow_client_assertion_audience_array: false,
             allow_client_assertion_endpoint_audience: false,
             require_par_request_object: false,
+            allow_authorization_code_without_pkce: true,
             require_mtls_bound_tokens: false,
             tls_client_auth_subject_dn: None,
             tls_client_auth_cert_sha256: None,
@@ -570,6 +577,7 @@ fn main() -> anyhow::Result<()> {
                     .policy
                     .allow_client_assertion_endpoint_audience,
                 require_par_request_object: seed.policy.require_par_request_object,
+                allow_authorization_code_without_pkce: false,
                 require_mtls_bound_tokens: seed.policy.require_mtls_bound_tokens,
                 tls_client_auth_subject_dn: None,
                 tls_client_auth_cert_sha256: seed.tls_client_auth_cert_sha256.as_deref(),

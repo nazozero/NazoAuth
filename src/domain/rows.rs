@@ -185,6 +185,8 @@ pub(crate) struct ClientRow {
     #[diesel(sql_type = diesel::sql_types::Bool)]
     pub(crate) require_par_request_object: bool,
     #[diesel(sql_type = diesel::sql_types::Bool)]
+    pub(crate) allow_authorization_code_without_pkce: bool,
+    #[diesel(sql_type = diesel::sql_types::Bool)]
     pub(crate) is_active: bool,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Jsonb>)]
     pub(crate) jwks: Option<Value>,

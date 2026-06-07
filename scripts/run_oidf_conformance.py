@@ -621,15 +621,18 @@ def oidf_api_request(
     method: str,
     base_url: str,
     path: str,
-    token: str,
+    token: str | None,
     *,
     query: dict[str, str | int] | None = None,
     expected_statuses: set[int],
 ) -> tuple[int, object | None]:
+    headers = {"Accept": "application/json"}
+    if token is not None:
+        headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(
         api_url(base_url, path, query),
         method=method,
-        headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+        headers=headers,
     )
     attempts = 3
     last_error: Exception | None = None
@@ -1162,6 +1165,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--config-file-name", default="oidf-plan-config.json")
     parser.add_argument("--token-env", default="OIDF_CONFORMANCE_TOKEN")
+    parser.add_argument(
+        "--no-api-token",
+        action="store_true",
+        help=(
+            "do not send a conformance API bearer token; intended only for "
+            "local devmode conformance-suite instances"
+        ),
+    )
     parser.add_argument("--export-dir", default="")
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--disable-ssl-verify", action="store_true")
@@ -1198,7 +1209,7 @@ def run_official_runner(
     timeout_seconds: int,
     conformance_server: str,
     aliases: set[str],
-    token: str,
+    token: str | None,
     monitor_interval_seconds: int,
 ) -> int:
     if timeout_seconds <= 0:
@@ -1322,12 +1333,17 @@ def main() -> int:
 
     env = os.environ.copy()
     env["CONFORMANCE_SERVER"] = args.conformance_server
-    env["CONFORMANCE_TOKEN"] = non_empty_env(args.token_env)
+    token = None if args.no_api_token else non_empty_env(args.token_env)
+    if token is not None:
+        env["CONFORMANCE_TOKEN"] = token
+    else:
+        env.pop("CONFORMANCE_TOKEN", None)
+        env["CONFORMANCE_DEV_MODE"] = "1"
     if args.disable_ssl_verify:
         env["DISABLE_SSL_VERIFY"] = "1"
 
     if not args.list and not args.rerun:
-        cleanup_existing_alias_plans(args.conformance_server, env["CONFORMANCE_TOKEN"], aliases)
+        cleanup_existing_alias_plans(args.conformance_server, token, aliases)
 
     command = [sys.executable, str(runner)]
     if args.list:
@@ -1353,7 +1369,7 @@ def main() -> int:
         args.timeout_seconds,
         args.conformance_server,
         set() if args.list else aliases,
-        env["CONFORMANCE_TOKEN"],
+        token,
         args.monitor_interval_seconds,
     )
 

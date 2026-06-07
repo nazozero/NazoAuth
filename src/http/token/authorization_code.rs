@@ -97,6 +97,7 @@ fn authorization_code_requires_pkce(client: &ClientRow, payload: &CodePayload) -
         || client.require_mtls_bound_tokens
         || payload.dpop_jkt.is_some()
         || payload.mtls_x5t_s256.is_some()
+        || !client.allow_authorization_code_without_pkce
 }
 
 fn authorization_code_dpop_error_response(error: DpopError) -> HttpResponse {
@@ -437,6 +438,41 @@ async fn mark_failed_authorization_code(state: &AppState, code_hash: &str, error
 mod tests {
     use super::*;
 
+    fn pkce_policy_client() -> ClientRow {
+        ClientRow {
+            id: Uuid::now_v7(),
+            tenant_id: DEFAULT_TENANT_ID,
+            realm_id: DEFAULT_REALM_ID,
+            organization_id: DEFAULT_ORGANIZATION_ID,
+            client_id: "client-1".to_owned(),
+            client_name: "Client".to_owned(),
+            client_type: "confidential".to_owned(),
+            client_secret_argon2_hash: None,
+            redirect_uris: json!(["https://client.example/callback"]),
+            scopes: json!(["openid"]),
+            allowed_audiences: json!(["resource://default"]),
+            grant_types: json!(["authorization_code"]),
+            token_endpoint_auth_method: "client_secret_basic".to_owned(),
+            require_dpop_bound_tokens: false,
+            require_mtls_bound_tokens: false,
+            tls_client_auth_subject_dn: None,
+            tls_client_auth_cert_sha256: None,
+            tls_client_auth_san_dns: json!([]),
+            tls_client_auth_san_uri: json!([]),
+            tls_client_auth_san_ip: json!([]),
+            tls_client_auth_san_email: json!([]),
+            allow_client_assertion_audience_array: false,
+            allow_client_assertion_endpoint_audience: false,
+            require_par_request_object: false,
+            allow_authorization_code_without_pkce: false,
+            is_active: true,
+            jwks: None,
+            post_logout_redirect_uris: json!([]),
+            backchannel_logout_uri: None,
+            backchannel_logout_session_required: true,
+        }
+    }
+
     fn code_payload(redirect_uri_was_supplied: bool) -> CodePayload {
         let now = Utc::now();
         CodePayload {
@@ -492,6 +528,42 @@ mod tests {
         assert!(!redirect_uri_matches_authorization_request(
             &payload,
             Some("https://client.example/callback/")
+        ));
+    }
+
+    #[test]
+    fn authorization_code_pkce_policy_allows_only_explicit_confidential_compatibility() {
+        let mut client = pkce_policy_client();
+        let payload = code_payload(false);
+        assert!(authorization_code_requires_pkce(&client, &payload));
+
+        client.allow_authorization_code_without_pkce = true;
+        assert!(!authorization_code_requires_pkce(&client, &payload));
+
+        client.client_type = "public".to_owned();
+        assert!(authorization_code_requires_pkce(&client, &payload));
+
+        client.client_type = "confidential".to_owned();
+        client.require_dpop_bound_tokens = true;
+        assert!(authorization_code_requires_pkce(&client, &payload));
+
+        client.require_dpop_bound_tokens = false;
+        client.require_mtls_bound_tokens = true;
+        assert!(authorization_code_requires_pkce(&client, &payload));
+
+        client.require_mtls_bound_tokens = false;
+        let mut holder_bound_payload = code_payload(false);
+        holder_bound_payload.dpop_jkt = Some("thumbprint".to_owned());
+        assert!(authorization_code_requires_pkce(
+            &client,
+            &holder_bound_payload
+        ));
+
+        holder_bound_payload.dpop_jkt = None;
+        holder_bound_payload.mtls_x5t_s256 = Some("thumbprint".to_owned());
+        assert!(authorization_code_requires_pkce(
+            &client,
+            &holder_bound_payload
         ));
     }
 
