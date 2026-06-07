@@ -1,6 +1,6 @@
 //! 管理端客户端更新端点。
 // PATCH 请求只覆盖显式提交的字段，其余字段保持数据库当前值。
-use super::create::{trim_optional_string, trim_string_vec};
+use super::create::{trim_optional_string, trim_string_vec, validate_pkce_compatibility_policy};
 use crate::http::prelude::*;
 
 #[derive(Deserialize)]
@@ -15,6 +15,7 @@ pub(crate) struct PatchClientRequest {
     allow_client_assertion_audience_array: Option<bool>,
     allow_client_assertion_endpoint_audience: Option<bool>,
     require_par_request_object: Option<bool>,
+    allow_authorization_code_without_pkce: Option<bool>,
     backchannel_logout_uri: Option<String>,
     backchannel_logout_session_required: Option<bool>,
     tls_client_auth_subject_dn: Option<String>,
@@ -98,6 +99,9 @@ pub(crate) async fn admin_patch_client(
     let new_require_par_request_object = payload
         .require_par_request_object
         .unwrap_or(current.require_par_request_object);
+    let new_allow_authorization_code_without_pkce = payload
+        .allow_authorization_code_without_pkce
+        .unwrap_or(current.allow_authorization_code_without_pkce);
     let new_backchannel_logout_uri = payload
         .backchannel_logout_uri
         .map(Some)
@@ -152,24 +156,31 @@ pub(crate) async fn admin_patch_client(
     let new_tls_client_auth_san_ip_values = json_array_to_strings(&new_tls_client_auth_san_ip);
     let new_tls_client_auth_san_email_values =
         json_array_to_strings(&new_tls_client_auth_san_email);
-    if let Err(error) = validate_client_metadata(ClientMetadata {
-        client_type: &current.client_type,
-        redirect_uris: &new_redirect_uri_values,
-        post_logout_redirect_uris: &new_post_logout_redirect_uri_values,
-        scopes: &new_scope_values,
-        allowed_audiences: &new_audience_values,
-        grant_types: &new_grant_type_values,
-        token_endpoint_auth_method: &current.token_endpoint_auth_method,
-        backchannel_logout_uri: new_backchannel_logout_uri.as_deref(),
-        jwks: new_jwks.as_ref(),
-        mtls_binding: Some(&ClientMtlsMetadata {
-            tls_client_auth_subject_dn: new_tls_client_auth_subject_dn.clone(),
-            tls_client_auth_cert_sha256: new_tls_client_auth_cert_sha256.clone(),
-            tls_client_auth_san_dns: new_tls_client_auth_san_dns_values,
-            tls_client_auth_san_uri: new_tls_client_auth_san_uri_values,
-            tls_client_auth_san_ip: new_tls_client_auth_san_ip_values,
-            tls_client_auth_san_email: new_tls_client_auth_san_email_values,
-        }),
+    if let Err(error) = validate_pkce_compatibility_policy(
+        new_allow_authorization_code_without_pkce,
+        &current.client_type,
+        new_require_dpop_bound_tokens,
+    )
+    .and_then(|()| {
+        validate_client_metadata(ClientMetadata {
+            client_type: &current.client_type,
+            redirect_uris: &new_redirect_uri_values,
+            post_logout_redirect_uris: &new_post_logout_redirect_uri_values,
+            scopes: &new_scope_values,
+            allowed_audiences: &new_audience_values,
+            grant_types: &new_grant_type_values,
+            token_endpoint_auth_method: &current.token_endpoint_auth_method,
+            backchannel_logout_uri: new_backchannel_logout_uri.as_deref(),
+            jwks: new_jwks.as_ref(),
+            mtls_binding: Some(&ClientMtlsMetadata {
+                tls_client_auth_subject_dn: new_tls_client_auth_subject_dn.clone(),
+                tls_client_auth_cert_sha256: new_tls_client_auth_cert_sha256.clone(),
+                tls_client_auth_san_dns: new_tls_client_auth_san_dns_values,
+                tls_client_auth_san_uri: new_tls_client_auth_san_uri_values,
+                tls_client_auth_san_ip: new_tls_client_auth_san_ip_values,
+                tls_client_auth_san_email: new_tls_client_auth_san_email_values,
+            }),
+        })
     }) {
         return oauth_error(
             StatusCode::BAD_REQUEST,
@@ -204,6 +215,8 @@ pub(crate) async fn admin_patch_client(
         oauth_clients::allow_client_assertion_endpoint_audience
             .eq(new_allow_client_assertion_endpoint_audience),
         oauth_clients::require_par_request_object.eq(new_require_par_request_object),
+        oauth_clients::allow_authorization_code_without_pkce
+            .eq(new_allow_authorization_code_without_pkce),
         oauth_clients::backchannel_logout_uri.eq(new_backchannel_logout_uri),
         oauth_clients::backchannel_logout_session_required
             .eq(new_backchannel_logout_session_required),

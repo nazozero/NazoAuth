@@ -23,6 +23,8 @@ pub(crate) struct CreateClientRequest {
     #[serde(default)]
     pub(crate) require_par_request_object: bool,
     #[serde(default)]
+    pub(crate) allow_authorization_code_without_pkce: bool,
+    #[serde(default)]
     pub(crate) backchannel_logout_uri: Option<String>,
     #[serde(default = "default_backchannel_logout_session_required")]
     pub(crate) backchannel_logout_session_required: bool,
@@ -61,6 +63,7 @@ pub(crate) struct PreparedClientInsert {
     pub(crate) allow_client_assertion_audience_array: bool,
     pub(crate) allow_client_assertion_endpoint_audience: bool,
     pub(crate) require_par_request_object: bool,
+    pub(crate) allow_authorization_code_without_pkce: bool,
     pub(crate) backchannel_logout_uri: Option<String>,
     pub(crate) backchannel_logout_session_required: bool,
     pub(crate) tls_client_auth_subject_dn: Option<String>,
@@ -183,6 +186,7 @@ pub(crate) fn prepare_client_insert(
         allow_client_assertion_audience_array: payload.allow_client_assertion_audience_array,
         allow_client_assertion_endpoint_audience: payload.allow_client_assertion_endpoint_audience,
         require_par_request_object: payload.require_par_request_object,
+        allow_authorization_code_without_pkce: payload.allow_authorization_code_without_pkce,
         backchannel_logout_uri: trim_optional_string(payload.backchannel_logout_uri),
         backchannel_logout_session_required: payload.backchannel_logout_session_required,
         tls_client_auth_subject_dn: trim_optional_string(payload.tls_client_auth_subject_dn),
@@ -222,6 +226,8 @@ pub(crate) async fn insert_prepared_client(
             oauth_clients::allow_client_assertion_endpoint_audience
                 .eq(prepared.allow_client_assertion_endpoint_audience),
             oauth_clients::require_par_request_object.eq(prepared.require_par_request_object),
+            oauth_clients::allow_authorization_code_without_pkce
+                .eq(prepared.allow_authorization_code_without_pkce),
             oauth_clients::backchannel_logout_uri.eq(&prepared.backchannel_logout_uri),
             oauth_clients::backchannel_logout_session_required
                 .eq(prepared.backchannel_logout_session_required),
@@ -241,6 +247,11 @@ pub(crate) async fn insert_prepared_client(
 
 /// 校验客户端注册请求的协议约束。
 fn validate_client_payload(payload: &CreateClientRequest) -> anyhow::Result<()> {
+    validate_pkce_compatibility_policy(
+        payload.allow_authorization_code_without_pkce,
+        &payload.client_type,
+        payload.require_dpop_bound_tokens,
+    )?;
     validate_client_metadata(ClientMetadata {
         client_type: &payload.client_type,
         redirect_uris: &payload.redirect_uris,
@@ -262,6 +273,23 @@ fn validate_client_payload(payload: &CreateClientRequest) -> anyhow::Result<()> 
     })
 }
 
+pub(crate) fn validate_pkce_compatibility_policy(
+    allow_authorization_code_without_pkce: bool,
+    client_type: &str,
+    require_dpop_bound_tokens: bool,
+) -> anyhow::Result<()> {
+    if !allow_authorization_code_without_pkce {
+        return Ok(());
+    }
+    if client_type != "confidential" {
+        anyhow::bail!("PKCE compatibility exceptions are limited to confidential clients");
+    }
+    if require_dpop_bound_tokens {
+        anyhow::bail!("DPoP-bound clients must use PKCE");
+    }
+    Ok(())
+}
+
 fn default_backchannel_logout_session_required() -> bool {
     true
 }
@@ -278,4 +306,17 @@ pub(crate) fn trim_string_vec(values: Vec<String>) -> Vec<String> {
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty())
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pkce_compatibility_exception_is_limited_to_confidential_non_dpop_clients() {
+        assert!(validate_pkce_compatibility_policy(false, "public", true).is_ok());
+        assert!(validate_pkce_compatibility_policy(true, "confidential", false).is_ok());
+        assert!(validate_pkce_compatibility_policy(true, "public", false).is_err());
+        assert!(validate_pkce_compatibility_policy(true, "confidential", true).is_err());
+    }
 }
