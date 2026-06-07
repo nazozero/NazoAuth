@@ -551,6 +551,7 @@ pub(crate) struct IdTokenInput<'a> {
     pub(crate) nonce: Option<String>,
     pub(crate) auth_time: Option<i64>,
     pub(crate) amr: &'a [String],
+    pub(crate) sid: Option<&'a str>,
     pub(crate) acr: Option<&'a str>,
     pub(crate) extra_claims: Option<&'a Value>,
     pub(crate) ttl: i64,
@@ -561,15 +562,31 @@ pub(crate) fn make_id_token(
     input: IdTokenInput<'_>,
 ) -> jsonwebtoken::errors::Result<String> {
     let now = Utc::now().timestamp();
+    let claims = id_token_claims(&state.settings.issuer, &input, now);
+    let mut header = jsonwebtoken::Header::new(state.keyset.active_alg);
+    header.typ = Some("JWT".to_string());
+    header.kid = Some(state.keyset.active_kid.clone());
+    jsonwebtoken::encode(
+        &header,
+        &Value::Object(claims),
+        &state.keyset.active_encoding_key(),
+    )
+}
+
+fn id_token_claims(
+    issuer: &str,
+    input: &IdTokenInput<'_>,
+    now: i64,
+) -> serde_json::Map<String, Value> {
     let mut claims = serde_json::Map::new();
-    claims.insert("iss".to_owned(), json!(state.settings.issuer));
+    claims.insert("iss".to_owned(), json!(issuer));
     claims.insert("sub".to_owned(), json!(input.subject));
     claims.insert("aud".to_owned(), json!(input.client_id));
     claims.insert("iat".to_owned(), json!(now));
     claims.insert("nbf".to_owned(), json!(now));
     claims.insert("exp".to_owned(), json!(now + input.ttl));
     claims.insert("jti".to_owned(), json!(Uuid::now_v7().to_string()));
-    if let Some(nonce) = input.nonce {
+    if let Some(nonce) = &input.nonce {
         claims.insert("nonce".to_owned(), json!(nonce));
     }
     if let Some(auth_time) = input.auth_time {
@@ -577,6 +594,9 @@ pub(crate) fn make_id_token(
     }
     if !input.amr.is_empty() {
         claims.insert("amr".to_owned(), json!(input.amr));
+    }
+    if let Some(sid) = input.sid {
+        claims.insert("sid".to_owned(), json!(sid));
     }
     if let Some(acr) = input.acr {
         claims.insert("acr".to_owned(), json!(acr));
@@ -595,16 +615,14 @@ pub(crate) fn make_id_token(
                     | "nonce"
                     | "auth_time"
                     | "amr"
+                    | "sid"
                     | "acr"
             ) {
                 claims.insert(key.clone(), value.clone());
             }
         }
     }
-    let mut header = jsonwebtoken::Header::new(state.keyset.active_alg);
-    header.typ = Some("JWT".to_string());
-    header.kid = Some(state.keyset.active_kid.clone());
-    jsonwebtoken::encode(&header, &claims, &state.keyset.active_encoding_key())
+    claims
 }
 
 pub(crate) struct AuthorizationResponseJwtInput<'a> {
@@ -797,6 +815,35 @@ mod tests {
         assert!(!claims.contains_key("state"));
         assert!(!claims.contains_key("code"));
         assert_eq!(claims.get("error"), Some(&json!("invalid_request")));
+    }
+
+    #[test]
+    fn id_token_claims_include_independent_sid_and_protect_reserved_claims() {
+        let amr = vec!["password".to_owned()];
+        let extra_claims = json!({
+            "sid": "attacker-controlled-sid",
+            "email": "alice@example.com"
+        });
+        let input = IdTokenInput {
+            subject: "subject-1",
+            client_id: "client-1",
+            nonce: Some("nonce-1".to_owned()),
+            auth_time: Some(1_000),
+            amr: &amr,
+            sid: Some("server-session-sid"),
+            acr: Some("urn:acr:1"),
+            extra_claims: Some(&extra_claims),
+            ttl: 600,
+        };
+
+        let claims = id_token_claims("https://issuer.example", &input, 2_000);
+
+        assert_eq!(claims.get("sid"), Some(&json!("server-session-sid")));
+        assert_eq!(claims.get("email"), Some(&json!("alice@example.com")));
+        assert_eq!(claims.get("nonce"), Some(&json!("nonce-1")));
+        assert_eq!(claims.get("auth_time"), Some(&json!(1_000)));
+        assert_eq!(claims.get("amr"), Some(&json!(["password"])));
+        assert_eq!(claims.get("acr"), Some(&json!("urn:acr:1")));
     }
 
     #[test]

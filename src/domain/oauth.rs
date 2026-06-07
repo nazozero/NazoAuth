@@ -67,6 +67,8 @@ pub(crate) struct ConsentPayload {
     pub(crate) auth_time: i64,
     pub(crate) amr: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) oidc_sid: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) acr: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) userinfo_claims: Vec<String>,
@@ -114,6 +116,8 @@ pub(crate) struct CodePayload {
     pub(crate) nonce: Option<String>,
     pub(crate) auth_time: i64,
     pub(crate) amr: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) oidc_sid: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) acr: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -175,6 +179,7 @@ pub(crate) struct TokenIssue {
     pub(crate) nonce: Option<String>,
     pub(crate) auth_time: Option<i64>,
     pub(crate) amr: Vec<String>,
+    pub(crate) oidc_sid: Option<String>,
     pub(crate) acr: Option<String>,
     pub(crate) userinfo_claims: Vec<String>,
     pub(crate) userinfo_claim_requests: Vec<OidcClaimRequest>,

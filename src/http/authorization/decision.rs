@@ -171,6 +171,7 @@ pub(crate) async fn authorize_decision(
         nonce: payload.nonce,
         auth_time: payload.auth_time,
         amr: payload.amr,
+        oidc_sid: payload.oidc_sid,
         acr: payload.acr,
         userinfo_claims: payload.userinfo_claims,
         userinfo_claim_requests: payload.userinfo_claim_requests,

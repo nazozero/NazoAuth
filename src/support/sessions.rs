@@ -8,12 +8,15 @@ pub(crate) struct SessionPayload {
     pub(crate) user_id: Uuid,
     pub(crate) auth_time: i64,
     pub(crate) amr: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) oidc_sid: Option<String>,
 }
 
 pub(crate) struct CurrentSession {
     pub(crate) user: UserRow,
     pub(crate) auth_time: i64,
     pub(crate) amr: Vec<String>,
+    pub(crate) oidc_sid: Option<String>,
 }
 
 pub(crate) async fn current_user(
@@ -37,7 +40,16 @@ pub(crate) async fn current_session(
         return Ok(None);
     };
     let payload = match serde_json::from_str::<SessionPayload>(&raw) {
-        Ok(payload) if payload.auth_time > 0 && !payload.amr.is_empty() => payload,
+        Ok(payload)
+            if payload.auth_time > 0
+                && !payload.amr.is_empty()
+                && payload
+                    .oidc_sid
+                    .as_deref()
+                    .is_none_or(|sid| !sid.trim().is_empty()) =>
+        {
+            payload
+        }
         Ok(_) => {
             tracing::warn!("session payload contains invalid authentication metadata");
             let _ = valkey_del(&state.valkey, session_key).await;
@@ -60,6 +72,7 @@ pub(crate) async fn current_session(
         user,
         auth_time: payload.auth_time,
         amr: payload.amr,
+        oidc_sid: payload.oidc_sid,
     }))
 }
 

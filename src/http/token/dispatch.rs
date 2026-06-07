@@ -501,6 +501,7 @@ mod tests {
             nonce: None,
             auth_time: 1,
             amr: vec!["pwd".to_owned()],
+            oidc_sid: Some("sid-1".to_owned()),
             acr: None,
             userinfo_claims: Vec::new(),
             userinfo_claim_requests: Vec::new(),

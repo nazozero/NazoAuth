@@ -65,6 +65,7 @@ pub(crate) async fn login(
         user_id: user.id,
         auth_time: Utc::now().timestamp(),
         amr: vec!["password".to_owned()],
+        oidc_sid: Some(random_urlsafe_token()),
     };
     let session_body = match serde_json::to_string(&session) {
         Ok(body) => body,
