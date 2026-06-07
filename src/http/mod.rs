@@ -3,6 +3,7 @@ mod auth;
 mod authorization;
 mod fapi_resource;
 mod profile;
+mod scim;
 mod token;
 mod well_known;
 
@@ -11,6 +12,7 @@ pub(crate) use auth::*;
 pub(crate) use authorization::*;
 pub(crate) use fapi_resource::*;
 pub(crate) use profile::*;
+pub(crate) use scim::*;
 pub(crate) use token::*;
 pub(crate) use well_known::*;
 

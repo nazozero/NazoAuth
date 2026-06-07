@@ -1020,6 +1020,7 @@ printf '{"signature":"%s"}' "$signature"
             pairwise_subject_secret: None,
             par_ttl_seconds: 90,
             require_pushed_authorization_requests: false,
+            scim_bearer_token: None,
         }
     }
 }

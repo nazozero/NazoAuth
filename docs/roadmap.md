@@ -100,7 +100,7 @@ The roadmap separates three concerns that must not be mixed:
 - [x] Add TOTP, backup codes, remembered MFA, and step-up authentication. See `docs/mfa.md` and migration `20260607000500_totp_mfa_step_up`.
 - [ ] Add external OIDC/SAML identity provider federation.
 - [x] Add tenant/realm/organization boundaries. See `docs/tenancy.md` and migration `20260607000400_tenant_realm_organization_boundaries`.
-- [ ] Add SCIM 2.0 for enterprise provisioning.
+- [x] Add SCIM 2.0 for enterprise provisioning. See `docs/scim.md`.
 
 ## P2: Rust Ecosystem
 

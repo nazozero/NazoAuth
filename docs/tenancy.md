@@ -26,4 +26,4 @@ JWT access tokens include a private `tenant_id` claim. Resource endpoints and to
 
 ## Product Boundaries
 
-The current runtime remains single-tenant by default. External OIDC/SAML federation and SCIM provisioning must bind inbound identities, groups, and client metadata to an explicit tenant, realm, and organization before creating users, sessions, grants, or clients.
+The current runtime remains single-tenant by default. SCIM provisioning binds users to the default tenant, realm, and organization. External OIDC/SAML federation and any future multi-tenant SCIM resolver must bind inbound identities, groups, and client metadata to an explicit tenant, realm, and organization before creating users, sessions, grants, or clients.

@@ -46,6 +46,7 @@ pub(crate) struct Settings {
     pub(crate) pairwise_subject_secret: Option<String>,
     pub(crate) par_ttl_seconds: u64,
     pub(crate) require_pushed_authorization_requests: bool,
+    pub(crate) scim_bearer_token: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -203,6 +204,7 @@ impl Settings {
             pairwise_subject_secret,
             par_ttl_seconds: config.parse("PAR_TTL_SECONDS", 90)?,
             require_pushed_authorization_requests,
+            scim_bearer_token: config.optional_string("SCIM_BEARER_TOKEN"),
         })
     }
 }

@@ -42,6 +42,24 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig) {
                 .route(web::get().to(userinfo))
                 .route(web::post().to(userinfo)),
         )
+        .route(
+            "/scim/v2/ServiceProviderConfig",
+            web::get().to(scim_service_provider_config),
+        )
+        .route("/scim/v2/Schemas", web::get().to(scim_schemas))
+        .route("/scim/v2/ResourceTypes", web::get().to(scim_resource_types))
+        .service(
+            web::resource("/scim/v2/Users")
+                .route(web::get().to(scim_list_users))
+                .route(web::post().to(scim_create_user)),
+        )
+        .service(
+            web::resource("/scim/v2/Users/{user_id}")
+                .route(web::get().to(scim_get_user))
+                .route(web::put().to(scim_replace_user))
+                .route(web::patch().to(scim_patch_user))
+                .route(web::delete().to(scim_delete_user)),
+        )
         .service(
             web::scope("/auth")
                 .route("/captcha-config", web::get().to(captcha_config))
