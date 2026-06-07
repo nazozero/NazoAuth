@@ -12,6 +12,8 @@ The format follows Keep a Changelog style, and this project uses semantic versio
 - Added a production deployment guide covering container deployment, reverse proxy boundaries, key rotation, database and Valkey operations, live verification, and OIDF readiness.
 - Added `SECURITY.md` with reporting guidance, vulnerability classes, production boundaries, and disclosure expectations.
 - Added `docs/roadmap.md`, converting the latest static review into a maintained checklist.
+- Added `docs/profile-matrix.md`, separating OAuth/OIDC, FAPI2 Security, FAPI2 Message Signing, deployment-security, and product-hardening requirements.
+- Added `docs/threat-model.md` and `docs/refresh-token-rotation.md` for security boundary and refresh-token state-machine tracking.
 - Added `CHANGELOG.md`.
 - Added token endpoint support for the standard RFC 8707 `resource` parameter as the normative single-resource input, while retaining the legacy `audience` parameter as an extension.
 
@@ -20,11 +22,14 @@ The format follows Keep a Changelog style, and this project uses semantic versio
 - Reworked `README.md` into a project-level entry point with status, feature scope, quick start, architecture, configuration, conformance, deployment, development, and security posture sections.
 - Sanitized generic OAuth JSON `error_description` values so protocol responses use ASCII-safe descriptions consistently.
 - Made the Argon2 password hash policy explicit: Argon2id, version 19, 19456 KiB memory, time cost 2, parallelism 1.
+- Tightened proxy-terminated mTLS handling so forwarded certificate evidence is accepted only from configured trusted proxy CIDRs and duplicate forwarded certificate headers must agree on the same SHA-256 thumbprint.
+- Marked `client_secret_post` as a compatibility client authentication method in project documentation and recommended `private_key_jwt` or mTLS for high-security clients.
 
 ### Fixed
 
 - Reject token requests that send conflicting `resource` and `audience` inputs.
 - Reject token requests whose `resource` value is not an absolute URI or contains a fragment.
+- Fixed refresh-token lost-response recovery to allow only a short post-rotation retry window instead of accepting old tokens only after the window had elapsed.
 - Removed `session_id` from successful login JSON responses; the session identifier is carried only by the HTTPOnly session cookie.
 
 ### Ignored

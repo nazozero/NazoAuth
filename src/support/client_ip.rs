@@ -80,10 +80,7 @@ pub(crate) fn client_ip(req: &HttpRequest, settings: &Settings) -> String {
         return "unknown".to_owned();
     };
     if settings.client_ip_header_mode == ClientIpHeaderMode::None
-        || !settings
-            .trusted_proxy_cidrs
-            .iter()
-            .any(|cidr| cidr.contains(peer_ip))
+        || !trusted_proxy_peer_ip(peer_ip, settings)
     {
         return peer_ip.to_string();
     }
@@ -93,6 +90,19 @@ pub(crate) fn client_ip(req: &HttpRequest, settings: &Settings) -> String {
         ClientIpHeaderMode::XForwardedFor => x_forwarded_for_client_ip(req, settings),
     };
     parsed.unwrap_or(peer_ip).to_string()
+}
+
+pub(crate) fn request_from_trusted_proxy(req: &HttpRequest, settings: &Settings) -> bool {
+    req.peer_addr()
+        .map(|addr| trusted_proxy_peer_ip(addr.ip(), settings))
+        .unwrap_or(false)
+}
+
+fn trusted_proxy_peer_ip(peer_ip: IpAddr, settings: &Settings) -> bool {
+    settings
+        .trusted_proxy_cidrs
+        .iter()
+        .any(|cidr| cidr.contains(peer_ip))
 }
 
 fn forwarded_client_ip(req: &HttpRequest) -> Option<IpAddr> {

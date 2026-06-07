@@ -3,8 +3,7 @@
 
 use super::prelude::*;
 use super::{
-    audit_event, audit_fields, request_mtls_thumbprint_from_headers, signing_algorithm_name,
-    valkey_set_ex_nx,
+    audit_event, audit_fields, request_mtls_thumbprint, signing_algorithm_name, valkey_set_ex_nx,
 };
 
 const ARGON2_MEMORY_COST_KIB: u32 = 19_456;
@@ -106,12 +105,14 @@ pub(crate) fn has_basic_authorization_scheme(headers: &HeaderMap) -> bool {
 }
 
 pub(crate) fn extract_client_credentials(
-    headers: &HeaderMap,
+    req: &HttpRequest,
+    settings: &Settings,
     form_client_id: Option<&str>,
     form_secret: Option<&str>,
     form_assertion_type: Option<&str>,
     form_assertion: Option<&str>,
 ) -> ClientCredentials {
+    let headers = req.headers();
     if form_assertion_type.is_some() || form_assertion.is_some() {
         let client_id = form_assertion
             .filter(|_| form_assertion_type == Some(CLIENT_ASSERTION_TYPE_JWT_BEARER))
@@ -145,7 +146,7 @@ pub(crate) fn extract_client_credentials(
             client_assertion: None,
             method: "client_secret_post".to_owned(),
         },
-        Some(id) if request_mtls_thumbprint_from_headers(headers).is_some() => ClientCredentials {
+        Some(id) if request_mtls_thumbprint(req, settings).is_some() => ClientCredentials {
             client_id: Some(id.to_string()),
             client_secret: None,
             client_assertion: None,
@@ -638,6 +639,12 @@ pub(crate) fn decode_access_claims(state: &AppState, token: &str) -> Option<Clai
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::ConfigSource;
+    use actix_web::test::TestRequest;
+
+    fn test_settings() -> Settings {
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load")
+    }
 
     #[test]
     fn numeric_code_is_six_ascii_digits() {
@@ -702,15 +709,17 @@ mod tests {
 
     #[test]
     fn basic_client_credentials_scheme_is_case_insensitive() {
-        let mut headers = HeaderMap::new();
         let encoded = STANDARD.encode("client-1:secret-1");
-        headers.insert(
-            header::AUTHORIZATION,
-            HeaderValue::from_str(&format!("basic {encoded}")).unwrap(),
-        );
+        let req = TestRequest::default()
+            .insert_header((
+                header::AUTHORIZATION,
+                HeaderValue::from_str(&format!("basic {encoded}")).unwrap(),
+            ))
+            .to_http_request();
+        let settings = test_settings();
 
-        assert!(has_basic_authorization_scheme(&headers));
-        let credentials = extract_client_credentials(&headers, None, None, None, None);
+        assert!(has_basic_authorization_scheme(req.headers()));
+        let credentials = extract_client_credentials(&req, &settings, None, None, None, None);
 
         assert_eq!(credentials.method, "client_secret_basic");
         assert_eq!(credentials.client_id.as_deref(), Some("client-1"));
@@ -730,13 +739,12 @@ mod tests {
 
     #[test]
     fn malformed_basic_authorization_is_not_decoded_as_basic_credentials() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            header::AUTHORIZATION,
-            HeaderValue::from_static("Basic not-base64 with-space"),
-        );
+        let req = TestRequest::default()
+            .insert_header((header::AUTHORIZATION, "Basic not-base64 with-space"))
+            .to_http_request();
+        let settings = test_settings();
 
-        let credentials = extract_client_credentials(&headers, None, None, None, None);
+        let credentials = extract_client_credentials(&req, &settings, None, None, None, None);
 
         assert_eq!(credentials.method, "none");
         assert!(credentials.client_id.is_none());
@@ -862,14 +870,16 @@ mod tests {
 
     #[test]
     fn non_utf8_basic_authorization_scheme_is_detected() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            header::AUTHORIZATION,
-            HeaderValue::from_bytes(b"Basic \xff").unwrap(),
-        );
+        let req = TestRequest::default()
+            .insert_header((
+                header::AUTHORIZATION,
+                HeaderValue::from_bytes(b"Basic \xff").unwrap(),
+            ))
+            .to_http_request();
+        let settings = test_settings();
 
-        assert!(has_basic_authorization_scheme(&headers));
-        let credentials = extract_client_credentials(&headers, None, None, None, None);
+        assert!(has_basic_authorization_scheme(req.headers()));
+        let credentials = extract_client_credentials(&req, &settings, None, None, None, None);
         assert_eq!(credentials.method, "none");
     }
 }

@@ -116,7 +116,8 @@ pub(crate) async fn par(state: Data<AppState>, req: HttpRequest, body: Bytes) ->
         }
     };
     let credentials = extract_client_credentials(
-        req.headers(),
+        &req,
+        &state.settings,
         Some(&client_id),
         params.get("client_secret").map(String::as_str),
         params.get("client_assertion_type").map(String::as_str),
@@ -180,7 +181,7 @@ pub(crate) async fn par(state: Data<AppState>, req: HttpRequest, body: Bytes) ->
     }
     let dpop_jkt = request_dpop_jkt.or(header_dpop_jkt);
     let mtls_x5t_s256 = if client.require_mtls_bound_tokens {
-        request_mtls_thumbprint(&req)
+        request_mtls_thumbprint(&req, &state.settings)
     } else {
         None
     };

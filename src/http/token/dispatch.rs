@@ -34,7 +34,7 @@ async fn mtls_client_credentials_without_client_id(
     state: &AppState,
     req: &HttpRequest,
 ) -> Result<Option<ClientCredentials>, HttpResponse> {
-    let Some(thumbprint) = request_mtls_thumbprint(req) else {
+    let Some(thumbprint) = request_mtls_thumbprint(req, &state.settings) else {
         return Ok(None);
     };
     match find_active_mtls_client_by_thumbprint(&state.diesel_db, &thumbprint).await {
@@ -220,7 +220,8 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
         );
     }
     let mut credentials = extract_client_credentials(
-        req.headers(),
+        &req,
+        &state.settings,
         form.client_id.as_deref(),
         form.client_secret.as_deref(),
         form.client_assertion_type.as_deref(),
@@ -351,7 +352,7 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
                 }
             }
             "tls_client_auth" | "self_signed_tls_client_auth" => {
-                let Some(thumbprint) = request_mtls_thumbprint(&req) else {
+                let Some(thumbprint) = request_mtls_thumbprint(&req, &state.settings) else {
                     return oauth_token_error(
                         StatusCode::UNAUTHORIZED,
                         "invalid_client",

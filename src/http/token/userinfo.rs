@@ -75,7 +75,7 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Byte
         }
         (AccessTokenAuthScheme::Bearer, Some(cnf)) if cnf.x5t_s256.is_some() => {
             let expected = cnf.x5t_s256.as_deref().unwrap_or_default();
-            let Some(actual) = request_mtls_thumbprint(&req) else {
+            let Some(actual) = request_mtls_thumbprint(&req, &state.settings) else {
                 return oauth_bearer_error(
                     StatusCode::UNAUTHORIZED,
                     "invalid_token",

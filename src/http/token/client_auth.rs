@@ -50,7 +50,7 @@ pub(crate) fn verify_confidential_client(
                 .ok_or(TokenManagementClientAuthError::InvalidClient)
         }
         "tls_client_auth" | "self_signed_tls_client_auth" => {
-            let thumbprint = request_mtls_thumbprint(req)
+            let thumbprint = request_mtls_thumbprint(req, &state.settings)
                 .ok_or(TokenManagementClientAuthError::InvalidClient)?;
             client_mtls_thumbprint_matches(client, &thumbprint)
                 .then_some(None)

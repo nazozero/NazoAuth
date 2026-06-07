@@ -33,7 +33,8 @@ pub(crate) async fn introspect(
         );
     }
     let credentials = extract_client_credentials(
-        req.headers(),
+        &req,
+        &state.settings,
         form.client_id.as_deref(),
         form.client_secret.as_deref(),
         form.client_assertion_type.as_deref(),

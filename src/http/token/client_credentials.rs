@@ -26,7 +26,7 @@ pub(crate) async fn token_client_credentials(
         return dpop_error_response(DpopError::MissingProof, DpopErrorContext::TokenEndpoint);
     }
     let mtls_x5t_s256 = if client.require_mtls_bound_tokens {
-        match request_mtls_thumbprint(req) {
+        match request_mtls_thumbprint(req, &state.settings) {
             Some(value) => Some(value),
             None => {
                 return oauth_token_error(

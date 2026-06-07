@@ -7,6 +7,11 @@ use crate::http::prelude::*;
 
 const LOST_REFRESH_TOKEN_RETRY_SECONDS: i64 = 30;
 
+fn within_lost_refresh_token_retry_window(revoked_at: DateTime<Utc>, now: DateTime<Utc>) -> bool {
+    let elapsed = now.signed_duration_since(revoked_at);
+    elapsed >= Duration::zero() && elapsed <= Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS)
+}
+
 async fn mark_token_family_reuse(state: &AppState, token_family_id: Uuid) -> anyhow::Result<()> {
     let mut conn = get_conn(&state.diesel_db).await?;
     diesel::update(oauth_tokens::table.filter(oauth_tokens::token_family_id.eq(token_family_id)))
@@ -32,9 +37,7 @@ async fn lost_refresh_token_successor(
     let Some(revoked_at) = token.revoked_at else {
         return Ok(None);
     };
-    if Utc::now().signed_duration_since(revoked_at)
-        < Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS)
-    {
+    if !within_lost_refresh_token_retry_window(revoked_at, Utc::now()) {
         return Ok(None);
     }
 
@@ -63,6 +66,39 @@ async fn lost_refresh_token_successor(
         Ok(successors.pop())
     } else {
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lost_refresh_retry_allows_only_short_post_rotation_window() {
+        let now = Utc::now();
+
+        assert!(within_lost_refresh_token_retry_window(
+            now - Duration::seconds(1),
+            now
+        ));
+        assert!(within_lost_refresh_token_retry_window(
+            now - Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS),
+            now
+        ));
+        assert!(!within_lost_refresh_token_retry_window(
+            now - Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS + 1),
+            now
+        ));
+    }
+
+    #[test]
+    fn lost_refresh_retry_rejects_future_revocation_times() {
+        let now = Utc::now();
+
+        assert!(!within_lost_refresh_token_retry_window(
+            now + Duration::seconds(1),
+            now
+        ));
     }
 }
 
@@ -195,7 +231,7 @@ pub(crate) async fn token_refresh(
         );
     }
     let mtls_x5t_s256 = if let Some(expected) = token.mtls_x5t_s256.clone() {
-        match request_mtls_thumbprint(req) {
+        match request_mtls_thumbprint(req, &state.settings) {
             Some(actual) if constant_time_eq(expected.as_bytes(), actual.as_bytes()) => {
                 Some(expected)
             }
@@ -209,7 +245,7 @@ pub(crate) async fn token_refresh(
             }
         }
     } else if client.require_mtls_bound_tokens {
-        match request_mtls_thumbprint(req) {
+        match request_mtls_thumbprint(req, &state.settings) {
             Some(actual) => Some(actual),
             None => {
                 return oauth_token_error(

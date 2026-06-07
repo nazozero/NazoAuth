@@ -132,11 +132,14 @@ Production proxy requirements:
 - Terminate TLS with the public issuer hostname.
 - Forward only sanitized proxy headers to the service.
 - Strip inbound client-supplied `Forwarded`, `X-Forwarded-*`, mTLS, and certificate headers before adding trusted values.
+- Configure `TRUSTED_PROXY_CIDRS` to include only the reverse proxy addresses that are allowed to forward client IP and mTLS certificate metadata.
+- Protect the proxy-to-application hop with TLS, mTLS, or an equivalent private network boundary; forwarded certificate metadata is only meaningful on a trusted internal channel.
+- Use one certificate forwarding representation where possible. If multiple forwarded certificate thumbprint/certificate headers are present, the application rejects the request unless they resolve to the same SHA-256 certificate thumbprint.
 - Preserve the exact path for OAuth endpoints.
 - Disable response caching for protocol endpoints unless the endpoint is explicitly cacheable.
 - Ensure `/.well-known/openid-configuration`, `/.well-known/oauth-authorization-server`, `/jwks.json`, `/authorize`, `/par`, `/token`, `/userinfo`, `/introspect`, and `/revoke` are reachable as intended.
 
-For mTLS sender constraint and mTLS client authentication, the service currently relies on a trusted reverse proxy to verify the client certificate and forward certificate evidence. This is a strict trust boundary: never enable mTLS header parsing for traffic that can bypass or spoof the proxy.
+For mTLS sender constraint and mTLS client authentication, the service currently relies on a trusted reverse proxy to verify the client certificate and forward certificate evidence. This is a strict trust boundary: the application accepts forwarded certificate metadata only when the connection peer is in `TRUSTED_PROXY_CIDRS`; traffic from any other peer is treated as not having verified client certificate evidence.
 
 ## Key Rotation
 

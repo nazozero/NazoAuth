@@ -246,7 +246,7 @@ pub(crate) async fn token_authorization_code(
     if client.require_dpop_bound_tokens && dpop_jkt.is_none() {
         return authorization_code_dpop_error_response(DpopError::MissingProof);
     }
-    let request_mtls_x5t_s256 = request_mtls_thumbprint(req);
+    let request_mtls_x5t_s256 = request_mtls_thumbprint(req, &state.settings);
     let mtls_x5t_s256 = match (expected_mtls_x5t_s256, request_mtls_x5t_s256) {
         (Some(expected), Some(actual))
             if constant_time_eq(expected.as_bytes(), actual.as_bytes()) =>

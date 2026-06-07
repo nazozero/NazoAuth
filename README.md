@@ -25,7 +25,7 @@ This repository is not yet a full IAM suite like Keycloak, ZITADEL, authentik, o
 - Client credentials, refresh token, revocation, and introspection endpoints.
 - OpenID Connect discovery, OAuth Authorization Server Metadata, JWKS, ID Token, and UserInfo.
 - PAR and JAR support, including signed request objects with `EdDSA`, `RS256`, `ES256`, and `PS256`.
-- `client_secret_basic`, `client_secret_post`, `private_key_jwt`, public clients, and mTLS client authentication.
+- `client_secret_basic`, compatibility `client_secret_post`, `private_key_jwt`, public clients, and mTLS client authentication. High-security clients should use `private_key_jwt` or mTLS rather than `client_secret_post`.
 - DPoP proof validation, nonce handling, sender-constrained access tokens, and DPoP-bound UserInfo.
 - mTLS sender-constrained access tokens through a trusted reverse-proxy certificate forwarding boundary.
 - Server signing key rotation with active and previous JWKS publication.
@@ -158,7 +158,7 @@ See [.env.yaml.example](.env.yaml.example) for the complete field list.
 | `GET` | `/jwks.json` | JWKS |
 | `GET` | `/userinfo` | OIDC UserInfo |
 
-The token endpoint accepts the standard RFC 8707 `resource` parameter for a single absolute URI without a fragment. The legacy `audience` parameter is still accepted as an extension, but a request must not send both.
+The token endpoint accepts the standard RFC 8707 `resource` parameter for a single absolute URI without a fragment and maps it to the access-token audience. The legacy `audience` parameter is still accepted as a project extension, but a request must not send both.
 
 ## Key Management
 
@@ -250,5 +250,7 @@ Current high-priority boundaries:
 - ASCII-safe OAuth protocol error descriptions.
 - No-store token and protocol error responses.
 - Explicit trusted proxy configuration before forwarded headers are trusted.
+
+Refresh-token rotation for non-FAPI compatibility profiles is documented in [docs/refresh-token-rotation.md](docs/refresh-token-rotation.md). FAPI2 Security deployments should prefer sender-constrained refresh/access tokens and should not use routine rotation by default.
 
 Known roadmap items are tracked in [docs/roadmap.md](docs/roadmap.md), [CHANGELOG.md](CHANGELOG.md), and future conformance records. Priority areas include fuller OIDC claims request semantics, ACR/AMR policy, WebAuthn/passkeys, Dynamic Client Registration, RAR, broader RFC 8707 multi-resource support, richer mTLS RFC 8705 metadata matching, release signing, SBOM/provenance, and deeper supply-chain verification.
