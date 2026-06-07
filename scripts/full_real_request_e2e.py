@@ -1076,6 +1076,7 @@ def run() -> None:
                 "allowed_audiences": [DEFAULT_AUDIENCE],
                 "grant_types": ["authorization_code"],
                 "token_endpoint_auth_method": "client_secret_basic",
+                "allow_authorization_code_without_pkce": True,
                 "jwks": None,
             },
             "POST /admin/clients client_secret_basic authorization_code",
