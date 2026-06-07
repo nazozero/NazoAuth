@@ -610,6 +610,7 @@ fn id_token_claims(
                     | "jti"
                     | "nonce"
                     | "auth_time"
+                    | "azp"
                     | "amr"
                     | "sid"
                     | "acr"
@@ -814,6 +815,7 @@ mod tests {
         let amr = vec!["password".to_owned()];
         let extra_claims = json!({
             "sid": "attacker-controlled-sid",
+            "azp": "attacker-controlled-azp",
             "email": "alice@example.com"
         });
         let input = IdTokenInput {
@@ -831,6 +833,7 @@ mod tests {
         let claims = id_token_claims("https://issuer.example", &input, 2_000);
 
         assert_eq!(claims.get("sid"), Some(&json!("server-session-sid")));
+        assert!(!claims.contains_key("azp"));
         assert_eq!(claims.get("email"), Some(&json!("alice@example.com")));
         assert_eq!(claims.get("nonce"), Some(&json!("nonce-1")));
         assert_eq!(claims.get("auth_time"), Some(&json!(1_000)));

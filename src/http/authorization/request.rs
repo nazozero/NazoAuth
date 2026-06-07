@@ -68,6 +68,7 @@ struct RequestedClaims {
     userinfo: Vec<OidcClaimRequest>,
     id_token: Vec<OidcClaimRequest>,
     acr: Option<String>,
+    auth_time: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -105,16 +106,19 @@ fn requested_claims(q: &HashMap<String, String>) -> Result<RequestedClaims, ()> 
             userinfo: Vec::new(),
             id_token: Vec::new(),
             acr: None,
+            auth_time: false,
         });
     };
     let claims: Value = serde_json::from_str(raw_claims).map_err(|_| ())?;
     let userinfo = requested_claim_requests(claims.get("userinfo"))?;
     let id_token = requested_claim_requests(claims.get("id_token"))?;
     let acr = requested_acr_claim(claims.get("id_token"))?;
+    let auth_time = requested_auth_time_claim(claims.get("id_token"))?;
     Ok(RequestedClaims {
         userinfo,
         id_token,
         acr,
+        auth_time,
     })
 }
 
@@ -166,6 +170,20 @@ fn requested_acr_claim(value: Option<&Value>) -> Result<Option<String>, ()> {
         }
     }
     Ok(None)
+}
+
+fn requested_auth_time_claim(value: Option<&Value>) -> Result<bool, ()> {
+    let Some(value) = value else {
+        return Ok(false);
+    };
+    let Some(object) = value.as_object() else {
+        return Err(());
+    };
+    let Some(auth_time) = object.get("auth_time") else {
+        return Ok(false);
+    };
+    validate_claim_request(auth_time)?;
+    Ok(true)
 }
 
 fn validate_claim_request(value: &Value) -> Result<(), ()> {
@@ -230,6 +248,21 @@ fn preserve_verified_dpop_binding(q: &mut HashMap<String, String>, dpop_jkt: Opt
     {
         q.insert("dpop_jkt".to_owned(), dpop_jkt.to_owned());
     }
+}
+
+fn session_requires_reauthentication(
+    prompt: PromptDirectives,
+    max_age: Option<i64>,
+    auth_time: i64,
+    now: i64,
+) -> bool {
+    prompt.login
+        || prompt.select_account
+        || match max_age {
+            Some(0) => true,
+            Some(max_age) => now.saturating_sub(auth_time) > max_age,
+            None => false,
+        }
 }
 
 /// 校验 OAuth authorize 参数并创建待确认授权请求。
@@ -570,9 +603,7 @@ async fn authorize_request(
             prompt.login || prompt.select_account,
         ));
     };
-    if prompt.login
-        || prompt.select_account
-        || max_age.is_some_and(|max_age| Utc::now().timestamp() - session.auth_time > max_age)
+    if session_requires_reauthentication(prompt, max_age, session.auth_time, Utc::now().timestamp())
     {
         if prompt.none {
             return authorization_response_redirect(
@@ -616,7 +647,7 @@ async fn authorize_request(
         nonce: q.get("nonce").cloned(),
         auth_time: session.auth_time,
         amr: session.amr,
-        oidc_sid: session.oidc_sid,
+        oidc_sid: Some(session.oidc_sid),
         acr: requested_acr(q, requested_claims.acr),
         userinfo_claims: claim_request_names(&requested_claims.userinfo),
         userinfo_claim_requests: requested_claims.userinfo,
@@ -1074,7 +1105,7 @@ mod tests {
     fn claims_parameter_extracts_supported_user_claim_names() {
         let requested = requested_claims(&query(&[(
             "claims",
-            r#"{"userinfo":{"name":{"essential":true},"unknown":null},"id_token":{"email":{"essential":true},"acr":{"value":"urn:acr:1"}}}"#,
+            r#"{"userinfo":{"name":{"essential":true},"unknown":null},"id_token":{"email":{"essential":true},"acr":{"value":"urn:acr:1"},"auth_time":{"essential":true}}}"#,
         )]))
         .unwrap();
 
@@ -1083,6 +1114,7 @@ mod tests {
         assert_eq!(claim_request_names(&requested.id_token), vec!["email"]);
         assert!(requested.id_token[0].essential);
         assert_eq!(requested.acr, Some("urn:acr:1".to_owned()));
+        assert!(requested.auth_time);
     }
 
     #[test]
@@ -1118,6 +1150,7 @@ mod tests {
         );
         assert!(!requested.id_token[0].essential);
         assert_eq!(requested.acr, Some("urn:acr:2".to_owned()));
+        assert!(!requested.auth_time);
     }
 
     #[test]
@@ -1160,6 +1193,13 @@ mod tests {
             )]))
             .is_err()
         );
+        assert!(
+            requested_claims(&query(&[(
+                "claims",
+                r#"{"id_token":{"auth_time":{"essential":"yes"}}}"#
+            )]))
+            .is_err()
+        );
     }
 
     #[test]
@@ -1171,6 +1211,48 @@ mod tests {
         .unwrap();
 
         assert_eq!(requested.acr, Some("urn:acr:2".to_owned()));
+    }
+
+    #[test]
+    fn max_age_zero_and_prompt_directives_require_reauthentication() {
+        let prompt = PromptDirectives::default();
+
+        assert!(session_requires_reauthentication(
+            prompt,
+            Some(0),
+            1_000,
+            1_000
+        ));
+        assert!(!session_requires_reauthentication(
+            prompt,
+            Some(30),
+            1_000,
+            1_030
+        ));
+        assert!(session_requires_reauthentication(
+            prompt,
+            Some(30),
+            1_000,
+            1_031
+        ));
+        assert!(session_requires_reauthentication(
+            PromptDirectives {
+                login: true,
+                ..PromptDirectives::default()
+            },
+            None,
+            1_000,
+            1_001,
+        ));
+        assert!(session_requires_reauthentication(
+            PromptDirectives {
+                select_account: true,
+                ..PromptDirectives::default()
+            },
+            None,
+            1_000,
+            1_001,
+        ));
     }
 
     #[test]

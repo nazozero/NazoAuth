@@ -3,7 +3,7 @@
 
 use super::{login_required_response, oauth_error, prelude::*, valkey_del};
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct SessionPayload {
     pub(crate) user_id: Uuid,
     pub(crate) auth_time: i64,
@@ -16,7 +16,7 @@ pub(crate) struct CurrentSession {
     pub(crate) user: UserRow,
     pub(crate) auth_time: i64,
     pub(crate) amr: Vec<String>,
-    pub(crate) oidc_sid: Option<String>,
+    pub(crate) oidc_sid: String,
 }
 
 pub(crate) async fn current_user(
@@ -39,17 +39,9 @@ pub(crate) async fn current_session(
     let Some(raw) = valkey_get(&state.valkey, &session_key).await? else {
         return Ok(None);
     };
+    let now = Utc::now().timestamp();
     let payload = match serde_json::from_str::<SessionPayload>(&raw) {
-        Ok(payload)
-            if payload.auth_time > 0
-                && !payload.amr.is_empty()
-                && payload
-                    .oidc_sid
-                    .as_deref()
-                    .is_none_or(|sid| !sid.trim().is_empty()) =>
-        {
-            payload
-        }
+        Ok(payload) if valid_session_payload(&payload, now) => payload,
         Ok(_) => {
             tracing::warn!("session payload contains invalid authentication metadata");
             let _ = valkey_del(&state.valkey, session_key).await;
@@ -72,8 +64,18 @@ pub(crate) async fn current_session(
         user,
         auth_time: payload.auth_time,
         amr: payload.amr,
-        oidc_sid: payload.oidc_sid,
+        oidc_sid: payload.oidc_sid.expect("valid session payload has sid"),
     }))
+}
+
+fn valid_session_payload(payload: &SessionPayload, now: i64) -> bool {
+    payload.auth_time > 0
+        && payload.auth_time <= now.saturating_add(30)
+        && !payload.amr.is_empty()
+        && payload
+            .oidc_sid
+            .as_deref()
+            .is_some_and(|sid| !sid.trim().is_empty())
 }
 
 pub(crate) async fn require_admin(
@@ -118,4 +120,56 @@ fn session_lookup_error_response(error: anyhow::Error) -> HttpResponse {
         "server_error",
         "会话查询失败.",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_payload_requires_authentication_metadata_and_oidc_sid() {
+        let valid = SessionPayload {
+            user_id: Uuid::now_v7(),
+            auth_time: 1_000,
+            amr: vec!["password".to_owned()],
+            oidc_sid: Some("sid-1".to_owned()),
+        };
+
+        assert!(valid_session_payload(&valid, 1_001));
+        assert!(!valid_session_payload(
+            &SessionPayload {
+                oidc_sid: None,
+                ..valid.clone()
+            },
+            1_001
+        ));
+        assert!(!valid_session_payload(
+            &SessionPayload {
+                oidc_sid: Some(" ".to_owned()),
+                ..valid.clone()
+            },
+            1_001
+        ));
+        assert!(!valid_session_payload(
+            &SessionPayload {
+                auth_time: 0,
+                ..valid.clone()
+            },
+            1_001
+        ));
+        assert!(!valid_session_payload(
+            &SessionPayload {
+                auth_time: 2_000,
+                ..valid.clone()
+            },
+            1_001
+        ));
+        assert!(!valid_session_payload(
+            &SessionPayload {
+                amr: Vec::new(),
+                ..valid
+            },
+            1_001
+        ));
+    }
 }
