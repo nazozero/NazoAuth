@@ -410,7 +410,6 @@ pub(crate) async fn token_authorization_code(
             nonce: payload.nonce,
             auth_time: Some(payload.auth_time),
             amr: payload.amr,
-            oidc_sid: payload.oidc_sid,
             acr: payload.acr,
             userinfo_claims: payload.userinfo_claims,
             userinfo_claim_requests: payload.userinfo_claim_requests,

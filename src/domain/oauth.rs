@@ -196,7 +196,6 @@ pub(crate) struct TokenIssue {
     pub(crate) nonce: Option<String>,
     pub(crate) auth_time: Option<i64>,
     pub(crate) amr: Vec<String>,
-    pub(crate) oidc_sid: Option<String>,
     pub(crate) acr: Option<String>,
     pub(crate) userinfo_claims: Vec<String>,
     pub(crate) userinfo_claim_requests: Vec<OidcClaimRequest>,
