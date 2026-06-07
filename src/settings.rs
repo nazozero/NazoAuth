@@ -21,6 +21,7 @@ pub(crate) struct Settings {
     pub(crate) cors_allowed_origins: Vec<String>,
     pub(crate) default_audience: String,
     pub(crate) authorization_server_profile: AuthorizationServerProfile,
+    pub(crate) dpop_nonce_policy: DpopNoncePolicy,
     pub(crate) session_cookie_name: String,
     pub(crate) csrf_cookie_name: String,
     pub(crate) cookie_secure: bool,
@@ -49,6 +50,12 @@ pub(crate) enum AuthorizationServerProfile {
     Oauth2Baseline,
     Fapi2Security,
     Fapi2MessageSigningAuthzRequest,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DpopNoncePolicy {
+    Required,
+    Optional,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -133,6 +140,12 @@ impl Settings {
             bail!("PAIRWISE_SUBJECT_SECRET is required when SUBJECT_TYPE=pairwise");
         }
         let authorization_server_profile = AuthorizationServerProfile::from_config(config)?;
+        let configured_dpop_nonce_policy = DpopNoncePolicy::from_config(config)?;
+        let dpop_nonce_policy = if authorization_server_profile.requires_fapi2_security() {
+            DpopNoncePolicy::Required
+        } else {
+            configured_dpop_nonce_policy
+        };
         let auth_code_ttl_seconds = config.parse("AUTH_CODE_TTL_SECONDS", 60)?;
         if authorization_server_profile.requires_fapi2_security() && auth_code_ttl_seconds > 60 {
             bail!("AUTH_CODE_TTL_SECONDS must be 60 or less for FAPI2 profiles");
@@ -148,6 +161,7 @@ impl Settings {
             cors_allowed_origins,
             default_audience: config.string("DEFAULT_AUDIENCE", "resource://default"),
             authorization_server_profile,
+            dpop_nonce_policy,
             session_cookie_name: config.string("SESSION_COOKIE_NAME", "nazo_oauth_session"),
             csrf_cookie_name: config.string("CSRF_COOKIE_NAME", "nazo_oauth_csrf"),
             cookie_secure,
@@ -210,6 +224,21 @@ impl AuthorizationServerProfile {
 
     pub(crate) fn requires_signed_authorization_request(self) -> bool {
         self == Self::Fapi2MessageSigningAuthzRequest
+    }
+}
+
+impl DpopNoncePolicy {
+    fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
+        match config
+            .string("DPOP_NONCE_POLICY", "required")
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "required" | "require" | "strict" => Ok(Self::Required),
+            "optional" | "compat" | "compatible" => Ok(Self::Optional),
+            value => bail!("DPOP_NONCE_POLICY must be required or optional, got {value}"),
+        }
     }
 }
 
@@ -316,5 +345,43 @@ impl SmtpTlsMode {
             "none" | "plain" => Ok(Self::None),
             value => bail!("EMAIL_SMTP_TLS must be starttls, implicit, or none, got {value}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_dpop_nonce_policy_is_required() {
+        let settings = Settings::from_config(&ConfigSource::default()).unwrap();
+
+        assert_eq!(settings.dpop_nonce_policy, DpopNoncePolicy::Required);
+    }
+
+    #[test]
+    fn baseline_profile_can_use_optional_dpop_nonce_policy() {
+        let config = ConfigSource::from_pairs_for_test([("DPOP_NONCE_POLICY", "optional")]);
+        let settings = Settings::from_config(&config).unwrap();
+
+        assert_eq!(settings.dpop_nonce_policy, DpopNoncePolicy::Optional);
+    }
+
+    #[test]
+    fn fapi_profiles_force_required_dpop_nonce_policy() {
+        let config = ConfigSource::from_pairs_for_test([
+            ("AUTHORIZATION_SERVER_PROFILE", "fapi2-security"),
+            ("DPOP_NONCE_POLICY", "optional"),
+        ]);
+        let settings = Settings::from_config(&config).unwrap();
+
+        assert_eq!(settings.dpop_nonce_policy, DpopNoncePolicy::Required);
+    }
+
+    #[test]
+    fn invalid_dpop_nonce_policy_is_rejected() {
+        let config = ConfigSource::from_pairs_for_test([("DPOP_NONCE_POLICY", "sometimes")]);
+
+        assert!(Settings::from_config(&config).is_err());
     }
 }

@@ -485,7 +485,8 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::settings::{
-        AuthorizationServerProfile, EmailDelivery, EmailSettings, RateLimitSettings, SubjectType,
+        AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings,
+        RateLimitSettings, SubjectType,
     };
     use crate::support::{ClientIpHeaderMode, IpCidr};
 
@@ -520,6 +521,7 @@ mod tests {
             cors_allowed_origins: vec!["https://app.example".to_owned()],
             default_audience: "resource://default".to_owned(),
             authorization_server_profile: profile,
+            dpop_nonce_policy: DpopNoncePolicy::Required,
             session_cookie_name: "sid".to_owned(),
             csrf_cookie_name: "csrf".to_owned(),
             cookie_secure: true,
