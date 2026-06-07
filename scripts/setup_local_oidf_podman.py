@@ -23,6 +23,7 @@ USER_EMAIL = os.environ.get("OIDF_LOCAL_USER_EMAIL", "oidf-local@example.test")
 USER_PASSWORD = os.environ.get("OIDF_LOCAL_USER_PASSWORD", "oidf-local-password")
 CLIENT_SECRET = os.environ.get("OIDF_LOCAL_CLIENT_SECRET", "oidf-local-client-secret")
 FAPI_CLIENT_PREFIX = os.environ.get("OIDF_LOCAL_FAPI_CLIENT_PREFIX", "local-oidf-fapi")
+TRUSTED_PROXY_CIDRS = os.environ.get("OIDF_LOCAL_TRUSTED_PROXY_CIDRS", "10.89.0.0/16")
 WRITE_ENV_YAML = os.environ.get("OIDF_LOCAL_WRITE_ENV_YAML", "1") != "0"
 OIDCC_SECOND_LOGIN_SCREENSHOT_MODULES = (
     "oidcc-prompt-login",
@@ -216,6 +217,7 @@ DEFAULT_AUDIENCE: "resource://default"
 EMAIL_DELIVERY: "disabled"
 AVATAR_STORAGE_DIR: "/var/lib/nazo_oauth/avatars"
 JWK_KEYS_DIR: "/var/lib/nazo_oauth/keys"
+TRUSTED_PROXY_CIDRS: "{TRUSTED_PROXY_CIDRS}"
 RUST_LOG: "info"
 """,
         0o600,

@@ -58,6 +58,7 @@ The roadmap separates three concerns that must not be mixed:
 - [x] Split advertised capabilities by profile or deployment configuration where support depends on mTLS/proxy/JARM/JAR policy.
 - [x] Keep proxy-terminated mTLS as an explicit deployment profile, not an implicit application security property.
 - [x] Enforce trusted proxy CIDR checks before accepting mTLS certificate forwarding headers.
+- [x] Ensure the local OIDF mTLS runtime config writes trusted proxy CIDRs so discovery metadata and proxy-terminated certificate forwarding are enabled together.
 - [x] Document required reverse-proxy header stripping for all forwarded certificate headers.
 - [x] Reject duplicate or conflicting forwarded certificate headers. Standardizing on one representation remains a deployment documentation task.
 - [x] Require TLS or mTLS on the proxy-to-app hop, or otherwise bind forwarded certificate metadata to a trusted internal channel.
