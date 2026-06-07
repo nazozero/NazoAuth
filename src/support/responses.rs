@@ -10,6 +10,7 @@ pub(crate) struct OAuthJsonErrorFields {
 }
 
 pub(crate) fn oauth_error(status: StatusCode, error: &str, description: &str) -> HttpResponse {
+    let description = oauth_error_description(description);
     let mut response = json_response_status(
         status,
         json!({"error": error, "error_description": description}),
@@ -18,6 +19,14 @@ pub(crate) fn oauth_error(status: StatusCode, error: &str, description: &str) ->
         error: error.to_owned(),
     });
     response
+}
+
+fn oauth_error_description(description: &str) -> Cow<'_, str> {
+    if description.bytes().all(is_oauth_error_description_byte) {
+        Cow::Borrowed(description)
+    } else {
+        Cow::Borrowed("Request failed.")
+    }
 }
 
 pub(crate) fn authorization_error_page(
@@ -44,7 +53,7 @@ pub(crate) fn oauth_token_error(
     description: &str,
     basic_challenge: bool,
 ) -> HttpResponse {
-    let description = oauth_token_error_description(description);
+    let description = oauth_error_description(description);
     let mut response = no_store(oauth_error(status, error, &description));
     if basic_challenge {
         response.headers_mut().insert(
@@ -53,14 +62,6 @@ pub(crate) fn oauth_token_error(
         );
     }
     response
-}
-
-fn oauth_token_error_description(description: &str) -> Cow<'_, str> {
-    if description.bytes().all(is_oauth_error_description_byte) {
-        Cow::Borrowed(description)
-    } else {
-        Cow::Borrowed("Request failed.")
-    }
 }
 
 fn is_oauth_error_description_byte(byte: u8) -> bool {
@@ -99,7 +100,7 @@ pub(crate) fn oauth_bearer_error(
 }
 
 fn bearer_challenge(error: &str, description: &str) -> HeaderValue {
-    let description = oauth_token_error_description(description);
+    let description = oauth_error_description(description);
     HeaderValue::from_str(&format!(
         r#"Bearer error="{}", error_description="{}""#,
         oauth_challenge_param(error),
@@ -244,7 +245,7 @@ mod tests {
     #[test]
     fn oauth_token_error_description_keeps_rfc_allowed_ascii() {
         assert_eq!(
-            oauth_token_error_description("Authorization code has already been used.").as_ref(),
+            oauth_error_description("Authorization code has already been used.").as_ref(),
             "Authorization code has already been used."
         );
     }
@@ -252,11 +253,11 @@ mod tests {
     #[test]
     fn oauth_token_error_description_replaces_disallowed_text() {
         assert_eq!(
-            oauth_token_error_description("授权码已被使用.").as_ref(),
+            oauth_error_description("授权码已被使用.").as_ref(),
             "Request failed."
         );
         assert_eq!(
-            oauth_token_error_description("invalid\\request").as_ref(),
+            oauth_error_description("invalid\\request").as_ref(),
             "Request failed."
         );
     }

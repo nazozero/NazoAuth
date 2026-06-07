@@ -30,6 +30,7 @@ pub(crate) enum TokenFormError {
     InvalidContentType,
     InvalidEncoding,
     DuplicateParameter,
+    InvalidResourceParameter,
     MissingGrantType,
 }
 
@@ -120,6 +121,7 @@ pub(crate) fn parse_token_form(
                 | "client_assertion_type"
                 | "client_assertion"
                 | "audience"
+                | "resource"
         ) {
             continue;
         }
@@ -138,7 +140,19 @@ pub(crate) fn parse_token_form(
             "client_secret" => form.client_secret = non_empty(value),
             "client_assertion_type" => form.client_assertion_type = non_empty(value),
             "client_assertion" => form.client_assertion = non_empty(value),
-            "audience" => form.audience = non_empty(value),
+            "audience" => {
+                if form.audience.is_some() {
+                    return Err(TokenFormError::DuplicateParameter);
+                }
+                form.audience = non_empty(value);
+            }
+            "resource" => {
+                let resource = parse_resource_parameter(value)?;
+                if form.audience.is_some() {
+                    return Err(TokenFormError::DuplicateParameter);
+                }
+                form.audience = Some(resource);
+            }
             _ => {}
         }
     }
@@ -215,6 +229,14 @@ fn non_empty(value: String) -> Option<String> {
     (!value.is_empty()).then_some(value)
 }
 
+fn parse_resource_parameter(value: String) -> Result<String, TokenFormError> {
+    let parsed = url::Url::parse(&value).map_err(|_| TokenFormError::InvalidResourceParameter)?;
+    if parsed.fragment().is_some() {
+        return Err(TokenFormError::InvalidResourceParameter);
+    }
+    Ok(value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -247,6 +269,65 @@ mod tests {
         .unwrap();
 
         assert_eq!(form.grant_type, "client_credentials");
+    }
+
+    #[test]
+    fn token_form_accepts_standard_resource_parameter_as_audience() {
+        let req = TestRequest::default()
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+            .to_http_request();
+
+        let form = parse_token_form(
+            &req,
+            &Bytes::from_static(
+                b"grant_type=client_credentials&resource=https%3A%2F%2Fapi.example.com",
+            ),
+        )
+        .unwrap();
+
+        assert_eq!(form.audience.as_deref(), Some("https://api.example.com"));
+    }
+
+    #[test]
+    fn token_form_rejects_invalid_resource_parameter() {
+        let req = TestRequest::default()
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+            .to_http_request();
+
+        let result = parse_token_form(
+            &req,
+            &Bytes::from_static(b"grant_type=client_credentials&resource=api"),
+        );
+
+        assert!(matches!(
+            result,
+            Err(TokenFormError::InvalidResourceParameter)
+        ));
+    }
+
+    #[test]
+    fn token_form_rejects_conflicting_resource_and_audience() {
+        let req = TestRequest::default()
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+            .to_http_request();
+
+        let result = parse_token_form(
+            &req,
+            &Bytes::from_static(
+                b"grant_type=client_credentials&audience=resource%3A%2F%2Fdefault&resource=https%3A%2F%2Fapi.example.com",
+            ),
+        );
+
+        assert!(matches!(result, Err(TokenFormError::DuplicateParameter)));
+
+        let result = parse_token_form(
+            &req,
+            &Bytes::from_static(
+                b"grant_type=client_credentials&resource=https%3A%2F%2Fapi.example.com&audience=resource%3A%2F%2Fdefault",
+            ),
+        );
+
+        assert!(matches!(result, Err(TokenFormError::DuplicateParameter)));
     }
 
     #[test]

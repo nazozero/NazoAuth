@@ -106,7 +106,6 @@ pub(crate) async fn login(
     );
 
     let body = json!({
-        "session_id": session_id,
         "expires_in": state.settings.session_ttl_seconds,
         "csrf_token": csrf_token
     });

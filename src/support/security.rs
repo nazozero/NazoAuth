@@ -7,6 +7,10 @@ use super::{
     valkey_set_ex_nx,
 };
 
+const ARGON2_MEMORY_COST_KIB: u32 = 19_456;
+const ARGON2_TIME_COST: u32 = 2;
+const ARGON2_PARALLELISM: u32 = 1;
+
 pub(crate) fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
     if left.len() != right.len() {
         return false;
@@ -19,7 +23,7 @@ pub(crate) fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
 
 pub(crate) fn hash_password(password: &str) -> password_hash::Result<String> {
     let salt = SaltString::generate(&mut OsRng);
-    Ok(Argon2::default()
+    Ok(password_hasher()
         .hash_password(password.as_bytes(), &salt)?
         .to_string())
 }
@@ -28,9 +32,20 @@ pub(crate) fn verify_password(password: &str, password_hash: &str) -> bool {
     let Ok(parsed) = PasswordHash::new(password_hash) else {
         return false;
     };
-    Argon2::default()
+    password_hasher()
         .verify_password(password.as_bytes(), &parsed)
         .is_ok()
+}
+
+fn password_hasher() -> Argon2<'static> {
+    let params = argon2::Params::new(
+        ARGON2_MEMORY_COST_KIB,
+        ARGON2_TIME_COST,
+        ARGON2_PARALLELISM,
+        None,
+    )
+    .expect("Argon2 password hash policy must be valid");
+    Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params)
 }
 
 pub(crate) fn blake3_hex(value: &str) -> String {
@@ -630,6 +645,15 @@ mod tests {
 
         assert_eq!(code.len(), 6);
         assert!(code.chars().all(|value| value.is_ascii_digit()));
+    }
+
+    #[test]
+    fn password_hash_policy_is_explicit_argon2id_v19() {
+        let hash = hash_password("correct horse battery staple").expect("password should hash");
+
+        assert!(hash.starts_with("$argon2id$v=19$m=19456,t=2,p=1$"));
+        assert!(verify_password("correct horse battery staple", &hash));
+        assert!(!verify_password("wrong password", &hash));
     }
 
     #[test]

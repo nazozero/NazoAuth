@@ -183,6 +183,14 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
                 false,
             );
         }
+        Err(TokenFormError::InvalidResourceParameter) => {
+            return oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_target",
+                "resource must be an absolute URI without a fragment.",
+                false,
+            );
+        }
         Err(TokenFormError::MissingGrantType) => {
             return oauth_token_error(
                 StatusCode::BAD_REQUEST,
