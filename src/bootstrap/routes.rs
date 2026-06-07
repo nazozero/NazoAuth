@@ -66,6 +66,15 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig) {
                 .route("/send-code", web::post().to(send_code))
                 .route("/register", web::post().to(register))
                 .route("/login", web::post().to(login))
+                .route(
+                    "/federation/oidc/start",
+                    web::get().to(federation_oidc_start),
+                )
+                .route(
+                    "/federation/oidc/callback",
+                    web::get().to(federation_oidc_callback),
+                )
+                .route("/federation/saml/acs", web::post().to(federation_saml_acs))
                 .route("/passkey/begin", web::post().to(passkey_login_begin))
                 .route("/passkey/finish", web::post().to(passkey_login_finish))
                 .route("/mfa/verify", web::post().to(mfa_verify))

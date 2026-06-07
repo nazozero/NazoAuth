@@ -1,0 +1,3 @@
+DROP INDEX IF EXISTS ix_external_identity_links_tenant_user;
+DROP INDEX IF EXISTS ux_external_identity_links_tenant_provider_subject;
+DROP TABLE IF EXISTS external_identity_links;

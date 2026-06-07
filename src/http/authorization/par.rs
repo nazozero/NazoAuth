@@ -440,6 +440,10 @@ mod tests {
                 require_user_handle: true,
                 strict_base64: true,
             },
+            federation: crate::settings::FederationSettings {
+                oidc: None,
+                saml_gateway: None,
+            },
         };
 
         assert!(!pushed_authorization_request_requires_request_object(
@@ -505,6 +509,10 @@ mod tests {
                 require_user_verification: true,
                 require_user_handle: true,
                 strict_base64: true,
+            },
+            federation: crate::settings::FederationSettings {
+                oidc: None,
+                saml_gateway: None,
             },
         };
 

@@ -1,4 +1,20 @@
 diesel::table! {
+    external_identity_links (id) {
+        id -> Uuid,
+        tenant_id -> Uuid,
+        user_id -> Uuid,
+        provider_type -> Varchar,
+        provider_id -> Varchar,
+        subject -> Varchar,
+        email -> Varchar,
+        claims -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        last_login_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
     user_passkey_credentials (id) {
         id -> Uuid,
         tenant_id -> Uuid,
@@ -228,6 +244,8 @@ diesel::table! {
 diesel::joinable!(access_token_revocations -> oauth_clients (client_id));
 diesel::joinable!(client_access_requests -> oauth_clients (approved_client_id));
 diesel::joinable!(client_access_requests -> tenants (tenant_id));
+diesel::joinable!(external_identity_links -> tenants (tenant_id));
+diesel::joinable!(external_identity_links -> users (user_id));
 diesel::joinable!(oauth_clients -> organizations (organization_id));
 diesel::joinable!(oauth_clients -> realms (realm_id));
 diesel::joinable!(oauth_clients -> tenants (tenant_id));
@@ -254,6 +272,7 @@ diesel::joinable!(users -> tenants (tenant_id));
 diesel::allow_tables_to_appear_in_same_query!(
     access_token_revocations,
     client_access_requests,
+    external_identity_links,
     oauth_clients,
     oauth_tokens,
     organizations,

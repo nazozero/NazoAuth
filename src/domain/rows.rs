@@ -105,6 +105,33 @@ pub(crate) struct PasskeyCredentialRow {
     pub(crate) updated_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Queryable, QueryableByName, Selectable, Serialize, Clone)]
+#[diesel(table_name = crate::schema::external_identity_links)]
+pub(crate) struct ExternalIdentityLinkRow {
+    #[diesel(sql_type = diesel::sql_types::Uuid)]
+    pub(crate) id: Uuid,
+    #[diesel(sql_type = diesel::sql_types::Uuid)]
+    pub(crate) tenant_id: Uuid,
+    #[diesel(sql_type = diesel::sql_types::Uuid)]
+    pub(crate) user_id: Uuid,
+    #[diesel(sql_type = diesel::sql_types::VarChar)]
+    pub(crate) provider_type: String,
+    #[diesel(sql_type = diesel::sql_types::VarChar)]
+    pub(crate) provider_id: String,
+    #[diesel(sql_type = diesel::sql_types::VarChar)]
+    pub(crate) subject: String,
+    #[diesel(sql_type = diesel::sql_types::VarChar)]
+    pub(crate) email: String,
+    #[diesel(sql_type = diesel::sql_types::Jsonb)]
+    pub(crate) claims: Value,
+    #[diesel(sql_type = diesel::sql_types::Timestamptz)]
+    pub(crate) created_at: DateTime<Utc>,
+    #[diesel(sql_type = diesel::sql_types::Timestamptz)]
+    pub(crate) updated_at: DateTime<Utc>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>)]
+    pub(crate) last_login_at: Option<DateTime<Utc>>,
+}
+
 /// oauth_clients 表完整客户端行。
 #[derive(Debug, Queryable, QueryableByName, Selectable, Serialize, Clone)]
 #[diesel(table_name = crate::schema::oauth_clients)]

@@ -44,15 +44,16 @@ pub(crate) mod prelude {
     pub(crate) use crate::db::get_conn;
     pub(crate) use crate::domain::{
         AccessRequestStatus, AppState, AuthorizationCodeState, ClientRow, CodePayload,
-        ConsentPayload, ConsumedAuthorizationCode, GrantRow, MyApplicationRow, OidcClaimRequest,
-        PasskeyCredentialRow, PendingAccessRequestRow, PushedAuthorizationRequest, TokenIssue,
-        TokenRow, UserAccessRequestRow, UserRow, authorization_details_empty,
-        canonical_authorization_details, high_risk_authorization_details,
-        normalize_authorization_details, parse_authorization_details,
+        ConsentPayload, ConsumedAuthorizationCode, ExternalIdentityLinkRow, GrantRow,
+        MyApplicationRow, OidcClaimRequest, PasskeyCredentialRow, PendingAccessRequestRow,
+        PushedAuthorizationRequest, TokenIssue, TokenRow, UserAccessRequestRow, UserRow,
+        authorization_details_empty, canonical_authorization_details,
+        high_risk_authorization_details, normalize_authorization_details,
+        parse_authorization_details,
     };
     pub(crate) use crate::schema::{
-        access_token_revocations, client_access_requests, oauth_clients, oauth_tokens,
-        user_client_grants, user_passkey_credentials, user_totp_credentials, users,
+        access_token_revocations, client_access_requests, external_identity_links, oauth_clients,
+        oauth_tokens, user_client_grants, user_passkey_credentials, user_totp_credentials, users,
     };
     pub(crate) use crate::settings::Settings;
     pub(crate) use crate::support::*;
