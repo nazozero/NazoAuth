@@ -78,8 +78,8 @@ The roadmap separates three concerns that must not be mixed:
 - [x] Optional stricter-than-FAPI policy: require request object `jti` with replay cache for signed JAR.
 - [x] Mark `client_secret_post` as a compatibility method in documentation and examples; recommend `private_key_jwt` or mTLS for high-security clients.
 - [x] Complete OIDC `claims` request semantics for `essential`, `value`, and `values`.
-- [x] Strengthen `auth_time`, `max_age`, `acr_values`, `azp`, `sid`, and session-related ID Token behavior.
-- [x] Add an independent OIDC `sid` value to login sessions and propagate it to ID Tokens without exposing the HTTPOnly session cookie value.
+- [x] Strengthen `auth_time`, `max_age`, `acr_values`, `azp`, and session-related ID Token behavior, including omission of unrequested session claims.
+- [x] Add an independent OIDC `sid` value to login sessions for logout/session flows without exposing the HTTPOnly session cookie value or overclaiming ordinary ID Tokens.
 - [x] Add consent and transaction-binding tests for high-risk `authorization_details`, especially payments or write APIs.
 - [x] Expand RFC 8707 support to multi-resource handling when an ecosystem use case requires it.
 - [x] Implement RFC 9396 Rich Authorization Requests when structured authorization is required.

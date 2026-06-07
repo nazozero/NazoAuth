@@ -53,6 +53,15 @@ pub(crate) fn should_issue_refresh_token(client: &ClientRow, scopes: &[String]) 
         && scopes.iter().any(|scope| scope == "offline_access")
 }
 
+fn id_token_session_sid(issue: &TokenIssue) -> Option<&str> {
+    let requested = issue.id_token_claims.iter().any(|claim| claim == "sid")
+        || issue
+            .id_token_claim_requests
+            .iter()
+            .any(|request| request.name == "sid");
+    requested.then_some(issue.oidc_sid.as_deref()).flatten()
+}
+
 async fn mark_token_family_reuse(
     conn: &mut AsyncPgConnection,
     token_family_id: Uuid,
@@ -388,7 +397,7 @@ pub(crate) async fn issue_token_response(
                 nonce: issue.nonce.clone(),
                 auth_time: issue.auth_time,
                 amr: &issue.amr,
-                sid: issue.oidc_sid.as_deref(),
+                sid: id_token_session_sid(&issue),
                 acr: issue.acr.as_deref(),
                 extra_claims: user_claims.as_ref(),
                 ttl: state.settings.id_token_ttl_seconds,
@@ -594,5 +603,53 @@ mod tests {
 
         let client = client_with_grants(&["authorization_code"]);
         assert!(!should_issue_refresh_token(&client, &scopes));
+    }
+
+    fn token_issue_with_sid(id_token_claims: Vec<String>) -> TokenIssue {
+        TokenIssue {
+            user_id: None,
+            subject: "subject-1".to_owned(),
+            scopes: vec!["openid".to_owned()],
+            authorization_details: json!([]),
+            audiences: vec!["resource://default".to_owned()],
+            nonce: None,
+            auth_time: Some(1_000),
+            amr: vec!["password".to_owned()],
+            oidc_sid: Some("op-session-sid".to_owned()),
+            acr: None,
+            userinfo_claims: Vec::new(),
+            userinfo_claim_requests: Vec::new(),
+            id_token_claims,
+            id_token_claim_requests: Vec::new(),
+            include_refresh: false,
+            refresh_token_policy: RefreshTokenPolicy::IssueNew,
+            dpop_jkt: None,
+            refresh_token_dpop_jkt: None,
+            mtls_x5t_s256: None,
+            refresh_token_mtls_x5t_s256: None,
+            authorization_code_hash: None,
+        }
+    }
+
+    #[test]
+    fn id_token_sid_is_omitted_unless_explicitly_requested() {
+        let issue = token_issue_with_sid(Vec::new());
+        assert_eq!(id_token_session_sid(&issue), None);
+
+        let issue = token_issue_with_sid(vec!["sid".to_owned()]);
+        assert_eq!(id_token_session_sid(&issue), Some("op-session-sid"));
+    }
+
+    #[test]
+    fn id_token_sid_request_object_also_allows_session_sid() {
+        let mut issue = token_issue_with_sid(Vec::new());
+        issue.id_token_claim_requests.push(OidcClaimRequest {
+            name: "sid".to_owned(),
+            essential: true,
+            value: None,
+            values: Vec::new(),
+        });
+
+        assert_eq!(id_token_session_sid(&issue), Some("op-session-sid"));
     }
 }
