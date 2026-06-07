@@ -23,6 +23,13 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Byte
             "访问令牌无效或已过期.",
         );
     };
+    if !userinfo_audience_allowed(&state.settings, &claims.aud) {
+        return oauth_bearer_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_token",
+            "访问令牌 audience 不适用于 userinfo.",
+        );
+    }
     let revoked = match get_conn(&state.diesel_db).await {
         Ok(mut conn) => match access_token_revocations::table
             .filter(access_token_revocations::access_token_jti_blake3.eq(blake3_hex(&claims.jti)))
@@ -177,6 +184,11 @@ fn userinfo_access_token(req: &HttpRequest, body: &Bytes) -> UserInfoAccessToken
     }
 }
 
+fn userinfo_audience_allowed(settings: &Settings, audience: &str) -> bool {
+    let userinfo_url = format!("{}/userinfo", settings.issuer.trim_end_matches('/'));
+    audience == settings.default_audience || audience == userinfo_url
+}
+
 enum FormBodyAccessToken {
     Present(String),
     Missing,
@@ -223,6 +235,25 @@ mod tests {
             panic!("expected bearer token from form body");
         };
         assert_eq!(token, "token-1");
+    }
+
+    #[test]
+    fn userinfo_accepts_only_userinfo_or_default_audience() {
+        let mut settings = Settings::from_config(&crate::config::ConfigSource::default())
+            .expect("default settings should load");
+        settings.issuer = "https://issuer.example".to_owned();
+        settings.default_audience = "resource://default".to_owned();
+
+        assert!(userinfo_audience_allowed(&settings, "resource://default"));
+        assert!(userinfo_audience_allowed(
+            &settings,
+            "https://issuer.example/userinfo"
+        ));
+        assert!(!userinfo_audience_allowed(
+            &settings,
+            "https://issuer.example/fapi/resource"
+        ));
+        assert!(!userinfo_audience_allowed(&settings, "resource://other"));
     }
 
     #[test]

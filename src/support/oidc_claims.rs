@@ -193,7 +193,9 @@ pub(crate) fn oidc_id_token_user_claims(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settings::{EmailDelivery, EmailSettings, RateLimitSettings};
+    use crate::settings::{
+        AuthorizationServerProfile, EmailDelivery, EmailSettings, RateLimitSettings,
+    };
     use crate::support::ClientIpHeaderMode;
 
     fn user() -> UserRow {
@@ -241,6 +243,7 @@ mod tests {
             frontend_base_url: "https://frontend.example".to_owned(),
             cors_allowed_origins: vec!["https://frontend.example".to_owned()],
             default_audience: "resource://default".to_owned(),
+            authorization_server_profile: AuthorizationServerProfile::Oauth2Baseline,
             session_cookie_name: "session".to_owned(),
             csrf_cookie_name: "csrf".to_owned(),
             cookie_secure: true,

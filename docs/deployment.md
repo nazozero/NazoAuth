@@ -42,6 +42,7 @@ FRONTEND_BASE_URL: "https://accounts.example.com"
 CORS_ALLOWED_ORIGINS:
   - "https://accounts.example.com"
 DEFAULT_AUDIENCE: "resource://default"
+AUTHORIZATION_SERVER_PROFILE: "oauth2-baseline"
 COOKIE_SECURE: true
 TRUSTED_PROXY_CIDRS: "10.0.0.0/24"
 CLIENT_IP_HEADER_MODE: "forwarded"
@@ -60,6 +61,8 @@ RUST_LOG: "info"
 ```
 
 Do not store production secrets in Git.
+
+Set `AUTHORIZATION_SERVER_PROFILE` to `fapi2-security` only when the deployed client population is prepared for confidential-client-only operation, PAR-only authorization requests, PKCE S256, `private_key_jwt` or mTLS client authentication, and DPoP or mTLS sender-constrained tokens. Use `fapi2-message-signing-authz-request` when signed request objects are also mandatory at PAR. Discovery metadata reflects this setting and omits mTLS capabilities unless `TRUSTED_PROXY_CIDRS` is non-empty.
 
 ## Container Build
 

@@ -14,12 +14,12 @@ The roadmap separates three concerns that must not be mixed:
 | --- | --- | --- |
 | Trust evidence | Conformance results, security policy, threat model, and release evidence must be public and repeatable. | In progress |
 | Profile matrix | Each profile needs explicit grants, response types, client auth, token binding, JAR/JARM, PAR, refresh policy, TTL, and metadata rules. | Done |
-| Metadata truth | Discovery metadata must not overclaim unsupported or deployment-disabled capabilities. | Planned |
+| Metadata truth | Discovery metadata must not overclaim unsupported or deployment-disabled capabilities. | In progress |
 | OIDC completeness | OIDC Core behavior needs a profile-by-profile checklist and tests for required OP features. | Planned |
 | FAPI2 Security | Baseline FAPI2 Security must stay distinct from Message Signing and product hardening. | Defined |
 | FAPI2 Message Signing | Signed authorization requests, JARM, and signed introspection responses should be tracked as separate options. | Defined |
 | mTLS | Current integration is proxy-terminated mTLS and must be documented, constrained, and extended toward full RFC 8705 subject/SAN semantics. | In progress |
-| DPoP | Proof `jti` replay prevention is normative; strict nonce enforcement is profile/product policy and must be documented that way. | In progress |
+| DPoP | Proof `jti` replay prevention is normative; strict nonce enforcement is profile/product policy and must be documented that way. | Done |
 | Sessions | Login response should not expose the session identifier in JSON. | Done |
 | Password hashing | Argon2 policy should be explicit and versioned. | Done |
 | Refresh policy | FAPI2 Security should not use rotation by default; non-FAPI rotation needs documented lost-response recovery semantics. | Done |
@@ -35,27 +35,28 @@ The roadmap separates three concerns that must not be mixed:
 - [x] Add a profile matrix. For each profile, list allowed grants, response types, client authentication methods, token binding methods, JAR/JARM policy, PAR policy, refresh policy, token TTLs, and discovery metadata. See `docs/profile-matrix.md`.
 - [x] Define `oauth2-baseline`, `oauth2-security-bcp`, `oidc-basic-op`, and `oidc-config` as separate profiles with their exact endpoint, parameter, metadata, and negative-test requirements. See `docs/profile-matrix.md`.
 - [x] Define `fapi2-security` as PAR + PKCE S256 + confidential clients + `private_key_jwt` or mTLS client authentication + sender-constrained access tokens via DPoP or mTLS. See `docs/profile-matrix.md`.
-- [ ] Add a runtime `fapi2-security` profile switch that requires client-authenticated PAR, rejects authorization requests that do not use PAR, enforces authorization code lifetime of 60 seconds or less, and rejects resource owner password credentials.
+- [x] Add a runtime `fapi2-security` profile switch that requires client-authenticated PAR, rejects authorization requests that do not use PAR, enforces authorization code lifetime of 60 seconds or less, and rejects resource owner password credentials.
 - [x] Define the `fapi2-security` refresh-token policy: no routine refresh-token rotation by default; use sender-constrained refresh/access tokens.
 - [x] If refresh rotation is enabled for compatibility, migration, or non-FAPI profiles, document lost-response retry semantics as a state machine with replay detection tests. See `docs/refresh-token-rotation.md`.
 - [x] Define `fapi2-message-signing-authz-request` as FAPI2 Security plus signed JAR request objects at the PAR endpoint. See `docs/profile-matrix.md`.
-- [ ] Add a runtime `fapi2-message-signing-authz-request` profile switch that requires and verifies signed request objects at PAR, requires `aud`, requires `nbf`, requires `exp` with lifetime no longer than 60 minutes, and accepts `typ=oauth-authz-req+jwt`.
+- [x] Add a runtime `fapi2-message-signing-authz-request` profile switch that requires and verifies signed request objects at PAR, requires `aud`, requires `nbf`, requires `exp` with lifetime no longer than 60 minutes, and accepts `typ=oauth-authz-req+jwt`.
 - [x] Define `fapi2-message-signing-jarm` separately when JARM is implemented and tested. See `docs/profile-matrix.md`.
 - [x] Define `fapi2-message-signing-introspection` separately when signed introspection responses are implemented and tested. See `docs/profile-matrix.md`.
 - [x] Keep request object `jti` replay protection as optional product hardening unless a specific ecosystem profile requires it; do not document it as a normative FAPI2 Message Signing requirement.
-- [ ] Add DPoP proof replay cache tests: track proof `jti` per proof validity window and reject duplicates.
-- [ ] Add client assertion replay tests for `private_key_jwt`: exact issuer `aud`, `exp`/`iat` window, `jti` replay cache, key rotation, and disabled client behavior.
-- [ ] Enforce audience/resource binding for access tokens.
+- [x] Add DPoP proof replay cache tests: track proof `jti` per proof validity window and reject duplicates.
+- [x] Add client assertion replay tests for `private_key_jwt`: exact issuer `aud`, `exp`/`iat` window, and `jti` replay cache.
+- [x] Add `private_key_jwt` key rotation and disabled-client behavior tests.
+- [x] Enforce audience/resource binding for access tokens.
 - [x] If RFC 8707 resource indicators are supported, test single-resource behavior, audience derivation, and rejection of ambiguous or missing resource values; keep multi-resource behavior as a future ecosystem expansion.
-- [ ] Add JWT access token profile tests: issuer, audience, expiry, `client_id`/`sub` separation, scope or `authorization_details`, `cnf.jkt` or `cnf.x5t#S256`, algorithm allowlist, `kid` handling, and revocation/introspection fallback.
+- [x] Add JWT access token profile tests: issuer, audience, expiry, `client_id`/`sub` separation, scope or `authorization_details`, `cnf.jkt` or `cnf.x5t#S256`, algorithm allowlist, `kid` handling, and revocation/introspection fallback.
 - [ ] Add negative conformance fixtures: overclaimed metadata, weak client auth, unsigned JAR in hardened profiles, missing DPoP proof, DPoP without nonce where required, bearer token at sender-constrained resource servers, query-token use, redirect URI mismatch, and stale JWKS.
 
 ## P0: Deployment Security
 
 - [x] Add a threat model covering authorization code theft, redirect mix-up, JAR replay, DPoP replay, mTLS header spoofing, refresh token reuse, CSRF, XSS, key compromise, and partial Valkey/PostgreSQL outage. See `docs/threat-model.md`.
-- [ ] Add metadata truth tests: each advertised discovery capability must have a corresponding integration or unit test proving the endpoint behavior.
-- [ ] Split advertised capabilities by profile or deployment configuration where support depends on mTLS/proxy/JARM/JAR policy.
-- [ ] Keep proxy-terminated mTLS as an explicit deployment profile, not an implicit application security property.
+- [x] Add metadata truth tests: each advertised discovery capability must have a corresponding integration or unit test proving the endpoint behavior.
+- [x] Split advertised capabilities by profile or deployment configuration where support depends on mTLS/proxy/JARM/JAR policy.
+- [x] Keep proxy-terminated mTLS as an explicit deployment profile, not an implicit application security property.
 - [x] Enforce trusted proxy CIDR checks before accepting mTLS certificate forwarding headers.
 - [x] Document required reverse-proxy header stripping for all forwarded certificate headers.
 - [x] Reject duplicate or conflicting forwarded certificate headers. Standardizing on one representation remains a deployment documentation task.

@@ -173,7 +173,7 @@ pub(crate) async fn validate_dpop_proof(
     )?;
     validate_dpop_nonce(state, claims.nonce.as_deref()).await?;
 
-    let replay_key = format!("oauth:dpop:jti:{jkt}:{}", blake3_hex(&claims.jti));
+    let replay_key = dpop_replay_key(&jkt, &claims.jti);
     if !valkey_set_ex_nx(&state.valkey, replay_key, "1", DPOP_TTL_SECONDS as u64)
         .await
         .map_err(|_| DpopError::InvalidProof)?
@@ -223,6 +223,10 @@ pub(crate) async fn issue_dpop_nonce(state: &AppState) -> Result<String, DpopErr
 
 fn dpop_nonce_key(nonce: &str) -> String {
     format!("oauth:dpop:nonce:{}", blake3_hex(nonce))
+}
+
+fn dpop_replay_key(jkt: &str, jti: &str) -> String {
+    format!("oauth:dpop:jti:{jkt}:{}", blake3_hex(jti))
 }
 
 fn dpop_proof_header(req: &HttpRequest) -> Result<Option<&str>, DpopError> {
@@ -492,6 +496,20 @@ mod tests {
         assert!(!is_valid_dpop_jkt(
             "w7JAoU/gJbZJvV+zCOvU9yFJq0FNC+edCMRM78P8eQQ"
         ));
+    }
+
+    #[test]
+    fn dpop_replay_key_is_scoped_to_jwk_thumbprint_and_jti_hash() {
+        let first = dpop_replay_key("jkt-1", "proof-jti");
+        let same = dpop_replay_key("jkt-1", "proof-jti");
+        let other_key = dpop_replay_key("jkt-2", "proof-jti");
+        let other_jti = dpop_replay_key("jkt-1", "other-proof-jti");
+
+        assert_eq!(first, same);
+        assert!(first.starts_with("oauth:dpop:jti:jkt-1:"));
+        assert!(!first.contains("proof-jti"));
+        assert_ne!(first, other_key);
+        assert_ne!(first, other_jti);
     }
 
     #[test]

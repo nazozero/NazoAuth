@@ -200,6 +200,19 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
             );
         }
     };
+    if state
+        .settings
+        .authorization_server_profile
+        .requires_fapi2_security()
+        && form.grant_type == "password"
+    {
+        return oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_grant_type",
+            "FAPI2 profiles do not allow resource owner password credentials.",
+            false,
+        );
+    }
     let has_basic = has_basic_authorization_scheme(req.headers());
     let has_assertion = form.client_assertion_type.is_some() || form.client_assertion.is_some();
     let has_client_auth_material = token_request_has_client_auth_material(has_basic, &form);
@@ -278,13 +291,8 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
             );
         }
     };
-    if !client.is_active || !json_array_to_strings(&client.grant_types).contains(&form.grant_type) {
-        return oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "unauthorized_client",
-            "该客户端未启用当前授权类型.",
-            false,
-        );
+    if let Err(response) = validate_token_client_enabled(&client, &form.grant_type) {
+        return response;
     }
     let mut client_assertion = None;
     if client.client_type == "confidential" {
@@ -389,6 +397,11 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
             has_basic,
         );
     }
+    if let Err(response) =
+        validate_token_request_profile(&state.settings, &client, credentials.method.as_str())
+    {
+        return response;
+    }
     match form.grant_type.as_str() {
         "authorization_code" => {
             token_authorization_code(&state, &req, &client, &form, client_assertion.as_ref()).await
@@ -408,9 +421,72 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
     }
 }
 
+fn validate_token_client_enabled(client: &ClientRow, grant_type: &str) -> Result<(), HttpResponse> {
+    if !client.is_active
+        || !json_array_to_strings(&client.grant_types)
+            .iter()
+            .any(|grant| grant == grant_type)
+    {
+        return Err(oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "unauthorized_client",
+            "该客户端未启用当前授权类型.",
+            false,
+        ));
+    }
+    Ok(())
+}
+
+fn validate_token_request_profile(
+    settings: &Settings,
+    client: &ClientRow,
+    auth_method: &str,
+) -> Result<(), HttpResponse> {
+    if !settings
+        .authorization_server_profile
+        .requires_fapi2_security()
+    {
+        return Ok(());
+    }
+    if client.client_type != "confidential" {
+        return Err(oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "unauthorized_client",
+            "FAPI2 profiles require confidential clients.",
+            false,
+        ));
+    }
+    if !matches!(
+        auth_method,
+        "private_key_jwt" | "tls_client_auth" | "self_signed_tls_client_auth"
+    ) {
+        return Err(oauth_token_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_client",
+            "FAPI2 profiles require private_key_jwt or mTLS client authentication.",
+            false,
+        ));
+    }
+    if !(client.require_dpop_bound_tokens || client.require_mtls_bound_tokens) {
+        return Err(oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "FAPI2 profiles require sender-constrained access tokens.",
+            false,
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
+    use crate::settings::{
+        AuthorizationServerProfile, EmailDelivery, EmailSettings, RateLimitSettings, SubjectType,
+    };
+    use crate::support::{ClientIpHeaderMode, IpCidr};
 
     fn code_payload(dpop_jkt: Option<&str>) -> CodePayload {
         CodePayload {
@@ -432,6 +508,72 @@ mod tests {
             mtls_x5t_s256: None,
             issued_at: Utc::now(),
             expires_at: Utc::now() + Duration::minutes(5),
+        }
+    }
+
+    fn settings(profile: AuthorizationServerProfile) -> Settings {
+        Settings {
+            issuer: "https://issuer.example".to_owned(),
+            mtls_endpoint_base_url: "https://issuer.example".to_owned(),
+            frontend_base_url: "https://app.example".to_owned(),
+            cors_allowed_origins: vec!["https://app.example".to_owned()],
+            default_audience: "resource://default".to_owned(),
+            authorization_server_profile: profile,
+            session_cookie_name: "sid".to_owned(),
+            csrf_cookie_name: "csrf".to_owned(),
+            cookie_secure: true,
+            session_ttl_seconds: 3600,
+            auth_code_ttl_seconds: 60,
+            access_token_ttl_seconds: 300,
+            id_token_ttl_seconds: 600,
+            refresh_token_ttl_seconds: 2_592_000,
+            avatar_max_bytes: 2_097_152,
+            client_delivery_ttl_seconds: 86_400,
+            rate_limit: RateLimitSettings {
+                window_seconds: 60,
+                auth_max_requests: 30,
+                token_max_requests: 60,
+                token_management_max_requests: 120,
+            },
+            email: EmailSettings {
+                delivery: EmailDelivery::Disabled,
+                code_ttl_seconds: 900,
+                send_cooldown_seconds: 60,
+                send_peer_cooldown_seconds: 5,
+            },
+            email_code_dev_response_enabled: false,
+            avatar_storage_dir: PathBuf::from("runtime/avatars"),
+            jwk_keys_dir: PathBuf::from("runtime/keys"),
+            trusted_proxy_cidrs: Vec::<IpCidr>::new(),
+            client_ip_header_mode: ClientIpHeaderMode::None,
+            subject_type: SubjectType::Public,
+            pairwise_subject_secret: None,
+            par_ttl_seconds: 90,
+            require_pushed_authorization_requests: profile.requires_fapi2_security(),
+        }
+    }
+
+    fn client() -> ClientRow {
+        ClientRow {
+            id: Uuid::now_v7(),
+            client_id: "client-a".to_owned(),
+            client_name: "Client A".to_owned(),
+            client_type: "confidential".to_owned(),
+            client_secret_argon2_hash: None,
+            redirect_uris: json!(["https://client.example/callback"]),
+            scopes: json!(["openid"]),
+            allowed_audiences: json!(["resource://default"]),
+            grant_types: json!(["authorization_code"]),
+            token_endpoint_auth_method: "private_key_jwt".to_owned(),
+            require_dpop_bound_tokens: true,
+            require_mtls_bound_tokens: false,
+            tls_client_auth_subject_dn: None,
+            tls_client_auth_cert_sha256: None,
+            allow_client_assertion_audience_array: false,
+            allow_client_assertion_endpoint_audience: false,
+            require_par_request_object: false,
+            is_active: true,
+            jwks: None,
         }
     }
 
@@ -611,5 +753,68 @@ mod tests {
         assert_eq!(credentials.method, "tls_client_auth");
         assert!(credentials.client_secret.is_none());
         assert!(credentials.client_assertion.is_none());
+    }
+
+    #[test]
+    fn baseline_profile_does_not_restrict_token_client_auth() {
+        let mut client = client();
+        client.token_endpoint_auth_method = "client_secret_basic".to_owned();
+        client.require_dpop_bound_tokens = false;
+
+        assert!(
+            validate_token_request_profile(
+                &settings(AuthorizationServerProfile::Oauth2Baseline),
+                &client,
+                "client_secret_basic",
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn disabled_client_is_rejected_before_grant_dispatch() {
+        let mut client = client();
+        client.is_active = false;
+
+        let response = validate_token_client_enabled(&client, "authorization_code")
+            .expect_err("disabled clients must not use token grants");
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(oauth_error_code(&response), "unauthorized_client");
+    }
+
+    #[test]
+    fn missing_grant_registration_is_rejected_before_grant_dispatch() {
+        let client = client();
+
+        let response = validate_token_client_enabled(&client, "client_credentials")
+            .expect_err("client must be registered for the requested grant");
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(oauth_error_code(&response), "unauthorized_client");
+    }
+
+    #[test]
+    fn fapi2_profile_requires_confidential_client_auth_and_sender_constraint() {
+        let fapi = settings(AuthorizationServerProfile::Fapi2Security);
+        let valid_client = client();
+
+        assert!(validate_token_request_profile(&fapi, &valid_client, "private_key_jwt").is_ok());
+
+        let weak_auth = validate_token_request_profile(&fapi, &valid_client, "client_secret_basic")
+            .expect_err("client_secret_basic is not a FAPI2 client auth method");
+        assert_eq!(weak_auth.status(), StatusCode::UNAUTHORIZED);
+
+        let mut bearer_client = client();
+        bearer_client.require_dpop_bound_tokens = false;
+        let bearer = validate_token_request_profile(&fapi, &bearer_client, "private_key_jwt")
+            .expect_err("FAPI2 requires sender-constrained tokens");
+        assert_eq!(bearer.status(), StatusCode::BAD_REQUEST);
+
+        let mut public_client = client();
+        public_client.client_type = "public".to_owned();
+        let public = validate_token_request_profile(&fapi, &public_client, "none")
+            .expect_err("FAPI2 rejects public clients");
+        assert_eq!(public.status(), StatusCode::BAD_REQUEST);
     }
 }

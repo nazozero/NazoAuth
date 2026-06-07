@@ -164,12 +164,13 @@ def dpop_proof(
     public_jwk: dict[str, Any] | None = None,
     nonce: str | None = None,
     access_token: str | None = None,
+    jti: str | None = None,
 ) -> str:
     claims: dict[str, Any] = {
         "htm": method.upper(),
         "htu": url,
         "iat": now(),
-        "jti": str(uuid.uuid4()),
+        "jti": jti or str(uuid.uuid4()),
     }
     if nonce is not None:
         claims["nonce"] = nonce
@@ -2420,6 +2421,77 @@ def run() -> None:
                 200,
             )
         )
+        replay_userinfo_challenge = requests.get(
+            f"{BASE_URL}/userinfo",
+            headers={
+                "Authorization": f"DPoP {access_token}",
+                "DPoP": dpop_proof(
+                    "GET",
+                    f"{ISSUER_URL}/userinfo",
+                    dpop_key,
+                    access_token=access_token,
+                ),
+            },
+            timeout=10,
+        )
+        expect_status("GET /userinfo DPoP replay nonce challenge", replay_userinfo_challenge, 401)
+        replay_userinfo_nonce = replay_userinfo_challenge.headers.get("DPoP-Nonce")
+        check("userinfo_dpop_replay_nonce_header", bool(replay_userinfo_nonce))
+        replay_userinfo_jti = str(uuid.uuid4())
+        replay_userinfo_proof = dpop_proof(
+            "GET",
+            f"{ISSUER_URL}/userinfo",
+            dpop_key,
+            nonce=replay_userinfo_nonce,
+            access_token=access_token,
+            jti=replay_userinfo_jti,
+        )
+        first_replay_probe = requests.get(
+            f"{BASE_URL}/userinfo",
+            headers={
+                "Authorization": f"DPoP {access_token}",
+                "DPoP": replay_userinfo_proof,
+            },
+            timeout=10,
+        )
+        expect_status("GET /userinfo DPoP replay proof first use", first_replay_probe, 200)
+        second_replay_challenge = requests.get(
+            f"{BASE_URL}/userinfo",
+            headers={
+                "Authorization": f"DPoP {access_token}",
+                "DPoP": dpop_proof(
+                    "GET",
+                    f"{ISSUER_URL}/userinfo",
+                    dpop_key,
+                    access_token=access_token,
+                ),
+            },
+            timeout=10,
+        )
+        expect_status("GET /userinfo DPoP replay second nonce challenge", second_replay_challenge, 401)
+        second_replay_nonce = second_replay_challenge.headers.get("DPoP-Nonce")
+        check("userinfo_dpop_replay_second_nonce_header", bool(second_replay_nonce))
+        second_replay_proof = dpop_proof(
+            "GET",
+            f"{ISSUER_URL}/userinfo",
+            dpop_key,
+            nonce=second_replay_nonce,
+            access_token=access_token,
+            jti=replay_userinfo_jti,
+        )
+        second_replay_probe = requests.get(
+            f"{BASE_URL}/userinfo",
+            headers={
+                "Authorization": f"DPoP {access_token}",
+                "DPoP": second_replay_proof,
+            },
+            timeout=10,
+        )
+        expect_status("GET /userinfo DPoP replay proof rejected", second_replay_probe, 400)
+        check(
+            "userinfo_dpop_replay_invalid_proof",
+            expect_json(second_replay_probe).get("error") == "invalid_dpop_proof",
+        )
         check(
             "userinfo_claims",
             userinfo.get("sub") == user_id
@@ -2890,6 +2962,10 @@ def run() -> None:
             timeout=10,
         )
         expect_status("POST /token private_key_jwt replay rejected", replay, 401)
+        check(
+            "private_key_jwt_replay_invalid_client",
+            expect_json(replay).get("error") == "invalid_client",
+        )
 
         for algorithm, key, kid in [
             ("RS256", rsa_key, "private-key-jwt-rs256-e2e"),

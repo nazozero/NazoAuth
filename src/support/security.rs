@@ -212,6 +212,15 @@ pub(crate) fn verify_private_key_jwt_claims(
     client: &ClientRow,
     assertion: &str,
 ) -> Result<ValidatedClientAssertion, ClientAssertionError> {
+    verify_private_key_jwt_claims_with_settings(&state.settings, req, client, assertion)
+}
+
+fn verify_private_key_jwt_claims_with_settings(
+    settings: &Settings,
+    req: &HttpRequest,
+    client: &ClientRow,
+    assertion: &str,
+) -> Result<ValidatedClientAssertion, ClientAssertionError> {
     let header =
         jsonwebtoken::decode_header(assertion).map_err(|_| ClientAssertionError::Invalid)?;
     let kid = header.kid.ok_or(ClientAssertionError::Invalid)?;
@@ -230,7 +239,7 @@ pub(crate) fn verify_private_key_jwt_claims(
         || claims.sub != client.client_id
         || !audience_matches(
             &claims.aud,
-            &client_assertion_audiences(&state.settings, req, client),
+            &client_assertion_audiences(settings, req, client),
             client.allow_client_assertion_audience_array,
         )
         || !valid_client_assertion_times(&claims, now)
@@ -252,15 +261,8 @@ pub(crate) async fn consume_private_key_jwt(
     assertion: &ValidatedClientAssertion,
 ) -> Result<(), ClientAssertionError> {
     let now = Utc::now().timestamp();
-    let ttl_seconds = assertion
-        .exp
-        .saturating_sub(now)
-        .clamp(1, CLIENT_ASSERTION_MAX_TTL_SECONDS) as u64;
-    let replay_key = format!(
-        "oauth:client_assertion:jti:{}:{}",
-        blake3_hex(&client.client_id),
-        blake3_hex(&assertion.jti)
-    );
+    let ttl_seconds = assertion.replay_ttl_seconds(now);
+    let replay_key = client_assertion_replay_key(&client.client_id, &assertion.jti);
     match valkey_set_ex_nx(&state.valkey, replay_key, "1", ttl_seconds).await {
         Ok(true) => Ok(()),
         Ok(false) => {
@@ -279,6 +281,22 @@ pub(crate) async fn consume_private_key_jwt(
             Err(ClientAssertionError::StoreUnavailable)
         }
     }
+}
+
+impl ValidatedClientAssertion {
+    fn replay_ttl_seconds(&self, now: i64) -> u64 {
+        self.exp
+            .saturating_sub(now)
+            .clamp(1, CLIENT_ASSERTION_MAX_TTL_SECONDS) as u64
+    }
+}
+
+fn client_assertion_replay_key(client_id: &str, jti: &str) -> String {
+    format!(
+        "oauth:client_assertion:jti:{}:{}",
+        blake3_hex(client_id),
+        blake3_hex(jti)
+    )
 }
 
 fn unverified_client_assertion_client_id(assertion: &str) -> Option<String> {
@@ -476,8 +494,20 @@ pub(crate) fn make_jwt(
     let now = Utc::now().timestamp();
     let jti = Uuid::now_v7().to_string();
     let exp = now + input.ttl;
-    let claims = Claims {
-        iss: state.settings.issuer.clone(),
+    let claims = access_token_claims(&state.settings.issuer, input, now, &jti);
+    let header = access_token_header(state.keyset.active_alg, &state.keyset.active_kid);
+    let token = jsonwebtoken::encode(&header, &claims, &state.keyset.active_encoding_key())?;
+    Ok(IssuedAccessToken { token, jti, exp })
+}
+
+fn access_token_claims(
+    issuer: &str,
+    input: AccessTokenJwtInput<'_>,
+    now: i64,
+    jti: &str,
+) -> Claims {
+    Claims {
+        iss: issuer.to_owned(),
         sub: input.subject.to_string(),
         user_id: input.user_id.map(|id| id.to_string()),
         subject_type: input.subject_type.to_string(),
@@ -485,10 +515,10 @@ pub(crate) fn make_jwt(
         client_id: input.client_id.to_string(),
         scope: sorted_scope_string(input.scopes),
         token_use: "access".into(),
-        jti: jti.clone(),
+        jti: jti.to_owned(),
         iat: now,
         nbf: now,
-        exp,
+        exp: now + input.ttl,
         cnf: match (input.dpop_jkt, input.mtls_x5t_s256) {
             (Some(jkt), None) => Some(ConfirmationClaims {
                 jkt: Some(jkt.to_owned()),
@@ -501,12 +531,14 @@ pub(crate) fn make_jwt(
             _ => None,
         },
         userinfo_claims: input.userinfo_claims.to_vec(),
-    };
-    let mut header = jsonwebtoken::Header::new(state.keyset.active_alg);
+    }
+}
+
+fn access_token_header(alg: jsonwebtoken::Algorithm, kid: &str) -> jsonwebtoken::Header {
+    let mut header = jsonwebtoken::Header::new(alg);
     header.typ = Some("at+jwt".to_string());
-    header.kid = Some(state.keyset.active_kid.clone());
-    let token = jsonwebtoken::encode(&header, &claims, &state.keyset.active_encoding_key())?;
-    Ok(IssuedAccessToken { token, jti, exp })
+    header.kid = Some(kid.to_owned());
+    header
 }
 
 pub(crate) struct IdTokenInput<'a> {
@@ -640,10 +672,62 @@ pub(crate) fn decode_access_claims(state: &AppState, token: &str) -> Option<Clai
 mod tests {
     use super::*;
     use crate::config::ConfigSource;
+    use crate::support::{generate_key_material, public_jwk_from_private_der};
     use actix_web::test::TestRequest;
 
     fn test_settings() -> Settings {
         Settings::from_config(&ConfigSource::default()).expect("default settings should load")
+    }
+
+    fn private_key_jwt_client(jwks: Value) -> ClientRow {
+        ClientRow {
+            id: Uuid::now_v7(),
+            client_id: "client-1".to_owned(),
+            client_name: "Client".to_owned(),
+            client_type: "confidential".to_owned(),
+            client_secret_argon2_hash: None,
+            redirect_uris: json!(["https://client.example/callback"]),
+            scopes: json!(["openid"]),
+            allowed_audiences: json!(["resource://default"]),
+            grant_types: json!(["authorization_code"]),
+            token_endpoint_auth_method: "private_key_jwt".to_owned(),
+            require_dpop_bound_tokens: false,
+            require_mtls_bound_tokens: false,
+            tls_client_auth_subject_dn: None,
+            tls_client_auth_cert_sha256: None,
+            allow_client_assertion_audience_array: false,
+            allow_client_assertion_endpoint_audience: false,
+            require_par_request_object: false,
+            is_active: true,
+            jwks: Some(jwks),
+        }
+    }
+
+    fn signed_client_assertion(
+        client_id: &str,
+        audience: &str,
+        kid: &str,
+        private_pkcs8_der: &[u8],
+        jti: &str,
+    ) -> String {
+        let now = Utc::now().timestamp();
+        let claims = json!({
+            "iss": client_id,
+            "sub": client_id,
+            "aud": audience,
+            "iat": now,
+            "nbf": now,
+            "exp": now + 120,
+            "jti": jti
+        });
+        let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+        header.kid = Some(kid.to_owned());
+        jsonwebtoken::encode(
+            &header,
+            &claims,
+            &jsonwebtoken::EncodingKey::from_rsa_der(private_pkcs8_der),
+        )
+        .expect("client assertion should sign")
     }
 
     #[test]
@@ -705,6 +789,89 @@ mod tests {
         assert!(!claims.contains_key("state"));
         assert!(!claims.contains_key("code"));
         assert_eq!(claims.get("error"), Some(&json!("invalid_request")));
+    }
+
+    #[test]
+    fn access_token_header_uses_active_alg_kid_and_at_jwt_type() {
+        let header = access_token_header(jsonwebtoken::Algorithm::PS256, "active-kid");
+
+        assert_eq!(header.alg, jsonwebtoken::Algorithm::PS256);
+        assert_eq!(header.kid.as_deref(), Some("active-kid"));
+        assert_eq!(header.typ.as_deref(), Some("at+jwt"));
+    }
+
+    #[test]
+    fn access_token_claims_follow_jwt_profile_for_user_subjects() {
+        let user_id = Uuid::now_v7();
+        let scopes = vec!["profile".to_owned(), "openid".to_owned()];
+        let claims = access_token_claims(
+            "https://issuer.example",
+            AccessTokenJwtInput {
+                subject: "pairwise-subject",
+                user_id: Some(user_id),
+                subject_type: "user",
+                client_id: "client-1",
+                audience: "https://issuer.example/userinfo",
+                scopes: &scopes,
+                userinfo_claims: &["email".to_owned()],
+                ttl: 300,
+                dpop_jkt: Some("thumbprint-jkt"),
+                mtls_x5t_s256: None,
+            },
+            1_000,
+            "jti-1",
+        );
+
+        assert_eq!(claims.iss, "https://issuer.example");
+        assert_eq!(claims.aud, "https://issuer.example/userinfo");
+        assert_eq!(claims.exp, 1_300);
+        assert_eq!(claims.iat, 1_000);
+        assert_eq!(claims.nbf, 1_000);
+        assert_eq!(claims.client_id, "client-1");
+        assert_eq!(claims.sub, "pairwise-subject");
+        assert_eq!(
+            claims.user_id.as_deref(),
+            Some(user_id.to_string().as_str())
+        );
+        assert_eq!(claims.subject_type, "user");
+        assert_eq!(claims.scope, "openid profile");
+        assert_eq!(claims.token_use, "access");
+        assert_eq!(claims.jti, "jti-1");
+        assert_eq!(claims.userinfo_claims, vec!["email"]);
+        let cnf = claims.cnf.expect("DPoP-bound token should carry cnf");
+        assert_eq!(cnf.jkt.as_deref(), Some("thumbprint-jkt"));
+        assert!(cnf.x5t_s256.is_none());
+    }
+
+    #[test]
+    fn access_token_claims_keep_client_credentials_subject_separate() {
+        let scopes = vec!["write".to_owned(), "read".to_owned()];
+        let claims = access_token_claims(
+            "https://issuer.example",
+            AccessTokenJwtInput {
+                subject: "service-client",
+                user_id: None,
+                subject_type: "client",
+                client_id: "service-client",
+                audience: "resource://default",
+                scopes: &scopes,
+                userinfo_claims: &[],
+                ttl: 120,
+                dpop_jkt: None,
+                mtls_x5t_s256: Some("certificate-thumbprint"),
+            },
+            2_000,
+            "jti-2",
+        );
+
+        assert_eq!(claims.sub, "service-client");
+        assert!(claims.user_id.is_none());
+        assert_eq!(claims.subject_type, "client");
+        assert_eq!(claims.client_id, "service-client");
+        assert_eq!(claims.scope, "read write");
+        let cnf = claims.cnf.expect("mTLS-bound token should carry cnf");
+        assert!(cnf.jkt.is_none());
+        assert_eq!(cnf.x5t_s256.as_deref(), Some("certificate-thumbprint"));
     }
 
     #[test]
@@ -866,6 +1033,116 @@ mod tests {
             &expected,
             true
         ));
+    }
+
+    #[test]
+    fn private_key_jwt_accepts_current_and_previous_jwks_during_rotation() {
+        let first = generate_key_material(jsonwebtoken::Algorithm::RS256)
+            .expect("first key should generate")
+            .private_pkcs8_der;
+        let second = generate_key_material(jsonwebtoken::Algorithm::RS256)
+            .expect("second key should generate")
+            .private_pkcs8_der;
+        let first_jwk =
+            public_jwk_from_private_der("kid-1", jsonwebtoken::Algorithm::RS256, &first)
+                .expect("first jwk should derive");
+        let second_jwk =
+            public_jwk_from_private_der("kid-2", jsonwebtoken::Algorithm::RS256, &second)
+                .expect("second jwk should derive");
+        let client = private_key_jwt_client(json!({"keys": [first_jwk, second_jwk]}));
+        let settings = test_settings();
+        let req = TestRequest::post().uri("/token").to_http_request();
+        let first_assertion = signed_client_assertion(
+            &client.client_id,
+            &settings.issuer,
+            "kid-1",
+            &first,
+            "jti-first",
+        );
+        let second_assertion = signed_client_assertion(
+            &client.client_id,
+            &settings.issuer,
+            "kid-2",
+            &second,
+            "jti-second",
+        );
+
+        assert!(
+            verify_private_key_jwt_claims_with_settings(&settings, &req, &client, &first_assertion)
+                .is_ok()
+        );
+        assert!(
+            verify_private_key_jwt_claims_with_settings(
+                &settings,
+                &req,
+                &client,
+                &second_assertion
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn private_key_jwt_rejects_assertions_after_key_retirement() {
+        let retired = generate_key_material(jsonwebtoken::Algorithm::RS256)
+            .expect("retired key should generate")
+            .private_pkcs8_der;
+        let active = generate_key_material(jsonwebtoken::Algorithm::RS256)
+            .expect("active key should generate")
+            .private_pkcs8_der;
+        let active_jwk =
+            public_jwk_from_private_der("active-kid", jsonwebtoken::Algorithm::RS256, &active)
+                .expect("active jwk should derive");
+        let client = private_key_jwt_client(json!({"keys": [active_jwk]}));
+        let settings = test_settings();
+        let req = TestRequest::post().uri("/token").to_http_request();
+        let retired_assertion = signed_client_assertion(
+            &client.client_id,
+            &settings.issuer,
+            "retired-kid",
+            &retired,
+            "jti-retired",
+        );
+
+        let result = verify_private_key_jwt_claims_with_settings(
+            &settings,
+            &req,
+            &client,
+            &retired_assertion,
+        );
+
+        assert!(matches!(result, Err(ClientAssertionError::Invalid)));
+    }
+
+    #[test]
+    fn private_key_jwt_replay_key_is_client_scoped_and_hashed() {
+        let first = client_assertion_replay_key("client-1", "assertion-jti");
+        let same = client_assertion_replay_key("client-1", "assertion-jti");
+        let other_client = client_assertion_replay_key("client-2", "assertion-jti");
+        let other_jti = client_assertion_replay_key("client-1", "other-jti");
+
+        assert_eq!(first, same);
+        assert!(first.starts_with("oauth:client_assertion:jti:"));
+        assert!(!first.contains("client-1"));
+        assert!(!first.contains("assertion-jti"));
+        assert_ne!(first, other_client);
+        assert_ne!(first, other_jti);
+    }
+
+    #[test]
+    fn private_key_jwt_replay_ttl_is_bounded_to_assertion_window() {
+        let assertion = ValidatedClientAssertion {
+            jti: "jti-1".to_owned(),
+            exp: 1_000,
+            kid: "kid-1".to_owned(),
+        };
+
+        assert_eq!(assertion.replay_ttl_seconds(900), 100);
+        assert_eq!(
+            assertion.replay_ttl_seconds(1_000 - CLIENT_ASSERTION_MAX_TTL_SECONDS - 1),
+            CLIENT_ASSERTION_MAX_TTL_SECONDS as u64
+        );
+        assert_eq!(assertion.replay_ttl_seconds(1_001), 1);
     }
 
     #[test]
