@@ -22,7 +22,15 @@ jobs:
       - name: Build release binaries
         run: cargo build --release --locked
       - name: Install SBOM tool
-        run: cargo install cargo-cyclonedx --locked
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if cargo install cargo-cyclonedx --locked; then
+              exit 0
+            fi
+            sleep $((attempt * 20))
+          done
+          cargo install cargo-cyclonedx --locked
       - name: Generate Rust SBOM
         run: |
           cargo cyclonedx --format json --override-filename nazo-oauth-server.cdx

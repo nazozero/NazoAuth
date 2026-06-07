@@ -37,7 +37,21 @@ jobs:
       - name: Install native dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev
       - name: Install Rust supply-chain tools
-        run: cargo install cargo-audit cargo-deny cargo-cyclonedx --locked
+        run: |
+          set -euo pipefail
+          install_crate() {
+            local crate="$1"
+            for attempt in 1 2 3; do
+              if cargo install "$crate" --locked; then
+                return 0
+              fi
+              sleep $((attempt * 20))
+            done
+            cargo install "$crate" --locked
+          }
+          install_crate cargo-audit
+          install_crate cargo-deny
+          install_crate cargo-cyclonedx
       - name: Audit Rust advisories
         run: cargo audit
       - name: Check dependency policy
