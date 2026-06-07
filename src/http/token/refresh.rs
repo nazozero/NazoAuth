@@ -38,7 +38,10 @@ fn confidential_client_has_sender_constrained_refresh_token(
         return false;
     }
 
-    token.dpop_jkt.is_some() || token.mtls_x5t_s256.is_some()
+    client.require_dpop_bound_tokens
+        || client.require_mtls_bound_tokens
+        || token.dpop_jkt.is_some()
+        || token.mtls_x5t_s256.is_some()
 }
 
 fn refresh_token_policy_for_profile(
@@ -461,10 +464,29 @@ mod tests {
     }
 
     #[test]
+    fn baseline_profile_preserves_confidential_sender_constrained_client_refresh_tokens() {
+        let mut token = token_row();
+        token.dpop_jkt = None;
+        token.mtls_x5t_s256 = None;
+        let client = client_row();
+
+        assert_eq!(
+            refresh_token_policy_for_authorization_server_profile(
+                AuthorizationServerProfile::Oauth2Baseline,
+                &client,
+                &token,
+            ),
+            RefreshTokenPolicy::PreserveExisting
+        );
+    }
+
+    #[test]
     fn baseline_profile_rotates_unbound_refresh_tokens() {
         let mut token = token_row();
         token.dpop_jkt = None;
-        let client = client_row();
+        let mut client = client_row();
+        client.require_dpop_bound_tokens = false;
+        client.require_mtls_bound_tokens = false;
 
         assert_eq!(
             refresh_token_policy_for_authorization_server_profile(
