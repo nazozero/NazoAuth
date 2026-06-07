@@ -68,6 +68,8 @@ pub(crate) struct UserRow {
     pub(crate) phone_number_verified: bool,
     #[diesel(sql_type = diesel::sql_types::Bool)]
     pub(crate) email_verified: bool,
+    #[diesel(sql_type = diesel::sql_types::Bool)]
+    pub(crate) mfa_enabled: bool,
     #[diesel(sql_type = diesel::sql_types::VarChar)]
     pub(crate) password_hash: String,
     #[diesel(sql_type = diesel::sql_types::Bool)]

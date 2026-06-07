@@ -1,4 +1,42 @@
 diesel::table! {
+    user_totp_credentials (id) {
+        id -> Uuid,
+        tenant_id -> Uuid,
+        user_id -> Uuid,
+        secret_base32 -> Varchar,
+        label -> Varchar,
+        confirmed_at -> Nullable<Timestamptz>,
+        last_used_step -> Nullable<Int8>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    user_mfa_backup_codes (id) {
+        id -> Uuid,
+        tenant_id -> Uuid,
+        user_id -> Uuid,
+        code_hash -> Varchar,
+        used_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    user_mfa_remembered_devices (id) {
+        id -> Uuid,
+        tenant_id -> Uuid,
+        user_id -> Uuid,
+        token_hash -> Varchar,
+        user_agent_hash -> Nullable<Varchar>,
+        created_at -> Timestamptz,
+        last_used_at -> Nullable<Timestamptz>,
+        expires_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
     access_token_revocations (id) {
         id -> Uuid,
         access_token_jti_blake3 -> Varchar,
@@ -186,6 +224,12 @@ diesel::joinable!(realms -> tenants (tenant_id));
 diesel::joinable!(user_client_grants -> oauth_clients (client_id));
 diesel::joinable!(user_client_grants -> tenants (tenant_id));
 diesel::joinable!(user_client_grants -> users (user_id));
+diesel::joinable!(user_mfa_backup_codes -> tenants (tenant_id));
+diesel::joinable!(user_mfa_backup_codes -> users (user_id));
+diesel::joinable!(user_mfa_remembered_devices -> tenants (tenant_id));
+diesel::joinable!(user_mfa_remembered_devices -> users (user_id));
+diesel::joinable!(user_totp_credentials -> tenants (tenant_id));
+diesel::joinable!(user_totp_credentials -> users (user_id));
 diesel::joinable!(users -> organizations (organization_id));
 diesel::joinable!(users -> realms (realm_id));
 diesel::joinable!(users -> tenants (tenant_id));
@@ -199,5 +243,8 @@ diesel::allow_tables_to_appear_in_same_query!(
     realms,
     tenants,
     user_client_grants,
+    user_mfa_backup_codes,
+    user_mfa_remembered_devices,
+    user_totp_credentials,
     users,
 );

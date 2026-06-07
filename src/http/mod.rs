@@ -50,7 +50,7 @@ pub(crate) mod prelude {
     };
     pub(crate) use crate::schema::{
         access_token_revocations, client_access_requests, oauth_clients, oauth_tokens,
-        user_client_grants, users,
+        user_client_grants, user_totp_credentials, users,
     };
     pub(crate) use crate::settings::Settings;
     pub(crate) use crate::support::*;

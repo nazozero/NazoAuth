@@ -9,6 +9,7 @@ mod dpop;
 mod email;
 mod email_templates;
 mod keyset;
+mod mfa;
 mod mtls;
 mod oauth;
 mod oidc_claims;
@@ -30,6 +31,7 @@ pub(crate) use cookies::*;
 pub(crate) use dpop::*;
 pub(crate) use email::*;
 pub(crate) use keyset::*;
+pub(crate) use mfa::*;
 pub(crate) use mtls::*;
 pub(crate) use oauth::*;
 pub(crate) use oidc_claims::*;
@@ -76,7 +78,8 @@ pub(crate) mod prelude {
         ConfirmationClaims, ExternalSigningKey, Keyset, UserRow, VerificationKey,
     };
     pub(crate) use crate::schema::{
-        client_access_requests, oauth_clients, user_client_grants, users,
+        client_access_requests, oauth_clients, user_client_grants, user_mfa_backup_codes,
+        user_mfa_remembered_devices, user_totp_credentials, users,
     };
     pub(crate) use crate::settings::Settings;
 

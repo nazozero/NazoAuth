@@ -61,10 +61,31 @@ pub(crate) async fn login(
     let session_id = random_urlsafe_token();
     let csrf_token = random_urlsafe_token();
     let key = format!("oauth:session:{session_id}");
+    let remembered_mfa = if user.mfa_enabled {
+        match remembered_mfa_device_valid(&state, &req, &user).await {
+            Ok(value) => value,
+            Err(error) => {
+                tracing::warn!(%error, "failed to check remembered MFA device");
+                return oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "MFA 状态查询失败.",
+                );
+            }
+        }
+    } else {
+        false
+    };
+    let mut amr = vec!["password".to_owned()];
+    if remembered_mfa {
+        amr.push("remembered_mfa".to_owned());
+        amr.push("mfa".to_owned());
+    }
     let session = SessionPayload {
         user_id: user.id,
         auth_time: Utc::now().timestamp(),
-        amr: vec!["password".to_owned()],
+        amr,
+        pending_mfa: user.mfa_enabled && !remembered_mfa,
         oidc_sid: Some(random_urlsafe_token()),
     };
     let session_body = match serde_json::to_string(&session) {
@@ -108,7 +129,8 @@ pub(crate) async fn login(
 
     let body = json!({
         "expires_in": state.settings.session_ttl_seconds,
-        "csrf_token": csrf_token
+        "csrf_token": csrf_token,
+        "mfa_required": session.pending_mfa
     });
     with_cookie_headers(
         json_response(body),

@@ -3,12 +3,43 @@
 use crate::http::prelude::*;
 
 pub(crate) async fn me(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
-    let user = match current_user_or_login_required(&state, &req).await {
-        Ok(user) => user,
-        Err(response) => return response,
+    let session = match current_session(&state, &req).await {
+        Ok(Some(session)) => session,
+        Ok(None) => match current_pending_mfa_session(&state, &req).await {
+            Ok(Some(session)) => {
+                return json_response(json!({
+                    "mfa_required": true,
+                    "id": session.user.id,
+                    "email": session.user.email,
+                    "csrf_token": cookie_value(&req, &state.settings.csrf_cookie_name)
+                }));
+            }
+            Ok(None) => return login_required_response(&state),
+            Err(error) => {
+                tracing::warn!(%error, "failed to resolve pending MFA session");
+                return oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "会话查询失败.",
+                );
+            }
+        },
+        Err(error) => {
+            tracing::warn!(%error, "failed to resolve current session");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "会话查询失败.",
+            );
+        }
     };
-    match auth_me_json(&state, &user).await {
-        Ok(body) => json_response(body),
+    match auth_me_json(&state, &session.user).await {
+        Ok(mut body) => {
+            if let Some(object) = body.as_object_mut() {
+                object.insert("mfa_required".to_owned(), json!(false));
+            }
+            json_response(body)
+        }
         Err(error) => {
             tracing::warn!(%error, "failed to build auth me response");
             oauth_error(

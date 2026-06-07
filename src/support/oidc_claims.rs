@@ -420,6 +420,7 @@ mod tests {
             phone_number: Some("+15555550000".to_owned()),
             phone_number_verified: true,
             email_verified: true,
+            mfa_enabled: false,
             password_hash: "hash".to_owned(),
             is_active: true,
             created_at: now,
