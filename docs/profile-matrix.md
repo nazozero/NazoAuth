@@ -6,14 +6,14 @@ This matrix defines the project profiles separately from product hardening. A pr
 
 | Profile | Purpose | Status |
 | --- | --- | --- |
-| `oauth2-baseline` | General OAuth authorization server profile for authorization code, refresh token, client credentials, revocation, introspection, metadata, and JWKS. | Implemented, needs matrix tests |
-| `oauth2-security-bcp` | OAuth baseline constrained by RFC 9700-style security defaults. | In progress |
+| `oauth2-baseline` | General OAuth authorization server profile for authorization code, refresh token, client credentials, revocation, introspection, metadata, and JWKS. | Implemented and covered by local matrix tests |
+| `oauth2-security-bcp` | OAuth baseline constrained by RFC 9700-style security defaults. | Policy defined; enforced through baseline controls and client/profile policy |
 | `oidc-basic-op` | OpenID Connect Authorization Code OP with discovery, ID Token, JWKS, and UserInfo. | OIDF-tested |
 | `oidc-config` | OIDC discovery/server metadata verification. | OIDF-tested |
 | `fapi2-security` | FAPI2 Security profile without message-signing options. | Runtime profile switch implemented; OIDF-tested for recorded matrix variants |
 | `fapi2-message-signing-authz-request` | FAPI2 Security plus signed authorization requests at PAR. | Runtime profile switch implemented; OIDF-tested for recorded matrix variants |
 | `fapi2-message-signing-jarm` | FAPI2 Message Signing authorization response signing option. | OIDF-tested for recorded matrix variant |
-| `fapi2-message-signing-introspection` | FAPI2 Message Signing signed introspection response option. | Not implemented |
+| `fapi2-message-signing-introspection` | FAPI2 Message Signing signed introspection response option. | Separately defined; not advertised until implemented and tested |
 
 ## `oauth2-baseline`
 
@@ -44,6 +44,12 @@ Negative tests:
 - unknown or malformed `authorization_details`
 
 ## `oauth2-security-bcp`
+
+`oauth2-security-bcp` is a documented policy profile layered onto the baseline
+runtime behavior. It is not a separate `AUTHORIZATION_SERVER_PROFILE` switch in
+the current implementation; high-risk clients use the same protocol invariants
+through registration policy, PAR/JAR/client-auth settings, sender constraint,
+and negative conformance tests.
 
 | Field | Policy |
 | --- | --- |
@@ -183,7 +189,7 @@ Negative tests:
 | Field | Policy |
 | --- | --- |
 | Base | `fapi2-security` |
-| Status | Not implemented |
+| Status | Separately defined; not advertised until implemented and tested |
 | Required before advertising | Signed introspection response generation, metadata, and OIDF tests |
 
 Negative tests:
