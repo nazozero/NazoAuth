@@ -16,6 +16,7 @@ The format follows Keep a Changelog style, and this project uses semantic versio
 - Added `docs/threat-model.md` and `docs/refresh-token-rotation.md` for security boundary and refresh-token state-machine tracking.
 - Added `CHANGELOG.md`.
 - Added token endpoint support for the standard RFC 8707 `resource` parameter as the normative single-resource input, while retaining the legacy `audience` parameter as an extension.
+- Added supply-chain and release security gates with `cargo audit`, `cargo deny`, CycloneDX SBOM generation, Trivy image scanning, keyless artifact signing, and GitHub provenance attestations.
 
 ### Changed
 
@@ -24,6 +25,7 @@ The format follows Keep a Changelog style, and this project uses semantic versio
 - Made the Argon2 password hash policy explicit: Argon2id, version 19, 19456 KiB memory, time cost 2, parallelism 1.
 - Tightened proxy-terminated mTLS handling so forwarded certificate evidence is accepted only from configured trusted proxy CIDRs and duplicate forwarded certificate headers must agree on the same SHA-256 thumbprint.
 - Marked `client_secret_post` as a compatibility client authentication method in project documentation and recommended `private_key_jwt` or mTLS for high-security clients.
+- Switched JWT signing and verification from the RustCrypto-backed `jsonwebtoken` provider to the AWS-LC-backed provider and removed the direct RustCrypto `rsa` dependency.
 
 ### Fixed
 
@@ -42,4 +44,4 @@ The format follows Keep a Changelog style, and this project uses semantic versio
 - Add explicit ACR/AMR policy and real step-up authentication support.
 - Expand RFC 8707 support from the current single-resource model to full multi-resource handling.
 - Add Dynamic Client Registration, Client Configuration Management, Rich Authorization Requests, and broader security profile configuration.
-- Add release signing, SBOM/provenance, and supply-chain verification flow.
+- Add KMS/HSM key backends, OpenTelemetry, structured SIEM export, fuzz/property testing, and HA/backup/restore documentation.

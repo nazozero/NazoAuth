@@ -6,10 +6,9 @@ use std::path::Path;
 
 use anyhow::{Context, anyhow};
 use jsonwebtoken::jwk::{Jwk, PublicKeyUse};
+use openssl::rsa::Rsa;
 use p256::elliptic_curve::pkcs8::EncodePrivateKey as EncodeEcPrivateKey;
 use rand_core::OsRng;
-use rsa::RsaPrivateKey;
-use rsa::pkcs1::EncodeRsaPrivateKey;
 
 use super::prelude::*;
 
@@ -187,8 +186,7 @@ pub(crate) fn generate_key_material(
             ed25519_pkcs8_private_der(&seed)
         }
         jsonwebtoken::Algorithm::RS256 | jsonwebtoken::Algorithm::PS256 => {
-            let private_key = RsaPrivateKey::new(&mut OsRng, 2048)?;
-            private_key.to_pkcs1_der()?.as_bytes().to_vec()
+            Rsa::generate(2048)?.private_key_to_der()?
         }
         jsonwebtoken::Algorithm::ES256 => {
             let secret_key = p256::SecretKey::random(&mut OsRng);

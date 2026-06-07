@@ -1,0 +1,71 @@
+name: release-security
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  release-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.3
+      - uses: dtolnay/rust-toolchain@1.96.0
+      - name: Install native dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev
+      - name: Build release binaries
+        run: cargo build --release --locked
+      - name: Install SBOM tool
+        run: cargo install cargo-cyclonedx --locked
+      - name: Generate Rust SBOM
+        run: |
+          cargo cyclonedx --format json --override-filename nazo-oauth-server.cdx
+          mkdir -p target
+          mv nazo-oauth-server.cdx.json target/nazo-oauth-server.cdx.json
+      - name: Build release image
+        run: docker build -f Containerfile -t nazo-oauth-server:${{ github.sha }} .
+      - name: Export release image
+        run: docker save nazo-oauth-server:${{ github.sha }} -o target/nazo-oauth-server-image.tar
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4.0.0
+      - name: Sign release artifacts
+        run: |
+          cosign sign-blob --yes --bundle target/release/nazo-oauth-server.bundle target/release/nazo-oauth-server
+          cosign sign-blob --yes --bundle target/release/nazo-oauth-migrate.bundle target/release/nazo-oauth-migrate
+          cosign sign-blob --yes --bundle target/release/nazo-oauth-keyctl.bundle target/release/nazo-oauth-keyctl
+          cosign sign-blob --yes --bundle target/release/nazo_oauth_seed_oidf.bundle target/release/nazo_oauth_seed_oidf
+          cosign sign-blob --yes --bundle target/nazo-oauth-server.cdx.json.bundle target/nazo-oauth-server.cdx.json
+          cosign sign-blob --yes --bundle target/nazo-oauth-server-image.tar.bundle target/nazo-oauth-server-image.tar
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v6.0.0
+        with:
+          name: nazo-oauth-release-artifacts
+          path: |
+            target/release/nazo-oauth-server
+            target/release/nazo-oauth-migrate
+            target/release/nazo-oauth-keyctl
+            target/release/nazo_oauth_seed_oidf
+            target/nazo-oauth-server.cdx.json
+            target/nazo-oauth-server-image.tar
+            target/release/*.bundle
+            target/*.bundle
+          if-no-files-found: error
+      - name: Attest release binaries and SBOM
+        uses: actions/attest-build-provenance@v3.0.0
+        with:
+          subject-path: |
+            target/release/nazo-oauth-server
+            target/release/nazo-oauth-migrate
+            target/release/nazo-oauth-keyctl
+            target/release/nazo_oauth_seed_oidf
+            target/nazo-oauth-server.cdx.json
+      - name: Attest release image archive
+        uses: actions/attest-build-provenance@v3.0.0
+        with:
+          subject-path: target/nazo-oauth-server-image.tar

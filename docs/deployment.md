@@ -98,6 +98,12 @@ docker run -d --name nazo-oauth-server \
 
 The repository also includes `compose.yml` for local integration. Treat it as a development baseline, not a complete production topology.
 
+## Release Security
+
+Before promoting an image, require a successful `conformance-security` workflow for the exact commit. That workflow runs Rust advisory checks, dependency policy checks, SBOM generation, image build, and Trivy scanning in addition to the Rust and real HTTP gates.
+
+For versioned releases, create a `v*` tag and require the `release-security` workflow to complete successfully. It builds release binaries, generates the Rust SBOM, signs the binaries, SBOM, and image archive through keyless Sigstore signing, uploads artifacts, and emits GitHub provenance attestations. Preserve the release evidence listed in [docs/release-security.md](release-security.md).
+
 ## Live Deployment Script
 
 The repository includes [scripts/deploy_live.ps1](../scripts/deploy_live.ps1), which builds an image, transfers it to a remote host, runs migrations, replaces the running Podman container, and verifies health and discovery.
@@ -223,4 +229,5 @@ Before launching a full OpenID Foundation conformance run:
 - Audit logs collected and retained.
 - Admin accounts hardened.
 - Dependency and image scanning in release flow.
+- Release SBOM, image signature, and provenance attestation retained.
 - OIDF conformance records updated before artifacts expire.

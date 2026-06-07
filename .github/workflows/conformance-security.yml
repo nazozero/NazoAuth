@@ -25,9 +25,50 @@ jobs:
       - name: Test
         run: cargo test --locked
 
+  supply-chain-gate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6.0.3
+      - uses: dtolnay/rust-toolchain@1.96.0
+      - name: Install native dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev
+      - name: Install Rust supply-chain tools
+        run: cargo install cargo-audit cargo-deny cargo-cyclonedx --locked
+      - name: Audit Rust advisories
+        run: cargo audit
+      - name: Check dependency policy
+        run: cargo deny check advisories bans licenses sources
+      - name: Generate Rust SBOM
+        run: |
+          cargo cyclonedx --format json --override-filename nazo-oauth-server.cdx
+          mkdir -p target
+          mv nazo-oauth-server.cdx.json target/nazo-oauth-server.cdx.json
+      - name: Build service image
+        run: docker build -f Containerfile -t nazo-oauth-supply-chain:${{ github.sha }} .
+      - name: Scan service image
+        uses: aquasecurity/trivy-action@v0.33.1
+        with:
+          image-ref: nazo-oauth-supply-chain:${{ github.sha }}
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v6.0.0
+        with:
+          name: nazo-oauth-rust-sbom
+          path: target/nazo-oauth-server.cdx.json
+          if-no-files-found: error
+
   real-http-security-matrix:
     runs-on: ubuntu-latest
-    needs: rust-gate
+    needs:
+      - rust-gate
+      - supply-chain-gate
     steps:
       - uses: actions/checkout@v6.0.3
       - name: Build service image
