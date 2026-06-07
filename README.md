@@ -12,7 +12,9 @@ The project is intentionally focused on the authorization server surface: author
 - Main branch policy: work happens on `main`
 - Conformance evidence: see [docs/conformance](docs/conformance)
 - Deployment guide: see [docs/deployment.md](docs/deployment.md)
+- Ecosystem onboarding decisions: see [docs/ecosystem-onboarding.md](docs/ecosystem-onboarding.md)
 - PostgreSQL and Valkey operations: see [docs/ha-operations.md](docs/ha-operations.md)
+- Resource server verifier: see [docs/resource-server-verifier.md](docs/resource-server-verifier.md)
 - Roadmap: see [docs/roadmap.md](docs/roadmap.md)
 - Security policy: see [SECURITY.md](SECURITY.md)
 - Release security: see [docs/release-security.md](docs/release-security.md)
@@ -39,6 +41,7 @@ This repository is not yet a full IAM suite like Keycloak, ZITADEL, authentik, o
 - User, profile, avatar, OAuth client, grant, and access-request management APIs.
 - RFC 8707 `resource` parameter support for token requests, including repeated resource indicators mapped to JWT access-token `aud` arrays. The older `audience` parameter remains as a single-audience project extension.
 - RFC 9396-style Rich Authorization Requests through `authorization_details` on authorization, PAR, and signed request object inputs. Supported detail types are advertised in OAuth metadata and bound into consent, authorization codes, refresh tokens, and JWT access-token claims.
+- Resource-server JWT access-token verifier core for Rust integrations. It validates `typ=at+jwt`, issuer, audience, expiry, scopes, algorithm/key selection, and optional DPoP or mTLS `cnf` sender constraints before application policy hooks run.
 
 ## Conformance
 
@@ -282,4 +285,4 @@ Current high-priority boundaries:
 
 Refresh-token rotation for non-FAPI compatibility profiles is documented in [docs/refresh-token-rotation.md](docs/refresh-token-rotation.md). FAPI2 Security deployments should prefer sender-constrained refresh/access tokens and should not use routine rotation by default.
 
-Known roadmap items are tracked in [docs/roadmap.md](docs/roadmap.md), [CHANGELOG.md](CHANGELOG.md), and future conformance records. Priority areas include WebAuthn/passkeys, Dynamic Client Registration, Device Authorization, Token Exchange, resource-server middleware, release signing, SBOM/provenance, and deeper supply-chain verification.
+Known roadmap items are tracked in [docs/roadmap.md](docs/roadmap.md), [CHANGELOG.md](CHANGELOG.md), and future conformance records. Dynamic Client Registration, Client Configuration Management, Device Authorization Grant, and Token Exchange are tracked as ecosystem onboarding decisions in [docs/ecosystem-onboarding.md](docs/ecosystem-onboarding.md). Remaining priority areas include WebAuthn/passkeys, MFA, federation, tenant/realm boundaries, SCIM, framework-specific resource-server middleware, and deeper conformance evidence.
