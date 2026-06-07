@@ -14,6 +14,7 @@ The project is intentionally focused on the authorization server surface: author
 - Deployment guide: see [docs/deployment.md](docs/deployment.md)
 - Roadmap: see [docs/roadmap.md](docs/roadmap.md)
 - Security policy: see [SECURITY.md](SECURITY.md)
+- Release security: see [docs/release-security.md](docs/release-security.md)
 - Change history: see [CHANGELOG.md](CHANGELOG.md)
 
 This repository is not yet a full IAM suite like Keycloak, ZITADEL, authentik, or Ory Hydra. The current goal is narrower and stricter: become one of the most trustworthy and standards-compatible OAuth2 / OpenID Connect authorization server implementations in the Rust ecosystem.
@@ -213,6 +214,8 @@ python scripts/full_real_request_load.py
 ```
 
 The `conformance-security` GitHub Actions workflow runs format, check, clippy, tests, a real HTTP matrix, load/race checks, and a Valkey outage injection check.
+
+It also runs the supply-chain gate: `cargo audit`, `cargo deny`, CycloneDX SBOM generation, container build, and Trivy image scanning. Tagged `v*` releases run the separate `release-security` workflow for release binaries, SBOM artifact upload, keyless artifact signing, and GitHub provenance attestations.
 
 ## OpenID Foundation Suite
 
