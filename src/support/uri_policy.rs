@@ -145,6 +145,10 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
 
+    fn valid_dns_host() -> impl Strategy<Value = String> {
+        "[a-z][a-z0-9]{0,16}\\.(example|test|invalid)"
+    }
+
     #[test]
     fn issuer_requires_https_except_loopback_http() {
         assert!(validate_issuer_url("https://auth.example").is_ok());
@@ -201,7 +205,7 @@ mod tests {
     proptest! {
         #[test]
         fn https_redirect_uris_without_forbidden_parts_are_allowed(
-            host in "[a-z][a-z0-9-]{0,16}\\.(example|test|invalid)",
+            host in valid_dns_host(),
             path in "[a-zA-Z0-9/_-]{0,32}"
         ) {
             let uri = format!("https://{host}/{path}");
@@ -212,7 +216,7 @@ mod tests {
 
         #[test]
         fn non_loopback_http_redirect_uris_are_rejected(
-            host in "[a-z][a-z0-9-]{0,16}\\.(example|test|invalid)",
+            host in valid_dns_host(),
             path in "[a-zA-Z0-9/_-]{0,32}"
         ) {
             let uri = format!("http://{host}/{path}");
@@ -224,7 +228,7 @@ mod tests {
         #[test]
         fn redirect_uri_rejects_credentials_fragments_and_wildcards(
             user in "[a-zA-Z0-9_-]{1,16}",
-            host in "[a-z][a-z0-9-]{0,16}\\.(example|test|invalid)",
+            host in valid_dns_host(),
             path in "[a-zA-Z0-9/_-]{0,32}"
         ) {
             let with_credentials = format!("https://{user}@{host}/{path}");
@@ -259,7 +263,7 @@ mod tests {
         #[test]
         fn issuer_urls_reject_query_fragment_credentials_and_trailing_slash(
             user in "[a-zA-Z0-9_-]{1,16}",
-            host in "[a-z][a-z0-9-]{0,16}\\.(example|test|invalid)",
+            host in valid_dns_host(),
             query in "[a-zA-Z0-9_=&-]{1,32}"
         ) {
             let issuer = format!("https://{host}");
