@@ -26,9 +26,10 @@ This matrix defines the project profiles separately from product hardening. A pr
 | PAR | Supported, not globally required by default |
 | JAR | Supported; unsigned request objects are baseline compatibility only |
 | JARM | Supported as `response_mode=jwt` when negotiated |
+| RAR | RFC 9396-style `authorization_details` accepted on authorization, PAR, and signed request object inputs for advertised supported types |
 | Refresh policy | Rotation by default for refresh-token grants |
 | Token TTLs | Authorization code <= configured `AUTH_CODE_TTL_SECONDS`; access token <= configured `ACCESS_TOKEN_TTL_SECONDS` |
-| Metadata | Generated from `AUTHORIZATION_SERVER_PROFILE`; mTLS capabilities advertised only when trusted proxy CIDRs are configured |
+| Metadata | Generated from `AUTHORIZATION_SERVER_PROFILE`; mTLS capabilities advertised only when trusted proxy CIDRs are configured; `authorization_details_types_supported` must match parser allowlist |
 
 Refresh-token rotation follows the state machine in `docs/refresh-token-rotation.md`. The lost-response retry window is a compatibility recovery path, not a replay bypass.
 
@@ -40,6 +41,7 @@ Negative tests:
 - mixed client authentication methods
 - invalid client assertion audience
 - access token transport ambiguity
+- unknown or malformed `authorization_details`
 
 ## `oauth2-security-bcp`
 
@@ -53,6 +55,7 @@ Negative tests:
 | JAR | Signed JAR recommended for high-risk clients |
 | Refresh policy | Rotation or sender constraint according to client risk |
 | Metadata | Must not overclaim disabled high-security behavior |
+| RAR | High-risk `authorization_details` require explicit transaction binding and exact stored-detail matching for non-high-risk silent consent reuse |
 
 Negative tests:
 

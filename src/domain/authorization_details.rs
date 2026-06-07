@@ -3,6 +3,8 @@
 use serde_json::Value;
 
 const AUTHORIZATION_DETAILS_MAX_BYTES: usize = 16 * 1024;
+pub(crate) const SUPPORTED_AUTHORIZATION_DETAILS_TYPES: &[&str] =
+    &["account_information", "payment_initiation"];
 
 pub(crate) fn parse_authorization_details(raw: Option<&str>) -> Result<Value, ()> {
     let Some(raw) = raw else {
@@ -65,6 +67,9 @@ fn validate_authorization_details(value: &Value) -> Result<(), ()> {
         if type_.trim().is_empty() || type_.len() > 256 {
             return Err(());
         }
+        if !SUPPORTED_AUTHORIZATION_DETAILS_TYPES.contains(&type_) {
+            return Err(());
+        }
         if let Some(actions) = object.get("actions") {
             let Some(actions) = actions.as_array() else {
                 return Err(());
@@ -101,6 +106,7 @@ mod tests {
         );
         assert!(parse_authorization_details(Some(r#"[{"type":"account_information"}]"#)).is_ok());
         assert!(parse_authorization_details(Some(r#"{"type":"payment"}"#)).is_err());
+        assert!(parse_authorization_details(Some(r#"[{"type":"unknown"}]"#)).is_err());
         assert!(parse_authorization_details(Some(r#"[{"locations":["x"]}]"#)).is_err());
         assert!(parse_authorization_details(Some(r#"[{"type":" "}]"#)).is_err());
         assert!(

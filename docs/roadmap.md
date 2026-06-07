@@ -82,7 +82,7 @@ The roadmap separates three concerns that must not be mixed:
 - [x] Add an independent OIDC `sid` value to login sessions and propagate it to ID Tokens without exposing the HTTPOnly session cookie value.
 - [x] Add consent and transaction-binding tests for high-risk `authorization_details`, especially payments or write APIs.
 - [x] Expand RFC 8707 support to multi-resource handling when an ecosystem use case requires it.
-- [ ] Implement RFC 9396 Rich Authorization Requests when structured authorization is required.
+- [x] Implement RFC 9396 Rich Authorization Requests when structured authorization is required.
 - [ ] Add OIDC RP-Initiated Logout and Back-Channel Logout.
 
 ## P1: Ecosystem Onboarding

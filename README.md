@@ -38,6 +38,7 @@ This repository is not yet a full IAM suite like Keycloak, ZITADEL, authentik, o
 - Valkey-backed sessions, security state, replay prevention, PAR handles, and rate limiting.
 - User, profile, avatar, OAuth client, grant, and access-request management APIs.
 - RFC 8707 `resource` parameter support for token requests, including repeated resource indicators mapped to JWT access-token `aud` arrays. The older `audience` parameter remains as a single-audience project extension.
+- RFC 9396-style Rich Authorization Requests through `authorization_details` on authorization, PAR, and signed request object inputs. Supported detail types are advertised in OAuth metadata and bound into consent, authorization codes, refresh tokens, and JWT access-token claims.
 
 ## Conformance
 
@@ -167,6 +168,8 @@ When `AUTHORIZATION_SERVER_PROFILE` is set to `fapi2-security`, the server requi
 
 The token endpoint accepts the standard RFC 8707 `resource` parameter as an absolute URI without a fragment. A request may repeat `resource` to request multiple audiences; single-resource access tokens keep a string `aud`, and multi-resource access tokens use a JWT `aud` array. The legacy `audience` parameter is still accepted as a single-audience project extension, but a request must not send both.
 
+The authorization endpoint, PAR endpoint, and signed request objects accept RFC 9396-style `authorization_details` arrays. Each item must be an object with a supported `type`; the server currently advertises `account_information` and `payment_initiation` in `authorization_details_types_supported`. High-risk details such as payments or write actions require fresh transaction binding and are not silently covered by a previous broad consent.
+
 ## Key Management
 
 Generate keys:
@@ -276,4 +279,4 @@ Current high-priority boundaries:
 
 Refresh-token rotation for non-FAPI compatibility profiles is documented in [docs/refresh-token-rotation.md](docs/refresh-token-rotation.md). FAPI2 Security deployments should prefer sender-constrained refresh/access tokens and should not use routine rotation by default.
 
-Known roadmap items are tracked in [docs/roadmap.md](docs/roadmap.md), [CHANGELOG.md](CHANGELOG.md), and future conformance records. Priority areas include WebAuthn/passkeys, Dynamic Client Registration, RAR, OIDC logout, resource-server middleware, release signing, SBOM/provenance, and deeper supply-chain verification.
+Known roadmap items are tracked in [docs/roadmap.md](docs/roadmap.md), [CHANGELOG.md](CHANGELOG.md), and future conformance records. Priority areas include WebAuthn/passkeys, Dynamic Client Registration, OIDC logout, resource-server middleware, release signing, SBOM/provenance, and deeper supply-chain verification.

@@ -1,5 +1,5 @@
 use super::prelude::*;
-use crate::domain::Keyset;
+use crate::domain::{Keyset, SUPPORTED_AUTHORIZATION_DETAILS_TYPES};
 use crate::settings::{AuthorizationServerProfile, Settings};
 
 const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
@@ -100,6 +100,7 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
         "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
         "authorization_response_iss_parameter_supported": true,
         "claims_parameter_supported": true,
+        "authorization_details_types_supported": SUPPORTED_AUTHORIZATION_DETAILS_TYPES,
         "request_parameter_supported": true,
         "request_uri_parameter_supported": false,
         "require_pushed_authorization_requests": settings.require_pushed_authorization_requests,
@@ -256,6 +257,25 @@ mod tests {
     #[test]
     fn discovery_claims_include_supported_id_token_acr() {
         assert!(CLAIMS_SUPPORTED.contains(&"acr"));
+    }
+
+    #[test]
+    fn discovery_advertises_supported_rar_types() {
+        let metadata = authorization_server_metadata(
+            &settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new()),
+            &keyset(jsonwebtoken::Algorithm::RS256),
+        );
+
+        assert_eq!(
+            metadata
+                .get("authorization_details_types_supported")
+                .and_then(Value::as_array)
+                .expect("RAR type metadata should be present")
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>(),
+            SUPPORTED_AUTHORIZATION_DETAILS_TYPES
+        );
     }
 
     #[test]
