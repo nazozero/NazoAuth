@@ -132,6 +132,43 @@ fn authorization_code_client_mismatch_response() -> HttpResponse {
     )
 }
 
+struct AuthorizationCodeIssueInput {
+    payload: CodePayload,
+    subject: String,
+    audiences: Vec<String>,
+    dpop_jkt: Option<String>,
+    mtls_x5t_s256: Option<String>,
+    code_hash: String,
+    refresh_token_dpop_jkt: Option<String>,
+    refresh_token_mtls_x5t_s256: Option<String>,
+}
+
+fn token_issue_from_authorization_code(input: AuthorizationCodeIssueInput) -> TokenIssue {
+    TokenIssue {
+        user_id: Some(input.payload.user_id),
+        subject: input.subject,
+        scopes: input.payload.scopes,
+        authorization_details: input.payload.authorization_details,
+        audiences: input.audiences,
+        nonce: input.payload.nonce,
+        auth_time: Some(input.payload.auth_time),
+        amr: input.payload.amr,
+        oidc_sid: input.payload.oidc_sid,
+        acr: input.payload.acr,
+        userinfo_claims: input.payload.userinfo_claims,
+        userinfo_claim_requests: input.payload.userinfo_claim_requests,
+        id_token_claims: input.payload.id_token_claims,
+        id_token_claim_requests: input.payload.id_token_claim_requests,
+        include_refresh: true,
+        rotation: None,
+        dpop_jkt: input.dpop_jkt,
+        refresh_token_dpop_jkt: input.refresh_token_dpop_jkt,
+        mtls_x5t_s256: input.mtls_x5t_s256,
+        refresh_token_mtls_x5t_s256: input.refresh_token_mtls_x5t_s256,
+        authorization_code_hash: Some(input.code_hash),
+    }
+}
+
 async fn begin_authorization_code_consumption(
     state: &AppState,
     code_hash: &str,
@@ -398,31 +435,20 @@ pub(crate) async fn token_authorization_code(
         None
     };
     let refresh_token_mtls_x5t_s256 = mtls_x5t_s256.clone();
+    let subject = oidc_subject(&state.settings, payload.user_id, &payload.redirect_uri);
     issue_token_response(
         state,
         client,
-        TokenIssue {
-            user_id: Some(payload.user_id),
-            subject: oidc_subject(&state.settings, payload.user_id, &payload.redirect_uri),
-            scopes: payload.scopes,
-            authorization_details: payload.authorization_details,
+        token_issue_from_authorization_code(AuthorizationCodeIssueInput {
+            payload,
+            subject,
             audiences,
-            nonce: payload.nonce,
-            auth_time: Some(payload.auth_time),
-            amr: payload.amr,
-            acr: payload.acr,
-            userinfo_claims: payload.userinfo_claims,
-            userinfo_claim_requests: payload.userinfo_claim_requests,
-            id_token_claims: payload.id_token_claims,
-            id_token_claim_requests: payload.id_token_claim_requests,
-            include_refresh: true,
-            rotation: None,
             dpop_jkt,
-            refresh_token_dpop_jkt,
             mtls_x5t_s256,
+            code_hash,
+            refresh_token_dpop_jkt,
             refresh_token_mtls_x5t_s256,
-            authorization_code_hash: Some(code_hash),
-        },
+        }),
     )
     .await
 }
@@ -528,6 +554,31 @@ mod tests {
             &payload,
             Some("https://client.example/callback/")
         ));
+    }
+
+    #[test]
+    fn authorization_code_token_issue_preserves_independent_oidc_sid() {
+        let payload = code_payload(true);
+
+        let issue = token_issue_from_authorization_code(AuthorizationCodeIssueInput {
+            payload,
+            subject: "subject-1".to_owned(),
+            audiences: vec!["resource://default".to_owned()],
+            dpop_jkt: Some("dpop-jkt".to_owned()),
+            mtls_x5t_s256: Some("mtls-thumbprint".to_owned()),
+            code_hash: "code-hash".to_owned(),
+            refresh_token_dpop_jkt: Some("refresh-dpop-jkt".to_owned()),
+            refresh_token_mtls_x5t_s256: Some("refresh-mtls-thumbprint".to_owned()),
+        });
+
+        assert_eq!(issue.subject, "subject-1");
+        assert_eq!(issue.oidc_sid.as_deref(), Some("sid-1"));
+        assert_eq!(issue.authorization_code_hash.as_deref(), Some("code-hash"));
+        assert_eq!(issue.dpop_jkt.as_deref(), Some("dpop-jkt"));
+        assert_eq!(
+            issue.refresh_token_mtls_x5t_s256.as_deref(),
+            Some("refresh-mtls-thumbprint")
+        );
     }
 
     #[test]
