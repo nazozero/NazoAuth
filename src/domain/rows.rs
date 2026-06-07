@@ -12,6 +12,12 @@ use uuid::Uuid;
 pub(crate) struct UserRow {
     #[diesel(sql_type = diesel::sql_types::Uuid)]
     pub(crate) id: Uuid,
+    #[diesel(sql_type = diesel::sql_types::Uuid)]
+    pub(crate) tenant_id: Uuid,
+    #[diesel(sql_type = diesel::sql_types::Uuid)]
+    pub(crate) realm_id: Uuid,
+    #[diesel(sql_type = diesel::sql_types::Uuid)]
+    pub(crate) organization_id: Uuid,
     #[diesel(sql_type = diesel::sql_types::VarChar)]
     pub(crate) username: String,
     #[diesel(sql_type = diesel::sql_types::VarChar)]
@@ -78,6 +84,12 @@ pub(crate) struct UserRow {
 pub(crate) struct ClientRow {
     #[diesel(sql_type = diesel::sql_types::Uuid)]
     pub(crate) id: Uuid,
+    #[diesel(sql_type = diesel::sql_types::Uuid)]
+    pub(crate) tenant_id: Uuid,
+    #[diesel(sql_type = diesel::sql_types::Uuid)]
+    pub(crate) realm_id: Uuid,
+    #[diesel(sql_type = diesel::sql_types::Uuid)]
+    pub(crate) organization_id: Uuid,
     #[diesel(sql_type = diesel::sql_types::VarChar)]
     pub(crate) client_id: String,
     #[diesel(sql_type = diesel::sql_types::VarChar)]
@@ -136,6 +148,8 @@ pub(crate) struct ClientRow {
 pub(crate) struct TokenRow {
     #[diesel(sql_type = diesel::sql_types::Uuid)]
     pub(crate) id: Uuid,
+    #[diesel(sql_type = diesel::sql_types::Uuid)]
+    pub(crate) tenant_id: Uuid,
     #[diesel(sql_type = diesel::sql_types::Uuid)]
     pub(crate) token_family_id: Uuid,
     #[diesel(sql_type = diesel::sql_types::Uuid)]

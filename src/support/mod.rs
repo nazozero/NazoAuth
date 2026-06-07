@@ -17,6 +17,7 @@ mod repositories;
 mod responses;
 mod security;
 mod sessions;
+mod tenancy;
 mod uri_policy;
 mod valkey;
 mod views;
@@ -37,6 +38,7 @@ pub(crate) use repositories::*;
 pub(crate) use responses::*;
 pub(crate) use security::*;
 pub(crate) use sessions::*;
+pub(crate) use tenancy::*;
 pub(crate) use uri_policy::*;
 pub(crate) use valkey::*;
 pub(crate) use views::*;
@@ -78,8 +80,11 @@ pub(crate) mod prelude {
     };
     pub(crate) use crate::settings::Settings;
 
+    #[cfg(test)]
+    pub(crate) use super::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
     pub(crate) use super::{
-        clear_cookie, constant_time_eq, cookie_value, find_client, find_user_by_id,
-        json_array_to_strings, sorted_scope_string, valkey_get, with_cookie_headers,
+        clear_cookie, constant_time_eq, cookie_value, default_tenant_context, find_client,
+        find_user_by_id, json_array_to_strings, sorted_scope_string, valkey_get,
+        with_cookie_headers,
     };
 }

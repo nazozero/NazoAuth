@@ -424,6 +424,9 @@ mod tests {
     fn client() -> ClientRow {
         ClientRow {
             id: Uuid::now_v7(),
+            tenant_id: DEFAULT_TENANT_ID,
+            realm_id: DEFAULT_REALM_ID,
+            organization_id: DEFAULT_ORGANIZATION_ID,
             client_id: "client-1".to_owned(),
             client_name: "Client".to_owned(),
             client_type: "confidential".to_owned(),

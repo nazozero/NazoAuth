@@ -390,6 +390,9 @@ mod tests {
         let now = Utc::now();
         UserRow {
             id: Uuid::now_v7(),
+            tenant_id: DEFAULT_TENANT_ID,
+            realm_id: DEFAULT_REALM_ID,
+            organization_id: DEFAULT_ORGANIZATION_ID,
             username: "alice".to_owned(),
             email: "alice@example.com".to_owned(),
             display_name: Some("Alice Example".to_owned()),

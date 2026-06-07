@@ -3,13 +3,23 @@
 
 use super::mtls::{MtlsClientCertificate, client_mtls_certificate_matches};
 use super::prelude::*;
+use super::tenancy::DEFAULT_TENANT_ID;
 
 pub(crate) async fn find_user_by_email(
     db: &DbPool,
     email: &str,
 ) -> anyhow::Result<Option<UserRow>> {
+    find_user_by_email_in_tenant(db, DEFAULT_TENANT_ID, email).await
+}
+
+pub(crate) async fn find_user_by_email_in_tenant(
+    db: &DbPool,
+    tenant_id: Uuid,
+    email: &str,
+) -> anyhow::Result<Option<UserRow>> {
     let mut conn = db.get().await?;
     Ok(users::table
+        .filter(users::tenant_id.eq(tenant_id))
         .filter(users::email.eq(email))
         .select(UserRow::as_select())
         .first::<UserRow>(&mut conn)
@@ -18,9 +28,18 @@ pub(crate) async fn find_user_by_email(
 }
 
 pub(crate) async fn find_user_by_id(db: &DbPool, id: Uuid) -> anyhow::Result<Option<UserRow>> {
+    find_user_by_id_in_tenant(db, DEFAULT_TENANT_ID, id).await
+}
+
+pub(crate) async fn find_user_by_id_in_tenant(
+    db: &DbPool,
+    tenant_id: Uuid,
+    id: Uuid,
+) -> anyhow::Result<Option<UserRow>> {
     let mut conn = db.get().await?;
     Ok(users::table
         .find(id)
+        .filter(users::tenant_id.eq(tenant_id))
         .select(UserRow::as_select())
         .first::<UserRow>(&mut conn)
         .await
@@ -28,9 +47,28 @@ pub(crate) async fn find_user_by_id(db: &DbPool, id: Uuid) -> anyhow::Result<Opt
 }
 
 pub(crate) async fn find_client(db: &DbPool, client_id: &str) -> anyhow::Result<Option<ClientRow>> {
+    find_client_in_tenant(db, DEFAULT_TENANT_ID, client_id).await
+}
+
+pub(crate) async fn find_client_in_tenant(
+    db: &DbPool,
+    tenant_id: Uuid,
+    client_id: &str,
+) -> anyhow::Result<Option<ClientRow>> {
     let mut conn = db.get().await?;
     Ok(oauth_clients::table
+        .filter(oauth_clients::tenant_id.eq(tenant_id))
         .filter(oauth_clients::client_id.eq(client_id))
+        .select(ClientRow::as_select())
+        .first::<ClientRow>(&mut conn)
+        .await
+        .optional()?)
+}
+
+pub(crate) async fn find_client_by_id(db: &DbPool, id: Uuid) -> anyhow::Result<Option<ClientRow>> {
+    let mut conn = db.get().await?;
+    Ok(oauth_clients::table
+        .find(id)
         .select(ClientRow::as_select())
         .first::<ClientRow>(&mut conn)
         .await
@@ -43,6 +81,7 @@ pub(crate) async fn find_active_mtls_client_by_certificate(
 ) -> anyhow::Result<Option<ClientRow>> {
     let mut conn = db.get().await?;
     let candidates = oauth_clients::table
+        .filter(oauth_clients::tenant_id.eq(DEFAULT_TENANT_ID))
         .filter(
             oauth_clients::token_endpoint_auth_method
                 .eq_any(["tls_client_auth", "self_signed_tls_client_auth"]),
@@ -62,4 +101,18 @@ pub(crate) async fn find_active_mtls_client_by_certificate(
         [client] => Some(client.clone()),
         _ => None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_repository_context_is_default_tenant() {
+        let context = default_tenant_context();
+
+        assert_eq!(context.tenant_id, DEFAULT_TENANT_ID);
+        assert_eq!(context.realm_id, DEFAULT_REALM_ID);
+        assert_eq!(context.organization_id, DEFAULT_ORGANIZATION_ID);
+    }
 }

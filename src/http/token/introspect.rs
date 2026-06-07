@@ -71,8 +71,12 @@ pub(crate) async fn introspect(
         if claims.client_id != client.client_id && !token_audience_allowed(&client, &claims.aud) {
             return json_response_no_store(json!({"active": false}));
         }
+        if access_token_tenant_id(&claims) != Some(client.tenant_id) {
+            return json_response_no_store(json!({"active": false}));
+        }
         let revoked = match get_conn(&state.diesel_db).await {
             Ok(mut conn) => match access_token_revocations::table
+                .filter(access_token_revocations::tenant_id.eq(client.tenant_id))
                 .filter(
                     access_token_revocations::access_token_jti_blake3.eq(blake3_hex(&claims.jti)),
                 )
@@ -120,6 +124,7 @@ pub(crate) async fn introspect(
     let hash = blake3_hex(&form.token);
     let token = match get_conn(&state.diesel_db).await {
         Ok(mut conn) => match oauth_tokens::table
+            .filter(oauth_tokens::tenant_id.eq(client.tenant_id))
             .filter(oauth_tokens::refresh_token_blake3.eq(hash))
             .select(TokenRow::as_select())
             .first::<TokenRow>(&mut conn)
@@ -194,6 +199,7 @@ mod tests {
         Claims {
             iss: "https://as.example".to_owned(),
             sub: "subject".to_owned(),
+            tenant_id: DEFAULT_TENANT_ID.to_string(),
             user_id: None,
             subject_type: "client".to_owned(),
             aud: json!("resource://default"),
@@ -244,6 +250,7 @@ mod tests {
         let issued_at = DateTime::<Utc>::from_timestamp(1_700_000_000, 0).unwrap();
         let token = TokenRow {
             id: Uuid::now_v7(),
+            tenant_id: DEFAULT_TENANT_ID,
             token_family_id: Uuid::now_v7(),
             client_id: Uuid::now_v7(),
             user_id: None,

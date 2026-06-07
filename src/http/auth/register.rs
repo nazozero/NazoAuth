@@ -70,6 +70,7 @@ pub(crate) async fn register(
         }
     };
     let username = format!("user_{}", Uuid::now_v7());
+    let tenant = default_tenant_context();
     let mut conn = match get_conn(&state.diesel_db).await {
         Ok(conn) => conn,
         Err(_) => {
@@ -83,6 +84,9 @@ pub(crate) async fn register(
 
     let row = diesel::insert_into(users::table)
         .values((
+            users::tenant_id.eq(tenant.tenant_id),
+            users::realm_id.eq(tenant.realm_id),
+            users::organization_id.eq(tenant.organization_id),
             users::username.eq(username),
             users::email.eq(&email),
             users::password_hash.eq(password_hash),
@@ -93,6 +97,14 @@ pub(crate) async fn register(
         .await;
     match row {
         Ok(user) => {
+            if !tenant.includes_user(&user) {
+                tracing::warn!("created user returned outside the default tenant context");
+                return oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "用户创建失败.",
+                );
+            }
             let _ = valkey_del(&state.valkey, &key).await;
             json_response_status(
                 StatusCode::CREATED,

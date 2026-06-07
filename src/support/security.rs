@@ -53,6 +53,10 @@ pub(crate) fn blake3_hex(value: &str) -> String {
     blake3::hash(value.as_bytes()).to_hex().to_string()
 }
 
+pub(crate) fn access_token_tenant_id(claims: &Claims) -> Option<Uuid> {
+    claims.tenant_id.parse::<Uuid>().ok()
+}
+
 pub(crate) fn random_urlsafe_token() -> String {
     URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>())
 }
@@ -471,6 +475,7 @@ fn valid_client_assertion_jti(jti: &str) -> bool {
 }
 
 pub(crate) struct AccessTokenJwtInput<'a> {
+    pub(crate) tenant_id: Uuid,
     pub(crate) subject: &'a str,
     pub(crate) user_id: Option<Uuid>,
     pub(crate) subject_type: &'a str,
@@ -513,6 +518,7 @@ fn access_token_claims(
     Claims {
         iss: issuer.to_owned(),
         sub: input.subject.to_string(),
+        tenant_id: input.tenant_id.to_string(),
         user_id: input.user_id.map(|id| id.to_string()),
         subject_type: input.subject_type.to_string(),
         aud: token_audience_claim(input.audiences),
@@ -750,6 +756,9 @@ mod tests {
     fn private_key_jwt_client(jwks: Value) -> ClientRow {
         ClientRow {
             id: Uuid::now_v7(),
+            tenant_id: DEFAULT_TENANT_ID,
+            realm_id: DEFAULT_REALM_ID,
+            organization_id: DEFAULT_ORGANIZATION_ID,
             client_id: "client-1".to_owned(),
             client_name: "Client".to_owned(),
             client_type: "confidential".to_owned(),
@@ -938,6 +947,7 @@ mod tests {
         let claims = access_token_claims(
             "https://issuer.example",
             AccessTokenJwtInput {
+                tenant_id: DEFAULT_TENANT_ID,
                 subject: "pairwise-subject",
                 user_id: Some(user_id),
                 subject_type: "user",
@@ -961,6 +971,7 @@ mod tests {
         assert_eq!(claims.iat, 1_000);
         assert_eq!(claims.nbf, 1_000);
         assert_eq!(claims.client_id, "client-1");
+        assert_eq!(claims.tenant_id, DEFAULT_TENANT_ID.to_string());
         assert_eq!(claims.sub, "pairwise-subject");
         assert_eq!(
             claims.user_id.as_deref(),
@@ -982,6 +993,7 @@ mod tests {
         let claims = access_token_claims(
             "https://issuer.example",
             AccessTokenJwtInput {
+                tenant_id: DEFAULT_TENANT_ID,
                 subject: "service-client",
                 user_id: None,
                 subject_type: "client",

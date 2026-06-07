@@ -3,6 +3,7 @@ diesel::table! {
         id -> Uuid,
         access_token_jti_blake3 -> Varchar,
         client_id -> Uuid,
+        tenant_id -> Uuid,
         revoked_at -> Timestamptz,
         expires_at -> Timestamptz,
     }
@@ -11,6 +12,7 @@ diesel::table! {
 diesel::table! {
     client_access_requests (id) {
         id -> Uuid,
+        tenant_id -> Uuid,
         user_id -> Uuid,
         site_name -> Varchar,
         site_url -> Varchar,
@@ -28,6 +30,9 @@ diesel::table! {
 diesel::table! {
     oauth_clients (id) {
         id -> Uuid,
+        tenant_id -> Uuid,
+        realm_id -> Uuid,
+        organization_id -> Uuid,
         client_id -> Varchar,
         client_name -> Varchar,
         client_type -> Text,
@@ -61,6 +66,7 @@ diesel::table! {
 diesel::table! {
     oauth_tokens (id) {
         id -> Uuid,
+        tenant_id -> Uuid,
         refresh_token_blake3 -> Varchar,
         token_family_id -> Uuid,
         rotated_from_id -> Nullable<Uuid>,
@@ -81,6 +87,7 @@ diesel::table! {
 diesel::table! {
     user_client_grants (id) {
         id -> Uuid,
+        tenant_id -> Uuid,
         user_id -> Uuid,
         client_id -> Uuid,
         first_authorized_at -> Timestamptz,
@@ -94,6 +101,9 @@ diesel::table! {
 diesel::table! {
     users (id) {
         id -> Uuid,
+        tenant_id -> Uuid,
+        realm_id -> Uuid,
+        organization_id -> Uuid,
         username -> Varchar,
         email -> Varchar,
         password_hash -> Varchar,
@@ -127,18 +137,67 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    tenants (id) {
+        id -> Uuid,
+        slug -> Varchar,
+        display_name -> Varchar,
+        status -> Varchar,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    realms (id) {
+        id -> Uuid,
+        tenant_id -> Uuid,
+        slug -> Varchar,
+        display_name -> Varchar,
+        status -> Varchar,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    organizations (id) {
+        id -> Uuid,
+        tenant_id -> Uuid,
+        slug -> Varchar,
+        display_name -> Varchar,
+        status -> Varchar,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
 diesel::joinable!(access_token_revocations -> oauth_clients (client_id));
 diesel::joinable!(client_access_requests -> oauth_clients (approved_client_id));
+diesel::joinable!(client_access_requests -> tenants (tenant_id));
+diesel::joinable!(oauth_clients -> organizations (organization_id));
+diesel::joinable!(oauth_clients -> realms (realm_id));
+diesel::joinable!(oauth_clients -> tenants (tenant_id));
 diesel::joinable!(oauth_tokens -> oauth_clients (client_id));
+diesel::joinable!(oauth_tokens -> tenants (tenant_id));
 diesel::joinable!(oauth_tokens -> users (user_id));
+diesel::joinable!(organizations -> tenants (tenant_id));
+diesel::joinable!(realms -> tenants (tenant_id));
 diesel::joinable!(user_client_grants -> oauth_clients (client_id));
+diesel::joinable!(user_client_grants -> tenants (tenant_id));
 diesel::joinable!(user_client_grants -> users (user_id));
+diesel::joinable!(users -> organizations (organization_id));
+diesel::joinable!(users -> realms (realm_id));
+diesel::joinable!(users -> tenants (tenant_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     access_token_revocations,
     client_access_requests,
     oauth_clients,
     oauth_tokens,
+    organizations,
+    realms,
+    tenants,
     user_client_grants,
     users,
 );

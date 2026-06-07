@@ -74,16 +74,17 @@ async fn mark_token_family_reuse(
 
 async fn insert_refresh_token(
     conn: &mut AsyncPgConnection,
-    client_id: Uuid,
+    client: &ClientRow,
     issue: &TokenIssue,
     refresh: &PendingRefreshToken,
 ) -> diesel::QueryResult<usize> {
     diesel::insert_into(oauth_tokens::table)
         .values((
             oauth_tokens::refresh_token_blake3.eq(blake3_hex(&refresh.raw)),
+            oauth_tokens::tenant_id.eq(client.tenant_id),
             oauth_tokens::token_family_id.eq(refresh.family),
             oauth_tokens::rotated_from_id.eq(refresh.rotated_from),
-            oauth_tokens::client_id.eq(client_id),
+            oauth_tokens::client_id.eq(client.id),
             oauth_tokens::user_id.eq(issue.user_id),
             oauth_tokens::scopes.eq(json!(issue.scopes)),
             oauth_tokens::authorization_details.eq(issue.authorization_details.clone()),
@@ -109,6 +110,7 @@ async fn persist_refresh_token(
             if let Some(rotated_from) = refresh.rotated_from {
                 let rotated = diesel::update(
                     oauth_tokens::table
+                        .filter(oauth_tokens::tenant_id.eq(client.tenant_id))
                         .filter(oauth_tokens::id.eq(rotated_from))
                         .filter(oauth_tokens::revoked_at.is_null()),
                 )
@@ -120,7 +122,7 @@ async fn persist_refresh_token(
                     return Ok(RefreshPersistResult::RotationConflict);
                 }
             }
-            insert_refresh_token(conn, client.id, issue, refresh).await?;
+            insert_refresh_token(conn, client, issue, refresh).await?;
             Ok(RefreshPersistResult::Inserted)
         })
         .await?;
@@ -206,7 +208,7 @@ async fn mark_failed_authorization_code_if_needed(
 
 pub(super) async fn revoke_issued_authorization_code_tokens(
     state: &AppState,
-    client_id: Uuid,
+    client: &ClientRow,
     access_token_jti: &str,
     access_token_expires_at: i64,
     refresh_token_family_id: Option<Uuid>,
@@ -216,11 +218,15 @@ pub(super) async fn revoke_issued_authorization_code_tokens(
         diesel::insert_into(access_token_revocations::table)
             .values((
                 access_token_revocations::access_token_jti_blake3.eq(blake3_hex(access_token_jti)),
-                access_token_revocations::client_id.eq(client_id),
+                access_token_revocations::tenant_id.eq(client.tenant_id),
+                access_token_revocations::client_id.eq(client.id),
                 access_token_revocations::revoked_at.eq(Utc::now()),
                 access_token_revocations::expires_at.eq(expires_at),
             ))
-            .on_conflict(access_token_revocations::access_token_jti_blake3)
+            .on_conflict((
+                access_token_revocations::tenant_id,
+                access_token_revocations::access_token_jti_blake3,
+            ))
             .do_nothing()
             .execute(&mut conn)
             .await?;
@@ -228,7 +234,8 @@ pub(super) async fn revoke_issued_authorization_code_tokens(
     if let Some(family_id) = refresh_token_family_id {
         diesel::update(
             oauth_tokens::table
-                .filter(oauth_tokens::client_id.eq(client_id))
+                .filter(oauth_tokens::tenant_id.eq(client.tenant_id))
+                .filter(oauth_tokens::client_id.eq(client.id))
                 .filter(oauth_tokens::token_family_id.eq(family_id))
                 .filter(oauth_tokens::revoked_at.is_null()),
         )
@@ -282,6 +289,7 @@ pub(crate) async fn issue_token_response(
     let issued_access_token = match make_jwt(
         state,
         AccessTokenJwtInput {
+            tenant_id: client.tenant_id,
             subject: &issue.subject,
             user_id: issue.user_id,
             subject_type: if issue.user_id.is_some() {
@@ -469,7 +477,7 @@ pub(crate) async fn issue_token_response(
         tracing::warn!(%error, "failed to persist consumed authorization code marker");
         if let Err(revoke_error) = revoke_issued_authorization_code_tokens(
             state,
-            client.id,
+            client,
             &issued_access_token.jti,
             issued_access_token.exp,
             refresh_token_family_id,
@@ -525,6 +533,9 @@ mod tests {
     fn client_with_grants(grant_types: &[&str]) -> ClientRow {
         ClientRow {
             id: Uuid::now_v7(),
+            tenant_id: DEFAULT_TENANT_ID,
+            realm_id: DEFAULT_REALM_ID,
+            organization_id: DEFAULT_ORGANIZATION_ID,
             client_id: "client-1".to_owned(),
             client_name: "Client".to_owned(),
             client_type: "public".to_owned(),

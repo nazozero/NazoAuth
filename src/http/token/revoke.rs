@@ -65,6 +65,7 @@ pub(crate) async fn revoke(state: Data<AppState>, req: HttpRequest, body: Bytes)
     let updated = match get_conn(&state.diesel_db).await {
         Ok(mut conn) => match diesel::update(
             oauth_tokens::table
+                .filter(oauth_tokens::tenant_id.eq(client.tenant_id))
                 .filter(oauth_tokens::refresh_token_blake3.eq(&refresh_hash))
                 .filter(oauth_tokens::client_id.eq(client.id)),
         )
@@ -113,11 +114,15 @@ pub(crate) async fn revoke(state: Data<AppState>, req: HttpRequest, body: Bytes)
         if let Err(error) = diesel::insert_into(access_token_revocations::table)
             .values((
                 access_token_revocations::access_token_jti_blake3.eq(blake3_hex(&claims.jti)),
+                access_token_revocations::tenant_id.eq(client.tenant_id),
                 access_token_revocations::client_id.eq(client.id),
                 access_token_revocations::revoked_at.eq(Utc::now()),
                 access_token_revocations::expires_at.eq(expires_at),
             ))
-            .on_conflict(access_token_revocations::access_token_jti_blake3)
+            .on_conflict((
+                access_token_revocations::tenant_id,
+                access_token_revocations::access_token_jti_blake3,
+            ))
             .do_nothing()
             .execute(&mut conn)
             .await

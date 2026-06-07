@@ -31,6 +31,7 @@ pub(crate) struct OidcClaimRequest {
 pub(crate) struct Claims {
     pub(crate) iss: String,
     pub(crate) sub: String,
+    pub(crate) tenant_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) user_id: Option<String>,
     pub(crate) subject_type: String,

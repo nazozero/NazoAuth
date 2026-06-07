@@ -745,6 +745,9 @@ mod tests {
     fn dpop_bound_client_rejects_unsigned_request_objects() {
         let mut client = ClientRow {
             id: Uuid::now_v7(),
+            tenant_id: DEFAULT_TENANT_ID,
+            realm_id: DEFAULT_REALM_ID,
+            organization_id: DEFAULT_ORGANIZATION_ID,
             client_id: "client-a".to_owned(),
             client_name: "Client A".to_owned(),
             client_type: "confidential".to_owned(),
@@ -796,6 +799,9 @@ mod tests {
     fn par_request_object_policy_rejects_unsigned_request_objects() {
         let mut client = ClientRow {
             id: Uuid::now_v7(),
+            tenant_id: DEFAULT_TENANT_ID,
+            realm_id: DEFAULT_REALM_ID,
+            organization_id: DEFAULT_ORGANIZATION_ID,
             client_id: "client-a".to_owned(),
             client_name: "Client A".to_owned(),
             client_type: "confidential".to_owned(),
@@ -854,6 +860,9 @@ mod tests {
         };
         let client = ClientRow {
             id: Uuid::now_v7(),
+            tenant_id: DEFAULT_TENANT_ID,
+            realm_id: DEFAULT_REALM_ID,
+            organization_id: DEFAULT_ORGANIZATION_ID,
             client_id: "client-a".to_owned(),
             client_name: "Client A".to_owned(),
             client_type: "confidential".to_owned(),

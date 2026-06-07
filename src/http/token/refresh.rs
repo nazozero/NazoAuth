@@ -12,14 +12,23 @@ fn within_lost_refresh_token_retry_window(revoked_at: DateTime<Utc>, now: DateTi
     elapsed >= Duration::zero() && elapsed <= Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS)
 }
 
-async fn mark_token_family_reuse(state: &AppState, token_family_id: Uuid) -> anyhow::Result<()> {
+async fn mark_token_family_reuse(
+    state: &AppState,
+    tenant_id: Uuid,
+    token_family_id: Uuid,
+) -> anyhow::Result<()> {
     let mut conn = get_conn(&state.diesel_db).await?;
-    diesel::update(oauth_tokens::table.filter(oauth_tokens::token_family_id.eq(token_family_id)))
-        .set(oauth_tokens::reuse_detected_at.eq(diesel_now))
-        .execute(&mut conn)
-        .await?;
     diesel::update(
         oauth_tokens::table
+            .filter(oauth_tokens::tenant_id.eq(tenant_id))
+            .filter(oauth_tokens::token_family_id.eq(token_family_id)),
+    )
+    .set(oauth_tokens::reuse_detected_at.eq(diesel_now))
+    .execute(&mut conn)
+    .await?;
+    diesel::update(
+        oauth_tokens::table
+            .filter(oauth_tokens::tenant_id.eq(tenant_id))
             .filter(oauth_tokens::token_family_id.eq(token_family_id))
             .filter(oauth_tokens::revoked_at.is_null()),
     )
@@ -43,6 +52,7 @@ async fn lost_refresh_token_successor(
 
     let mut conn = get_conn(&state.diesel_db).await?;
     let reuse_count = oauth_tokens::table
+        .filter(oauth_tokens::tenant_id.eq(token.tenant_id))
         .filter(oauth_tokens::token_family_id.eq(token.token_family_id))
         .filter(oauth_tokens::reuse_detected_at.is_not_null())
         .select(diesel::dsl::count_star())
@@ -54,6 +64,7 @@ async fn lost_refresh_token_successor(
 
     let now = Utc::now();
     let mut successors = oauth_tokens::table
+        .filter(oauth_tokens::tenant_id.eq(token.tenant_id))
         .filter(oauth_tokens::rotated_from_id.eq(token.id))
         .filter(oauth_tokens::token_family_id.eq(token.token_family_id))
         .filter(oauth_tokens::client_id.eq(client_id))
@@ -87,6 +98,7 @@ pub(crate) async fn token_refresh(
     let hash = blake3_hex(refresh_token);
     let token = match get_conn(&state.diesel_db).await {
         Ok(mut conn) => match oauth_tokens::table
+            .filter(oauth_tokens::tenant_id.eq(client.tenant_id))
             .filter(oauth_tokens::refresh_token_blake3.eq(hash))
             .select(TokenRow::as_select())
             .first::<TokenRow>(&mut conn)
@@ -136,7 +148,9 @@ pub(crate) async fn token_refresh(
                 token = successor;
             }
             Ok(None) => {
-                if let Err(error) = mark_token_family_reuse(state, token.token_family_id).await {
+                if let Err(error) =
+                    mark_token_family_reuse(state, token.tenant_id, token.token_family_id).await
+                {
                     tracing::warn!(%error, "failed to mark refresh token family reuse");
                     return oauth_token_error(
                         StatusCode::SERVICE_UNAVAILABLE,

@@ -434,10 +434,15 @@ pub(crate) async fn upsert_grant(
     let Some(client) = find_client(&state.diesel_db, client_id).await? else {
         return Ok(());
     };
+    let tenant = default_tenant_context();
+    if !tenant.same_tenant(client.tenant_id) {
+        anyhow::bail!("client resolved outside the default tenant context");
+    }
     let now = Utc::now();
     let mut conn = get_conn(&state.diesel_db).await?;
     diesel::insert_into(user_client_grants::table)
         .values((
+            user_client_grants::tenant_id.eq(client.tenant_id),
             user_client_grants::user_id.eq(user_id),
             user_client_grants::client_id.eq(client.id),
             user_client_grants::first_authorized_at.eq(now),
@@ -446,7 +451,11 @@ pub(crate) async fn upsert_grant(
             user_client_grants::last_authorization_details.eq(authorization_details.clone()),
             user_client_grants::authorization_count.eq(1),
         ))
-        .on_conflict((user_client_grants::user_id, user_client_grants::client_id))
+        .on_conflict((
+            user_client_grants::tenant_id,
+            user_client_grants::user_id,
+            user_client_grants::client_id,
+        ))
         .do_update()
         .set((
             user_client_grants::last_authorized_at.eq(now),
@@ -472,6 +481,9 @@ mod tests {
     fn client_with_redirects(redirect_uris: &[&str]) -> ClientRow {
         ClientRow {
             id: Uuid::now_v7(),
+            tenant_id: DEFAULT_TENANT_ID,
+            realm_id: DEFAULT_REALM_ID,
+            organization_id: DEFAULT_ORGANIZATION_ID,
             client_id: "client-1".to_owned(),
             client_name: "Client".to_owned(),
             client_type: "public".to_owned(),

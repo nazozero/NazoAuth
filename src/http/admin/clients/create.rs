@@ -47,6 +47,7 @@ pub(crate) enum InsertClientError {
 }
 
 pub(crate) struct PreparedClientInsert {
+    pub(crate) tenant: TenantContext,
     pub(crate) client_id: String,
     pub(crate) client_name: String,
     pub(crate) client_type: String,
@@ -139,6 +140,11 @@ pub(crate) async fn insert_client_row(
     let client = insert_prepared_client(&mut conn, &prepared)
         .await
         .map_err(|error| InsertClientError::Server(format!("客户端写入失败: {error}")))?;
+    if !prepared.tenant.includes_client(&client) {
+        return Err(InsertClientError::Server(
+            "客户端写入后租户边界不匹配".to_owned(),
+        ));
+    }
     Ok((client, issued_secret))
 }
 
@@ -163,6 +169,7 @@ pub(crate) fn prepare_client_insert(
     }
 
     Ok(PreparedClientInsert {
+        tenant: default_tenant_context(),
         client_id: format!("client-{}", Uuid::now_v7()),
         client_name: payload.client_name,
         client_type: payload.client_type,
@@ -196,6 +203,9 @@ pub(crate) async fn insert_prepared_client(
 ) -> diesel::QueryResult<ClientRow> {
     diesel::insert_into(oauth_clients::table)
         .values((
+            oauth_clients::tenant_id.eq(prepared.tenant.tenant_id),
+            oauth_clients::realm_id.eq(prepared.tenant.realm_id),
+            oauth_clients::organization_id.eq(prepared.tenant.organization_id),
             oauth_clients::client_id.eq(&prepared.client_id),
             oauth_clients::client_name.eq(&prepared.client_name),
             oauth_clients::client_type.eq(&prepared.client_type),

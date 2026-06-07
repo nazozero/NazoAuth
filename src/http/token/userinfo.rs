@@ -30,8 +30,16 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Byte
             "访问令牌 audience 不适用于 userinfo.",
         );
     }
+    let Some(tenant_id) = access_token_tenant_id(&claims) else {
+        return oauth_bearer_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_token",
+            "访问令牌租户边界无效.",
+        );
+    };
     let revoked = match get_conn(&state.diesel_db).await {
         Ok(mut conn) => match access_token_revocations::table
+            .filter(access_token_revocations::tenant_id.eq(tenant_id))
             .filter(access_token_revocations::access_token_jti_blake3.eq(blake3_hex(&claims.jti)))
             .select(count_star())
             .first::<i64>(&mut conn)

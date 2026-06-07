@@ -754,6 +754,7 @@ async fn user_grant_covers_requested_scopes(
         }
     };
     let stored = match user_client_grants::table
+        .filter(user_client_grants::tenant_id.eq(DEFAULT_TENANT_ID))
         .filter(user_client_grants::user_id.eq(user_id))
         .filter(user_client_grants::client_id.eq(client_id))
         .select((

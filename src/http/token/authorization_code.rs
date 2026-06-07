@@ -187,9 +187,24 @@ async fn revoke_replayed_authorization_code(
     state: &AppState,
     marker: ConsumedAuthorizationCode,
 ) -> Result<bool, HttpResponse> {
+    let client = match find_client_by_id(&state.diesel_db, marker.client_id).await {
+        Ok(Some(client)) => client,
+        Ok(None) => {
+            return Ok(false);
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to load replayed authorization code client");
+            return Err(oauth_token_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权码重放撤销失败.",
+                false,
+            ));
+        }
+    };
     if let Err(error) = revoke_issued_authorization_code_tokens(
         state,
-        marker.client_id,
+        &client,
         &marker.access_token_jti,
         marker.access_token_expires_at,
         marker.refresh_token_family_id,
