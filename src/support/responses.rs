@@ -333,10 +333,10 @@ mod tests {
             let rendered = challenge.to_str().unwrap();
 
             if description.bytes().all(is_oauth_error_description_byte) {
-                prop_assert!(rendered.contains(&description));
+                let expected = format!(r#"error_description="{}""#, description);
+                prop_assert!(rendered.contains(&expected));
             } else {
-                prop_assert!(rendered.contains("Request failed."));
-                prop_assert!(!rendered.contains(&description));
+                prop_assert!(rendered.contains(r#"error_description="Request failed.""#));
             }
         }
     }
