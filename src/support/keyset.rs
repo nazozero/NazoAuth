@@ -1029,6 +1029,10 @@ printf '{"signature":"%s"}' "$signature"
                 require_user_handle: true,
                 strict_base64: true,
             },
+            federation: crate::settings::FederationSettings {
+                oidc: None,
+                saml_gateway: None,
+            },
         }
     }
 }
