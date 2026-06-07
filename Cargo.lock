@@ -1877,6 +1877,7 @@ dependencies = [
  "futures-util",
  "jsonwebtoken",
  "lettre",
+ "openssl",
  "p256",
  "password-hash",
  "proptest",

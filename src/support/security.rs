@@ -3,7 +3,8 @@
 
 use super::prelude::*;
 use super::{
-    audit_event, audit_fields, request_mtls_thumbprint, signing_algorithm_name, valkey_set_ex_nx,
+    audit_event, audit_fields, request_mtls_client_certificate, signing_algorithm_name,
+    valkey_set_ex_nx,
 };
 
 const ARGON2_MEMORY_COST_KIB: u32 = 19_456;
@@ -146,7 +147,7 @@ pub(crate) fn extract_client_credentials(
             client_assertion: None,
             method: "client_secret_post".to_owned(),
         },
-        Some(id) if request_mtls_thumbprint(req, settings).is_some() => ClientCredentials {
+        Some(id) if request_mtls_client_certificate(req, settings).is_some() => ClientCredentials {
             client_id: Some(id.to_string()),
             client_secret: None,
             client_assertion: None,
@@ -695,6 +696,10 @@ mod tests {
             require_mtls_bound_tokens: false,
             tls_client_auth_subject_dn: None,
             tls_client_auth_cert_sha256: None,
+            tls_client_auth_san_dns: json!([]),
+            tls_client_auth_san_uri: json!([]),
+            tls_client_auth_san_ip: json!([]),
+            tls_client_auth_san_email: json!([]),
             allow_client_assertion_audience_array: false,
             allow_client_assertion_endpoint_audience: false,
             require_par_request_object: false,

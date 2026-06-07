@@ -34,14 +34,14 @@ async fn mtls_client_credentials_without_client_id(
     state: &AppState,
     req: &HttpRequest,
 ) -> Result<Option<ClientCredentials>, HttpResponse> {
-    let Some(thumbprint) = request_mtls_thumbprint(req, &state.settings) else {
+    let Some(certificate) = request_mtls_client_certificate(req, &state.settings) else {
         return Ok(None);
     };
-    match find_active_mtls_client_by_thumbprint(&state.diesel_db, &thumbprint).await {
+    match find_active_mtls_client_by_certificate(&state.diesel_db, &certificate).await {
         Ok(Some(client)) => Ok(Some(mtls_client_credentials(client.client_id))),
         Ok(None) => Ok(None),
         Err(error) => {
-            tracing::warn!(%error, "failed to query mTLS client by certificate thumbprint");
+            tracing::warn!(%error, "failed to query mTLS client by certificate identity");
             Err(oauth_token_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -360,7 +360,8 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
                 }
             }
             "tls_client_auth" | "self_signed_tls_client_auth" => {
-                let Some(thumbprint) = request_mtls_thumbprint(&req, &state.settings) else {
+                let Some(certificate) = request_mtls_client_certificate(&req, &state.settings)
+                else {
                     return oauth_token_error(
                         StatusCode::UNAUTHORIZED,
                         "invalid_client",
@@ -368,7 +369,7 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
                         false,
                     );
                 };
-                if !client_mtls_thumbprint_matches(&client, &thumbprint) {
+                if !client_mtls_certificate_matches(&client, &certificate) {
                     return oauth_token_error(
                         StatusCode::UNAUTHORIZED,
                         "invalid_client",
@@ -569,6 +570,10 @@ mod tests {
             require_mtls_bound_tokens: false,
             tls_client_auth_subject_dn: None,
             tls_client_auth_cert_sha256: None,
+            tls_client_auth_san_dns: json!([]),
+            tls_client_auth_san_uri: json!([]),
+            tls_client_auth_san_ip: json!([]),
+            tls_client_auth_san_email: json!([]),
             allow_client_assertion_audience_array: false,
             allow_client_assertion_endpoint_audience: false,
             require_par_request_object: false,

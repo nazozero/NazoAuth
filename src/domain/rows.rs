@@ -104,6 +104,14 @@ pub(crate) struct ClientRow {
     pub(crate) tls_client_auth_subject_dn: Option<String>,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
     pub(crate) tls_client_auth_cert_sha256: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Jsonb)]
+    pub(crate) tls_client_auth_san_dns: Value,
+    #[diesel(sql_type = diesel::sql_types::Jsonb)]
+    pub(crate) tls_client_auth_san_uri: Value,
+    #[diesel(sql_type = diesel::sql_types::Jsonb)]
+    pub(crate) tls_client_auth_san_ip: Value,
+    #[diesel(sql_type = diesel::sql_types::Jsonb)]
+    pub(crate) tls_client_auth_san_email: Value,
     #[diesel(sql_type = diesel::sql_types::Bool)]
     pub(crate) allow_client_assertion_audience_array: bool,
     #[diesel(sql_type = diesel::sql_types::Bool)]

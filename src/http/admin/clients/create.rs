@@ -20,6 +20,18 @@ pub(crate) struct CreateClientRequest {
     pub(crate) allow_client_assertion_endpoint_audience: bool,
     #[serde(default)]
     pub(crate) require_par_request_object: bool,
+    #[serde(default)]
+    pub(crate) tls_client_auth_subject_dn: Option<String>,
+    #[serde(default)]
+    pub(crate) tls_client_auth_cert_sha256: Option<String>,
+    #[serde(default)]
+    pub(crate) tls_client_auth_san_dns: Vec<String>,
+    #[serde(default)]
+    pub(crate) tls_client_auth_san_uri: Vec<String>,
+    #[serde(default)]
+    pub(crate) tls_client_auth_san_ip: Vec<String>,
+    #[serde(default)]
+    pub(crate) tls_client_auth_san_email: Vec<String>,
     pub(crate) jwks: Option<Value>,
 }
 
@@ -41,6 +53,12 @@ pub(crate) struct PreparedClientInsert {
     pub(crate) allow_client_assertion_audience_array: bool,
     pub(crate) allow_client_assertion_endpoint_audience: bool,
     pub(crate) require_par_request_object: bool,
+    pub(crate) tls_client_auth_subject_dn: Option<String>,
+    pub(crate) tls_client_auth_cert_sha256: Option<String>,
+    pub(crate) tls_client_auth_san_dns: Vec<String>,
+    pub(crate) tls_client_auth_san_uri: Vec<String>,
+    pub(crate) tls_client_auth_san_ip: Vec<String>,
+    pub(crate) tls_client_auth_san_email: Vec<String>,
     pub(crate) jwks: Option<Value>,
     pub(crate) issued_secret: Option<String>,
     client_secret_argon2_hash: Option<String>,
@@ -148,6 +166,12 @@ pub(crate) fn prepare_client_insert(
         allow_client_assertion_audience_array: payload.allow_client_assertion_audience_array,
         allow_client_assertion_endpoint_audience: payload.allow_client_assertion_endpoint_audience,
         require_par_request_object: payload.require_par_request_object,
+        tls_client_auth_subject_dn: trim_optional_string(payload.tls_client_auth_subject_dn),
+        tls_client_auth_cert_sha256: trim_optional_string(payload.tls_client_auth_cert_sha256),
+        tls_client_auth_san_dns: trim_string_vec(payload.tls_client_auth_san_dns),
+        tls_client_auth_san_uri: trim_string_vec(payload.tls_client_auth_san_uri),
+        tls_client_auth_san_ip: trim_string_vec(payload.tls_client_auth_san_ip),
+        tls_client_auth_san_email: trim_string_vec(payload.tls_client_auth_san_email),
         jwks: payload.jwks,
         issued_secret,
         client_secret_argon2_hash: secret_hash,
@@ -175,6 +199,12 @@ pub(crate) async fn insert_prepared_client(
             oauth_clients::allow_client_assertion_endpoint_audience
                 .eq(prepared.allow_client_assertion_endpoint_audience),
             oauth_clients::require_par_request_object.eq(prepared.require_par_request_object),
+            oauth_clients::tls_client_auth_subject_dn.eq(&prepared.tls_client_auth_subject_dn),
+            oauth_clients::tls_client_auth_cert_sha256.eq(&prepared.tls_client_auth_cert_sha256),
+            oauth_clients::tls_client_auth_san_dns.eq(json!(&prepared.tls_client_auth_san_dns)),
+            oauth_clients::tls_client_auth_san_uri.eq(json!(&prepared.tls_client_auth_san_uri)),
+            oauth_clients::tls_client_auth_san_ip.eq(json!(&prepared.tls_client_auth_san_ip)),
+            oauth_clients::tls_client_auth_san_email.eq(json!(&prepared.tls_client_auth_san_email)),
             oauth_clients::jwks.eq(&prepared.jwks),
             oauth_clients::is_active.eq(true),
         ))
@@ -185,13 +215,35 @@ pub(crate) async fn insert_prepared_client(
 
 /// 校验客户端注册请求的协议约束。
 fn validate_client_payload(payload: &CreateClientRequest) -> anyhow::Result<()> {
-    validate_client_metadata(
-        &payload.client_type,
-        &payload.redirect_uris,
-        &payload.scopes,
-        &payload.allowed_audiences,
-        &payload.grant_types,
-        &payload.token_endpoint_auth_method,
-        payload.jwks.as_ref(),
-    )
+    validate_client_metadata(ClientMetadata {
+        client_type: &payload.client_type,
+        redirect_uris: &payload.redirect_uris,
+        scopes: &payload.scopes,
+        allowed_audiences: &payload.allowed_audiences,
+        grant_types: &payload.grant_types,
+        token_endpoint_auth_method: &payload.token_endpoint_auth_method,
+        jwks: payload.jwks.as_ref(),
+        mtls_binding: Some(&ClientMtlsMetadata {
+            tls_client_auth_subject_dn: payload.tls_client_auth_subject_dn.clone(),
+            tls_client_auth_cert_sha256: payload.tls_client_auth_cert_sha256.clone(),
+            tls_client_auth_san_dns: payload.tls_client_auth_san_dns.clone(),
+            tls_client_auth_san_uri: payload.tls_client_auth_san_uri.clone(),
+            tls_client_auth_san_ip: payload.tls_client_auth_san_ip.clone(),
+            tls_client_auth_san_email: payload.tls_client_auth_san_email.clone(),
+        }),
+    })
+}
+
+pub(crate) fn trim_optional_string(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+}
+
+pub(crate) fn trim_string_vec(values: Vec<String>) -> Vec<String> {
+    values
+        .into_iter()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .collect()
 }

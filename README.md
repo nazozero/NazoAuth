@@ -256,4 +256,4 @@ Current high-priority boundaries:
 
 Refresh-token rotation for non-FAPI compatibility profiles is documented in [docs/refresh-token-rotation.md](docs/refresh-token-rotation.md). FAPI2 Security deployments should prefer sender-constrained refresh/access tokens and should not use routine rotation by default.
 
-Known roadmap items are tracked in [docs/roadmap.md](docs/roadmap.md), [CHANGELOG.md](CHANGELOG.md), and future conformance records. Priority areas include fuller OIDC claims request semantics, ACR/AMR policy, WebAuthn/passkeys, Dynamic Client Registration, RAR, broader RFC 8707 multi-resource support, richer mTLS RFC 8705 metadata matching, release signing, SBOM/provenance, and deeper supply-chain verification.
+Known roadmap items are tracked in [docs/roadmap.md](docs/roadmap.md), [CHANGELOG.md](CHANGELOG.md), and future conformance records. Priority areas include fuller OIDC claims request semantics, ACR/AMR policy, WebAuthn/passkeys, Dynamic Client Registration, RAR, broader RFC 8707 multi-resource support, self-signed mTLS certificate rotation, release signing, SBOM/provenance, and deeper supply-chain verification.

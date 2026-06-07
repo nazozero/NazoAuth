@@ -1,6 +1,7 @@
 //! 基础行查询函数。
 // 只放被多个 handler 复用的简单 Diesel 查询。
 
+use super::mtls::{MtlsClientCertificate, client_mtls_certificate_matches};
 use super::prelude::*;
 
 pub(crate) async fn find_user_by_email(
@@ -36,13 +37,12 @@ pub(crate) async fn find_client(db: &DbPool, client_id: &str) -> anyhow::Result<
         .optional()?)
 }
 
-pub(crate) async fn find_active_mtls_client_by_thumbprint(
+pub(crate) async fn find_active_mtls_client_by_certificate(
     db: &DbPool,
-    thumbprint: &str,
+    certificate: &MtlsClientCertificate,
 ) -> anyhow::Result<Option<ClientRow>> {
     let mut conn = db.get().await?;
-    let clients = oauth_clients::table
-        .filter(oauth_clients::tls_client_auth_cert_sha256.eq(thumbprint))
+    let candidates = oauth_clients::table
         .filter(
             oauth_clients::token_endpoint_auth_method
                 .eq_any(["tls_client_auth", "self_signed_tls_client_auth"]),
@@ -50,9 +50,14 @@ pub(crate) async fn find_active_mtls_client_by_thumbprint(
         .filter(oauth_clients::client_type.eq("confidential"))
         .filter(oauth_clients::is_active.eq(true))
         .select(ClientRow::as_select())
-        .limit(2)
+        .limit(1000)
         .load::<ClientRow>(&mut conn)
         .await?;
+    let clients = candidates
+        .into_iter()
+        .filter(|client| client_mtls_certificate_matches(client, certificate))
+        .take(2)
+        .collect::<Vec<_>>();
     Ok(match clients.as_slice() {
         [client] => Some(client.clone()),
         _ => None,

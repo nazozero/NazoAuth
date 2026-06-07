@@ -2,6 +2,7 @@
 // 只处理 OAuth 语义中的集合判断和授权记录 upsert。
 
 use super::{
+    mtls::normalize_sha256_thumbprint,
     prelude::*,
     security::{
         SUPPORTED_CLIENT_JWT_SIGNING_ALGS, blake3_hex, client_jwt_algorithm_from_name,
@@ -105,15 +106,28 @@ pub(crate) fn is_valid_pkce_value(value: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~'))
 }
 
-pub(crate) fn validate_client_metadata(
-    client_type: &str,
-    redirect_uris: &[String],
-    scopes: &[String],
-    allowed_audiences: &[String],
-    grant_types: &[String],
-    token_endpoint_auth_method: &str,
-    jwks: Option<&Value>,
-) -> anyhow::Result<()> {
+pub(crate) struct ClientMetadata<'a> {
+    pub(crate) client_type: &'a str,
+    pub(crate) redirect_uris: &'a [String],
+    pub(crate) scopes: &'a [String],
+    pub(crate) allowed_audiences: &'a [String],
+    pub(crate) grant_types: &'a [String],
+    pub(crate) token_endpoint_auth_method: &'a str,
+    pub(crate) jwks: Option<&'a Value>,
+    pub(crate) mtls_binding: Option<&'a ClientMtlsMetadata>,
+}
+
+pub(crate) fn validate_client_metadata(metadata: ClientMetadata<'_>) -> anyhow::Result<()> {
+    let ClientMetadata {
+        client_type,
+        redirect_uris,
+        scopes,
+        allowed_audiences,
+        grant_types,
+        token_endpoint_auth_method,
+        jwks,
+        mtls_binding,
+    } = metadata;
     if !matches!(client_type, "public" | "confidential") {
         anyhow::bail!("客户端类型无效");
     }
@@ -152,6 +166,19 @@ pub(crate) fn validate_client_metadata(
     {
         anyhow::bail!("mTLS 客户端认证只适用于 confidential 客户端");
     }
+    if token_endpoint_auth_method == "tls_client_auth"
+        && !mtls_binding.is_some_and(ClientMtlsMetadata::has_binding_material)
+    {
+        anyhow::bail!("tls_client_auth 客户端必须注册 subject DN、SAN 或证书 SHA-256 绑定材料");
+    }
+    if token_endpoint_auth_method == "self_signed_tls_client_auth"
+        && !mtls_binding.is_some_and(ClientMtlsMetadata::has_cert_thumbprint)
+    {
+        anyhow::bail!("self_signed_tls_client_auth 客户端必须注册证书 SHA-256 指纹");
+    }
+    if let Some(mtls_binding) = mtls_binding {
+        validate_mtls_metadata(mtls_binding)?;
+    }
     if client_type == "public"
         && grant_types
             .iter()
@@ -189,6 +216,71 @@ pub(crate) fn validate_client_metadata(
         validate_oauth_redirect_uri(client_type, redirect_uri)?;
     }
     Ok(())
+}
+
+fn validate_mtls_metadata(mtls_binding: &ClientMtlsMetadata) -> anyhow::Result<()> {
+    if let Some(subject_dn) = mtls_binding.tls_client_auth_subject_dn.as_deref()
+        && subject_dn.trim().is_empty()
+    {
+        anyhow::bail!("tls_client_auth_subject_dn 不能为空");
+    }
+    if let Some(cert_sha256) = mtls_binding.tls_client_auth_cert_sha256.as_deref()
+        && normalize_sha256_thumbprint(cert_sha256).is_none()
+    {
+        anyhow::bail!("tls_client_auth_cert_sha256 必须是 SHA-256 证书指纹");
+    }
+    validate_unique_non_empty(
+        "tls_client_auth_san_dns",
+        &mtls_binding.tls_client_auth_san_dns,
+    )?;
+    validate_unique_non_empty(
+        "tls_client_auth_san_uri",
+        &mtls_binding.tls_client_auth_san_uri,
+    )?;
+    validate_unique_non_empty(
+        "tls_client_auth_san_ip",
+        &mtls_binding.tls_client_auth_san_ip,
+    )?;
+    validate_unique_non_empty(
+        "tls_client_auth_san_email",
+        &mtls_binding.tls_client_auth_san_email,
+    )?;
+    for value in &mtls_binding.tls_client_auth_san_ip {
+        value
+            .parse::<std::net::IpAddr>()
+            .map_err(|_| anyhow::anyhow!("tls_client_auth_san_ip 必须是合法 IP 地址: {value}"))?;
+    }
+    Ok(())
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct ClientMtlsMetadata {
+    pub(crate) tls_client_auth_subject_dn: Option<String>,
+    pub(crate) tls_client_auth_cert_sha256: Option<String>,
+    pub(crate) tls_client_auth_san_dns: Vec<String>,
+    pub(crate) tls_client_auth_san_uri: Vec<String>,
+    pub(crate) tls_client_auth_san_ip: Vec<String>,
+    pub(crate) tls_client_auth_san_email: Vec<String>,
+}
+
+impl ClientMtlsMetadata {
+    pub(crate) fn has_binding_material(&self) -> bool {
+        self.tls_client_auth_subject_dn
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
+            || self.has_cert_thumbprint()
+            || !self.tls_client_auth_san_dns.is_empty()
+            || !self.tls_client_auth_san_uri.is_empty()
+            || !self.tls_client_auth_san_ip.is_empty()
+            || !self.tls_client_auth_san_email.is_empty()
+    }
+
+    pub(crate) fn has_cert_thumbprint(&self) -> bool {
+        self.tls_client_auth_cert_sha256
+            .as_deref()
+            .and_then(normalize_sha256_thumbprint)
+            .is_some()
+    }
 }
 
 pub(crate) fn validate_client_jwks(jwks: &Value) -> anyhow::Result<()> {
@@ -308,11 +400,37 @@ mod tests {
             require_mtls_bound_tokens: false,
             tls_client_auth_subject_dn: None,
             tls_client_auth_cert_sha256: None,
+            tls_client_auth_san_dns: json!([]),
+            tls_client_auth_san_uri: json!([]),
+            tls_client_auth_san_ip: json!([]),
+            tls_client_auth_san_email: json!([]),
             allow_client_assertion_audience_array: false,
             allow_client_assertion_endpoint_audience: false,
             require_par_request_object: false,
             is_active: true,
             jwks: None,
+        }
+    }
+
+    fn metadata<'a>(
+        client_type: &'a str,
+        redirect_uris: &'a [String],
+        scopes: &'a [String],
+        allowed_audiences: &'a [String],
+        grant_types: &'a [String],
+        token_endpoint_auth_method: &'a str,
+        jwks: Option<&'a Value>,
+        mtls_binding: Option<&'a ClientMtlsMetadata>,
+    ) -> ClientMetadata<'a> {
+        ClientMetadata {
+            client_type,
+            redirect_uris,
+            scopes,
+            allowed_audiences,
+            grant_types,
+            token_endpoint_auth_method,
+            jwks,
+            mtls_binding,
         }
     }
 
@@ -359,7 +477,7 @@ mod tests {
 
     #[test]
     fn client_metadata_rejects_removed_or_unsafe_grants() {
-        let result = validate_client_metadata(
+        let result = validate_client_metadata(metadata(
             "public",
             &["https://client.example/callback".to_owned()],
             &["openid".to_owned()],
@@ -367,14 +485,15 @@ mod tests {
             &["password".to_owned()],
             "none",
             None,
-        );
+            None,
+        ));
 
         assert!(result.is_err());
     }
 
     #[test]
     fn client_metadata_rejects_non_loopback_http_redirect_uri() {
-        let result = validate_client_metadata(
+        let result = validate_client_metadata(metadata(
             "public",
             &["http://client.example/callback".to_owned()],
             &["openid".to_owned()],
@@ -382,14 +501,15 @@ mod tests {
             &["authorization_code".to_owned()],
             "none",
             None,
-        );
+            None,
+        ));
 
         assert!(result.is_err());
     }
 
     #[test]
     fn client_metadata_requires_refresh_grant_for_offline_access() {
-        let result = validate_client_metadata(
+        let result = validate_client_metadata(metadata(
             "public",
             &["https://client.example/callback".to_owned()],
             &["openid".to_owned(), "offline_access".to_owned()],
@@ -397,11 +517,12 @@ mod tests {
             &["authorization_code".to_owned()],
             "none",
             None,
-        );
+            None,
+        ));
 
         assert!(result.is_err());
 
-        let result = validate_client_metadata(
+        let result = validate_client_metadata(metadata(
             "public",
             &["https://client.example/callback".to_owned()],
             &["openid".to_owned(), "offline_access".to_owned()],
@@ -409,7 +530,8 @@ mod tests {
             &["authorization_code".to_owned(), "refresh_token".to_owned()],
             "none",
             None,
-        );
+            None,
+        ));
 
         assert!(result.is_ok());
     }
@@ -427,7 +549,7 @@ mod tests {
             }]
         });
 
-        let result = validate_client_metadata(
+        let result = validate_client_metadata(metadata(
             "confidential",
             &["https://client.example/callback".to_owned()],
             &["openid".to_owned()],
@@ -435,10 +557,11 @@ mod tests {
             &["authorization_code".to_owned()],
             "private_key_jwt",
             None,
-        );
+            None,
+        ));
         assert!(result.is_err());
 
-        let result = validate_client_metadata(
+        let result = validate_client_metadata(metadata(
             "confidential",
             &["https://client.example/callback".to_owned()],
             &["openid".to_owned()],
@@ -446,7 +569,8 @@ mod tests {
             &["authorization_code".to_owned()],
             "private_key_jwt",
             Some(&jwks),
-        );
+            None,
+        ));
         assert!(result.is_ok());
     }
 
@@ -462,7 +586,7 @@ mod tests {
             }]
         });
 
-        let result = validate_client_metadata(
+        let result = validate_client_metadata(metadata(
             "confidential",
             &["https://client.example/callback".to_owned()],
             &["openid".to_owned()],
@@ -470,10 +594,11 @@ mod tests {
             &["authorization_code".to_owned()],
             "client_secret_basic",
             Some(&private_jwk),
-        );
+            None,
+        ));
         assert!(result.is_err());
 
-        let result = validate_client_metadata(
+        let result = validate_client_metadata(metadata(
             "confidential",
             &["https://client.example/callback".to_owned()],
             &["openid".to_owned()],
@@ -481,7 +606,78 @@ mod tests {
             &["authorization_code".to_owned()],
             "client_secret_basic",
             None,
-        );
+            None,
+        ));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn client_metadata_requires_mtls_binding_material() {
+        let empty_mtls = ClientMtlsMetadata::default();
+        let result = validate_client_metadata(metadata(
+            "confidential",
+            &["https://client.example/callback".to_owned()],
+            &["accounts".to_owned()],
+            &["resource://default".to_owned()],
+            &["authorization_code".to_owned()],
+            "tls_client_auth",
+            None,
+            Some(&empty_mtls),
+        ));
+        assert!(result.is_err());
+
+        let subject_mtls = ClientMtlsMetadata {
+            tls_client_auth_subject_dn: Some("CN=client-1,O=Example".to_owned()),
+            ..ClientMtlsMetadata::default()
+        };
+        let result = validate_client_metadata(metadata(
+            "confidential",
+            &["https://client.example/callback".to_owned()],
+            &["accounts".to_owned()],
+            &["resource://default".to_owned()],
+            &["authorization_code".to_owned()],
+            "tls_client_auth",
+            None,
+            Some(&subject_mtls),
+        ));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn client_metadata_requires_self_signed_mtls_thumbprint() {
+        let subject_only = ClientMtlsMetadata {
+            tls_client_auth_subject_dn: Some("CN=client-1,O=Example".to_owned()),
+            ..ClientMtlsMetadata::default()
+        };
+        let result = validate_client_metadata(metadata(
+            "confidential",
+            &["https://client.example/callback".to_owned()],
+            &["accounts".to_owned()],
+            &["resource://default".to_owned()],
+            &["authorization_code".to_owned()],
+            "self_signed_tls_client_auth",
+            None,
+            Some(&subject_only),
+        ));
+        assert!(result.is_err());
+
+        let thumbprint = ClientMtlsMetadata {
+            tls_client_auth_cert_sha256: Some(
+                "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff"
+                    .to_owned(),
+            ),
+            ..ClientMtlsMetadata::default()
+        };
+        let result = validate_client_metadata(metadata(
+            "confidential",
+            &["https://client.example/callback".to_owned()],
+            &["accounts".to_owned()],
+            &["resource://default".to_owned()],
+            &["authorization_code".to_owned()],
+            "self_signed_tls_client_auth",
+            None,
+            Some(&thumbprint),
+        ));
         assert!(result.is_ok());
     }
 
