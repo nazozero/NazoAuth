@@ -78,6 +78,7 @@ mod tests {
             phone_number: None,
             phone_number_verified: false,
             email_verified: true,
+            mfa_enabled: false,
             password_hash: "hash".to_owned(),
             is_active: true,
             created_at: Utc::now(),

@@ -48,9 +48,17 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig) {
                 .route("/send-code", web::post().to(send_code))
                 .route("/register", web::post().to(register))
                 .route("/login", web::post().to(login))
+                .route("/mfa/verify", web::post().to(mfa_verify))
                 .route("/csrf", web::get().to(csrf))
                 .route("/me", web::get().to(me))
                 .route("/me", web::patch().to(update_me))
+                .route("/me/mfa/totp/begin", web::post().to(mfa_totp_begin))
+                .route("/me/mfa/totp/confirm", web::post().to(mfa_totp_confirm))
+                .route(
+                    "/me/mfa/backup-codes/regenerate",
+                    web::post().to(mfa_backup_codes_regenerate),
+                )
+                .route("/me/mfa/disable", web::post().to(mfa_disable))
                 .route("/me/avatar", web::post().to(upload_avatar))
                 .route("/me/avatar", web::get().to(get_avatar))
                 .route("/me/avatar", web::delete().to(delete_avatar))

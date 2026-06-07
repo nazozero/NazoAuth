@@ -12,6 +12,10 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeSet, env, fs, path::Path};
 
+const DEFAULT_TENANT_ID: &str = "00000000-0000-0000-0000-000000000001";
+const DEFAULT_REALM_ID: &str = "00000000-0000-0000-0000-000000000002";
+const DEFAULT_ORGANIZATION_ID: &str = "00000000-0000-0000-0000-000000000003";
+
 #[derive(Clone, Copy)]
 struct FapiClientPolicy {
     auth_method: &'static str,
@@ -73,6 +77,9 @@ fn upsert_user(
     sql_query(
         r#"
         INSERT INTO users (
+            tenant_id,
+            realm_id,
+            organization_id,
             username,
             email,
             password_hash,
@@ -102,6 +109,9 @@ fn upsert_user(
             phone_number_verified
         )
         VALUES (
+            $3::uuid,
+            $4::uuid,
+            $5::uuid,
             'oidf_local_user',
             $1,
             $2,
@@ -130,7 +140,7 @@ fn upsert_user(
             '+15555550100',
             TRUE
         )
-        ON CONFLICT (email) DO UPDATE
+        ON CONFLICT (tenant_id, email) DO UPDATE
         SET password_hash = EXCLUDED.password_hash,
             is_active = TRUE,
             email_verified = TRUE,
@@ -159,6 +169,9 @@ fn upsert_user(
     )
     .bind::<diesel::sql_types::VarChar, _>(email)
     .bind::<diesel::sql_types::VarChar, _>(password_hash)
+    .bind::<diesel::sql_types::VarChar, _>(DEFAULT_TENANT_ID)
+    .bind::<diesel::sql_types::VarChar, _>(DEFAULT_REALM_ID)
+    .bind::<diesel::sql_types::VarChar, _>(DEFAULT_ORGANIZATION_ID)
     .execute(connection)?;
     Ok(())
 }
@@ -167,6 +180,9 @@ fn upsert_client(connection: &mut PgConnection, client: ClientUpsert<'_>) -> any
     sql_query(
         r#"
         INSERT INTO oauth_clients (
+            tenant_id,
+            realm_id,
+            organization_id,
             client_id,
             client_name,
             client_type,
@@ -187,10 +203,11 @@ fn upsert_client(connection: &mut PgConnection, client: ClientUpsert<'_>) -> any
             is_active
         )
         VALUES (
+            $17::uuid, $18::uuid, $19::uuid,
             $1, $2, 'confidential', $3, $4, $5, $6, $7, $8,
             $9, $10, $11, $12, $13, $14, $15, $16, TRUE
         )
-        ON CONFLICT (client_id) DO UPDATE
+        ON CONFLICT (tenant_id, client_id) DO UPDATE
         SET client_name = EXCLUDED.client_name,
             client_type = EXCLUDED.client_type,
             client_secret_argon2_hash = EXCLUDED.client_secret_argon2_hash,
@@ -231,6 +248,9 @@ fn upsert_client(connection: &mut PgConnection, client: ClientUpsert<'_>) -> any
     .bind::<diesel::sql_types::Bool, _>(client.allow_client_assertion_endpoint_audience)
     .bind::<diesel::sql_types::Bool, _>(client.require_par_request_object)
     .bind::<diesel::sql_types::Nullable<diesel::sql_types::Jsonb>, _>(client.jwks)
+    .bind::<diesel::sql_types::VarChar, _>(DEFAULT_TENANT_ID)
+    .bind::<diesel::sql_types::VarChar, _>(DEFAULT_REALM_ID)
+    .bind::<diesel::sql_types::VarChar, _>(DEFAULT_ORGANIZATION_ID)
     .execute(connection)?;
     Ok(())
 }

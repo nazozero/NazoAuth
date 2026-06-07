@@ -46,6 +46,9 @@ USER_EMAIL = "user-full-e2e@example.com"
 USER_PASSWORD = "UserPassword-2026"
 CLIENT_REDIRECT_URI = "https://client.example/callback"
 DEFAULT_AUDIENCE = "resource://default"
+DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000001"
+DEFAULT_REALM_ID = "00000000-0000-0000-0000-000000000002"
+DEFAULT_ORGANIZATION_ID = "00000000-0000-0000-0000-000000000003"
 CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 SESSION_COOKIE_NAME = "nazo_oauth_session"
 
@@ -399,12 +402,21 @@ def seed_prerequisites() -> None:
             cur.execute(
                 """
                 INSERT INTO users (
-                    username, email, password_hash, email_verified,
-                    display_name, role, admin_level, is_active
+                    tenant_id, realm_id, organization_id, username, email,
+                    password_hash, email_verified, display_name, role, admin_level,
+                    is_active
                 )
-                VALUES (%s, %s, %s, TRUE, %s, 'admin', 10, TRUE)
+                VALUES (%s, %s, %s, %s, %s, %s, TRUE, %s, 'admin', 10, TRUE)
                 """,
-                ("admin_full_e2e", ADMIN_EMAIL, password_hash, "Admin E2E"),
+                (
+                    DEFAULT_TENANT_ID,
+                    DEFAULT_REALM_ID,
+                    DEFAULT_ORGANIZATION_ID,
+                    "admin_full_e2e",
+                    ADMIN_EMAIL,
+                    password_hash,
+                    "Admin E2E",
+                ),
             )
         conn.commit()
 

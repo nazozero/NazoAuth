@@ -37,6 +37,7 @@ pub(crate) async fn auth_me_json(state: &AppState, user: &UserRow) -> anyhow::Re
         "address_country": user.address_country,
         "phone_number": user.phone_number,
         "phone_number_verified": user.phone_number_verified,
+        "mfa_enabled": user.mfa_enabled,
         "role": user.role,
         "admin_level": user.admin_level,
         "authorized_app_count": count
@@ -74,6 +75,7 @@ pub(crate) fn admin_user_json(user: UserRow) -> Value {
         "address_country": user.address_country,
         "phone_number": user.phone_number,
         "phone_number_verified": user.phone_number_verified,
+        "mfa_enabled": user.mfa_enabled,
         "is_active": user.is_active,
         "role": user.role,
         "admin_level": user.admin_level,

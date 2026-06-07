@@ -31,6 +31,9 @@ ADMIN_PASSWORD = os.environ.get("LOAD_ADMIN_PASSWORD", "AdminLoadPassword-2026")
 LOAD_REQUESTS = int(os.environ.get("LOAD_REQUESTS", "300"))
 LOAD_CONCURRENCY = int(os.environ.get("LOAD_CONCURRENCY", "24"))
 DEFAULT_AUDIENCE = "resource://default"
+DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000001"
+DEFAULT_REALM_ID = "00000000-0000-0000-0000-000000000002"
+DEFAULT_ORGANIZATION_ID = "00000000-0000-0000-0000-000000000003"
 
 
 def fail(message: str) -> None:
@@ -75,18 +78,27 @@ def seed_admin() -> None:
             cur.execute(
                 """
                 INSERT INTO users (
-                    username, email, password_hash, email_verified,
-                    display_name, role, admin_level, is_active
+                    tenant_id, realm_id, organization_id, username, email,
+                    password_hash, email_verified, display_name, role, admin_level,
+                    is_active
                 )
-                VALUES (%s, %s, %s, TRUE, %s, 'admin', 10, TRUE)
-                ON CONFLICT (email) DO UPDATE SET
+                VALUES (%s, %s, %s, %s, %s, %s, TRUE, %s, 'admin', 10, TRUE)
+                ON CONFLICT (tenant_id, email) DO UPDATE SET
                     password_hash = EXCLUDED.password_hash,
                     role = 'admin',
                     admin_level = 10,
                     is_active = TRUE,
                     updated_at = CURRENT_TIMESTAMP
                 """,
-                ("admin_load_e2e", ADMIN_EMAIL, password_hash, "Admin Load E2E"),
+                (
+                    DEFAULT_TENANT_ID,
+                    DEFAULT_REALM_ID,
+                    DEFAULT_ORGANIZATION_ID,
+                    "admin_load_e2e",
+                    ADMIN_EMAIL,
+                    password_hash,
+                    "Admin Load E2E",
+                ),
             )
         conn.commit()
 
