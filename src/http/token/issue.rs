@@ -242,8 +242,26 @@ pub(super) async fn revoke_issued_authorization_code_tokens(
 pub(crate) async fn issue_token_response(
     state: &AppState,
     client: &ClientRow,
-    issue: TokenIssue,
+    mut issue: TokenIssue,
 ) -> HttpResponse {
+    issue.authorization_details = match normalize_authorization_details(issue.authorization_details)
+    {
+        Ok(value) => value,
+        Err(()) => {
+            mark_failed_authorization_code_if_needed(
+                state,
+                issue.authorization_code_hash.as_deref(),
+                "authorization_details_state_invalid",
+            )
+            .await;
+            return oauth_token_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权详情状态无效.",
+                false,
+            );
+        }
+    };
     let now = Utc::now();
     let next_dpop_nonce = if issue.dpop_jkt.is_some() {
         match issue_dpop_nonce(state).await {

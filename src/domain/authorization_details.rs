@@ -1,5 +1,6 @@
 //! RFC 9396-style authorization details helpers.
 
+use serde::Deserialize;
 use serde_json::Value;
 
 const AUTHORIZATION_DETAILS_MAX_BYTES: usize = 16 * 1024;
@@ -16,6 +17,30 @@ pub(crate) fn parse_authorization_details(raw: Option<&str>) -> Result<Value, ()
     let value: Value = serde_json::from_str(raw).map_err(|_| ())?;
     validate_authorization_details(&value)?;
     Ok(value)
+}
+
+pub(crate) fn empty_authorization_details() -> Value {
+    Value::Array(Vec::new())
+}
+
+pub(crate) fn deserialize_authorization_details<'de, D>(deserializer: D) -> Result<Value, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    normalize_authorization_details(value)
+        .map_err(|()| serde::de::Error::custom("authorization_details must be a valid JSON array"))
+}
+
+pub(crate) fn normalize_authorization_details(value: Value) -> Result<Value, ()> {
+    match value {
+        Value::Null => Ok(empty_authorization_details()),
+        Value::Object(object) if object.is_empty() => Ok(empty_authorization_details()),
+        other => {
+            validate_authorization_details(&other)?;
+            Ok(other)
+        }
+    }
 }
 
 pub(crate) fn canonical_authorization_details(value: &Value) -> Result<String, ()> {
@@ -125,5 +150,23 @@ mod tests {
         assert!(!high_risk_authorization_details(&json!([
             {"type": "account", "actions": ["read"]}
         ])));
+    }
+
+    #[test]
+    fn authorization_details_normalization_preserves_only_empty_internal_states() {
+        assert_eq!(
+            normalize_authorization_details(Value::Null).unwrap(),
+            json!([])
+        );
+        assert_eq!(
+            normalize_authorization_details(json!({})).unwrap(),
+            json!([])
+        );
+        assert_eq!(
+            normalize_authorization_details(json!([{"type":"account_information"}])).unwrap(),
+            json!([{"type":"account_information"}])
+        );
+        assert!(normalize_authorization_details(json!({"type":"account_information"})).is_err());
+        assert!(normalize_authorization_details(json!([{"type":"unknown"}])).is_err());
     }
 }

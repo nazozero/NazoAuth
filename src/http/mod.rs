@@ -46,7 +46,7 @@ pub(crate) mod prelude {
         PendingAccessRequestRow, PushedAuthorizationRequest, TokenIssue, TokenRow,
         UserAccessRequestRow, UserRow, authorization_details_empty,
         canonical_authorization_details, high_risk_authorization_details,
-        parse_authorization_details,
+        normalize_authorization_details, parse_authorization_details,
     };
     pub(crate) use crate::schema::{
         access_token_revocations, client_access_requests, oauth_clients, oauth_tokens,
