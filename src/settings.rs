@@ -20,6 +20,7 @@ pub(crate) struct Settings {
     pub(crate) frontend_base_url: String,
     pub(crate) cors_allowed_origins: Vec<String>,
     pub(crate) default_audience: String,
+    pub(crate) authorization_server_profile: AuthorizationServerProfile,
     pub(crate) session_cookie_name: String,
     pub(crate) csrf_cookie_name: String,
     pub(crate) cookie_secure: bool,
@@ -41,6 +42,13 @@ pub(crate) struct Settings {
     pub(crate) pairwise_subject_secret: Option<String>,
     pub(crate) par_ttl_seconds: u64,
     pub(crate) require_pushed_authorization_requests: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AuthorizationServerProfile {
+    Oauth2Baseline,
+    Fapi2Security,
+    Fapi2MessageSigningAuthzRequest,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -124,6 +132,14 @@ impl Settings {
         if subject_type == SubjectType::Pairwise && pairwise_subject_secret.is_none() {
             bail!("PAIRWISE_SUBJECT_SECRET is required when SUBJECT_TYPE=pairwise");
         }
+        let authorization_server_profile = AuthorizationServerProfile::from_config(config)?;
+        let auth_code_ttl_seconds = config.parse("AUTH_CODE_TTL_SECONDS", 60)?;
+        if authorization_server_profile.requires_fapi2_security() && auth_code_ttl_seconds > 60 {
+            bail!("AUTH_CODE_TTL_SECONDS must be 60 or less for FAPI2 profiles");
+        }
+        let require_pushed_authorization_requests = config
+            .bool("REQUIRE_PUSHED_AUTHORIZATION_REQUESTS", false)?
+            || authorization_server_profile.requires_fapi2_security();
 
         Ok(Self {
             issuer,
@@ -131,11 +147,12 @@ impl Settings {
             frontend_base_url,
             cors_allowed_origins,
             default_audience: config.string("DEFAULT_AUDIENCE", "resource://default"),
+            authorization_server_profile,
             session_cookie_name: config.string("SESSION_COOKIE_NAME", "nazo_oauth_session"),
             csrf_cookie_name: config.string("CSRF_COOKIE_NAME", "nazo_oauth_csrf"),
             cookie_secure,
             session_ttl_seconds: config.parse("SESSION_TTL_SECONDS", 28_800)?,
-            auth_code_ttl_seconds: config.parse("AUTH_CODE_TTL_SECONDS", 60)?,
+            auth_code_ttl_seconds,
             access_token_ttl_seconds: config.parse("ACCESS_TOKEN_TTL_SECONDS", 300)?,
             id_token_ttl_seconds: config.parse("ID_TOKEN_TTL_SECONDS", 600)?,
             refresh_token_ttl_seconds: config.parse("REFRESH_TOKEN_TTL_SECONDS", 2_592_000)?,
@@ -156,9 +173,43 @@ impl Settings {
             subject_type,
             pairwise_subject_secret,
             par_ttl_seconds: config.parse("PAR_TTL_SECONDS", 90)?,
-            require_pushed_authorization_requests: config
-                .bool("REQUIRE_PUSHED_AUTHORIZATION_REQUESTS", false)?,
+            require_pushed_authorization_requests,
         })
+    }
+}
+
+impl AuthorizationServerProfile {
+    fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
+        match config
+            .string("AUTHORIZATION_SERVER_PROFILE", "oauth2-baseline")
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "oauth2-baseline" | "baseline" => Ok(Self::Oauth2Baseline),
+            "fapi2-security" => Ok(Self::Fapi2Security),
+            "fapi2-message-signing-authz-request" => Ok(Self::Fapi2MessageSigningAuthzRequest),
+            value => bail!("AUTHORIZATION_SERVER_PROFILE is not supported: {value}"),
+        }
+    }
+
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Oauth2Baseline => "oauth2-baseline",
+            Self::Fapi2Security => "fapi2-security",
+            Self::Fapi2MessageSigningAuthzRequest => "fapi2-message-signing-authz-request",
+        }
+    }
+
+    pub(crate) fn requires_fapi2_security(self) -> bool {
+        matches!(
+            self,
+            Self::Fapi2Security | Self::Fapi2MessageSigningAuthzRequest
+        )
+    }
+
+    pub(crate) fn requires_signed_authorization_request(self) -> bool {
+        self == Self::Fapi2MessageSigningAuthzRequest
     }
 }
 

@@ -204,7 +204,7 @@ fn public_key_from_ed_private_der(private_pkcs8_der: &[u8]) -> Option<[u8; 32]> 
     Some(SigningKey::from_bytes(&seed).verifying_key().to_bytes())
 }
 
-fn public_jwk_from_private_der(
+pub(crate) fn public_jwk_from_private_der(
     kid: &str,
     alg: jsonwebtoken::Algorithm,
     private_pkcs8_der: &[u8],
@@ -618,6 +618,8 @@ mod tests {
             frontend_base_url: "https://frontend.example".to_owned(),
             cors_allowed_origins: vec!["https://frontend.example".to_owned()],
             default_audience: "resource://default".to_owned(),
+            authorization_server_profile:
+                crate::settings::AuthorizationServerProfile::Oauth2Baseline,
             session_cookie_name: "session".to_owned(),
             csrf_cookie_name: "csrf".to_owned(),
             cookie_secure: true,

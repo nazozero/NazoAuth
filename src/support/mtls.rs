@@ -112,7 +112,9 @@ fn header_str<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settings::{EmailDelivery, EmailSettings, RateLimitSettings, SubjectType};
+    use crate::settings::{
+        AuthorizationServerProfile, EmailDelivery, EmailSettings, RateLimitSettings, SubjectType,
+    };
     use crate::support::{ClientIpHeaderMode, IpCidr};
     use actix_web::test::TestRequest;
 
@@ -123,6 +125,7 @@ mod tests {
             frontend_base_url: "https://app.example".to_owned(),
             cors_allowed_origins: vec!["https://app.example".to_owned()],
             default_audience: "resource://default".to_owned(),
+            authorization_server_profile: AuthorizationServerProfile::Oauth2Baseline,
             session_cookie_name: "sid".to_owned(),
             csrf_cookie_name: "csrf".to_owned(),
             cookie_secure: true,

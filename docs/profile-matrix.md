@@ -10,8 +10,8 @@ This matrix defines the project profiles separately from product hardening. A pr
 | `oauth2-security-bcp` | OAuth baseline constrained by RFC 9700-style security defaults. | In progress |
 | `oidc-basic-op` | OpenID Connect Authorization Code OP with discovery, ID Token, JWKS, and UserInfo. | OIDF-tested |
 | `oidc-config` | OIDC discovery/server metadata verification. | OIDF-tested |
-| `fapi2-security` | FAPI2 Security profile without message-signing options. | OIDF-tested for recorded matrix variants |
-| `fapi2-message-signing-authz-request` | FAPI2 Security plus signed authorization requests at PAR. | OIDF-tested for recorded matrix variants |
+| `fapi2-security` | FAPI2 Security profile without message-signing options. | Runtime profile switch implemented; OIDF-tested for recorded matrix variants |
+| `fapi2-message-signing-authz-request` | FAPI2 Security plus signed authorization requests at PAR. | Runtime profile switch implemented; OIDF-tested for recorded matrix variants |
 | `fapi2-message-signing-jarm` | FAPI2 Message Signing authorization response signing option. | OIDF-tested for recorded matrix variant |
 | `fapi2-message-signing-introspection` | FAPI2 Message Signing signed introspection response option. | Not implemented |
 
@@ -28,7 +28,7 @@ This matrix defines the project profiles separately from product hardening. A pr
 | JARM | Supported as `response_mode=jwt` when negotiated |
 | Refresh policy | Rotation by default for refresh-token grants |
 | Token TTLs | Authorization code <= configured `AUTH_CODE_TTL_SECONDS`; access token <= configured `ACCESS_TOKEN_TTL_SECONDS` |
-| Metadata | Must only advertise capabilities enabled in the deployed profile |
+| Metadata | Generated from `AUTHORIZATION_SERVER_PROFILE`; mTLS capabilities advertised only when trusted proxy CIDRs are configured |
 
 Refresh-token rotation follows the state machine in `docs/refresh-token-rotation.md`. The lost-response retry window is a compatibility recovery path, not a replay bypass.
 
@@ -119,6 +119,8 @@ Negative tests:
 
 If a deployment enables refresh-token rotation for migration or compatibility, it must document that exception and keep the replay-detection state machine from `docs/refresh-token-rotation.md`.
 
+Runtime enforcement is selected with `AUTHORIZATION_SERVER_PROFILE=fapi2-security`. This setting forces PAR globally, caps authorization code lifetime at 60 seconds, rejects password grant requests, limits clients to confidential clients, allows only `private_key_jwt` or mTLS client authentication, and requires DPoP or mTLS sender-constrained access tokens.
+
 Negative tests:
 
 - public client usage
@@ -139,6 +141,8 @@ Negative tests:
 | JAR claims | `aud` required, `nbf` required, `exp` required with lifetime <= 60 minutes |
 | JAR header | Accept `typ=oauth-authz-req+jwt` |
 | Request object `jti` | Optional product hardening unless a selected ecosystem profile requires it |
+
+Runtime enforcement is selected with `AUTHORIZATION_SERVER_PROFILE=fapi2-message-signing-authz-request`. This includes the `fapi2-security` controls and requires a signed request object at PAR. Existing signed JAR validation requires `aud`, `nbf`, and `exp`; the implementation currently uses a 5-minute maximum lifetime, which is stricter than the FAPI2 Message Signing 60-minute ceiling.
 
 Negative tests:
 

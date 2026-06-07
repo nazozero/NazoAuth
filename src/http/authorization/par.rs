@@ -134,7 +134,12 @@ pub(crate) async fn par(state: Data<AppState>, req: HttpRequest, body: Bytes) ->
     params.remove("client_secret");
     params.remove("client_assertion_type");
     params.remove("client_assertion");
-    if pushed_authorization_request_requires_request_object(&client)
+    if let Err(response) =
+        validate_pushed_authorization_request_profile(&state.settings, &client, &credentials.method)
+    {
+        return response;
+    }
+    if pushed_authorization_request_requires_request_object(&state.settings, &client)
         && !params.contains_key("request")
     {
         return oauth_error(
@@ -275,13 +280,63 @@ fn pushed_authorization_request_contains_request_uri(params: &HashMap<String, St
     params.contains_key("request_uri")
 }
 
-fn pushed_authorization_request_requires_request_object(client: &ClientRow) -> bool {
+fn pushed_authorization_request_requires_request_object(
+    settings: &Settings,
+    client: &ClientRow,
+) -> bool {
     client.require_par_request_object
+        || settings
+            .authorization_server_profile
+            .requires_signed_authorization_request()
+}
+
+fn validate_pushed_authorization_request_profile(
+    settings: &Settings,
+    client: &ClientRow,
+    auth_method: &str,
+) -> Result<(), HttpResponse> {
+    if !settings
+        .authorization_server_profile
+        .requires_fapi2_security()
+    {
+        return Ok(());
+    }
+    if client.client_type != "confidential" {
+        return Err(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "unauthorized_client",
+            "FAPI2 profiles require confidential clients.",
+        ));
+    }
+    if !matches!(
+        auth_method,
+        "private_key_jwt" | "tls_client_auth" | "self_signed_tls_client_auth"
+    ) {
+        return Err(oauth_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_client",
+            "FAPI2 profiles require private_key_jwt or mTLS client authentication.",
+        ));
+    }
+    if !(client.require_dpop_bound_tokens || client.require_mtls_bound_tokens) {
+        return Err(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "FAPI2 profiles require sender-constrained access tokens.",
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
+    use crate::settings::{
+        AuthorizationServerProfile, EmailDelivery, EmailSettings, RateLimitSettings, SubjectType,
+    };
+    use crate::support::{ClientIpHeaderMode, IpCidr};
 
     fn client(require_dpop_bound_tokens: bool) -> ClientRow {
         ClientRow {
@@ -322,12 +377,102 @@ mod tests {
     fn par_policy_requires_request_object_when_enabled() {
         let mut policy_client = client(true);
         policy_client.require_par_request_object = true;
+        let settings = Settings {
+            issuer: "https://issuer.example".to_owned(),
+            mtls_endpoint_base_url: "https://issuer.example".to_owned(),
+            frontend_base_url: "https://app.example".to_owned(),
+            cors_allowed_origins: vec!["https://app.example".to_owned()],
+            default_audience: "resource://default".to_owned(),
+            authorization_server_profile: AuthorizationServerProfile::Oauth2Baseline,
+            session_cookie_name: "sid".to_owned(),
+            csrf_cookie_name: "csrf".to_owned(),
+            cookie_secure: true,
+            session_ttl_seconds: 3600,
+            auth_code_ttl_seconds: 60,
+            access_token_ttl_seconds: 300,
+            id_token_ttl_seconds: 600,
+            refresh_token_ttl_seconds: 2_592_000,
+            avatar_max_bytes: 2_097_152,
+            client_delivery_ttl_seconds: 86_400,
+            rate_limit: RateLimitSettings {
+                window_seconds: 60,
+                auth_max_requests: 30,
+                token_max_requests: 60,
+                token_management_max_requests: 120,
+            },
+            email: EmailSettings {
+                delivery: EmailDelivery::Disabled,
+                code_ttl_seconds: 900,
+                send_cooldown_seconds: 60,
+                send_peer_cooldown_seconds: 5,
+            },
+            email_code_dev_response_enabled: false,
+            avatar_storage_dir: PathBuf::from("runtime/avatars"),
+            jwk_keys_dir: PathBuf::from("runtime/keys"),
+            trusted_proxy_cidrs: Vec::<IpCidr>::new(),
+            client_ip_header_mode: ClientIpHeaderMode::None,
+            subject_type: SubjectType::Public,
+            pairwise_subject_secret: None,
+            par_ttl_seconds: 90,
+            require_pushed_authorization_requests: false,
+        };
 
         assert!(!pushed_authorization_request_requires_request_object(
+            &settings,
             &client(true)
         ));
         assert!(pushed_authorization_request_requires_request_object(
+            &settings,
             &policy_client
+        ));
+    }
+
+    #[test]
+    fn message_signing_profile_requires_request_object_at_par() {
+        let settings = Settings {
+            issuer: "https://issuer.example".to_owned(),
+            mtls_endpoint_base_url: "https://issuer.example".to_owned(),
+            frontend_base_url: "https://app.example".to_owned(),
+            cors_allowed_origins: vec!["https://app.example".to_owned()],
+            default_audience: "resource://default".to_owned(),
+            authorization_server_profile:
+                AuthorizationServerProfile::Fapi2MessageSigningAuthzRequest,
+            session_cookie_name: "sid".to_owned(),
+            csrf_cookie_name: "csrf".to_owned(),
+            cookie_secure: true,
+            session_ttl_seconds: 3600,
+            auth_code_ttl_seconds: 60,
+            access_token_ttl_seconds: 300,
+            id_token_ttl_seconds: 600,
+            refresh_token_ttl_seconds: 2_592_000,
+            avatar_max_bytes: 2_097_152,
+            client_delivery_ttl_seconds: 86_400,
+            rate_limit: RateLimitSettings {
+                window_seconds: 60,
+                auth_max_requests: 30,
+                token_max_requests: 60,
+                token_management_max_requests: 120,
+            },
+            email: EmailSettings {
+                delivery: EmailDelivery::Disabled,
+                code_ttl_seconds: 900,
+                send_cooldown_seconds: 60,
+                send_peer_cooldown_seconds: 5,
+            },
+            email_code_dev_response_enabled: false,
+            avatar_storage_dir: PathBuf::from("runtime/avatars"),
+            jwk_keys_dir: PathBuf::from("runtime/keys"),
+            trusted_proxy_cidrs: Vec::<IpCidr>::new(),
+            client_ip_header_mode: ClientIpHeaderMode::None,
+            subject_type: SubjectType::Public,
+            pairwise_subject_secret: None,
+            par_ttl_seconds: 90,
+            require_pushed_authorization_requests: true,
+        };
+
+        assert!(pushed_authorization_request_requires_request_object(
+            &settings,
+            &client(true)
         ));
     }
 

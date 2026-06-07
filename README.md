@@ -130,6 +130,7 @@ Important settings:
 | `FRONTEND_BASE_URL` | `http://127.0.0.1:3000` | Login and consent frontend base URL |
 | `CORS_ALLOWED_ORIGINS` | `http://127.0.0.1:3000` | Comma list or YAML array |
 | `DEFAULT_AUDIENCE` | `resource://default` | Default access-token audience |
+| `AUTHORIZATION_SERVER_PROFILE` | `oauth2-baseline` | `oauth2-baseline`, `fapi2-security`, or `fapi2-message-signing-authz-request` |
 | `COOKIE_SECURE` | derived from issuer | Must be `true` in HTTPS production |
 | `TRUSTED_PROXY_CIDRS` | empty | Required before trusting forwarded IP or mTLS headers |
 | `CLIENT_IP_HEADER_MODE` | `none` | `none`, `forwarded`, or `x-forwarded-for` |
@@ -140,6 +141,8 @@ Important settings:
 | `JWK_KEYS_DIR` | `runtime/keys` | Signing key storage path |
 
 See [.env.yaml.example](.env.yaml.example) for the complete field list.
+
+When `AUTHORIZATION_SERVER_PROFILE` is set to `fapi2-security`, the server requires PAR, confidential clients, `private_key_jwt` or mTLS client authentication, sender-constrained access tokens, and authorization code lifetimes of 60 seconds or less. `fapi2-message-signing-authz-request` adds signed request objects at PAR. Discovery metadata is generated from the active profile and mTLS proxy configuration; mTLS capabilities are not advertised unless `TRUSTED_PROXY_CIDRS` is configured.
 
 ## Protocol Endpoints
 

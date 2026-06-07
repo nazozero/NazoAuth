@@ -32,6 +32,13 @@ pub(crate) async fn fapi_resource(
     {
         return response;
     }
+    if !fapi_resource_audience_allowed(&state.settings, &claims.aud) {
+        return oauth_bearer_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_token",
+            "访问令牌 audience 不适用于该资源.",
+        );
+    }
     let revoked = match get_conn(&state.diesel_db).await {
         Ok(mut conn) => match access_token_revocations::table
             .filter(access_token_revocations::access_token_jti_blake3.eq(blake3_hex(&claims.jti)))
@@ -114,6 +121,11 @@ async fn validate_access_token_binding(
         (AccessTokenAuthScheme::Bearer, None) => {}
     }
     Ok(())
+}
+
+fn fapi_resource_audience_allowed(settings: &Settings, audience: &str) -> bool {
+    let resource_url = format!("{}/fapi/resource", settings.issuer.trim_end_matches('/'));
+    audience == settings.default_audience || audience == resource_url
 }
 
 enum ResourceAccessToken {
@@ -228,5 +240,30 @@ mod tests {
         let token = resource_access_token(&req, &Bytes::from_static(b"access_token=body-token"));
 
         assert!(matches!(token, ResourceAccessToken::InvalidRequest));
+    }
+
+    #[test]
+    fn fapi_resource_accepts_only_bound_resource_audiences() {
+        let mut settings = Settings::from_config(&crate::config::ConfigSource::default())
+            .expect("default settings should load");
+        settings.issuer = "https://issuer.example".to_owned();
+        settings.default_audience = "resource://default".to_owned();
+
+        assert!(fapi_resource_audience_allowed(
+            &settings,
+            "resource://default"
+        ));
+        assert!(fapi_resource_audience_allowed(
+            &settings,
+            "https://issuer.example/fapi/resource"
+        ));
+        assert!(!fapi_resource_audience_allowed(
+            &settings,
+            "https://issuer.example/userinfo"
+        ));
+        assert!(!fapi_resource_audience_allowed(
+            &settings,
+            "resource://other"
+        ));
     }
 }
