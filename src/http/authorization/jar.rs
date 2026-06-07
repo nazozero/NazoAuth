@@ -500,6 +500,7 @@ fn is_valid_request_object_jti(jti: &str) -> bool {
 mod tests {
     use super::*;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use proptest::prelude::*;
     use serde_json::json;
 
     fn request_object(payload: Value, alg: &str, signature: &str) -> String {
@@ -889,5 +890,83 @@ mod tests {
             &client,
             RequestObjectMode::SignedJar
         ));
+    }
+
+    proptest! {
+        #[test]
+        fn request_object_params_accept_supported_string_number_and_claims_object_values(
+            state in "[A-Za-z0-9._~-]{1,32}",
+            max_age in 0i64..=3_600
+        ) {
+            let claims = RequestObjectClaims {
+                client_id: "client-a".to_owned(),
+                iss: None,
+                sub: None,
+                aud: None,
+                exp: None,
+                nbf: None,
+                iat: None,
+                jti: None,
+                params: HashMap::from([
+                    ("state".to_owned(), json!(state)),
+                    ("max_age".to_owned(), json!(max_age)),
+                    ("claims".to_owned(), json!({"id_token": {"auth_time": {"essential": true}}})),
+                    ("unknown".to_owned(), json!("ignored")),
+                ]),
+            };
+
+            let params = request_object_params(&claims).unwrap();
+            let expected_max_age = max_age.to_string();
+
+            prop_assert_eq!(params.get("state").map(String::as_str), Some(state.as_str()));
+            prop_assert_eq!(params.get("max_age").map(String::as_str), Some(expected_max_age.as_str()));
+            prop_assert!(params.get("claims").is_some_and(|value| value.contains("auth_time")));
+            prop_assert!(!params.contains_key("unknown"));
+        }
+
+        #[test]
+        fn request_object_params_reject_invalid_supported_value_types(
+            state in "[A-Za-z0-9._~-]{1,32}"
+        ) {
+            let claims = RequestObjectClaims {
+                client_id: "client-a".to_owned(),
+                iss: None,
+                sub: None,
+                aud: None,
+                exp: None,
+                nbf: None,
+                iat: None,
+                jti: None,
+                params: HashMap::from([
+                    ("state".to_owned(), json!([state])),
+                ]),
+            };
+
+            prop_assert!(request_object_params(&claims).is_err());
+        }
+
+        #[test]
+        fn signed_request_object_time_window_accepts_only_profile_bounds(
+            lifetime in 1i64..=REQUEST_OBJECT_MAX_TTL_SECONDS + REQUEST_OBJECT_CLOCK_SKEW_SECONDS,
+            nbf_skew in 0i64..=REQUEST_OBJECT_CLOCK_SKEW_SECONDS
+        ) {
+            let now = 1_700_000_000;
+            let nbf = now + nbf_skew;
+
+            prop_assert!(request_object_times_valid(
+                &time_claims(Some(nbf + lifetime), Some(nbf), None),
+                now,
+                RequestObjectMode::SignedJar
+            ));
+            prop_assert!(!request_object_times_valid(
+                &time_claims(
+                    Some(nbf + REQUEST_OBJECT_MAX_TTL_SECONDS + REQUEST_OBJECT_CLOCK_SKEW_SECONDS + 1),
+                    Some(nbf),
+                    None
+                ),
+                now,
+                RequestObjectMode::SignedJar
+            ));
+        }
     }
 }

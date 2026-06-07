@@ -241,6 +241,13 @@ fn parse_resource_parameter(value: String) -> Result<String, TokenFormError> {
 mod tests {
     use super::*;
     use actix_web::test::TestRequest;
+    use proptest::prelude::*;
+
+    fn form_request() -> HttpRequest {
+        TestRequest::default()
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+            .to_http_request()
+    }
 
     #[test]
     fn token_form_rejects_duplicate_defined_parameters() {
@@ -422,5 +429,72 @@ mod tests {
             HeaderValue::from_static("no-cache")
         );
         assert!(response.headers().get(header::WWW_AUTHENTICATE).is_none());
+    }
+
+    proptest! {
+        #[test]
+        fn resource_parameter_accepts_absolute_uris_without_fragments(
+            host in "[a-z][a-z0-9]{0,12}\\.example",
+            path in "[a-zA-Z0-9/_-]{0,32}",
+            query in prop::option::of("[a-zA-Z0-9_=&-]{1,32}")
+        ) {
+            let req = form_request();
+            let query_suffix = query
+                .as_deref()
+                .map(|value| format!("?{value}"))
+                .unwrap_or_default();
+            let resource = format!("https://{host}/{path}{query_suffix}");
+            let encoded = url::form_urlencoded::Serializer::new(String::new())
+                .append_pair("grant_type", "client_credentials")
+                .append_pair("resource", &resource)
+                .finish();
+
+            let form = parse_token_form(&req, &Bytes::from(encoded)).unwrap();
+
+            prop_assert_eq!(form.audience.as_deref(), Some(resource.as_str()));
+        }
+
+        #[test]
+        fn resource_parameter_rejects_relative_or_fragment_uris(
+            resource in "[a-zA-Z0-9/_-]{1,32}",
+            fragment in "[a-zA-Z0-9_-]{1,16}"
+        ) {
+            let req = form_request();
+            let relative = url::form_urlencoded::Serializer::new(String::new())
+                .append_pair("grant_type", "client_credentials")
+                .append_pair("resource", &resource)
+                .finish();
+            let with_fragment = url::form_urlencoded::Serializer::new(String::new())
+                .append_pair("grant_type", "client_credentials")
+                .append_pair("resource", &format!("https://api.example/{resource}#{fragment}"))
+                .finish();
+
+            prop_assert!(matches!(
+                parse_token_form(&req, &Bytes::from(relative)),
+                Err(TokenFormError::InvalidResourceParameter)
+            ));
+            prop_assert!(matches!(
+                parse_token_form(&req, &Bytes::from(with_fragment)),
+                Err(TokenFormError::InvalidResourceParameter)
+            ));
+        }
+
+        #[test]
+        fn duplicate_defined_parameters_are_rejected_regardless_of_value(
+            first in "[a-zA-Z0-9_-]{0,16}",
+            second in "[a-zA-Z0-9_-]{0,16}"
+        ) {
+            let req = form_request();
+            let body = url::form_urlencoded::Serializer::new(String::new())
+                .append_pair("grant_type", "client_credentials")
+                .append_pair("client_id", &first)
+                .append_pair("client_id", &second)
+                .finish();
+
+            prop_assert!(matches!(
+                parse_token_form(&req, &Bytes::from(body)),
+                Err(TokenFormError::DuplicateParameter)
+            ));
+        }
     }
 }

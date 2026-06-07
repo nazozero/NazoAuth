@@ -241,6 +241,7 @@ pub(crate) fn empty_response(status: StatusCode) -> HttpResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn oauth_token_error_description_keeps_rfc_allowed_ascii() {
@@ -308,5 +309,35 @@ mod tests {
             response.headers().get(header::CONTENT_TYPE).unwrap(),
             "text/html; charset=utf-8"
         );
+    }
+
+    proptest! {
+        #[test]
+        fn oauth_error_description_preserves_only_rfc_allowed_ascii(
+            allowed in "[\\t\\n\\r !#-\\[\\]-~]{0,128}",
+            disallowed in "[^\\t\\n\\r !#-\\[\\]-~]{1,32}"
+        ) {
+            let allowed_description = oauth_error_description(&allowed);
+            let disallowed_description = oauth_error_description(&disallowed);
+
+            prop_assert_eq!(allowed_description.as_ref(), allowed.as_str());
+            prop_assert_eq!(disallowed_description.as_ref(), "Request failed.");
+        }
+
+        #[test]
+        fn bearer_challenge_never_serializes_non_ascii_descriptions(
+            error in "[a-z_]{1,32}",
+            description in "\\PC{1,64}"
+        ) {
+            let challenge = bearer_challenge(&error, &description);
+            let rendered = challenge.to_str().unwrap();
+
+            if description.bytes().all(is_oauth_error_description_byte) {
+                prop_assert!(rendered.contains(&description));
+            } else {
+                prop_assert!(rendered.contains("Request failed."));
+                prop_assert!(!rendered.contains(&description));
+            }
+        }
     }
 }

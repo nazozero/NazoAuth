@@ -365,6 +365,7 @@ impl Keyset {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
     use std::path::PathBuf;
 
     use crate::settings::{EmailDelivery, EmailSettings, RateLimitSettings};
@@ -412,6 +413,37 @@ mod tests {
 
         assert!(key_entry_is_retired(&retired));
         assert!(!key_entry_is_retired(&live));
+    }
+
+    proptest! {
+        #[test]
+        fn ed25519_pkcs8_seed_roundtrips_through_der(seed in any::<[u8; 32]>()) {
+            let der = ed25519_pkcs8_private_der(&seed);
+
+            prop_assert_eq!(ed25519_seed_from_pkcs8(&der), Some(seed));
+            prop_assert!(public_jwk_from_private_der(
+                "kid-1",
+                jsonwebtoken::Algorithm::EdDSA,
+                &der
+            ).is_ok());
+        }
+
+        #[test]
+        fn pem_der_roundtrip_preserves_key_material(seed in any::<[u8; 32]>()) {
+            let der = ed25519_pkcs8_private_der(&seed);
+            let pem = der_to_pem(&der, "PRIVATE KEY");
+            let decoded = pem_to_der(&pem);
+
+            prop_assert_eq!(decoded.as_deref(), Some(der.as_slice()));
+        }
+
+        #[test]
+        fn unsupported_keyset_algorithms_are_rejected(alg in "[A-Z0-9]{1,12}") {
+            prop_assume!(!matches!(alg.as_str(), "EdDSA" | "RS256" | "ES256" | "PS256"));
+            let entry = json!({"alg": alg});
+
+            prop_assert!(key_entry_algorithm(&entry).is_err());
+        }
     }
 
     #[tokio::test]

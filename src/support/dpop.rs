@@ -406,6 +406,7 @@ fn normalize_htu(value: &str) -> Result<String, DpopError> {
 mod tests {
     use super::*;
     use ed25519_dalek::{Signer, SigningKey};
+    use proptest::prelude::*;
 
     #[test]
     fn authorization_scheme_is_case_insensitive() {
@@ -629,6 +630,47 @@ mod tests {
             None,
         )
         .unwrap();
+    }
+
+    proptest! {
+        #[test]
+        fn dpop_iat_window_accepts_only_configured_past_and_future_skew(
+            age in 0i64..=DPOP_TTL_SECONDS,
+            future_skew in 0i64..=DPOP_CLOCK_SKEW_SECONDS
+        ) {
+            let now = 1_700_000_000;
+
+            prop_assert!(dpop_iat_within_window(now - age, now));
+            prop_assert!(dpop_iat_within_window(now + future_skew, now));
+            prop_assert!(!dpop_iat_within_window(now - DPOP_TTL_SECONDS - 1, now));
+            prop_assert!(!dpop_iat_within_window(now + DPOP_CLOCK_SKEW_SECONDS + 1, now));
+        }
+
+        #[test]
+        fn dpop_jti_accepts_non_empty_values_within_byte_limit(
+            valid in "[A-Za-z0-9._~-]{1,128}",
+            oversized in "[A-Za-z0-9._~-]{129,160}"
+        ) {
+            prop_assert!(valid_jti(&valid));
+            prop_assert!(!valid_jti(&oversized));
+            prop_assert!(!valid_jti(""));
+            prop_assert!(!valid_jti("   "));
+        }
+
+        #[test]
+        fn dpop_htu_normalization_removes_query_and_fragment(
+            path in "[a-zA-Z0-9/_-]{0,32}",
+            query in "[a-zA-Z0-9_=&-]{1,32}",
+            fragment in "[a-zA-Z0-9_-]{1,16}"
+        ) {
+            let normalized_path = format!("/{}", path.trim_start_matches('/'));
+            let htu = format!("https://issuer.example{normalized_path}?{query}#{fragment}");
+
+            prop_assert_eq!(
+                normalize_htu(&htu).unwrap(),
+                format!("https://issuer.example{normalized_path}")
+            );
+        }
     }
 
     fn signed_test_proof(
