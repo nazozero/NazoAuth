@@ -47,7 +47,7 @@ The roadmap separates three concerns that must not be mixed:
 - [x] Add client assertion replay tests for `private_key_jwt`: exact issuer `aud`, `exp`/`iat` window, and `jti` replay cache.
 - [x] Add `private_key_jwt` key rotation and disabled-client behavior tests.
 - [x] Enforce audience/resource binding for access tokens.
-- [x] If RFC 8707 resource indicators are supported, test single-resource behavior, audience derivation, and rejection of ambiguous or missing resource values; keep multi-resource behavior as a future ecosystem expansion.
+- [x] If RFC 8707 resource indicators are supported, test single-resource and multi-resource behavior, audience derivation, and rejection of ambiguous, duplicate, or malformed resource values.
 - [x] Add JWT access token profile tests: issuer, audience, expiry, `client_id`/`sub` separation, scope or `authorization_details`, `cnf.jkt` or `cnf.x5t#S256`, algorithm allowlist, `kid` handling, and revocation/introspection fallback.
 - [x] Add negative conformance fixtures: overclaimed metadata, weak client auth, unsigned JAR in hardened profiles, missing DPoP proof, DPoP without nonce where required, bearer token at sender-constrained resource servers, query-token use, redirect URI mismatch, and stale JWKS. See `docs/conformance/negative-fixtures.md`.
 
@@ -81,7 +81,7 @@ The roadmap separates three concerns that must not be mixed:
 - [x] Strengthen `auth_time`, `max_age`, `acr_values`, `azp`, `sid`, and session-related ID Token behavior.
 - [x] Add an independent OIDC `sid` value to login sessions and propagate it to ID Tokens without exposing the HTTPOnly session cookie value.
 - [x] Add consent and transaction-binding tests for high-risk `authorization_details`, especially payments or write APIs.
-- [ ] Expand RFC 8707 support from the current single-resource model to multi-resource handling when an ecosystem use case requires it.
+- [x] Expand RFC 8707 support to multi-resource handling when an ecosystem use case requires it.
 - [ ] Implement RFC 9396 Rich Authorization Requests when structured authorization is required.
 - [ ] Add OIDC RP-Initiated Logout and Back-Channel Logout.
 

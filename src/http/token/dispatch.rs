@@ -670,7 +670,7 @@ mod tests {
             client_secret: None,
             client_assertion_type: None,
             client_assertion: None,
-            audience: None,
+            audiences: Vec::new(),
         };
         let response = client_credentials_holder_missing_client_error(&form, false)
             .expect("missing DPoP proof should be reported before generic client auth");
@@ -692,7 +692,7 @@ mod tests {
             client_secret: None,
             client_assertion_type: None,
             client_assertion: None,
-            audience: None,
+            audiences: Vec::new(),
         };
 
         assert!(client_credentials_holder_missing_client_error(&form, true).is_none());
@@ -711,7 +711,7 @@ mod tests {
             client_secret: None,
             client_assertion_type: None,
             client_assertion: None,
-            audience: None,
+            audiences: Vec::new(),
         };
 
         let response = client_credentials_holder_missing_client_error(&form, false)
@@ -734,7 +734,7 @@ mod tests {
             client_secret: None,
             client_assertion_type: None,
             client_assertion: Some("malformed-or-missing-sub".to_owned()),
-            audience: None,
+            audiences: Vec::new(),
         };
 
         assert!(token_request_has_client_auth_material(false, &form));
@@ -753,7 +753,7 @@ mod tests {
             client_secret: None,
             client_assertion_type: None,
             client_assertion: None,
-            audience: None,
+            audiences: Vec::new(),
         };
 
         assert!(!token_request_has_client_auth_material(false, &form));

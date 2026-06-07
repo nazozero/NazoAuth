@@ -475,7 +475,7 @@ pub(crate) struct AccessTokenJwtInput<'a> {
     pub(crate) user_id: Option<Uuid>,
     pub(crate) subject_type: &'a str,
     pub(crate) client_id: &'a str,
-    pub(crate) audience: &'a str,
+    pub(crate) audiences: &'a [String],
     pub(crate) scopes: &'a [String],
     pub(crate) authorization_details: &'a Value,
     pub(crate) userinfo_claims: &'a [String],
@@ -515,7 +515,7 @@ fn access_token_claims(
         sub: input.subject.to_string(),
         user_id: input.user_id.map(|id| id.to_string()),
         subject_type: input.subject_type.to_string(),
-        aud: input.audience.to_string(),
+        aud: token_audience_claim(input.audiences),
         client_id: input.client_id.to_string(),
         scope: sorted_scope_string(input.scopes),
         authorization_details: input.authorization_details.clone(),
@@ -537,6 +537,13 @@ fn access_token_claims(
         },
         userinfo_claims: input.userinfo_claims.to_vec(),
         userinfo_claim_requests: input.userinfo_claim_requests.to_vec(),
+    }
+}
+
+fn token_audience_claim(audiences: &[String]) -> Value {
+    match audiences {
+        [audience] => json!(audience),
+        _ => json!(audiences),
     }
 }
 
@@ -863,7 +870,7 @@ mod tests {
                 user_id: Some(user_id),
                 subject_type: "user",
                 client_id: "client-1",
-                audience: "https://issuer.example/userinfo",
+                audiences: &["https://issuer.example/userinfo".to_owned()],
                 scopes: &scopes,
                 authorization_details: &json!([]),
                 userinfo_claims: &["email".to_owned()],
@@ -877,7 +884,7 @@ mod tests {
         );
 
         assert_eq!(claims.iss, "https://issuer.example");
-        assert_eq!(claims.aud, "https://issuer.example/userinfo");
+        assert_eq!(claims.aud, json!("https://issuer.example/userinfo"));
         assert_eq!(claims.exp, 1_300);
         assert_eq!(claims.iat, 1_000);
         assert_eq!(claims.nbf, 1_000);
@@ -907,7 +914,10 @@ mod tests {
                 user_id: None,
                 subject_type: "client",
                 client_id: "service-client",
-                audience: "resource://default",
+                audiences: &[
+                    "resource://default".to_owned(),
+                    "https://api.example".to_owned(),
+                ],
                 scopes: &scopes,
                 authorization_details: &json!([{"type":"payment_initiation","actions":["write"]}]),
                 userinfo_claims: &[],
@@ -924,6 +934,10 @@ mod tests {
         assert!(claims.user_id.is_none());
         assert_eq!(claims.subject_type, "client");
         assert_eq!(claims.client_id, "service-client");
+        assert_eq!(
+            claims.aud,
+            json!(["resource://default", "https://api.example"])
+        );
         assert_eq!(claims.scope, "read write");
         assert_eq!(
             claims.authorization_details,

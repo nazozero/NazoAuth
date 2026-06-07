@@ -63,6 +63,36 @@ pub(crate) fn audience_allowed(client: &ClientRow, audience: &str) -> bool {
         .any(|allowed| allowed == audience)
 }
 
+pub(crate) fn audiences_allowed(client: &ClientRow, audiences: &[String]) -> bool {
+    !audiences.is_empty()
+        && audiences
+            .iter()
+            .all(|audience| audience_allowed(client, audience))
+}
+
+pub(crate) fn token_audience_values(audience: &Value) -> Vec<String> {
+    match audience {
+        Value::String(value) => vec![value.clone()],
+        Value::Array(values) => values
+            .iter()
+            .filter_map(|value| value.as_str().map(ToOwned::to_owned))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+pub(crate) fn token_audience_contains(audience: &Value, expected: &str) -> bool {
+    token_audience_values(audience)
+        .iter()
+        .any(|audience| audience == expected)
+}
+
+pub(crate) fn token_audience_allowed(client: &ClientRow, audience: &Value) -> bool {
+    token_audience_values(audience)
+        .iter()
+        .any(|audience| audience_allowed(client, audience))
+}
+
 pub(crate) fn sorted_scope_string(scopes: &[String]) -> String {
     let mut values = scopes.to_vec();
     values.sort();

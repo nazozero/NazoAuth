@@ -68,7 +68,7 @@ pub(crate) async fn introspect(
         return token_management_client_auth_error(error, has_basic);
     }
     if let Some(claims) = decode_access_claims(&state, &form.token) {
-        if claims.client_id != client.client_id && !audience_allowed(&client, &claims.aud) {
+        if claims.client_id != client.client_id && !token_audience_allowed(&client, &claims.aud) {
             return json_response_no_store(json!({"active": false}));
         }
         let revoked = match get_conn(&state.diesel_db).await {
@@ -196,7 +196,7 @@ mod tests {
             sub: "subject".to_owned(),
             user_id: None,
             subject_type: "client".to_owned(),
-            aud: "resource://default".to_owned(),
+            aud: json!("resource://default"),
             client_id: "client-1".to_owned(),
             scope: "openid".to_owned(),
             authorization_details: json!([]),

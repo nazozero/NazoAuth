@@ -13,7 +13,7 @@ pub(crate) struct TokenForm {
     pub(crate) client_secret: Option<String>,
     pub(crate) client_assertion_type: Option<String>,
     pub(crate) client_assertion: Option<String>,
-    pub(crate) audience: Option<String>,
+    pub(crate) audiences: Vec<String>,
 }
 
 pub(crate) struct TokenOnlyForm {
@@ -92,6 +92,7 @@ pub(crate) fn parse_token_form(
 
     let raw = std::str::from_utf8(body).map_err(|_| TokenFormError::InvalidEncoding)?;
     let mut seen = std::collections::HashSet::new();
+    let mut resource_values = std::collections::HashSet::new();
     let mut form = TokenForm {
         grant_type: String::new(),
         code: None,
@@ -103,7 +104,7 @@ pub(crate) fn parse_token_form(
         client_secret: None,
         client_assertion_type: None,
         client_assertion: None,
-        audience: None,
+        audiences: Vec::new(),
     };
 
     for (key, value) in url::form_urlencoded::parse(raw.as_bytes()) {
@@ -125,10 +126,22 @@ pub(crate) fn parse_token_form(
         ) {
             continue;
         }
+        let value = value.into_owned();
+        if key == "resource" {
+            let resource = parse_resource_parameter(value)?;
+            if seen.contains("audience") {
+                return Err(TokenFormError::DuplicateParameter);
+            }
+            seen.insert(key);
+            if !resource_values.insert(resource.clone()) {
+                return Err(TokenFormError::DuplicateParameter);
+            }
+            form.audiences.push(resource);
+            continue;
+        }
         if !seen.insert(key.clone()) {
             return Err(TokenFormError::DuplicateParameter);
         }
-        let value = value.into_owned();
         match key.as_str() {
             "grant_type" => form.grant_type = value,
             "code" => form.code = non_empty(value),
@@ -141,17 +154,12 @@ pub(crate) fn parse_token_form(
             "client_assertion_type" => form.client_assertion_type = non_empty(value),
             "client_assertion" => form.client_assertion = non_empty(value),
             "audience" => {
-                if form.audience.is_some() {
+                if !form.audiences.is_empty() {
                     return Err(TokenFormError::DuplicateParameter);
                 }
-                form.audience = non_empty(value);
-            }
-            "resource" => {
-                let resource = parse_resource_parameter(value)?;
-                if form.audience.is_some() {
-                    return Err(TokenFormError::DuplicateParameter);
+                if let Some(value) = non_empty(value) {
+                    form.audiences.push(value);
                 }
-                form.audience = Some(resource);
             }
             _ => {}
         }
@@ -292,7 +300,43 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(form.audience.as_deref(), Some("https://api.example.com"));
+        assert_eq!(form.audiences, vec!["https://api.example.com"]);
+    }
+
+    #[test]
+    fn token_form_accepts_multiple_resource_parameters_as_audiences() {
+        let req = TestRequest::default()
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+            .to_http_request();
+
+        let form = parse_token_form(
+            &req,
+            &Bytes::from_static(
+                b"grant_type=client_credentials&resource=https%3A%2F%2Fapi.example.com&resource=https%3A%2F%2Fpayments.example.com",
+            ),
+        )
+        .unwrap();
+
+        assert_eq!(
+            form.audiences,
+            vec!["https://api.example.com", "https://payments.example.com"]
+        );
+    }
+
+    #[test]
+    fn token_form_rejects_duplicate_resource_values() {
+        let req = TestRequest::default()
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+            .to_http_request();
+
+        let result = parse_token_form(
+            &req,
+            &Bytes::from_static(
+                b"grant_type=client_credentials&resource=https%3A%2F%2Fapi.example.com&resource=https%3A%2F%2Fapi.example.com",
+            ),
+        );
+
+        assert!(matches!(result, Err(TokenFormError::DuplicateParameter)));
     }
 
     #[test]
@@ -451,7 +495,7 @@ mod tests {
 
             let form = parse_token_form(&req, &Bytes::from(encoded)).unwrap();
 
-            prop_assert_eq!(form.audience.as_deref(), Some(resource.as_str()));
+            prop_assert_eq!(form.audiences, vec![resource]);
         }
 
         #[test]

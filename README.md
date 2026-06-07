@@ -37,7 +37,7 @@ This repository is not yet a full IAM suite like Keycloak, ZITADEL, authentik, o
 - PostgreSQL persistence with Rust-native migrations.
 - Valkey-backed sessions, security state, replay prevention, PAR handles, and rate limiting.
 - User, profile, avatar, OAuth client, grant, and access-request management APIs.
-- RFC 8707 `resource` parameter support for token requests, mapped to the current single-audience access-token model. The older `audience` parameter remains as a project extension.
+- RFC 8707 `resource` parameter support for token requests, including repeated resource indicators mapped to JWT access-token `aud` arrays. The older `audience` parameter remains as a single-audience project extension.
 
 ## Conformance
 
@@ -165,7 +165,7 @@ When `AUTHORIZATION_SERVER_PROFILE` is set to `fapi2-security`, the server requi
 | `GET` | `/jwks.json` | JWKS |
 | `GET` | `/userinfo` | OIDC UserInfo |
 
-The token endpoint accepts the standard RFC 8707 `resource` parameter for a single absolute URI without a fragment and maps it to the access-token audience. The legacy `audience` parameter is still accepted as a project extension, but a request must not send both.
+The token endpoint accepts the standard RFC 8707 `resource` parameter as an absolute URI without a fragment. A request may repeat `resource` to request multiple audiences; single-resource access tokens keep a string `aud`, and multi-resource access tokens use a JWT `aud` array. The legacy `audience` parameter is still accepted as a single-audience project extension, but a request must not send both.
 
 ## Key Management
 
@@ -276,4 +276,4 @@ Current high-priority boundaries:
 
 Refresh-token rotation for non-FAPI compatibility profiles is documented in [docs/refresh-token-rotation.md](docs/refresh-token-rotation.md). FAPI2 Security deployments should prefer sender-constrained refresh/access tokens and should not use routine rotation by default.
 
-Known roadmap items are tracked in [docs/roadmap.md](docs/roadmap.md), [CHANGELOG.md](CHANGELOG.md), and future conformance records. Priority areas include fuller OIDC claims request semantics, ACR/AMR policy, WebAuthn/passkeys, Dynamic Client Registration, RAR, broader RFC 8707 multi-resource support, release signing, SBOM/provenance, and deeper supply-chain verification.
+Known roadmap items are tracked in [docs/roadmap.md](docs/roadmap.md), [CHANGELOG.md](CHANGELOG.md), and future conformance records. Priority areas include WebAuthn/passkeys, Dynamic Client Registration, RAR, OIDC logout, resource-server middleware, release signing, SBOM/provenance, and deeper supply-chain verification.
