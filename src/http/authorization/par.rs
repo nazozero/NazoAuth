@@ -432,6 +432,14 @@ mod tests {
             par_ttl_seconds: 90,
             require_pushed_authorization_requests: false,
             scim_bearer_token: None,
+            passkey: crate::settings::PasskeySettings {
+                rp_id: "issuer.example".to_owned(),
+                rp_name: "Nazo OAuth".to_owned(),
+                origin: "https://issuer.example".to_owned(),
+                require_user_verification: true,
+                require_user_handle: true,
+                strict_base64: true,
+            },
         };
 
         assert!(!pushed_authorization_request_requires_request_object(
@@ -490,6 +498,14 @@ mod tests {
             par_ttl_seconds: 90,
             require_pushed_authorization_requests: true,
             scim_bearer_token: None,
+            passkey: crate::settings::PasskeySettings {
+                rp_id: "issuer.example".to_owned(),
+                rp_name: "Nazo OAuth".to_owned(),
+                origin: "https://issuer.example".to_owned(),
+                require_user_verification: true,
+                require_user_handle: true,
+                strict_base64: true,
+            },
         };
 
         assert!(pushed_authorization_request_requires_request_object(

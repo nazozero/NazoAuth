@@ -66,10 +66,25 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig) {
                 .route("/send-code", web::post().to(send_code))
                 .route("/register", web::post().to(register))
                 .route("/login", web::post().to(login))
+                .route("/passkey/begin", web::post().to(passkey_login_begin))
+                .route("/passkey/finish", web::post().to(passkey_login_finish))
                 .route("/mfa/verify", web::post().to(mfa_verify))
                 .route("/csrf", web::get().to(csrf))
                 .route("/me", web::get().to(me))
                 .route("/me", web::patch().to(update_me))
+                .route("/me/passkeys", web::get().to(passkey_list))
+                .route(
+                    "/me/passkeys/registration/begin",
+                    web::post().to(passkey_registration_begin),
+                )
+                .route(
+                    "/me/passkeys/registration/finish",
+                    web::post().to(passkey_registration_finish),
+                )
+                .route(
+                    "/me/passkeys/{passkey_id}",
+                    web::delete().to(passkey_delete),
+                )
                 .route("/me/mfa/totp/begin", web::post().to(mfa_totp_begin))
                 .route("/me/mfa/totp/confirm", web::post().to(mfa_totp_confirm))
                 .route(

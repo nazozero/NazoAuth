@@ -31,4 +31,4 @@ MFA state is stored in migration `20260607000500_totp_mfa_step_up`:
 
 ## Non-Goals
 
-This is local account MFA. It does not implement WebAuthn/passkeys or external OIDC/SAML federation. SCIM provisioning is implemented separately for lifecycle management and does not satisfy local MFA challenges.
+This is local account MFA. WebAuthn/passkeys are implemented separately for passkey login and do not satisfy TOTP challenge flows. This MFA profile does not implement external OIDC/SAML federation. SCIM provisioning is implemented separately for lifecycle management and does not satisfy local MFA challenges.

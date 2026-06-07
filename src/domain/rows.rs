@@ -80,6 +80,31 @@ pub(crate) struct UserRow {
     pub(crate) updated_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Queryable, QueryableByName, Selectable, Serialize, Clone)]
+#[diesel(table_name = crate::schema::user_passkey_credentials)]
+pub(crate) struct PasskeyCredentialRow {
+    #[diesel(sql_type = diesel::sql_types::Uuid)]
+    pub(crate) id: Uuid,
+    #[diesel(sql_type = diesel::sql_types::Uuid)]
+    pub(crate) tenant_id: Uuid,
+    #[diesel(sql_type = diesel::sql_types::Uuid)]
+    pub(crate) user_id: Uuid,
+    #[diesel(sql_type = diesel::sql_types::VarChar)]
+    pub(crate) credential_id: String,
+    #[diesel(sql_type = diesel::sql_types::Jsonb)]
+    pub(crate) credential: Value,
+    #[diesel(sql_type = diesel::sql_types::VarChar)]
+    pub(crate) label: String,
+    #[diesel(sql_type = diesel::sql_types::Int8)]
+    pub(crate) sign_count: i64,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>)]
+    pub(crate) last_used_at: Option<DateTime<Utc>>,
+    #[diesel(sql_type = diesel::sql_types::Timestamptz)]
+    pub(crate) created_at: DateTime<Utc>,
+    #[diesel(sql_type = diesel::sql_types::Timestamptz)]
+    pub(crate) updated_at: DateTime<Utc>,
+}
+
 /// oauth_clients 表完整客户端行。
 #[derive(Debug, Queryable, QueryableByName, Selectable, Serialize, Clone)]
 #[diesel(table_name = crate::schema::oauth_clients)]

@@ -3,9 +3,11 @@
 mod csrf;
 mod email_code;
 mod login;
+mod passkey;
 mod register;
 
 pub(crate) use csrf::*;
 pub(crate) use email_code::*;
 pub(crate) use login::*;
+pub(crate) use passkey::*;
 pub(crate) use register::*;

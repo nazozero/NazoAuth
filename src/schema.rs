@@ -1,4 +1,19 @@
 diesel::table! {
+    user_passkey_credentials (id) {
+        id -> Uuid,
+        tenant_id -> Uuid,
+        user_id -> Uuid,
+        credential_id -> Varchar,
+        credential -> Jsonb,
+        label -> Varchar,
+        sign_count -> Int8,
+        last_used_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
     user_totp_credentials (id) {
         id -> Uuid,
         tenant_id -> Uuid,
@@ -228,6 +243,8 @@ diesel::joinable!(user_mfa_backup_codes -> tenants (tenant_id));
 diesel::joinable!(user_mfa_backup_codes -> users (user_id));
 diesel::joinable!(user_mfa_remembered_devices -> tenants (tenant_id));
 diesel::joinable!(user_mfa_remembered_devices -> users (user_id));
+diesel::joinable!(user_passkey_credentials -> tenants (tenant_id));
+diesel::joinable!(user_passkey_credentials -> users (user_id));
 diesel::joinable!(user_totp_credentials -> tenants (tenant_id));
 diesel::joinable!(user_totp_credentials -> users (user_id));
 diesel::joinable!(users -> organizations (organization_id));
@@ -245,6 +262,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     user_client_grants,
     user_mfa_backup_codes,
     user_mfa_remembered_devices,
+    user_passkey_credentials,
     user_totp_credentials,
     users,
 );

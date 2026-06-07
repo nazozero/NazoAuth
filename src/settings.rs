@@ -47,6 +47,7 @@ pub(crate) struct Settings {
     pub(crate) par_ttl_seconds: u64,
     pub(crate) require_pushed_authorization_requests: bool,
     pub(crate) scim_bearer_token: Option<String>,
+    pub(crate) passkey: PasskeySettings,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -88,6 +89,16 @@ pub(crate) struct EmailSettings {
     pub(crate) code_ttl_seconds: u64,
     pub(crate) send_cooldown_seconds: u64,
     pub(crate) send_peer_cooldown_seconds: u64,
+}
+
+#[derive(Clone)]
+pub(crate) struct PasskeySettings {
+    pub(crate) rp_id: String,
+    pub(crate) rp_name: String,
+    pub(crate) origin: String,
+    pub(crate) require_user_verification: bool,
+    pub(crate) require_user_handle: bool,
+    pub(crate) strict_base64: bool,
 }
 
 #[derive(Clone)]
@@ -164,6 +175,7 @@ impl Settings {
         let require_pushed_authorization_requests = config
             .bool("REQUIRE_PUSHED_AUTHORIZATION_REQUESTS", false)?
             || authorization_server_profile.requires_fapi2_security();
+        let passkey = PasskeySettings::from_config(config, &issuer)?;
 
         Ok(Self {
             issuer,
@@ -205,6 +217,38 @@ impl Settings {
             par_ttl_seconds: config.parse("PAR_TTL_SECONDS", 90)?,
             require_pushed_authorization_requests,
             scim_bearer_token: config.optional_string("SCIM_BEARER_TOKEN"),
+            passkey,
+        })
+    }
+}
+
+impl PasskeySettings {
+    fn from_config(config: &ConfigSource, issuer: &str) -> anyhow::Result<Self> {
+        let origin = config
+            .optional_string("PASSKEY_ORIGIN")
+            .unwrap_or_else(|| issuer.trim_end_matches('/').to_owned());
+        validate_issuer_url(&origin)?;
+        let rp_id = match config.optional_string("PASSKEY_RP_ID") {
+            Some(value) => value,
+            None => passkey_auth::RpId::try_from_url(&origin)
+                .map_err(|error| anyhow::anyhow!("PASSKEY_ORIGIN cannot derive RP ID: {error}"))?
+                .as_str()
+                .to_owned(),
+        };
+        if rp_id.trim().is_empty()
+            || rp_id.contains("://")
+            || rp_id.contains('/')
+            || rp_id.contains(':')
+        {
+            bail!("PASSKEY_RP_ID must be a bare host name without scheme, port, or path");
+        }
+        Ok(Self {
+            rp_id,
+            rp_name: config.string("PASSKEY_RP_NAME", "Nazo OAuth"),
+            origin,
+            require_user_verification: config.bool("PASSKEY_REQUIRE_USER_VERIFICATION", true)?,
+            require_user_handle: config.bool("PASSKEY_REQUIRE_USER_HANDLE", true)?,
+            strict_base64: config.bool("PASSKEY_STRICT_BASE64", true)?,
         })
     }
 }

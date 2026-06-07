@@ -13,6 +13,7 @@ mod mfa;
 mod mtls;
 mod oauth;
 mod oidc_claims;
+mod passkeys;
 mod rate_limit;
 mod repositories;
 mod responses;
@@ -35,6 +36,7 @@ pub(crate) use mfa::*;
 pub(crate) use mtls::*;
 pub(crate) use oauth::*;
 pub(crate) use oidc_claims::*;
+pub(crate) use passkeys::*;
 pub(crate) use rate_limit::*;
 pub(crate) use repositories::*;
 pub(crate) use responses::*;
@@ -75,7 +77,8 @@ pub(crate) mod prelude {
     pub(crate) use crate::db::{DbPool, get_conn};
     pub(crate) use crate::domain::{
         AccessRequestRow, AccessRequestStatus, ActiveSigningKey, AppState, Claims, ClientRow,
-        ConfirmationClaims, ExternalSigningKey, Keyset, UserRow, VerificationKey,
+        ConfirmationClaims, ExternalSigningKey, Keyset, PasskeyCredentialRow, UserRow,
+        VerificationKey,
     };
     pub(crate) use crate::schema::{
         client_access_requests, oauth_clients, user_client_grants, user_mfa_backup_codes,
