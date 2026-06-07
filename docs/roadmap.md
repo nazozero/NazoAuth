@@ -12,13 +12,13 @@ The roadmap separates three concerns that must not be mixed:
 
 | Area | Finding | Status |
 | --- | --- | --- |
-| Trust evidence | Conformance results, security policy, threat model, and release evidence must be public and repeatable. | In progress |
+| Trust evidence | Conformance results, security policy, threat model, and release evidence must be public and repeatable. | Done for current roadmap scope |
 | Profile matrix | Each profile needs explicit grants, response types, client auth, token binding, JAR/JARM, PAR, refresh policy, TTL, and metadata rules. | Done |
-| Metadata truth | Discovery metadata must not overclaim unsupported or deployment-disabled capabilities. | In progress |
+| Metadata truth | Discovery metadata must not overclaim unsupported or deployment-disabled capabilities. | Done |
 | OIDC completeness | OIDC Core behavior needs a profile-by-profile checklist and tests for required OP features. | Done for current profile matrix |
 | FAPI2 Security | Baseline FAPI2 Security must stay distinct from Message Signing and product hardening. | Defined |
 | FAPI2 Message Signing | Signed authorization requests, JARM, and signed introspection responses should be tracked as separate options. | Defined |
-| mTLS | Current integration is proxy-terminated mTLS and must be documented, constrained, and extended toward full RFC 8705 subject/SAN semantics. | In progress |
+| mTLS | Current integration is proxy-terminated mTLS and must be documented, constrained, and extended toward full RFC 8705 subject/SAN semantics. | Done |
 | DPoP | Proof `jti` replay prevention is normative; strict nonce enforcement is profile/product policy and must be documented that way. | Done |
 | Sessions | Login response should not expose the session identifier in JSON. | Done |
 | Password hashing | Argon2 policy should be explicit and versioned. | Done |
