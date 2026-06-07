@@ -3,6 +3,9 @@ name: oidf-conformance-full
 on:
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   oidf-conformance-full:
     runs-on: ubuntu-latest
