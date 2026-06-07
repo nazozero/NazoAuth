@@ -279,7 +279,9 @@ pub(crate) async fn issue_token_response(
             dpop_jkt: issue.dpop_jkt.as_deref(),
             mtls_x5t_s256: issue.mtls_x5t_s256.as_deref(),
         },
-    ) {
+    )
+    .await
+    {
         Ok(v) => v,
         Err(_) => {
             mark_failed_authorization_code_if_needed(
@@ -363,7 +365,9 @@ pub(crate) async fn issue_token_response(
                 extra_claims: user_claims.as_ref(),
                 ttl: state.settings.id_token_ttl_seconds,
             },
-        ) {
+        )
+        .await
+        {
             Ok(token) => token,
             Err(_) => {
                 mark_failed_authorization_code_if_needed(

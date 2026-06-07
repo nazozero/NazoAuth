@@ -38,6 +38,8 @@ pub(crate) struct Settings {
     pub(crate) email_code_dev_response_enabled: bool,
     pub(crate) avatar_storage_dir: PathBuf,
     pub(crate) jwk_keys_dir: PathBuf,
+    pub(crate) signing_external_command: Vec<String>,
+    pub(crate) signing_external_timeout_ms: u64,
     pub(crate) trusted_proxy_cidrs: Vec<IpCidr>,
     pub(crate) client_ip_header_mode: ClientIpHeaderMode,
     pub(crate) subject_type: SubjectType,
@@ -189,6 +191,10 @@ impl Settings {
                 config.string("AVATAR_STORAGE_DIR", "runtime/avatars"),
             ),
             jwk_keys_dir: PathBuf::from(config.string("JWK_KEYS_DIR", "runtime/keys")),
+            signing_external_command: parse_signing_external_command(
+                config.optional_string("SIGNING_EXTERNAL_COMMAND"),
+            ),
+            signing_external_timeout_ms: config.parse("SIGNING_EXTERNAL_TIMEOUT_MS", 2_000)?,
             trusted_proxy_cidrs: parse_trusted_proxy_cidrs(config.get("TRUSTED_PROXY_CIDRS"))?,
             client_ip_header_mode: ClientIpHeaderMode::parse(
                 &config.string("CLIENT_IP_HEADER_MODE", "none"),
@@ -199,6 +205,19 @@ impl Settings {
             require_pushed_authorization_requests,
         })
     }
+}
+
+fn parse_signing_external_command(value: Option<String>) -> Vec<String> {
+    value
+        .map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|part| !part.is_empty())
+                .map(ToOwned::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 impl AuthorizationServerProfile {

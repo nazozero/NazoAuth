@@ -459,6 +459,8 @@ mod tests {
             email_code_dev_response_enabled: false,
             avatar_storage_dir: std::env::temp_dir().join("unused-avatars"),
             jwk_keys_dir: std::env::temp_dir().join("unused-keys"),
+            signing_external_command: Vec::new(),
+            signing_external_timeout_ms: 2_000,
             trusted_proxy_cidrs: Vec::new(),
             client_ip_header_mode: ClientIpHeaderMode::None,
             subject_type: SubjectType::Public,

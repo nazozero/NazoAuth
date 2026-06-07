@@ -24,7 +24,7 @@ The roadmap separates three concerns that must not be mixed:
 | Password hashing | Argon2 policy should be explicit and versioned. | Done |
 | Refresh policy | FAPI2 Security should not use rotation by default; non-FAPI rotation needs documented lost-response recovery semantics. | Done |
 | Resource servers | Provide verifier guidance and eventually Rust middleware so resource servers validate JWT access tokens correctly. | Planned |
-| Operations | HA, backups, observability, key lifecycle, SBOM/provenance, and security release process need production evidence. | In progress |
+| Operations | HA, backups, observability, key lifecycle, SBOM/provenance, and security release process need production evidence. | Done for core deployment controls |
 
 ## P0: Normative Conformance
 
@@ -65,7 +65,7 @@ The roadmap separates three concerns that must not be mixed:
 - [x] Implement full `tls_client_auth` subject DN/SAN matching.
 - [x] Implement self-signed certificate registration and rotation semantics for `self_signed_tls_client_auth`.
 - [x] Add certificate expiry and rotation tests.
-- [ ] Add KMS/HSM backends for signing key lifecycle.
+- [x] Add KMS/HSM backends for signing key lifecycle.
 - [x] Add OpenTelemetry traces, metrics, and logs.
 - [x] Define a structured security event taxonomy and SIEM export format. See `docs/security-events.md`.
 - [x] Add `cargo audit`, `cargo deny`, SBOM, container scanning, release signing, and provenance. See `deny.toml`, `docs/release-security.md`, `conformance-security`, and `release-security`.

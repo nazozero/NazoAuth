@@ -141,6 +141,8 @@ Important settings:
 | `EMAIL_DELIVERY` | `disabled` | `smtp` enables registration email delivery |
 | `AVATAR_STORAGE_DIR` | `runtime/avatars` | Avatar storage path |
 | `JWK_KEYS_DIR` | `runtime/keys` | Signing key storage path |
+| `SIGNING_EXTERNAL_COMMAND` | empty | Optional comma-separated argv for a KMS/HSM signing command or sidecar |
+| `SIGNING_EXTERNAL_TIMEOUT_MS` | `2000` | External signer timeout in milliseconds |
 
 See [.env.yaml.example](.env.yaml.example) for the complete field list.
 
@@ -193,6 +195,20 @@ Validate the keyset:
 ```sh
 nazo-oauth-keyctl validate
 ```
+
+Register a non-exportable KMS/HSM key by storing only its public JWK and provider reference:
+
+```sh
+nazo-oauth-keyctl register-external \
+  --kid rs256-kms-2026-06 \
+  --alg RS256 \
+  --key-ref kms://prod/oauth/rs256-kms-2026-06 \
+  --public-jwk /secure/exported-public-jwk.json
+nazo-oauth-keyctl validate
+nazo-oauth-keyctl activate rs256-kms-2026-06
+```
+
+When the active key uses `backend: external-command`, configure `SIGNING_EXTERNAL_COMMAND` to the signer argv. The signer receives JSON on stdin with `kid`, `alg`, `key_ref`, and the compact-JWS `signing_input`, and returns `{"signature":"<base64url-signature>"}` on stdout. Signing failures return protocol `server_error`; the server does not fall back to unsigned tokens or plain query responses.
 
 The keyset uses atomic file replacement. On Unix platforms, private key PEM files are written with `0600` permissions. Retired keys are not published in JWKS, and the active key cannot be retired.
 

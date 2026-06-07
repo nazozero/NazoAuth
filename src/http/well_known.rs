@@ -191,7 +191,7 @@ mod tests {
         Keyset {
             active_kid: "active".to_owned(),
             active_alg: alg,
-            active_private_pkcs8_der: Vec::new(),
+            active_signing_key: crate::domain::ActiveSigningKey::LocalPkcs8Der(Vec::new()),
             verification_keys: vec![VerificationKey {
                 kid: "active".to_owned(),
                 public_jwk: json!({"kty": "RSA", "kid": "active", "alg": alg_name, "use": "sig"}),
@@ -234,6 +234,8 @@ mod tests {
             email_code_dev_response_enabled: false,
             avatar_storage_dir: PathBuf::from("runtime/avatars"),
             jwk_keys_dir: PathBuf::from("runtime/keys"),
+            signing_external_command: Vec::new(),
+            signing_external_timeout_ms: 2_000,
             trusted_proxy_cidrs,
             client_ip_header_mode: ClientIpHeaderMode::None,
             subject_type: SubjectType::Public,

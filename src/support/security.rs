@@ -490,7 +490,7 @@ pub(crate) struct IssuedAccessToken {
     pub(crate) exp: i64,
 }
 
-pub(crate) fn make_jwt(
+pub(crate) async fn make_jwt(
     state: &AppState,
     input: AccessTokenJwtInput<'_>,
 ) -> jsonwebtoken::errors::Result<IssuedAccessToken> {
@@ -499,7 +499,7 @@ pub(crate) fn make_jwt(
     let exp = now + input.ttl;
     let claims = access_token_claims(&state.settings.issuer, input, now, &jti);
     let header = access_token_header(state.keyset.active_alg, &state.keyset.active_kid);
-    let token = jsonwebtoken::encode(&header, &claims, &state.keyset.active_encoding_key())?;
+    let token = state.keyset.sign_jwt(&header, &claims).await?;
     Ok(IssuedAccessToken { token, jti, exp })
 }
 
@@ -557,7 +557,7 @@ pub(crate) struct IdTokenInput<'a> {
     pub(crate) ttl: i64,
 }
 
-pub(crate) fn make_id_token(
+pub(crate) async fn make_id_token(
     state: &AppState,
     input: IdTokenInput<'_>,
 ) -> jsonwebtoken::errors::Result<String> {
@@ -566,11 +566,7 @@ pub(crate) fn make_id_token(
     let mut header = jsonwebtoken::Header::new(state.keyset.active_alg);
     header.typ = Some("JWT".to_string());
     header.kid = Some(state.keyset.active_kid.clone());
-    jsonwebtoken::encode(
-        &header,
-        &Value::Object(claims),
-        &state.keyset.active_encoding_key(),
-    )
+    state.keyset.sign_jwt(&header, &Value::Object(claims)).await
 }
 
 fn id_token_claims(
@@ -633,7 +629,7 @@ pub(crate) struct AuthorizationResponseJwtInput<'a> {
     pub(crate) ttl: i64,
 }
 
-pub(crate) fn make_authorization_response_jwt(
+pub(crate) async fn make_authorization_response_jwt(
     state: &AppState,
     input: AuthorizationResponseJwtInput<'_>,
 ) -> jsonwebtoken::errors::Result<String> {
@@ -642,11 +638,7 @@ pub(crate) fn make_authorization_response_jwt(
     let mut header = jsonwebtoken::Header::new(state.keyset.active_alg);
     header.typ = Some("oauth-authz-resp+jwt".to_string());
     header.kid = Some(state.keyset.active_kid.clone());
-    jsonwebtoken::encode(
-        &header,
-        &Value::Object(claims),
-        &state.keyset.active_encoding_key(),
-    )
+    state.keyset.sign_jwt(&header, &Value::Object(claims)).await
 }
 
 fn authorization_response_jwt_claims(

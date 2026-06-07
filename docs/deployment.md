@@ -57,6 +57,8 @@ EMAIL_SMTP_PASSWORD: "<smtp-password>"
 EMAIL_FROM: "Nazo OAuth <no-reply@example.com>"
 AVATAR_STORAGE_DIR: "/var/lib/nazo_oauth/avatars"
 JWK_KEYS_DIR: "/var/lib/nazo_oauth/keys"
+SIGNING_EXTERNAL_COMMAND: ""
+SIGNING_EXTERNAL_TIMEOUT_MS: 2000
 RUST_LOG: "info"
 OTEL_ENABLED: false
 OTEL_EXPORTER_OTLP_ENDPOINT: ""
@@ -176,6 +178,34 @@ nazo-oauth-keyctl validate
 ```
 
 Back up the key directory before and after rotation. Losing active private keys invalidates token signing continuity.
+
+### External KMS/HSM signing
+
+Local PEM keys remain the default. For non-exportable signing keys, register an external key whose public JWK is stored in `keyset.json` while signing is delegated to a trusted command or sidecar:
+
+```sh
+nazo-oauth-keyctl register-external \
+  --kid rs256-kms-2026-06 \
+  --alg RS256 \
+  --key-ref kms://prod/oauth/rs256-kms-2026-06 \
+  --public-jwk /secure/exported-public-jwk.json
+nazo-oauth-keyctl validate
+nazo-oauth-keyctl activate rs256-kms-2026-06
+```
+
+Configure `SIGNING_EXTERNAL_COMMAND` as a comma-separated argv list, for example `/usr/local/bin/oauth-kms-signer,--profile,prod`, and set `SIGNING_EXTERNAL_TIMEOUT_MS` to the maximum allowed signing latency. The service sends one JSON request on stdin:
+
+```json
+{"version":1,"kid":"rs256-kms-2026-06","alg":"RS256","key_ref":"kms://prod/oauth/rs256-kms-2026-06","signing_input":"<base64url(header)>.<base64url(payload)>"}
+```
+
+The signer must return JSON on stdout with a base64url raw JWS signature:
+
+```json
+{"signature":"<base64url-signature>"}
+```
+
+The application rejects active external keys unless `SIGNING_EXTERNAL_COMMAND` is configured, kills timed-out signer processes, rejects empty or malformed signatures, and never falls back to unsigned or query-mode responses after signing failure.
 
 ## Database and Valkey
 

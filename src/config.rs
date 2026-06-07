@@ -40,6 +40,8 @@ const ENV_CONFIG_KEYS: &[&str] = &[
     "ISSUER",
     "JWK_KEYS_DIR",
     "MTLS_ENDPOINT_BASE_URL",
+    "SIGNING_EXTERNAL_COMMAND",
+    "SIGNING_EXTERNAL_TIMEOUT_MS",
     "OTEL_ENABLED",
     "OTEL_EXPORTER_OTLP_ENDPOINT",
     "OTEL_EXPORTER_OTLP_PROTOCOL",
@@ -322,6 +324,10 @@ mod tests {
                     "OTEL_EXPORTER_OTLP_ENDPOINT".to_owned(),
                     "http://collector:4318".to_owned(),
                 ),
+                (
+                    "SIGNING_EXTERNAL_COMMAND".to_owned(),
+                    "/usr/local/bin/kms-signer,--profile,prod".to_owned(),
+                ),
                 ("VALKEY_COMMAND_TIMEOUT_MS".to_owned(), "1000".to_owned()),
                 ("UNKNOWN_ENV".to_owned(), "ignored".to_owned()),
             ])
@@ -333,6 +339,10 @@ mod tests {
         assert_eq!(
             source.string("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
             "http://collector:4318"
+        );
+        assert_eq!(
+            source.string("SIGNING_EXTERNAL_COMMAND", ""),
+            "/usr/local/bin/kms-signer,--profile,prod"
         );
         assert_eq!(source.string("VALKEY_COMMAND_TIMEOUT_MS", ""), "1000");
         assert!(source.get("UNKNOWN_ENV").is_none());

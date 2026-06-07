@@ -40,19 +40,17 @@ async fn consume_pushed_request_uri_if_present(
 
     match consume_pushed_authorization_request(state, request_uri).await {
         Ok(()) => Ok(()),
-        Err(PushedAuthorizationRequestConsumeError::Missing) => Err(authorization_error_redirect(
-            state,
-            payload,
-            "invalid_request_uri",
-        )),
+        Err(PushedAuthorizationRequestConsumeError::Missing) => {
+            Err(authorization_error_redirect(state, payload, "invalid_request_uri").await)
+        }
         Err(PushedAuthorizationRequestConsumeError::ReadFailed)
         | Err(PushedAuthorizationRequestConsumeError::Malformed) => {
-            Err(authorization_error_redirect(state, payload, "server_error"))
+            Err(authorization_error_redirect(state, payload, "server_error").await)
         }
     }
 }
 
-fn authorization_error_redirect(
+async fn authorization_error_redirect(
     state: &AppState,
     payload: &ConsentPayload,
     error: &str,
@@ -66,6 +64,7 @@ fn authorization_error_redirect(
         Some(error),
         payload.state.as_deref(),
     )
+    .await
 }
 
 /// 处理用户对授权请求的同意或拒绝。
@@ -154,7 +153,7 @@ pub(crate) async fn authorize_decision(
                     ),
                 ]),
             );
-            return authorization_error_redirect(&state, &payload, "access_denied");
+            return authorization_error_redirect(&state, &payload, "access_denied").await;
         }
         AuthorizationDecision::Approve => {}
     }
@@ -249,6 +248,7 @@ pub(crate) async fn authorize_decision(
         None,
         payload.state.as_deref(),
     )
+    .await
 }
 
 #[cfg(test)]

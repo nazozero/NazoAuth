@@ -42,7 +42,7 @@ This threat model tracks the P0 attack classes from the roadmap. It is a living 
 | Refresh token reuse | Stolen refresh token extends session | Opaque token hash storage, token family tracking, reuse detection | State-machine doc for lost-response retry; FAPI2 default no routine rotation |
 | CSRF | Browser performs unwanted state-changing request | CSRF cookie/header check, SameSite cookies | Extend CSRF tests across all admin/profile mutation endpoints |
 | XSS session theft | Script steals session credential | Session id only in HTTPOnly cookie; login JSON omits `session_id` | Frontend CSP and template audit |
-| Key compromise | Signing key leak enables token forgery | Keyset validation, active/previous JWKS, keyctl lifecycle | KMS/HSM backend, emergency rotation runbook, release signing |
+| Key compromise | Signing key leak enables token forgery | Keyset validation, active/previous JWKS, keyctl lifecycle, optional external KMS/HSM signer backend | Emergency rotation runbook and rehearsal evidence |
 | Valkey outage | Replay/rate/session state unavailable | Sensitive paths fail with server errors instead of weakening controls | HA guidance, chaos tests, timeout SLOs |
 | PostgreSQL outage | Durable state unavailable | Protocol endpoints return server errors | HA guidance, backup/restore tests, migration rollback plan |
 | Metadata overclaim | Clients rely on unsupported security behavior | Discovery generated from runtime state for signing algs | Full metadata truth tests and profile-aware metadata |
@@ -58,4 +58,3 @@ Revisit this threat model when:
 - refresh token rotation semantics change
 - DCR, RAR, Device Grant, Token Exchange, federation, or SCIM is added
 - production incident, conformance failure, or security report reveals a new class
-

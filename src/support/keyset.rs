@@ -3,12 +3,17 @@
 
 use std::io::ErrorKind;
 use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, anyhow};
 use jsonwebtoken::jwk::{Jwk, PublicKeyUse};
 use openssl::rsa::Rsa;
 use p256::elliptic_curve::pkcs8::EncodePrivateKey as EncodeEcPrivateKey;
 use rand_core::OsRng;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::process::Command;
+use tokio::time;
 
 use super::prelude::*;
 
@@ -43,7 +48,7 @@ pub(crate) async fn try_load_keyset(
         .get("keys")
         .and_then(Value::as_array)
         .ok_or_else(|| anyhow!("keyset.json missing keys array"))?;
-    let mut active_private_pkcs8_der = None;
+    let mut active_signing_key = None;
     let mut active_alg = None;
     let mut seen_kids = std::collections::HashSet::new();
     let mut verification_keys = Vec::new();
@@ -64,21 +69,57 @@ pub(crate) async fn try_load_keyset(
             continue;
         }
 
-        let file_name = entry
-            .get("file")
-            .and_then(Value::as_str)
-            .ok_or_else(|| anyhow!("keyset entry {kid} missing file"))?;
-        let raw_key = tokio::fs::read_to_string(settings.jwk_keys_dir.join(file_name))
-            .await
-            .with_context(|| format!("failed to read keyset entry {kid} from {file_name}"))?;
         let alg = key_entry_algorithm(entry)
             .with_context(|| format!("keyset entry {kid} has unsupported alg"))?;
-        let der =
-            pem_to_der(&raw_key).with_context(|| format!("keyset entry {kid} is not valid PEM"))?;
-        let public_jwk = public_jwk_from_private_der(kid, alg, &der)
-            .with_context(|| format!("keyset entry {kid} private key does not match alg"))?;
+        let backend = key_entry_backend(entry);
+        let (public_jwk, signing_key) = match backend {
+            "local-pem" => {
+                let file_name = entry
+                    .get("file")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| anyhow!("keyset entry {kid} missing file"))?;
+                let raw_key = tokio::fs::read_to_string(settings.jwk_keys_dir.join(file_name))
+                    .await
+                    .with_context(|| {
+                        format!("failed to read keyset entry {kid} from {file_name}")
+                    })?;
+                let der = pem_to_der(&raw_key)
+                    .with_context(|| format!("keyset entry {kid} is not valid PEM"))?;
+                let public_jwk =
+                    public_jwk_from_private_der(kid, alg, &der).with_context(|| {
+                        format!("keyset entry {kid} private key does not match alg")
+                    })?;
+                (public_jwk, Some(ActiveSigningKey::LocalPkcs8Der(der)))
+            }
+            "external-command" => {
+                let public_jwk = external_public_jwk(entry)
+                    .with_context(|| format!("keyset entry {kid} missing public_jwk"))?;
+                let key_ref = entry
+                    .get("key_ref")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| anyhow!("keyset entry {kid} missing key_ref"))?;
+                let signing_key = if is_active {
+                    if settings.signing_external_command.is_empty() {
+                        anyhow::bail!(
+                            "SIGNING_EXTERNAL_COMMAND is required for active external-command key {kid}"
+                        );
+                    }
+                    Some(ActiveSigningKey::ExternalCommand(ExternalSigningKey {
+                        command: Arc::new(settings.signing_external_command.clone()),
+                        key_ref: key_ref.to_owned(),
+                        timeout: Duration::from_millis(settings.signing_external_timeout_ms),
+                    }))
+                } else {
+                    None
+                };
+                (public_jwk, signing_key)
+            }
+            _ => anyhow::bail!("keyset entry {kid} has unsupported backend {backend}"),
+        };
         if is_active {
-            active_private_pkcs8_der = Some(der);
+            active_signing_key = signing_key;
             active_alg = Some(alg);
         }
         verification_keys.push(VerificationKey {
@@ -91,7 +132,7 @@ pub(crate) async fn try_load_keyset(
         active_kid: active_kid.to_owned(),
         active_alg: active_alg
             .ok_or_else(|| anyhow!("keyset.json active_kid does not reference a live key"))?,
-        active_private_pkcs8_der: active_private_pkcs8_der
+        active_signing_key: active_signing_key
             .ok_or_else(|| anyhow!("keyset.json active_kid does not reference a live key"))?,
         verification_keys,
     }))
@@ -121,7 +162,7 @@ pub(crate) async fn create_new_keyset(settings: &Settings) -> anyhow::Result<Key
     Ok(Keyset {
         active_kid: kid.clone(),
         active_alg: jsonwebtoken::Algorithm::RS256,
-        active_private_pkcs8_der: private_pkcs8_der,
+        active_signing_key: ActiveSigningKey::LocalPkcs8Der(private_pkcs8_der),
         verification_keys: vec![VerificationKey { kid, public_jwk }],
     })
 }
@@ -279,6 +320,42 @@ fn key_entry_algorithm(entry: &Value) -> anyhow::Result<jsonwebtoken::Algorithm>
         .ok_or_else(|| anyhow!("unsupported signing alg"))
 }
 
+fn key_entry_backend(entry: &Value) -> &str {
+    entry
+        .get("backend")
+        .and_then(Value::as_str)
+        .unwrap_or("local-pem")
+}
+
+fn external_public_jwk(entry: &Value) -> anyhow::Result<Value> {
+    let kid = entry
+        .get("kid")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("key entry missing kid"))?;
+    let alg = entry.get("alg").and_then(Value::as_str).unwrap_or("EdDSA");
+    let jwk = entry
+        .get("public_jwk")
+        .and_then(Value::as_object)
+        .ok_or_else(|| anyhow!("public_jwk must be an object"))?;
+    let mut jwk = Value::Object(jwk.clone());
+    match jwk.get("kid").and_then(Value::as_str) {
+        Some(value) if value != kid => anyhow::bail!("public_jwk kid does not match key entry"),
+        Some(_) => {}
+        None => jwk["kid"] = json!(kid),
+    }
+    match jwk.get("alg").and_then(Value::as_str) {
+        Some(value) if value != alg => anyhow::bail!("public_jwk alg does not match key entry"),
+        Some(_) => {}
+        None => jwk["alg"] = json!(alg),
+    }
+    match jwk.get("use").and_then(Value::as_str) {
+        Some("sig") => {}
+        Some(_) => anyhow::bail!("public_jwk use must be sig"),
+        None => jwk["use"] = json!("sig"),
+    }
+    Ok(jwk)
+}
+
 fn key_entry_is_retired(entry: &Value) -> bool {
     entry
         .get("retire_at")
@@ -346,20 +423,153 @@ impl Keyset {
         self.verification_keys.iter().find(|key| key.kid == kid)
     }
 
-    pub(crate) fn active_encoding_key(&self) -> jsonwebtoken::EncodingKey {
-        match self.active_alg {
-            jsonwebtoken::Algorithm::EdDSA => {
-                jsonwebtoken::EncodingKey::from_ed_der(&self.active_private_pkcs8_der)
-            }
-            jsonwebtoken::Algorithm::RS256 | jsonwebtoken::Algorithm::PS256 => {
-                jsonwebtoken::EncodingKey::from_rsa_der(&self.active_private_pkcs8_der)
-            }
-            jsonwebtoken::Algorithm::ES256 => {
-                jsonwebtoken::EncodingKey::from_ec_der(&self.active_private_pkcs8_der)
-            }
-            _ => unreachable!("active signing algorithm is validated during keyset loading"),
+    pub(crate) async fn sign_jwt<T: Serialize>(
+        &self,
+        header: &jsonwebtoken::Header,
+        claims: &T,
+    ) -> jsonwebtoken::errors::Result<String> {
+        if header.alg != self.active_alg || header.kid.as_deref() != Some(&self.active_kid) {
+            return Err(jsonwebtoken::errors::ErrorKind::InvalidAlgorithm.into());
         }
+        let encoded_header = URL_SAFE_NO_PAD.encode(serde_json::to_vec(header)?);
+        let encoded_claims = URL_SAFE_NO_PAD.encode(serde_json::to_vec(claims)?);
+        let signing_input = format!("{encoded_header}.{encoded_claims}");
+        let signature = match &self.active_signing_key {
+            ActiveSigningKey::LocalPkcs8Der(private_pkcs8_der) => {
+                sign_local_jwt_input(self.active_alg, private_pkcs8_der, signing_input.as_bytes())?
+            }
+            ActiveSigningKey::ExternalCommand(external) => {
+                sign_external_jwt_input(
+                    external,
+                    &self.active_kid,
+                    self.active_alg,
+                    signing_input.as_str(),
+                )
+                .await?
+            }
+        };
+        Ok(format!("{signing_input}.{signature}"))
     }
+}
+
+fn sign_local_jwt_input(
+    alg: jsonwebtoken::Algorithm,
+    private_pkcs8_der: &[u8],
+    signing_input: &[u8],
+) -> jsonwebtoken::errors::Result<String> {
+    let key = match alg {
+        jsonwebtoken::Algorithm::EdDSA => jsonwebtoken::EncodingKey::from_ed_der(private_pkcs8_der),
+        jsonwebtoken::Algorithm::RS256 | jsonwebtoken::Algorithm::PS256 => {
+            jsonwebtoken::EncodingKey::from_rsa_der(private_pkcs8_der)
+        }
+        jsonwebtoken::Algorithm::ES256 => jsonwebtoken::EncodingKey::from_ec_der(private_pkcs8_der),
+        _ => return Err(jsonwebtoken::errors::ErrorKind::InvalidAlgorithm.into()),
+    };
+    jsonwebtoken::crypto::sign(signing_input, &key, alg)
+}
+
+async fn sign_external_jwt_input(
+    external: &ExternalSigningKey,
+    kid: &str,
+    alg: jsonwebtoken::Algorithm,
+    signing_input: &str,
+) -> jsonwebtoken::errors::Result<String> {
+    let alg_name =
+        signing_algorithm_name(alg).ok_or(jsonwebtoken::errors::ErrorKind::InvalidAlgorithm)?;
+    let request = json!({
+        "version": 1,
+        "kid": kid,
+        "alg": alg_name,
+        "key_ref": external.key_ref,
+        "signing_input": signing_input
+    });
+    let mut child = Command::new(
+        external
+            .command
+            .as_slice()
+            .first()
+            .ok_or_else(|| jwt_provider_error("external signer command is empty"))?,
+    )
+    .args(external.command.iter().skip(1))
+    .stdin(std::process::Stdio::piped())
+    .stdout(std::process::Stdio::piped())
+    .stderr(std::process::Stdio::piped())
+    .spawn()
+    .map_err(|error| jwt_provider_error(format!("failed to spawn external signer: {error}")))?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| jwt_provider_error("external signer stdin unavailable"))?;
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| jwt_provider_error("external signer stdout unavailable"))?;
+    let mut stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| jwt_provider_error("external signer stderr unavailable"))?;
+    let stdout_task = tokio::spawn(async move {
+        let mut output = Vec::new();
+        stdout.read_to_end(&mut output).await.map(|_| output)
+    });
+    let stderr_task = tokio::spawn(async move {
+        let mut output = Vec::new();
+        stderr.read_to_end(&mut output).await.map(|_| output)
+    });
+    stdin
+        .write_all(serde_json::to_string(&request)?.as_bytes())
+        .await
+        .map_err(|error| {
+            jwt_provider_error(format!("failed to write external signer request: {error}"))
+        })?;
+    drop(stdin);
+    let status = match time::timeout(external.timeout, child.wait()).await {
+        Ok(result) => result
+            .map_err(|error| jwt_provider_error(format!("external signer failed: {error}")))?,
+        Err(_) => {
+            let _ = child.kill().await;
+            return Err(jwt_provider_error("external signer timed out"));
+        }
+    };
+    let stdout = stdout_task
+        .await
+        .map_err(|error| {
+            jwt_provider_error(format!("external signer stdout join failed: {error}"))
+        })?
+        .map_err(|error| jwt_provider_error(format!("external signer failed: {error}")))?;
+    let stderr = stderr_task
+        .await
+        .map_err(|error| {
+            jwt_provider_error(format!("external signer stderr join failed: {error}"))
+        })?
+        .map_err(|error| jwt_provider_error(format!("external signer failed: {error}")))?;
+    if !status.success() {
+        return Err(jwt_provider_error(format!(
+            "external signer exited with status {}: {}",
+            status,
+            String::from_utf8_lossy(&stderr)
+        )));
+    }
+    let response: Value = serde_json::from_slice(&stdout)?;
+    let signature = response
+        .get("signature")
+        .and_then(Value::as_str)
+        .ok_or_else(|| jwt_provider_error("external signer response missing signature"))?;
+    let decoded = URL_SAFE_NO_PAD.decode(signature).map_err(|error| {
+        jwt_provider_error(format!(
+            "external signer returned invalid signature: {error}"
+        ))
+    })?;
+    if decoded.is_empty() {
+        return Err(jwt_provider_error(
+            "external signer returned empty signature",
+        ));
+    }
+    Ok(signature.to_owned())
+}
+
+fn jwt_provider_error(message: impl Into<String>) -> jsonwebtoken::errors::Error {
+    jsonwebtoken::errors::ErrorKind::Provider(message.into()).into()
 }
 
 #[cfg(test)]
@@ -378,7 +588,7 @@ mod tests {
         let keyset = Keyset {
             active_kid: "active".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_private_pkcs8_der: active_der.clone(),
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(active_der.clone()),
             verification_keys: vec![
                 VerificationKey {
                     kid: "active".to_owned(),
@@ -631,6 +841,131 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[tokio::test]
+    async fn active_external_command_key_requires_signer_command() {
+        let keys_dir = temp_keys_dir("external_missing_command");
+        tokio::fs::create_dir_all(&keys_dir).await.unwrap();
+        let active_der = generate_key_material(jsonwebtoken::Algorithm::RS256)
+            .unwrap()
+            .private_pkcs8_der;
+        let public_jwk = public_jwk_from_private_der(
+            "external-active",
+            jsonwebtoken::Algorithm::RS256,
+            &active_der,
+        )
+        .unwrap();
+        tokio::fs::write(
+            keys_dir.join("keyset.json"),
+            serde_json::to_string_pretty(&json!({
+                "active_kid": "external-active",
+                "keys": [{
+                    "kid": "external-active",
+                    "alg": "RS256",
+                    "backend": "external-command",
+                    "key_ref": "kms://tenant/signing/external-active",
+                    "public_jwk": public_jwk,
+                    "retire_at": null
+                }]
+            }))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        let settings = test_settings(keys_dir.clone());
+        let keyset_path = keys_dir.join("keyset.json");
+
+        let result = try_load_keyset(&settings, &keyset_path).await;
+        let _ = tokio::fs::remove_dir_all(&keys_dir).await;
+
+        match result {
+            Ok(_) => panic!("active external-command key without command should fail"),
+            Err(error) => assert!(format!("{error:#}").contains("SIGNING_EXTERNAL_COMMAND")),
+        }
+    }
+
+    #[tokio::test]
+    async fn external_command_signer_produces_verifiable_jwt() {
+        let keys_dir = temp_keys_dir("external_signer");
+        tokio::fs::create_dir_all(&keys_dir).await.unwrap();
+        let active_der = generate_key_material(jsonwebtoken::Algorithm::RS256)
+            .unwrap()
+            .private_pkcs8_der;
+        let private_pem = der_to_pem(&active_der, "RSA PRIVATE KEY");
+        let public_jwk = public_jwk_from_private_der(
+            "external-active",
+            jsonwebtoken::Algorithm::RS256,
+            &active_der,
+        )
+        .unwrap();
+        let private_key_path = keys_dir.join("external-active.pem");
+        tokio::fs::write(&private_key_path, &private_pem)
+            .await
+            .unwrap();
+        let signer = keys_dir.join("signer.sh");
+        tokio::fs::write(
+            &signer,
+            r#"#!/bin/sh
+set -eu
+key_file="$1"
+request=$(cat)
+signing_input=$(printf '%s' "$request" | sed -n 's/.*"signing_input":"\([^"]*\)".*/\1/p')
+signature=$(printf '%s' "$signing_input" | openssl dgst -sha256 -sign "$key_file" -binary | openssl base64 -A | tr '+/' '-_' | tr -d '=')
+printf '{"signature":"%s"}' "$signature"
+"#
+            ,
+        )
+        .await
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            tokio::fs::set_permissions(&signer, std::fs::Permissions::from_mode(0o700))
+                .await
+                .unwrap();
+        }
+        tokio::fs::write(
+            keys_dir.join("keyset.json"),
+            serde_json::to_string_pretty(&json!({
+                "active_kid": "external-active",
+                "keys": [{
+                    "kid": "external-active",
+                    "alg": "RS256",
+                    "backend": "external-command",
+                    "key_ref": "test-ed25519",
+                    "public_jwk": public_jwk,
+                    "retire_at": null
+                }]
+            }))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        let mut settings = test_settings(keys_dir.clone());
+        settings.signing_external_command = vec![
+            signer.display().to_string(),
+            private_key_path.display().to_string(),
+        ];
+        let keyset_path = keys_dir.join("keyset.json");
+        let keyset = try_load_keyset(&settings, &keyset_path)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+        header.kid = Some("external-active".to_owned());
+        let claims = json!({"sub": "subject-1", "exp": 4_102_444_800_i64});
+
+        let token = keyset.sign_jwt(&header, &claims).await.unwrap();
+        let decoding_key =
+            crate::support::jwt_decoding_key_from_jwk(&keyset.jwks()["keys"][0], header.alg)
+                .unwrap();
+        let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::RS256);
+        validation.validate_exp = false;
+        let decoded = jsonwebtoken::decode::<Value>(&token, &decoding_key, &validation).unwrap();
+        let _ = tokio::fs::remove_dir_all(&keys_dir).await;
+
+        assert_eq!(decoded.claims["sub"], "subject-1");
+    }
+
     fn temp_keys_dir(label: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
             "nazo_keyset_{label}_{}",
@@ -677,6 +1012,8 @@ mod tests {
             email_code_dev_response_enabled: false,
             avatar_storage_dir: jwk_keys_dir.join("avatars"),
             jwk_keys_dir,
+            signing_external_command: Vec::new(),
+            signing_external_timeout_ms: 2_000,
             trusted_proxy_cidrs: Vec::new(),
             client_ip_header_mode: ClientIpHeaderMode::None,
             subject_type: crate::settings::SubjectType::Public,

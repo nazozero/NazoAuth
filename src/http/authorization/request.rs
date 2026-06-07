@@ -458,11 +458,11 @@ async fn authorize_request(
         };
 
     if let Some(error) = consumed_request_uri_error {
-        return authorization_oauth_error_redirect(&state, &redirect_uri, error, q);
+        return authorization_oauth_error_redirect(&state, &redirect_uri, error, q).await;
     }
     if let Some(error_response) = request_object_error {
         if let Some(error) = oauth_json_error(&error_response) {
-            return authorization_oauth_error_redirect(&state, &redirect_uri, &error, q);
+            return authorization_oauth_error_redirect(&state, &redirect_uri, &error, q).await;
         }
         return error_response;
     }
@@ -470,10 +470,12 @@ async fn authorize_request(
         && !used_pushed_authorization_request
         && !q.contains_key("request")
     {
-        return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q);
+        return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q)
+            .await;
     }
     if authorization_nonce_too_long(q) {
-        return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q);
+        return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q)
+            .await;
     }
 
     if q.get("response_type").map(String::as_str) != Some("code") {
@@ -482,28 +484,33 @@ async fn authorize_request(
             &redirect_uri,
             "unsupported_response_type",
             q,
-        );
+        )
+        .await;
     }
     let response_mode = match authorization_response_mode(q) {
         Ok(value) => value,
         Err(()) => {
-            return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q);
+            return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q)
+                .await;
         }
     };
     let (code_challenge, code_challenge_method) = match authorization_pkce(q) {
         Ok(value) => value,
         Err(()) => {
-            return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q);
+            return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q)
+                .await;
         }
     };
     if authorization_request_requires_pkce(&client) && code_challenge.is_none() {
-        return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q);
+        return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q)
+            .await;
     }
 
     let prompt = match requested_prompt(q) {
         Ok(prompt) => prompt,
         Err(()) => {
-            return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q);
+            return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q)
+                .await;
         }
     };
     let max_age = match q.get("max_age") {
@@ -515,7 +522,8 @@ async fn authorize_request(
                     &redirect_uri,
                     "invalid_request",
                     q,
-                );
+                )
+                .await;
             }
         },
         None => None,
@@ -523,7 +531,8 @@ async fn authorize_request(
     let requested_claims = match requested_claims(q) {
         Ok(value) => value,
         Err(()) => {
-            return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q);
+            return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q)
+                .await;
         }
     };
 
@@ -548,7 +557,8 @@ async fn authorize_request(
                 None,
                 Some("login_required"),
                 q.get("state").map(String::as_str),
-            );
+            )
+            .await;
         }
         return redirect_found(authorization_login_url(
             &state,
@@ -573,7 +583,8 @@ async fn authorize_request(
                 None,
                 Some("login_required"),
                 q.get("state").map(String::as_str),
-            );
+            )
+            .await;
         }
         return redirect_found(authorization_login_url(
             &state,
@@ -588,7 +599,7 @@ async fn authorize_request(
 
     let requested_scopes = parse_scope(q.get("scope").map(String::as_str).unwrap_or(""));
     if !is_subset(&requested_scopes, &json_array_to_strings(&client.scopes)) {
-        return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_scope", q);
+        return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_scope", q).await;
     }
     let now = Utc::now();
     let request_id = Uuid::now_v7().to_string();
@@ -637,7 +648,8 @@ async fn authorize_request(
                     &redirect_uri,
                     "consent_required",
                     q,
-                );
+                )
+                .await;
             }
             Err(response) => return response,
         }
@@ -740,7 +752,8 @@ async fn issue_authorization_code_without_interaction(
                     None,
                     Some("invalid_request_uri"),
                     payload.state.as_deref(),
-                );
+                )
+                .await;
             }
             Err(PushedAuthorizationRequestConsumeError::ReadFailed)
             | Err(PushedAuthorizationRequestConsumeError::Malformed) => {
@@ -752,7 +765,8 @@ async fn issue_authorization_code_without_interaction(
                     None,
                     Some("server_error"),
                     payload.state.as_deref(),
-                );
+                )
+                .await;
             }
         }
     }
@@ -831,6 +845,7 @@ async fn issue_authorization_code_without_interaction(
         None,
         payload.state.as_deref(),
     )
+    .await
 }
 
 fn outer_request_uri_parameters_match_pushed(
@@ -874,7 +889,7 @@ pub(crate) async fn consume_pushed_authorization_request(
     Ok(())
 }
 
-pub(crate) fn authorization_oauth_error_redirect(
+pub(crate) async fn authorization_oauth_error_redirect(
     state: &AppState,
     redirect_uri: &str,
     error: &str,
@@ -889,9 +904,10 @@ pub(crate) fn authorization_oauth_error_redirect(
         Some(error),
         q.get("state").map(String::as_str),
     )
+    .await
 }
 
-pub(crate) fn authorization_response_redirect(
+pub(crate) async fn authorization_response_redirect(
     state: &AppState,
     redirect_uri: &str,
     client_id: &str,
@@ -912,7 +928,8 @@ pub(crate) fn authorization_response_redirect(
                     state: state_value,
                     ttl: state.settings.auth_code_ttl_seconds as i64,
                 },
-            ),
+            )
+            .await,
         );
     }
     redirect_found(append_authorization_response_query(

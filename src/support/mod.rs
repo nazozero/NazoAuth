@@ -70,8 +70,8 @@ pub(crate) mod prelude {
 
     pub(crate) use crate::db::{DbPool, get_conn};
     pub(crate) use crate::domain::{
-        AccessRequestRow, AccessRequestStatus, AppState, Claims, ClientRow, ConfirmationClaims,
-        Keyset, UserRow, VerificationKey,
+        AccessRequestRow, AccessRequestStatus, ActiveSigningKey, AppState, Claims, ClientRow,
+        ConfirmationClaims, ExternalSigningKey, Keyset, UserRow, VerificationKey,
     };
     pub(crate) use crate::schema::{
         client_access_requests, oauth_clients, user_client_grants, users,
