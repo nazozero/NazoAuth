@@ -1,6 +1,6 @@
 # Refresh Token Rotation
 
-This document defines the refresh-token behavior used by non-FAPI compatibility profiles. FAPI2 Security deployments should prefer sender-constrained refresh and access tokens and should not rely on routine refresh-token rotation by default.
+This document defines the refresh-token behavior used by non-FAPI compatibility profiles. FAPI2 Security deployments should not rely on routine refresh-token rotation by default; refresh grants still require confidential client authentication and the configured DPoP or mTLS proof, and newly issued access tokens remain sender-constrained.
 
 ## State Machine
 

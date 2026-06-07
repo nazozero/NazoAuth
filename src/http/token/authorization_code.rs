@@ -171,13 +171,10 @@ fn token_issue_from_authorization_code(input: AuthorizationCodeIssueInput) -> To
 
 fn refresh_token_dpop_binding(
     client: &ClientRow,
-    payload: &CodePayload,
+    _payload: &CodePayload,
     dpop_jkt: Option<String>,
 ) -> Option<String> {
-    if client.client_type == "public"
-        || client.require_dpop_bound_tokens
-        || payload.dpop_jkt.is_some()
-    {
+    if client.client_type == "public" {
         dpop_jkt
     } else {
         None
@@ -593,17 +590,16 @@ mod tests {
     }
 
     #[test]
-    fn confidential_dpop_client_binds_refresh_token_to_dpop_key() {
+    fn confidential_dpop_client_does_not_pin_refresh_token_to_initial_dpop_key() {
         let mut client = pkce_policy_client();
         client.client_type = "confidential".to_owned();
         client.require_dpop_bound_tokens = true;
         let mut payload = code_payload(true);
         payload.dpop_jkt = Some("request-dpop-jkt".to_owned());
 
-        assert_eq!(
+        assert!(
             refresh_token_dpop_binding(&client, &payload, Some("verified-dpop-jkt".to_owned()))
-                .as_deref(),
-            Some("verified-dpop-jkt")
+                .is_none()
         );
     }
 

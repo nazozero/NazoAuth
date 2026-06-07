@@ -36,7 +36,7 @@ The roadmap separates three concerns that must not be mixed:
 - [x] Define `oauth2-baseline`, `oauth2-security-bcp`, `oidc-basic-op`, and `oidc-config` as separate profiles with their exact endpoint, parameter, metadata, and negative-test requirements. See `docs/profile-matrix.md`.
 - [x] Define `fapi2-security` as PAR + PKCE S256 + confidential clients + `private_key_jwt` or mTLS client authentication + sender-constrained access tokens via DPoP or mTLS. See `docs/profile-matrix.md`.
 - [x] Add a runtime `fapi2-security` profile switch that requires client-authenticated PAR, rejects authorization requests that do not use PAR, enforces authorization code lifetime of 60 seconds or less, and rejects resource owner password credentials.
-- [x] Define the `fapi2-security` refresh-token policy: no routine refresh-token rotation by default; use sender-constrained refresh/access tokens.
+- [x] Define the `fapi2-security` refresh-token policy: no routine refresh-token rotation by default; require confidential client authentication plus configured DPoP or mTLS proof on refresh grants, and keep newly issued access tokens sender-constrained.
 - [x] If refresh rotation is enabled for compatibility, migration, or non-FAPI profiles, document lost-response retry semantics as a state machine with replay detection tests. See `docs/refresh-token-rotation.md`.
 - [x] Define `fapi2-message-signing-authz-request` as FAPI2 Security plus signed JAR request objects at the PAR endpoint. See `docs/profile-matrix.md`.
 - [x] Add a runtime `fapi2-message-signing-authz-request` profile switch that requires and verifies signed request objects at PAR, requires `aud`, requires `nbf`, requires `exp` with lifetime no longer than 60 minutes, and accepts `typ=oauth-authz-req+jwt`.

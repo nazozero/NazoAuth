@@ -283,6 +283,6 @@ Current high-priority boundaries:
 - No-store token and protocol error responses.
 - Explicit trusted proxy configuration before forwarded headers are trusted.
 
-Refresh-token rotation for non-FAPI compatibility profiles is documented in [docs/refresh-token-rotation.md](docs/refresh-token-rotation.md). FAPI2 Security deployments should prefer sender-constrained refresh/access tokens and should not use routine rotation by default.
+Refresh-token rotation for non-FAPI compatibility profiles is documented in [docs/refresh-token-rotation.md](docs/refresh-token-rotation.md). FAPI2 Security deployments should not use routine rotation by default; refresh grants still require confidential client authentication and the configured DPoP or mTLS proof, and newly issued access tokens remain sender-constrained.
 
 Known roadmap items are tracked in [docs/roadmap.md](docs/roadmap.md), [CHANGELOG.md](CHANGELOG.md), and future conformance records. Dynamic Client Registration, Client Configuration Management, Device Authorization Grant, and Token Exchange are tracked as ecosystem onboarding decisions in [docs/ecosystem-onboarding.md](docs/ecosystem-onboarding.md). Implemented identity-platform areas now include tenant/realm boundaries, TOTP MFA, WebAuthn/passkeys, external OIDC/SAML federation, SCIM provisioning, and resource-server middleware. Remaining priority areas focus on deeper conformance evidence and release proof.
