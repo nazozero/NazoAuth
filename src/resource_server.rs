@@ -7,9 +7,17 @@
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
+use futures_util::future::{Ready, ready};
+use http::{HeaderMap, header};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
+use tower::{Layer, Service};
 
 const DEFAULT_CLOCK_SKEW_SECONDS: i64 = 60;
 
@@ -61,7 +69,7 @@ pub struct ConfirmationClaims {
     pub x5t_s256: Option<String>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResourceServerVerifierError {
     MissingIssuer,
     MissingAudience,
@@ -80,6 +88,28 @@ pub enum ResourceServerVerifierError {
     MissingSenderConstraint,
     DpopBindingMismatch,
     MtlsBindingMismatch,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SenderConstraintProof {
+    pub dpop_jkt: Option<String>,
+    pub mtls_x5t_s256: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ResourceServerRequestError {
+    MissingToken,
+    InvalidRequest,
+    InvalidToken(ResourceServerVerifierError),
+    MissingSenderConstraint,
+    DpopBindingMismatch,
+    MtlsBindingMismatch,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PresentedAccessTokenScheme {
+    Bearer,
+    Dpop,
 }
 
 #[derive(Debug, Deserialize)]
@@ -213,6 +243,344 @@ impl ResourceServerVerifierConfig {
             ],
             clock_skew_seconds: DEFAULT_CLOCK_SKEW_SECONDS,
         }
+    }
+}
+
+pub fn authorize_resource_request(
+    verifier: &ResourceServerVerifier,
+    authorization_headers: &[&str],
+    query: Option<&str>,
+    proof: &SenderConstraintProof,
+) -> Result<VerifiedAccessToken, ResourceServerRequestError> {
+    if query_has_access_token(query) {
+        return Err(ResourceServerRequestError::InvalidRequest);
+    }
+    let (scheme, token) = presented_authorization_token(authorization_headers)?;
+    let verified = verifier
+        .verify(token)
+        .map_err(ResourceServerRequestError::InvalidToken)?;
+    validate_presented_sender_constraint(scheme, &verified, proof)?;
+    Ok(verified)
+}
+
+pub fn authorize_http_request<B>(
+    verifier: &ResourceServerVerifier,
+    request: &mut http::Request<B>,
+) -> Result<VerifiedAccessToken, ResourceServerRequestError> {
+    let headers = http_authorization_headers(request.headers())?;
+    let proof = request
+        .extensions()
+        .get::<SenderConstraintProof>()
+        .cloned()
+        .unwrap_or_default();
+    let verified = authorize_resource_request(verifier, &headers, request.uri().query(), &proof)?;
+    request.extensions_mut().insert(verified.clone());
+    Ok(verified)
+}
+
+pub fn authorize_actix_request(
+    verifier: &ResourceServerVerifier,
+    request: &actix_web::HttpRequest,
+) -> Result<VerifiedAccessToken, ResourceServerRequestError> {
+    use actix_web::HttpMessage;
+
+    let headers: Result<Vec<_>, _> = request
+        .headers()
+        .get_all(actix_web::http::header::AUTHORIZATION)
+        .map(|value| {
+            value
+                .to_str()
+                .map_err(|_| ResourceServerRequestError::InvalidRequest)
+        })
+        .collect();
+    let headers = headers?;
+    let proof = request
+        .extensions()
+        .get::<SenderConstraintProof>()
+        .cloned()
+        .unwrap_or_default();
+    let query = if request.query_string().is_empty() {
+        None
+    } else {
+        Some(request.query_string())
+    };
+    let verified = authorize_resource_request(verifier, &headers, query, &proof)?;
+    request.extensions_mut().insert(verified.clone());
+    Ok(verified)
+}
+
+#[derive(Clone, Debug)]
+pub struct ActixVerifiedAccessToken(pub VerifiedAccessToken);
+
+impl actix_web::FromRequest for ActixVerifiedAccessToken {
+    type Error = actix_web::Error;
+    type Future = Ready<Result<Self, Self::Error>>;
+
+    fn from_request(
+        req: &actix_web::HttpRequest,
+        _payload: &mut actix_web::dev::Payload,
+    ) -> Self::Future {
+        let Some(verifier) = req.app_data::<actix_web::web::Data<ResourceServerVerifier>>() else {
+            return ready(Err(actix_web::error::InternalError::from_response(
+                "resource server verifier is not configured",
+                actix_bearer_error_response(ResourceServerRequestError::InvalidRequest),
+            )
+            .into()));
+        };
+        ready(
+            authorize_actix_request(verifier, req)
+                .map(ActixVerifiedAccessToken)
+                .map_err(|error| {
+                    actix_web::error::InternalError::from_response(
+                        format!("{error:?}"),
+                        actix_bearer_error_response(error),
+                    )
+                    .into()
+                }),
+        )
+    }
+}
+
+pub fn actix_bearer_error_response(error: ResourceServerRequestError) -> actix_web::HttpResponse {
+    let status = http_status_for_request_error(&error);
+    let (code, description) = bearer_error_fields(&error);
+    let challenge = bearer_challenge_value(code, description);
+    actix_web::HttpResponse::build(
+        actix_web::http::StatusCode::from_u16(status.as_u16())
+            .unwrap_or(actix_web::http::StatusCode::UNAUTHORIZED),
+    )
+    .insert_header((actix_web::http::header::WWW_AUTHENTICATE, challenge))
+    .json(serde_json::json!({
+        "error": code,
+        "error_description": description
+    }))
+}
+
+#[derive(Clone, Debug)]
+pub struct TowerResourceServerLayer {
+    verifier: ResourceServerVerifier,
+}
+
+impl TowerResourceServerLayer {
+    pub fn new(verifier: ResourceServerVerifier) -> Self {
+        Self { verifier }
+    }
+}
+
+impl<S> Layer<S> for TowerResourceServerLayer {
+    type Service = TowerResourceServerService<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        TowerResourceServerService {
+            inner,
+            verifier: self.verifier.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct TowerResourceServerService<S> {
+    inner: S,
+    verifier: ResourceServerVerifier,
+}
+
+#[derive(Debug)]
+pub enum TowerResourceServerError<E> {
+    Unauthorized(ResourceServerRequestError),
+    Inner(E),
+}
+
+impl<S, B> Service<http::Request<B>> for TowerResourceServerService<S>
+where
+    S: Service<http::Request<B>> + Send + 'static,
+    S::Future: Send + 'static,
+    S::Response: Send + 'static,
+    S::Error: Send + 'static,
+    B: Send + 'static,
+{
+    type Response = S::Response;
+    type Error = TowerResourceServerError<S::Error>;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner
+            .poll_ready(cx)
+            .map_err(TowerResourceServerError::Inner)
+    }
+
+    fn call(&mut self, mut request: http::Request<B>) -> Self::Future {
+        if let Err(error) = authorize_http_request(&self.verifier, &mut request) {
+            return Box::pin(async move { Err(TowerResourceServerError::Unauthorized(error)) });
+        }
+        let future = self.inner.call(request);
+        Box::pin(async move { future.await.map_err(TowerResourceServerError::Inner) })
+    }
+}
+
+pub fn authorize_tonic_request<T>(
+    verifier: &ResourceServerVerifier,
+    request: &mut tonic::Request<T>,
+) -> Result<VerifiedAccessToken, tonic::Status> {
+    let headers = request
+        .metadata()
+        .get("authorization")
+        .and_then(|value| value.to_str().ok())
+        .into_iter()
+        .collect::<Vec<_>>();
+    let proof = request
+        .extensions()
+        .get::<SenderConstraintProof>()
+        .cloned()
+        .unwrap_or_default();
+    match authorize_resource_request(verifier, &headers, None, &proof) {
+        Ok(verified) => {
+            request.extensions_mut().insert(verified.clone());
+            Ok(verified)
+        }
+        Err(error) => Err(tonic_status_for_request_error(error)),
+    }
+}
+
+pub fn http_bearer_error_response(error: &ResourceServerRequestError) -> http::Response<String> {
+    let status = http_status_for_request_error(error);
+    let (code, description) = bearer_error_fields(error);
+    http::Response::builder()
+        .status(status)
+        .header(
+            header::WWW_AUTHENTICATE,
+            bearer_challenge_value(code, description),
+        )
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(format!(
+            r#"{{"error":"{code}","error_description":"{description}"}}"#
+        ))
+        .expect("static bearer error response must be valid")
+}
+
+fn http_authorization_headers(
+    headers: &HeaderMap,
+) -> Result<Vec<&str>, ResourceServerRequestError> {
+    headers
+        .get_all(header::AUTHORIZATION)
+        .iter()
+        .map(|value| {
+            value
+                .to_str()
+                .map_err(|_| ResourceServerRequestError::InvalidRequest)
+        })
+        .collect()
+}
+
+fn query_has_access_token(query: Option<&str>) -> bool {
+    query.is_some_and(|query| {
+        url::form_urlencoded::parse(query.as_bytes()).any(|(key, _)| key == "access_token")
+    })
+}
+
+fn presented_authorization_token<'a>(
+    values: &'a [&'a str],
+) -> Result<(PresentedAccessTokenScheme, &'a str), ResourceServerRequestError> {
+    if values.is_empty() {
+        return Err(ResourceServerRequestError::MissingToken);
+    }
+    if values.len() != 1 {
+        return Err(ResourceServerRequestError::InvalidRequest);
+    }
+    let mut parts = values[0].split_whitespace();
+    let Some(scheme) = parts.next() else {
+        return Err(ResourceServerRequestError::MissingToken);
+    };
+    let Some(token) = parts.next().filter(|token| !token.trim().is_empty()) else {
+        return Err(ResourceServerRequestError::MissingToken);
+    };
+    if parts.next().is_some() {
+        return Err(ResourceServerRequestError::InvalidRequest);
+    }
+    let scheme = if scheme.eq_ignore_ascii_case("bearer") {
+        PresentedAccessTokenScheme::Bearer
+    } else if scheme.eq_ignore_ascii_case("dpop") {
+        PresentedAccessTokenScheme::Dpop
+    } else {
+        return Err(ResourceServerRequestError::MissingToken);
+    };
+    Ok((scheme, token))
+}
+
+fn validate_presented_sender_constraint(
+    scheme: PresentedAccessTokenScheme,
+    verified: &VerifiedAccessToken,
+    proof: &SenderConstraintProof,
+) -> Result<(), ResourceServerRequestError> {
+    let Some(cnf) = verified.cnf.as_ref() else {
+        return if scheme == PresentedAccessTokenScheme::Dpop {
+            Err(ResourceServerRequestError::MissingSenderConstraint)
+        } else {
+            Ok(())
+        };
+    };
+    if let Some(expected) = cnf.jkt.as_ref() {
+        if scheme != PresentedAccessTokenScheme::Dpop {
+            return Err(ResourceServerRequestError::MissingSenderConstraint);
+        }
+        return match proof.dpop_jkt.as_ref() {
+            Some(actual) if actual == expected => Ok(()),
+            Some(_) => Err(ResourceServerRequestError::DpopBindingMismatch),
+            None => Err(ResourceServerRequestError::MissingSenderConstraint),
+        };
+    }
+    if let Some(expected) = cnf.x5t_s256.as_ref() {
+        return match proof.mtls_x5t_s256.as_ref() {
+            Some(actual) if actual == expected => Ok(()),
+            Some(_) => Err(ResourceServerRequestError::MtlsBindingMismatch),
+            None => Err(ResourceServerRequestError::MissingSenderConstraint),
+        };
+    }
+    Err(ResourceServerRequestError::MissingSenderConstraint)
+}
+
+fn http_status_for_request_error(error: &ResourceServerRequestError) -> http::StatusCode {
+    match error {
+        ResourceServerRequestError::InvalidRequest => http::StatusCode::BAD_REQUEST,
+        _ => http::StatusCode::UNAUTHORIZED,
+    }
+}
+
+fn bearer_error_fields(error: &ResourceServerRequestError) -> (&'static str, &'static str) {
+    match error {
+        ResourceServerRequestError::InvalidRequest => (
+            "invalid_request",
+            "The request used an invalid access token transport.",
+        ),
+        ResourceServerRequestError::MissingToken => {
+            ("invalid_token", "Missing bearer access token.")
+        }
+        ResourceServerRequestError::MissingSenderConstraint => (
+            "invalid_token",
+            "Sender-constrained access token requires verified proof.",
+        ),
+        ResourceServerRequestError::DpopBindingMismatch => {
+            ("invalid_token", "DPoP proof does not match access token.")
+        }
+        ResourceServerRequestError::MtlsBindingMismatch => (
+            "invalid_token",
+            "Client certificate does not match access token.",
+        ),
+        ResourceServerRequestError::InvalidToken(_) => {
+            ("invalid_token", "Access token is invalid.")
+        }
+    }
+}
+
+fn bearer_challenge_value(error: &str, description: &str) -> String {
+    format!(r#"Bearer error="{error}", error_description="{description}""#)
+}
+
+fn tonic_status_for_request_error(error: ResourceServerRequestError) -> tonic::Status {
+    match error {
+        ResourceServerRequestError::InvalidRequest => {
+            tonic::Status::invalid_argument("invalid_request")
+        }
+        _ => tonic::Status::unauthenticated("invalid_token"),
     }
 }
 
@@ -428,6 +796,14 @@ mod tests {
         }
     }
 
+    fn bearer(token: &str) -> String {
+        format!("Bearer {token}")
+    }
+
+    fn dpop(token: &str) -> String {
+        format!("DPoP {token}")
+    }
+
     #[test]
     fn verifies_jwt_access_token_with_required_scope() {
         let fixture = fixture();
@@ -514,5 +890,199 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(error, ResourceServerVerifierError::DpopBindingMismatch);
+    }
+
+    #[test]
+    fn request_authorizer_rejects_query_access_tokens() {
+        let fixture = fixture();
+        let token = bearer(&token(&fixture, json!({}), None));
+        let error = authorize_resource_request(
+            &fixture.verifier,
+            &[token.as_str()],
+            Some("access_token=query-token"),
+            &SenderConstraintProof::default(),
+        )
+        .unwrap_err();
+
+        assert_eq!(error, ResourceServerRequestError::InvalidRequest);
+    }
+
+    #[test]
+    fn request_authorizer_rejects_duplicate_authorization_headers() {
+        let fixture = fixture();
+        let token = bearer(&token(&fixture, json!({}), None));
+        let error = authorize_resource_request(
+            &fixture.verifier,
+            &[token.as_str(), token.as_str()],
+            None,
+            &SenderConstraintProof::default(),
+        )
+        .unwrap_err();
+
+        assert_eq!(error, ResourceServerRequestError::InvalidRequest);
+    }
+
+    #[test]
+    fn request_authorizer_requires_verified_dpop_binding_context() {
+        let fixture = fixture();
+        let token = token(&fixture, json!({"cnf": {"jkt": "jkt-1"}}), None);
+        let header = dpop(&token);
+        let error = authorize_resource_request(
+            &fixture.verifier,
+            &[header.as_str()],
+            None,
+            &SenderConstraintProof::default(),
+        )
+        .unwrap_err();
+
+        assert_eq!(error, ResourceServerRequestError::MissingSenderConstraint);
+
+        let verified = authorize_resource_request(
+            &fixture.verifier,
+            &[header.as_str()],
+            None,
+            &SenderConstraintProof {
+                dpop_jkt: Some("jkt-1".to_owned()),
+                mtls_x5t_s256: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(verified.cnf.unwrap().jkt, Some("jkt-1".to_owned()));
+    }
+
+    #[test]
+    fn request_authorizer_requires_verified_mtls_binding_context() {
+        let fixture = fixture();
+        let token = token(&fixture, json!({"cnf": {"x5t#S256": "thumb-1"}}), None);
+        let header = bearer(&token);
+        let error = authorize_resource_request(
+            &fixture.verifier,
+            &[header.as_str()],
+            None,
+            &SenderConstraintProof::default(),
+        )
+        .unwrap_err();
+
+        assert_eq!(error, ResourceServerRequestError::MissingSenderConstraint);
+
+        let verified = authorize_resource_request(
+            &fixture.verifier,
+            &[header.as_str()],
+            None,
+            &SenderConstraintProof {
+                dpop_jkt: None,
+                mtls_x5t_s256: Some("thumb-1".to_owned()),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(verified.cnf.unwrap().x5t_s256, Some("thumb-1".to_owned()));
+    }
+
+    #[test]
+    fn http_request_authorizer_inserts_verified_claims_for_tower_and_axum() {
+        let fixture = fixture();
+        let token = bearer(&token(&fixture, json!({}), None));
+        let mut request = http::Request::builder()
+            .uri("https://api.example/orders")
+            .header(header::AUTHORIZATION, token)
+            .body(())
+            .unwrap();
+
+        let verified = authorize_http_request(&fixture.verifier, &mut request).unwrap();
+
+        assert_eq!(verified.subject, "subject-1");
+        assert_eq!(
+            request
+                .extensions()
+                .get::<VerifiedAccessToken>()
+                .unwrap()
+                .client_id,
+            "client-1"
+        );
+    }
+
+    #[actix_web::test]
+    async fn actix_request_authorizer_inserts_verified_claims() {
+        use actix_web::HttpMessage;
+
+        let fixture = fixture();
+        let token = bearer(&token(&fixture, json!({}), None));
+        let request = actix_web::test::TestRequest::get()
+            .uri("/orders")
+            .insert_header((actix_web::http::header::AUTHORIZATION, token))
+            .to_http_request();
+
+        let verified = authorize_actix_request(&fixture.verifier, &request).unwrap();
+
+        assert_eq!(verified.subject, "subject-1");
+        assert_eq!(
+            request
+                .extensions()
+                .get::<VerifiedAccessToken>()
+                .unwrap()
+                .client_id,
+            "client-1"
+        );
+    }
+
+    #[tokio::test]
+    async fn tower_layer_inserts_verified_claims_before_inner_service() {
+        #[derive(Clone)]
+        struct ExtensionCheckService;
+
+        impl Service<http::Request<()>> for ExtensionCheckService {
+            type Response = bool;
+            type Error = ();
+            type Future = Ready<Result<bool, ()>>;
+
+            fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+                Poll::Ready(Ok(()))
+            }
+
+            fn call(&mut self, request: http::Request<()>) -> Self::Future {
+                ready(Ok(request
+                    .extensions()
+                    .get::<VerifiedAccessToken>()
+                    .is_some()))
+            }
+        }
+
+        let fixture = fixture();
+        let token = bearer(&token(&fixture, json!({}), None));
+        let request = http::Request::builder()
+            .uri("https://api.example/orders")
+            .header(header::AUTHORIZATION, token)
+            .body(())
+            .unwrap();
+        let mut service =
+            TowerResourceServerLayer::new(fixture.verifier).layer(ExtensionCheckService);
+
+        let saw_claims = service.call(request).await.unwrap();
+
+        assert!(saw_claims);
+    }
+
+    #[test]
+    fn tonic_request_authorizer_inserts_verified_claims() {
+        let fixture = fixture();
+        let token = bearer(&token(&fixture, json!({}), None));
+        let mut request = tonic::Request::new(());
+        request
+            .metadata_mut()
+            .insert("authorization", token.parse().unwrap());
+
+        let verified = authorize_tonic_request(&fixture.verifier, &mut request).unwrap();
+
+        assert_eq!(verified.subject, "subject-1");
+        assert_eq!(
+            request
+                .extensions()
+                .get::<VerifiedAccessToken>()
+                .unwrap()
+                .client_id,
+            "client-1"
+        );
     }
 }
