@@ -160,7 +160,7 @@ fn token_issue_from_authorization_code(input: AuthorizationCodeIssueInput) -> To
         id_token_claims: input.payload.id_token_claims,
         id_token_claim_requests: input.payload.id_token_claim_requests,
         include_refresh: true,
-        rotation: None,
+        refresh_token_policy: RefreshTokenPolicy::IssueNew,
         dpop_jkt: input.dpop_jkt,
         refresh_token_dpop_jkt: input.refresh_token_dpop_jkt,
         mtls_x5t_s256: input.mtls_x5t_s256,

@@ -90,7 +90,7 @@ pub(crate) async fn token_client_credentials(
             id_token_claims: Vec::new(),
             id_token_claim_requests: Vec::new(),
             include_refresh: false,
-            rotation: None,
+            refresh_token_policy: RefreshTokenPolicy::PreserveExisting,
             dpop_jkt,
             refresh_token_dpop_jkt: None,
             mtls_x5t_s256,

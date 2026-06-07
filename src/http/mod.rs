@@ -46,8 +46,8 @@ pub(crate) mod prelude {
         AccessRequestStatus, AppState, AuthorizationCodeState, ClientRow, CodePayload,
         ConsentPayload, ConsumedAuthorizationCode, ExternalIdentityLinkRow, GrantRow,
         MyApplicationRow, OidcClaimRequest, PasskeyCredentialRow, PendingAccessRequestRow,
-        PushedAuthorizationRequest, TokenIssue, TokenRow, UserAccessRequestRow, UserRow,
-        authorization_details_empty, canonical_authorization_details,
+        PushedAuthorizationRequest, RefreshTokenPolicy, TokenIssue, TokenRow, UserAccessRequestRow,
+        UserRow, authorization_details_empty, canonical_authorization_details,
         high_risk_authorization_details, normalize_authorization_details,
         parse_authorization_details,
     };

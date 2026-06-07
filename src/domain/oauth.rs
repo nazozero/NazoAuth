@@ -187,6 +187,16 @@ pub(crate) struct ConsumedAuthorizationCode {
 }
 
 /// token 签发函数所需的归一化输入。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RefreshTokenPolicy {
+    IssueNew,
+    Rotate {
+        family_id: Uuid,
+        rotated_from_id: Uuid,
+    },
+    PreserveExisting,
+}
+
 pub(crate) struct TokenIssue {
     pub(crate) user_id: Option<Uuid>,
     pub(crate) subject: String,
@@ -203,7 +213,7 @@ pub(crate) struct TokenIssue {
     pub(crate) id_token_claims: Vec<String>,
     pub(crate) id_token_claim_requests: Vec<OidcClaimRequest>,
     pub(crate) include_refresh: bool,
-    pub(crate) rotation: Option<(Uuid, Option<Uuid>)>,
+    pub(crate) refresh_token_policy: RefreshTokenPolicy,
     pub(crate) dpop_jkt: Option<String>,
     pub(crate) refresh_token_dpop_jkt: Option<String>,
     pub(crate) mtls_x5t_s256: Option<String>,

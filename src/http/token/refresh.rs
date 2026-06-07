@@ -4,8 +4,30 @@ use super::{
     TokenForm, consume_token_client_assertion, issue_token_response, should_issue_refresh_token,
 };
 use crate::http::prelude::*;
+use crate::settings::AuthorizationServerProfile;
 
 const LOST_REFRESH_TOKEN_RETRY_SECONDS: i64 = 30;
+
+fn refresh_token_policy_for_authorization_server_profile(
+    profile: AuthorizationServerProfile,
+    token: &TokenRow,
+) -> RefreshTokenPolicy {
+    if profile.requires_fapi2_security() {
+        RefreshTokenPolicy::PreserveExisting
+    } else {
+        RefreshTokenPolicy::Rotate {
+            family_id: token.token_family_id,
+            rotated_from_id: token.id,
+        }
+    }
+}
+
+fn refresh_token_policy_for_profile(settings: &Settings, token: &TokenRow) -> RefreshTokenPolicy {
+    refresh_token_policy_for_authorization_server_profile(
+        settings.authorization_server_profile,
+        token,
+    )
+}
 
 fn within_lost_refresh_token_retry_window(revoked_at: DateTime<Utc>, now: DateTime<Utc>) -> bool {
     let elapsed = now.signed_duration_since(revoked_at);
@@ -279,6 +301,7 @@ pub(crate) async fn token_refresh(
             false,
         );
     }
+    let refresh_token_policy = refresh_token_policy_for_profile(&state.settings, &token);
     issue_token_response(
         state,
         client,
@@ -298,7 +321,7 @@ pub(crate) async fn token_refresh(
             id_token_claims: Vec::new(),
             id_token_claim_requests: Vec::new(),
             include_refresh: true,
-            rotation: Some((token.token_family_id, Some(token.id))),
+            refresh_token_policy,
             dpop_jkt: dpop_jkt.clone(),
             refresh_token_dpop_jkt: token.dpop_jkt,
             mtls_x5t_s256: mtls_x5t_s256.clone(),
@@ -312,6 +335,55 @@ pub(crate) async fn token_refresh(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn token_row() -> TokenRow {
+        TokenRow {
+            id: Uuid::now_v7(),
+            tenant_id: DEFAULT_TENANT_ID,
+            token_family_id: Uuid::now_v7(),
+            client_id: Uuid::now_v7(),
+            user_id: Some(Uuid::now_v7()),
+            scopes: json!(["openid", "offline_access"]),
+            authorization_details: json!([]),
+            issued_at: Utc::now(),
+            expires_at: Utc::now() + Duration::days(30),
+            revoked_at: None,
+            subject: "subject-1".to_owned(),
+            dpop_jkt: Some("dpop-jkt".to_owned()),
+            mtls_x5t_s256: None,
+        }
+    }
+
+    #[test]
+    fn fapi_profiles_preserve_sender_constrained_refresh_tokens() {
+        let token = token_row();
+
+        for profile in [
+            AuthorizationServerProfile::Fapi2Security,
+            AuthorizationServerProfile::Fapi2MessageSigningAuthzRequest,
+        ] {
+            assert_eq!(
+                refresh_token_policy_for_authorization_server_profile(profile, &token),
+                RefreshTokenPolicy::PreserveExisting
+            );
+        }
+    }
+
+    #[test]
+    fn baseline_profile_rotates_refresh_tokens() {
+        let token = token_row();
+
+        assert_eq!(
+            refresh_token_policy_for_authorization_server_profile(
+                AuthorizationServerProfile::Oauth2Baseline,
+                &token,
+            ),
+            RefreshTokenPolicy::Rotate {
+                family_id: token.token_family_id,
+                rotated_from_id: token.id,
+            }
+        );
+    }
 
     #[test]
     fn lost_refresh_retry_allows_only_short_post_rotation_window() {

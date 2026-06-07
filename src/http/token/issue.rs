@@ -414,11 +414,26 @@ pub(crate) async fn issue_token_response(
         };
         body["id_token"] = json!(id_token);
     }
-    if issue.include_refresh && should_issue_refresh_token(client, &issue.scopes) {
+    let mut refresh_rotated = None;
+    if issue.include_refresh
+        && should_issue_refresh_token(client, &issue.scopes)
+        && !matches!(
+            issue.refresh_token_policy,
+            RefreshTokenPolicy::PreserveExisting
+        )
+    {
+        let (family, rotated_from) = match issue.refresh_token_policy {
+            RefreshTokenPolicy::IssueNew => (Uuid::now_v7(), None),
+            RefreshTokenPolicy::Rotate {
+                family_id,
+                rotated_from_id,
+            } => (family_id, Some(rotated_from_id)),
+            RefreshTokenPolicy::PreserveExisting => unreachable!("handled above"),
+        };
         let refresh = PendingRefreshToken {
             raw: format!("{}.{}", random_urlsafe_token(), random_urlsafe_token()),
-            family: issue.rotation.map(|r| r.0).unwrap_or_else(Uuid::now_v7),
-            rotated_from: issue.rotation.and_then(|r| r.1),
+            family,
+            rotated_from,
             issued_at: now,
             expires_at: now + Duration::seconds(state.settings.refresh_token_ttl_seconds),
         };
@@ -426,6 +441,9 @@ pub(crate) async fn issue_token_response(
             Ok(RefreshPersistResult::Inserted) => {
                 body["refresh_token"] = json!(refresh.raw);
                 refresh_token_family_id = Some(refresh.family);
+                refresh_rotated = refresh
+                    .rotated_from
+                    .map(|rotated_from_id| (refresh.family, rotated_from_id));
             }
             Ok(RefreshPersistResult::RotationConflict) => {
                 mark_failed_authorization_code_if_needed(
@@ -505,7 +523,7 @@ pub(crate) async fn issue_token_response(
             ("refresh_token_family_id", json!(refresh_token_family_id)),
         ]),
     );
-    if let Some((family_id, rotated_from_id)) = issue.rotation {
+    if let Some((family_id, rotated_from_id)) = refresh_rotated {
         audit_event(
             "refresh_rotated",
             audit_fields(&[
