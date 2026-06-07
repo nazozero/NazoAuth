@@ -23,7 +23,7 @@ The roadmap separates three concerns that must not be mixed:
 | Sessions | Login response should not expose the session identifier in JSON. | Done |
 | Password hashing | Argon2 policy should be explicit and versioned. | Done |
 | Refresh policy | FAPI2 Security should not use rotation by default; non-FAPI rotation needs documented lost-response recovery semantics. | Done |
-| Resource servers | Provide verifier guidance and eventually Rust middleware so resource servers validate JWT access tokens correctly. | Planned |
+| Resource servers | Provide verifier guidance and eventually Rust middleware so resource servers validate JWT access tokens correctly. | Core verifier done; framework middleware planned |
 | Operations | HA, backups, observability, key lifecycle, SBOM/provenance, and security release process need production evidence. | Done for core deployment controls |
 
 ## P0: Normative Conformance
@@ -87,12 +87,12 @@ The roadmap separates three concerns that must not be mixed:
 
 ## P1: Ecosystem Onboarding
 
-- [ ] Evaluate RFC 7591 Dynamic Client Registration as an ecosystem onboarding feature, not as default AS-core scope.
-- [ ] If DCR is added, threat-model redirect URI validation, client metadata, JWKS URI fetching, software statements, initial access tokens, and client update/delete authorization first.
-- [ ] Evaluate RFC 7592 Client Configuration Management only after DCR threat modeling is complete.
-- [ ] Evaluate Device Authorization Grant for CLI, TV, and constrained-device ecosystems.
-- [ ] Evaluate RFC 8693 Token Exchange for service delegation, impersonation, and actor-token ecosystems.
-- [ ] Publish conformance fixtures and example clients for backend web, SPA, native, machine-to-machine, DPoP, and `private_key_jwt`.
+- [x] Evaluate RFC 7591 Dynamic Client Registration as an ecosystem onboarding feature, not as default AS-core scope. See `docs/ecosystem-onboarding.md`.
+- [x] If DCR is added, threat-model redirect URI validation, client metadata, JWKS URI fetching, software statements, initial access tokens, and client update/delete authorization first. See `docs/ecosystem-onboarding.md`.
+- [x] Evaluate RFC 7592 Client Configuration Management only after DCR threat modeling is complete. See `docs/ecosystem-onboarding.md`.
+- [x] Evaluate Device Authorization Grant for CLI, TV, and constrained-device ecosystems. See `docs/ecosystem-onboarding.md`.
+- [x] Evaluate RFC 8693 Token Exchange for service delegation, impersonation, and actor-token ecosystems. See `docs/ecosystem-onboarding.md`.
+- [x] Publish conformance fixtures and example clients for backend web, SPA, native, machine-to-machine, DPoP, and `private_key_jwt`. See `examples/resource-server-fixtures.md`.
 
 ## P2: Identity Platform
 
@@ -104,6 +104,7 @@ The roadmap separates three concerns that must not be mixed:
 
 ## P2: Rust Ecosystem
 
-- [ ] Publish resource-server verifier crates or middleware for Actix Web, Axum/Tower, and tonic.
-- [ ] Provide JWKS cache, issuer/audience validation, scope guards, DPoP checks, mTLS `cnf` checks, and introspection fallback.
-- [ ] Add policy and claims extension points without allowing extensions to bypass protocol invariants.
+- [x] Publish resource-server verifier core for Rust integrations. See `src/resource_server.rs` and `docs/resource-server-verifier.md`.
+- [ ] Publish framework-specific resource-server middleware for Actix Web, Axum/Tower, and tonic.
+- [x] Provide issuer/audience validation, scope guards, DPoP `cnf.jkt` checks, mTLS `cnf.x5t#S256` checks, and introspection fallback guidance. JWKS cache packaging remains a framework/crate follow-up. See `src/resource_server.rs` and `docs/resource-server-verifier.md`.
+- [x] Add policy and claims extension points without allowing extensions to bypass protocol invariants. The verifier returns claims only after protocol invariants pass; adapters must run extension hooks after verification.
