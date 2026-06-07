@@ -2,7 +2,7 @@
 // 只处理 OAuth 语义中的集合判断和授权记录 upsert。
 
 use super::{
-    mtls::normalize_sha256_thumbprint,
+    mtls::{certificate_x5c_thumbprint, normalize_sha256_thumbprint},
     prelude::*,
     security::{
         SUPPORTED_CLIENT_JWT_SIGNING_ALGS, blake3_hex, client_jwt_algorithm_from_name,
@@ -148,7 +148,9 @@ pub(crate) fn validate_client_metadata(metadata: ClientMetadata<'_>) -> anyhow::
     if client_type == "confidential" && token_endpoint_auth_method == "none" {
         anyhow::bail!("confidential 客户端必须使用机密认证方式");
     }
-    if let Some(jwks) = jwks {
+    if let Some(jwks) = jwks
+        && token_endpoint_auth_method != "self_signed_tls_client_auth"
+    {
         validate_client_jwks(jwks)?;
     }
     if token_endpoint_auth_method == "private_key_jwt" {
@@ -172,9 +174,9 @@ pub(crate) fn validate_client_metadata(metadata: ClientMetadata<'_>) -> anyhow::
         anyhow::bail!("tls_client_auth 客户端必须注册 subject DN、SAN 或证书 SHA-256 绑定材料");
     }
     if token_endpoint_auth_method == "self_signed_tls_client_auth"
-        && !mtls_binding.is_some_and(ClientMtlsMetadata::has_cert_thumbprint)
+        && !jwks.is_some_and(validate_self_signed_mtls_jwks)
     {
-        anyhow::bail!("self_signed_tls_client_auth 客户端必须注册证书 SHA-256 指纹");
+        anyhow::bail!("self_signed_tls_client_auth 客户端必须注册有效 x5c 证书");
     }
     if let Some(mtls_binding) = mtls_binding {
         validate_mtls_metadata(mtls_binding)?;
@@ -326,6 +328,21 @@ pub(crate) fn validate_client_jwks(jwks: &Value) -> anyhow::Result<()> {
     Ok(())
 }
 
+pub(crate) fn validate_self_signed_mtls_jwks(jwks: &Value) -> bool {
+    jwks.get("keys")
+        .and_then(Value::as_array)
+        .is_some_and(|keys| {
+            keys.iter().any(|key| {
+                key.get("x5c")
+                    .and_then(Value::as_array)
+                    .and_then(|x5c| x5c.as_slice().first())
+                    .and_then(Value::as_str)
+                    .and_then(certificate_x5c_thumbprint)
+                    .is_some()
+            })
+        })
+}
+
 fn validate_unique_non_empty(name: &str, values: &[String]) -> anyhow::Result<()> {
     let mut seen = std::collections::HashSet::new();
     for value in values {
@@ -383,6 +400,12 @@ pub(crate) async fn upsert_grant(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use openssl::asn1::Asn1Time;
+    use openssl::hash::MessageDigest;
+    use openssl::nid::Nid;
+    use openssl::pkey::{PKey, Private};
+    use openssl::rsa::Rsa;
+    use openssl::x509::{X509Builder, X509Name};
 
     fn client_with_redirects(redirect_uris: &[&str]) -> ClientRow {
         ClientRow {
@@ -432,6 +455,33 @@ mod tests {
             jwks,
             mtls_binding,
         }
+    }
+
+    fn test_x5c(common_name: &str, not_before_offset: i64, not_after_offset: i64) -> String {
+        let key: PKey<Private> =
+            PKey::from_rsa(Rsa::generate(2048).expect("test rsa key")).expect("test pkey");
+        let mut name = X509Name::builder().expect("x509 name builder");
+        name.append_entry_by_nid(Nid::COMMONNAME, common_name)
+            .expect("test common name");
+        let name = name.build();
+        let mut builder = X509Builder::new().expect("x509 builder");
+        builder.set_version(2).expect("x509 version");
+        builder.set_subject_name(&name).expect("x509 subject");
+        builder.set_issuer_name(&name).expect("x509 issuer");
+        builder.set_pubkey(&key).expect("x509 pubkey");
+        let now = Utc::now().timestamp();
+        let not_before = Asn1Time::from_unix(now + not_before_offset).expect("x509 not_before");
+        let not_after = Asn1Time::from_unix(now + not_after_offset).expect("x509 not_after");
+        builder
+            .set_not_before(&not_before)
+            .expect("set x509 not_before");
+        builder
+            .set_not_after(&not_after)
+            .expect("set x509 not_after");
+        builder
+            .sign(&key, MessageDigest::sha256())
+            .expect("sign test cert");
+        STANDARD.encode(builder.build().to_der().expect("cert der"))
     }
 
     #[test]
@@ -644,7 +694,7 @@ mod tests {
     }
 
     #[test]
-    fn client_metadata_requires_self_signed_mtls_thumbprint() {
+    fn client_metadata_requires_self_signed_mtls_x5c_jwks() {
         let subject_only = ClientMtlsMetadata {
             tls_client_auth_subject_dn: Some("CN=client-1,O=Example".to_owned()),
             ..ClientMtlsMetadata::default()
@@ -678,7 +728,54 @@ mod tests {
             None,
             Some(&thumbprint),
         ));
+        assert!(result.is_err());
+
+        let invalid_jwks = json!({
+            "keys": [{
+                "kid": "cert-1",
+                "x5c": ["invalid-certificate"]
+            }]
+        });
+        assert!(!validate_self_signed_mtls_jwks(&invalid_jwks));
+
+        let result = validate_client_metadata(metadata(
+            "confidential",
+            &["https://client.example/callback".to_owned()],
+            &["accounts".to_owned()],
+            &["resource://default".to_owned()],
+            &["authorization_code".to_owned()],
+            "self_signed_tls_client_auth",
+            Some(&invalid_jwks),
+            None,
+        ));
+        assert!(result.is_err());
+
+        let valid_jwks = json!({
+            "keys": [{
+                "kid": "cert-1",
+                "x5c": [test_x5c("client-1", -60, 3600)]
+            }]
+        });
+        assert!(validate_self_signed_mtls_jwks(&valid_jwks));
+        let result = validate_client_metadata(metadata(
+            "confidential",
+            &["https://client.example/callback".to_owned()],
+            &["accounts".to_owned()],
+            &["resource://default".to_owned()],
+            &["authorization_code".to_owned()],
+            "self_signed_tls_client_auth",
+            Some(&valid_jwks),
+            None,
+        ));
         assert!(result.is_ok());
+
+        let expired_jwks = json!({
+            "keys": [{
+                "kid": "expired",
+                "x5c": [test_x5c("client-expired", -7200, -3600)]
+            }]
+        });
+        assert!(!validate_self_signed_mtls_jwks(&expired_jwks));
     }
 
     #[test]

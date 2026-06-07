@@ -63,8 +63,8 @@ The roadmap separates three concerns that must not be mixed:
 - [x] Require TLS or mTLS on the proxy-to-app hop, or otherwise bind forwarded certificate metadata to a trusted internal channel.
 - [x] Add negative tests for forged forwarded certificate headers from untrusted source IPs.
 - [x] Implement full `tls_client_auth` subject DN/SAN matching.
-- [ ] Implement self-signed certificate registration and rotation semantics for `self_signed_tls_client_auth`.
-- [ ] Add certificate expiry and rotation tests.
+- [x] Implement self-signed certificate registration and rotation semantics for `self_signed_tls_client_auth`.
+- [x] Add certificate expiry and rotation tests.
 - [ ] Add KMS/HSM backends for signing key lifecycle.
 - [ ] Add OpenTelemetry traces, metrics, and logs.
 - [ ] Define a structured security event taxonomy and SIEM export format.

@@ -139,7 +139,7 @@ Production proxy requirements:
 - Protect the proxy-to-application hop with TLS, mTLS, or an equivalent private network boundary; forwarded certificate metadata is only meaningful on a trusted internal channel.
 - Use one certificate forwarding representation where possible. If multiple forwarded certificate thumbprint/certificate headers are present, the application rejects the request unless they resolve to the same SHA-256 certificate thumbprint. If multiple forwarded subject-DN headers are present, they must be byte-identical after trimming.
 - For `tls_client_auth`, register at least one of `tls_client_auth_subject_dn`, `tls_client_auth_san_dns`, `tls_client_auth_san_uri`, `tls_client_auth_san_ip`, `tls_client_auth_san_email`, or `tls_client_auth_cert_sha256`. The application matches these values against trusted forwarded certificate metadata; forwarded PEM certificates are parsed directly for subject DN and DNS/URI/IP/email SAN values.
-- For `self_signed_tls_client_auth`, register `tls_client_auth_cert_sha256`; certificate rotation semantics remain a separate deployment procedure.
+- For `self_signed_tls_client_auth`, register current client certificates in `jwks.keys[].x5c[0]`. Multiple current `x5c` certificates are the rotation window; removing an old certificate retires it. Expired or not-yet-valid registered certificates are ignored.
 - Preserve the exact path for OAuth endpoints.
 - Disable response caching for protocol endpoints unless the endpoint is explicitly cacheable.
 - Ensure `/.well-known/openid-configuration`, `/.well-known/oauth-authorization-server`, `/jwks.json`, `/authorize`, `/par`, `/token`, `/userinfo`, `/introspect`, and `/revoke` are reachable as intended.

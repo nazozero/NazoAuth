@@ -6,8 +6,10 @@
 
 use super::prelude::*;
 use super::request_from_trusted_proxy;
+use openssl::asn1::Asn1Time;
 use openssl::nid::Nid;
 use openssl::x509::{X509, X509NameRef};
+use std::cmp::Ordering;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 const VERIFY_HEADER: &str = "x-ssl-client-verify";
@@ -44,6 +46,7 @@ pub(crate) struct MtlsClientCertificate {
     pub(crate) san_uri: Vec<String>,
     pub(crate) san_ip: Vec<String>,
     pub(crate) san_email: Vec<String>,
+    pub(crate) verified_certificate_expiry: bool,
 }
 
 pub(crate) fn request_mtls_thumbprint(req: &HttpRequest, settings: &Settings) -> Option<String> {
@@ -83,6 +86,7 @@ pub(crate) fn request_mtls_client_certificate_from_headers(
         san_uri: sorted_unique(forwarded_list_values(headers, SAN_URI_HEADERS)),
         san_ip: sorted_unique(forwarded_list_values(headers, SAN_IP_HEADERS)),
         san_email: sorted_unique(forwarded_list_values(headers, SAN_EMAIL_HEADERS)),
+        verified_certificate_expiry: false,
     };
 
     for pem in forwarded_values(headers, CERTIFICATE_HEADERS) {
@@ -93,6 +97,7 @@ pub(crate) fn request_mtls_client_certificate_from_headers(
         merge_sorted_unique(&mut certificate.san_uri, parsed.san_uri);
         merge_sorted_unique(&mut certificate.san_ip, parsed.san_ip);
         merge_sorted_unique(&mut certificate.san_email, parsed.san_email);
+        certificate.verified_certificate_expiry |= parsed.verified_certificate_expiry;
     }
 
     certificate.has_binding_material().then_some(certificate)
@@ -112,9 +117,11 @@ pub(crate) fn certificate_pem_identity(value: &str) -> Option<MtlsClientCertific
         .collect::<String>();
     let der = STANDARD.decode(body).ok()?;
     let x509 = X509::from_der(&der).ok()?;
+    x509_is_current(&x509)?;
     let mut certificate = MtlsClientCertificate {
         thumbprint: Some(URL_SAFE_NO_PAD.encode(Sha256::digest(&der))),
         subject_dn: Some(subject_name_to_dn(x509.subject_name())?),
+        verified_certificate_expiry: true,
         ..MtlsClientCertificate::default()
     };
     if let Some(names) = x509.subject_alt_names() {
@@ -166,6 +173,20 @@ pub(crate) fn normalize_sha256_thumbprint(value: &str) -> Option<String> {
     Some(URL_SAFE_NO_PAD.encode(bytes))
 }
 
+pub(crate) fn certificate_x5c_thumbprint(value: &str) -> Option<String> {
+    let der = STANDARD
+        .decode(
+            value
+                .chars()
+                .filter(|ch| !ch.is_ascii_whitespace())
+                .collect::<String>(),
+        )
+        .ok()?;
+    let x509 = X509::from_der(&der).ok()?;
+    x509_is_current(&x509)?;
+    Some(URL_SAFE_NO_PAD.encode(Sha256::digest(&der)))
+}
+
 pub(crate) fn client_mtls_thumbprint_matches(client: &ClientRow, thumbprint: &str) -> bool {
     client
         .tls_client_auth_cert_sha256
@@ -179,10 +200,7 @@ pub(crate) fn client_mtls_certificate_matches(
     certificate: &MtlsClientCertificate,
 ) -> bool {
     if client.token_endpoint_auth_method == "self_signed_tls_client_auth" {
-        return certificate
-            .thumbprint
-            .as_deref()
-            .is_some_and(|thumbprint| client_mtls_thumbprint_matches(client, thumbprint));
+        return client_self_signed_mtls_certificate_matches(client, certificate);
     }
     if certificate
         .thumbprint
@@ -202,6 +220,35 @@ pub(crate) fn client_mtls_certificate_matches(
         || registered_values_match(&client.tls_client_auth_san_uri, &certificate.san_uri)
         || registered_values_match(&client.tls_client_auth_san_ip, &certificate.san_ip)
         || registered_values_match(&client.tls_client_auth_san_email, &certificate.san_email)
+}
+
+pub(crate) fn client_self_signed_mtls_certificate_matches(
+    client: &ClientRow,
+    certificate: &MtlsClientCertificate,
+) -> bool {
+    let Some(thumbprint) = certificate.thumbprint.as_deref() else {
+        return false;
+    };
+    if client
+        .jwks
+        .as_ref()
+        .is_some_and(|jwks| jwks_contains_current_x5c_thumbprint(jwks, thumbprint))
+    {
+        return true;
+    }
+    false
+}
+
+pub(crate) fn jwks_contains_current_x5c_thumbprint(jwks: &Value, thumbprint: &str) -> bool {
+    jwks.get("keys")
+        .and_then(Value::as_array)
+        .is_some_and(|keys| {
+            keys.iter()
+                .filter_map(|key| key.get("x5c").and_then(Value::as_array))
+                .flat_map(|x5c| x5c.iter().filter_map(Value::as_str))
+                .filter_map(certificate_x5c_thumbprint)
+                .any(|registered| constant_time_eq(registered.as_bytes(), thumbprint.as_bytes()))
+        })
 }
 
 impl MtlsClientCertificate {
@@ -291,6 +338,13 @@ fn decode_forwarded_pem(value: &str) -> String {
     decoded.replace("\\n", "\n")
 }
 
+fn x509_is_current(x509: &X509) -> Option<()> {
+    let now = Asn1Time::from_unix(Utc::now().timestamp()).ok()?;
+    let not_before = x509.not_before().compare(&now).ok()?;
+    let not_after = x509.not_after().compare(&now).ok()?;
+    (not_before != Ordering::Greater && not_after != Ordering::Less).then_some(())
+}
+
 fn subject_name_to_dn(name: &X509NameRef) -> Option<String> {
     let mut parts = Vec::new();
     for entry in name.entries() {
@@ -356,6 +410,15 @@ mod tests {
     };
     use crate::support::{ClientIpHeaderMode, IpCidr};
     use actix_web::test::TestRequest;
+    use openssl::hash::MessageDigest;
+    use openssl::pkey::{PKey, Private};
+    use openssl::rsa::Rsa;
+    use openssl::x509::{X509Builder, X509Name};
+
+    struct TestCertificate {
+        x5c: String,
+        thumbprint: String,
+    }
 
     fn client() -> ClientRow {
         ClientRow {
@@ -382,6 +445,44 @@ mod tests {
             require_par_request_object: false,
             is_active: true,
             jwks: None,
+        }
+    }
+
+    fn test_private_key() -> PKey<Private> {
+        PKey::from_rsa(Rsa::generate(2048).expect("test rsa key")).expect("test pkey")
+    }
+
+    fn test_certificate(
+        common_name: &str,
+        not_before_offset: i64,
+        not_after_offset: i64,
+    ) -> TestCertificate {
+        let key = test_private_key();
+        let mut name = X509Name::builder().expect("x509 name builder");
+        name.append_entry_by_nid(Nid::COMMONNAME, common_name)
+            .expect("test common name");
+        let name = name.build();
+        let mut builder = X509Builder::new().expect("x509 builder");
+        builder.set_version(2).expect("x509 version");
+        builder.set_subject_name(&name).expect("x509 subject");
+        builder.set_issuer_name(&name).expect("x509 issuer");
+        builder.set_pubkey(&key).expect("x509 pubkey");
+        let now = Utc::now().timestamp();
+        let not_before = Asn1Time::from_unix(now + not_before_offset).expect("x509 not_before");
+        let not_after = Asn1Time::from_unix(now + not_after_offset).expect("x509 not_after");
+        builder
+            .set_not_before(&not_before)
+            .expect("set x509 not_before");
+        builder
+            .set_not_after(&not_after)
+            .expect("set x509 not_after");
+        builder
+            .sign(&key, MessageDigest::sha256())
+            .expect("sign test cert");
+        let der = builder.build().to_der().expect("cert der");
+        TestCertificate {
+            x5c: STANDARD.encode(&der),
+            thumbprint: URL_SAFE_NO_PAD.encode(Sha256::digest(&der)),
         }
     }
 
@@ -530,7 +631,7 @@ mod tests {
     }
 
     #[test]
-    fn self_signed_client_certificate_matches_only_registered_thumbprint() {
+    fn self_signed_client_certificate_rejects_subject_dn_and_thumbprint_shortcuts() {
         let mut client = client();
         client.token_endpoint_auth_method = "self_signed_tls_client_auth".to_owned();
         client.tls_client_auth_subject_dn = Some("CN=client-1,O=Example".to_owned());
@@ -549,7 +650,67 @@ mod tests {
             ..MtlsClientCertificate::default()
         };
 
+        assert!(!client_mtls_certificate_matches(&client, &certificate));
+    }
+
+    #[test]
+    fn self_signed_client_certificate_matches_registered_x5c() {
+        let registered = test_certificate("client-1", -60, 3600);
+        let mut client = client();
+        client.token_endpoint_auth_method = "self_signed_tls_client_auth".to_owned();
+        client.jwks = Some(json!({"keys": [{"kid": "cert-1", "x5c": [registered.x5c]}]}));
+        let certificate = MtlsClientCertificate {
+            thumbprint: Some(registered.thumbprint),
+            verified_certificate_expiry: true,
+            ..MtlsClientCertificate::default()
+        };
+
         assert!(client_mtls_certificate_matches(&client, &certificate));
+    }
+
+    #[test]
+    fn self_signed_client_certificate_rotation_accepts_only_registered_x5c_set() {
+        let old = test_certificate("client-old", -60, 3600);
+        let new = test_certificate("client-new", -60, 3600);
+        let mut client = client();
+        client.token_endpoint_auth_method = "self_signed_tls_client_auth".to_owned();
+        client.jwks = Some(json!({
+            "keys": [
+                {"kid": "old", "x5c": [old.x5c.clone()]},
+                {"kid": "new", "x5c": [new.x5c.clone()]}
+            ]
+        }));
+        let old_certificate = MtlsClientCertificate {
+            thumbprint: Some(old.thumbprint.clone()),
+            verified_certificate_expiry: true,
+            ..MtlsClientCertificate::default()
+        };
+        let new_certificate = MtlsClientCertificate {
+            thumbprint: Some(new.thumbprint.clone()),
+            verified_certificate_expiry: true,
+            ..MtlsClientCertificate::default()
+        };
+        assert!(client_mtls_certificate_matches(&client, &old_certificate));
+        assert!(client_mtls_certificate_matches(&client, &new_certificate));
+
+        client.jwks = Some(json!({"keys": [{"kid": "new", "x5c": [new.x5c]}]}));
+        assert!(!client_mtls_certificate_matches(&client, &old_certificate));
+        assert!(client_mtls_certificate_matches(&client, &new_certificate));
+    }
+
+    #[test]
+    fn self_signed_client_certificate_rejects_expired_x5c() {
+        let expired = test_certificate("client-expired", -7200, -3600);
+        let mut client = client();
+        client.token_endpoint_auth_method = "self_signed_tls_client_auth".to_owned();
+        client.jwks = Some(json!({"keys": [{"kid": "expired", "x5c": [expired.x5c]}]}));
+        let certificate = MtlsClientCertificate {
+            thumbprint: Some(expired.thumbprint),
+            verified_certificate_expiry: true,
+            ..MtlsClientCertificate::default()
+        };
+
+        assert!(!client_mtls_certificate_matches(&client, &certificate));
     }
 
     #[test]
