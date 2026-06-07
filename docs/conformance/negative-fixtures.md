@@ -13,6 +13,9 @@ This index maps high-risk negative conformance cases to durable local tests. It 
 | Bearer token at sender-constrained resource servers | `http::fapi_resource::tests::access_token_rejects_multiple_transport_methods`, `http::token::userinfo::tests::access_token_rejects_multiple_transport_methods`, `http::token::introspect::tests::access_token_introspection_type_matches_issued_dpop_token_type` |
 | Query-token use at resource endpoints | `http::fapi_resource::tests::query_access_token_is_not_accepted`, `http::token::userinfo::tests::query_access_token_is_not_accepted` |
 | Redirect URI mismatch | `support::oauth::tests::redirect_uri_requires_exact_match`, `http::authorization::request::tests::request_uri_allows_outer_parameters_only_when_equal_to_pushed_values`, `http::token::authorization_code::tests::token_redirect_uri_is_required_when_authorize_request_supplied_it` |
+| OIDC logout redirect mismatch | `http::profile::oidc_logout::tests::post_logout_redirect_requires_exact_registered_uri_and_preserves_state` |
+| OIDC logout ambiguous client identity | `http::profile::oidc_logout::tests::logout_client_id_must_match_id_token_hint_audience`, `http::profile::oidc_logout::tests::multi_audience_id_token_hint_requires_explicit_matching_client_id` |
+| Back-channel logout token shape | `support::security::tests::backchannel_logout_token_claims_follow_oidc_shape_without_nonce` |
 | Stale JWKS or retired key use | `support::security::tests::private_key_jwt_rejects_assertions_after_key_retirement`, `support::keyset::tests::retired_active_key_entry_is_rejected`, `support::keyset::tests::retired_previous_key_entry_is_skipped` |
 
 The fixture names are intentionally specific: when discovery or profile behavior changes, the corresponding row should be updated in the same commit as the runtime behavior and metadata.

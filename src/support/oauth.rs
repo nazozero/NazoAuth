@@ -139,10 +139,12 @@ pub(crate) fn is_valid_pkce_value(value: &str) -> bool {
 pub(crate) struct ClientMetadata<'a> {
     pub(crate) client_type: &'a str,
     pub(crate) redirect_uris: &'a [String],
+    pub(crate) post_logout_redirect_uris: &'a [String],
     pub(crate) scopes: &'a [String],
     pub(crate) allowed_audiences: &'a [String],
     pub(crate) grant_types: &'a [String],
     pub(crate) token_endpoint_auth_method: &'a str,
+    pub(crate) backchannel_logout_uri: Option<&'a str>,
     pub(crate) jwks: Option<&'a Value>,
     pub(crate) mtls_binding: Option<&'a ClientMtlsMetadata>,
 }
@@ -151,10 +153,12 @@ pub(crate) fn validate_client_metadata(metadata: ClientMetadata<'_>) -> anyhow::
     let ClientMetadata {
         client_type,
         redirect_uris,
+        post_logout_redirect_uris,
         scopes,
         allowed_audiences,
         grant_types,
         token_endpoint_auth_method,
+        backchannel_logout_uri,
         jwks,
         mtls_binding,
     } = metadata;
@@ -247,7 +251,32 @@ pub(crate) fn validate_client_metadata(metadata: ClientMetadata<'_>) -> anyhow::
     for redirect_uri in redirect_uris {
         validate_oauth_redirect_uri(client_type, redirect_uri)?;
     }
+    validate_unique_non_empty("post_logout_redirect_uri", post_logout_redirect_uris)?;
+    for redirect_uri in post_logout_redirect_uris {
+        validate_oauth_redirect_uri(client_type, redirect_uri)?;
+    }
+    if let Some(uri) = backchannel_logout_uri {
+        validate_backchannel_logout_uri(uri)?;
+    }
     Ok(())
+}
+
+fn validate_backchannel_logout_uri(uri: &str) -> anyhow::Result<()> {
+    let parsed = url::Url::parse(uri)?;
+    if parsed.fragment().is_some() {
+        anyhow::bail!("backchannel_logout_uri 不能包含 fragment");
+    }
+    match parsed.scheme() {
+        "https" => Ok(()),
+        "http"
+            if parsed.host_str().is_some_and(|host| {
+                matches!(host, "localhost" | "127.0.0.1" | "::1") || host.ends_with(".localhost")
+            }) =>
+        {
+            Ok(())
+        }
+        _ => anyhow::bail!("backchannel_logout_uri 必须使用 https 或 loopback http"),
+    }
 }
 
 fn validate_mtls_metadata(mtls_binding: &ClientMtlsMetadata) -> anyhow::Result<()> {
@@ -465,6 +494,9 @@ mod tests {
             require_par_request_object: false,
             is_active: true,
             jwks: None,
+            post_logout_redirect_uris: json!([]),
+            backchannel_logout_uri: None,
+            backchannel_logout_session_required: true,
         }
     }
 
@@ -482,10 +514,12 @@ mod tests {
         ClientMetadata {
             client_type,
             redirect_uris,
+            post_logout_redirect_uris: &[],
             scopes,
             allowed_audiences,
             grant_types,
             token_endpoint_auth_method,
+            backchannel_logout_uri: None,
             jwks,
             mtls_binding,
         }

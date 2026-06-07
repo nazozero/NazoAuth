@@ -159,6 +159,7 @@ When `AUTHORIZATION_SERVER_PROFILE` is set to `fapi2-security`, the server requi
 | `POST` | `/authorize/decision` | Consent decision |
 | `POST` | `/par` | Pushed Authorization Request |
 | `POST` | `/token` | Token endpoint |
+| `GET`/`POST` | `/logout` | OIDC RP-Initiated Logout |
 | `POST` | `/revoke` | Token revocation |
 | `POST` | `/introspect` | Token introspection |
 | `GET` | `/.well-known/openid-configuration` | OIDC discovery |
@@ -169,6 +170,8 @@ When `AUTHORIZATION_SERVER_PROFILE` is set to `fapi2-security`, the server requi
 The token endpoint accepts the standard RFC 8707 `resource` parameter as an absolute URI without a fragment. A request may repeat `resource` to request multiple audiences; single-resource access tokens keep a string `aud`, and multi-resource access tokens use a JWT `aud` array. The legacy `audience` parameter is still accepted as a single-audience project extension, but a request must not send both.
 
 The authorization endpoint, PAR endpoint, and signed request objects accept RFC 9396-style `authorization_details` arrays. Each item must be an object with a supported `type`; the server currently advertises `account_information` and `payment_initiation` in `authorization_details_types_supported`. High-risk details such as payments or write actions require fresh transaction binding and are not silently covered by a previous broad consent.
+
+OIDC logout is available at `/logout` and advertised as `end_session_endpoint`. RP-Initiated Logout accepts `id_token_hint`, `client_id`, `post_logout_redirect_uri`, and `state`; post-logout redirects require exact registration in `post_logout_redirect_uris`. Registered clients with `backchannel_logout_uri` receive best-effort back-channel logout notifications signed as `logout+jwt` tokens.
 
 ## Key Management
 
@@ -279,4 +282,4 @@ Current high-priority boundaries:
 
 Refresh-token rotation for non-FAPI compatibility profiles is documented in [docs/refresh-token-rotation.md](docs/refresh-token-rotation.md). FAPI2 Security deployments should prefer sender-constrained refresh/access tokens and should not use routine rotation by default.
 
-Known roadmap items are tracked in [docs/roadmap.md](docs/roadmap.md), [CHANGELOG.md](CHANGELOG.md), and future conformance records. Priority areas include WebAuthn/passkeys, Dynamic Client Registration, OIDC logout, resource-server middleware, release signing, SBOM/provenance, and deeper supply-chain verification.
+Known roadmap items are tracked in [docs/roadmap.md](docs/roadmap.md), [CHANGELOG.md](CHANGELOG.md), and future conformance records. Priority areas include WebAuthn/passkeys, Dynamic Client Registration, Device Authorization, Token Exchange, resource-server middleware, release signing, SBOM/provenance, and deeper supply-chain verification.

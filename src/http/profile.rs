@@ -5,6 +5,7 @@ mod account;
 mod applications;
 mod avatar;
 mod delivery;
+mod oidc_logout;
 mod session;
 
 pub(crate) use access_requests::*;
@@ -12,4 +13,5 @@ pub(crate) use account::*;
 pub(crate) use applications::*;
 pub(crate) use avatar::*;
 pub(crate) use delivery::*;
+pub(crate) use oidc_logout::*;
 pub(crate) use session::*;

@@ -122,6 +122,12 @@ pub(crate) struct ClientRow {
     pub(crate) is_active: bool,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Jsonb>)]
     pub(crate) jwks: Option<Value>,
+    #[diesel(sql_type = diesel::sql_types::Jsonb)]
+    pub(crate) post_logout_redirect_uris: Value,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
+    pub(crate) backchannel_logout_uri: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Bool)]
+    pub(crate) backchannel_logout_session_required: bool,
 }
 
 /// oauth_tokens 表 token 行。

@@ -365,6 +365,9 @@ mod tests {
             require_par_request_object: false,
             is_active: true,
             jwks: None,
+            post_logout_redirect_uris: json!([]),
+            backchannel_logout_uri: None,
+            backchannel_logout_session_required: true,
         }
     }
 

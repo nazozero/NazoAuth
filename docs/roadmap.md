@@ -15,7 +15,7 @@ The roadmap separates three concerns that must not be mixed:
 | Trust evidence | Conformance results, security policy, threat model, and release evidence must be public and repeatable. | In progress |
 | Profile matrix | Each profile needs explicit grants, response types, client auth, token binding, JAR/JARM, PAR, refresh policy, TTL, and metadata rules. | Done |
 | Metadata truth | Discovery metadata must not overclaim unsupported or deployment-disabled capabilities. | In progress |
-| OIDC completeness | OIDC Core behavior needs a profile-by-profile checklist and tests for required OP features. | In progress |
+| OIDC completeness | OIDC Core behavior needs a profile-by-profile checklist and tests for required OP features. | Done for current profile matrix |
 | FAPI2 Security | Baseline FAPI2 Security must stay distinct from Message Signing and product hardening. | Defined |
 | FAPI2 Message Signing | Signed authorization requests, JARM, and signed introspection responses should be tracked as separate options. | Defined |
 | mTLS | Current integration is proxy-terminated mTLS and must be documented, constrained, and extended toward full RFC 8705 subject/SAN semantics. | In progress |
@@ -83,7 +83,7 @@ The roadmap separates three concerns that must not be mixed:
 - [x] Add consent and transaction-binding tests for high-risk `authorization_details`, especially payments or write APIs.
 - [x] Expand RFC 8707 support to multi-resource handling when an ecosystem use case requires it.
 - [x] Implement RFC 9396 Rich Authorization Requests when structured authorization is required.
-- [ ] Add OIDC RP-Initiated Logout and Back-Channel Logout.
+- [x] Add OIDC RP-Initiated Logout and Back-Channel Logout.
 
 ## P1: Ecosystem Onboarding
 

@@ -87,6 +87,7 @@ pub(crate) fn client_json(client: ClientRow) -> Value {
         "client_name": client.client_name,
         "client_type": client.client_type,
         "redirect_uris": json_array_to_strings(&client.redirect_uris),
+        "post_logout_redirect_uris": json_array_to_strings(&client.post_logout_redirect_uris),
         "scopes": json_array_to_strings(&client.scopes),
         "allowed_audiences": json_array_to_strings(&client.allowed_audiences),
         "grant_types": json_array_to_strings(&client.grant_types),
@@ -102,6 +103,8 @@ pub(crate) fn client_json(client: ClientRow) -> Value {
         "allow_client_assertion_audience_array": client.allow_client_assertion_audience_array,
         "allow_client_assertion_endpoint_audience": client.allow_client_assertion_endpoint_audience,
         "require_par_request_object": client.require_par_request_object,
+        "backchannel_logout_uri": client.backchannel_logout_uri,
+        "backchannel_logout_session_required": client.backchannel_logout_session_required,
         "is_active": client.is_active,
         "jwks": client.jwks
     })

@@ -639,6 +639,50 @@ pub(crate) struct AuthorizationResponseJwtInput<'a> {
     pub(crate) ttl: i64,
 }
 
+pub(crate) struct BackchannelLogoutTokenInput<'a> {
+    pub(crate) client_id: &'a str,
+    pub(crate) subject: Option<&'a str>,
+    pub(crate) sid: Option<&'a str>,
+    pub(crate) ttl: i64,
+}
+
+pub(crate) async fn make_backchannel_logout_token(
+    state: &AppState,
+    input: BackchannelLogoutTokenInput<'_>,
+) -> jsonwebtoken::errors::Result<String> {
+    let now = Utc::now().timestamp();
+    let claims = backchannel_logout_token_claims(&state.settings.issuer, &input, now);
+    let mut header = jsonwebtoken::Header::new(state.keyset.active_alg);
+    header.typ = Some("logout+jwt".to_string());
+    header.kid = Some(state.keyset.active_kid.clone());
+    state.keyset.sign_jwt(&header, &Value::Object(claims)).await
+}
+
+fn backchannel_logout_token_claims(
+    issuer: &str,
+    input: &BackchannelLogoutTokenInput<'_>,
+    now: i64,
+) -> serde_json::Map<String, Value> {
+    let mut claims = serde_json::Map::new();
+    claims.insert("iss".to_owned(), json!(issuer));
+    claims.insert("aud".to_owned(), json!(input.client_id));
+    claims.insert("iat".to_owned(), json!(now));
+    claims.insert("nbf".to_owned(), json!(now));
+    claims.insert("exp".to_owned(), json!(now + input.ttl.max(1)));
+    claims.insert("jti".to_owned(), json!(Uuid::now_v7().to_string()));
+    claims.insert(
+        "events".to_owned(),
+        json!({"http://schemas.openid.net/event/backchannel-logout": {}}),
+    );
+    if let Some(subject) = input.subject {
+        claims.insert("sub".to_owned(), json!(subject));
+    }
+    if let Some(sid) = input.sid {
+        claims.insert("sid".to_owned(), json!(sid));
+    }
+    claims
+}
+
 pub(crate) async fn make_authorization_response_jwt(
     state: &AppState,
     input: AuthorizationResponseJwtInput<'_>,
@@ -728,6 +772,9 @@ mod tests {
             require_par_request_object: false,
             is_active: true,
             jwks: Some(jwks),
+            post_logout_redirect_uris: json!([]),
+            backchannel_logout_uri: None,
+            backchannel_logout_session_required: true,
         }
     }
 
@@ -848,6 +895,31 @@ mod tests {
         assert_eq!(claims.get("auth_time"), Some(&json!(1_000)));
         assert_eq!(claims.get("amr"), Some(&json!(["password"])));
         assert_eq!(claims.get("acr"), Some(&json!("urn:acr:1")));
+    }
+
+    #[test]
+    fn backchannel_logout_token_claims_follow_oidc_shape_without_nonce() {
+        let input = BackchannelLogoutTokenInput {
+            client_id: "client-1",
+            subject: Some("user-1"),
+            sid: Some("sid-1"),
+            ttl: 120,
+        };
+
+        let claims = backchannel_logout_token_claims("https://issuer.example", &input, 2_000);
+
+        assert_eq!(claims.get("iss"), Some(&json!("https://issuer.example")));
+        assert_eq!(claims.get("aud"), Some(&json!("client-1")));
+        assert_eq!(claims.get("sub"), Some(&json!("user-1")));
+        assert_eq!(claims.get("sid"), Some(&json!("sid-1")));
+        assert_eq!(
+            claims.get("events").and_then(|events| {
+                events.get("http://schemas.openid.net/event/backchannel-logout")
+            }),
+            Some(&json!({}))
+        );
+        assert!(claims.get("nonce").is_none());
+        assert!(claims.get("jti").and_then(Value::as_str).is_some());
     }
 
     #[test]

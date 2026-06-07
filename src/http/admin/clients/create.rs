@@ -8,6 +8,8 @@ pub(crate) struct CreateClientRequest {
     pub(crate) client_name: String,
     pub(crate) client_type: String,
     pub(crate) redirect_uris: Vec<String>,
+    #[serde(default)]
+    pub(crate) post_logout_redirect_uris: Vec<String>,
     pub(crate) scopes: Vec<String>,
     pub(crate) allowed_audiences: Vec<String>,
     pub(crate) grant_types: Vec<String>,
@@ -20,6 +22,10 @@ pub(crate) struct CreateClientRequest {
     pub(crate) allow_client_assertion_endpoint_audience: bool,
     #[serde(default)]
     pub(crate) require_par_request_object: bool,
+    #[serde(default)]
+    pub(crate) backchannel_logout_uri: Option<String>,
+    #[serde(default = "default_backchannel_logout_session_required")]
+    pub(crate) backchannel_logout_session_required: bool,
     #[serde(default)]
     pub(crate) tls_client_auth_subject_dn: Option<String>,
     #[serde(default)]
@@ -45,6 +51,7 @@ pub(crate) struct PreparedClientInsert {
     pub(crate) client_name: String,
     pub(crate) client_type: String,
     pub(crate) redirect_uris: Vec<String>,
+    pub(crate) post_logout_redirect_uris: Vec<String>,
     pub(crate) scopes: Vec<String>,
     pub(crate) allowed_audiences: Vec<String>,
     pub(crate) grant_types: Vec<String>,
@@ -53,6 +60,8 @@ pub(crate) struct PreparedClientInsert {
     pub(crate) allow_client_assertion_audience_array: bool,
     pub(crate) allow_client_assertion_endpoint_audience: bool,
     pub(crate) require_par_request_object: bool,
+    pub(crate) backchannel_logout_uri: Option<String>,
+    pub(crate) backchannel_logout_session_required: bool,
     pub(crate) tls_client_auth_subject_dn: Option<String>,
     pub(crate) tls_client_auth_cert_sha256: Option<String>,
     pub(crate) tls_client_auth_san_dns: Vec<String>,
@@ -158,6 +167,7 @@ pub(crate) fn prepare_client_insert(
         client_name: payload.client_name,
         client_type: payload.client_type,
         redirect_uris: payload.redirect_uris,
+        post_logout_redirect_uris: trim_string_vec(payload.post_logout_redirect_uris),
         scopes: payload.scopes,
         allowed_audiences: payload.allowed_audiences,
         grant_types: payload.grant_types,
@@ -166,6 +176,8 @@ pub(crate) fn prepare_client_insert(
         allow_client_assertion_audience_array: payload.allow_client_assertion_audience_array,
         allow_client_assertion_endpoint_audience: payload.allow_client_assertion_endpoint_audience,
         require_par_request_object: payload.require_par_request_object,
+        backchannel_logout_uri: trim_optional_string(payload.backchannel_logout_uri),
+        backchannel_logout_session_required: payload.backchannel_logout_session_required,
         tls_client_auth_subject_dn: trim_optional_string(payload.tls_client_auth_subject_dn),
         tls_client_auth_cert_sha256: trim_optional_string(payload.tls_client_auth_cert_sha256),
         tls_client_auth_san_dns: trim_string_vec(payload.tls_client_auth_san_dns),
@@ -189,6 +201,7 @@ pub(crate) async fn insert_prepared_client(
             oauth_clients::client_type.eq(&prepared.client_type),
             oauth_clients::client_secret_argon2_hash.eq(&prepared.client_secret_argon2_hash),
             oauth_clients::redirect_uris.eq(json!(&prepared.redirect_uris)),
+            oauth_clients::post_logout_redirect_uris.eq(json!(&prepared.post_logout_redirect_uris)),
             oauth_clients::scopes.eq(json!(&prepared.scopes)),
             oauth_clients::allowed_audiences.eq(json!(&prepared.allowed_audiences)),
             oauth_clients::grant_types.eq(json!(&prepared.grant_types)),
@@ -199,6 +212,9 @@ pub(crate) async fn insert_prepared_client(
             oauth_clients::allow_client_assertion_endpoint_audience
                 .eq(prepared.allow_client_assertion_endpoint_audience),
             oauth_clients::require_par_request_object.eq(prepared.require_par_request_object),
+            oauth_clients::backchannel_logout_uri.eq(&prepared.backchannel_logout_uri),
+            oauth_clients::backchannel_logout_session_required
+                .eq(prepared.backchannel_logout_session_required),
             oauth_clients::tls_client_auth_subject_dn.eq(&prepared.tls_client_auth_subject_dn),
             oauth_clients::tls_client_auth_cert_sha256.eq(&prepared.tls_client_auth_cert_sha256),
             oauth_clients::tls_client_auth_san_dns.eq(json!(&prepared.tls_client_auth_san_dns)),
@@ -218,10 +234,12 @@ fn validate_client_payload(payload: &CreateClientRequest) -> anyhow::Result<()> 
     validate_client_metadata(ClientMetadata {
         client_type: &payload.client_type,
         redirect_uris: &payload.redirect_uris,
+        post_logout_redirect_uris: &payload.post_logout_redirect_uris,
         scopes: &payload.scopes,
         allowed_audiences: &payload.allowed_audiences,
         grant_types: &payload.grant_types,
         token_endpoint_auth_method: &payload.token_endpoint_auth_method,
+        backchannel_logout_uri: payload.backchannel_logout_uri.as_deref(),
         jwks: payload.jwks.as_ref(),
         mtls_binding: Some(&ClientMtlsMetadata {
             tls_client_auth_subject_dn: payload.tls_client_auth_subject_dn.clone(),
@@ -232,6 +250,10 @@ fn validate_client_payload(payload: &CreateClientRequest) -> anyhow::Result<()> 
             tls_client_auth_san_email: payload.tls_client_auth_san_email.clone(),
         }),
     })
+}
+
+fn default_backchannel_logout_session_required() -> bool {
+    true
 }
 
 pub(crate) fn trim_optional_string(value: Option<String>) -> Option<String> {

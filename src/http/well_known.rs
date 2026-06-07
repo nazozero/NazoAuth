@@ -78,6 +78,7 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
         "authorization_server_profile": settings.authorization_server_profile.as_str(),
         "authorization_endpoint": format!("{issuer}/authorize"),
         "token_endpoint": format!("{issuer}/token"),
+        "end_session_endpoint": format!("{issuer}/logout"),
         "pushed_authorization_request_endpoint": format!("{issuer}/par"),
         "revocation_endpoint": format!("{issuer}/revoke"),
         "introspection_endpoint": format!("{issuer}/introspect"),
@@ -101,6 +102,8 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
         "authorization_response_iss_parameter_supported": true,
         "claims_parameter_supported": true,
         "authorization_details_types_supported": SUPPORTED_AUTHORIZATION_DETAILS_TYPES,
+        "backchannel_logout_supported": true,
+        "backchannel_logout_session_supported": true,
         "request_parameter_supported": true,
         "request_uri_parameter_supported": false,
         "require_pushed_authorization_requests": settings.require_pushed_authorization_requests,
@@ -275,6 +278,31 @@ mod tests {
                 .filter_map(Value::as_str)
                 .collect::<Vec<_>>(),
             SUPPORTED_AUTHORIZATION_DETAILS_TYPES
+        );
+    }
+
+    #[test]
+    fn discovery_advertises_oidc_logout_endpoints_and_backchannel_support() {
+        let metadata = authorization_server_metadata(
+            &settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new()),
+            &keyset(jsonwebtoken::Algorithm::RS256),
+        );
+
+        assert_eq!(
+            metadata.get("end_session_endpoint").and_then(Value::as_str),
+            Some("https://issuer.example/logout")
+        );
+        assert_eq!(
+            metadata
+                .get("backchannel_logout_supported")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            metadata
+                .get("backchannel_logout_session_supported")
+                .and_then(Value::as_bool),
+            Some(true)
         );
     }
 

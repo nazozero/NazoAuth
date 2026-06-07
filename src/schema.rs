@@ -52,6 +52,9 @@ diesel::table! {
         updated_at -> Timestamptz,
         allowed_audiences -> Jsonb,
         jwks -> Nullable<Jsonb>,
+        post_logout_redirect_uris -> Jsonb,
+        backchannel_logout_uri -> Nullable<Varchar>,
+        backchannel_logout_session_required -> Bool,
     }
 }
 

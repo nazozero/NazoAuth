@@ -79,7 +79,8 @@ Negative tests:
 | JAR | Optional; signed request objects validated when supplied |
 | ID Token | RS256 support must be real; active signing alg is advertised |
 | UserInfo | Requires valid access token with `openid` scope |
-| Metadata | OIDC discovery must match runtime issuer and endpoints |
+| Logout | RP-Initiated Logout at `/logout`; exact `post_logout_redirect_uri` matching; best-effort Back-Channel Logout for registered clients |
+| Metadata | OIDC discovery must match runtime issuer and endpoints, including `end_session_endpoint` and back-channel logout support |
 
 Negative tests:
 
@@ -88,6 +89,9 @@ Negative tests:
 - missing or invalid nonce where required
 - userinfo without `openid`
 - unsupported prompt combinations
+- unregistered `post_logout_redirect_uri`
+- multi-audience `id_token_hint` without matching `client_id`
+- logout token containing forbidden `nonce`
 
 ## `oidc-config`
 
@@ -104,6 +108,7 @@ Negative tests:
 - advertised alg without usable key
 - advertised auth method without working path
 - disabled profile still advertised
+- advertised logout endpoint without exact redirect validation or signed logout token support
 
 ## `fapi2-security`
 

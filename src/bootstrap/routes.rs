@@ -16,6 +16,11 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig) {
         .route("/authorize/decision", web::post().to(authorize_decision))
         .route("/par", web::post().to(par))
         .route("/token", web::post().to(token))
+        .service(
+            web::resource("/logout")
+                .route(web::get().to(oidc_logout))
+                .route(web::post().to(oidc_logout)),
+        )
         .route("/revoke", web::post().to(revoke))
         .route("/introspect", web::post().to(introspect))
         .service(

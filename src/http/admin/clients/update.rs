@@ -7,6 +7,7 @@ use crate::http::prelude::*;
 pub(crate) struct PatchClientRequest {
     client_name: Option<String>,
     redirect_uris: Option<Vec<String>>,
+    post_logout_redirect_uris: Option<Vec<String>>,
     scopes: Option<Vec<String>>,
     allowed_audiences: Option<Vec<String>>,
     grant_types: Option<Vec<String>>,
@@ -14,6 +15,8 @@ pub(crate) struct PatchClientRequest {
     allow_client_assertion_audience_array: Option<bool>,
     allow_client_assertion_endpoint_audience: Option<bool>,
     require_par_request_object: Option<bool>,
+    backchannel_logout_uri: Option<String>,
+    backchannel_logout_session_required: Option<bool>,
     tls_client_auth_subject_dn: Option<String>,
     tls_client_auth_cert_sha256: Option<String>,
     tls_client_auth_san_dns: Option<Vec<String>>,
@@ -62,6 +65,12 @@ pub(crate) async fn admin_patch_client(
             .redirect_uris
             .unwrap_or_else(|| json_array_to_strings(&current.redirect_uris))
     );
+    let new_post_logout_redirect_uris = json!(
+        payload
+            .post_logout_redirect_uris
+            .map(trim_string_vec)
+            .unwrap_or_else(|| json_array_to_strings(&current.post_logout_redirect_uris))
+    );
     let new_scopes = json!(
         payload
             .scopes
@@ -89,6 +98,14 @@ pub(crate) async fn admin_patch_client(
     let new_require_par_request_object = payload
         .require_par_request_object
         .unwrap_or(current.require_par_request_object);
+    let new_backchannel_logout_uri = payload
+        .backchannel_logout_uri
+        .map(Some)
+        .map(trim_optional_string)
+        .unwrap_or_else(|| current.backchannel_logout_uri.clone());
+    let new_backchannel_logout_session_required = payload
+        .backchannel_logout_session_required
+        .unwrap_or(current.backchannel_logout_session_required);
     let new_tls_client_auth_subject_dn = payload
         .tls_client_auth_subject_dn
         .map(Some)
@@ -126,6 +143,7 @@ pub(crate) async fn admin_patch_client(
     let new_jwks = payload.jwks.or_else(|| current.jwks.clone());
     let new_is_active = payload.is_active.unwrap_or(current.is_active);
     let new_redirect_uri_values = json_array_to_strings(&new_redirect_uris);
+    let new_post_logout_redirect_uri_values = json_array_to_strings(&new_post_logout_redirect_uris);
     let new_scope_values = json_array_to_strings(&new_scopes);
     let new_audience_values = json_array_to_strings(&new_allowed_audiences);
     let new_grant_type_values = json_array_to_strings(&new_grant_types);
@@ -137,10 +155,12 @@ pub(crate) async fn admin_patch_client(
     if let Err(error) = validate_client_metadata(ClientMetadata {
         client_type: &current.client_type,
         redirect_uris: &new_redirect_uri_values,
+        post_logout_redirect_uris: &new_post_logout_redirect_uri_values,
         scopes: &new_scope_values,
         allowed_audiences: &new_audience_values,
         grant_types: &new_grant_type_values,
         token_endpoint_auth_method: &current.token_endpoint_auth_method,
+        backchannel_logout_uri: new_backchannel_logout_uri.as_deref(),
         jwks: new_jwks.as_ref(),
         mtls_binding: Some(&ClientMtlsMetadata {
             tls_client_auth_subject_dn: new_tls_client_auth_subject_dn.clone(),
@@ -174,6 +194,7 @@ pub(crate) async fn admin_patch_client(
     .set((
         oauth_clients::client_name.eq(new_client_name),
         oauth_clients::redirect_uris.eq(new_redirect_uris),
+        oauth_clients::post_logout_redirect_uris.eq(new_post_logout_redirect_uris),
         oauth_clients::scopes.eq(new_scopes),
         oauth_clients::allowed_audiences.eq(new_allowed_audiences),
         oauth_clients::grant_types.eq(new_grant_types),
@@ -183,6 +204,9 @@ pub(crate) async fn admin_patch_client(
         oauth_clients::allow_client_assertion_endpoint_audience
             .eq(new_allow_client_assertion_endpoint_audience),
         oauth_clients::require_par_request_object.eq(new_require_par_request_object),
+        oauth_clients::backchannel_logout_uri.eq(new_backchannel_logout_uri),
+        oauth_clients::backchannel_logout_session_required
+            .eq(new_backchannel_logout_session_required),
         oauth_clients::tls_client_auth_subject_dn.eq(new_tls_client_auth_subject_dn),
         oauth_clients::tls_client_auth_cert_sha256.eq(new_tls_client_auth_cert_sha256),
         oauth_clients::tls_client_auth_san_dns.eq(new_tls_client_auth_san_dns),
