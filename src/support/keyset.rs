@@ -619,6 +619,7 @@ mod tests {
             authorization_server_profile:
                 crate::settings::AuthorizationServerProfile::Oauth2Baseline,
             dpop_nonce_policy: crate::settings::DpopNoncePolicy::Required,
+            request_object_jti_policy: crate::settings::RequestObjectJtiPolicy::Optional,
             session_cookie_name: "session".to_owned(),
             csrf_cookie_name: "csrf".to_owned(),
             cookie_secure: true,

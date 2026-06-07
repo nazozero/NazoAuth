@@ -142,9 +142,9 @@ Negative tests:
 | PAR | Signed request object accepted and required at PAR |
 | JAR claims | `aud` required, `nbf` required, `exp` required with lifetime <= 60 minutes |
 | JAR header | Accept `typ=oauth-authz-req+jwt` |
-| Request object `jti` | Optional product hardening unless a selected ecosystem profile requires it |
+| Request object `jti` | Optional product hardening unless `REQUEST_OBJECT_JTI_POLICY=required-for-signed-jar` is selected |
 
-Runtime enforcement is selected with `AUTHORIZATION_SERVER_PROFILE=fapi2-message-signing-authz-request`. This includes the `fapi2-security` controls and requires a signed request object at PAR. Existing signed JAR validation requires `aud`, `nbf`, and `exp`; the implementation currently uses a 5-minute maximum lifetime, which is stricter than the FAPI2 Message Signing 60-minute ceiling.
+Runtime enforcement is selected with `AUTHORIZATION_SERVER_PROFILE=fapi2-message-signing-authz-request`. This includes the `fapi2-security` controls and requires a signed request object at PAR. Existing signed JAR validation requires `aud`, `nbf`, and `exp`; the implementation currently uses a 5-minute maximum lifetime, which is stricter than the FAPI2 Message Signing 60-minute ceiling. `REQUEST_OBJECT_JTI_POLICY=required-for-signed-jar` is a stricter-than-FAPI product hardening switch that requires signed JAR request objects to carry a valid `jti` and stores it in the request-object replay cache.
 
 Negative tests:
 

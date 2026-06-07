@@ -2,6 +2,7 @@
 
 use super::request::AUTHORIZED_REQUEST_PARAMETERS;
 use crate::http::prelude::*;
+use crate::settings::RequestObjectJtiPolicy;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 
 const REQUEST_OBJECT_MAX_TTL_SECONDS: i64 = 300;
@@ -207,7 +208,7 @@ async fn validate_request_object_claims_and_apply(
         || !request_object_party_claims_valid(&claims, client, mode)
         || !request_object_audience_valid(&claims, state, mode)
         || !request_object_times_valid(&claims, now, mode)
-        || !request_object_jti_valid(&claims, mode)
+        || !request_object_jti_valid(&claims, mode, state.settings.request_object_jti_policy)
     {
         return Err(oauth_error(
             StatusCode::BAD_REQUEST,
@@ -474,9 +475,18 @@ fn request_object_times_valid(
     true
 }
 
-fn request_object_jti_valid(claims: &RequestObjectClaims, mode: RequestObjectMode) -> bool {
+fn request_object_jti_valid(
+    claims: &RequestObjectClaims,
+    mode: RequestObjectMode,
+    policy: RequestObjectJtiPolicy,
+) -> bool {
     match (&claims.jti, mode) {
         (Some(jti), _) => is_valid_request_object_jti(jti),
+        (None, RequestObjectMode::SignedJar)
+            if policy == RequestObjectJtiPolicy::RequiredForSignedJar =>
+        {
+            false
+        }
         (None, _) => true,
     }
 }
@@ -593,11 +603,18 @@ mod tests {
         };
         assert!(request_object_jti_valid(
             &basic,
-            RequestObjectMode::BasicOidc
+            RequestObjectMode::BasicOidc,
+            RequestObjectJtiPolicy::RequiredForSignedJar
         ));
         assert!(request_object_jti_valid(
             &basic,
-            RequestObjectMode::SignedJar
+            RequestObjectMode::SignedJar,
+            RequestObjectJtiPolicy::Optional
+        ));
+        assert!(!request_object_jti_valid(
+            &basic,
+            RequestObjectMode::SignedJar,
+            RequestObjectJtiPolicy::RequiredForSignedJar
         ));
 
         let invalid = RequestObjectClaims {
@@ -606,7 +623,8 @@ mod tests {
         };
         assert!(!request_object_jti_valid(
             &invalid,
-            RequestObjectMode::SignedJar
+            RequestObjectMode::SignedJar,
+            RequestObjectJtiPolicy::RequiredForSignedJar
         ));
     }
 

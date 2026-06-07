@@ -75,7 +75,7 @@ The roadmap separates three concerns that must not be mixed:
 ## P1: Product Hardening
 
 - [x] Represent strict DPoP nonce enforcement as hardened profile behavior and test downgrade boundaries.
-- [ ] Optional stricter-than-FAPI policy: require request object `jti` with replay cache for signed JAR.
+- [x] Optional stricter-than-FAPI policy: require request object `jti` with replay cache for signed JAR.
 - [x] Mark `client_secret_post` as a compatibility method in documentation and examples; recommend `private_key_jwt` or mTLS for high-security clients.
 - [ ] Complete OIDC `claims` request semantics for `essential`, `value`, and `values`.
 - [ ] Strengthen `auth_time`, `max_age`, `acr_values`, `azp`, `sid`, and session-related ID Token behavior.

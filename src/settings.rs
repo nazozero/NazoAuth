@@ -22,6 +22,7 @@ pub(crate) struct Settings {
     pub(crate) default_audience: String,
     pub(crate) authorization_server_profile: AuthorizationServerProfile,
     pub(crate) dpop_nonce_policy: DpopNoncePolicy,
+    pub(crate) request_object_jti_policy: RequestObjectJtiPolicy,
     pub(crate) session_cookie_name: String,
     pub(crate) csrf_cookie_name: String,
     pub(crate) cookie_secure: bool,
@@ -56,6 +57,12 @@ pub(crate) enum AuthorizationServerProfile {
 pub(crate) enum DpopNoncePolicy {
     Required,
     Optional,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RequestObjectJtiPolicy {
+    Optional,
+    RequiredForSignedJar,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -146,6 +153,7 @@ impl Settings {
         } else {
             configured_dpop_nonce_policy
         };
+        let request_object_jti_policy = RequestObjectJtiPolicy::from_config(config)?;
         let auth_code_ttl_seconds = config.parse("AUTH_CODE_TTL_SECONDS", 60)?;
         if authorization_server_profile.requires_fapi2_security() && auth_code_ttl_seconds > 60 {
             bail!("AUTH_CODE_TTL_SECONDS must be 60 or less for FAPI2 profiles");
@@ -162,6 +170,7 @@ impl Settings {
             default_audience: config.string("DEFAULT_AUDIENCE", "resource://default"),
             authorization_server_profile,
             dpop_nonce_policy,
+            request_object_jti_policy,
             session_cookie_name: config.string("SESSION_COOKIE_NAME", "nazo_oauth_session"),
             csrf_cookie_name: config.string("CSRF_COOKIE_NAME", "nazo_oauth_csrf"),
             cookie_secure,
@@ -238,6 +247,25 @@ impl DpopNoncePolicy {
             "required" | "require" | "strict" => Ok(Self::Required),
             "optional" | "compat" | "compatible" => Ok(Self::Optional),
             value => bail!("DPOP_NONCE_POLICY must be required or optional, got {value}"),
+        }
+    }
+}
+
+impl RequestObjectJtiPolicy {
+    fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
+        match config
+            .string("REQUEST_OBJECT_JTI_POLICY", "optional")
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "optional" => Ok(Self::Optional),
+            "required-for-signed-jar" | "required_signed_jar" | "required" => {
+                Ok(Self::RequiredForSignedJar)
+            }
+            value => bail!(
+                "REQUEST_OBJECT_JTI_POLICY must be optional or required-for-signed-jar, got {value}"
+            ),
         }
     }
 }
@@ -381,6 +409,34 @@ mod tests {
     #[test]
     fn invalid_dpop_nonce_policy_is_rejected() {
         let config = ConfigSource::from_pairs_for_test([("DPOP_NONCE_POLICY", "sometimes")]);
+
+        assert!(Settings::from_config(&config).is_err());
+    }
+
+    #[test]
+    fn default_request_object_jti_policy_is_optional() {
+        let settings = Settings::from_config(&ConfigSource::default()).unwrap();
+
+        assert_eq!(
+            settings.request_object_jti_policy,
+            RequestObjectJtiPolicy::Optional
+        );
+    }
+
+    #[test]
+    fn request_object_jti_policy_can_require_signed_jar_jti() {
+        let config = ConfigSource::from_pairs_for_test([("REQUEST_OBJECT_JTI_POLICY", "required")]);
+        let settings = Settings::from_config(&config).unwrap();
+
+        assert_eq!(
+            settings.request_object_jti_policy,
+            RequestObjectJtiPolicy::RequiredForSignedJar
+        );
+    }
+
+    #[test]
+    fn invalid_request_object_jti_policy_is_rejected() {
+        let config = ConfigSource::from_pairs_for_test([("REQUEST_OBJECT_JTI_POLICY", "always")]);
 
         assert!(Settings::from_config(&config).is_err());
     }

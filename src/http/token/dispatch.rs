@@ -486,7 +486,7 @@ mod tests {
 
     use crate::settings::{
         AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings,
-        RateLimitSettings, SubjectType,
+        RateLimitSettings, RequestObjectJtiPolicy, SubjectType,
     };
     use crate::support::{ClientIpHeaderMode, IpCidr};
 
@@ -522,6 +522,7 @@ mod tests {
             default_audience: "resource://default".to_owned(),
             authorization_server_profile: profile,
             dpop_nonce_policy: DpopNoncePolicy::Required,
+            request_object_jti_policy: RequestObjectJtiPolicy::Optional,
             session_cookie_name: "sid".to_owned(),
             csrf_cookie_name: "csrf".to_owned(),
             cookie_secure: true,
