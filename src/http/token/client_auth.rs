@@ -120,6 +120,58 @@ pub(crate) fn token_management_client_auth_error(
     }
 }
 
+pub(crate) async fn consume_token_management_client_assertion(
+    state: &AppState,
+    client: &ClientRow,
+    assertion: Option<&ValidatedClientAssertion>,
+) -> Result<(), TokenManagementClientAuthError> {
+    let Some(assertion) = assertion else {
+        return Ok(());
+    };
+    consume_private_key_jwt(state, client, assertion)
+        .await
+        .map_err(token_management_client_assertion_error)
+}
+
+fn token_management_client_assertion_error(
+    error: ClientAssertionError,
+) -> TokenManagementClientAuthError {
+    match error {
+        ClientAssertionError::StoreUnavailable => TokenManagementClientAuthError::StoreUnavailable,
+        ClientAssertionError::Invalid | ClientAssertionError::ReplayDetected => {
+            TokenManagementClientAuthError::InvalidClient
+        }
+    }
+}
+
+pub(crate) async fn consume_token_client_assertion(
+    state: &AppState,
+    client: &ClientRow,
+    assertion: Option<&ValidatedClientAssertion>,
+) -> Result<(), HttpResponse> {
+    let Some(assertion) = assertion else {
+        return Ok(());
+    };
+    consume_private_key_jwt(state, client, assertion)
+        .await
+        .map_err(|error| match error {
+            ClientAssertionError::StoreUnavailable => oauth_token_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "客户端认证状态存储不可用.",
+                false,
+            ),
+            ClientAssertionError::Invalid | ClientAssertionError::ReplayDetected => {
+                oauth_token_error(
+                    StatusCode::UNAUTHORIZED,
+                    "invalid_client",
+                    "客户端认证失败.",
+                    false,
+                )
+            }
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,56 +225,4 @@ mod tests {
             HeaderValue::from_static("no-store")
         );
     }
-}
-
-pub(crate) async fn consume_token_management_client_assertion(
-    state: &AppState,
-    client: &ClientRow,
-    assertion: Option<&ValidatedClientAssertion>,
-) -> Result<(), TokenManagementClientAuthError> {
-    let Some(assertion) = assertion else {
-        return Ok(());
-    };
-    consume_private_key_jwt(state, client, assertion)
-        .await
-        .map_err(token_management_client_assertion_error)
-}
-
-fn token_management_client_assertion_error(
-    error: ClientAssertionError,
-) -> TokenManagementClientAuthError {
-    match error {
-        ClientAssertionError::StoreUnavailable => TokenManagementClientAuthError::StoreUnavailable,
-        ClientAssertionError::Invalid | ClientAssertionError::ReplayDetected => {
-            TokenManagementClientAuthError::InvalidClient
-        }
-    }
-}
-
-pub(crate) async fn consume_token_client_assertion(
-    state: &AppState,
-    client: &ClientRow,
-    assertion: Option<&ValidatedClientAssertion>,
-) -> Result<(), HttpResponse> {
-    let Some(assertion) = assertion else {
-        return Ok(());
-    };
-    consume_private_key_jwt(state, client, assertion)
-        .await
-        .map_err(|error| match error {
-            ClientAssertionError::StoreUnavailable => oauth_token_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "客户端认证状态存储不可用.",
-                false,
-            ),
-            ClientAssertionError::Invalid | ClientAssertionError::ReplayDetected => {
-                oauth_token_error(
-                    StatusCode::UNAUTHORIZED,
-                    "invalid_client",
-                    "客户端认证失败.",
-                    false,
-                )
-            }
-        })
 }

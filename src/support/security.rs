@@ -6,6 +6,7 @@ use super::{
     audit_event, audit_fields, request_mtls_client_certificate, signing_algorithm_name,
     valkey_set_ex_nx,
 };
+use crate::domain::OidcClaimRequest;
 
 const ARGON2_MEMORY_COST_KIB: u32 = 19_456;
 const ARGON2_TIME_COST: u32 = 2;
@@ -477,6 +478,7 @@ pub(crate) struct AccessTokenJwtInput<'a> {
     pub(crate) audience: &'a str,
     pub(crate) scopes: &'a [String],
     pub(crate) userinfo_claims: &'a [String],
+    pub(crate) userinfo_claim_requests: &'a [OidcClaimRequest],
     pub(crate) ttl: i64,
     pub(crate) dpop_jkt: Option<&'a str>,
     pub(crate) mtls_x5t_s256: Option<&'a str>,
@@ -532,6 +534,7 @@ fn access_token_claims(
             _ => None,
         },
         userinfo_claims: input.userinfo_claims.to_vec(),
+        userinfo_claim_requests: input.userinfo_claim_requests.to_vec(),
     }
 }
 
@@ -819,6 +822,7 @@ mod tests {
                 audience: "https://issuer.example/userinfo",
                 scopes: &scopes,
                 userinfo_claims: &["email".to_owned()],
+                userinfo_claim_requests: &[],
                 ttl: 300,
                 dpop_jkt: Some("thumbprint-jkt"),
                 mtls_x5t_s256: None,
@@ -861,6 +865,7 @@ mod tests {
                 audience: "resource://default",
                 scopes: &scopes,
                 userinfo_claims: &[],
+                userinfo_claim_requests: &[],
                 ttl: 120,
                 dpop_jkt: None,
                 mtls_x5t_s256: Some("certificate-thumbprint"),

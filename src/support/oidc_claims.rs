@@ -2,6 +2,7 @@
 //! 只从已授权 scope 和本地用户事实源生成声明，不为缺失字段写入 null。
 
 use super::prelude::*;
+use crate::domain::OidcClaimRequest;
 use crate::settings::SubjectType;
 
 pub(crate) fn oidc_subject(settings: &Settings, user_id: Uuid, redirect_uri: &str) -> String {
@@ -55,6 +56,7 @@ pub(crate) fn oidc_user_claims(
     scopes: &[String],
     subject: &str,
     requested_claims: &[String],
+    requested_claim_requests: &[OidcClaimRequest],
 ) -> Value {
     let mut claims = json!({"sub": subject});
     let has_profile_scope = scopes.iter().any(|scope| scope == "profile");
@@ -62,69 +64,188 @@ pub(crate) fn oidc_user_claims(
     let has_address_scope = scopes.iter().any(|scope| scope == "address");
     let has_phone_scope = scopes.iter().any(|scope| scope == "phone");
 
-    if has_profile_scope || requested_claim(requested_claims, "preferred_username") {
+    if claim_allowed(
+        has_profile_scope,
+        requested_claims,
+        requested_claim_requests,
+        "preferred_username",
+        &json!(user.username),
+    ) {
         claims["preferred_username"] = json!(user.username);
     }
-    if has_profile_scope || requested_claim(requested_claims, "name") {
-        claims["name"] = json!(user_display_name(user));
+    let name = user_display_name(user);
+    if claim_allowed(
+        has_profile_scope,
+        requested_claims,
+        requested_claim_requests,
+        "name",
+        &json!(name),
+    ) {
+        claims["name"] = json!(name);
     }
-    if has_profile_scope || requested_claim(requested_claims, "given_name") {
+    if optional_string_claim_allowed(
+        has_profile_scope,
+        requested_claims,
+        requested_claim_requests,
+        "given_name",
+        user.given_name.as_deref(),
+    ) {
         optional_string_claim(&mut claims, "given_name", user.given_name.as_deref());
     }
-    if has_profile_scope || requested_claim(requested_claims, "family_name") {
+    if optional_string_claim_allowed(
+        has_profile_scope,
+        requested_claims,
+        requested_claim_requests,
+        "family_name",
+        user.family_name.as_deref(),
+    ) {
         optional_string_claim(&mut claims, "family_name", user.family_name.as_deref());
     }
-    if has_profile_scope || requested_claim(requested_claims, "middle_name") {
+    if optional_string_claim_allowed(
+        has_profile_scope,
+        requested_claims,
+        requested_claim_requests,
+        "middle_name",
+        user.middle_name.as_deref(),
+    ) {
         optional_string_claim(&mut claims, "middle_name", user.middle_name.as_deref());
     }
-    if has_profile_scope || requested_claim(requested_claims, "nickname") {
+    if optional_string_claim_allowed(
+        has_profile_scope,
+        requested_claims,
+        requested_claim_requests,
+        "nickname",
+        user.nickname.as_deref(),
+    ) {
         optional_string_claim(&mut claims, "nickname", user.nickname.as_deref());
     }
-    if has_profile_scope || requested_claim(requested_claims, "profile") {
+    if optional_string_claim_allowed(
+        has_profile_scope,
+        requested_claims,
+        requested_claim_requests,
+        "profile",
+        user.profile_url.as_deref(),
+    ) {
         optional_string_claim(&mut claims, "profile", user.profile_url.as_deref());
     }
-    if has_profile_scope || requested_claim(requested_claims, "picture") {
+    if optional_string_claim_allowed(
+        has_profile_scope,
+        requested_claims,
+        requested_claim_requests,
+        "picture",
+        user.avatar_url.as_deref(),
+    ) {
         optional_string_claim(&mut claims, "picture", user.avatar_url.as_deref());
     }
-    if has_profile_scope || requested_claim(requested_claims, "website") {
+    if optional_string_claim_allowed(
+        has_profile_scope,
+        requested_claims,
+        requested_claim_requests,
+        "website",
+        user.website_url.as_deref(),
+    ) {
         optional_string_claim(&mut claims, "website", user.website_url.as_deref());
     }
-    if has_profile_scope || requested_claim(requested_claims, "gender") {
+    if optional_string_claim_allowed(
+        has_profile_scope,
+        requested_claims,
+        requested_claim_requests,
+        "gender",
+        user.gender.as_deref(),
+    ) {
         optional_string_claim(&mut claims, "gender", user.gender.as_deref());
     }
-    if has_profile_scope || requested_claim(requested_claims, "birthdate") {
+    if optional_string_claim_allowed(
+        has_profile_scope,
+        requested_claims,
+        requested_claim_requests,
+        "birthdate",
+        user.birthdate.as_deref(),
+    ) {
         optional_string_claim(&mut claims, "birthdate", user.birthdate.as_deref());
     }
-    if has_profile_scope || requested_claim(requested_claims, "zoneinfo") {
+    if optional_string_claim_allowed(
+        has_profile_scope,
+        requested_claims,
+        requested_claim_requests,
+        "zoneinfo",
+        user.zoneinfo.as_deref(),
+    ) {
         optional_string_claim(&mut claims, "zoneinfo", user.zoneinfo.as_deref());
     }
-    if has_profile_scope || requested_claim(requested_claims, "locale") {
+    if optional_string_claim_allowed(
+        has_profile_scope,
+        requested_claims,
+        requested_claim_requests,
+        "locale",
+        user.locale.as_deref(),
+    ) {
         optional_string_claim(&mut claims, "locale", user.locale.as_deref());
     }
-    if has_profile_scope || requested_claim(requested_claims, "updated_at") {
+    let updated_at = json!(user.updated_at.timestamp());
+    if claim_allowed(
+        has_profile_scope,
+        requested_claims,
+        requested_claim_requests,
+        "updated_at",
+        &updated_at,
+    ) {
         claims["updated_at"] = json!(user.updated_at.timestamp());
     }
 
-    if has_email_scope || requested_claim(requested_claims, "email") {
+    if claim_allowed(
+        has_email_scope,
+        requested_claims,
+        requested_claim_requests,
+        "email",
+        &json!(user.email),
+    ) {
         claims["email"] = json!(user.email);
     }
-    if has_email_scope || requested_claim(requested_claims, "email_verified") {
+    if claim_allowed(
+        has_email_scope,
+        requested_claims,
+        requested_claim_requests,
+        "email_verified",
+        &json!(user.email_verified),
+    ) {
         claims["email_verified"] = json!(user.email_verified);
     }
-    if has_address_scope || requested_claim(requested_claims, "address") {
-        optional_address_claim(&mut claims, user);
+    let address = address_claim(user);
+    if let Some(address) = address
+        && claim_allowed(
+            has_address_scope,
+            requested_claims,
+            requested_claim_requests,
+            "address",
+            &address,
+        )
+    {
+        claims["address"] = address;
     }
-    if has_phone_scope || requested_claim(requested_claims, "phone_number") {
+    if optional_string_claim_allowed(
+        has_phone_scope,
+        requested_claims,
+        requested_claim_requests,
+        "phone_number",
+        user.phone_number.as_deref(),
+    ) {
         optional_string_claim(&mut claims, "phone_number", user.phone_number.as_deref());
     }
-    if has_phone_scope || requested_claim(requested_claims, "phone_number_verified") {
+    if claim_allowed(
+        has_phone_scope,
+        requested_claims,
+        requested_claim_requests,
+        "phone_number_verified",
+        &json!(user.phone_number_verified),
+    ) {
         claims["phone_number_verified"] = json!(user.phone_number_verified);
     }
 
     claims
 }
 
-fn optional_address_claim(claims: &mut Value, user: &UserRow) {
+fn address_claim(user: &UserRow) -> Option<Value> {
     let mut address = json!({});
     optional_string_claim(&mut address, "formatted", user.address_formatted.as_deref());
     optional_string_claim(
@@ -140,9 +261,10 @@ fn optional_address_claim(claims: &mut Value, user: &UserRow) {
         user.address_postal_code.as_deref(),
     );
     optional_string_claim(&mut address, "country", user.address_country.as_deref());
-    if address.as_object().is_some_and(|object| !object.is_empty()) {
-        claims["address"] = address;
-    }
+    address
+        .as_object()
+        .is_some_and(|object| !object.is_empty())
+        .then_some(address)
 }
 
 fn optional_string_claim(claims: &mut Value, name: &str, value: Option<&str>) {
@@ -153,6 +275,60 @@ fn optional_string_claim(claims: &mut Value, name: &str, value: Option<&str>) {
 
 fn requested_claim(requested_claims: &[String], name: &str) -> bool {
     requested_claims.iter().any(|claim| claim == name)
+}
+
+fn claim_requested(
+    requested_claims: &[String],
+    requested_claim_requests: &[OidcClaimRequest],
+    name: &str,
+) -> bool {
+    requested_claim(requested_claims, name)
+        || requested_claim_requests
+            .iter()
+            .any(|request| request.name == name)
+}
+
+fn claim_allowed(
+    scope_allowed: bool,
+    requested_claims: &[String],
+    requested_claim_requests: &[OidcClaimRequest],
+    name: &str,
+    actual: &Value,
+) -> bool {
+    if let Some(request) = requested_claim_requests
+        .iter()
+        .find(|request| request.name == name)
+    {
+        return claim_value_matches_request(request, actual);
+    }
+    scope_allowed || requested_claim(requested_claims, name)
+}
+
+fn optional_string_claim_allowed(
+    scope_allowed: bool,
+    requested_claims: &[String],
+    requested_claim_requests: &[OidcClaimRequest],
+    name: &str,
+    actual: Option<&str>,
+) -> bool {
+    let Some(actual) = actual.map(str::trim).filter(|value| !value.is_empty()) else {
+        return false;
+    };
+    claim_allowed(
+        scope_allowed,
+        requested_claims,
+        requested_claim_requests,
+        name,
+        &json!(actual),
+    )
+}
+
+fn claim_value_matches_request(request: &OidcClaimRequest, actual: &Value) -> bool {
+    match (&request.value, request.values.as_slice()) {
+        (Some(expected), _) => expected == actual,
+        (None, []) => true,
+        (None, values) => values.iter().any(|expected| expected == actual),
+    }
 }
 
 fn user_display_name(user: &UserRow) -> &str {
@@ -168,22 +344,33 @@ pub(crate) fn oidc_id_token_user_claims(
     scopes: &[String],
     subject: &str,
     requested_claims: &[String],
+    requested_claim_requests: &[OidcClaimRequest],
 ) -> Value {
-    let mut claims = oidc_user_claims(user, scopes, subject, requested_claims);
+    let mut claims = oidc_user_claims(
+        user,
+        scopes,
+        subject,
+        requested_claims,
+        requested_claim_requests,
+    );
     if let Some(object) = claims.as_object_mut() {
-        if !requested_claim(requested_claims, "email") {
+        if !claim_requested(requested_claims, requested_claim_requests, "email") {
             object.remove("email");
         }
-        if !requested_claim(requested_claims, "email_verified") {
+        if !claim_requested(requested_claims, requested_claim_requests, "email_verified") {
             object.remove("email_verified");
         }
-        if !requested_claim(requested_claims, "address") {
+        if !claim_requested(requested_claims, requested_claim_requests, "address") {
             object.remove("address");
         }
-        if !requested_claim(requested_claims, "phone_number") {
+        if !claim_requested(requested_claims, requested_claim_requests, "phone_number") {
             object.remove("phone_number");
         }
-        if !requested_claim(requested_claims, "phone_number_verified") {
+        if !claim_requested(
+            requested_claims,
+            requested_claim_requests,
+            "phone_number_verified",
+        ) {
             object.remove("phone_number_verified");
         }
     }
@@ -295,6 +482,7 @@ mod tests {
             ],
             "subject-1",
             &[],
+            &[],
         );
 
         assert_eq!(claims["sub"], "subject-1");
@@ -332,7 +520,7 @@ mod tests {
     #[test]
     fn userinfo_claims_omit_unrequested_profile_and_email() {
         let user = user();
-        let claims = oidc_user_claims(&user, &["openid".to_owned()], "subject-1", &[]);
+        let claims = oidc_user_claims(&user, &["openid".to_owned()], "subject-1", &[], &[]);
 
         assert!(claims.get("name").is_none());
         assert!(claims.get("given_name").is_none());
@@ -366,6 +554,7 @@ mod tests {
             ],
             "subject-1",
             &[],
+            &[],
         );
 
         assert_eq!(claims["sub"], "subject-1");
@@ -386,6 +575,7 @@ mod tests {
             &["openid".to_owned()],
             "subject-1",
             &["name".to_owned()],
+            &[],
         );
 
         assert_eq!(claims["sub"], "subject-1");
@@ -405,11 +595,90 @@ mod tests {
                 "phone_number".to_owned(),
                 "phone_number_verified".to_owned(),
             ],
+            &[],
         );
 
         assert_eq!(claims["address"]["country"], "US");
         assert_eq!(claims["phone_number"], "+15555550000");
         assert_eq!(claims["phone_number_verified"], true);
+    }
+
+    #[test]
+    fn requested_userinfo_claim_values_filter_output_even_when_scope_allows_claim() {
+        let user = user();
+        let claims = oidc_user_claims(
+            &user,
+            &["openid".to_owned(), "email".to_owned(), "phone".to_owned()],
+            "subject-1",
+            &[
+                "email".to_owned(),
+                "email_verified".to_owned(),
+                "phone_number".to_owned(),
+            ],
+            &[
+                OidcClaimRequest {
+                    name: "email".to_owned(),
+                    essential: true,
+                    value: Some(json!("other@example.com")),
+                    values: Vec::new(),
+                },
+                OidcClaimRequest {
+                    name: "email_verified".to_owned(),
+                    essential: false,
+                    value: Some(json!(true)),
+                    values: Vec::new(),
+                },
+                OidcClaimRequest {
+                    name: "phone_number".to_owned(),
+                    essential: false,
+                    value: None,
+                    values: vec![json!("+15555550000"), json!("+15555550001")],
+                },
+            ],
+        );
+
+        assert!(claims.get("email").is_none());
+        assert_eq!(claims["email_verified"], true);
+        assert_eq!(claims["phone_number"], "+15555550000");
+    }
+
+    #[test]
+    fn id_token_claim_values_filter_output_and_allow_matching_contact_claims() {
+        let user = user();
+        let claims = oidc_id_token_user_claims(
+            &user,
+            &["openid".to_owned(), "email".to_owned(), "phone".to_owned()],
+            "subject-1",
+            &[
+                "email".to_owned(),
+                "email_verified".to_owned(),
+                "phone_number".to_owned(),
+            ],
+            &[
+                OidcClaimRequest {
+                    name: "email".to_owned(),
+                    essential: false,
+                    value: Some(json!("alice@example.com")),
+                    values: Vec::new(),
+                },
+                OidcClaimRequest {
+                    name: "email_verified".to_owned(),
+                    essential: false,
+                    value: None,
+                    values: vec![json!(false)],
+                },
+                OidcClaimRequest {
+                    name: "phone_number".to_owned(),
+                    essential: false,
+                    value: None,
+                    values: vec![json!("+15555550000")],
+                },
+            ],
+        );
+
+        assert_eq!(claims["email"], "alice@example.com");
+        assert!(claims.get("email_verified").is_none());
+        assert_eq!(claims["phone_number"], "+15555550000");
     }
 
     #[test]

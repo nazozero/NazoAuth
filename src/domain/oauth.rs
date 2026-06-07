@@ -2,6 +2,7 @@
 // 这些结构体会进入 JWT、Valkey 临时键或 token 签发逻辑，字段名需保持协议稳定。
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use uuid::Uuid;
 
 /// RFC 9449/RFC 7800 confirmation claim for proof-of-possession access tokens.
@@ -11,6 +12,18 @@ pub(crate) struct ConfirmationClaims {
     pub(crate) jkt: Option<String>,
     #[serde(rename = "x5t#S256", default, skip_serializing_if = "Option::is_none")]
     pub(crate) x5t_s256: Option<String>,
+}
+
+/// One requested OIDC Claim from the `claims` authorization request parameter.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub(crate) struct OidcClaimRequest {
+    pub(crate) name: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) essential: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) value: Option<Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) values: Vec<Value>,
 }
 
 /// Access token 中的 JWT claims。
@@ -33,6 +46,8 @@ pub(crate) struct Claims {
     pub(crate) cnf: Option<ConfirmationClaims>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) userinfo_claims: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) userinfo_claim_requests: Vec<OidcClaimRequest>,
 }
 
 /// 用户待确认的授权请求快照。
@@ -56,7 +71,11 @@ pub(crate) struct ConsentPayload {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) userinfo_claims: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) userinfo_claim_requests: Vec<OidcClaimRequest>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) id_token_claims: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) id_token_claim_requests: Vec<OidcClaimRequest>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) code_challenge: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -100,7 +119,11 @@ pub(crate) struct CodePayload {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) userinfo_claims: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) userinfo_claim_requests: Vec<OidcClaimRequest>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) id_token_claims: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) id_token_claim_requests: Vec<OidcClaimRequest>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) code_challenge: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -154,7 +177,9 @@ pub(crate) struct TokenIssue {
     pub(crate) amr: Vec<String>,
     pub(crate) acr: Option<String>,
     pub(crate) userinfo_claims: Vec<String>,
+    pub(crate) userinfo_claim_requests: Vec<OidcClaimRequest>,
     pub(crate) id_token_claims: Vec<String>,
+    pub(crate) id_token_claim_requests: Vec<OidcClaimRequest>,
     pub(crate) include_refresh: bool,
     pub(crate) rotation: Option<(Uuid, Option<Uuid>)>,
     pub(crate) dpop_jkt: Option<String>,

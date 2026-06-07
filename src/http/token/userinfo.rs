@@ -152,6 +152,7 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Byte
         &scopes,
         &claims.sub,
         &claims.userinfo_claims,
+        &claims.userinfo_claim_requests,
     ));
     if let Some(nonce) = next_dpop_nonce
         && let Ok(value) = HeaderValue::from_str(&nonce)
@@ -301,6 +302,16 @@ mod tests {
         );
 
         assert!(matches!(token, UserInfoAccessToken::InvalidRequest));
+    }
+
+    #[test]
+    fn query_access_token_is_not_accepted() {
+        let req = actix_web::test::TestRequest::get()
+            .uri("/userinfo?access_token=query-token")
+            .to_http_request();
+        let token = userinfo_access_token(&req, &Bytes::new());
+
+        assert!(matches!(token, UserInfoAccessToken::Missing));
     }
 
     #[test]

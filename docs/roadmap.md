@@ -15,7 +15,7 @@ The roadmap separates three concerns that must not be mixed:
 | Trust evidence | Conformance results, security policy, threat model, and release evidence must be public and repeatable. | In progress |
 | Profile matrix | Each profile needs explicit grants, response types, client auth, token binding, JAR/JARM, PAR, refresh policy, TTL, and metadata rules. | Done |
 | Metadata truth | Discovery metadata must not overclaim unsupported or deployment-disabled capabilities. | In progress |
-| OIDC completeness | OIDC Core behavior needs a profile-by-profile checklist and tests for required OP features. | Planned |
+| OIDC completeness | OIDC Core behavior needs a profile-by-profile checklist and tests for required OP features. | In progress |
 | FAPI2 Security | Baseline FAPI2 Security must stay distinct from Message Signing and product hardening. | Defined |
 | FAPI2 Message Signing | Signed authorization requests, JARM, and signed introspection responses should be tracked as separate options. | Defined |
 | mTLS | Current integration is proxy-terminated mTLS and must be documented, constrained, and extended toward full RFC 8705 subject/SAN semantics. | In progress |
@@ -49,7 +49,7 @@ The roadmap separates three concerns that must not be mixed:
 - [x] Enforce audience/resource binding for access tokens.
 - [x] If RFC 8707 resource indicators are supported, test single-resource behavior, audience derivation, and rejection of ambiguous or missing resource values; keep multi-resource behavior as a future ecosystem expansion.
 - [x] Add JWT access token profile tests: issuer, audience, expiry, `client_id`/`sub` separation, scope or `authorization_details`, `cnf.jkt` or `cnf.x5t#S256`, algorithm allowlist, `kid` handling, and revocation/introspection fallback.
-- [ ] Add negative conformance fixtures: overclaimed metadata, weak client auth, unsigned JAR in hardened profiles, missing DPoP proof, DPoP without nonce where required, bearer token at sender-constrained resource servers, query-token use, redirect URI mismatch, and stale JWKS.
+- [x] Add negative conformance fixtures: overclaimed metadata, weak client auth, unsigned JAR in hardened profiles, missing DPoP proof, DPoP without nonce where required, bearer token at sender-constrained resource servers, query-token use, redirect URI mismatch, and stale JWKS. See `docs/conformance/negative-fixtures.md`.
 
 ## P0: Deployment Security
 
@@ -77,7 +77,7 @@ The roadmap separates three concerns that must not be mixed:
 - [x] Represent strict DPoP nonce enforcement as hardened profile behavior and test downgrade boundaries.
 - [x] Optional stricter-than-FAPI policy: require request object `jti` with replay cache for signed JAR.
 - [x] Mark `client_secret_post` as a compatibility method in documentation and examples; recommend `private_key_jwt` or mTLS for high-security clients.
-- [ ] Complete OIDC `claims` request semantics for `essential`, `value`, and `values`.
+- [x] Complete OIDC `claims` request semantics for `essential`, `value`, and `values`.
 - [ ] Strengthen `auth_time`, `max_age`, `acr_values`, `azp`, `sid`, and session-related ID Token behavior.
 - [ ] Add consent and transaction-binding tests for high-risk `authorization_details`, especially payments or write APIs.
 - [ ] Expand RFC 8707 support from the current single-resource model to multi-resource handling when an ecosystem use case requires it.

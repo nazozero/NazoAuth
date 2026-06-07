@@ -435,6 +435,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn metadata<'a>(
         client_type: &'a str,
         redirect_uris: &'a [String],

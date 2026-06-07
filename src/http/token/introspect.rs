@@ -206,6 +206,7 @@ mod tests {
             exp: 2,
             cnf,
             userinfo_claims: Vec::new(),
+            userinfo_claim_requests: Vec::new(),
         }
     }
 

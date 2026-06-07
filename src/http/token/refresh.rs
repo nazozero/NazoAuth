@@ -69,39 +69,6 @@ async fn lost_refresh_token_successor(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn lost_refresh_retry_allows_only_short_post_rotation_window() {
-        let now = Utc::now();
-
-        assert!(within_lost_refresh_token_retry_window(
-            now - Duration::seconds(1),
-            now
-        ));
-        assert!(within_lost_refresh_token_retry_window(
-            now - Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS),
-            now
-        ));
-        assert!(!within_lost_refresh_token_retry_window(
-            now - Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS + 1),
-            now
-        ));
-    }
-
-    #[test]
-    fn lost_refresh_retry_rejects_future_revocation_times() {
-        let now = Utc::now();
-
-        assert!(!within_lost_refresh_token_retry_window(
-            now + Duration::seconds(1),
-            now
-        ));
-    }
-}
-
 pub(crate) async fn token_refresh(
     state: &AppState,
     req: &HttpRequest,
@@ -310,7 +277,9 @@ pub(crate) async fn token_refresh(
             amr: Vec::new(),
             acr: None,
             userinfo_claims: Vec::new(),
+            userinfo_claim_requests: Vec::new(),
             id_token_claims: Vec::new(),
+            id_token_claim_requests: Vec::new(),
             include_refresh: true,
             rotation: Some((token.token_family_id, Some(token.id))),
             dpop_jkt: dpop_jkt.clone(),
@@ -321,4 +290,37 @@ pub(crate) async fn token_refresh(
         },
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lost_refresh_retry_allows_only_short_post_rotation_window() {
+        let now = Utc::now();
+
+        assert!(within_lost_refresh_token_retry_window(
+            now - Duration::seconds(1),
+            now
+        ));
+        assert!(within_lost_refresh_token_retry_window(
+            now - Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS),
+            now
+        ));
+        assert!(!within_lost_refresh_token_retry_window(
+            now - Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS + 1),
+            now
+        ));
+    }
+
+    #[test]
+    fn lost_refresh_retry_rejects_future_revocation_times() {
+        let now = Utc::now();
+
+        assert!(!within_lost_refresh_token_retry_window(
+            now + Duration::seconds(1),
+            now
+        ));
+    }
 }

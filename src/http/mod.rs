@@ -42,7 +42,7 @@ pub(crate) mod prelude {
     pub(crate) use crate::db::get_conn;
     pub(crate) use crate::domain::{
         AccessRequestStatus, AppState, AuthorizationCodeState, ClientRow, CodePayload,
-        ConsentPayload, ConsumedAuthorizationCode, GrantRow, MyApplicationRow,
+        ConsentPayload, ConsumedAuthorizationCode, GrantRow, MyApplicationRow, OidcClaimRequest,
         PendingAccessRequestRow, PushedAuthorizationRequest, TokenIssue, TokenRow,
         UserAccessRequestRow, UserRow,
     };

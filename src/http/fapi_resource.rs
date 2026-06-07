@@ -219,6 +219,16 @@ mod tests {
     }
 
     #[test]
+    fn query_access_token_is_not_accepted() {
+        let req = actix_web::test::TestRequest::get()
+            .uri("/fapi/resource?access_token=query-token")
+            .to_http_request();
+        let token = resource_access_token(&req, &Bytes::new());
+
+        assert!(matches!(token, ResourceAccessToken::Missing));
+    }
+
+    #[test]
     fn authorization_header_access_token_accepts_single_value() {
         let req = actix_web::test::TestRequest::get()
             .insert_header((header::AUTHORIZATION, "DPoP header-token"))

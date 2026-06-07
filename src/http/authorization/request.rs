@@ -63,10 +63,10 @@ fn requested_acr(q: &HashMap<String, String>, claims_acr: Option<String>) -> Opt
         .or(claims_acr)
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 struct RequestedClaims {
-    userinfo: Vec<String>,
-    id_token: Vec<String>,
+    userinfo: Vec<OidcClaimRequest>,
+    id_token: Vec<OidcClaimRequest>,
     acr: Option<String>,
 }
 
@@ -108,8 +108,8 @@ fn requested_claims(q: &HashMap<String, String>) -> Result<RequestedClaims, ()> 
         });
     };
     let claims: Value = serde_json::from_str(raw_claims).map_err(|_| ())?;
-    let userinfo = requested_claim_names(claims.get("userinfo"))?;
-    let id_token = requested_claim_names(claims.get("id_token"))?;
+    let userinfo = requested_claim_requests(claims.get("userinfo"))?;
+    let id_token = requested_claim_requests(claims.get("id_token"))?;
     let acr = requested_acr_claim(claims.get("id_token"))?;
     Ok(RequestedClaims {
         userinfo,
@@ -118,23 +118,24 @@ fn requested_claims(q: &HashMap<String, String>) -> Result<RequestedClaims, ()> 
     })
 }
 
-fn requested_claim_names(value: Option<&Value>) -> Result<Vec<String>, ()> {
+fn requested_claim_requests(value: Option<&Value>) -> Result<Vec<OidcClaimRequest>, ()> {
     let Some(value) = value else {
         return Ok(Vec::new());
     };
     let Some(object) = value.as_object() else {
         return Err(());
     };
-    let mut names = Vec::new();
+    let mut requests = Vec::new();
     for (name, request) in object {
-        validate_claim_request(request)?;
         if supported_user_claim(name) {
-            names.push(name.clone());
+            requests.push(parse_claim_request(name, request)?);
+        } else {
+            validate_claim_request(request)?;
         }
     }
-    names.sort();
-    names.dedup();
-    Ok(names)
+    requests.sort_by(|left, right| left.name.cmp(&right.name));
+    requests.dedup_by(|left, right| left.name == right.name);
+    Ok(requests)
 }
 
 fn requested_acr_claim(value: Option<&Value>) -> Result<Option<String>, ()> {
@@ -168,21 +169,37 @@ fn requested_acr_claim(value: Option<&Value>) -> Result<Option<String>, ()> {
 }
 
 fn validate_claim_request(value: &Value) -> Result<(), ()> {
+    parse_optional_claim_request(None, value).map(|_| ())
+}
+
+fn parse_claim_request(name: &str, value: &Value) -> Result<OidcClaimRequest, ()> {
+    parse_optional_claim_request(Some(name), value)?.ok_or(())
+}
+
+fn parse_optional_claim_request(
+    name: Option<&str>,
+    value: &Value,
+) -> Result<Option<OidcClaimRequest>, ()> {
     if value.is_null() {
-        return Ok(());
+        return Ok(name.map(|name| OidcClaimRequest {
+            name: name.to_owned(),
+            essential: false,
+            value: None,
+            values: Vec::new(),
+        }));
     }
     let Some(object) = value.as_object() else {
         return Err(());
     };
-    if object
-        .get("essential")
-        .is_some_and(|essential| !essential.is_boolean())
-    {
-        return Err(());
-    }
+    let essential = match object.get("essential") {
+        Some(essential) => essential.as_bool().ok_or(())?,
+        None => false,
+    };
     if object.contains_key("value") && object.contains_key("values") {
         return Err(());
     }
+    let requested_value = object.get("value").cloned();
+    let mut requested_values = Vec::new();
     if let Some(values) = object.get("values") {
         let Some(values) = values.as_array() else {
             return Err(());
@@ -190,8 +207,21 @@ fn validate_claim_request(value: &Value) -> Result<(), ()> {
         if values.is_empty() {
             return Err(());
         }
+        requested_values = values.clone();
     }
-    Ok(())
+    Ok(name.map(|name| OidcClaimRequest {
+        name: name.to_owned(),
+        essential,
+        value: requested_value,
+        values: requested_values,
+    }))
+}
+
+fn claim_request_names(requests: &[OidcClaimRequest]) -> Vec<String> {
+    requests
+        .iter()
+        .map(|request| request.name.clone())
+        .collect()
 }
 
 fn preserve_verified_dpop_binding(q: &mut HashMap<String, String>, dpop_jkt: Option<&str>) {
@@ -576,8 +606,10 @@ async fn authorize_request(
         auth_time: session.auth_time,
         amr: session.amr,
         acr: requested_acr(q, requested_claims.acr),
-        userinfo_claims: requested_claims.userinfo,
-        id_token_claims: requested_claims.id_token,
+        userinfo_claims: claim_request_names(&requested_claims.userinfo),
+        userinfo_claim_requests: requested_claims.userinfo,
+        id_token_claims: claim_request_names(&requested_claims.id_token),
+        id_token_claim_requests: requested_claims.id_token,
         code_challenge,
         code_challenge_method,
         dpop_jkt,
@@ -738,7 +770,9 @@ async fn issue_authorization_code_without_interaction(
         amr: payload.amr,
         acr: payload.acr,
         userinfo_claims: payload.userinfo_claims,
+        userinfo_claim_requests: payload.userinfo_claim_requests,
         id_token_claims: payload.id_token_claims,
+        id_token_claim_requests: payload.id_token_claim_requests,
         code_challenge: payload.code_challenge,
         code_challenge_method: payload.code_challenge_method,
         dpop_jkt: payload.dpop_jkt,
@@ -959,6 +993,31 @@ fn authorization_login_query<'a>(
     }
 }
 
+fn authorization_login_url(
+    state: &AppState,
+    q: &HashMap<String, String>,
+    remove_prompt_login: bool,
+) -> String {
+    let query = q
+        .iter()
+        .filter(|(key, value)| {
+            !(remove_prompt_login && key.as_str() == "prompt" && value.as_str() == "login")
+        })
+        .map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v)))
+        .collect::<Vec<_>>()
+        .join("&");
+    let next = if query.is_empty() {
+        "/authorize".to_string()
+    } else {
+        format!("/authorize?{query}")
+    };
+    format!(
+        "{}/auth?next={}",
+        state.settings.frontend_base_url.trim_end_matches('/'),
+        urlencoding::encode(&next)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1000,8 +1059,10 @@ mod tests {
         )]))
         .unwrap();
 
-        assert_eq!(requested.userinfo, vec!["name".to_owned()]);
-        assert_eq!(requested.id_token, vec!["email".to_owned()]);
+        assert_eq!(claim_request_names(&requested.userinfo), vec!["name"]);
+        assert!(requested.userinfo[0].essential);
+        assert_eq!(claim_request_names(&requested.id_token), vec!["email"]);
+        assert!(requested.id_token[0].essential);
         assert_eq!(requested.acr, Some("urn:acr:1".to_owned()));
     }
 
@@ -1014,14 +1075,29 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            requested.userinfo,
-            vec![
-                "email".to_owned(),
-                "name".to_owned(),
-                "phone_number".to_owned()
-            ]
+            claim_request_names(&requested.userinfo),
+            vec!["email", "name", "phone_number"]
         );
-        assert_eq!(requested.id_token, vec!["email_verified".to_owned()]);
+        let email = requested
+            .userinfo
+            .iter()
+            .find(|request| request.name == "email")
+            .expect("email claim request");
+        assert_eq!(email.value, Some(json!("alice@example.com")));
+        let phone = requested
+            .userinfo
+            .iter()
+            .find(|request| request.name == "phone_number")
+            .expect("phone claim request");
+        assert_eq!(
+            phone.values,
+            vec![json!("+15555550000"), json!("+15555550001")]
+        );
+        assert_eq!(
+            claim_request_names(&requested.id_token),
+            vec!["email_verified"]
+        );
+        assert!(!requested.id_token[0].essential);
         assert_eq!(requested.acr, Some("urn:acr:2".to_owned()));
     }
 
@@ -1306,29 +1382,4 @@ mod tests {
             .is_ok()
         );
     }
-}
-
-fn authorization_login_url(
-    state: &AppState,
-    q: &HashMap<String, String>,
-    remove_prompt_login: bool,
-) -> String {
-    let query = q
-        .iter()
-        .filter(|(key, value)| {
-            !(remove_prompt_login && key.as_str() == "prompt" && value.as_str() == "login")
-        })
-        .map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v)))
-        .collect::<Vec<_>>()
-        .join("&");
-    let next = if query.is_empty() {
-        "/authorize".to_string()
-    } else {
-        format!("/authorize?{query}")
-    };
-    format!(
-        "{}/auth?next={}",
-        state.settings.frontend_base_url.trim_end_matches('/'),
-        urlencoding::encode(&next)
-    )
 }
