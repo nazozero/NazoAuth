@@ -2,12 +2,12 @@
 // 负责组装配置、外部连接、共享状态和 Actix HTTP server。
 
 mod cors;
+mod observability;
 mod routes;
 
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use actix_web::{App, HttpServer, http::header, middleware::DefaultHeaders, web};
-use anyhow::Context;
+use actix_web::{App, HttpServer, dev::Service, http::header, middleware::DefaultHeaders, web};
 use fred::{
     interfaces::ClientLike,
     prelude::{
@@ -21,16 +21,11 @@ use crate::db::create_pool;
 use crate::domain::AppState;
 use crate::settings::Settings;
 use crate::support::load_or_create_keyset;
+use tracing::Instrument;
 
 pub async fn run() -> anyhow::Result<()> {
     let config = ConfigSource::load()?;
-    let env_filter = config.string("RUST_LOG", "info");
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_new(env_filter)
-                .context("RUST_LOG must be a valid tracing filter")?,
-        )
-        .init();
+    let _observability = observability::init(&config)?;
 
     // 配置只在启动阶段读取，运行期通过 AppState 共享不可变配置。
     let database_url = normalize_database_url(&config.string(
@@ -77,6 +72,35 @@ pub async fn run() -> anyhow::Result<()> {
 
     HttpServer::new(move || {
         App::new()
+            .wrap_fn(|req, service| {
+                let method = req.method().clone();
+                let path = req.path().to_owned();
+                let started = std::time::Instant::now();
+                let span = tracing::info_span!(
+                    "http.request",
+                    "otel.kind" = "server",
+                    "http.request.method" = %method,
+                    "url.path" = %path
+                );
+                let future = service.call(req);
+                async move {
+                    let result = future.await;
+                    if let Ok(response) = &result {
+                        let status = response.status().as_u16();
+                        let elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0;
+                        tracing::info!(
+                            monotonic_counter.http_server_requests = 1_u64,
+                            histogram.http_server_request_duration_ms = elapsed_ms,
+                            "http.request.method" = %method,
+                            "http.response.status_code" = status as i64,
+                            "url.path" = %path,
+                            "HTTP request completed"
+                        );
+                    }
+                    result
+                }
+                .instrument(span)
+            })
             .wrap(security_headers())
             .wrap(cors::build(&state.settings))
             .app_data(state.clone())

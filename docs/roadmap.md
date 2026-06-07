@@ -66,7 +66,7 @@ The roadmap separates three concerns that must not be mixed:
 - [x] Implement self-signed certificate registration and rotation semantics for `self_signed_tls_client_auth`.
 - [x] Add certificate expiry and rotation tests.
 - [ ] Add KMS/HSM backends for signing key lifecycle.
-- [ ] Add OpenTelemetry traces, metrics, and logs.
+- [x] Add OpenTelemetry traces, metrics, and logs.
 - [x] Define a structured security event taxonomy and SIEM export format. See `docs/security-events.md`.
 - [x] Add `cargo audit`, `cargo deny`, SBOM, container scanning, release signing, and provenance. See `deny.toml`, `docs/release-security.md`, `conformance-security`, and `release-security`.
 - [x] Add fuzz/property tests for parsers, JWT/JWK handling, redirect URI validation, request object merging, DPoP validation, and OAuth error serialization.
