@@ -12,6 +12,7 @@ The project is intentionally focused on the authorization server surface: author
 - Main branch policy: work happens on `main`
 - Conformance evidence: see [docs/conformance](docs/conformance)
 - Deployment guide: see [docs/deployment.md](docs/deployment.md)
+- PostgreSQL and Valkey operations: see [docs/ha-operations.md](docs/ha-operations.md)
 - Roadmap: see [docs/roadmap.md](docs/roadmap.md)
 - Security policy: see [SECURITY.md](SECURITY.md)
 - Release security: see [docs/release-security.md](docs/release-security.md)

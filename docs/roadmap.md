@@ -70,7 +70,7 @@ The roadmap separates three concerns that must not be mixed:
 - [ ] Define a structured security event taxonomy and SIEM export format.
 - [x] Add `cargo audit`, `cargo deny`, SBOM, container scanning, release signing, and provenance. See `deny.toml`, `docs/release-security.md`, `conformance-security`, and `release-security`.
 - [ ] Add fuzz/property tests for parsers, JWT/JWK handling, redirect URI validation, request object merging, DPoP validation, and OAuth error serialization.
-- [ ] Document PostgreSQL and Valkey HA, backup, restore, timeout, and partial-outage behavior.
+- [x] Document PostgreSQL and Valkey HA, backup, restore, timeout, and partial-outage behavior. See `docs/ha-operations.md`.
 
 ## P1: Product Hardening
 

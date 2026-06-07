@@ -189,6 +189,8 @@ Valkey stores short-lived sessions, authorization codes, PAR handles, DPoP/clien
 
 If Valkey is unavailable, sensitive protocol paths should fail closed with OAuth errors instead of silently weakening replay or rate-limit controls.
 
+The full HA, backup, restore, timeout, and partial-outage requirements are maintained in [docs/ha-operations.md](ha-operations.md).
+
 ## Verification
 
 After deployment:
@@ -225,6 +227,7 @@ Before launching a full OpenID Foundation conformance run:
 - No proxy header spoofing path.
 - PostgreSQL backup and restore tested.
 - Valkey availability and memory monitored.
+- PostgreSQL and Valkey HA and partial-outage behavior documented.
 - Signing key backups and rotation schedule.
 - Audit logs collected and retained.
 - Admin accounts hardened.

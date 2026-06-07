@@ -17,6 +17,7 @@ The format follows Keep a Changelog style, and this project uses semantic versio
 - Added `CHANGELOG.md`.
 - Added token endpoint support for the standard RFC 8707 `resource` parameter as the normative single-resource input, while retaining the legacy `audience` parameter as an extension.
 - Added supply-chain and release security gates with `cargo audit`, `cargo deny`, CycloneDX SBOM generation, Trivy image scanning, keyless artifact signing, and GitHub provenance attestations.
+- Added PostgreSQL and Valkey HA, backup, restore, timeout, and partial-outage operations guidance.
 
 ### Changed
 
@@ -44,4 +45,4 @@ The format follows Keep a Changelog style, and this project uses semantic versio
 - Add explicit ACR/AMR policy and real step-up authentication support.
 - Expand RFC 8707 support from the current single-resource model to full multi-resource handling.
 - Add Dynamic Client Registration, Client Configuration Management, Rich Authorization Requests, and broader security profile configuration.
-- Add KMS/HSM key backends, OpenTelemetry, structured SIEM export, fuzz/property testing, and HA/backup/restore documentation.
+- Add KMS/HSM key backends, OpenTelemetry, structured SIEM export, and fuzz/property testing.
