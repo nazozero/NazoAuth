@@ -40,6 +40,10 @@ const ENV_CONFIG_KEYS: &[&str] = &[
     "ISSUER",
     "JWK_KEYS_DIR",
     "MTLS_ENDPOINT_BASE_URL",
+    "OTEL_ENABLED",
+    "OTEL_EXPORTER_OTLP_ENDPOINT",
+    "OTEL_EXPORTER_OTLP_PROTOCOL",
+    "OTEL_EXPORTER_OTLP_TIMEOUT",
     "PAIRWISE_SUBJECT_SECRET",
     "PAR_TTL_SECONDS",
     "RATE_LIMIT_WINDOW_SECONDS",
@@ -313,6 +317,11 @@ mod tests {
             .merge_env([
                 ("ISSUER".to_owned(), "https://env.example".to_owned()),
                 ("DPOP_NONCE_POLICY".to_owned(), "optional".to_owned()),
+                ("OTEL_ENABLED".to_owned(), "true".to_owned()),
+                (
+                    "OTEL_EXPORTER_OTLP_ENDPOINT".to_owned(),
+                    "http://collector:4318".to_owned(),
+                ),
                 ("VALKEY_COMMAND_TIMEOUT_MS".to_owned(), "1000".to_owned()),
                 ("UNKNOWN_ENV".to_owned(), "ignored".to_owned()),
             ])
@@ -320,6 +329,11 @@ mod tests {
 
         assert_eq!(source.string("ISSUER", ""), "https://env.example");
         assert_eq!(source.string("DPOP_NONCE_POLICY", ""), "optional");
+        assert_eq!(source.string("OTEL_ENABLED", ""), "true");
+        assert_eq!(
+            source.string("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+            "http://collector:4318"
+        );
         assert_eq!(source.string("VALKEY_COMMAND_TIMEOUT_MS", ""), "1000");
         assert!(source.get("UNKNOWN_ENV").is_none());
     }

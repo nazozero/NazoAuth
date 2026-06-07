@@ -58,11 +58,17 @@ EMAIL_FROM: "Nazo OAuth <no-reply@example.com>"
 AVATAR_STORAGE_DIR: "/var/lib/nazo_oauth/avatars"
 JWK_KEYS_DIR: "/var/lib/nazo_oauth/keys"
 RUST_LOG: "info"
+OTEL_ENABLED: false
+OTEL_EXPORTER_OTLP_ENDPOINT: ""
+OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
+OTEL_EXPORTER_OTLP_TIMEOUT: 10000
 ```
 
 Do not store production secrets in Git.
 
 Set `AUTHORIZATION_SERVER_PROFILE` to `fapi2-security` only when the deployed client population is prepared for confidential-client-only operation, PAR-only authorization requests, PKCE S256, `private_key_jwt` or mTLS client authentication, and DPoP or mTLS sender-constrained tokens. Use `fapi2-message-signing-authz-request` when signed request objects are also mandatory at PAR. Discovery metadata reflects this setting and omits mTLS capabilities unless `TRUSTED_PROXY_CIDRS` is non-empty.
+
+OpenTelemetry is opt-in. Set `OTEL_ENABLED: true` and `OTEL_EXPORTER_OTLP_ENDPOINT` to an OTLP/HTTP collector base URL such as `http://otel-collector:4318` to export traces, metrics, and logs. The service appends `/v1/traces`, `/v1/metrics`, and `/v1/logs` internally. `OTEL_EXPORTER_OTLP_PROTOCOL` is currently `http/protobuf`; leave `RUST_LOG` configured for local stdout logs even when OTLP export is enabled.
 
 ## Container Build
 
