@@ -174,7 +174,10 @@ fn refresh_token_dpop_binding(
     payload: &CodePayload,
     dpop_jkt: Option<String>,
 ) -> Option<String> {
-    if client.require_dpop_bound_tokens || payload.dpop_jkt.is_some() {
+    if client.client_type == "public"
+        || client.require_dpop_bound_tokens
+        || payload.dpop_jkt.is_some()
+    {
         dpop_jkt
     } else {
         None
@@ -596,6 +599,21 @@ mod tests {
         client.require_dpop_bound_tokens = true;
         let mut payload = code_payload(true);
         payload.dpop_jkt = Some("request-dpop-jkt".to_owned());
+
+        assert_eq!(
+            refresh_token_dpop_binding(&client, &payload, Some("verified-dpop-jkt".to_owned()))
+                .as_deref(),
+            Some("verified-dpop-jkt")
+        );
+    }
+
+    #[test]
+    fn public_dpop_client_binds_refresh_token_to_dpop_key() {
+        let mut client = pkce_policy_client();
+        client.client_type = "public".to_owned();
+        client.require_dpop_bound_tokens = false;
+        let mut payload = code_payload(true);
+        payload.dpop_jkt = None;
 
         assert_eq!(
             refresh_token_dpop_binding(&client, &payload, Some("verified-dpop-jkt".to_owned()))
