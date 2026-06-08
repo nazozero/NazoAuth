@@ -1,10 +1,16 @@
 # Nazo OAuth Server
 
-Nazo OAuth Server is a Rust-native OAuth 2.1 / OpenID Connect authorization server for self-hosted deployments that need explicit protocol boundaries and repeatable conformance evidence.
+Nazo OAuth Server is a Rust-native OAuth 2.1 and OpenID Connect authorization
+server for self-hosted deployments. The implementation favors explicit profile
+boundaries, sender-constrained token support, and repeatable conformance
+evidence.
 
-Version 1 covers the authorization-server surface: authorization code + PKCE, token issuance, refresh-token rotation, PAR, signed request objects, DPoP, mTLS sender constraints, JWKS, discovery, UserInfo, token management, and a small identity/admin data plane.
+Version 1 covers the authorization-server surface: authorization code with
+PKCE, token issuance, refresh tokens, PAR, signed request objects, DPoP, mTLS
+sender constraints, JWKS, discovery, UserInfo, token management, and a compact
+identity/admin data plane.
 
-## Status
+## Project Map
 
 - Package: `nazo-oauth-server`
 - Language: Rust 2024
@@ -20,10 +26,10 @@ Version 1 covers the authorization-server surface: authorization code + PKCE, to
 - Release security: see [docs/release-security.md](docs/release-security.md)
 - Change history: see [CHANGELOG.md](CHANGELOG.md)
 
-## Features
+## Version 1 Capabilities
 
 - OAuth authorization code flow with S256 PKCE.
-- Refresh token rotation, token family reuse detection, and atomic authorization code consumption.
+- Refresh-token rotation, token-family reuse detection, and atomic authorization code consumption.
 - Client credentials, refresh token, revocation, and introspection endpoints.
 - OpenID Connect discovery, OAuth Authorization Server Metadata, JWKS, ID Token, and UserInfo.
 - PAR and JAR support, including signed request objects with `EdDSA`, `RS256`, `ES256`, and `PS256`.
@@ -31,7 +37,7 @@ Version 1 covers the authorization-server surface: authorization code + PKCE, to
 - DPoP proof validation, nonce handling, sender-constrained access tokens, and DPoP-bound UserInfo.
 - mTLS sender-constrained access tokens through a trusted reverse-proxy certificate forwarding boundary.
 - Server signing key rotation with active and previous JWKS publication.
-- Pairwise subject support.
+- Pairwise subject identifiers.
 - Cookie sessions, CSRF protection, security response headers, and structured audit events.
 - HTTPOnly session cookie flow; login responses do not expose session identifiers in JSON.
 - PostgreSQL persistence with Rust-native migrations.
@@ -39,20 +45,29 @@ Version 1 covers the authorization-server surface: authorization code + PKCE, to
 - User, profile, avatar, OAuth client, grant, and access-request management APIs.
 - RFC 8707 `resource` parameter support for token requests, including repeated resource indicators mapped to JWT access-token `aud` arrays. The older `audience` parameter remains as a single-audience project extension.
 - RFC 9396-style Rich Authorization Requests through `authorization_details` on authorization, PAR, and signed request object inputs. Supported detail types are advertised in OAuth metadata and bound into consent, authorization codes, refresh tokens, and JWT access-token claims.
-- Resource-server JWT access-token verifier core for Rust integrations. It validates `typ=at+jwt`, issuer, audience, expiry, scopes, algorithm/key selection, and optional DPoP or mTLS `cnf` sender constraints before application policy hooks run.
+- Resource-server JWT access-token verifier core for Rust integrations. It
+  validates `typ=at+jwt`, issuer, audience, expiry, scopes, algorithm/key
+  selection, and optional DPoP or mTLS `cnf` sender constraints before
+  application policy hooks run.
 
 ## Conformance
 
-The repository keeps durable conformance records in Git instead of relying only on expiring GitHub Actions artifacts. The current version is backed by the 2026-06-08 OpenID Foundation 16-plan matrix across OIDC Basic, OIDC Config, FAPI2 Security Profile Final, FAPI2 Message Signing Final, mTLS, DPoP, `private_key_jwt`, and client credentials variants:
+Durable conformance records live in Git because GitHub Actions artifacts
+expire. Version 1 is backed by the 2026-06-08 OpenID Foundation 16-plan matrix
+across OIDC Basic, OIDC Config, FAPI2 Security Profile Final, FAPI2 Message
+Signing Final, mTLS, DPoP, `private_key_jwt`, and client credentials variants:
 
 - [2026-06-08 OIDF full matrix](docs/conformance/2026-06-08-oidf-full-matrix.md)
 
-Earlier records remain available for audit history:
+Earlier records:
 
 - [2026-06-07 OIDF full matrix](docs/conformance/2026-06-07-oidf-full-matrix.md)
 - [2026-06-06 OIDF full matrix](docs/conformance/2026-06-06-oidf-full-matrix.md)
 
-The recorded workflow conclusion was `success`, with every matrix plan completing with `0 failures` and `0 warnings`. The record includes commit SHA, workflow run URL, job URL, artifact name, artifact digest, artifact expiry, plan IDs, exported artifact filenames, profile combinations, and pass counts.
+The recorded workflow conclusion was `success`. Every matrix plan completed
+with `0 failures` and `0 warnings`. The record includes commit SHA, workflow
+run URL, job URL, artifact name, artifact digest, artifact expiry, plan IDs,
+exported artifact filenames, profile combinations, and pass counts.
 
 ## Architecture
 
@@ -83,14 +98,14 @@ Key binaries:
 | `nazo-oauth-migrate` | Database migration command |
 | `nazo-oauth-keyctl` | JWT signing key lifecycle command |
 
-## Requirements
+## Local Requirements
 
 - Rust toolchain compatible with edition 2024
 - PostgreSQL 18 or compatible PostgreSQL server
 - Valkey 8 or compatible Redis protocol server
 - Docker or Podman for containerized local integration
 
-## Quick Start
+## Local Start
 
 Create a local configuration file:
 
@@ -118,7 +133,7 @@ cargo run --bin nazo-oauth-migrate
 cargo run --bin nazo-oauth-server
 ```
 
-## Configuration
+## Runtime Configuration
 
 Configuration precedence is:
 
@@ -128,7 +143,7 @@ defaults < .env.yaml < process environment variables
 
 Only explicitly allowlisted environment variables are accepted. A `.env` file is deliberately unsupported; if `.env` exists, the service refuses to start. Use `.env.yaml` for local or deployment configuration and do not commit real secrets.
 
-Important settings:
+Common settings:
 
 | Setting | Default | Notes |
 | --- | --- | --- |
@@ -153,9 +168,15 @@ Important settings:
 
 See [.env.yaml.example](.env.yaml.example) for the complete field list.
 
-When `AUTHORIZATION_SERVER_PROFILE` is set to `fapi2-security`, the server requires PAR, confidential clients, `private_key_jwt` or mTLS client authentication, sender-constrained access tokens, and authorization code lifetimes of 60 seconds or less. `fapi2-message-signing-authz-request` adds signed request objects at PAR. Discovery metadata is generated from the active profile and mTLS proxy configuration; mTLS capabilities are not advertised unless `TRUSTED_PROXY_CIDRS` is configured.
+`AUTHORIZATION_SERVER_PROFILE=fapi2-security` requires PAR, confidential
+clients, `private_key_jwt` or mTLS client authentication, sender-constrained
+access tokens, and authorization code lifetimes of 60 seconds or less.
+`fapi2-message-signing-authz-request` adds signed request objects at PAR.
+Discovery metadata is generated from the active profile and mTLS proxy
+configuration. mTLS capabilities are not advertised unless
+`TRUSTED_PROXY_CIDRS` is configured.
 
-## Protocol Endpoints
+## Endpoints
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -173,11 +194,26 @@ When `AUTHORIZATION_SERVER_PROFILE` is set to `fapi2-security`, the server requi
 | `GET` | `/jwks.json` | JWKS |
 | `GET` | `/userinfo` | OIDC UserInfo |
 
-The token endpoint accepts the standard RFC 8707 `resource` parameter as an absolute URI without a fragment. A request may repeat `resource` to request multiple audiences; single-resource access tokens keep a string `aud`, and multi-resource access tokens use a JWT `aud` array. The legacy `audience` parameter is still accepted as a single-audience project extension, but a request must not send both.
+The token endpoint accepts the RFC 8707 `resource` parameter as an absolute URI
+without a fragment. A request may repeat `resource` to request multiple
+audiences; single-resource access tokens keep a string `aud`, and
+multi-resource access tokens use a JWT `aud` array. The legacy `audience`
+parameter remains available as a single-audience project extension. A request
+must not send both.
 
-The authorization endpoint, PAR endpoint, and signed request objects accept RFC 9396-style `authorization_details` arrays. Each item must be an object with a supported `type`; the server currently advertises `account_information` and `payment_initiation` in `authorization_details_types_supported`. High-risk details such as payments or write actions require fresh transaction binding and are not silently covered by a previous broad consent.
+The authorization endpoint, PAR endpoint, and signed request objects accept RFC
+9396-style `authorization_details` arrays. Each item must be an object with a
+supported `type`; the server advertises `account_information` and
+`payment_initiation` in `authorization_details_types_supported`. High-risk
+details such as payments or write actions require fresh transaction binding and
+are not silently covered by a previous broad consent.
 
-OIDC logout is available at `/logout` and advertised as `end_session_endpoint`. RP-Initiated Logout accepts `id_token_hint`, `client_id`, `post_logout_redirect_uri`, and `state`; post-logout redirects require exact registration in `post_logout_redirect_uris`. Registered clients with `backchannel_logout_uri` receive best-effort back-channel logout notifications signed as `logout+jwt` tokens.
+OIDC logout is available at `/logout` and advertised as `end_session_endpoint`.
+RP-Initiated Logout accepts `id_token_hint`, `client_id`,
+`post_logout_redirect_uri`, and `state`; post-logout redirects require exact
+registration in `post_logout_redirect_uris`. Registered clients with
+`backchannel_logout_uri` receive best-effort back-channel logout notifications
+signed as `logout+jwt` tokens.
 
 ## Key Management
 
@@ -224,7 +260,7 @@ When the active key uses `backend: external-command`, configure `SIGNING_EXTERNA
 
 The keyset uses atomic file replacement. On Unix platforms, private key PEM files are written with `0600` permissions. Retired keys are not published in JWKS, and the active key cannot be retired.
 
-## Development
+## Local Checks
 
 Run the standard local gates:
 
@@ -242,13 +278,21 @@ python scripts/full_real_request_e2e.py
 python scripts/full_real_request_load.py
 ```
 
-The `conformance-security` GitHub Actions workflow runs format, check, clippy, tests, a real HTTP matrix, load/race checks, and a Valkey outage injection check.
+The `conformance-security` GitHub Actions workflow runs format, check, clippy,
+tests, a real HTTP matrix, load/race checks, and a Valkey outage injection
+check for implementation-affecting changes.
 
-It also runs the supply-chain gate: `cargo audit`, `cargo deny`, CycloneDX SBOM generation, container build, and Trivy image scanning. Tagged `v*` releases run the separate `release-security` workflow for release binaries, SBOM artifact upload, keyless artifact signing, and GitHub provenance attestations.
+It also runs the supply-chain gate: `cargo audit`, `cargo deny`, CycloneDX SBOM
+generation, container build, and Trivy image scanning. Tagged `v*` releases run
+the separate `release-security` workflow for release binaries, SBOM artifact
+upload, keyless artifact signing, and GitHub provenance attestations.
 
 ## OpenID Foundation Suite
 
-The full OIDF workflow is [.github/workflows/oidf-conformance-full.yml](.github/workflows/oidf-conformance-full.yml). It runs the official OpenID Foundation Conformance Suite runner against a public HTTPS deployment and exports per-plan result archives.
+The full OIDF workflow is
+[.github/workflows/oidf-conformance-full.yml](.github/workflows/oidf-conformance-full.yml).
+It runs the official OpenID Foundation Conformance Suite runner against a public
+HTTPS deployment and exports per-plan result archives.
 
 Required GitHub secret:
 
@@ -274,9 +318,9 @@ The pass condition is stricter than a triggered workflow: GitHub Actions must co
 
 Production deployment requires HTTPS, stable issuer metadata, PostgreSQL backups, Valkey availability, key rotation, strict trusted-proxy configuration, and live endpoint verification. See [docs/deployment.md](docs/deployment.md).
 
-## Security Posture
+## Security Boundaries
 
-Version 1 security boundaries:
+Version 1 enforces these boundaries:
 
 - Exact issuer, redirect URI, PKCE, client, and token binding checks.
 - Refresh token rotation and token-family reuse detection.

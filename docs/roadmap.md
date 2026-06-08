@@ -1,9 +1,16 @@
 # Version 1 Scope
 
-Nazo OAuth Server version 1 is an OAuth 2.1 / OpenID Connect authorization
+## Scope
+
+Nazo OAuth Server version 1 is an OAuth 2.1 and OpenID Connect authorization
 server with FAPI2-oriented security profiles, repeatable conformance evidence,
-and production deployment controls. The codebase treats protocol conformance,
-deployment security, and product extensions as separate concerns.
+and production deployment controls.
+
+The project separates three surfaces:
+
+- protocol conformance
+- deployment security
+- product extensions
 
 ## Core Profiles
 
@@ -18,7 +25,7 @@ deployment security, and product extensions as separate concerns.
 | `fapi2-message-signing-jarm` | Implemented where advertised and OIDF-tested | Signed authorization responses without unsafe fallback |
 | `fapi2-message-signing-introspection` | Not advertised in version 1 | Defined in the matrix; no discovery claim until implemented and tested |
 
-## Implemented Boundaries
+## Protocol Boundaries
 
 - Login responses carry session state only in the HTTPOnly session cookie.
 - Password hashes use the documented Argon2id policy.
@@ -81,7 +88,7 @@ deployment security, and product extensions as separate concerns.
   introspection fallback guidance.
 - Policy and claims extension points run only after protocol invariants pass.
 
-## Outside the Default Version 1 Scope
+## Outside Version 1 Default Scope
 
 The following capabilities are not part of the default authorization-server
 core and are not advertised in discovery metadata:
@@ -98,7 +105,7 @@ Each item has a threat-model and acceptance-test entry in
 
 ## Evidence
 
-- Current official conformance record:
+- Official conformance record:
   [2026-06-08 OIDF full matrix](conformance/2026-06-08-oidf-full-matrix.md).
 - OAuth 2.1 and best-practice audit:
   [oauth2-1-self-audit.md](oauth2-1-self-audit.md).

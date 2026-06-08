@@ -1,6 +1,10 @@
 # MFA and Step-Up Authentication
 
-The local identity profile supports TOTP MFA, one-time backup codes, remembered MFA devices, and session step-up state.
+## Scope
+
+Local account MFA supports TOTP, one-time backup codes, remembered MFA devices,
+and session step-up state. It is an identity-platform feature, not an OAuth/OIDC
+profile requirement.
 
 ## Runtime Behavior
 
@@ -29,6 +33,8 @@ MFA state is stored in migration `20260607000500_totp_mfa_step_up`:
 - `user_mfa_backup_codes`: Argon2id hashes for one-time recovery codes.
 - `user_mfa_remembered_devices`: hashed remembered-device tokens with expiry and last-use metadata.
 
-## Non-Goals
+## Boundaries
 
-This is local account MFA. WebAuthn/passkeys and external OIDC/SAML federation are implemented separately for login and do not satisfy TOTP challenge flows. SCIM provisioning is implemented separately for lifecycle management and does not satisfy local MFA challenges.
+WebAuthn/passkeys and external OIDC/SAML federation are separate login methods.
+They do not satisfy TOTP challenge flows. SCIM provisioning is lifecycle
+management; it does not satisfy local MFA challenges.

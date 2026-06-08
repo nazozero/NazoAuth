@@ -1,10 +1,15 @@
 # Release Security
 
-This project treats dependency, image, signing, and provenance checks as release gates, not optional after-build reports.
+## Scope
+
+Dependency, image, signing, and provenance checks are release gates. A release
+artifact is not trusted until these gates pass for the exact commit or tag.
 
 ## Continuous Gates
 
-The `conformance-security` workflow runs these supply-chain checks on `main`, pull requests, and manual dispatch:
+The `conformance-security` workflow runs supply-chain checks for code,
+dependency, migration, script, deployment, container, runtime config, and
+workflow changes:
 
 - `cargo audit` over `Cargo.lock`
 - `cargo deny` using `deny.toml`
@@ -13,11 +18,13 @@ The `conformance-security` workflow runs these supply-chain checks on `main`, pu
 - Trivy vulnerability scan of the built image
 - SBOM upload as a workflow artifact
 
-The supply-chain job is independent from the Rust unit/integration gate so dependency or image regressions fail before a deployment-shaped release is trusted.
+The supply-chain job is independent from the Rust unit/integration gate.
+Dependency and image regressions fail before a deployment-shaped release is
+trusted.
 
 ## Tagged Release Gates
 
-The `release-security` workflow runs for `v*` tags and manual dispatch. It:
+The `release-security` workflow runs for `v*` tags and manual dispatch:
 
 - builds the release binaries with the pinned Rust toolchain
 - builds the container image

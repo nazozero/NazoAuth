@@ -1,9 +1,12 @@
 # Tenant, Realm, and Organization Boundaries
 
-The authorization server has a tenant-aware schema and explicit tenant, realm,
-and organization columns for core identity and OAuth records. Version 1 runs as
-a single-tenant deployment unless an operator adds request-level tenant routing.
-Do not describe this as dynamic multi-issuer realm routing.
+## Scope
+
+Version 1 uses a tenant-aware schema with explicit tenant, realm, and
+organization columns for core identity and OAuth records. Runtime routing is
+single-tenant unless a deployment adds request-level tenant selection.
+
+Dynamic multi-issuer realm routing is outside this boundary.
 
 ## Default Boundary
 
@@ -11,7 +14,9 @@ Do not describe this as dynamic multi-issuer realm routing.
 - Default realm: `00000000-0000-0000-0000-000000000002`
 - Default organization: `00000000-0000-0000-0000-000000000003`
 
-Local registration, admin-created clients, access tokens, refresh tokens, grants, SCIM users, federation links, and revocation records are written into the default boundary unless a tenant resolver explicitly selects another boundary.
+Local registration, admin-created clients, access tokens, refresh tokens,
+grants, SCIM users, federation links, and revocation records are written into
+the default boundary unless a tenant resolver selects another boundary.
 
 ## Database Invariants
 

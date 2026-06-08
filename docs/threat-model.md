@@ -1,6 +1,8 @@
 # Threat Model
 
-This threat model covers the version 1 authorization-server boundary. Update it
+## Scope
+
+The threat model covers the version 1 authorization-server boundary. Update it
 in the same change that adds a profile, changes deployment topology, changes
 token format, or expands discovery metadata.
 
@@ -31,7 +33,7 @@ token format, or expands discovery metadata.
 | App to Valkey | Application process | Cache network and cache data loss | fail-closed replay/rate/session behavior |
 | AS to resource server | Resource server verifier | Token replay and wrong-audience use | issuer/audience/cnf validation, revocation or introspection fallback |
 
-## Threats And Controls
+## Threats and Controls
 
 | Threat | Risk | Version 1 controls | Operational note |
 | --- | --- | --- | --- |

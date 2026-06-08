@@ -1,6 +1,9 @@
 # Deployment Guide
 
-This guide describes a production-shaped deployment for Nazo OAuth Server. It assumes the service runs behind a TLS-terminating reverse proxy, with PostgreSQL and Valkey managed as persistent infrastructure.
+## Scope
+
+Production deployments run Nazo OAuth Server behind a TLS-terminating reverse
+proxy. PostgreSQL stores durable state. Valkey stores transient protocol state.
 
 ## Deployment Model
 
@@ -14,9 +17,10 @@ Required components:
 - persistent avatar directory
 - HTTPS reverse proxy
 
-The service itself listens on HTTP, typically `0.0.0.0:8000`, and the reverse proxy exposes the public HTTPS issuer.
+The service listens on HTTP, typically `0.0.0.0:8000`. The reverse proxy exposes
+the public HTTPS issuer.
 
-## Preflight
+## Preflight Checklist
 
 Before first deployment:
 
@@ -31,7 +35,7 @@ Before first deployment:
 9. Keep `CLIENT_IP_HEADER_MODE=none` until forwarded headers are correctly sanitized by the proxy.
 10. Run migrations before serving traffic.
 
-## Minimal Production Configuration
+## Configuration Baseline
 
 ```yaml
 BIND: "0.0.0.0:8000"
@@ -68,9 +72,20 @@ OTEL_EXPORTER_OTLP_TIMEOUT: 10000
 
 Do not store production secrets in Git.
 
-Set `AUTHORIZATION_SERVER_PROFILE` to `fapi2-security` only when the deployed client population is prepared for confidential-client-only operation, PAR-only authorization requests, PKCE S256, `private_key_jwt` or mTLS client authentication, and DPoP or mTLS sender-constrained tokens. Use `fapi2-message-signing-authz-request` when signed request objects are also mandatory at PAR. Discovery metadata reflects this setting and omits mTLS capabilities unless `TRUSTED_PROXY_CIDRS` is non-empty.
+Use `AUTHORIZATION_SERVER_PROFILE=fapi2-security` only for client populations
+that support confidential-client-only operation, PAR-only authorization
+requests, PKCE S256, `private_key_jwt` or mTLS client authentication, and DPoP
+or mTLS sender-constrained tokens. Use
+`fapi2-message-signing-authz-request` when signed request objects are mandatory
+at PAR. Discovery metadata reflects the active profile and omits mTLS
+capabilities unless `TRUSTED_PROXY_CIDRS` is non-empty.
 
-OpenTelemetry is opt-in. Set `OTEL_ENABLED: true` and `OTEL_EXPORTER_OTLP_ENDPOINT` to an OTLP/HTTP collector base URL such as `http://otel-collector:4318` to export traces, metrics, and logs. The service appends `/v1/traces`, `/v1/metrics`, and `/v1/logs` internally. `OTEL_EXPORTER_OTLP_PROTOCOL` is currently `http/protobuf`; leave `RUST_LOG` configured for local stdout logs even when OTLP export is enabled.
+OpenTelemetry is opt-in. Set `OTEL_ENABLED: true` and
+`OTEL_EXPORTER_OTLP_ENDPOINT` to an OTLP/HTTP collector base URL such as
+`http://otel-collector:4318` to export traces, metrics, and logs. The service
+appends `/v1/traces`, `/v1/metrics`, and `/v1/logs` internally.
+`OTEL_EXPORTER_OTLP_PROTOCOL` is `http/protobuf`; keep `RUST_LOG` configured
+for local stdout logs even when OTLP export is enabled.
 
 ## Container Build
 
@@ -104,19 +119,27 @@ docker run -d --name nazo-oauth-server \
   nazo-oauth-server
 ```
 
-The repository also includes `compose.yml` for local integration. Treat it as a development baseline, not a complete production topology.
+`compose.yml` is for local integration. It is not a complete production
+topology.
 
 ## Release Security
 
-Before promoting an image, require a successful `conformance-security` workflow for the exact commit. That workflow runs Rust advisory checks, dependency policy checks, SBOM generation, image build, and Trivy scanning in addition to the Rust and real HTTP gates.
+Before promoting an image, require a successful `conformance-security` workflow
+for the exact commit. That workflow runs Rust advisory checks, dependency
+policy checks, SBOM generation, image build, and Trivy scanning in addition to
+Rust and real HTTP gates.
 
-For versioned releases, create a `v*` tag and require the `release-security` workflow to complete successfully. It builds release binaries, generates the Rust SBOM, signs the binaries, SBOM, and image archive through keyless Sigstore signing, uploads artifacts, and emits GitHub provenance attestations. Preserve the release evidence listed in [docs/release-security.md](release-security.md).
+For versioned releases, create a `v*` tag and require the `release-security`
+workflow to complete successfully. It builds release binaries, generates the
+Rust SBOM, signs the binaries, SBOM, and image archive through keyless Sigstore
+signing, uploads artifacts, and emits GitHub provenance attestations. Preserve
+the release evidence listed in [docs/release-security.md](release-security.md).
 
 ## Live Deployment Script
 
 The repository includes [scripts/deploy_live.ps1](../scripts/deploy_live.ps1), which builds an image, transfers it to a remote host, runs migrations, replaces the running Podman container, and verifies health and discovery.
 
-Default live assumptions in the script:
+Default live assumptions:
 
 | Setting | Default |
 | --- | --- |
@@ -140,11 +163,13 @@ pwsh scripts/deploy_live.ps1 `
   -ImageTag main-$(git rev-parse --short=7 HEAD)
 ```
 
-The script is intentionally opinionated for the current `nazo.run` environment. Recheck the live listener, reverse-proxy config, container network, TLS settings, and expected issuer before reusing it for another host.
+The script targets the `nazo.run` environment. Recheck the live listener,
+reverse-proxy config, container network, TLS settings, and expected issuer
+before using it for another host.
 
-## Reverse Proxy
+## Reverse Proxy Boundary
 
-Production proxy requirements:
+Proxy requirements:
 
 - Terminate TLS with the public issuer hostname.
 - Forward only sanitized proxy headers to the service.
@@ -153,16 +178,20 @@ Production proxy requirements:
 - Protect the proxy-to-application hop with TLS, mTLS, or an equivalent private network boundary; forwarded certificate metadata is only meaningful on a trusted internal channel.
 - Use one certificate forwarding representation where possible. If multiple forwarded certificate thumbprint/certificate headers are present, the application rejects the request unless they resolve to the same SHA-256 certificate thumbprint. If multiple forwarded subject-DN headers are present, they must be byte-identical after trimming.
 - For `tls_client_auth`, register at least one of `tls_client_auth_subject_dn`, `tls_client_auth_san_dns`, `tls_client_auth_san_uri`, `tls_client_auth_san_ip`, `tls_client_auth_san_email`, or `tls_client_auth_cert_sha256`. The application matches these values against trusted forwarded certificate metadata; forwarded PEM certificates are parsed directly for subject DN and DNS/URI/IP/email SAN values.
-- For `self_signed_tls_client_auth`, register current client certificates in `jwks.keys[].x5c[0]`. Multiple current `x5c` certificates are the rotation window; removing an old certificate retires it. Expired or not-yet-valid registered certificates are ignored.
+- For `self_signed_tls_client_auth`, register active client certificates in `jwks.keys[].x5c[0]`. Multiple active `x5c` certificates form the rotation window; removing an old certificate retires it. Expired or not-yet-valid registered certificates are ignored.
 - Preserve the exact path for OAuth endpoints.
 - Disable response caching for protocol endpoints unless the endpoint is explicitly cacheable.
 - Ensure `/.well-known/openid-configuration`, `/.well-known/oauth-authorization-server`, `/jwks.json`, `/authorize`, `/par`, `/token`, `/userinfo`, `/introspect`, and `/revoke` are reachable as intended.
 
-For mTLS sender constraint and mTLS client authentication, the service currently relies on a trusted reverse proxy to verify the client certificate and forward certificate evidence. This is a strict trust boundary: the application accepts forwarded certificate metadata only when the connection peer is in `TRUSTED_PROXY_CIDRS`; traffic from any other peer is treated as not having verified client certificate evidence.
+For mTLS sender constraint and mTLS client authentication, the service relies
+on a trusted reverse proxy to verify the client certificate and forward
+certificate evidence. The application accepts forwarded certificate metadata
+only when the connection peer is in `TRUSTED_PROXY_CIDRS`; traffic from any
+other peer is treated as not having verified client certificate evidence.
 
 ## Key Rotation
 
-Initial startup creates a signing key if no keyset exists. For controlled rotation:
+Initial startup creates a signing key if no keyset exists. Controlled rotation:
 
 ```sh
 nazo-oauth-keyctl generate --alg RS256
@@ -179,9 +208,11 @@ nazo-oauth-keyctl validate
 
 Back up the key directory before and after rotation. Losing active private keys invalidates token signing continuity.
 
-### External KMS/HSM signing
+### External KMS/HSM Signing
 
-Local PEM keys remain the default. For non-exportable signing keys, register an external key whose public JWK is stored in `keyset.json` while signing is delegated to a trusted command or sidecar:
+Local PEM keys are the default. For non-exportable signing keys, register an
+external key whose public JWK is stored in `keyset.json` while signing is
+delegated to a trusted command or sidecar:
 
 ```sh
 nazo-oauth-keyctl register-external \
@@ -193,7 +224,10 @@ nazo-oauth-keyctl validate
 nazo-oauth-keyctl activate rs256-kms-2026-06
 ```
 
-Configure `SIGNING_EXTERNAL_COMMAND` as a comma-separated argv list, for example `/usr/local/bin/oauth-kms-signer,--profile,prod`, and set `SIGNING_EXTERNAL_TIMEOUT_MS` to the maximum allowed signing latency. The service sends one JSON request on stdin:
+Configure `SIGNING_EXTERNAL_COMMAND` as a comma-separated argv list, for example
+`/usr/local/bin/oauth-kms-signer,--profile,prod`, and set
+`SIGNING_EXTERNAL_TIMEOUT_MS` to the maximum allowed signing latency. The
+service sends one JSON request on stdin:
 
 ```json
 {"version":1,"kid":"rs256-kms-2026-06","alg":"RS256","key_ref":"kms://prod/oauth/rs256-kms-2026-06","signing_input":"<base64url(header)>.<base64url(payload)>"}
@@ -205,18 +239,26 @@ The signer must return JSON on stdout with a base64url raw JWS signature:
 {"signature":"<base64url-signature>"}
 ```
 
-The application rejects active external keys unless `SIGNING_EXTERNAL_COMMAND` is configured, kills timed-out signer processes, rejects empty or malformed signatures, verifies the returned signature against the active public JWK before returning the JWT, and never falls back to unsigned or query-mode responses after signing failure. A verification failure is treated as an external signer fault because it indicates the signer used the wrong key, algorithm, or signing input.
+The application rejects active external keys unless `SIGNING_EXTERNAL_COMMAND`
+is configured, kills timed-out signer processes, rejects empty or malformed
+signatures, verifies the returned signature against the active public JWK before
+returning the JWT, and never falls back to unsigned or query-mode responses
+after signing failure. A verification failure is an external signer fault: the
+signer used the wrong key, algorithm, or signing input.
 
 ## Database and Valkey
 
-PostgreSQL stores durable users, clients, grants, tokens, and revocation state. Production operation requires:
+PostgreSQL stores durable users, clients, grants, tokens, and revocation state.
+Production requirements:
 
 - automated backups
 - restore rehearsals
 - migration rollback planning
 - monitoring for replication lag or storage saturation
 
-Valkey stores short-lived sessions, authorization codes, PAR handles, DPoP/client assertion replay state, and rate-limit counters. Production operation requires:
+Valkey stores short-lived sessions, authorization codes, PAR handles,
+DPoP/client assertion replay state, and rate-limit counters. Production
+requirements:
 
 - bounded memory policy
 - latency monitoring

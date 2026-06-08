@@ -1,6 +1,10 @@
 # Profile Matrix
 
-This matrix defines the project profiles separately from product hardening. A profile may only advertise metadata and behavior that the implementation and deployment can actually satisfy.
+## Scope
+
+The profile matrix separates protocol conformance from product hardening.
+Discovery metadata may advertise only behavior that the implementation and
+deployment can satisfy.
 
 ## Summary
 
@@ -34,7 +38,7 @@ This matrix defines the project profiles separately from product hardening. A pr
 
 Refresh-token rotation follows the state machine in `docs/refresh-token-rotation.md`. The lost-response retry window is a compatibility recovery path, not a replay bypass.
 
-Negative tests:
+Required negative tests:
 
 - duplicate OAuth parameters
 - unsafe redirect URI
@@ -47,11 +51,11 @@ Negative tests:
 
 ## `oauth2-security-bcp`
 
-`oauth2-security-bcp` is a documented policy profile layered onto the baseline
-runtime behavior. It is not a separate `AUTHORIZATION_SERVER_PROFILE` switch in
-the current implementation; high-risk clients use the same protocol invariants
-through registration policy, PAR/JAR/client-auth settings, sender constraint,
-and negative conformance tests.
+`oauth2-security-bcp` is a policy profile layered onto baseline runtime
+behavior. It is not a separate `AUTHORIZATION_SERVER_PROFILE` switch. High-risk
+clients use the same protocol invariants through registration policy,
+PAR/JAR/client-auth settings, sender constraints, and negative conformance
+tests.
 
 | Field | Policy |
 | --- | --- |
@@ -66,7 +70,7 @@ and negative conformance tests.
 | Metadata | Must not overclaim disabled high-security behavior |
 | RAR | High-risk `authorization_details` require explicit transaction binding and exact stored-detail matching for non-high-risk silent consent reuse |
 
-Negative tests:
+Required negative tests:
 
 - authorization without required PKCE
 - redirect URI mismatch
@@ -91,7 +95,7 @@ Negative tests:
 | Logout | RP-Initiated Logout at `/logout`; exact `post_logout_redirect_uri` matching; best-effort Back-Channel Logout for registered clients |
 | Metadata | OIDC discovery must match runtime issuer and endpoints, including `end_session_endpoint` and back-channel logout support |
 
-Negative tests:
+Required negative tests:
 
 - invalid issuer
 - invalid ID Token signature alg
@@ -111,7 +115,7 @@ Negative tests:
 | JWKS | `/jwks.json` publishes active and previous non-retired keys |
 | Metadata truth | Discovery values must correspond to real endpoint behavior |
 
-Negative tests:
+Required negative tests:
 
 - stale issuer
 - advertised alg without usable key
@@ -136,11 +140,18 @@ Negative tests:
 | Refresh policy | Sender-constrained tokens; no routine refresh-token rotation for FAPI2 Security by default |
 | Metadata | Must reflect selected client auth and sender constraint behavior |
 
-If a deployment enables refresh-token rotation for migration or compatibility, it must document that exception and keep the replay-detection state machine from `docs/refresh-token-rotation.md`.
+Deployments that enable refresh-token rotation for migration or compatibility
+must document that exception and keep the replay-detection state machine from
+`docs/refresh-token-rotation.md`.
 
-Runtime enforcement is selected with `AUTHORIZATION_SERVER_PROFILE=fapi2-security`. This setting forces PAR globally, caps authorization code lifetime at 60 seconds, rejects password grant requests, limits clients to confidential clients, allows only `private_key_jwt` or mTLS client authentication, requires DPoP or mTLS sender-constrained access tokens, and keeps DPoP nonce enforcement required even if a baseline deployment configured `DPOP_NONCE_POLICY=optional`.
+Runtime enforcement is selected with `AUTHORIZATION_SERVER_PROFILE=fapi2-security`.
+The setting forces PAR globally, caps authorization code lifetime at 60 seconds,
+rejects password grant requests, limits clients to confidential clients, allows
+only `private_key_jwt` or mTLS client authentication, requires DPoP or mTLS
+sender-constrained access tokens, and keeps DPoP nonce enforcement required
+even if a baseline deployment configured `DPOP_NONCE_POLICY=optional`.
 
-Negative tests:
+Required negative tests:
 
 - public client usage
 - non-PAR authorization request
@@ -161,9 +172,16 @@ Negative tests:
 | JAR header | Accept `typ=oauth-authz-req+jwt` |
 | Request object `jti` | Optional product hardening unless `REQUEST_OBJECT_JTI_POLICY=required-for-signed-jar` is selected |
 
-Runtime enforcement is selected with `AUTHORIZATION_SERVER_PROFILE=fapi2-message-signing-authz-request`. This includes the `fapi2-security` controls and requires a signed request object at PAR. Existing signed JAR validation requires `aud`, `nbf`, and `exp`; the implementation currently uses a 5-minute maximum lifetime, which is stricter than the FAPI2 Message Signing 60-minute ceiling. `REQUEST_OBJECT_JTI_POLICY=required-for-signed-jar` is a stricter-than-FAPI product hardening switch that requires signed JAR request objects to carry a valid `jti` and stores it in the request-object replay cache.
+Runtime enforcement is selected with
+`AUTHORIZATION_SERVER_PROFILE=fapi2-message-signing-authz-request`. The profile
+includes the `fapi2-security` controls and requires a signed request object at
+PAR. Signed JAR validation requires `aud`, `nbf`, and `exp`; the implementation
+uses a 5-minute maximum lifetime, stricter than the FAPI2 Message Signing
+60-minute ceiling. `REQUEST_OBJECT_JTI_POLICY=required-for-signed-jar` is a
+stricter-than-FAPI product hardening switch that requires signed JAR request
+objects to carry a valid `jti` and stores it in the request-object replay cache.
 
-Negative tests:
+Required negative tests:
 
 - unsigned JAR when signed JAR is required
 - missing `aud`, `nbf`, or `exp`
@@ -180,7 +198,7 @@ Negative tests:
 | Metadata | `authorization_signing_alg_values_supported` must match active signing capability |
 | Failure behavior | Signing failure must not fall back to query response |
 
-Negative tests:
+Required negative tests:
 
 - unsigned response where JARM is required
 - wrong `iss` or `aud`
@@ -195,7 +213,7 @@ Negative tests:
 | Status | Separately defined; not advertised until implemented and tested |
 | Required before advertising | Signed introspection response generation, metadata, and OIDF tests |
 
-Negative tests:
+Required negative tests:
 
 - unsigned introspection response when advertised
 - wrong response issuer/audience
