@@ -10,7 +10,7 @@ semantic versioning once public release tags are cut.
 - Added durable OpenID Foundation conformance evidence under `docs/conformance`, including the 2026-06-06 full 16-plan matrix result, workflow URLs, artifact metadata, plan IDs, profile combinations, pass counts, and exported artifact filenames.
 - Added a production deployment guide covering container deployment, reverse proxy boundaries, key rotation, database and Valkey operations, live verification, and OIDF readiness.
 - Added `SECURITY.md` with reporting guidance, vulnerability classes, production boundaries, and disclosure expectations.
-- Added `docs/roadmap.md` as the version 1 scope record for implemented profiles, deployment controls, product boundaries, and evidence links.
+- Added `docs/roadmap.md` as the current scope record for implemented profiles, deployment controls, product boundaries, and evidence links.
 - Added `docs/profile-matrix.md`, separating OAuth/OIDC, FAPI2 Security, FAPI2 Message Signing, deployment-security, and product-hardening requirements.
 - Added `docs/threat-model.md` and `docs/refresh-token-rotation.md` for security boundaries and refresh-token state-machine behavior.
 - Added `CHANGELOG.md`.
@@ -42,8 +42,8 @@ semantic versioning once public release tags are cut.
 
 - Added `.codex_remote_handoff/`, Python `__pycache__` directories, `code_review.md`, and `code_revioew.md` to `.gitignore`.
 
-### Version 1 Scope
+### Current Scope
 
-- Version 1 centers on the authorization-server surface: OAuth 2.1, OpenID Connect, PAR/JAR, FAPI2 Security, selected FAPI2 Message Signing behavior, DPoP, mTLS sender constraints, durable conformance evidence, and production deployment controls.
+- The current scope centers on the authorization-server surface: OAuth 2.1, OpenID Connect, PAR/JAR, FAPI2 Security, selected FAPI2 Message Signing behavior, DPoP, mTLS sender constraints, durable conformance evidence, and production deployment controls.
 - Implemented product surfaces include TOTP MFA, WebAuthn/passkeys, external OIDC/SAML federation, default-tenant SCIM provisioning, tenant-aware schema boundaries, and Rust resource-server middleware.
-- Dynamic Client Registration, Client Configuration Management, Device Authorization Grant, Token Exchange, request-level dynamic tenant routing, and signed introspection responses remain outside the default version 1 scope.
+- Dynamic Client Registration, Client Configuration Management, Device Authorization Grant, Token Exchange, request-level dynamic tenant routing, and signed introspection responses remain outside the default scope.

@@ -1,10 +1,10 @@
-# Version 1 Scope
+# Current Scope
 
 ## Scope
 
-Nazo Auth Server version 1 is an OAuth 2.1 and OpenID Connect authorization
-server with FAPI2-oriented security profiles, repeatable conformance evidence,
-and production deployment controls.
+Nazo Auth Server is an OAuth 2.1 and OpenID Connect authorization server with
+FAPI2-oriented security profiles, repeatable conformance evidence, and
+production deployment controls.
 
 The project separates three surfaces:
 
@@ -14,7 +14,7 @@ The project separates three surfaces:
 
 ## Core Profiles
 
-| Profile | Version 1 status | Evidence |
+| Profile | Status | Evidence |
 | --- | --- | --- |
 | `oauth2-baseline` | Implemented | Authorization code, PKCE, token, refresh, revocation, introspection, discovery, JWKS |
 | `oauth2-security-bcp` | Implemented | Sender constraints, redirect policy, query-token rejection, replay controls |
@@ -23,7 +23,7 @@ The project separates three surfaces:
 | `fapi2-security` | Implemented and OIDF-tested | PAR, PKCE S256, confidential clients, DPoP/mTLS-bound tokens |
 | `fapi2-message-signing-authz-request` | Implemented and OIDF-tested | Signed request objects at PAR with `aud`, `nbf`, and bounded `exp` |
 | `fapi2-message-signing-jarm` | Implemented where advertised and OIDF-tested | Signed authorization responses without unsafe fallback |
-| `fapi2-message-signing-introspection` | Not advertised in version 1 | Defined in the matrix; no discovery claim until implemented and tested |
+| `fapi2-message-signing-introspection` | Not advertised by default | Defined in the matrix; no discovery claim until implemented and tested |
 
 ## Protocol Boundaries
 
@@ -88,7 +88,7 @@ The project separates three surfaces:
   introspection fallback guidance.
 - Policy and claims extension points run only after protocol invariants pass.
 
-## Outside Version 1 Default Scope
+## Outside Default Scope
 
 The following capabilities are not part of the default authorization-server
 core and are not advertised in discovery metadata:

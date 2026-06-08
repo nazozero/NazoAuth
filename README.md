@@ -5,7 +5,7 @@ server for self-hosted deployments. The implementation favors explicit profile
 boundaries, sender-constrained token support, and repeatable conformance
 evidence.
 
-Version 1 covers the authorization-server surface: authorization code with
+The current implementation covers the authorization-server surface: authorization code with
 PKCE, token issuance, refresh tokens, PAR, signed request objects, DPoP, mTLS
 sender constraints, JWKS, discovery, UserInfo, token management, and a compact
 identity/admin data plane.
@@ -22,12 +22,12 @@ identity/admin data plane.
 - Ecosystem onboarding decisions: see [docs/ecosystem-onboarding.md](docs/ecosystem-onboarding.md)
 - PostgreSQL and Valkey operations: see [docs/ha-operations.md](docs/ha-operations.md)
 - Resource server verifier: see [docs/resource-server-verifier.md](docs/resource-server-verifier.md)
-- Version scope: see [docs/roadmap.md](docs/roadmap.md)
+- Current scope: see [docs/roadmap.md](docs/roadmap.md)
 - Security policy: see [SECURITY.md](SECURITY.md)
 - Release security: see [docs/release-security.md](docs/release-security.md)
 - Change history: see [CHANGELOG.md](CHANGELOG.md)
 
-## Version 1 Capabilities
+## Capabilities
 
 - OAuth authorization code flow with S256 PKCE.
 - Refresh-token rotation, token-family reuse detection, and atomic authorization code consumption.
@@ -54,7 +54,7 @@ identity/admin data plane.
 ## Conformance
 
 Durable conformance records live in Git because GitHub Actions artifacts
-expire. Version 1 is backed by the 2026-06-08 OpenID Foundation 16-plan matrix
+expire. The current implementation is backed by the 2026-06-08 OpenID Foundation 16-plan matrix
 across OIDC Basic, OIDC Config, FAPI2 Security Profile Final, FAPI2 Message
 Signing Final, mTLS, DPoP, `private_key_jwt`, and client credentials variants:
 
@@ -321,7 +321,7 @@ Production deployment requires HTTPS, stable issuer metadata, PostgreSQL backups
 
 ## Security Boundaries
 
-Version 1 enforces these boundaries:
+The implementation enforces these boundaries:
 
 - Exact issuer, redirect URI, PKCE, client, and token binding checks.
 - Refresh token rotation and token-family reuse detection.
@@ -333,4 +333,4 @@ Version 1 enforces these boundaries:
 
 Refresh-token rotation for non-FAPI compatibility profiles is documented in [docs/refresh-token-rotation.md](docs/refresh-token-rotation.md). FAPI2 Security deployments do not use routine rotation by default; refresh grants still require confidential client authentication and the configured DPoP or mTLS proof, and newly issued access tokens remain sender-constrained.
 
-Version 1 uses a single-tenant runtime with tenant-aware schema boundaries. TOTP MFA, WebAuthn/passkeys, external OIDC/SAML federation, SCIM provisioning with hashed/scoped/audited database tokens, and Rust resource-server middleware are implemented. Dynamic Client Registration, Client Configuration Management, Device Authorization Grant, Token Exchange, and request-level multi-issuer tenant routing are outside the default version 1 scope; see [docs/ecosystem-onboarding.md](docs/ecosystem-onboarding.md), [docs/tenancy.md](docs/tenancy.md), and [docs/oauth2-1-self-audit.md](docs/oauth2-1-self-audit.md).
+The default deployment is single-tenant with tenant-aware schema boundaries. TOTP MFA, WebAuthn/passkeys, external OIDC/SAML federation, SCIM provisioning with hashed/scoped/audited database tokens, and Rust resource-server middleware are implemented. Dynamic Client Registration, Client Configuration Management, Device Authorization Grant, Token Exchange, and request-level multi-issuer tenant routing are outside the default scope; see [docs/ecosystem-onboarding.md](docs/ecosystem-onboarding.md), [docs/tenancy.md](docs/tenancy.md), and [docs/oauth2-1-self-audit.md](docs/oauth2-1-self-audit.md).
