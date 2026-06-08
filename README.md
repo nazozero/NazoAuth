@@ -14,6 +14,7 @@ identity/admin data plane.
 
 - Package: `nazo-oauth-server`
 - Language: Rust 2024
+- License: Apache-2.0
 - Runtime dependencies: PostgreSQL and Valkey
 - Main branch policy: work happens on `main`
 - Conformance evidence: see [docs/conformance](docs/conformance)

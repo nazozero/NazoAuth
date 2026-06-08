@@ -2,7 +2,8 @@
 name = "nazo-oauth-server"
 version = "0.1.0"
 edition = "2024"
-license = "MIT"
+license = "Apache-2.0"
+repository = "https://github.com/bymoye/NazoAuth"
 
 [[bin]]
 name = "nazo-oauth-server"

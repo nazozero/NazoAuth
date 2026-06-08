@@ -20,6 +20,8 @@ semantic versioning once public release tags are cut.
 
 ### Changed
 
+- Changed the project license metadata to Apache-2.0 and added the top-level
+  license text.
 - Reworked `README.md` into a project-level entry point for scope,
   conformance, local setup, configuration, deployment, checks, and security
   boundaries.
