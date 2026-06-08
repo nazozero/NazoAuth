@@ -2,7 +2,7 @@
 
 Date: 2026-06-08
 
-OAuth 2.1 is tracked as the IETF OAuth working group draft, not as a final RFC at this date. This audit therefore treats OAuth 2.1 as the consolidated OAuth 2.0 security baseline and cross-checks it with the project profile matrix, OAuth Security BCP controls, OIDC conformance records, and FAPI2 profile boundaries.
+OAuth 2.1 is tracked as the IETF OAuth working group draft, not as a final RFC at this date. The current Datatracker entry is `draft-ietf-oauth-v2-1-15`, an active Internet-Draft from March 2026 that expires on 2026-09-03. Internet-Drafts remain work in progress, so this audit treats OAuth 2.1 as the current consolidated OAuth 2.0 security baseline and cross-checks it with the project profile matrix, OAuth Security BCP controls, OIDC conformance records, and FAPI2 profile boundaries.
 
 References:
 
@@ -68,12 +68,19 @@ They remain ecosystem or identity-platform features with separate threat models 
 
 ## Current Evidence
 
-Local implementation gates pass on the current working tree:
+Current implementation and workflow evidence:
 
-- `cargo fmt --check`
-- `cargo clippy --all-targets --all-features -- -D warnings`
-- `cargo test --all-targets --all-features --locked`
-- `git diff --check`
+- Current `main` HEAD `2773b28d8ddd062c0d4c5eecee953b393a0797fc` passed
+  `conformance-security` run `27117658022` on 2026-06-08. That run covered
+  `rust-gate`, `supply-chain-gate`, and `real-http-security-matrix`.
+- The docs-only trigger boundary is now enforced by
+  `.github/workflows/conformance-security.yml`: documentation-only commits do
+  not run the expensive CI matrix, while code, dependency, migration, script,
+  deploy, container, runtime config, and workflow changes still do.
+- Latest implementation-affecting local gates were run before the OIDF proof
+  update: `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D
+  warnings`, `cargo test --all-targets --all-features --locked`, and `git diff
+  --check`.
 
 The evidence freshness blocker has been closed for the current implementation:
 the official OIDF full matrix passed on implementation commit
