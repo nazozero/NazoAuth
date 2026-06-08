@@ -25,6 +25,7 @@ The roadmap separates three concerns that must not be mixed:
 | Refresh policy | FAPI2 Security should not use rotation by default; non-FAPI rotation needs documented lost-response recovery semantics. | Done |
 | Resource servers | Provide verifier guidance, Rust middleware, and DPoP proof verification so resource servers validate JWT access tokens correctly. | Done |
 | Operations | HA, backups, observability, key lifecycle, SBOM/provenance, and security release process need production evidence. | Done for core deployment controls |
+| OAuth 2.1 self-audit | Confirm OAuth 2.1 and best-practice coverage, and separate core gaps from deferred ecosystem features. | Done; final OIDF evidence refresh pending |
 
 ## P0: Normative Conformance
 
@@ -50,6 +51,7 @@ The roadmap separates three concerns that must not be mixed:
 - [x] If RFC 8707 resource indicators are supported, test single-resource and multi-resource behavior, audience derivation, and rejection of ambiguous, duplicate, or malformed resource values.
 - [x] Add JWT access token profile tests: issuer, audience, expiry, `client_id`/`sub` separation, scope or `authorization_details`, `cnf.jkt` or `cnf.x5t#S256`, algorithm allowlist, `kid` handling, and revocation/introspection fallback.
 - [x] Add negative conformance fixtures: overclaimed metadata, weak client auth, unsigned JAR in hardened profiles, missing DPoP proof, DPoP without nonce where required, bearer token at sender-constrained resource servers, query-token use, redirect URI mismatch, and stale JWKS. See `docs/conformance/negative-fixtures.md`.
+- [x] Add OAuth 2.1 and best-practice self-audit that identifies implemented core controls, deferred non-core ecosystem features, and the final evidence-refresh blocker. See `docs/oauth2-1-self-audit.md`.
 
 ## P0: Deployment Security
 
