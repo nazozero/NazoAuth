@@ -1,8 +1,15 @@
 # OAuth 2.1 and Best-Practice Audit
 
-Date: 2026-06-08
+Audit date: 2026-06-08
 
-OAuth 2.1 is tracked as the IETF OAuth working group draft, not as a final RFC at this date. The current Datatracker entry is `draft-ietf-oauth-v2-1-15`, an active Internet-Draft from March 2026 that expires on 2026-09-03. Internet-Drafts remain work in progress, so this audit treats OAuth 2.1 as the current consolidated OAuth 2.0 security baseline and cross-checks it with the project profile matrix, OAuth Security BCP controls, OIDC conformance records, and FAPI2 profile boundaries.
+## Scope
+
+OAuth 2.1 is tracked as the IETF OAuth working group draft, not as a final RFC.
+On the audit date, the Datatracker entry was
+`draft-ietf-oauth-v2-1-15`, an active Internet-Draft from March 2026 that
+expires on 2026-09-03. The audit treats OAuth 2.1 as the consolidated OAuth
+2.0 security baseline and cross-checks it with the profile matrix, OAuth
+Security BCP controls, OIDC conformance records, and FAPI2 profile boundaries.
 
 References:
 
@@ -55,7 +62,7 @@ References:
 
 ## Outside OAuth 2.1 Core
 
-These product features are outside the OAuth 2.1 core profile:
+Product features outside the OAuth 2.1 core profile:
 
 - Dynamic Client Registration / RFC 7591.
 - Client Configuration Management / RFC 7592.
@@ -66,11 +73,11 @@ These product features are outside the OAuth 2.1 core profile:
 
 They remain ecosystem or identity-platform features with separate threat models in `docs/ecosystem-onboarding.md`, `docs/tenancy.md`, and `docs/scim.md`.
 
-## Current Evidence
+## Evidence
 
-Current implementation and workflow evidence:
+Implementation and workflow evidence:
 
-- Current `main` HEAD `2773b28d8ddd062c0d4c5eecee953b393a0797fc` passed
+- Implementation HEAD `2773b28d8ddd062c0d4c5eecee953b393a0797fc` passed
   `conformance-security` run `27117658022` on 2026-06-08. That run covered
   `rust-gate`, `supply-chain-gate`, and `real-http-security-matrix`.
 - The docs-only trigger boundary is now enforced by
@@ -82,8 +89,7 @@ Current implementation and workflow evidence:
   warnings`, `cargo test --all-targets --all-features --locked`, and `git diff
   --check`.
 
-The evidence freshness blocker has been closed for the current implementation:
-the official OIDF full matrix passed on implementation commit
+The official OIDF full matrix passed on implementation commit
 `8f6901abe2a014b4a5d1e486d986598daf3b825f`, and the durable result index is
 `docs/conformance/2026-06-08-oidf-full-matrix.md`. Documentation-only commits
 can differ from the implementation commit under test; implementation-affecting

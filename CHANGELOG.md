@@ -1,8 +1,7 @@
 # Changelog
 
-All notable changes to this project are recorded here.
-
-The format follows Keep a Changelog style, and this project uses semantic versioning once public releases are cut.
+Project changes are recorded in Keep a Changelog style. Versioned releases use
+semantic versioning once public release tags are cut.
 
 ## Unreleased
 
@@ -21,7 +20,9 @@ The format follows Keep a Changelog style, and this project uses semantic versio
 
 ### Changed
 
-- Reworked `README.md` into a project-level entry point with status, feature scope, quick start, architecture, configuration, conformance, deployment, development, and security posture sections.
+- Reworked `README.md` into a project-level entry point for scope,
+  conformance, local setup, configuration, deployment, checks, and security
+  boundaries.
 - Sanitized generic OAuth JSON `error_description` values so protocol responses use ASCII-safe descriptions consistently.
 - Made the Argon2 password hash policy explicit: Argon2id, version 19, 19456 KiB memory, time cost 2, parallelism 1.
 - Tightened proxy-terminated mTLS handling so forwarded certificate evidence is accepted only from configured trusted proxy CIDRs and duplicate forwarded certificate headers must agree on the same SHA-256 thumbprint.

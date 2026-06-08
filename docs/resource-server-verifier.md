@@ -1,6 +1,10 @@
 # Resource Server Verifier
 
-Resource servers must not reuse authorization-server internals that deliberately skip audience validation for `/userinfo` or `/introspect`. The public verifier API in `src/resource_server.rs` is the stable core for Rust resource servers and the Actix Web, Axum/Tower, and tonic adapters.
+## Scope
+
+Resource servers use the public verifier API in `src/resource_server.rs`.
+Authorization-server internals that skip audience validation for `/userinfo` or
+`/introspect` are not resource-server verification APIs.
 
 ## Validation Contract
 

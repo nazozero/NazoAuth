@@ -1,14 +1,17 @@
 # Security Policy
 
-Nazo OAuth Server is security-sensitive infrastructure. Please report suspected vulnerabilities privately before public disclosure.
+Nazo OAuth Server is security-sensitive infrastructure. Report suspected
+vulnerabilities privately before public disclosure.
 
 ## Supported Versions
 
-The project is pre-release. Security fixes are maintained on `main` until versioned releases are established.
+The project is pre-release. Security fixes are maintained on `main` until
+versioned releases are established.
 
 ## Reporting a Vulnerability
 
-Send a private report to the repository maintainer through a non-public channel. Include:
+Send a private report to the repository maintainer through a non-public channel.
+Include:
 
 - affected commit or version
 - vulnerable endpoint or component
@@ -17,7 +20,8 @@ Send a private report to the repository maintainer through a non-public channel.
 - impact assessment
 - logs or traces with secrets removed
 
-Do not include live access tokens, refresh tokens, private keys, passwords, session cookies, or production database contents in a report.
+Do not include live access tokens, refresh tokens, private keys, passwords,
+session cookies, or production database contents in a report.
 
 ## Handling Targets
 
@@ -37,7 +41,7 @@ High-priority vulnerability classes include:
 
 ## Production Boundaries
 
-Production deployments must treat these as hard security boundaries:
+Production deployments treat these as hard security boundaries:
 
 - `ISSUER` must be exact and HTTPS.
 - `COOKIE_SECURE` must be `true`.
@@ -49,4 +53,5 @@ Production deployments must treat these as hard security boundaries:
 
 ## Disclosure
 
-Public disclosure waits until a fix is available or a coordinated timeline is agreed. Security fixes include focused regression tests whenever practical.
+Public disclosure waits until a fix is available or a coordinated timeline is
+agreed. Security fixes include focused regression tests whenever practical.

@@ -1,8 +1,9 @@
 # 2026-06-06 OIDF Full Matrix
 
-## Summary
+## Outcome
 
-This record preserves the OpenID Foundation Conformance Suite result index for the full 16-plan matrix that passed on `main`.
+OpenID Foundation Conformance Suite result index for the 16-plan matrix that
+passed on `main`.
 
 | Field | Value |
 | --- | --- |
@@ -32,7 +33,7 @@ This record preserves the OpenID Foundation Conformance Suite result index for t
 
 ## Coverage
 
-Important profiles and protocol features covered by this run:
+Profiles and protocol features covered by this run:
 
 - OIDC Basic OP certification plan
 - OIDC Config OP certification plan
@@ -71,7 +72,7 @@ Important profiles and protocol features covered by this run:
 
 ## Exported Artifact Filenames
 
-These are the 16 zip files inside `oidf-conformance-results-full`:
+Artifact contents:
 
 - `oidcc-basic-certification-test-plan-discovery-static_client-x8DmDn94xmYfX-06-Jun-2026.zip`
 - `oidcc-config-certification-test-plan--16x9lgL9ihmup-06-Jun-2026.zip`
@@ -92,7 +93,7 @@ These are the 16 zip files inside `oidf-conformance-results-full`:
 
 ## Workflow Steps
 
-The GitHub job completed every step successfully:
+Workflow step results:
 
 | Step | Result |
 | --- | --- |
@@ -108,6 +109,7 @@ The GitHub job completed every step successfully:
 ## Notes
 
 - The implementation commit for this conformance run is `4e15e77d70749e3b01d29670d449b40ac834f206`.
-- The repository later added this durable record and documentation updates, so the documentation commit can differ from the implementation commit under test.
+- The durable record and documentation updates were added later, so the documentation commit may differ from the implementation commit under test.
 - OIDC Basic contained 3 allowed `FINISHED/REVIEW` modules and no failures or warnings.
-- This record indexes the official suite output; it is not itself an OpenID Foundation certification statement.
+- Official suite output is indexed here. Not an OpenID Foundation certification
+  statement.

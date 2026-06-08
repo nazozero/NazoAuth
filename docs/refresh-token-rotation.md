@@ -1,9 +1,11 @@
 # Refresh Token Rotation
 
+## Scope
+
 Non-FAPI compatibility profiles use the refresh-token behavior below. FAPI2
-Security deployments do not rely on routine refresh-token rotation by default;
-refresh grants still require confidential client authentication and the
-configured DPoP or mTLS proof, and newly issued access tokens remain
+Security deployments do not use routine refresh-token rotation by default.
+Refresh grants still require confidential client authentication and the
+configured DPoP or mTLS proof. Newly issued access tokens remain
 sender-constrained.
 
 ## State Machine
@@ -33,7 +35,7 @@ DPoP-bound refresh tokens require a valid DPoP proof for refresh. mTLS-bound ref
 
 ## Tests
 
-The current unit tests cover:
+Unit coverage:
 
 - the lost-response retry window boundary
 - rejection of `revoked_at` timestamps later than the current clock
@@ -41,6 +43,6 @@ The current unit tests cover:
 - mTLS-bound refresh proof requirements
 - refresh issuance requiring both `offline_access` and the client `refresh_token` grant
 
-Database integration coverage for full Active -> Rotated -> Reused family
-transitions belongs with any deployment that advertises lost-response recovery
-as a production guarantee.
+Deployments that advertise lost-response recovery as a production guarantee
+need database integration coverage for full Active -> Rotated -> Reused family
+transitions.

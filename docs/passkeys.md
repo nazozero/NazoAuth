@@ -1,6 +1,10 @@
 # WebAuthn Passkeys
 
-The local identity profile supports WebAuthn/passkey registration and email-first passkey login.
+## Scope
+
+The local identity profile supports WebAuthn/passkey registration and
+email-first passkey login. Passkeys create normal server-side sessions and do
+not bypass OAuth/OIDC authorization, consent, token, or tenant checks.
 
 ## Configuration
 
@@ -11,11 +15,12 @@ The local identity profile supports WebAuthn/passkey registration and email-firs
 - `PASSKEY_REQUIRE_USER_HANDLE`: requires assertions to include the expected user handle for username-first login.
 - `PASSKEY_STRICT_BASE64`: requires WebAuthn binary fields to use spec-compliant base64url without padding.
 
-Production deployments leave user verification, user handle, and strict base64 enabled.
+Production deployments keep user verification, user handle, and strict base64
+enabled.
 
 ## Endpoints
 
-Current-user passkey management:
+User passkey management:
 
 - `POST /auth/me/passkeys/registration/begin`
 - `POST /auth/me/passkeys/registration/finish`
@@ -35,4 +40,5 @@ WebAuthn ceremonies use the `passkey-auth` verifier. The server verifies challen
 
 Ceremony state is stored only in Valkey with a five-minute TTL and is consumed with `GETDEL` at finish time. Persisted credentials are bound to `(tenant_id, user_id)` and credential ID uniqueness is enforced per tenant.
 
-Successful passkey login creates the normal HTTPOnly server-side session with `amr=["passkey"]`; it does not bypass existing OAuth/OIDC authorization, consent, token, or tenant checks.
+Successful passkey login creates the normal HTTPOnly server-side session with
+`amr=["passkey"]`.

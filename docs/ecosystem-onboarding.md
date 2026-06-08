@@ -1,18 +1,23 @@
 # Ecosystem Onboarding
 
-Version 1 keeps ecosystem onboarding features outside the default authorization-server core. They are useful for some deployments, but they expand the protocol attack surface and stay out of discovery metadata until implemented, tested, and enabled by policy.
+## Scope
+
+Version 1 keeps ecosystem onboarding features outside the default
+authorization-server core. The features expand the protocol attack surface and
+stay out of discovery metadata until implementation, tests, and deployment
+policy explicitly enable them.
 
 ## Dynamic Client Registration
 
-RFC 7591 Dynamic Client Registration is outside the default version 1 scope.
+### Boundary
 
-Rationale:
+RFC 7591 Dynamic Client Registration is outside the default version 1 scope.
 
 - DCR changes client creation from an administrator-controlled action into a protocol surface exposed to external callers.
 - Redirect URI validation, JWKS URI fetching, software statements, initial access tokens, and client metadata updates all become security-critical input paths.
-- The current admin client API already supports explicit client onboarding without advertising DCR metadata.
+- The admin client API supports explicit client onboarding without advertising DCR metadata.
 
-Enable DCR only after a dedicated threat model covers:
+### Activation Criteria
 
 - Initial access token issuance, scope, expiry, replay prevention, and revocation.
 - Redirect URI validation, including loopback/native exceptions and exact-match web redirects.
@@ -23,7 +28,7 @@ Enable DCR only after a dedicated threat model covers:
 - Registration access token storage, rotation, update/delete authorization, disabled-client behavior, and audit events.
 - Metadata truth tests proving discovery only advertises DCR when the registration endpoint is enabled and protected.
 
-Acceptance tests before enabling DCR:
+### Required Tests
 
 - DCR is absent from discovery by default.
 - Invalid redirect URIs are rejected.
@@ -35,15 +40,16 @@ Acceptance tests before enabling DCR:
 
 ## Client Configuration Management
 
-RFC 7592 Client Configuration Management stays disabled until DCR has a complete implementation and threat model.
+### Boundary
 
-Rationale:
+RFC 7592 Client Configuration Management stays disabled until DCR has a
+complete implementation and threat model.
 
 - DCRM inherits every DCR risk and adds update/delete authority over existing clients.
 - Client update can silently weaken redirect URI, JWKS, logout, token auth, grant, or profile policy if metadata merge rules are not strict.
 - Delete/deactivate semantics affect active sessions, refresh token families, outstanding authorization codes, PAR handles, and audit retention.
 
-Enable DCRM only after these semantics are defined:
+### Activation Criteria
 
 - Registration access token binding to a single client.
 - Full replacement versus partial update semantics.
@@ -54,9 +60,13 @@ Enable DCRM only after these semantics are defined:
 
 ## Device Authorization Grant
 
-The Device Authorization Grant is outside the default version 1 scope. It fits CLI, TV, appliance, and constrained-input clients after user-code phishing and polling-abuse controls are designed.
+### Boundary
 
-Required design points:
+The Device Authorization Grant is outside the default version 1 scope. It fits
+CLI, TV, appliance, and constrained-input clients after user-code phishing and
+polling-abuse controls are designed.
+
+### Activation Criteria
 
 - User code entropy, display format, expiry, brute-force limits, and replay behavior.
 - Device code entropy, storage, expiry, and one-time completion.
@@ -65,7 +75,7 @@ Required design points:
 - Phishing-resistant UI language and audit events for approved, denied, expired, and rate-limited flows.
 - Profile matrix changes for public versus confidential device clients.
 
-Minimum acceptance tests:
+### Required Tests
 
 - Pending token request returns `authorization_pending`.
 - Too-frequent polling returns `slow_down`.
@@ -75,9 +85,13 @@ Minimum acceptance tests:
 
 ## Token Exchange
 
-RFC 8693 Token Exchange is outside the default version 1 scope. It fits service delegation, impersonation, and actor-token deployments after policy and audit boundaries are specified.
+### Boundary
 
-Required design points:
+RFC 8693 Token Exchange is outside the default version 1 scope. It fits service
+delegation, impersonation, and actor-token deployments after policy and audit
+boundaries are specified.
+
+### Activation Criteria
 
 - Allowed subject token types and actor token types.
 - Delegation versus impersonation semantics.
@@ -88,7 +102,7 @@ Required design points:
 - Introspection and revocation behavior for exchanged tokens.
 - Audit events that distinguish the requesting client, subject token client, subject, actor, audience, and policy decision.
 
-Minimum acceptance tests:
+### Required Tests
 
 - Exchange cannot mint a token for an audience not allowed to the requesting client and subject token.
 - Requested scopes and authorization details must be equal or narrower than the subject token unless an explicit policy grants escalation.
@@ -98,7 +112,8 @@ Minimum acceptance tests:
 
 ## Example Client Matrix
 
-The project maintains examples and fixtures as protocol contracts, not marketing samples. Each example must include at least one negative path.
+Examples and fixtures are protocol contracts. Each example includes at least one
+negative path.
 
 | Client type | Primary profile | Required fixture coverage |
 | --- | --- | --- |

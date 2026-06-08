@@ -1,13 +1,16 @@
 # Security Events
 
-Nazo OAuth emits security audit events through structured `tracing` records with `target="audit"` and message `security audit event`.
+## Scope
+
+Nazo OAuth emits security audit events as structured `tracing` records with
+`target="audit"` and message `security audit event`.
 
 Collectors parse:
 
 - `event`: stable event name.
 - `fields`: JSON object containing `schema_version`, `event_category`, and event-specific fields.
 
-The current schema version is `nazo.audit.v1`.
+Schema version: `nazo.audit.v1`.
 
 ## SIEM Shape
 
@@ -57,4 +60,5 @@ Raw credentials and bearer material must never appear in audit fields. The audit
 | `scim_token_used` | `provisioning` | SCIM bearer credential was accepted without logging raw token material. |
 | `scim_token_denied` | `provisioning` | SCIM bearer credential was missing, invalid, or lacked the required scope. |
 
-Event names and categories use lowercase ASCII words separated by `_`; new events must be added to the implementation allowlist and this document in the same commit.
+Event names and categories use lowercase ASCII words separated by `_`. Add new
+events to the implementation allowlist and this document in the same commit.

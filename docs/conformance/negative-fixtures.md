@@ -1,6 +1,10 @@
 # Negative Conformance Fixtures
 
-This index maps high-risk negative conformance cases to durable local tests. It is not a replacement for OIDF results, but it keeps security-profile regressions visible in `cargo test`.
+## Scope
+
+High-risk negative conformance cases map to durable local tests here. OIDF
+results remain the authority for official suite status; local tests keep
+security-profile regressions visible in `cargo test`.
 
 | Fixture | Local evidence |
 | --- | --- |
@@ -18,4 +22,8 @@ This index maps high-risk negative conformance cases to durable local tests. It 
 | Back-channel logout token shape | `support::security::tests::backchannel_logout_token_claims_follow_oidc_shape_without_nonce` |
 | Stale JWKS or retired key use | `support::security::tests::private_key_jwt_rejects_assertions_after_key_retirement`, `support::keyset::tests::retired_active_key_entry_is_rejected`, `support::keyset::tests::retired_previous_key_entry_is_skipped` |
 
-The fixture names are specific by design. When discovery or profile behavior changes, update the corresponding row in the same commit as the runtime behavior and metadata.
+## Maintenance
+
+Fixture names are specific by design. When discovery or profile behavior
+changes, update the corresponding row in the same commit as runtime behavior and
+metadata.

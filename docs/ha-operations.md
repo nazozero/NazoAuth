@@ -1,8 +1,10 @@
 # PostgreSQL and Valkey Operations
 
-Production deployments depend on PostgreSQL for durable state and Valkey for
-transient protocol state. This page defines the availability, backup, restore,
-timeout, and partial-outage rules for both tiers.
+## Scope
+
+PostgreSQL is the durable state tier. Valkey is the transient protocol state
+tier. Production operation requires explicit availability, backup, restore,
+timeout, and partial-outage rules for both.
 
 ## State Classification
 
@@ -28,7 +30,7 @@ Production deployments use a managed PostgreSQL service or an equivalent HA clus
 
 ## PostgreSQL Backup and Restore
 
-Required backup controls:
+Backup controls:
 
 - continuous WAL archiving or provider point-in-time recovery
 - at least daily logical or physical backups
@@ -37,7 +39,7 @@ Required backup controls:
 - retention long enough to cover compromise detection and operational rollback windows
 - restore rehearsal for a recent backup before first production launch and after backup tooling changes
 
-Restore rehearsal must prove:
+Restore rehearsal proves:
 
 - migrations can run on the restored database
 - a known user, OAuth client, grant, refresh token, and revocation row are present
@@ -63,12 +65,14 @@ Operational response:
 
 ## Valkey High Availability
 
-Production Valkey uses a managed HA Redis-compatible service, Valkey Sentinel topology, or Valkey Cluster topology appropriate to the deployment. Required controls:
+Production Valkey uses a managed HA Redis-compatible service, Valkey Sentinel
+topology, or Valkey Cluster topology appropriate to the deployment. Required
+controls:
 
 - authenticated connections and network isolation from untrusted clients
 - TLS when traffic crosses a host or private-network boundary that is not otherwise encrypted
 - bounded memory policy with alerting before eviction affects OAuth state
-- persistence policy selected intentionally: AOF or managed persistence for faster recovery, or documented acceptance of losing transient security state
+- selected persistence policy: AOF or managed persistence for faster recovery, or documented acceptance of losing transient security state
 - failover tests that include in-flight sessions, PAR handles, authorization codes, and replay caches
 
 Valkey is not the durable source of truth. Losing it invalidates or interrupts transient flows rather than weakening replay prevention.
@@ -121,7 +125,7 @@ Valkey incident:
 
 ## Evidence to Preserve
 
-For each production environment, keep:
+For each production environment, preserve:
 
 - PostgreSQL HA topology and failover owner
 - PostgreSQL backup schedule, retention, last successful backup, and last restore rehearsal date

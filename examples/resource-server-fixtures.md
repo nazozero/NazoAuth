@@ -1,6 +1,10 @@
 # Resource Server and Client Fixtures
 
-These fixtures define the minimum example coverage for resource servers and common OAuth/OIDC clients. They are kept as protocol contracts until executable example clients are split into dedicated crates.
+## Scope
+
+Fixtures define minimum example coverage for resource servers and common
+OAuth/OIDC clients. They act as protocol contracts until executable example
+clients move into dedicated crates.
 
 ## Backend Web Client
 
@@ -45,7 +49,7 @@ Negative path:
 - Custom scheme redirect URI must match the registered scheme exactly.
 - Missing PKCE is rejected.
 
-## Machine-To-Machine Client
+## Machine-to-Machine Client
 
 Positive path:
 

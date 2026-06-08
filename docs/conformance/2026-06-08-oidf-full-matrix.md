@@ -1,10 +1,9 @@
 # 2026-06-08 OIDF Full Matrix
 
-## Summary
+## Outcome
 
-This record preserves the OpenID Foundation Conformance Suite result index for
-the full 16-plan matrix that passed on `main` after the external-signer,
-resource-server DPoP verifier, SCIM token model, and OAuth 2.1 self-audit work.
+OpenID Foundation Conformance Suite result index for the 16-plan matrix that
+passed on `main`.
 
 | Field | Value |
 | --- | --- |
@@ -33,7 +32,7 @@ resource-server DPoP verifier, SCIM token model, and OAuth 2.1 self-audit work.
 
 ## Coverage
 
-Important profiles and protocol features covered by this run:
+Profiles and protocol features covered by this run:
 
 - OIDC Basic OP certification plan
 - OIDC Config OP certification plan
@@ -75,7 +74,7 @@ selector sweep.
 
 ## Exported Artifact Filenames
 
-These are the 16 zip files inside `oidf-conformance-results-full`:
+Artifact contents:
 
 - `oidcc-basic-certification-test-plan-discovery-static_client-2nsmZuUFRxRFE-08-Jun-2026.zip`
 - `oidcc-config-certification-test-plan--c9uGZxnhzvWWj-08-Jun-2026.zip`
@@ -96,7 +95,7 @@ These are the 16 zip files inside `oidf-conformance-results-full`:
 
 ## Workflow Steps
 
-The GitHub job completed every step successfully:
+Workflow step results:
 
 | Step | Result |
 | --- | --- |
@@ -111,7 +110,7 @@ The GitHub job completed every step successfully:
 
 ## Notes
 
-- This record indexes official suite output for commit `8f6901abe2a014b4a5d1e486d986598daf3b825f`.
+- Official suite output is indexed for commit `8f6901abe2a014b4a5d1e486d986598daf3b825f`.
 - The post-run selector sweep returned no modules requiring rerun for all 16 plan IDs.
-- The repository added this durable record after the implementation commit was tested, so the documentation commit can differ from the implementation commit under test.
-- This record is not itself an OpenID Foundation certification statement.
+- The durable record was added after the implementation commit was tested, so the documentation commit may differ from the implementation commit under test.
+- Not an OpenID Foundation certification statement.
