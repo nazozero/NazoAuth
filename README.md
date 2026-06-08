@@ -47,6 +47,7 @@ This repository is not yet a full IAM suite like Keycloak, ZITADEL, authentik, o
 
 The project maintains durable conformance records in Git instead of relying only on GitHub Actions artifacts, which expire. The latest recorded OpenID Foundation run covers a 16-plan matrix across OIDC Basic, OIDC Config, FAPI2 Security Profile Final, FAPI2 Message Signing Final, mTLS, DPoP, `private_key_jwt`, and client credentials variants:
 
+- [2026-06-08 OIDF full matrix](docs/conformance/2026-06-08-oidf-full-matrix.md)
 - [2026-06-07 OIDF full matrix](docs/conformance/2026-06-07-oidf-full-matrix.md)
 - [2026-06-06 OIDF full matrix](docs/conformance/2026-06-06-oidf-full-matrix.md)
 
