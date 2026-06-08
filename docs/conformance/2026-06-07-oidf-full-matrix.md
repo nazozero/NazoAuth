@@ -3,7 +3,7 @@
 ## Summary
 
 This record preserves the OpenID Foundation Conformance Suite result index for
-the full 16-plan matrix that passed on `main` after the roadmap completion work.
+the full 16-plan matrix that passed on `main` for the version 1 profile set.
 
 | Field | Value |
 | --- | --- |

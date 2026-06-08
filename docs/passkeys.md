@@ -11,7 +11,7 @@ The local identity profile supports WebAuthn/passkey registration and email-firs
 - `PASSKEY_REQUIRE_USER_HANDLE`: requires assertions to include the expected user handle for username-first login.
 - `PASSKEY_STRICT_BASE64`: requires WebAuthn binary fields to use spec-compliant base64url without padding.
 
-Production deployments should leave user verification, user handle, and strict base64 enabled.
+Production deployments leave user verification, user handle, and strict base64 enabled.
 
 ## Endpoints
 

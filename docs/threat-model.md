@@ -1,6 +1,8 @@
 # Threat Model
 
-This threat model tracks the P0 attack classes from the roadmap. It is a living document and should be updated when profiles, deployment topology, or token formats change.
+This threat model covers the version 1 authorization-server boundary. Update it
+in the same change that adds a profile, changes deployment topology, changes
+token format, or expands discovery metadata.
 
 ## Assets
 
@@ -31,7 +33,7 @@ This threat model tracks the P0 attack classes from the roadmap. It is a living 
 
 ## Threats And Controls
 
-| Threat | Risk | Current controls | Remaining work |
+| Threat | Risk | Version 1 controls | Operational note |
 | --- | --- | --- | --- |
 | Authorization code theft | Stolen code exchanged by attacker | PKCE S256, redirect URI matching, client binding, short TTL, atomic code consumption | Profile matrix tests for every high-security client class |
 | Authorization code replay | Reuse races mint extra tokens | Valkey state machine, consumed-code token revocation | More concurrency and lost-response regression tests |
@@ -45,11 +47,11 @@ This threat model tracks the P0 attack classes from the roadmap. It is a living 
 | Key compromise | Signing key leak enables token forgery | Keyset validation, active/previous JWKS, keyctl lifecycle, optional external KMS/HSM signer backend | Emergency rotation runbook and rehearsal evidence |
 | Valkey outage | Replay/rate/session state unavailable | Sensitive paths fail with server errors instead of weakening controls | HA guidance, chaos tests, timeout SLOs |
 | PostgreSQL outage | Durable state unavailable | Protocol endpoints return server errors | HA guidance, backup/restore tests, migration rollback plan |
-| Metadata overclaim | Clients rely on unsupported security behavior | Discovery generated from runtime state for signing algs | Full metadata truth tests and profile-aware metadata |
+| Metadata overclaim | Clients rely on unsupported security behavior | Discovery generated from runtime state for signing algs | Profile-aware metadata tests and conformance records |
 
 ## Review Triggers
 
-Revisit this threat model when:
+Update this threat model when:
 
 - a new profile is added or advertised
 - discovery metadata changes

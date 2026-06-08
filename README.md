@@ -1,8 +1,8 @@
 # Nazo OAuth Server
 
-Nazo OAuth Server is a Rust-native OAuth 2.1 / OpenID Connect authorization server for self-hosted deployments that need a compact codebase, explicit security boundaries, and repeatable conformance evidence.
+Nazo OAuth Server is a Rust-native OAuth 2.1 / OpenID Connect authorization server for self-hosted deployments that need explicit protocol boundaries and repeatable conformance evidence.
 
-The project is intentionally focused on the authorization server surface: authorization code + PKCE, token issuance, refresh-token rotation, PAR, signed request objects, DPoP, mTLS sender constraints, JWKS, discovery, userinfo, token management, and a small built-in identity/admin data plane.
+Version 1 covers the authorization-server surface: authorization code + PKCE, token issuance, refresh-token rotation, PAR, signed request objects, DPoP, mTLS sender constraints, JWKS, discovery, UserInfo, token management, and a small identity/admin data plane.
 
 ## Status
 
@@ -15,12 +15,10 @@ The project is intentionally focused on the authorization server surface: author
 - Ecosystem onboarding decisions: see [docs/ecosystem-onboarding.md](docs/ecosystem-onboarding.md)
 - PostgreSQL and Valkey operations: see [docs/ha-operations.md](docs/ha-operations.md)
 - Resource server verifier: see [docs/resource-server-verifier.md](docs/resource-server-verifier.md)
-- Roadmap: see [docs/roadmap.md](docs/roadmap.md)
+- Version scope: see [docs/roadmap.md](docs/roadmap.md)
 - Security policy: see [SECURITY.md](SECURITY.md)
 - Release security: see [docs/release-security.md](docs/release-security.md)
 - Change history: see [CHANGELOG.md](CHANGELOG.md)
-
-This repository is not yet a full IAM suite like Keycloak, ZITADEL, authentik, or Ory Hydra. The current goal is narrower and stricter: become one of the most trustworthy and standards-compatible OAuth2 / OpenID Connect authorization server implementations in the Rust ecosystem.
 
 ## Features
 
@@ -29,7 +27,7 @@ This repository is not yet a full IAM suite like Keycloak, ZITADEL, authentik, o
 - Client credentials, refresh token, revocation, and introspection endpoints.
 - OpenID Connect discovery, OAuth Authorization Server Metadata, JWKS, ID Token, and UserInfo.
 - PAR and JAR support, including signed request objects with `EdDSA`, `RS256`, `ES256`, and `PS256`.
-- `client_secret_basic`, compatibility `client_secret_post`, `private_key_jwt`, public clients, and mTLS client authentication. High-security clients should use `private_key_jwt` or mTLS rather than `client_secret_post`.
+- `client_secret_basic`, compatibility `client_secret_post`, `private_key_jwt`, public clients, and mTLS client authentication. High-security clients use `private_key_jwt` or mTLS rather than `client_secret_post`.
 - DPoP proof validation, nonce handling, sender-constrained access tokens, and DPoP-bound UserInfo.
 - mTLS sender-constrained access tokens through a trusted reverse-proxy certificate forwarding boundary.
 - Server signing key rotation with active and previous JWKS publication.
@@ -45,9 +43,12 @@ This repository is not yet a full IAM suite like Keycloak, ZITADEL, authentik, o
 
 ## Conformance
 
-The project maintains durable conformance records in Git instead of relying only on GitHub Actions artifacts, which expire. The latest recorded OpenID Foundation run covers a 16-plan matrix across OIDC Basic, OIDC Config, FAPI2 Security Profile Final, FAPI2 Message Signing Final, mTLS, DPoP, `private_key_jwt`, and client credentials variants:
+The repository keeps durable conformance records in Git instead of relying only on expiring GitHub Actions artifacts. The current version is backed by the 2026-06-08 OpenID Foundation 16-plan matrix across OIDC Basic, OIDC Config, FAPI2 Security Profile Final, FAPI2 Message Signing Final, mTLS, DPoP, `private_key_jwt`, and client credentials variants:
 
 - [2026-06-08 OIDF full matrix](docs/conformance/2026-06-08-oidf-full-matrix.md)
+
+Earlier records remain available for audit history:
+
 - [2026-06-07 OIDF full matrix](docs/conformance/2026-06-07-oidf-full-matrix.md)
 - [2026-06-06 OIDF full matrix](docs/conformance/2026-06-06-oidf-full-matrix.md)
 
@@ -275,7 +276,7 @@ Production deployment requires HTTPS, stable issuer metadata, PostgreSQL backups
 
 ## Security Posture
 
-Current high-priority boundaries:
+Version 1 security boundaries:
 
 - Exact issuer, redirect URI, PKCE, client, and token binding checks.
 - Refresh token rotation and token-family reuse detection.
@@ -285,6 +286,6 @@ Current high-priority boundaries:
 - No-store token and protocol error responses.
 - Explicit trusted proxy configuration before forwarded headers are trusted.
 
-Refresh-token rotation for non-FAPI compatibility profiles is documented in [docs/refresh-token-rotation.md](docs/refresh-token-rotation.md). FAPI2 Security deployments should not use routine rotation by default; refresh grants still require confidential client authentication and the configured DPoP or mTLS proof, and newly issued access tokens remain sender-constrained.
+Refresh-token rotation for non-FAPI compatibility profiles is documented in [docs/refresh-token-rotation.md](docs/refresh-token-rotation.md). FAPI2 Security deployments do not use routine rotation by default; refresh grants still require confidential client authentication and the configured DPoP or mTLS proof, and newly issued access tokens remain sender-constrained.
 
-Known roadmap items are tracked in [docs/roadmap.md](docs/roadmap.md), [docs/oauth2-1-self-audit.md](docs/oauth2-1-self-audit.md), [CHANGELOG.md](CHANGELOG.md), and future conformance records. Dynamic Client Registration, Client Configuration Management, Device Authorization Grant, and Token Exchange are tracked as deferred ecosystem onboarding decisions in [docs/ecosystem-onboarding.md](docs/ecosystem-onboarding.md). Implemented identity-platform areas now include a single-tenant default runtime with tenant-aware schema boundaries, TOTP MFA, WebAuthn/passkeys, external OIDC/SAML federation, SCIM provisioning with hashed/scoped/audited database tokens, and resource-server middleware. Remaining priority areas focus on deeper conformance evidence, release proof, and dynamic tenant resolution.
+Version 1 uses a single-tenant runtime with tenant-aware schema boundaries. TOTP MFA, WebAuthn/passkeys, external OIDC/SAML federation, SCIM provisioning with hashed/scoped/audited database tokens, and Rust resource-server middleware are implemented. Dynamic Client Registration, Client Configuration Management, Device Authorization Grant, Token Exchange, and request-level multi-issuer tenant routing are outside the default version 1 scope; see [docs/ecosystem-onboarding.md](docs/ecosystem-onboarding.md), [docs/tenancy.md](docs/tenancy.md), and [docs/oauth2-1-self-audit.md](docs/oauth2-1-self-audit.md).

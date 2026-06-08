@@ -17,7 +17,7 @@ The verifier requires:
 - Required scope checks.
 - Optional sender-constraint policy for DPoP `cnf.jkt`, mTLS `cnf.x5t#S256`, or either sender constraint.
 
-The verifier returns structured errors such as `AudienceMismatch`, `MissingScope`, `WrongTokenType`, `DpopBindingMismatch`, and `MtlsBindingMismatch`. Application adapters should map these to RFC 6750 `WWW-Authenticate` responses without leaking token contents.
+The verifier returns structured errors such as `AudienceMismatch`, `MissingScope`, `WrongTokenType`, `DpopBindingMismatch`, and `MtlsBindingMismatch`. Application adapters map these to RFC 6750 `WWW-Authenticate` responses without leaking token contents.
 
 ## Core Usage
 
@@ -149,7 +149,7 @@ JWT validation is the local fast path. Resource servers may fall back to token i
 
 - the `kid` is unknown and JWKS refresh still cannot find it,
 - local revocation freshness requirements are stricter than the JWT lifetime,
-- an opaque token profile is introduced by a future deployment,
+- an opaque token profile is introduced by a deployment,
 - or policy extensions require authorization-server-side state.
 
 Fallback must not override a local protocol invariant failure such as wrong issuer, wrong audience, wrong `typ`, unsupported algorithm, or sender-constraint mismatch.

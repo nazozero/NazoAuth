@@ -1,6 +1,8 @@
 # PostgreSQL and Valkey Operations
 
-This document defines the production availability, backup, restore, timeout, and partial-outage expectations for the durable PostgreSQL tier and transient Valkey tier.
+Production deployments depend on PostgreSQL for durable state and Valkey for
+transient protocol state. This page defines the availability, backup, restore,
+timeout, and partial-outage rules for both tiers.
 
 ## State Classification
 
@@ -13,7 +15,7 @@ This document defines the production availability, backup, restore, timeout, and
 
 ## PostgreSQL High Availability
 
-Production deployments should use a managed PostgreSQL service or an equivalent HA cluster with:
+Production deployments use a managed PostgreSQL service or an equivalent HA cluster with:
 
 - synchronous or bounded-lag replication for the primary region
 - automated primary failover with a tested DNS, virtual IP, or proxy cutover path
@@ -22,7 +24,7 @@ Production deployments should use a managed PostgreSQL service or an equivalent 
 - least-privilege application credentials that cannot create superusers, change replication, or read unrelated databases
 - maintenance windows for major upgrades and extension changes
 
-`DATABASE_URL` should point at the HA endpoint, not a single unmanaged instance, when production traffic depends on it. Failover must preserve read-after-write expectations for OAuth state; stale replicas must not serve token, consent, revocation, or client-management writes.
+`DATABASE_URL` points at the HA endpoint when production traffic depends on it. Failover must preserve read-after-write expectations for OAuth state; stale replicas must not serve token, consent, revocation, or client-management writes.
 
 ## PostgreSQL Backup and Restore
 
@@ -48,7 +50,7 @@ Point-in-time restore can roll back security events. After any PostgreSQL restor
 
 When PostgreSQL is unavailable or the pool is exhausted:
 
-- `/health` may continue to return process health only; external readiness checks should include a database probe outside this service.
+- `/health` can remain a process-health check; external readiness checks include a database probe outside this service.
 - Discovery and JWKS can still serve if the process has loaded the keyset and configuration.
 - Login, consent, authorization code issuance, token issuance, refresh, introspection, revocation, admin APIs, profile APIs, and userinfo that requires durable lookup fail with server errors.
 - The service must not mint tokens, mark grants, or accept revocation/introspection decisions from stale or partial durable state.
@@ -61,7 +63,7 @@ Operational response:
 
 ## Valkey High Availability
 
-Production Valkey should be deployed as a managed HA Redis-compatible service, Valkey Sentinel topology, or Valkey Cluster topology appropriate to the deployment. Required controls:
+Production Valkey uses a managed HA Redis-compatible service, Valkey Sentinel topology, or Valkey Cluster topology appropriate to the deployment. Required controls:
 
 - authenticated connections and network isolation from untrusted clients
 - TLS when traffic crosses a host or private-network boundary that is not otherwise encrypted
@@ -69,11 +71,11 @@ Production Valkey should be deployed as a managed HA Redis-compatible service, V
 - persistence policy selected intentionally: AOF or managed persistence for faster recovery, or documented acceptance of losing transient security state
 - failover tests that include in-flight sessions, PAR handles, authorization codes, and replay caches
 
-Valkey is not the durable source of truth. Losing it should invalidate or interrupt transient flows rather than weakening replay prevention.
+Valkey is not the durable source of truth. Losing it invalidates or interrupts transient flows rather than weakening replay prevention.
 
 ## Valkey Timeouts
 
-`VALKEY_COMMAND_TIMEOUT_MS` controls Valkey command, connection, and internal command timeouts. The value must be greater than zero. Production values should be short enough to avoid request pileups and long enough to tolerate normal network jitter; start with `1000` ms and adjust based on measured latency.
+`VALKEY_COMMAND_TIMEOUT_MS` controls Valkey command, connection, and internal command timeouts. The value must be greater than zero. Production values stay short enough to avoid request pileups and long enough to tolerate normal network jitter; start with `1000` ms and adjust based on measured latency.
 
 Timeout guidance:
 

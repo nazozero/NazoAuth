@@ -1,114 +1,110 @@
-# Roadmap
+# Version 1 Scope
 
-This roadmap is derived from the latest static review in `code_revioew.md` and is maintained as the project checklist. The target is a Rust-native, security-profiled, conformance-tested OAuth2 / OpenID Connect Authorization Server core.
+Nazo OAuth Server version 1 is an OAuth 2.1 / OpenID Connect authorization
+server with FAPI2-oriented security profiles, repeatable conformance evidence,
+and production deployment controls. The codebase treats protocol conformance,
+deployment security, and product extensions as separate concerns.
 
-The roadmap separates three concerns that must not be mixed:
+## Core Profiles
 
-- Normative conformance: what OIDC, OAuth, FAPI2 Security, and FAPI2 Message Signing profiles actually require.
-- Deployment security: how a production deployment preserves those protocol properties at the proxy, key, database, cache, release, and observability layers.
-- Product hardening: stricter-than-profile policies and ecosystem/product capabilities that may be valuable but are not FAPI2 requirements.
-
-## Current Status
-
-| Area | Finding | Status |
+| Profile | Version 1 status | Evidence |
 | --- | --- | --- |
-| Trust evidence | Conformance results, security policy, threat model, and release evidence must be public and repeatable. | Done for current roadmap scope |
-| Profile matrix | Each profile needs explicit grants, response types, client auth, token binding, JAR/JARM, PAR, refresh policy, TTL, and metadata rules. | Done |
-| Metadata truth | Discovery metadata must not overclaim unsupported or deployment-disabled capabilities. | Done |
-| OIDC completeness | OIDC Core behavior needs a profile-by-profile checklist and tests for required OP features. | Done for current profile matrix |
-| FAPI2 Security | Baseline FAPI2 Security must stay distinct from Message Signing and product hardening. | Defined |
-| FAPI2 Message Signing | Signed authorization requests, JARM, and signed introspection responses should be tracked as separate options. | Defined |
-| mTLS | Current integration is proxy-terminated mTLS and must be documented, constrained, and extended toward full RFC 8705 subject/SAN semantics. | Done |
-| DPoP | Proof `jti` replay prevention is normative; strict nonce enforcement is profile/product policy and must be documented that way. | Done |
-| Sessions | Login response should not expose the session identifier in JSON. | Done |
-| Password hashing | Argon2 policy should be explicit and versioned. | Done |
-| Refresh policy | FAPI2 Security should not use rotation by default; non-FAPI rotation needs documented lost-response recovery semantics. | Done |
-| Resource servers | Provide verifier guidance, Rust middleware, and DPoP proof verification so resource servers validate JWT access tokens correctly. | Done |
-| Operations | HA, backups, observability, key lifecycle, SBOM/provenance, and security release process need production evidence. | Done for core deployment controls |
-| OAuth 2.1 self-audit | Confirm OAuth 2.1 and best-practice coverage, and separate core gaps from deferred ecosystem features. | Done; final OIDF evidence refreshed on 2026-06-08 |
+| `oauth2-baseline` | Implemented | Authorization code, PKCE, token, refresh, revocation, introspection, discovery, JWKS |
+| `oauth2-security-bcp` | Implemented | Sender constraints, redirect policy, query-token rejection, replay controls |
+| `oidc-basic-op` | Implemented and OIDF-tested | [profile matrix](profile-matrix.md), [2026-06-08 OIDF record](conformance/2026-06-08-oidf-full-matrix.md) |
+| `oidc-config` | Implemented and OIDF-tested | Runtime discovery metadata and metadata truth tests |
+| `fapi2-security` | Implemented and OIDF-tested | PAR, PKCE S256, confidential clients, DPoP/mTLS-bound tokens |
+| `fapi2-message-signing-authz-request` | Implemented and OIDF-tested | Signed request objects at PAR with `aud`, `nbf`, and bounded `exp` |
+| `fapi2-message-signing-jarm` | Implemented where advertised and OIDF-tested | Signed authorization responses without unsafe fallback |
+| `fapi2-message-signing-introspection` | Not advertised in version 1 | Defined in the matrix; no discovery claim until implemented and tested |
 
-## P0: Normative Conformance
+## Implemented Boundaries
 
-- [x] Store durable OIDF conformance evidence under `docs/conformance`.
-- [x] Add `SECURITY.md` with reporting and production boundary guidance.
-- [x] Remove `session_id` from the login JSON response; sessions are carried only by the HTTPOnly session cookie.
-- [x] Make the Argon2 password hash policy explicit: Argon2id, version 19, memory 19456 KiB, time cost 2, parallelism 1.
-- [x] Add a profile matrix. For each profile, list allowed grants, response types, client authentication methods, token binding methods, JAR/JARM policy, PAR policy, refresh policy, token TTLs, and discovery metadata. See `docs/profile-matrix.md`.
-- [x] Define `oauth2-baseline`, `oauth2-security-bcp`, `oidc-basic-op`, and `oidc-config` as separate profiles with their exact endpoint, parameter, metadata, and negative-test requirements. See `docs/profile-matrix.md`.
-- [x] Define `fapi2-security` as PAR + PKCE S256 + confidential clients + `private_key_jwt` or mTLS client authentication + sender-constrained access tokens via DPoP or mTLS. See `docs/profile-matrix.md`.
-- [x] Add a runtime `fapi2-security` profile switch that requires client-authenticated PAR, rejects authorization requests that do not use PAR, enforces authorization code lifetime of 60 seconds or less, and rejects resource owner password credentials.
-- [x] Define the `fapi2-security` refresh-token policy: no routine refresh-token rotation by default; require confidential client authentication plus configured DPoP or mTLS proof on refresh grants, and keep newly issued access tokens sender-constrained.
-- [x] If refresh rotation is enabled for compatibility, migration, or non-FAPI profiles, document lost-response retry semantics as a state machine with replay detection tests. See `docs/refresh-token-rotation.md`.
-- [x] Define `fapi2-message-signing-authz-request` as FAPI2 Security plus signed JAR request objects at the PAR endpoint. See `docs/profile-matrix.md`.
-- [x] Add a runtime `fapi2-message-signing-authz-request` profile switch that requires and verifies signed request objects at PAR, requires `aud`, requires `nbf`, requires `exp` with lifetime no longer than 60 minutes, and accepts `typ=oauth-authz-req+jwt`.
-- [x] Define `fapi2-message-signing-jarm` separately when JARM is implemented and tested. See `docs/profile-matrix.md`.
-- [x] Define `fapi2-message-signing-introspection` separately when signed introspection responses are implemented and tested. See `docs/profile-matrix.md`.
-- [x] Keep request object `jti` replay protection as optional product hardening unless a specific ecosystem profile requires it; do not document it as a normative FAPI2 Message Signing requirement.
-- [x] Add DPoP proof replay cache tests: track proof `jti` per proof validity window and reject duplicates.
-- [x] Add client assertion replay tests for `private_key_jwt`: exact issuer `aud`, `exp`/`iat` window, and `jti` replay cache.
-- [x] Add `private_key_jwt` key rotation and disabled-client behavior tests.
-- [x] Enforce audience/resource binding for access tokens.
-- [x] If RFC 8707 resource indicators are supported, test single-resource and multi-resource behavior, audience derivation, and rejection of ambiguous, duplicate, or malformed resource values.
-- [x] Add JWT access token profile tests: issuer, audience, expiry, `client_id`/`sub` separation, scope or `authorization_details`, `cnf.jkt` or `cnf.x5t#S256`, algorithm allowlist, `kid` handling, and revocation/introspection fallback.
-- [x] Add negative conformance fixtures: overclaimed metadata, weak client auth, unsigned JAR in hardened profiles, missing DPoP proof, DPoP without nonce where required, bearer token at sender-constrained resource servers, query-token use, redirect URI mismatch, and stale JWKS. See `docs/conformance/negative-fixtures.md`.
-- [x] Add OAuth 2.1 and best-practice self-audit that identifies implemented core controls, deferred non-core ecosystem features, and the refreshed 2026-06-08 OIDF evidence. See `docs/oauth2-1-self-audit.md`.
+- Login responses carry session state only in the HTTPOnly session cookie.
+- Password hashes use the documented Argon2id policy.
+- Discovery metadata is generated from runtime profile and deployment state.
+- FAPI2 Security keeps refresh tokens sender-constrained and avoids routine
+  refresh-token rotation by default.
+- Non-FAPI refresh-token rotation uses a documented lost-response retry state
+  machine with replay detection.
+- Request object `jti` replay protection is a stricter product policy, not a
+  FAPI2 Message Signing requirement.
+- DPoP proof replay protection tracks proof `jti` values within the proof
+  validity window.
+- `private_key_jwt` assertions enforce exact audience, time windows, `jti`
+  replay detection, key rotation behavior, and disabled-client rejection.
+- JWT access tokens carry issuer, audience, expiry, client/subject separation,
+  scope or `authorization_details`, and DPoP or mTLS confirmation where
+  required.
+- RFC 8707 resource indicators support single-resource and multi-resource
+  audience derivation.
+- RFC 9396-style `authorization_details` are parsed, consent-bound, and carried
+  into tokens for supported detail types.
 
-## P0: Deployment Security
+## Deployment Security
 
-- [x] Add a threat model covering authorization code theft, redirect mix-up, JAR replay, DPoP replay, mTLS header spoofing, refresh token reuse, CSRF, XSS, key compromise, and partial Valkey/PostgreSQL outage. See `docs/threat-model.md`.
-- [x] Add metadata truth tests: each advertised discovery capability must have a corresponding integration or unit test proving the endpoint behavior.
-- [x] Split advertised capabilities by profile or deployment configuration where support depends on mTLS/proxy/JARM/JAR policy.
-- [x] Keep proxy-terminated mTLS as an explicit deployment profile, not an implicit application security property.
-- [x] Enforce trusted proxy CIDR checks before accepting mTLS certificate forwarding headers.
-- [x] Ensure the local OIDF mTLS runtime config writes trusted proxy CIDRs so discovery metadata and proxy-terminated certificate forwarding are enabled together.
-- [x] Document required reverse-proxy header stripping for all forwarded certificate headers.
-- [x] Reject duplicate or conflicting forwarded certificate headers. Standardizing on one representation remains a deployment documentation task.
-- [x] Require TLS or mTLS on the proxy-to-app hop, or otherwise bind forwarded certificate metadata to a trusted internal channel.
-- [x] Add negative tests for forged forwarded certificate headers from untrusted source IPs.
-- [x] Implement full `tls_client_auth` subject DN/SAN matching.
-- [x] Implement self-signed certificate registration and rotation semantics for `self_signed_tls_client_auth`.
-- [x] Add certificate expiry and rotation tests.
-- [x] Add KMS/HSM backends for signing key lifecycle.
-- [x] Add OpenTelemetry traces, metrics, and logs.
-- [x] Define a structured security event taxonomy and SIEM export format. See `docs/security-events.md`.
-- [x] Add `cargo audit`, `cargo deny`, SBOM, container scanning, release signing, and provenance. See `deny.toml`, `docs/release-security.md`, `conformance-security`, and `release-security`.
-- [x] Add fuzz/property tests for parsers, JWT/JWK handling, redirect URI validation, request object merging, DPoP validation, and OAuth error serialization.
-- [x] Document PostgreSQL and Valkey HA, backup, restore, timeout, and partial-outage behavior. See `docs/ha-operations.md`.
+- Proxy-terminated mTLS is explicit. Certificate forwarding is accepted only
+  from trusted proxy CIDRs.
+- Duplicate or conflicting forwarded certificate headers are rejected.
+- The proxy-to-app hop must be protected by TLS, mTLS, or an equivalent trusted
+  internal channel.
+- `tls_client_auth` supports subject DN and SAN matching.
+- `self_signed_tls_client_auth` uses registered client certificates with
+  rotation semantics.
+- Signing keys support active, previous, retired, file-backed, KMS/HSM, and
+  external-command backends.
+- External signer output is locally verified against the active public JWK
+  before a JWT is returned.
+- OpenTelemetry, structured security events, SBOM generation, dependency
+  policy checks, container scanning, release signing, and provenance workflows
+  are part of the release posture.
+- PostgreSQL and Valkey HA, restore, timeout, and partial-outage behavior are
+  documented in [ha-operations.md](ha-operations.md).
 
-## P1: Product Hardening
+## Identity Platform Surface
 
-- [x] Represent strict DPoP nonce enforcement as hardened profile behavior and test downgrade boundaries.
-- [x] Optional stricter-than-FAPI policy: require request object `jti` with replay cache for signed JAR.
-- [x] Mark `client_secret_post` as a compatibility method in documentation and examples; recommend `private_key_jwt` or mTLS for high-security clients.
-- [x] Complete OIDC `claims` request semantics for `essential`, `value`, and `values`.
-- [x] Strengthen `auth_time`, `max_age`, `acr_values`, `azp`, and session-related ID Token behavior, including omission of unrequested session claims.
-- [x] Add an independent OIDC `sid` value to login sessions for logout/session flows without exposing the HTTPOnly session cookie value or overclaiming ordinary ID Tokens.
-- [x] Add consent and transaction-binding tests for high-risk `authorization_details`, especially payments or write APIs.
-- [x] Expand RFC 8707 support to multi-resource handling when an ecosystem use case requires it.
-- [x] Implement RFC 9396 Rich Authorization Requests when structured authorization is required.
-- [x] Add OIDC RP-Initiated Logout and Back-Channel Logout.
+- Single-tenant runtime with tenant-aware schema boundaries.
+- TOTP MFA, backup codes, remembered MFA, and step-up authentication.
+- WebAuthn/passkeys.
+- External OIDC/SAML federation.
+- SCIM 2.0 provisioning for the default tenant with hashed, rotatable, scoped,
+  audited database tokens and a legacy deployment-token fallback.
 
-## P1: Ecosystem Onboarding
+## Rust Resource Server Support
 
-- [x] Evaluate RFC 7591 Dynamic Client Registration as an ecosystem onboarding feature, not as default AS-core scope. See `docs/ecosystem-onboarding.md`.
-- [x] If DCR is added, threat-model redirect URI validation, client metadata, JWKS URI fetching, software statements, initial access tokens, and client update/delete authorization first. See `docs/ecosystem-onboarding.md`.
-- [x] Evaluate RFC 7592 Client Configuration Management only after DCR threat modeling is complete. See `docs/ecosystem-onboarding.md`.
-- [x] Evaluate Device Authorization Grant for CLI, TV, and constrained-device ecosystems. See `docs/ecosystem-onboarding.md`.
-- [x] Evaluate RFC 8693 Token Exchange for service delegation, impersonation, and actor-token ecosystems. See `docs/ecosystem-onboarding.md`.
-- [x] Publish conformance fixtures and example clients for backend web, SPA, native, machine-to-machine, DPoP, and `private_key_jwt`. See `examples/resource-server-fixtures.md`.
+- JWT access-token verifier for Rust resource servers.
+- Actix Web, Axum/Tower, and tonic adapters.
+- DPoP proof verification for `typ`, embedded-JWK signature, `htu`, `htm`,
+  `ath`, `jti` replay, and optional nonce policy before sender-constraint
+  context is populated.
+- Issuer, audience, scope, DPoP `cnf.jkt`, mTLS `cnf.x5t#S256`, and
+  introspection fallback guidance.
+- Policy and claims extension points run only after protocol invariants pass.
 
-## P2: Identity Platform
+## Outside the Default Version 1 Scope
 
-- [x] Add WebAuthn/passkeys. See `docs/passkeys.md` and migration `20260607000600_webauthn_passkeys`.
-- [x] Add TOTP, backup codes, remembered MFA, and step-up authentication. See `docs/mfa.md` and migration `20260607000500_totp_mfa_step_up`.
-- [x] Add external OIDC/SAML identity provider federation. See `docs/federation.md` and migration `20260607000700_identity_federation`.
-- [x] Add tenant-aware schema boundaries for tenant/realm/organization records while documenting that runtime request resolution remains single-tenant by default. See `docs/tenancy.md` and migration `20260607000400_tenant_realm_organization_boundaries`.
-- [x] Add SCIM 2.0 provisioning for the default tenant with hashed, rotatable, scoped, audited database tokens and a legacy deployment-token fallback. See `docs/scim.md`.
+The following capabilities are not part of the default authorization-server
+core and are not advertised in discovery metadata:
 
-## P2: Rust Ecosystem
+- Dynamic Client Registration / RFC 7591.
+- Client Configuration Management / RFC 7592.
+- Device Authorization Grant.
+- Token Exchange / RFC 8693.
+- Request-level dynamic tenant or issuer routing.
+- Signed introspection responses.
 
-- [x] Publish resource-server verifier core for Rust integrations. See `src/resource_server.rs` and `docs/resource-server-verifier.md`.
-- [x] Publish framework-specific resource-server middleware for Actix Web, Axum/Tower, and tonic. See `src/resource_server.rs` and `docs/resource-server-verifier.md`.
-- [x] Provide resource-server DPoP proof verification for `typ`, embedded-JWK signature, `htu`, `htm`, `ath`, `jti` replay, and optional nonce policy before populating verified sender-constraint context. See `src/resource_server.rs` and `docs/resource-server-verifier.md`.
-- [x] Provide issuer/audience validation, scope guards, DPoP `cnf.jkt` checks, mTLS `cnf.x5t#S256` checks, and introspection fallback guidance. JWKS cache packaging remains a framework/crate follow-up. See `src/resource_server.rs` and `docs/resource-server-verifier.md`.
-- [x] Add policy and claims extension points without allowing extensions to bypass protocol invariants. The verifier returns claims only after protocol invariants pass; adapters must run extension hooks after verification.
+Each item has a threat-model and acceptance-test entry in
+[ecosystem-onboarding.md](ecosystem-onboarding.md) or [tenancy.md](tenancy.md).
+
+## Evidence
+
+- Current official conformance record:
+  [2026-06-08 OIDF full matrix](conformance/2026-06-08-oidf-full-matrix.md).
+- OAuth 2.1 and best-practice audit:
+  [oauth2-1-self-audit.md](oauth2-1-self-audit.md).
+- Negative conformance fixtures:
+  [conformance/negative-fixtures.md](conformance/negative-fixtures.md).
+- Deployment guide:
+  [deployment.md](deployment.md).
+- Release controls:
+  [release-security.md](release-security.md).

@@ -49,4 +49,4 @@ Production deployments must treat these as hard security boundaries:
 
 ## Disclosure
 
-Public disclosure should wait until a fix is available or a coordinated timeline is agreed. Security fixes should include focused regression tests whenever practical.
+Public disclosure waits until a fix is available or a coordinated timeline is agreed. Security fixes include focused regression tests whenever practical.

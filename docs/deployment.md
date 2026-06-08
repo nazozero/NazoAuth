@@ -223,7 +223,7 @@ Valkey stores short-lived sessions, authorization codes, PAR handles, DPoP/clien
 - persistence or HA appropriate to your risk model
 - clear failure handling expectations
 
-If Valkey is unavailable, sensitive protocol paths should fail closed with OAuth errors instead of silently weakening replay or rate-limit controls.
+If Valkey is unavailable, sensitive protocol paths fail closed with OAuth errors instead of silently weakening replay or rate-limit controls.
 
 The full HA, backup, restore, timeout, and partial-outage requirements are maintained in [docs/ha-operations.md](ha-operations.md).
 
@@ -240,7 +240,7 @@ curl -fsS https://oauth.example.com/jwks.json
 
 Check that discovery `issuer` exactly equals `ISSUER`.
 
-For the current live environment, [scripts/verify_live_full_interfaces.py](../scripts/verify_live_full_interfaces.py) exercises a broader HTTPS path against `https://oauth.nazo.run`. It reads host-local secrets and should be run only in the intended deployment environment.
+The `nazo.run` deployment helper [scripts/verify_live_full_interfaces.py](../scripts/verify_live_full_interfaces.py) exercises a broader HTTPS path against `https://oauth.nazo.run`. It reads host-local secrets and runs only in the intended deployment environment.
 
 ## OIDF Readiness
 

@@ -2,7 +2,7 @@
 
 Nazo OAuth emits security audit events through structured `tracing` records with `target="audit"` and message `security audit event`.
 
-Collectors should parse:
+Collectors parse:
 
 - `event`: stable event name.
 - `fields`: JSON object containing `schema_version`, `event_category`, and event-specific fields.

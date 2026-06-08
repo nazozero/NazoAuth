@@ -1,10 +1,9 @@
 # Tenant, Realm, and Organization Boundaries
 
 The authorization server has a tenant-aware schema and explicit tenant, realm,
-and organization columns for core identity and OAuth records. The current runtime
-is still a single-tenant default deployment unless a future request-level tenant
-resolver selects another boundary. Do not describe this as dynamic multi-issuer
-realm routing.
+and organization columns for core identity and OAuth records. Version 1 runs as
+a single-tenant deployment unless an operator adds request-level tenant routing.
+Do not describe this as dynamic multi-issuer realm routing.
 
 ## Default Boundary
 
@@ -12,7 +11,7 @@ realm routing.
 - Default realm: `00000000-0000-0000-0000-000000000002`
 - Default organization: `00000000-0000-0000-0000-000000000003`
 
-Local registration, admin-created clients, access tokens, refresh tokens, grants, SCIM users, federation links, and revocation records are written into the default boundary unless a future tenant resolver explicitly selects another boundary.
+Local registration, admin-created clients, access tokens, refresh tokens, grants, SCIM users, federation links, and revocation records are written into the default boundary unless a tenant resolver explicitly selects another boundary.
 
 ## Database Invariants
 
@@ -30,14 +29,13 @@ JWT access tokens include a private `tenant_id` claim. Resource endpoints and to
 
 ## Product Boundaries
 
-The current runtime remains single-tenant by default with tenant-aware data
-invariants. SCIM provisioning, local registration, grant lookup paths, and
+Version 1 remains single-tenant by default with tenant-aware data invariants.
+SCIM provisioning, local registration, grant lookup paths, and
 external OIDC/SAML federation still bind users and grants to the default tenant,
 realm, and organization.
 
-Before this can be documented as full multi-tenant operation, the project must
-add and test request-level tenant resolution by host, path, issuer, or another
-explicit deployment boundary. That resolver must run before client lookup,
-authorization, token issuance, SCIM provisioning, federation account linking,
-session creation, consent/grant lookup, revocation, and resource-server
-introspection.
+A full multi-tenant deployment needs request-level tenant resolution by host,
+path, issuer, or another explicit deployment boundary. That resolver must run
+before client lookup, authorization, token issuance, SCIM provisioning,
+federation account linking, session creation, consent/grant lookup, revocation,
+and resource-server introspection.

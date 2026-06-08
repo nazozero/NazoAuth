@@ -1,10 +1,10 @@
-# Ecosystem Onboarding Decisions
+# Ecosystem Onboarding
 
-This document records the current product and threat-model decisions for ecosystem onboarding features. These features are valuable for specific deployments, but they are not part of the default authorization-server core profile and must not expand discovery metadata until implemented, tested, and enabled.
+Version 1 keeps ecosystem onboarding features outside the default authorization-server core. They are useful for some deployments, but they expand the protocol attack surface and stay out of discovery metadata until implemented, tested, and enabled by policy.
 
 ## Dynamic Client Registration
 
-Decision: RFC 7591 Dynamic Client Registration is deferred from the default AS core and treated as an ecosystem onboarding feature.
+RFC 7591 Dynamic Client Registration is outside the default version 1 scope.
 
 Rationale:
 
@@ -12,7 +12,7 @@ Rationale:
 - Redirect URI validation, JWKS URI fetching, software statements, initial access tokens, and client metadata updates all become security-critical input paths.
 - The current admin client API already supports explicit client onboarding without advertising DCR metadata.
 
-Before DCR is implemented, the project must add a dedicated threat model covering:
+Enable DCR only after a dedicated threat model covers:
 
 - Initial access token issuance, scope, expiry, replay prevention, and revocation.
 - Redirect URI validation, including loopback/native exceptions and exact-match web redirects.
@@ -23,7 +23,7 @@ Before DCR is implemented, the project must add a dedicated threat model coverin
 - Registration access token storage, rotation, update/delete authorization, disabled-client behavior, and audit events.
 - Metadata truth tests proving discovery only advertises DCR when the registration endpoint is enabled and protected.
 
-Minimum acceptance tests before enabling DCR:
+Acceptance tests before enabling DCR:
 
 - DCR is absent from discovery by default.
 - Invalid redirect URIs are rejected.
@@ -35,7 +35,7 @@ Minimum acceptance tests before enabling DCR:
 
 ## Client Configuration Management
 
-Decision: RFC 7592 Client Configuration Management is deferred until DCR has a complete implementation and threat model.
+RFC 7592 Client Configuration Management stays disabled until DCR has a complete implementation and threat model.
 
 Rationale:
 
@@ -43,7 +43,7 @@ Rationale:
 - Client update can silently weaken redirect URI, JWKS, logout, token auth, grant, or profile policy if metadata merge rules are not strict.
 - Delete/deactivate semantics affect active sessions, refresh token families, outstanding authorization codes, PAR handles, and audit retention.
 
-Before DCRM is implemented, the project must define:
+Enable DCRM only after these semantics are defined:
 
 - Registration access token binding to a single client.
 - Full replacement versus partial update semantics.
@@ -54,7 +54,7 @@ Before DCRM is implemented, the project must define:
 
 ## Device Authorization Grant
 
-Decision: Device Authorization Grant is a candidate ecosystem feature for CLI, TV, appliance, and constrained-input clients. It remains outside the default AS core until there is a user-code phishing and polling-abuse design.
+The Device Authorization Grant is outside the default version 1 scope. It fits CLI, TV, appliance, and constrained-input clients after user-code phishing and polling-abuse controls are designed.
 
 Required design points:
 
@@ -75,7 +75,7 @@ Minimum acceptance tests:
 
 ## Token Exchange
 
-Decision: RFC 8693 Token Exchange is a candidate ecosystem feature for service delegation, impersonation, and actor-token deployments. It remains outside the default AS core until policy and audit boundaries are specified.
+RFC 8693 Token Exchange is outside the default version 1 scope. It fits service delegation, impersonation, and actor-token deployments after policy and audit boundaries are specified.
 
 Required design points:
 

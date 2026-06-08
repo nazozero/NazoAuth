@@ -27,10 +27,10 @@ Security properties:
 - Successful database-token use updates `last_used_at` and inserts `scim_audit_events`.
 - Successful and denied SCIM token checks emit structured audit events without raw token material.
 
-Remaining non-core extension:
+Outside the version 1 SCIM surface:
 
 - OAuth client-credentials or introspection-backed SCIM authorization.
-- Per-tenant SCIM credential routing after dynamic tenant resolution exists. The schema stores `tenant_id`, but the current provisioning data path still uses the default tenant boundary.
+- Per-tenant SCIM credential routing. The schema stores `tenant_id`; version 1 provisioning uses the default tenant boundary.
 
 ## Endpoints
 
@@ -50,7 +50,7 @@ Remaining non-core extension:
 
 The current implementation maps SCIM `userName` to the local `users.email` login identifier. The primary email must match `userName`; create, replace, and patch requests that try to split these identities are rejected.
 
-Provisioned users are created in the default tenant, realm, and organization. Future multi-tenant resolvers must select the tenant boundary before creating, listing, updating, or deleting users.
+Provisioned users are created in the default tenant, realm, and organization. A deployment that adds request-level tenant routing must select the tenant boundary before creating, listing, updating, or deleting users.
 
 ## Supported Operations
 

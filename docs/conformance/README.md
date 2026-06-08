@@ -1,8 +1,10 @@
 # Conformance Records
 
-This directory stores durable conformance evidence that remains available after GitHub Actions artifacts expire.
+This directory is the permanent index for official conformance evidence. GitHub
+Actions artifacts expire; these records keep the run metadata, plan IDs, and
+artifact digests tied to the code that was tested.
 
-Each record should include:
+Each record includes:
 
 - implementation commit SHA
 - current documentation commit SHA, when different
@@ -16,4 +18,5 @@ Each record should include:
 - any allowed review states
 - notes about the public issuer and test environment
 
-Records in this directory are evidence indexes, not replacements for official OpenID Foundation certification.
+These files index official suite output. They are not substitutes for an
+OpenID Foundation certification statement.

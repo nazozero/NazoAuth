@@ -27,7 +27,7 @@ The `release-security` workflow runs for `v*` tags and manual dispatch. It:
 - uploads binaries, SBOM, image archive, and signature bundles as GitHub Actions artifacts
 - emits GitHub artifact provenance attestations for the binaries, SBOM, and image archive
 
-Downstream deployments should consume only artifacts from a successful tagged release workflow, or repeat the same checks in their own release pipeline.
+Downstream deployments consume artifacts from a successful tagged release workflow, or repeat the same checks in their own release pipeline.
 
 ## Required Evidence
 
