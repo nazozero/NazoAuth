@@ -12,14 +12,18 @@ use http::{HeaderMap, header};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::{
+    collections::{BTreeMap, HashMap},
     future::Future,
     pin::Pin,
+    sync::{Arc, Mutex},
     task::{Context, Poll},
 };
 use tower::{Layer, Service};
 
 const DEFAULT_CLOCK_SKEW_SECONDS: i64 = 60;
+const DEFAULT_DPOP_MAX_AGE_SECONDS: i64 = 300;
 
 #[derive(Clone, Debug)]
 pub struct ResourceServerVerifier {
@@ -109,9 +113,43 @@ pub enum ResourceServerRequestError {
     MissingToken,
     InvalidRequest,
     InvalidToken(ResourceServerVerifierError),
+    InvalidDpopProof(DpopProofVerifierError),
     MissingSenderConstraint,
     DpopBindingMismatch,
     MtlsBindingMismatch,
+}
+
+#[derive(Clone, Debug)]
+pub struct DpopProofVerifier {
+    config: DpopProofVerifierConfig,
+    replay_cache: Arc<Mutex<HashMap<String, i64>>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct DpopProofVerifierConfig {
+    pub allowed_algs: Vec<Algorithm>,
+    pub clock_skew_seconds: i64,
+    pub max_age_seconds: i64,
+    pub required_nonce: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DpopProofVerifierError {
+    MalformedProof,
+    UnsupportedAlgorithm,
+    MissingPublicJwk,
+    InvalidPublicJwk,
+    InvalidSignature,
+    WrongType,
+    MethodMismatch,
+    UriMismatch,
+    AccessTokenHashMismatch,
+    MissingJti,
+    ReplayDetected,
+    Expired,
+    NotYetValid,
+    NonceMismatch,
+    ReplayStoreUnavailable,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -137,6 +175,133 @@ struct AccessTokenClaims {
     exp: i64,
     #[serde(default)]
     cnf: Option<ConfirmationClaims>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DpopProofClaims {
+    htm: String,
+    htu: String,
+    iat: i64,
+    jti: String,
+    #[serde(default)]
+    ath: Option<String>,
+    #[serde(default)]
+    nonce: Option<String>,
+}
+
+impl DpopProofVerifier {
+    pub fn new(config: DpopProofVerifierConfig) -> Self {
+        Self {
+            config,
+            replay_cache: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    pub fn verify(
+        &self,
+        proof_jwt: &str,
+        method: &str,
+        htu: &str,
+        access_token: &str,
+    ) -> Result<VerifiedSenderConstraintProof, DpopProofVerifierError> {
+        let header = jsonwebtoken::decode_header(proof_jwt)
+            .map_err(|_| DpopProofVerifierError::MalformedProof)?;
+        if header.typ.as_deref() != Some("dpop+jwt") {
+            return Err(DpopProofVerifierError::WrongType);
+        }
+        if !self.config.allowed_algs.contains(&header.alg) {
+            return Err(DpopProofVerifierError::UnsupportedAlgorithm);
+        }
+        let jwk = header
+            .jwk
+            .as_ref()
+            .ok_or(DpopProofVerifierError::MissingPublicJwk)?;
+        let public_jwk =
+            serde_json::to_value(jwk).map_err(|_| DpopProofVerifierError::InvalidPublicJwk)?;
+        let decoding_key = dpop_jwk_decoding_key(&public_jwk, header.alg)
+            .ok_or(DpopProofVerifierError::InvalidPublicJwk)?;
+        let claims = decode_and_verify_dpop_proof(proof_jwt, &decoding_key, header.alg)?;
+        self.validate_claims(&claims, method, htu, access_token)?;
+        let jkt =
+            dpop_jwk_thumbprint(&public_jwk).ok_or(DpopProofVerifierError::InvalidPublicJwk)?;
+        self.check_replay(&jkt, &claims.jti)?;
+        Ok(VerifiedSenderConstraintProof {
+            dpop_jkt: Some(jkt),
+            mtls_x5t_s256: None,
+        })
+    }
+
+    fn validate_claims(
+        &self,
+        claims: &DpopProofClaims,
+        method: &str,
+        htu: &str,
+        access_token: &str,
+    ) -> Result<(), DpopProofVerifierError> {
+        if claims.htm != method.to_ascii_uppercase() {
+            return Err(DpopProofVerifierError::MethodMismatch);
+        }
+        if claims.htu != htu {
+            return Err(DpopProofVerifierError::UriMismatch);
+        }
+        if claims.ath.as_deref() != Some(access_token_hash(access_token).as_str()) {
+            return Err(DpopProofVerifierError::AccessTokenHashMismatch);
+        }
+        if claims.jti.trim().is_empty() {
+            return Err(DpopProofVerifierError::MissingJti);
+        }
+        let now = Utc::now().timestamp();
+        let skew = self.config.clock_skew_seconds.max(0);
+        let max_age = self.config.max_age_seconds.max(1);
+        if claims.iat < now.saturating_sub(max_age.saturating_add(skew)) {
+            return Err(DpopProofVerifierError::Expired);
+        }
+        if claims.iat > now.saturating_add(skew) {
+            return Err(DpopProofVerifierError::NotYetValid);
+        }
+        if let Some(expected) = self.config.required_nonce.as_deref()
+            && claims.nonce.as_deref() != Some(expected)
+        {
+            return Err(DpopProofVerifierError::NonceMismatch);
+        }
+        Ok(())
+    }
+
+    fn check_replay(&self, jkt: &str, jti: &str) -> Result<(), DpopProofVerifierError> {
+        let now = Utc::now().timestamp();
+        let ttl = self
+            .config
+            .max_age_seconds
+            .max(1)
+            .saturating_add(self.config.clock_skew_seconds.max(0));
+        let mut cache = self
+            .replay_cache
+            .lock()
+            .map_err(|_| DpopProofVerifierError::ReplayStoreUnavailable)?;
+        cache.retain(|_, expires_at| *expires_at > now);
+        let replay_key = format!("{jkt}:{jti}");
+        if cache.contains_key(&replay_key) {
+            return Err(DpopProofVerifierError::ReplayDetected);
+        }
+        cache.insert(replay_key, now.saturating_add(ttl));
+        Ok(())
+    }
+}
+
+impl Default for DpopProofVerifierConfig {
+    fn default() -> Self {
+        Self {
+            allowed_algs: vec![
+                Algorithm::EdDSA,
+                Algorithm::RS256,
+                Algorithm::ES256,
+                Algorithm::PS256,
+            ],
+            clock_skew_seconds: DEFAULT_CLOCK_SKEW_SECONDS,
+            max_age_seconds: DEFAULT_DPOP_MAX_AGE_SECONDS,
+            required_nonce: None,
+        }
+    }
 }
 
 impl ResourceServerVerifier {
@@ -271,6 +436,32 @@ pub fn authorize_resource_request(
     Ok(verified)
 }
 
+pub fn authorize_dpop_resource_request(
+    verifier: &ResourceServerVerifier,
+    dpop_verifier: &DpopProofVerifier,
+    authorization_headers: &[&str],
+    dpop_proof_jwt: &str,
+    query: Option<&str>,
+    method: &str,
+    htu: &str,
+) -> Result<(VerifiedAccessToken, VerifiedSenderConstraintProof), ResourceServerRequestError> {
+    if query_has_access_token(query) {
+        return Err(ResourceServerRequestError::InvalidRequest);
+    }
+    let (scheme, access_token) = presented_authorization_token(authorization_headers)?;
+    if scheme != PresentedAccessTokenScheme::Dpop {
+        return Err(ResourceServerRequestError::MissingSenderConstraint);
+    }
+    let proof = dpop_verifier
+        .verify(dpop_proof_jwt, method, htu, access_token)
+        .map_err(ResourceServerRequestError::InvalidDpopProof)?;
+    let verified = verifier
+        .verify(access_token)
+        .map_err(ResourceServerRequestError::InvalidToken)?;
+    validate_presented_sender_constraint(scheme, &verified, &proof)?;
+    Ok((verified, proof))
+}
+
 pub fn authorize_http_request<B>(
     verifier: &ResourceServerVerifier,
     request: &mut http::Request<B>,
@@ -282,6 +473,29 @@ pub fn authorize_http_request<B>(
         .cloned()
         .unwrap_or_default();
     let verified = authorize_resource_request(verifier, &headers, request.uri().query(), &proof)?;
+    request.extensions_mut().insert(verified.clone());
+    Ok(verified)
+}
+
+pub fn authorize_dpop_http_request<B>(
+    verifier: &ResourceServerVerifier,
+    dpop_verifier: &DpopProofVerifier,
+    request: &mut http::Request<B>,
+    htu: &str,
+) -> Result<VerifiedAccessToken, ResourceServerRequestError> {
+    let authorization_headers = http_authorization_headers(request.headers())?;
+    let dpop_headers = http_dpop_headers(request.headers())?;
+    let dpop_proof_jwt = single_dpop_header(&dpop_headers)?;
+    let (verified, proof) = authorize_dpop_resource_request(
+        verifier,
+        dpop_verifier,
+        &authorization_headers,
+        dpop_proof_jwt,
+        request.uri().query(),
+        request.method().as_str(),
+        htu,
+    )?;
+    request.extensions_mut().insert(proof);
     request.extensions_mut().insert(verified.clone());
     Ok(verified)
 }
@@ -479,6 +693,31 @@ fn http_authorization_headers(
         .collect()
 }
 
+fn http_dpop_headers(headers: &HeaderMap) -> Result<Vec<&str>, ResourceServerRequestError> {
+    headers
+        .get_all("dpop")
+        .iter()
+        .map(|value| {
+            value
+                .to_str()
+                .map_err(|_| ResourceServerRequestError::InvalidRequest)
+        })
+        .collect()
+}
+
+fn single_dpop_header<'a>(values: &'a [&'a str]) -> Result<&'a str, ResourceServerRequestError> {
+    if values.is_empty() {
+        return Err(ResourceServerRequestError::MissingSenderConstraint);
+    }
+    if values.len() != 1 {
+        return Err(ResourceServerRequestError::InvalidRequest);
+    }
+    if values[0].trim().is_empty() {
+        return Err(ResourceServerRequestError::InvalidRequest);
+    }
+    Ok(values[0])
+}
+
 fn query_has_access_token(query: Option<&str>) -> bool {
     query.is_some_and(|query| {
         url::form_urlencoded::parse(query.as_bytes()).any(|(key, _)| key == "access_token")
@@ -576,6 +815,9 @@ fn bearer_error_fields(error: &ResourceServerRequestError) -> (&'static str, &'s
         ResourceServerRequestError::InvalidToken(_) => {
             ("invalid_token", "Access token is invalid.")
         }
+        ResourceServerRequestError::InvalidDpopProof(_) => {
+            ("invalid_token", "DPoP proof is invalid.")
+        }
     }
 }
 
@@ -656,6 +898,130 @@ fn scope_values(value: &str) -> Vec<String> {
         .map(ToOwned::to_owned)
         .filter(|scope| !scope.is_empty())
         .collect()
+}
+
+fn decode_and_verify_dpop_proof(
+    proof_jwt: &str,
+    decoding_key: &DecodingKey,
+    alg: Algorithm,
+) -> Result<DpopProofClaims, DpopProofVerifierError> {
+    let mut parts = proof_jwt.split('.');
+    let Some(header) = parts.next().filter(|part| !part.is_empty()) else {
+        return Err(DpopProofVerifierError::MalformedProof);
+    };
+    let Some(payload) = parts.next().filter(|part| !part.is_empty()) else {
+        return Err(DpopProofVerifierError::MalformedProof);
+    };
+    let Some(signature) = parts.next().filter(|part| !part.is_empty()) else {
+        return Err(DpopProofVerifierError::MalformedProof);
+    };
+    if parts.next().is_some() {
+        return Err(DpopProofVerifierError::MalformedProof);
+    }
+    let signing_input = format!("{header}.{payload}");
+    if !jsonwebtoken::crypto::verify(signature, signing_input.as_bytes(), decoding_key, alg)
+        .map_err(|_| DpopProofVerifierError::InvalidSignature)?
+    {
+        return Err(DpopProofVerifierError::InvalidSignature);
+    }
+    let payload = URL_SAFE_NO_PAD
+        .decode(payload)
+        .map_err(|_| DpopProofVerifierError::MalformedProof)?;
+    let claims = serde_json::from_slice::<DpopProofClaims>(&payload)
+        .map_err(|_| DpopProofVerifierError::MalformedProof)?;
+    Ok(claims)
+}
+
+fn dpop_jwk_decoding_key(key: &Value, alg: Algorithm) -> Option<DecodingKey> {
+    let expected_alg = algorithm_name(alg)?;
+    if let Some(key_alg) = key.get("alg").and_then(Value::as_str)
+        && key_alg != expected_alg
+    {
+        return None;
+    }
+    if key.get("d").is_some() {
+        return None;
+    }
+    if key
+        .get("use")
+        .and_then(Value::as_str)
+        .is_some_and(|use_| use_ != "sig")
+    {
+        return None;
+    }
+    match alg {
+        Algorithm::EdDSA => {
+            if key.get("kty").and_then(Value::as_str) != Some("OKP")
+                || key.get("crv").and_then(Value::as_str) != Some("Ed25519")
+            {
+                return None;
+            }
+            let x = key.get("x").and_then(Value::as_str)?;
+            let bytes = URL_SAFE_NO_PAD.decode(x).ok()?;
+            if bytes.len() != 32 {
+                return None;
+            }
+            DecodingKey::from_ed_components(x).ok()
+        }
+        Algorithm::RS256 | Algorithm::PS256 => {
+            if key.get("kty").and_then(Value::as_str) != Some("RSA") {
+                return None;
+            }
+            let n = key.get("n").and_then(Value::as_str)?;
+            let e = key.get("e").and_then(Value::as_str)?;
+            let modulus = URL_SAFE_NO_PAD.decode(n).ok()?;
+            let exponent = URL_SAFE_NO_PAD.decode(e).ok()?;
+            if modulus.len() < 256 || exponent.is_empty() {
+                return None;
+            }
+            DecodingKey::from_rsa_components(n, e).ok()
+        }
+        Algorithm::ES256 => {
+            if key.get("kty").and_then(Value::as_str) != Some("EC")
+                || key.get("crv").and_then(Value::as_str) != Some("P-256")
+            {
+                return None;
+            }
+            let x = key.get("x").and_then(Value::as_str)?;
+            let y = key.get("y").and_then(Value::as_str)?;
+            let x_bytes = URL_SAFE_NO_PAD.decode(x).ok()?;
+            let y_bytes = URL_SAFE_NO_PAD.decode(y).ok()?;
+            if x_bytes.len() != 32 || y_bytes.len() != 32 {
+                return None;
+            }
+            DecodingKey::from_ec_components(x, y).ok()
+        }
+        _ => None,
+    }
+}
+
+fn dpop_jwk_thumbprint(key: &Value) -> Option<String> {
+    let mut members = BTreeMap::new();
+    match key.get("kty").and_then(Value::as_str)? {
+        "EC" => {
+            members.insert("crv", key.get("crv")?.as_str()?);
+            members.insert("kty", "EC");
+            members.insert("x", key.get("x")?.as_str()?);
+            members.insert("y", key.get("y")?.as_str()?);
+        }
+        "OKP" => {
+            members.insert("crv", key.get("crv")?.as_str()?);
+            members.insert("kty", "OKP");
+            members.insert("x", key.get("x")?.as_str()?);
+        }
+        "RSA" => {
+            members.insert("e", key.get("e")?.as_str()?);
+            members.insert("kty", "RSA");
+            members.insert("n", key.get("n")?.as_str()?);
+        }
+        _ => return None,
+    }
+    let canonical = serde_json::to_string(&members).ok()?;
+    Some(URL_SAFE_NO_PAD.encode(Sha256::digest(canonical.as_bytes())))
+}
+
+fn access_token_hash(access_token: &str) -> String {
+    URL_SAFE_NO_PAD.encode(Sha256::digest(access_token.as_bytes()))
 }
 
 fn jwk_decoding_key(key: &Value, alg: Algorithm) -> Option<DecodingKey> {
@@ -745,6 +1111,12 @@ mod tests {
         encoding_key: EncodingKey,
     }
 
+    struct DpopFixture {
+        encoding_key: EncodingKey,
+        public_jwk: Jwk,
+        jkt: String,
+    }
+
     fn fixture() -> Fixture {
         let der = Rsa::generate(2048).unwrap().private_key_to_der().unwrap();
         let encoding_key = EncodingKey::from_rsa_der(&der);
@@ -762,6 +1134,21 @@ mod tests {
             verifier: ResourceServerVerifier::new(config).unwrap(),
             jwks,
             encoding_key,
+        }
+    }
+
+    fn dpop_fixture() -> DpopFixture {
+        let der = Rsa::generate(2048).unwrap().private_key_to_der().unwrap();
+        let encoding_key = EncodingKey::from_rsa_der(&der);
+        let mut public_jwk = Jwk::from_encoding_key(&encoding_key, Algorithm::RS256).unwrap();
+        public_jwk.common.key_id = Some("dpop-rs256".to_owned());
+        public_jwk.common.public_key_use = Some(PublicKeyUse::Signature);
+        let public_jwk_value = serde_json::to_value(&public_jwk).unwrap();
+        let jkt = dpop_jwk_thumbprint(&public_jwk_value).unwrap();
+        DpopFixture {
+            encoding_key,
+            public_jwk,
+            jkt,
         }
     }
 
@@ -794,6 +1181,33 @@ mod tests {
         if header.kid.is_none() {
             header.kid = Some("test-rs256".to_owned());
         }
+        jsonwebtoken::encode(&header, &claims, &fixture.encoding_key).unwrap()
+    }
+
+    fn dpop_proof(
+        fixture: &DpopFixture,
+        access_token: &str,
+        method: &str,
+        htu: &str,
+        jti: &str,
+        nonce: Option<&str>,
+        ath_override: Option<&str>,
+    ) -> String {
+        let mut claims = json!({
+            "htu": htu,
+            "htm": method,
+            "iat": Utc::now().timestamp(),
+            "jti": jti,
+            "ath": ath_override
+                .map(ToOwned::to_owned)
+                .unwrap_or_else(|| access_token_hash(access_token)),
+        });
+        if let Some(nonce) = nonce {
+            claims["nonce"] = json!(nonce);
+        }
+        let mut header = Header::new(Algorithm::RS256);
+        header.typ = Some("dpop+jwt".to_owned());
+        header.jwk = Some(fixture.public_jwk.clone());
         jsonwebtoken::encode(&header, &claims, &fixture.encoding_key).unwrap()
     }
 
@@ -957,6 +1371,221 @@ mod tests {
         .unwrap();
 
         assert_eq!(verified.cnf.unwrap().jkt, Some("jkt-1".to_owned()));
+    }
+
+    #[test]
+    fn dpop_proof_verifier_produces_verified_sender_context() {
+        let fixture = fixture();
+        let dpop_fixture = dpop_fixture();
+        let access_token = token(&fixture, json!({"cnf": {"jkt": dpop_fixture.jkt}}), None);
+        let proof_jwt = dpop_proof(
+            &dpop_fixture,
+            &access_token,
+            "GET",
+            "https://api.example/orders",
+            "proof-jti-1",
+            None,
+            None,
+        );
+        let verifier = DpopProofVerifier::new(DpopProofVerifierConfig::default());
+
+        let proof = verifier
+            .verify(
+                &proof_jwt,
+                "GET",
+                "https://api.example/orders",
+                &access_token,
+            )
+            .unwrap();
+        let header = dpop(&access_token);
+        let verified =
+            authorize_resource_request(&fixture.verifier, &[header.as_str()], None, &proof)
+                .unwrap();
+
+        assert_eq!(verified.cnf.unwrap().jkt, Some(dpop_fixture.jkt));
+    }
+
+    #[test]
+    fn dpop_http_authorizer_verifies_proof_and_inserts_extensions() {
+        let fixture = fixture();
+        let dpop_fixture = dpop_fixture();
+        let access_token = token(&fixture, json!({"cnf": {"jkt": dpop_fixture.jkt}}), None);
+        let proof_jwt = dpop_proof(
+            &dpop_fixture,
+            &access_token,
+            "GET",
+            "https://api.example/orders",
+            "proof-jti-http",
+            None,
+            None,
+        );
+        let dpop_verifier = DpopProofVerifier::new(DpopProofVerifierConfig::default());
+        let mut request = http::Request::builder()
+            .method("GET")
+            .uri("/orders")
+            .header(header::AUTHORIZATION, dpop(&access_token))
+            .header("DPoP", proof_jwt)
+            .body(())
+            .unwrap();
+
+        let verified = authorize_dpop_http_request(
+            &fixture.verifier,
+            &dpop_verifier,
+            &mut request,
+            "https://api.example/orders",
+        )
+        .unwrap();
+
+        assert_eq!(verified.cnf.unwrap().jkt, Some(dpop_fixture.jkt.clone()));
+        assert_eq!(
+            request
+                .extensions()
+                .get::<VerifiedSenderConstraintProof>()
+                .unwrap()
+                .dpop_jkt,
+            Some(dpop_fixture.jkt)
+        );
+        assert!(request.extensions().get::<VerifiedAccessToken>().is_some());
+    }
+
+    #[test]
+    fn dpop_authorizer_rejects_invalid_proof_before_token_binding() {
+        let fixture = fixture();
+        let dpop_fixture = dpop_fixture();
+        let access_token = token(&fixture, json!({"cnf": {"jkt": dpop_fixture.jkt}}), None);
+        let proof_jwt = dpop_proof(
+            &dpop_fixture,
+            &access_token,
+            "GET",
+            "https://api.example/orders",
+            "proof-jti-invalid",
+            None,
+            Some("wrong-ath"),
+        );
+        let dpop_verifier = DpopProofVerifier::new(DpopProofVerifierConfig::default());
+        let authorization = dpop(&access_token);
+
+        let error = authorize_dpop_resource_request(
+            &fixture.verifier,
+            &dpop_verifier,
+            &[authorization.as_str()],
+            &proof_jwt,
+            None,
+            "GET",
+            "https://api.example/orders",
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            ResourceServerRequestError::InvalidDpopProof(
+                DpopProofVerifierError::AccessTokenHashMismatch
+            )
+        );
+    }
+
+    #[test]
+    fn dpop_proof_verifier_rejects_replayed_jti() {
+        let dpop = dpop_fixture();
+        let access_token = "access-token";
+        let proof_jwt = dpop_proof(
+            &dpop,
+            access_token,
+            "GET",
+            "https://api.example/orders",
+            "proof-jti-replay",
+            None,
+            None,
+        );
+        let verifier = DpopProofVerifier::new(DpopProofVerifierConfig::default());
+
+        verifier
+            .verify(
+                &proof_jwt,
+                "GET",
+                "https://api.example/orders",
+                access_token,
+            )
+            .unwrap();
+        let error = verifier
+            .verify(
+                &proof_jwt,
+                "GET",
+                "https://api.example/orders",
+                access_token,
+            )
+            .unwrap_err();
+
+        assert_eq!(error, DpopProofVerifierError::ReplayDetected);
+    }
+
+    #[test]
+    fn dpop_proof_verifier_rejects_wrong_ath() {
+        let dpop = dpop_fixture();
+        let proof_jwt = dpop_proof(
+            &dpop,
+            "access-token",
+            "GET",
+            "https://api.example/orders",
+            "proof-jti-ath",
+            None,
+            Some("wrong-ath"),
+        );
+        let verifier = DpopProofVerifier::new(DpopProofVerifierConfig::default());
+
+        let error = verifier
+            .verify(
+                &proof_jwt,
+                "GET",
+                "https://api.example/orders",
+                "access-token",
+            )
+            .unwrap_err();
+
+        assert_eq!(error, DpopProofVerifierError::AccessTokenHashMismatch);
+    }
+
+    #[test]
+    fn dpop_proof_verifier_enforces_required_nonce() {
+        let dpop = dpop_fixture();
+        let access_token = "access-token";
+        let proof_jwt = dpop_proof(
+            &dpop,
+            access_token,
+            "GET",
+            "https://api.example/orders",
+            "proof-jti-nonce",
+            Some("nonce-1"),
+            None,
+        );
+        let verifier = DpopProofVerifier::new(DpopProofVerifierConfig {
+            required_nonce: Some("nonce-1".to_owned()),
+            ..DpopProofVerifierConfig::default()
+        });
+
+        verifier
+            .verify(
+                &proof_jwt,
+                "GET",
+                "https://api.example/orders",
+                access_token,
+            )
+            .unwrap();
+
+        let verifier = DpopProofVerifier::new(DpopProofVerifierConfig {
+            required_nonce: Some("nonce-2".to_owned()),
+            ..DpopProofVerifierConfig::default()
+        });
+        let error = verifier
+            .verify(
+                &proof_jwt,
+                "GET",
+                "https://api.example/orders",
+                access_token,
+            )
+            .unwrap_err();
+
+        assert_eq!(error, DpopProofVerifierError::NonceMismatch);
     }
 
     #[test]

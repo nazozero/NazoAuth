@@ -96,15 +96,44 @@ fn guard<T>(verifier: &ResourceServerVerifier, request: &mut tonic::Request<T>) 
 `ConfirmationPolicy::RequireDpopJkt(expected_jkt)` verifies the token binding material in the JWT access token. A full DPoP-protected resource request must also validate the DPoP proof JWT for:
 
 - `typ=dpop+jwt`
+- one and only one `DPoP` request header
 - proof signature against the embedded JWK
 - proof `jti` replay cache
 - `htu` and `htm`
 - `ath` matching the presented access token
 - nonce policy when configured
 
-The verifier intentionally keeps these two checks separate so framework adapters can bind proof validation to the actual HTTP method, URI, headers, and replay store. The adapters require a `VerifiedSenderConstraintProof { dpop_jkt: Some(...) }` request extension before accepting a DPoP-bound access token. The older `SenderConstraintProof` name is only a compatibility alias for this verified context type.
+`DpopProofVerifier` performs the proof checks and returns a `VerifiedSenderConstraintProof { dpop_jkt: Some(...) }` value. The access-token authorizer then compares that verified `jkt` with the token `cnf.jkt` before accepting the request. The older `SenderConstraintProof` name is only a compatibility alias for this verified context type.
 
-`VerifiedSenderConstraintProof` must never be populated directly from an unverified `DPoP` header. It must come from a DPoP proof validator that has already checked signature, `jti`, `htu`, `htm`, `ath`, and nonce policy. A complete resource-server integration should install a DPoP proof middleware before `TowerResourceServerLayer`, `ActixVerifiedAccessToken`, or `authorize_tonic_request`; that middleware is responsible for replay storage and for inserting only verified `dpop_jkt` values into request extensions.
+`VerifiedSenderConstraintProof` must never be populated directly from an unverified `DPoP` header. It must come from `DpopProofVerifier` or an equivalent validator that has already checked signature, `jti`, `htu`, `htm`, `ath`, and nonce policy.
+
+For HTTP integrations, `authorize_dpop_http_request` reads the `Authorization: DPoP ...` and `DPoP` headers, verifies the proof, inserts both `VerifiedSenderConstraintProof` and `VerifiedAccessToken` into request extensions, and rejects invalid proof material before token binding is evaluated:
+
+```rust
+use nazo_oauth_server::resource_server::{
+    authorize_dpop_http_request, DpopProofVerifier, DpopProofVerifierConfig,
+    ResourceServerVerifier,
+};
+
+fn guard<B>(
+    verifier: &ResourceServerVerifier,
+    dpop_verifier: &DpopProofVerifier,
+    request: &mut http::Request<B>,
+) {
+    let htu = "https://api.example/orders";
+    let claims = authorize_dpop_http_request(verifier, dpop_verifier, request, htu)
+        .expect("DPoP-bound request must be valid");
+    assert!(!claims.subject.is_empty());
+}
+
+fn dpop_verifier() -> DpopProofVerifier {
+    DpopProofVerifier::new(DpopProofVerifierConfig::default())
+}
+```
+
+The `htu` value passed to `authorize_dpop_http_request` must be the deployment-canonical target URI without query or fragment parts. Behind reverse proxies, derive it from the trusted external scheme, host, and path after forwarded-header validation. Do not pass an origin-form URI such as `/orders`, and do not include query parameters in the comparison value.
+
+The built-in replay cache is process-local and bounded by the configured proof validity window. Clustered deployments that require cross-instance replay detection must either route a DPoP key consistently to one resource-server instance or replace this boundary with a shared replay store that preserves the same `jkt:jti` duplicate rejection semantics.
 
 ## mTLS Boundary
 
