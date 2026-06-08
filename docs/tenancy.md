@@ -2,7 +2,7 @@
 
 ## Scope
 
-Version 1 uses a tenant-aware schema with explicit tenant, realm, and
+The current runtime uses a tenant-aware schema with explicit tenant, realm, and
 organization columns for core identity and OAuth records. Runtime routing is
 single-tenant unless a deployment adds request-level tenant selection.
 
@@ -34,7 +34,7 @@ JWT access tokens include a private `tenant_id` claim. Resource endpoints and to
 
 ## Product Boundaries
 
-Version 1 remains single-tenant by default with tenant-aware data invariants.
+The default runtime remains single-tenant with tenant-aware data invariants.
 SCIM provisioning, local registration, grant lookup paths, and
 external OIDC/SAML federation still bind users and grants to the default tenant,
 realm, and organization.

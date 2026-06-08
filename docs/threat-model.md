@@ -2,7 +2,7 @@
 
 ## Scope
 
-The threat model covers the version 1 authorization-server boundary. Update it
+The threat model covers the current authorization-server boundary. Update it
 in the same change that adds a profile, changes deployment topology, changes
 token format, or expands discovery metadata.
 
@@ -35,7 +35,7 @@ token format, or expands discovery metadata.
 
 ## Threats and Controls
 
-| Threat | Risk | Version 1 controls | Operational note |
+| Threat | Risk | Controls | Operational note |
 | --- | --- | --- | --- |
 | Authorization code theft | Stolen code exchanged by attacker | PKCE S256, redirect URI matching, client binding, short TTL, atomic code consumption | Profile matrix tests for every high-security client class |
 | Authorization code replay | Reuse races mint extra tokens | Valkey state machine, consumed-code token revocation | More concurrency and lost-response regression tests |

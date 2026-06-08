@@ -29,10 +29,10 @@ Credential behavior:
 - Successful database-token use updates `last_used_at` and inserts `scim_audit_events`.
 - Successful and denied SCIM token checks emit structured audit events without raw token material.
 
-Outside version 1 SCIM:
+Outside default SCIM:
 
 - OAuth client-credentials or introspection-backed SCIM authorization.
-- Per-tenant SCIM credential routing. The schema stores `tenant_id`; version 1 provisioning uses the default tenant boundary.
+- Per-tenant SCIM credential routing. The schema stores `tenant_id`; provisioning uses the default tenant boundary.
 
 ## Endpoints
 

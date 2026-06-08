@@ -2,7 +2,7 @@
 
 ## Scope
 
-Version 1 keeps ecosystem onboarding features outside the default
+The default scope keeps ecosystem onboarding features outside the
 authorization-server core. The features expand the protocol attack surface and
 stay out of discovery metadata until implementation, tests, and deployment
 policy explicitly enable them.
@@ -11,7 +11,7 @@ policy explicitly enable them.
 
 ### Boundary
 
-RFC 7591 Dynamic Client Registration is outside the default version 1 scope.
+RFC 7591 Dynamic Client Registration is outside the default scope.
 
 - DCR changes client creation from an administrator-controlled action into a protocol surface exposed to external callers.
 - Redirect URI validation, JWKS URI fetching, software statements, initial access tokens, and client metadata updates all become security-critical input paths.
@@ -62,7 +62,7 @@ complete implementation and threat model.
 
 ### Boundary
 
-The Device Authorization Grant is outside the default version 1 scope. It fits
+The Device Authorization Grant is outside the default scope. It fits
 CLI, TV, appliance, and constrained-input clients after user-code phishing and
 polling-abuse controls are designed.
 
@@ -87,7 +87,7 @@ polling-abuse controls are designed.
 
 ### Boundary
 
-RFC 8693 Token Exchange is outside the default version 1 scope. It fits service
+RFC 8693 Token Exchange is outside the default scope. It fits service
 delegation, impersonation, and actor-token deployments after policy and audit
 boundaries are specified.
 

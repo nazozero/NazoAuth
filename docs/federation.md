@@ -5,7 +5,7 @@
 External federation belongs to the identity-platform surface. It is separate
 from OAuth/OIDC authorization-server conformance.
 
-Version 1 supports:
+Supported federation modes:
 
 - one configured external OIDC provider
 - one trusted SAML gateway integration
