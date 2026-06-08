@@ -1,6 +1,6 @@
-# Nazo OAuth Server
+# Nazo Auth Server
 
-Nazo OAuth Server is a Rust-native OAuth 2.1 and OpenID Connect authorization
+Nazo Auth Server is a Rust-native OAuth 2.1 and OpenID Connect authorization
 server for self-hosted deployments. The implementation favors explicit profile
 boundaries, sender-constrained token support, and repeatable conformance
 evidence.
