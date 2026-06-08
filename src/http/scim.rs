@@ -9,6 +9,32 @@ const SCIM_SERVICE_PROVIDER_CONFIG_SCHEMA: &str =
     "urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig";
 const SCIM_SCHEMA_SCHEMA: &str = "urn:ietf:params:scim:schemas:core:2.0:Schema";
 const SCIM_RESOURCE_TYPE_SCHEMA: &str = "urn:ietf:params:scim:schemas:core:2.0:ResourceType";
+const SCIM_SCOPE_READ: &str = "scim:read";
+const SCIM_SCOPE_WRITE: &str = "scim:write";
+const SCIM_SCOPE_ALL: &str = "scim:*";
+
+#[derive(Clone)]
+struct ScimCredential {
+    token_id: Option<Uuid>,
+    tenant_id: Uuid,
+    scopes: Vec<String>,
+    source: &'static str,
+}
+
+#[derive(Clone, Copy)]
+enum ScimRequiredScope {
+    Read,
+    Write,
+}
+
+impl ScimRequiredScope {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Read => SCIM_SCOPE_READ,
+            Self::Write => SCIM_SCOPE_WRITE,
+        }
+    }
+}
 
 #[derive(Deserialize)]
 pub(crate) struct ScimListQuery {
@@ -62,7 +88,7 @@ pub(crate) async fn scim_service_provider_config(
     state: Data<AppState>,
     req: HttpRequest,
 ) -> HttpResponse {
-    if let Err(response) = require_scim_bearer(&state, &req) {
+    if let Err(response) = require_scim_bearer(&state, &req, ScimRequiredScope::Read).await {
         return response;
     }
     json_response(scim_base(json!({
@@ -77,7 +103,7 @@ pub(crate) async fn scim_service_provider_config(
         "authenticationSchemes": [{
             "type": "oauthbearertoken",
             "name": "Bearer",
-            "description": "Static deployment bearer token for SCIM provisioning.",
+            "description": "Database-backed bearer credential with legacy deployment-token fallback.",
             "specUri": "https://www.rfc-editor.org/rfc/rfc6750",
             "primary": true
         }]
@@ -85,7 +111,7 @@ pub(crate) async fn scim_service_provider_config(
 }
 
 pub(crate) async fn scim_schemas(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
-    if let Err(response) = require_scim_bearer(&state, &req) {
+    if let Err(response) = require_scim_bearer(&state, &req, ScimRequiredScope::Read).await {
         return response;
     }
     json_response(scim_base(json!({
@@ -98,7 +124,7 @@ pub(crate) async fn scim_schemas(state: Data<AppState>, req: HttpRequest) -> Htt
 }
 
 pub(crate) async fn scim_resource_types(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
-    if let Err(response) = require_scim_bearer(&state, &req) {
+    if let Err(response) = require_scim_bearer(&state, &req, ScimRequiredScope::Read).await {
         return response;
     }
     json_response(scim_base(json!({
@@ -121,7 +147,7 @@ pub(crate) async fn scim_list_users(
     req: HttpRequest,
     Query(query): Query<ScimListQuery>,
 ) -> HttpResponse {
-    if let Err(response) = require_scim_bearer(&state, &req) {
+    if let Err(response) = require_scim_bearer(&state, &req, ScimRequiredScope::Read).await {
         return response;
     }
     let start_index = query.start_index.unwrap_or(1).max(1);
@@ -210,7 +236,7 @@ pub(crate) async fn scim_create_user(
     req: HttpRequest,
     Json(payload): Json<ScimUserRequest>,
 ) -> HttpResponse {
-    if let Err(response) = require_scim_bearer(&state, &req) {
+    if let Err(response) = require_scim_bearer(&state, &req, ScimRequiredScope::Write).await {
         return response;
     }
     let input = match normalize_scim_user_payload(payload, true) {
@@ -283,7 +309,7 @@ pub(crate) async fn scim_get_user(
     req: HttpRequest,
     path: actix_web::web::Path<Uuid>,
 ) -> HttpResponse {
-    if let Err(response) = require_scim_bearer(&state, &req) {
+    if let Err(response) = require_scim_bearer(&state, &req, ScimRequiredScope::Read).await {
         return response;
     }
     match load_scim_user(&state, path.into_inner()).await {
@@ -299,7 +325,7 @@ pub(crate) async fn scim_replace_user(
     path: actix_web::web::Path<Uuid>,
     Json(payload): Json<ScimUserRequest>,
 ) -> HttpResponse {
-    if let Err(response) = require_scim_bearer(&state, &req) {
+    if let Err(response) = require_scim_bearer(&state, &req, ScimRequiredScope::Write).await {
         return response;
     }
     let user_id = path.into_inner();
@@ -367,7 +393,7 @@ pub(crate) async fn scim_patch_user(
     path: actix_web::web::Path<Uuid>,
     Json(payload): Json<ScimPatchRequest>,
 ) -> HttpResponse {
-    if let Err(response) = require_scim_bearer(&state, &req) {
+    if let Err(response) = require_scim_bearer(&state, &req, ScimRequiredScope::Write).await {
         return response;
     }
     if !payload.schemas.is_empty()
@@ -448,7 +474,7 @@ pub(crate) async fn scim_delete_user(
     req: HttpRequest,
     path: actix_web::web::Path<Uuid>,
 ) -> HttpResponse {
-    if let Err(response) = require_scim_bearer(&state, &req) {
+    if let Err(response) = require_scim_bearer(&state, &req, ScimRequiredScope::Write).await {
         return response;
     }
     let tenant = default_tenant_context();
@@ -702,30 +728,223 @@ fn sync_scim_identity(patch: &mut ScimPatch) -> Result<(), HttpResponse> {
     }
 }
 
-fn require_scim_bearer(state: &AppState, req: &HttpRequest) -> Result<(), HttpResponse> {
-    let Some(expected) = state.settings.scim_bearer_token.as_deref() else {
-        return Err(scim_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "disabled",
-            "SCIM is not configured",
-        ));
-    };
+async fn require_scim_bearer(
+    state: &AppState,
+    req: &HttpRequest,
+    required_scope: ScimRequiredScope,
+) -> Result<ScimCredential, HttpResponse> {
     let Some(actual) = bearer_token(req) else {
+        audit_scim_token_denied(state, req, required_scope, "missing_bearer", None);
         return Err(scim_error(
             StatusCode::UNAUTHORIZED,
             "unauthorized",
             "missing bearer token",
         ));
     };
-    if constant_time_eq(expected.as_bytes(), actual.as_bytes()) {
-        Ok(())
-    } else {
-        Err(scim_error(
-            StatusCode::UNAUTHORIZED,
-            "unauthorized",
-            "invalid bearer token",
-        ))
+    let token_hash = blake3_hex(actual);
+    match load_scim_credential(state, &token_hash).await {
+        Ok(Some(credential)) => {
+            return authorize_scim_credential(state, req, required_scope, credential).await;
+        }
+        Ok(None) => {}
+        Err(response) => {
+            if let Some(credential) = legacy_scim_credential(state, actual) {
+                return authorize_scim_credential(state, req, required_scope, credential).await;
+            }
+            return Err(response);
+        }
     }
+    if let Some(credential) = legacy_scim_credential(state, actual) {
+        return authorize_scim_credential(state, req, required_scope, credential).await;
+    }
+    audit_scim_token_denied(state, req, required_scope, "invalid_token", None);
+    Err(scim_error(
+        StatusCode::UNAUTHORIZED,
+        "unauthorized",
+        "invalid bearer token",
+    ))
+}
+
+async fn load_scim_credential(
+    state: &AppState,
+    token_hash: &str,
+) -> Result<Option<ScimCredential>, HttpResponse> {
+    let mut conn = match get_conn(&state.diesel_db).await {
+        Ok(conn) => conn,
+        Err(error) => {
+            tracing::warn!(%error, "failed to get database connection for SCIM token lookup");
+            return Err(scim_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "backend unavailable",
+            ));
+        }
+    };
+    let row = scim_tokens::table
+        .filter(scim_tokens::token_hash.eq(token_hash))
+        .filter(scim_tokens::revoked_at.is_null())
+        .filter(
+            scim_tokens::expires_at
+                .is_null()
+                .or(scim_tokens::expires_at.gt(diesel_now)),
+        )
+        .select((scim_tokens::id, scim_tokens::tenant_id, scim_tokens::scopes))
+        .first::<(Uuid, Uuid, Value)>(&mut conn)
+        .await
+        .optional();
+    match row {
+        Ok(Some((token_id, tenant_id, scopes))) => Ok(Some(ScimCredential {
+            token_id: Some(token_id),
+            tenant_id,
+            scopes: scim_scope_values(&scopes),
+            source: "database",
+        })),
+        Ok(None) => Ok(None),
+        Err(error) => {
+            tracing::warn!(%error, "failed to query SCIM token");
+            Err(scim_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "backend unavailable",
+            ))
+        }
+    }
+}
+
+fn legacy_scim_credential(state: &AppState, actual: &str) -> Option<ScimCredential> {
+    let expected = state.settings.scim_bearer_token.as_deref()?;
+    constant_time_eq(expected.as_bytes(), actual.as_bytes()).then(|| {
+        let tenant = default_tenant_context();
+        ScimCredential {
+            token_id: None,
+            tenant_id: tenant.tenant_id,
+            scopes: vec![SCIM_SCOPE_READ.to_owned(), SCIM_SCOPE_WRITE.to_owned()],
+            source: "legacy-env",
+        }
+    })
+}
+
+async fn authorize_scim_credential(
+    state: &AppState,
+    req: &HttpRequest,
+    required_scope: ScimRequiredScope,
+    credential: ScimCredential,
+) -> Result<ScimCredential, HttpResponse> {
+    if !scim_credential_allows(&credential, required_scope) {
+        audit_scim_token_denied(
+            state,
+            req,
+            required_scope,
+            "insufficient_scope",
+            credential.token_id,
+        );
+        return Err(scim_error(
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            "SCIM token lacks the required scope",
+        ));
+    }
+    record_scim_token_use(state, req, required_scope, &credential).await;
+    audit_event(
+        "scim_token_used",
+        audit_fields(&[
+            ("token_id", json!(credential.token_id)),
+            ("tenant_id", json!(credential.tenant_id)),
+            ("scope", json!(required_scope.as_str())),
+            ("source", json!(credential.source)),
+            (
+                "ip_hash",
+                json!(blake3_hex(&client_ip(req, &state.settings))),
+            ),
+        ]),
+    );
+    Ok(credential)
+}
+
+fn scim_credential_allows(credential: &ScimCredential, required_scope: ScimRequiredScope) -> bool {
+    credential
+        .scopes
+        .iter()
+        .any(|scope| scope == SCIM_SCOPE_ALL || scope == required_scope.as_str())
+}
+
+fn scim_scope_values(value: &Value) -> Vec<String> {
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|value| value.as_str().map(str::trim))
+        .filter(|scope| !scope.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+async fn record_scim_token_use(
+    state: &AppState,
+    req: &HttpRequest,
+    required_scope: ScimRequiredScope,
+    credential: &ScimCredential,
+) {
+    let Some(token_id) = credential.token_id else {
+        return;
+    };
+    let mut conn = match get_conn(&state.diesel_db).await {
+        Ok(conn) => conn,
+        Err(error) => {
+            tracing::warn!(%error, "failed to get database connection for SCIM token audit");
+            return;
+        }
+    };
+    if let Err(error) = diesel::update(scim_tokens::table.find(token_id))
+        .set((
+            scim_tokens::last_used_at.eq(diesel_now),
+            scim_tokens::updated_at.eq(diesel_now),
+        ))
+        .execute(&mut conn)
+        .await
+    {
+        tracing::warn!(%error, token_id = %token_id, "failed to update SCIM token last_used_at");
+    }
+    let user_agent_hash = req
+        .headers()
+        .get(header::USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .map(blake3_hex);
+    if let Err(error) = diesel::insert_into(scim_audit_events::table)
+        .values((
+            scim_audit_events::tenant_id.eq(credential.tenant_id),
+            scim_audit_events::scim_token_id.eq(Some(token_id)),
+            scim_audit_events::event_type.eq("scim_token_used"),
+            scim_audit_events::scopes.eq(json!([required_scope.as_str()])),
+            scim_audit_events::ip_hash.eq(Some(blake3_hex(&client_ip(req, &state.settings)))),
+            scim_audit_events::user_agent_hash.eq(user_agent_hash),
+        ))
+        .execute(&mut conn)
+        .await
+    {
+        tracing::warn!(%error, token_id = %token_id, "failed to insert SCIM token audit event");
+    }
+}
+
+fn audit_scim_token_denied(
+    state: &AppState,
+    req: &HttpRequest,
+    required_scope: ScimRequiredScope,
+    reason: &str,
+    token_id: Option<Uuid>,
+) {
+    audit_event(
+        "scim_token_denied",
+        audit_fields(&[
+            ("token_id", json!(token_id)),
+            ("scope", json!(required_scope.as_str())),
+            ("reason", json!(reason)),
+            (
+                "ip_hash",
+                json!(blake3_hex(&client_ip(req, &state.settings))),
+            ),
+        ]),
+    );
 }
 
 fn bearer_token(req: &HttpRequest) -> Option<&str> {
@@ -971,6 +1190,37 @@ mod tests {
             .insert_header((header::AUTHORIZATION, "Bearer   "))
             .to_http_request();
         assert_eq!(bearer_token(&req), None);
+    }
+
+    #[test]
+    fn scim_scope_values_accepts_only_non_empty_strings() {
+        assert_eq!(
+            scim_scope_values(&json!([SCIM_SCOPE_READ, "", 7, SCIM_SCOPE_WRITE])),
+            vec![SCIM_SCOPE_READ, SCIM_SCOPE_WRITE]
+        );
+    }
+
+    #[test]
+    fn scim_credentials_enforce_read_write_and_wildcard_scopes() {
+        let tenant = default_tenant_context();
+        let read_only = ScimCredential {
+            token_id: None,
+            tenant_id: tenant.tenant_id,
+            scopes: vec![SCIM_SCOPE_READ.to_owned()],
+            source: "test",
+        };
+        let wildcard = ScimCredential {
+            scopes: vec![SCIM_SCOPE_ALL.to_owned()],
+            ..read_only.clone()
+        };
+
+        assert!(scim_credential_allows(&read_only, ScimRequiredScope::Read));
+        assert!(!scim_credential_allows(
+            &read_only,
+            ScimRequiredScope::Write
+        ));
+        assert!(scim_credential_allows(&wildcard, ScimRequiredScope::Read));
+        assert!(scim_credential_allows(&wildcard, ScimRequiredScope::Write));
     }
 
     #[test]

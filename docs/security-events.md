@@ -54,5 +54,7 @@ Raw credentials and bearer material must never appear in audit fields. The audit
 | `client_created` | `client_lifecycle` | Client registration was created through admin or access-request flow. |
 | `client_updated` | `client_lifecycle` | Client registration metadata was updated. |
 | `admin_user_updated` | `administration` | Administrator changed user status, role, or admin level. |
+| `scim_token_used` | `provisioning` | SCIM bearer credential was accepted without logging raw token material. |
+| `scim_token_denied` | `provisioning` | SCIM bearer credential was missing, invalid, or lacked the required scope. |
 
 Event names and categories use lowercase ASCII words separated by `_`; new events must be added to the implementation allowlist and this document in the same commit.

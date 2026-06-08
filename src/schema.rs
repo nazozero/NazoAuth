@@ -1,4 +1,32 @@
 diesel::table! {
+    scim_tokens (id) {
+        id -> Uuid,
+        tenant_id -> Uuid,
+        token_hash -> Varchar,
+        label -> Varchar,
+        scopes -> Jsonb,
+        expires_at -> Nullable<Timestamptz>,
+        revoked_at -> Nullable<Timestamptz>,
+        last_used_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    scim_audit_events (id) {
+        id -> Uuid,
+        tenant_id -> Uuid,
+        scim_token_id -> Nullable<Uuid>,
+        event_type -> Varchar,
+        scopes -> Jsonb,
+        ip_hash -> Nullable<Varchar>,
+        user_agent_hash -> Nullable<Varchar>,
+        created_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
     external_identity_links (id) {
         id -> Uuid,
         tenant_id -> Uuid,
@@ -255,6 +283,9 @@ diesel::joinable!(oauth_tokens -> tenants (tenant_id));
 diesel::joinable!(oauth_tokens -> users (user_id));
 diesel::joinable!(organizations -> tenants (tenant_id));
 diesel::joinable!(realms -> tenants (tenant_id));
+diesel::joinable!(scim_audit_events -> scim_tokens (scim_token_id));
+diesel::joinable!(scim_audit_events -> tenants (tenant_id));
+diesel::joinable!(scim_tokens -> tenants (tenant_id));
 diesel::joinable!(user_client_grants -> oauth_clients (client_id));
 diesel::joinable!(user_client_grants -> tenants (tenant_id));
 diesel::joinable!(user_client_grants -> users (user_id));
@@ -278,6 +309,8 @@ diesel::allow_tables_to_appear_in_same_query!(
     oauth_tokens,
     organizations,
     realms,
+    scim_audit_events,
+    scim_tokens,
     tenants,
     user_client_grants,
     user_mfa_backup_codes,
