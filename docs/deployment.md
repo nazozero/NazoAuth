@@ -205,7 +205,7 @@ The signer must return JSON on stdout with a base64url raw JWS signature:
 {"signature":"<base64url-signature>"}
 ```
 
-The application rejects active external keys unless `SIGNING_EXTERNAL_COMMAND` is configured, kills timed-out signer processes, rejects empty or malformed signatures, and never falls back to unsigned or query-mode responses after signing failure.
+The application rejects active external keys unless `SIGNING_EXTERNAL_COMMAND` is configured, kills timed-out signer processes, rejects empty or malformed signatures, verifies the returned signature against the active public JWK before returning the JWT, and never falls back to unsigned or query-mode responses after signing failure. A verification failure is treated as an external signer fault because it indicates the signer used the wrong key, algorithm, or signing input.
 
 ## Database and Valkey
 

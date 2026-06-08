@@ -439,11 +439,15 @@ impl Keyset {
                 sign_local_jwt_input(self.active_alg, private_pkcs8_der, signing_input.as_bytes())?
             }
             ActiveSigningKey::ExternalCommand(external) => {
+                let verification_key = self
+                    .verification_key(&self.active_kid)
+                    .ok_or_else(|| jwt_provider_error("active signing key has no public JWK"))?;
                 sign_external_jwt_input(
                     external,
                     &self.active_kid,
                     self.active_alg,
                     signing_input.as_str(),
+                    &verification_key.public_jwk,
                 )
                 .await?
             }
@@ -473,6 +477,7 @@ async fn sign_external_jwt_input(
     kid: &str,
     alg: jsonwebtoken::Algorithm,
     signing_input: &str,
+    public_jwk: &Value,
 ) -> jsonwebtoken::errors::Result<String> {
     let alg_name =
         signing_algorithm_name(alg).ok_or(jsonwebtoken::errors::ErrorKind::InvalidAlgorithm)?;
@@ -565,7 +570,35 @@ async fn sign_external_jwt_input(
             "external signer returned empty signature",
         ));
     }
+    verify_external_jwt_signature(external, kid, alg, signing_input, signature, public_jwk)?;
     Ok(signature.to_owned())
+}
+
+fn verify_external_jwt_signature(
+    external: &ExternalSigningKey,
+    kid: &str,
+    alg: jsonwebtoken::Algorithm,
+    signing_input: &str,
+    signature: &str,
+    public_jwk: &Value,
+) -> jsonwebtoken::errors::Result<()> {
+    let decoding_key = super::jwt_decoding_key_from_jwk(public_jwk, alg).ok_or_else(|| {
+        jwt_provider_error("active external signer public JWK is not usable for verification")
+    })?;
+    match jsonwebtoken::crypto::verify(signature, signing_input.as_bytes(), &decoding_key, alg) {
+        Ok(true) => Ok(()),
+        Ok(false) | Err(_) => {
+            tracing::error!(
+                kid,
+                alg = ?alg,
+                key_ref = %external.key_ref,
+                "external signer returned a signature that failed local verification"
+            );
+            Err(jwt_provider_error(
+                "external signer returned signature that does not verify with active public JWK",
+            ))
+        }
+    }
 }
 
 fn jwt_provider_error(message: impl Into<String>) -> jsonwebtoken::errors::Error {
@@ -964,6 +997,88 @@ printf '{"signature":"%s"}' "$signature"
         let _ = tokio::fs::remove_dir_all(&keys_dir).await;
 
         assert_eq!(decoded.claims["sub"], "subject-1");
+    }
+
+    #[tokio::test]
+    async fn external_command_signer_signature_must_match_active_public_jwk() {
+        let keys_dir = temp_keys_dir("external_signer_bad_signature");
+        tokio::fs::create_dir_all(&keys_dir).await.unwrap();
+        let active_der = generate_key_material(jsonwebtoken::Algorithm::RS256)
+            .unwrap()
+            .private_pkcs8_der;
+        let wrong_der = generate_key_material(jsonwebtoken::Algorithm::RS256)
+            .unwrap()
+            .private_pkcs8_der;
+        let wrong_private_pem = der_to_pem(&wrong_der, "RSA PRIVATE KEY");
+        let public_jwk = public_jwk_from_private_der(
+            "external-active",
+            jsonwebtoken::Algorithm::RS256,
+            &active_der,
+        )
+        .unwrap();
+        let wrong_private_key_path = keys_dir.join("wrong-external-active.pem");
+        tokio::fs::write(&wrong_private_key_path, &wrong_private_pem)
+            .await
+            .unwrap();
+        let signer = keys_dir.join("signer.sh");
+        tokio::fs::write(
+            &signer,
+            r#"#!/bin/sh
+set -eu
+key_file="$1"
+request=$(cat)
+signing_input=$(printf '%s' "$request" | sed -n 's/.*"signing_input":"\([^"]*\)".*/\1/p')
+signature=$(printf '%s' "$signing_input" | openssl dgst -sha256 -sign "$key_file" -binary | openssl base64 -A | tr '+/' '-_' | tr -d '=')
+printf '{"signature":"%s"}' "$signature"
+"#,
+        )
+        .await
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            tokio::fs::set_permissions(&signer, std::fs::Permissions::from_mode(0o700))
+                .await
+                .unwrap();
+        }
+        tokio::fs::write(
+            keys_dir.join("keyset.json"),
+            serde_json::to_string_pretty(&json!({
+                "active_kid": "external-active",
+                "keys": [{
+                    "kid": "external-active",
+                    "alg": "RS256",
+                    "backend": "external-command",
+                    "key_ref": "kms://tenant/signing/external-active",
+                    "public_jwk": public_jwk,
+                    "retire_at": null
+                }]
+            }))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        let mut settings = test_settings(keys_dir.clone());
+        settings.signing_external_command = vec![
+            signer.display().to_string(),
+            wrong_private_key_path.display().to_string(),
+        ];
+        let keyset_path = keys_dir.join("keyset.json");
+        let keyset = try_load_keyset(&settings, &keyset_path)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+        header.kid = Some("external-active".to_owned());
+        let claims = json!({"sub": "subject-1", "exp": 4_102_444_800_i64});
+
+        let result = keyset.sign_jwt(&header, &claims).await;
+        let _ = tokio::fs::remove_dir_all(&keys_dir).await;
+
+        match result {
+            Ok(_) => panic!("external signer signature mismatch should fail"),
+            Err(error) => assert!(format!("{error}").contains("does not verify")),
+        }
     }
 
     fn temp_keys_dir(label: &str) -> PathBuf {

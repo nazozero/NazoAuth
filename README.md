@@ -47,6 +47,7 @@ This repository is not yet a full IAM suite like Keycloak, ZITADEL, authentik, o
 
 The project maintains durable conformance records in Git instead of relying only on GitHub Actions artifacts, which expire. The latest recorded OpenID Foundation run covers a 16-plan matrix across OIDC Basic, OIDC Config, FAPI2 Security Profile Final, FAPI2 Message Signing Final, mTLS, DPoP, `private_key_jwt`, and client credentials variants:
 
+- [2026-06-07 OIDF full matrix](docs/conformance/2026-06-07-oidf-full-matrix.md)
 - [2026-06-06 OIDF full matrix](docs/conformance/2026-06-06-oidf-full-matrix.md)
 
 The recorded workflow conclusion was `success`, with every matrix plan completing with `0 failures` and `0 warnings`. The record includes commit SHA, workflow run URL, job URL, artifact name, artifact digest, artifact expiry, plan IDs, exported artifact filenames, profile combinations, and pass counts.
@@ -285,4 +286,4 @@ Current high-priority boundaries:
 
 Refresh-token rotation for non-FAPI compatibility profiles is documented in [docs/refresh-token-rotation.md](docs/refresh-token-rotation.md). FAPI2 Security deployments should not use routine rotation by default; refresh grants still require confidential client authentication and the configured DPoP or mTLS proof, and newly issued access tokens remain sender-constrained.
 
-Known roadmap items are tracked in [docs/roadmap.md](docs/roadmap.md), [CHANGELOG.md](CHANGELOG.md), and future conformance records. Dynamic Client Registration, Client Configuration Management, Device Authorization Grant, and Token Exchange are tracked as ecosystem onboarding decisions in [docs/ecosystem-onboarding.md](docs/ecosystem-onboarding.md). Implemented identity-platform areas now include tenant/realm boundaries, TOTP MFA, WebAuthn/passkeys, external OIDC/SAML federation, SCIM provisioning, and resource-server middleware. Remaining priority areas focus on deeper conformance evidence and release proof.
+Known roadmap items are tracked in [docs/roadmap.md](docs/roadmap.md), [CHANGELOG.md](CHANGELOG.md), and future conformance records. Dynamic Client Registration, Client Configuration Management, Device Authorization Grant, and Token Exchange are tracked as deferred ecosystem onboarding decisions in [docs/ecosystem-onboarding.md](docs/ecosystem-onboarding.md). Implemented identity-platform areas now include a single-tenant default runtime with tenant-aware schema boundaries, TOTP MFA, WebAuthn/passkeys, external OIDC/SAML federation, minimum SCIM provisioning, and resource-server middleware. Remaining priority areas focus on deeper conformance evidence, release proof, dynamic tenant resolution, and enterprise SCIM authorization.

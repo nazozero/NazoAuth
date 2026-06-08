@@ -1,12 +1,31 @@
 # SCIM 2.0 Provisioning
 
-SCIM support provides tenant-bound enterprise user provisioning for the default deployment boundary. It is a product identity-platform feature, not part of OAuth/OIDC or FAPI normative conformance.
+SCIM support is a usable minimum provisioning implementation for the default
+deployment boundary. It is a product identity-platform feature, not part of
+OAuth/OIDC or FAPI normative conformance, and it is not yet an enterprise
+provisioning security model with independently rotating, scoped, audited SCIM
+credentials.
 
 ## Configuration
 
 Set `SCIM_BEARER_TOKEN` to enable the endpoints. If it is empty or unset, SCIM endpoints return a SCIM `disabled` error.
 
 The token is a deployment secret and is compared in constant time against the `Authorization: Bearer` header. Put SCIM behind HTTPS, keep proxy header stripping enabled, and rotate the token through normal deployment-secret management.
+
+Current maturity:
+
+- One static deployment-level bearer token.
+- Missing token configuration returns `503`.
+- Missing or incorrect bearer token returns `401`.
+- The comparison is constant-time.
+
+Target enterprise model:
+
+- OAuth client-credentials or introspection-backed SCIM authorization.
+- Hashed token storage instead of plaintext deployment config.
+- Multiple concurrently valid tokens with expiry, revocation, and audit events.
+- Scope-limited provisioning capabilities such as read-only, user-write, or group-write.
+- Per-tenant SCIM credential binding after dynamic tenant resolution exists.
 
 ## Endpoints
 
@@ -26,7 +45,7 @@ The token is a deployment secret and is compared in constant time against the `A
 
 The current implementation maps SCIM `userName` to the local `users.email` login identifier. The primary email must match `userName`; create, replace, and patch requests that try to split these identities are rejected.
 
-Provisioned users are created in the default tenant, realm, and organization. Future multi-tenant resolvers must select the tenant boundary before creating or updating users.
+Provisioned users are created in the default tenant, realm, and organization. Future multi-tenant resolvers must select the tenant boundary before creating, listing, updating, or deleting users.
 
 ## Supported Operations
 

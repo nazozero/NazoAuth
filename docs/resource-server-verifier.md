@@ -102,7 +102,9 @@ fn guard<T>(verifier: &ResourceServerVerifier, request: &mut tonic::Request<T>) 
 - `ath` matching the presented access token
 - nonce policy when configured
 
-The verifier intentionally keeps these two checks separate so framework adapters can bind proof validation to the actual HTTP method, URI, headers, and replay store. The adapters require a `SenderConstraintProof { dpop_jkt: Some(...) }` request extension before accepting a DPoP-bound access token. That extension must come from a DPoP proof validator that has already checked signature, `jti`, `htu`, `htm`, `ath`, and nonce policy.
+The verifier intentionally keeps these two checks separate so framework adapters can bind proof validation to the actual HTTP method, URI, headers, and replay store. The adapters require a `VerifiedSenderConstraintProof { dpop_jkt: Some(...) }` request extension before accepting a DPoP-bound access token. The older `SenderConstraintProof` name is only a compatibility alias for this verified context type.
+
+`VerifiedSenderConstraintProof` must never be populated directly from an unverified `DPoP` header. It must come from a DPoP proof validator that has already checked signature, `jti`, `htu`, `htm`, `ath`, and nonce policy. A complete resource-server integration should install a DPoP proof middleware before `TowerResourceServerLayer`, `ActixVerifiedAccessToken`, or `authorize_tonic_request`; that middleware is responsible for replay storage and for inserting only verified `dpop_jkt` values into request extensions.
 
 ## mTLS Boundary
 
@@ -110,7 +112,7 @@ The verifier intentionally keeps these two checks separate so framework adapters
 
 Forwarded certificate metadata must only be accepted from trusted proxy CIDRs and after duplicate or conflicting forwarded certificate headers have been rejected.
 
-The adapters require a `SenderConstraintProof { mtls_x5t_s256: Some(...) }` request extension before accepting an mTLS-bound access token. That extension must come from the local TLS listener or a trusted proxy boundary after certificate metadata has been authenticated.
+The adapters require a `VerifiedSenderConstraintProof { mtls_x5t_s256: Some(...) }` request extension before accepting an mTLS-bound access token. That extension must come from the local TLS listener or a trusted proxy boundary after certificate metadata has been authenticated.
 
 ## Introspection Fallback
 

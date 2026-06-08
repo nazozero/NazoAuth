@@ -90,11 +90,19 @@ pub enum ResourceServerVerifierError {
     MtlsBindingMismatch,
 }
 
+/// Sender-constraint material that has already been verified by the resource
+/// server's DPoP proof verifier or mTLS certificate boundary.
+///
+/// This type intentionally does not represent a raw DPoP proof JWT. A caller
+/// must validate DPoP `typ`, proof signature, `htu`, `htm`, `ath`, `jti`, and
+/// nonce policy before filling `dpop_jkt`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct SenderConstraintProof {
+pub struct VerifiedSenderConstraintProof {
     pub dpop_jkt: Option<String>,
     pub mtls_x5t_s256: Option<String>,
 }
+
+pub type SenderConstraintProof = VerifiedSenderConstraintProof;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ResourceServerRequestError {
@@ -250,7 +258,7 @@ pub fn authorize_resource_request(
     verifier: &ResourceServerVerifier,
     authorization_headers: &[&str],
     query: Option<&str>,
-    proof: &SenderConstraintProof,
+    proof: &VerifiedSenderConstraintProof,
 ) -> Result<VerifiedAccessToken, ResourceServerRequestError> {
     if query_has_access_token(query) {
         return Err(ResourceServerRequestError::InvalidRequest);
@@ -270,7 +278,7 @@ pub fn authorize_http_request<B>(
     let headers = http_authorization_headers(request.headers())?;
     let proof = request
         .extensions()
-        .get::<SenderConstraintProof>()
+        .get::<VerifiedSenderConstraintProof>()
         .cloned()
         .unwrap_or_default();
     let verified = authorize_resource_request(verifier, &headers, request.uri().query(), &proof)?;
@@ -296,7 +304,7 @@ pub fn authorize_actix_request(
     let headers = headers?;
     let proof = request
         .extensions()
-        .get::<SenderConstraintProof>()
+        .get::<VerifiedSenderConstraintProof>()
         .cloned()
         .unwrap_or_default();
     let query = if request.query_string().is_empty() {
@@ -429,7 +437,7 @@ pub fn authorize_tonic_request<T>(
         .collect::<Vec<_>>();
     let proof = request
         .extensions()
-        .get::<SenderConstraintProof>()
+        .get::<VerifiedSenderConstraintProof>()
         .cloned()
         .unwrap_or_default();
     match authorize_resource_request(verifier, &headers, None, &proof) {
@@ -509,7 +517,7 @@ fn presented_authorization_token<'a>(
 fn validate_presented_sender_constraint(
     scheme: PresentedAccessTokenScheme,
     verified: &VerifiedAccessToken,
-    proof: &SenderConstraintProof,
+    proof: &VerifiedSenderConstraintProof,
 ) -> Result<(), ResourceServerRequestError> {
     let Some(cnf) = verified.cnf.as_ref() else {
         return if scheme == PresentedAccessTokenScheme::Dpop {
