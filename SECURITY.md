@@ -1,6 +1,6 @@
 # Security Policy
 
-Nazo OAuth Server is security-sensitive infrastructure. Report suspected
+Nazo Auth Server is security-sensitive infrastructure. Report suspected
 vulnerabilities privately before public disclosure.
 
 ## Supported Versions

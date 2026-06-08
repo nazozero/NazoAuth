@@ -12,8 +12,8 @@ passed on `main`.
 | Warnings | `0` across all plans |
 | Workflow | `oidf-conformance-full` |
 | Matrix job | `oidf-conformance-full` |
-| Workflow run | <https://github.com/bymoye/oauth2_server/actions/runs/27113465641> |
-| Job URL | <https://github.com/bymoye/oauth2_server/actions/runs/27113465641/job/80015656145> |
+| Workflow run | <https://github.com/bymoye/NazoAuth/actions/runs/27113465641> |
+| Job URL | <https://github.com/bymoye/NazoAuth/actions/runs/27113465641/job/80015656145> |
 | Workflow event | `workflow_dispatch` |
 | Head branch | `main` |
 | Implementation commit | `8f6901abe2a014b4a5d1e486d986598daf3b825f` |

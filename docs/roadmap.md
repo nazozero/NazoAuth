@@ -2,7 +2,7 @@
 
 ## Scope
 
-Nazo OAuth Server version 1 is an OAuth 2.1 and OpenID Connect authorization
+Nazo Auth Server version 1 is an OAuth 2.1 and OpenID Connect authorization
 server with FAPI2-oriented security profiles, repeatable conformance evidence,
 and production deployment controls.
 

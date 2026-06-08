@@ -2,7 +2,7 @@
 
 ## Scope
 
-Production deployments run Nazo OAuth Server behind a TLS-terminating reverse
+Production deployments run Nazo Auth Server behind a TLS-terminating reverse
 proxy. PostgreSQL stores durable state. Valkey stores transient protocol state.
 
 ## Deployment Model
@@ -58,7 +58,7 @@ EMAIL_SMTP_PORT: 587
 EMAIL_SMTP_TLS: "starttls"
 EMAIL_SMTP_USERNAME: "<smtp-user>"
 EMAIL_SMTP_PASSWORD: "<smtp-password>"
-EMAIL_FROM: "Nazo OAuth <no-reply@example.com>"
+EMAIL_FROM: "Nazo Auth <no-reply@example.com>"
 AVATAR_STORAGE_DIR: "/var/lib/nazo_oauth/avatars"
 JWK_KEYS_DIR: "/var/lib/nazo_oauth/keys"
 SIGNING_EXTERNAL_COMMAND: ""
