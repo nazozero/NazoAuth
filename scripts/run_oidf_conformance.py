@@ -557,6 +557,14 @@ def login_page_wait_command(command: object) -> bool:
     )
 
 
+def login_page_visible_wait_command(command: object) -> bool:
+    return (
+        isinstance(command, list)
+        and len(command) >= 4
+        and command[:4] == ["wait-element-visible", "id", NAZO_LOGIN_EMAIL_ID, 30]
+    )
+
+
 def login_page_click_command(command: object) -> bool:
     if (
         isinstance(command, list)
@@ -744,7 +752,7 @@ def mark_login_page_wait_as_placeholder_update(task: object) -> None:
     if not isinstance(commands, list):
         return
 
-    for command in commands:
+    for index, command in enumerate(commands):
         if not isinstance(command, list) or len(command) < 5:
             continue
         if not login_page_wait_command(command):
@@ -753,6 +761,16 @@ def mark_login_page_wait_as_placeholder_update(task: object) -> None:
             command.append("update-image-placeholder-optional")
         elif command[5] in {None, ""}:
             command[5] = "update-image-placeholder-optional"
+        return
+
+    for index, command in enumerate(commands):
+        if not login_page_visible_wait_command(command):
+            continue
+        commands.insert(
+            index,
+            ["wait", "id", NAZO_LOGIN_EMAIL_ID, 30, ".*", "update-image-placeholder-optional"],
+        )
+        return
 
 
 def browser_automation_with_second_login_placeholder(
