@@ -543,6 +543,14 @@ def login_page_wait_command(command: object) -> bool:
         and command[:5] == ["wait", "id", NAZO_LOGIN_EMAIL_ID, 30, ".*"]
     ):
         return True
+    if (
+        isinstance(command, list)
+        and len(command) >= 5
+        and command[:3] == ["wait", "css", "body"]
+        and isinstance(command[4], str)
+        and re.search(r"Sign in to NazoAuth|Email address", command[4])
+    ):
+        return True
     return (
         isinstance(command, list)
         and len(command) >= 5
@@ -596,7 +604,10 @@ def add_login_page_click(task: object) -> None:
 
 def task_matches_hosted_ui(task: dict[str, object], config_value: dict[str, object], path: str) -> bool:
     match = task.get("match")
-    return isinstance(match, str) and match == hosted_ui_match(config_value, path)
+    if not isinstance(match, str):
+        return False
+    expected = hosted_ui_match(config_value, path)
+    return match == expected or f"/ui/{path.lstrip('/')}" in match
 
 
 def use_nazo_user_facing_task_commands(config_value: dict[str, object], task: object) -> None:
