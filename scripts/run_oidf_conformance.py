@@ -68,6 +68,7 @@ OIDF_ALLOWED_REVIEW_MODULES = {
 }
 OIDF_CALLBACK_PATH_PATTERN = re.compile(r"/test/a/[^/]+/callback")
 OIDF_API_SSL_CONTEXT: ssl.SSLContext | None = None
+NAZO_HOSTED_CONFORMANCE_UI_ORIGIN = "https://oauth.nazo.run"
 
 DEFAULT_PLAN_EXPRESSIONS = [
     f"oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] {OIDCC_CONFIG_FILE}",
@@ -169,6 +170,61 @@ def validate_browser_automation(config_name: str, config_value: dict[str, object
     )
 
 
+def issuer_from_config(config_value: dict[str, object]) -> str | None:
+    server = config_value.get("server")
+    if not isinstance(server, dict):
+        return None
+    discovery_url = server.get("discoveryUrl")
+    if not isinstance(discovery_url, str):
+        return None
+    return issuer_from_discovery_url(discovery_url)
+
+
+def hosted_conformance_ui_origin(config_value: dict[str, object]) -> str:
+    return issuer_from_config(config_value) or NAZO_HOSTED_CONFORMANCE_UI_ORIGIN
+
+
+def hosted_authorization_prefix(config_value: dict[str, object]) -> str:
+    return f"{hosted_conformance_ui_origin(config_value).rstrip('/')}/authorize"
+
+
+def hosted_ui_match(config_value: dict[str, object], path: str) -> str:
+    return f"{hosted_conformance_ui_origin(config_value).rstrip('/')}/ui/{path.lstrip('/')}*"
+
+
+def is_hosted_authorization_match(match: object, config_value: dict[str, object]) -> bool:
+    return isinstance(match, str) and match.startswith(hosted_authorization_prefix(config_value))
+
+
+def normalize_nazo_hosted_urls_in_value(value: object, origin: str) -> None:
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            if isinstance(item, str):
+                value[index] = item.replace(NAZO_HOSTED_CONFORMANCE_UI_ORIGIN, origin)
+            else:
+                normalize_nazo_hosted_urls_in_value(item, origin)
+    elif isinstance(value, dict):
+        for key, item in list(value.items()):
+            if isinstance(item, str):
+                value[key] = item.replace(NAZO_HOSTED_CONFORMANCE_UI_ORIGIN, origin)
+            else:
+                normalize_nazo_hosted_urls_in_value(item, origin)
+
+
+def normalize_nazo_hosted_urls(config_value: dict[str, object]) -> None:
+    origin = hosted_conformance_ui_origin(config_value).rstrip("/")
+    if origin == NAZO_HOSTED_CONFORMANCE_UI_ORIGIN:
+        return
+
+    browser = config_value.get("browser")
+    if isinstance(browser, list):
+        normalize_nazo_hosted_urls_in_value(browser, origin)
+
+    override = config_value.get("override")
+    if isinstance(override, dict):
+        normalize_nazo_hosted_urls_in_value(override, origin)
+
+
 def config_alias(config_value: dict[str, object]) -> str | None:
     alias = config_value.get("alias")
     if isinstance(alias, str) and alias.strip():
@@ -229,24 +285,24 @@ def config_uses_nazo_hosted_conformance_ui(config_value: dict[str, object]) -> b
         if not isinstance(entry, dict):
             continue
         match = entry.get("match")
-        if isinstance(match, str) and match.startswith("https://oauth.nazo.run/authorize"):
+        if is_hosted_authorization_match(match, config_value):
             return True
     return False
 
 
-def nazo_user_reject_browser_automation() -> list[dict[str, object]]:
+def nazo_user_reject_browser_automation(config_value: dict[str, object]) -> list[dict[str, object]]:
     return [
         {
             "comment": (
                 "Nazo OAuth hosted conformance UI signs in after an explicit browser click, "
                 "then lets this negative module choose deny before the default approval."
             ),
-            "match": "https://oauth.nazo.run/authorize*",
+            "match": f"{hosted_authorization_prefix(config_value)}*",
             "tasks": [
                 {
                     "task": "Complete login page",
                     "optional": True,
-                    "match": "https://oauth.nazo.run/ui/auth*",
+                    "match": hosted_ui_match(config_value, "auth"),
                     "commands": [
                         [
                             "wait",
@@ -261,7 +317,7 @@ def nazo_user_reject_browser_automation() -> list[dict[str, object]]:
                 },
                 {
                     "task": "Deny consent page",
-                    "match": "https://oauth.nazo.run/ui/consent*",
+                    "match": hosted_ui_match(config_value, "consent"),
                     "commands": [
                         ["wait", "id", "oidf_conformance_deny", 10],
                         ["click", "id", "oidf_conformance_deny"],
@@ -279,11 +335,11 @@ def nazo_user_reject_browser_automation() -> list[dict[str, object]]:
     ]
 
 
-def authorization_error_page_task() -> dict[str, object]:
+def authorization_error_page_task(config_value: dict[str, object]) -> dict[str, object]:
     return {
         "task": NAZO_AUTHORIZATION_ERROR_PAGE_TASK,
         "optional": True,
-        "match": "https://oauth.nazo.run/authorize*",
+        "match": f"{hosted_authorization_prefix(config_value)}*",
         "commands": [
             [
                 "wait",
@@ -344,7 +400,7 @@ def add_login_page_clicks(config_value: dict[str, object]) -> None:
         if not isinstance(entry, dict):
             continue
         match = entry.get("match")
-        if not (isinstance(match, str) and match.startswith("https://oauth.nazo.run/authorize")):
+        if not is_hosted_authorization_match(match, config_value):
             continue
         tasks = entry.get("tasks")
         if not isinstance(tasks, list):
@@ -362,7 +418,7 @@ def add_authorization_error_page_capture(config_value: dict[str, object]) -> Non
         if not isinstance(entry, dict):
             continue
         match = entry.get("match")
-        if not (isinstance(match, str) and match.startswith("https://oauth.nazo.run/authorize")):
+        if not is_hosted_authorization_match(match, config_value):
             continue
         tasks = entry.setdefault("tasks", [])
         if not isinstance(tasks, list):
@@ -372,7 +428,7 @@ def add_authorization_error_page_capture(config_value: dict[str, object]) -> Non
             for task in tasks
         ):
             continue
-        tasks.insert(0, authorization_error_page_task())
+        tasks.insert(0, authorization_error_page_task(config_value))
 
 
 def remove_login_page_placeholder_update(task: object) -> None:
@@ -400,7 +456,7 @@ def remove_default_login_page_placeholder_updates(config_value: dict[str, object
         if not isinstance(entry, dict):
             continue
         match = entry.get("match")
-        if not (isinstance(match, str) and match.startswith("https://oauth.nazo.run/authorize")):
+        if not is_hosted_authorization_match(match, config_value):
             continue
         tasks = entry.get("tasks")
         if not isinstance(tasks, list):
@@ -428,6 +484,7 @@ def mark_login_page_wait_as_placeholder_update(task: object) -> None:
 
 
 def browser_automation_with_second_login_placeholder(
+    config_value: dict[str, object],
     browser: list[object],
 ) -> list[object]:
     automation: list[object] = []
@@ -437,7 +494,7 @@ def browser_automation_with_second_login_placeholder(
             continue
 
         match = entry.get("match")
-        if not (isinstance(match, str) and match.startswith("https://oauth.nazo.run/authorize")):
+        if not is_hosted_authorization_match(match, config_value):
             automation.append(copy.deepcopy(entry))
             continue
 
@@ -456,7 +513,10 @@ def browser_automation_with_second_login_placeholder(
     return automation
 
 
-def first_login_observation_automation(browser: list[object]) -> list[object]:
+def first_login_observation_automation(
+    config_value: dict[str, object],
+    browser: list[object],
+) -> list[object]:
     automation: list[object] = []
     for entry in browser:
         if not isinstance(entry, dict):
@@ -464,7 +524,7 @@ def first_login_observation_automation(browser: list[object]) -> list[object]:
             continue
 
         match = entry.get("match")
-        if not (isinstance(match, str) and match.startswith("https://oauth.nazo.run/authorize")):
+        if not is_hosted_authorization_match(match, config_value):
             automation.append(copy.deepcopy(entry))
             continue
 
@@ -478,7 +538,7 @@ def first_login_observation_automation(browser: list[object]) -> list[object]:
             "tasks": [
                 {
                     "task": "Observe first login page without authentication",
-                    "match": "https://oauth.nazo.run/ui/auth*",
+                    "match": hosted_ui_match(config_value, "auth"),
                     "commands": [
                         [
                             "wait",
@@ -513,7 +573,7 @@ def add_nazo_second_login_placeholder_overrides(config_value: dict[str, object])
     if not isinstance(override, dict):
         fail("OIDF plan config override must be a JSON object when present")
 
-    browser_override = browser_automation_with_second_login_placeholder(browser)
+    browser_override = browser_automation_with_second_login_placeholder(config_value, browser)
     for module_name in OIDCC_SECOND_LOGIN_SCREENSHOT_MODULES:
         override.setdefault(module_name, {"browser": copy.deepcopy(browser_override)})
 
@@ -530,7 +590,7 @@ def add_nazo_par_reuse_before_auth_override(config_value: dict[str, object]) -> 
     if not isinstance(override, dict):
         fail("OIDF plan config override must be a JSON object when present")
 
-    browser_override = first_login_observation_automation(browser)
+    browser_override = first_login_observation_automation(config_value, browser)
     for module_name in FAPI_SECURITY_PAR_REUSE_BEFORE_AUTH_MODULES:
         override.setdefault(module_name, {"browser": copy.deepcopy(browser_override)})
 
@@ -542,12 +602,13 @@ def add_nazo_user_reject_override(config_value: dict[str, object]) -> None:
     override = config_value.setdefault("override", {})
     if not isinstance(override, dict):
         fail("OIDF plan config override must be a JSON object when present")
-    browser_override = nazo_user_reject_browser_automation()
+    browser_override = nazo_user_reject_browser_automation(config_value)
     for module_name in FAPI_SECURITY_USER_REJECTS_AUTHENTICATION_MODULES:
         override.setdefault(module_name, {"browser": copy.deepcopy(browser_override)})
 
 
 def add_nazo_browser_overrides(config_value: dict[str, object]) -> None:
+    normalize_nazo_hosted_urls(config_value)
     normalize_oidf_callback_waits(config_value)
     remove_default_login_page_placeholder_updates(config_value)
     add_login_page_clicks(config_value)

@@ -101,7 +101,6 @@ jobs:
             --plan-set-json-file oidf-full-plan-set.json
             --timeout-seconds "$RUN_TIMEOUT_SECONDS"
             --monitor-interval-seconds "$MONITOR_INTERVAL_SECONDS"
-            --no-parallel
           )
           if [ "$EXPORT_RESULTS" = "true" ]; then
             args+=(--export-dir "$GITHUB_WORKSPACE/oidf-results")
