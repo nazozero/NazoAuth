@@ -250,9 +250,11 @@ def nazo_login_page_commands(config_value: dict[str, object]) -> list[list[objec
         ]
     email, password = nazo_automation_credentials(config_value)
     return [
-        ["wait", "css", "body", 10, NAZO_LOGIN_PAGE_PATTERN],
+        ["wait-element-visible", "id", NAZO_LOGIN_EMAIL_ID, 30],
+        ["wait-element-visible", "id", NAZO_LOGIN_PASSWORD_ID, 30],
         ["text", "id", NAZO_LOGIN_EMAIL_ID, email],
         ["text", "id", NAZO_LOGIN_PASSWORD_ID, password],
+        ["wait-element-visible", "id", NAZO_LOGIN_SUBMIT_ID, 30],
         ["click", "id", NAZO_LOGIN_SUBMIT_ID],
         ["wait", "contains", "/ui/consent", 30],
     ]
@@ -266,7 +268,7 @@ def nazo_consent_approve_commands(config_value: dict[str, object]) -> list[list[
             ["wait", "id", "submission_complete", 10],
         ]
     return [
-        ["wait", "css", "body", 10, NAZO_CONSENT_PAGE_PATTERN],
+        ["wait-element-visible", "id", NAZO_CONSENT_APPROVE_ID, 30],
         ["click", "id", NAZO_CONSENT_APPROVE_ID],
         ["wait", "contains", "/test/", 30],
         ["wait", "id", "submission_complete", 10],
@@ -282,7 +284,7 @@ def nazo_consent_deny_commands(config_value: dict[str, object]) -> list[list[obj
             ["wait", "id", "submission_complete", 10],
         ]
     return [
-        ["wait", "css", "body", 10, NAZO_CONSENT_PAGE_PATTERN],
+        ["wait-element-visible", "id", NAZO_CONSENT_DENY_ID, 30],
         ["click", "id", NAZO_CONSENT_DENY_ID],
         ["wait", "contains", "/test/", 30],
         ["wait", "id", "submission_complete", 10],
@@ -304,10 +306,10 @@ def nazo_login_observation_commands(config_value: dict[str, object]) -> list[lis
     return [
         [
             "wait",
-            "css",
-            "body",
-            10,
-            NAZO_LOGIN_PAGE_PATTERN,
+            "id",
+            NAZO_LOGIN_EMAIL_ID,
+            30,
+            ".*",
             "update-image-placeholder-optional",
         ]
     ]
@@ -519,7 +521,7 @@ def login_page_wait_command(command: object) -> bool:
     if (
         isinstance(command, list)
         and len(command) >= 5
-        and command[:5] == ["wait", "css", "body", 10, NAZO_LOGIN_PAGE_PATTERN]
+        and command[:5] == ["wait", "id", NAZO_LOGIN_EMAIL_ID, 30, ".*"]
     ):
         return True
     return (
