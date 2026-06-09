@@ -116,6 +116,8 @@ jobs:
           python -u scripts/run_oidf_conformance.py "${args[@]}"
         env:
           OIDF_CONFORMANCE_TOKEN: ${{ secrets.OIDF_CONFORMANCE_TOKEN }}
+          OIDF_USER_EMAIL: ${{ secrets.OIDF_USER_EMAIL }}
+          OIDF_USER_PASSWORD: ${{ secrets.OIDF_USER_PASSWORD }}
 
       - name: Upload OIDF result archive
         if: always() && vars.OIDF_EXPORT_RESULTS != 'false'

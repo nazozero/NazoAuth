@@ -68,12 +68,19 @@ OIDF_ALLOWED_REVIEW_MODULES = {
 }
 OIDF_CALLBACK_PATH_PATTERN = re.compile(r"/test/a/[^/]+/callback")
 OIDF_API_SSL_CONTEXT: ssl.SSLContext | None = None
-NAZO_HOSTED_CONFORMANCE_UI_ORIGIN = "https://oauth.nazo.run"
+NAZO_HOSTED_CONFORMANCE_UI_ORIGIN = "https://auth.nazo.run"
 NAZO_LEGACY_CONFORMANCE_ORIGINS = (
     "https://oauth.nazo.run",
     "https://oauth-test.nazo.run",
     "https://oauth0test.nazo.run",
 )
+NAZO_LOGIN_EMAIL_ID = "nazo-login-email"
+NAZO_LOGIN_PASSWORD_ID = "nazo-login-password"
+NAZO_LOGIN_SUBMIT_ID = "nazo-login-submit"
+NAZO_CONSENT_APPROVE_ID = "nazo-consent-approve"
+NAZO_CONSENT_DENY_ID = "nazo-consent-deny"
+NAZO_LOGIN_PAGE_PATTERN = r"(Sign in to NazoAuth|Email address)"
+NAZO_CONSENT_PAGE_PATTERN = r"(Review authorization|Requested permissions)"
 
 DEFAULT_PLAN_EXPRESSIONS = [
     f"oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] {OIDCC_CONFIG_FILE}",
@@ -199,6 +206,111 @@ def hosted_ui_match(config_value: dict[str, object], path: str) -> str:
 
 def is_hosted_authorization_match(match: object, config_value: dict[str, object]) -> bool:
     return isinstance(match, str) and match.startswith(hosted_authorization_prefix(config_value))
+
+
+def uses_user_facing_nazo_ui(config_value: dict[str, object]) -> bool:
+    return hosted_conformance_ui_origin(config_value).rstrip("/") == NAZO_HOSTED_CONFORMANCE_UI_ORIGIN
+
+
+def non_empty_string(value: object) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def nazo_automation_credentials(config_value: dict[str, object]) -> tuple[str, str]:
+    nazo = config_value.get("nazo")
+    nazo_object = nazo if isinstance(nazo, dict) else {}
+    email = (
+        non_empty_string(nazo_object.get("oidf_user_email"))
+        or non_empty_string(nazo_object.get("user_email"))
+        or non_empty_string(nazo_object.get("login_email"))
+        or non_empty_string(os.environ.get("OIDF_USER_EMAIL"))
+    )
+    password = (
+        non_empty_string(nazo_object.get("oidf_user_password"))
+        or non_empty_string(nazo_object.get("user_password"))
+        or non_empty_string(nazo_object.get("login_password"))
+        or non_empty_string(os.environ.get("OIDF_USER_PASSWORD"))
+    )
+    if not email or not password:
+        fail(
+            "Nazo user-facing /ui browser automation requires OIDF_USER_EMAIL and "
+            "OIDF_USER_PASSWORD secrets, or matching nazo.oidf_user_* fields in the plan config"
+        )
+    return email, password
+
+
+def nazo_login_page_commands(config_value: dict[str, object]) -> list[list[object]]:
+    if not uses_user_facing_nazo_ui(config_value):
+        return [
+            ["wait", "id", "oidf_conformance_interaction", 5, "OIDF conformance login page"],
+            ["click", "id", "oidf_conformance_login"],
+            ["wait", "contains", "/ui/consent", 30],
+        ]
+    email, password = nazo_automation_credentials(config_value)
+    return [
+        ["wait", "css", "body", 10, NAZO_LOGIN_PAGE_PATTERN],
+        ["text", "id", NAZO_LOGIN_EMAIL_ID, email],
+        ["text", "id", NAZO_LOGIN_PASSWORD_ID, password],
+        ["click", "id", NAZO_LOGIN_SUBMIT_ID],
+        ["wait", "contains", "/ui/consent", 30],
+    ]
+
+
+def nazo_consent_approve_commands(config_value: dict[str, object]) -> list[list[object]]:
+    if not uses_user_facing_nazo_ui(config_value):
+        return [
+            ["wait", "id", "oidf_conformance_interaction", 10, "OIDF conformance consent page"],
+            ["wait", "contains", "/test/", 30],
+            ["wait", "id", "submission_complete", 10],
+        ]
+    return [
+        ["wait", "css", "body", 10, NAZO_CONSENT_PAGE_PATTERN],
+        ["click", "id", NAZO_CONSENT_APPROVE_ID],
+        ["wait", "contains", "/test/", 30],
+        ["wait", "id", "submission_complete", 10],
+    ]
+
+
+def nazo_consent_deny_commands(config_value: dict[str, object]) -> list[list[object]]:
+    if not uses_user_facing_nazo_ui(config_value):
+        return [
+            ["wait", "id", "oidf_conformance_deny", 10],
+            ["click", "id", "oidf_conformance_deny"],
+            ["wait", "contains", "/test/", 30],
+            ["wait", "id", "submission_complete", 10],
+        ]
+    return [
+        ["wait", "css", "body", 10, NAZO_CONSENT_PAGE_PATTERN],
+        ["click", "id", NAZO_CONSENT_DENY_ID],
+        ["wait", "contains", "/test/", 30],
+        ["wait", "id", "submission_complete", 10],
+    ]
+
+
+def nazo_login_observation_commands(config_value: dict[str, object]) -> list[list[object]]:
+    if not uses_user_facing_nazo_ui(config_value):
+        return [
+            [
+                "wait",
+                "id",
+                "oidf_conformance_interaction",
+                5,
+                "OIDF conformance login page",
+                "update-image-placeholder-optional",
+            ]
+        ]
+    return [
+        [
+            "wait",
+            "css",
+            "body",
+            10,
+            NAZO_LOGIN_PAGE_PATTERN,
+            "update-image-placeholder-optional",
+        ]
+    ]
 
 
 def normalized_origin(value: str) -> str:
@@ -346,7 +458,7 @@ def nazo_user_reject_browser_automation(config_value: dict[str, object]) -> list
     return [
         {
             "comment": (
-                "Nazo OAuth hosted conformance UI signs in after an explicit browser click, "
+                "Nazo OAuth hosted UI signs in after explicit browser automation, "
                 "then lets this negative module choose deny before the default approval."
             ),
             "match": f"{hosted_authorization_prefix(config_value)}*",
@@ -355,27 +467,12 @@ def nazo_user_reject_browser_automation(config_value: dict[str, object]) -> list
                     "task": "Complete login page",
                     "optional": True,
                     "match": hosted_ui_match(config_value, "auth"),
-                    "commands": [
-                        [
-                            "wait",
-                            "id",
-                            "oidf_conformance_interaction",
-                            5,
-                            "OIDF conformance login page",
-                        ],
-                        ["click", "id", "oidf_conformance_login"],
-                        ["wait", "contains", "/ui/consent", 30],
-                    ],
+                    "commands": nazo_login_page_commands(config_value),
                 },
                 {
                     "task": "Deny consent page",
                     "match": hosted_ui_match(config_value, "consent"),
-                    "commands": [
-                        ["wait", "id", "oidf_conformance_deny", 10],
-                        ["click", "id", "oidf_conformance_deny"],
-                        ["wait", "contains", "/test/", 30],
-                        ["wait", "id", "submission_complete", 10],
-                    ],
+                    "commands": nazo_consent_deny_commands(config_value),
                 },
                 {
                     "task": "Verify callback completion",
@@ -388,11 +485,19 @@ def nazo_user_reject_browser_automation(config_value: dict[str, object]) -> list
 
 
 def authorization_error_page_task(config_value: dict[str, object]) -> dict[str, object]:
-    return {
-        "task": NAZO_AUTHORIZATION_ERROR_PAGE_TASK,
-        "optional": True,
-        "match": f"{hosted_authorization_prefix(config_value)}*",
-        "commands": [
+    if uses_user_facing_nazo_ui(config_value):
+        commands = [
+            [
+                "wait",
+                "css",
+                "body",
+                10,
+                NAZO_AUTHORIZATION_ERROR_PAGE_PATTERN,
+                "update-image-placeholder-optional",
+            ]
+        ]
+    else:
+        commands = [
             [
                 "wait",
                 "id",
@@ -401,11 +506,22 @@ def authorization_error_page_task(config_value: dict[str, object]) -> dict[str, 
                 NAZO_AUTHORIZATION_ERROR_PAGE_PATTERN,
                 "update-image-placeholder-optional",
             ]
-        ],
+        ]
+    return {
+        "task": NAZO_AUTHORIZATION_ERROR_PAGE_TASK,
+        "optional": True,
+        "match": f"{hosted_authorization_prefix(config_value)}*",
+        "commands": commands,
     }
 
 
 def login_page_wait_command(command: object) -> bool:
+    if (
+        isinstance(command, list)
+        and len(command) >= 5
+        and command[:5] == ["wait", "css", "body", 10, NAZO_LOGIN_PAGE_PATTERN]
+    ):
+        return True
     return (
         isinstance(command, list)
         and len(command) >= 5
@@ -421,6 +537,12 @@ def login_page_wait_command(command: object) -> bool:
 
 
 def login_page_click_command(command: object) -> bool:
+    if (
+        isinstance(command, list)
+        and len(command) >= 3
+        and command[:3] == ["click", "id", NAZO_LOGIN_SUBMIT_ID]
+    ):
+        return True
     return (
         isinstance(command, list)
         and len(command) >= 3
@@ -441,6 +563,83 @@ def add_login_page_click(task: object) -> None:
         if login_page_wait_command(command):
             commands.insert(index + 1, ["click", "id", "oidf_conformance_login"])
             return
+
+
+def task_matches_hosted_ui(task: dict[str, object], config_value: dict[str, object], path: str) -> bool:
+    match = task.get("match")
+    return isinstance(match, str) and match == hosted_ui_match(config_value, path)
+
+
+def use_nazo_user_facing_task_commands(config_value: dict[str, object], task: object) -> None:
+    if not isinstance(task, dict):
+        return
+    if task_matches_hosted_ui(task, config_value, "auth"):
+        if task.get("task") == "Observe first login page without authentication":
+            task["commands"] = nazo_login_observation_commands(config_value)
+            return
+        commands = task.get("commands")
+        captures_placeholder = isinstance(commands, list) and any(
+            isinstance(command, list)
+            and "update-image-placeholder-optional" in command
+            for command in commands
+        )
+        updated_commands = nazo_login_page_commands(config_value)
+        if captures_placeholder and updated_commands:
+            updated_commands[0] = [*updated_commands[0], "update-image-placeholder-optional"]
+        task["commands"] = updated_commands
+    elif task_matches_hosted_ui(task, config_value, "consent"):
+        commands = task.get("commands")
+        has_deny_command = isinstance(commands, list) and any(
+            isinstance(command, list)
+            and len(command) >= 3
+            and command[0] == "click"
+            and command[1] == "id"
+            and command[2] in {NAZO_CONSENT_DENY_ID, "oidf_conformance_deny"}
+            for command in commands
+        )
+        if task.get("task") == "Deny consent page" or has_deny_command:
+            task["commands"] = nazo_consent_deny_commands(config_value)
+        else:
+            task["commands"] = nazo_consent_approve_commands(config_value)
+
+
+def use_nazo_user_facing_browser_commands(config_value: dict[str, object]) -> None:
+    if not uses_user_facing_nazo_ui(config_value):
+        return
+
+    browser = config_value.get("browser")
+    if isinstance(browser, list):
+        for entry in browser:
+            if not isinstance(entry, dict):
+                continue
+            match = entry.get("match")
+            if not is_hosted_authorization_match(match, config_value):
+                continue
+            tasks = entry.get("tasks")
+            if not isinstance(tasks, list):
+                continue
+            for task in tasks:
+                use_nazo_user_facing_task_commands(config_value, task)
+
+    override = config_value.get("override")
+    if isinstance(override, dict):
+        for override_value in override.values():
+            if not isinstance(override_value, dict):
+                continue
+            override_browser = override_value.get("browser")
+            if not isinstance(override_browser, list):
+                continue
+            for entry in override_browser:
+                if not isinstance(entry, dict):
+                    continue
+                match = entry.get("match")
+                if not is_hosted_authorization_match(match, config_value):
+                    continue
+                tasks = entry.get("tasks")
+                if not isinstance(tasks, list):
+                    continue
+                for task in tasks:
+                    use_nazo_user_facing_task_commands(config_value, task)
 
 
 def add_login_page_clicks(config_value: dict[str, object]) -> None:
@@ -591,16 +790,7 @@ def first_login_observation_automation(
                 {
                     "task": "Observe first login page without authentication",
                     "match": hosted_ui_match(config_value, "auth"),
-                    "commands": [
-                        [
-                            "wait",
-                            "id",
-                            "oidf_conformance_interaction",
-                            5,
-                            "OIDF conformance login page",
-                            "update-image-placeholder-optional",
-                        ]
-                    ],
+                    "commands": nazo_login_observation_commands(config_value),
                 }
             ],
         }
@@ -668,6 +858,7 @@ def add_nazo_browser_overrides(config_value: dict[str, object]) -> None:
     add_nazo_second_login_placeholder_overrides(config_value)
     add_nazo_par_reuse_before_auth_override(config_value)
     add_nazo_user_reject_override(config_value)
+    use_nazo_user_facing_browser_commands(config_value)
     config_value.pop("nazo", None)
 
 
