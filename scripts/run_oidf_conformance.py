@@ -89,7 +89,6 @@ NAZO_LOGIN_SUBMIT_ID = "nazo-login-submit"
 NAZO_LOGIN_SUBMIT_READY_SELECTOR = f"#{NAZO_LOGIN_SUBMIT_ID}:not([disabled])"
 NAZO_CONSENT_APPROVE_ID = "nazo-consent-approve"
 NAZO_CONSENT_DENY_ID = "nazo-consent-deny"
-NAZO_LOGIN_PAGE_PATTERN = r"(Sign in to NazoAuth|Email address)"
 NAZO_CONSENT_PAGE_PATTERN = r"(Review authorization|Requested permissions)"
 
 DEFAULT_PLAN_EXPRESSIONS = [
@@ -541,14 +540,6 @@ def login_page_wait_command(command: object) -> bool:
         isinstance(command, list)
         and len(command) >= 5
         and command[:5] == ["wait", "id", NAZO_LOGIN_EMAIL_ID, 30, ".*"]
-    ):
-        return True
-    if (
-        isinstance(command, list)
-        and len(command) >= 5
-        and command[:3] == ["wait", "css", "body"]
-        and isinstance(command[4], str)
-        and re.search(r"Sign in to NazoAuth|Email address", command[4])
     ):
         return True
     return (
