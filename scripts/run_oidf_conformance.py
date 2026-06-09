@@ -61,6 +61,7 @@ NAZO_AUTHORIZATION_ERROR_PAGE_PATTERN = (
 OIDF_BAD_FINAL_RESULTS = {"FAILED", "SKIPPED", "INTERRUPTED", "WARNING"}
 OIDF_BAD_STATUS_VALUES = {"FAILED", "SKIPPED", "INTERRUPTED"}
 OIDF_BAD_LOG_RESULTS = {"FAILURE", "WARNING"}
+OIDF_LOG_CONTEXT_SOURCES = {"BROWSER", "WebRunner"}
 OIDF_ALLOWED_REVIEW_MODULES = {
     "oidcc-prompt-login",
     "oidcc-max-age-1",
@@ -1119,6 +1120,55 @@ def oidf_log_failure(module_id: str, logs: object) -> str | None:
     return None
 
 
+def oidf_log_context(logs: object, *, max_entries: int = 6) -> str:
+    if not isinstance(logs, list):
+        return ""
+
+    interesting: list[str] = []
+    for entry in logs:
+        if not isinstance(entry, dict):
+            continue
+        src = entry.get("src")
+        result = value_as_upper(entry.get("result"))
+        if src not in OIDF_LOG_CONTEXT_SOURCES and result not in OIDF_BAD_LOG_RESULTS:
+            continue
+
+        parts: list[str] = []
+        for key in (
+            "src",
+            "result",
+            "msg",
+            "browser",
+            "task",
+            "url",
+            "request_uri",
+            "match",
+            "element_type",
+            "target",
+            "response_status_code",
+            "response_status_text",
+            "content_type",
+        ):
+            value = entry.get(key)
+            if isinstance(value, (str, int, float, bool)):
+                text = str(value).replace("\n", " ").strip()
+                if text:
+                    parts.append(f"{key}={text[:180]}")
+        if parts:
+            interesting.append("; ".join(parts))
+
+    if not interesting:
+        return ""
+    return " | ".join(interesting[-max_entries:])
+
+
+def oidf_failure_with_log_context(module_id: str, failure: str, logs: object) -> str:
+    context = oidf_log_context(logs)
+    if not context:
+        return failure
+    return f"{failure}; recent log context: {context[:1200]}"
+
+
 def fetch_alias_plans(base_url: str, token: str, aliases: set[str]) -> list[dict[str, object]]:
     if not aliases:
         return []
@@ -1191,7 +1241,14 @@ def inspect_oidf_state(
         if status_code == 200 and info is not None:
             failure = oidf_module_failure(info)
             if failure:
-                return failure
+                _, logs = oidf_api_request(
+                    "GET",
+                    base_url,
+                    f"api/log/{module_id}",
+                    token,
+                    expected_statuses={200, 404},
+                )
+                return oidf_failure_with_log_context(module_id, failure, logs)
             status = value_as_upper(info.get("status")) if isinstance(info, dict) else ""
             if final and status and status != "FINISHED":
                 return f"{module_id} ended with non-final status {status}"
