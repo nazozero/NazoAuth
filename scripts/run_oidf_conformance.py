@@ -70,7 +70,7 @@ OIDF_ALLOWED_REVIEW_MODULES = {
 OIDF_CALLBACK_PATH_PATTERN = re.compile(r"/test/a/[^/]+/callback")
 OIDF_API_SSL_CONTEXT: ssl.SSLContext | None = None
 NAZO_HOSTED_CONFORMANCE_UI_ORIGIN = "https://auth.nazo.run"
-NAZO_LEGACY_CONFORMANCE_ORIGINS = (
+NAZO_STALE_CONFORMANCE_ORIGINS = (
     "https://oauth.nazo.run",
     "https://oauth-test.nazo.run",
     "https://oauth0test.nazo.run",
@@ -78,7 +78,7 @@ NAZO_LEGACY_CONFORMANCE_ORIGINS = (
     "https://localhost:8443",
     "https://127.0.0.1:8443",
 )
-NAZO_LEGACY_RESOURCE_ORIGINS = (
+NAZO_STALE_RESOURCE_ORIGINS = (
     "https://host.containers.internal:9444",
     "https://localhost:8444",
     "https://127.0.0.1:8444",
@@ -332,81 +332,11 @@ def normalized_origin(value: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
-def normalize_legacy_nazo_origins_in_value(value: object, target_origin: str) -> int:
-    replacements = 0
-    if isinstance(value, list):
-        for index, item in enumerate(value):
-            if isinstance(item, str):
-                updated = item
-                for origin in NAZO_LEGACY_CONFORMANCE_ORIGINS:
-                    updated = updated.replace(origin, target_origin)
-                for origin in NAZO_LEGACY_RESOURCE_ORIGINS:
-                    updated = updated.replace(origin, target_origin)
-                if updated != item:
-                    replacements += 1
-                    value[index] = updated
-            else:
-                replacements += normalize_legacy_nazo_origins_in_value(item, target_origin)
-    elif isinstance(value, dict):
-        for key, item in list(value.items()):
-            if isinstance(item, str):
-                updated = item
-                for origin in NAZO_LEGACY_CONFORMANCE_ORIGINS:
-                    updated = updated.replace(origin, target_origin)
-                for origin in NAZO_LEGACY_RESOURCE_ORIGINS:
-                    updated = updated.replace(origin, target_origin)
-                if updated != item:
-                    replacements += 1
-                    value[key] = updated
-            else:
-                replacements += normalize_legacy_nazo_origins_in_value(item, target_origin)
-    return replacements
-
-
-def assert_no_legacy_nazo_origins(value: object, config_name: str) -> None:
+def assert_no_stale_nazo_origins(value: object, config_name: str) -> None:
     serialized = json.dumps(value, sort_keys=True)
-    for origin in (*NAZO_LEGACY_CONFORMANCE_ORIGINS, *NAZO_LEGACY_RESOURCE_ORIGINS):
+    for origin in (*NAZO_STALE_CONFORMANCE_ORIGINS, *NAZO_STALE_RESOURCE_ORIGINS):
         if origin in serialized:
             fail(f"{config_name} still contains stale Nazo OIDF origin {origin}")
-
-
-def normalize_nazo_hosted_urls_in_value(value: object, origin: str) -> None:
-    if isinstance(value, list):
-        for index, item in enumerate(value):
-            if isinstance(item, str):
-                updated = item
-                for legacy_origin in NAZO_LEGACY_CONFORMANCE_ORIGINS:
-                    updated = updated.replace(legacy_origin, origin)
-                for legacy_origin in NAZO_LEGACY_RESOURCE_ORIGINS:
-                    updated = updated.replace(legacy_origin, origin)
-                value[index] = updated
-            else:
-                normalize_nazo_hosted_urls_in_value(item, origin)
-    elif isinstance(value, dict):
-        for key, item in list(value.items()):
-            if isinstance(item, str):
-                updated = item
-                for legacy_origin in NAZO_LEGACY_CONFORMANCE_ORIGINS:
-                    updated = updated.replace(legacy_origin, origin)
-                for legacy_origin in NAZO_LEGACY_RESOURCE_ORIGINS:
-                    updated = updated.replace(legacy_origin, origin)
-                value[key] = updated
-            else:
-                normalize_nazo_hosted_urls_in_value(item, origin)
-
-
-def normalize_nazo_hosted_urls(config_value: dict[str, object]) -> None:
-    origin = hosted_conformance_ui_origin(config_value).rstrip("/")
-    if origin == NAZO_HOSTED_CONFORMANCE_UI_ORIGIN:
-        return
-
-    browser = config_value.get("browser")
-    if isinstance(browser, list):
-        normalize_nazo_hosted_urls_in_value(browser, origin)
-
-    override = config_value.get("override")
-    if isinstance(override, dict):
-        normalize_nazo_hosted_urls_in_value(override, origin)
 
 
 def config_alias(config_value: dict[str, object]) -> str | None:
@@ -901,7 +831,6 @@ def add_nazo_user_reject_override(config_value: dict[str, object]) -> None:
 
 
 def add_nazo_browser_overrides(config_value: dict[str, object]) -> None:
-    normalize_nazo_hosted_urls(config_value)
     normalize_oidf_callback_waits(config_value)
     remove_default_login_page_placeholder_updates(config_value)
     add_login_page_clicks(config_value)
@@ -938,15 +867,10 @@ def write_plan_configs(
     configs = parsed.get("configs")
     if configs is None:
         if target_issuer:
-            replacements = normalize_legacy_nazo_origins_in_value(parsed, target_issuer)
-            print(
-                f"OIDF target issuer normalization for {file_name}: "
-                f"{replacements} stale Nazo URL fields rewritten to {target_issuer}",
-                flush=True,
-            )
+            assert_no_stale_nazo_origins(parsed, file_name)
         add_nazo_browser_overrides(parsed)
         if target_issuer:
-            assert_no_legacy_nazo_origins(parsed, file_name)
+            assert_no_stale_nazo_origins(parsed, file_name)
         validate_browser_automation(file_name, parsed)
         target = suite_scripts / file_name
         target.write_text(json.dumps(parsed, indent=2, sort_keys=True), encoding="utf-8")
@@ -965,15 +889,10 @@ def write_plan_configs(
         if not isinstance(config_value, dict):
             fail(f"{env_name}.configs.{config_name} must contain a JSON object")
         if target_issuer:
-            replacements = normalize_legacy_nazo_origins_in_value(config_value, target_issuer)
-            print(
-                f"OIDF target issuer normalization for {config_name}: "
-                f"{replacements} stale Nazo URL fields rewritten to {target_issuer}",
-                flush=True,
-            )
+            assert_no_stale_nazo_origins(config_value, config_name)
         add_nazo_browser_overrides(config_value)
         if target_issuer:
-            assert_no_legacy_nazo_origins(config_value, config_name)
+            assert_no_stale_nazo_origins(config_value, config_name)
         validate_browser_automation(config_name, config_value)
         alias = config_alias(config_value)
         if alias:
@@ -1598,8 +1517,7 @@ def parse_args() -> argparse.Namespace:
         "--target-issuer",
         default=os.environ.get("OIDF_TARGET_ISSUER", ""),
         help=(
-            "rewrite legacy Nazo conformance origins in plan configs to this issuer origin "
-            "before submitting plans"
+            "expected issuer origin; plan configs containing stale Nazo origins fail before submission"
         ),
     )
     parser.add_argument("--token-env", default="OIDF_CONFORMANCE_TOKEN")
