@@ -73,10 +73,19 @@ NAZO_LEGACY_CONFORMANCE_ORIGINS = (
     "https://oauth.nazo.run",
     "https://oauth-test.nazo.run",
     "https://oauth0test.nazo.run",
+    "https://host.containers.internal:9443",
+    "https://localhost:8443",
+    "https://127.0.0.1:8443",
+)
+NAZO_LEGACY_RESOURCE_ORIGINS = (
+    "https://host.containers.internal:9444",
+    "https://localhost:8444",
+    "https://127.0.0.1:8444",
 )
 NAZO_LOGIN_EMAIL_ID = "nazo-login-email"
 NAZO_LOGIN_PASSWORD_ID = "nazo-login-password"
 NAZO_LOGIN_SUBMIT_ID = "nazo-login-submit"
+NAZO_LOGIN_SUBMIT_READY_SELECTOR = f"#{NAZO_LOGIN_SUBMIT_ID}:not([disabled])"
 NAZO_CONSENT_APPROVE_ID = "nazo-consent-approve"
 NAZO_CONSENT_DENY_ID = "nazo-consent-deny"
 NAZO_LOGIN_PAGE_PATTERN = r"(Sign in to NazoAuth|Email address)"
@@ -255,6 +264,7 @@ def nazo_login_page_commands(config_value: dict[str, object]) -> list[list[objec
         ["text", "id", NAZO_LOGIN_EMAIL_ID, email],
         ["text", "id", NAZO_LOGIN_PASSWORD_ID, password],
         ["wait-element-visible", "id", NAZO_LOGIN_SUBMIT_ID, 30],
+        ["wait-element-visible", "css", NAZO_LOGIN_SUBMIT_READY_SELECTOR, 30],
         ["click", "id", NAZO_LOGIN_SUBMIT_ID],
         ["wait", "contains", "/ui/consent", 30],
     ]
@@ -330,6 +340,8 @@ def normalize_legacy_nazo_origins_in_value(value: object, target_origin: str) ->
                 updated = item
                 for origin in NAZO_LEGACY_CONFORMANCE_ORIGINS:
                     updated = updated.replace(origin, target_origin)
+                for origin in NAZO_LEGACY_RESOURCE_ORIGINS:
+                    updated = updated.replace(origin, target_origin)
                 if updated != item:
                     replacements += 1
                     value[index] = updated
@@ -341,6 +353,8 @@ def normalize_legacy_nazo_origins_in_value(value: object, target_origin: str) ->
                 updated = item
                 for origin in NAZO_LEGACY_CONFORMANCE_ORIGINS:
                     updated = updated.replace(origin, target_origin)
+                for origin in NAZO_LEGACY_RESOURCE_ORIGINS:
+                    updated = updated.replace(origin, target_origin)
                 if updated != item:
                     replacements += 1
                     value[key] = updated
@@ -351,7 +365,7 @@ def normalize_legacy_nazo_origins_in_value(value: object, target_origin: str) ->
 
 def assert_no_legacy_nazo_origins(value: object, config_name: str) -> None:
     serialized = json.dumps(value, sort_keys=True)
-    for origin in NAZO_LEGACY_CONFORMANCE_ORIGINS:
+    for origin in (*NAZO_LEGACY_CONFORMANCE_ORIGINS, *NAZO_LEGACY_RESOURCE_ORIGINS):
         if origin in serialized:
             fail(f"{config_name} still contains stale Nazo OIDF origin {origin}")
 
@@ -363,6 +377,8 @@ def normalize_nazo_hosted_urls_in_value(value: object, origin: str) -> None:
                 updated = item
                 for legacy_origin in NAZO_LEGACY_CONFORMANCE_ORIGINS:
                     updated = updated.replace(legacy_origin, origin)
+                for legacy_origin in NAZO_LEGACY_RESOURCE_ORIGINS:
+                    updated = updated.replace(legacy_origin, origin)
                 value[index] = updated
             else:
                 normalize_nazo_hosted_urls_in_value(item, origin)
@@ -371,6 +387,8 @@ def normalize_nazo_hosted_urls_in_value(value: object, origin: str) -> None:
             if isinstance(item, str):
                 updated = item
                 for legacy_origin in NAZO_LEGACY_CONFORMANCE_ORIGINS:
+                    updated = updated.replace(legacy_origin, origin)
+                for legacy_origin in NAZO_LEGACY_RESOURCE_ORIGINS:
                     updated = updated.replace(legacy_origin, origin)
                 value[key] = updated
             else:
