@@ -6,14 +6,22 @@ use crate::http::prelude::*;
 pub(crate) struct LoginRequest {
     email: String,
     password: String,
+    next: Option<String>,
+}
+
+#[derive(Clone, Copy)]
+enum LoginResponseMode {
+    Json,
+    Form,
 }
 
 /// 校验邮箱密码并创建会话。
-pub(crate) async fn login(
-    state: Data<AppState>,
-    req: HttpRequest,
-    Json(payload): Json<LoginRequest>,
-) -> HttpResponse {
+pub(crate) async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
+    let (payload, response_mode) = match parse_login_request(&req, &body) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+
     if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
         return response;
     }
@@ -127,28 +135,201 @@ pub(crate) async fn login(
         ]),
     );
 
-    let body = json!({
+    let cookies = [
+        make_cookie(
+            &state.settings.session_cookie_name,
+            &session_id,
+            true,
+            state.settings.session_ttl_seconds,
+            state.settings.cookie_secure,
+        ),
+        make_cookie(
+            &state.settings.csrf_cookie_name,
+            &csrf_token,
+            false,
+            state.settings.session_ttl_seconds,
+            state.settings.cookie_secure,
+        ),
+    ];
+
+    if matches!(response_mode, LoginResponseMode::Form) {
+        let location = safe_form_login_next(&state, &req, payload.next.as_deref());
+        let mut response = HttpResponse::SeeOther();
+        if let Ok(value) = HeaderValue::from_str(&location) {
+            response.insert_header((header::LOCATION, value));
+        }
+        return with_cookie_headers(response.finish(), &cookies);
+    }
+
+    let response_body = json!({
         "expires_in": state.settings.session_ttl_seconds,
         "csrf_token": csrf_token,
         "mfa_required": session.pending_mfa
     });
-    with_cookie_headers(
-        json_response(body),
-        &[
-            make_cookie(
-                &state.settings.session_cookie_name,
-                &session_id,
-                true,
-                state.settings.session_ttl_seconds,
-                state.settings.cookie_secure,
-            ),
-            make_cookie(
-                &state.settings.csrf_cookie_name,
-                &csrf_token,
-                false,
-                state.settings.session_ttl_seconds,
-                state.settings.cookie_secure,
-            ),
-        ],
-    )
+    with_cookie_headers(json_response(response_body), &cookies)
+}
+
+fn parse_login_request(
+    req: &HttpRequest,
+    body: &Bytes,
+) -> Result<(LoginRequest, LoginResponseMode), HttpResponse> {
+    let content_type = req
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(';').next())
+        .map(str::trim)
+        .unwrap_or_default();
+
+    if content_type.eq_ignore_ascii_case("application/json") {
+        let payload = serde_json::from_slice::<LoginRequest>(body).map_err(|_| {
+            oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "login request body must be valid JSON.",
+            )
+        })?;
+        return Ok((payload, LoginResponseMode::Json));
+    }
+
+    if content_type.eq_ignore_ascii_case("application/x-www-form-urlencoded") {
+        let raw = std::str::from_utf8(body).map_err(|_| {
+            oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "login form body must be valid UTF-8.",
+            )
+        })?;
+        return parse_login_form(raw).map(|payload| (payload, LoginResponseMode::Form));
+    }
+
+    Err(oauth_error(
+        StatusCode::UNSUPPORTED_MEDIA_TYPE,
+        "invalid_request",
+        "login request must use JSON or form encoding.",
+    ))
+}
+
+fn parse_login_form(raw: &str) -> Result<LoginRequest, HttpResponse> {
+    let mut email: Option<String> = None;
+    let mut password: Option<String> = None;
+    let mut next: Option<String> = None;
+
+    for (key, value) in url::form_urlencoded::parse(raw.as_bytes()) {
+        match key.as_ref() {
+            "email" => assign_once(&mut email, value.into_owned())?,
+            "password" => assign_once(&mut password, value.into_owned())?,
+            "next" => assign_once(&mut next, value.into_owned())?,
+            _ => {}
+        }
+    }
+
+    let Some(email) = email else {
+        return Err(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "email is required.",
+        ));
+    };
+    let Some(password) = password else {
+        return Err(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "password is required.",
+        ));
+    };
+
+    Ok(LoginRequest {
+        email,
+        password,
+        next,
+    })
+}
+
+fn assign_once(slot: &mut Option<String>, value: String) -> Result<(), HttpResponse> {
+    if slot.is_some() {
+        return Err(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "duplicate login form parameter.",
+        ));
+    }
+    *slot = Some(value);
+    Ok(())
+}
+
+fn safe_form_login_next(state: &AppState, req: &HttpRequest, submitted: Option<&str>) -> String {
+    submitted
+        .and_then(safe_relative_next)
+        .or_else(|| referer_login_next(req))
+        .unwrap_or_else(|| {
+            format!(
+                "{}/profile",
+                state.settings.frontend_base_url.trim_end_matches('/')
+            )
+        })
+}
+
+fn safe_relative_next(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || !trimmed.starts_with('/') || trimmed.starts_with("//") {
+        return None;
+    }
+    let path = trimmed
+        .split_once(['?', '#'])
+        .map(|(path, _)| path)
+        .unwrap_or(trimmed)
+        .trim_end_matches('/');
+    if path == "/auth" || path == "/ui/auth" {
+        return None;
+    }
+    Some(trimmed.to_owned())
+}
+
+fn referer_login_next(req: &HttpRequest) -> Option<String> {
+    let header = req.headers().get(header::REFERER)?.to_str().ok()?;
+    let referer = url::Url::parse(header).ok()?;
+    let next = referer.query_pairs().find_map(|(key, value)| {
+        if key == "next" {
+            Some(value.into_owned())
+        } else {
+            None
+        }
+    })?;
+    safe_relative_next(&next)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn form_parser_accepts_login_fields_and_next() {
+        let parsed = parse_login_form(
+            "email=user%40example.test&password=s3cret&next=%2Fauthorize%3Fclient_id%3Dabc",
+        )
+        .expect("form should parse");
+        assert_eq!(parsed.email, "user@example.test");
+        assert_eq!(parsed.password, "s3cret");
+        assert_eq!(parsed.next.as_deref(), Some("/authorize?client_id=abc"));
+    }
+
+    #[test]
+    fn form_parser_rejects_duplicate_login_fields() {
+        assert!(
+            parse_login_form("email=a%40example.test&email=b%40example.test&password=s3cret")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn safe_relative_next_allows_authorization_path_only_when_relative() {
+        assert_eq!(
+            safe_relative_next("/authorize?client_id=abc").as_deref(),
+            Some("/authorize?client_id=abc")
+        );
+        assert!(safe_relative_next("https://evil.example/authorize").is_none());
+        assert!(safe_relative_next("//evil.example/authorize").is_none());
+        assert!(safe_relative_next("/ui/auth?next=%2Fauthorize").is_none());
+    }
 }
