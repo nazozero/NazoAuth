@@ -54,14 +54,16 @@ identity/admin data plane.
 ## Conformance
 
 Durable conformance records live in Git because GitHub Actions artifacts
-expire. The current implementation is backed by the 2026-06-08 OpenID Foundation 16-plan matrix
-across OIDC Basic, OIDC Config, FAPI2 Security Profile Final, FAPI2 Message
-Signing Final, mTLS, DPoP, `private_key_jwt`, and client credentials variants:
+expire. The current implementation is backed by the 2026-06-09 OpenID
+Foundation 16-plan matrix against `https://auth.nazo.run` across OIDC Basic,
+OIDC Config, FAPI2 Security Profile Final, FAPI2 Message Signing Final, mTLS,
+DPoP, `private_key_jwt`, and client credentials variants:
 
-- [2026-06-08 OIDF full matrix](docs/conformance/2026-06-08-oidf-full-matrix.md)
+- [2026-06-09 OIDF full matrix](docs/conformance/2026-06-09-oidf-full-matrix.md)
 
 Earlier records:
 
+- [2026-06-08 OIDF full matrix](docs/conformance/2026-06-08-oidf-full-matrix.md)
 - [2026-06-07 OIDF full matrix](docs/conformance/2026-06-07-oidf-full-matrix.md)
 - [2026-06-06 OIDF full matrix](docs/conformance/2026-06-06-oidf-full-matrix.md)
 
