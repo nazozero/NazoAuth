@@ -69,6 +69,11 @@ OIDF_ALLOWED_REVIEW_MODULES = {
 OIDF_CALLBACK_PATH_PATTERN = re.compile(r"/test/a/[^/]+/callback")
 OIDF_API_SSL_CONTEXT: ssl.SSLContext | None = None
 NAZO_HOSTED_CONFORMANCE_UI_ORIGIN = "https://oauth.nazo.run"
+NAZO_LEGACY_CONFORMANCE_ORIGINS = (
+    "https://oauth.nazo.run",
+    "https://oauth-test.nazo.run",
+    "https://oauth0test.nazo.run",
+)
 
 DEFAULT_PLAN_EXPRESSIONS = [
     f"oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] {OIDCC_CONFIG_FILE}",
@@ -196,17 +201,64 @@ def is_hosted_authorization_match(match: object, config_value: dict[str, object]
     return isinstance(match, str) and match.startswith(hosted_authorization_prefix(config_value))
 
 
+def normalized_origin(value: str) -> str:
+    parsed = urlparse(value.strip().rstrip("/"))
+    if parsed.scheme not in {"https", "http"} or not parsed.netloc or parsed.path:
+        fail(f"target issuer must be an origin URL without a path: {value}")
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def normalize_legacy_nazo_origins_in_value(value: object, target_origin: str) -> int:
+    replacements = 0
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            if isinstance(item, str):
+                updated = item
+                for origin in NAZO_LEGACY_CONFORMANCE_ORIGINS:
+                    updated = updated.replace(origin, target_origin)
+                if updated != item:
+                    replacements += 1
+                    value[index] = updated
+            else:
+                replacements += normalize_legacy_nazo_origins_in_value(item, target_origin)
+    elif isinstance(value, dict):
+        for key, item in list(value.items()):
+            if isinstance(item, str):
+                updated = item
+                for origin in NAZO_LEGACY_CONFORMANCE_ORIGINS:
+                    updated = updated.replace(origin, target_origin)
+                if updated != item:
+                    replacements += 1
+                    value[key] = updated
+            else:
+                replacements += normalize_legacy_nazo_origins_in_value(item, target_origin)
+    return replacements
+
+
+def assert_no_legacy_nazo_origins(value: object, config_name: str) -> None:
+    serialized = json.dumps(value, sort_keys=True)
+    for origin in NAZO_LEGACY_CONFORMANCE_ORIGINS:
+        if origin in serialized:
+            fail(f"{config_name} still contains stale Nazo OIDF origin {origin}")
+
+
 def normalize_nazo_hosted_urls_in_value(value: object, origin: str) -> None:
     if isinstance(value, list):
         for index, item in enumerate(value):
             if isinstance(item, str):
-                value[index] = item.replace(NAZO_HOSTED_CONFORMANCE_UI_ORIGIN, origin)
+                updated = item
+                for legacy_origin in NAZO_LEGACY_CONFORMANCE_ORIGINS:
+                    updated = updated.replace(legacy_origin, origin)
+                value[index] = updated
             else:
                 normalize_nazo_hosted_urls_in_value(item, origin)
     elif isinstance(value, dict):
         for key, item in list(value.items()):
             if isinstance(item, str):
-                value[key] = item.replace(NAZO_HOSTED_CONFORMANCE_UI_ORIGIN, origin)
+                updated = item
+                for legacy_origin in NAZO_LEGACY_CONFORMANCE_ORIGINS:
+                    updated = updated.replace(legacy_origin, origin)
+                value[key] = updated
             else:
                 normalize_nazo_hosted_urls_in_value(item, origin)
 
@@ -624,6 +676,7 @@ def write_plan_configs(
     file_name: str,
     env_name: str,
     config_json_file: str,
+    target_issuer: str,
 ) -> tuple[set[str], set[str]]:
     validate_config_file_name(file_name)
     raw_config = (
@@ -642,7 +695,16 @@ def write_plan_configs(
 
     configs = parsed.get("configs")
     if configs is None:
+        if target_issuer:
+            replacements = normalize_legacy_nazo_origins_in_value(parsed, target_issuer)
+            print(
+                f"OIDF target issuer normalization for {file_name}: "
+                f"{replacements} stale Nazo URL fields rewritten to {target_issuer}",
+                flush=True,
+            )
         add_nazo_browser_overrides(parsed)
+        if target_issuer:
+            assert_no_legacy_nazo_origins(parsed, file_name)
         validate_browser_automation(file_name, parsed)
         target = suite_scripts / file_name
         target.write_text(json.dumps(parsed, indent=2, sort_keys=True), encoding="utf-8")
@@ -660,7 +722,16 @@ def write_plan_configs(
         validate_config_file_name(config_name)
         if not isinstance(config_value, dict):
             fail(f"{env_name}.configs.{config_name} must contain a JSON object")
+        if target_issuer:
+            replacements = normalize_legacy_nazo_origins_in_value(config_value, target_issuer)
+            print(
+                f"OIDF target issuer normalization for {config_name}: "
+                f"{replacements} stale Nazo URL fields rewritten to {target_issuer}",
+                flush=True,
+            )
         add_nazo_browser_overrides(config_value)
+        if target_issuer:
+            assert_no_legacy_nazo_origins(config_value, config_name)
         validate_browser_automation(config_name, config_value)
         alias = config_alias(config_value)
         if alias:
@@ -1225,6 +1296,14 @@ def parse_args() -> argparse.Namespace:
         help="read the plan configuration JSON object from this file instead of --config-env",
     )
     parser.add_argument("--config-file-name", default="oidf-plan-config.json")
+    parser.add_argument(
+        "--target-issuer",
+        default=os.environ.get("OIDF_TARGET_ISSUER", ""),
+        help=(
+            "rewrite legacy Nazo conformance origins in plan configs to this issuer origin "
+            "before submitting plans"
+        ),
+    )
     parser.add_argument("--token-env", default="OIDF_CONFORMANCE_TOKEN")
     parser.add_argument(
         "--no-api-token",
@@ -1371,6 +1450,7 @@ def main() -> int:
         validate_rerun_argument(args.rerun)
     if args.disable_ssl_verify:
         OIDF_API_SSL_CONTEXT = ssl._create_unverified_context()
+    target_issuer = normalized_origin(args.target_issuer) if args.target_issuer.strip() else ""
 
     suite_dir = Path(args.suite_dir).resolve()
     suite_scripts = suite_dir / "scripts"
@@ -1383,6 +1463,7 @@ def main() -> int:
         args.config_file_name,
         args.config_env,
         args.config_json_file,
+        target_issuer,
     )
     expressions = plan_expressions(
         args.plan_expression,
