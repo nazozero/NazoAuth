@@ -614,7 +614,17 @@ def use_nazo_user_facing_task_commands(config_value: dict[str, object], task: ob
         )
         updated_commands = nazo_login_page_commands(config_value)
         if captures_placeholder and updated_commands:
-            updated_commands[0] = [*updated_commands[0], "update-image-placeholder-optional"]
+            updated_commands.insert(
+                0,
+                [
+                    "wait",
+                    "id",
+                    NAZO_LOGIN_EMAIL_ID,
+                    30,
+                    ".*",
+                    "update-image-placeholder-optional",
+                ],
+            )
         task["commands"] = updated_commands
     elif task_matches_hosted_ui(task, config_value, "consent"):
         commands = task.get("commands")
