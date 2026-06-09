@@ -61,12 +61,6 @@ DPoP, `private_key_jwt`, and client credentials variants:
 
 - [2026-06-09 OIDF full matrix](docs/conformance/2026-06-09-oidf-full-matrix.md)
 
-Earlier records:
-
-- [2026-06-08 OIDF full matrix](docs/conformance/2026-06-08-oidf-full-matrix.md)
-- [2026-06-07 OIDF full matrix](docs/conformance/2026-06-07-oidf-full-matrix.md)
-- [2026-06-06 OIDF full matrix](docs/conformance/2026-06-06-oidf-full-matrix.md)
-
 The recorded workflow conclusion was `success`. Every matrix plan completed
 with `0 failures` and `0 warnings`. The record includes commit SHA, workflow
 run URL, job URL, artifact name, artifact digest, artifact expiry, plan IDs,

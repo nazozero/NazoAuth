@@ -12,9 +12,9 @@ param(
     [string]$RemoteConformanceUiPath = "/opt/nazo-oauth/ui",
     [string]$LocalConformanceAuthTemplate = "deploy/conformance-ui/auth/index.html.template",
     [string]$LocalConformanceConsentHtml = "deploy/conformance-ui/consent/index.html",
-    [string]$HealthUrl = "https://oauth.nazo.run/health",
-    [string]$DiscoveryUrl = "https://oauth.nazo.run/.well-known/openid-configuration",
-    [string]$ExpectedIssuer = "https://oauth.nazo.run",
+    [string]$HealthUrl = "https://auth.nazo.run/health",
+    [string]$DiscoveryUrl = "https://auth.nazo.run/.well-known/openid-configuration",
+    [string]$ExpectedIssuer = "https://auth.nazo.run",
     [switch]$SkipBuild,
     [switch]$SkipMigrate
 )

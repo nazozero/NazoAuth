@@ -150,9 +150,9 @@ Default live assumptions:
 | Remote config | `/opt/nazo-oauth/.env.yaml` |
 | Keys path | `/opt/nazo-oauth/runtime/keys` |
 | Avatars path | `/opt/nazo-oauth/runtime/avatars` |
-| Health URL | `https://oauth.nazo.run/health` |
-| Discovery URL | `https://oauth.nazo.run/.well-known/openid-configuration` |
-| Expected issuer | `https://oauth.nazo.run` |
+| Health URL | `https://auth.nazo.run/health` |
+| Discovery URL | `https://auth.nazo.run/.well-known/openid-configuration` |
+| Expected issuer | `https://auth.nazo.run` |
 
 Example:
 
@@ -282,7 +282,7 @@ curl -fsS https://oauth.example.com/jwks.json
 
 Check that discovery `issuer` exactly equals `ISSUER`.
 
-The `nazo.run` deployment helper [scripts/verify_live_full_interfaces.py](../scripts/verify_live_full_interfaces.py) exercises a broader HTTPS path against `https://oauth.nazo.run`. It reads host-local secrets and runs only in the intended deployment environment.
+The `nazo.run` deployment helper [scripts/verify_live_full_interfaces.py](../scripts/verify_live_full_interfaces.py) exercises a broader HTTPS path against `https://auth.nazo.run`. It reads host-local secrets and runs only in the intended deployment environment.
 
 ## OIDF Readiness
 

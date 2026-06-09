@@ -70,19 +70,7 @@ OIDF_ALLOWED_REVIEW_MODULES = {
 OIDF_CALLBACK_PATH_PATTERN = re.compile(r"/test/a/[^/]+/callback")
 OIDF_API_SSL_CONTEXT: ssl.SSLContext | None = None
 NAZO_HOSTED_CONFORMANCE_UI_ORIGIN = "https://auth.nazo.run"
-NAZO_STALE_CONFORMANCE_ORIGINS = (
-    "https://oauth.nazo.run",
-    "https://oauth-test.nazo.run",
-    "https://oauth0test.nazo.run",
-    "https://host.containers.internal:9443",
-    "https://localhost:8443",
-    "https://127.0.0.1:8443",
-)
-NAZO_STALE_RESOURCE_ORIGINS = (
-    "https://host.containers.internal:9444",
-    "https://localhost:8444",
-    "https://127.0.0.1:8444",
-)
+NAZO_RUN_URL_PATTERN = re.compile(r"https?://[A-Za-z0-9.-]*nazo\.run(?::\d+)?(?:/[^\s\"'<>)]*)?")
 NAZO_LOGIN_EMAIL_ID = "nazo-login-email"
 NAZO_LOGIN_PASSWORD_ID = "nazo-login-password"
 NAZO_LOGIN_SUBMIT_ID = "nazo-login-submit"
@@ -329,14 +317,29 @@ def normalized_origin(value: str) -> str:
     parsed = urlparse(value.strip().rstrip("/"))
     if parsed.scheme not in {"https", "http"} or not parsed.netloc or parsed.path:
         fail(f"target issuer must be an origin URL without a path: {value}")
-    return f"{parsed.scheme}://{parsed.netloc}"
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    if origin != NAZO_HOSTED_CONFORMANCE_UI_ORIGIN:
+        fail(f"target issuer must be {NAZO_HOSTED_CONFORMANCE_UI_ORIGIN}")
+    return origin
 
 
-def assert_no_stale_nazo_origins(value: object, config_name: str) -> None:
-    serialized = json.dumps(value, sort_keys=True)
-    for origin in (*NAZO_STALE_CONFORMANCE_ORIGINS, *NAZO_STALE_RESOURCE_ORIGINS):
-        if origin in serialized:
-            fail(f"{config_name} still contains stale Nazo OIDF origin {origin}")
+def assert_only_auth_nazo_run_urls(value: object, config_name: str) -> None:
+    if isinstance(value, list):
+        for item in value:
+            assert_only_auth_nazo_run_urls(item, config_name)
+    elif isinstance(value, dict):
+        for item in value.values():
+            assert_only_auth_nazo_run_urls(item, config_name)
+    elif isinstance(value, str):
+        for match in NAZO_RUN_URL_PATTERN.finditer(value):
+            url = match.group(0)
+            parsed = urlparse(url)
+            origin = f"{parsed.scheme}://{parsed.netloc}"
+            if origin != NAZO_HOSTED_CONFORMANCE_UI_ORIGIN:
+                fail(
+                    f"{config_name} contains unsupported Nazo URL {url}; "
+                    f"use {NAZO_HOSTED_CONFORMANCE_UI_ORIGIN} only"
+                )
 
 
 def config_alias(config_value: dict[str, object]) -> str | None:
@@ -867,10 +870,10 @@ def write_plan_configs(
     configs = parsed.get("configs")
     if configs is None:
         if target_issuer:
-            assert_no_stale_nazo_origins(parsed, file_name)
+            assert_only_auth_nazo_run_urls(parsed, file_name)
         add_nazo_browser_overrides(parsed)
         if target_issuer:
-            assert_no_stale_nazo_origins(parsed, file_name)
+            assert_only_auth_nazo_run_urls(parsed, file_name)
         validate_browser_automation(file_name, parsed)
         target = suite_scripts / file_name
         target.write_text(json.dumps(parsed, indent=2, sort_keys=True), encoding="utf-8")
@@ -889,10 +892,10 @@ def write_plan_configs(
         if not isinstance(config_value, dict):
             fail(f"{env_name}.configs.{config_name} must contain a JSON object")
         if target_issuer:
-            assert_no_stale_nazo_origins(config_value, config_name)
+            assert_only_auth_nazo_run_urls(config_value, config_name)
         add_nazo_browser_overrides(config_value)
         if target_issuer:
-            assert_no_stale_nazo_origins(config_value, config_name)
+            assert_only_auth_nazo_run_urls(config_value, config_name)
         validate_browser_automation(config_name, config_value)
         alias = config_alias(config_value)
         if alias:
@@ -1516,9 +1519,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--target-issuer",
         default=os.environ.get("OIDF_TARGET_ISSUER", ""),
-        help=(
-            "expected issuer origin; plan configs containing stale Nazo origins fail before submission"
-        ),
+        help=f"expected issuer origin; Nazo URLs must use {NAZO_HOSTED_CONFORMANCE_UI_ORIGIN}",
     )
     parser.add_argument("--token-env", default="OIDF_CONFORMANCE_TOKEN")
     parser.add_argument(

@@ -125,9 +125,9 @@ fn upsert_user(
             'Local',
             'Conformance',
             'oidf',
-            'https://host.containers.internal:9443/profile/oidf-local',
-            'https://host.containers.internal:9443/avatar/oidf-local.png',
-            'https://host.containers.internal:9443/',
+            'https://auth.nazo.run/profile/oidf-local',
+            'https://auth.nazo.run/avatar/oidf-local.png',
+            'https://auth.nazo.run/',
             'unspecified',
             '2000-01-01',
             'Asia/Shanghai',
@@ -150,9 +150,9 @@ fn upsert_user(
             family_name = 'Local',
             middle_name = 'Conformance',
             nickname = 'oidf',
-            profile_url = 'https://host.containers.internal:9443/profile/oidf-local',
-            avatar_url = 'https://host.containers.internal:9443/avatar/oidf-local.png',
-            website_url = 'https://host.containers.internal:9443/',
+            profile_url = 'https://auth.nazo.run/profile/oidf-local',
+            avatar_url = 'https://auth.nazo.run/avatar/oidf-local.png',
+            website_url = 'https://auth.nazo.run/',
             gender = 'unspecified',
             birthdate = '2000-01-01',
             zoneinfo = 'Asia/Shanghai',
@@ -423,7 +423,7 @@ fn main() -> anyhow::Result<()> {
     ));
     let suite_base_url = env_or("OIDF_LOCAL_SUITE_BASE_URL", "https://nginx:8443");
     let suite_base_urls = suite_base_urls(&suite_base_url);
-    let issuer = config.string("ISSUER", "https://host.containers.internal:9443");
+    let issuer = config.string("ISSUER", "https://auth.nazo.run");
     let runtime_dir = env_or("OIDF_LOCAL_RUNTIME_DIR", "runtime/oidf");
     let runtime_dir = Path::new(&runtime_dir);
     let alias = env_or("OIDF_LOCAL_BASIC_ALIAS", "local-nazo-oauth-oidf");

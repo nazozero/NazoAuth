@@ -15,8 +15,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = ROOT / "runtime" / "oidf"
-ISSUER = os.environ.get("OIDF_LOCAL_ISSUER", "https://host.containers.internal:9443").rstrip("/")
-MTLS_ISSUER = os.environ.get("OIDF_LOCAL_MTLS_ISSUER", "https://host.containers.internal:9444").rstrip("/")
+ISSUER = "https://auth.nazo.run"
+MTLS_ISSUER = "https://auth.nazo.run"
 SUITE_BASE_URL = os.environ.get("OIDF_LOCAL_SUITE_BASE_URL", "https://nginx:8443").rstrip("/")
 BASIC_ALIAS = os.environ.get("OIDF_LOCAL_BASIC_ALIAS", "local-nazo-oauth-oidf")
 USER_EMAIL = os.environ.get("OIDF_LOCAL_USER_EMAIL", "oidf-local@example.test")
@@ -84,9 +84,9 @@ def ensure_cert() -> None:
             "-out",
             str(cert),
             "-subj",
-            "/CN=host.containers.internal",
+            "/CN=auth.nazo.run",
             "-addext",
-            "subjectAltName=DNS:host.containers.internal,DNS:localhost,IP:127.0.0.1",
+            "subjectAltName=DNS:auth.nazo.run",
         ],
         check=True,
         cwd=ROOT,
@@ -273,9 +273,9 @@ http {
 
     location / {
       proxy_pass http://nazo-oauth-server:8000;
-      proxy_set_header Host host.containers.internal:9443;
+      proxy_set_header Host auth.nazo.run;
       proxy_set_header X-Forwarded-Proto https;
-      proxy_set_header X-Forwarded-Host host.containers.internal;
+      proxy_set_header X-Forwarded-Host auth.nazo.run;
       proxy_set_header X-Forwarded-Port 9444;
       proxy_set_header X-SSL-Client-Verify $ssl_client_verify;
       proxy_set_header X-SSL-Client-Cert $ssl_client_escaped_cert;

@@ -18,7 +18,7 @@ from psycopg.types.json import Jsonb
 from requests_toolbelt import MultipartEncoder
 
 
-BASE_URL = "https://oauth.nazo.run"
+BASE_URL = "https://auth.nazo.run"
 REMOTE_BASE = Path("/opt/nazo-oauth")
 SECRETS_PATH = REMOTE_BASE / "secrets.json"
 RUN_ID = f"live-full-{int(time.time())}-{secrets.token_hex(3)}"
@@ -164,8 +164,8 @@ def cleanup_rows(conn):
             ),
             test_users AS (
                 SELECT id FROM users
-                WHERE email LIKE 'live-full-%@oauth.nazo.run'
-                   OR email LIKE 'registered-live-full-%@oauth.nazo.run'
+                WHERE email LIKE 'live-full-%@auth.nazo.run'
+                   OR email LIKE 'registered-live-full-%@auth.nazo.run'
             )
             DELETE FROM access_token_revocations
             WHERE client_id IN (SELECT id FROM test_clients)
@@ -179,8 +179,8 @@ def cleanup_rows(conn):
             ),
             test_users AS (
                 SELECT id FROM users
-                WHERE email LIKE 'live-full-%@oauth.nazo.run'
-                   OR email LIKE 'registered-live-full-%@oauth.nazo.run'
+                WHERE email LIKE 'live-full-%@auth.nazo.run'
+                   OR email LIKE 'registered-live-full-%@auth.nazo.run'
             )
             DELETE FROM oauth_tokens
             WHERE client_id IN (SELECT id FROM test_clients)
@@ -195,8 +195,8 @@ def cleanup_rows(conn):
             ),
             test_users AS (
                 SELECT id FROM users
-                WHERE email LIKE 'live-full-%@oauth.nazo.run'
-                   OR email LIKE 'registered-live-full-%@oauth.nazo.run'
+                WHERE email LIKE 'live-full-%@auth.nazo.run'
+                   OR email LIKE 'registered-live-full-%@auth.nazo.run'
             )
             DELETE FROM user_client_grants
             WHERE client_id IN (SELECT id FROM test_clients)
@@ -211,8 +211,8 @@ def cleanup_rows(conn):
             ),
             test_users AS (
                 SELECT id FROM users
-                WHERE email LIKE 'live-full-%@oauth.nazo.run'
-                   OR email LIKE 'registered-live-full-%@oauth.nazo.run'
+                WHERE email LIKE 'live-full-%@auth.nazo.run'
+                   OR email LIKE 'registered-live-full-%@auth.nazo.run'
             )
             DELETE FROM client_access_requests
             WHERE user_id IN (SELECT id FROM test_users)
@@ -229,15 +229,15 @@ def cleanup_rows(conn):
         cur.execute(
             """
             DELETE FROM users
-            WHERE email LIKE 'live-full-%@oauth.nazo.run'
-               OR email LIKE 'registered-live-full-%@oauth.nazo.run'
+            WHERE email LIKE 'live-full-%@auth.nazo.run'
+               OR email LIKE 'registered-live-full-%@auth.nazo.run'
             """
         )
 
 
 def seed_admin(conn):
     ph = PasswordHasher()
-    email = f"{RUN_ID}@oauth.nazo.run"
+    email = f"{RUN_ID}@auth.nazo.run"
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -514,9 +514,9 @@ def run():
     request(public, "GET", "/.well-known/oauth-authorization-server", expected={200}, name="oauth metadata")
     request(public, "GET", "/jwks.json", expected={200}, name="jwks")
     request(public, "GET", "/auth/captcha-config", expected={200}, name="captcha config")
-    request(public, "POST", "/auth/send-code", expected={503}, name="send-code disabled", json={"email": f"registered-{RUN_ID}@oauth.nazo.run"})
+    request(public, "POST", "/auth/send-code", expected={503}, name="send-code disabled", json={"email": f"registered-{RUN_ID}@auth.nazo.run"})
 
-    register_email = f"registered-{RUN_ID}@oauth.nazo.run"
+    register_email = f"registered-{RUN_ID}@auth.nazo.run"
     code = "731924"
     create_email_code(redis_client, register_email, code)
     registered = request(
