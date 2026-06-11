@@ -1,5 +1,9 @@
 # Nazo Auth Server
 
+[![OpenID Certified](https://openid.net/wordpress-content/uploads/2016/04/oid-l-certification-mark-l-rgb-150dpi-90mm-300x157.png)](https://openid.net/mark/)
+
+[中文文档](README.zh-CN.md)
+
 Nazo Auth Server is a Rust-native OAuth 2.1 and OpenID Connect authorization
 server for self-hosted deployments. The implementation favors explicit profile
 boundaries, sender-constrained token support, and repeatable conformance
@@ -17,8 +21,10 @@ identity/admin data plane.
 - License: Apache-2.0
 - Runtime dependencies: PostgreSQL and Valkey
 - Main branch policy: work happens on `main`
+- Chinese documentation: see [README.zh-CN.md](README.zh-CN.md)
 - Conformance evidence: see [docs/conformance](docs/conformance)
-- Deployment guide: see [docs/deployment.md](docs/deployment.md)
+- Deployment guide: see [docs/deployment.md](docs/deployment.md) and
+  [docs/deployment.zh-CN.md](docs/deployment.zh-CN.md)
 - Ecosystem onboarding decisions: see [docs/ecosystem-onboarding.md](docs/ecosystem-onboarding.md)
 - PostgreSQL and Valkey operations: see [docs/ha-operations.md](docs/ha-operations.md)
 - Resource server verifier: see [docs/resource-server-verifier.md](docs/resource-server-verifier.md)
