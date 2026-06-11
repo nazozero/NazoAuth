@@ -51,13 +51,20 @@ identity/admin data plane.
   selection, and optional DPoP or mTLS `cnf` sender constraints before
   application policy hooks run.
 
-## Conformance
+## Certification And Conformance
+
+Nazo Auth Server is published in the OpenID Foundation certification listings.
+The certified implementer is `YongQi Tan / Nazo Auth`, and the certified
+deployment is `Nazo Auth Server 0.1.0`, dated `09-Jun-2026`:
+
+- [Certified OpenID Provider profiles](https://openid.net/certification/certified-openid-providers-profiles/)
+- [Certified FAPI 2.0 OP Security Profile Final and Message Signing Final](https://openid.net/certification/certified-fapi-2-0-op-security-profile-final-message-signing-final/)
 
 Durable conformance records live in Git because GitHub Actions artifacts
-expire. The current implementation is backed by the 2026-06-09 OpenID
-Foundation 16-plan matrix against `https://auth.nazo.run` across OIDC Basic,
-OIDC Config, FAPI2 Security Profile Final, FAPI2 Message Signing Final, mTLS,
-DPoP, `private_key_jwt`, and client credentials variants:
+expire. The certified deployment is backed by the 2026-06-09 OpenID Foundation
+16-plan matrix against `https://auth.nazo.run` across OIDC Basic, OIDC Config,
+FAPI2 Security Profile Final, FAPI2 Message Signing Final, mTLS, DPoP,
+`private_key_jwt`, and client credentials variants:
 
 - [2026-06-09 OIDF full matrix](docs/conformance/2026-06-09-oidf-full-matrix.md)
 
