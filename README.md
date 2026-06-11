@@ -54,8 +54,7 @@ identity/admin data plane.
 ## Certification And Conformance
 
 Nazo Auth Server is published in the OpenID Foundation certification listings.
-The certified implementer is `YongQi Tan / Nazo Auth`, and the certified
-deployment is `Nazo Auth Server 0.1.0`, dated `09-Jun-2026`:
+The certified deployment is `Nazo Auth Server 0.1.0`, dated `09-Jun-2026`:
 
 - [Certified OpenID Provider profiles](https://openid.net/certification/certified-openid-providers-profiles/)
 - [Certified FAPI 2.0 OP Security Profile Final and Message Signing Final](https://openid.net/certification/certified-fapi-2-0-op-security-profile-final-message-signing-final/)
