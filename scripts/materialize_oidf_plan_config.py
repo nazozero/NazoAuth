@@ -31,6 +31,13 @@ def secret_patch_from_env(prefix: str) -> dict[str, Any]:
     return patch
 
 
+def secret_patch_from_file(path: Path) -> dict[str, Any]:
+    patch = read_json(path)
+    if not isinstance(patch, dict):
+        raise SystemExit("OIDF secret patch file must contain a JSON object")
+    return patch
+
+
 def materialize(value: Any, patch: dict[str, Any]) -> Any:
     if isinstance(value, dict):
         secret = value.get("$secret")
@@ -51,6 +58,12 @@ def main() -> int:
     parser.add_argument("--template", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument(
+        "--secret-patch-file",
+        type=Path,
+        default=None,
+        help="read the secret patch JSON object from this file",
+    )
+    parser.add_argument(
         "--secret-prefix",
         default="OIDF_PLAN_CONFIG_SECRET_PATCH_GZ_B64",
         help="environment variable prefix for gzip+base64 secret patch chunks",
@@ -58,7 +71,11 @@ def main() -> int:
     args = parser.parse_args()
 
     template = read_json(args.template)
-    patch = secret_patch_from_env(args.secret_prefix)
+    patch = (
+        secret_patch_from_file(args.secret_patch_file)
+        if args.secret_patch_file is not None
+        else secret_patch_from_env(args.secret_prefix)
+    )
     rendered = materialize(template, patch)
     args.output.write_text(json.dumps(rendered, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return 0
