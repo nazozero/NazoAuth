@@ -10,10 +10,13 @@ import copy
 import base64
 import hashlib
 import re
+import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+FRONTEND_ROOT = ROOT.parent / "NazoAuthWeb"
 RUNTIME = ROOT / "runtime" / "oidf"
 ISSUER = "https://auth.nazo.run"
 MTLS_ISSUER = "https://auth.nazo.run"
@@ -53,6 +56,52 @@ PLAN_CONFIG_FILES = (
 FAPI_MATRIX_CLIENT_AUTHS = ("private_key_jwt", "mtls")
 FAPI_MATRIX_SENDER_CONSTRAINS = ("dpop", "mtls")
 FAPI_MATRIX_OPENID_MODES = ("plain_oauth", "openid_connect")
+NAZO_LOGIN_EMAIL_ID = "nazo-login-email"
+NAZO_LOGIN_PASSWORD_ID = "nazo-login-password"
+NAZO_LOGIN_SUBMIT_ID = "nazo-login-submit"
+NAZO_LOGIN_SUBMIT_READY_SELECTOR = f"#{NAZO_LOGIN_SUBMIT_ID}:not([disabled])"
+NAZO_CONSENT_APPROVE_ID = "nazo-consent-approve"
+NAZO_CONSENT_DENY_ID = "nazo-consent-deny"
+NAZO_AUTHORIZATION_ERROR_PAGE_PATTERN = (
+    r"(invalid_request|invalid_request_object|access_denied|login_required|server_error)"
+)
+
+
+def login_commands(*, capture_placeholder: bool = False) -> list[list[object]]:
+    commands: list[list[object]] = [
+        ["wait-element-visible", "id", NAZO_LOGIN_EMAIL_ID, 30],
+        ["wait-element-visible", "id", NAZO_LOGIN_PASSWORD_ID, 30],
+        ["text", "id", NAZO_LOGIN_EMAIL_ID, USER_EMAIL],
+        ["text", "id", NAZO_LOGIN_PASSWORD_ID, USER_PASSWORD],
+        ["wait-element-visible", "id", NAZO_LOGIN_SUBMIT_ID, 30],
+        ["wait-element-visible", "css", NAZO_LOGIN_SUBMIT_READY_SELECTOR, 30],
+        ["click", "id", NAZO_LOGIN_SUBMIT_ID],
+        ["wait", "contains", "/ui/consent", 30],
+    ]
+    if capture_placeholder:
+        commands.insert(
+            0,
+            ["wait", "id", NAZO_LOGIN_EMAIL_ID, 30, ".*", "update-image-placeholder-optional"],
+        )
+    return commands
+
+
+def consent_approve_commands() -> list[list[object]]:
+    return [
+        ["wait-element-visible", "id", NAZO_CONSENT_APPROVE_ID, 30],
+        ["click", "id", NAZO_CONSENT_APPROVE_ID],
+        ["wait", "contains", "/test/", 30],
+        ["wait", "id", "submission_complete", 10],
+    ]
+
+
+def consent_deny_commands() -> list[list[object]]:
+    return [
+        ["wait-element-visible", "id", NAZO_CONSENT_DENY_ID, 30],
+        ["click", "id", NAZO_CONSENT_DENY_ID],
+        ["wait", "contains", "/test/", 30],
+        ["wait", "id", "submission_complete", 10],
+    ]
 
 
 def write_text(path: Path, body: str, mode: int | None = None) -> None:
@@ -60,6 +109,99 @@ def write_text(path: Path, body: str, mode: int | None = None) -> None:
     path.write_text(body, encoding="utf-8")
     if mode is not None:
         path.chmod(mode)
+
+
+def ensure_server_ps256_keyset() -> None:
+    key_dir = RUNTIME / "keys"
+    key_dir.mkdir(parents=True, exist_ok=True)
+    keyset_path = key_dir / "keyset.json"
+    keyset: dict[str, object] = {"active_kid": "", "keys": []}
+    if keyset_path.is_file():
+        loaded = json.loads(keyset_path.read_text(encoding="utf-8"))
+        if not isinstance(loaded, dict):
+            raise RuntimeError(f"server keyset must be a JSON object: {keyset_path}")
+        keyset = loaded
+
+    keys = keyset.setdefault("keys", [])
+    if not isinstance(keys, list):
+        raise RuntimeError(f"server keyset keys must be an array: {keyset_path}")
+
+    live_ps256 = next(
+        (
+            key
+            for key in keys
+            if isinstance(key, dict)
+            and key.get("alg") == "PS256"
+            and isinstance(key.get("kid"), str)
+            and isinstance(key.get("file"), str)
+            and key_dir.joinpath(str(key["file"])).is_file()
+            and key.get("retire_at") is None
+        ),
+        None,
+    )
+    if live_ps256 is None:
+        kid = "ps256-local-oidf-server"
+        file_name = f"{kid}.pem"
+        existing_kids = {
+            key.get("kid")
+            for key in keys
+            if isinstance(key, dict) and isinstance(key.get("kid"), str)
+        }
+        suffix = 2
+        while kid in existing_kids:
+            kid = f"ps256-local-oidf-server-{suffix}"
+            file_name = f"{kid}.pem"
+            suffix += 1
+        pem = key_dir / file_name
+        subprocess.run(
+            [
+                "openssl",
+                "genrsa",
+                "-traditional",
+                "-out",
+                str(pem),
+                "2048",
+            ],
+            check=True,
+            cwd=ROOT,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        pem.chmod(0o600)
+        live_ps256 = {
+            "kid": kid,
+            "alg": "PS256",
+            "file": file_name,
+            "created_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            "retire_at": None,
+        }
+        keys.append(live_ps256)
+
+    normalize_server_rsa_private_key(key_dir / str(live_ps256["file"]))
+    keyset["active_kid"] = live_ps256["kid"]
+    write_text(keyset_path, json.dumps(keyset, indent=2) + "\n", 0o600)
+
+
+def normalize_server_rsa_private_key(path: Path) -> None:
+    tmp_path = path.with_name(f".{path.name}.traditional.tmp")
+    subprocess.run(
+        [
+            "openssl",
+            "rsa",
+            "-in",
+            str(path),
+            "-traditional",
+            "-out",
+            str(tmp_path),
+        ],
+        check=True,
+        cwd=ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    tmp_path.chmod(0o600)
+    tmp_path.replace(path)
+    path.chmod(0o600)
 
 
 def ensure_cert() -> None:
@@ -218,6 +360,10 @@ EMAIL_DELIVERY: "disabled"
 AVATAR_STORAGE_DIR: "/var/lib/nazo_oauth/avatars"
 JWK_KEYS_DIR: "/var/lib/nazo_oauth/keys"
 TRUSTED_PROXY_CIDRS: "{TRUSTED_PROXY_CIDRS}"
+RATE_LIMIT_WINDOW_SECONDS: 60
+AUTH_RATE_LIMIT_MAX_REQUESTS: 10000
+TOKEN_RATE_LIMIT_MAX_REQUESTS: 10000
+TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS: 10000
 RUST_LOG: "info"
 """,
         0o600,
@@ -231,31 +377,31 @@ def write_nginx() -> None:
 
 http {
   server {
+    listen 443 ssl;
     listen 9443 ssl;
     server_name _;
 
     ssl_certificate /etc/nginx/certs/oidf.crt;
     ssl_certificate_key /etc/nginx/certs/oidf.key;
+    ssl_client_certificate /etc/nginx/certs/mtls-ca.crt;
+    ssl_verify_client optional;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384;
     ssl_prefer_server_ciphers on;
 
-    location = /ui/auth {
+    location /ui/ {
       root /usr/share/nginx/html;
-      try_files /ui/auth/index.html =404;
-    }
-
-    location = /ui/consent {
-      root /usr/share/nginx/html;
-      try_files /ui/consent/index.html =404;
+      try_files $uri $uri/ /ui/index.html;
     }
 
     location / {
-      proxy_pass http://nazo-oauth-server:8000;
+      proxy_pass http://nazo_oauth_server:8000;
       proxy_set_header Host $host;
       proxy_set_header X-Forwarded-Proto https;
       proxy_set_header X-Forwarded-Host $host;
-      proxy_set_header X-Forwarded-Port 9443;
+      proxy_set_header X-Forwarded-Port $server_port;
+      proxy_set_header X-SSL-Client-Verify $ssl_client_verify;
+      proxy_set_header X-SSL-Client-Cert $ssl_client_escaped_cert;
     }
   }
 
@@ -272,7 +418,7 @@ http {
     ssl_prefer_server_ciphers on;
 
     location / {
-      proxy_pass http://nazo-oauth-server:8000;
+      proxy_pass http://nazo_oauth_server:8000;
       proxy_set_header Host auth.nazo.run;
       proxy_set_header X-Forwarded-Proto https;
       proxy_set_header X-Forwarded-Host auth.nazo.run;
@@ -287,17 +433,30 @@ http {
 
 
 def write_ui() -> None:
-    auth_template = (ROOT / "deploy" / "conformance-ui" / "auth" / "index.html.template").read_text(
-        encoding="utf-8"
+    package_json = FRONTEND_ROOT / "package.json"
+    if not package_json.is_file():
+        raise RuntimeError(f"frontend project not found: {FRONTEND_ROOT}")
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "VITE_BASE_PATH": "/ui/",
+        }
     )
-    auth_html = auth_template.replace("__OIDF_USER_EMAIL_JSON__", json.dumps(USER_EMAIL)).replace(
-        "__OIDF_USER_PASSWORD_JSON__", json.dumps(USER_PASSWORD)
-    )
-    write_text(RUNTIME / "ui" / "auth" / "index.html", auth_html)
-    consent_html = (ROOT / "deploy" / "conformance-ui" / "consent" / "index.html").read_text(
-        encoding="utf-8"
-    )
-    write_text(RUNTIME / "ui" / "consent" / "index.html", consent_html)
+    subprocess.run(["npm", "run", "build"], cwd=FRONTEND_ROOT, env=env, check=True)
+
+    dist = FRONTEND_ROOT / "dist"
+    if not (dist / "index.html").is_file():
+        raise RuntimeError(f"frontend build did not produce {dist / 'index.html'}")
+
+    target = RUNTIME / "ui"
+    target.mkdir(parents=True, exist_ok=True)
+    for item in target.iterdir():
+        if item.is_dir():
+            shutil.rmtree(item)
+        else:
+            item.unlink()
+    shutil.copytree(dist, target, dirs_exist_ok=True)
 
 
 def b64url(raw: bytes) -> str:
@@ -399,6 +558,10 @@ def callback_for(alias: str) -> str:
 def mark_login_page_wait_as_placeholder_update(task: object) -> None:
     if not isinstance(task, dict):
         return
+    if task.get("match") == f"{ISSUER}/ui/auth*":
+        task["commands"] = login_commands(capture_placeholder=True)
+        return
+
     commands = task.get("commands")
     if not isinstance(commands, list):
         return
@@ -406,13 +569,7 @@ def mark_login_page_wait_as_placeholder_update(task: object) -> None:
     for command in commands:
         if not isinstance(command, list) or len(command) < 5:
             continue
-        if command[:5] != [
-            "wait",
-            "id",
-            "oidf_conformance_interaction",
-            5,
-            "OIDF conformance login page",
-        ]:
+        if command[:5] != ["wait", "id", NAZO_LOGIN_EMAIL_ID, 30, ".*"]:
             continue
         if len(command) == 5:
             command.append("update-image-placeholder-optional")
@@ -475,9 +632,9 @@ def first_login_observation_automation(browser: list[object]) -> list[object]:
                             [
                                 "wait",
                                 "id",
-                                "oidf_conformance_interaction",
-                                5,
-                                "OIDF conformance login page",
+                                NAZO_LOGIN_EMAIL_ID,
+                                30,
+                                ".*",
                                 "update-image-placeholder-optional",
                             ]
                         ],
@@ -506,21 +663,12 @@ def user_reject_browser_automation() -> list[dict[str, object]]:
                     "task": "Complete login page",
                     "optional": True,
                     "match": f"{ISSUER}/ui/auth*",
-                    "commands": [
-                        ["wait", "id", "oidf_conformance_interaction", 5, "OIDF conformance login page"],
-                        ["click", "id", "oidf_conformance_login"],
-                        ["wait", "contains", "/ui/consent", 30],
-                    ],
+                    "commands": login_commands(),
                 },
                 {
                     "task": "Deny consent page",
                     "match": f"{ISSUER}/ui/consent*",
-                    "commands": [
-                        ["wait", "id", "oidf_conformance_deny", 10],
-                        ["click", "id", "oidf_conformance_deny"],
-                        ["wait", "contains", "/test/", 30],
-                        ["wait", "id", "submission_complete", 10],
-                    ],
+                    "commands": consent_deny_commands(),
                 },
                 {
                     "task": "Verify callback completion",
@@ -545,10 +693,10 @@ def browser_automation() -> list[dict[str, object]]:
                     "commands": [
                         [
                             "wait",
-                            "id",
-                            "oidf_conformance_interaction",
-                            5,
-                            "(invalid_request|invalid_request_object|access_denied|login_required|server_error)",
+                            "css",
+                            "body",
+                            10,
+                            NAZO_AUTHORIZATION_ERROR_PAGE_PATTERN,
                             "update-image-placeholder-optional",
                         ]
                     ],
@@ -557,21 +705,13 @@ def browser_automation() -> list[dict[str, object]]:
                     "task": "Complete login page",
                     "optional": True,
                     "match": f"{ISSUER}/ui/auth*",
-                    "commands": [
-                        ["wait", "id", "oidf_conformance_interaction", 5, "OIDF conformance login page"],
-                        ["click", "id", "oidf_conformance_login"],
-                        ["wait", "contains", "/ui/consent", 30],
-                    ],
+                    "commands": login_commands(),
                 },
                 {
                     "task": "Complete consent page",
                     "optional": True,
                     "match": f"{ISSUER}/ui/consent*",
-                    "commands": [
-                        ["wait", "id", "oidf_conformance_interaction", 10, "OIDF conformance consent page"],
-                        ["wait", "contains", "/test/", 30],
-                        ["wait", "id", "submission_complete", 10],
-                    ],
+                    "commands": consent_approve_commands(),
                 },
                 {
                     "task": "Verify callback completion",
@@ -595,10 +735,10 @@ def redirect_error_browser_automation() -> list[dict[str, object]]:
                     "commands": [
                         [
                             "wait",
-                            "id",
-                            "oidf_conformance_interaction",
-                            5,
-                            "(invalid_request|invalid_request_object|access_denied|login_required|server_error)",
+                            "css",
+                            "body",
+                            10,
+                            NAZO_AUTHORIZATION_ERROR_PAGE_PATTERN,
                             "update-image-placeholder-optional",
                         ]
                     ],
@@ -635,6 +775,13 @@ def write_plan_config(name: str, config: dict[str, object]) -> None:
     write_text(RUNTIME / name, json.dumps(config, indent=2) + "\n", 0o600)
 
 
+def nazo_login_metadata() -> dict[str, str]:
+    return {
+        "oidf_user_email": USER_EMAIL,
+        "oidf_user_password": USER_PASSWORD,
+    }
+
+
 def write_basic_plan_config() -> None:
     browser = browser_automation()
     config = {
@@ -656,6 +803,7 @@ def write_basic_plan_config() -> None:
             "client_secret": CLIENT_SECRET,
             "scope": "openid profile email address phone offline_access",
         },
+        "nazo": nazo_login_metadata(),
         "browser": browser,
         "override": {
             module_name: {
@@ -739,6 +887,7 @@ def fapi_plan_config(
         "mtls": mtls_named_config(mtls_client_cert_name(client1_id)),
         "mtls2": mtls_named_config(mtls_client_cert_name(client2_id)),
         "nazo": {
+            **nazo_login_metadata(),
             "client_auth_type": client_auth_type,
             "sender_constrain": sender_constrain,
             "openid": openid,
@@ -920,6 +1069,7 @@ def plan_expressions_for_configs(configs: dict[str, dict[str, object]]) -> list[
 def main() -> int:
     ensure_cert()
     ensure_mtls_certs()
+    ensure_server_ps256_keyset()
     if WRITE_ENV_YAML:
         write_env_yaml()
     write_nginx()

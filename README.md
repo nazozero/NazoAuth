@@ -69,14 +69,17 @@ Durable conformance records live in Git because GitHub Actions artifacts
 expire. The certified deployment is backed by the 2026-06-09 OpenID Foundation
 16-plan matrix against `https://auth.nazo.run` across OIDC Basic, OIDC Config,
 FAPI2 Security Profile Final, FAPI2 Message Signing Final, mTLS, DPoP,
-`private_key_jwt`, and client credentials variants:
+`private_key_jwt`, and client credentials variants. The latest local regression
+record re-ran the same public issuer through the real `/ui/` frontend after the
+OIDF-only interaction pages were removed:
 
 - [2026-06-09 OIDF full matrix](docs/conformance/2026-06-09-oidf-full-matrix.md)
+- [2026-06-13 real public UI OIDF regression](docs/conformance/2026-06-13-real-public-ui-regression.md)
 
 The recorded workflow conclusion was `success`. Every matrix plan completed
-with `0 failures` and `0 warnings`. The record includes commit SHA, workflow
-run URL, job URL, artifact name, artifact digest, artifact expiry, plan IDs,
-exported artifact filenames, profile combinations, and pass counts.
+with `0 failures` and `0 warnings`. The records include commit SHA, run
+environment, plan IDs, exported artifact filenames, profile combinations, and
+pass counts.
 
 ## Architecture
 

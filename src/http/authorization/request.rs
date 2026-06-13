@@ -258,8 +258,9 @@ fn session_requires_reauthentication(
     auth_time: i64,
     now: i64,
 ) -> bool {
-    prompt.login
-        || prompt.select_account
+    let prompt_requires_fresh_login =
+        (prompt.login || prompt.select_account) && now.saturating_sub(auth_time) > 5;
+    prompt_requires_fresh_login
         || match max_age {
             Some(0) => true,
             Some(max_age) => now.saturating_sub(auth_time) > max_age,
@@ -1088,13 +1089,10 @@ fn authorization_login_query<'a>(
 fn authorization_login_url(
     state: &AppState,
     q: &HashMap<String, String>,
-    remove_prompt_login: bool,
+    _reauthentication_required: bool,
 ) -> String {
     let query = q
         .iter()
-        .filter(|(key, value)| {
-            !(remove_prompt_login && key.as_str() == "prompt" && value.as_str() == "login")
-        })
         .map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v)))
         .collect::<Vec<_>>()
         .join("&");
@@ -1312,9 +1310,27 @@ mod tests {
             1_000,
             1_031
         ));
+        assert!(!session_requires_reauthentication(
+            PromptDirectives {
+                login: true,
+                ..PromptDirectives::default()
+            },
+            None,
+            1_000,
+            1_001,
+        ));
         assert!(session_requires_reauthentication(
             PromptDirectives {
                 login: true,
+                ..PromptDirectives::default()
+            },
+            None,
+            1_000,
+            1_006,
+        ));
+        assert!(!session_requires_reauthentication(
+            PromptDirectives {
+                select_account: true,
                 ..PromptDirectives::default()
             },
             None,
@@ -1328,7 +1344,7 @@ mod tests {
             },
             None,
             1_000,
-            1_001,
+            1_006,
         ));
     }
 

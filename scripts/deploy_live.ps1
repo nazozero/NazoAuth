@@ -8,10 +8,8 @@ param(
     [string]$RemoteConfigPath = "/opt/nazo-oauth/.env.yaml",
     [string]$RemoteKeysPath = "/opt/nazo-oauth/runtime/keys",
     [string]$RemoteAvatarsPath = "/opt/nazo-oauth/runtime/avatars",
-    [string]$RemoteSecretsPath = "/opt/nazo-oauth/secrets.json",
-    [string]$RemoteConformanceUiPath = "/opt/nazo-oauth/ui",
-    [string]$LocalConformanceAuthTemplate = "deploy/conformance-ui/auth/index.html.template",
-    [string]$LocalConformanceConsentHtml = "deploy/conformance-ui/consent/index.html",
+    [string]$RemoteUiPath = "/opt/nazo-oauth/ui",
+    [string]$LocalUiDist = "../NazoAuthWeb/dist",
     [string]$HealthUrl = "https://auth.nazo.run/health",
     [string]$DiscoveryUrl = "https://auth.nazo.run/.well-known/openid-configuration",
     [string]$ExpectedIssuer = "https://auth.nazo.run",
@@ -64,19 +62,16 @@ if (-not $ImageTag) {
 $image = "${ImageRepository}:$ImageTag"
 $safeTag = $ImageTag -replace '[^A-Za-z0-9_.-]', '-'
 $archive = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-server-$safeTag.tar"
+$uiArchive = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-web-$safeTag.tar.gz"
 $remoteArchive = "/tmp/nazo-oauth-server-$safeTag.tar"
+$remoteUiArchive = "/tmp/nazo-oauth-web-$safeTag.tar.gz"
 $remoteScript = "/tmp/nazo-oauth-deploy-$safeTag.sh"
-$remoteAuthTemplate = "/tmp/nazo-oauth-auth-$safeTag.html.template"
-$remoteConsentHtml = "/tmp/nazo-oauth-consent-$safeTag.html"
 $localRemoteScript = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-deploy-$safeTag.sh"
 
 Write-Host "Deploying $image to $RemoteHost"
 
-if (-not (Test-Path -LiteralPath $LocalConformanceAuthTemplate)) {
-    throw "Missing conformance auth template: $LocalConformanceAuthTemplate"
-}
-if (-not (Test-Path -LiteralPath $LocalConformanceConsentHtml)) {
-    throw "Missing conformance consent HTML: $LocalConformanceConsentHtml"
+if (-not (Test-Path -LiteralPath (Join-Path $LocalUiDist "index.html"))) {
+    throw "Missing frontend dist index.html: $LocalUiDist"
 }
 
 if (-not $SkipBuild) {
@@ -86,10 +81,13 @@ if (-not $SkipBuild) {
 if (Test-Path -LiteralPath $archive) {
     Remove-Item -LiteralPath $archive -Force
 }
+if (Test-Path -LiteralPath $uiArchive) {
+    Remove-Item -LiteralPath $uiArchive -Force
+}
 Invoke-Checked docker @("save", $image, "-o", $archive)
+Invoke-Checked tar @("-C", $LocalUiDist, "-czf", $uiArchive, ".")
 Invoke-Checked scp $archive "${RemoteHost}:$remoteArchive"
-Invoke-Checked scp $LocalConformanceAuthTemplate "${RemoteHost}:$remoteAuthTemplate"
-Invoke-Checked scp $LocalConformanceConsentHtml "${RemoteHost}:$remoteConsentHtml"
+Invoke-Checked scp $uiArchive "${RemoteHost}:$remoteUiArchive"
 
 $skipMigrateValue = if ($SkipMigrate) { "1" } else { "0" }
 $remoteBody = @"
@@ -97,61 +95,28 @@ set -euo pipefail
 
 IMAGE=$(ConvertTo-ShellLiteral $image)
 REMOTE_ARCHIVE=$(ConvertTo-ShellLiteral $remoteArchive)
+REMOTE_UI_ARCHIVE=$(ConvertTo-ShellLiteral $remoteUiArchive)
 REMOTE_SCRIPT=$(ConvertTo-ShellLiteral $remoteScript)
-REMOTE_AUTH_TEMPLATE=$(ConvertTo-ShellLiteral $remoteAuthTemplate)
-REMOTE_CONSENT_HTML=$(ConvertTo-ShellLiteral $remoteConsentHtml)
 CONTAINER_NAME=$(ConvertTo-ShellLiteral $ContainerName)
 NETWORK_NAME=$(ConvertTo-ShellLiteral $Network)
 CONTAINER_IP=$(ConvertTo-ShellLiteral $IPAddress)
 CONFIG_PATH=$(ConvertTo-ShellLiteral $RemoteConfigPath)
 KEYS_PATH=$(ConvertTo-ShellLiteral $RemoteKeysPath)
 AVATARS_PATH=$(ConvertTo-ShellLiteral $RemoteAvatarsPath)
-SECRETS_PATH=$(ConvertTo-ShellLiteral $RemoteSecretsPath)
-CONFORMANCE_UI_PATH=$(ConvertTo-ShellLiteral $RemoteConformanceUiPath)
+UI_PATH=$(ConvertTo-ShellLiteral $RemoteUiPath)
 SKIP_MIGRATE=$(ConvertTo-ShellLiteral $skipMigrateValue)
-export REMOTE_AUTH_TEMPLATE REMOTE_CONSENT_HTML SECRETS_PATH CONFORMANCE_UI_PATH
 
 cleanup() {
-  rm -f "`$REMOTE_ARCHIVE" "`$REMOTE_SCRIPT" "`$REMOTE_AUTH_TEMPLATE" "`$REMOTE_CONSENT_HTML"
+  rm -f "`$REMOTE_ARCHIVE" "`$REMOTE_UI_ARCHIVE" "`$REMOTE_SCRIPT"
 }
 trap cleanup EXIT
 
 test -f "`$CONFIG_PATH"
 test -d "`$KEYS_PATH"
 test -d "`$AVATARS_PATH"
-test -f "`$SECRETS_PATH"
-
-python3 - <<'PY'
-import json
-import os
-from pathlib import Path
-
-secrets_path = Path(os.environ["SECRETS_PATH"])
-ui_path = Path(os.environ["CONFORMANCE_UI_PATH"])
-auth_template_path = Path(os.environ["REMOTE_AUTH_TEMPLATE"])
-consent_html_path = Path(os.environ["REMOTE_CONSENT_HTML"])
-
-secrets = json.loads(secrets_path.read_text(encoding="utf-8"))
-email = secrets.get("oidf_user_email")
-password = secrets.get("oidf_user_password")
-if not isinstance(email, str) or not email:
-    raise SystemExit("oidf_user_email is missing from remote secrets")
-if not isinstance(password, str) or not password:
-    raise SystemExit("oidf_user_password is missing from remote secrets")
-
-auth_html = auth_template_path.read_text(encoding="utf-8")
-auth_html = auth_html.replace("__OIDF_USER_EMAIL_JSON__", json.dumps(email))
-auth_html = auth_html.replace("__OIDF_USER_PASSWORD_JSON__", json.dumps(password))
-if "__OIDF_USER_" in auth_html:
-    raise SystemExit("conformance auth template placeholders were not fully rendered")
-
-auth_dir = ui_path / "auth"
-consent_dir = ui_path / "consent"
-auth_dir.mkdir(parents=True, exist_ok=True)
-consent_dir.mkdir(parents=True, exist_ok=True)
-(auth_dir / "index.html").write_text(auth_html, encoding="utf-8")
-(consent_dir / "index.html").write_text(consent_html_path.read_text(encoding="utf-8"), encoding="utf-8")
-PY
+mkdir -p "`$UI_PATH"
+find "`$UI_PATH" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+tar -xzf "`$REMOTE_UI_ARCHIVE" -C "`$UI_PATH"
 
 podman load -i "`$REMOTE_ARCHIVE"
 podman image exists "`$IMAGE"
@@ -188,6 +153,7 @@ try {
 }
 finally {
     Remove-Item -LiteralPath $localRemoteScript -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $uiArchive -Force -ErrorAction SilentlyContinue
 }
 
 $health = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 20

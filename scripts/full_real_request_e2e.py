@@ -1102,7 +1102,7 @@ def run() -> None:
         expect_status("GET /authorize invalid redirect_uri error page", invalid_redirect, 400)
         check("authorize_invalid_redirect_no_location", "Location" not in invalid_redirect.headers)
         check("authorize_invalid_redirect_html", "text/html" in invalid_redirect.headers.get("Content-Type", ""))
-        check("authorize_invalid_redirect_marker", 'id="oidf_conformance_interaction"' in invalid_redirect.text)
+        check("authorize_invalid_redirect_error_body", "invalid_request" in invalid_redirect.text)
 
         public_without_pkce = user.get(
             f"{BASE_URL}/authorize",
@@ -2230,7 +2230,7 @@ def run() -> None:
         check(
             "prompt_login_redirects_to_frontend_auth",
             prompt_login_location.startswith("http://127.0.0.1:3000/auth?next=")
-            and "prompt%3Dlogin" not in prompt_login_location,
+            and "prompt%3Dlogin" in prompt_login_location,
             prompt_login_location,
         )
 
