@@ -35,7 +35,7 @@ pub(crate) fn authorization_error_page(
     description: &str,
 ) -> HttpResponse {
     let body = format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>{}</title></head><body><main id=\"oidf_conformance_interaction\"><h1>{}</h1><p>{}</p></main></body></html>",
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>{}</title></head><body><main id=\"oauth_authorization_error\"><h1>{}</h1><p>{}</p></main></body></html>",
         html_escape_text(error),
         html_escape_text(error),
         html_escape_text(description)

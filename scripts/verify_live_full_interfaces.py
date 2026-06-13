@@ -705,8 +705,8 @@ def run():
         checks.fail("authorize invalid redirect_uri error page", "unexpected redirect")
     if "text/html" not in invalid_redirect.headers.get("content-type", ""):
         checks.fail("authorize invalid redirect_uri content type", invalid_redirect.headers.get("content-type"))
-    if 'id="oidf_conformance_interaction"' not in invalid_redirect.text:
-        checks.fail("authorize invalid redirect_uri screenshot marker", invalid_redirect.text[:200])
+    if "invalid_request" not in invalid_redirect.text:
+        checks.fail("authorize invalid redirect_uri error body", invalid_redirect.text[:200])
     checks.ok("authorize invalid redirect_uri error page", "GET /authorize invalid redirect_uri -> 400 HTML")
 
     post_code, post_verifier = auth_code_flow(

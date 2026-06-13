@@ -1,9 +1,86 @@
+name: nazo-oauth-oidf-local
+
 services:
+  migrate:
+    build:
+      context: .
+      dockerfile: Containerfile
+    container_name: nazo-oauth-oidf-migrate
+    volumes:
+      - ./.env.yaml:/app/.env.yaml:ro
+    command: ["nazo-oauth-migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      nazo_oauth_net:
+
+  seed_oidf:
+    build:
+      context: .
+      dockerfile: Containerfile
+    container_name: nazo-oauth-oidf-seed
+    volumes:
+      - ./.env.yaml:/app/.env.yaml:ro
+      - ./runtime/oidf:/app/runtime/oidf:ro
+    command: ["nazo-oauth-seed-oidf"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      nazo_oauth_net:
+
+  nazo_oauth_server:
+    build:
+      context: .
+      dockerfile: Containerfile
+    container_name: nazo-oauth-oidf-server
+    volumes:
+      - ./.env.yaml:/app/.env.yaml:ro
+      - ./runtime/oidf/keys:/var/lib/nazo_oauth/keys
+      - ./runtime/avatars:/var/lib/nazo_oauth/avatars
+    depends_on:
+      seed_oidf:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+    networks:
+      nazo_oauth_net:
+
+  postgres:
+    image: docker.io/library/postgres:18
+    container_name: nazo-oauth-oidf-postgres
+    environment:
+      POSTGRES_DB: oauth
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - oidf_postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d oauth"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      nazo_oauth_net:
+
+  valkey:
+    image: docker.io/valkey/valkey:8-alpine
+    container_name: nazo-oauth-oidf-valkey
+    command: ["valkey-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - oidf_valkey_data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      nazo_oauth_net:
+
   oidf_https:
     image: docker.io/library/nginx:1.27-alpine
     container_name: nazo-oauth-oidf-https
-    depends_on:
-      - nazo_oauth_server
     volumes:
       - ./runtime/oidf/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./runtime/oidf/certs:/etc/nginx/certs:ro
@@ -13,3 +90,11 @@ services:
     ports:
       - "9443:9443"
       - "9444:9444"
+
+volumes:
+  oidf_postgres_data:
+  oidf_valkey_data:
+
+networks:
+  nazo_oauth_net:
+    driver: bridge
