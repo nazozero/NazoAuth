@@ -1,0 +1,70 @@
+name: codeql
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/codeql.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain"
+      - "rust-toolchain.toml"
+      - "src/**"
+      - "tests/**"
+      - "benches/**"
+      - "examples/**/*.rs"
+      - "examples/**/Cargo.toml"
+      - "examples/**/Cargo.lock"
+      - "migrations/**"
+      - "Containerfile"
+      - ".dockerignore"
+  pull_request:
+    paths:
+      - ".github/workflows/codeql.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain"
+      - "rust-toolchain.toml"
+      - "src/**"
+      - "tests/**"
+      - "benches/**"
+      - "examples/**/*.rs"
+      - "examples/**/Cargo.toml"
+      - "examples/**/Cargo.lock"
+      - "migrations/**"
+      - "Containerfile"
+      - ".dockerignore"
+  schedule:
+    - cron: "23 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: CodeQL Rust analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6.0.3
+
+      - uses: dtolnay/rust-toolchain@1.96.0
+
+      - name: Install native dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: rust
+          build-mode: manual
+          queries: security-extended,security-and-quality
+
+      - name: Build for CodeQL
+        run: cargo build --locked
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:rust"

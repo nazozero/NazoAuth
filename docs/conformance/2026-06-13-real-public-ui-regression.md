@@ -244,3 +244,41 @@ python3 scripts/run_oidf_conformance.py \
   --timeout-seconds 10800 \
   --monitor-interval-seconds 30
 ```
+
+## Follow-up Official Workflow Boundary
+
+The follow-up official GitHub Actions run for the JSON-only backend response
+change was submitted after commit `a6c3319d140ffc67939c9cb51b251567391aa0ad`.
+It is not recorded as a passing official workflow run.
+
+| Field | Value |
+| --- | --- |
+| Workflow run | <https://github.com/bymoye/NazoAuth/actions/runs/27470527340> |
+| Job URL | <https://github.com/bymoye/NazoAuth/actions/runs/27470527340/job/81200506418> |
+| Workflow event | `workflow_dispatch` |
+| Head branch | `main` |
+| Implementation commit | `a6c3319d140ffc67939c9cb51b251567391aa0ad` |
+| Public issuer under test | `https://auth.nazo.run` |
+| Conformance server | `https://www.certification.openid.net/` |
+| Started | `2026-06-13T15:11:18Z` |
+| Completed | `2026-06-13T15:17:29Z` |
+| GitHub conclusion | `failure` |
+| Artifact | `oidf-conformance-results-full` |
+| Artifact ID | `7611946039` |
+| Artifact digest | `sha256:24fd9b9c35002b1b8abd94b5d3703495ef9a55b04c075a4aed8c46642ac8e964` |
+| Artifact size | `6946375` bytes |
+| Artifact created | `2026-06-13T15:17:26Z` |
+| Artifact expires | `2026-09-11T15:11:19Z` |
+
+The failure was at the workflow runner boundary, not accepted here as a passing
+official matrix record. The OIDF browser runner still had the stale task name
+`Capture authorization error page` and waited for the removed HTML marker
+`oidf_conformance_interaction`. The public service correctly returned a JSON
+authorization error response with `content-type: application/json`, so the
+browser task timed out in `oidcc-ensure-registered-redirect-uri`.
+
+The runner configuration now normalizes the old task name to
+`Capture authorization error response` before submitting plans. A future
+official workflow success after that runner fix should be recorded as a new
+passing official workflow record rather than overwriting the successful
+`27468700891` real-UI evidence above.

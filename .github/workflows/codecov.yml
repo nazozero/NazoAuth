@@ -1,0 +1,64 @@
+name: codecov
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/codecov.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain"
+      - "rust-toolchain.toml"
+      - "src/**"
+      - "tests/**"
+      - "benches/**"
+      - "examples/**/*.rs"
+      - "examples/**/Cargo.toml"
+      - "examples/**/Cargo.lock"
+      - "migrations/**"
+  pull_request:
+    paths:
+      - ".github/workflows/codecov.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain"
+      - "rust-toolchain.toml"
+      - "src/**"
+      - "tests/**"
+      - "benches/**"
+      - "examples/**/*.rs"
+      - "examples/**/Cargo.toml"
+      - "examples/**/Cargo.lock"
+      - "migrations/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    name: Rust coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6.0.3
+
+      - uses: dtolnay/rust-toolchain@1.96.0
+        with:
+          components: llvm-tools-preview
+
+      - name: Install native dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Generate coverage report
+        run: cargo llvm-cov --locked --all-targets --lcov --output-path lcov.info
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}

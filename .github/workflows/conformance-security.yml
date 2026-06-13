@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/conformance-security.yml"
+      - ".github/e2e-runner.Containerfile"
       - "Cargo.toml"
       - "Cargo.lock"
       - "deny.toml"
@@ -27,6 +28,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/conformance-security.yml"
+      - ".github/e2e-runner.Containerfile"
       - "Cargo.toml"
       - "Cargo.lock"
       - "deny.toml"
@@ -103,8 +105,16 @@ jobs:
           cargo cyclonedx --format json --override-filename nazo-oauth-server.cdx
           mkdir -p target
           mv nazo-oauth-server.cdx.json target/nazo-oauth-server.cdx.json
+      - uses: docker/setup-buildx-action@v3.11.1
       - name: Build service image
-        run: docker build -f Containerfile -t nazo-oauth-supply-chain:${{ github.sha }} .
+        uses: docker/build-push-action@v6.18.0
+        with:
+          context: .
+          file: Containerfile
+          tags: nazo-oauth-supply-chain:${{ github.sha }}
+          load: true
+          cache-from: type=gha,scope=nazo-oauth-service
+          cache-to: type=gha,mode=max,scope=nazo-oauth-service
       - name: Scan service image
         run: |
           docker run --rm \
@@ -129,8 +139,25 @@ jobs:
       - supply-chain-gate
     steps:
       - uses: actions/checkout@v6.0.3
+      - uses: docker/setup-buildx-action@v3.11.1
       - name: Build service image
-        run: docker build -f Containerfile -t nazo-oauth-e2e:latest .
+        uses: docker/build-push-action@v6.18.0
+        with:
+          context: .
+          file: Containerfile
+          tags: nazo-oauth-e2e:latest
+          load: true
+          cache-from: type=gha,scope=nazo-oauth-service
+          cache-to: type=gha,mode=max,scope=nazo-oauth-service
+      - name: Build E2E runner image
+        uses: docker/build-push-action@v6.18.0
+        with:
+          context: .
+          tags: nazo-oauth-e2e-runner:latest
+          load: true
+          cache-from: type=gha,scope=nazo-oauth-e2e-runner
+          cache-to: type=gha,mode=max,scope=nazo-oauth-e2e-runner
+          file: .github/e2e-runner.Containerfile
       - name: Prepare isolated runtime config
         run: |
           mkdir -p runtime/e2e/keys runtime/e2e/avatars
@@ -213,9 +240,7 @@ jobs:
             -v "$PWD:/app" -w /app \
             -e E2E_BASE_URL=http://nazo-oauth-e2e-server:8000 \
             -e E2E_ISSUER_URL=http://127.0.0.1:8000 \
-            -e PIP_DISABLE_PIP_VERSION_CHECK=1 \
-            -e PIP_ROOT_USER_ACTION=ignore \
-            python:3.13-slim sh -lc 'pip install --no-cache-dir requests psycopg[binary] redis argon2-cffi pyjwt cryptography aiosmtpd >/tmp/pip.log && python scripts/full_real_request_e2e.py'
+            nazo-oauth-e2e-runner:latest python scripts/full_real_request_e2e.py
       - name: Run load and race gate
         run: |
           docker run --rm --name nazo-oauth-e2e-runner --network nazo-oauth-e2e-net \
@@ -223,18 +248,14 @@ jobs:
             -e E2E_BASE_URL=http://nazo-oauth-e2e-server:8000 \
             -e LOAD_REQUESTS=400 \
             -e LOAD_CONCURRENCY=32 \
-            -e PIP_DISABLE_PIP_VERSION_CHECK=1 \
-            -e PIP_ROOT_USER_ACTION=ignore \
-            python:3.13-slim sh -lc 'pip install --no-cache-dir requests psycopg[binary] argon2-cffi >/tmp/pip.log && python scripts/full_real_request_load.py'
+            nazo-oauth-e2e-runner:latest python scripts/full_real_request_load.py
       - name: Run Valkey outage injection
         run: |
           docker stop nazo-oauth-e2e-valkey
           docker run --rm --name nazo-oauth-e2e-runner --network nazo-oauth-e2e-net \
             -v "$PWD:/app" -w /app \
             -e E2E_BASE_URL=http://nazo-oauth-e2e-server:8000 \
-            -e PIP_DISABLE_PIP_VERSION_CHECK=1 \
-            -e PIP_ROOT_USER_ACTION=ignore \
-            python:3.13-slim sh -lc 'pip install --no-cache-dir requests >/tmp/pip.log && python scripts/valkey_failure_injection.py'
+            nazo-oauth-e2e-runner:latest python scripts/valkey_failure_injection.py
       - name: Cleanup
         if: always()
         run: |

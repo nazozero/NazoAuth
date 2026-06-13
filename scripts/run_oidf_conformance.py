@@ -55,6 +55,7 @@ OIDCC_SECOND_LOGIN_SCREENSHOT_MODULES = (
     "oidcc-max-age-1",
 )
 NAZO_AUTHORIZATION_ERROR_RESPONSE_TASK = "Capture authorization error response"
+NAZO_AUTHORIZATION_ERROR_PAGE_TASK = "Capture authorization error page"
 NAZO_AUTHORIZATION_ERROR_RESPONSE_PATTERN = (
     r'("error"\s*:\s*"(invalid_request|invalid_request_object|access_denied|login_required|server_error)"'
     r"|invalid_request|invalid_request_object|access_denied|login_required|server_error)"
@@ -598,12 +599,21 @@ def add_authorization_error_response_capture(config_value: dict[str, object]) ->
         tasks = entry.setdefault("tasks", [])
         if not isinstance(tasks, list):
             continue
-        if any(
-            isinstance(task, dict) and task.get("task") == NAZO_AUTHORIZATION_ERROR_RESPONSE_TASK
-            for task in tasks
-        ):
-            continue
-        tasks.insert(0, authorization_error_response_task(config_value))
+        normalized_tasks: list[object] = []
+        has_error_response_task = False
+        for task in tasks:
+            if isinstance(task, dict) and task.get("task") in {
+                NAZO_AUTHORIZATION_ERROR_PAGE_TASK,
+                NAZO_AUTHORIZATION_ERROR_RESPONSE_TASK,
+            }:
+                if not has_error_response_task:
+                    normalized_tasks.append(authorization_error_response_task(config_value))
+                    has_error_response_task = True
+                continue
+            normalized_tasks.append(task)
+        if not has_error_response_task:
+            normalized_tasks.insert(0, authorization_error_response_task(config_value))
+        tasks[:] = normalized_tasks
 
 
 def remove_login_page_placeholder_update(task: object) -> None:

@@ -1,0 +1,79 @@
+name: code-quality
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/code-quality.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain"
+      - "rust-toolchain.toml"
+      - "src/**"
+      - "tests/**"
+      - "benches/**"
+      - "examples/**/*.rs"
+      - "examples/**/Cargo.toml"
+      - "examples/**/Cargo.lock"
+      - "migrations/**"
+      - "scripts/**/*.py"
+  pull_request:
+    paths:
+      - ".github/workflows/code-quality.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain"
+      - "rust-toolchain.toml"
+      - "src/**"
+      - "tests/**"
+      - "benches/**"
+      - "examples/**/*.rs"
+      - "examples/**/Cargo.toml"
+      - "examples/**/Cargo.lock"
+      - "migrations/**"
+      - "scripts/**/*.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust-quality:
+    name: Rust quality gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6.0.3
+
+      - uses: dtolnay/rust-toolchain@1.96.0
+        with:
+          components: rustfmt, clippy
+
+      - name: Install native dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Check all targets
+        run: cargo check --all-targets --locked
+
+      - name: Clippy all targets
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --locked
+
+  python-quality:
+    name: Python script syntax gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6.0.3
+
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.13"
+
+      - name: Compile Python scripts
+        run: python -m compileall -q scripts

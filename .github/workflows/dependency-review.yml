@@ -1,0 +1,29 @@
+name: dependency-review
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/dependency-review.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - "Containerfile"
+      - ".github/e2e-runner.Containerfile"
+      - ".github/workflows/*.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  dependency-review:
+    name: Dependency vulnerability review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.3
+      - uses: actions/dependency-review-action@v5.0.0
+        with:
+          fail-on-severity: high
+          vulnerability-check: true
+          license-check: false
