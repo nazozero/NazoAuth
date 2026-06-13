@@ -62,8 +62,9 @@ NAZO_LOGIN_SUBMIT_ID = "nazo-login-submit"
 NAZO_LOGIN_SUBMIT_READY_SELECTOR = f"#{NAZO_LOGIN_SUBMIT_ID}:not([disabled])"
 NAZO_CONSENT_APPROVE_ID = "nazo-consent-approve"
 NAZO_CONSENT_DENY_ID = "nazo-consent-deny"
-NAZO_AUTHORIZATION_ERROR_PAGE_PATTERN = (
-    r"(invalid_request|invalid_request_object|access_denied|login_required|server_error)"
+NAZO_AUTHORIZATION_ERROR_RESPONSE_PATTERN = (
+    r'("error"\s*:\s*"(invalid_request|invalid_request_object|access_denied|login_required|server_error)"'
+    r"|invalid_request|invalid_request_object|access_denied|login_required|server_error)"
 )
 
 
@@ -687,7 +688,7 @@ def browser_automation() -> list[dict[str, object]]:
             "match": f"{ISSUER}/authorize*",
             "tasks": [
                 {
-                    "task": "Capture authorization error page",
+                    "task": "Capture authorization error response",
                     "optional": True,
                     "match": f"{ISSUER}/authorize*",
                     "commands": [
@@ -696,7 +697,7 @@ def browser_automation() -> list[dict[str, object]]:
                             "css",
                             "body",
                             10,
-                            NAZO_AUTHORIZATION_ERROR_PAGE_PATTERN,
+                            NAZO_AUTHORIZATION_ERROR_RESPONSE_PATTERN,
                             "update-image-placeholder-optional",
                         ]
                     ],
@@ -726,11 +727,11 @@ def browser_automation() -> list[dict[str, object]]:
 def redirect_error_browser_automation() -> list[dict[str, object]]:
     return [
         {
-            "comment": "Capture the local authorization error page for redirect_uri rejection.",
+            "comment": "Capture the local authorization error response for redirect_uri rejection.",
             "match": f"{ISSUER}/authorize*",
             "tasks": [
                 {
-                    "task": "Capture authorization error page",
+                    "task": "Capture authorization error response",
                     "match": f"{ISSUER}/authorize*",
                     "commands": [
                         [
@@ -738,7 +739,7 @@ def redirect_error_browser_automation() -> list[dict[str, object]]:
                             "css",
                             "body",
                             10,
-                            NAZO_AUTHORIZATION_ERROR_PAGE_PATTERN,
+                            NAZO_AUTHORIZATION_ERROR_RESPONSE_PATTERN,
                             "update-image-placeholder-optional",
                         ]
                     ],

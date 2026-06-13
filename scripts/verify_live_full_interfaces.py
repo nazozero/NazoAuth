@@ -698,16 +698,21 @@ def run():
     )
     if invalid_redirect.status_code != 400:
         checks.fail(
-            "authorize invalid redirect_uri error page",
+            "authorize invalid redirect_uri error response",
             f"expected 400 got {invalid_redirect.status_code}: {invalid_redirect.text[:200]}",
         )
     if invalid_redirect.headers.get("location"):
-        checks.fail("authorize invalid redirect_uri error page", "unexpected redirect")
-    if "text/html" not in invalid_redirect.headers.get("content-type", ""):
+        checks.fail("authorize invalid redirect_uri error response", "unexpected redirect")
+    if "application/json" not in invalid_redirect.headers.get("content-type", ""):
         checks.fail("authorize invalid redirect_uri content type", invalid_redirect.headers.get("content-type"))
-    if "invalid_request" not in invalid_redirect.text:
+    try:
+        invalid_redirect_body = invalid_redirect.json()
+    except ValueError:
         checks.fail("authorize invalid redirect_uri error body", invalid_redirect.text[:200])
-    checks.ok("authorize invalid redirect_uri error page", "GET /authorize invalid redirect_uri -> 400 HTML")
+    else:
+        if invalid_redirect_body.get("error") != "invalid_request":
+            checks.fail("authorize invalid redirect_uri error body", invalid_redirect.text[:200])
+    checks.ok("authorize invalid redirect_uri error response", "GET /authorize invalid redirect_uri -> 400 JSON")
 
     post_code, post_verifier = auth_code_flow(
         user_session,

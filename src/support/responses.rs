@@ -29,22 +29,12 @@ fn oauth_error_description(description: &str) -> Cow<'_, str> {
     }
 }
 
-pub(crate) fn authorization_error_page(
+pub(crate) fn authorization_error_response(
     status: StatusCode,
     error: &str,
     description: &str,
 ) -> HttpResponse {
-    let body = format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>{}</title></head><body><main id=\"oauth_authorization_error\"><h1>{}</h1><p>{}</p></main></body></html>",
-        html_escape_text(error),
-        html_escape_text(error),
-        html_escape_text(description)
-    );
-    no_store(
-        HttpResponse::build(status)
-            .content_type("text/html; charset=utf-8")
-            .body(body),
-    )
+    no_store(oauth_error(status, error, description))
 }
 
 pub(crate) fn oauth_token_error(
@@ -69,21 +59,6 @@ fn is_oauth_error_description_byte(byte: u8) -> bool {
         byte,
         0x09 | 0x0A | 0x0D | 0x20..=0x21 | 0x23..=0x5B | 0x5D..=0x7E
     )
-}
-
-fn html_escape_text(value: &str) -> String {
-    let mut escaped = String::with_capacity(value.len());
-    for ch in value.chars() {
-        match ch {
-            '&' => escaped.push_str("&amp;"),
-            '<' => escaped.push_str("&lt;"),
-            '>' => escaped.push_str("&gt;"),
-            '"' => escaped.push_str("&quot;"),
-            '\'' => escaped.push_str("&#39;"),
-            _ => escaped.push(ch),
-        }
-    }
-    escaped
 }
 
 pub(crate) fn oauth_bearer_error(
@@ -293,8 +268,8 @@ mod tests {
     }
 
     #[test]
-    fn authorization_error_page_is_html_and_no_store() {
-        let response = authorization_error_page(
+    fn authorization_error_response_is_json_and_no_store() {
+        let response = authorization_error_response(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "redirect_uri is invalid.",
@@ -307,7 +282,7 @@ mod tests {
         );
         assert_eq!(
             response.headers().get(header::CONTENT_TYPE).unwrap(),
-            "text/html; charset=utf-8"
+            "application/json"
         );
     }
 

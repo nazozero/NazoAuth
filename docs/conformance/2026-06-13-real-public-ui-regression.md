@@ -30,6 +30,37 @@ All tests ran to completion. See above for any test condition failures.
 
 Every printed plan summary reported `0 failures` and `0 warnings`.
 
+## Official Workflow Rerun
+
+After the real-UI changes were committed, the full GitHub Actions OIDF workflow
+was submitted against the same public issuer and completed successfully.
+
+| Field | Value |
+| --- | --- |
+| Result | Passed |
+| Workflow | `oidf-conformance-full` |
+| Workflow run | <https://github.com/bymoye/NazoAuth/actions/runs/27468700891> |
+| Job URL | <https://github.com/bymoye/NazoAuth/actions/runs/27468700891/job/81195546195> |
+| Workflow event | `workflow_dispatch` |
+| Head branch | `main` |
+| Implementation commit | `98105ae30d8b83c3e93c17ef3ae787fbd592dad3` |
+| Public issuer under test | `https://auth.nazo.run` |
+| Conformance server | `https://www.certification.openid.net/` |
+| Started | `2026-06-13T13:54:04Z` |
+| Completed | `2026-06-13T14:06:14Z` |
+| Runtime | 12m 10s |
+| Artifact | `oidf-conformance-results-full` |
+| Artifact ID | `7611429377` |
+| Artifact digest | `sha256:bea5e602edb98524cefb57368a33b9e8e0f2d6f5dad74cb7fb7d8ec83e465afd` |
+| Artifact size | `15654042` bytes |
+| Artifact created | `2026-06-13T14:06:11Z` |
+| Artifact expires | `2026-09-11T13:54:05Z` |
+| Runner mode | Official workflow runner, public `auth.nazo.run` target |
+
+GitHub reported the `Run full OIDF matrix` step and the artifact upload step as
+`success`. This is workflow evidence for the committed real-UI changes; it is
+not a new OpenID Foundation certification statement.
+
 ## Real Environment Checks
 
 The regression intentionally avoids local DNS overrides or hidden OIDF-specific
@@ -40,8 +71,8 @@ browser pages.
 | Suite container DNS for `auth.nazo.run` | `153.92.208.166 auth.nazo.run` |
 | Suite container public health request | `{"status":"正常"}` |
 | Public discovery issuer | `https://auth.nazo.run` |
-| Remote container | `nazo-oauth-server localhost/nazo-oauth-server:main-297294e-real-ui-20260613T132751Z Up` |
-| Remote `/opt/nazo-oauth/ui` marker scan | no `oidf_conformance`, `OIDF_USER`, or `conformance login` matches |
+| Local public container | `nazo-oauth-server localhost/nazo-oauth-server:main-297294e-real-ui-20260613T132751Z Up` |
+| Local `/opt/nazo-oauth/ui` marker scan | no `oidf_conformance`, `OIDF_USER`, or `conformance login` matches |
 
 Browser automation used the same public React UI that users see:
 
@@ -140,3 +171,76 @@ python3 scripts/run_oidf_conformance.py \
   conformance-only login or consent page.
 - The runner stores credentials only in suite configuration or environment
   variables and drives visible real UI controls.
+
+## JSON-only Backend and `prompt=login` Regression
+
+After converting backend authorization errors to JSON-only responses, the local
+full OIDF matrix was rerun against the same public issuer on this host. The run
+also verifies that `prompt=login` performs a fresh authentication and returns a
+new `auth_time` instead of reusing a recently authenticated session.
+
+| Field | Value |
+| --- | --- |
+| Result | Passed |
+| Failures | `0` across all plans |
+| Warnings | `0` across all plans |
+| Implementation base commit | `98105ae30d8b83c3e93c17ef3ae787fbd592dad3` |
+| Public issuer under test | `https://auth.nazo.run` |
+| Local public deployment image | `localhost/nazo-oauth-server:main-json-only-reauth-20260613T1518Z` |
+| Local public container | `nazo-oauth-server localhost/nazo-oauth-server:main-json-only-reauth-20260613T1518Z 127.0.0.1:8000->8000/tcp Up` |
+| Conformance server | `https://localhost.emobix.co.uk:8443` |
+| Suite location | `/root/oauth2_server/oidf-conformance-suite` |
+| Started | `2026-06-13T15:04:28Z` |
+| Completed | `2026-06-13T15:09:03Z` |
+| Export directory | `runtime/oidf/results-json-only-public-full-20260613T1505Z` |
+| Runner mode | Local suite runner, public `auth.nazo.run` target |
+
+The runner completed with:
+
+```text
+All tests ran to completion. See above for any test condition failures.
+```
+
+The public authorization error response was also checked directly:
+
+```text
+HTTP/2 401
+content-type: application/json
+
+{"error":"unauthorized_client","error_description":"Request failed."}
+```
+
+The exported zip filenames below identify the 16 completed plans:
+
+- `oidcc-basic-certification-test-plan-discovery-static_client-ZF95Zk5p5dLdj-13-Jun-2026.zip`
+- `oidcc-config-certification-test-plan--k3p4qhatc0DMC-13-Jun-2026.zip`
+- `fapi2-message-signing-final-test-plan-private_key_jwt-dpop-simple-openid_connect-signed_non_repudiation-plain_fapi-jarm-sKDfseHmOfjhe-13-Jun-2026.zip`
+- `fapi2-message-signing-final-test-plan-private_key_jwt-dpop-simple-openid_connect-signed_non_repudiation-plain_fapi-plain_response-aLdouvmwVVXST-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-dpop-simple-openid_connect-plain_fapi-aw6watON6gLaJ-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-dpop-simple-plain_oauth-fapi_client_credentials_grant-e2GJ7EO3OdQt8-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-dpop-simple-plain_oauth-plain_fapi-XKgI9MNewCCaT-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-mtls-simple-openid_connect-plain_fapi-xJe3Cpe5u5FRK-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-mtls-simple-plain_oauth-fapi_client_credentials_grant-5ZJWLvjvno6p6-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-mtls-simple-plain_oauth-plain_fapi-YyBjvFbBaCxKT-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-dpop-simple-openid_connect-plain_fapi-drv4USmp87BNH-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-dpop-simple-plain_oauth-fapi_client_credentials_grant-jqh7nMFxICuKr-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-dpop-simple-plain_oauth-plain_fapi-rVmbJ9SQXA8yF-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-mtls-simple-openid_connect-plain_fapi-B3lDXAltFcGiy-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-mtls-simple-plain_oauth-fapi_client_credentials_grant-NmRNR5WegeSyV-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-mtls-simple-plain_oauth-plain_fapi-fV0hzLi2ReF7L-13-Jun-2026.zip`
+
+Run command:
+
+```bash
+python3 scripts/run_oidf_conformance.py \
+  --suite-dir ../oidf-conformance-suite \
+  --conformance-server https://localhost.emobix.co.uk:8443 \
+  --no-api-token \
+  --disable-ssl-verify \
+  --config-json-file runtime/oidf/oidf-plan-configs.json \
+  --config-file-name oidf-plan-configs.json \
+  --plan-set-json-file runtime/oidf/oidf-plan-set.json \
+  --export-dir runtime/oidf/results-json-only-public-full-20260613T1505Z \
+  --timeout-seconds 10800 \
+  --monitor-interval-seconds 30
+```

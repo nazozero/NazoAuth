@@ -54,9 +54,10 @@ OIDCC_SECOND_LOGIN_SCREENSHOT_MODULES = (
     "oidcc-prompt-login",
     "oidcc-max-age-1",
 )
-NAZO_AUTHORIZATION_ERROR_PAGE_TASK = "Capture authorization error page"
-NAZO_AUTHORIZATION_ERROR_PAGE_PATTERN = (
-    r"(invalid_request|invalid_request_object|access_denied|login_required|server_error)"
+NAZO_AUTHORIZATION_ERROR_RESPONSE_TASK = "Capture authorization error response"
+NAZO_AUTHORIZATION_ERROR_RESPONSE_PATTERN = (
+    r'("error"\s*:\s*"(invalid_request|invalid_request_object|access_denied|login_required|server_error)"'
+    r"|invalid_request|invalid_request_object|access_denied|login_required|server_error)"
 )
 OIDF_BAD_FINAL_RESULTS = {"FAILED", "SKIPPED", "INTERRUPTED", "WARNING"}
 OIDF_BAD_STATUS_VALUES = {"FAILED", "SKIPPED", "INTERRUPTED"}
@@ -417,19 +418,19 @@ def nazo_user_reject_browser_automation(config_value: dict[str, object]) -> list
     ]
 
 
-def authorization_error_page_task(config_value: dict[str, object]) -> dict[str, object]:
+def authorization_error_response_task(config_value: dict[str, object]) -> dict[str, object]:
     commands = [
         [
             "wait",
             "css",
             "body",
             10,
-            NAZO_AUTHORIZATION_ERROR_PAGE_PATTERN,
+            NAZO_AUTHORIZATION_ERROR_RESPONSE_PATTERN,
             "update-image-placeholder-optional",
         ]
     ]
     return {
-        "task": NAZO_AUTHORIZATION_ERROR_PAGE_TASK,
+        "task": NAZO_AUTHORIZATION_ERROR_RESPONSE_TASK,
         "optional": True,
         "match": f"{nazo_authorization_prefix(config_value)}*",
         "commands": commands,
@@ -583,7 +584,7 @@ def add_login_page_clicks(config_value: dict[str, object]) -> None:
             add_login_page_click(task)
 
 
-def add_authorization_error_page_capture(config_value: dict[str, object]) -> None:
+def add_authorization_error_response_capture(config_value: dict[str, object]) -> None:
     browser = config_value.get("browser")
     if not isinstance(browser, list):
         return
@@ -598,11 +599,11 @@ def add_authorization_error_page_capture(config_value: dict[str, object]) -> Non
         if not isinstance(tasks, list):
             continue
         if any(
-            isinstance(task, dict) and task.get("task") == NAZO_AUTHORIZATION_ERROR_PAGE_TASK
+            isinstance(task, dict) and task.get("task") == NAZO_AUTHORIZATION_ERROR_RESPONSE_TASK
             for task in tasks
         ):
             continue
-        tasks.insert(0, authorization_error_page_task(config_value))
+        tasks.insert(0, authorization_error_response_task(config_value))
 
 
 def remove_login_page_placeholder_update(task: object) -> None:
@@ -796,7 +797,7 @@ def add_nazo_browser_overrides(config_value: dict[str, object]) -> None:
     normalize_oidf_callback_waits(config_value)
     remove_default_login_page_placeholder_updates(config_value)
     add_login_page_clicks(config_value)
-    add_authorization_error_page_capture(config_value)
+    add_authorization_error_response_capture(config_value)
     add_nazo_second_login_placeholder_overrides(config_value)
     add_nazo_par_reuse_before_auth_override(config_value)
     add_nazo_user_reject_override(config_value)

@@ -1099,10 +1099,17 @@ def run() -> None:
             allow_redirects=False,
             timeout=10,
         )
-        expect_status("GET /authorize invalid redirect_uri error page", invalid_redirect, 400)
+        expect_status("GET /authorize invalid redirect_uri error response", invalid_redirect, 400)
         check("authorize_invalid_redirect_no_location", "Location" not in invalid_redirect.headers)
-        check("authorize_invalid_redirect_html", "text/html" in invalid_redirect.headers.get("Content-Type", ""))
-        check("authorize_invalid_redirect_error_body", "invalid_request" in invalid_redirect.text)
+        check(
+            "authorize_invalid_redirect_json",
+            "application/json" in invalid_redirect.headers.get("Content-Type", ""),
+        )
+        invalid_redirect_body = expect_json(invalid_redirect)
+        check(
+            "authorize_invalid_redirect_error_body",
+            invalid_redirect_body.get("error") == "invalid_request",
+        )
 
         public_without_pkce = user.get(
             f"{BASE_URL}/authorize",

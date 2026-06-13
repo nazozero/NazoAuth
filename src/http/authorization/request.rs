@@ -25,6 +25,13 @@ pub(crate) const AUTHORIZED_REQUEST_PARAMETERS: &[&str] = &[
     "request",
 ];
 const AUTHORIZATION_NONCE_MAX_BYTES: usize = 256;
+const REAUTH_STARTED_AT_PARAMETER: &str = "_nazo_reauth_started_at";
+
+fn authorization_duplicate_parameters() -> Vec<&'static str> {
+    let mut parameters = AUTHORIZED_REQUEST_PARAMETERS.to_vec();
+    parameters.push(REAUTH_STARTED_AT_PARAMETER);
+    parameters
+}
 
 fn authorization_request_requires_pkce(client: &ClientRow) -> bool {
     client.client_type == "public"
@@ -256,10 +263,11 @@ fn session_requires_reauthentication(
     prompt: PromptDirectives,
     max_age: Option<i64>,
     auth_time: i64,
+    reauth_started_at: Option<i64>,
     now: i64,
 ) -> bool {
-    let prompt_requires_fresh_login =
-        (prompt.login || prompt.select_account) && now.saturating_sub(auth_time) > 5;
+    let prompt_requires_fresh_login = (prompt.login || prompt.select_account)
+        && reauth_started_at.is_none_or(|started_at| auth_time < started_at);
     prompt_requires_fresh_login
         || match max_age {
             Some(0) => true,
@@ -308,7 +316,8 @@ pub(crate) async fn authorize_post(
             );
         }
     };
-    if has_duplicate_oauth_parameter(req.query_string(), AUTHORIZED_REQUEST_PARAMETERS) {
+    let query_parameters = authorization_duplicate_parameters();
+    if has_duplicate_oauth_parameter(req.query_string(), &query_parameters) {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -319,7 +328,7 @@ pub(crate) async fn authorize_post(
     let mut seen = std::collections::HashSet::new();
     for (key, value) in url::form_urlencoded::parse(raw.as_bytes()) {
         let key = key.into_owned();
-        if AUTHORIZED_REQUEST_PARAMETERS.contains(&key.as_str()) && !seen.insert(key.clone()) {
+        if query_parameters.contains(&key.as_str()) && !seen.insert(key.clone()) {
             return oauth_error(
                 StatusCode::BAD_REQUEST,
                 "invalid_request",
@@ -336,7 +345,8 @@ async fn authorize_request(
     req: HttpRequest,
     q: &mut HashMap<String, String>,
 ) -> HttpResponse {
-    if has_duplicate_oauth_parameter(req.query_string(), AUTHORIZED_REQUEST_PARAMETERS) {
+    let query_parameters = authorization_duplicate_parameters();
+    if has_duplicate_oauth_parameter(req.query_string(), &query_parameters) {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -345,6 +355,11 @@ async fn authorize_request(
     }
 
     let original_authorization_query = q.clone();
+    let reauth_started_at = q
+        .get(REAUTH_STARTED_AT_PARAMETER)
+        .and_then(|value| value.parse::<i64>().ok())
+        .filter(|value| *value > 0);
+    q.remove(REAUTH_STARTED_AT_PARAMETER);
     let mut pushed_dpop_jkt = None;
     let mut pushed_mtls_x5t_s256 = None;
     let mut consumed_request_uri_error: Option<&'static str> = None;
@@ -478,14 +493,14 @@ async fn authorize_request(
         match registered_redirect_uri(&client, q.get("redirect_uri").map(String::as_str)) {
             Ok(value) => value,
             Err(RedirectUriError::Missing) => {
-                return authorization_error_page(
+                return authorization_error_response(
                     StatusCode::BAD_REQUEST,
                     "invalid_request",
                     "redirect_uri is required for this authorization request.",
                 );
             }
             Err(RedirectUriError::Invalid) => {
-                return authorization_error_page(
+                return authorization_error_response(
                     StatusCode::BAD_REQUEST,
                     "invalid_request",
                     "redirect_uri is not registered for this client.",
@@ -598,16 +613,22 @@ async fn authorize_request(
         }
         return redirect_found(authorization_login_url(
             &state,
-            authorization_login_query(
+            &authorization_login_query(
                 q,
                 &original_authorization_query,
                 pending_pushed_request_uri.as_ref(),
             ),
             prompt.login || prompt.select_account,
+            reauth_started_at,
         ));
     };
-    if session_requires_reauthentication(prompt, max_age, session.auth_time, Utc::now().timestamp())
-    {
+    if session_requires_reauthentication(
+        prompt,
+        max_age,
+        session.auth_time,
+        reauth_started_at,
+        Utc::now().timestamp(),
+    ) {
         if prompt.none {
             return authorization_response_redirect(
                 &state,
@@ -622,12 +643,13 @@ async fn authorize_request(
         }
         return redirect_found(authorization_login_url(
             &state,
-            authorization_login_query(
+            &authorization_login_query(
                 q,
                 &original_authorization_query,
                 pending_pushed_request_uri.as_ref(),
             ),
             prompt.login || prompt.select_account,
+            reauth_started_at,
         ));
     }
 
@@ -1074,24 +1096,48 @@ fn oauth_json_error(response: &HttpResponse) -> Option<String> {
         .map(|fields| fields.error.clone())
 }
 
-fn authorization_login_query<'a>(
-    expanded: &'a HashMap<String, String>,
-    original: &'a HashMap<String, String>,
+fn authorization_login_query(
+    expanded: &HashMap<String, String>,
+    original: &HashMap<String, String>,
     request_uri: Option<&String>,
-) -> &'a HashMap<String, String> {
+) -> HashMap<String, String> {
     if request_uri.is_some() {
-        original
+        original.clone()
     } else {
-        expanded
+        expanded.clone()
     }
 }
 
 fn authorization_login_url(
     state: &AppState,
     q: &HashMap<String, String>,
-    _reauthentication_required: bool,
+    reauthentication_required: bool,
+    reauth_started_at: Option<i64>,
 ) -> String {
-    let query = q
+    authorization_login_url_for_frontend(
+        &state.settings.frontend_base_url,
+        q,
+        reauthentication_required,
+        reauth_started_at,
+    )
+}
+
+fn authorization_login_url_for_frontend(
+    frontend_base_url: &str,
+    q: &HashMap<String, String>,
+    reauthentication_required: bool,
+    reauth_started_at: Option<i64>,
+) -> String {
+    let mut next_query = q.clone();
+    if reauthentication_required {
+        next_query.insert(
+            REAUTH_STARTED_AT_PARAMETER.to_owned(),
+            reauth_started_at
+                .unwrap_or_else(|| Utc::now().timestamp())
+                .to_string(),
+        );
+    }
+    let query = next_query
         .iter()
         .map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v)))
         .collect::<Vec<_>>()
@@ -1103,7 +1149,7 @@ fn authorization_login_url(
     };
     format!(
         "{}/auth?next={}",
-        state.settings.frontend_base_url.trim_end_matches('/'),
+        frontend_base_url.trim_end_matches('/'),
         urlencoding::encode(&next)
     )
 }
@@ -1296,27 +1342,31 @@ mod tests {
             prompt,
             Some(0),
             1_000,
+            None,
             1_000
         ));
         assert!(!session_requires_reauthentication(
             prompt,
             Some(30),
             1_000,
+            None,
             1_030
         ));
         assert!(session_requires_reauthentication(
             prompt,
             Some(30),
             1_000,
+            None,
             1_031
         ));
-        assert!(!session_requires_reauthentication(
+        assert!(session_requires_reauthentication(
             PromptDirectives {
                 login: true,
                 ..PromptDirectives::default()
             },
             None,
             1_000,
+            None,
             1_001,
         ));
         assert!(session_requires_reauthentication(
@@ -1326,15 +1376,27 @@ mod tests {
             },
             None,
             1_000,
-            1_006,
+            Some(1_001),
+            1_001,
         ));
         assert!(!session_requires_reauthentication(
+            PromptDirectives {
+                login: true,
+                ..PromptDirectives::default()
+            },
+            None,
+            1_001,
+            Some(1_001),
+            1_006,
+        ));
+        assert!(session_requires_reauthentication(
             PromptDirectives {
                 select_account: true,
                 ..PromptDirectives::default()
             },
             None,
             1_000,
+            None,
             1_001,
         ));
         assert!(session_requires_reauthentication(
@@ -1344,8 +1406,34 @@ mod tests {
             },
             None,
             1_000,
+            Some(1_001),
+            1_001,
+        ));
+        assert!(!session_requires_reauthentication(
+            PromptDirectives {
+                select_account: true,
+                ..PromptDirectives::default()
+            },
+            None,
+            1_001,
+            Some(1_001),
             1_006,
         ));
+    }
+
+    #[test]
+    fn authorization_login_url_marks_reauthentication_start_once() {
+        let q = query(&[("client_id", "client-1"), ("prompt", "login")]);
+
+        let url = authorization_login_url_for_frontend("https://auth.example", &q, true, None);
+
+        let url = url::Url::parse(&url).unwrap();
+        assert!(url.as_str().starts_with("https://auth.example/auth?"));
+        let next = url
+            .query_pairs()
+            .find_map(|(key, value)| (key == "next").then_some(value.into_owned()))
+            .unwrap();
+        assert!(next.contains("_nazo_reauth_started_at="));
     }
 
     #[test]
