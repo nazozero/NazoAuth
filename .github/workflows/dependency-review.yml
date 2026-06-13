@@ -19,6 +19,7 @@ permissions:
 jobs:
   dependency-review:
     name: Dependency vulnerability review
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6.0.3
@@ -27,3 +28,19 @@ jobs:
           fail-on-severity: high
           vulnerability-check: true
           license-check: false
+
+  rust-advisory-audit:
+    name: Rust advisory audit
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6.0.3
+
+      - uses: dtolnay/rust-toolchain@1.96.0
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
+      - name: Audit Rust advisories
+        run: cargo audit
