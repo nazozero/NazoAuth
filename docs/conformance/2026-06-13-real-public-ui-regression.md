@@ -341,3 +341,63 @@ Exported artifact filenames:
 - `fapi2-security-profile-final-test-plan-private_key_jwt-mtls-simple-openid_connect-plain_fapi-Qw78rkVDoCk6l-13-Jun-2026.zip`
 - `fapi2-security-profile-final-test-plan-private_key_jwt-mtls-simple-plain_oauth-fapi_client_credentials_grant-DR2ioORPB8GPh-13-Jun-2026.zip`
 - `fapi2-security-profile-final-test-plan-private_key_jwt-mtls-simple-plain_oauth-plain_fapi-GnJNlXSv9b2uY-13-Jun-2026.zip`
+
+## Official Workflow Success After Security Test And Module Split
+
+After security-invariant tests were added and oversized security modules were
+split by responsibility, the full GitHub Actions OIDF workflow was rerun against
+the same public issuer and completed successfully. This is the current official
+workflow record for the real public UI, JSON-only backend behavior, and the
+post-split security test layout.
+
+| Field | Value |
+| --- | --- |
+| Result | Passed |
+| Workflow | `oidf-conformance-full` |
+| Workflow run | <https://github.com/bymoye/NazoAuth/actions/runs/27474748434> |
+| Job URL | <https://github.com/bymoye/NazoAuth/actions/runs/27474748434/job/81211877680> |
+| Workflow event | `workflow_dispatch` |
+| Head branch | `main` |
+| Implementation commit | `6d75031c878fba1b1e9ce73d7fd661f0c1aea63f` |
+| Public issuer under test | `https://auth.nazo.run` |
+| Conformance server | `https://www.certification.openid.net/` |
+| Started | `2026-06-13T18:04:46Z` |
+| Completed | `2026-06-13T18:15:16Z` |
+| Runtime | 10m 30s |
+| Artifact | `oidf-conformance-results-full` |
+| Artifact ID | `7613257714` |
+| Artifact digest | `sha256:6f2b12d0ce04ea0637eb9e6f9bf8757d64f4b5ae1748b30213a1020d191f3feb` |
+| Artifact size | `15665592` bytes |
+| Artifact created | `2026-06-13T18:15:14Z` |
+| Artifact expires | `2026-09-11T18:04:48Z` |
+| Runner mode | Official workflow runner, public `auth.nazo.run` target |
+
+GitHub reported `success` for the workflow, the `Run full OIDF matrix` step,
+and the artifact upload step. The runner log reported:
+
+```text
+Overall totals: ran 71 test modules. Conditions: 6375 successes, 0 failures, 0 warnings.
+All tests ran to completion. See above for any test condition failures.
+```
+
+The artifact upload step reported 16 uploaded files and the same SHA-256 digest
+as the GitHub artifact API.
+
+Exported artifact filenames:
+
+- `oidcc-basic-certification-test-plan-discovery-static_client-fE3fAE8GJkqwT-13-Jun-2026.zip`
+- `oidcc-config-certification-test-plan--3XYc5o9Ep9pM7-13-Jun-2026.zip`
+- `fapi2-message-signing-final-test-plan-private_key_jwt-dpop-simple-openid_connect-signed_non_repudiation-plain_fapi-jarm-r9apWZ4d4gL1o-13-Jun-2026.zip`
+- `fapi2-message-signing-final-test-plan-private_key_jwt-dpop-simple-openid_connect-signed_non_repudiation-plain_fapi-plain_response-apz7HPxv1bJrV-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-dpop-simple-openid_connect-plain_fapi-sBq5CpOtEJSs7-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-dpop-simple-plain_oauth-fapi_client_credentials_grant-ywv6JAPWOE965-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-dpop-simple-plain_oauth-plain_fapi-dXAR2ZFHRtJat-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-mtls-simple-openid_connect-plain_fapi-2hbeGHt7i5j07-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-mtls-simple-plain_oauth-fapi_client_credentials_grant-M4QMAyOLSSL2r-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-mtls-simple-plain_oauth-plain_fapi-vGSH019CXnMcf-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-dpop-simple-openid_connect-plain_fapi-Gl42dLEh2jANI-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-dpop-simple-plain_oauth-fapi_client_credentials_grant-2Rdauo3L4XdwV-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-dpop-simple-plain_oauth-plain_fapi-3i5FFBrruNsG7-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-mtls-simple-openid_connect-plain_fapi-E9b4X2r5wTyr8-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-mtls-simple-plain_oauth-fapi_client_credentials_grant-xwvJrciNYlnr8-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-mtls-simple-plain_oauth-plain_fapi-KPciu0XVwWj8s-13-Jun-2026.zip`
