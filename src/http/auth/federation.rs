@@ -1,62 +1,11 @@
 //! External OIDC and trusted SAML-gateway federation.
 
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use hmac::{Hmac, Mac};
-use serde::Serialize;
-use sha2::Sha256;
-
 use crate::http::prelude::*;
-use crate::settings::{OidcFederationSettings, SamlGatewaySettings};
 
-type HmacSha256 = Hmac<Sha256>;
-
-const FEDERATION_STATE_TTL_SECONDS: u64 = 300;
-
-#[derive(Serialize, Deserialize)]
-struct OidcFederationState {
-    nonce: String,
-    pkce_verifier: String,
-    created_at: i64,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct OidcCallbackQuery {
-    code: Option<String>,
-    state: Option<String>,
-    error: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct OidcTokenResponse {
-    id_token: String,
-}
-
-#[derive(Deserialize)]
-struct OidcIdTokenClaims {
-    iss: String,
-    sub: String,
-    aud: Value,
-    exp: i64,
-    iat: Option<i64>,
-    nonce: Option<String>,
-    email: Option<String>,
-    email_verified: Option<bool>,
-    name: Option<String>,
-    given_name: Option<String>,
-    family_name: Option<String>,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct SamlGatewayAssertion {
-    issuer: String,
-    audience: String,
-    subject: String,
-    email: String,
-    name: Option<String>,
-    iat: i64,
-    exp: i64,
-    signature: String,
-}
+mod oidc;
+mod saml;
+use oidc::*;
+use saml::*;
 
 pub(crate) async fn federation_oidc_start(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
     if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
@@ -311,29 +260,6 @@ pub(crate) async fn federation_saml_acs(
     create_federated_session(&state, &req, &user, "saml").await
 }
 
-fn oidc_authorization_url(
-    provider: &OidcFederationSettings,
-    state: &str,
-    nonce: &str,
-    verifier: &str,
-) -> String {
-    let mut serializer = url::form_urlencoded::Serializer::new(String::new());
-    serializer
-        .append_pair("response_type", "code")
-        .append_pair("client_id", &provider.client_id)
-        .append_pair("redirect_uri", &provider.redirect_uri)
-        .append_pair("scope", &provider.scopes)
-        .append_pair("state", state)
-        .append_pair("nonce", nonce)
-        .append_pair("code_challenge_method", "S256")
-        .append_pair("code_challenge", &pkce_s256(verifier));
-    format!(
-        "{}?{}",
-        provider.authorization_endpoint,
-        serializer.finish()
-    )
-}
-
 async fn take_oidc_state(
     state: &AppState,
     state_token: &str,
@@ -359,101 +285,6 @@ async fn take_oidc_state(
         })
     })
     .transpose()
-}
-
-fn oidc_state_key(state: &str) -> String {
-    format!("oauth:federation:oidc:state:{}", blake3_hex(state))
-}
-
-async fn exchange_oidc_code(
-    provider: &OidcFederationSettings,
-    code: &str,
-    verifier: &str,
-) -> anyhow::Result<OidcTokenResponse> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()?;
-    let body = url::form_urlencoded::Serializer::new(String::new())
-        .append_pair("grant_type", "authorization_code")
-        .append_pair("code", code)
-        .append_pair("redirect_uri", &provider.redirect_uri)
-        .append_pair("code_verifier", verifier)
-        .finish();
-    let response = client
-        .post(&provider.token_endpoint)
-        .basic_auth(&provider.client_id, Some(&provider.client_secret))
-        .header(
-            reqwest::header::CONTENT_TYPE,
-            "application/x-www-form-urlencoded",
-        )
-        .body(body)
-        .send()
-        .await?
-        .error_for_status()?;
-    Ok(response.json::<OidcTokenResponse>().await?)
-}
-
-async fn fetch_oidc_jwks(provider: &OidcFederationSettings) -> anyhow::Result<Value> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()?;
-    let value = client
-        .get(&provider.jwks_url)
-        .send()
-        .await?
-        .error_for_status()?
-        .json::<Value>()
-        .await?;
-    if value.get("keys").and_then(Value::as_array).is_none() {
-        anyhow::bail!("OIDC JWKS does not contain keys array");
-    }
-    Ok(value)
-}
-
-fn verify_oidc_id_token(
-    provider: &OidcFederationSettings,
-    jwks: &Value,
-    token: &str,
-    expected_nonce: &str,
-) -> anyhow::Result<OidcIdTokenClaims> {
-    let header = jsonwebtoken::decode_header(token)?;
-    let kid = header
-        .kid
-        .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("missing kid"))?;
-    let keys = jwks
-        .get("keys")
-        .and_then(Value::as_array)
-        .ok_or_else(|| anyhow::anyhow!("missing keys"))?;
-    let key = keys
-        .iter()
-        .find(|key| key.get("kid").and_then(Value::as_str) == Some(kid))
-        .ok_or_else(|| anyhow::anyhow!("kid not found"))?;
-    let decoding_key = jwt_decoding_key_from_jwk(key, header.alg)
-        .ok_or_else(|| anyhow::anyhow!("unsupported OIDC JWK"))?;
-    let mut validation = jsonwebtoken::Validation::new(header.alg);
-    validation.set_issuer(&[provider.issuer.as_str()]);
-    validation.set_audience(&[provider.client_id.as_str()]);
-    let token = jsonwebtoken::decode::<OidcIdTokenClaims>(token, &decoding_key, &validation)?;
-    let claims = token.claims;
-    if claims.nonce.as_deref() != Some(expected_nonce)
-        || !audience_contains(&claims.aud, &provider.client_id)
-        || claims.exp <= Utc::now().timestamp()
-        || claims
-            .iat
-            .is_some_and(|iat| iat > Utc::now().timestamp().saturating_add(60))
-    {
-        anyhow::bail!("OIDC ID Token claims failed policy");
-    }
-    Ok(claims)
-}
-
-fn audience_contains(aud: &Value, client_id: &str) -> bool {
-    match aud {
-        Value::String(value) => value == client_id,
-        Value::Array(values) => values.iter().any(|value| value.as_str() == Some(client_id)),
-        _ => false,
-    }
 }
 
 async fn resolve_external_identity(
@@ -599,47 +430,6 @@ async fn create_federated_user(
         })
 }
 
-fn valid_saml_gateway_assertion(
-    settings: &SamlGatewaySettings,
-    assertion: &SamlGatewayAssertion,
-    normalized_email: &str,
-) -> bool {
-    let now = Utc::now().timestamp();
-    if assertion.issuer != settings.issuer
-        || assertion.audience != settings.audience
-        || assertion.subject.trim().is_empty()
-        || assertion.iat > now.saturating_add(60)
-        || assertion.exp <= now
-        || assertion.exp.saturating_sub(assertion.iat) > 300
-    {
-        return false;
-    }
-    let expected = saml_gateway_signature(
-        &settings.secret,
-        &assertion.issuer,
-        &assertion.audience,
-        &assertion.subject,
-        normalized_email,
-        assertion.iat,
-        assertion.exp,
-    );
-    constant_time_eq(expected.as_bytes(), assertion.signature.as_bytes())
-}
-
-fn saml_gateway_signature(
-    secret: &str,
-    issuer: &str,
-    audience: &str,
-    subject: &str,
-    email: &str,
-    iat: i64,
-    exp: i64,
-) -> String {
-    let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC accepts any key");
-    mac.update(format!("{issuer}\n{audience}\n{subject}\n{email}\n{iat}\n{exp}").as_bytes());
-    URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
-}
-
 fn normalize_federation_token(value: &str) -> Option<String> {
     let value = value.trim();
     (value.len() >= 32
@@ -728,56 +518,5 @@ async fn create_federated_session(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn federation_token_accepts_only_urlsafe_values() {
-        assert!(
-            normalize_federation_token("abcdefghijklmnopqrstuvwxyzABCDEF0123456789-_").is_some()
-        );
-        assert!(normalize_federation_token("short").is_none());
-        assert!(
-            normalize_federation_token("abcdefghijklmnopqrstuvwxyzABCDEF0123456789+/").is_none()
-        );
-    }
-
-    #[test]
-    fn saml_gateway_signature_is_bound_to_assertion_fields() {
-        let settings = SamlGatewaySettings {
-            issuer: "gateway".to_owned(),
-            audience: "nazo".to_owned(),
-            secret: "01234567890123456789012345678901".to_owned(),
-        };
-        let now = Utc::now().timestamp();
-        let signature = saml_gateway_signature(
-            &settings.secret,
-            &settings.issuer,
-            &settings.audience,
-            "subject",
-            "user@example.com",
-            now,
-            now + 60,
-        );
-        let assertion = SamlGatewayAssertion {
-            issuer: settings.issuer.clone(),
-            audience: settings.audience.clone(),
-            subject: "subject".to_owned(),
-            email: "user@example.com".to_owned(),
-            name: None,
-            iat: now,
-            exp: now + 60,
-            signature,
-        };
-        assert!(valid_saml_gateway_assertion(
-            &settings,
-            &assertion,
-            "user@example.com"
-        ));
-        assert!(!valid_saml_gateway_assertion(
-            &settings,
-            &assertion,
-            "other@example.com"
-        ));
-    }
-}
+#[path = "tests/federation.rs"]
+mod tests;

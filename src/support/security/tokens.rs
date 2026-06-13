@@ -1,0 +1,271 @@
+use super::jwt_decoding_key_from_jwk;
+use crate::support::signing_algorithm_name;
+use crate::{domain::OidcClaimRequest, support::prelude::*};
+
+pub(crate) struct AccessTokenJwtInput<'a> {
+    pub(crate) tenant_id: Uuid,
+    pub(crate) subject: &'a str,
+    pub(crate) user_id: Option<Uuid>,
+    pub(crate) subject_type: &'a str,
+    pub(crate) client_id: &'a str,
+    pub(crate) audiences: &'a [String],
+    pub(crate) scopes: &'a [String],
+    pub(crate) authorization_details: &'a Value,
+    pub(crate) userinfo_claims: &'a [String],
+    pub(crate) userinfo_claim_requests: &'a [OidcClaimRequest],
+    pub(crate) ttl: i64,
+    pub(crate) dpop_jkt: Option<&'a str>,
+    pub(crate) mtls_x5t_s256: Option<&'a str>,
+}
+
+pub(crate) struct IssuedAccessToken {
+    pub(crate) token: String,
+    pub(crate) jti: String,
+    pub(crate) exp: i64,
+}
+
+pub(crate) async fn make_jwt(
+    state: &AppState,
+    input: AccessTokenJwtInput<'_>,
+) -> jsonwebtoken::errors::Result<IssuedAccessToken> {
+    let now = Utc::now().timestamp();
+    let jti = Uuid::now_v7().to_string();
+    let exp = now + input.ttl;
+    let claims = access_token_claims(&state.settings.issuer, input, now, &jti);
+    let header = access_token_header(state.keyset.active_alg, &state.keyset.active_kid);
+    let token = state.keyset.sign_jwt(&header, &claims).await?;
+    Ok(IssuedAccessToken { token, jti, exp })
+}
+
+pub(super) fn access_token_claims(
+    issuer: &str,
+    input: AccessTokenJwtInput<'_>,
+    now: i64,
+    jti: &str,
+) -> Claims {
+    Claims {
+        iss: issuer.to_owned(),
+        sub: input.subject.to_string(),
+        tenant_id: input.tenant_id.to_string(),
+        user_id: input.user_id.map(|id| id.to_string()),
+        subject_type: input.subject_type.to_string(),
+        aud: token_audience_claim(input.audiences),
+        client_id: input.client_id.to_string(),
+        scope: sorted_scope_string(input.scopes),
+        authorization_details: input.authorization_details.clone(),
+        token_use: "access".into(),
+        jti: jti.to_owned(),
+        iat: now,
+        nbf: now,
+        exp: now + input.ttl,
+        cnf: match (input.dpop_jkt, input.mtls_x5t_s256) {
+            (Some(jkt), None) => Some(ConfirmationClaims {
+                jkt: Some(jkt.to_owned()),
+                x5t_s256: None,
+            }),
+            (None, Some(x5t_s256)) => Some(ConfirmationClaims {
+                jkt: None,
+                x5t_s256: Some(x5t_s256.to_owned()),
+            }),
+            _ => None,
+        },
+        userinfo_claims: input.userinfo_claims.to_vec(),
+        userinfo_claim_requests: input.userinfo_claim_requests.to_vec(),
+    }
+}
+
+fn token_audience_claim(audiences: &[String]) -> Value {
+    match audiences {
+        [audience] => json!(audience),
+        _ => json!(audiences),
+    }
+}
+
+pub(super) fn access_token_header(alg: jsonwebtoken::Algorithm, kid: &str) -> jsonwebtoken::Header {
+    let mut header = jsonwebtoken::Header::new(alg);
+    header.typ = Some("at+jwt".to_string());
+    header.kid = Some(kid.to_owned());
+    header
+}
+
+pub(crate) struct IdTokenInput<'a> {
+    pub(crate) subject: &'a str,
+    pub(crate) client_id: &'a str,
+    pub(crate) nonce: Option<String>,
+    pub(crate) auth_time: Option<i64>,
+    pub(crate) amr: &'a [String],
+    pub(crate) sid: Option<&'a str>,
+    pub(crate) acr: Option<&'a str>,
+    pub(crate) extra_claims: Option<&'a Value>,
+    pub(crate) ttl: i64,
+}
+
+pub(crate) async fn make_id_token(
+    state: &AppState,
+    input: IdTokenInput<'_>,
+) -> jsonwebtoken::errors::Result<String> {
+    let now = Utc::now().timestamp();
+    let claims = id_token_claims(&state.settings.issuer, &input, now);
+    let mut header = jsonwebtoken::Header::new(state.keyset.active_alg);
+    header.typ = Some("JWT".to_string());
+    header.kid = Some(state.keyset.active_kid.clone());
+    state.keyset.sign_jwt(&header, &Value::Object(claims)).await
+}
+
+pub(super) fn id_token_claims(
+    issuer: &str,
+    input: &IdTokenInput<'_>,
+    now: i64,
+) -> serde_json::Map<String, Value> {
+    let mut claims = serde_json::Map::new();
+    claims.insert("iss".to_owned(), json!(issuer));
+    claims.insert("sub".to_owned(), json!(input.subject));
+    claims.insert("aud".to_owned(), json!(input.client_id));
+    claims.insert("iat".to_owned(), json!(now));
+    claims.insert("nbf".to_owned(), json!(now));
+    claims.insert("exp".to_owned(), json!(now + input.ttl));
+    claims.insert("jti".to_owned(), json!(Uuid::now_v7().to_string()));
+    if let Some(nonce) = &input.nonce {
+        claims.insert("nonce".to_owned(), json!(nonce));
+    }
+    if let Some(auth_time) = input.auth_time {
+        claims.insert("auth_time".to_owned(), json!(auth_time));
+    }
+    if !input.amr.is_empty() {
+        claims.insert("amr".to_owned(), json!(input.amr));
+    }
+    if let Some(sid) = input.sid {
+        claims.insert("sid".to_owned(), json!(sid));
+    }
+    if let Some(acr) = input.acr {
+        claims.insert("acr".to_owned(), json!(acr));
+    }
+    if let Some(extra_claims) = input.extra_claims.and_then(Value::as_object) {
+        for (key, value) in extra_claims {
+            if !matches!(
+                key.as_str(),
+                "iss"
+                    | "sub"
+                    | "aud"
+                    | "iat"
+                    | "nbf"
+                    | "exp"
+                    | "jti"
+                    | "nonce"
+                    | "auth_time"
+                    | "azp"
+                    | "amr"
+                    | "sid"
+                    | "acr"
+            ) {
+                claims.insert(key.clone(), value.clone());
+            }
+        }
+    }
+    claims
+}
+
+pub(crate) struct AuthorizationResponseJwtInput<'a> {
+    pub(crate) client_id: &'a str,
+    pub(crate) code: Option<&'a str>,
+    pub(crate) error: Option<&'a str>,
+    pub(crate) state: Option<&'a str>,
+    pub(crate) ttl: i64,
+}
+
+pub(crate) struct BackchannelLogoutTokenInput<'a> {
+    pub(crate) client_id: &'a str,
+    pub(crate) subject: Option<&'a str>,
+    pub(crate) sid: Option<&'a str>,
+    pub(crate) ttl: i64,
+}
+
+pub(crate) async fn make_backchannel_logout_token(
+    state: &AppState,
+    input: BackchannelLogoutTokenInput<'_>,
+) -> jsonwebtoken::errors::Result<String> {
+    let now = Utc::now().timestamp();
+    let claims = backchannel_logout_token_claims(&state.settings.issuer, &input, now);
+    let mut header = jsonwebtoken::Header::new(state.keyset.active_alg);
+    header.typ = Some("logout+jwt".to_string());
+    header.kid = Some(state.keyset.active_kid.clone());
+    state.keyset.sign_jwt(&header, &Value::Object(claims)).await
+}
+
+pub(super) fn backchannel_logout_token_claims(
+    issuer: &str,
+    input: &BackchannelLogoutTokenInput<'_>,
+    now: i64,
+) -> serde_json::Map<String, Value> {
+    let mut claims = serde_json::Map::new();
+    claims.insert("iss".to_owned(), json!(issuer));
+    claims.insert("aud".to_owned(), json!(input.client_id));
+    claims.insert("iat".to_owned(), json!(now));
+    claims.insert("nbf".to_owned(), json!(now));
+    claims.insert("exp".to_owned(), json!(now + input.ttl.max(1)));
+    claims.insert("jti".to_owned(), json!(Uuid::now_v7().to_string()));
+    claims.insert(
+        "events".to_owned(),
+        json!({"http://schemas.openid.net/event/backchannel-logout": {}}),
+    );
+    if let Some(subject) = input.subject {
+        claims.insert("sub".to_owned(), json!(subject));
+    }
+    if let Some(sid) = input.sid {
+        claims.insert("sid".to_owned(), json!(sid));
+    }
+    claims
+}
+
+pub(crate) async fn make_authorization_response_jwt(
+    state: &AppState,
+    input: AuthorizationResponseJwtInput<'_>,
+) -> jsonwebtoken::errors::Result<String> {
+    let now = Utc::now().timestamp();
+    let claims = authorization_response_jwt_claims(&state.settings.issuer, &input, now);
+    let mut header = jsonwebtoken::Header::new(state.keyset.active_alg);
+    header.typ = Some("oauth-authz-resp+jwt".to_string());
+    header.kid = Some(state.keyset.active_kid.clone());
+    state.keyset.sign_jwt(&header, &Value::Object(claims)).await
+}
+
+pub(super) fn authorization_response_jwt_claims(
+    issuer: &str,
+    input: &AuthorizationResponseJwtInput<'_>,
+    now: i64,
+) -> serde_json::Map<String, Value> {
+    let mut claims = serde_json::Map::new();
+    claims.insert("iss".to_owned(), json!(issuer));
+    claims.insert("aud".to_owned(), json!(input.client_id));
+    claims.insert("iat".to_owned(), json!(now));
+    claims.insert("nbf".to_owned(), json!(now));
+    claims.insert("exp".to_owned(), json!(now + input.ttl.max(1)));
+    claims.insert("jti".to_owned(), json!(Uuid::now_v7().to_string()));
+    if let Some(code) = input.code {
+        claims.insert("code".to_owned(), json!(code));
+    }
+    if let Some(error) = input.error {
+        claims.insert("error".to_owned(), json!(error));
+    }
+    if let Some(state_value) = input.state {
+        claims.insert("state".to_owned(), json!(state_value));
+    }
+    claims
+}
+
+pub(crate) fn decode_access_claims(state: &AppState, token: &str) -> Option<Claims> {
+    let header = jsonwebtoken::decode_header(token).ok()?;
+    if header.typ.as_deref() != Some("at+jwt") || signing_algorithm_name(header.alg).is_none() {
+        return None;
+    }
+    let verification_key = state.keyset.verification_key(header.kid.as_deref()?)?;
+    let decoding_key = jwt_decoding_key_from_jwk(&verification_key.public_jwk, header.alg)?;
+    let mut validation = jsonwebtoken::Validation::new(header.alg);
+    validation.validate_aud = false;
+    validation.set_issuer(&[state.settings.issuer.as_str()]);
+    let token_data = jsonwebtoken::decode::<Claims>(token, &decoding_key, &validation).ok()?;
+    if token_data.claims.token_use != "access" {
+        return None;
+    }
+    Some(token_data.claims)
+}
