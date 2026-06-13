@@ -586,10 +586,26 @@ def add_login_page_clicks(config_value: dict[str, object]) -> None:
 
 
 def add_authorization_error_response_capture(config_value: dict[str, object]) -> None:
-    browser = config_value.get("browser")
-    if not isinstance(browser, list):
+    normalize_authorization_error_response_capture(config_value, config_value.get("browser"))
+
+    override = config_value.get("override")
+    if not isinstance(override, dict):
         return
 
+    for override_value in override.values():
+        if isinstance(override_value, dict):
+            normalize_authorization_error_response_capture(
+                config_value,
+                override_value.get("browser"),
+            )
+
+
+def normalize_authorization_error_response_capture(
+    config_value: dict[str, object],
+    browser: object,
+) -> None:
+    if not isinstance(browser, list):
+        return
     for entry in browser:
         if not isinstance(entry, dict):
             continue
