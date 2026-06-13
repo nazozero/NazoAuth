@@ -45,6 +45,36 @@ enum AuthorizationCodeConsumption {
     Malformed,
 }
 
+fn parse_authorization_code_consumption_response(response: &str) -> AuthorizationCodeConsumption {
+    if let Some(raw) = response.strip_prefix("consuming|") {
+        return match serde_json::from_str::<CodePayload>(raw) {
+            Ok(payload) => AuthorizationCodeConsumption::Consuming(Box::new(payload)),
+            Err(error) => {
+                tracing::warn!(%error, "authorization code pending payload is malformed");
+                AuthorizationCodeConsumption::Malformed
+            }
+        };
+    }
+    if let Some(raw) = response.strip_prefix("consumed|") {
+        return match serde_json::from_str::<AuthorizationCodeState>(raw) {
+            Ok(AuthorizationCodeState::Consumed { marker }) => {
+                AuthorizationCodeConsumption::Consumed(marker)
+            }
+            Ok(_) => AuthorizationCodeConsumption::Malformed,
+            Err(error) => {
+                tracing::warn!(%error, "consumed authorization code marker is malformed");
+                AuthorizationCodeConsumption::Malformed
+            }
+        };
+    }
+    match response {
+        "busy" => AuthorizationCodeConsumption::Busy,
+        "failed" => AuthorizationCodeConsumption::Failed,
+        "missing" => AuthorizationCodeConsumption::Missing,
+        _ => AuthorizationCodeConsumption::Malformed,
+    }
+}
+
 async fn load_pending_authorization_code_payload(
     state: &AppState,
     code_hash: &str,
@@ -204,33 +234,7 @@ async fn begin_authorization_code_consumption(
             ));
         }
     };
-    if let Some(raw) = response.strip_prefix("consuming|") {
-        return match serde_json::from_str::<CodePayload>(raw) {
-            Ok(payload) => Ok(AuthorizationCodeConsumption::Consuming(Box::new(payload))),
-            Err(error) => {
-                tracing::warn!(%error, "authorization code pending payload is malformed");
-                Ok(AuthorizationCodeConsumption::Malformed)
-            }
-        };
-    }
-    if let Some(raw) = response.strip_prefix("consumed|") {
-        return match serde_json::from_str::<AuthorizationCodeState>(raw) {
-            Ok(AuthorizationCodeState::Consumed { marker }) => {
-                Ok(AuthorizationCodeConsumption::Consumed(marker))
-            }
-            Ok(_) => Ok(AuthorizationCodeConsumption::Malformed),
-            Err(error) => {
-                tracing::warn!(%error, "consumed authorization code marker is malformed");
-                Ok(AuthorizationCodeConsumption::Malformed)
-            }
-        };
-    }
-    match response.as_str() {
-        "busy" => Ok(AuthorizationCodeConsumption::Busy),
-        "failed" => Ok(AuthorizationCodeConsumption::Failed),
-        "missing" => Ok(AuthorizationCodeConsumption::Missing),
-        _ => Ok(AuthorizationCodeConsumption::Malformed),
-    }
+    Ok(parse_authorization_code_consumption_response(&response))
 }
 
 async fn revoke_replayed_authorization_code(
@@ -565,8 +569,26 @@ mod tests {
     }
 
     #[test]
+    fn token_redirect_uri_is_still_bound_when_authorization_request_omitted_it() {
+        let payload = code_payload(false);
+
+        for attacker_redirect_uri in [
+            "https://client.example/other-callback",
+            "https://evil.example/callback",
+            "http://client.example/callback",
+            "https://client.example/callback?next=https://evil.example",
+        ] {
+            assert!(
+                !redirect_uri_matches_authorization_request(&payload, Some(attacker_redirect_uri)),
+                "authorization code exchange must not accept a different redirect_uri: {attacker_redirect_uri}"
+            );
+        }
+    }
+
+    #[test]
     fn authorization_code_token_issue_preserves_independent_oidc_sid() {
         let payload = code_payload(true);
+        let auth_time = payload.auth_time;
 
         let issue = token_issue_from_authorization_code(AuthorizationCodeIssueInput {
             payload,
@@ -582,11 +604,107 @@ mod tests {
         assert_eq!(issue.subject, "subject-1");
         assert_eq!(issue.oidc_sid.as_deref(), Some("sid-1"));
         assert_eq!(issue.authorization_code_hash.as_deref(), Some("code-hash"));
+        assert!(issue.include_refresh);
+        assert_eq!(issue.refresh_token_policy, RefreshTokenPolicy::IssueNew);
+        assert_eq!(issue.scopes, vec!["openid".to_owned()]);
+        assert_eq!(issue.audiences, vec!["resource://default".to_owned()]);
+        assert_eq!(issue.nonce, None);
+        assert_eq!(issue.auth_time, Some(auth_time));
         assert_eq!(issue.dpop_jkt.as_deref(), Some("dpop-jkt"));
         assert_eq!(
             issue.refresh_token_mtls_x5t_s256.as_deref(),
             Some("refresh-mtls-thumbprint")
         );
+    }
+
+    #[test]
+    fn authorization_code_consumption_parser_accepts_only_pending_payload_for_consuming_state() {
+        let payload = code_payload(true);
+        let raw = format!("consuming|{}", serde_json::to_string(&payload).unwrap());
+
+        match parse_authorization_code_consumption_response(&raw) {
+            AuthorizationCodeConsumption::Consuming(parsed) => {
+                assert_eq!(parsed.code_id, "code-1");
+                assert_eq!(parsed.client_id, "client-1");
+                assert_eq!(parsed.redirect_uri, "https://client.example/callback");
+                assert_eq!(parsed.code_challenge_method.as_deref(), Some("S256"));
+            }
+            _ => panic!("pending authorization code payload should enter consuming state"),
+        }
+
+        assert!(matches!(
+            parse_authorization_code_consumption_response("consuming|not-json"),
+            AuthorizationCodeConsumption::Malformed
+        ));
+        assert!(matches!(
+            parse_authorization_code_consumption_response("consuming|[]"),
+            AuthorizationCodeConsumption::Malformed
+        ));
+    }
+
+    #[test]
+    fn authorization_code_consumption_parser_accepts_only_consumed_marker_for_replay_state() {
+        let marker = ConsumedAuthorizationCode {
+            client_id: Uuid::now_v7(),
+            access_token_jti: "access-jti-1".to_owned(),
+            access_token_expires_at: Utc::now().timestamp() + 300,
+            refresh_token_family_id: Some(Uuid::now_v7()),
+            consumed_at: Utc::now(),
+        };
+        let consumed = serde_json::to_string(&AuthorizationCodeState::Consumed {
+            marker: marker.clone(),
+        })
+        .unwrap();
+        let raw = format!("consumed|{consumed}");
+
+        match parse_authorization_code_consumption_response(&raw) {
+            AuthorizationCodeConsumption::Consumed(parsed) => {
+                assert_eq!(parsed.client_id, marker.client_id);
+                assert_eq!(parsed.access_token_jti, "access-jti-1");
+                assert_eq!(
+                    parsed.refresh_token_family_id,
+                    marker.refresh_token_family_id
+                );
+            }
+            _ => panic!("consumed authorization code marker should be replay evidence"),
+        }
+
+        let failed = serde_json::to_string(&AuthorizationCodeState::Failed {
+            failed_at: Utc::now(),
+            error: "pkce_failed".to_owned(),
+        })
+        .unwrap();
+        assert!(matches!(
+            parse_authorization_code_consumption_response(&format!("consumed|{failed}")),
+            AuthorizationCodeConsumption::Malformed
+        ));
+        assert!(matches!(
+            parse_authorization_code_consumption_response("consumed|not-json"),
+            AuthorizationCodeConsumption::Malformed
+        ));
+    }
+
+    #[test]
+    fn authorization_code_consumption_parser_maps_terminal_states_fail_closed() {
+        for (raw, expected) in [
+            ("busy", "busy"),
+            ("failed", "failed"),
+            ("missing", "missing"),
+            ("pending", "malformed"),
+            ("ok", "malformed"),
+            ("", "malformed"),
+        ] {
+            let parsed = parse_authorization_code_consumption_response(raw);
+            let actual = match parsed {
+                AuthorizationCodeConsumption::Busy => "busy",
+                AuthorizationCodeConsumption::Failed => "failed",
+                AuthorizationCodeConsumption::Missing => "missing",
+                AuthorizationCodeConsumption::Malformed => "malformed",
+                AuthorizationCodeConsumption::Consuming(_) => "consuming",
+                AuthorizationCodeConsumption::Consumed(_) => "consumed",
+            };
+            assert_eq!(actual, expected, "unexpected parser result for {raw:?}");
+        }
     }
 
     #[test]

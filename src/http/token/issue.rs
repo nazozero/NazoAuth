@@ -48,6 +48,22 @@ struct PendingRefreshToken {
     expires_at: DateTime<Utc>,
 }
 
+fn consumed_authorization_code_transition_result(result: &str) -> anyhow::Result<()> {
+    if result == "ok" {
+        Ok(())
+    } else {
+        anyhow::bail!("authorization code state is {result}, expected consuming")
+    }
+}
+
+fn failed_authorization_code_transition_result(result: &str) -> anyhow::Result<()> {
+    if matches!(result, "ok" | "missing" | "failed" | "consumed") {
+        Ok(())
+    } else {
+        anyhow::bail!("authorization code state is {result}, expected consuming")
+    }
+}
+
 pub(crate) fn should_issue_refresh_token(client: &ClientRow, scopes: &[String]) -> bool {
     client_supports_grant(client, "refresh_token")
         && scopes.iter().any(|scope| scope == "offline_access")
@@ -171,10 +187,7 @@ async fn persist_consumed_authorization_code(
         vec![body, ttl_seconds.to_string()],
     )
     .await?;
-    if result != "ok" {
-        anyhow::bail!("authorization code state is {result}, expected consuming");
-    }
-    Ok(())
+    consumed_authorization_code_transition_result(&result)
 }
 
 pub(super) async fn mark_failed_authorization_code(
@@ -196,11 +209,7 @@ pub(super) async fn mark_failed_authorization_code(
         ],
     )
     .await?;
-    if matches!(result.as_str(), "ok" | "missing" | "failed" | "consumed") {
-        Ok(())
-    } else {
-        anyhow::bail!("authorization code state is {result}, expected consuming");
-    }
+    failed_authorization_code_transition_result(&result)
 }
 
 async fn mark_failed_authorization_code_if_needed(
@@ -603,6 +612,47 @@ mod tests {
 
         let client = client_with_grants(&["authorization_code"]);
         assert!(!should_issue_refresh_token(&client, &scopes));
+    }
+
+    #[test]
+    fn consumed_authorization_code_transition_requires_active_consuming_state() {
+        assert!(consumed_authorization_code_transition_result("ok").is_ok());
+
+        for state in [
+            "missing",
+            "pending",
+            "consumed",
+            "failed",
+            "busy",
+            "malformed",
+        ] {
+            let error = consumed_authorization_code_transition_result(state).expect_err(
+                "non-consuming authorization code state must fail consumed marker write",
+            );
+            assert!(
+                error.to_string().contains(state),
+                "error should preserve the unexpected state for diagnostics"
+            );
+        }
+    }
+
+    #[test]
+    fn failed_authorization_code_transition_is_idempotent_only_for_terminal_or_missing_states() {
+        for state in ["ok", "missing", "failed", "consumed"] {
+            assert!(
+                failed_authorization_code_transition_result(state).is_ok(),
+                "failed marker cleanup should tolerate {state}"
+            );
+        }
+
+        for state in ["pending", "busy", "malformed"] {
+            let error = failed_authorization_code_transition_result(state)
+                .expect_err("failed marker must not hide an unexpected active state");
+            assert!(
+                error.to_string().contains(state),
+                "error should preserve the unexpected state for diagnostics"
+            );
+        }
     }
 
     fn token_issue_with_sid(id_token_claims: Vec<String>) -> TokenIssue {

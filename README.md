@@ -76,17 +76,20 @@ Durable conformance records live in Git because GitHub Actions artifacts
 expire. The certified deployment is backed by the 2026-06-09 OpenID Foundation
 16-plan matrix against `https://auth.nazo.run` across OIDC Basic, OIDC Config,
 FAPI2 Security Profile Final, FAPI2 Message Signing Final, mTLS, DPoP,
-`private_key_jwt`, and client credentials variants. The latest local regression
-record re-ran the same public issuer through the real `/ui/` frontend after the
-OIDF-only interaction pages were removed:
+`private_key_jwt`, and client credentials variants. The latest official full
+matrix reran the same public issuer through the real `/ui/` frontend after the
+OIDF-only interaction pages were removed and after JSON-only backend
+authorization errors were enabled:
 
 - [2026-06-09 OIDF full matrix](docs/conformance/2026-06-09-oidf-full-matrix.md)
 - [2026-06-13 real public UI OIDF regression](docs/conformance/2026-06-13-real-public-ui-regression.md)
 
-The recorded workflow conclusion was `success`. Every matrix plan completed
-with `0 failures` and `0 warnings`. The records include commit SHA, run
-environment, plan IDs, exported artifact filenames, profile combinations, and
-pass counts.
+The latest recorded official workflow conclusion was `success` on run
+`27472766776` for commit
+`c9a5a19c651ce2cd8b6861ceaf66b135569764c6`. The official runner reported 71
+test modules, 5929 successes, `0 failures`, and `0 warnings`. The records
+include commit SHA, run environment, plan IDs, exported artifact filenames,
+profile combinations, artifact digest, and pass counts.
 
 ## Architecture
 
@@ -289,6 +292,23 @@ cargo check
 cargo clippy -- -D warnings
 cargo test --locked
 ```
+
+Run local Rust coverage with `cargo-llvm-cov`:
+
+```sh
+cargo install cargo-llvm-cov
+cargo test --workspace --all-features
+cargo llvm-cov --workspace --all-features --html
+cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
+```
+
+Coverage is used as a security signal, not a cosmetic target. Codecov is
+configured for an 80% project target and a 90% patch target so changes improve
+meaningful coverage without forcing artificial tests for generated schema,
+migrations, examples, benches, or mechanical glue. Security-critical protocol
+logic such as authorization-code exchange, PKCE, client authentication, DPoP,
+mTLS, JWT/JWK validation, refresh-token rotation, and OAuth error mapping should
+use behavior-oriented tests with exact error and state assertions.
 
 Run deterministic HTTP and race-condition checks:
 

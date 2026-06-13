@@ -61,6 +61,23 @@ fn within_lost_refresh_token_retry_window(revoked_at: DateTime<Utc>, now: DateTi
     elapsed >= Duration::zero() && elapsed <= Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS)
 }
 
+fn refresh_token_scopes(
+    original_scopes: &[String],
+    requested_scope: Option<&str>,
+) -> Result<Vec<String>, ()> {
+    let Some(requested) = requested_scope.map(parse_scope) else {
+        return Ok(original_scopes.to_vec());
+    };
+    if requested.is_empty() {
+        return Ok(original_scopes.to_vec());
+    }
+    if is_subset(&requested, original_scopes) {
+        Ok(requested)
+    } else {
+        Err(())
+    }
+}
+
 async fn mark_token_family_reuse(
     state: &AppState,
     tenant_id: Uuid,
@@ -301,11 +318,9 @@ pub(crate) async fn token_refresh(
             false,
         );
     }
-    let requested_scopes = form.scope.as_deref().map(parse_scope);
-    let scopes = match requested_scopes {
-        Some(requested) if requested.is_empty() => original_scopes,
-        Some(requested) if is_subset(&requested, &original_scopes) => requested,
-        Some(_) => {
+    let scopes = match refresh_token_scopes(&original_scopes, form.scope.as_deref()) {
+        Ok(scopes) => scopes,
+        Err(()) => {
             return oauth_token_error(
                 StatusCode::BAD_REQUEST,
                 "invalid_scope",
@@ -313,7 +328,6 @@ pub(crate) async fn token_refresh(
                 false,
             );
         }
-        None => original_scopes,
     };
     let audiences = if form.audiences.is_empty() {
         vec![state.settings.default_audience.clone()]
@@ -481,6 +495,48 @@ mod tests {
     }
 
     #[test]
+    fn baseline_profile_rotates_public_sender_constrained_refresh_tokens() {
+        let token = token_row();
+        let mut client = client_row();
+        client.client_type = "public".to_owned();
+        client.token_endpoint_auth_method = "none".to_owned();
+
+        assert_eq!(
+            refresh_token_policy_for_authorization_server_profile(
+                AuthorizationServerProfile::Oauth2Baseline,
+                &client,
+                &token,
+            ),
+            RefreshTokenPolicy::Rotate {
+                family_id: token.token_family_id,
+                rotated_from_id: token.id,
+            },
+            "public-client refresh tokens must rotate even when sender-constrained"
+        );
+    }
+
+    #[test]
+    fn baseline_profile_rotates_confidential_secret_authenticated_sender_constrained_refresh_tokens()
+     {
+        let token = token_row();
+        let mut client = client_row();
+        client.token_endpoint_auth_method = "client_secret_basic".to_owned();
+
+        assert_eq!(
+            refresh_token_policy_for_authorization_server_profile(
+                AuthorizationServerProfile::Oauth2Baseline,
+                &client,
+                &token,
+            ),
+            RefreshTokenPolicy::Rotate {
+                family_id: token.token_family_id,
+                rotated_from_id: token.id,
+            },
+            "only confidential clients using holder-of-key client auth may preserve sender-constrained refresh tokens"
+        );
+    }
+
+    #[test]
     fn baseline_profile_rotates_unbound_refresh_tokens() {
         let mut token = token_row();
         token.dpop_jkt = None;
@@ -525,6 +581,64 @@ mod tests {
 
         assert!(!within_lost_refresh_token_retry_window(
             now + Duration::seconds(1),
+            now
+        ));
+    }
+
+    #[test]
+    fn refresh_token_scope_request_defaults_to_original_authorization() {
+        let original = vec![
+            "openid".to_owned(),
+            "profile".to_owned(),
+            "offline_access".to_owned(),
+        ];
+
+        assert_eq!(refresh_token_scopes(&original, None).unwrap(), original);
+        assert_eq!(refresh_token_scopes(&original, Some("")).unwrap(), original);
+        assert_eq!(
+            refresh_token_scopes(&original, Some("   ")).unwrap(),
+            original
+        );
+    }
+
+    #[test]
+    fn refresh_token_scope_request_may_only_narrow_original_authorization() {
+        let original = vec![
+            "openid".to_owned(),
+            "profile".to_owned(),
+            "offline_access".to_owned(),
+        ];
+
+        assert_eq!(
+            refresh_token_scopes(&original, Some("openid offline_access")).unwrap(),
+            vec!["openid".to_owned(), "offline_access".to_owned()]
+        );
+        assert_eq!(
+            refresh_token_scopes(&original, Some("openid openid")).unwrap(),
+            vec!["openid".to_owned(), "openid".to_owned()],
+            "scope parsing preserves request shape while still enforcing subset authorization"
+        );
+    }
+
+    #[test]
+    fn refresh_token_scope_request_rejects_privilege_expansion() {
+        let original = vec!["openid".to_owned(), "offline_access".to_owned()];
+
+        for requested in ["email", "openid email", "offline_access admin"] {
+            assert!(
+                refresh_token_scopes(&original, Some(requested)).is_err(),
+                "refresh_token grant must reject scope outside original authorization: {requested}"
+            );
+        }
+    }
+
+    #[test]
+    fn lost_refresh_retry_allows_exact_rotation_timestamp_only_until_window_expires() {
+        let now = Utc::now();
+
+        assert!(within_lost_refresh_token_retry_window(now, now));
+        assert!(!within_lost_refresh_token_retry_window(
+            now - Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS + 1),
             now
         ));
     }

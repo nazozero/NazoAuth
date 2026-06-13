@@ -282,3 +282,62 @@ The runner configuration now normalizes the old task name to
 official workflow success after that runner fix should be recorded as a new
 passing official workflow record rather than overwriting the successful
 `27468700891` real-UI evidence above.
+
+## Official Workflow Success After Runner Fix
+
+After the runner task-name normalization and encrypted plan-config patch were
+committed, the full GitHub Actions OIDF workflow was rerun against the same
+public issuer and completed successfully. This is the current official workflow
+record for the real public UI and JSON-only backend behavior.
+
+| Field | Value |
+| --- | --- |
+| Result | Passed |
+| Workflow | `oidf-conformance-full` |
+| Workflow run | <https://github.com/bymoye/NazoAuth/actions/runs/27472766776> |
+| Job URL | <https://github.com/bymoye/NazoAuth/actions/runs/27472766776/job/81206552071> |
+| Workflow event | `workflow_dispatch` |
+| Head branch | `main` |
+| Implementation commit | `c9a5a19c651ce2cd8b6861ceaf66b135569764c6` |
+| Public issuer under test | `https://auth.nazo.run` |
+| Conformance server | `https://www.certification.openid.net/` |
+| Started | `2026-06-13T16:42:22Z` |
+| Completed | `2026-06-13T16:58:09Z` |
+| Runtime | 15m 47s |
+| Artifact | `oidf-conformance-results-full` |
+| Artifact ID | `7612696776` |
+| Artifact digest | `sha256:54c39e3bc8a5602fa3e4deed522256699f12b033a678229c7c2eb83090ffb7e8` |
+| Artifact size | `15658715` bytes |
+| Artifact created | `2026-06-13T16:58:05Z` |
+| Artifact expires | `2026-09-11T16:42:23Z` |
+| Runner mode | Official workflow runner, public `auth.nazo.run` target |
+
+GitHub reported `success` for the workflow, the `Run full OIDF matrix` step,
+and the artifact upload step. The runner log reported:
+
+```text
+Overall totals: ran 71 test modules. Conditions: 5929 successes, 0 failures, 0 warnings.
+All tests ran to completion. See above for any test condition failures.
+```
+
+The artifact upload step reported 16 uploaded files and the same SHA-256 digest
+as the GitHub artifact API.
+
+Exported artifact filenames:
+
+- `oidcc-basic-certification-test-plan-discovery-static_client-ZmyunyhrH7vQl-13-Jun-2026.zip`
+- `oidcc-config-certification-test-plan--xuPKzi9AgIDAV-13-Jun-2026.zip`
+- `fapi2-message-signing-final-test-plan-private_key_jwt-dpop-simple-openid_connect-signed_non_repudiation-plain_fapi-jarm-mnI9zbvptj4JJ-13-Jun-2026.zip`
+- `fapi2-message-signing-final-test-plan-private_key_jwt-dpop-simple-openid_connect-signed_non_repudiation-plain_fapi-plain_response-OzjVyvl8G65xL-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-dpop-simple-openid_connect-plain_fapi-8fRtEnk8GIroI-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-dpop-simple-plain_oauth-fapi_client_credentials_grant-yfCC8nMT1QNmY-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-dpop-simple-plain_oauth-plain_fapi-9wJB15GFTQu8G-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-mtls-simple-openid_connect-plain_fapi-oqoNr6JJbq9Gw-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-mtls-simple-plain_oauth-fapi_client_credentials_grant-wJV4oQ5WvTIuR-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-mtls-simple-plain_oauth-plain_fapi-cflOToGvlAfhB-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-dpop-simple-openid_connect-plain_fapi-VOyxhFDbKMEJ0-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-dpop-simple-plain_oauth-fapi_client_credentials_grant-9dyv4ROqaATW0-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-dpop-simple-plain_oauth-plain_fapi-C9LdH0JGHxnpF-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-mtls-simple-openid_connect-plain_fapi-Qw78rkVDoCk6l-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-mtls-simple-plain_oauth-fapi_client_credentials_grant-DR2ioORPB8GPh-13-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-mtls-simple-plain_oauth-plain_fapi-GnJNlXSv9b2uY-13-Jun-2026.zip`
