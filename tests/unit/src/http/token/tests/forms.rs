@@ -8,6 +8,17 @@ fn form_request() -> HttpRequest {
         .to_http_request()
 }
 
+fn token_management_form_with_client_auth() -> TokenOnlyForm {
+    TokenOnlyForm {
+        token: "token-1".to_owned(),
+        token_type_hint: None,
+        client_id: Some("client-1".to_owned()),
+        client_secret: None,
+        client_assertion_type: None,
+        client_assertion: None,
+    }
+}
+
 async fn response_json(response: HttpResponse) -> Value {
     let body = actix_web::body::to_bytes(response.into_body())
         .await
@@ -339,6 +350,63 @@ fn token_management_form_requires_non_empty_token() {
     assert!(matches!(
         result,
         Err(TokenManagementFormError::MissingToken)
+    ));
+}
+
+#[test]
+fn token_management_rejects_conflicting_client_auth_before_token_state_lookup() {
+    let mut basic_with_post = token_management_form_with_client_auth();
+    basic_with_post.client_secret = Some("secret".to_owned());
+    assert!(token_management_has_conflicting_client_auth(
+        true,
+        &basic_with_post
+    ));
+
+    let mut basic_with_assertion = token_management_form_with_client_auth();
+    basic_with_assertion.client_assertion_type = Some(CLIENT_ASSERTION_TYPE_JWT_BEARER.to_owned());
+    basic_with_assertion.client_assertion = Some("assertion".to_owned());
+    assert!(token_management_has_conflicting_client_auth(
+        true,
+        &basic_with_assertion
+    ));
+
+    let mut post_with_assertion = token_management_form_with_client_auth();
+    post_with_assertion.client_secret = Some("secret".to_owned());
+    post_with_assertion.client_assertion = Some("assertion".to_owned());
+    assert!(token_management_has_conflicting_client_auth(
+        false,
+        &post_with_assertion
+    ));
+}
+
+#[test]
+fn token_management_allows_exactly_one_client_auth_method() {
+    let basic_only = TokenOnlyForm {
+        client_id: None,
+        ..token_management_form_with_client_auth()
+    };
+    assert!(!token_management_has_conflicting_client_auth(
+        true,
+        &basic_only
+    ));
+
+    let post_secret = TokenOnlyForm {
+        client_secret: Some("secret".to_owned()),
+        ..token_management_form_with_client_auth()
+    };
+    assert!(!token_management_has_conflicting_client_auth(
+        false,
+        &post_secret
+    ));
+
+    let private_key_jwt = TokenOnlyForm {
+        client_assertion_type: Some(CLIENT_ASSERTION_TYPE_JWT_BEARER.to_owned()),
+        client_assertion: Some("assertion".to_owned()),
+        ..token_management_form_with_client_auth()
+    };
+    assert!(!token_management_has_conflicting_client_auth(
+        false,
+        &private_key_jwt
     ));
 }
 

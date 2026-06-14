@@ -11,14 +11,17 @@ in the repository.
 
 - [2026-06-09 OIDF full matrix](2026-06-09-oidf-full-matrix.md)
 - [2026-06-13 real public UI OIDF regression](2026-06-13-real-public-ui-regression.md)
+- [2026-06-14 security-coverage OIDF full matrix](2026-06-14-local-refactor-full-matrix.md)
 
-The latest official full-matrix workflow record is run `27491182262` against
-`https://auth.nazo.run` at commit
-`31c3d0665ec72ffb4babedfea519ed175ef403ad`. GitHub reported `success`; the
-official runner reported 71 test modules, 6375 successes, `0 failures`, and
-`0 warnings`. The exported artifact is `oidf-conformance-results-full` with
-digest
-`sha256:3faed1f41a2258c8b948d73b0356dd8bbe7b6b701afd3c845939b3ea17585d8a`.
+The latest official full-matrix workflow record before the current local
+security-coverage batch is run `27500481513` against `https://auth.nazo.run` at
+commit `8370f8123af310a7dae009609021c7320a19a725`. GitHub reported `success`.
+
+The latest local full-matrix regression record is
+`runtime/oidf/results-local-full-20260614T140947Z`. It exported all 16 plan
+archives and a read-only Conformance Suite API audit found 562 module results:
+559 `PASSED`, 3 allowed `REVIEW`, and no `FAILED`, `WARNING`, `SKIPPED`, or
+`INTERRUPTED` results.
 
 ## Record Format
 

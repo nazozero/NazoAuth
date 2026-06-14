@@ -1,17 +1,11 @@
 //! token revoke 端点。
 // 只处理 refresh token 撤销和 access token jti 黑名单写入。
 use super::{
-    TokenManagementClientAuthError, TokenOnlyForm, authenticate_revocation_client,
-    parse_token_management_form, token_management_client_auth_error, token_management_form_error,
-    token_management_oauth_error,
+    TokenManagementClientAuthError, authenticate_revocation_client, parse_token_management_form,
+    token_management_client_auth_error, token_management_form_error,
+    token_management_has_conflicting_client_auth, token_management_oauth_error,
 };
 use crate::http::prelude::*;
-
-fn has_conflicting_revocation_client_auth(has_basic: bool, form: &TokenOnlyForm) -> bool {
-    let has_assertion = form.client_assertion_type.is_some() || form.client_assertion.is_some();
-    has_basic && (form.client_id.is_some() || form.client_secret.is_some() || has_assertion)
-        || has_assertion && form.client_secret.is_some()
-}
 
 pub(crate) async fn revoke(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
     if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await
@@ -24,7 +18,7 @@ pub(crate) async fn revoke(state: Data<AppState>, req: HttpRequest, body: Bytes)
     };
 
     let has_basic = has_basic_authorization_scheme(req.headers());
-    if has_conflicting_revocation_client_auth(has_basic, &form) {
+    if token_management_has_conflicting_client_auth(has_basic, &form) {
         return token_management_oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",

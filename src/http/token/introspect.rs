@@ -2,7 +2,8 @@
 // 只处理 access/refresh token 活跃性查询。
 use super::{
     TokenManagementClientAuthError, authenticate_introspection_client, parse_token_management_form,
-    token_management_client_auth_error, token_management_form_error, token_management_oauth_error,
+    token_management_client_auth_error, token_management_form_error,
+    token_management_has_conflicting_client_auth, token_management_oauth_error,
 };
 use crate::domain::Claims;
 use crate::http::prelude::*;
@@ -22,10 +23,7 @@ pub(crate) async fn introspect(
     };
 
     let has_basic = has_basic_authorization_scheme(req.headers());
-    let has_assertion = form.client_assertion_type.is_some() || form.client_assertion.is_some();
-    if has_basic && (form.client_id.is_some() || form.client_secret.is_some() || has_assertion)
-        || has_assertion && form.client_secret.is_some()
-    {
+    if token_management_has_conflicting_client_auth(has_basic, &form) {
         return token_management_oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",

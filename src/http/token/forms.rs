@@ -50,6 +50,15 @@ pub(crate) fn token_management_oauth_error(
     oauth_token_error(status, error, description, false)
 }
 
+pub(crate) fn token_management_has_conflicting_client_auth(
+    has_basic: bool,
+    form: &TokenOnlyForm,
+) -> bool {
+    let has_assertion = form.client_assertion_type.is_some() || form.client_assertion.is_some();
+    has_basic && (form.client_id.is_some() || form.client_secret.is_some() || has_assertion)
+        || has_assertion && form.client_secret.is_some()
+}
+
 pub(crate) fn token_management_form_error(error: TokenManagementFormError) -> HttpResponse {
     match error {
         TokenManagementFormError::InvalidContentType => token_management_oauth_error(

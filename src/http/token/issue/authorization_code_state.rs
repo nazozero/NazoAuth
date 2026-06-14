@@ -48,6 +48,19 @@ pub(super) fn failed_authorization_code_transition_result(result: &str) -> anyho
     }
 }
 
+pub(super) fn consumed_authorization_code_ttl_seconds(
+    access_token_ttl_seconds: i64,
+    refresh_token_ttl_seconds: i64,
+    refresh_token_family_id: Option<Uuid>,
+) -> u64 {
+    let ttl_seconds = if refresh_token_family_id.is_some() {
+        refresh_token_ttl_seconds
+    } else {
+        access_token_ttl_seconds
+    };
+    ttl_seconds.max(1) as u64
+}
+
 pub(super) async fn persist_consumed_authorization_code(
     state: &AppState,
     code_hash: &str,
@@ -64,16 +77,11 @@ pub(super) async fn persist_consumed_authorization_code(
         consumed_at: Utc::now(),
     };
     let body = serde_json::to_string(&AuthorizationCodeState::Consumed { marker: payload })?;
-    let ttl_seconds = if refresh_token_family_id.is_some() {
-        state.settings.refresh_token_ttl_seconds
-    } else {
-        state.settings.access_token_ttl_seconds
-    };
-    let ttl_seconds = if ttl_seconds <= 0 {
-        1
-    } else {
-        ttl_seconds as u64
-    };
+    let ttl_seconds = consumed_authorization_code_ttl_seconds(
+        state.settings.access_token_ttl_seconds,
+        state.settings.refresh_token_ttl_seconds,
+        refresh_token_family_id,
+    );
     let result = valkey_eval_string(
         &state.valkey,
         MARK_CONSUMED_AUTHORIZATION_CODE_SCRIPT,
