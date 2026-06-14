@@ -1,5 +1,12 @@
 use super::*;
 
+fn settings_error(config: &ConfigSource, expected_context: &str) -> anyhow::Error {
+    match Settings::from_config(config) {
+        Ok(_) => panic!("{expected_context}"),
+        Err(error) => error,
+    }
+}
+
 #[test]
 fn production_issuer_cannot_disable_secure_session_cookies() {
     let config = ConfigSource::from_pairs_for_test([
@@ -36,7 +43,8 @@ fn pairwise_subject_type_requires_stable_secret_material() {
         ("SUBJECT_TYPE", "pairwise"),
         ("PAIRWISE_SUBJECT_SECRET", "stable-pairwise-secret"),
     ]);
-    let settings = Settings::from_config(&configured).expect("pairwise secret should satisfy startup policy");
+    let settings =
+        Settings::from_config(&configured).expect("pairwise secret should satisfy startup policy");
     assert_eq!(settings.subject_type, SubjectType::Pairwise);
     assert_eq!(
         settings.pairwise_subject_secret.as_deref(),
@@ -60,7 +68,10 @@ fn fapi_profiles_force_par_and_cap_authorization_code_lifetime() {
     );
 
     let par_disabled = ConfigSource::from_pairs_for_test([
-        ("AUTHORIZATION_SERVER_PROFILE", "fapi2-message-signing-authz-request"),
+        (
+            "AUTHORIZATION_SERVER_PROFILE",
+            "fapi2-message-signing-authz-request",
+        ),
         ("AUTH_CODE_TTL_SECONDS", "60"),
         ("REQUIRE_PUSHED_AUTHORIZATION_REQUESTS", "false"),
         ("DPOP_NONCE_POLICY", "optional"),
