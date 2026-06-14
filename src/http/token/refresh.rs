@@ -376,3 +376,7 @@ pub(crate) async fn token_refresh(
 #[cfg(test)]
 #[path = "../../../tests/unit/src/http/token/tests/refresh.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/src/http/token/tests/refresh_security.rs"]
+mod security_tests;
