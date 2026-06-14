@@ -1,4 +1,71 @@
 use super::*;
+use std::sync::Arc;
+
+use crate::config::ConfigSource;
+use crate::db::create_pool;
+use crate::domain::{ActiveSigningKey, Keyset};
+
+fn test_state() -> AppState {
+    AppState {
+        diesel_db: create_pool(
+            "postgres://nazo_refresh_test_invalid:nazo_refresh_test_invalid@127.0.0.1:1/nazo"
+                .to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey: fred::prelude::Builder::default_centralized()
+            .build()
+            .expect("valkey client construction should not connect"),
+        settings: Arc::new(
+            Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
+        ),
+        keyset: Arc::new(Keyset {
+            active_kid: "test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+            verification_keys: Vec::new(),
+        }),
+    }
+}
+
+fn refresh_form_without_token() -> TokenForm {
+    TokenForm {
+        grant_type: "refresh_token".to_owned(),
+        code: None,
+        redirect_uri: None,
+        code_verifier: None,
+        refresh_token: None,
+        scope: None,
+        client_id: None,
+        client_secret: None,
+        client_assertion_type: None,
+        client_assertion: None,
+        audiences: Vec::new(),
+    }
+}
+
+async fn response_json(response: HttpResponse) -> (StatusCode, Value) {
+    let status = response.status();
+    assert_eq!(
+        response
+            .headers()
+            .get(header::CACHE_CONTROL)
+            .and_then(|value| value.to_str().ok()),
+        Some("no-store")
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get(header::PRAGMA)
+            .and_then(|value| value.to_str().ok()),
+        Some("no-cache")
+    );
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should be readable");
+    let json = serde_json::from_slice(&body).expect("response should be json");
+    (status, json)
+}
 
 fn client_row() -> ClientRow {
     ClientRow {
@@ -263,4 +330,25 @@ fn lost_refresh_retry_allows_exact_rotation_timestamp_only_until_window_expires(
         now - Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS + 1),
         now
     ));
+}
+
+#[actix_web::test]
+async fn refresh_grant_requires_refresh_token_before_database_lookup_or_token_issue() {
+    let state = test_state();
+    let req = actix_web::test::TestRequest::post()
+        .uri("/oauth/token")
+        .to_http_request();
+    let client = client_row();
+    let form = refresh_form_without_token();
+
+    let (status, body) =
+        response_json(token_refresh(&state, &req, &client, &form, None).await).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_request");
+    assert_eq!(body["error_description"], "Request failed.");
+    assert!(body.get("access_token").is_none());
+    assert!(body.get("refresh_token").is_none());
+    assert!(body.get("id_token").is_none());
+    assert!(body.get("token_type").is_none());
 }

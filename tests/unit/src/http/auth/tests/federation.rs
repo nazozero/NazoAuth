@@ -56,6 +56,33 @@ fn oidc_authorization_url_binds_state_nonce_and_s256_pkce() {
     );
 }
 
+fn saml_assertion(
+    settings: &SamlGatewaySettings,
+    subject: &str,
+    email: &str,
+    iat: i64,
+    exp: i64,
+) -> SamlGatewayAssertion {
+    SamlGatewayAssertion {
+        issuer: settings.issuer.clone(),
+        audience: settings.audience.clone(),
+        subject: subject.to_owned(),
+        email: email.to_owned(),
+        name: None,
+        iat,
+        exp,
+        signature: saml_gateway_signature(
+            &settings.secret,
+            &settings.issuer,
+            &settings.audience,
+            subject,
+            email,
+            iat,
+            exp,
+        ),
+    }
+}
+
 #[test]
 fn saml_gateway_signature_is_bound_to_assertion_fields() {
     let settings = SamlGatewaySettings {
@@ -128,4 +155,66 @@ fn saml_gateway_assertion_rejects_correctly_signed_overlong_ttl() {
         &assertion,
         "user@example.com"
     ));
+}
+
+#[test]
+fn saml_gateway_assertion_rejects_wrong_issuer_audience_and_signature() {
+    let settings = SamlGatewaySettings {
+        issuer: "gateway".to_owned(),
+        audience: "nazo".to_owned(),
+        secret: "01234567890123456789012345678901".to_owned(),
+    };
+    let now = Utc::now().timestamp();
+    let mut wrong_issuer = saml_assertion(&settings, "subject", "user@example.com", now, now + 60);
+    wrong_issuer.issuer = "other-gateway".to_owned();
+    assert!(!valid_saml_gateway_assertion(
+        &settings,
+        &wrong_issuer,
+        "user@example.com"
+    ));
+
+    let mut wrong_audience =
+        saml_assertion(&settings, "subject", "user@example.com", now, now + 60);
+    wrong_audience.audience = "other-audience".to_owned();
+    assert!(!valid_saml_gateway_assertion(
+        &settings,
+        &wrong_audience,
+        "user@example.com"
+    ));
+
+    let mut wrong_signature =
+        saml_assertion(&settings, "subject", "user@example.com", now, now + 60);
+    wrong_signature.signature = saml_gateway_signature(
+        &settings.secret,
+        &settings.issuer,
+        &settings.audience,
+        "other-subject",
+        "user@example.com",
+        now,
+        now + 60,
+    );
+    assert!(!valid_saml_gateway_assertion(
+        &settings,
+        &wrong_signature,
+        "user@example.com"
+    ));
+}
+
+#[test]
+fn saml_gateway_assertion_rejects_expired_or_future_assertions() {
+    let settings = SamlGatewaySettings {
+        issuer: "gateway".to_owned(),
+        audience: "nazo".to_owned(),
+        secret: "01234567890123456789012345678901".to_owned(),
+    };
+    let now = Utc::now().timestamp();
+    for (iat, exp) in [(now - 600, now - 60), (now + 61, now + 120)] {
+        let assertion = saml_assertion(&settings, "subject", "user@example.com", iat, exp);
+
+        assert!(!valid_saml_gateway_assertion(
+            &settings,
+            &assertion,
+            "user@example.com"
+        ));
+    }
 }

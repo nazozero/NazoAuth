@@ -1,5 +1,8 @@
 use super::*;
 
+#[path = "request/endpoint.rs"]
+mod endpoint;
+
 fn query(values: &[(&str, &str)]) -> HashMap<String, String> {
     values
         .iter()

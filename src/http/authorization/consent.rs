@@ -2,6 +2,43 @@
 // 前端通过 request_id 读取待确认内容，服务端再次校验该请求属于当前用户。
 use crate::http::prelude::*;
 
+fn parse_consent_payload(raw: Option<String>) -> Option<ConsentPayload> {
+    raw.and_then(|value| serde_json::from_str::<ConsentPayload>(&value).ok())
+}
+
+fn validate_consent_payload_user(
+    payload: ConsentPayload,
+    current_user_id: Uuid,
+) -> Result<ConsentPayload, HttpResponse> {
+    if payload.user_id != current_user_id {
+        return Err(oauth_error(
+            StatusCode::FORBIDDEN,
+            "access_denied",
+            "当前会话与授权请求不匹配.",
+        ));
+    }
+    Ok(payload)
+}
+
+fn malformed_or_missing_consent_response() -> HttpResponse {
+    oauth_error(
+        StatusCode::BAD_REQUEST,
+        "invalid_request",
+        "授权请求不存在或已过期,请重新发起授权.",
+    )
+}
+
+fn consent_page_response(payload: ConsentPayload, csrf_token: Option<String>) -> HttpResponse {
+    json_response(json!({
+        "request_id": payload.request_id,
+        "client_id": payload.client_id,
+        "client_name": payload.client_name,
+        "redirect_uri": payload.redirect_uri,
+        "scopes": payload.scopes,
+        "csrf_token": csrf_token
+    }))
+}
+
 /// 返回授权确认页所需的客户端、scope 和 CSRF 信息。
 pub(crate) async fn authorize_consent(
     state: Data<AppState>,
@@ -45,27 +82,20 @@ pub(crate) async fn authorize_consent(
             );
         }
     };
-    let Some(payload) = raw.and_then(|v| serde_json::from_str::<ConsentPayload>(&v).ok()) else {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "授权请求不存在或已过期,请重新发起授权.",
-        );
+    let Some(payload) = parse_consent_payload(raw) else {
+        return malformed_or_missing_consent_response();
     };
-    if payload.user_id != user.id {
-        return oauth_error(
-            StatusCode::FORBIDDEN,
-            "access_denied",
-            "当前会话与授权请求不匹配.",
-        );
-    }
+    let payload = match validate_consent_payload_user(payload, user.id) {
+        Ok(payload) => payload,
+        Err(response) => return response,
+    };
 
-    json_response(json!({
-        "request_id": payload.request_id,
-        "client_id": payload.client_id,
-        "client_name": payload.client_name,
-        "redirect_uri": payload.redirect_uri,
-        "scopes": payload.scopes,
-        "csrf_token": cookie_value(&req, &state.settings.csrf_cookie_name)
-    }))
+    consent_page_response(
+        payload,
+        cookie_value(&req, &state.settings.csrf_cookie_name),
+    )
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/src/http/authorization/tests/consent.rs"]
+mod tests;
