@@ -398,6 +398,47 @@ Exported artifact filenames:
 - `fapi2-security-profile-final-test-plan-private_key_jwt-dpop-simple-openid_connect-plain_fapi-Gl42dLEh2jANI-13-Jun-2026.zip`
 - `fapi2-security-profile-final-test-plan-private_key_jwt-dpop-simple-plain_oauth-fapi_client_credentials_grant-2Rdauo3L4XdwV-13-Jun-2026.zip`
 - `fapi2-security-profile-final-test-plan-private_key_jwt-dpop-simple-plain_oauth-plain_fapi-3i5FFBrruNsG7-13-Jun-2026.zip`
+
+## Official Workflow Success After Test Boundary Split
+
+After the support OAuth tests were split into security-boundary test files and
+the repository kept protocol behavior unchanged, the full GitHub Actions OIDF
+workflow was rerun against the same public issuer and completed successfully.
+This is the latest recorded official workflow proof before the current
+resource-server verifier coverage work.
+
+| Field | Value |
+| --- | --- |
+| Result | Passed |
+| Workflow | `oidf-conformance-full` |
+| Workflow run | <https://github.com/bymoye/NazoAuth/actions/runs/27491182262> |
+| Job URL | <https://github.com/bymoye/NazoAuth/actions/runs/27491182262/job/81256497262> |
+| Workflow event | `workflow_dispatch` |
+| Head branch | `main` |
+| Implementation commit | `31c3d0665ec72ffb4babedfea519ed175ef403ad` |
+| Public issuer under test | `https://auth.nazo.run` |
+| Conformance server | `https://www.certification.openid.net/` |
+| Started | `2026-06-14T06:53:15Z` |
+| Completed | `2026-06-14T07:04:43Z` |
+| Runtime | 11m 28s |
+| Artifact | `oidf-conformance-results-full` |
+| Artifact ID | `7618469850` |
+| Artifact digest | `sha256:3faed1f41a2258c8b948d73b0356dd8bbe7b6b701afd3c845939b3ea17585d8a` |
+| Artifact size | `15668786` bytes |
+| Artifact created | `2026-06-14T07:04:40Z` |
+| Artifact expires | `2026-09-12T06:53:13Z` |
+| Runner mode | Official workflow runner, public `auth.nazo.run` target |
+
+GitHub reported `success` for the workflow, the `Run full OIDF matrix` step,
+and the artifact upload step. The runner log reported:
+
+```text
+Overall totals: ran 71 test modules. Conditions: 6375 successes, 0 failures, 0 warnings.
+All tests ran to completion. See above for any test condition failures.
+```
+
+The artifact upload step reported 16 uploaded files and the same SHA-256 digest
+as the GitHub artifact API.
 - `fapi2-security-profile-final-test-plan-private_key_jwt-mtls-simple-openid_connect-plain_fapi-E9b4X2r5wTyr8-13-Jun-2026.zip`
 - `fapi2-security-profile-final-test-plan-private_key_jwt-mtls-simple-plain_oauth-fapi_client_credentials_grant-xwvJrciNYlnr8-13-Jun-2026.zip`
 - `fapi2-security-profile-final-test-plan-private_key_jwt-mtls-simple-plain_oauth-plain_fapi-KPciu0XVwWj8s-13-Jun-2026.zip`

@@ -139,7 +139,21 @@ pub(crate) fn has_valid_csrf_token(
     req: &HttpRequest,
     fallback_token: Option<&str>,
 ) -> bool {
-    if cookie_value(req, &state.settings.session_cookie_name).is_none() {
+    has_valid_csrf_token_for_cookies(
+        req,
+        fallback_token,
+        &state.settings.session_cookie_name,
+        &state.settings.csrf_cookie_name,
+    )
+}
+
+fn has_valid_csrf_token_for_cookies(
+    req: &HttpRequest,
+    fallback_token: Option<&str>,
+    session_cookie_name: &str,
+    csrf_cookie_name: &str,
+) -> bool {
+    if cookie_value(req, session_cookie_name).is_none() {
         return true;
     }
     let header_token = req
@@ -156,7 +170,7 @@ pub(crate) fn has_valid_csrf_token(
     let Some(header_token) = header_token else {
         return false;
     };
-    let Some(cookie_token) = cookie_value(req, &state.settings.csrf_cookie_name) else {
+    let Some(cookie_token) = cookie_value(req, csrf_cookie_name) else {
         return false;
     };
     constant_time_eq(header_token.as_bytes(), cookie_token.trim().as_bytes())
