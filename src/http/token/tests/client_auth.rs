@@ -83,3 +83,43 @@ fn token_management_store_failure_has_no_basic_challenge() {
         HeaderValue::from_static("no-store")
     );
 }
+
+#[test]
+fn client_assertion_replay_maps_to_invalid_client_not_server_error() {
+    let error = token_management_client_assertion_error(ClientAssertionError::ReplayDetected);
+    let response = token_management_client_auth_error(error, false);
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert!(response.headers().get(header::WWW_AUTHENTICATE).is_none());
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        HeaderValue::from_static("no-store")
+    );
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("invalid_client")
+    );
+}
+
+#[test]
+fn client_assertion_store_failure_maps_to_server_error_without_challenge() {
+    let error = token_management_client_assertion_error(ClientAssertionError::StoreUnavailable);
+    let response = token_management_client_auth_error(error, true);
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert!(response.headers().get(header::WWW_AUTHENTICATE).is_none());
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        HeaderValue::from_static("no-store")
+    );
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("server_error")
+    );
+}

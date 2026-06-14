@@ -53,10 +53,13 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
+      - name: Run instrumented tests
+        run: cargo llvm-cov --locked --workspace --all-features --all-targets --no-rustc-wrapper --no-report
+
       - name: Generate coverage report
         run: >-
-          cargo llvm-cov --locked --workspace --all-features --all-targets --lcov --output-path lcov.info
-          --ignore-filename-regex '(^|/)(tests?|benches|examples|migrations)(/|\.rs$)|src/schema\.rs$|src/main\.rs$|src/bin/nazo_oauth_(keyctl|migrate)\.rs$'
+          cargo llvm-cov report --lcov --output-path lcov.info
+          --ignore-filename-regex '(^|/)(tests?|benches|examples|migrations)(/|\.rs$)|src/schema\.rs$|src/main\.rs$|src/bin/nazo_oauth_(keyctl|migrate|seed_oidf)\.rs$'
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5

@@ -1,0 +1,50 @@
+//! Local OpenID Foundation conformance seed helpers.
+//!
+//! The binary performs database writes; this module owns deterministic parsing
+//! and URL/JWKS normalization logic that can be tested without external state.
+
+use std::{collections::BTreeSet, env};
+
+pub mod config;
+
+pub fn callback_uri(suite_base_url: &str, alias: &str) -> String {
+    format!(
+        "{}/test/a/{}/callback",
+        suite_base_url.trim_end_matches('/'),
+        alias
+    )
+}
+
+pub fn suite_base_urls(primary_suite_base_url: &str) -> Vec<String> {
+    suite_base_urls_from_extra(
+        primary_suite_base_url,
+        env::var("OIDF_LOCAL_EXTRA_SUITE_BASE_URLS").ok().as_deref(),
+    )
+}
+
+fn suite_base_urls_from_extra(
+    primary_suite_base_url: &str,
+    extra_urls: Option<&str>,
+) -> Vec<String> {
+    let mut urls = BTreeSet::new();
+    urls.insert(primary_suite_base_url.trim_end_matches('/').to_owned());
+    urls.insert("https://www.certification.openid.net".to_owned());
+
+    if let Some(extra_urls) = extra_urls {
+        for url in extra_urls.split(',') {
+            let url = url.trim().trim_end_matches('/');
+            if !url.is_empty() {
+                urls.insert(url.to_owned());
+            }
+        }
+    }
+
+    urls.into_iter().collect()
+}
+
+pub fn callback_uris(suite_base_urls: &[String], alias: &str) -> Vec<String> {
+    suite_base_urls
+        .iter()
+        .map(|suite_base_url| callback_uri(suite_base_url, alias))
+        .collect()
+}
