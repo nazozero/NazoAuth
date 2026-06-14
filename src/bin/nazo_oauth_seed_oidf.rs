@@ -3,16 +3,13 @@
 use argon2::{Argon2, PasswordHasher};
 use diesel::{Connection, PgConnection, RunQueryDsl, sql_query};
 use nazo_oauth_server::config::{ConfigSource, database_url};
+use nazo_oauth_server::oidf_seed::{
+    callback_uris, config::client_scopes, config::mtls_thumbprint, config::plan_config_files,
+    config::public_jwks, config::read_plan_config, config::string_value, suite_base_urls,
+};
 use password_hash::{SaltString, rand_core::OsRng};
 use serde_json::{Value, json};
 use std::{collections::BTreeSet, env, path::Path};
-
-#[path = "oidf_seed/config.rs"]
-mod oidf_config;
-
-use oidf_config::{
-    client_scopes, mtls_thumbprint, plan_config_files, public_jwks, read_plan_config, string_value,
-};
 
 const DEFAULT_TENANT_ID: &str = "00000000-0000-0000-0000-000000000001";
 const DEFAULT_REALM_ID: &str = "00000000-0000-0000-0000-000000000002";
@@ -293,38 +290,6 @@ fn fapi_client_policy(file_name: &str, plan: &Value) -> FapiClientPolicy {
     }
 }
 
-fn callback_uri(suite_base_url: &str, alias: &str) -> String {
-    format!(
-        "{}/test/a/{}/callback",
-        suite_base_url.trim_end_matches('/'),
-        alias
-    )
-}
-
-fn suite_base_urls(primary_suite_base_url: &str) -> Vec<String> {
-    let mut urls = BTreeSet::new();
-    urls.insert(primary_suite_base_url.trim_end_matches('/').to_owned());
-    urls.insert("https://www.certification.openid.net".to_owned());
-
-    if let Ok(extra_urls) = env::var("OIDF_LOCAL_EXTRA_SUITE_BASE_URLS") {
-        for url in extra_urls.split(',') {
-            let url = url.trim().trim_end_matches('/');
-            if !url.is_empty() {
-                urls.insert(url.to_owned());
-            }
-        }
-    }
-
-    urls.into_iter().collect()
-}
-
-fn callback_uris(suite_base_urls: &[String], alias: &str) -> Vec<String> {
-    suite_base_urls
-        .iter()
-        .map(|suite_base_url| callback_uri(suite_base_url, alias))
-        .collect()
-}
-
 fn main() -> anyhow::Result<()> {
     let config = ConfigSource::load()?;
     let database_url = database_url(&config);
@@ -503,7 +468,3 @@ fn main() -> anyhow::Result<()> {
     println!("OIDF_LOCAL_FAPI_CLIENT_COUNT={}", fapi_clients.len());
     Ok(())
 }
-
-#[cfg(test)]
-#[path = "tests/nazo_oauth_seed_oidf.rs"]
-mod tests;

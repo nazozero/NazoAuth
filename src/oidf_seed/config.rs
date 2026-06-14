@@ -6,14 +6,14 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{fs, path::Path};
 
-pub(super) fn string_value<'a>(value: &'a Value, key: &str) -> anyhow::Result<&'a str> {
+pub fn string_value<'a>(value: &'a Value, key: &str) -> anyhow::Result<&'a str> {
     value
         .get(key)
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow::anyhow!("OIDF config is missing string field {key}"))
 }
 
-pub(super) fn public_jwks(jwks: &Value) -> anyhow::Result<Value> {
+pub fn public_jwks(jwks: &Value) -> anyhow::Result<Value> {
     let keys = jwks
         .get("keys")
         .and_then(Value::as_array)
@@ -34,7 +34,7 @@ pub(super) fn public_jwks(jwks: &Value) -> anyhow::Result<Value> {
     Ok(json!({ "keys": public_keys }))
 }
 
-pub(super) fn plan_config_files(runtime_dir: &Path) -> anyhow::Result<Vec<String>> {
+pub fn plan_config_files(runtime_dir: &Path) -> anyhow::Result<Vec<String>> {
     let mut names = Vec::new();
     for entry in fs::read_dir(runtime_dir)? {
         let entry = entry?;
@@ -67,7 +67,7 @@ fn certificate_pem_thumbprint(value: &str) -> anyhow::Result<String> {
     Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(&der)))
 }
 
-pub(super) fn mtls_thumbprint(plan: &Value, key: &str) -> anyhow::Result<Option<String>> {
+pub fn mtls_thumbprint(plan: &Value, key: &str) -> anyhow::Result<Option<String>> {
     let mtls_key = if key == "client2" { "mtls2" } else { "mtls" };
     let Some(cert) = plan
         .get(mtls_key)
@@ -79,7 +79,7 @@ pub(super) fn mtls_thumbprint(plan: &Value, key: &str) -> anyhow::Result<Option<
     Ok(Some(certificate_pem_thumbprint(cert)?))
 }
 
-pub(super) fn client_scopes(client: &serde_json::Map<String, Value>) -> Value {
+pub fn client_scopes(client: &serde_json::Map<String, Value>) -> Value {
     let scopes = client
         .get("scope")
         .and_then(Value::as_str)
@@ -90,7 +90,7 @@ pub(super) fn client_scopes(client: &serde_json::Map<String, Value>) -> Value {
     json!(scopes)
 }
 
-pub(super) fn read_plan_config(runtime_dir: &Path, file_name: &str) -> anyhow::Result<Value> {
+pub fn read_plan_config(runtime_dir: &Path, file_name: &str) -> anyhow::Result<Value> {
     let path = runtime_dir.join(file_name);
     let body = fs::read_to_string(&path)
         .map_err(|error| anyhow::anyhow!("failed to read {}: {error}", path.display()))?;

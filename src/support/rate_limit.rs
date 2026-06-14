@@ -2,7 +2,7 @@
 //! 限流主体默认取连接来源地址，不信任可伪造的转发头。
 
 use super::prelude::*;
-use super::{blake3_hex, client_ip, oauth_error, valkey_set_ex_nx};
+use super::{authorization_error_response, blake3_hex, client_ip, oauth_error, valkey_set_ex_nx};
 
 #[derive(Clone, Copy)]
 pub(crate) enum RateLimitPolicy {
@@ -77,7 +77,7 @@ fn rate_limit_key(policy: RateLimitPolicy, subject: &str) -> String {
 }
 
 fn rate_limited_response(retry_after_seconds: u64) -> HttpResponse {
-    let mut response = oauth_error(
+    let mut response = authorization_error_response(
         StatusCode::TOO_MANY_REQUESTS,
         "temporarily_unavailable",
         "请求过于频繁，请稍后重试.",

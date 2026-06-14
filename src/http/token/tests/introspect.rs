@@ -84,3 +84,59 @@ fn refresh_token_introspection_metadata_omits_access_token_type() {
     assert!(!body.as_object().unwrap().contains_key("token_type"));
     assert!(!body.as_object().unwrap().contains_key("jti"));
 }
+
+#[actix_web::test]
+async fn inactive_introspection_response_is_minimal_and_not_cacheable() {
+    let response = json_response_no_store(json!({"active": false}));
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        HeaderValue::from_static("no-store")
+    );
+    assert_eq!(
+        response.headers().get(header::PRAGMA).unwrap(),
+        HeaderValue::from_static("no-cache")
+    );
+    assert!(response.headers().get(header::WWW_AUTHENTICATE).is_none());
+
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should collect");
+    let value: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(value, json!({"active": false}));
+    assert!(
+        value.get("client_id").is_none() && value.get("sub").is_none(),
+        "inactive introspection must not leak token metadata"
+    );
+}
+
+#[test]
+fn token_management_server_errors_are_oauth_json_without_auth_challenge() {
+    let response = token_management_oauth_error(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "server_error",
+        "token 状态查询失败.",
+    );
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("server_error")
+    );
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        HeaderValue::from_static("no-store")
+    );
+    assert_eq!(
+        response.headers().get(header::PRAGMA).unwrap(),
+        HeaderValue::from_static("no-cache")
+    );
+    assert!(
+        response.headers().get(header::WWW_AUTHENTICATE).is_none(),
+        "backend failures must not be exposed as client-auth challenges"
+    );
+}

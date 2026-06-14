@@ -17,6 +17,10 @@ path = "src/bin/nazo_oauth_migrate.rs"
 name = "nazo-oauth-keyctl"
 path = "src/bin/nazo_oauth_keyctl.rs"
 
+[[bin]]
+name = "nazo_oauth_seed_oidf"
+path = "src/bin/nazo_oauth_seed_oidf.rs"
+
 [dependencies]
 actix-cors = "0.7.1"
 actix-multipart = "0.7.2"
