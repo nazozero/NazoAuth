@@ -300,6 +300,49 @@ For every added test, record the invariant implicitly in the test name and asser
 
 The user reported that the official full OIDF matrix has passed. Before writing final public proof text, verify the current official run URL, run id, tested commit, plan list, and artifact/API result, then update README and conformance docs with exact evidence.
 
-## Pause Point
+## Resume Continuation
 
-Work is paused here by request. Do not push, run containerized OIDF, or start the next test-expansion batch until explicitly resumed.
+The session fail-closed batch was resumed and completed.
+
+Additional tests:
+
+- `tests/unit/src/support/tests/sessions.rs`
+  - missing session cookies return anonymous state without touching Valkey or Postgres
+  - missing session cookies cannot complete MFA or perform MFA step-up
+  - anonymous requests receive exact `401 login_required` for user-only paths
+  - anonymous requests receive exact `403 access_denied` for admin-only paths
+  - stale session cookies are cleared on login-required responses
+  - session lookup backend failures return `503 server_error`
+  - session lookup backend failures do not become Basic or Bearer challenges
+
+Validation for this continuation:
+
+```sh
+rtk cargo fmt --all -- --check
+rtk cargo test --workspace --all-features support::sessions::tests
+CARGO_BUILD_JOBS=1 CARGO_TARGET_DIR=target/codex-coverage rtk proxy bash -lc 'cargo llvm-cov clean --workspace && eval "$(cargo llvm-cov show-env --sh)" && cargo test --locked --workspace --all-features --lib --test oidf_seed --test resource_server && cargo llvm-cov report --lcov --output-path lcov.info --ignore-filename-regex ...'
+```
+
+Observed result:
+
+- `support::sessions::tests`: 10 passed
+- coverage test target set: 568 lib tests + 8 `oidf_seed` tests + 10 `resource_server` tests passed
+
+Coverage after this continuation:
+
+```text
+TOTAL LH=7234 LF=15514 46.63%
+src/support/sessions.rs LH=102 LF=186 54.84%
+```
+
+Delta from the previous reliable checkpoint:
+
+```text
+45.97% -> 46.63%
+```
+
+Continue from the low-coverage map in this document, with
+`src/http/token/issue/refresh_persistence.rs`, `src/support/repositories.rs`,
+`src/http/token/refresh.rs`, `src/http/auth/federation.rs`, and DB-backed
+handler paths as high-value next targets. Those need storage-aware integration
+tests or carefully bounded service-boundary tests, not mocked validation.
