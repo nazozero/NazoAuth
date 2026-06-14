@@ -1,4 +1,107 @@
 use super::*;
+use std::sync::Arc;
+
+use crate::config::ConfigSource;
+use crate::db::create_pool;
+use crate::domain::{ActiveSigningKey, Keyset};
+
+fn uuid_fixture(value: u128) -> Uuid {
+    Uuid::from_u128(value)
+}
+
+fn test_state() -> AppState {
+    AppState {
+        diesel_db: create_pool(
+            "postgres://nazo_scim_test_invalid:nazo_scim_test_invalid@127.0.0.1:1/nazo".to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey: fred::prelude::Builder::default_centralized()
+            .build()
+            .expect("valkey client construction should not connect"),
+        settings: Arc::new(
+            Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
+        ),
+        keyset: Arc::new(Keyset {
+            active_kid: "test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+            verification_keys: Vec::new(),
+        }),
+    }
+}
+
+fn user_row(id: Uuid, email: &str) -> UserRow {
+    let now = Utc::now();
+    UserRow {
+        id,
+        tenant_id: uuid_fixture(0x11111111111111111111111111111111),
+        realm_id: uuid_fixture(0x22222222222222222222222222222222),
+        organization_id: uuid_fixture(0x33333333333333333333333333333333),
+        username: email.to_owned(),
+        email: email.to_owned(),
+        display_name: Some("Alice Example".to_owned()),
+        avatar_url: Some("https://cdn.example/avatar.png".to_owned()),
+        given_name: Some("Alice".to_owned()),
+        family_name: Some("Example".to_owned()),
+        middle_name: Some("Q".to_owned()),
+        nickname: Some("alice".to_owned()),
+        profile_url: Some("https://example.test/alice".to_owned()),
+        website_url: Some("https://alice.example".to_owned()),
+        gender: Some("unspecified".to_owned()),
+        birthdate: Some("1970-01-01".to_owned()),
+        zoneinfo: Some("UTC".to_owned()),
+        locale: Some("en-US".to_owned()),
+        role: "admin".to_owned(),
+        admin_level: 99,
+        address_formatted: Some("Internal address".to_owned()),
+        address_street_address: Some("Secret street".to_owned()),
+        address_locality: Some("Secret city".to_owned()),
+        address_region: Some("Secret region".to_owned()),
+        address_postal_code: Some("Secret postal".to_owned()),
+        address_country: Some("Secret country".to_owned()),
+        phone_number: Some("+15555555555".to_owned()),
+        phone_number_verified: true,
+        email_verified: true,
+        mfa_enabled: true,
+        password_hash: "argon2-secret-hash".to_owned(),
+        is_active: true,
+        created_at: now,
+        updated_at: now,
+    }
+}
+
+fn scim_user_request_fixture() -> ScimUserRequest {
+    ScimUserRequest {
+        user_name: Some("user@example.test".to_owned()),
+        active: Some(true),
+        name: None,
+        emails: Some(vec![ScimEmail {
+            value: Some("user@example.test".to_owned()),
+            primary: Some(true),
+        }]),
+    }
+}
+
+async fn response_json(response: HttpResponse) -> (StatusCode, Value) {
+    let status = response.status();
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should be readable");
+    let json = serde_json::from_slice(&body).expect("response should be json");
+    (status, json)
+}
+
+async fn assert_missing_bearer_is_scim_unauthorized(response: HttpResponse) {
+    let (status, body) = response_json(response).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(body["schemas"], json!([SCIM_ERROR_SCHEMA]));
+    assert_eq!(body["status"], "401");
+    assert_eq!(body["scimType"], "unauthorized");
+    assert_eq!(body["detail"], "missing bearer token");
+    assert!(body.get("Resources").is_none());
+    assert!(body.get("password_hash").is_none());
+}
 
 #[test]
 fn scim_user_filter_accepts_user_name_eq_quoted_email() {
@@ -176,4 +279,214 @@ fn scim_user_schema_declares_core_identity_fields() {
     assert!(names.contains(&"emails"));
     assert!(names.contains(&"active"));
     assert!(names.contains(&"name"));
+}
+
+#[actix_web::test]
+async fn scim_service_provider_config_advertises_only_supported_capabilities() {
+    let (status, body) = response_json(scim_service_provider_config_response()).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["schemas"],
+        json!([SCIM_SERVICE_PROVIDER_CONFIG_SCHEMA])
+    );
+    assert_eq!(body["patch"]["supported"], true);
+    assert_eq!(body["bulk"]["supported"], false);
+    assert_eq!(body["filter"]["supported"], true);
+    assert_eq!(body["filter"]["maxResults"], 200);
+    assert_eq!(body["authenticationSchemes"][0]["type"], "oauthbearertoken");
+    assert!(body.get("scim_bearer_token").is_none());
+}
+
+#[actix_web::test]
+async fn scim_schemas_and_resource_types_use_list_response_shape() {
+    let (schemas_status, schemas) = response_json(scim_schemas_response()).await;
+    let (types_status, resource_types) = response_json(scim_resource_types_response()).await;
+
+    assert_eq!(schemas_status, StatusCode::OK);
+    assert_eq!(schemas["schemas"], json!([SCIM_LIST_SCHEMA]));
+    assert_eq!(schemas["totalResults"], 1);
+    assert_eq!(schemas["itemsPerPage"], 1);
+    assert_eq!(schemas["Resources"][0]["id"], SCIM_USER_SCHEMA);
+
+    assert_eq!(types_status, StatusCode::OK);
+    assert_eq!(resource_types["schemas"], json!([SCIM_LIST_SCHEMA]));
+    assert_eq!(resource_types["Resources"][0]["id"], "User");
+    assert_eq!(resource_types["Resources"][0]["endpoint"], "/Users");
+    assert_eq!(resource_types["Resources"][0]["schema"], SCIM_USER_SCHEMA);
+}
+
+#[actix_web::test]
+async fn scim_list_users_response_preserves_pagination_and_hides_internal_user_fields() {
+    let user = user_row(
+        uuid_fixture(0x44444444444444444444444444444444),
+        "alice@example.test",
+    );
+
+    let (status, body) = response_json(scim_list_users_response(10, 3, vec![user.clone()])).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["schemas"], json!([SCIM_LIST_SCHEMA]));
+    assert_eq!(body["totalResults"], 10);
+    assert_eq!(body["startIndex"], 3);
+    assert_eq!(body["itemsPerPage"], 1);
+    let resource = body["Resources"][0]
+        .as_object()
+        .expect("SCIM resource should be an object");
+    assert_eq!(resource["schemas"], json!([SCIM_USER_SCHEMA]));
+    assert_eq!(resource["id"], json!(user.id));
+    assert_eq!(resource["userName"], "alice@example.test");
+    assert_eq!(resource["emails"][0]["value"], "alice@example.test");
+    assert_eq!(
+        resource["meta"]["location"],
+        format!("/scim/v2/Users/{}", user.id)
+    );
+    for forbidden in [
+        "tenant_id",
+        "realm_id",
+        "organization_id",
+        "password_hash",
+        "role",
+        "admin_level",
+        "mfa_enabled",
+        "phone_number",
+    ] {
+        assert!(
+            resource.get(forbidden).is_none(),
+            "{forbidden} must not be exposed through SCIM user projection"
+        );
+    }
+}
+
+#[actix_web::test]
+async fn scim_create_user_response_returns_created_public_projection() {
+    let user = user_row(
+        uuid_fixture(0x55555555555555555555555555555555),
+        "created@example.test",
+    );
+
+    let (status, body) = response_json(scim_create_user_response(user)).await;
+
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["schemas"], json!([SCIM_USER_SCHEMA]));
+    assert_eq!(body["userName"], "created@example.test");
+    assert!(body.get("password_hash").is_none());
+    assert!(body.get("tenant_id").is_none());
+}
+
+#[actix_web::test]
+async fn scim_conflict_and_not_found_errors_use_exact_scim_error_shape() {
+    let (conflict_status, conflict) = response_json(scim_uniqueness_conflict_response()).await;
+    assert_eq!(conflict_status, StatusCode::CONFLICT);
+    assert_eq!(conflict["schemas"], json!([SCIM_ERROR_SCHEMA]));
+    assert_eq!(conflict["status"], "409");
+    assert_eq!(conflict["scimType"], "uniqueness");
+    assert_eq!(conflict["detail"], "userName or email already exists");
+
+    let (missing_status, missing) = response_json(scim_user_not_found_response()).await;
+    assert_eq!(missing_status, StatusCode::NOT_FOUND);
+    assert_eq!(missing["schemas"], json!([SCIM_ERROR_SCHEMA]));
+    assert_eq!(missing["status"], "404");
+    assert_eq!(missing["scimType"], "notFound");
+    assert_eq!(missing["detail"], "user not found");
+}
+
+#[actix_web::test]
+async fn scim_delete_response_is_not_found_or_empty_no_content() {
+    let (missing_status, missing) = response_json(scim_delete_user_response(0)).await;
+    assert_eq!(missing_status, StatusCode::NOT_FOUND);
+    assert_eq!(missing["scimType"], "notFound");
+
+    let response = scim_delete_user_response(1);
+    let status = response.status();
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should be readable");
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(body.is_empty());
+}
+
+#[actix_web::test]
+async fn scim_metadata_endpoints_require_bearer_before_disclosing_capabilities() {
+    let state = Data::new(test_state());
+    let req = actix_web::test::TestRequest::default().to_http_request();
+
+    assert_missing_bearer_is_scim_unauthorized(
+        scim_service_provider_config(state.clone(), req.clone()).await,
+    )
+    .await;
+    assert_missing_bearer_is_scim_unauthorized(scim_schemas(state.clone(), req.clone()).await)
+        .await;
+    assert_missing_bearer_is_scim_unauthorized(scim_resource_types(state, req).await).await;
+}
+
+#[actix_web::test]
+async fn scim_user_endpoints_require_bearer_before_user_state_access() {
+    let state = Data::new(test_state());
+    let req = actix_web::test::TestRequest::default().to_http_request();
+    let user_id = uuid_fixture(0x66666666666666666666666666666666);
+    let patch_payload = ScimPatchRequest {
+        schemas: vec![SCIM_PATCH_SCHEMA.to_owned()],
+        operations: vec![ScimPatchOperation {
+            op: "replace".to_owned(),
+            path: Some("active".to_owned()),
+            value: json!(false),
+        }],
+    };
+
+    assert_missing_bearer_is_scim_unauthorized(
+        scim_list_users(
+            state.clone(),
+            req.clone(),
+            Query(ScimListQuery {
+                start_index: Some(1),
+                count: Some(10),
+                filter: None,
+            }),
+        )
+        .await,
+    )
+    .await;
+    assert_missing_bearer_is_scim_unauthorized(
+        scim_create_user(
+            state.clone(),
+            req.clone(),
+            Json(scim_user_request_fixture()),
+        )
+        .await,
+    )
+    .await;
+    assert_missing_bearer_is_scim_unauthorized(
+        scim_get_user(
+            state.clone(),
+            req.clone(),
+            actix_web::web::Path::from(user_id),
+        )
+        .await,
+    )
+    .await;
+    assert_missing_bearer_is_scim_unauthorized(
+        scim_replace_user(
+            state.clone(),
+            req.clone(),
+            actix_web::web::Path::from(user_id),
+            Json(scim_user_request_fixture()),
+        )
+        .await,
+    )
+    .await;
+    assert_missing_bearer_is_scim_unauthorized(
+        scim_patch_user(
+            state.clone(),
+            req.clone(),
+            actix_web::web::Path::from(user_id),
+            Json(patch_payload),
+        )
+        .await,
+    )
+    .await;
+    assert_missing_bearer_is_scim_unauthorized(
+        scim_delete_user(state, req, actix_web::web::Path::from(user_id)).await,
+    )
+    .await;
 }

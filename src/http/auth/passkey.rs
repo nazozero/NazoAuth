@@ -35,11 +35,7 @@ pub(crate) async fn passkey_login_begin(
                     ("reason", json!("user_not_found")),
                 ]),
             );
-            return oauth_error(
-                StatusCode::UNAUTHORIZED,
-                "access_denied",
-                "passkey login failed.",
-            );
+            return passkey_login_failed_response();
         }
         Err(error) => {
             tracing::warn!(%error, "failed to query user for passkey login");
@@ -53,11 +49,7 @@ pub(crate) async fn passkey_login_begin(
     let rows = match load_user_passkeys(&state, &user).await {
         Ok(rows) if !rows.is_empty() => rows,
         Ok(_) => {
-            return oauth_error(
-                StatusCode::UNAUTHORIZED,
-                "access_denied",
-                "passkey login failed.",
-            );
+            return passkey_login_failed_response();
         }
         Err(response) => return response,
     };
@@ -120,22 +112,14 @@ pub(crate) async fn passkey_login_finish(
     {
         Ok(Some(stored)) => stored,
         Ok(None) => {
-            return oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "passkey ceremony expired.",
-            );
+            return passkey_ceremony_expired_response();
         }
         Err(response) => return response,
     };
     let user = match find_user_by_id(&state.diesel_db, stored.user_id).await {
         Ok(Some(user)) if user.is_active && user.tenant_id == stored.tenant_id => user,
         Ok(_) => {
-            return oauth_error(
-                StatusCode::UNAUTHORIZED,
-                "access_denied",
-                "passkey login failed.",
-            );
+            return passkey_login_failed_response();
         }
         Err(error) => {
             tracing::warn!(%error, "failed to query passkey login user");
@@ -153,11 +137,7 @@ pub(crate) async fn passkey_login_finish(
     let row = match load_passkey_by_credential_id(&state, &user, &credential_id).await {
         Ok(Some(row)) => row,
         Ok(None) => {
-            return oauth_error(
-                StatusCode::UNAUTHORIZED,
-                "access_denied",
-                "passkey login failed.",
-            );
+            return passkey_login_failed_response();
         }
         Err(response) => return response,
     };
@@ -186,17 +166,29 @@ pub(crate) async fn passkey_login_finish(
                     ("reason", json!(error.to_string())),
                 ]),
             );
-            return oauth_error(
-                StatusCode::UNAUTHORIZED,
-                "access_denied",
-                "passkey login failed.",
-            );
+            return passkey_login_failed_response();
         }
     };
     if let Err(response) = update_passkey_counter(&state, &user, &row, outcome.new_counter).await {
         return response;
     }
     create_passkey_session(&state, &req, &user).await
+}
+
+fn passkey_login_failed_response() -> HttpResponse {
+    oauth_error(
+        StatusCode::UNAUTHORIZED,
+        "access_denied",
+        "passkey login failed.",
+    )
+}
+
+fn passkey_ceremony_expired_response() -> HttpResponse {
+    oauth_error(
+        StatusCode::BAD_REQUEST,
+        "invalid_request",
+        "passkey ceremony expired.",
+    )
 }
 
 async fn load_passkey_by_credential_id(
@@ -337,27 +329,45 @@ async fn create_passkey_session(
             ),
         ]),
     );
+    passkey_session_response(
+        &state.settings,
+        &session_id,
+        &csrf_token,
+        state.settings.session_ttl_seconds,
+    )
+}
+
+fn passkey_session_response(
+    settings: &Settings,
+    session_id: &str,
+    csrf_token: &str,
+    expires_in: u64,
+) -> HttpResponse {
     with_cookie_headers(
         json_response(json!({
-            "expires_in": state.settings.session_ttl_seconds,
+            "expires_in": expires_in,
             "csrf_token": csrf_token,
             "mfa_required": false
         })),
         &[
             make_cookie(
-                &state.settings.session_cookie_name,
-                &session_id,
+                &settings.session_cookie_name,
+                session_id,
                 true,
-                state.settings.session_ttl_seconds,
-                state.settings.cookie_secure,
+                expires_in,
+                settings.cookie_secure,
             ),
             make_cookie(
-                &state.settings.csrf_cookie_name,
-                &csrf_token,
+                &settings.csrf_cookie_name,
+                csrf_token,
                 false,
-                state.settings.session_ttl_seconds,
-                state.settings.cookie_secure,
+                expires_in,
+                settings.cookie_secure,
             ),
         ],
     )
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/src/http/auth/tests/passkey.rs"]
+mod tests;

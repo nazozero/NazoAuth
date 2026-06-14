@@ -186,16 +186,12 @@ pub(crate) async fn passkey_registration_finish(
                     ("credential_id", json!(row.id)),
                 ]),
             );
-            json_response_status(StatusCode::CREATED, passkey_public_json(&row))
+            passkey_created_response(&row)
         }
         Err(diesel::result::Error::DatabaseError(
             diesel::result::DatabaseErrorKind::UniqueViolation,
             _,
-        )) => oauth_error(
-            StatusCode::CONFLICT,
-            "invalid_request",
-            "passkey already registered.",
-        ),
+        )) => passkey_already_registered_response(),
         Err(error) => {
             tracing::warn!(%error, "failed to insert passkey credential");
             oauth_error(
@@ -216,9 +212,25 @@ pub(crate) async fn passkey_list(state: Data<AppState>, req: HttpRequest) -> Htt
         Ok(rows) => rows,
         Err(response) => return response,
     };
+    passkey_list_response(&rows)
+}
+
+fn passkey_list_response(rows: &[PasskeyCredentialRow]) -> HttpResponse {
     json_response(json!({
         "passkeys": rows.iter().map(passkey_public_json).collect::<Vec<_>>()
     }))
+}
+
+fn passkey_created_response(row: &PasskeyCredentialRow) -> HttpResponse {
+    json_response_status(StatusCode::CREATED, passkey_public_json(row))
+}
+
+fn passkey_already_registered_response() -> HttpResponse {
+    oauth_error(
+        StatusCode::CONFLICT,
+        "invalid_request",
+        "passkey already registered.",
+    )
 }
 
 pub(crate) async fn passkey_delete(
@@ -253,12 +265,7 @@ pub(crate) async fn passkey_delete(
     .execute(&mut conn)
     .await
     {
-        Ok(0) => oauth_error(
-            StatusCode::NOT_FOUND,
-            "invalid_request",
-            "passkey not found.",
-        ),
-        Ok(_) => empty_response(StatusCode::NO_CONTENT),
+        Ok(deleted) => passkey_delete_response(deleted),
         Err(error) => {
             tracing::warn!(%error, "failed to delete passkey credential");
             oauth_error(
@@ -268,6 +275,17 @@ pub(crate) async fn passkey_delete(
             )
         }
     }
+}
+
+fn passkey_delete_response(deleted_count: usize) -> HttpResponse {
+    if deleted_count == 0 {
+        return oauth_error(
+            StatusCode::NOT_FOUND,
+            "invalid_request",
+            "passkey not found.",
+        );
+    }
+    empty_response(StatusCode::NO_CONTENT)
 }
 
 pub(crate) async fn load_user_passkeys(
@@ -298,3 +316,7 @@ pub(crate) async fn load_user_passkeys(
             )
         })
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/src/http/profile/tests/passkeys.rs"]
+mod tests;

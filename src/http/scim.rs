@@ -24,6 +24,10 @@ pub(crate) async fn scim_service_provider_config(
     if let Err(response) = require_scim_bearer(&state, &req, ScimRequiredScope::Read).await {
         return response;
     }
+    scim_service_provider_config_response()
+}
+
+fn scim_service_provider_config_response() -> HttpResponse {
     json_response(scim_base(json!({
         "id": "nazo-oauth-scim",
         "schemas": [SCIM_SERVICE_PROVIDER_CONFIG_SCHEMA],
@@ -47,6 +51,10 @@ pub(crate) async fn scim_schemas(state: Data<AppState>, req: HttpRequest) -> Htt
     if let Err(response) = require_scim_bearer(&state, &req, ScimRequiredScope::Read).await {
         return response;
     }
+    scim_schemas_response()
+}
+
+fn scim_schemas_response() -> HttpResponse {
     json_response(scim_base(json!({
         "schemas": [SCIM_LIST_SCHEMA],
         "totalResults": 1,
@@ -60,6 +68,10 @@ pub(crate) async fn scim_resource_types(state: Data<AppState>, req: HttpRequest)
     if let Err(response) = require_scim_bearer(&state, &req, ScimRequiredScope::Read).await {
         return response;
     }
+    scim_resource_types_response()
+}
+
+fn scim_resource_types_response() -> HttpResponse {
     json_response(scim_base(json!({
         "schemas": [SCIM_LIST_SCHEMA],
         "totalResults": 1,
@@ -155,6 +167,10 @@ pub(crate) async fn scim_list_users(
             );
         }
     };
+    scim_list_users_response(total, start_index, rows)
+}
+
+fn scim_list_users_response(total: i64, start_index: i64, rows: Vec<UserRow>) -> HttpResponse {
     json_response(scim_base(json!({
         "schemas": [SCIM_LIST_SCHEMA],
         "totalResults": total,
@@ -162,6 +178,18 @@ pub(crate) async fn scim_list_users(
         "itemsPerPage": rows.len(),
         "Resources": rows.into_iter().map(scim_user_json).collect::<Vec<_>>()
     })))
+}
+
+fn scim_create_user_response(user: UserRow) -> HttpResponse {
+    json_response_status(StatusCode::CREATED, scim_user_json(user))
+}
+
+fn scim_uniqueness_conflict_response() -> HttpResponse {
+    scim_error(
+        StatusCode::CONFLICT,
+        "uniqueness",
+        "userName or email already exists",
+    )
 }
 
 pub(crate) async fn scim_create_user(
@@ -217,15 +245,11 @@ pub(crate) async fn scim_create_user(
         .get_result::<UserRow>(&mut conn)
         .await;
     match row {
-        Ok(user) => json_response_status(StatusCode::CREATED, scim_user_json(user)),
+        Ok(user) => scim_create_user_response(user),
         Err(diesel::result::Error::DatabaseError(
             diesel::result::DatabaseErrorKind::UniqueViolation,
             _,
-        )) => scim_error(
-            StatusCode::CONFLICT,
-            "uniqueness",
-            "userName or email already exists",
-        ),
+        )) => scim_uniqueness_conflict_response(),
         Err(error) => {
             tracing::warn!(%error, "failed to create SCIM user");
             scim_error(
@@ -247,7 +271,7 @@ pub(crate) async fn scim_get_user(
     }
     match load_scim_user(&state, path.into_inner()).await {
         Ok(Some(user)) => json_response(scim_user_json(user)),
-        Ok(None) => scim_error(StatusCode::NOT_FOUND, "notFound", "user not found"),
+        Ok(None) => scim_user_not_found_response(),
         Err(response) => response,
     }
 }
@@ -298,17 +322,11 @@ pub(crate) async fn scim_replace_user(
     .await;
     match updated {
         Ok(user) => json_response(scim_user_json(user)),
-        Err(diesel::result::Error::NotFound) => {
-            scim_error(StatusCode::NOT_FOUND, "notFound", "user not found")
-        }
+        Err(diesel::result::Error::NotFound) => scim_user_not_found_response(),
         Err(diesel::result::Error::DatabaseError(
             diesel::result::DatabaseErrorKind::UniqueViolation,
             _,
-        )) => scim_error(
-            StatusCode::CONFLICT,
-            "uniqueness",
-            "userName or email already exists",
-        ),
+        )) => scim_uniqueness_conflict_response(),
         Err(error) => {
             tracing::warn!(%error, "failed to replace SCIM user");
             scim_error(
@@ -348,7 +366,7 @@ pub(crate) async fn scim_patch_user(
     let user_id = path.into_inner();
     let current = match load_scim_user(&state, user_id).await {
         Ok(Some(user)) => user,
-        Ok(None) => return scim_error(StatusCode::NOT_FOUND, "notFound", "user not found"),
+        Ok(None) => return scim_user_not_found_response(),
         Err(response) => return response,
     };
     let tenant = default_tenant_context();
@@ -386,11 +404,7 @@ pub(crate) async fn scim_patch_user(
         Err(diesel::result::Error::DatabaseError(
             diesel::result::DatabaseErrorKind::UniqueViolation,
             _,
-        )) => scim_error(
-            StatusCode::CONFLICT,
-            "uniqueness",
-            "userName or email already exists",
-        ),
+        )) => scim_uniqueness_conflict_response(),
         Err(error) => {
             tracing::warn!(%error, "failed to patch SCIM user");
             scim_error(
@@ -431,8 +445,7 @@ pub(crate) async fn scim_delete_user(
     .execute(&mut conn)
     .await
     {
-        Ok(0) => scim_error(StatusCode::NOT_FOUND, "notFound", "user not found"),
-        Ok(_) => empty_response(StatusCode::NO_CONTENT),
+        Ok(deleted) => scim_delete_user_response(deleted),
         Err(error) => {
             tracing::warn!(%error, "failed to delete SCIM user");
             scim_error(
@@ -442,6 +455,17 @@ pub(crate) async fn scim_delete_user(
             )
         }
     }
+}
+
+fn scim_user_not_found_response() -> HttpResponse {
+    scim_error(StatusCode::NOT_FOUND, "notFound", "user not found")
+}
+
+fn scim_delete_user_response(updated_count: usize) -> HttpResponse {
+    if updated_count == 0 {
+        return scim_user_not_found_response();
+    }
+    empty_response(StatusCode::NO_CONTENT)
 }
 
 async fn load_scim_user(state: &AppState, user_id: Uuid) -> Result<Option<UserRow>, HttpResponse> {
