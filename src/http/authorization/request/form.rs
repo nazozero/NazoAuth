@@ -52,5 +52,5 @@ pub(super) fn parse_authorization_post_form(
 }
 
 #[cfg(test)]
-#[path = "tests.rs"]
+#[path = "tests/form.rs"]
 mod tests;

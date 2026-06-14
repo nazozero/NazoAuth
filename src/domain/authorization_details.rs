@@ -116,4 +116,5 @@ fn validate_authorization_details(value: &Value) -> Result<(), ()> {
 }
 
 #[cfg(test)]
+#[path = "authorization_details/tests/authorization_details.rs"]
 mod tests;

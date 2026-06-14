@@ -121,4 +121,5 @@ fn security_headers() -> DefaultHeaders {
 }
 
 #[cfg(test)]
+#[path = "tests/bootstrap.rs"]
 mod tests;
