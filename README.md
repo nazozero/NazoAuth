@@ -299,16 +299,20 @@ Run local Rust coverage with `cargo-llvm-cov`:
 cargo install cargo-llvm-cov
 cargo test --workspace --all-features
 cargo llvm-cov --workspace --all-features --html
-cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
+cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info \
+  --ignore-filename-regex '(^|/)(tests?|benches|examples|migrations)(/|\.rs$)'
 ```
 
 Coverage is used as a security signal, not a cosmetic target. Codecov is
 configured for an 80% project target and a 90% patch target so changes improve
 meaningful coverage without forcing artificial tests for generated schema,
-migrations, examples, benches, or mechanical glue. Security-critical protocol
-logic such as authorization-code exchange, PKCE, client authentication, DPoP,
-mTLS, JWT/JWK validation, refresh-token rotation, and OAuth error mapping should
-use behavior-oriented tests with exact error and state assertions.
+migrations, examples, benches, test sources, or mechanical glue. Test files are
+excluded from coverage accounting so split-out tests measure production-code
+coverage rather than inflating totals with test implementation lines.
+Security-critical protocol logic such as authorization-code exchange, PKCE,
+client authentication, DPoP, mTLS, JWT/JWK validation, refresh-token rotation,
+and OAuth error mapping should use behavior-oriented tests with exact error and
+state assertions.
 
 Run deterministic HTTP and race-condition checks:
 

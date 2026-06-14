@@ -54,7 +54,9 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Generate coverage report
-        run: cargo llvm-cov --locked --all-targets --lcov --output-path lcov.info
+        run: >-
+          cargo llvm-cov --locked --all-targets --lcov --output-path lcov.info
+          --ignore-filename-regex '(^|/)(tests?|benches|examples|migrations)(/|\.rs$)'
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5

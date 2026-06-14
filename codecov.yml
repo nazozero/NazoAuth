@@ -8,3 +8,11 @@ coverage:
       default:
         target: 90%
         threshold: 2%
+
+ignore:
+  - "tests/**"
+  - "src/**/tests/**"
+  - "src/**/tests.rs"
+  - "benches/**"
+  - "examples/**"
+  - "migrations/**"
