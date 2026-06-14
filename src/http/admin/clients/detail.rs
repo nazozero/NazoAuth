@@ -14,8 +14,8 @@ pub(crate) async fn admin_get_client(
     }
 
     match find_client(&state.diesel_db, &client_id).await {
-        Ok(Some(client)) => json_response(client_json(client)),
-        Ok(None) => oauth_error(StatusCode::NOT_FOUND, "invalid_request", "未找到该客户端."),
+        Ok(Some(client)) => client_detail_response(client),
+        Ok(None) => client_detail_not_found_response(),
         Err(error) => {
             tracing::warn!(%error, "failed to query oauth client detail");
             oauth_error(
@@ -26,3 +26,15 @@ pub(crate) async fn admin_get_client(
         }
     }
 }
+
+fn client_detail_response(client: ClientRow) -> HttpResponse {
+    json_response(client_json(client))
+}
+
+fn client_detail_not_found_response() -> HttpResponse {
+    oauth_error(StatusCode::NOT_FOUND, "invalid_request", "未找到该客户端.")
+}
+
+#[cfg(test)]
+#[path = "../../../../tests/unit/src/http/admin/clients/tests/detail.rs"]
+mod tests;

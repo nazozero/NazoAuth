@@ -23,6 +23,7 @@ pub(crate) fn clear_cookie(name: &str, secure: bool) -> Cookie<'static> {
     let mut cookie = Cookie::build(name.to_owned(), String::new())
         .path("/")
         .same_site(SameSite::Lax)
+        .http_only(true)
         .secure(secure)
         .finish();
     cookie.make_removal();

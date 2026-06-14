@@ -9,14 +9,22 @@ pub(crate) async fn csrf(state: Data<AppState>, req: HttpRequest) -> HttpRespons
     };
 
     let csrf_token = random_urlsafe_token();
+    csrf_response(&state.settings, csrf_token)
+}
+
+fn csrf_response(settings: &Settings, csrf_token: String) -> HttpResponse {
     with_cookie_headers(
         json_response(json!({"csrf_token": csrf_token})),
         &[make_cookie(
-            &state.settings.csrf_cookie_name,
+            &settings.csrf_cookie_name,
             &csrf_token,
             false,
-            state.settings.session_ttl_seconds,
-            state.settings.cookie_secure,
+            settings.session_ttl_seconds,
+            settings.cookie_secure,
         )],
     )
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/src/http/auth/tests/csrf.rs"]
+mod tests;

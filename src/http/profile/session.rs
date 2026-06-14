@@ -6,17 +6,19 @@ pub(crate) async fn logout(state: Data<AppState>, req: HttpRequest) -> HttpRespo
     if let Some(session_id) = cookie_value(&req, &state.settings.session_cookie_name) {
         let _ = valkey_del(&state.valkey, format!("oauth:session:{session_id}")).await;
     }
+    logout_response(&state.settings)
+}
+
+fn logout_response(settings: &Settings) -> HttpResponse {
     with_cookie_headers(
         json_response(json!({"success": true})),
         &[
-            clear_cookie(
-                &state.settings.session_cookie_name,
-                state.settings.cookie_secure,
-            ),
-            clear_cookie(
-                &state.settings.csrf_cookie_name,
-                state.settings.cookie_secure,
-            ),
+            clear_cookie(&settings.session_cookie_name, settings.cookie_secure),
+            clear_cookie(&settings.csrf_cookie_name, settings.cookie_secure),
         ],
     )
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/src/http/profile/tests/session.rs"]
+mod tests;

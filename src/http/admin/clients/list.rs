@@ -59,6 +59,19 @@ pub(crate) async fn admin_clients(
             );
         }
     };
+    clients_list_response(total, page, page_size, clients)
+}
+
+fn clients_list_response(
+    total: i64,
+    page: i32,
+    page_size: i32,
+    clients: Vec<ClientRow>,
+) -> HttpResponse {
     let items: Vec<Value> = clients.into_iter().map(client_json).collect();
     json_response(json!({"total": total, "page": page, "page_size": page_size, "items": items}))
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/unit/src/http/admin/clients/tests/list.rs"]
+mod tests;

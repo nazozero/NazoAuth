@@ -1,5 +1,32 @@
 use super::*;
 
+fn create_request() -> CreateClientRequest {
+    CreateClientRequest {
+        client_name: "Payments client".to_owned(),
+        client_type: "confidential".to_owned(),
+        redirect_uris: vec!["https://client.example/callback".to_owned()],
+        post_logout_redirect_uris: vec!["https://client.example/logout".to_owned()],
+        scopes: vec!["openid".to_owned(), "payments".to_owned()],
+        allowed_audiences: vec!["https://api.example".to_owned()],
+        grant_types: vec!["authorization_code".to_owned(), "refresh_token".to_owned()],
+        token_endpoint_auth_method: "private_key_jwt".to_owned(),
+        require_dpop_bound_tokens: false,
+        allow_client_assertion_audience_array: false,
+        allow_client_assertion_endpoint_audience: false,
+        require_par_request_object: true,
+        allow_authorization_code_without_pkce: false,
+        backchannel_logout_uri: Some("https://client.example/backchannel".to_owned()),
+        backchannel_logout_session_required: true,
+        tls_client_auth_subject_dn: None,
+        tls_client_auth_cert_sha256: None,
+        tls_client_auth_san_dns: Vec::new(),
+        tls_client_auth_san_uri: Vec::new(),
+        tls_client_auth_san_ip: Vec::new(),
+        tls_client_auth_san_email: Vec::new(),
+        jwks: Some(json!({"keys": []})),
+    }
+}
+
 #[test]
 fn pkce_legacy_exception_is_limited_to_confidential_non_dpop_clients() {
     assert!(validate_pkce_compatibility_policy(false, "public", true).is_ok());
@@ -13,4 +40,169 @@ fn pkce_legacy_exception_is_limited_to_confidential_non_dpop_clients() {
 
     let dpop_err = validate_pkce_compatibility_policy(true, "confidential", true).unwrap_err();
     assert_eq!(dpop_err.to_string(), "DPoP-bound clients must use PKCE");
+}
+
+#[test]
+fn prepare_client_insert_issues_secret_only_for_secret_based_confidential_clients() {
+    for method in ["client_secret_basic", "client_secret_post"] {
+        let mut payload = create_request();
+        payload.token_endpoint_auth_method = method.to_owned();
+        payload.jwks = None;
+
+        let prepared = match prepare_client_insert(payload) {
+            Ok(prepared) => prepared,
+            Err(_) => {
+                panic!("secret-based confidential client registration should be accepted")
+            }
+        };
+        let issued_secret = prepared
+            .issued_secret
+            .as_deref()
+            .expect("created secret client must receive its one-time plaintext secret");
+        let stored_hash = prepared
+            .client_secret_argon2_hash
+            .as_deref()
+            .expect("plaintext secret must be represented only by an Argon2 hash at rest");
+
+        assert_eq!(prepared.client_type, "confidential");
+        assert_eq!(prepared.token_endpoint_auth_method, method);
+        assert!(
+            verify_password(issued_secret, stored_hash),
+            "stored secret hash must verify the one-time plaintext secret"
+        );
+        assert_ne!(
+            issued_secret, stored_hash,
+            "plaintext client secret must never be stored as the DB hash"
+        );
+    }
+}
+
+#[test]
+fn prepare_client_insert_does_not_issue_secret_for_public_or_mtls_clients() {
+    let mut public = create_request();
+    public.client_type = "public".to_owned();
+    public.token_endpoint_auth_method = "none".to_owned();
+    public.jwks = None;
+    let public = match prepare_client_insert(public) {
+        Ok(prepared) => prepared,
+        Err(_) => panic!("public client registration without secret is valid"),
+    };
+    assert!(public.issued_secret.is_none());
+    assert!(public.client_secret_argon2_hash.is_none());
+
+    let mut mtls = create_request();
+    mtls.token_endpoint_auth_method = "tls_client_auth".to_owned();
+    mtls.jwks = None;
+    mtls.tls_client_auth_subject_dn = Some("CN=client.example".to_owned());
+    let mtls = match prepare_client_insert(mtls) {
+        Ok(prepared) => prepared,
+        Err(_) => panic!("mTLS client registration should be accepted without client secret"),
+    };
+    assert!(mtls.issued_secret.is_none());
+    assert!(mtls.client_secret_argon2_hash.is_none());
+}
+
+#[test]
+fn prepare_client_insert_normalizes_optional_string_metadata() {
+    let mut payload = create_request();
+    payload.token_endpoint_auth_method = "tls_client_auth".to_owned();
+    payload.jwks = None;
+    payload.backchannel_logout_uri = Some("  https://client.example/backchannel  ".to_owned());
+    payload.post_logout_redirect_uris = vec!["https://client.example/logout".to_owned()];
+    payload.tls_client_auth_subject_dn = Some("  CN=client.example  ".to_owned());
+    payload.tls_client_auth_cert_sha256 = None;
+    payload.tls_client_auth_san_dns = vec!["client.example".to_owned()];
+    payload.tls_client_auth_san_uri = vec!["spiffe://client".to_owned()];
+    payload.tls_client_auth_san_ip = vec!["192.0.2.10".to_owned()];
+    payload.tls_client_auth_san_email = vec!["ops@example.com".to_owned()];
+
+    let prepared = match prepare_client_insert(payload) {
+        Ok(prepared) => prepared,
+        Err(_) => panic!("mTLS metadata with surrounding whitespace should be normalizable"),
+    };
+
+    assert_eq!(
+        prepared.backchannel_logout_uri.as_deref(),
+        Some("https://client.example/backchannel")
+    );
+    assert_eq!(
+        prepared.post_logout_redirect_uris,
+        vec!["https://client.example/logout".to_owned()]
+    );
+    assert_eq!(
+        prepared.tls_client_auth_subject_dn.as_deref(),
+        Some("CN=client.example")
+    );
+    assert!(prepared.tls_client_auth_cert_sha256.is_none());
+    assert_eq!(prepared.tls_client_auth_san_dns, vec!["client.example"]);
+    assert_eq!(prepared.tls_client_auth_san_uri, vec!["spiffe://client"]);
+    assert_eq!(prepared.tls_client_auth_san_ip, vec!["192.0.2.10"]);
+    assert_eq!(prepared.tls_client_auth_san_email, vec!["ops@example.com"]);
+}
+
+#[test]
+fn prepare_client_insert_rejects_empty_array_metadata_before_storage() {
+    let mut payload = create_request();
+    payload.token_endpoint_auth_method = "client_secret_basic".to_owned();
+    payload.jwks = None;
+    payload.post_logout_redirect_uris = vec![" ".to_owned()];
+
+    let err = prepare_client_insert(payload)
+        .err()
+        .expect("empty array metadata must fail closed");
+    match err {
+        InsertClientError::InvalidRequest(message) => assert!(
+            message.contains("post_logout_redirect_uri"),
+            "error should identify the invalid array metadata boundary: {message}"
+        ),
+        InsertClientError::Server(message) => {
+            panic!("metadata validation failure must not be reported as server error: {message}")
+        }
+    }
+}
+
+#[test]
+fn prepare_client_insert_rejects_secret_auth_for_public_clients() {
+    let mut payload = create_request();
+    payload.client_type = "public".to_owned();
+    payload.token_endpoint_auth_method = "client_secret_post".to_owned();
+    payload.jwks = None;
+
+    let err = prepare_client_insert(payload)
+        .err()
+        .expect("public clients must not be registered with client secrets");
+    match err {
+        InsertClientError::InvalidRequest(message) => assert!(
+            message.contains("public"),
+            "error should identify the invalid public-client metadata boundary: {message}"
+        ),
+        InsertClientError::Server(message) => {
+            panic!("metadata validation failure must not be reported as server error: {message}")
+        }
+    }
+}
+
+#[test]
+fn insert_client_error_response_preserves_oauth_error_category() {
+    let invalid = insert_client_error_response(InsertClientError::InvalidRequest(
+        "redirect_uri is invalid".to_owned(),
+    ));
+    assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        invalid
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("invalid_request")
+    );
+
+    let server = insert_client_error_response(InsertClientError::Server("database".to_owned()));
+    assert_eq!(server.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        server
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("server_error")
+    );
 }

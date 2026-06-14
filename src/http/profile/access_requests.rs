@@ -44,10 +44,11 @@ pub(crate) async fn my_access_requests(state: Data<AppState>, req: HttpRequest) 
             );
         }
     };
-    let items: Vec<Value> = rows
-        .into_iter()
-        .map(|r| json!({"id": r.id, "site_name": r.site_name, "site_url": r.site_url, "request_description": r.request_description, "status": r.status, "admin_note": r.admin_note, "approved_client_id": r.approved_client_id, "created_at": r.created_at, "resolved_at": r.resolved_at}))
-        .collect();
+    my_access_requests_response(rows)
+}
+
+fn my_access_requests_response(rows: Vec<UserAccessRequestRow>) -> HttpResponse {
+    let items: Vec<Value> = rows.into_iter().map(user_access_request_json).collect();
     let pending_count = items
         .iter()
         .filter(|item| {
@@ -56,6 +57,20 @@ pub(crate) async fn my_access_requests(state: Data<AppState>, req: HttpRequest) 
         })
         .count();
     json_response(json!({"total": items.len(), "pending_count": pending_count, "items": items}))
+}
+
+fn user_access_request_json(row: UserAccessRequestRow) -> Value {
+    json!({
+        "id": row.id,
+        "site_name": row.site_name,
+        "site_url": row.site_url,
+        "request_description": row.request_description,
+        "status": row.status,
+        "admin_note": row.admin_note,
+        "approved_client_id": row.approved_client_id,
+        "created_at": row.created_at,
+        "resolved_at": row.resolved_at
+    })
 }
 
 #[derive(Deserialize)]
@@ -109,10 +124,7 @@ pub(crate) async fn create_access_request(
         .get_result::<UserAccessRequestRow>(&mut conn)
         .await;
     match row {
-        Ok(r) => json_response_status(
-            StatusCode::CREATED,
-            json!({"id": r.id, "site_name": r.site_name, "site_url": r.site_url, "request_description": r.request_description, "status": r.status, "admin_note": r.admin_note, "approved_client_id": r.approved_client_id, "created_at": r.created_at, "resolved_at": r.resolved_at}),
-        ),
+        Ok(r) => create_access_request_response(r),
         Err(diesel::result::Error::DatabaseError(
             diesel::result::DatabaseErrorKind::UniqueViolation,
             _,
@@ -127,3 +139,11 @@ pub(crate) async fn create_access_request(
         }
     }
 }
+
+fn create_access_request_response(row: UserAccessRequestRow) -> HttpResponse {
+    json_response_status(StatusCode::CREATED, user_access_request_json(row))
+}
+
+#[cfg(test)]
+#[path = "../../../tests/unit/src/http/profile/tests/access_requests.rs"]
+mod tests;
