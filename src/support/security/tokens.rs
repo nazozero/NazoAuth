@@ -1,6 +1,10 @@
 use super::jwt_decoding_key_from_jwk;
-use crate::support::signing_algorithm_name;
-use crate::{domain::OidcClaimRequest, support::prelude::*};
+use chrono::Utc;
+use serde_json::{Value, json};
+use uuid::Uuid;
+
+use crate::domain::{AppState, Claims, ConfirmationClaims, OidcClaimRequest};
+use crate::support::{signing_algorithm_name, sorted_scope_string};
 
 pub(crate) struct AccessTokenJwtInput<'a> {
     pub(crate) tenant_id: Uuid,

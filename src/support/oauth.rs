@@ -469,5 +469,17 @@ pub(crate) async fn upsert_grant(
 }
 
 #[cfg(test)]
-#[path = "tests/oauth.rs"]
-mod tests;
+#[path = "tests/oauth_client_jwks.rs"]
+mod oauth_client_jwks_tests;
+
+#[cfg(test)]
+#[path = "tests/oauth_client_metadata.rs"]
+mod oauth_client_metadata_tests;
+
+#[cfg(test)]
+#[path = "tests/oauth_mtls_metadata.rs"]
+mod oauth_mtls_metadata_tests;
+
+#[cfg(test)]
+#[path = "tests/oauth_redirect_pkce.rs"]
+mod oauth_redirect_pkce_tests;

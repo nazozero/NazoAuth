@@ -77,8 +77,7 @@ pub(crate) mod prelude {
     pub(crate) use crate::db::{DbPool, get_conn};
     pub(crate) use crate::domain::{
         AccessRequestRow, AccessRequestStatus, ActiveSigningKey, AppState, Claims, ClientRow,
-        ConfirmationClaims, ExternalSigningKey, Keyset, PasskeyCredentialRow, UserRow,
-        VerificationKey,
+        ExternalSigningKey, Keyset, PasskeyCredentialRow, UserRow, VerificationKey,
     };
     pub(crate) use crate::schema::{
         client_access_requests, oauth_clients, user_client_grants, user_mfa_backup_codes,
@@ -90,7 +89,6 @@ pub(crate) mod prelude {
     pub(crate) use super::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
     pub(crate) use super::{
         clear_cookie, constant_time_eq, cookie_value, default_tenant_context, find_client,
-        find_user_by_id, json_array_to_strings, sorted_scope_string, valkey_get,
-        with_cookie_headers,
+        find_user_by_id, json_array_to_strings, valkey_get, with_cookie_headers,
     };
 }

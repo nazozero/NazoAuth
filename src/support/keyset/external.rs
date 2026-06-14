@@ -1,11 +1,13 @@
 //! External signer boundary for active JWT signing keys.
 
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 use tokio::time;
 
 use super::signing_algorithm_name;
-use crate::support::prelude::*;
+use crate::domain::ExternalSigningKey;
 
 pub(super) async fn sign_external_jwt_input(
     external: &ExternalSigningKey,
@@ -118,7 +120,7 @@ fn verify_external_jwt_signature(
     public_jwk: &Value,
 ) -> jsonwebtoken::errors::Result<()> {
     let decoding_key =
-        crate::support::jwt_decoding_key_from_jwk(public_jwk, alg).ok_or_else(|| {
+        super::super::jwt_decoding_key_from_jwk(public_jwk, alg).ok_or_else(|| {
             jwt_provider_error("active external signer public JWK is not usable for verification")
         })?;
     match jsonwebtoken::crypto::verify(signature, signing_input.as_bytes(), &decoding_key, alg) {
