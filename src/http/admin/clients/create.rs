@@ -309,14 +309,5 @@ pub(crate) fn trim_string_vec(values: Vec<String>) -> Vec<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn pkce_compatibility_exception_is_limited_to_confidential_non_dpop_clients() {
-        assert!(validate_pkce_compatibility_policy(false, "public", true).is_ok());
-        assert!(validate_pkce_compatibility_policy(true, "confidential", false).is_ok());
-        assert!(validate_pkce_compatibility_policy(true, "public", false).is_err());
-        assert!(validate_pkce_compatibility_policy(true, "confidential", true).is_err());
-    }
-}
+#[path = "tests/create.rs"]
+mod tests;

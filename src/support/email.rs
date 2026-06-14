@@ -101,29 +101,4 @@ fn html_part(body: String) -> SinglePart {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn recipient_email_rejects_display_name_mailbox() {
-        assert!(parse_email_recipient("Nazo <user@example.com>").is_err());
-    }
-
-    #[test]
-    fn recipient_email_is_normalized_and_has_no_display_name() {
-        let recipient = parse_email_recipient(" USER@Example.COM ").unwrap();
-
-        assert_eq!(recipient.normalized, "user@example.com");
-        assert_eq!(recipient.mailbox.name, None);
-    }
-
-    #[test]
-    fn html_part_uses_html_content_type() {
-        let part = html_part("<p>hello</p>".to_owned());
-
-        assert_eq!(
-            part.headers().get::<ContentType>().unwrap(),
-            ContentType::TEXT_HTML
-        );
-    }
-}
+mod tests;

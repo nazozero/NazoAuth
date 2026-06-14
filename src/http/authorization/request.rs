@@ -5,9 +5,11 @@ use super::{
 };
 use crate::http::prelude::*;
 
+mod form;
 mod parameters;
 mod prompt_none;
 
+use form::*;
 pub(crate) use parameters::AUTHORIZED_REQUEST_PARAMETERS;
 use parameters::*;
 use prompt_none::*;
@@ -26,53 +28,11 @@ pub(crate) async fn authorize_post(
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
-    let content_type = req
-        .headers()
-        .get(header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or("");
-    if !content_type.split(';').next().is_some_and(|value| {
-        value
-            .trim()
-            .eq_ignore_ascii_case("application/x-www-form-urlencoded")
-    }) {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "authorization request must use application/x-www-form-urlencoded.",
-        );
-    }
-    let raw = match std::str::from_utf8(&body) {
-        Ok(raw) => raw,
-        Err(_) => {
-            return oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "authorization request form is invalid.",
-            );
-        }
-    };
     let query_parameters = authorization_duplicate_parameters();
-    if has_duplicate_oauth_parameter(req.query_string(), &query_parameters) {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "OAuth 参数不能重复.",
-        );
-    }
-    let mut q = HashMap::new();
-    let mut seen = std::collections::HashSet::new();
-    for (key, value) in url::form_urlencoded::parse(raw.as_bytes()) {
-        let key = key.into_owned();
-        if query_parameters.contains(&key.as_str()) && !seen.insert(key.clone()) {
-            return oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "OAuth 参数不能重复.",
-            );
-        }
-        q.insert(key, value.into_owned());
-    }
+    let mut q = match parse_authorization_post_form(&req, &body, &query_parameters) {
+        Ok(q) => q,
+        Err(response) => return response,
+    };
     authorize_request(state, req, &mut q).await
 }
 

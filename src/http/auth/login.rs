@@ -280,7 +280,7 @@ fn safe_relative_next(value: &str) -> Option<String> {
         .map(|(path, _)| path)
         .unwrap_or(trimmed)
         .trim_end_matches('/');
-    if path == "/auth" || path == "/ui/auth" {
+    if path != "/authorize" {
         return None;
     }
     Some(trimmed.to_owned())
@@ -300,36 +300,5 @@ fn referer_login_next(req: &HttpRequest) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn form_parser_accepts_login_fields_and_next() {
-        let parsed = parse_login_form(
-            "email=user%40example.test&password=s3cret&next=%2Fauthorize%3Fclient_id%3Dabc",
-        )
-        .expect("form should parse");
-        assert_eq!(parsed.email, "user@example.test");
-        assert_eq!(parsed.password, "s3cret");
-        assert_eq!(parsed.next.as_deref(), Some("/authorize?client_id=abc"));
-    }
-
-    #[test]
-    fn form_parser_rejects_duplicate_login_fields() {
-        assert!(
-            parse_login_form("email=a%40example.test&email=b%40example.test&password=s3cret")
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn safe_relative_next_allows_authorization_path_only_when_relative() {
-        assert_eq!(
-            safe_relative_next("/authorize?client_id=abc").as_deref(),
-            Some("/authorize?client_id=abc")
-        );
-        assert!(safe_relative_next("https://evil.example/authorize").is_none());
-        assert!(safe_relative_next("//evil.example/authorize").is_none());
-        assert!(safe_relative_next("/ui/auth?next=%2Fauthorize").is_none());
-    }
-}
+#[path = "tests/login.rs"]
+mod tests;
