@@ -180,3 +180,7 @@ fn parse_signing_external_command(value: Option<String>) -> Vec<String> {
 #[cfg(test)]
 #[path = "../tests/unit/src/settings/tests/settings.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/unit/src/settings/tests/security.rs"]
+mod security_tests;
