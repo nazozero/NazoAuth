@@ -22,7 +22,7 @@ pub(crate) async fn register(
     let Ok(email) = normalize_email_address(&payload.email) else {
         return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "邮箱格式无效.");
     };
-    let code = payload.verification_code.trim().to_string();
+    let code = verification_code_for_lookup(&payload);
     match find_user_by_email(&state.diesel_db, &email).await {
         Ok(Some(_)) => {
             return oauth_error(StatusCode::CONFLICT, "invalid_request", "该邮箱已注册.");
@@ -106,10 +106,7 @@ pub(crate) async fn register(
                 );
             }
             let _ = valkey_del(&state.valkey, &key).await;
-            json_response_status(
-                StatusCode::CREATED,
-                json!({"id": user.id, "email": user.email}),
-            )
+            register_success_response(user)
         }
         Err(diesel::result::Error::DatabaseError(
             diesel::result::DatabaseErrorKind::UniqueViolation,
@@ -128,3 +125,18 @@ pub(crate) async fn register(
         }
     }
 }
+
+fn verification_code_for_lookup(payload: &RegisterRequest) -> String {
+    payload.verification_code.trim().to_owned()
+}
+
+fn register_success_response(user: UserRow) -> HttpResponse {
+    json_response_status(
+        StatusCode::CREATED,
+        json!({"id": user.id, "email": user.email}),
+    )
+}
+
+#[cfg(test)]
+#[path = "../../../tests/unit/src/http/auth/tests/register.rs"]
+mod tests;

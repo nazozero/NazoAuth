@@ -58,6 +58,15 @@ pub(crate) async fn admin_users(
             );
         }
     };
+    admin_users_list_response(page, page_size, total, user_rows)
+}
+
+fn admin_users_list_response(
+    page: i32,
+    page_size: i32,
+    total: i64,
+    user_rows: Vec<UserRow>,
+) -> HttpResponse {
     let items: Vec<Value> = user_rows.into_iter().map(admin_user_json).collect();
     json_response(json!({"total": total, "page": page, "page_size": page_size, "items": items}))
 }
@@ -82,20 +91,8 @@ pub(crate) async fn admin_patch_user(
     if let Err(response) = require_admin_or_forbidden(&state, &req).await {
         return response;
     }
-    if payload.admin_level.is_some_and(|level| level < 0) {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "admin_level 不能为负数.",
-        );
-    }
-    if let Some(role) = payload.role.as_deref() {
-        match role {
-            "admin" | "user" => {}
-            _ => {
-                return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "用户角色无效.");
-            }
-        }
+    if let Some(response) = patch_user_validation_error(&payload) {
+        return response;
     }
     let mut conn = match get_conn(&state.diesel_db).await {
         Ok(conn) => conn,
@@ -179,3 +176,30 @@ pub(crate) async fn admin_patch_user(
         None => oauth_error(StatusCode::NOT_FOUND, "invalid_request", "未找到该用户."),
     }
 }
+
+fn patch_user_validation_error(payload: &PatchUserRequest) -> Option<HttpResponse> {
+    if payload.admin_level.is_some_and(|level| level < 0) {
+        return Some(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "admin_level 不能为负数.",
+        ));
+    }
+    if let Some(role) = payload.role.as_deref() {
+        match role {
+            "admin" | "user" => {}
+            _ => {
+                return Some(oauth_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_request",
+                    "用户角色无效.",
+                ));
+            }
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+#[path = "../../../tests/unit/src/http/admin/tests/users.rs"]
+mod tests;

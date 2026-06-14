@@ -406,7 +406,7 @@ fn validate_unique_non_empty(name: &str, values: &[String]) -> anyhow::Result<()
     let mut seen = std::collections::HashSet::new();
     for value in values {
         let trimmed = value.trim();
-        if trimmed.is_empty() || trimmed.split_whitespace().count() != 1 {
+        if trimmed.is_empty() || value != trimmed || trimmed.split_whitespace().count() != 1 {
             anyhow::bail!("{name} 不能为空或包含空白字符");
         }
         if !seen.insert(trimmed) {

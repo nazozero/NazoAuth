@@ -55,6 +55,9 @@ jobs:
 
       - name: Generate coverage report
         shell: bash
+        env:
+          CARGO_BUILD_JOBS: 1
+          CARGO_TERM_COLOR: never
         run: |
           cargo llvm-cov clean --workspace
           cargo clean

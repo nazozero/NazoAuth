@@ -16,26 +16,9 @@ pub(crate) async fn admin_access_requests(
         return response;
     };
     let (page, page_size, offset) = pagination(&q);
-    let status = match q
-        .get("status")
-        .map(|value| value.trim())
-        .filter(|value| !value.is_empty())
-    {
-        Some(value) => match value
-            .parse::<i16>()
-            .ok()
-            .and_then(AccessRequestStatus::from_code)
-        {
-            Some(status) => Some(status),
-            None => {
-                return oauth_error(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_request",
-                    "status 参数仅支持 0/1/2.",
-                );
-            }
-        },
-        None => None,
+    let status = match parse_access_request_status(&q) {
+        Ok(status) => status,
+        Err(response) => return response,
     };
     let search = q.get("q").map(String::as_str);
     let total = match access_request_count(&state.diesel_db, search, status).await {
@@ -61,6 +44,41 @@ pub(crate) async fn admin_access_requests(
             );
         }
     };
+    access_requests_response(page, page_size, total, rows)
+}
+
+fn parse_access_request_status(
+    q: &HashMap<String, String>,
+) -> Result<Option<AccessRequestStatus>, HttpResponse> {
+    match q
+        .get("status")
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+    {
+        Some(value) => value
+            .parse::<i16>()
+            .ok()
+            .and_then(AccessRequestStatus::from_code)
+            .map(Some)
+            .ok_or_else(invalid_access_request_status_response),
+        None => Ok(None),
+    }
+}
+
+fn invalid_access_request_status_response() -> HttpResponse {
+    oauth_error(
+        StatusCode::BAD_REQUEST,
+        "invalid_request",
+        "status 参数仅支持 0/1/2.",
+    )
+}
+
+fn access_requests_response(
+    page: i32,
+    page_size: i32,
+    total: i64,
+    rows: Vec<Value>,
+) -> HttpResponse {
     json_response(json!({"total": total, "page": page, "page_size": page_size, "items": rows}))
 }
 
@@ -92,11 +110,7 @@ pub(crate) async fn admin_approve_access_request(
         {
             Ok(Some(row)) => row,
             Ok(None) => {
-                return oauth_error(
-                    StatusCode::CONFLICT,
-                    "invalid_request",
-                    "该申请已处理,不可重复审批.",
-                );
+                return access_request_already_approved_response();
             }
             Err(error) => {
                 tracing::warn!(%error, "failed to query pending access request");
@@ -198,11 +212,7 @@ pub(crate) async fn admin_approve_access_request(
                 tracing::warn!(%cleanup_error, "failed to remove client delivery payload");
             }
             if matches!(error, diesel::result::Error::NotFound) {
-                return oauth_error(
-                    StatusCode::CONFLICT,
-                    "invalid_request",
-                    "该申请已处理,不可重复审批.",
-                );
+                return access_request_already_approved_response();
             }
             tracing::warn!(%error, "failed to approve access request");
             return oauth_error(
@@ -293,11 +303,7 @@ pub(crate) async fn admin_reject_access_request(
         }
     };
     if updated == 0 {
-        return oauth_error(
-            StatusCode::CONFLICT,
-            "invalid_request",
-            "该申请已处理,不可重复拒绝.",
-        );
+        return access_request_already_rejected_response();
     }
     match access_request_by_id(&state.diesel_db, request_id).await {
         Ok(Some(row)) => json_response(row),
@@ -312,3 +318,23 @@ pub(crate) async fn admin_reject_access_request(
         }
     }
 }
+
+fn access_request_already_approved_response() -> HttpResponse {
+    oauth_error(
+        StatusCode::CONFLICT,
+        "invalid_request",
+        "该申请已处理,不可重复审批.",
+    )
+}
+
+fn access_request_already_rejected_response() -> HttpResponse {
+    oauth_error(
+        StatusCode::CONFLICT,
+        "invalid_request",
+        "该申请已处理,不可重复拒绝.",
+    )
+}
+
+#[cfg(test)]
+#[path = "../../../tests/unit/src/http/admin/tests/access_requests.rs"]
+mod tests;

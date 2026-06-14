@@ -71,8 +71,30 @@ pub(crate) async fn admin_grants(
             );
         }
     };
-    let items: Vec<Value> = rows.into_iter().map(|r| json!({"user_id": r.user_id, "email": r.email, "client_id": r.client_id, "client_name": r.client_name, "last_authorized_at": r.last_authorized_at, "authorization_count": r.authorization_count, "last_scopes": json_array_to_strings(&r.last_scopes), "last_authorization_details": r.last_authorization_details})).collect();
+    grants_list_response(page, page_size, total, rows)
+}
+
+fn grants_list_response(
+    page: i32,
+    page_size: i32,
+    total: i64,
+    rows: Vec<GrantRow>,
+) -> HttpResponse {
+    let items: Vec<Value> = rows.into_iter().map(grant_json).collect();
     json_response(json!({"total": total, "page": page, "page_size": page_size, "items": items}))
+}
+
+fn grant_json(row: GrantRow) -> Value {
+    json!({
+        "user_id": row.user_id,
+        "email": row.email,
+        "client_id": row.client_id,
+        "client_name": row.client_name,
+        "last_authorized_at": row.last_authorized_at,
+        "authorization_count": row.authorization_count,
+        "last_scopes": json_array_to_strings(&row.last_scopes),
+        "last_authorization_details": row.last_authorization_details
+    })
 }
 
 #[derive(Deserialize)]
@@ -155,5 +177,16 @@ pub(crate) async fn admin_revoke_grant(
             );
         }
     };
-    json_response(json!({"revoked_refresh_tokens": revoked, "removed_grants": removed}))
+    grant_revocation_response(revoked, removed)
 }
+
+fn grant_revocation_response(revoked_refresh_tokens: usize, removed_grants: usize) -> HttpResponse {
+    json_response(json!({
+        "revoked_refresh_tokens": revoked_refresh_tokens,
+        "removed_grants": removed_grants
+    }))
+}
+
+#[cfg(test)]
+#[path = "../../../tests/unit/src/http/admin/tests/grants.rs"]
+mod tests;

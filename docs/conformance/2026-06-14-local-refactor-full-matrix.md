@@ -13,15 +13,15 @@ containers and targeted the public issuer at `https://auth.nazo.run`.
 | Successes | `6375` |
 | Failures | `0` |
 | Warnings | `0` |
-| Implementation commit before local edits | `082003fdc76799a0ee7fb3d1cd6a732fc85a6133` |
+| Implementation tree under test | `c24c18205456ecae4172f2c1be99412533088a27` |
 | Public issuer under test | `https://auth.nazo.run` |
 | Conformance server | `https://localhost.emobix.co.uk:8443` |
 | Suite location | `/root/oauth2_server/oidf-conformance-suite` |
-| Export directory | `runtime/oidf/results-local-full-20260614T0854Z` |
+| Export directory | `runtime/oidf/results-local-full-20260614T112525Z` |
 | Runner mode | Local suite runner, public `auth.nazo.run` target |
 
-The runner process exited successfully after exporting 16 plan archives and
-reported:
+The latest runner process exited successfully after exporting 16 plan archives
+and reported:
 
 ```text
 Overall totals: ran 71 test modules. Conditions: 6375 successes, 0 failures, 0 warnings.
@@ -47,24 +47,24 @@ Profiles and protocol features covered by this run:
 
 ## Exported Artifact Filenames
 
-Artifact contents in `runtime/oidf/results-local-full-20260614T0854Z`:
+Artifact contents in `runtime/oidf/results-local-full-20260614T112525Z`:
 
-- `oidcc-basic-certification-test-plan-discovery-static_client-3nNsqb3zdkJd0-14-Jun-2026.zip`
-- `oidcc-config-certification-test-plan--77moNBam3ic0M-14-Jun-2026.zip`
-- `fapi2-message-signing-final-test-plan-private_key_jwt-dpop-simple-openid_connect-signed_non_repudiation-plain_fapi-jarm-aQAf8D4KPDebA-14-Jun-2026.zip`
-- `fapi2-message-signing-final-test-plan-private_key_jwt-dpop-simple-openid_connect-signed_non_repudiation-plain_fapi-plain_response-MQbKbYMTDjJ7s-14-Jun-2026.zip`
-- `fapi2-security-profile-final-test-plan-mtls-dpop-simple-openid_connect-plain_fapi-Wz31LzhcjBsYY-14-Jun-2026.zip`
-- `fapi2-security-profile-final-test-plan-mtls-dpop-simple-plain_oauth-fapi_client_credentials_grant-ZI1MTSWwPcHY4-14-Jun-2026.zip`
-- `fapi2-security-profile-final-test-plan-mtls-dpop-simple-plain_oauth-plain_fapi-fqtSMgFbKRXCN-14-Jun-2026.zip`
-- `fapi2-security-profile-final-test-plan-mtls-mtls-simple-openid_connect-plain_fapi-P8nn87WBgU8gu-14-Jun-2026.zip`
-- `fapi2-security-profile-final-test-plan-mtls-mtls-simple-plain_oauth-fapi_client_credentials_grant-oEMUrJ7yKJTaX-14-Jun-2026.zip`
-- `fapi2-security-profile-final-test-plan-mtls-mtls-simple-plain_oauth-plain_fapi-LpZ7p0yvFcpAs-14-Jun-2026.zip`
-- `fapi2-security-profile-final-test-plan-private_key_jwt-dpop-simple-openid_connect-plain_fapi-oArgw6KElNxcu-14-Jun-2026.zip`
-- `fapi2-security-profile-final-test-plan-private_key_jwt-dpop-simple-plain_oauth-fapi_client_credentials_grant-GUxPytDSYrRwT-14-Jun-2026.zip`
-- `fapi2-security-profile-final-test-plan-private_key_jwt-dpop-simple-plain_oauth-plain_fapi-v5OPyY4fC2jdA-14-Jun-2026.zip`
-- `fapi2-security-profile-final-test-plan-private_key_jwt-mtls-simple-openid_connect-plain_fapi-N1GZZLbzpVSM9-14-Jun-2026.zip`
-- `fapi2-security-profile-final-test-plan-private_key_jwt-mtls-simple-plain_oauth-fapi_client_credentials_grant-q2MzHWxKijBPs-14-Jun-2026.zip`
-- `fapi2-security-profile-final-test-plan-private_key_jwt-mtls-simple-plain_oauth-plain_fapi-Vfvu9JkGS5xo1-14-Jun-2026.zip`
+- `fapi2-message-signing-final-test-plan-private_key_jwt-dpop-simple-openid_connect-signed_non_repudiation-plain_fapi-jarm-cBLTIfVdP4Ku7-14-Jun-2026.zip`
+- `fapi2-message-signing-final-test-plan-private_key_jwt-dpop-simple-openid_connect-signed_non_repudiation-plain_fapi-plain_response-DuxlA7WkLR10X-14-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-dpop-simple-openid_connect-plain_fapi-vc6RPo0FLdqTA-14-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-dpop-simple-plain_oauth-fapi_client_credentials_grant-HTFkTEigqDfLL-14-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-dpop-simple-plain_oauth-plain_fapi-75C6tlgTdeZSN-14-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-mtls-simple-openid_connect-plain_fapi-OXB4yfsCtR4Z2-14-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-mtls-simple-plain_oauth-fapi_client_credentials_grant-dkFW7ZEkg8x2H-14-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-mtls-mtls-simple-plain_oauth-plain_fapi-fUm3OfVlO85go-14-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-dpop-simple-openid_connect-plain_fapi-D2Dvq97tm1JhP-14-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-dpop-simple-plain_oauth-fapi_client_credentials_grant-RBTUS5iLpWrgu-14-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-dpop-simple-plain_oauth-plain_fapi-Hqlhmb9RO9F5H-14-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-mtls-simple-openid_connect-plain_fapi-q4j4qAD2X1owY-14-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-mtls-simple-plain_oauth-fapi_client_credentials_grant-we8drC7ntD3mv-14-Jun-2026.zip`
+- `fapi2-security-profile-final-test-plan-private_key_jwt-mtls-simple-plain_oauth-plain_fapi-BQA5A6tkTzd2L-14-Jun-2026.zip`
+- `oidcc-basic-certification-test-plan-discovery-static_client-ViOi27eYIgJia-14-Jun-2026.zip`
+- `oidcc-config-certification-test-plan--zflLvVMlAXqsn-14-Jun-2026.zip`
 
 ## Verification Commands
 
@@ -77,12 +77,12 @@ python3 scripts/run_oidf_conformance.py \
   --config-json-file runtime/oidf/oidf-plan-configs.json \
   --config-file-name oidf-plan-configs.json \
   --plan-set-json-file runtime/oidf/oidf-plan-set.json \
-  --export-dir runtime/oidf/results-local-full-20260614T0854Z \
+  --export-dir runtime/oidf/results-local-full-20260614T112525Z \
   --timeout-seconds 10800 \
   --monitor-interval-seconds 30
 
 grep -R '"result"[[:space:]]*:[[:space:]]*"\(FAILED\|WARNING\|INTERRUPTED\|SKIPPED\)"' \
-  runtime/oidf/results-local-full-20260614T0854Z
+  runtime/oidf/results-local-full-20260614T112525Z
 ```
 
 ## Notes

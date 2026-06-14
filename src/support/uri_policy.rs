@@ -106,6 +106,9 @@ pub(crate) fn is_loopback_http_url(value: &str) -> bool {
 }
 
 fn parse_url(name: &str, value: &str) -> anyhow::Result<Url> {
+    if value != value.trim() {
+        bail!("{name} 不能包含前后空白");
+    }
     Url::parse(value).map_err(|_| anyhow::anyhow!("{name} 必须是绝对 URI"))
 }
 

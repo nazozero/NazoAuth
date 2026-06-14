@@ -27,6 +27,7 @@ fn redirect_uri_policy_allows_only_oauth_bcp_exceptions() {
     assert!(validate_oauth_redirect_uri("public", "http://client.example/cb").is_err());
     assert!(validate_oauth_redirect_uri("public", "https://client.example/cb#frag").is_err());
     assert!(validate_oauth_redirect_uri("public", "https://user@client.example/cb").is_err());
+    assert!(validate_oauth_redirect_uri("public", " https://client.example/cb ").is_err());
 }
 
 #[test]
