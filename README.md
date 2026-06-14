@@ -85,8 +85,8 @@ authorization errors were enabled:
 - [2026-06-13 real public UI OIDF regression](docs/conformance/2026-06-13-real-public-ui-regression.md)
 
 The latest recorded official workflow conclusion was `success` on run
-`27474748434` for commit
-`6d75031c878fba1b1e9ce73d7fd661f0c1aea63f`. The official runner reported 71
+`27491182262` for commit
+`31c3d0665ec72ffb4babedfea519ed175ef403ad`. The official runner reported 71
 test modules, 6375 successes, `0 failures`, and `0 warnings`. The records
 include commit SHA, run environment, plan IDs, exported artifact filenames,
 profile combinations, artifact digest, and pass counts.

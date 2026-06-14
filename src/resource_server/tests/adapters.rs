@@ -1,5 +1,6 @@
 use super::fixtures::*;
 use super::*;
+use actix_web::{FromRequest, http::StatusCode};
 use futures_util::future::{Ready, ready};
 use serde_json::json;
 use std::task::{Context, Poll};
@@ -108,4 +109,111 @@ fn tonic_request_authorizer_inserts_verified_claims() {
             .client_id,
         "client-1"
     );
+}
+
+#[actix_web::test]
+async fn actix_extractor_fails_closed_when_verifier_is_not_configured() {
+    let request = actix_web::test::TestRequest::get()
+        .uri("/orders")
+        .to_http_request();
+    let mut payload = actix_web::dev::Payload::None;
+
+    let error = ActixVerifiedAccessToken::from_request(&request, &mut payload)
+        .await
+        .unwrap_err();
+    let response = error.as_response_error().error_response();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response
+            .headers()
+            .get(actix_web::http::header::WWW_AUTHENTICATE)
+            .unwrap(),
+        r#"Bearer error="invalid_request", error_description="The request used an invalid access token transport.""#
+    );
+}
+
+#[test]
+fn bearer_error_mappers_hide_internal_reasons_but_preserve_protocol_category() {
+    let invalid_request = http_bearer_error_response(&ResourceServerRequestError::InvalidRequest);
+    assert_eq!(invalid_request.status(), http::StatusCode::BAD_REQUEST);
+    assert_eq!(
+        invalid_request
+            .headers()
+            .get(http::header::WWW_AUTHENTICATE)
+            .unwrap(),
+        r#"Bearer error="invalid_request", error_description="The request used an invalid access token transport.""#
+    );
+
+    let dpop_mismatch =
+        http_bearer_error_response(&ResourceServerRequestError::DpopBindingMismatch);
+    assert_eq!(dpop_mismatch.status(), http::StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        dpop_mismatch.body(),
+        r#"{"error":"invalid_token","error_description":"DPoP proof does not match access token."}"#
+    );
+
+    let invalid_dpop = http_bearer_error_response(&ResourceServerRequestError::InvalidDpopProof(
+        DpopProofVerifierError::InvalidSignature,
+    ));
+    assert_eq!(invalid_dpop.status(), http::StatusCode::UNAUTHORIZED);
+    assert!(!invalid_dpop.body().contains("InvalidSignature"));
+    assert_eq!(
+        invalid_dpop.body(),
+        r#"{"error":"invalid_token","error_description":"DPoP proof is invalid."}"#
+    );
+}
+
+#[test]
+fn tonic_authorizer_maps_invalid_request_to_argument_and_auth_failures_to_unauthenticated() {
+    let fixture = fixture();
+    let mut invalid_request = tonic::Request::new(());
+    invalid_request
+        .metadata_mut()
+        .insert("authorization", "Bearer token extra".parse().unwrap());
+
+    let invalid_request_status =
+        authorize_tonic_request(&fixture.verifier, &mut invalid_request).unwrap_err();
+    assert_eq!(invalid_request_status.code(), tonic::Code::InvalidArgument);
+    assert_eq!(invalid_request_status.message(), "invalid_request");
+
+    let mut missing_token = tonic::Request::new(());
+    let missing_token_status =
+        authorize_tonic_request(&fixture.verifier, &mut missing_token).unwrap_err();
+    assert_eq!(missing_token_status.code(), tonic::Code::Unauthenticated);
+    assert_eq!(missing_token_status.message(), "invalid_token");
+}
+
+#[tokio::test]
+async fn tower_layer_returns_unauthorized_without_calling_inner_service() {
+    #[derive(Clone)]
+    struct PanicIfCalled;
+
+    impl Service<http::Request<()>> for PanicIfCalled {
+        type Response = ();
+        type Error = ();
+        type Future = Ready<Result<(), ()>>;
+
+        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn call(&mut self, _request: http::Request<()>) -> Self::Future {
+            panic!("inner service must not be called after failed authorization")
+        }
+    }
+
+    let fixture = fixture();
+    let request = http::Request::builder()
+        .uri("https://api.example/orders")
+        .body(())
+        .unwrap();
+    let mut service = TowerResourceServerLayer::new(fixture.verifier).layer(PanicIfCalled);
+
+    let error = service.call(request).await.unwrap_err();
+
+    assert!(matches!(
+        error,
+        TowerResourceServerError::Unauthorized(ResourceServerRequestError::MissingToken)
+    ));
 }

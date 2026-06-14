@@ -8,6 +8,106 @@ fn form_request() -> HttpRequest {
         .to_http_request()
 }
 
+async fn response_json(response: HttpResponse) -> Value {
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should collect");
+    serde_json::from_slice(&body).expect("response body should be JSON")
+}
+
+#[test]
+fn token_form_requires_form_content_type() {
+    let req = TestRequest::default()
+        .insert_header((header::CONTENT_TYPE, "application/json"))
+        .to_http_request();
+
+    let result = parse_token_form(&req, &Bytes::from_static(b"grant_type=client_credentials"));
+
+    assert!(matches!(result, Err(TokenFormError::InvalidContentType)));
+}
+
+#[test]
+fn token_form_accepts_form_content_type_with_charset() {
+    let req = TestRequest::default()
+        .insert_header((
+            header::CONTENT_TYPE,
+            "application/x-www-form-urlencoded; charset=utf-8",
+        ))
+        .to_http_request();
+
+    let form = parse_token_form(&req, &Bytes::from_static(b"grant_type=client_credentials"))
+        .expect("form content type parameters are allowed by RFC 6749");
+
+    assert_eq!(form.grant_type, "client_credentials");
+}
+
+#[test]
+fn token_form_rejects_invalid_utf8_before_parsing_parameters() {
+    let req = form_request();
+
+    let result = parse_token_form(&req, &Bytes::from_static(b"grant_type=\xff"));
+
+    assert!(matches!(result, Err(TokenFormError::InvalidEncoding)));
+}
+
+#[test]
+fn token_form_requires_non_empty_grant_type() {
+    let req = form_request();
+
+    let missing = parse_token_form(&req, &Bytes::from_static(b"client_id=client-1"));
+    let empty = parse_token_form(&req, &Bytes::from_static(b"grant_type=%20%20"));
+
+    assert!(matches!(missing, Err(TokenFormError::MissingGrantType)));
+    assert!(matches!(empty, Err(TokenFormError::MissingGrantType)));
+}
+
+#[test]
+fn token_form_maps_empty_optional_credentials_to_absent_values() {
+    let req = form_request();
+
+    let form = parse_token_form(
+        &req,
+        &Bytes::from_static(
+            b"grant_type=authorization_code&code=&redirect_uri=&code_verifier=&client_id=&client_secret=&client_assertion_type=&client_assertion=&audience=",
+        ),
+    )
+    .expect("empty optional values should not create credentials");
+
+    assert_eq!(form.grant_type, "authorization_code");
+    assert!(form.code.is_none());
+    assert!(form.redirect_uri.is_none());
+    assert!(form.code_verifier.is_none());
+    assert!(form.client_id.is_none());
+    assert!(form.client_secret.is_none());
+    assert!(form.client_assertion_type.is_none());
+    assert!(form.client_assertion.is_none());
+    assert!(form.audiences.is_empty());
+}
+
+#[test]
+fn token_form_extracts_authorization_code_exchange_fields_without_reordering() {
+    let req = form_request();
+
+    let form = parse_token_form(
+        &req,
+        &Bytes::from_static(
+            b"grant_type=authorization_code&code=code-1&redirect_uri=https%3A%2F%2Fclient.example%2Fcb&code_verifier=verifier-1&scope=openid%20profile&client_id=client-1&client_secret=secret-1",
+        ),
+    )
+    .expect("well-formed token request should parse");
+
+    assert_eq!(form.grant_type, "authorization_code");
+    assert_eq!(form.code.as_deref(), Some("code-1"));
+    assert_eq!(
+        form.redirect_uri.as_deref(),
+        Some("https://client.example/cb")
+    );
+    assert_eq!(form.code_verifier.as_deref(), Some("verifier-1"));
+    assert_eq!(form.scope.as_deref(), Some("openid profile"));
+    assert_eq!(form.client_id.as_deref(), Some("client-1"));
+    assert_eq!(form.client_secret.as_deref(), Some("secret-1"));
+}
+
 #[test]
 fn token_form_rejects_duplicate_defined_parameters() {
     let req = TestRequest::default()
@@ -197,6 +297,38 @@ fn token_management_form_requires_form_content_type() {
 }
 
 #[test]
+fn token_management_form_rejects_invalid_utf8() {
+    let req = form_request();
+
+    let result = parse_token_management_form(&req, &Bytes::from_static(b"token=\xff"));
+
+    assert!(matches!(
+        result,
+        Err(TokenManagementFormError::InvalidEncoding)
+    ));
+}
+
+#[test]
+fn token_management_form_ignores_unknown_parameters_and_extracts_auth_fields() {
+    let req = form_request();
+
+    let form = parse_token_management_form(
+        &req,
+        &Bytes::from_static(
+            b"token=token-1&token_type_hint=refresh_token&client_id=client-1&client_secret=secret-1&client_assertion_type=jwt-bearer&client_assertion=assertion-1&unknown=value",
+        ),
+    )
+    .expect("well-formed token management request should parse");
+
+    assert_eq!(form.token, "token-1");
+    assert_eq!(form.token_type_hint.as_deref(), Some("refresh_token"));
+    assert_eq!(form.client_id.as_deref(), Some("client-1"));
+    assert_eq!(form.client_secret.as_deref(), Some("secret-1"));
+    assert_eq!(form.client_assertion_type.as_deref(), Some("jwt-bearer"));
+    assert_eq!(form.client_assertion.as_deref(), Some("assertion-1"));
+}
+
+#[test]
 fn token_management_form_requires_non_empty_token() {
     let req = TestRequest::default()
         .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
@@ -210,20 +342,35 @@ fn token_management_form_requires_non_empty_token() {
     ));
 }
 
-#[test]
-fn token_management_form_error_is_not_cacheable() {
-    let response = token_management_form_error(TokenManagementFormError::MissingToken);
+#[actix_web::test]
+async fn token_management_form_errors_are_exact_oauth_json_and_not_cacheable() {
+    let cases = [
+        TokenManagementFormError::InvalidContentType,
+        TokenManagementFormError::InvalidEncoding,
+        TokenManagementFormError::DuplicateParameter,
+        TokenManagementFormError::MissingToken,
+    ];
 
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(
-        response.headers().get(header::CACHE_CONTROL).unwrap(),
-        HeaderValue::from_static("no-store")
-    );
-    assert_eq!(
-        response.headers().get(header::PRAGMA).unwrap(),
-        HeaderValue::from_static("no-cache")
-    );
-    assert!(response.headers().get(header::WWW_AUTHENTICATE).is_none());
+    for error in cases {
+        let response = token_management_form_error(error);
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            HeaderValue::from_static("no-store")
+        );
+        assert_eq!(
+            response.headers().get(header::PRAGMA).unwrap(),
+            HeaderValue::from_static("no-cache")
+        );
+        assert!(response.headers().get(header::WWW_AUTHENTICATE).is_none());
+
+        let body = response_json(response).await;
+        assert_eq!(body["error"], "invalid_request");
+        assert!(body["error_description"].as_str().is_some());
+        assert!(body.get("access_token").is_none());
+        assert!(body.get("refresh_token").is_none());
+    }
 }
 
 proptest! {

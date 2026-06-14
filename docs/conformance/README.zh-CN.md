@@ -20,7 +20,7 @@ Nazo Auth Server 已发布在 OpenID Foundation 官方认证列表中：
 
 `2026-06-09` full matrix 是当前官方认证证据，针对 `https://auth.nazo.run` 执行，覆盖 OIDC Basic、OIDC Config、FAPI2 Security Profile Final、FAPI2 Message Signing Final、mTLS、DPoP、`private_key_jwt`、client credentials 变体。结果为全计划完成，`0 failures`，`0 warnings`。
 
-`2026-06-13` 记录保存了移除 OIDF-only 前端页面、启用 JSON-only 后端授权错误响应后的真实公网 UI 回归结果。最新官方 workflow run `27472766776` 在 `main` 的 `c9a5a19c651ce2cd8b6861ceaf66b135569764c6` 上完成 full matrix，GitHub conclusion 为 `success`，artifact 为 `oidf-conformance-results-full`，artifact digest 为 `sha256:54c39e3bc8a5602fa3e4deed522256699f12b033a678229c7c2eb83090ffb7e8`。官方 runner 报告 71 个 test modules、5929 successes、`0 failures`、`0 warnings`。
+`2026-06-13` 记录保存了移除 OIDF-only 前端页面、启用 JSON-only 后端授权错误响应后的真实公网 UI 回归结果。最新官方 workflow run `27491182262` 在 `main` 的 `31c3d0665ec72ffb4babedfea519ed175ef403ad` 上完成 full matrix，GitHub conclusion 为 `success`，artifact 为 `oidf-conformance-results-full`，artifact digest 为 `sha256:3faed1f41a2258c8b948d73b0356dd8bbe7b6b701afd3c845939b3ea17585d8a`。官方 runner 报告 71 个 test modules、6375 successes、`0 failures`、`0 warnings`。
 
 ## 记录格式
 

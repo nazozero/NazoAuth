@@ -205,7 +205,7 @@ fn decode_and_verify_dpop_proof(
     Ok(claims)
 }
 
-fn dpop_jwk_decoding_key(key: &Value, alg: Algorithm) -> Option<DecodingKey> {
+pub(super) fn dpop_jwk_decoding_key(key: &Value, alg: Algorithm) -> Option<DecodingKey> {
     let expected_alg = algorithm_name(alg)?;
     if let Some(key_alg) = key.get("alg").and_then(Value::as_str)
         && key_alg != expected_alg
