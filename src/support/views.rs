@@ -143,3 +143,7 @@ pub(crate) fn append_query(base: &str, pairs: &[(&str, &str)]) -> String {
     }
     url.to_string()
 }
+
+#[cfg(test)]
+#[path = "tests/views.rs"]
+mod tests;
