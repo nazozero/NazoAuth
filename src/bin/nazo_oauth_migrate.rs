@@ -2,16 +2,13 @@
 
 use diesel::{Connection, PgConnection, RunQueryDsl};
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
-use nazo_oauth_server::{config::ConfigSource, database_config::normalize_database_url};
+use nazo_oauth_server::config::{ConfigSource, database_url};
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
 
 fn main() -> anyhow::Result<()> {
     let config = ConfigSource::load()?;
-    let database_url = normalize_database_url(&config.string(
-        "DATABASE_URL",
-        "postgresql://postgres:postgres@127.0.0.1:5432/oauth",
-    ));
+    let database_url = database_url(&config);
     let mut connection = PgConnection::establish(&database_url)?;
     connection
         .run_pending_migrations(MIGRATIONS)

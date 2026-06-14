@@ -2,7 +2,7 @@
 
 use argon2::{Argon2, PasswordHasher};
 use diesel::{Connection, PgConnection, RunQueryDsl, sql_query};
-use nazo_oauth_server::{config::ConfigSource, database_config::normalize_database_url};
+use nazo_oauth_server::config::{ConfigSource, database_url};
 use password_hash::{SaltString, rand_core::OsRng};
 use serde_json::{Value, json};
 use std::{collections::BTreeSet, env, path::Path};
@@ -327,10 +327,7 @@ fn callback_uris(suite_base_urls: &[String], alias: &str) -> Vec<String> {
 
 fn main() -> anyhow::Result<()> {
     let config = ConfigSource::load()?;
-    let database_url = normalize_database_url(&config.string(
-        "DATABASE_URL",
-        "postgresql://postgres:postgres@127.0.0.1:5432/oauth",
-    ));
+    let database_url = database_url(&config);
     let suite_base_url = env_or("OIDF_LOCAL_SUITE_BASE_URL", "https://nginx:8443");
     let suite_base_urls = suite_base_urls(&suite_base_url);
     let issuer = config.string("ISSUER", "https://auth.nazo.run");

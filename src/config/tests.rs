@@ -165,3 +165,39 @@ fn invalid_environment_type_is_error() {
             .contains("SESSION_TTL_SECONDS must be a valid")
     );
 }
+
+#[test]
+fn database_url_uses_documented_default_when_unset() {
+    let source = ConfigSource::default();
+
+    assert_eq!(database_url(&source), DEFAULT_DATABASE_URL);
+}
+
+#[test]
+fn database_url_uses_whitelisted_environment_value() {
+    let mut source = ConfigSource::default();
+    source
+        .merge_env([(
+            "DATABASE_URL".to_owned(),
+            "postgresql://nazo:secret@db.internal:5432/oauth".to_owned(),
+        )])
+        .unwrap();
+
+    assert_eq!(
+        database_url(&source),
+        "postgresql://nazo:secret@db.internal:5432/oauth"
+    );
+}
+
+#[test]
+fn database_url_does_not_rewrite_unsupported_legacy_driver_scheme() {
+    let source = ConfigSource::from_pairs_for_test([(
+        "DATABASE_URL",
+        "postgresql+psycopg://nazo:secret@db.internal:5432/oauth",
+    )]);
+
+    assert_eq!(
+        database_url(&source),
+        "postgresql+psycopg://nazo:secret@db.internal:5432/oauth"
+    );
+}

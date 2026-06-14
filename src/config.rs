@@ -8,6 +8,7 @@ use yaml_serde::Value as YamlValue;
 
 const CONFIG_FILE: &str = ".env.yaml";
 const UNSUPPORTED_DOTENV_FILE: &str = ".env";
+pub const DEFAULT_DATABASE_URL: &str = "postgresql://postgres:postgres@127.0.0.1:5432/oauth";
 const ENV_CONFIG_KEYS: &[&str] = &[
     "ACCESS_TOKEN_TTL_SECONDS",
     "AUTH_CODE_TTL_SECONDS",
@@ -237,6 +238,10 @@ fn parse_bool(value: &str) -> Option<bool> {
         "0" | "false" | "no" | "off" => Some(false),
         _ => None,
     }
+}
+
+pub fn database_url(source: &ConfigSource) -> String {
+    source.string("DATABASE_URL", DEFAULT_DATABASE_URL)
 }
 
 #[cfg(test)]

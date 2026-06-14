@@ -15,8 +15,7 @@ use fred::{
     },
 };
 
-use crate::config::ConfigSource;
-use crate::database_config::normalize_database_url;
+use crate::config::{ConfigSource, database_url};
 use crate::db::create_pool;
 use crate::domain::AppState;
 use crate::settings::Settings;
@@ -28,10 +27,7 @@ pub async fn run() -> anyhow::Result<()> {
     let _observability = observability::init(&config)?;
 
     // 配置只在启动阶段读取，运行期通过 AppState 共享不可变配置。
-    let database_url = normalize_database_url(&config.string(
-        "DATABASE_URL",
-        "postgresql://postgres:postgres@127.0.0.1:5432/oauth",
-    ));
+    let database_url = database_url(&config);
     let valkey_url = config.string("VALKEY_URL", "redis://127.0.0.1:6379/0");
     let valkey_command_timeout_ms = config.parse::<u64>("VALKEY_COMMAND_TIMEOUT_MS", 1_000)?;
     if valkey_command_timeout_ms == 0 {

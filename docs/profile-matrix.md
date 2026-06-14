@@ -132,7 +132,7 @@ Required negative tests:
 | Response types | `code` |
 | Client auth | `private_key_jwt` or mTLS |
 | Token binding | DPoP or mTLS sender-constrained access tokens |
-| DPoP nonce | Required, regardless of `DPOP_NONCE_POLICY` compatibility settings |
+| DPoP nonce | Required, regardless of a baseline `DPOP_NONCE_POLICY=optional` setting |
 | PAR | Required; authorization requests that do not use PAR must be rejected |
 | PKCE | S256 required for authorization code flow |
 | Authorization code TTL | 60 seconds or less |

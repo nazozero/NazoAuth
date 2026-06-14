@@ -3,14 +3,27 @@
 
 use std::path::PathBuf;
 
-use anyhow::{Context, bail};
-use lettre::message::Mailbox;
+use anyhow::bail;
 
 use crate::config::ConfigSource;
 use crate::support::{
     ClientIpHeaderMode, IpCidr, is_loopback_http_url, parse_trusted_proxy_cidrs,
     validate_cors_origin, validate_frontend_base_url, validate_issuer_url,
 };
+
+mod email;
+mod federation;
+mod passkey;
+mod profile;
+mod rate_limit;
+
+pub(crate) use email::{EmailDelivery, EmailSettings, SmtpEmailSettings, SmtpTlsMode};
+pub(crate) use federation::{FederationSettings, OidcFederationSettings, SamlGatewaySettings};
+pub(crate) use passkey::PasskeySettings;
+pub(crate) use profile::{
+    AuthorizationServerProfile, DpopNoncePolicy, RequestObjectJtiPolicy, SubjectType,
+};
+pub(crate) use rate_limit::RateLimitSettings;
 
 /// OAuth service runtime parameters.
 #[derive(Clone)]
@@ -49,106 +62,6 @@ pub(crate) struct Settings {
     pub(crate) scim_bearer_token: Option<String>,
     pub(crate) passkey: PasskeySettings,
     pub(crate) federation: FederationSettings,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum AuthorizationServerProfile {
-    Oauth2Baseline,
-    Fapi2Security,
-    Fapi2MessageSigningAuthzRequest,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum DpopNoncePolicy {
-    Required,
-    Optional,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum RequestObjectJtiPolicy {
-    Optional,
-    RequiredForSignedJar,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SubjectType {
-    Public,
-    Pairwise,
-}
-
-#[derive(Clone)]
-pub(crate) struct RateLimitSettings {
-    pub(crate) window_seconds: u64,
-    pub(crate) auth_max_requests: u64,
-    pub(crate) token_max_requests: u64,
-    pub(crate) token_management_max_requests: u64,
-}
-
-#[derive(Clone)]
-pub(crate) struct EmailSettings {
-    pub(crate) delivery: EmailDelivery,
-    pub(crate) code_ttl_seconds: u64,
-    pub(crate) send_cooldown_seconds: u64,
-    pub(crate) send_peer_cooldown_seconds: u64,
-}
-
-#[derive(Clone)]
-pub(crate) struct PasskeySettings {
-    pub(crate) rp_id: String,
-    pub(crate) rp_name: String,
-    pub(crate) origin: String,
-    pub(crate) require_user_verification: bool,
-    pub(crate) require_user_handle: bool,
-    pub(crate) strict_base64: bool,
-}
-
-#[derive(Clone)]
-pub(crate) struct FederationSettings {
-    pub(crate) oidc: Option<OidcFederationSettings>,
-    pub(crate) saml_gateway: Option<SamlGatewaySettings>,
-}
-
-#[derive(Clone)]
-pub(crate) struct OidcFederationSettings {
-    pub(crate) provider_id: String,
-    pub(crate) issuer: String,
-    pub(crate) authorization_endpoint: String,
-    pub(crate) token_endpoint: String,
-    pub(crate) jwks_url: String,
-    pub(crate) client_id: String,
-    pub(crate) client_secret: String,
-    pub(crate) redirect_uri: String,
-    pub(crate) scopes: String,
-}
-
-#[derive(Clone)]
-pub(crate) struct SamlGatewaySettings {
-    pub(crate) issuer: String,
-    pub(crate) audience: String,
-    pub(crate) secret: String,
-}
-
-#[derive(Clone)]
-pub(crate) enum EmailDelivery {
-    Disabled,
-    Smtp(SmtpEmailSettings),
-}
-
-#[derive(Clone)]
-pub(crate) struct SmtpEmailSettings {
-    pub(crate) host: String,
-    pub(crate) port: u16,
-    pub(crate) tls: SmtpTlsMode,
-    pub(crate) username: Option<String>,
-    pub(crate) password: Option<String>,
-    pub(crate) from: Mailbox,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) enum SmtpTlsMode {
-    StartTls,
-    ImplicitTls,
-    None,
 }
 
 impl Settings {
@@ -251,129 +164,6 @@ impl Settings {
     }
 }
 
-impl FederationSettings {
-    fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
-        let oidc = OidcFederationSettings::from_config(config)?;
-        let saml_gateway = SamlGatewaySettings::from_config(config)?;
-        Ok(Self { oidc, saml_gateway })
-    }
-}
-
-impl OidcFederationSettings {
-    fn from_config(config: &ConfigSource) -> anyhow::Result<Option<Self>> {
-        let provider_id = config.optional_string("FEDERATION_OIDC_PROVIDER_ID");
-        let issuer = config.optional_string("FEDERATION_OIDC_ISSUER");
-        let authorization_endpoint =
-            config.optional_string("FEDERATION_OIDC_AUTHORIZATION_ENDPOINT");
-        let token_endpoint = config.optional_string("FEDERATION_OIDC_TOKEN_ENDPOINT");
-        let jwks_url = config.optional_string("FEDERATION_OIDC_JWKS_URL");
-        let client_id = config.optional_string("FEDERATION_OIDC_CLIENT_ID");
-        let client_secret = config.optional_string("FEDERATION_OIDC_CLIENT_SECRET");
-        let redirect_uri = config.optional_string("FEDERATION_OIDC_REDIRECT_URI");
-        let any = [
-            &provider_id,
-            &issuer,
-            &authorization_endpoint,
-            &token_endpoint,
-            &jwks_url,
-            &client_id,
-            &client_secret,
-            &redirect_uri,
-        ]
-        .iter()
-        .any(|value| {
-            value
-                .as_deref()
-                .is_some_and(|value| !value.trim().is_empty())
-        });
-        if !any {
-            return Ok(None);
-        }
-        let settings = Self {
-            provider_id: required_optional(provider_id, "FEDERATION_OIDC_PROVIDER_ID")?,
-            issuer: required_optional(issuer, "FEDERATION_OIDC_ISSUER")?,
-            authorization_endpoint: required_optional(
-                authorization_endpoint,
-                "FEDERATION_OIDC_AUTHORIZATION_ENDPOINT",
-            )?,
-            token_endpoint: required_optional(token_endpoint, "FEDERATION_OIDC_TOKEN_ENDPOINT")?,
-            jwks_url: required_optional(jwks_url, "FEDERATION_OIDC_JWKS_URL")?,
-            client_id: required_optional(client_id, "FEDERATION_OIDC_CLIENT_ID")?,
-            client_secret: required_optional(client_secret, "FEDERATION_OIDC_CLIENT_SECRET")?,
-            redirect_uri: required_optional(redirect_uri, "FEDERATION_OIDC_REDIRECT_URI")?,
-            scopes: config.string("FEDERATION_OIDC_SCOPES", "openid email profile"),
-        };
-        validate_issuer_url(&settings.issuer)?;
-        validate_issuer_url(&settings.authorization_endpoint)?;
-        validate_issuer_url(&settings.token_endpoint)?;
-        validate_issuer_url(&settings.jwks_url)?;
-        validate_issuer_url(&settings.redirect_uri)?;
-        if !settings
-            .scopes
-            .split_whitespace()
-            .any(|scope| scope == "openid")
-        {
-            bail!("FEDERATION_OIDC_SCOPES must include openid");
-        }
-        Ok(Some(settings))
-    }
-}
-
-impl SamlGatewaySettings {
-    fn from_config(config: &ConfigSource) -> anyhow::Result<Option<Self>> {
-        if !config.bool("FEDERATION_SAML_GATEWAY_ENABLED", false)? {
-            return Ok(None);
-        }
-        let settings = Self {
-            issuer: config.required_string("FEDERATION_SAML_GATEWAY_ISSUER")?,
-            audience: config.required_string("FEDERATION_SAML_GATEWAY_AUDIENCE")?,
-            secret: config.required_string("FEDERATION_SAML_GATEWAY_SECRET")?,
-        };
-        if settings.secret.len() < 32 {
-            bail!("FEDERATION_SAML_GATEWAY_SECRET must be at least 32 bytes");
-        }
-        Ok(Some(settings))
-    }
-}
-
-fn required_optional(value: Option<String>, key: &str) -> anyhow::Result<String> {
-    value
-        .map(|value| value.trim().to_owned())
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("{key} is required when OIDC federation is configured"))
-}
-
-impl PasskeySettings {
-    fn from_config(config: &ConfigSource, issuer: &str) -> anyhow::Result<Self> {
-        let origin = config
-            .optional_string("PASSKEY_ORIGIN")
-            .unwrap_or_else(|| issuer.trim_end_matches('/').to_owned());
-        validate_issuer_url(&origin)?;
-        let rp_id = match config.optional_string("PASSKEY_RP_ID") {
-            Some(value) => value,
-            None => passkey_auth::RpId::try_from_url(&origin)
-                .map_err(|error| anyhow::anyhow!("PASSKEY_ORIGIN cannot derive RP ID: {error}"))?
-                .as_str()
-                .to_owned(),
-        };
-        if rp_id.trim().is_empty()
-            || rp_id.contains("://")
-            || rp_id.contains('/')
-            || rp_id.contains(':')
-        {
-            bail!("PASSKEY_RP_ID must be a bare host name without scheme, port, or path");
-        }
-        Ok(Self {
-            rp_id,
-            rp_name: config.string("PASSKEY_RP_NAME", "Nazo OAuth"),
-            origin,
-            require_user_verification: config.bool("PASSKEY_REQUIRE_USER_VERIFICATION", true)?,
-            require_user_handle: config.bool("PASSKEY_REQUIRE_USER_HANDLE", true)?,
-            strict_base64: config.bool("PASSKEY_STRICT_BASE64", true)?,
-        })
-    }
-}
-
 fn parse_signing_external_command(value: Option<String>) -> Vec<String> {
     value
         .map(|value| {
@@ -385,181 +175,6 @@ fn parse_signing_external_command(value: Option<String>) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
-}
-
-impl AuthorizationServerProfile {
-    fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
-        match config
-            .string("AUTHORIZATION_SERVER_PROFILE", "oauth2-baseline")
-            .trim()
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "oauth2-baseline" | "baseline" => Ok(Self::Oauth2Baseline),
-            "fapi2-security" => Ok(Self::Fapi2Security),
-            "fapi2-message-signing-authz-request" => Ok(Self::Fapi2MessageSigningAuthzRequest),
-            value => bail!("AUTHORIZATION_SERVER_PROFILE is not supported: {value}"),
-        }
-    }
-
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::Oauth2Baseline => "oauth2-baseline",
-            Self::Fapi2Security => "fapi2-security",
-            Self::Fapi2MessageSigningAuthzRequest => "fapi2-message-signing-authz-request",
-        }
-    }
-
-    pub(crate) fn requires_fapi2_security(self) -> bool {
-        matches!(
-            self,
-            Self::Fapi2Security | Self::Fapi2MessageSigningAuthzRequest
-        )
-    }
-
-    pub(crate) fn requires_signed_authorization_request(self) -> bool {
-        self == Self::Fapi2MessageSigningAuthzRequest
-    }
-}
-
-impl DpopNoncePolicy {
-    fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
-        match config
-            .string("DPOP_NONCE_POLICY", "required")
-            .trim()
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "required" | "require" | "strict" => Ok(Self::Required),
-            "optional" | "compat" | "compatible" => Ok(Self::Optional),
-            value => bail!("DPOP_NONCE_POLICY must be required or optional, got {value}"),
-        }
-    }
-}
-
-impl RequestObjectJtiPolicy {
-    fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
-        match config
-            .string("REQUEST_OBJECT_JTI_POLICY", "optional")
-            .trim()
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "optional" => Ok(Self::Optional),
-            "required-for-signed-jar" | "required_signed_jar" | "required" => {
-                Ok(Self::RequiredForSignedJar)
-            }
-            value => bail!(
-                "REQUEST_OBJECT_JTI_POLICY must be optional or required-for-signed-jar, got {value}"
-            ),
-        }
-    }
-}
-
-impl SubjectType {
-    fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
-        match config
-            .string("SUBJECT_TYPE", "public")
-            .trim()
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "public" => Ok(Self::Public),
-            "pairwise" => Ok(Self::Pairwise),
-            value => bail!("SUBJECT_TYPE must be public or pairwise, got {value}"),
-        }
-    }
-
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::Public => "public",
-            Self::Pairwise => "pairwise",
-        }
-    }
-}
-
-impl RateLimitSettings {
-    fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
-        let settings = Self {
-            window_seconds: config.parse("RATE_LIMIT_WINDOW_SECONDS", 60)?,
-            auth_max_requests: config.parse("AUTH_RATE_LIMIT_MAX_REQUESTS", 30)?,
-            token_max_requests: config.parse("TOKEN_RATE_LIMIT_MAX_REQUESTS", 60)?,
-            token_management_max_requests: config
-                .parse("TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS", 120)?,
-        };
-        if settings.window_seconds == 0 {
-            bail!("RATE_LIMIT_WINDOW_SECONDS must be greater than 0");
-        }
-        if settings.auth_max_requests == 0
-            || settings.token_max_requests == 0
-            || settings.token_management_max_requests == 0
-        {
-            bail!("rate limit request caps must be greater than 0");
-        }
-        Ok(settings)
-    }
-}
-
-impl EmailSettings {
-    fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
-        let delivery = match config
-            .string("EMAIL_DELIVERY", "disabled")
-            .trim()
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "disabled" => EmailDelivery::Disabled,
-            "smtp" => EmailDelivery::Smtp(SmtpEmailSettings::from_config(config)?),
-            value => bail!("EMAIL_DELIVERY must be disabled or smtp, got {value}"),
-        };
-
-        Ok(Self {
-            delivery,
-            code_ttl_seconds: config.parse("EMAIL_CODE_TTL_SECONDS", 900)?,
-            send_cooldown_seconds: config.parse("EMAIL_CODE_SEND_COOLDOWN_SECONDS", 60)?,
-            send_peer_cooldown_seconds: config.parse("EMAIL_CODE_PEER_COOLDOWN_SECONDS", 5)?,
-        })
-    }
-}
-
-impl SmtpEmailSettings {
-    fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
-        let username = config.optional_string("EMAIL_SMTP_USERNAME");
-        let password = config.optional_string("EMAIL_SMTP_PASSWORD");
-        if username.is_some() != password.is_some() {
-            bail!("EMAIL_SMTP_USERNAME and EMAIL_SMTP_PASSWORD must be configured together");
-        }
-
-        let from = config
-            .required_string("EMAIL_FROM")?
-            .parse::<Mailbox>()
-            .context("EMAIL_FROM must be a valid mailbox")?;
-
-        Ok(Self {
-            host: config.required_string("EMAIL_SMTP_HOST")?,
-            port: config.parse("EMAIL_SMTP_PORT", 587)?,
-            tls: SmtpTlsMode::from_config(config)?,
-            username,
-            password,
-            from,
-        })
-    }
-}
-
-impl SmtpTlsMode {
-    fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
-        match config
-            .string("EMAIL_SMTP_TLS", "starttls")
-            .trim()
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "starttls" => Ok(Self::StartTls),
-            "implicit" | "tls" => Ok(Self::ImplicitTls),
-            "none" | "plain" => Ok(Self::None),
-            value => bail!("EMAIL_SMTP_TLS must be starttls, implicit, or none, got {value}"),
-        }
-    }
 }
 
 #[cfg(test)]

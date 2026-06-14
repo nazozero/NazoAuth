@@ -30,7 +30,30 @@ fn fapi_profiles_force_required_dpop_nonce_policy() {
 fn invalid_dpop_nonce_policy_is_rejected() {
     let config = ConfigSource::from_pairs_for_test([("DPOP_NONCE_POLICY", "sometimes")]);
 
-    assert!(Settings::from_config(&config).is_err());
+    let Err(err) = Settings::from_config(&config) else {
+        panic!("invalid DPoP nonce policy must be rejected");
+    };
+
+    assert_eq!(
+        err.to_string(),
+        "DPOP_NONCE_POLICY must be required or optional, got sometimes"
+    );
+}
+
+#[test]
+fn dpop_nonce_policy_rejects_legacy_compatibility_alias() {
+    for value in ["compat", "compatible"] {
+        let config = ConfigSource::from_pairs_for_test([("DPOP_NONCE_POLICY", value)]);
+
+        let Err(err) = Settings::from_config(&config) else {
+            panic!("legacy DPoP nonce policy alias must be rejected");
+        };
+
+        assert_eq!(
+            err.to_string(),
+            format!("DPOP_NONCE_POLICY must be required or optional, got {value}")
+        );
+    }
 }
 
 #[test]
