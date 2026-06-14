@@ -544,7 +544,7 @@ fn test_settings(jwk_keys_dir: PathBuf) -> Settings {
         email_code_dev_response_enabled: false,
         avatar_storage_dir: jwk_keys_dir.join("avatars"),
         jwk_keys_dir,
-        signing_external_command: Vec::new(),
+        signing_external_command: vec!["/bin/false".to_owned()],
         signing_external_timeout_ms: 2_000,
         trusted_proxy_cidrs: Vec::new(),
         client_ip_header_mode: ClientIpHeaderMode::None,
