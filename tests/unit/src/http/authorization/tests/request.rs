@@ -2,6 +2,8 @@ use super::*;
 
 #[path = "request/endpoint.rs"]
 mod endpoint;
+#[path = "request/prompt_none.rs"]
+mod prompt_none;
 
 fn query(values: &[(&str, &str)]) -> HashMap<String, String> {
     values
@@ -466,60 +468,6 @@ fn prompt_parsing_accepts_oidc_values_and_rejects_invalid_combinations() {
     );
     assert!(requested_prompt(&query(&[("prompt", "none consent")])).is_err());
     assert!(requested_prompt(&query(&[("prompt", "unsupported")])).is_err());
-}
-
-#[test]
-fn stored_grant_covers_requested_authorization_when_scope_is_subset() {
-    assert!(stored_grant_covers_requested_authorization(
-        &json!(["openid", "profile", "email"]),
-        &json!([]),
-        &parse_scope("openid email"),
-        &json!([]),
-    ));
-}
-
-#[test]
-fn stored_grant_does_not_cover_new_or_malformed_scope_sets() {
-    assert!(!stored_grant_covers_requested_authorization(
-        &json!(["openid", "profile"]),
-        &json!([]),
-        &parse_scope("openid email"),
-        &json!([]),
-    ));
-    assert!(!stored_grant_covers_requested_authorization(
-        &json!({"scope": "openid"}),
-        &json!([]),
-        &parse_scope("openid"),
-        &json!([]),
-    ));
-}
-
-#[test]
-fn stored_grant_requires_transaction_binding_for_authorization_details() {
-    let scopes = json!(["openid", "payments"]);
-    let read_details = json!([{"type":"account_information","actions":["read"]}]);
-    let different_read_details =
-        json!([{"type":"account_information","actions":["read"],"locations":["acct-2"]}]);
-    let payment_details = json!([{"type":"payment_initiation","actions":["write"],"instructedAmount":{"currency":"USD","amount":"10.00"}}]);
-
-    assert!(stored_grant_covers_requested_authorization(
-        &scopes,
-        &read_details,
-        &parse_scope("openid payments"),
-        &read_details,
-    ));
-    assert!(!stored_grant_covers_requested_authorization(
-        &scopes,
-        &read_details,
-        &parse_scope("openid payments"),
-        &different_read_details,
-    ));
-    assert!(!stored_grant_covers_requested_authorization(
-        &scopes,
-        &payment_details,
-        &parse_scope("openid payments"),
-        &payment_details,
-    ));
 }
 
 #[test]

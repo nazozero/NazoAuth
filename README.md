@@ -301,8 +301,8 @@ cargo install cargo-llvm-cov
 cargo test --workspace --all-features
 printf '%s\n' 'Generate lcov.info with the same target set as CI:'
 cargo llvm-cov clean --workspace
-cargo clean
 eval "$(cargo llvm-cov show-env --sh)"
+cargo clean
 cargo test --workspace --all-features --lib --test oidf_seed --test resource_server
 cargo llvm-cov report --lcov --output-path lcov.info \
   --ignore-filename-regex '(^|/)(tests?|benches|examples|migrations)(/|\.rs$)|src/(schema|db)\.rs$|src/domain/rows\.rs$|src/bootstrap/routes\.rs$|src/support/valkey\.rs$|src/main\.rs$|src/bin/nazo_oauth_(keyctl|migrate|seed_oidf)\.rs$'

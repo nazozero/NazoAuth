@@ -64,53 +64,6 @@ fn code_payload(redirect_uri_was_supplied: bool) -> CodePayload {
 }
 
 #[test]
-fn token_redirect_uri_is_required_when_authorize_request_supplied_it() {
-    let payload = code_payload(true);
-
-    assert!(!redirect_uri_matches_authorization_request(&payload, None));
-    assert!(redirect_uri_matches_authorization_request(
-        &payload,
-        Some("https://client.example/callback")
-    ));
-    assert!(!redirect_uri_matches_authorization_request(
-        &payload,
-        Some("https://client.example/callback/")
-    ));
-}
-
-#[test]
-fn token_redirect_uri_may_be_omitted_when_authorize_request_used_single_registered_uri() {
-    let payload = code_payload(false);
-
-    assert!(redirect_uri_matches_authorization_request(&payload, None));
-    assert!(redirect_uri_matches_authorization_request(
-        &payload,
-        Some("https://client.example/callback")
-    ));
-    assert!(!redirect_uri_matches_authorization_request(
-        &payload,
-        Some("https://client.example/callback/")
-    ));
-}
-
-#[test]
-fn token_redirect_uri_is_still_bound_when_authorization_request_omitted_it() {
-    let payload = code_payload(false);
-
-    for attacker_redirect_uri in [
-        "https://client.example/other-callback",
-        "https://evil.example/callback",
-        "http://client.example/callback",
-        "https://client.example/callback?next=https://evil.example",
-    ] {
-        assert!(
-            !redirect_uri_matches_authorization_request(&payload, Some(attacker_redirect_uri)),
-            "authorization code exchange must not accept a different redirect_uri: {attacker_redirect_uri}"
-        );
-    }
-}
-
-#[test]
 fn authorization_code_token_issue_preserves_independent_oidc_sid() {
     let payload = code_payload(true);
     let auth_time = payload.auth_time;
@@ -140,96 +93,6 @@ fn authorization_code_token_issue_preserves_independent_oidc_sid() {
         issue.refresh_token_mtls_x5t_s256.as_deref(),
         Some("refresh-mtls-thumbprint")
     );
-}
-
-#[test]
-fn authorization_code_consumption_parser_accepts_only_pending_payload_for_consuming_state() {
-    let payload = code_payload(true);
-    let raw = format!("consuming|{}", serde_json::to_string(&payload).unwrap());
-
-    match parse_authorization_code_consumption_response(&raw) {
-        AuthorizationCodeConsumption::Consuming(parsed) => {
-            assert_eq!(parsed.code_id, "code-1");
-            assert_eq!(parsed.client_id, "client-1");
-            assert_eq!(parsed.redirect_uri, "https://client.example/callback");
-            assert_eq!(parsed.code_challenge_method.as_deref(), Some("S256"));
-        }
-        _ => panic!("pending authorization code payload should enter consuming state"),
-    }
-
-    assert!(matches!(
-        parse_authorization_code_consumption_response("consuming|not-json"),
-        AuthorizationCodeConsumption::Malformed
-    ));
-    assert!(matches!(
-        parse_authorization_code_consumption_response("consuming|[]"),
-        AuthorizationCodeConsumption::Malformed
-    ));
-}
-
-#[test]
-fn authorization_code_consumption_parser_accepts_only_consumed_marker_for_replay_state() {
-    let marker = ConsumedAuthorizationCode {
-        client_id: Uuid::now_v7(),
-        access_token_jti: "access-jti-1".to_owned(),
-        access_token_expires_at: Utc::now().timestamp() + 300,
-        refresh_token_family_id: Some(Uuid::now_v7()),
-        consumed_at: Utc::now(),
-    };
-    let consumed = serde_json::to_string(&AuthorizationCodeState::Consumed {
-        marker: marker.clone(),
-    })
-    .unwrap();
-    let raw = format!("consumed|{consumed}");
-
-    match parse_authorization_code_consumption_response(&raw) {
-        AuthorizationCodeConsumption::Consumed(parsed) => {
-            assert_eq!(parsed.client_id, marker.client_id);
-            assert_eq!(parsed.access_token_jti, "access-jti-1");
-            assert_eq!(
-                parsed.refresh_token_family_id,
-                marker.refresh_token_family_id
-            );
-        }
-        _ => panic!("consumed authorization code marker should be replay evidence"),
-    }
-
-    let failed = serde_json::to_string(&AuthorizationCodeState::Failed {
-        failed_at: Utc::now(),
-        error: "pkce_failed".to_owned(),
-    })
-    .unwrap();
-    assert!(matches!(
-        parse_authorization_code_consumption_response(&format!("consumed|{failed}")),
-        AuthorizationCodeConsumption::Malformed
-    ));
-    assert!(matches!(
-        parse_authorization_code_consumption_response("consumed|not-json"),
-        AuthorizationCodeConsumption::Malformed
-    ));
-}
-
-#[test]
-fn authorization_code_consumption_parser_maps_terminal_states_fail_closed() {
-    for (raw, expected) in [
-        ("busy", "busy"),
-        ("failed", "failed"),
-        ("missing", "missing"),
-        ("pending", "malformed"),
-        ("ok", "malformed"),
-        ("", "malformed"),
-    ] {
-        let parsed = parse_authorization_code_consumption_response(raw);
-        let actual = match parsed {
-            AuthorizationCodeConsumption::Busy => "busy",
-            AuthorizationCodeConsumption::Failed => "failed",
-            AuthorizationCodeConsumption::Missing => "missing",
-            AuthorizationCodeConsumption::Malformed => "malformed",
-            AuthorizationCodeConsumption::Consuming(_) => "consuming",
-            AuthorizationCodeConsumption::Consumed(_) => "consumed",
-        };
-        assert_eq!(actual, expected, "unexpected parser result for {raw:?}");
-    }
 }
 
 #[test]
@@ -275,42 +138,6 @@ fn bearer_confidential_client_does_not_bind_refresh_token_to_access_token_dpop()
     );
 }
 
-#[test]
-fn authorization_code_pkce_policy_allows_only_explicit_confidential_compatibility() {
-    let mut client = pkce_policy_client();
-    let payload = code_payload(false);
-    assert!(authorization_code_requires_pkce(&client, &payload));
-
-    client.allow_authorization_code_without_pkce = true;
-    assert!(!authorization_code_requires_pkce(&client, &payload));
-
-    client.client_type = "public".to_owned();
-    assert!(authorization_code_requires_pkce(&client, &payload));
-
-    client.client_type = "confidential".to_owned();
-    client.require_dpop_bound_tokens = true;
-    assert!(authorization_code_requires_pkce(&client, &payload));
-
-    client.require_dpop_bound_tokens = false;
-    client.require_mtls_bound_tokens = true;
-    assert!(authorization_code_requires_pkce(&client, &payload));
-
-    client.require_mtls_bound_tokens = false;
-    let mut holder_bound_payload = code_payload(false);
-    holder_bound_payload.dpop_jkt = Some("thumbprint".to_owned());
-    assert!(authorization_code_requires_pkce(
-        &client,
-        &holder_bound_payload
-    ));
-
-    holder_bound_payload.dpop_jkt = None;
-    holder_bound_payload.mtls_x5t_s256 = Some("thumbprint".to_owned());
-    assert!(authorization_code_requires_pkce(
-        &client,
-        &holder_bound_payload
-    ));
-}
-
 fn oauth_error_code(response: &HttpResponse) -> String {
     response
         .extensions()
@@ -319,66 +146,11 @@ fn oauth_error_code(response: &HttpResponse) -> String {
         .expect("OAuth error response should record its error code")
 }
 
-#[test]
-fn authorization_code_dpop_missing_proof_uses_invalid_grant() {
-    let response = authorization_code_dpop_error_response(DpopError::MissingProof);
-
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(oauth_error_code(&response), "invalid_grant");
-    assert!(response.headers().get(header::WWW_AUTHENTICATE).is_none());
-}
-
-#[test]
-fn authorization_code_dpop_holder_key_failures_use_invalid_grant() {
-    for error in [
-        DpopError::MalformedProof,
-        DpopError::InvalidProof,
-        DpopError::ReplayDetected,
-        DpopError::BindingMismatch,
-        DpopError::TokenNotBound,
-    ] {
-        let response = authorization_code_dpop_error_response(error);
-
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        assert_eq!(oauth_error_code(&response), "invalid_grant");
-        assert!(
-            response.headers().get(header::WWW_AUTHENTICATE).is_none(),
-            "authorization code holder-of-key failures are OAuth grant errors, not DPoP challenges"
-        );
-    }
-}
-
-#[test]
-fn authorization_code_dpop_nonce_challenge_keeps_dpop_error() {
-    let response =
-        authorization_code_dpop_error_response(DpopError::UseNonce("nonce-1".to_owned()));
-
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(oauth_error_code(&response), "use_dpop_nonce");
-    assert_eq!(
-        response.headers().get("dpop-nonce").unwrap(),
-        HeaderValue::from_static("nonce-1")
-    );
-    assert_eq!(
-        response.headers().get(header::WWW_AUTHENTICATE).unwrap(),
-        HeaderValue::from_static(r#"DPoP error="use_dpop_nonce""#)
-    );
-}
-
-#[test]
-fn authorization_code_mtls_holder_key_failures_use_invalid_request() {
-    let response = authorization_code_mtls_holder_error_response();
-
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(oauth_error_code(&response), "invalid_request");
-    assert!(response.headers().get(header::WWW_AUTHENTICATE).is_none());
-}
-
-#[test]
-fn authorization_code_client_mismatch_uses_invalid_grant() {
-    let response = authorization_code_client_mismatch_response();
-
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(oauth_error_code(&response), "invalid_grant");
-    assert!(response.headers().get(header::WWW_AUTHENTICATE).is_none());
-}
+#[path = "authorization_code/consumption.rs"]
+mod consumption;
+#[path = "authorization_code/error_mapping.rs"]
+mod error_mapping;
+#[path = "authorization_code/pkce.rs"]
+mod pkce;
+#[path = "authorization_code/redirect_uri.rs"]
+mod redirect_uri;

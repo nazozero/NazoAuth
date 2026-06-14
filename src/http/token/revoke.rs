@@ -12,6 +12,14 @@ pub(crate) async fn revoke(state: Data<AppState>, req: HttpRequest, body: Bytes)
     {
         return response;
     }
+    revoke_after_rate_limit(state, req, body).await
+}
+
+pub(crate) async fn revoke_after_rate_limit(
+    state: Data<AppState>,
+    req: HttpRequest,
+    body: Bytes,
+) -> HttpResponse {
     let form = match parse_token_management_form(&req, &body) {
         Ok(form) => form,
         Err(error) => return token_management_form_error(error),

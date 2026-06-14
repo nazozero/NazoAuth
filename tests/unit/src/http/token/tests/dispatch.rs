@@ -355,16 +355,45 @@ fn fapi2_profile_requires_confidential_client_auth_and_sender_constraint() {
     let weak_auth = validate_token_request_profile(&fapi, &valid_client, "client_secret_basic")
         .expect_err("client_secret_basic is not a FAPI2 client auth method");
     assert_eq!(weak_auth.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(oauth_error_code(&weak_auth), "invalid_client");
 
     let mut bearer_client = client();
     bearer_client.require_dpop_bound_tokens = false;
     let bearer = validate_token_request_profile(&fapi, &bearer_client, "private_key_jwt")
         .expect_err("FAPI2 requires sender-constrained tokens");
     assert_eq!(bearer.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(&bearer), "invalid_request");
 
     let mut public_client = client();
     public_client.client_type = "public".to_owned();
     let public = validate_token_request_profile(&fapi, &public_client, "none")
         .expect_err("FAPI2 rejects public clients");
     assert_eq!(public.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(&public), "unauthorized_client");
+}
+
+#[test]
+fn fapi2_profile_accepts_mtls_confidential_sender_constrained_clients() {
+    let fapi = settings(AuthorizationServerProfile::Fapi2Security);
+    let mut client = client();
+    client.token_endpoint_auth_method = "tls_client_auth".to_owned();
+    client.require_dpop_bound_tokens = false;
+    client.require_mtls_bound_tokens = true;
+
+    assert!(
+        validate_token_request_profile(&fapi, &client, "tls_client_auth").is_ok(),
+        "FAPI2 allows confidential mTLS clients when tokens are sender constrained"
+    );
+}
+
+#[test]
+fn grant_dispatch_rejects_malformed_grant_registration_without_panicking() {
+    let mut client = client();
+    client.grant_types = json!("authorization_code");
+
+    let response = validate_token_client_enabled(&client, "authorization_code")
+        .expect_err("non-array grant_types must fail closed");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(&response), "unauthorized_client");
 }

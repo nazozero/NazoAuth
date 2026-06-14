@@ -1,4 +1,9 @@
 use super::*;
+use std::sync::Arc;
+
+use crate::config::ConfigSource;
+use crate::db::create_pool;
+use crate::domain::{ActiveSigningKey, Keyset};
 
 fn client_with_grants(grant_types: &[&str]) -> ClientRow {
     ClientRow {
@@ -32,6 +37,29 @@ fn client_with_grants(grant_types: &[&str]) -> ClientRow {
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: None,
         backchannel_logout_session_required: true,
+    }
+}
+
+fn issue_state_with_invalid_signing_key() -> AppState {
+    AppState {
+        diesel_db: create_pool(
+            "postgres://nazo_issue_test_invalid:nazo_issue_test_invalid@127.0.0.1:1/nazo"
+                .to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey: fred::prelude::Builder::default_centralized()
+            .build()
+            .expect("valkey client construction should not connect"),
+        settings: Arc::new(
+            Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
+        ),
+        keyset: Arc::new(Keyset {
+            active_kid: "test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+            verification_keys: Vec::new(),
+        }),
     }
 }
 
@@ -176,6 +204,40 @@ fn token_issue_with_sid(id_token_claims: Vec<String>) -> TokenIssue {
     }
 }
 
+fn token_issue_without_openid() -> TokenIssue {
+    TokenIssue {
+        user_id: None,
+        subject: "subject-1".to_owned(),
+        scopes: vec!["accounts".to_owned()],
+        authorization_details: json!([]),
+        audiences: vec!["resource://default".to_owned()],
+        nonce: None,
+        auth_time: Some(1_000),
+        amr: vec!["password".to_owned()],
+        oidc_sid: None,
+        acr: None,
+        userinfo_claims: Vec::new(),
+        userinfo_claim_requests: Vec::new(),
+        id_token_claims: Vec::new(),
+        id_token_claim_requests: Vec::new(),
+        include_refresh: true,
+        refresh_token_policy: RefreshTokenPolicy::IssueNew,
+        dpop_jkt: None,
+        refresh_token_dpop_jkt: None,
+        mtls_x5t_s256: None,
+        refresh_token_mtls_x5t_s256: None,
+        authorization_code_hash: None,
+    }
+}
+
+fn oauth_error_code(response: &HttpResponse) -> String {
+    response
+        .extensions()
+        .get::<OAuthJsonErrorFields>()
+        .map(|fields| fields.error.clone())
+        .expect("OAuth error response should record its error code")
+}
+
 #[test]
 fn id_token_sid_is_omitted_unless_explicitly_requested() {
     let issue = token_issue_with_sid(Vec::new());
@@ -196,4 +258,51 @@ fn id_token_sid_request_object_also_allows_session_sid() {
     });
 
     assert_eq!(id_token_session_sid(&issue), Some("op-session-sid"));
+}
+
+#[actix_web::test]
+async fn signing_failure_does_not_issue_any_tokens() {
+    let state = issue_state_with_invalid_signing_key();
+    let mut client = client_with_grants(&["authorization_code", "refresh_token"]);
+    client.client_type = "confidential".to_owned();
+    client.token_endpoint_auth_method = "client_secret_basic".to_owned();
+    let issue = token_issue_without_openid();
+
+    let response = issue_token_response(&state, &client, issue).await;
+
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(oauth_error_code(&response), "server_error");
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        HeaderValue::from_static("no-store")
+    );
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should collect");
+    let value: Value = serde_json::from_slice(&body).expect("OAuth error body should be JSON");
+    assert_eq!(value.get("error"), Some(&json!("server_error")));
+    assert!(value.get("access_token").is_none());
+    assert!(value.get("refresh_token").is_none());
+    assert!(value.get("id_token").is_none());
+}
+
+#[actix_web::test]
+async fn invalid_authorization_details_state_fails_before_token_signing() {
+    let state = issue_state_with_invalid_signing_key();
+    let client = client_with_grants(&["authorization_code", "refresh_token"]);
+    let mut issue = token_issue_without_openid();
+    issue.authorization_details = json!({"type": "account_information"});
+
+    let response = issue_token_response(&state, &client, issue).await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(&response), "server_error");
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should collect");
+    let value: Value = serde_json::from_slice(&body).expect("OAuth error body should be JSON");
+    assert_eq!(value.get("error"), Some(&json!("server_error")));
+    assert!(value.get("access_token").is_none());
+    assert!(value.get("refresh_token").is_none());
+    assert!(value.get("id_token").is_none());
 }

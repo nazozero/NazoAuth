@@ -1,5 +1,66 @@
 use super::*;
+use std::sync::Arc;
+
+use crate::config::ConfigSource;
+use crate::db::create_pool;
 use crate::domain::ConfirmationClaims;
+use crate::domain::{ActiveSigningKey, Keyset};
+use actix_web::test::TestRequest;
+
+fn introspection_state() -> Data<AppState> {
+    Data::new(AppState {
+        diesel_db: create_pool(
+            "postgres://nazo_introspect_test_invalid:nazo_introspect_test_invalid@127.0.0.1:1/nazo"
+                .to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey: fred::prelude::Builder::default_centralized()
+            .build()
+            .expect("valkey client construction should not connect"),
+        settings: Arc::new(
+            Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
+        ),
+        keyset: Arc::new(Keyset {
+            active_kid: "test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+            verification_keys: Vec::new(),
+        }),
+    })
+}
+
+fn form_request() -> HttpRequest {
+    TestRequest::default()
+        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+        .to_http_request()
+}
+
+async fn introspect_form(body: &'static [u8]) -> HttpResponse {
+    introspect_after_rate_limit(
+        introspection_state(),
+        form_request(),
+        Bytes::from_static(body),
+    )
+    .await
+}
+
+async fn json_body(response: HttpResponse) -> (StatusCode, Value) {
+    let status = response.status();
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        HeaderValue::from_static("no-store")
+    );
+    assert_eq!(
+        response.headers().get(header::PRAGMA).unwrap(),
+        HeaderValue::from_static("no-cache")
+    );
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should collect");
+    let value = serde_json::from_slice(&body).expect("response body should be JSON");
+    (status, value)
+}
 
 fn access_claims(cnf: Option<ConfirmationClaims>) -> Claims {
     Claims {
@@ -139,4 +200,87 @@ fn token_management_server_errors_are_oauth_json_without_auth_challenge() {
         response.headers().get(header::WWW_AUTHENTICATE).is_none(),
         "backend failures must not be exposed as client-auth challenges"
     );
+}
+
+#[actix_web::test]
+async fn introspection_rejects_malformed_form_before_token_lookup() {
+    let cases = [
+        introspect_after_rate_limit(
+            introspection_state(),
+            TestRequest::default()
+                .insert_header((header::CONTENT_TYPE, "application/json"))
+                .to_http_request(),
+            Bytes::from_static(br#"{"token":"secret"}"#),
+        )
+        .await,
+        introspect_form(b"token=\xff").await,
+        introspect_form(b"token=token-1&token=token-2").await,
+        introspect_form(b"token=%20%20").await,
+    ];
+
+    for response in cases {
+        assert!(
+            response.headers().get(header::WWW_AUTHENTICATE).is_none(),
+            "malformed introspection input is invalid_request, not a client-auth challenge"
+        );
+        let (status, body) = json_body(response).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body.get("error"), Some(&json!("invalid_request")));
+        assert_eq!(
+            body.get("error_description"),
+            Some(&json!("Request failed."))
+        );
+        assert!(body.get("active").is_none());
+        assert!(body.get("client_id").is_none());
+        assert!(body.get("sub").is_none());
+    }
+}
+
+#[actix_web::test]
+async fn introspection_rejects_conflicting_client_auth_without_token_lookup() {
+    let response = introspect_after_rate_limit(
+        introspection_state(),
+        TestRequest::default()
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+            .insert_header((header::AUTHORIZATION, "Basic Y2xpZW50LTE6c2VjcmV0"))
+            .to_http_request(),
+        Bytes::from_static(b"token=token-1&client_assertion=jwt"),
+    )
+    .await;
+
+    let (status, body) = json_body(response).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body.get("error"), Some(&json!("invalid_request")));
+    assert_eq!(
+        body.get("error_description"),
+        Some(&json!("Request failed."))
+    );
+    assert!(body.get("active").is_none());
+    assert!(body.get("client_id").is_none());
+    assert!(body.get("sub").is_none());
+}
+
+#[actix_web::test]
+async fn introspection_requires_client_authentication_before_token_lookup() {
+    let response = introspect_after_rate_limit(
+        introspection_state(),
+        form_request(),
+        Bytes::from_static(b"token=token-1"),
+    )
+    .await;
+
+    assert!(
+        response.headers().get(header::WWW_AUTHENTICATE).is_none(),
+        "introspection must not invent a Basic challenge unless the client attempted Basic auth"
+    );
+    let (status, body) = json_body(response).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(body.get("error"), Some(&json!("invalid_client")));
+    assert_eq!(
+        body.get("error_description"),
+        Some(&json!("Request failed."))
+    );
+    assert!(body.get("active").is_none());
+    assert!(body.get("client_id").is_none());
+    assert!(body.get("sub").is_none());
 }
