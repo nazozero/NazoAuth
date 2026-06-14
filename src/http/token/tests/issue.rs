@@ -50,7 +50,7 @@ fn refresh_token_requires_offline_access_scope_and_client_grant() {
 
 #[test]
 fn consumed_authorization_code_transition_requires_active_consuming_state() {
-    assert!(consumed_authorization_code_transition_result("ok").is_ok());
+    assert!(authorization_code_state::consumed_authorization_code_transition_result("ok").is_ok());
 
     for state in [
         "missing",
@@ -60,7 +60,7 @@ fn consumed_authorization_code_transition_requires_active_consuming_state() {
         "busy",
         "malformed",
     ] {
-        let error = consumed_authorization_code_transition_result(state)
+        let error = authorization_code_state::consumed_authorization_code_transition_result(state)
             .expect_err("non-consuming authorization code state must fail consumed marker write");
         assert!(
             error.to_string().contains(state),
@@ -73,13 +73,13 @@ fn consumed_authorization_code_transition_requires_active_consuming_state() {
 fn failed_authorization_code_transition_is_idempotent_only_for_terminal_or_missing_states() {
     for state in ["ok", "missing", "failed", "consumed"] {
         assert!(
-            failed_authorization_code_transition_result(state).is_ok(),
+            authorization_code_state::failed_authorization_code_transition_result(state).is_ok(),
             "failed marker cleanup should tolerate {state}"
         );
     }
 
     for state in ["pending", "busy", "malformed"] {
-        let error = failed_authorization_code_transition_result(state)
+        let error = authorization_code_state::failed_authorization_code_transition_result(state)
             .expect_err("failed marker must not hide an unexpected active state");
         assert!(
             error.to_string().contains(state),
