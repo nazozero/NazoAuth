@@ -55,8 +55,8 @@ jobs:
 
       - name: Generate coverage report
         run: >-
-          cargo llvm-cov --locked --all-targets --lcov --output-path lcov.info
-          --ignore-filename-regex '(^|/)(tests?|benches|examples|migrations)(/|\.rs$)'
+          cargo llvm-cov --locked --workspace --all-features --all-targets --lcov --output-path lcov.info
+          --ignore-filename-regex '(^|/)(tests?|benches|examples|migrations)(/|\.rs$)|src/schema\.rs$|src/main\.rs$|src/bin/nazo_oauth_(keyctl|migrate)\.rs$'
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5

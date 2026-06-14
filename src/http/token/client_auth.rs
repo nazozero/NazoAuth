@@ -78,11 +78,15 @@ pub(crate) async fn authenticate_revocation_client(
     if client.client_type == "confidential" {
         return authenticate_confidential_client(state, req, client, credentials).await;
     }
-    (credentials.method == "none"
+    revocation_public_client_allows_credentials(credentials)
+        .then_some(())
+        .ok_or(TokenManagementClientAuthError::InvalidClient)
+}
+
+fn revocation_public_client_allows_credentials(credentials: &ClientCredentials) -> bool {
+    credentials.method == "none"
         && credentials.client_secret.is_none()
-        && credentials.client_assertion.is_none())
-    .then_some(())
-    .ok_or(TokenManagementClientAuthError::InvalidClient)
+        && credentials.client_assertion.is_none()
 }
 
 pub(crate) fn token_management_auth_error(error: TokenManagementClientAuthError) -> HttpResponse {
