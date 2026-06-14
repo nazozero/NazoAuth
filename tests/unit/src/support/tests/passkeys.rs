@@ -1,4 +1,5 @@
 use super::*;
+use crate::support::OAuthJsonErrorFields;
 use passkey_auth::{CosePublicKey, CredentialId, PasskeyCredential};
 
 #[test]
@@ -70,4 +71,109 @@ fn ceremony_id_rejects_malformed_values() {
 fn ceremony_id_accepts_urlsafe_tokens() {
     let value = "abcdefghijklmnopqrstuvwxyzABCDEF0123456789-_";
     assert_eq!(normalize_ceremony_id(value).unwrap(), value);
+}
+
+#[test]
+fn passkey_label_defaults_trims_and_rejects_oversized_input() {
+    assert_eq!(normalize_passkey_label(None).unwrap(), "Passkey");
+    assert_eq!(
+        normalize_passkey_label(Some("  Laptop key  ".to_owned())).unwrap(),
+        "Laptop key"
+    );
+    assert_eq!(
+        normalize_passkey_label(Some("   ".to_owned())).unwrap(),
+        "Passkey"
+    );
+
+    let response = normalize_passkey_label(Some("x".repeat(121))).unwrap_err();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("invalid_request")
+    );
+}
+
+#[test]
+fn credential_id_from_response_accepts_only_base64url_credential_ids() {
+    let credential = credential_id_from_response("AQIDBA").unwrap();
+    assert_eq!(credential, CredentialId(vec![1, 2, 3, 4]));
+
+    let response = credential_id_from_response("not+base64/standard").unwrap_err();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("invalid_request")
+    );
+}
+
+#[test]
+fn passkey_row_parsing_and_public_json_do_not_expose_private_row_context() {
+    let now = Utc::now();
+    let credential = PasskeyCredential {
+        id: CredentialId(vec![1, 2, 3, 4]),
+        public_key_cose: CosePublicKey(vec![5, 6, 7]),
+        counter: 9,
+        transports: vec!["internal".to_owned(), "hybrid".to_owned()],
+        aaguid: [7; 16],
+    };
+    let row = PasskeyCredentialRow {
+        id: Uuid::now_v7(),
+        tenant_id: Uuid::now_v7(),
+        user_id: Uuid::now_v7(),
+        credential_id: passkey_credential_id(&credential),
+        credential: serde_json::to_value(&credential).unwrap(),
+        label: "Laptop".to_owned(),
+        sign_count: 9,
+        last_used_at: Some(now),
+        created_at: now,
+        updated_at: now,
+    };
+
+    let parsed = passkey_credential_from_row(&row).unwrap();
+    assert_eq!(parsed.id, credential.id);
+    assert_eq!(
+        passkey_credential_ids(std::slice::from_ref(&row)).unwrap(),
+        vec![credential.id]
+    );
+
+    let public = passkey_public_json(&row);
+    assert_eq!(public["id"], json!(row.id));
+    assert_eq!(public["label"], "Laptop");
+    assert_eq!(public["credential_id"], row.credential_id);
+    assert_eq!(public["sign_count"], 9);
+    assert!(public.get("tenant_id").is_none());
+    assert!(public.get("user_id").is_none());
+    assert!(public.get("credential").is_none());
+}
+
+#[test]
+fn malformed_passkey_credential_rows_fail_closed() {
+    let now = Utc::now();
+    let row = PasskeyCredentialRow {
+        id: Uuid::now_v7(),
+        tenant_id: Uuid::now_v7(),
+        user_id: Uuid::now_v7(),
+        credential_id: "not-a-real-credential".to_owned(),
+        credential: json!({"id": "not enough fields"}),
+        label: "Broken".to_owned(),
+        sign_count: 0,
+        last_used_at: None,
+        created_at: now,
+        updated_at: now,
+    };
+
+    assert!(
+        passkey_credential_from_row(&row).is_err(),
+        "malformed stored passkey credential JSON must not be accepted"
+    );
+    assert!(
+        passkey_credential_ids(&[row]).is_err(),
+        "credential-id extraction must fail when any stored credential is malformed"
+    );
 }

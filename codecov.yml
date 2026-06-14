@@ -13,6 +13,14 @@ ignore:
   # Generated Diesel table declarations. Protocol and persistence behavior is
   # tested through repository/handler code, not by executing generated macros.
   - "src/schema.rs"
+  # Diesel row projection structs and connection-pool glue. These files carry
+  # no protocol, authorization, token, or persistence state-transition policy;
+  # behavior is covered through repository, handler, and conformance tests.
+  - "src/domain/rows.rs"
+  - "src/db.rs"
+  # Route table wiring only. Handler behavior remains covered in the owning
+  # HTTP modules and integration tests.
+  - "src/bootstrap/routes.rs"
   # Thin binary/bootstrap wrappers with no protocol or security decisions.
   - "src/main.rs"
   - "src/bin/nazo_oauth_keyctl.rs"

@@ -29,3 +29,7 @@ pub(crate) fn build(settings: &Settings) -> Cors {
     }
     cors
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/src/bootstrap/tests/cors.rs"]
+mod tests;

@@ -72,3 +72,7 @@ pub(super) fn algorithm_name(alg: Algorithm) -> Option<&'static str> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/src/resource_server/tests/jwk.rs"]
+mod tests;
