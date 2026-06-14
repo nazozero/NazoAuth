@@ -66,4 +66,5 @@ fn expiry_text(ttl_seconds: u64) -> String {
 }
 
 #[cfg(test)]
+#[path = "tests/email_templates.rs"]
 mod tests;

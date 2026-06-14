@@ -214,4 +214,5 @@ pub(crate) fn empty_response(status: StatusCode) -> HttpResponse {
 }
 
 #[cfg(test)]
+#[path = "tests/responses.rs"]
 mod tests;

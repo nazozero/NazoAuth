@@ -101,4 +101,5 @@ fn html_part(body: String) -> SinglePart {
 }
 
 #[cfg(test)]
+#[path = "tests/email.rs"]
 mod tests;

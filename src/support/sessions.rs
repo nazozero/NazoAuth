@@ -232,4 +232,5 @@ fn session_lookup_error_response(error: anyhow::Error) -> HttpResponse {
 }
 
 #[cfg(test)]
+#[path = "tests/sessions.rs"]
 mod tests;

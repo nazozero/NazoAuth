@@ -79,4 +79,5 @@ fn audit_event_name_valid(event: &str) -> bool {
 }
 
 #[cfg(test)]
+#[path = "tests/audit.rs"]
 mod tests;

@@ -104,4 +104,5 @@ pub(crate) async fn find_active_mtls_client_by_certificate(
 }
 
 #[cfg(test)]
+#[path = "tests/repositories.rs"]
 mod tests;
