@@ -44,5 +44,5 @@ pub(crate) async fn read_avatar_meta(
 }
 
 #[cfg(test)]
-#[path = "tests/avatars.rs"]
+#[path = "../../tests/unit/src/support/tests/avatars.rs"]
 mod tests;

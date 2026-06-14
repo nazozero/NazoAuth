@@ -403,5 +403,5 @@ fn normalize_htu(value: &str) -> Result<String, DpopError> {
 }
 
 #[cfg(test)]
-#[path = "tests/dpop.rs"]
+#[path = "../../tests/unit/src/support/tests/dpop.rs"]
 mod tests;

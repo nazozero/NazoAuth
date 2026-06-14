@@ -159,5 +159,5 @@ fn ipv6_prefix_value(ip: Ipv6Addr, prefix: u8) -> u128 {
 }
 
 #[cfg(test)]
-#[path = "tests/client_ip.rs"]
+#[path = "../../tests/unit/src/support/tests/client_ip.rs"]
 mod tests;

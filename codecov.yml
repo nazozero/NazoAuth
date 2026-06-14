@@ -22,7 +22,6 @@ ignore:
   - "src/bin/nazo_oauth_seed_oidf.rs"
   # Test implementation files are excluded so coverage measures production code.
   - "tests/**"
-  - "src/**/tests/**"
   - "benches/**"
   - "examples/**"
   - "migrations/**"

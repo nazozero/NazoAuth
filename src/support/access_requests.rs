@@ -124,5 +124,5 @@ pub(crate) fn access_request_json(row: AccessRequestRow) -> Value {
 }
 
 #[cfg(test)]
-#[path = "tests/access_requests.rs"]
+#[path = "../../tests/unit/src/support/tests/access_requests.rs"]
 mod tests;

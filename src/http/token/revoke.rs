@@ -155,5 +155,5 @@ pub(crate) async fn revoke(state: Data<AppState>, req: HttpRequest, body: Bytes)
 }
 
 #[cfg(test)]
-#[path = "tests/revoke.rs"]
+#[path = "../../../tests/unit/src/http/token/tests/revoke.rs"]
 mod tests;

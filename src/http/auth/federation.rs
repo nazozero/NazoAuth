@@ -518,5 +518,5 @@ async fn create_federated_session(
 }
 
 #[cfg(test)]
-#[path = "tests/federation.rs"]
+#[path = "../../../tests/unit/src/http/auth/tests/federation.rs"]
 mod tests;

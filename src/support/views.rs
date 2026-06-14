@@ -145,5 +145,5 @@ pub(crate) fn append_query(base: &str, pairs: &[(&str, &str)]) -> String {
 }
 
 #[cfg(test)]
-#[path = "tests/views.rs"]
+#[path = "../../tests/unit/src/support/tests/views.rs"]
 mod tests;

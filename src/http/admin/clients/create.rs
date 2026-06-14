@@ -309,5 +309,5 @@ pub(crate) fn trim_string_vec(values: Vec<String>) -> Vec<String> {
 }
 
 #[cfg(test)]
-#[path = "tests/create.rs"]
+#[path = "../../../../tests/unit/src/http/admin/clients/tests/create.rs"]
 mod tests;

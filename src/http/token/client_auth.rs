@@ -177,5 +177,5 @@ pub(crate) async fn consume_token_client_assertion(
 }
 
 #[cfg(test)]
-#[path = "tests/client_auth.rs"]
+#[path = "../../../tests/unit/src/http/token/tests/client_auth.rs"]
 mod tests;

@@ -300,5 +300,5 @@ fn referer_login_next(req: &HttpRequest) -> Option<String> {
 }
 
 #[cfg(test)]
-#[path = "tests/login.rs"]
+#[path = "../../../tests/unit/src/http/auth/tests/login.rs"]
 mod tests;

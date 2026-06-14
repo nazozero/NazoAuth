@@ -44,5 +44,5 @@ pub(crate) fn cookie_value(req: &HttpRequest, name: &str) -> Option<String> {
 }
 
 #[cfg(test)]
-#[path = "tests/cookies.rs"]
+#[path = "../../tests/unit/src/support/tests/cookies.rs"]
 mod tests;

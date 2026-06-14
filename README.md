@@ -314,6 +314,10 @@ OIDF seed tooling.
 Test files are excluded from coverage accounting so split-out tests measure
 production-code coverage rather than inflating totals with test implementation
 lines.
+Integration tests live directly under `tests/*.rs`. Unit tests that must access
+private or `pub(crate)` implementation boundaries live under `tests/unit/src/**`
+and are mounted from the owning module with `#[cfg(test)]`; this keeps test
+source out of `src/` without widening production APIs just for tests.
 Security-critical protocol logic such as authorization-code exchange, PKCE,
 client authentication, DPoP, mTLS, JWT/JWK validation, refresh-token rotation,
 and OAuth error mapping should use behavior-oriented tests with exact error and

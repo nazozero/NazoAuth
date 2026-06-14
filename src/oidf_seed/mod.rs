@@ -48,3 +48,7 @@ pub fn callback_uris(suite_base_urls: &[String], alias: &str) -> Vec<String> {
         .map(|suite_base_url| callback_uri(suite_base_url, alias))
         .collect()
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/src/oidf_seed/tests/oidf_seed.rs"]
+mod tests;

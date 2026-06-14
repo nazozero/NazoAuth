@@ -89,6 +89,7 @@ async fn list_keys(settings: &Settings) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[derive(Debug)]
 struct RegisterExternalKeyOptions {
     kid: String,
     alg: jsonwebtoken::Algorithm,
@@ -367,3 +368,7 @@ fn key_is_retired(key: &Value) -> bool {
         .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
         .is_some_and(|retire_at| retire_at.with_timezone(&Utc) <= Utc::now())
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/src/keyctl/tests/keyctl.rs"]
+mod tests;

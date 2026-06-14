@@ -141,5 +141,5 @@ fn is_private_use_scheme(scheme: &str) -> bool {
 }
 
 #[cfg(test)]
-#[path = "tests/uri_policy.rs"]
+#[path = "../../tests/unit/src/support/tests/uri_policy.rs"]
 mod tests;

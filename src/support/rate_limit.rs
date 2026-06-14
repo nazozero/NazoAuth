@@ -89,5 +89,5 @@ fn rate_limited_response(retry_after_seconds: u64) -> HttpResponse {
 }
 
 #[cfg(test)]
-#[path = "tests/rate_limit.rs"]
+#[path = "../../tests/unit/src/support/tests/rate_limit.rs"]
 mod tests;

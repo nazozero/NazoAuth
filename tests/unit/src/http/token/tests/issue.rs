@@ -49,6 +49,28 @@ fn refresh_token_requires_offline_access_scope_and_client_grant() {
 }
 
 #[test]
+fn refresh_token_grant_matching_is_exact_and_scope_case_sensitive() {
+    let client = client_with_grants(&["authorization_code", "refresh_token:legacy"]);
+    let scopes = vec!["openid".to_owned(), "offline_access".to_owned()];
+    assert!(
+        !should_issue_refresh_token(&client, &scopes),
+        "refresh issuance must require the exact refresh_token grant"
+    );
+
+    let client = client_with_grants(&["authorization_code", "refresh_token"]);
+    for scopes in [
+        vec!["openid".to_owned(), "OFFLINE_ACCESS".to_owned()],
+        vec!["openid".to_owned(), "offline_access ".to_owned()],
+        vec!["openid".to_owned(), "offline".to_owned()],
+    ] {
+        assert!(
+            !should_issue_refresh_token(&client, &scopes),
+            "refresh issuance must require exact offline_access authorization scope: {scopes:?}"
+        );
+    }
+}
+
+#[test]
 fn consumed_authorization_code_transition_requires_active_consuming_state() {
     assert!(authorization_code_state::consumed_authorization_code_transition_result("ok").is_ok());
 

@@ -164,5 +164,5 @@ pub(crate) fn credential_id_from_response(id: &str) -> Result<CredentialId, Http
 }
 
 #[cfg(test)]
-#[path = "tests/passkeys.rs"]
+#[path = "../../tests/unit/src/support/tests/passkeys.rs"]
 mod tests;

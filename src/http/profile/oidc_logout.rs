@@ -508,5 +508,5 @@ async fn post_backchannel_logout(uri: &str, token: &str) -> anyhow::Result<()> {
 }
 
 #[cfg(test)]
-#[path = "tests/oidc_logout.rs"]
+#[path = "../../../tests/unit/src/http/profile/tests/oidc_logout.rs"]
 mod tests;

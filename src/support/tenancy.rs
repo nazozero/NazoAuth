@@ -44,5 +44,5 @@ pub(crate) fn default_tenant_context() -> TenantContext {
 }
 
 #[cfg(test)]
-#[path = "tests/tenancy.rs"]
+#[path = "../../tests/unit/src/support/tests/tenancy.rs"]
 mod tests;

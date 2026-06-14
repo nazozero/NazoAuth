@@ -28,5 +28,5 @@ impl AccessRequestStatus {
 }
 
 #[cfg(test)]
-#[path = "tests/status.rs"]
+#[path = "../../tests/unit/src/domain/tests/status.rs"]
 mod tests;

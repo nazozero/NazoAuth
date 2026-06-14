@@ -231,5 +231,5 @@ fn userinfo_form_body_access_token(req: &HttpRequest, body: &Bytes) -> FormBodyA
 }
 
 #[cfg(test)]
-#[path = "tests/userinfo.rs"]
+#[path = "../../../tests/unit/src/http/token/tests/userinfo.rs"]
 mod tests;
