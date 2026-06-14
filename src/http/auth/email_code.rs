@@ -142,3 +142,7 @@ fn send_code_success_response(dev_response_enabled: bool, code: Option<&str>) ->
     }
     json_response(body)
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/src/http/auth/tests/email_code.rs"]
+mod tests;

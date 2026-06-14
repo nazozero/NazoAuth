@@ -299,22 +299,27 @@ Run local Rust coverage with `cargo-llvm-cov`:
 ```sh
 cargo install cargo-llvm-cov
 cargo test --workspace --all-features
-cargo llvm-cov --workspace --all-features --all-targets --no-rustc-wrapper --no-report
-cargo llvm-cov report --html \
-  --ignore-filename-regex '(^|/)(tests?|benches|examples|migrations)(/|\.rs$)|src/(schema|db)\.rs$|src/domain/rows\.rs$|src/bootstrap/routes\.rs$|src/main\.rs$|src/bin/nazo_oauth_(keyctl|migrate|seed_oidf)\.rs$'
+printf '%s\n' 'Generate lcov.info with the same target set as CI:'
+cargo llvm-cov clean --workspace
+cargo clean
+eval "$(cargo llvm-cov show-env --sh)"
+cargo test --workspace --all-features --lib --test oidf_seed --test resource_server
 cargo llvm-cov report --lcov --output-path lcov.info \
-  --ignore-filename-regex '(^|/)(tests?|benches|examples|migrations)(/|\.rs$)|src/(schema|db)\.rs$|src/domain/rows\.rs$|src/bootstrap/routes\.rs$|src/main\.rs$|src/bin/nazo_oauth_(keyctl|migrate|seed_oidf)\.rs$'
+  --ignore-filename-regex '(^|/)(tests?|benches|examples|migrations)(/|\.rs$)|src/(schema|db)\.rs$|src/domain/rows\.rs$|src/bootstrap/routes\.rs$|src/support/valkey\.rs$|src/main\.rs$|src/bin/nazo_oauth_(keyctl|migrate|seed_oidf)\.rs$'
+printf '%s\n' 'Generate an HTML report from the same coverage data:'
+cargo llvm-cov report --html \
+  --ignore-filename-regex '(^|/)(tests?|benches|examples|migrations)(/|\.rs$)|src/(schema|db)\.rs$|src/domain/rows\.rs$|src/bootstrap/routes\.rs$|src/support/valkey\.rs$|src/main\.rs$|src/bin/nazo_oauth_(keyctl|migrate|seed_oidf)\.rs$'
 ```
 
 Coverage is used as a security signal, not a cosmetic target. Codecov is
 configured for an 80% project target and a 90% patch target so changes improve
 meaningful coverage without forcing artificial tests for generated schema,
 migrations, examples, benches, test sources, Diesel row projection structs,
-connection-pool glue, route table wiring, binary entry wrappers, or local OIDF
-seed tooling. Protocol handlers, token issuance/validation, client
-authentication, PKCE, DPoP, mTLS, PAR/JAR/JARM, resource-server verification,
-repository state transitions, settings validation, and OAuth/OIDC error mapping
-must not be excluded.
+connection-pool glue, route table wiring, thin Valkey command wrappers, binary
+entry wrappers, or local OIDF seed tooling. Protocol handlers, token
+issuance/validation, client authentication, PKCE, DPoP, mTLS, PAR/JAR/JARM,
+resource-server verification, repository state transitions, settings
+validation, and OAuth/OIDC error mapping must not be excluded.
 Test files are excluded from coverage accounting so split-out tests measure
 production-code coverage rather than inflating totals with test implementation
 lines.

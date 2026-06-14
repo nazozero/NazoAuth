@@ -8,18 +8,22 @@ repository = "https://github.com/bymoye/NazoAuth"
 [[bin]]
 name = "nazo-oauth-server"
 path = "src/main.rs"
+test = false
 
 [[bin]]
 name = "nazo-oauth-migrate"
 path = "src/bin/nazo_oauth_migrate.rs"
+test = false
 
 [[bin]]
 name = "nazo-oauth-keyctl"
 path = "src/bin/nazo_oauth_keyctl.rs"
+test = false
 
 [[bin]]
 name = "nazo_oauth_seed_oidf"
 path = "src/bin/nazo_oauth_seed_oidf.rs"
+test = false
 
 [dependencies]
 actix-cors = "0.7.1"

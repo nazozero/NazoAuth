@@ -1,0 +1,292 @@
+use super::*;
+
+#[test]
+fn authorization_response_jwt_preserves_explicit_empty_state() {
+    let input = AuthorizationResponseJwtInput {
+        client_id: "client-1",
+        code: Some("code-1"),
+        error: None,
+        state: Some(""),
+        ttl: 60,
+    };
+    let claims = authorization_response_jwt_claims("https://issuer.example", &input, 123);
+
+    assert_eq!(claims.get("state"), Some(&json!("")));
+    assert_eq!(claims.get("code"), Some(&json!("code-1")));
+    assert!(!claims.contains_key("error"));
+}
+
+#[test]
+fn authorization_response_jwt_omits_absent_state_and_inapplicable_result() {
+    let input = AuthorizationResponseJwtInput {
+        client_id: "client-1",
+        code: None,
+        error: Some("invalid_request"),
+        state: None,
+        ttl: 60,
+    };
+    let claims = authorization_response_jwt_claims("https://issuer.example", &input, 123);
+
+    assert!(!claims.contains_key("state"));
+    assert!(!claims.contains_key("code"));
+    assert_eq!(claims.get("error"), Some(&json!("invalid_request")));
+}
+
+#[test]
+fn authorization_response_jwt_ttl_is_never_zero_or_negative() {
+    for ttl in [0, -60] {
+        let input = AuthorizationResponseJwtInput {
+            client_id: "client-1",
+            code: Some("code-1"),
+            error: None,
+            state: None,
+            ttl,
+        };
+        let claims = authorization_response_jwt_claims("https://issuer.example", &input, 123);
+
+        assert_eq!(
+            claims.get("exp"),
+            Some(&json!(124)),
+            "JARM response JWTs must remain expiring tokens even when configuration supplies ttl {ttl}"
+        );
+    }
+}
+
+#[test]
+fn id_token_claims_include_independent_sid_and_protect_reserved_claims() {
+    let amr = vec!["password".to_owned()];
+    let extra_claims = json!({
+        "sid": "attacker-controlled-sid",
+        "azp": "attacker-controlled-azp",
+        "email": "alice@example.com"
+    });
+    let input = IdTokenInput {
+        subject: "subject-1",
+        client_id: "client-1",
+        nonce: Some("nonce-1".to_owned()),
+        auth_time: Some(1_000),
+        amr: &amr,
+        sid: Some("server-session-sid"),
+        acr: Some("urn:acr:1"),
+        extra_claims: Some(&extra_claims),
+        ttl: 600,
+    };
+
+    let claims = id_token_claims("https://issuer.example", &input, 2_000);
+
+    assert_eq!(claims.get("sid"), Some(&json!("server-session-sid")));
+    assert!(!claims.contains_key("azp"));
+    assert_eq!(claims.get("email"), Some(&json!("alice@example.com")));
+    assert_eq!(claims.get("nonce"), Some(&json!("nonce-1")));
+    assert_eq!(claims.get("auth_time"), Some(&json!(1_000)));
+    assert_eq!(claims.get("amr"), Some(&json!(["password"])));
+    assert_eq!(claims.get("acr"), Some(&json!("urn:acr:1")));
+}
+
+#[test]
+fn id_token_extra_claims_cannot_override_registered_claims() {
+    let extra_claims = json!({
+        "iss": "https://attacker.example",
+        "sub": "attacker-subject",
+        "aud": "attacker-client",
+        "exp": 9_999_999,
+        "email": "alice@example.com"
+    });
+    let input = IdTokenInput {
+        subject: "subject-1",
+        client_id: "client-1",
+        nonce: None,
+        auth_time: None,
+        amr: &[],
+        sid: None,
+        acr: None,
+        extra_claims: Some(&extra_claims),
+        ttl: 600,
+    };
+
+    let claims = id_token_claims("https://issuer.example", &input, 2_000);
+
+    assert_eq!(claims.get("iss"), Some(&json!("https://issuer.example")));
+    assert_eq!(claims.get("sub"), Some(&json!("subject-1")));
+    assert_eq!(claims.get("aud"), Some(&json!("client-1")));
+    assert_eq!(claims.get("exp"), Some(&json!(2_600)));
+    assert_eq!(claims.get("email"), Some(&json!("alice@example.com")));
+}
+
+#[test]
+fn backchannel_logout_token_claims_follow_oidc_shape_without_nonce() {
+    let input = BackchannelLogoutTokenInput {
+        client_id: "client-1",
+        subject: Some("user-1"),
+        sid: Some("sid-1"),
+        ttl: 120,
+    };
+
+    let claims = backchannel_logout_token_claims("https://issuer.example", &input, 2_000);
+
+    assert_eq!(claims.get("iss"), Some(&json!("https://issuer.example")));
+    assert_eq!(claims.get("aud"), Some(&json!("client-1")));
+    assert_eq!(claims.get("sub"), Some(&json!("user-1")));
+    assert_eq!(claims.get("sid"), Some(&json!("sid-1")));
+    assert_eq!(
+        claims.get("events").and_then(|events| {
+            events.get("http://schemas.openid.net/event/backchannel-logout")
+        }),
+        Some(&json!({}))
+    );
+    assert!(claims.get("nonce").is_none());
+    assert!(claims.get("jti").and_then(Value::as_str).is_some());
+}
+
+#[test]
+fn backchannel_logout_token_ttl_is_never_zero_or_negative() {
+    for ttl in [0, -60] {
+        let input = BackchannelLogoutTokenInput {
+            client_id: "client-1",
+            subject: None,
+            sid: Some("sid-1"),
+            ttl,
+        };
+        let claims = backchannel_logout_token_claims("https://issuer.example", &input, 2_000);
+
+        assert_eq!(
+            claims.get("exp"),
+            Some(&json!(2_001)),
+            "logout tokens must be short-lived but never already expired for ttl {ttl}"
+        );
+        assert!(!claims.contains_key("sub"));
+        assert_eq!(claims.get("sid"), Some(&json!("sid-1")));
+    }
+}
+
+#[test]
+fn access_token_header_uses_active_alg_kid_and_at_jwt_type() {
+    let header = access_token_header(jsonwebtoken::Algorithm::PS256, "active-kid");
+
+    assert_eq!(header.alg, jsonwebtoken::Algorithm::PS256);
+    assert_eq!(header.kid.as_deref(), Some("active-kid"));
+    assert_eq!(header.typ.as_deref(), Some("at+jwt"));
+}
+
+#[test]
+fn access_token_claims_follow_jwt_profile_for_user_subjects() {
+    let user_id = Uuid::now_v7();
+    let scopes = vec!["profile".to_owned(), "openid".to_owned()];
+    let claims = access_token_claims(
+        "https://issuer.example",
+        AccessTokenJwtInput {
+            tenant_id: DEFAULT_TENANT_ID,
+            subject: "pairwise-subject",
+            user_id: Some(user_id),
+            subject_type: "user",
+            client_id: "client-1",
+            audiences: &["https://issuer.example/userinfo".to_owned()],
+            scopes: &scopes,
+            authorization_details: &json!([]),
+            userinfo_claims: &["email".to_owned()],
+            userinfo_claim_requests: &[],
+            ttl: 300,
+            dpop_jkt: Some("thumbprint-jkt"),
+            mtls_x5t_s256: None,
+        },
+        1_000,
+        "jti-1",
+    );
+
+    assert_eq!(claims.iss, "https://issuer.example");
+    assert_eq!(claims.aud, json!("https://issuer.example/userinfo"));
+    assert_eq!(claims.exp, 1_300);
+    assert_eq!(claims.iat, 1_000);
+    assert_eq!(claims.nbf, 1_000);
+    assert_eq!(claims.client_id, "client-1");
+    assert_eq!(claims.tenant_id, DEFAULT_TENANT_ID.to_string());
+    assert_eq!(claims.sub, "pairwise-subject");
+    assert_eq!(
+        claims.user_id.as_deref(),
+        Some(user_id.to_string().as_str())
+    );
+    assert_eq!(claims.subject_type, "user");
+    assert_eq!(claims.scope, "openid profile");
+    assert_eq!(claims.token_use, "access");
+    assert_eq!(claims.jti, "jti-1");
+    assert_eq!(claims.userinfo_claims, vec!["email"]);
+    let cnf = claims.cnf.expect("DPoP-bound token should carry cnf");
+    assert_eq!(cnf.jkt.as_deref(), Some("thumbprint-jkt"));
+    assert!(cnf.x5t_s256.is_none());
+}
+
+#[test]
+fn access_token_claims_keep_client_credentials_subject_separate() {
+    let scopes = vec!["write".to_owned(), "read".to_owned()];
+    let claims = access_token_claims(
+        "https://issuer.example",
+        AccessTokenJwtInput {
+            tenant_id: DEFAULT_TENANT_ID,
+            subject: "service-client",
+            user_id: None,
+            subject_type: "client",
+            client_id: "service-client",
+            audiences: &[
+                "resource://default".to_owned(),
+                "https://api.example".to_owned(),
+            ],
+            scopes: &scopes,
+            authorization_details: &json!([{"type":"payment_initiation","actions":["write"]}]),
+            userinfo_claims: &[],
+            userinfo_claim_requests: &[],
+            ttl: 120,
+            dpop_jkt: None,
+            mtls_x5t_s256: Some("certificate-thumbprint"),
+        },
+        2_000,
+        "jti-2",
+    );
+
+    assert_eq!(claims.sub, "service-client");
+    assert!(claims.user_id.is_none());
+    assert_eq!(claims.subject_type, "client");
+    assert_eq!(claims.client_id, "service-client");
+    assert_eq!(
+        claims.aud,
+        json!(["resource://default", "https://api.example"])
+    );
+    assert_eq!(claims.scope, "read write");
+    assert_eq!(
+        claims.authorization_details,
+        json!([{"type":"payment_initiation","actions":["write"]}])
+    );
+    let cnf = claims.cnf.expect("mTLS-bound token should carry cnf");
+    assert!(cnf.jkt.is_none());
+    assert_eq!(cnf.x5t_s256.as_deref(), Some("certificate-thumbprint"));
+}
+
+#[test]
+fn access_token_does_not_emit_cnf_when_sender_constraints_conflict_or_are_absent() {
+    for (dpop_jkt, mtls_x5t_s256) in [(None, None), (Some("jkt"), Some("x5t"))] {
+        let claims = access_token_claims(
+            "https://issuer.example",
+            AccessTokenJwtInput {
+                tenant_id: DEFAULT_TENANT_ID,
+                subject: "subject-1",
+                user_id: None,
+                subject_type: "client",
+                client_id: "client-1",
+                audiences: &["resource://default".to_owned()],
+                scopes: &["read".to_owned()],
+                authorization_details: &json!([]),
+                userinfo_claims: &[],
+                userinfo_claim_requests: &[],
+                ttl: 120,
+                dpop_jkt,
+                mtls_x5t_s256,
+            },
+            2_000,
+            "jti-3",
+        );
+
+        assert!(
+            claims.cnf.is_none(),
+            "a token must not publish ambiguous confirmation claims when sender constraints conflict"
+        );
+    }
+}

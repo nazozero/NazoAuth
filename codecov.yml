@@ -21,6 +21,9 @@ ignore:
   # Route table wiring only. Handler behavior remains covered in the owning
   # HTTP modules and integration tests.
   - "src/bootstrap/routes.rs"
+  # Thin Valkey command wrappers. Business keys, replay semantics, and token
+  # state transitions are tested in the calling protocol modules.
+  - "src/support/valkey.rs"
   # Thin binary/bootstrap wrappers with no protocol or security decisions.
   - "src/main.rs"
   - "src/bin/nazo_oauth_keyctl.rs"

@@ -33,7 +33,11 @@ pub(crate) async fn access_delivery(
             "凭据链接无效、已过期或已被读取.",
         );
     };
-    match serde_json::from_str::<Value>(&raw) {
+    delivery_payload_response(&raw)
+}
+
+fn delivery_payload_response(raw: &str) -> HttpResponse {
+    match serde_json::from_str::<Value>(raw) {
         Ok(mut v) => {
             v["read_once_notice"] = json!("此凭据链接已完成一次性读取并销毁，请立即保存敏感信息。");
             json_response(v)
@@ -45,3 +49,7 @@ pub(crate) async fn access_delivery(
         ),
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/src/http/profile/tests/delivery.rs"]
+mod tests;
