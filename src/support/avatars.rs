@@ -42,3 +42,7 @@ pub(crate) async fn read_avatar_meta(
     };
     Ok(Some(serde_json::from_str(&raw)?))
 }
+
+#[cfg(test)]
+#[path = "tests/avatars.rs"]
+mod tests;

@@ -3,6 +3,60 @@
 use super::{TokenForm, consume_token_client_assertion, issue_token_response};
 use crate::http::prelude::*;
 
+#[derive(Debug)]
+struct ClientCredentialsIssue {
+    scopes: Vec<String>,
+    audiences: Vec<String>,
+}
+
+fn reject_non_confidential_client_credentials_client(client: &ClientRow) -> Option<HttpResponse> {
+    if client.client_type == "confidential" {
+        return None;
+    }
+    Some(oauth_token_error(
+        StatusCode::BAD_REQUEST,
+        "unauthorized_client",
+        "client_credentials 只允许机密客户端使用.",
+        false,
+    ))
+}
+
+fn client_credentials_issue_request(
+    settings: &Settings,
+    client: &ClientRow,
+    form: &TokenForm,
+) -> Result<ClientCredentialsIssue, HttpResponse> {
+    let requested = parse_scope(form.scope.as_deref().unwrap_or(""));
+    let allowed = json_array_to_strings(&client.scopes);
+    if !requested.is_empty() && !is_subset(&requested, &allowed) {
+        return Err(oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_scope",
+            "请求的作用域超出客户端允许范围.",
+            false,
+        ));
+    }
+    let scopes = if requested.is_empty() {
+        allowed
+    } else {
+        requested
+    };
+    let audiences = if form.audiences.is_empty() {
+        vec![settings.default_audience.clone()]
+    } else {
+        form.audiences.clone()
+    };
+    if !audiences_allowed(client, &audiences) {
+        return Err(oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_target",
+            "请求的 audience 不在客户端允许范围内.",
+            false,
+        ));
+    }
+    Ok(ClientCredentialsIssue { scopes, audiences })
+}
+
 pub(crate) async fn token_client_credentials(
     state: &AppState,
     req: &HttpRequest,
@@ -10,13 +64,8 @@ pub(crate) async fn token_client_credentials(
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
-    if client.client_type != "confidential" {
-        return oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "unauthorized_client",
-            "client_credentials 只允许机密客户端使用.",
-            false,
-        );
+    if let Some(response) = reject_non_confidential_client_credentials_client(client) {
+        return response;
     }
     let dpop_jkt = match validate_dpop_proof(state, req, None, None).await {
         Ok(value) => value,
@@ -43,43 +92,19 @@ pub(crate) async fn token_client_credentials(
     if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
         return response;
     }
-    let requested = parse_scope(form.scope.as_deref().unwrap_or(""));
-    let allowed = json_array_to_strings(&client.scopes);
-    if !requested.is_empty() && !is_subset(&requested, &allowed) {
-        return oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_scope",
-            "请求的作用域超出客户端允许范围.",
-            false,
-        );
-    }
-    let scopes = if requested.is_empty() {
-        allowed
-    } else {
-        requested
+    let issue_request = match client_credentials_issue_request(&state.settings, client, form) {
+        Ok(issue_request) => issue_request,
+        Err(response) => return response,
     };
-    let audiences = if form.audiences.is_empty() {
-        vec![state.settings.default_audience.clone()]
-    } else {
-        form.audiences.clone()
-    };
-    if !audiences_allowed(client, &audiences) {
-        return oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_target",
-            "请求的 audience 不在客户端允许范围内.",
-            false,
-        );
-    }
     issue_token_response(
         state,
         client,
         TokenIssue {
             user_id: None,
             subject: client.client_id.clone(),
-            scopes,
+            scopes: issue_request.scopes,
             authorization_details: json!([]),
-            audiences,
+            audiences: issue_request.audiences,
             nonce: None,
             auth_time: None,
             amr: Vec::new(),
@@ -100,3 +125,7 @@ pub(crate) async fn token_client_credentials(
     )
     .await
 }
+
+#[cfg(test)]
+#[path = "tests/client_credentials.rs"]
+mod tests;

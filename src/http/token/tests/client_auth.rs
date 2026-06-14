@@ -1,5 +1,14 @@
 use super::*;
 
+fn client_credentials(method: &str) -> ClientCredentials {
+    ClientCredentials {
+        client_id: Some("client-1".to_owned()),
+        client_secret: None,
+        client_assertion: None,
+        method: method.to_owned(),
+    }
+}
+
 #[test]
 fn token_management_basic_client_auth_failure_has_basic_challenge() {
     let response =
@@ -17,6 +26,35 @@ fn token_management_basic_client_auth_failure_has_basic_challenge() {
     assert_eq!(
         response.headers().get(header::PRAGMA).unwrap(),
         HeaderValue::from_static("no-cache")
+    );
+}
+
+#[test]
+fn public_revocation_client_accepts_only_none_without_secret_material() {
+    let credentials = client_credentials("none");
+    assert!(
+        revocation_public_client_allows_credentials(&credentials),
+        "public revocation may identify the client without authenticating as confidential"
+    );
+
+    let mut with_secret = client_credentials("none");
+    with_secret.client_secret = Some("secret".to_owned());
+    assert!(
+        !revocation_public_client_allows_credentials(&with_secret),
+        "public revocation must not accept confidential-client secret material"
+    );
+
+    let mut with_assertion = client_credentials("none");
+    with_assertion.client_assertion = Some("jwt".to_owned());
+    assert!(
+        !revocation_public_client_allows_credentials(&with_assertion),
+        "public revocation must not accept private_key_jwt assertion material"
+    );
+
+    let basic = client_credentials("client_secret_basic");
+    assert!(
+        !revocation_public_client_allows_credentials(&basic),
+        "public revocation must not upgrade itself into a confidential auth method"
     );
 }
 

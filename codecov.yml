@@ -10,6 +10,13 @@ coverage:
         threshold: 2%
 
 ignore:
+  # Generated Diesel table declarations. Protocol and persistence behavior is
+  # tested through repository/handler code, not by executing generated macros.
+  - "src/schema.rs"
+  # Thin binary/bootstrap wrappers with no protocol or security decisions.
+  - "src/main.rs"
+  - "src/bin/nazo_oauth_keyctl.rs"
+  - "src/bin/nazo_oauth_migrate.rs"
   - "tests/**"
   - "src/**/tests/**"
   - "src/**/tests.rs"
