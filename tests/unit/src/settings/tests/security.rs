@@ -45,7 +45,10 @@ fn pairwise_subject_type_requires_stable_secret_material() {
     ]);
     let settings =
         Settings::from_config(&configured).expect("pairwise secret should satisfy startup policy");
-    assert_eq!(settings.subject_type, SubjectType::Pairwise);
+    assert!(
+        settings.subject_type == SubjectType::Pairwise,
+        "configured pairwise subject type must be preserved"
+    );
     assert_eq!(
         settings.pairwise_subject_secret.as_deref(),
         Some("stable-pairwise-secret")
