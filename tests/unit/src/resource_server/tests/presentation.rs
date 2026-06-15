@@ -36,7 +36,10 @@ fn http_authorization_headers_accepts_multiple_headers() {
 #[test]
 fn http_authorization_headers_rejects_invalid_utf8() {
     let mut map = HeaderMap::new();
-    map.insert("authorization", HeaderValue::from_bytes(b"Bearer \xff").unwrap());
+    map.insert(
+        "authorization",
+        HeaderValue::from_bytes(b"Bearer \xff").unwrap(),
+    );
     assert_eq!(
         http_authorization_headers(&map).unwrap_err(),
         ResourceServerRequestError::InvalidRequest
@@ -125,12 +128,16 @@ fn query_has_access_token_detects_absent() {
 
 #[test]
 fn query_has_access_token_ignores_other_params() {
-    assert!(query_has_access_token(Some("resource=x&access_token=secret")));
+    assert!(query_has_access_token(Some(
+        "resource=x&access_token=secret"
+    )));
 }
 
 #[test]
 fn query_has_access_token_handles_url_encoded() {
-    assert!(query_has_access_token(Some("resource=x&access%5Ftoken=secret")));
+    assert!(query_has_access_token(Some(
+        "resource=x&access%5Ftoken=secret"
+    )));
 }
 
 #[test]
@@ -239,7 +246,10 @@ fn validate_presented_sender_constraint_no_cnf_dpop_fails() {
         &verified_token(None),
         &empty_proof(),
     );
-    assert_eq!(result, Err(ResourceServerRequestError::MissingSenderConstraint));
+    assert_eq!(
+        result,
+        Err(ResourceServerRequestError::MissingSenderConstraint)
+    );
 }
 
 #[test]
@@ -252,12 +262,10 @@ fn validate_presented_sender_constraint_cnf_jkt_with_dpop_and_matching_proof() {
         dpop_jkt: Some("jkt-1".to_owned()),
         mtls_x5t_s256: None,
     };
-    assert!(validate_presented_sender_constraint(
-        PresentedAccessTokenScheme::Dpop,
-        &token,
-        &proof,
-    )
-    .is_ok());
+    assert!(
+        validate_presented_sender_constraint(PresentedAccessTokenScheme::Dpop, &token, &proof,)
+            .is_ok()
+    );
 }
 
 #[test]
@@ -271,7 +279,10 @@ fn validate_presented_sender_constraint_cnf_jkt_without_dpop_fails() {
         &token,
         &empty_proof(),
     );
-    assert_eq!(result, Err(ResourceServerRequestError::MissingSenderConstraint));
+    assert_eq!(
+        result,
+        Err(ResourceServerRequestError::MissingSenderConstraint)
+    );
 }
 
 #[test]
@@ -284,11 +295,8 @@ fn validate_presented_sender_constraint_cnf_jkt_dpop_jkt_mismatch() {
         dpop_jkt: Some("jkt-other".to_owned()),
         mtls_x5t_s256: None,
     };
-    let result = validate_presented_sender_constraint(
-        PresentedAccessTokenScheme::Dpop,
-        &token,
-        &proof,
-    );
+    let result =
+        validate_presented_sender_constraint(PresentedAccessTokenScheme::Dpop, &token, &proof);
     assert_eq!(result, Err(ResourceServerRequestError::DpopBindingMismatch));
 }
 
@@ -303,7 +311,10 @@ fn validate_presented_sender_constraint_cnf_jkt_dpop_missing_proof() {
         &token,
         &empty_proof(),
     );
-    assert_eq!(result, Err(ResourceServerRequestError::MissingSenderConstraint));
+    assert_eq!(
+        result,
+        Err(ResourceServerRequestError::MissingSenderConstraint)
+    );
 }
 
 #[test]
@@ -316,12 +327,10 @@ fn validate_presented_sender_constraint_cnf_x5t_with_mtls_matching() {
         dpop_jkt: None,
         mtls_x5t_s256: Some("thumb-1".to_owned()),
     };
-    assert!(validate_presented_sender_constraint(
-        PresentedAccessTokenScheme::Bearer,
-        &token,
-        &proof,
-    )
-    .is_ok());
+    assert!(
+        validate_presented_sender_constraint(PresentedAccessTokenScheme::Bearer, &token, &proof,)
+            .is_ok()
+    );
 }
 
 #[test]
@@ -334,11 +343,8 @@ fn validate_presented_sender_constraint_cnf_x5t_mismatch() {
         dpop_jkt: None,
         mtls_x5t_s256: Some("thumb-other".to_owned()),
     };
-    let result = validate_presented_sender_constraint(
-        PresentedAccessTokenScheme::Bearer,
-        &token,
-        &proof,
-    );
+    let result =
+        validate_presented_sender_constraint(PresentedAccessTokenScheme::Bearer, &token, &proof);
     assert_eq!(result, Err(ResourceServerRequestError::MtlsBindingMismatch));
 }
 
@@ -353,7 +359,10 @@ fn validate_presented_sender_constraint_cnf_x5t_missing_mtls_proof() {
         &token,
         &empty_proof(),
     );
-    assert_eq!(result, Err(ResourceServerRequestError::MissingSenderConstraint));
+    assert_eq!(
+        result,
+        Err(ResourceServerRequestError::MissingSenderConstraint)
+    );
 }
 
 #[test]
@@ -367,5 +376,8 @@ fn validate_presented_sender_constraint_cnf_without_jkt_or_x5t_fails() {
         &token,
         &empty_proof(),
     );
-    assert_eq!(result, Err(ResourceServerRequestError::MissingSenderConstraint));
+    assert_eq!(
+        result,
+        Err(ResourceServerRequestError::MissingSenderConstraint)
+    );
 }

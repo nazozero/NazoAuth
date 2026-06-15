@@ -113,7 +113,10 @@ fn authorization_pkce_rejects_challenge_with_plain_method() {
 #[test]
 fn authorization_pkce_rejects_challenge_without_method() {
     let mut q = HashMap::new();
-    q.insert("code_challenge".to_owned(), "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM".to_owned());
+    q.insert(
+        "code_challenge".to_owned(),
+        "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM".to_owned(),
+    );
     assert_eq!(authorization_pkce(&q), Err(()));
 }
 
@@ -428,26 +431,23 @@ fn requested_claims_parses_claim_with_values() {
     );
     let result = requested_claims(&q).unwrap();
     assert_eq!(result.userinfo.len(), 1);
-    assert_eq!(result.userinfo[0].values, vec![json!("John"), json!("Jane")]);
+    assert_eq!(
+        result.userinfo[0].values,
+        vec![json!("John"), json!("Jane")]
+    );
 }
 
 #[test]
 fn requested_claims_rejects_userinfo_non_object() {
     let mut q = HashMap::new();
-    q.insert(
-        "claims".to_owned(),
-        r#"{"userinfo":"string"}"#.to_owned(),
-    );
+    q.insert("claims".to_owned(), r#"{"userinfo":"string"}"#.to_owned());
     assert_eq!(requested_claims(&q), Err(()));
 }
 
 #[test]
 fn requested_claims_rejects_id_token_non_object() {
     let mut q = HashMap::new();
-    q.insert(
-        "claims".to_owned(),
-        r#"{"id_token":["array"]}"#.to_owned(),
-    );
+    q.insert("claims".to_owned(), r#"{"id_token":["array"]}"#.to_owned());
     assert_eq!(requested_claims(&q), Err(()));
 }
 
@@ -526,10 +526,7 @@ fn preserve_verified_dpop_binding_does_not_overwrite_existing() {
     let mut q = HashMap::new();
     q.insert("dpop_jkt".to_owned(), "existing-jkt".to_owned());
     preserve_verified_dpop_binding(&mut q, Some("new-jkt"));
-    assert_eq!(
-        q.get("dpop_jkt").map(String::as_str),
-        Some("existing-jkt")
-    );
+    assert_eq!(q.get("dpop_jkt").map(String::as_str), Some("existing-jkt"));
 }
 
 #[test]
@@ -542,7 +539,9 @@ fn preserve_verified_dpop_binding_noops_when_dpop_jkt_is_none() {
 #[test]
 fn session_requires_reauthentication_false_when_no_conditions() {
     let prompt = PromptDirectives::default();
-    assert!(!session_requires_reauthentication(prompt, None, 1000, None, 2000));
+    assert!(!session_requires_reauthentication(
+        prompt, None, 1000, None, 2000
+    ));
 }
 
 #[test]
@@ -551,7 +550,13 @@ fn session_requires_reauthentication_true_when_login_prompt_and_auth_time_before
         login: true,
         ..Default::default()
     };
-    assert!(session_requires_reauthentication(prompt, None, 1000, Some(1500), 2000));
+    assert!(session_requires_reauthentication(
+        prompt,
+        None,
+        1000,
+        Some(1500),
+        2000
+    ));
 }
 
 #[test]
@@ -560,7 +565,13 @@ fn session_requires_reauthentication_false_when_login_prompt_and_auth_time_after
         login: true,
         ..Default::default()
     };
-    assert!(!session_requires_reauthentication(prompt, None, 2000, Some(1500), 2500));
+    assert!(!session_requires_reauthentication(
+        prompt,
+        None,
+        2000,
+        Some(1500),
+        2500
+    ));
 }
 
 #[test]
@@ -569,25 +580,49 @@ fn session_requires_reauthentication_true_when_select_account_and_auth_time_befo
         select_account: true,
         ..Default::default()
     };
-    assert!(session_requires_reauthentication(prompt, None, 1000, Some(1500), 2000));
+    assert!(session_requires_reauthentication(
+        prompt,
+        None,
+        1000,
+        Some(1500),
+        2000
+    ));
 }
 
 #[test]
 fn session_requires_reauthentication_true_when_max_age_is_zero() {
     let prompt = PromptDirectives::default();
-    assert!(session_requires_reauthentication(prompt, Some(0), 1000, None, 2000));
+    assert!(session_requires_reauthentication(
+        prompt,
+        Some(0),
+        1000,
+        None,
+        2000
+    ));
 }
 
 #[test]
 fn session_requires_reauthentication_true_when_max_age_exceeded() {
     let prompt = PromptDirectives::default();
-    assert!(session_requires_reauthentication(prompt, Some(5), 0, None, 100));
+    assert!(session_requires_reauthentication(
+        prompt,
+        Some(5),
+        0,
+        None,
+        100
+    ));
 }
 
 #[test]
 fn session_requires_reauthentication_false_when_max_age_not_exceeded() {
     let prompt = PromptDirectives::default();
-    assert!(!session_requires_reauthentication(prompt, Some(100), 90, None, 100));
+    assert!(!session_requires_reauthentication(
+        prompt,
+        Some(100),
+        90,
+        None,
+        100
+    ));
 }
 
 #[test]
@@ -596,7 +631,9 @@ fn session_requires_reauthentication_handles_login_without_reauth_started_at() {
         login: true,
         ..Default::default()
     };
-    assert!(session_requires_reauthentication(prompt, None, 1000, None, 2000));
+    assert!(session_requires_reauthentication(
+        prompt, None, 1000, None, 2000
+    ));
 }
 
 #[test]
@@ -605,7 +642,9 @@ fn session_requires_reauthentication_false_when_none_prompt_without_conditions()
         none: true,
         ..Default::default()
     };
-    assert!(!session_requires_reauthentication(prompt, None, 1000, None, 2000));
+    assert!(!session_requires_reauthentication(
+        prompt, None, 1000, None, 2000
+    ));
 }
 
 #[test]
@@ -633,7 +672,10 @@ fn outer_request_uri_parameters_match_pushed_rejects_mismatch() {
 #[test]
 fn outer_request_uri_parameters_match_pushed_ignores_request_uri() {
     let mut outer = HashMap::new();
-    outer.insert("request_uri".to_owned(), "urn:ietf:params:oauth:request_uri:abc".to_owned());
+    outer.insert(
+        "request_uri".to_owned(),
+        "urn:ietf:params:oauth:request_uri:abc".to_owned(),
+    );
     let pushed = HashMap::new();
     assert!(outer_request_uri_parameters_match_pushed(&outer, &pushed));
 }
@@ -767,13 +809,19 @@ fn authorization_login_query_returns_original_when_request_uri_is_some() {
     let mut expanded = HashMap::new();
     expanded.insert("scope".to_owned(), "openid".to_owned());
     let mut original = HashMap::new();
-    original.insert("request_uri".to_owned(), "urn:ietf:params:oauth:request_uri:abc".to_owned());
+    original.insert(
+        "request_uri".to_owned(),
+        "urn:ietf:params:oauth:request_uri:abc".to_owned(),
+    );
     let result = authorization_login_query(
         &expanded,
         &original,
         Some(&"urn:ietf:params:oauth:request_uri:abc".to_owned()),
     );
-    assert_eq!(result.get("request_uri").map(String::as_str), Some("urn:ietf:params:oauth:request_uri:abc"));
+    assert_eq!(
+        result.get("request_uri").map(String::as_str),
+        Some("urn:ietf:params:oauth:request_uri:abc")
+    );
     assert!(result.get("scope").is_none());
 }
 
@@ -821,10 +869,7 @@ fn authorization_login_url_for_frontend_uses_now_when_reauth_started_at_not_give
 fn authorization_login_url_for_frontend_with_empty_query() {
     let q = HashMap::new();
     let url = authorization_login_url_for_frontend("https://app.example", &q, false, None);
-    assert_eq!(
-        url,
-        "https://app.example/auth?next=%2Fauthorize"
-    );
+    assert_eq!(url, "https://app.example/auth?next=%2Fauthorize");
 }
 
 #[test]

@@ -7,9 +7,16 @@ fn consumed_authorization_code_transition_ok_returns_ok() {
 
 #[test]
 fn consumed_authorization_code_transition_non_ok_returns_err() {
-    for state in ["missing", "pending", "consumed", "failed", "busy", "malformed"] {
-        let error = consumed_authorization_code_transition_result(state)
-            .expect_err("expected error");
+    for state in [
+        "missing",
+        "pending",
+        "consumed",
+        "failed",
+        "busy",
+        "malformed",
+    ] {
+        let error =
+            consumed_authorization_code_transition_result(state).expect_err("expected error");
         assert!(
             error.to_string().contains(state),
             "error should mention the unexpected state, got: {error}"
@@ -30,8 +37,7 @@ fn failed_authorization_code_transition_ok_missing_failed_consumed_ok() {
 #[test]
 fn failed_authorization_code_transition_other_states_err() {
     for state in ["pending", "busy", "malformed"] {
-        let error = failed_authorization_code_transition_result(state)
-            .expect_err("expected error");
+        let error = failed_authorization_code_transition_result(state).expect_err("expected error");
         assert!(
             error.to_string().contains(state),
             "error should mention the unexpected state, got: {error}"

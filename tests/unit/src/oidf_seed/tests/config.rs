@@ -1,7 +1,7 @@
 use super::*;
 use base64::{Engine, engine::general_purpose::STANDARD};
-use serde_json::json;
 use serde_json::Value;
+use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{fs, path::PathBuf};
 
@@ -188,7 +188,10 @@ fn client_scopes_uses_default_when_scope_missing() {
 #[test]
 fn client_scopes_parses_custom_scopes() {
     let mut client = serde_json::Map::new();
-    client.insert("scope".to_owned(), Value::String(" openid  payments   accounts ".to_owned()));
+    client.insert(
+        "scope".to_owned(),
+        Value::String(" openid  payments   accounts ".to_owned()),
+    );
     assert_eq!(
         client_scopes(&client),
         json!(["openid", "payments", "accounts"])
@@ -249,8 +252,8 @@ fn certificate_pem_thumbprint_errors_for_missing_end() {
 
 #[test]
 fn certificate_pem_thumbprint_errors_for_invalid_base64() {
-    let err = certificate_pem_thumbprint(
-        "-----BEGIN CERTIFICATE-----\n!!!\n-----END CERTIFICATE-----"
-    ).unwrap_err();
+    let err =
+        certificate_pem_thumbprint("-----BEGIN CERTIFICATE-----\n!!!\n-----END CERTIFICATE-----")
+            .unwrap_err();
     assert!(err.to_string().contains("base64 decode failed"));
 }

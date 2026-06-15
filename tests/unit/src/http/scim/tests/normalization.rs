@@ -176,7 +176,10 @@ fn normalize_scim_path_lowercases_mixed_case() {
 
 #[test]
 fn normalize_scim_path_handles_camelcase_path() {
-    assert_eq!(normalize_scim_path("  name.FamilyName  "), "name.familyname");
+    assert_eq!(
+        normalize_scim_path("  name.FamilyName  "),
+        "name.familyname"
+    );
 }
 
 #[test]
@@ -209,44 +212,59 @@ fn normalize_email_address_rejects_empty_string() {
 #[test]
 fn primary_email_selects_flagged_primary_over_others() {
     let emails = Some(vec![
-        ScimEmail { value: Some("first@example.com".to_owned()), primary: Some(false) },
-        ScimEmail { value: Some("second@example.com".to_owned()), primary: Some(true) },
-        ScimEmail { value: Some("third@example.com".to_owned()), primary: Some(false) },
+        ScimEmail {
+            value: Some("first@example.com".to_owned()),
+            primary: Some(false),
+        },
+        ScimEmail {
+            value: Some("second@example.com".to_owned()),
+            primary: Some(true),
+        },
+        ScimEmail {
+            value: Some("third@example.com".to_owned()),
+            primary: Some(false),
+        },
     ]);
-    assert_eq!(
-        primary_email(emails, false).unwrap(),
-        "second@example.com"
-    );
+    assert_eq!(primary_email(emails, false).unwrap(), "second@example.com");
 }
 
 #[test]
 fn primary_email_falls_back_to_first_entry_when_none_marked_primary() {
     let emails = Some(vec![
-        ScimEmail { value: Some("first@example.com".to_owned()), primary: Some(false) },
-        ScimEmail { value: Some("second@example.com".to_owned()), primary: Some(false) },
+        ScimEmail {
+            value: Some("first@example.com".to_owned()),
+            primary: Some(false),
+        },
+        ScimEmail {
+            value: Some("second@example.com".to_owned()),
+            primary: Some(false),
+        },
     ]);
-    assert_eq!(
-        primary_email(emails, false).unwrap(),
-        "first@example.com"
-    );
+    assert_eq!(primary_email(emails, false).unwrap(), "first@example.com");
 }
 
 #[test]
 fn primary_email_falls_back_to_first_entry_when_primary_null() {
     let emails = Some(vec![
-        ScimEmail { value: Some("first@example.com".to_owned()), primary: None },
-        ScimEmail { value: Some("second@example.com".to_owned()), primary: Some(true) },
+        ScimEmail {
+            value: Some("first@example.com".to_owned()),
+            primary: None,
+        },
+        ScimEmail {
+            value: Some("second@example.com".to_owned()),
+            primary: Some(true),
+        },
     ]);
-    assert_eq!(
-        primary_email(emails, false).unwrap(),
-        "second@example.com"
-    );
+    assert_eq!(primary_email(emails, false).unwrap(), "second@example.com");
 }
 
 #[test]
 fn primary_email_errors_when_values_contain_null_email() {
     let err = primary_email(
-        Some(vec![ScimEmail { value: None, primary: Some(true) }]),
+        Some(vec![ScimEmail {
+            value: None,
+            primary: Some(true),
+        }]),
         true,
     )
     .unwrap_err();
@@ -273,7 +291,10 @@ fn primary_email_errors_when_required_and_no_emails() {
 #[test]
 fn primary_email_errors_on_invalid_email() {
     let err = primary_email(
-        Some(vec![ScimEmail { value: Some("invalid".to_owned()), primary: Some(true) }]),
+        Some(vec![ScimEmail {
+            value: Some("invalid".to_owned()),
+            primary: Some(true),
+        }]),
         true,
     )
     .unwrap_err();
