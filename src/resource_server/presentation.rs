@@ -117,3 +117,7 @@ pub(super) fn validate_presented_sender_constraint(
     }
     Err(ResourceServerRequestError::MissingSenderConstraint)
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/src/resource_server/tests/presentation.rs"]
+mod tests;

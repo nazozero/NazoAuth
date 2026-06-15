@@ -40,6 +40,7 @@ pub(crate) struct ScimPatchOperation {
     pub(super) value: Value,
 }
 
+#[derive(Debug)]
 pub(super) struct NormalizedScimUser {
     pub(super) user_name: String,
     pub(super) email: String,
@@ -49,7 +50,7 @@ pub(super) struct NormalizedScimUser {
     pub(super) family_name: Option<String>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub(super) struct ScimPatch {
     pub(super) user_name: Option<String>,
     pub(super) email: Option<String>,
@@ -364,3 +365,7 @@ fn required_bool_value(value: Value, field: &str) -> Result<bool, HttpResponse> 
 fn normalize_scim_path(value: &str) -> String {
     value.trim().replace(' ', "").to_ascii_lowercase()
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/src/http/scim/tests/normalization.rs"]
+mod tests;

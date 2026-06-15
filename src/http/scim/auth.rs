@@ -263,3 +263,7 @@ pub(super) fn bearer_token(req: &HttpRequest) -> Option<&str> {
         && !token.contains(char::is_whitespace))
     .then_some(token)
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/src/http/scim/tests/auth.rs"]
+mod tests;
