@@ -822,7 +822,7 @@ fn authorization_login_query_returns_original_when_request_uri_is_some() {
         result.get("request_uri").map(String::as_str),
         Some("urn:ietf:params:oauth:request_uri:abc")
     );
-    assert!(result.get("scope").is_none());
+    assert!(!result.contains_key("scope"));
 }
 
 #[test]
