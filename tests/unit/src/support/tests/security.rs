@@ -10,10 +10,10 @@ mod client_assertion;
 mod client_auth;
 #[path = "security/entropy_passwords.rs"]
 mod entropy_passwords;
-#[path = "security/token_claims.rs"]
-mod token_claims;
 #[path = "security_tokens.rs"]
 mod security_tokens;
+#[path = "security/token_claims.rs"]
+mod token_claims;
 
 fn test_settings() -> Settings {
     Settings::from_config(&ConfigSource::default()).expect("default settings should load")

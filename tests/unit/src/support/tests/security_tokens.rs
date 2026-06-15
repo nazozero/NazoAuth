@@ -8,7 +8,11 @@ use crate::domain::OidcClaimRequest;
 #[test]
 fn access_token_claims_includes_all_required_jwt_fields() {
     let user_id = Uuid::now_v7();
-    let scopes = vec!["openid".to_owned(), "profile".to_owned(), "email".to_owned()];
+    let scopes = vec![
+        "openid".to_owned(),
+        "profile".to_owned(),
+        "email".to_owned(),
+    ];
     let audiences = vec!["https://issuer.example/userinfo".to_owned()];
     let ad = json!([{"type":"payment_initiation","actions":["write","read"]}]);
 
@@ -202,7 +206,11 @@ fn access_token_claims_multiple_audiences_produces_json_array() {
 
     assert_eq!(
         claims.aud,
-        json!(["resource://default", "https://api.example", "https://another"])
+        json!([
+            "resource://default",
+            "https://api.example",
+            "https://another"
+        ])
     );
 }
 
@@ -473,10 +481,7 @@ fn id_token_claims_includes_all_fields_when_provided() {
     assert_eq!(claims.get("aud"), Some(&json!("client-1")));
     assert_eq!(claims.get("nonce"), Some(&json!("nonce-val")));
     assert_eq!(claims.get("auth_time"), Some(&json!(1_500_000_000)));
-    assert_eq!(
-        claims.get("amr"),
-        Some(&json!(["pwd", "otp"]))
-    );
+    assert_eq!(claims.get("amr"), Some(&json!(["pwd", "otp"])));
     assert_eq!(claims.get("sid"), Some(&json!("session-id-abc")));
     assert_eq!(
         claims.get("acr"),
@@ -552,7 +557,10 @@ fn id_token_claims_filters_all_reserved_keys_from_extra_claims() {
     let claims = id_token_claims("https://real-issuer.example", &input, 1_000);
 
     // Reserved keys must NOT be overwritten
-    assert_eq!(claims.get("iss"), Some(&json!("https://real-issuer.example")));
+    assert_eq!(
+        claims.get("iss"),
+        Some(&json!("https://real-issuer.example"))
+    );
     assert_eq!(claims.get("sub"), Some(&json!("real-subject")));
     assert_eq!(claims.get("aud"), Some(&json!("real-client")));
     assert_eq!(claims.get("iat"), Some(&json!(1_000)));
@@ -569,10 +577,7 @@ fn id_token_claims_filters_all_reserved_keys_from_extra_claims() {
     );
 
     // Non-reserved extra claims must be included
-    assert_eq!(
-        claims.get("email"),
-        Some(&json!("alice@example.com"))
-    );
+    assert_eq!(claims.get("email"), Some(&json!("alice@example.com")));
     assert_eq!(claims.get("custom_org_id"), Some(&json!("org-42")));
     assert_eq!(claims.len(), 14); // 11 from input + email + custom_org_id + jti
 }
@@ -595,10 +600,7 @@ fn id_token_claims_extra_claims_null_value_does_not_crash() {
     let claims = id_token_claims("https://issuer.example", &input, 100);
 
     assert_eq!(claims.get("email"), Some(&Value::Null));
-    assert_eq!(
-        claims.get("custom"),
-        Some(&json!({"nested": true}))
-    );
+    assert_eq!(claims.get("custom"), Some(&json!({"nested": true})));
 }
 
 #[test]
@@ -635,11 +637,7 @@ fn backchannel_logout_token_claims_full_with_sub_and_sid() {
         ttl: 120,
     };
 
-    let claims = backchannel_logout_token_claims(
-        "https://issuer.example",
-        &input,
-        2_000_000_000,
-    );
+    let claims = backchannel_logout_token_claims("https://issuer.example", &input, 2_000_000_000);
 
     assert_eq!(claims.get("iss"), Some(&json!("https://issuer.example")));
     assert_eq!(claims.get("aud"), Some(&json!("client-1")));
@@ -656,11 +654,7 @@ fn backchannel_logout_token_claims_omits_sub_when_not_provided() {
         ttl: 120,
     };
 
-    let claims = backchannel_logout_token_claims(
-        "https://issuer.example",
-        &input,
-        1_000,
-    );
+    let claims = backchannel_logout_token_claims("https://issuer.example", &input, 1_000);
 
     assert!(!claims.contains_key("sub"));
     assert_eq!(claims.get("sid"), Some(&json!("session-xyz")));
@@ -675,11 +669,7 @@ fn backchannel_logout_token_claims_omits_sid_when_not_provided() {
         ttl: 120,
     };
 
-    let claims = backchannel_logout_token_claims(
-        "https://issuer.example",
-        &input,
-        1_000,
-    );
+    let claims = backchannel_logout_token_claims("https://issuer.example", &input, 1_000);
 
     assert_eq!(claims.get("sub"), Some(&json!("user-42")));
     assert!(!claims.contains_key("sid"));
@@ -694,11 +684,7 @@ fn backchannel_logout_token_claims_omits_both_sub_and_sid_when_not_provided() {
         ttl: 120,
     };
 
-    let claims = backchannel_logout_token_claims(
-        "https://issuer.example",
-        &input,
-        1_000,
-    );
+    let claims = backchannel_logout_token_claims("https://issuer.example", &input, 1_000);
 
     assert!(!claims.contains_key("sub"));
     assert!(!claims.contains_key("sid"));
@@ -713,11 +699,7 @@ fn backchannel_logout_token_claims_includes_openid_events_claim() {
         ttl: 120,
     };
 
-    let claims = backchannel_logout_token_claims(
-        "https://issuer.example",
-        &input,
-        1_000,
-    );
+    let claims = backchannel_logout_token_claims("https://issuer.example", &input, 1_000);
 
     let events = claims.get("events").expect("logout token must have events");
     let logout_event = events
@@ -735,11 +717,7 @@ fn backchannel_logout_token_claims_exp_is_at_least_iat_plus_one() {
             sid: None,
             ttl,
         };
-        let claims = backchannel_logout_token_claims(
-            "https://issuer.example",
-            &input,
-            1_000,
-        );
+        let claims = backchannel_logout_token_claims("https://issuer.example", &input, 1_000);
 
         assert_eq!(
             claims.get("exp"),
@@ -758,11 +736,7 @@ fn backchannel_logout_token_claims_standard_fields_are_always_present() {
         ttl: 60,
     };
 
-    let claims = backchannel_logout_token_claims(
-        "https://issuer.example",
-        &input,
-        500,
-    );
+    let claims = backchannel_logout_token_claims("https://issuer.example", &input, 500);
 
     assert_eq!(claims.get("iss"), Some(&json!("https://issuer.example")));
     assert_eq!(claims.get("aud"), Some(&json!("client-1")));
@@ -786,11 +760,7 @@ fn authorization_response_jwt_with_code_only() {
         ttl: 60,
     };
 
-    let claims = authorization_response_jwt_claims(
-        "https://issuer.example",
-        &input,
-        1_000,
-    );
+    let claims = authorization_response_jwt_claims("https://issuer.example", &input, 1_000);
 
     assert_eq!(claims.get("iss"), Some(&json!("https://issuer.example")));
     assert_eq!(claims.get("aud"), Some(&json!("client-1")));
@@ -810,11 +780,7 @@ fn authorization_response_jwt_with_error_only() {
         ttl: 60,
     };
 
-    let claims = authorization_response_jwt_claims(
-        "https://issuer.example",
-        &input,
-        1_000,
-    );
+    let claims = authorization_response_jwt_claims("https://issuer.example", &input, 1_000);
 
     assert_eq!(claims.get("iss"), Some(&json!("https://issuer.example")));
     assert_eq!(claims.get("aud"), Some(&json!("client-1")));
@@ -833,11 +799,7 @@ fn authorization_response_jwt_with_state_only() {
         ttl: 60,
     };
 
-    let claims = authorization_response_jwt_claims(
-        "https://issuer.example",
-        &input,
-        1_000,
-    );
+    let claims = authorization_response_jwt_claims("https://issuer.example", &input, 1_000);
 
     assert!(!claims.contains_key("code"));
     assert!(!claims.contains_key("error"));
@@ -854,11 +816,7 @@ fn authorization_response_jwt_with_code_and_state() {
         ttl: 60,
     };
 
-    let claims = authorization_response_jwt_claims(
-        "https://issuer.example",
-        &input,
-        1_000,
-    );
+    let claims = authorization_response_jwt_claims("https://issuer.example", &input, 1_000);
 
     assert_eq!(claims.get("code"), Some(&json!("code-123")));
     assert_eq!(claims.get("state"), Some(&json!("state-abc")));
@@ -875,11 +833,7 @@ fn authorization_response_jwt_with_error_and_state() {
         ttl: 60,
     };
 
-    let claims = authorization_response_jwt_claims(
-        "https://issuer.example",
-        &input,
-        1_000,
-    );
+    let claims = authorization_response_jwt_claims("https://issuer.example", &input, 1_000);
 
     assert!(!claims.contains_key("code"));
     assert_eq!(claims.get("error"), Some(&json!("access_denied")));
@@ -896,11 +850,7 @@ fn authorization_response_jwt_with_code_error_and_state() {
         ttl: 60,
     };
 
-    let claims = authorization_response_jwt_claims(
-        "https://issuer.example",
-        &input,
-        1_000,
-    );
+    let claims = authorization_response_jwt_claims("https://issuer.example", &input, 1_000);
 
     assert_eq!(claims.get("code"), Some(&json!("code-123")));
     assert_eq!(claims.get("error"), Some(&json!("invalid_request")));
@@ -917,11 +867,7 @@ fn authorization_response_jwt_with_all_optionals_absent() {
         ttl: 60,
     };
 
-    let claims = authorization_response_jwt_claims(
-        "https://issuer.example",
-        &input,
-        1_000,
-    );
+    let claims = authorization_response_jwt_claims("https://issuer.example", &input, 1_000);
 
     assert!(!claims.contains_key("code"));
     assert!(!claims.contains_key("error"));
@@ -938,11 +884,7 @@ fn authorization_response_jwt_exp_floor_is_iat_plus_one() {
             state: None,
             ttl,
         };
-        let claims = authorization_response_jwt_claims(
-            "https://issuer.example",
-            &input,
-            1_000,
-        );
+        let claims = authorization_response_jwt_claims("https://issuer.example", &input, 1_000);
 
         assert_eq!(
             claims.get("exp"),
@@ -962,11 +904,7 @@ fn authorization_response_jwt_includes_standard_timestamp_and_identifier_claims(
         ttl: 60,
     };
 
-    let claims = authorization_response_jwt_claims(
-        "https://issuer.example",
-        &input,
-        1_000,
-    );
+    let claims = authorization_response_jwt_claims("https://issuer.example", &input, 1_000);
 
     assert_eq!(claims.get("iss"), Some(&json!("https://issuer.example")));
     assert_eq!(claims.get("aud"), Some(&json!("client-1")));

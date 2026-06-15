@@ -4,7 +4,10 @@ use super::*;
 
 #[test]
 fn scim_user_schema_constant_matches_rfc() {
-    assert_eq!(SCIM_USER_SCHEMA, "urn:ietf:params:scim:schemas:core:2.0:User");
+    assert_eq!(
+        SCIM_USER_SCHEMA,
+        "urn:ietf:params:scim:schemas:core:2.0:User"
+    );
 }
 
 #[test]
@@ -103,11 +106,7 @@ fn scim_base_is_identity_for_boolean() {
 
 #[actix_web::test]
 async fn scim_error_response_uses_scim_error_schema() {
-    let response = scim_error(
-        StatusCode::BAD_REQUEST,
-        "invalidValue",
-        "email is required",
-    );
+    let response = scim_error(StatusCode::BAD_REQUEST, "invalidValue", "email is required");
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let body = actix_web::body::to_bytes(response.into_body())
         .await

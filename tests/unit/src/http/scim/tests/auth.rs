@@ -93,7 +93,10 @@ fn credential_denies_write_with_read_only_scope() {
         scopes: vec![SCIM_SCOPE_READ.to_owned()],
         source: "test",
     };
-    assert!(!scim_credential_allows(&credential, ScimRequiredScope::Write));
+    assert!(!scim_credential_allows(
+        &credential,
+        ScimRequiredScope::Write
+    ));
 }
 
 #[test]
@@ -104,7 +107,10 @@ fn credential_allows_write_with_write_scope() {
         scopes: vec![SCIM_SCOPE_WRITE.to_owned()],
         source: "test",
     };
-    assert!(scim_credential_allows(&credential, ScimRequiredScope::Write));
+    assert!(scim_credential_allows(
+        &credential,
+        ScimRequiredScope::Write
+    ));
 }
 
 #[test]
@@ -115,7 +121,10 @@ fn credential_denies_read_with_write_only_scope() {
         scopes: vec![SCIM_SCOPE_WRITE.to_owned()],
         source: "test",
     };
-    assert!(!scim_credential_allows(&credential, ScimRequiredScope::Read));
+    assert!(!scim_credential_allows(
+        &credential,
+        ScimRequiredScope::Read
+    ));
 }
 
 #[test]
@@ -127,7 +136,10 @@ fn credential_allows_any_scope_with_wildcard() {
         source: "test",
     };
     assert!(scim_credential_allows(&credential, ScimRequiredScope::Read));
-    assert!(scim_credential_allows(&credential, ScimRequiredScope::Write));
+    assert!(scim_credential_allows(
+        &credential,
+        ScimRequiredScope::Write
+    ));
 }
 
 #[test]
@@ -139,7 +151,10 @@ fn credential_allows_with_both_read_and_write_scopes() {
         source: "test",
     };
     assert!(scim_credential_allows(&credential, ScimRequiredScope::Read));
-    assert!(scim_credential_allows(&credential, ScimRequiredScope::Write));
+    assert!(scim_credential_allows(
+        &credential,
+        ScimRequiredScope::Write
+    ));
 }
 
 #[test]
@@ -150,8 +165,14 @@ fn credential_denies_when_scope_list_empty() {
         scopes: vec![],
         source: "test",
     };
-    assert!(!scim_credential_allows(&credential, ScimRequiredScope::Read));
-    assert!(!scim_credential_allows(&credential, ScimRequiredScope::Write));
+    assert!(!scim_credential_allows(
+        &credential,
+        ScimRequiredScope::Read
+    ));
+    assert!(!scim_credential_allows(
+        &credential,
+        ScimRequiredScope::Write
+    ));
 }
 
 #[test]
@@ -162,8 +183,14 @@ fn credential_denies_when_scope_does_not_match() {
         scopes: vec!["other:scope".to_owned()],
         source: "test",
     };
-    assert!(!scim_credential_allows(&credential, ScimRequiredScope::Read));
-    assert!(!scim_credential_allows(&credential, ScimRequiredScope::Write));
+    assert!(!scim_credential_allows(
+        &credential,
+        ScimRequiredScope::Read
+    ));
+    assert!(!scim_credential_allows(
+        &credential,
+        ScimRequiredScope::Write
+    ));
 }
 
 #[test]
@@ -175,7 +202,10 @@ fn credential_allows_wildcard_among_other_scopes() {
         source: "test",
     };
     assert!(scim_credential_allows(&credential, ScimRequiredScope::Read));
-    assert!(scim_credential_allows(&credential, ScimRequiredScope::Write));
+    assert!(scim_credential_allows(
+        &credential,
+        ScimRequiredScope::Write
+    ));
 }
 
 // ScimRequiredScope::as_str
@@ -202,25 +232,37 @@ fn scope_constants_have_correct_values() {
 #[test]
 fn scope_values_extracts_strings_from_json_array() {
     let scopes = scim_scope_values(&json!(["scim:read", "scim:write"]));
-    assert_eq!(scopes, vec!["scim:read".to_owned(), "scim:write".to_owned()]);
+    assert_eq!(
+        scopes,
+        vec!["scim:read".to_owned(), "scim:write".to_owned()]
+    );
 }
 
 #[test]
 fn scope_values_skips_non_string_elements() {
     let scopes = scim_scope_values(&json!(["scim:read", 7, true, "scim:write"]));
-    assert_eq!(scopes, vec!["scim:read".to_owned(), "scim:write".to_owned()]);
+    assert_eq!(
+        scopes,
+        vec!["scim:read".to_owned(), "scim:write".to_owned()]
+    );
 }
 
 #[test]
 fn scope_values_skips_empty_strings() {
     let scopes = scim_scope_values(&json!(["scim:read", "", "scim:write"]));
-    assert_eq!(scopes, vec!["scim:read".to_owned(), "scim:write".to_owned()]);
+    assert_eq!(
+        scopes,
+        vec!["scim:read".to_owned(), "scim:write".to_owned()]
+    );
 }
 
 #[test]
 fn scope_values_trims_whitespace() {
     let scopes = scim_scope_values(&json!(["  scim:read  ", "scim:write"]));
-    assert_eq!(scopes, vec!["scim:read".to_owned(), "scim:write".to_owned()]);
+    assert_eq!(
+        scopes,
+        vec!["scim:read".to_owned(), "scim:write".to_owned()]
+    );
 }
 
 #[test]
@@ -250,5 +292,8 @@ fn scope_values_returns_empty_for_empty_array() {
 #[test]
 fn scope_values_skips_whitespace_only_strings() {
     let scopes = scim_scope_values(&json!(["scim:read", "   ", "scim:write"]));
-    assert_eq!(scopes, vec!["scim:read".to_owned(), "scim:write".to_owned()]);
+    assert_eq!(
+        scopes,
+        vec!["scim:read".to_owned(), "scim:write".to_owned()]
+    );
 }

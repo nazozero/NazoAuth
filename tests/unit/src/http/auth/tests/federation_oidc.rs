@@ -28,13 +28,22 @@ fn oidc_authorization_url_includes_all_required_params() {
         url.as_str().split('?').next(),
         Some("https://issuer.example/authorize")
     );
-    assert_eq!(params.get("response_type").map(|v| v.as_ref()), Some("code"));
-    assert_eq!(params.get("client_id").map(|v| v.as_ref()), Some("client-1"));
+    assert_eq!(
+        params.get("response_type").map(|v| v.as_ref()),
+        Some("code")
+    );
+    assert_eq!(
+        params.get("client_id").map(|v| v.as_ref()),
+        Some("client-1")
+    );
     assert_eq!(
         params.get("redirect_uri").map(|v| v.as_ref()),
         Some("https://auth.example/federation/oidc/callback")
     );
-    assert_eq!(params.get("scope").map(|v| v.as_ref()), Some("openid email"));
+    assert_eq!(
+        params.get("scope").map(|v| v.as_ref()),
+        Some("openid email")
+    );
     assert_eq!(params.get("state").map(|v| v.as_ref()), Some("state-1"));
     assert_eq!(params.get("nonce").map(|v| v.as_ref()), Some("nonce-1"));
     assert_eq!(
@@ -79,7 +88,10 @@ fn audience_contains_matches_array_element() {
 
 #[test]
 fn audience_contains_rejects_array_without_match() {
-    assert!(!audience_contains(&json!(["other-1", "other-2"]), "client-1"));
+    assert!(!audience_contains(
+        &json!(["other-1", "other-2"]),
+        "client-1"
+    ));
 }
 
 #[test]

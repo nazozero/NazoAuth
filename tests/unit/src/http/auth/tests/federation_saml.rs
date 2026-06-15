@@ -11,13 +11,7 @@ fn settings() -> SamlGatewaySettings {
     }
 }
 
-fn sign(
-    settings: &SamlGatewaySettings,
-    subject: &str,
-    email: &str,
-    iat: i64,
-    exp: i64,
-) -> String {
+fn sign(settings: &SamlGatewaySettings, subject: &str, email: &str, iat: i64, exp: i64) -> String {
     saml_gateway_signature(
         &settings.secret,
         &settings.issuer,
@@ -52,8 +46,24 @@ fn assertion(
 fn saml_gateway_signature_is_deterministic() {
     let settings = settings();
     let now = Utc::now().timestamp();
-    let a = saml_gateway_signature(&settings.secret, "iss", "aud", "sub", "e@m.co", now, now + 60);
-    let b = saml_gateway_signature(&settings.secret, "iss", "aud", "sub", "e@m.co", now, now + 60);
+    let a = saml_gateway_signature(
+        &settings.secret,
+        "iss",
+        "aud",
+        "sub",
+        "e@m.co",
+        now,
+        now + 60,
+    );
+    let b = saml_gateway_signature(
+        &settings.secret,
+        "iss",
+        "aud",
+        "sub",
+        "e@m.co",
+        now,
+        now + 60,
+    );
     assert_eq!(a, b);
 }
 
@@ -61,8 +71,24 @@ fn saml_gateway_signature_is_deterministic() {
 fn saml_gateway_signature_differs_for_different_fields() {
     let settings = settings();
     let now = Utc::now().timestamp();
-    let a = saml_gateway_signature(&settings.secret, "iss", "aud", "sub", "e@m.co", now, now + 60);
-    let b = saml_gateway_signature(&settings.secret, "other", "aud", "sub", "e@m.co", now, now + 60);
+    let a = saml_gateway_signature(
+        &settings.secret,
+        "iss",
+        "aud",
+        "sub",
+        "e@m.co",
+        now,
+        now + 60,
+    );
+    let b = saml_gateway_signature(
+        &settings.secret,
+        "other",
+        "aud",
+        "sub",
+        "e@m.co",
+        now,
+        now + 60,
+    );
     assert_ne!(a, b);
 }
 
@@ -71,15 +97,29 @@ fn valid_saml_gateway_assertion_accepts_valid_assertion() {
     let settings = settings();
     let now = Utc::now().timestamp();
     let a = assertion(&settings, "subject", "user@example.com", now, now + 60);
-    assert!(valid_saml_gateway_assertion(&settings, &a, "user@example.com"));
+    assert!(valid_saml_gateway_assertion(
+        &settings,
+        &a,
+        "user@example.com"
+    ));
 }
 
 #[test]
 fn valid_saml_gateway_assertion_rejects_expired_assertion() {
     let settings = settings();
     let now = Utc::now().timestamp();
-    let a = assertion(&settings, "subject", "user@example.com", now - 600, now - 60);
-    assert!(!valid_saml_gateway_assertion(&settings, &a, "user@example.com"));
+    let a = assertion(
+        &settings,
+        "subject",
+        "user@example.com",
+        now - 600,
+        now - 60,
+    );
+    assert!(!valid_saml_gateway_assertion(
+        &settings,
+        &a,
+        "user@example.com"
+    ));
 }
 
 #[test]
@@ -88,7 +128,11 @@ fn valid_saml_gateway_assertion_rejects_wrong_issuer() {
     let now = Utc::now().timestamp();
     let mut a = assertion(&settings, "subject", "user@example.com", now, now + 60);
     a.issuer = "other-gateway".to_owned();
-    assert!(!valid_saml_gateway_assertion(&settings, &a, "user@example.com"));
+    assert!(!valid_saml_gateway_assertion(
+        &settings,
+        &a,
+        "user@example.com"
+    ));
 }
 
 #[test]
@@ -97,7 +141,11 @@ fn valid_saml_gateway_assertion_rejects_wrong_audience() {
     let now = Utc::now().timestamp();
     let mut a = assertion(&settings, "subject", "user@example.com", now, now + 60);
     a.audience = "other-audience".to_owned();
-    assert!(!valid_saml_gateway_assertion(&settings, &a, "user@example.com"));
+    assert!(!valid_saml_gateway_assertion(
+        &settings,
+        &a,
+        "user@example.com"
+    ));
 }
 
 #[test]
@@ -105,15 +153,29 @@ fn valid_saml_gateway_assertion_rejects_empty_subject() {
     let settings = settings();
     let now = Utc::now().timestamp();
     let a = assertion(&settings, "  ", "user@example.com", now, now + 60);
-    assert!(!valid_saml_gateway_assertion(&settings, &a, "user@example.com"));
+    assert!(!valid_saml_gateway_assertion(
+        &settings,
+        &a,
+        "user@example.com"
+    ));
 }
 
 #[test]
 fn valid_saml_gateway_assertion_rejects_iat_too_far_in_future() {
     let settings = settings();
     let now = Utc::now().timestamp();
-    let a = assertion(&settings, "subject", "user@example.com", now + 61, now + 120);
-    assert!(!valid_saml_gateway_assertion(&settings, &a, "user@example.com"));
+    let a = assertion(
+        &settings,
+        "subject",
+        "user@example.com",
+        now + 61,
+        now + 120,
+    );
+    assert!(!valid_saml_gateway_assertion(
+        &settings,
+        &a,
+        "user@example.com"
+    ));
 }
 
 #[test]
@@ -121,7 +183,11 @@ fn valid_saml_gateway_assertion_rejects_exp_iat_window_too_long() {
     let settings = settings();
     let now = Utc::now().timestamp();
     let a = assertion(&settings, "subject", "user@example.com", now, now + 301);
-    assert!(!valid_saml_gateway_assertion(&settings, &a, "user@example.com"));
+    assert!(!valid_saml_gateway_assertion(
+        &settings,
+        &a,
+        "user@example.com"
+    ));
 }
 
 #[test]
@@ -129,8 +195,18 @@ fn valid_saml_gateway_assertion_rejects_signature_mismatch() {
     let settings = settings();
     let now = Utc::now().timestamp();
     let mut a = assertion(&settings, "subject", "user@example.com", now, now + 60);
-    a.signature = sign(&settings, "other-subject", "user@example.com", now, now + 60);
-    assert!(!valid_saml_gateway_assertion(&settings, &a, "user@example.com"));
+    a.signature = sign(
+        &settings,
+        "other-subject",
+        "user@example.com",
+        now,
+        now + 60,
+    );
+    assert!(!valid_saml_gateway_assertion(
+        &settings,
+        &a,
+        "user@example.com"
+    ));
 }
 
 #[test]
@@ -138,5 +214,9 @@ fn valid_saml_gateway_assertion_rejects_normalized_email_mismatch() {
     let settings = settings();
     let now = Utc::now().timestamp();
     let a = assertion(&settings, "subject", "user@example.com", now, now + 60);
-    assert!(!valid_saml_gateway_assertion(&settings, &a, "other@example.com"));
+    assert!(!valid_saml_gateway_assertion(
+        &settings,
+        &a,
+        "other@example.com"
+    ));
 }
