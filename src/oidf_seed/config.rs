@@ -97,3 +97,7 @@ pub fn read_plan_config(runtime_dir: &Path, file_name: &str) -> anyhow::Result<V
     serde_json::from_str(&body)
         .map_err(|error| anyhow::anyhow!("failed to parse {}: {error}", path.display()))
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/src/oidf_seed/tests/config.rs"]
+mod tests;

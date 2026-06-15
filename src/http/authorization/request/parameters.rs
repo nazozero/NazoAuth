@@ -371,3 +371,7 @@ pub(super) fn authorization_login_url_for_frontend(
         urlencoding::encode(&next)
     )
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/unit/src/http/authorization/request/tests/parameters.rs"]
+mod tests;

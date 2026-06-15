@@ -165,3 +165,7 @@ pub(crate) async fn revoke_issued_authorization_code_tokens(
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/unit/src/http/token/tests/authorization_code_state.rs"]
+mod tests;

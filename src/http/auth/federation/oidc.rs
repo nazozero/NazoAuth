@@ -156,3 +156,7 @@ fn audience_contains(aud: &Value, client_id: &str) -> bool {
         _ => false,
     }
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/unit/src/http/auth/tests/federation_oidc.rs"]
+mod tests;

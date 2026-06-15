@@ -59,3 +59,7 @@ pub(super) fn saml_gateway_signature(
     mac.update(format!("{issuer}\n{audience}\n{subject}\n{email}\n{iat}\n{exp}").as_bytes());
     URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/unit/src/http/auth/tests/federation_saml.rs"]
+mod tests;

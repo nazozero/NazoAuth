@@ -24,6 +24,20 @@ ignore:
   # Thin Valkey command wrappers. Business keys, replay semantics, and token
   # state transitions are tested in the calling protocol modules.
   - "src/support/valkey.rs"
+  # Module aggregation re-exports only. No protocol, authorization, or token
+  # policy; all covered in the owning sub-modules.
+  - "src/lib.rs"
+  - "src/domain/mod.rs"
+  - "src/domain/state.rs"
+  - "src/domain/keyset.rs"
+  - "src/http/mod.rs"
+  - "src/http/admin.rs"
+  - "src/http/admin/clients/mod.rs"
+  - "src/http/auth/mod.rs"
+  - "src/http/authorization/mod.rs"
+  - "src/http/profile.rs"
+  - "src/http/token.rs"
+  - "src/support/mod.rs"
   # Thin binary/bootstrap wrappers with no protocol or security decisions.
   - "src/main.rs"
   - "src/bin/nazo_oauth_keyctl.rs"

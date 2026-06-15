@@ -142,3 +142,7 @@ fn verify_external_jwt_signature(
 pub(super) fn jwt_provider_error(message: impl Into<String>) -> jsonwebtoken::errors::Error {
     jsonwebtoken::errors::ErrorKind::Provider(message.into()).into()
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/src/support/tests/keyset_external.rs"]
+mod tests;
