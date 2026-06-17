@@ -9,7 +9,10 @@ fn uuid_fixture(value: u128) -> Uuid {
     Uuid::from_u128(value)
 }
 
-fn test_state() -> AppState {
+fn test_state_with_scim_bearer_token(scim_bearer_token: Option<&str>) -> AppState {
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.scim_bearer_token = scim_bearer_token.map(ToOwned::to_owned);
     AppState {
         diesel_db: create_pool(
             "postgres://nazo_scim_test_invalid:nazo_scim_test_invalid@127.0.0.1:1/nazo".to_owned(),
@@ -19,9 +22,7 @@ fn test_state() -> AppState {
         valkey: fred::prelude::Builder::default_centralized()
             .build()
             .expect("valkey client construction should not connect"),
-        settings: Arc::new(
-            Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
-        ),
+        settings: Arc::new(settings),
         keyset: Arc::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
@@ -29,6 +30,10 @@ fn test_state() -> AppState {
             verification_keys: Vec::new(),
         }),
     }
+}
+
+fn test_state() -> AppState {
+    test_state_with_scim_bearer_token(None)
 }
 
 fn user_row(id: Uuid, email: &str) -> UserRow {
@@ -83,6 +88,24 @@ fn scim_user_request_fixture() -> ScimUserRequest {
     }
 }
 
+fn scim_user_request_mismatched_identity_fixture() -> ScimUserRequest {
+    ScimUserRequest {
+        user_name: Some("user@example.test".to_owned()),
+        active: Some(true),
+        name: None,
+        emails: Some(vec![ScimEmail {
+            value: Some("other@example.test".to_owned()),
+            primary: Some(true),
+        }]),
+    }
+}
+
+fn bearer_request(token: &str) -> HttpRequest {
+    actix_web::test::TestRequest::default()
+        .insert_header((header::AUTHORIZATION, format!("Bearer {token}")))
+        .to_http_request()
+}
+
 async fn response_json(response: HttpResponse) -> (StatusCode, Value) {
     let status = response.status();
     let body = actix_web::body::to_bytes(response.into_body())
@@ -101,6 +124,20 @@ async fn assert_missing_bearer_is_scim_unauthorized(response: HttpResponse) {
     assert_eq!(body["detail"], "missing bearer token");
     assert!(body.get("Resources").is_none());
     assert!(body.get("password_hash").is_none());
+}
+
+async fn assert_scim_error_response(
+    response: HttpResponse,
+    expected_status: StatusCode,
+    expected_scim_type: &str,
+    expected_detail: &str,
+) {
+    let (status, body) = response_json(response).await;
+    assert_eq!(status, expected_status);
+    assert_eq!(body["schemas"], json!([SCIM_ERROR_SCHEMA]));
+    assert_eq!(body["status"], expected_status.as_u16().to_string());
+    assert_eq!(body["scimType"], expected_scim_type);
+    assert_eq!(body["detail"], expected_detail);
 }
 
 #[test]
@@ -418,6 +455,239 @@ async fn scim_metadata_endpoints_require_bearer_before_disclosing_capabilities()
     assert_missing_bearer_is_scim_unauthorized(scim_schemas(state.clone(), req.clone()).await)
         .await;
     assert_missing_bearer_is_scim_unauthorized(scim_resource_types(state, req).await).await;
+}
+
+#[actix_web::test]
+async fn scim_metadata_endpoints_accept_configured_legacy_bearer_token() {
+    let state = Data::new(test_state_with_scim_bearer_token(Some(
+        "legacy-scim-secret",
+    )));
+    let req = bearer_request("legacy-scim-secret");
+
+    let (config_status, config) =
+        response_json(scim_service_provider_config(state.clone(), req.clone()).await).await;
+    assert_eq!(config_status, StatusCode::OK);
+    assert_eq!(
+        config["schemas"],
+        json!([SCIM_SERVICE_PROVIDER_CONFIG_SCHEMA])
+    );
+
+    let (schemas_status, schemas) =
+        response_json(scim_schemas(state.clone(), req.clone()).await).await;
+    assert_eq!(schemas_status, StatusCode::OK);
+    assert_eq!(schemas["schemas"], json!([SCIM_LIST_SCHEMA]));
+    assert_eq!(schemas["Resources"][0]["id"], SCIM_USER_SCHEMA);
+
+    let (types_status, resource_types) = response_json(scim_resource_types(state, req).await).await;
+    assert_eq!(types_status, StatusCode::OK);
+    assert_eq!(resource_types["schemas"], json!([SCIM_LIST_SCHEMA]));
+    assert_eq!(resource_types["Resources"][0]["schema"], SCIM_USER_SCHEMA);
+}
+
+#[actix_web::test]
+async fn scim_list_users_rejects_invalid_filter_before_database_access() {
+    let state = Data::new(test_state_with_scim_bearer_token(Some(
+        "legacy-scim-secret",
+    )));
+    let req = bearer_request("legacy-scim-secret");
+
+    assert_scim_error_response(
+        scim_list_users(
+            state,
+            req,
+            Query(ScimListQuery {
+                start_index: Some(1),
+                count: Some(10),
+                filter: Some(r#"email eq "user@example.test""#.to_owned()),
+            }),
+        )
+        .await,
+        StatusCode::BAD_REQUEST,
+        "invalidFilter",
+        "only userName filters are supported",
+    )
+    .await;
+}
+
+#[actix_web::test]
+async fn scim_create_and_replace_user_reject_identity_mismatch_before_database_access() {
+    let state = Data::new(test_state_with_scim_bearer_token(Some(
+        "legacy-scim-secret",
+    )));
+    let req = bearer_request("legacy-scim-secret");
+    let user_id = uuid_fixture(0x77777777777777777777777777777777);
+
+    assert_scim_error_response(
+        scim_create_user(
+            state.clone(),
+            req.clone(),
+            Json(scim_user_request_mismatched_identity_fixture()),
+        )
+        .await,
+        StatusCode::BAD_REQUEST,
+        "invalidValue",
+        "primary email must match userName",
+    )
+    .await;
+    assert_scim_error_response(
+        scim_replace_user(
+            state,
+            req,
+            actix_web::web::Path::from(user_id),
+            Json(scim_user_request_mismatched_identity_fixture()),
+        )
+        .await,
+        StatusCode::BAD_REQUEST,
+        "invalidValue",
+        "primary email must match userName",
+    )
+    .await;
+}
+
+#[actix_web::test]
+async fn scim_patch_user_rejects_invalid_schema_and_invalid_path_before_database_access() {
+    let state = Data::new(test_state_with_scim_bearer_token(Some(
+        "legacy-scim-secret",
+    )));
+    let req = bearer_request("legacy-scim-secret");
+    let user_id = uuid_fixture(0x88888888888888888888888888888888);
+
+    assert_scim_error_response(
+        scim_patch_user(
+            state.clone(),
+            req.clone(),
+            actix_web::web::Path::from(user_id),
+            Json(ScimPatchRequest {
+                schemas: vec!["urn:example:unsupported:PatchOp".to_owned()],
+                operations: vec![ScimPatchOperation {
+                    op: "replace".to_owned(),
+                    path: Some("active".to_owned()),
+                    value: json!(false),
+                }],
+            }),
+        )
+        .await,
+        StatusCode::BAD_REQUEST,
+        "invalidSyntax",
+        "unsupported PATCH schema",
+    )
+    .await;
+    assert_scim_error_response(
+        scim_patch_user(
+            state,
+            req,
+            actix_web::web::Path::from(user_id),
+            Json(ScimPatchRequest {
+                schemas: vec![SCIM_PATCH_SCHEMA.to_owned()],
+                operations: vec![ScimPatchOperation {
+                    op: "replace".to_owned(),
+                    path: Some("password".to_owned()),
+                    value: json!("secret"),
+                }],
+            }),
+        )
+        .await,
+        StatusCode::BAD_REQUEST,
+        "invalidPath",
+        "unsupported path",
+    )
+    .await;
+}
+
+#[actix_web::test]
+async fn scim_read_endpoints_surface_backend_unavailable_after_legacy_auth() {
+    let state = Data::new(test_state_with_scim_bearer_token(Some(
+        "legacy-scim-secret",
+    )));
+    let req = bearer_request("legacy-scim-secret");
+    let user_id = uuid_fixture(0x99999999999999999999999999999999);
+
+    assert_scim_error_response(
+        scim_list_users(
+            state.clone(),
+            req.clone(),
+            Query(ScimListQuery {
+                start_index: Some(1),
+                count: Some(10),
+                filter: Some(r#"userName eq "user@example.test""#.to_owned()),
+            }),
+        )
+        .await,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "server_error",
+        "backend unavailable",
+    )
+    .await;
+    assert_scim_error_response(
+        scim_get_user(state, req, actix_web::web::Path::from(user_id)).await,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "server_error",
+        "backend unavailable",
+    )
+    .await;
+}
+
+#[actix_web::test]
+async fn scim_mutating_endpoints_surface_backend_unavailable_after_legacy_auth() {
+    let state = Data::new(test_state_with_scim_bearer_token(Some(
+        "legacy-scim-secret",
+    )));
+    let req = bearer_request("legacy-scim-secret");
+    let user_id = uuid_fixture(0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa);
+    let patch_payload = ScimPatchRequest {
+        schemas: vec![SCIM_PATCH_SCHEMA.to_owned()],
+        operations: vec![ScimPatchOperation {
+            op: "replace".to_owned(),
+            path: Some("active".to_owned()),
+            value: json!(false),
+        }],
+    };
+
+    assert_scim_error_response(
+        scim_create_user(
+            state.clone(),
+            req.clone(),
+            Json(scim_user_request_fixture()),
+        )
+        .await,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "server_error",
+        "backend unavailable",
+    )
+    .await;
+    assert_scim_error_response(
+        scim_replace_user(
+            state.clone(),
+            req.clone(),
+            actix_web::web::Path::from(user_id),
+            Json(scim_user_request_fixture()),
+        )
+        .await,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "server_error",
+        "backend unavailable",
+    )
+    .await;
+    assert_scim_error_response(
+        scim_patch_user(
+            state.clone(),
+            req.clone(),
+            actix_web::web::Path::from(user_id),
+            Json(patch_payload),
+        )
+        .await,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "server_error",
+        "backend unavailable",
+    )
+    .await;
+    assert_scim_error_response(
+        scim_delete_user(state, req, actix_web::web::Path::from(user_id)).await,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "server_error",
+        "backend unavailable",
+    )
+    .await;
 }
 
 #[actix_web::test]

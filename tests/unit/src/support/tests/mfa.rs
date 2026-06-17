@@ -1,6 +1,12 @@
 use super::*;
 
 #[test]
+fn mfa_verification_method_amr_values_are_stable_oidc_contract() {
+    assert_eq!(MfaVerificationMethod::Totp.amr(), "otp");
+    assert_eq!(MfaVerificationMethod::BackupCode.amr(), "recovery_code");
+}
+
+#[test]
 fn totp_matches_rfc6238_sha1_vectors() {
     let secret = b"12345678901234567890";
     let cases = [
@@ -19,6 +25,46 @@ fn totp_matches_rfc6238_sha1_vectors() {
 }
 
 #[test]
+fn otpauth_uri_percent_encodes_issuer_and_account_without_rewriting_secret() {
+    let uri = otpauth_uri(
+        "Nazo OAuth/Production",
+        "user+admin@example.com",
+        "JBSWY3DPEHPK3PXP",
+    );
+    let parsed = url::Url::parse(&uri).expect("otpauth URI should parse");
+    let params = parsed
+        .query_pairs()
+        .collect::<std::collections::HashMap<_, _>>();
+
+    assert_eq!(parsed.scheme(), "otpauth");
+    assert_eq!(parsed.host_str(), Some("totp"));
+    assert_eq!(
+        parsed.path(),
+        "/Nazo%20OAuth%2FProduction:user%2Badmin%40example.com"
+    );
+    assert_eq!(
+        params.get("secret").map(|value| value.as_ref()),
+        Some("JBSWY3DPEHPK3PXP")
+    );
+    assert_eq!(
+        params.get("issuer").map(|value| value.as_ref()),
+        Some("Nazo OAuth/Production")
+    );
+    assert_eq!(
+        params.get("algorithm").map(|value| value.as_ref()),
+        Some("SHA1")
+    );
+    assert_eq!(
+        params.get("digits").map(|value| value.as_ref()),
+        Some(MFA_TOTP_DIGITS.to_string().as_str())
+    );
+    assert_eq!(
+        params.get("period").map(|value| value.as_ref()),
+        Some(MFA_TOTP_PERIOD_SECONDS.to_string().as_str())
+    );
+}
+
+#[test]
 fn generated_totp_secret_is_base32_without_padding() {
     let secret = generate_totp_secret_base32();
 
@@ -29,6 +75,25 @@ fn generated_totp_secret_is_base32_without_padding() {
             .all(|value| matches!(value, 'A'..='Z' | '2'..='7'))
     );
     assert_eq!(base32_decode(&secret).unwrap().len(), 20);
+}
+
+#[test]
+fn generated_backup_code_uses_two_fixed_width_numeric_chunks() {
+    for _ in 0..128 {
+        let code = generate_backup_code();
+        let (left, right) = code
+            .split_once('-')
+            .expect("generated backup code should contain a separator");
+
+        assert_eq!(left.len(), 5);
+        assert_eq!(right.len(), 5);
+        assert!(left.bytes().all(|value| value.is_ascii_digit()));
+        assert!(right.bytes().all(|value| value.is_ascii_digit()));
+        assert_eq!(
+            normalize_backup_code(&code).as_deref(),
+            Some([left, right].concat().as_str())
+        );
+    }
 }
 
 #[test]
@@ -43,6 +108,23 @@ fn backup_code_normalization_accepts_display_format_only() {
     );
     assert!(normalize_backup_code("1234-67890").is_none());
     assert!(normalize_backup_code("abcdefghij").is_none());
+}
+
+#[test]
+fn base32_decode_accepts_transport_whitespace_case_and_padding_only() {
+    let encoded = base32_encode(b"hello world");
+
+    assert_eq!(
+        base32_decode(&encoded).as_deref(),
+        Some(b"hello world".as_slice())
+    );
+    assert_eq!(
+        base32_decode(&format!("  {}\n=", encoded.to_ascii_lowercase())).as_deref(),
+        Some(b"hello world".as_slice()),
+        "base32 secrets may arrive with user-facing whitespace or padding"
+    );
+    assert_eq!(base32_decode("===="), None);
+    assert_eq!(base32_decode("JBSWY3DP!"), None);
 }
 
 #[test]

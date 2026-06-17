@@ -195,6 +195,14 @@ fn missing_client_mtls_authorization_code_holder_uses_invalid_request() {
 }
 
 #[test]
+fn missing_client_unbound_authorization_code_does_not_mask_client_auth_failure() {
+    assert!(
+        authorization_code_holder_missing_client_error(false, false).is_none(),
+        "authorization codes without sender binding should proceed to normal client authentication"
+    );
+}
+
+#[test]
 fn missing_client_client_credentials_without_dpop_uses_invalid_request() {
     let form = TokenForm {
         grant_type: "client_credentials".to_owned(),
@@ -214,6 +222,25 @@ fn missing_client_client_credentials_without_dpop_uses_invalid_request() {
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(oauth_error_code(&response), "invalid_request");
+}
+
+#[test]
+fn missing_client_holder_check_ignores_non_client_credentials_grants() {
+    let form = TokenForm {
+        grant_type: "refresh_token".to_owned(),
+        code: None,
+        redirect_uri: None,
+        code_verifier: None,
+        refresh_token: Some("refresh-token".to_owned()),
+        scope: None,
+        client_id: None,
+        client_secret: None,
+        client_assertion_type: None,
+        client_assertion: None,
+        audiences: Vec::new(),
+    };
+
+    assert!(client_credentials_holder_missing_client_error(&form, false).is_none());
 }
 
 #[test]
@@ -278,6 +305,46 @@ fn token_request_auth_material_detects_assertion_even_without_client_id() {
 }
 
 #[test]
+fn token_request_auth_material_detects_each_registered_client_auth_channel() {
+    let base = TokenForm {
+        grant_type: "authorization_code".to_owned(),
+        code: Some("code".to_owned()),
+        redirect_uri: None,
+        code_verifier: None,
+        refresh_token: None,
+        scope: None,
+        client_id: None,
+        client_secret: None,
+        client_assertion_type: None,
+        client_assertion: None,
+        audiences: Vec::new(),
+    };
+
+    assert!(token_request_has_client_auth_material(true, &base));
+
+    let mut with_client_id = base;
+    with_client_id.client_id = Some("client-1".to_owned());
+    assert!(token_request_has_client_auth_material(
+        false,
+        &with_client_id
+    ));
+
+    let mut with_secret = with_client_id;
+    with_secret.client_id = None;
+    with_secret.client_secret = Some("secret".to_owned());
+    assert!(token_request_has_client_auth_material(false, &with_secret));
+
+    let mut with_assertion_type = with_secret;
+    with_assertion_type.client_secret = None;
+    with_assertion_type.client_assertion_type =
+        Some("urn:ietf:params:oauth:client-assertion-type:jwt-bearer".to_owned());
+    assert!(token_request_has_client_auth_material(
+        false,
+        &with_assertion_type
+    ));
+}
+
+#[test]
 fn token_request_auth_material_allows_absent_client_credentials() {
     let form = TokenForm {
         grant_type: "authorization_code".to_owned(),
@@ -335,6 +402,13 @@ fn disabled_client_is_rejected_before_grant_dispatch() {
 }
 
 #[test]
+fn active_client_with_registered_grant_is_allowed_to_dispatch() {
+    let client = client();
+
+    assert!(validate_token_client_enabled(&client, "authorization_code").is_ok());
+}
+
+#[test]
 fn missing_grant_registration_is_rejected_before_grant_dispatch() {
     let client = client();
 
@@ -383,6 +457,20 @@ fn fapi2_profile_accepts_mtls_confidential_sender_constrained_clients() {
     assert!(
         validate_token_request_profile(&fapi, &client, "tls_client_auth").is_ok(),
         "FAPI2 allows confidential mTLS clients when tokens are sender constrained"
+    );
+}
+
+#[test]
+fn fapi2_profile_accepts_self_signed_mtls_confidential_sender_constrained_clients() {
+    let fapi = settings(AuthorizationServerProfile::Fapi2Security);
+    let mut client = client();
+    client.token_endpoint_auth_method = "self_signed_tls_client_auth".to_owned();
+    client.require_dpop_bound_tokens = false;
+    client.require_mtls_bound_tokens = true;
+
+    assert!(
+        validate_token_request_profile(&fapi, &client, "self_signed_tls_client_auth").is_ok(),
+        "FAPI2 allows self-signed mTLS when the client is confidential and sender constrained"
     );
 }
 

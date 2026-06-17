@@ -1,4 +1,60 @@
 use super::*;
+use std::sync::Arc;
+
+use crate::config::ConfigSource;
+use crate::db::create_pool;
+use crate::domain::{ActiveSigningKey, Keyset};
+
+fn test_state(scim_bearer_token: Option<&str>) -> AppState {
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.scim_bearer_token = scim_bearer_token.map(ToOwned::to_owned);
+    AppState {
+        diesel_db: create_pool(
+            "postgres://nazo_scim_test_invalid:nazo_scim_test_invalid@127.0.0.1:1/nazo".to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey: fred::prelude::Builder::default_centralized()
+            .build()
+            .expect("valkey client construction should not connect"),
+        settings: Arc::new(settings),
+        keyset: Arc::new(Keyset {
+            active_kid: "test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+            verification_keys: Vec::new(),
+        }),
+    }
+}
+
+fn bearer_request(token: &str) -> HttpRequest {
+    actix_web::test::TestRequest::default()
+        .insert_header((header::AUTHORIZATION, format!("Bearer {token}")))
+        .to_http_request()
+}
+
+async fn response_json(response: HttpResponse) -> (StatusCode, Value) {
+    let status = response.status();
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should be readable");
+    let json = serde_json::from_slice(&body).expect("response should be json");
+    (status, json)
+}
+
+async fn assert_scim_error_response(
+    response: HttpResponse,
+    expected_status: StatusCode,
+    expected_scim_type: &str,
+    expected_detail: &str,
+) {
+    let (status, body) = response_json(response).await;
+    assert_eq!(status, expected_status);
+    assert_eq!(body["status"], expected_status.as_u16().to_string());
+    assert_eq!(body["scimType"], expected_scim_type);
+    assert_eq!(body["detail"], expected_detail);
+}
 
 // bearer_token
 
@@ -70,6 +126,86 @@ fn bearer_token_handles_token_with_hyphens_and_underscores() {
         .insert_header((header::AUTHORIZATION, "Bearer scim_token-v2_secret"))
         .to_http_request();
     assert_eq!(bearer_token(&req), Some("scim_token-v2_secret"));
+}
+
+#[test]
+fn legacy_scim_credential_requires_exact_configured_token() {
+    let state = test_state(Some("legacy-scim-secret"));
+    let credential = legacy_scim_credential(&state, "legacy-scim-secret")
+        .expect("configured legacy token should be accepted");
+    assert_eq!(credential.token_id, None);
+    assert_eq!(credential.tenant_id, default_tenant_context().tenant_id);
+    assert_eq!(
+        credential.scopes,
+        vec![SCIM_SCOPE_READ.to_owned(), SCIM_SCOPE_WRITE.to_owned()]
+    );
+    assert_eq!(credential.source, "legacy-env");
+    assert!(legacy_scim_credential(&state, "legacy-scim-secret ").is_none());
+    assert!(legacy_scim_credential(&state, "different-secret").is_none());
+    assert!(legacy_scim_credential(&test_state(None), "legacy-scim-secret").is_none());
+}
+
+#[actix_web::test]
+async fn require_scim_bearer_accepts_legacy_token_when_database_lookup_fails() {
+    let state = test_state(Some("legacy-scim-secret"));
+    let req = bearer_request("legacy-scim-secret");
+
+    let credential = require_scim_bearer(&state, &req, ScimRequiredScope::Write)
+        .await
+        .expect("legacy token should authorize when database lookup is unavailable");
+
+    assert_eq!(credential.token_id, None);
+    assert_eq!(credential.tenant_id, default_tenant_context().tenant_id);
+    assert_eq!(
+        credential.scopes,
+        vec![SCIM_SCOPE_READ.to_owned(), SCIM_SCOPE_WRITE.to_owned()]
+    );
+    assert_eq!(credential.source, "legacy-env");
+}
+
+#[actix_web::test]
+async fn require_scim_bearer_surfaces_backend_unavailable_for_unknown_token_during_lookup_error() {
+    let state = test_state(Some("legacy-scim-secret"));
+    let req = bearer_request("not-the-legacy-token");
+
+    let response = match require_scim_bearer(&state, &req, ScimRequiredScope::Read).await {
+        Ok(_) => panic!("unknown token should not bypass lookup failure"),
+        Err(response) => response,
+    };
+
+    assert_scim_error_response(
+        response,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "server_error",
+        "backend unavailable",
+    )
+    .await;
+}
+
+#[actix_web::test]
+async fn authorize_scim_credential_rejects_insufficient_scope() {
+    let state = test_state(None);
+    let req = bearer_request("ignored");
+    let credential = ScimCredential {
+        token_id: None,
+        tenant_id: default_tenant_context().tenant_id,
+        scopes: vec![SCIM_SCOPE_READ.to_owned()],
+        source: "test",
+    };
+
+    let response =
+        match authorize_scim_credential(&state, &req, ScimRequiredScope::Write, credential).await {
+            Ok(_) => panic!("read-only credential must not authorize write access"),
+            Err(response) => response,
+        };
+
+    assert_scim_error_response(
+        response,
+        StatusCode::FORBIDDEN,
+        "forbidden",
+        "SCIM token lacks the required scope",
+    )
+    .await;
 }
 
 // scim_credential_allows

@@ -1,6 +1,6 @@
 use super::*;
 use proptest::prelude::*;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::settings::{EmailDelivery, EmailSettings, RateLimitSettings};
 use crate::support::ClientIpHeaderMode;
@@ -325,28 +325,7 @@ async fn external_command_signer_produces_verifiable_jwt() {
     tokio::fs::write(&private_key_path, &private_pem)
         .await
         .unwrap();
-    let signer = keys_dir.join("signer.sh");
-    tokio::fs::write(
-        &signer,
-        r#"#!/bin/sh
-set -eu
-key_file="$1"
-request=$(cat)
-signing_input=$(printf '%s' "$request" | sed -n 's/.*"signing_input":"\([^"]*\)".*/\1/p')
-signature=$(printf '%s' "$signing_input" | openssl dgst -sha256 -sign "$key_file" -binary | openssl base64 -A | tr '+/' '-_' | tr -d '=')
-printf '{"signature":"%s"}' "$signature"
-"#
-        ,
-    )
-    .await
-    .unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        tokio::fs::set_permissions(&signer, std::fs::Permissions::from_mode(0o700))
-            .await
-            .unwrap();
-    }
+    let signer_command = external_rsa_signer_command(&keys_dir, &private_key_path).await;
     tokio::fs::write(
         keys_dir.join("keyset.json"),
         serde_json::to_string_pretty(&json!({
@@ -365,10 +344,7 @@ printf '{"signature":"%s"}' "$signature"
     .await
     .unwrap();
     let mut settings = test_settings(keys_dir.clone());
-    settings.signing_external_command = vec![
-        signer.display().to_string(),
-        private_key_path.display().to_string(),
-    ];
+    settings.signing_external_command = signer_command;
     let keyset_path = keys_dir.join("keyset.json");
     let keyset = try_load_keyset(&settings, &keyset_path)
         .await
@@ -410,27 +386,7 @@ async fn external_command_signer_signature_must_match_active_public_jwk() {
     tokio::fs::write(&wrong_private_key_path, &wrong_private_pem)
         .await
         .unwrap();
-    let signer = keys_dir.join("signer.sh");
-    tokio::fs::write(
-        &signer,
-        r#"#!/bin/sh
-set -eu
-key_file="$1"
-request=$(cat)
-signing_input=$(printf '%s' "$request" | sed -n 's/.*"signing_input":"\([^"]*\)".*/\1/p')
-signature=$(printf '%s' "$signing_input" | openssl dgst -sha256 -sign "$key_file" -binary | openssl base64 -A | tr '+/' '-_' | tr -d '=')
-printf '{"signature":"%s"}' "$signature"
-"#,
-    )
-    .await
-    .unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        tokio::fs::set_permissions(&signer, std::fs::Permissions::from_mode(0o700))
-            .await
-            .unwrap();
-    }
+    let signer_command = external_rsa_signer_command(&keys_dir, &wrong_private_key_path).await;
     tokio::fs::write(
         keys_dir.join("keyset.json"),
         serde_json::to_string_pretty(&json!({
@@ -449,10 +405,7 @@ printf '{"signature":"%s"}' "$signature"
     .await
     .unwrap();
     let mut settings = test_settings(keys_dir.clone());
-    settings.signing_external_command = vec![
-        signer.display().to_string(),
-        wrong_private_key_path.display().to_string(),
-    ];
+    settings.signing_external_command = signer_command;
     let keyset_path = keys_dir.join("keyset.json");
     let keyset = try_load_keyset(&settings, &keyset_path)
         .await
@@ -479,6 +432,61 @@ fn temp_keys_dir(label: &str) -> PathBuf {
             .unwrap()
             .as_nanos()
     ))
+}
+
+#[cfg(unix)]
+async fn external_rsa_signer_command(keys_dir: &Path, private_key_path: &Path) -> Vec<String> {
+    let signer = keys_dir.join("signer.sh");
+    tokio::fs::write(
+        &signer,
+        r#"#!/bin/sh
+set -eu
+key_file="$1"
+request=$(cat)
+signing_input=$(printf '%s' "$request" | sed -n 's/.*"signing_input":"\([^"]*\)".*/\1/p')
+signature=$(printf '%s' "$signing_input" | openssl dgst -sha256 -sign "$key_file" -binary | openssl base64 -A | tr '+/' '-_' | tr -d '=')
+printf '{"signature":"%s"}' "$signature"
+"#,
+    )
+    .await
+    .unwrap();
+    vec![
+        "sh".to_owned(),
+        signer.display().to_string(),
+        private_key_path.display().to_string(),
+    ]
+}
+
+#[cfg(windows)]
+async fn external_rsa_signer_command(keys_dir: &Path, private_key_path: &Path) -> Vec<String> {
+    let signer = keys_dir.join("signer.ps1");
+    tokio::fs::write(
+        &signer,
+        r#"$ErrorActionPreference = 'Stop'
+$keyFile = $args[0]
+$request = [Console]::In.ReadToEnd() | ConvertFrom-Json
+$inputPath = [System.IO.Path]::GetTempFileName()
+$signaturePath = [System.IO.Path]::GetTempFileName()
+try {
+  [System.IO.File]::WriteAllText($inputPath, [string]$request.signing_input, [System.Text.Encoding]::ASCII)
+  & openssl dgst -sha256 -sign $keyFile -binary -out $signaturePath $inputPath | Out-Null
+  $signature = (& openssl base64 -A -in $signaturePath).Trim().Replace('+', '-').Replace('/', '_').TrimEnd('=')
+  [Console]::Out.Write("{""signature"":""$signature""}")
+} finally {
+  Remove-Item -LiteralPath $inputPath, $signaturePath -ErrorAction SilentlyContinue
+}
+"#,
+    )
+    .await
+    .unwrap();
+    vec![
+        "pwsh".to_owned(),
+        "-NoLogo".to_owned(),
+        "-NoProfile".to_owned(),
+        "-File".to_owned(),
+        signer.display().to_string(),
+        private_key_path.display().to_string(),
+    ]
 }
 
 fn test_settings(jwk_keys_dir: PathBuf) -> Settings {

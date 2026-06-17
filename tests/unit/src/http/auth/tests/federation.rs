@@ -9,6 +9,107 @@ fn federation_token_accepts_only_urlsafe_values() {
 }
 
 #[test]
+fn federation_token_trims_transport_whitespace_but_preserves_length_and_charset_limits() {
+    let min = "A".repeat(32);
+    let max = "b".repeat(256);
+
+    assert_eq!(
+        normalize_federation_token(&format!(" \t{min}\n")).as_deref(),
+        Some(min.as_str())
+    );
+    assert_eq!(
+        normalize_federation_token(&max).as_deref(),
+        Some(max.as_str())
+    );
+    assert!(
+        normalize_federation_token(&"c".repeat(31)).is_none(),
+        "state tokens shorter than 256 bits of base64url-like entropy must fail closed"
+    );
+    assert!(
+        normalize_federation_token(&"d".repeat(257)).is_none(),
+        "oversized state tokens must not be accepted into Valkey keys"
+    );
+    assert!(
+        normalize_federation_token(&format!("{}=", "e".repeat(32))).is_none(),
+        "base64 padding is intentionally outside the accepted state-token alphabet"
+    );
+}
+
+#[test]
+fn oidc_callback_input_rejects_provider_error_before_code_or_state_processing() {
+    let query = OidcCallbackQuery {
+        code: Some("authorization-code".to_owned()),
+        state: Some("A".repeat(32)),
+        error: Some("access_denied".to_owned()),
+    };
+    let response = validate_oidc_callback_input(&query)
+        .expect_err("upstream OIDC error must stop callback processing");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("access_denied")
+    );
+}
+
+#[test]
+fn oidc_callback_input_requires_urlsafe_state_and_bounded_non_empty_code() {
+    let valid_state = "A".repeat(32);
+    let valid = OidcCallbackQuery {
+        code: Some(" code-1 ".to_owned()),
+        state: Some(valid_state.clone()),
+        error: None,
+    };
+    let input = validate_oidc_callback_input(&valid).expect("valid callback input should parse");
+    assert_eq!(input.state_token, valid_state);
+    assert_eq!(input.code, "code-1");
+
+    for query in [
+        OidcCallbackQuery {
+            code: Some("code-1".to_owned()),
+            state: None,
+            error: None,
+        },
+        OidcCallbackQuery {
+            code: Some("code-1".to_owned()),
+            state: Some("not+urlsafe".to_owned()),
+            error: None,
+        },
+    ] {
+        let response = validate_oidc_callback_input(&query)
+            .expect_err("missing or malformed state must fail before token exchange");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response
+                .extensions()
+                .get::<OAuthJsonErrorFields>()
+                .map(|fields| fields.error.as_str()),
+            Some("invalid_request")
+        );
+    }
+
+    for code in [None, Some("   ".to_owned()), Some("x".repeat(4097))] {
+        let response = validate_oidc_callback_input(&OidcCallbackQuery {
+            code,
+            state: Some(valid_state.clone()),
+            error: None,
+        })
+        .expect_err("missing, blank, or oversized authorization code must fail closed");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response
+                .extensions()
+                .get::<OAuthJsonErrorFields>()
+                .map(|fields| fields.error.as_str()),
+            Some("invalid_request")
+        );
+    }
+}
+
+#[test]
 fn oidc_authorization_url_binds_state_nonce_and_s256_pkce() {
     let provider = OidcFederationSettings {
         provider_id: "oidc".to_owned(),

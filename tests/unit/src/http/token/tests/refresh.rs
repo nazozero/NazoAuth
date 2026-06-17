@@ -247,6 +247,33 @@ fn baseline_profile_rotates_unbound_refresh_tokens() {
 }
 
 #[test]
+fn refresh_token_policy_uses_configured_authorization_server_profile() {
+    let mut settings = Settings::from_config(&ConfigSource::default()).unwrap();
+    settings.authorization_server_profile = AuthorizationServerProfile::Fapi2Security;
+    let token = token_row();
+    let mut client = client_row();
+    client.client_type = "public".to_owned();
+    client.token_endpoint_auth_method = "none".to_owned();
+    client.require_dpop_bound_tokens = false;
+    client.require_mtls_bound_tokens = false;
+
+    assert_eq!(
+        refresh_token_policy_for_profile(&settings, &client, &token),
+        RefreshTokenPolicy::PreserveExisting,
+        "FAPI profiles preserve refresh-token families even for public clients"
+    );
+
+    settings.authorization_server_profile = AuthorizationServerProfile::Oauth2Baseline;
+    assert_eq!(
+        refresh_token_policy_for_profile(&settings, &client, &token),
+        RefreshTokenPolicy::Rotate {
+            family_id: token.token_family_id,
+            rotated_from_id: token.id,
+        }
+    );
+}
+
+#[test]
 fn lost_refresh_retry_allows_only_short_post_rotation_window() {
     let now = Utc::now();
 
@@ -346,6 +373,28 @@ async fn refresh_grant_requires_refresh_token_before_database_lookup_or_token_is
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"], "invalid_request");
+    assert_eq!(body["error_description"], "Request failed.");
+    assert!(body.get("access_token").is_none());
+    assert!(body.get("refresh_token").is_none());
+    assert!(body.get("id_token").is_none());
+    assert!(body.get("token_type").is_none());
+}
+
+#[actix_web::test]
+async fn refresh_grant_reports_lookup_failure_without_issuing_tokens() {
+    let state = test_state();
+    let req = actix_web::test::TestRequest::post()
+        .uri("/oauth/token")
+        .to_http_request();
+    let client = client_row();
+    let mut form = refresh_form_without_token();
+    form.refresh_token = Some("refresh-token-value".to_owned());
+
+    let (status, body) =
+        response_json(token_refresh(&state, &req, &client, &form, None).await).await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"], "server_error");
     assert_eq!(body["error_description"], "Request failed.");
     assert!(body.get("access_token").is_none());
     assert!(body.get("refresh_token").is_none());
