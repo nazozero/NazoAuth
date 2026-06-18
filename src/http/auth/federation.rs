@@ -68,6 +68,14 @@ pub(crate) async fn federation_oidc_callback(
     if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
         return response;
     }
+    federation_oidc_callback_after_rate_limit(state, req, query).await
+}
+
+async fn federation_oidc_callback_after_rate_limit(
+    state: Data<AppState>,
+    req: HttpRequest,
+    query: OidcCallbackQuery,
+) -> HttpResponse {
     let Some(provider) = state.settings.federation.oidc.clone() else {
         return oauth_error(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -75,11 +83,11 @@ pub(crate) async fn federation_oidc_callback(
             "OIDC federation is not configured.",
         );
     };
-    let input = match validate_oidc_callback_input(&query) {
+    let OidcCallbackInput { state_token, code } = match validate_oidc_callback_input(&query) {
         Ok(input) => input,
         Err(response) => return response,
     };
-    let stored = match take_oidc_state(&state, &input.state_token).await {
+    let stored = match take_oidc_state(&state, &state_token).await {
         Ok(Some(stored)) => stored,
         Ok(None) => {
             return oauth_error(
@@ -99,7 +107,7 @@ pub(crate) async fn federation_oidc_callback(
             "federation state expired.",
         );
     }
-    let token = match exchange_oidc_code(&provider, &input.code, &stored.pkce_verifier).await {
+    let token = match exchange_oidc_code(&provider, &code, &stored.pkce_verifier).await {
         Ok(token) => token,
         Err(error) => {
             tracing::warn!(%error, provider_id = %provider.provider_id, "OIDC token exchange failed");

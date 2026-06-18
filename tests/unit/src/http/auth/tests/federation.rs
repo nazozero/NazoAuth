@@ -1,5 +1,57 @@
 use super::*;
+use std::{sync::Arc, time::Duration};
+
+use crate::config::ConfigSource;
+use crate::db::create_pool;
+use crate::domain::{ActiveSigningKey, Keyset};
 use crate::settings::{OidcFederationSettings, SamlGatewaySettings};
+
+fn oidc_provider() -> OidcFederationSettings {
+    OidcFederationSettings {
+        provider_id: "oidc".to_owned(),
+        issuer: "https://issuer.example".to_owned(),
+        authorization_endpoint: "https://issuer.example/authorize".to_owned(),
+        token_endpoint: "https://issuer.example/token".to_owned(),
+        jwks_url: "https://issuer.example/jwks".to_owned(),
+        client_id: "client-1".to_owned(),
+        client_secret: "secret".to_owned(),
+        redirect_uri: "https://auth.example/federation/oidc/callback".to_owned(),
+        scopes: "openid email".to_owned(),
+    }
+}
+
+fn oidc_callback_state() -> AppState {
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.federation.oidc = Some(oidc_provider());
+    let mut valkey_builder = fred::prelude::Builder::default_centralized();
+    valkey_builder.with_performance_config(|performance| {
+        performance.default_command_timeout = Duration::from_millis(50);
+    });
+    valkey_builder.with_connection_config(|connection| {
+        connection.connection_timeout = Duration::from_millis(50);
+        connection.internal_command_timeout = Duration::from_millis(50);
+    });
+
+    AppState {
+        diesel_db: create_pool(
+            "postgres://nazo_federation_test_invalid:nazo_federation_test_invalid@127.0.0.1:1/nazo"
+                .to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey: valkey_builder
+            .build()
+            .expect("valkey client construction should not connect"),
+        settings: Arc::new(settings),
+        keyset: Arc::new(Keyset {
+            active_kid: "test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+            verification_keys: Vec::new(),
+        }),
+    }
+}
 
 #[test]
 fn federation_token_accepts_only_urlsafe_values() {
@@ -109,19 +161,57 @@ fn oidc_callback_input_requires_urlsafe_state_and_bounded_non_empty_code() {
     }
 }
 
+#[actix_web::test]
+async fn oidc_callback_after_rate_limit_rejects_provider_error_before_state_lookup() {
+    let state = Data::new(oidc_callback_state());
+    let req = actix_web::test::TestRequest::get()
+        .uri("/auth/federation/oidc/callback?error=access_denied")
+        .to_http_request();
+    let query = OidcCallbackQuery {
+        code: None,
+        state: None,
+        error: Some("access_denied".to_owned()),
+    };
+
+    let response = federation_oidc_callback_after_rate_limit(state, req, query).await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("access_denied")
+    );
+}
+
+#[actix_web::test]
+async fn oidc_callback_after_rate_limit_validates_input_before_state_storage_errors() {
+    let state = Data::new(oidc_callback_state());
+    let req = actix_web::test::TestRequest::get()
+        .uri("/auth/federation/oidc/callback?state=valid&code=code")
+        .to_http_request();
+    let query = OidcCallbackQuery {
+        code: Some(" code-1 ".to_owned()),
+        state: Some("A".repeat(32)),
+        error: None,
+    };
+
+    let response = federation_oidc_callback_after_rate_limit(state, req, query).await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("server_error")
+    );
+}
+
 #[test]
 fn oidc_authorization_url_binds_state_nonce_and_s256_pkce() {
-    let provider = OidcFederationSettings {
-        provider_id: "oidc".to_owned(),
-        issuer: "https://issuer.example".to_owned(),
-        authorization_endpoint: "https://issuer.example/authorize".to_owned(),
-        token_endpoint: "https://issuer.example/token".to_owned(),
-        jwks_url: "https://issuer.example/jwks".to_owned(),
-        client_id: "client-1".to_owned(),
-        client_secret: "secret".to_owned(),
-        redirect_uri: "https://auth.example/federation/oidc/callback".to_owned(),
-        scopes: "openid email".to_owned(),
-    };
+    let provider = oidc_provider();
 
     let location = oidc_authorization_url(&provider, "state-1", "nonce-1", "verifier-1");
     let url = url::Url::parse(&location).unwrap();
