@@ -1425,7 +1425,7 @@ async fn authorization_response_redirect_emits_signed_jarm_response() {
     let location = authorization_location(&response);
     let pairs = location.query_pairs().collect::<HashMap<_, _>>();
     assert_eq!(pairs.get("existing").map(|value| value.as_ref()), Some("1"));
-    assert!(pairs.get("response").is_some());
+    assert!(pairs.contains_key("response"));
     assert!(!pairs.contains_key("code"));
     assert!(!pairs.contains_key("state"));
     assert!(!pairs.contains_key("iss"));

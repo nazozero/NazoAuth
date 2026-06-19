@@ -230,6 +230,7 @@ async fn revoke_access_token(state: &Data<AppState>, client_row_id: Uuid, access
     .expect("access token revocation insert should succeed");
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn signed_userinfo_access_token(
     state: &Data<AppState>,
     tenant_id: Uuid,

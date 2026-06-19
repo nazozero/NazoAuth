@@ -246,7 +246,7 @@ async fn sign_access_token(state: &Data<AppState>, client: &ClientRow) -> Issued
             user_id: None,
             subject_type: "client",
             client_id: client.client_id.as_str(),
-            audiences: &[state.settings.default_audience.clone()],
+            audiences: std::slice::from_ref(&state.settings.default_audience),
             scopes: &["openid".to_owned()],
             authorization_details: &json!([]),
             userinfo_claims: &[],

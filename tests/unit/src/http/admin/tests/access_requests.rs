@@ -486,7 +486,7 @@ async fn admin_access_request_list_validates_status_after_admin_auth_and_returns
         .create_user(&format!("{suffix}-user"), "user", 0)
         .await;
     let sid = format!("sid-{suffix}");
-    fixture.store_session(&admin, &sid).await;
+    fixture.store_session(&admin, sid).await;
     let pending_site = format!("Payments-{suffix}");
     fixture
         .insert_access_request(&applicant, &pending_site, AccessRequestStatus::Pending)

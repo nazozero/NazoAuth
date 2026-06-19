@@ -276,6 +276,7 @@ async fn token_json_body(response: HttpResponse) -> (StatusCode, Value) {
     (status, value)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn insert_token_client(
     state: &Data<AppState>,
     client_id: &str,

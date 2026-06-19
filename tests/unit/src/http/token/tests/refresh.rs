@@ -682,8 +682,7 @@ async fn refresh_grant_marks_family_reuse_and_revokes_active_family_tokens() {
     reused.subject = client.client_id.clone();
     reused.user_id = None;
     reused.dpop_jkt = None;
-    reused.revoked_at =
-        Some(Utc::now() - Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS as i64 + 5));
+    reused.revoked_at = Some(Utc::now() - Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS + 5));
     let reused_raw = "refresh-token-reused";
     insert_refresh_token_row(&state, reused_raw, &reused, None, None).await;
 
