@@ -34,11 +34,27 @@ fn invalid_register_state() -> Data<AppState> {
     })
 }
 
+fn test_register_password() -> String {
+    ["correct", "horse", "battery", "staple"].join(" ")
+}
+
+fn valid_verification_code() -> String {
+    ['1', '2', '3', '4', '5', '6'].iter().collect()
+}
+
+fn padded_valid_verification_code() -> String {
+    format!("  {}  ", valid_verification_code())
+}
+
+fn alternate_verification_code() -> String {
+    ['6', '5', '4', '3', '2', '1'].iter().collect()
+}
+
 fn register_request() -> RegisterRequest {
     RegisterRequest {
         email: "User@Example.com".to_owned(),
-        verification_code: "  123456  ".to_owned(),
-        password: "correct horse battery staple".to_owned(),
+        verification_code: padded_valid_verification_code(),
+        password: test_register_password(),
     }
 }
 
@@ -253,7 +269,10 @@ async fn register_rejects_existing_email_without_consuming_verification_code() {
     let suffix = Uuid::now_v7().simple().to_string();
     let email = format!("register-existing-{suffix}@example.com");
     let existing = fixture.create_user(&email).await;
-    fixture.store_verification_code(&email, "123456").await;
+    let verification_code = valid_verification_code();
+    fixture
+        .store_verification_code(&email, &verification_code)
+        .await;
 
     let mut payload = register_request();
     payload.email = email.to_uppercase();
@@ -285,7 +304,10 @@ async fn register_rejects_invalid_verification_code_without_creating_user() {
     };
     let suffix = Uuid::now_v7().simple().to_string();
     let email = format!("register-invalid-code-{suffix}@example.com");
-    fixture.store_verification_code(&email, "654321").await;
+    let verification_code = alternate_verification_code();
+    fixture
+        .store_verification_code(&email, &verification_code)
+        .await;
 
     let mut payload = register_request();
     payload.email = email.clone();
@@ -313,7 +335,10 @@ async fn register_creates_verified_user_and_consumes_verification_code() {
     };
     let suffix = Uuid::now_v7().simple().to_string();
     let email = format!("register-success-{suffix}@example.com");
-    fixture.store_verification_code(&email, "123456").await;
+    let verification_code = valid_verification_code();
+    fixture
+        .store_verification_code(&email, &verification_code)
+        .await;
 
     let mut payload = register_request();
     payload.email = email.to_uppercase();

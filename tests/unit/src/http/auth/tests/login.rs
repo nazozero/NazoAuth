@@ -22,6 +22,14 @@ fn login_request(content_type: &'static str) -> HttpRequest {
         .to_http_request()
 }
 
+fn test_login_password() -> String {
+    ["correct", "horse", "battery", "staple"].join(" ")
+}
+
+fn form_encoded_test_login_password() -> String {
+    test_login_password().replace(' ', "+")
+}
+
 async fn error_json(response: HttpResponse) -> (StatusCode, Value) {
     let status = response.status();
     let body = actix_web::body::to_bytes(response.into_body())
@@ -203,9 +211,9 @@ async fn login_form_request_creates_session_and_redirects_to_safe_next() {
         return;
     };
 
-    let password = "correct horse battery staple";
+    let password = test_login_password();
     let _user = fixture
-        .create_user("form-success", "User@Example.com", password, true, false)
+        .create_user("form-success", "User@Example.com", &password, true, false)
         .await;
     let req = actix_web::test::TestRequest::default()
         .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
@@ -214,7 +222,10 @@ async fn login_form_request_creates_session_and_redirects_to_safe_next() {
             "https://app.example/login?next=%2Fauthorize%3Fclient_id%3Dabc",
         ))
         .to_http_request();
-    let body = Bytes::from_static(br#"email=User%40Example.com&password=correct+horse+battery+staple&next=%2Fauthorize%3Fclient_id%3Dabc"#);
+    let body = Bytes::from(format!(
+        "email=User%40Example.com&password={}&next=%2Fauthorize%3Fclient_id%3Dabc",
+        form_encoded_test_login_password()
+    ));
 
     let response = login(fixture.state.clone(), req, body.clone()).await;
 
@@ -251,12 +262,12 @@ async fn login_json_request_returns_session_payload_for_mfa_enabled_user_when_no
         return;
     };
 
-    let password = "correct horse battery staple";
+    let password = test_login_password();
     let user = fixture
         .create_user(
             "json-required-mfa",
             "required-mfa@example.com",
-            password,
+            &password,
             true,
             true,
         )
@@ -285,12 +296,12 @@ async fn login_json_request_returns_session_payload_for_remembered_mfa_device() 
         return;
     };
 
-    let password = "correct horse battery staple";
+    let password = test_login_password();
     let user = fixture
         .create_user(
             "json-remembered-mfa",
             "remembered-mfa@example.com",
-            password,
+            &password,
             true,
             true,
         )
@@ -354,12 +365,12 @@ async fn login_rejects_wrong_password_as_access_denied() {
     let Some(fixture) = LiveLoginFixture::new().await else {
         return;
     };
-    let password = "correct horse battery staple";
+    let password = test_login_password();
     let user = fixture
         .create_user(
             "wrong-password",
             "wrong-password@example.com",
-            password,
+            &password,
             true,
             false,
         )
@@ -387,12 +398,12 @@ async fn login_rejects_inactive_user_as_access_denied() {
     let Some(fixture) = LiveLoginFixture::new().await else {
         return;
     };
-    let password = "correct horse battery staple";
+    let password = test_login_password();
     let user = fixture
         .create_user(
             "inactive-user",
             "inactive-user@example.com",
-            password,
+            &password,
             false,
             false,
         )

@@ -293,7 +293,7 @@ fn cookie_value_from_response(response: &HttpResponse, name: &str) -> Option<Str
         .filter_map(|value| value.to_str().ok())
         .find_map(|cookie| {
             cookie
-                .strip_prefix(&format!("{name}="))
+                .strip_prefix(&format!("{}=", name))
                 .and_then(|value| value.split(';').next())
                 .map(ToOwned::to_owned)
         })
