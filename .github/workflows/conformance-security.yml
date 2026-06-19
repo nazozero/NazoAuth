@@ -191,6 +191,7 @@ jobs:
           PAIRWISE_SUBJECT_SECRET: ""
           PAR_TTL_SECONDS: 90
           REQUIRE_PUSHED_AUTHORIZATION_REQUESTS: false
+          SCIM_BEARER_TOKEN: "codecov-scim-secret"
           EMAIL_DELIVERY: "smtp"
           EMAIL_CODE_TTL_SECONDS: 900
           EMAIL_CODE_SEND_COOLDOWN_SECONDS: 1
