@@ -506,7 +506,10 @@ async fn authorization_decision_rejects_request_with_invalid_pushed_request_uri(
         .query_pairs()
         .into_owned()
         .collect::<HashMap<_, _>>();
-    assert_eq!(pairs.get("error").map(String::as_str), Some("invalid_request_uri"));
+    assert_eq!(
+        pairs.get("error").map(String::as_str),
+        Some("invalid_request_uri")
+    );
 }
 
 #[actix_web::test]
@@ -533,7 +536,10 @@ async fn authorization_decision_accepts_deny_with_user_match() {
         .query_pairs()
         .into_owned()
         .collect::<HashMap<_, _>>();
-    assert_eq!(pairs.get("error").map(String::as_str), Some("access_denied"));
+    assert_eq!(
+        pairs.get("error").map(String::as_str),
+        Some("access_denied")
+    );
     assert!(!pairs.contains_key("code"));
 }
 

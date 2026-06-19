@@ -187,7 +187,6 @@ impl ConsentLiveFixture {
                 "csrf-token".to_owned(),
             ))
     }
-
 }
 
 async fn response_json(response: HttpResponse) -> (StatusCode, Value) {
@@ -310,9 +309,12 @@ async fn authorize_consent_requires_login() {
             1,
         )
         .expect("pool construction should not connect"),
-        valkey: ValkeyBuilder::default_centralized().build().expect("valkey client should construct"),
-        settings: Arc::new(Settings::from_config(&ConfigSource::default())
-            .expect("settings should load")),
+        valkey: ValkeyBuilder::default_centralized()
+            .build()
+            .expect("valkey client should construct"),
+        settings: Arc::new(
+            Settings::from_config(&ConfigSource::default()).expect("settings should load"),
+        ),
         keyset: Arc::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
@@ -321,10 +323,13 @@ async fn authorize_consent_requires_login() {
         }),
     };
     let state = Data::new(state);
-    let req = TestRequest::get().uri("/authorize/consent?request_id=req-login").to_http_request();
-    let (status, body) =
-        response_json(authorize_consent(state, req, Query(query(&[("request_id", "req-login")]))).await)
-            .await;
+    let req = TestRequest::get()
+        .uri("/authorize/consent?request_id=req-login")
+        .to_http_request();
+    let (status, body) = response_json(
+        authorize_consent(state, req, Query(query(&[("request_id", "req-login")]))).await,
+    )
+    .await;
 
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(body["error"], "login_required");
@@ -343,12 +348,8 @@ async fn authorize_consent_rejects_requests_without_request_id() {
     let req = fixture
         .consent_request("sid-no-request-id", None)
         .to_http_request();
-    let response = authorize_consent(
-        fixture.state.clone(),
-        req,
-        Query(query(&[("foo", "bar")])),
-    )
-    .await;
+    let response =
+        authorize_consent(fixture.state.clone(), req, Query(query(&[("foo", "bar")]))).await;
     let (status, body) = response_json(response).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);

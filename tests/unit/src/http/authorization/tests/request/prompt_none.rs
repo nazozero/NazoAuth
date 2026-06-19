@@ -288,15 +288,14 @@ async fn prompt_none_redirects_invalid_request_uri_when_request_uri_is_missing()
     let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
     payload.pushed_request_uri = Some(request_uri);
 
-    let response = issue_authorization_code_without_interaction(
-        &state,
-        &prompt_none_request(),
-        payload,
-    )
-    .await;
+    let response =
+        issue_authorization_code_without_interaction(&state, &prompt_none_request(), payload).await;
 
     let query = redirect_query(&response);
-    assert_eq!(query.get("error").map(String::as_str), Some("invalid_request_uri"));
+    assert_eq!(
+        query.get("error").map(String::as_str),
+        Some("invalid_request_uri")
+    );
     assert_eq!(query.get("state").map(String::as_str), Some("opaque-state"));
 }
 
@@ -317,12 +316,8 @@ async fn prompt_none_redirects_server_error_when_request_uri_is_malformed() {
     .expect("malformed request_uri should persist");
     payload.pushed_request_uri = Some(request_uri);
 
-    let response = issue_authorization_code_without_interaction(
-        &state,
-        &prompt_none_request(),
-        payload,
-    )
-    .await;
+    let response =
+        issue_authorization_code_without_interaction(&state, &prompt_none_request(), payload).await;
 
     let query = redirect_query(&response);
     assert_eq!(query.get("error").map(String::as_str), Some("server_error"));

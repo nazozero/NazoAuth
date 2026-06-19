@@ -5,13 +5,15 @@ use actix_web::test::TestRequest;
 use diesel::sql_query;
 use diesel::sql_types::{Text, Uuid as SqlUuid};
 use fred::interfaces::ClientLike;
-use fred::prelude::{Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig};
+use fred::prelude::{
+    Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
+};
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
-use crate::support::prelude::{ActiveSigningKey, Keyset};
 use crate::db::{create_pool, get_conn};
+use crate::support::prelude::{ActiveSigningKey, Keyset};
 
 fn test_state() -> AppState {
     AppState {
@@ -284,8 +286,11 @@ async fn my_access_requests_response_with_live_data() {
     .await
     .expect("fixture access requests should insert");
 
-    let response = my_access_requests(Data::clone(&fixture.state), fixture.request(&sid, "csrf-live"))
-        .await;
+    let response = my_access_requests(
+        Data::clone(&fixture.state),
+        fixture.request(&sid, "csrf-live"),
+    )
+    .await;
 
     assert_eq!(response.status(), StatusCode::OK);
     let body = actix_web::body::to_bytes(response.into_body())
@@ -296,7 +301,10 @@ async fn my_access_requests_response_with_live_data() {
     assert_eq!(body["total"], json!(2));
     assert_eq!(body["pending_count"], json!(1));
     assert_eq!(
-        body["items"].as_array().expect("items should be array").len(),
+        body["items"]
+            .as_array()
+            .expect("items should be array")
+            .len(),
         2
     );
 }
@@ -319,12 +327,8 @@ async fn create_access_request_handles_duplicate_pending_request_as_conflict() {
     .await;
     assert_eq!(first.status(), StatusCode::CREATED);
 
-    let second = create_access_request(
-        Data::clone(&fixture.state),
-        request_payload,
-        Json(payload),
-    )
-    .await;
+    let second =
+        create_access_request(Data::clone(&fixture.state), request_payload, Json(payload)).await;
     assert_eq!(second.status(), StatusCode::CONFLICT);
     let body = actix_web::body::to_bytes(second.into_body())
         .await
