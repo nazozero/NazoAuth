@@ -16,6 +16,14 @@ pub(crate) async fn send_code(
         return response;
     }
 
+    send_code_after_rate_limit(state, req, payload).await
+}
+
+pub(crate) async fn send_code_after_rate_limit(
+    state: Data<AppState>,
+    req: HttpRequest,
+    payload: SendCodeRequest,
+) -> HttpResponse {
     let Ok(recipient) = parse_email_recipient(&payload.email) else {
         return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "邮箱格式无效.");
     };

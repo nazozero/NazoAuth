@@ -90,16 +90,19 @@ pub(crate) fn generate_backup_code() -> String {
 }
 
 pub(crate) fn normalize_backup_code(value: &str) -> Option<String> {
-    let normalized = value
-        .trim()
-        .chars()
-        .filter(|value| !matches!(value, '-' | ' '))
-        .collect::<String>();
-    if normalized.len() == 10 && normalized.chars().all(|value| value.is_ascii_digit()) {
-        Some(normalized)
-    } else {
-        None
+    let trimmed = value.trim();
+    if trimmed.len() == 10 && trimmed.bytes().all(|value| value.is_ascii_digit()) {
+        return Some(trimmed.to_owned());
     }
+    let bytes = trimmed.as_bytes();
+    if bytes.len() == 11
+        && matches!(bytes[5], b'-' | b' ')
+        && bytes[..5].iter().all(u8::is_ascii_digit)
+        && bytes[6..].iter().all(u8::is_ascii_digit)
+    {
+        return Some(format!("{}{}", &trimmed[..5], &trimmed[6..]));
+    }
+    None
 }
 
 pub(crate) async fn remembered_mfa_device_valid(

@@ -1,4 +1,281 @@
 use super::*;
+use actix_web::cookie::Cookie;
+use diesel::prelude::SelectableHelper;
+use diesel::sql_query;
+use diesel::sql_types::{Int4, Text, Uuid as SqlUuid};
+use diesel_async::RunQueryDsl;
+use fred::interfaces::ClientLike;
+use fred::prelude::{
+    Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
+};
+use std::sync::Arc;
+use std::time::Duration as StdDuration;
+
+use crate::config::ConfigSource;
+use crate::db::{create_pool, get_conn};
+use crate::domain::{ActiveSigningKey, Keyset};
+use crate::http::admin::{CreateClientRequest, insert_prepared_client, prepare_client_insert};
+
+fn unavailable_valkey_client() -> fred::prelude::Client {
+    let mut builder = ValkeyBuilder::from_config(
+        ValkeyConfig::from_url("redis://127.0.0.1:1").expect("unavailable Valkey URL should parse"),
+    );
+    builder.with_performance_config(|performance: &mut PerformanceConfig| {
+        performance.default_command_timeout = StdDuration::from_millis(200);
+    });
+    builder.with_connection_config(|connection: &mut ConnectionConfig| {
+        connection.connection_timeout = StdDuration::from_millis(200);
+        connection.internal_command_timeout = StdDuration::from_millis(200);
+        connection.max_command_attempts = 1;
+    });
+    builder
+        .build()
+        .expect("unavailable valkey client construction should not connect")
+}
+
+fn test_state() -> AppState {
+    AppState {
+        diesel_db: create_pool(
+            "postgres://nazo_admin_client_update_test_invalid:nazo_admin_client_update_test_invalid@127.0.0.1:1/nazo"
+                .to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey: unavailable_valkey_client(),
+        settings: Arc::new(
+            Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
+        ),
+        keyset: Arc::new(Keyset {
+            active_kid: "test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+            verification_keys: Vec::new(),
+        }),
+    }
+}
+
+fn oauth_error_name(response: &HttpResponse) -> Option<String> {
+    response
+        .extensions()
+        .get::<OAuthJsonErrorFields>()
+        .map(|fields| fields.error.clone())
+}
+
+fn create_client_request(client_name: &str) -> CreateClientRequest {
+    CreateClientRequest {
+        client_name: client_name.to_owned(),
+        client_type: "confidential".to_owned(),
+        redirect_uris: vec!["https://client.example/callback".to_owned()],
+        post_logout_redirect_uris: vec!["https://client.example/logout".to_owned()],
+        scopes: vec!["openid".to_owned(), "payments".to_owned()],
+        allowed_audiences: vec!["https://api.example".to_owned()],
+        grant_types: vec!["authorization_code".to_owned(), "refresh_token".to_owned()],
+        token_endpoint_auth_method: "client_secret_post".to_owned(),
+        require_dpop_bound_tokens: false,
+        allow_client_assertion_audience_array: false,
+        allow_client_assertion_endpoint_audience: false,
+        require_par_request_object: false,
+        allow_authorization_code_without_pkce: false,
+        backchannel_logout_uri: Some("https://client.example/backchannel".to_owned()),
+        backchannel_logout_session_required: true,
+        tls_client_auth_subject_dn: None,
+        tls_client_auth_cert_sha256: None,
+        tls_client_auth_san_dns: Vec::new(),
+        tls_client_auth_san_uri: Vec::new(),
+        tls_client_auth_san_ip: Vec::new(),
+        tls_client_auth_san_email: Vec::new(),
+        jwks: None,
+    }
+}
+
+fn database_url_with_search_path(schema: &str) -> Option<String> {
+    let base = std::env::var("DATABASE_URL").ok()?;
+    let separator = if base.contains('?') { "&" } else { "?" };
+    Some(format!(
+        "{base}{separator}options=-csearch_path%3D{schema}%2Cpublic"
+    ))
+}
+
+struct LiveAdminClientUpdateFixture {
+    state: Data<AppState>,
+    schema: String,
+}
+
+impl LiveAdminClientUpdateFixture {
+    async fn new_isolated(schema: &str) -> Option<Self> {
+        let database_url = database_url_with_search_path(schema)?;
+        let valkey_url = std::env::var("VALKEY_URL").ok()?;
+        let config = ConfigSource::from_pairs_for_test([
+            ("ISSUER", "https://issuer.example"),
+            ("COOKIE_SECURE", "true"),
+            ("SESSION_COOKIE_NAME", "nazo_admin_client_update_session"),
+            ("CSRF_COOKIE_NAME", "nazo_admin_client_update_csrf"),
+        ]);
+        let settings = Settings::from_config(&config).expect("test settings should load");
+        let mut valkey_builder = ValkeyBuilder::from_config(
+            ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),
+        );
+        valkey_builder.with_performance_config(|performance: &mut PerformanceConfig| {
+            performance.default_command_timeout = StdDuration::from_millis(1000);
+        });
+        valkey_builder.with_connection_config(|connection: &mut ConnectionConfig| {
+            connection.connection_timeout = StdDuration::from_millis(1000);
+            connection.internal_command_timeout = StdDuration::from_millis(1000);
+            connection.max_command_attempts = 1;
+        });
+        let valkey = valkey_builder.build().expect("valkey client should build");
+        valkey.init().await.expect("valkey should connect");
+        let fixture = Self {
+            state: Data::new(AppState {
+                diesel_db: create_pool(database_url, 4).expect("database pool should build"),
+                valkey,
+                settings: Arc::new(settings),
+                keyset: Arc::new(Keyset {
+                    active_kid: "test-kid".to_owned(),
+                    active_alg: jsonwebtoken::Algorithm::EdDSA,
+                    active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+                    verification_keys: Vec::new(),
+                }),
+            }),
+            schema: schema.to_owned(),
+        };
+        fixture
+            .create_isolated_schema(&["users", "oauth_clients"])
+            .await;
+        Some(fixture)
+    }
+
+    async fn create_isolated_schema(&self, tables: &[&str]) {
+        self.exec_sql(&format!(r#"CREATE SCHEMA IF NOT EXISTS "{}""#, self.schema))
+            .await;
+        for table in tables {
+            self.exec_sql(&format!(
+                r#"CREATE TABLE "{}"."{}" (LIKE public."{}" INCLUDING ALL)"#,
+                self.schema, table, table
+            ))
+            .await;
+        }
+    }
+
+    async fn exec_sql(&self, sql: &str) {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        sql_query(sql)
+            .execute(&mut conn)
+            .await
+            .expect("schema mutation should succeed");
+    }
+
+    async fn rename_column(&self, table: &str, from: &str, to: &str) {
+        self.exec_sql(&format!(
+            r#"ALTER TABLE "{}"."{}" RENAME COLUMN "{}" TO "{}""#,
+            self.schema, table, from, to
+        ))
+        .await;
+    }
+
+    async fn cleanup(&self) {
+        self.exec_sql(&format!(
+            r#"DROP SCHEMA IF EXISTS "{}" CASCADE"#,
+            self.schema
+        ))
+        .await;
+    }
+
+    async fn create_user(&self, suffix: &str, role: &str, admin_level: i32) -> UserRow {
+        let email = format!("admin-client-update-{suffix}@example.com");
+        let username = format!("admin-client-update-{suffix}");
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        sql_query(
+            r#"
+            INSERT INTO users (
+                tenant_id, realm_id, organization_id, username, email,
+                password_hash, is_active, mfa_enabled, email_verified, role, admin_level
+            )
+            VALUES ($1, $2, $3, $4, $5, 'unused-admin-client-update-hash', true, false, true, $6, $7)
+            RETURNING *
+            "#,
+        )
+        .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+        .bind::<SqlUuid, _>(DEFAULT_REALM_ID)
+        .bind::<SqlUuid, _>(DEFAULT_ORGANIZATION_ID)
+        .bind::<Text, _>(username)
+        .bind::<Text, _>(email)
+        .bind::<Text, _>(role.to_owned())
+        .bind::<Int4, _>(admin_level)
+        .get_result::<UserRow>(&mut conn)
+        .await
+        .expect("test user should insert")
+    }
+
+    async fn store_session(&self, user: &UserRow, sid: &str) {
+        let payload = SessionPayload {
+            user_id: user.id,
+            auth_time: Utc::now().timestamp(),
+            amr: vec!["pwd".to_owned()],
+            pending_mfa: false,
+            oidc_sid: Some(format!("oidc-{sid}")),
+        };
+        valkey_set_ex(
+            &self.state.valkey,
+            format!("oauth:session:{sid}"),
+            serde_json::to_string(&payload).expect("session should serialize"),
+            self.state.settings.session_ttl_seconds,
+        )
+        .await
+        .expect("session should store");
+    }
+
+    fn admin_patch_request(&self, sid: &str, csrf: &str, uri: &str) -> HttpRequest {
+        actix_web::test::TestRequest::patch()
+            .uri(uri)
+            .cookie(Cookie::new(
+                self.state.settings.session_cookie_name.clone(),
+                sid.to_owned(),
+            ))
+            .cookie(Cookie::new(
+                self.state.settings.csrf_cookie_name.clone(),
+                csrf.to_owned(),
+            ))
+            .insert_header(("x-csrf-token", csrf))
+            .to_http_request()
+    }
+
+    async fn insert_client(&self, client_name: &str) -> ClientRow {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        let prepared = prepare_client_insert(create_client_request(client_name))
+            .expect("client creation payload should be valid");
+        insert_prepared_client(&mut conn, &prepared)
+            .await
+            .expect("client should insert")
+    }
+
+    async fn client_row(&self, client_id: &str) -> ClientRow {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        oauth_clients::table
+            .filter(oauth_clients::client_id.eq(client_id))
+            .select(ClientRow::as_select())
+            .first::<ClientRow>(&mut conn)
+            .await
+            .expect("client should load")
+    }
+}
+
+async fn json_body(response: HttpResponse) -> (StatusCode, Value) {
+    let status = response.status();
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should be readable");
+    let value = serde_json::from_slice(&body).expect("response should be JSON");
+    (status, value)
+}
 
 fn current_client() -> ClientRow {
     ClientRow {
@@ -119,4 +396,147 @@ fn patch_rejects_post_logout_redirect_uri_with_surrounding_whitespace() {
         error.to_string().contains("post_logout_redirect_uri"),
         "error should identify the exact post_logout_redirect_uri boundary: {error}"
     );
+}
+
+#[actix_web::test]
+async fn admin_patch_client_rejects_missing_csrf_before_admin_lookup() {
+    let state = Data::new(test_state());
+    let req = actix_web::test::TestRequest::patch()
+        .uri("/admin/clients/client-1")
+        .cookie(Cookie::new(
+            state.settings.session_cookie_name.clone(),
+            "session-id",
+        ))
+        .to_http_request();
+
+    let response = admin_patch_client(
+        state,
+        req,
+        actix_web::web::Path::from("client-1".to_owned()),
+        Json(empty_patch()),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_name(&response).as_deref(),
+        Some("invalid_request")
+    );
+}
+
+#[actix_web::test]
+async fn admin_patch_client_reports_not_found_for_unknown_client_id() {
+    let schema = format!("admin_client_update_missing_{}", Uuid::now_v7().simple());
+    let Some(fixture) = LiveAdminClientUpdateFixture::new_isolated(&schema).await else {
+        return;
+    };
+    let admin = fixture.create_user("missing", "admin", 10).await;
+    fixture.store_session(&admin, "sid-missing").await;
+    let req = fixture.admin_patch_request("sid-missing", "csrf-missing", "/admin/clients/missing");
+
+    let response = admin_patch_client(
+        fixture.state.clone(),
+        req,
+        actix_web::web::Path::from("missing-client".to_owned()),
+        Json(empty_patch()),
+    )
+    .await;
+    fixture.cleanup().await;
+    let (status, body) = json_body(response).await;
+
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"], "invalid_request");
+}
+
+#[actix_web::test]
+async fn admin_patch_client_validates_metadata_after_admin_authentication() {
+    let schema = format!("admin_client_update_invalid_{}", Uuid::now_v7().simple());
+    let Some(fixture) = LiveAdminClientUpdateFixture::new_isolated(&schema).await else {
+        return;
+    };
+    let admin = fixture.create_user("invalid", "admin", 10).await;
+    fixture.store_session(&admin, "sid-invalid").await;
+    let client = fixture.insert_client("Client Invalid").await;
+    let mut payload = empty_patch();
+    payload.redirect_uris = Some(vec![" https://client.example/callback ".to_owned()]);
+    let req = fixture.admin_patch_request("sid-invalid", "csrf-invalid", "/admin/clients/update");
+
+    let response = admin_patch_client(
+        fixture.state.clone(),
+        req,
+        actix_web::web::Path::from(client.client_id.clone()),
+        Json(payload),
+    )
+    .await;
+    let stored_name = fixture.client_row(&client.client_id).await.client_name;
+    fixture.cleanup().await;
+    let (status, body) = json_body(response).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_request");
+    assert_eq!(stored_name, "Client Invalid");
+}
+
+#[actix_web::test]
+async fn admin_patch_client_surfaces_client_lookup_failure_after_admin_authentication() {
+    let schema = format!("admin_client_update_lookup_{}", Uuid::now_v7().simple());
+    let Some(fixture) = LiveAdminClientUpdateFixture::new_isolated(&schema).await else {
+        return;
+    };
+    let admin = fixture.create_user("lookup", "admin", 10).await;
+    let sid = format!("sid-lookup-{}", Uuid::now_v7().simple());
+    let csrf = format!("csrf-lookup-{}", Uuid::now_v7().simple());
+    fixture.store_session(&admin, &sid).await;
+    let client = fixture.insert_client("Client Lookup").await;
+    fixture
+        .rename_column("oauth_clients", "client_id", "client_id_unavailable")
+        .await;
+    let req = fixture.admin_patch_request(&sid, &csrf, "/admin/clients/update");
+
+    let response = admin_patch_client(
+        fixture.state.clone(),
+        req,
+        actix_web::web::Path::from(client.client_id),
+        Json(empty_patch()),
+    )
+    .await;
+    fixture.cleanup().await;
+    let (status, body) = json_body(response).await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"], "server_error");
+}
+
+#[actix_web::test]
+async fn admin_patch_client_surfaces_update_failure_without_mutating_current_client() {
+    let schema = format!("admin_client_update_write_{}", Uuid::now_v7().simple());
+    let Some(fixture) = LiveAdminClientUpdateFixture::new_isolated(&schema).await else {
+        return;
+    };
+    let admin = fixture.create_user("write", "admin", 10).await;
+    let sid = format!("sid-write-{}", Uuid::now_v7().simple());
+    let csrf = format!("csrf-write-{}", Uuid::now_v7().simple());
+    fixture.store_session(&admin, &sid).await;
+    let client = fixture.insert_client("Client Write").await;
+    fixture
+        .rename_column("oauth_clients", "updated_at", "updated_at_unavailable")
+        .await;
+    let mut payload = empty_patch();
+    payload.client_name = Some("Renamed After Failure".to_owned());
+    let req = fixture.admin_patch_request(&sid, &csrf, "/admin/clients/update");
+
+    let response = admin_patch_client(
+        fixture.state.clone(),
+        req,
+        actix_web::web::Path::from(client.client_id.clone()),
+        Json(payload),
+    )
+    .await;
+    let stored_name = fixture.client_row(&client.client_id).await.client_name;
+    fixture.cleanup().await;
+    let (status, body) = json_body(response).await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"], "server_error");
+    assert_eq!(stored_name, "Client Write");
 }

@@ -1,4 +1,19 @@
 use super::*;
+use actix_web::cookie::Cookie;
+use diesel::sql_query;
+use diesel::sql_types::{Int4, Text, Uuid as SqlUuid};
+use diesel_async::RunQueryDsl;
+use fred::interfaces::ClientLike;
+use fred::prelude::{
+    Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
+};
+use std::sync::Arc;
+use std::time::Duration as StdDuration;
+
+use crate::config::ConfigSource;
+use crate::db::{create_pool, get_conn};
+use crate::domain::{ActiveSigningKey, Keyset};
+use crate::http::admin::{CreateClientRequest, insert_prepared_client, prepare_client_insert};
 
 fn client_row(client_id: &str, secret_hash: Option<&str>) -> ClientRow {
     ClientRow {
@@ -35,6 +50,192 @@ fn client_row(client_id: &str, secret_hash: Option<&str>) -> ClientRow {
     }
 }
 
+fn unavailable_valkey_client() -> fred::prelude::Client {
+    let mut builder = ValkeyBuilder::from_config(
+        ValkeyConfig::from_url("redis://127.0.0.1:1").expect("unavailable Valkey URL should parse"),
+    );
+    builder.with_performance_config(|performance: &mut PerformanceConfig| {
+        performance.default_command_timeout = StdDuration::from_millis(200);
+    });
+    builder.with_connection_config(|connection: &mut ConnectionConfig| {
+        connection.connection_timeout = StdDuration::from_millis(200);
+        connection.internal_command_timeout = StdDuration::from_millis(200);
+        connection.max_command_attempts = 1;
+    });
+    builder
+        .build()
+        .expect("unavailable valkey client construction should not connect")
+}
+
+fn test_state() -> AppState {
+    AppState {
+        diesel_db: create_pool(
+            "postgres://nazo_admin_clients_list_test_invalid:nazo_admin_clients_list_test_invalid@127.0.0.1:1/nazo"
+                .to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey: unavailable_valkey_client(),
+        settings: Arc::new(
+            Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
+        ),
+        keyset: Arc::new(Keyset {
+            active_kid: "test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+            verification_keys: Vec::new(),
+        }),
+    }
+}
+
+fn create_client_request(client_name: &str) -> CreateClientRequest {
+    CreateClientRequest {
+        client_name: client_name.to_owned(),
+        client_type: "confidential".to_owned(),
+        redirect_uris: vec!["https://client.example/callback".to_owned()],
+        post_logout_redirect_uris: vec!["https://client.example/logout".to_owned()],
+        scopes: vec!["openid".to_owned(), "payments".to_owned()],
+        allowed_audiences: vec!["https://api.example".to_owned()],
+        grant_types: vec!["authorization_code".to_owned(), "refresh_token".to_owned()],
+        token_endpoint_auth_method: "client_secret_post".to_owned(),
+        require_dpop_bound_tokens: false,
+        allow_client_assertion_audience_array: false,
+        allow_client_assertion_endpoint_audience: false,
+        require_par_request_object: true,
+        allow_authorization_code_without_pkce: false,
+        backchannel_logout_uri: Some("https://client.example/backchannel".to_owned()),
+        backchannel_logout_session_required: true,
+        tls_client_auth_subject_dn: None,
+        tls_client_auth_cert_sha256: None,
+        tls_client_auth_san_dns: Vec::new(),
+        tls_client_auth_san_uri: Vec::new(),
+        tls_client_auth_san_ip: Vec::new(),
+        tls_client_auth_san_email: Vec::new(),
+        jwks: None,
+    }
+}
+
+fn oauth_error_name(response: &HttpResponse) -> Option<String> {
+    response
+        .extensions()
+        .get::<OAuthJsonErrorFields>()
+        .map(|fields| fields.error.clone())
+}
+
+struct LiveAdminClientListFixture {
+    state: Data<AppState>,
+}
+
+impl LiveAdminClientListFixture {
+    async fn new() -> Option<Self> {
+        let database_url = std::env::var("DATABASE_URL").ok()?;
+        let valkey_url = std::env::var("VALKEY_URL").ok()?;
+        let config = ConfigSource::from_pairs_for_test([
+            ("ISSUER", "https://issuer.example"),
+            ("COOKIE_SECURE", "true"),
+            ("SESSION_COOKIE_NAME", "nazo_admin_clients_list_session"),
+            ("CSRF_COOKIE_NAME", "nazo_admin_clients_list_csrf"),
+        ]);
+        let settings = Settings::from_config(&config).expect("test settings should load");
+        let mut valkey_builder = ValkeyBuilder::from_config(
+            ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),
+        );
+        valkey_builder.with_performance_config(|performance: &mut PerformanceConfig| {
+            performance.default_command_timeout = StdDuration::from_millis(1000);
+        });
+        valkey_builder.with_connection_config(|connection: &mut ConnectionConfig| {
+            connection.connection_timeout = StdDuration::from_millis(1000);
+            connection.internal_command_timeout = StdDuration::from_millis(1000);
+            connection.max_command_attempts = 1;
+        });
+        let valkey = valkey_builder.build().expect("valkey client should build");
+        valkey.init().await.expect("valkey should connect");
+
+        Some(Self {
+            state: Data::new(AppState {
+                diesel_db: create_pool(database_url, 4).expect("database pool should build"),
+                valkey,
+                settings: Arc::new(settings),
+                keyset: Arc::new(Keyset {
+                    active_kid: "test-kid".to_owned(),
+                    active_alg: jsonwebtoken::Algorithm::EdDSA,
+                    active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+                    verification_keys: Vec::new(),
+                }),
+            }),
+        })
+    }
+
+    async fn create_user(&self, suffix: &str, role: &str, admin_level: i32) -> UserRow {
+        let email = format!("admin-clients-list-{suffix}@example.com");
+        let username = format!("admin-clients-list-{suffix}");
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        sql_query(
+            r#"
+            INSERT INTO users (
+                tenant_id, realm_id, organization_id, username, email,
+                password_hash, is_active, mfa_enabled, email_verified, role, admin_level
+            )
+            VALUES ($1, $2, $3, $4, $5, 'unused-admin-clients-list-hash', true, false, true, $6, $7)
+            RETURNING *
+            "#,
+        )
+        .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+        .bind::<SqlUuid, _>(DEFAULT_REALM_ID)
+        .bind::<SqlUuid, _>(DEFAULT_ORGANIZATION_ID)
+        .bind::<Text, _>(username)
+        .bind::<Text, _>(email)
+        .bind::<Text, _>(role.to_owned())
+        .bind::<Int4, _>(admin_level)
+        .get_result::<UserRow>(&mut conn)
+        .await
+        .expect("test user should insert")
+    }
+
+    async fn store_session(&self, user: &UserRow, sid: &str) {
+        let payload = SessionPayload {
+            user_id: user.id,
+            auth_time: Utc::now().timestamp(),
+            amr: vec!["pwd".to_owned()],
+            pending_mfa: false,
+            oidc_sid: Some(format!("oidc-{sid}")),
+        };
+        valkey_set_ex(
+            &self.state.valkey,
+            format!("oauth:session:{sid}"),
+            serde_json::to_string(&payload).expect("session should serialize"),
+            self.state.settings.session_ttl_seconds,
+        )
+        .await
+        .expect("session should store");
+    }
+
+    fn admin_get_request(&self, sid: &str, uri: &str) -> HttpRequest {
+        actix_web::test::TestRequest::get()
+            .uri(uri)
+            .cookie(Cookie::new(
+                self.state.settings.session_cookie_name.clone(),
+                sid.to_owned(),
+            ))
+            .to_http_request()
+    }
+
+    async fn insert_client(&self, client_name: &str) -> ClientRow {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        let prepared = match prepare_client_insert(create_client_request(client_name)) {
+            Ok(prepared) => prepared,
+            Err(_) => panic!("client creation payload should be valid"),
+        };
+        insert_prepared_client(&mut conn, &prepared)
+            .await
+            .expect("client should insert")
+    }
+}
+
 #[actix_web::test]
 async fn clients_list_response_preserves_pagination_and_omits_secret_hashes() {
     let response = clients_list_response(
@@ -61,6 +262,73 @@ async fn clients_list_response_preserves_pagination_and_omits_secret_hashes() {
     assert_eq!(items[0]["client_id"], json!("client-1"));
     assert_eq!(items[1]["client_id"], json!("client-2"));
     for item in items {
+        assert!(item.get("client_secret_argon2_hash").is_none());
+        assert!(item.get("tenant_id").is_none());
+        assert!(item.get("realm_id").is_none());
+        assert!(item.get("organization_id").is_none());
+    }
+}
+
+#[actix_web::test]
+async fn admin_clients_requires_admin_before_database_lookup() {
+    let state = Data::new(test_state());
+    let req = actix_web::test::TestRequest::get()
+        .uri("/admin/clients")
+        .to_http_request();
+
+    let response = admin_clients(state, req, Query(HashMap::new())).await;
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        oauth_error_name(&response).as_deref(),
+        Some("access_denied")
+    );
+}
+
+#[actix_web::test]
+async fn admin_clients_lists_persisted_clients_for_admin_without_secret_hashes() {
+    let Some(fixture) = LiveAdminClientListFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let admin = fixture
+        .create_user(&format!("{suffix}-admin"), "admin", 10)
+        .await;
+    let sid = format!("sid-{suffix}");
+    fixture.store_session(&admin, &sid).await;
+    let first = fixture.insert_client(&format!("First {suffix}")).await;
+    let second = fixture.insert_client(&format!("Second {suffix}")).await;
+
+    let response = admin_clients(
+        fixture.state.clone(),
+        fixture.admin_get_request(&sid, "/admin/clients?page=1&page_size=100"),
+        Query(HashMap::from([
+            ("page".to_owned(), "1".to_owned()),
+            ("page_size".to_owned(), "100".to_owned()),
+        ])),
+    )
+    .await;
+
+    let status = response.status();
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should be readable");
+    let body: Value = serde_json::from_slice(&body).expect("response should be JSON");
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["total"].as_i64().is_some_and(|total| total >= 2));
+    let items = body["items"].as_array().expect("items should be an array");
+    let client_ids = items
+        .iter()
+        .map(|item| item["client_id"].as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert!(client_ids.contains(&first.client_id));
+    assert!(client_ids.contains(&second.client_id));
+    for item in items.iter().filter(|item| {
+        item["client_id"]
+            .as_str()
+            .is_some_and(|client_id| client_id == first.client_id || client_id == second.client_id)
+    }) {
         assert!(item.get("client_secret_argon2_hash").is_none());
         assert!(item.get("tenant_id").is_none());
         assert!(item.get("realm_id").is_none());

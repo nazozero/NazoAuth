@@ -4,6 +4,20 @@ use std::sync::Arc;
 use crate::config::ConfigSource;
 use crate::db::create_pool;
 use crate::domain::{ActiveSigningKey, Keyset};
+use crate::support::DEFAULT_TENANT_ID;
+use chrono::Utc;
+use diesel::QueryableByName;
+use diesel::sql_query;
+use diesel::sql_types::{Jsonb, Nullable, Text, Timestamptz, Uuid as SqlUuid};
+use diesel_async::RunQueryDsl;
+
+#[derive(QueryableByName)]
+struct ScimTokenUseRow {
+    #[diesel(sql_type = Nullable<Timestamptz>)]
+    last_used_at: Option<chrono::DateTime<Utc>>,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    audit_count: i64,
+}
 
 fn test_state(scim_bearer_token: Option<&str>) -> AppState {
     let mut settings =
@@ -26,6 +40,68 @@ fn test_state(scim_bearer_token: Option<&str>) -> AppState {
             verification_keys: Vec::new(),
         }),
     }
+}
+
+async fn live_state(scim_bearer_token: Option<&str>) -> Option<AppState> {
+    let database_url = std::env::var("DATABASE_URL").ok()?;
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.scim_bearer_token = scim_bearer_token.map(ToOwned::to_owned);
+    Some(AppState {
+        diesel_db: create_pool(database_url, 4).expect("database pool should build"),
+        valkey: fred::prelude::Builder::default_centralized()
+            .build()
+            .expect("valkey client construction should not connect"),
+        settings: Arc::new(settings),
+        keyset: Arc::new(Keyset {
+            active_kid: "test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+            verification_keys: Vec::new(),
+        }),
+    })
+}
+
+async fn insert_scim_token(
+    state: &AppState,
+    raw_token: &str,
+    scopes: Value,
+    expires_at: Option<chrono::DateTime<Utc>>,
+    revoked_at: Option<chrono::DateTime<Utc>>,
+) -> Uuid {
+    let token_id = Uuid::now_v7();
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    sql_query(
+        "DELETE FROM scim_audit_events WHERE scim_token_id IN \
+         (SELECT id FROM scim_tokens WHERE token_hash = $1)",
+    )
+    .bind::<Text, _>(blake3_hex(raw_token))
+    .execute(&mut conn)
+    .await
+    .expect("SCIM audit cleanup should succeed");
+    sql_query("DELETE FROM scim_tokens WHERE token_hash = $1")
+        .bind::<Text, _>(blake3_hex(raw_token))
+        .execute(&mut conn)
+        .await
+        .expect("SCIM token cleanup should succeed");
+    sql_query(
+        "INSERT INTO scim_tokens \
+         (id, tenant_id, token_hash, label, scopes, expires_at, revoked_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    )
+    .bind::<SqlUuid, _>(token_id)
+    .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+    .bind::<Text, _>(blake3_hex(raw_token))
+    .bind::<Text, _>(format!("test-token-{token_id}"))
+    .bind::<Jsonb, _>(scopes)
+    .bind::<Nullable<Timestamptz>, _>(expires_at)
+    .bind::<Nullable<Timestamptz>, _>(revoked_at)
+    .execute(&mut conn)
+    .await
+    .expect("SCIM token insert should succeed");
+    token_id
 }
 
 fn bearer_request(token: &str) -> HttpRequest {
@@ -206,6 +282,155 @@ async fn authorize_scim_credential_rejects_insufficient_scope() {
         "SCIM token lacks the required scope",
     )
     .await;
+}
+
+#[actix_web::test]
+async fn require_scim_bearer_accepts_database_token_and_records_use() {
+    let Some(state) = live_state(None).await else {
+        return;
+    };
+    let raw_token = format!("database-scim-token-{}", Uuid::now_v7());
+    let token_id = insert_scim_token(
+        &state,
+        &raw_token,
+        json!([SCIM_SCOPE_READ, SCIM_SCOPE_WRITE]),
+        Some(Utc::now() + chrono::Duration::minutes(5)),
+        None,
+    )
+    .await;
+    let req = actix_web::test::TestRequest::default()
+        .insert_header((header::AUTHORIZATION, format!("Bearer {raw_token}")))
+        .insert_header((header::USER_AGENT, "SCIM-Provisioner/1.0"))
+        .to_http_request();
+
+    let credential = require_scim_bearer(&state, &req, ScimRequiredScope::Write)
+        .await
+        .expect("active database token with write scope should authorize");
+
+    assert_eq!(credential.token_id, Some(token_id));
+    assert_eq!(credential.tenant_id, DEFAULT_TENANT_ID);
+    assert_eq!(credential.source, "database");
+    assert_eq!(
+        credential.scopes,
+        vec![SCIM_SCOPE_READ.to_owned(), SCIM_SCOPE_WRITE.to_owned()]
+    );
+
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    let row = sql_query(
+        "SELECT \
+             token.last_used_at, \
+             (SELECT COUNT(*) FROM scim_audit_events event \
+              WHERE event.scim_token_id = token.id \
+                AND event.event_type = 'scim_token_used' \
+                AND event.scopes = '[\"scim:write\"]'::jsonb \
+                AND event.user_agent_hash IS NOT NULL) AS audit_count \
+         FROM scim_tokens token \
+         WHERE token.id = $1",
+    )
+    .bind::<SqlUuid, _>(token_id)
+    .get_result::<ScimTokenUseRow>(&mut conn)
+    .await
+    .expect("SCIM token usage row should be readable");
+    assert!(
+        row.last_used_at.is_some(),
+        "database token use must update last_used_at"
+    );
+    assert_eq!(row.audit_count, 1);
+}
+
+#[actix_web::test]
+async fn require_scim_bearer_rejects_database_token_without_required_scope() {
+    let Some(state) = live_state(None).await else {
+        return;
+    };
+    let raw_token = format!("database-scim-read-only-{}", Uuid::now_v7());
+    let token_id = insert_scim_token(
+        &state,
+        &raw_token,
+        json!([SCIM_SCOPE_READ]),
+        Some(Utc::now() + chrono::Duration::minutes(5)),
+        None,
+    )
+    .await;
+    let req = bearer_request(&raw_token);
+
+    let response = match require_scim_bearer(&state, &req, ScimRequiredScope::Write).await {
+        Ok(_) => panic!("read-only database token must not authorize write access"),
+        Err(response) => response,
+    };
+
+    assert_scim_error_response(
+        response,
+        StatusCode::FORBIDDEN,
+        "forbidden",
+        "SCIM token lacks the required scope",
+    )
+    .await;
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    let row = sql_query(
+        "SELECT \
+             token.last_used_at, \
+             (SELECT COUNT(*) FROM scim_audit_events event \
+              WHERE event.scim_token_id = token.id \
+                AND event.event_type = 'scim_token_used') AS audit_count \
+         FROM scim_tokens token \
+         WHERE token.id = $1",
+    )
+    .bind::<SqlUuid, _>(token_id)
+    .get_result::<ScimTokenUseRow>(&mut conn)
+    .await
+    .expect("SCIM token row should be readable");
+    assert!(
+        row.last_used_at.is_none(),
+        "insufficient-scope token must not be recorded as used"
+    );
+    assert_eq!(row.audit_count, 0);
+}
+
+#[actix_web::test]
+async fn require_scim_bearer_rejects_revoked_and_expired_database_tokens() {
+    let Some(state) = live_state(Some("legacy-scim-secret")).await else {
+        return;
+    };
+    let revoked = format!("database-scim-revoked-{}", Uuid::now_v7());
+    let expired = format!("database-scim-expired-{}", Uuid::now_v7());
+    insert_scim_token(
+        &state,
+        &revoked,
+        json!([SCIM_SCOPE_READ, SCIM_SCOPE_WRITE]),
+        Some(Utc::now() + chrono::Duration::minutes(5)),
+        Some(Utc::now()),
+    )
+    .await;
+    insert_scim_token(
+        &state,
+        &expired,
+        json!([SCIM_SCOPE_READ, SCIM_SCOPE_WRITE]),
+        Some(Utc::now() - chrono::Duration::minutes(5)),
+        None,
+    )
+    .await;
+
+    for raw_token in [revoked, expired] {
+        let response =
+            match require_scim_bearer(&state, &bearer_request(&raw_token), ScimRequiredScope::Read)
+                .await
+            {
+                Ok(_) => panic!("inactive database token must not authorize"),
+                Err(response) => response,
+            };
+        assert_scim_error_response(
+            response,
+            StatusCode::UNAUTHORIZED,
+            "unauthorized",
+            "invalid bearer token",
+        )
+        .await;
+    }
 }
 
 // scim_credential_allows

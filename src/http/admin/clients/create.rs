@@ -43,6 +43,7 @@ pub(crate) struct CreateClientRequest {
     pub(crate) jwks: Option<Value>,
 }
 
+#[derive(Debug)]
 pub(crate) enum InsertClientError {
     InvalidRequest(String),
     Server(String),

@@ -1,9 +1,27 @@
 use super::*;
 use std::sync::Arc;
+use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
 use crate::db::create_pool;
 use crate::domain::{ActiveSigningKey, Keyset};
+use crate::support::generate_key_material;
+use fred::prelude::{Builder as ValkeyBuilder, ConnectionConfig, PerformanceConfig};
+
+fn disconnected_valkey_client() -> fred::prelude::Client {
+    let mut builder = ValkeyBuilder::default_centralized();
+    builder.with_performance_config(|performance: &mut PerformanceConfig| {
+        performance.default_command_timeout = StdDuration::from_millis(50);
+    });
+    builder.with_connection_config(|connection: &mut ConnectionConfig| {
+        connection.connection_timeout = StdDuration::from_millis(50);
+        connection.internal_command_timeout = StdDuration::from_millis(50);
+        connection.max_command_attempts = 1;
+    });
+    builder
+        .build()
+        .expect("valkey client construction should not connect")
+}
 
 fn client_with_grants(grant_types: &[&str]) -> ClientRow {
     ClientRow {
@@ -48,9 +66,7 @@ fn issue_state_with_invalid_signing_key() -> AppState {
             1,
         )
         .expect("pool construction should not connect"),
-        valkey: fred::prelude::Builder::default_centralized()
-            .build()
-            .expect("valkey client construction should not connect"),
+        valkey: disconnected_valkey_client(),
         settings: Arc::new(
             Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
         ),
@@ -61,6 +77,48 @@ fn issue_state_with_invalid_signing_key() -> AppState {
             verification_keys: Vec::new(),
         }),
     }
+}
+
+fn issue_state_with_valid_signing_key() -> AppState {
+    let key_material =
+        generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
+    AppState {
+        diesel_db: create_pool(
+            "postgres://nazo_issue_test_invalid:nazo_issue_test_invalid@127.0.0.1:1/nazo"
+                .to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey: disconnected_valkey_client(),
+        settings: Arc::new(
+            Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
+        ),
+        keyset: Arc::new(Keyset {
+            active_kid: "test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),
+            verification_keys: Vec::new(),
+        }),
+    }
+}
+
+fn issue_state_with_live_database() -> Option<AppState> {
+    let database_url = std::env::var("DATABASE_URL").ok()?;
+    let key_material =
+        generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
+    Some(AppState {
+        diesel_db: create_pool(database_url, 1).expect("database pool should build"),
+        valkey: disconnected_valkey_client(),
+        settings: Arc::new(
+            Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
+        ),
+        keyset: Arc::new(Keyset {
+            active_kid: "test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),
+            verification_keys: Vec::new(),
+        }),
+    })
 }
 
 #[test]
@@ -305,4 +363,179 @@ async fn invalid_authorization_details_state_fails_before_token_signing() {
     assert!(value.get("access_token").is_none());
     assert!(value.get("refresh_token").is_none());
     assert!(value.get("id_token").is_none());
+}
+
+#[actix_web::test]
+async fn client_credentials_issue_returns_minimal_bearer_token_response_without_oidc_artifacts() {
+    let state = issue_state_with_valid_signing_key();
+    let client = client_with_grants(&["client_credentials"]);
+    let mut issue = token_issue_without_openid();
+    issue.user_id = None;
+    issue.subject = client.client_id.clone();
+    issue.scopes = vec!["accounts".to_owned(), "read".to_owned()];
+    issue.include_refresh = false;
+    issue.auth_time = None;
+    issue.amr = Vec::new();
+
+    let response = issue_token_response(&state, &client, issue).await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        HeaderValue::from_static("no-store")
+    );
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should collect");
+    let value: Value = serde_json::from_slice(&body).expect("token response should be JSON");
+    assert_eq!(value["token_type"], "Bearer");
+    assert_eq!(value["expires_in"], state.settings.access_token_ttl_seconds);
+    assert_eq!(value["scope"], "accounts read");
+    assert!(
+        value["access_token"]
+            .as_str()
+            .is_some_and(|token| !token.is_empty())
+    );
+    assert!(value.get("id_token").is_none());
+    assert!(value.get("refresh_token").is_none());
+}
+
+#[actix_web::test]
+async fn dpop_nonce_store_failure_stops_token_issue_before_access_token_signing() {
+    let state = issue_state_with_valid_signing_key();
+    let client = client_with_grants(&["client_credentials"]);
+    let mut issue = token_issue_without_openid();
+    issue.user_id = None;
+    issue.subject = client.client_id.clone();
+    issue.scopes = vec!["accounts".to_owned()];
+    issue.include_refresh = false;
+    issue.dpop_jkt = Some("dpop-thumbprint".to_owned());
+
+    let response = issue_token_response(&state, &client, issue).await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(&response), "server_error");
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should collect");
+    let value: Value = serde_json::from_slice(&body).expect("OAuth error body should be JSON");
+    assert!(value.get("access_token").is_none());
+    assert!(value.get("refresh_token").is_none());
+    assert!(value.get("id_token").is_none());
+}
+
+#[actix_web::test]
+async fn id_token_subject_load_failure_does_not_issue_oidc_response() {
+    let state = issue_state_with_valid_signing_key();
+    let client = client_with_grants(&["authorization_code"]);
+    let mut issue = token_issue_with_sid(Vec::new());
+    issue.user_id = Some(Uuid::now_v7());
+    issue.subject = "subject-1".to_owned();
+    issue.include_refresh = false;
+
+    let response = issue_token_response(&state, &client, issue).await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(&response), "server_error");
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should collect");
+    let value: Value = serde_json::from_slice(&body).expect("OAuth error body should be JSON");
+    assert!(value.get("id_token").is_none());
+    assert!(value.get("refresh_token").is_none());
+}
+
+#[actix_web::test]
+async fn missing_id_token_subject_fails_closed_without_returning_credentials() {
+    let Some(state) = issue_state_with_live_database() else {
+        return;
+    };
+    let client = client_with_grants(&["authorization_code"]);
+    let mut issue = token_issue_with_sid(vec!["sid".to_owned()]);
+    issue.user_id = Some(Uuid::now_v7());
+    issue.include_refresh = false;
+
+    let response = issue_token_response(&state, &client, issue).await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(&response), "invalid_grant");
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should collect");
+    let value: Value = serde_json::from_slice(&body).expect("OAuth error body should be JSON");
+    assert_eq!(value.get("error"), Some(&json!("invalid_grant")));
+    assert!(value.get("access_token").is_none());
+    assert!(value.get("refresh_token").is_none());
+    assert!(value.get("id_token").is_none());
+}
+
+#[actix_web::test]
+async fn refresh_token_persistence_failure_does_not_return_partial_refresh_token() {
+    let state = issue_state_with_valid_signing_key();
+    let client = client_with_grants(&["client_credentials", "refresh_token"]);
+    let mut issue = token_issue_without_openid();
+    issue.user_id = None;
+    issue.subject = client.client_id.clone();
+    issue.scopes = vec!["accounts".to_owned(), "offline_access".to_owned()];
+    issue.include_refresh = true;
+
+    let response = issue_token_response(&state, &client, issue).await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(&response), "server_error");
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should collect");
+    let value: Value = serde_json::from_slice(&body).expect("OAuth error body should be JSON");
+    assert!(value.get("refresh_token").is_none());
+}
+
+#[actix_web::test]
+async fn refresh_token_rotation_failure_does_not_return_partial_credentials() {
+    let state = issue_state_with_valid_signing_key();
+    let client = client_with_grants(&["authorization_code", "refresh_token"]);
+    let mut issue = token_issue_without_openid();
+    issue.user_id = None;
+    issue.subject = client.client_id.clone();
+    issue.scopes = vec!["accounts".to_owned(), "offline_access".to_owned()];
+    issue.include_refresh = true;
+    issue.refresh_token_policy = RefreshTokenPolicy::Rotate {
+        family_id: Uuid::now_v7(),
+        rotated_from_id: Uuid::now_v7(),
+    };
+
+    let response = issue_token_response(&state, &client, issue).await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(&response), "server_error");
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should collect");
+    let value: Value = serde_json::from_slice(&body).expect("OAuth error body should be JSON");
+    assert!(value.get("access_token").is_none());
+    assert!(value.get("refresh_token").is_none());
+    assert!(value.get("id_token").is_none());
+}
+
+#[actix_web::test]
+async fn consumed_authorization_code_marker_failure_returns_error_after_revocation_attempt() {
+    let state = issue_state_with_valid_signing_key();
+    let client = client_with_grants(&["authorization_code"]);
+    let mut issue = token_issue_without_openid();
+    issue.user_id = None;
+    issue.subject = "subject-1".to_owned();
+    issue.scopes = vec!["accounts".to_owned()];
+    issue.include_refresh = false;
+    issue.authorization_code_hash = Some("code-hash".to_owned());
+
+    let response = issue_token_response(&state, &client, issue).await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(&response), "server_error");
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should collect");
+    let value: Value = serde_json::from_slice(&body).expect("OAuth error body should be JSON");
+    assert!(value.get("access_token").is_none());
+    assert!(value.get("refresh_token").is_none());
 }

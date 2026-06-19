@@ -111,6 +111,18 @@ fn backup_code_normalization_accepts_display_format_only() {
 }
 
 #[test]
+fn backup_code_normalization_rejects_extra_separators_or_unicode_digits() {
+    assert_eq!(
+        normalize_backup_code(" 12345-67890 ").as_deref(),
+        Some("1234567890")
+    );
+    assert!(normalize_backup_code("12345--67890").is_none());
+    assert!(normalize_backup_code("12345\t67890").is_none());
+    assert!(normalize_backup_code("１２３４５６７８９０").is_none());
+    assert!(normalize_backup_code("12345-678901").is_none());
+}
+
+#[test]
 fn base32_decode_accepts_transport_whitespace_case_and_padding_only() {
     let encoded = base32_encode(b"hello world");
 
@@ -196,6 +208,17 @@ fn totp_verifier_rejects_malformed_code_or_secret_without_fallback() {
         verified_totp_step("", &code, now, None),
         None,
         "empty TOTP secrets must not be accepted"
+    );
+}
+
+#[test]
+fn totp_for_step_rejects_negative_time_steps() {
+    let error = totp_for_step(b"12345678901234567890", -1)
+        .expect_err("TOTP must not wrap negative time steps into large counters");
+
+    assert!(
+        error.to_string().contains("non-negative"),
+        "error should explain the rejected TOTP counter boundary"
     );
 }
 

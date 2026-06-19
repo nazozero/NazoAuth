@@ -19,6 +19,13 @@ pub(crate) async fn register(
         return response;
     }
 
+    register_after_rate_limit(state, payload).await
+}
+
+pub(crate) async fn register_after_rate_limit(
+    state: Data<AppState>,
+    payload: RegisterRequest,
+) -> HttpResponse {
     let Ok(email) = normalize_email_address(&payload.email) else {
         return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "邮箱格式无效.");
     };

@@ -1,4 +1,679 @@
 use super::*;
+use std::sync::Arc;
+
+use crate::config::ConfigSource;
+use crate::db::{create_pool, get_conn};
+use crate::domain::{ActiveSigningKey, Claims, Keyset, VerificationKey};
+use crate::support::{IpCidr, generate_key_material, public_jwk_from_private_der};
+use diesel::sql_query;
+use diesel::sql_types::{Bool, Text, Timestamptz, Uuid as SqlUuid};
+use diesel_async::RunQueryDsl;
+
+fn userinfo_test_state() -> AppState {
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.issuer = "https://issuer.example".to_owned();
+    settings.default_audience = "resource://default".to_owned();
+
+    AppState {
+        diesel_db: create_pool(
+            "postgres://nazo_userinfo_test_invalid:nazo_userinfo_test_invalid@127.0.0.1:1/nazo"
+                .to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey: fred::prelude::Builder::default_centralized()
+            .build()
+            .expect("valkey client construction should not connect"),
+        settings: Arc::new(settings),
+        keyset: Arc::new(Keyset {
+            active_kid: "test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+            verification_keys: Vec::new(),
+        }),
+    }
+}
+
+fn live_userinfo_state() -> Option<Data<AppState>> {
+    let database_url = std::env::var("DATABASE_URL").ok()?;
+    let key_material =
+        generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
+    let public_jwk = public_jwk_from_private_der(
+        "userinfo-test-kid",
+        jsonwebtoken::Algorithm::EdDSA,
+        &key_material.private_pkcs8_der,
+    )
+    .expect("test public JWK should derive");
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.issuer = "https://issuer.example".to_owned();
+    settings.default_audience = "resource://default".to_owned();
+
+    Some(Data::new(AppState {
+        diesel_db: create_pool(database_url, 1).expect("database pool should build"),
+        valkey: fred::prelude::Builder::default_centralized()
+            .build()
+            .expect("valkey client construction should not connect"),
+        settings: Arc::new(settings),
+        keyset: Arc::new(Keyset {
+            active_kid: "userinfo-test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),
+            verification_keys: vec![VerificationKey {
+                kid: "userinfo-test-kid".to_owned(),
+                public_jwk,
+            }],
+        }),
+    }))
+}
+
+fn userinfo_state_with_valid_signing_key_invalid_db() -> Data<AppState> {
+    let key_material =
+        generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
+    let public_jwk = public_jwk_from_private_der(
+        "userinfo-test-kid",
+        jsonwebtoken::Algorithm::EdDSA,
+        &key_material.private_pkcs8_der,
+    )
+    .expect("test public JWK should derive");
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.issuer = "https://issuer.example".to_owned();
+    settings.default_audience = "resource://default".to_owned();
+
+    Data::new(AppState {
+        diesel_db: create_pool(
+            "postgres://nazo_userinfo_test_invalid:nazo_userinfo_test_invalid@127.0.0.1:1/nazo"
+                .to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey: fred::prelude::Builder::default_centralized()
+            .build()
+            .expect("valkey client construction should not connect"),
+        settings: Arc::new(settings),
+        keyset: Arc::new(Keyset {
+            active_kid: "userinfo-test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),
+            verification_keys: vec![VerificationKey {
+                kid: "userinfo-test-kid".to_owned(),
+                public_jwk,
+            }],
+        }),
+    })
+}
+
+fn live_userinfo_state_with_trusted_proxy() -> Option<Data<AppState>> {
+    let state = live_userinfo_state()?;
+    let mut settings = (*state.settings).clone();
+    settings.trusted_proxy_cidrs =
+        vec![IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse")];
+
+    Some(Data::new(AppState {
+        diesel_db: state.diesel_db.clone(),
+        valkey: state.valkey.clone(),
+        settings: Arc::new(settings),
+        keyset: state.keyset.clone(),
+    }))
+}
+
+async fn insert_userinfo_client(state: &Data<AppState>, client_id: &str) -> Uuid {
+    #[derive(diesel::QueryableByName)]
+    struct IdRow {
+        #[diesel(sql_type = SqlUuid)]
+        id: Uuid,
+    }
+
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    sql_query(
+        r#"
+        DELETE FROM access_token_revocations
+        USING oauth_clients
+        WHERE access_token_revocations.client_id = oauth_clients.id
+          AND oauth_clients.tenant_id = $1
+          AND oauth_clients.client_id = $2
+        "#,
+    )
+    .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+    .bind::<Text, _>(client_id)
+    .execute(&mut conn)
+    .await
+    .expect("test access token revocation cleanup should succeed");
+    sql_query("DELETE FROM oauth_clients WHERE tenant_id = $1 AND client_id = $2")
+        .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+        .bind::<Text, _>(client_id)
+        .execute(&mut conn)
+        .await
+        .expect("test client cleanup should succeed");
+    sql_query(
+        r#"
+        INSERT INTO oauth_clients (
+            tenant_id, realm_id, organization_id, client_id, client_name, client_type,
+            client_secret_argon2_hash, redirect_uris, scopes, allowed_audiences,
+            grant_types, token_endpoint_auth_method, require_dpop_bound_tokens,
+            require_mtls_bound_tokens, tls_client_auth_san_dns, tls_client_auth_san_uri,
+            tls_client_auth_san_ip, tls_client_auth_san_email,
+            allow_client_assertion_audience_array,
+            allow_client_assertion_endpoint_audience, require_par_request_object,
+            allow_authorization_code_without_pkce, is_active,
+            post_logout_redirect_uris, backchannel_logout_session_required
+        )
+        VALUES (
+            $1, $2, $3, $4, 'UserInfo Test Client', 'confidential',
+            NULL, '["https://client.example/callback"]'::jsonb, '["openid","profile"]'::jsonb,
+            '["resource://default"]'::jsonb, '["authorization_code"]'::jsonb,
+            'client_secret_post', false, false, '[]'::jsonb, '[]'::jsonb,
+            '[]'::jsonb, '[]'::jsonb, false, false, false, false, true,
+            '[]'::jsonb, true
+        )
+        RETURNING id
+        "#,
+    )
+    .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+    .bind::<SqlUuid, _>(DEFAULT_REALM_ID)
+    .bind::<SqlUuid, _>(DEFAULT_ORGANIZATION_ID)
+    .bind::<Text, _>(client_id)
+    .get_result::<IdRow>(&mut conn)
+    .await
+    .expect("test client insert should succeed")
+    .id
+}
+
+async fn insert_userinfo_user(state: &Data<AppState>, active: bool) -> UserRow {
+    let suffix = Uuid::now_v7();
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    sql_query(
+        r#"
+        INSERT INTO users (
+            tenant_id, realm_id, organization_id, username, email,
+            password_hash, is_active, mfa_enabled, email_verified, role, admin_level
+        )
+        VALUES ($1, $2, $3, $4, $5, 'unused-userinfo-test-hash', $6, false, true, 'user', 0)
+        RETURNING *
+        "#,
+    )
+    .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+    .bind::<SqlUuid, _>(DEFAULT_REALM_ID)
+    .bind::<SqlUuid, _>(DEFAULT_ORGANIZATION_ID)
+    .bind::<Text, _>(format!("userinfo-{suffix}"))
+    .bind::<Text, _>(format!("userinfo-{suffix}@example.com"))
+    .bind::<Bool, _>(active)
+    .get_result::<UserRow>(&mut conn)
+    .await
+    .expect("test user insert should succeed")
+}
+
+async fn revoke_access_token(state: &Data<AppState>, client_row_id: Uuid, access_token_jti: &str) {
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    sql_query(
+        r#"
+        INSERT INTO access_token_revocations (
+            tenant_id, client_id, access_token_jti_blake3, expires_at
+        )
+        VALUES ($1, $2, $3, $4)
+        "#,
+    )
+    .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+    .bind::<SqlUuid, _>(client_row_id)
+    .bind::<Text, _>(blake3_hex(access_token_jti))
+    .bind::<Timestamptz, _>(Utc::now() + Duration::minutes(5))
+    .execute(&mut conn)
+    .await
+    .expect("access token revocation insert should succeed");
+}
+
+async fn signed_userinfo_access_token(
+    state: &Data<AppState>,
+    tenant_id: Uuid,
+    subject: &str,
+    user_id: Option<Uuid>,
+    subject_type: &str,
+    audiences: &[String],
+    scopes: &[String],
+    dpop_jkt: Option<&str>,
+    mtls_x5t_s256: Option<&str>,
+) -> IssuedAccessToken {
+    make_jwt(
+        state,
+        AccessTokenJwtInput {
+            tenant_id,
+            subject,
+            user_id,
+            subject_type,
+            client_id: "userinfo-client",
+            audiences,
+            scopes,
+            authorization_details: &json!([]),
+            userinfo_claims: &[],
+            userinfo_claim_requests: &[],
+            ttl: 300,
+            dpop_jkt,
+            mtls_x5t_s256,
+        },
+    )
+    .await
+    .expect("access token should sign")
+}
+
+async fn userinfo_error_for_token(
+    state: Data<AppState>,
+    scheme: &str,
+    token: &str,
+) -> HttpResponse {
+    let req = actix_web::test::TestRequest::get()
+        .uri("/userinfo")
+        .insert_header((header::AUTHORIZATION, format!("{scheme} {token}")))
+        .to_http_request();
+    userinfo(state, req, Bytes::new()).await
+}
+
+fn oauth_error_code(response: &HttpResponse) -> Option<String> {
+    response
+        .extensions()
+        .get::<OAuthJsonErrorFields>()
+        .map(|fields| fields.error.clone())
+}
+
+#[actix_web::test]
+async fn userinfo_rejects_signed_access_token_with_wrong_audience() {
+    let Some(state) = live_userinfo_state() else {
+        return;
+    };
+    let token = signed_userinfo_access_token(
+        &state,
+        DEFAULT_TENANT_ID,
+        &Uuid::now_v7().to_string(),
+        None,
+        "user",
+        &["https://issuer.example/fapi/resource".to_owned()],
+        &["openid".to_owned()],
+        None,
+        None,
+    )
+    .await;
+
+    let response = userinfo_error_for_token(state, "Bearer", &token.token).await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_token")
+    );
+}
+
+#[actix_web::test]
+async fn userinfo_rejects_signed_access_token_without_valid_tenant_boundary() {
+    let Some(state) = live_userinfo_state() else {
+        return;
+    };
+    let claims = Claims {
+        iss: state.settings.issuer.clone(),
+        sub: Uuid::now_v7().to_string(),
+        tenant_id: "not-a-uuid".to_owned(),
+        user_id: None,
+        subject_type: "user".to_owned(),
+        aud: json!("resource://default"),
+        client_id: "userinfo-client".to_owned(),
+        scope: "openid".to_owned(),
+        authorization_details: json!([]),
+        token_use: "access".to_owned(),
+        jti: Uuid::now_v7().to_string(),
+        iat: Utc::now().timestamp(),
+        nbf: Utc::now().timestamp(),
+        exp: Utc::now().timestamp() + 300,
+        cnf: None,
+        userinfo_claims: Vec::new(),
+        userinfo_claim_requests: Vec::new(),
+    };
+    let mut header = jsonwebtoken::Header::new(state.keyset.active_alg);
+    header.typ = Some("at+jwt".to_owned());
+    header.kid = Some(state.keyset.active_kid.clone());
+    let token = state
+        .keyset
+        .sign_jwt(&header, &claims)
+        .await
+        .expect("access token should sign");
+
+    let response = userinfo_error_for_token(state, "Bearer", &token).await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_token")
+    );
+}
+
+#[actix_web::test]
+async fn userinfo_rejects_revoked_access_token_before_subject_lookup() {
+    let Some(state) = live_userinfo_state() else {
+        return;
+    };
+    let client_row_id = insert_userinfo_client(&state, "userinfo-client").await;
+    let token = signed_userinfo_access_token(
+        &state,
+        DEFAULT_TENANT_ID,
+        &Uuid::now_v7().to_string(),
+        None,
+        "user",
+        &["resource://default".to_owned()],
+        &["openid".to_owned()],
+        None,
+        None,
+    )
+    .await;
+    revoke_access_token(&state, client_row_id, &token.jti).await;
+
+    let response = userinfo_error_for_token(state, "Bearer", &token.token).await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_token")
+    );
+}
+
+#[actix_web::test]
+async fn userinfo_rejects_sender_constrained_tokens_on_wrong_transport() {
+    let Some(state) = live_userinfo_state() else {
+        return;
+    };
+    let bearer_with_dpop_cnf = signed_userinfo_access_token(
+        &state,
+        DEFAULT_TENANT_ID,
+        &Uuid::now_v7().to_string(),
+        None,
+        "user",
+        &["resource://default".to_owned()],
+        &["openid".to_owned()],
+        Some("dpop-thumbprint"),
+        None,
+    )
+    .await;
+    let response =
+        userinfo_error_for_token(state.clone(), "Bearer", &bearer_with_dpop_cnf.token).await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_dpop_proof")
+    );
+
+    let dpop_without_cnf = signed_userinfo_access_token(
+        &state,
+        DEFAULT_TENANT_ID,
+        &Uuid::now_v7().to_string(),
+        None,
+        "user",
+        &["resource://default".to_owned()],
+        &["openid".to_owned()],
+        None,
+        None,
+    )
+    .await;
+    let response = userinfo_error_for_token(state, "DPoP", &dpop_without_cnf.token).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_dpop_proof")
+    );
+}
+
+#[actix_web::test]
+async fn userinfo_rejects_mtls_bound_token_without_verified_certificate() {
+    let Some(state) = live_userinfo_state() else {
+        return;
+    };
+    let token = signed_userinfo_access_token(
+        &state,
+        DEFAULT_TENANT_ID,
+        &Uuid::now_v7().to_string(),
+        None,
+        "user",
+        &["resource://default".to_owned()],
+        &["openid".to_owned()],
+        None,
+        Some("ABEiM0RVZneImaq7zN3u_wARIjNEVWZ3iJmqu8zd7v8"),
+    )
+    .await;
+
+    let response = userinfo_error_for_token(state, "Bearer", &token.token).await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_token")
+    );
+}
+
+#[actix_web::test]
+async fn userinfo_requires_openid_scope_and_user_subject_type() {
+    let Some(state) = live_userinfo_state() else {
+        return;
+    };
+    for (subject_type, scopes) in [
+        ("user", vec!["profile".to_owned()]),
+        ("client", vec!["openid".to_owned()]),
+    ] {
+        let token = signed_userinfo_access_token(
+            &state,
+            DEFAULT_TENANT_ID,
+            &Uuid::now_v7().to_string(),
+            None,
+            subject_type,
+            &["resource://default".to_owned()],
+            &scopes,
+            None,
+            None,
+        )
+        .await;
+
+        let response = userinfo_error_for_token(state.clone(), "Bearer", &token.token).await;
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            oauth_error_code(&response).as_deref(),
+            Some("insufficient_scope")
+        );
+    }
+}
+
+#[actix_web::test]
+async fn userinfo_rejects_invalid_or_inactive_token_subject() {
+    let Some(state) = live_userinfo_state() else {
+        return;
+    };
+    let invalid_subject = signed_userinfo_access_token(
+        &state,
+        DEFAULT_TENANT_ID,
+        "not-a-uuid",
+        None,
+        "user",
+        &["resource://default".to_owned()],
+        &["openid".to_owned()],
+        None,
+        None,
+    )
+    .await;
+    let response = userinfo_error_for_token(state.clone(), "Bearer", &invalid_subject.token).await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_token")
+    );
+
+    let inactive = insert_userinfo_user(&state, false).await;
+    let inactive_token = signed_userinfo_access_token(
+        &state,
+        DEFAULT_TENANT_ID,
+        &inactive.id.to_string(),
+        Some(inactive.id),
+        "user",
+        &["resource://default".to_owned()],
+        &["openid".to_owned()],
+        None,
+        None,
+    )
+    .await;
+    let response = userinfo_error_for_token(state, "Bearer", &inactive_token.token).await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_token")
+    );
+}
+
+#[actix_web::test]
+async fn userinfo_returns_claims_for_active_user_access_token() {
+    let Some(state) = live_userinfo_state() else {
+        return;
+    };
+    let user = insert_userinfo_user(&state, true).await;
+    let token = signed_userinfo_access_token(
+        &state,
+        DEFAULT_TENANT_ID,
+        &user.id.to_string(),
+        Some(user.id),
+        "user",
+        &["resource://default".to_owned()],
+        &["openid".to_owned(), "email".to_owned()],
+        None,
+        None,
+    )
+    .await;
+    let req = actix_web::test::TestRequest::get()
+        .uri("/userinfo")
+        .insert_header((header::AUTHORIZATION, format!("Bearer {}", token.token)))
+        .to_http_request();
+
+    let response = userinfo(state, req, Bytes::new()).await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("userinfo response body should collect");
+    let value: Value = serde_json::from_slice(&body).expect("userinfo body should be JSON");
+    assert_eq!(value["sub"], user.id.to_string());
+    assert_eq!(value["email"], user.email);
+}
+
+#[actix_web::test]
+async fn userinfo_rejects_missing_or_conflicting_access_token_transport_before_decode() {
+    let state = Data::new(userinfo_test_state());
+
+    let missing_req = actix_web::test::TestRequest::get()
+        .uri("/userinfo")
+        .to_http_request();
+    let missing = userinfo(state.clone(), missing_req, Bytes::new()).await;
+    assert_eq!(missing.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(oauth_error_code(&missing).as_deref(), Some("invalid_token"));
+
+    let duplicate_req = actix_web::test::TestRequest::post()
+        .uri("/userinfo")
+        .insert_header((header::AUTHORIZATION, "Bearer header-token"))
+        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+        .to_http_request();
+    let duplicate = userinfo(
+        state,
+        duplicate_req,
+        Bytes::from_static(b"access_token=body-token"),
+    )
+    .await;
+    assert_eq!(duplicate.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_code(&duplicate).as_deref(),
+        Some("invalid_request")
+    );
+}
+
+#[actix_web::test]
+async fn userinfo_rejects_unverifiable_access_token_before_revocation_lookup() {
+    let state = Data::new(userinfo_test_state());
+    let req = actix_web::test::TestRequest::get()
+        .uri("/userinfo")
+        .insert_header((header::AUTHORIZATION, "Bearer not-a-jwt"))
+        .to_http_request();
+
+    let response = userinfo(state, req, Bytes::new()).await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_token")
+    );
+}
+
+#[actix_web::test]
+async fn userinfo_returns_server_error_when_revocation_lookup_fails_after_decode() {
+    let state = userinfo_state_with_valid_signing_key_invalid_db();
+    let token = signed_userinfo_access_token(
+        &state,
+        DEFAULT_TENANT_ID,
+        &Uuid::now_v7().to_string(),
+        None,
+        "user",
+        &["resource://default".to_owned()],
+        &["openid".to_owned()],
+        None,
+        None,
+    )
+    .await;
+
+    let response = userinfo_error_for_token(state, "Bearer", &token.token).await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(&response).as_deref(), Some("server_error"));
+}
+
+#[actix_web::test]
+async fn userinfo_rejects_mtls_bound_token_with_mismatched_verified_certificate() {
+    let Some(state) = live_userinfo_state_with_trusted_proxy() else {
+        return;
+    };
+    let token = signed_userinfo_access_token(
+        &state,
+        DEFAULT_TENANT_ID,
+        &Uuid::now_v7().to_string(),
+        None,
+        "user",
+        &["resource://default".to_owned()],
+        &["openid".to_owned()],
+        None,
+        Some("ABEiM0RVZneImaq7zN3u_wARIjNEVWZ3iJmqu8zd7v8"),
+    )
+    .await;
+    let req = actix_web::test::TestRequest::get()
+        .uri("/userinfo")
+        .peer_addr("127.0.0.1:12345".parse().expect("peer addr should parse"))
+        .insert_header((header::AUTHORIZATION, format!("Bearer {}", token.token)))
+        .insert_header((
+            header::HeaderName::from_static("x-ssl-client-verify"),
+            "SUCCESS",
+        ))
+        .insert_header((
+            header::HeaderName::from_static("x-ssl-client-cert-sha256"),
+            "___________________________________________0",
+        ))
+        .insert_header((
+            header::HeaderName::from_static("x-ssl-client-subject-dn"),
+            "CN=userinfo-mismatch",
+        ))
+        .to_http_request();
+
+    let response = userinfo(state, req, Bytes::new()).await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_token")
+    );
+}
 
 #[test]
 fn post_body_access_token_accepts_single_value() {
@@ -87,6 +762,16 @@ fn post_body_access_token_rejects_duplicate_value() {
     );
 
     assert!(matches!(token, UserInfoAccessToken::InvalidRequest));
+}
+
+#[test]
+fn post_body_access_token_treats_blank_value_as_missing() {
+    let req = actix_web::test::TestRequest::post()
+        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+        .to_http_request();
+    let token = userinfo_access_token(&req, &Bytes::from_static(b"access_token=%20%20%09"));
+
+    assert!(matches!(token, UserInfoAccessToken::Missing));
 }
 
 #[test]

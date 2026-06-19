@@ -13,7 +13,7 @@ struct LogoutRequest {
     state: Option<String>,
 }
 
-#[derive(Clone, Queryable)]
+#[derive(Clone, Debug, Queryable)]
 struct BackchannelLogoutClient {
     client_id: String,
     redirect_uris: Value,

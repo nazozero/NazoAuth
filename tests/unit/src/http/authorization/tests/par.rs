@@ -1,11 +1,16 @@
 use super::*;
 use std::path::PathBuf;
+use std::sync::Arc;
 
+use crate::config::ConfigSource;
+use crate::db::create_pool;
+use crate::domain::{ActiveSigningKey, Keyset};
 use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, RateLimitSettings,
     RequestObjectJtiPolicy, SubjectType,
 };
 use crate::support::{ClientIpHeaderMode, IpCidr};
+use actix_web::test::TestRequest;
 
 fn client(require_dpop_bound_tokens: bool) -> ClientRow {
     ClientRow {
@@ -106,6 +111,58 @@ fn oauth_error_code(response: &HttpResponse) -> Option<String> {
         .extensions()
         .get::<OAuthJsonErrorFields>()
         .map(|fields| fields.error.clone())
+}
+
+fn par_state_without_live_services() -> Data<AppState> {
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.rate_limit.token_management_max_requests = 100_000;
+    let mut valkey_builder = fred::prelude::Builder::from_config(
+        fred::prelude::Config::from_url("redis://127.0.0.1:1")
+            .expect("unavailable Valkey URL should parse"),
+    );
+    valkey_builder.with_performance_config(|performance: &mut fred::prelude::PerformanceConfig| {
+        performance.default_command_timeout = std::time::Duration::from_millis(50);
+    });
+    valkey_builder.with_connection_config(|connection: &mut fred::prelude::ConnectionConfig| {
+        connection.connection_timeout = std::time::Duration::from_millis(50);
+        connection.internal_command_timeout = std::time::Duration::from_millis(50);
+        connection.max_command_attempts = 1;
+    });
+
+    Data::new(AppState {
+        diesel_db: create_pool(
+            "postgres://nazo_par_test_invalid:nazo_par_test_invalid@127.0.0.1:1/nazo".to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey: valkey_builder
+            .build()
+            .expect("valkey client construction should not connect"),
+        settings: Arc::new(settings),
+        keyset: Arc::new(Keyset {
+            active_kid: "test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+            verification_keys: Vec::new(),
+        }),
+    })
+}
+
+fn par_form_request() -> HttpRequest {
+    TestRequest::post()
+        .uri("/oauth/par")
+        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+        .to_http_request()
+}
+
+async fn par_json_body(response: HttpResponse) -> (StatusCode, Value) {
+    let status = response.status();
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("PAR response body should collect");
+    let value = serde_json::from_slice(&body).expect("PAR error response should be JSON");
+    (status, value)
 }
 
 #[test]
@@ -283,4 +340,85 @@ fn par_rejects_explicit_unsupported_response_type() {
     assert!(pushed_authorization_request_has_unsupported_response_type(
         &params
     ));
+}
+
+#[test]
+fn par_validation_binds_request_uri_to_registered_redirect_uri() {
+    let mut params = HashMap::from([("response_type".to_owned(), "code".to_owned())]);
+
+    assert!(
+        validate_pushed_authorization_request(&client(false), &params).is_ok(),
+        "single registered redirect_uri remains unambiguous when omitted"
+    );
+
+    let mut multi_redirect_client = client(false);
+    multi_redirect_client.redirect_uris = json!([
+        "https://client.example/callback",
+        "https://client.example/secondary-callback"
+    ]);
+    let missing = validate_pushed_authorization_request(&multi_redirect_client, &params)
+        .expect_err("PAR must not mint a request_uri when redirect_uri is ambiguous");
+    assert_eq!(missing.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_code(&missing).as_deref(),
+        Some("invalid_request")
+    );
+
+    params.insert(
+        "redirect_uri".to_owned(),
+        "https://attacker.example/callback".to_owned(),
+    );
+    let invalid = validate_pushed_authorization_request(&client(false), &params)
+        .expect_err("PAR must bind only pre-registered redirect_uri values");
+    assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_code(&invalid).as_deref(),
+        Some("invalid_request")
+    );
+
+    params.insert(
+        "redirect_uri".to_owned(),
+        "https://client.example/callback".to_owned(),
+    );
+    assert!(validate_pushed_authorization_request(&client(false), &params).is_ok());
+}
+
+#[actix_web::test]
+async fn par_rejects_non_form_content_type_before_client_lookup() {
+    let response = par_after_rate_limit(
+        par_state_without_live_services(),
+        TestRequest::post()
+            .uri("/oauth/par")
+            .insert_header((header::CONTENT_TYPE, "application/json"))
+            .to_http_request(),
+        Bytes::from_static(br#"{"client_id":"client-a"}"#),
+    )
+    .await;
+
+    let (status, body) = par_json_body(response).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body.get("error"), Some(&json!("invalid_request")));
+}
+
+#[actix_web::test]
+async fn par_rejects_malformed_or_ambiguous_authorization_parameters_before_client_lookup() {
+    let cases: &[&[u8]] = &[
+        b"client_id=\xff",
+        b"client_id=client-a&request_uri=urn%3Aietf%3Aparams%3Aoauth%3Arequest_uri%3Ax",
+        b"client_id=client-a&unsupported=value",
+        b"client_id=client-a&client_id=client-b",
+        b"response_type=code&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback",
+    ];
+
+    for body in cases {
+        let response = par_after_rate_limit(
+            par_state_without_live_services(),
+            par_form_request(),
+            Bytes::copy_from_slice(body),
+        )
+        .await;
+        let (status, value) = par_json_body(response).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(value.get("error"), Some(&json!("invalid_request")));
+    }
 }

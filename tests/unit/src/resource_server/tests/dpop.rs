@@ -1,6 +1,7 @@
 use super::fixtures::*;
 use super::*;
-use crate::resource_server::dpop::dpop_jwk_decoding_key;
+use crate::resource_server::dpop::{dpop_jwk_decoding_key, dpop_jwk_thumbprint};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use jsonwebtoken::{Algorithm, Header};
 use serde_json::json;
 
@@ -357,6 +358,94 @@ fn dpop_proof_verifier_rejects_missing_or_private_header_jwk() {
 }
 
 #[test]
+fn dpop_public_jwk_decoder_rejects_algorithm_use_and_shape_mismatches() {
+    let fixture = dpop_fixture();
+    let rsa = serde_json::to_value(&fixture.public_jwk).unwrap();
+
+    let mut wrong_alg = rsa.clone();
+    wrong_alg["alg"] = json!("ES256");
+    assert!(dpop_jwk_decoding_key(&wrong_alg, Algorithm::RS256).is_none());
+
+    let mut encryption_use = rsa.clone();
+    encryption_use["use"] = json!("enc");
+    assert!(dpop_jwk_decoding_key(&encryption_use, Algorithm::RS256).is_none());
+
+    let mut short_modulus = rsa.clone();
+    short_modulus["n"] = json!("AQID");
+    assert!(dpop_jwk_decoding_key(&short_modulus, Algorithm::RS256).is_none());
+
+    let mut missing_exponent = rsa.clone();
+    missing_exponent.as_object_mut().unwrap().remove("e");
+    assert!(dpop_jwk_decoding_key(&missing_exponent, Algorithm::RS256).is_none());
+
+    assert!(dpop_jwk_decoding_key(&json!({"kty":"oct","k":"secret"}), Algorithm::RS256).is_none());
+}
+
+#[test]
+fn dpop_public_jwk_decoder_accepts_supported_public_key_families() {
+    let ed_seed = [7u8; 32];
+    let ed_public = ed25519_dalek::SigningKey::from_bytes(&ed_seed)
+        .verifying_key()
+        .to_bytes();
+    let ed_jwk = json!({
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": URL_SAFE_NO_PAD.encode(ed_public),
+        "use": "sig",
+        "alg": "EdDSA"
+    });
+    assert!(dpop_jwk_decoding_key(&ed_jwk, Algorithm::EdDSA).is_some());
+
+    let ec_jwk = p256_public_jwk();
+    assert!(dpop_jwk_decoding_key(&ec_jwk, Algorithm::ES256).is_some());
+}
+
+#[test]
+fn dpop_jwk_thumbprint_is_defined_only_for_supported_public_jwk_members() {
+    let fixture = dpop_fixture();
+    let rsa = serde_json::to_value(&fixture.public_jwk).unwrap();
+    assert!(dpop_jwk_thumbprint(&rsa).is_some());
+
+    let mut missing_modulus = rsa.clone();
+    missing_modulus.as_object_mut().unwrap().remove("n");
+    assert!(dpop_jwk_thumbprint(&missing_modulus).is_none());
+
+    assert!(dpop_jwk_thumbprint(&json!({"kty":"oct","k":"secret"})).is_none());
+    assert!(dpop_jwk_thumbprint(&json!({"kty":"EC","crv":"P-256","x":"x-only"})).is_none());
+}
+
+#[test]
+fn dpop_jwk_thumbprint_covers_ec_okp_and_rsa_public_members_only() {
+    let rsa = serde_json::to_value(&dpop_fixture().public_jwk).unwrap();
+    let ed = json!({
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": URL_SAFE_NO_PAD.encode(ed25519_dalek::SigningKey::from_bytes(&[8u8; 32]).verifying_key().to_bytes())
+    });
+    let ec = p256_public_jwk();
+
+    assert!(dpop_jwk_thumbprint(&rsa).is_some());
+    assert!(dpop_jwk_thumbprint(&ed).is_some());
+    assert!(dpop_jwk_thumbprint(&ec).is_some());
+}
+
+fn p256_public_jwk() -> serde_json::Value {
+    use p256::elliptic_curve::sec1::ToEncodedPoint;
+
+    let secret_key = p256::SecretKey::random(&mut rand_core::OsRng);
+    let public_key = secret_key.public_key();
+    let point = public_key.to_encoded_point(false);
+    json!({
+        "kty": "EC",
+        "crv": "P-256",
+        "x": URL_SAFE_NO_PAD.encode(point.x().expect("P-256 x coordinate")),
+        "y": URL_SAFE_NO_PAD.encode(point.y().expect("P-256 y coordinate")),
+        "use": "sig",
+        "alg": "ES256"
+    })
+}
+
+#[test]
 fn dpop_proof_verifier_rejects_invalid_signature() {
     let dpop = dpop_fixture();
     let access_token = "access-token";
@@ -377,6 +466,23 @@ fn dpop_proof_verifier_rejects_invalid_signature() {
         .unwrap_err();
 
     assert_eq!(error, DpopProofVerifierError::InvalidSignature);
+}
+
+#[test]
+fn dpop_proof_verifier_rejects_malformed_compact_jwt_parts() {
+    let verifier = DpopProofVerifier::new(DpopProofVerifierConfig::default());
+    for proof in [
+        "",
+        ".payload.signature",
+        "header..signature",
+        "header.payload.",
+        "header.payload.signature.extra",
+    ] {
+        let error = verifier
+            .verify(proof, "GET", "https://api.example/orders", "access-token")
+            .unwrap_err();
+        assert_eq!(error, DpopProofVerifierError::MalformedProof);
+    }
 }
 
 #[test]

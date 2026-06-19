@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import json
 import os
 import re
 import secrets
+import struct
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -39,6 +41,7 @@ DATABASE_URL = os.environ.get(
 )
 VALKEY_URL = os.environ.get("E2E_VALKEY_URL", "redis://nazo-oauth-e2e-valkey:6379/0")
 E2E_CORS_ORIGIN = os.environ.get("E2E_CORS_ORIGIN", "http://127.0.0.1:3000")
+E2E_SMTP_BIND_HOST = os.environ.get("E2E_SMTP_BIND_HOST", "0.0.0.0")
 
 ADMIN_EMAIL = "admin-full-e2e@example.com"
 ADMIN_PASSWORD = "AdminPassword-2026"
@@ -46,6 +49,13 @@ USER_EMAIL = "user-full-e2e@example.com"
 USER_PASSWORD = "UserPassword-2026"
 CLIENT_REDIRECT_URI = "https://client.example/callback"
 DEFAULT_AUDIENCE = "resource://default"
+SCIM_BEARER_TOKEN = os.environ.get("E2E_SCIM_BEARER_TOKEN", "codecov-scim-secret")
+SAML_GATEWAY_ISSUER = os.environ.get("E2E_SAML_GATEWAY_ISSUER", "codecov-saml-gateway")
+SAML_GATEWAY_AUDIENCE = os.environ.get("E2E_SAML_GATEWAY_AUDIENCE", "nazo-oauth-codecov")
+SAML_GATEWAY_SECRET = os.environ.get(
+    "E2E_SAML_GATEWAY_SECRET",
+    "codecov-saml-gateway-secret-000000",
+)
 DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000001"
 DEFAULT_REALM_ID = "00000000-0000-0000-0000-000000000002"
 DEFAULT_ORGANIZATION_ID = "00000000-0000-0000-0000-000000000003"
@@ -94,6 +104,30 @@ def b64url(raw: bytes) -> str:
 
 def now() -> int:
     return int(time.time())
+
+
+def totp_code(secret_base32: str, timestamp: int | None = None) -> str:
+    normalized = "".join(secret_base32.split()).upper()
+    padding = "=" * ((8 - len(normalized) % 8) % 8)
+    secret = base64.b32decode(normalized + padding)
+    step = (timestamp or now()) // 30
+    digest = hmac.new(secret, struct.pack(">Q", step), hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    value = struct.unpack(">I", digest[offset : offset + 4])[0] & 0x7FFFFFFF
+    return f"{value % 1_000_000:06d}"
+
+
+def saml_gateway_signature(
+    issuer: str,
+    audience: str,
+    subject: str,
+    email: str,
+    iat: int,
+    exp: int,
+) -> str:
+    message = f"{issuer}\n{audience}\n{subject}\n{email}\n{iat}\n{exp}".encode("utf-8")
+    digest = hmac.new(SAML_GATEWAY_SECRET.encode("utf-8"), message, hashlib.sha256).digest()
+    return b64url(digest)
 
 
 def decode_jwt_unverified(token: str) -> dict[str, Any]:
@@ -304,6 +338,597 @@ def location_query(response: requests.Response) -> dict[str, list[str]]:
     return parse_qs(urlparse(location).query)
 
 
+def scim_headers() -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {SCIM_BEARER_TOKEN}",
+        "User-Agent": "nazo-oauth-codecov-e2e",
+    }
+
+
+def scim_user_payload(email: str, *, active: bool = True, family_name: str = "User") -> dict[str, Any]:
+    return {
+        "userName": email,
+        "active": active,
+        "name": {
+            "formatted": f"SCIM {family_name}",
+            "givenName": "SCIM",
+            "familyName": family_name,
+        },
+        "emails": [{"value": email, "primary": True}],
+    }
+
+
+def exercise_scim_routes() -> None:
+    missing = requests.get(f"{BASE_URL}/scim/v2/ServiceProviderConfig", timeout=10)
+    expect_status("GET /scim/v2/ServiceProviderConfig missing bearer", missing, 401)
+    check("scim_missing_bearer_error", expect_json(missing).get("scimType") == "unauthorized")
+
+    config = expect_json(
+        expect_status(
+            "GET /scim/v2/ServiceProviderConfig",
+            requests.get(f"{BASE_URL}/scim/v2/ServiceProviderConfig", headers=scim_headers(), timeout=10),
+            200,
+        )
+    )
+    check(
+        "scim_service_provider_config_shape",
+        config["authenticationSchemes"][0]["type"] == "oauthbearertoken"
+        and config["filter"]["supported"] is True,
+        config,
+    )
+    schemas = expect_json(
+        expect_status(
+            "GET /scim/v2/Schemas",
+            requests.get(f"{BASE_URL}/scim/v2/Schemas", headers=scim_headers(), timeout=10),
+            200,
+        )
+    )
+    check("scim_schemas_shape", schemas["Resources"][0]["id"].endswith(":User"), schemas)
+    resource_types = expect_json(
+        expect_status(
+            "GET /scim/v2/ResourceTypes",
+            requests.get(f"{BASE_URL}/scim/v2/ResourceTypes", headers=scim_headers(), timeout=10),
+            200,
+        )
+    )
+    check("scim_resource_types_shape", resource_types["Resources"][0]["endpoint"] == "/Users")
+
+    invalid_filter = requests.get(
+        f"{BASE_URL}/scim/v2/Users",
+        params={"filter": 'email eq "scim-user@example.com"'},
+        headers=scim_headers(),
+        timeout=10,
+    )
+    expect_status("GET /scim/v2/Users invalid filter", invalid_filter, 400)
+    check("scim_invalid_filter_type", expect_json(invalid_filter).get("scimType") == "invalidFilter")
+
+    created = expect_json(
+        expect_status(
+            "POST /scim/v2/Users",
+            requests.post(
+                f"{BASE_URL}/scim/v2/Users",
+                json=scim_user_payload("scim-user@example.com", family_name="Created"),
+                headers=scim_headers(),
+                timeout=10,
+            ),
+            201,
+        )
+    )
+    scim_user_id = created["id"]
+    check(
+        "scim_create_user_projection",
+        created["userName"] == "scim-user@example.com"
+        and created["active"] is True
+        and "password_hash" not in created,
+        created,
+    )
+
+    duplicate = requests.post(
+        f"{BASE_URL}/scim/v2/Users",
+        json=scim_user_payload("scim-user@example.com", family_name="Duplicate"),
+        headers=scim_headers(),
+        timeout=10,
+    )
+    expect_status("POST /scim/v2/Users duplicate", duplicate, 409)
+    check("scim_duplicate_conflict", expect_json(duplicate).get("scimType") == "uniqueness")
+
+    user_list = expect_json(
+        expect_status(
+            "GET /scim/v2/Users",
+            requests.get(
+                f"{BASE_URL}/scim/v2/Users",
+                params={"startIndex": 1, "count": 10},
+                headers=scim_headers(),
+                timeout=10,
+            ),
+            200,
+        )
+    )
+    check(
+        "scim_list_contains_created_user",
+        any(resource["id"] == scim_user_id for resource in user_list["Resources"]),
+        user_list,
+    )
+
+    filtered = expect_json(
+        expect_status(
+            "GET /scim/v2/Users filtered",
+            requests.get(
+                f"{BASE_URL}/scim/v2/Users",
+                params={"filter": 'userName eq "SCIM-USER@example.com"'},
+                headers=scim_headers(),
+                timeout=10,
+            ),
+            200,
+        )
+    )
+    check(
+        "scim_filter_normalizes_email",
+        filtered["totalResults"] == 1 and filtered["Resources"][0]["id"] == scim_user_id,
+        filtered,
+    )
+
+    loaded = expect_json(
+        expect_status(
+            "GET /scim/v2/Users/{id}",
+            requests.get(
+                f"{BASE_URL}/scim/v2/Users/{scim_user_id}",
+                headers=scim_headers(),
+                timeout=10,
+            ),
+            200,
+        )
+    )
+    check("scim_get_user_projection", loaded["id"] == scim_user_id and "role" not in loaded, loaded)
+
+    replacement = expect_json(
+        expect_status(
+            "PUT /scim/v2/Users/{id}",
+            requests.put(
+                f"{BASE_URL}/scim/v2/Users/{scim_user_id}",
+                json=scim_user_payload("scim-replaced@example.com", family_name="Replaced"),
+                headers=scim_headers(),
+                timeout=10,
+            ),
+            200,
+        )
+    )
+    check(
+        "scim_replace_user_updates_identity",
+        replacement["userName"] == "scim-replaced@example.com"
+        and replacement["name"]["familyName"] == "Replaced",
+        replacement,
+    )
+
+    patched = expect_json(
+        expect_status(
+            "PATCH /scim/v2/Users/{id}",
+            requests.patch(
+                f"{BASE_URL}/scim/v2/Users/{scim_user_id}",
+                json={
+                    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+                    "Operations": [
+                        {"op": "replace", "path": "active", "value": False},
+                        {"op": "replace", "path": "name.familyName", "value": "Patched"},
+                    ],
+                },
+                headers=scim_headers(),
+                timeout=10,
+            ),
+            200,
+        )
+    )
+    check(
+        "scim_patch_user_updates_allowed_fields",
+        patched["active"] is False and patched["name"]["familyName"] == "Patched",
+        patched,
+    )
+
+    missing_patch = requests.patch(
+        f"{BASE_URL}/scim/v2/Users/{uuid.uuid4()}",
+        json={
+            "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+            "Operations": [{"op": "replace", "path": "active", "value": True}],
+        },
+        headers=scim_headers(),
+        timeout=10,
+    )
+    expect_status("PATCH /scim/v2/Users missing", missing_patch, 404)
+
+    expect_status(
+        "DELETE /scim/v2/Users/{id}",
+        requests.delete(
+            f"{BASE_URL}/scim/v2/Users/{scim_user_id}",
+            headers=scim_headers(),
+            timeout=10,
+        ),
+        204,
+    )
+    missing_delete = requests.delete(
+        f"{BASE_URL}/scim/v2/Users/{uuid.uuid4()}",
+        headers=scim_headers(),
+        timeout=10,
+    )
+    expect_status("DELETE /scim/v2/Users missing", missing_delete, 404)
+
+
+def seed_malformed_passkey(user_id: str, credential_id: str = "malformed-e2e-credential") -> str:
+    passkey_id = str(uuid.uuid4())
+    with psycopg.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO user_passkey_credentials
+                    (id, tenant_id, user_id, credential_id, credential, label, sign_count)
+                VALUES
+                    (%s, %s, %s, %s, %s::jsonb, %s, %s)
+                """,
+                (
+                    passkey_id,
+                    DEFAULT_TENANT_ID,
+                    user_id,
+                    credential_id,
+                    json.dumps(
+                        {
+                            "id": [1, 2, 3, 4],
+                            "public_key_cose": [5, 6, 7],
+                            "counter": 9,
+                            "transports": ["internal"],
+                            "aaguid": [0] * 16,
+                        }
+                    ),
+                    "Seeded malformed passkey",
+                    9,
+                ),
+            )
+    return passkey_id
+
+
+def exercise_passkey_profile_edges(user: requests.Session, user_id: str) -> None:
+    passkey_id = seed_malformed_passkey(user_id)
+    listed = expect_json(
+        expect_status(
+            "GET /auth/me/passkeys seeded malformed",
+            user.get(f"{BASE_URL}/auth/me/passkeys", timeout=10),
+            200,
+        )
+    )
+    check(
+        "passkey_list_projects_public_fields",
+        any(
+            item["id"] == passkey_id
+            and item["label"] == "Seeded malformed passkey"
+            and item["sign_count"] == 9
+            and "credential" not in item
+            for item in listed["passkeys"]
+        ),
+        listed,
+    )
+
+    registration_begin = expect_json(
+        expect_status(
+            "POST /auth/me/passkeys/registration/begin with existing credential",
+            user.post(
+                f"{BASE_URL}/auth/me/passkeys/registration/begin",
+                json={"label": "New passkey"},
+                headers=csrf_header(user),
+                timeout=10,
+            ),
+            200,
+        )
+    )
+    check(
+        "passkey_registration_begin_excludes_existing_credential",
+        registration_begin["publicKey"]["excludeCredentials"][0]["id"] == "AQIDBA",
+        registration_begin,
+    )
+    expect_status(
+        "POST /auth/me/passkeys/registration/finish malformed response",
+        user.post(
+            f"{BASE_URL}/auth/me/passkeys/registration/finish",
+            json={
+                "ceremony_id": "B" * 32,
+                "response": {
+                    "id": "AQIDBA",
+                    "rawId": "AQIDBA",
+                    "type": "public-key",
+                    "response": {
+                        "clientDataJSON": "e30",
+                        "attestationObject": "e30",
+                    },
+                },
+            },
+            headers=csrf_header(user),
+            timeout=10,
+        ),
+        400,
+    )
+
+    passkey_login_begin = expect_json(
+        expect_status(
+            "POST /auth/passkey/begin with existing credential",
+            requests.post(
+                f"{BASE_URL}/auth/passkey/begin",
+                json={"email": USER_EMAIL},
+                timeout=10,
+            ),
+            200,
+        )
+    )
+    check(
+        "passkey_login_begin_returns_allowed_credential",
+        passkey_login_begin["publicKey"]["allowCredentials"][0]["id"] == "AQIDBA",
+        passkey_login_begin,
+    )
+    expect_status(
+        "POST /auth/passkey/finish malformed response",
+        requests.post(
+            f"{BASE_URL}/auth/passkey/finish",
+            json={
+                "ceremony_id": "C" * 32,
+                "response": {
+                    "id": "AQIDBA",
+                    "rawId": "AQIDBA",
+                    "type": "public-key",
+                    "response": {
+                        "clientDataJSON": "e30",
+                        "authenticatorData": "e30",
+                        "signature": "e30",
+                        "userHandle": "e30",
+                    },
+                },
+            },
+            timeout=10,
+        ),
+        400,
+    )
+
+    missing_passkey = user.delete(
+        f"{BASE_URL}/auth/me/passkeys/{uuid.uuid4()}",
+        headers=csrf_header(user),
+        timeout=10,
+    )
+    expect_status("DELETE /auth/me/passkeys missing", missing_passkey, 404)
+
+    expect_status(
+        "DELETE /auth/me/passkeys seeded malformed",
+        user.delete(
+            f"{BASE_URL}/auth/me/passkeys/{passkey_id}",
+            headers=csrf_header(user),
+            timeout=10,
+        ),
+        204,
+    )
+    empty_list = expect_json(
+        expect_status(
+            "GET /auth/me/passkeys after delete",
+            user.get(f"{BASE_URL}/auth/me/passkeys", timeout=10),
+            200,
+        )
+    )
+    check(
+        "passkey_delete_removes_current_user_credential",
+        all(item["id"] != passkey_id for item in empty_list["passkeys"]),
+        empty_list,
+    )
+
+
+def exercise_oidc_logout(public_client_id: str) -> None:
+    redirect_without_client = requests.get(
+        f"{BASE_URL}/logout",
+        params={"post_logout_redirect_uri": "https://client.example/logout/callback?flow=rp"},
+        timeout=10,
+    )
+    expect_status("GET /logout redirect without client", redirect_without_client, 400)
+    check(
+        "oidc_logout_redirect_requires_client",
+        expect_json(redirect_without_client).get("error") == "invalid_request",
+    )
+
+    duplicate_parameter = requests.get(
+        f"{BASE_URL}/logout?client_id=a&client_id=b",
+        timeout=10,
+    )
+    expect_status("GET /logout duplicate client_id", duplicate_parameter, 400)
+
+    logout_user = requests.Session()
+    login(logout_user, USER_EMAIL, USER_PASSWORD, "POST /auth/login OIDC logout no redirect")
+    logout_response = expect_json(
+        expect_status(
+            "GET /logout clears OP session",
+            logout_user.get(f"{BASE_URL}/logout", timeout=10),
+            200,
+        )
+    )
+    check("oidc_logout_success_body", logout_response.get("success") is True, logout_response)
+    expect_status(
+        "GET /auth/me after OIDC logout",
+        logout_user.get(f"{BASE_URL}/auth/me", timeout=10),
+        401,
+    )
+
+    redirect_user = requests.Session()
+    login(redirect_user, USER_EMAIL, USER_PASSWORD, "POST /auth/login OIDC logout redirect")
+    redirect = expect_status(
+        "GET /logout registered post_logout_redirect_uri",
+        redirect_user.get(
+            f"{BASE_URL}/logout",
+            params={
+                "client_id": public_client_id,
+                "post_logout_redirect_uri": "https://client.example/logout/callback?flow=rp",
+                "state": "logout-state",
+            },
+            allow_redirects=False,
+            timeout=10,
+        ),
+        302,
+    )
+    check(
+        "oidc_logout_redirect_preserves_registered_query_and_state",
+        redirect.headers.get("Location")
+        == "https://client.example/logout/callback?flow=rp&state=logout-state",
+        redirect.headers,
+    )
+    expect_status(
+        "GET /auth/me after OIDC logout redirect",
+        redirect_user.get(f"{BASE_URL}/auth/me", timeout=10),
+        401,
+    )
+
+    invalid_redirect = requests.get(
+        f"{BASE_URL}/logout",
+        params={
+            "client_id": public_client_id,
+            "post_logout_redirect_uri": "https://client.example/logout/unregistered",
+        },
+        timeout=10,
+    )
+    expect_status("GET /logout unregistered post_logout_redirect_uri", invalid_redirect, 400)
+    check(
+        "oidc_logout_unregistered_redirect_error",
+        expect_json(invalid_redirect).get("error") == "invalid_request",
+    )
+
+    unknown_client = requests.get(
+        f"{BASE_URL}/logout",
+        params={"client_id": "missing-client"},
+        timeout=10,
+    )
+    expect_status("GET /logout unknown client", unknown_client, 400)
+    check("oidc_logout_unknown_client_error", expect_json(unknown_client).get("error") == "invalid_request")
+
+
+def exercise_saml_federation() -> None:
+    federated = requests.Session()
+    federated.headers.update({"User-Agent": "nazo-oauth-full-e2e-federation/1"})
+    email = "federated-saml-full-e2e@example.com"
+    subject = "saml-subject-full-e2e"
+    issued_at = now()
+    expires_at = issued_at + 120
+    payload = {
+        "issuer": SAML_GATEWAY_ISSUER,
+        "audience": SAML_GATEWAY_AUDIENCE,
+        "subject": subject,
+        "email": email,
+        "name": "Federated SAML User",
+        "iat": issued_at,
+        "exp": expires_at,
+    }
+    payload["signature"] = saml_gateway_signature(
+        payload["issuer"],
+        payload["audience"],
+        payload["subject"],
+        email,
+        issued_at,
+        expires_at,
+    )
+
+    response = expect_json(
+        expect_status(
+            "POST /auth/federation/saml/acs",
+            federated.post(
+                f"{BASE_URL}/auth/federation/saml/acs",
+                json=payload,
+                timeout=10,
+            ),
+            200,
+        )
+    )
+    check(
+        "saml_federation_sets_session",
+        response.get("mfa_required") is False
+        and bool(response.get("csrf_token"))
+        and bool(federated.cookies.get(SESSION_COOKIE_NAME)),
+        response,
+    )
+    me = expect_json(
+        expect_status(
+            "GET /auth/me after SAML federation",
+            federated.get(f"{BASE_URL}/auth/me", timeout=10),
+            200,
+        )
+    )
+    check(
+        "saml_federation_user_profile",
+        me.get("email") == email
+        and me.get("display_name") == "Federated SAML User",
+        me,
+    )
+    with psycopg.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT provider_type, provider_id, subject, email, claims->>'sub'
+                FROM external_identity_links
+                WHERE user_id = %s
+                """,
+                (me["id"],),
+            )
+            row = cur.fetchone()
+    check(
+        "saml_federation_external_identity_link",
+        row == ("saml", SAML_GATEWAY_ISSUER, subject, email, subject),
+        row,
+    )
+
+    replay = expect_json(
+        expect_status(
+            "POST /auth/federation/saml/acs existing link",
+            federated.post(
+                f"{BASE_URL}/auth/federation/saml/acs",
+                json=payload,
+                timeout=10,
+            ),
+            200,
+        )
+    )
+    check(
+        "saml_federation_existing_link_reauthenticates",
+        replay.get("mfa_required") is False and bool(federated.cookies.get(SESSION_COOKIE_NAME)),
+        replay,
+    )
+
+
+def exercise_oidc_federation_start() -> None:
+    start = expect_status(
+        "GET /auth/federation/oidc/start",
+        requests.get(f"{BASE_URL}/auth/federation/oidc/start", allow_redirects=False, timeout=10),
+        302,
+    )
+    location = start.headers.get("Location", "")
+    parsed = urlparse(location)
+    query = parse_qs(parsed.query)
+    state_token = query.get("state", [""])[0]
+    nonce = query.get("nonce", [""])[0]
+    check(
+        "oidc_federation_start_redirect_binds_pkce_state_nonce",
+        parsed.scheme == "https"
+        and parsed.netloc == "issuer.example"
+        and parsed.path == "/authorize"
+        and query.get("response_type") == ["code"]
+        and query.get("client_id") == ["codecov-oidc-client"]
+        and query.get("redirect_uri") == [f"{BASE_URL}/auth/federation/oidc/callback"]
+        and query.get("scope") == ["openid email profile"]
+        and query.get("code_challenge_method") == ["S256"]
+        and bool(query.get("code_challenge", [""])[0])
+        and re.fullmatch(r"[A-Za-z0-9_-]{32,256}", state_token) is not None
+        and re.fullmatch(r"[A-Za-z0-9_-]{32,256}", nonce) is not None,
+        location,
+    )
+    missing_state = expect_json(
+        expect_status(
+            "GET /auth/federation/oidc/callback missing state",
+            requests.get(
+                f"{BASE_URL}/auth/federation/oidc/callback",
+                params={"state": "A" * 32, "code": "authorization-code"},
+                timeout=10,
+            ),
+            400,
+        )
+    )
+    check("oidc_federation_callback_missing_state", missing_state.get("error") == "invalid_request")
+
+
 def pkce_pair() -> tuple[str, str]:
     verifier = b64url(secrets.token_bytes(32))
     challenge = b64url(hashlib.sha256(verifier.encode("ascii")).digest())
@@ -354,28 +979,62 @@ def assert_destructive_targets_are_e2e() -> None:
 
     actual = {
         "database_host": database.hostname,
+        "database_port": database.port,
         "database_name": database.path.lstrip("/"),
         "valkey_host": valkey.hostname,
+        "valkey_port": valkey.port,
         "valkey_db": valkey.path or "/0",
         "base_host": base.hostname,
+        "base_port": base.port,
     }
     allowed_targets = [
         {
             "database_host": "nazo-oauth-e2e-postgres",
+            "database_port": None,
             "database_name": "oauth",
             "valkey_host": "nazo-oauth-e2e-valkey",
+            "valkey_port": None,
             "valkey_db": "/0",
             "base_host": "nazo-oauth-e2e-server",
+            "base_port": 8000,
         }
     ]
     if os.environ.get("E2E_ALLOW_SAME_CONTAINER_LOOPBACK") == "1":
         allowed_targets.append(
             {
                 "database_host": "postgres",
+                "database_port": None,
                 "database_name": "oauth",
                 "valkey_host": "valkey",
+                "valkey_port": None,
                 "valkey_db": "/0",
                 "base_host": "127.0.0.1",
+                "base_port": None,
+            }
+        )
+    if os.environ.get("E2E_ALLOW_CODEX_COVERAGE_LOOPBACK") == "1":
+        allowed_targets.append(
+            {
+                "database_host": "127.0.0.1",
+                "database_port": 15432,
+                "database_name": "oauth",
+                "valkey_host": "127.0.0.1",
+                "valkey_port": 16383,
+                "valkey_db": "/0",
+                "base_host": "127.0.0.1",
+                "base_port": 18000,
+            }
+        )
+        allowed_targets.append(
+            {
+                "database_host": "nazo-oauth-codecov-postgres",
+                "database_port": 5432,
+                "database_name": "oauth",
+                "valkey_host": "nazo-oauth-codecov-valkey",
+                "valkey_port": 6379,
+                "valkey_db": "/0",
+                "base_host": "127.0.0.1",
+                "base_port": 18000,
             }
         )
     if actual not in allowed_targets:
@@ -394,6 +1053,7 @@ def seed_prerequisites() -> None:
                     oauth_tokens,
                     user_client_grants,
                     client_access_requests,
+                    external_identity_links,
                     oauth_clients,
                     users
                 RESTART IDENTITY CASCADE
@@ -642,7 +1302,7 @@ def run() -> None:
     wait_for_service()
 
     smtp_sink = SmtpSink()
-    smtp = Controller(smtp_sink, hostname="0.0.0.0", port=1025)
+    smtp = Controller(smtp_sink, hostname=E2E_SMTP_BIND_HOST, port=1025)
     smtp.start()
     try:
         anonymous = requests.Session()
@@ -729,6 +1389,81 @@ def run() -> None:
             cors_actual.headers,
         )
 
+        token_json = requests.post(
+            f"{BASE_URL}/token",
+            json={"grant_type": "authorization_code"},
+            timeout=10,
+        )
+        expect_status("POST /token rejects JSON content type", token_json, 400)
+        check("token_json_invalid_request", expect_json(token_json).get("error") == "invalid_request")
+
+        token_missing_grant = requests.post(f"{BASE_URL}/token", data={}, timeout=10)
+        expect_status("POST /token rejects missing grant_type", token_missing_grant, 400)
+        check(
+            "token_missing_grant_invalid_request",
+            expect_json(token_missing_grant).get("error") == "invalid_request",
+        )
+
+        token_duplicate_grant = requests.post(
+            f"{BASE_URL}/token",
+            data="grant_type=authorization_code&grant_type=refresh_token",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10,
+        )
+        expect_status("POST /token rejects duplicate grant_type", token_duplicate_grant, 400)
+        check(
+            "token_duplicate_grant_invalid_request",
+            expect_json(token_duplicate_grant).get("error") == "invalid_request",
+        )
+
+        token_invalid_resource = requests.post(
+            f"{BASE_URL}/token",
+            data={"grant_type": "client_credentials", "resource": "https://api.example/#fragment"},
+            timeout=10,
+        )
+        expect_status("POST /token rejects resource fragment", token_invalid_resource, 400)
+        check(
+            "token_invalid_resource_invalid_target",
+            expect_json(token_invalid_resource).get("error") == "invalid_target",
+        )
+
+        token_mixed_auth = requests.post(
+            f"{BASE_URL}/token",
+            data={
+                "grant_type": "client_credentials",
+                "client_id": "body-client",
+                "client_secret": "body-secret",
+            },
+            headers={"Authorization": "Basic " + base64.b64encode(b"basic-client:secret").decode()},
+            timeout=10,
+        )
+        expect_status("POST /token rejects mixed basic and body auth", token_mixed_auth, 400)
+        check(
+            "token_mixed_auth_invalid_request",
+            expect_json(token_mixed_auth).get("error") == "invalid_request",
+        )
+
+        token_assertion_secret_mix = requests.post(
+            f"{BASE_URL}/token",
+            data={
+                "grant_type": "client_credentials",
+                "client_id": "client-a",
+                "client_secret": "secret",
+                "client_assertion_type": CLIENT_ASSERTION_TYPE,
+                "client_assertion": "assertion",
+            },
+            timeout=10,
+        )
+        expect_status(
+            "POST /token rejects client_secret plus private_key_jwt",
+            token_assertion_secret_mix,
+            400,
+        )
+        check(
+            "token_assertion_secret_mix_invalid_request",
+            expect_json(token_assertion_secret_mix).get("error") == "invalid_request",
+        )
+
         anonymous_redirect = anonymous.get(
             f"{BASE_URL}/authorize",
             params={"client_id": "missing-client"},
@@ -799,6 +1534,8 @@ def run() -> None:
         )
         check("csrf_refresh_body", bool(csrf.get("csrf_token")))
 
+        exercise_passkey_profile_edges(user, user_id)
+
         updated_me = expect_json(
             expect_status(
                 "PATCH /auth/me",
@@ -828,6 +1565,30 @@ def run() -> None:
             and updated_me["phone_number_verified"] is False,
         )
 
+        missing_avatar = user.post(
+            f"{BASE_URL}/auth/me/avatar",
+            files={"not_avatar": ("ignored.txt", b"ignored", "text/plain")},
+            headers=csrf_header(user),
+            timeout=10,
+        )
+        expect_status("POST /auth/me/avatar missing avatar field", missing_avatar, 400)
+
+        oversized_avatar = user.post(
+            f"{BASE_URL}/auth/me/avatar",
+            files={"avatar": ("avatar.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 2_100_000, "image/png")},
+            headers=csrf_header(user),
+            timeout=10,
+        )
+        expect_status("POST /auth/me/avatar oversized", oversized_avatar, 413)
+
+        unsupported_avatar = user.post(
+            f"{BASE_URL}/auth/me/avatar",
+            files={"avatar": ("avatar.txt", b"not an image", "text/plain")},
+            headers=csrf_header(user),
+            timeout=10,
+        )
+        expect_status("POST /auth/me/avatar unsupported content", unsupported_avatar, 400)
+
         png_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
         avatar_upload = expect_json(
             expect_status(
@@ -843,12 +1604,31 @@ def run() -> None:
         )
         check("avatar_url_set", bool(avatar_upload.get("avatar_url")))
 
+        webp_bytes = b"RIFF\x10\x00\x00\x00WEBPVP8 " + b"\x00" * 24
+        avatar_reupload = expect_json(
+            expect_status(
+                "POST /auth/me/avatar replace existing",
+                user.post(
+                    f"{BASE_URL}/auth/me/avatar",
+                    files={"avatar": ("avatar.webp", webp_bytes, "image/webp")},
+                    headers=csrf_header(user),
+                    timeout=10,
+                ),
+                200,
+            )
+        )
+        check(
+            "avatar_reupload_rotates_version",
+            avatar_reupload.get("avatar_url") != avatar_upload.get("avatar_url"),
+            avatar_reupload,
+        )
+
         avatar_get = expect_status(
             "GET /auth/me/avatar",
             user.get(f"{BASE_URL}/auth/me/avatar", timeout=10),
             200,
         )
-        check("avatar_content_type", avatar_get.headers.get("content-type") == "image/png")
+        check("avatar_content_type", avatar_get.headers.get("content-type") == "image/webp")
 
         avatar_cross_site = user.get(
             f"{BASE_URL}/auth/me/avatar",
@@ -871,6 +1651,15 @@ def run() -> None:
             user.get(f"{BASE_URL}/auth/me/avatar", timeout=10),
             404,
         )
+        expect_status(
+            "DELETE /auth/me/avatar already absent",
+            user.delete(
+                f"{BASE_URL}/auth/me/avatar",
+                headers=csrf_header(user),
+                timeout=10,
+            ),
+            200,
+        )
 
         expect_status(
             "GET /auth/me/applications initial",
@@ -882,6 +1671,11 @@ def run() -> None:
             user.get(f"{BASE_URL}/auth/me/access-requests", timeout=10),
             200,
         )
+
+        exercise_scim_routes()
+
+        exercise_oidc_federation_start()
+        exercise_saml_federation()
 
         login(admin, ADMIN_EMAIL, ADMIN_PASSWORD, "POST /auth/login admin")
         admin_users = expect_json(
@@ -913,6 +1707,7 @@ def run() -> None:
                 "client_name": "Public Full E2E",
                 "client_type": "public",
                 "redirect_uris": [CLIENT_REDIRECT_URI],
+                "post_logout_redirect_uris": ["https://client.example/logout/callback?flow=rp"],
                 "scopes": ["openid", "profile", "email", "address", "phone", "offline_access"],
                 "allowed_audiences": [DEFAULT_AUDIENCE],
                 "grant_types": ["authorization_code", "refresh_token"],
@@ -922,6 +1717,8 @@ def run() -> None:
             "POST /admin/clients public",
         )
         public_client_id = public_client["client_id"]
+
+        exercise_oidc_logout(public_client_id)
 
         secret_client = create_client(
             admin,
@@ -1464,6 +2261,20 @@ def run() -> None:
             "POST /token PAR after login",
         )
         check("par_login_token_issued", bool(par_login_tokens.get("access_token")))
+        unknown_par = user.get(
+            f"{BASE_URL}/authorize",
+            params={
+                "client_id": public_client_id,
+                "request_uri": "urn:ietf:params:oauth:request_uri:missing",
+            },
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_authorization_error_redirect(
+            "GET /authorize unknown request_uri",
+            unknown_par,
+            "invalid_request_uri",
+        )
         par_conflict = user.get(
             f"{BASE_URL}/authorize",
             params={
@@ -1841,6 +2652,26 @@ def run() -> None:
         check(
             "refresh_token_reuse_race_revokes_family",
             expect_json(refresh_after_race).get("error") == "invalid_grant",
+        )
+        refresh_race_access_introspection = expect_json(
+            expect_status(
+                "POST /introspect refresh race winner access token",
+                requests.post(
+                    f"{BASE_URL}/introspect",
+                    data={
+                        "token": refresh_successes[0]["access_token"],
+                        "client_id": secret_client_id,
+                        "client_secret": secret_client_secret,
+                    },
+                    timeout=10,
+                ),
+                200,
+            )
+        )
+        check(
+            "refresh_race_winner_access_token_remains_active",
+            refresh_race_access_introspection.get("active") is True,
+            refresh_race_access_introspection,
         )
         par_reuse = user.get(
             f"{BASE_URL}/authorize",
@@ -2353,6 +3184,71 @@ def run() -> None:
         refresh_token = token_response["refresh_token"]
         check("id_token_issued", bool(token_response.get("id_token")))
 
+        prompt_none_verifier, prompt_none_challenge = pkce_pair()
+        prompt_none_success = user.get(
+            f"{BASE_URL}/authorize",
+            params={
+                "response_type": "code",
+                "client_id": public_client_id,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "scope": "openid email",
+                "state": "prompt-none-success",
+                "nonce": "prompt-none-success-nonce",
+                "prompt": "none",
+                "code_challenge": prompt_none_challenge,
+                "code_challenge_method": "S256",
+            },
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_status("GET /authorize prompt=none with existing grant", prompt_none_success, 302)
+        prompt_none_query = location_query(prompt_none_success)
+        prompt_none_code = prompt_none_query.get("code", [None])[0]
+        check("prompt_none_existing_grant_issues_code", bool(prompt_none_code))
+        check(
+            "prompt_none_existing_grant_state_roundtrip",
+            prompt_none_query.get("state") == ["prompt-none-success"],
+        )
+        prompt_none_tokens = token_plain(
+            {
+                "grant_type": "authorization_code",
+                "client_id": public_client_id,
+                "code": prompt_none_code,
+                "code_verifier": prompt_none_verifier,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+            },
+            "POST /token prompt=none authorization_code",
+        )
+        check("prompt_none_existing_grant_token_issued", bool(prompt_none_tokens.get("access_token")))
+
+        prompt_none_details_verifier, prompt_none_details_challenge = pkce_pair()
+        prompt_none_consent_required = user.get(
+            f"{BASE_URL}/authorize",
+            params={
+                "response_type": "code",
+                "client_id": public_client_id,
+                "redirect_uri": CLIENT_REDIRECT_URI,
+                "scope": "openid email",
+                "state": "prompt-none-consent-required",
+                "nonce": "prompt-none-consent-required-nonce",
+                "prompt": "none",
+                "authorization_details": json.dumps(
+                    [{"type": "account_information", "actions": ["read"], "locations": ["acct-new"]}],
+                    separators=(",", ":"),
+                ),
+                "code_challenge": prompt_none_details_challenge,
+                "code_challenge_method": "S256",
+            },
+            allow_redirects=False,
+            timeout=10,
+        )
+        expect_authorization_error_redirect(
+            "GET /authorize prompt=none consent required for new authorization_details",
+            prompt_none_consent_required,
+            "consent_required",
+            state="prompt-none-consent-required",
+        )
+
         bearer_request_id, bearer_verifier = authorize_request(
             user,
             public_client_id,
@@ -2375,6 +3271,77 @@ def run() -> None:
             "POST /token authorization_code Bearer without DPoP",
         )
         check("bearer_token_type", bearer_response.get("token_type") == "Bearer")
+
+        wrong_verifier_request_id, wrong_verifier = authorize_request(
+            user,
+            public_client_id,
+            state="wrong-verifier-flow",
+        )
+        wrong_verifier_code, wrong_verifier = approve_authorization(
+            user,
+            wrong_verifier_request_id,
+            wrong_verifier,
+            state="wrong-verifier-flow",
+        )
+        wrong_verifier_response = expect_json(
+            expect_status(
+                "POST /token authorization_code wrong verifier",
+                requests.post(
+                    f"{BASE_URL}/token",
+                    data={
+                        "grant_type": "authorization_code",
+                        "client_id": public_client_id,
+                        "code": wrong_verifier_code,
+                        "code_verifier": "wrong-" + wrong_verifier,
+                        "redirect_uri": CLIENT_REDIRECT_URI,
+                    },
+                    timeout=10,
+                ),
+                400,
+            )
+        )
+        check(
+            "authorization_code_wrong_verifier_invalid_grant",
+            wrong_verifier_response.get("error") == "invalid_grant",
+        )
+        wrong_verifier_replay = expect_json(
+            expect_status(
+                "POST /token authorization_code wrong verifier replay",
+                requests.post(
+                    f"{BASE_URL}/token",
+                    data={
+                        "grant_type": "authorization_code",
+                        "client_id": public_client_id,
+                        "code": wrong_verifier_code,
+                        "code_verifier": wrong_verifier,
+                        "redirect_uri": CLIENT_REDIRECT_URI,
+                    },
+                    timeout=10,
+                ),
+                400,
+            )
+        )
+        check(
+            "authorization_code_failed_marker_blocks_later_correct_verifier",
+            wrong_verifier_replay.get("error") == "invalid_grant",
+        )
+        fapi_bearer = expect_json(
+            expect_status(
+                "GET /fapi/resource Bearer",
+                requests.get(
+                    f"{BASE_URL}/fapi/resource",
+                    headers={"Authorization": f"Bearer {bearer_response['access_token']}"},
+                    timeout=10,
+                ),
+                200,
+            )
+        )
+        check(
+            "fapi_resource_bearer_claims",
+            fapi_bearer.get("client_id") == public_client_id
+            and fapi_bearer.get("aud") == DEFAULT_AUDIENCE,
+            fapi_bearer,
+        )
 
         holder_request_id, holder_verifier = authorize_request(
             user,
@@ -2403,6 +3370,48 @@ def run() -> None:
         check(
             "holder_of_key_missing_proof_invalid_grant",
             expect_json(holder_missing_proof).get("error") == "invalid_grant",
+        )
+
+        fapi_dpop_challenge = requests.get(
+            f"{BASE_URL}/fapi/resource",
+            headers={
+                "Authorization": f"DPoP {access_token}",
+                "DPoP": dpop_proof(
+                    "GET",
+                    f"{ISSUER_URL}/fapi/resource",
+                    dpop_key,
+                    access_token=access_token,
+                ),
+            },
+            timeout=10,
+        )
+        expect_status("GET /fapi/resource DPoP nonce challenge", fapi_dpop_challenge, 401)
+        fapi_dpop_nonce = fapi_dpop_challenge.headers.get("DPoP-Nonce")
+        check("fapi_resource_dpop_nonce_header", bool(fapi_dpop_nonce))
+        fapi_dpop = expect_json(
+            expect_status(
+                "GET /fapi/resource DPoP",
+                requests.get(
+                    f"{BASE_URL}/fapi/resource",
+                    headers={
+                        "Authorization": f"DPoP {access_token}",
+                        "DPoP": dpop_proof(
+                            "GET",
+                            f"{ISSUER_URL}/fapi/resource",
+                            dpop_key,
+                            nonce=fapi_dpop_nonce,
+                            access_token=access_token,
+                        ),
+                    },
+                    timeout=10,
+                ),
+                200,
+            )
+        )
+        check(
+            "fapi_resource_dpop_claims",
+            fapi_dpop.get("client_id") == public_client_id and bool(fapi_dpop.get("sub")),
+            fapi_dpop,
         )
 
         userinfo_no_nonce = requests.get(
@@ -2695,6 +3704,36 @@ def run() -> None:
         check("introspect_active", introspected.get("active") is True)
 
         expect_status(
+            "POST /revoke refresh token",
+            requests.post(
+                f"{BASE_URL}/revoke",
+                data={"token": lost_response_refresh["refresh_token"], "client_id": public_client_id},
+                timeout=10,
+            ),
+            200,
+        )
+        refresh_introspection_after_revoke = expect_json(
+            expect_status(
+                "POST /introspect refresh token inactive",
+                requests.post(
+                    f"{BASE_URL}/introspect",
+                    data={
+                        "token": lost_response_refresh["refresh_token"],
+                        "client_id": secret_client_id,
+                        "client_secret": secret_client_secret,
+                    },
+                    timeout=10,
+                ),
+                200,
+            )
+        )
+        check(
+            "refresh_token_introspection_inactive_after_revoke",
+            refresh_introspection_after_revoke.get("active") is False,
+            refresh_introspection_after_revoke,
+        )
+
+        expect_status(
             "POST /revoke access token",
             requests.post(
                 f"{BASE_URL}/revoke",
@@ -2804,6 +3843,26 @@ def run() -> None:
             "userinfo_revoked_after_code_replay_error",
             replay_userinfo_after_revoke.get("error") == "invalid_token",
         )
+        replay_access_introspection_after_revoke = expect_json(
+            expect_status(
+                "POST /introspect access token inactive after code replay",
+                requests.post(
+                    f"{BASE_URL}/introspect",
+                    data={
+                        "token": replay_access_token,
+                        "client_id": secret_client_id,
+                        "client_secret": secret_client_secret,
+                    },
+                    timeout=10,
+                ),
+                200,
+            )
+        )
+        check(
+            "introspect_access_token_inactive_after_code_replay",
+            replay_access_introspection_after_revoke.get("active") is False,
+            replay_access_introspection_after_revoke,
+        )
         replay_refresh_after_revoke = expect_json(
             expect_status(
                 "POST /token refresh token revoked after code replay",
@@ -2826,6 +3885,26 @@ def run() -> None:
         check(
             "refresh_token_revoked_after_code_replay_error",
             replay_refresh_after_revoke.get("error") == "invalid_grant",
+        )
+        replay_refresh_introspection_after_revoke = expect_json(
+            expect_status(
+                "POST /introspect refresh token inactive after code replay",
+                requests.post(
+                    f"{BASE_URL}/introspect",
+                    data={
+                        "token": replay_tokens["refresh_token"],
+                        "client_id": secret_client_id,
+                        "client_secret": secret_client_secret,
+                    },
+                    timeout=10,
+                ),
+                200,
+            )
+        )
+        check(
+            "introspect_refresh_token_inactive_after_code_replay",
+            replay_refresh_introspection_after_revoke.get("active") is False,
+            replay_refresh_introspection_after_revoke,
         )
 
         concurrent_request_id, concurrent_verifier = authorize_request(
@@ -3163,6 +4242,232 @@ def run() -> None:
                 timeout=10,
             ),
             404,
+        )
+
+        expect_status(
+            "POST /auth/me/mfa/totp/confirm before begin",
+            user.post(
+                f"{BASE_URL}/auth/me/mfa/totp/confirm",
+                json={"code": "000000"},
+                headers=csrf_header(user),
+                timeout=10,
+            ),
+            400,
+        )
+        expect_status(
+            "POST /auth/mfa/verify without pending challenge",
+            user.post(
+                f"{BASE_URL}/auth/mfa/verify",
+                json={"code": "000000", "remember_device": False},
+                headers=csrf_header(user),
+                timeout=10,
+            ),
+            401,
+        )
+
+        totp_begin = expect_json(
+            expect_status(
+                "POST /auth/me/mfa/totp/begin",
+                user.post(
+                    f"{BASE_URL}/auth/me/mfa/totp/begin",
+                    headers=csrf_header(user),
+                    timeout=10,
+                ),
+                200,
+            )
+        )
+        check(
+            "mfa_totp_begin_secret_shape",
+            re.fullmatch(r"[A-Z2-7]+", totp_begin.get("secret_base32", "")) is not None,
+            totp_begin,
+        )
+        check(
+            "mfa_totp_begin_uri_binds_issuer_and_account",
+            "otpauth://totp/" in totp_begin.get("otpauth_uri", "")
+            and "issuer=" in totp_begin.get("otpauth_uri", ""),
+            totp_begin,
+        )
+        totp_confirm = expect_json(
+            expect_status(
+                "POST /auth/me/mfa/totp/confirm",
+                user.post(
+                    f"{BASE_URL}/auth/me/mfa/totp/confirm",
+                    json={"code": totp_code(totp_begin["secret_base32"])},
+                    headers=csrf_header(user),
+                    timeout=10,
+                ),
+                200,
+            )
+        )
+        backup_codes = totp_confirm.get("backup_codes", [])
+        check(
+            "mfa_totp_confirm_enables_mfa_and_returns_backup_codes_once",
+            totp_confirm.get("mfa_enabled") is True
+            and len(backup_codes) == 10
+            and all(re.fullmatch(r"\d{5}-\d{5}", code) for code in backup_codes),
+            totp_confirm,
+        )
+        expect_status(
+            "POST /auth/me/mfa/totp/begin when enabled",
+            user.post(
+                f"{BASE_URL}/auth/me/mfa/totp/begin",
+                headers=csrf_header(user),
+                timeout=10,
+            ),
+            409,
+        )
+        expect_status(
+            "POST /auth/me/mfa/backup-codes/regenerate invalid code",
+            user.post(
+                f"{BASE_URL}/auth/me/mfa/backup-codes/regenerate",
+                json={"code": "000000"},
+                headers=csrf_header(user),
+                timeout=10,
+            ),
+            400,
+        )
+        regenerated = expect_json(
+            expect_status(
+                "POST /auth/me/mfa/backup-codes/regenerate backup code",
+                user.post(
+                    f"{BASE_URL}/auth/me/mfa/backup-codes/regenerate",
+                    json={"code": backup_codes[0]},
+                    headers=csrf_header(user),
+                    timeout=10,
+                ),
+                200,
+            )
+        )
+        regenerated_backup_codes = regenerated.get("backup_codes", [])
+        check(
+            "mfa_backup_regenerate_replaces_codes",
+            len(regenerated_backup_codes) == 10
+            and regenerated_backup_codes != backup_codes
+            and all(re.fullmatch(r"\d{5}-\d{5}", code) for code in regenerated_backup_codes),
+            regenerated,
+        )
+        backup_codes = regenerated_backup_codes
+        expect_status(
+            "POST /auth/logout before MFA challenge login",
+            user.post(f"{BASE_URL}/auth/logout", timeout=10),
+            200,
+        )
+
+        mfa_login = requests.Session()
+        mfa_login.headers.update({"User-Agent": "nazo-oauth-full-e2e-mfa/1"})
+        mfa_login_body = login(
+            mfa_login,
+            USER_EMAIL,
+            USER_PASSWORD,
+            "POST /auth/login MFA challenge",
+        )
+        check("mfa_login_requires_second_factor", mfa_login_body.get("mfa_required") is True)
+        pending_me = expect_json(
+            expect_status(
+                "GET /auth/me pending MFA",
+                mfa_login.get(f"{BASE_URL}/auth/me", timeout=10),
+                200,
+            )
+        )
+        check("auth_me_reports_pending_mfa", pending_me.get("mfa_required") is True, pending_me)
+        expect_status(
+            "POST /auth/mfa/verify invalid backup code",
+            mfa_login.post(
+                f"{BASE_URL}/auth/mfa/verify",
+                json={"code": "00000-00000", "remember_device": False},
+                headers=csrf_header(mfa_login),
+                timeout=10,
+            ),
+            400,
+        )
+        mfa_verified = expect_json(
+            expect_status(
+                "POST /auth/mfa/verify backup code remember device",
+                mfa_login.post(
+                    f"{BASE_URL}/auth/mfa/verify",
+                    json={"code": backup_codes[0], "remember_device": True},
+                    headers=csrf_header(mfa_login),
+                    timeout=10,
+                ),
+                200,
+            )
+        )
+        check(
+            "mfa_backup_code_completes_pending_session",
+            mfa_verified.get("success") is True and mfa_verified.get("method") == "recovery_code",
+            mfa_verified,
+        )
+        check(
+            "mfa_remember_device_cookie_set",
+            bool(mfa_login.cookies.get("nazo_oauth_mfa_remembered")),
+            mfa_login.cookies.get_dict(),
+        )
+        expect_status(
+            "POST /auth/logout after remembered MFA",
+            mfa_login.post(f"{BASE_URL}/auth/logout", timeout=10),
+            200,
+        )
+        remembered_login_body = login(
+            mfa_login,
+            USER_EMAIL,
+            USER_PASSWORD,
+            "POST /auth/login remembered MFA device",
+        )
+        check(
+            "remembered_mfa_device_skips_second_factor",
+            remembered_login_body.get("mfa_required") is False,
+            remembered_login_body,
+        )
+        expect_status(
+            "POST /auth/me/mfa/disable invalid code",
+            mfa_login.post(
+                f"{BASE_URL}/auth/me/mfa/disable",
+                json={"code": "000000"},
+                headers=csrf_header(mfa_login),
+                timeout=10,
+            ),
+            400,
+        )
+        mfa_disabled = expect_json(
+            expect_status(
+                "POST /auth/me/mfa/disable",
+                mfa_login.post(
+                    f"{BASE_URL}/auth/me/mfa/disable",
+                    json={"code": backup_codes[1]},
+                    headers=csrf_header(mfa_login),
+                    timeout=10,
+                ),
+                200,
+            )
+        )
+        check("mfa_disable_clears_mfa_state", mfa_disabled.get("mfa_enabled") is False)
+        disabled_again = expect_json(
+            expect_status(
+                "POST /auth/me/mfa/disable already disabled",
+                mfa_login.post(
+                    f"{BASE_URL}/auth/me/mfa/disable",
+                    json={"code": "000000"},
+                    headers=csrf_header(mfa_login),
+                    timeout=10,
+                ),
+                200,
+            )
+        )
+        check("mfa_disable_is_idempotent_when_disabled", disabled_again.get("mfa_enabled") is False)
+        expect_status(
+            "POST /auth/me/mfa/backup-codes/regenerate when disabled",
+            mfa_login.post(
+                f"{BASE_URL}/auth/me/mfa/backup-codes/regenerate",
+                json={"code": "000000"},
+                headers=csrf_header(mfa_login),
+                timeout=10,
+            ),
+            400,
+        )
+        expect_status(
+            "POST /auth/logout after MFA disable",
+            mfa_login.post(f"{BASE_URL}/auth/logout", timeout=10),
+            200,
         )
 
         expect_status(

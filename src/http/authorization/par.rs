@@ -31,6 +31,14 @@ pub(crate) async fn par(state: Data<AppState>, req: HttpRequest, body: Bytes) ->
     {
         return response;
     }
+    par_after_rate_limit(state, req, body).await
+}
+
+pub(crate) async fn par_after_rate_limit(
+    state: Data<AppState>,
+    req: HttpRequest,
+    body: Bytes,
+) -> HttpResponse {
     let content_type = req
         .headers()
         .get(header::CONTENT_TYPE)

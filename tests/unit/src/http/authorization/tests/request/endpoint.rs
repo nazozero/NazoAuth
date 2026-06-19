@@ -1,10 +1,41 @@
 use super::*;
+use actix_web::cookie::Cookie;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use diesel::sql_query;
+use diesel::sql_types::{Bool, Int4, Jsonb, Text, Uuid as SqlUuid};
+use diesel_async::RunQueryDsl;
+use fred::interfaces::ClientLike;
+use fred::prelude::{
+    Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
+};
 use std::sync::Arc;
+use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
-use crate::db::create_pool;
-use crate::domain::{ActiveSigningKey, Keyset};
+use crate::db::{create_pool, get_conn};
+use crate::domain::{
+    ActiveSigningKey, ConsentPayload, Keyset, PushedAuthorizationRequest, VerificationKey,
+};
+use crate::support::{
+    generate_key_material, jwt_decoding_key_from_jwk, public_jwk_from_private_der,
+};
+
+fn unavailable_valkey_client() -> fred::prelude::Client {
+    let mut builder = ValkeyBuilder::from_config(
+        ValkeyConfig::from_url("redis://127.0.0.1:1").expect("unavailable Valkey URL should parse"),
+    );
+    builder.with_performance_config(|performance: &mut PerformanceConfig| {
+        performance.default_command_timeout = StdDuration::from_millis(200);
+    });
+    builder.with_connection_config(|connection: &mut ConnectionConfig| {
+        connection.connection_timeout = StdDuration::from_millis(200);
+        connection.internal_command_timeout = StdDuration::from_millis(200);
+        connection.max_command_attempts = 1;
+    });
+    builder
+        .build()
+        .expect("unavailable valkey client construction should not connect")
+}
 
 fn endpoint_state(require_par: bool) -> AppState {
     let mut settings =
@@ -21,9 +52,7 @@ fn endpoint_state(require_par: bool) -> AppState {
             1,
         )
         .expect("pool construction should not connect"),
-        valkey: fred::prelude::Builder::default_centralized()
-            .build()
-            .expect("valkey client construction should not connect"),
+        valkey: unavailable_valkey_client(),
         settings: Arc::new(settings),
         keyset: Arc::new(Keyset {
             active_kid: "test-kid".to_owned(),
@@ -31,6 +60,25 @@ fn endpoint_state(require_par: bool) -> AppState {
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
             verification_keys: Vec::new(),
         }),
+    }
+}
+
+fn local_signing_keyset() -> Keyset {
+    let kid = "test-rs256-kid";
+    let private_pkcs8_der = generate_key_material(jsonwebtoken::Algorithm::RS256)
+        .expect("test signing key should generate")
+        .private_pkcs8_der;
+    let public_jwk =
+        public_jwk_from_private_der(kid, jsonwebtoken::Algorithm::RS256, &private_pkcs8_der)
+            .expect("public JWK should derive from test signing key");
+    Keyset {
+        active_kid: kid.to_owned(),
+        active_alg: jsonwebtoken::Algorithm::RS256,
+        active_signing_key: ActiveSigningKey::LocalPkcs8Der(private_pkcs8_der),
+        verification_keys: vec![VerificationKey {
+            kid: kid.to_owned(),
+            public_jwk,
+        }],
     }
 }
 
@@ -47,6 +95,290 @@ fn unsigned_request_object(claims: Value) -> String {
     let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"none"}"#);
     let payload = URL_SAFE_NO_PAD.encode(claims.to_string());
     format!("{header}.{payload}.")
+}
+
+struct LiveAuthorizationFixture {
+    state: Data<AppState>,
+}
+
+impl LiveAuthorizationFixture {
+    async fn new() -> Option<Self> {
+        let database_url = std::env::var("DATABASE_URL").ok()?;
+        let valkey_url = std::env::var("VALKEY_URL").ok()?;
+        let config = ConfigSource::from_pairs_for_test([
+            ("ISSUER", "https://issuer.example"),
+            ("FRONTEND_BASE_URL", "https://app.example"),
+            ("COOKIE_SECURE", "true"),
+            ("AUTH_RATE_LIMIT_MAX_REQUESTS", "100000"),
+        ]);
+        let mut settings = Settings::from_config(&config).expect("test settings should load");
+        settings.require_pushed_authorization_requests = false;
+
+        let mut valkey_builder = ValkeyBuilder::from_config(
+            ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),
+        );
+        valkey_builder.with_performance_config(|performance: &mut PerformanceConfig| {
+            performance.default_command_timeout = StdDuration::from_millis(1000);
+        });
+        valkey_builder.with_connection_config(|connection: &mut ConnectionConfig| {
+            connection.connection_timeout = StdDuration::from_millis(1000);
+            connection.internal_command_timeout = StdDuration::from_millis(1000);
+            connection.max_command_attempts = 1;
+        });
+        let valkey = valkey_builder.build().expect("valkey client should build");
+        valkey.init().await.expect("valkey should connect");
+
+        Some(Self {
+            state: Data::new(AppState {
+                diesel_db: create_pool(database_url, 4).expect("database pool should build"),
+                valkey,
+                settings: Arc::new(settings),
+                keyset: Arc::new(Keyset {
+                    active_kid: "test-kid".to_owned(),
+                    active_alg: jsonwebtoken::Algorithm::EdDSA,
+                    active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+                    verification_keys: Vec::new(),
+                }),
+            }),
+        })
+    }
+
+    async fn create_user(&self, suffix: &str, auth_role: &str, admin_level: i32) -> UserRow {
+        let email = format!("authorize-{suffix}@example.com");
+        let username = format!("authorize-{suffix}");
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        sql_query(
+            r#"
+            INSERT INTO users (
+                tenant_id, realm_id, organization_id, username, email,
+                password_hash, is_active, mfa_enabled, email_verified, role, admin_level
+            )
+            VALUES ($1, $2, $3, $4, $5, 'unused-authorize-test-hash', true, false, true, $6, $7)
+            RETURNING *
+            "#,
+        )
+        .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+        .bind::<SqlUuid, _>(DEFAULT_REALM_ID)
+        .bind::<SqlUuid, _>(DEFAULT_ORGANIZATION_ID)
+        .bind::<Text, _>(username)
+        .bind::<Text, _>(email)
+        .bind::<Text, _>(auth_role.to_owned())
+        .bind::<Int4, _>(admin_level)
+        .get_result::<UserRow>(&mut conn)
+        .await
+        .expect("test user should insert")
+    }
+
+    async fn insert_client(
+        &self,
+        client_id: &str,
+        redirect_uris: Vec<&str>,
+        grant_types: Vec<&str>,
+        allow_authorization_code_without_pkce: bool,
+        is_active: bool,
+    ) {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        sql_query("DELETE FROM oauth_clients WHERE tenant_id = $1 AND client_id = $2")
+            .bind::<diesel::sql_types::Uuid, _>(DEFAULT_TENANT_ID)
+            .bind::<Text, _>(client_id)
+            .execute(&mut conn)
+            .await
+            .expect("test client cleanup should succeed");
+
+        let redirect_uris = json!(redirect_uris);
+        let grant_types = json!(grant_types);
+        sql_query(
+            r#"
+            INSERT INTO oauth_clients (
+                tenant_id, realm_id, organization_id, client_id, client_name, client_type,
+                client_secret_argon2_hash, redirect_uris, scopes, allowed_audiences,
+                grant_types, token_endpoint_auth_method, require_dpop_bound_tokens,
+                require_mtls_bound_tokens, tls_client_auth_san_dns, tls_client_auth_san_uri,
+                tls_client_auth_san_ip, tls_client_auth_san_email,
+                allow_client_assertion_audience_array,
+                allow_client_assertion_endpoint_audience, require_par_request_object,
+                allow_authorization_code_without_pkce, is_active,
+                post_logout_redirect_uris, backchannel_logout_session_required
+            )
+            VALUES (
+                $1, $2, $3, $4, 'Authorization Test Client', 'confidential',
+                NULL, $5, '["openid","profile"]'::jsonb, '["resource://default"]'::jsonb,
+                $6, 'client_secret_basic', false,
+                false, '[]'::jsonb, '[]'::jsonb,
+                '[]'::jsonb, '[]'::jsonb,
+                false,
+                false, false,
+                $7, $8,
+                '[]'::jsonb, true
+            )
+            "#,
+        )
+        .bind::<diesel::sql_types::Uuid, _>(DEFAULT_TENANT_ID)
+        .bind::<diesel::sql_types::Uuid, _>(DEFAULT_REALM_ID)
+        .bind::<diesel::sql_types::Uuid, _>(DEFAULT_ORGANIZATION_ID)
+        .bind::<Text, _>(client_id)
+        .bind::<Jsonb, _>(redirect_uris)
+        .bind::<Jsonb, _>(grant_types)
+        .bind::<Bool, _>(allow_authorization_code_without_pkce)
+        .bind::<Bool, _>(is_active)
+        .execute(&mut conn)
+        .await
+        .expect("test client insert should succeed");
+    }
+
+    async fn store_session(&self, user: &UserRow, sid: &str, auth_time: i64) {
+        let payload = SessionPayload {
+            user_id: user.id,
+            auth_time,
+            amr: vec!["pwd".to_owned()],
+            pending_mfa: false,
+            oidc_sid: Some(format!("oidc-{sid}")),
+        };
+        valkey_set_ex(
+            &self.state.valkey,
+            format!("oauth:session:{sid}"),
+            serde_json::to_string(&payload).expect("session should serialize"),
+            self.state.settings.session_ttl_seconds,
+        )
+        .await
+        .expect("session should store");
+    }
+
+    fn session_request(&self, sid: &str, uri: &str) -> HttpRequest {
+        actix_web::test::TestRequest::get()
+            .uri(uri)
+            .cookie(Cookie::new(
+                self.state.settings.session_cookie_name.clone(),
+                sid.to_owned(),
+            ))
+            .to_http_request()
+    }
+
+    async fn store_pushed_request(
+        &self,
+        request_uri: &str,
+        client_id: &str,
+        params: HashMap<String, String>,
+    ) {
+        let payload = PushedAuthorizationRequest {
+            client_id: client_id.to_owned(),
+            params,
+            dpop_jkt: None,
+            mtls_x5t_s256: None,
+            issued_at: Utc::now(),
+            expires_at: Utc::now() + Duration::seconds(60),
+        };
+        valkey_set_ex(
+            &self.state.valkey,
+            &pushed_authorization_request_key(request_uri),
+            serde_json::to_string(&payload).expect("PAR payload should serialize"),
+            60,
+        )
+        .await
+        .expect("PAR payload should persist");
+    }
+
+    async fn store_pushed_request_with_bindings(
+        &self,
+        request_uri: &str,
+        client_id: &str,
+        params: HashMap<String, String>,
+        dpop_jkt: Option<&str>,
+        mtls_x5t_s256: Option<&str>,
+    ) {
+        let payload = PushedAuthorizationRequest {
+            client_id: client_id.to_owned(),
+            params,
+            dpop_jkt: dpop_jkt.map(ToOwned::to_owned),
+            mtls_x5t_s256: mtls_x5t_s256.map(ToOwned::to_owned),
+            issued_at: Utc::now(),
+            expires_at: Utc::now() + Duration::seconds(60),
+        };
+        valkey_set_ex(
+            &self.state.valkey,
+            &pushed_authorization_request_key(request_uri),
+            serde_json::to_string(&payload).expect("PAR payload should serialize"),
+            60,
+        )
+        .await
+        .expect("PAR payload should persist");
+    }
+
+    async fn store_raw_pushed_request(&self, request_uri: &str, raw: &str) {
+        valkey_set_ex(
+            &self.state.valkey,
+            &pushed_authorization_request_key(request_uri),
+            raw.to_owned(),
+            60,
+        )
+        .await
+        .expect("raw PAR payload should persist");
+    }
+
+    async fn stored_consent_payload(&self, request_id: &str) -> ConsentPayload {
+        let raw = valkey_get(&self.state.valkey, format!("oauth:consent:{request_id}"))
+            .await
+            .expect("consent lookup should succeed")
+            .expect("consent payload should exist");
+        serde_json::from_str(&raw).expect("consent payload should deserialize")
+    }
+}
+
+fn authorization_location(response: &HttpResponse) -> url::Url {
+    assert_eq!(response.status(), StatusCode::FOUND);
+    let location = response
+        .headers()
+        .get(header::LOCATION)
+        .expect("authorization error should redirect")
+        .to_str()
+        .expect("redirect location should be ASCII");
+    url::Url::parse(location).expect("redirect location should be absolute")
+}
+
+fn assert_authorization_error_redirect(response: HttpResponse, error: &str, state: Option<&str>) {
+    let location = authorization_location(&response);
+    assert_eq!(
+        location.origin().ascii_serialization(),
+        "https://client.example"
+    );
+    assert_eq!(location.path(), "/callback");
+    let pairs = location.query_pairs().collect::<HashMap<_, _>>();
+    assert_eq!(pairs.get("error").map(|value| value.as_ref()), Some(error));
+    assert_eq!(
+        pairs.get("iss").map(|value| value.as_ref()),
+        Some("https://issuer.example")
+    );
+    assert_eq!(pairs.get("state").map(|value| value.as_ref()), state);
+    assert!(!pairs.contains_key("code"));
+}
+
+async fn assert_authorization_invalid_request(response: HttpResponse) {
+    if response.headers().get(header::LOCATION).is_some() {
+        assert_authorization_error_redirect(response, "invalid_request", None);
+    } else {
+        let (status, body) = json_body(response).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"], "invalid_request");
+        assert!(body.get("code").is_none());
+    }
+}
+
+fn decode_jarm_claims(state: &AppState, response_jwt: &str) -> Value {
+    let header =
+        jsonwebtoken::decode_header(response_jwt).expect("JARM response header should decode");
+    let decoding_key = jwt_decoding_key_from_jwk(&state.keyset.jwks()["keys"][0], header.alg)
+        .expect("JARM decoding key should derive from test JWKS");
+    let mut validation = jsonwebtoken::Validation::new(header.alg);
+    validation.validate_exp = false;
+    validation.set_audience(&["client-jarm"]);
+    validation.set_issuer(&[state.settings.issuer.as_str()]);
+    jsonwebtoken::decode::<Value>(response_jwt, &decoding_key, &validation)
+        .expect("JARM response should verify with the active key")
+        .claims
 }
 
 #[actix_web::test]
@@ -82,6 +414,23 @@ async fn authorization_get_requires_par_before_untrusted_runtime_parameters() {
     assert_eq!(body["error_description"], "Request failed.");
     assert!(body.get("redirect_uri").is_none());
     assert!(body.get("code").is_none());
+}
+
+#[actix_web::test]
+async fn authorization_request_reports_request_uri_storage_failure_without_redirect() {
+    let state = Data::new(endpoint_state(false));
+    let request_uri = "urn:ietf:params:oauth:request_uri:broken-storage";
+    let req = actix_web::test::TestRequest::get()
+        .uri("/authorize?client_id=client-a&request_uri=urn%3Aietf%3Aparams%3Aoauth%3Arequest_uri%3Abroken-storage")
+        .to_http_request();
+    let mut q = query(&[("client_id", "client-a"), ("request_uri", request_uri)]);
+
+    let response = authorize_request(state, req, &mut q).await;
+    assert!(response.headers().get(header::LOCATION).is_none());
+    let (status, body) = json_body(response).await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"], "server_error");
 }
 
 #[actix_web::test]
@@ -184,4 +533,911 @@ async fn authorization_request_reports_client_lookup_failure_without_redirecting
     assert_eq!(body["error"], "server_error");
     assert_eq!(body["error_description"], "Request failed.");
     assert!(body.get("code").is_none());
+}
+
+#[actix_web::test]
+async fn authorization_request_rejects_malformed_request_uri_state_without_redirecting() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
+    fixture
+        .store_raw_pushed_request(&request_uri, "{not-json")
+        .await;
+    let req = actix_web::test::TestRequest::get()
+        .uri("/authorize?client_id=client-a&request_uri=urn%3Aietf%3Aparams%3Aoauth%3Arequest_uri%3Abad")
+        .to_http_request();
+    let mut q = query(&[
+        ("client_id", "client-a"),
+        ("request_uri", request_uri.as_str()),
+    ]);
+
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+    assert!(response.headers().get(header::LOCATION).is_none());
+    let (status, body) = json_body(response).await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"], "server_error");
+}
+
+#[actix_web::test]
+async fn authorization_request_redirects_missing_par_uri_after_registered_redirect_is_known() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let client_id = format!("authorize-par-missing-{}", Uuid::now_v7());
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            true,
+            true,
+        )
+        .await;
+    let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
+    let uri = format!(
+        "/authorize?client_id={}&request_uri={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code&state=par-state",
+        urlencoding::encode(&client_id),
+        urlencoding::encode(&request_uri)
+    );
+    let req = actix_web::test::TestRequest::get()
+        .uri(&uri)
+        .to_http_request();
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("request_uri", request_uri.as_str()),
+        ("redirect_uri", "https://client.example/callback"),
+        ("response_type", "code"),
+        ("state", "par-state"),
+    ]);
+
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+
+    assert_authorization_error_redirect(response, "invalid_request_uri", Some("par-state"));
+}
+
+#[actix_web::test]
+async fn authorization_request_redirects_when_outer_request_uri_parameters_do_not_match_par() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let client_id = format!("authorize-par-mismatch-{}", Uuid::now_v7());
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            true,
+            true,
+        )
+        .await;
+    let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
+    fixture
+        .store_pushed_request(
+            &request_uri,
+            &client_id,
+            query(&[
+                ("client_id", client_id.as_str()),
+                ("redirect_uri", "https://client.example/callback"),
+                ("response_type", "code"),
+                ("scope", "openid"),
+                ("state", "pushed-state"),
+            ]),
+        )
+        .await;
+    let uri = format!(
+        "/authorize?client_id={}&request_uri={}&redirect_uri=https%3A%2F%2Fattacker.example%2Fcallback&response_type=code",
+        urlencoding::encode(&client_id),
+        urlencoding::encode(&request_uri)
+    );
+    let req = actix_web::test::TestRequest::get()
+        .uri(&uri)
+        .to_http_request();
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("request_uri", request_uri.as_str()),
+        ("redirect_uri", "https://attacker.example/callback"),
+        ("response_type", "code"),
+    ]);
+
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+
+    assert_authorization_error_redirect(response, "invalid_request", Some("pushed-state"));
+}
+
+#[actix_web::test]
+async fn authorization_request_redirects_when_par_client_id_does_not_match() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let client_id = format!("authorize-par-client-mismatch-{}", Uuid::now_v7());
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            true,
+            true,
+        )
+        .await;
+    let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
+    fixture
+        .store_pushed_request(
+            &request_uri,
+            "different-client",
+            query(&[
+                ("client_id", "different-client"),
+                ("redirect_uri", "https://client.example/callback"),
+                ("response_type", "code"),
+                ("state", "state-1"),
+            ]),
+        )
+        .await;
+    let uri = format!(
+        "/authorize?client_id={}&request_uri={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code&state=state-1",
+        urlencoding::encode(&client_id),
+        urlencoding::encode(&request_uri)
+    );
+    let req = actix_web::test::TestRequest::get()
+        .uri(&uri)
+        .to_http_request();
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("request_uri", request_uri.as_str()),
+        ("redirect_uri", "https://client.example/callback"),
+        ("response_type", "code"),
+        ("state", "state-1"),
+    ]);
+
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+
+    assert_authorization_error_redirect(response, "invalid_request_uri", Some("state-1"));
+}
+
+#[actix_web::test]
+async fn authorization_request_rejects_client_without_authorization_code_grant_before_redirect() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let client_id = format!("authorize-no-code-grant-{}", Uuid::now_v7());
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["client_credentials"],
+            true,
+            true,
+        )
+        .await;
+    let uri = format!(
+        "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code",
+        urlencoding::encode(&client_id)
+    );
+    let req = actix_web::test::TestRequest::get()
+        .uri(&uri)
+        .to_http_request();
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("redirect_uri", "https://client.example/callback"),
+        ("response_type", "code"),
+    ]);
+
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+    assert!(response.headers().get(header::LOCATION).is_none());
+    let (status, body) = json_body(response).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "unauthorized_client");
+    assert!(body.get("code").is_none());
+}
+
+#[actix_web::test]
+async fn authorization_request_rejects_inactive_client_before_session_lookup() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let client_id = format!("authorize-inactive-{}", Uuid::now_v7());
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            true,
+            false,
+        )
+        .await;
+    let uri = format!(
+        "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code",
+        urlencoding::encode(&client_id)
+    );
+    let req = actix_web::test::TestRequest::get()
+        .uri(&uri)
+        .to_http_request();
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("redirect_uri", "https://client.example/callback"),
+        ("response_type", "code"),
+    ]);
+
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+    assert!(response.headers().get(header::LOCATION).is_none());
+    let (status, body) = json_body(response).await;
+
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(body["error"], "unauthorized_client");
+}
+
+#[actix_web::test]
+async fn authorization_request_rejects_unregistered_redirect_uri_before_session_lookup() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let client_id = format!("authorize-bad-redirect-{}", Uuid::now_v7());
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            true,
+            true,
+        )
+        .await;
+    let uri = format!(
+        "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fattacker.example%2Fcallback&response_type=code",
+        urlencoding::encode(&client_id)
+    );
+    let req = actix_web::test::TestRequest::get()
+        .uri(&uri)
+        .to_http_request();
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("redirect_uri", "https://attacker.example/callback"),
+        ("response_type", "code"),
+    ]);
+
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+    assert!(response.headers().get(header::LOCATION).is_none());
+    let (status, body) = json_body(response).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_request");
+    assert!(body.get("code").is_none());
+}
+
+#[actix_web::test]
+async fn authorization_request_rejects_missing_redirect_uri_when_client_has_multiple_registrations()
+{
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let client_id = format!("authorize-multi-redirect-{}", Uuid::now_v7());
+    fixture
+        .insert_client(
+            &client_id,
+            vec![
+                "https://client.example/callback-a",
+                "https://client.example/callback-b",
+            ],
+            vec!["authorization_code"],
+            true,
+            true,
+        )
+        .await;
+    let uri = format!(
+        "/authorize?client_id={}&response_type=code",
+        urlencoding::encode(&client_id)
+    );
+    let req = actix_web::test::TestRequest::get()
+        .uri(&uri)
+        .to_http_request();
+    let mut q = query(&[("client_id", client_id.as_str()), ("response_type", "code")]);
+
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+    assert_authorization_invalid_request(response).await;
+}
+
+#[actix_web::test]
+async fn authorization_request_rejects_invalid_dpop_jkt_before_redirect_response() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let client_id = format!("authorize-dpop-invalid-{}", Uuid::now_v7());
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            true,
+            true,
+        )
+        .await;
+    let uri = format!(
+        "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code&dpop_jkt=not-a-thumbprint",
+        urlencoding::encode(&client_id)
+    );
+    let req = actix_web::test::TestRequest::get()
+        .uri(&uri)
+        .to_http_request();
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("redirect_uri", "https://client.example/callback"),
+        ("response_type", "code"),
+        ("dpop_jkt", "not-a-thumbprint"),
+    ]);
+
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+    assert_authorization_invalid_request(response).await;
+}
+
+#[actix_web::test]
+async fn authorization_request_rejects_par_dpop_binding_mismatch_without_redirect() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let client_id = format!("authorize-par-dpop-{}", Uuid::now_v7());
+    let pushed_jkt = "w7JAoU_gJbZJvV-zCOvU9yFJq0FNC_edCMRM78P8eQQ";
+    let request_jkt = "Vx6mH6nGWV2DnuqEbuGX4Xw_Dc0p0AQxnKpEG7o5YS8";
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            true,
+            true,
+        )
+        .await;
+    let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
+    fixture
+        .store_pushed_request_with_bindings(
+            &request_uri,
+            &client_id,
+            query(&[
+                ("client_id", client_id.as_str()),
+                ("redirect_uri", "https://client.example/callback"),
+                ("response_type", "code"),
+            ]),
+            Some(pushed_jkt),
+            None,
+        )
+        .await;
+    let uri = format!(
+        "/authorize?client_id={}&request_uri={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code&dpop_jkt={}",
+        urlencoding::encode(&client_id),
+        urlencoding::encode(&request_uri),
+        request_jkt
+    );
+    let req = actix_web::test::TestRequest::get()
+        .uri(&uri)
+        .to_http_request();
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("request_uri", request_uri.as_str()),
+        ("redirect_uri", "https://client.example/callback"),
+        ("response_type", "code"),
+        ("dpop_jkt", request_jkt),
+    ]);
+
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+    assert_authorization_invalid_request(response).await;
+}
+
+#[actix_web::test]
+async fn authorization_request_redirects_prompt_max_age_and_claims_parse_errors() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let client_id = format!("authorize-parse-errors-{}", Uuid::now_v7());
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            true,
+            true,
+        )
+        .await;
+
+    for (name, extra) in [
+        ("bad-prompt", ("prompt", "none login")),
+        ("bad-max-age", ("max_age", "-1")),
+        ("bad-claims", ("claims", r#"{"userinfo":[]}"#)),
+    ] {
+        let uri = format!(
+            "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code&state={}&{}={}",
+            urlencoding::encode(&client_id),
+            name,
+            extra.0,
+            urlencoding::encode(extra.1)
+        );
+        let req = actix_web::test::TestRequest::get()
+            .uri(&uri)
+            .to_http_request();
+        let mut q = query(&[
+            ("client_id", client_id.as_str()),
+            ("redirect_uri", "https://client.example/callback"),
+            ("response_type", "code"),
+            ("state", name),
+            extra,
+        ]);
+
+        let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+
+        assert_authorization_error_redirect(response, "invalid_request", Some(name));
+    }
+}
+
+#[actix_web::test]
+async fn authorization_request_redirects_request_object_claim_errors_after_redirect_resolution() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let client_id = format!("authorize-jar-redirect-{}", Uuid::now_v7());
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            true,
+            true,
+        )
+        .await;
+    let request_object = unsigned_request_object(json!({
+        "client_id": client_id,
+        "iss": "attacker-client",
+        "aud": "https://issuer.example",
+        "response_type": "code",
+        "redirect_uri": "https://client.example/callback",
+        "state": "jar-state"
+    }));
+    let uri = format!(
+        "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code&state=jar-state&request={}",
+        urlencoding::encode(&client_id),
+        urlencoding::encode(&request_object)
+    );
+    let req = actix_web::test::TestRequest::get()
+        .uri(&uri)
+        .to_http_request();
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("redirect_uri", "https://client.example/callback"),
+        ("response_type", "code"),
+        ("state", "jar-state"),
+        ("request", request_object.as_str()),
+    ]);
+
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+
+    assert_authorization_error_redirect(response, "invalid_request_object", Some("jar-state"));
+}
+
+#[actix_web::test]
+async fn authorization_request_redirects_prompt_none_without_session() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let client_id = format!("authorize-prompt-none-{}", Uuid::now_v7());
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            true,
+            true,
+        )
+        .await;
+    let uri = format!(
+        "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code&prompt=none&state=login-required",
+        urlencoding::encode(&client_id)
+    );
+    let req = actix_web::test::TestRequest::get()
+        .uri(&uri)
+        .to_http_request();
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("redirect_uri", "https://client.example/callback"),
+        ("response_type", "code"),
+        ("prompt", "none"),
+        ("state", "login-required"),
+    ]);
+
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+
+    assert_authorization_error_redirect(response, "login_required", Some("login-required"));
+}
+
+#[actix_web::test]
+async fn authorization_request_redirects_to_login_with_original_request_uri_after_par_expansion() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let client_id = format!("authorize-par-login-{}", Uuid::now_v7());
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            true,
+            true,
+        )
+        .await;
+    let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
+    fixture
+        .store_pushed_request(
+            &request_uri,
+            &client_id,
+            query(&[
+                ("client_id", client_id.as_str()),
+                ("redirect_uri", "https://client.example/callback"),
+                ("response_type", "code"),
+                ("scope", "openid"),
+                ("state", "par-login"),
+            ]),
+        )
+        .await;
+    let uri = format!(
+        "/authorize?client_id={}&request_uri={}",
+        urlencoding::encode(&client_id),
+        urlencoding::encode(&request_uri)
+    );
+    let req = actix_web::test::TestRequest::get()
+        .uri(&uri)
+        .to_http_request();
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("request_uri", request_uri.as_str()),
+    ]);
+
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+    let location = authorization_location(&response);
+
+    assert_eq!(
+        location.origin().ascii_serialization(),
+        "https://app.example"
+    );
+    assert_eq!(location.path(), "/auth");
+    let next = location
+        .query_pairs()
+        .find_map(|(key, value)| (key == "next").then_some(value.into_owned()))
+        .expect("login redirect should include next parameter");
+    let next = urlencoding::decode(&next).expect("next parameter should decode");
+    assert!(next.contains("request_uri="));
+    assert!(!next.contains("redirect_uri="));
+}
+
+#[actix_web::test]
+async fn authorization_request_reports_session_lookup_failure_after_client_validation() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let client_id = format!("authorize-session-fail-{}", Uuid::now_v7());
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            true,
+            true,
+        )
+        .await;
+
+    let mut broken_state = endpoint_state(false);
+    broken_state.diesel_db = fixture.state.diesel_db.clone();
+    let broken_state = Data::new(broken_state);
+    let req = actix_web::test::TestRequest::get()
+        .uri("/authorize")
+        .cookie(Cookie::new(
+            broken_state.settings.session_cookie_name.clone(),
+            "broken-session",
+        ))
+        .to_http_request();
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("redirect_uri", "https://client.example/callback"),
+        ("response_type", "code"),
+    ]);
+
+    let response = authorize_request(broken_state, req, &mut q).await;
+    assert!(response.headers().get(header::LOCATION).is_none());
+    let (status, body) = json_body(response).await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"], "server_error");
+}
+
+#[actix_web::test]
+async fn authorization_request_requires_reauthentication_for_prompt_none_sessions() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let client_id = format!("authorize-reauth-{suffix}");
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            true,
+            true,
+        )
+        .await;
+    let user = fixture.create_user(&suffix, "user", 0).await;
+    let sid = format!("sid-{suffix}");
+    fixture
+        .store_session(&user, &sid, Utc::now().timestamp() - 600)
+        .await;
+    let uri = format!(
+        "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code&prompt=none&max_age=0&state=reauth",
+        urlencoding::encode(&client_id)
+    );
+    let req = fixture.session_request(&sid, &uri);
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("redirect_uri", "https://client.example/callback"),
+        ("response_type", "code"),
+        ("prompt", "none"),
+        ("max_age", "0"),
+        ("state", "reauth"),
+    ]);
+
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+
+    assert_authorization_error_redirect(response, "login_required", Some("reauth"));
+}
+
+#[actix_web::test]
+async fn authorization_request_redirects_invalid_scope_for_authenticated_session() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let client_id = format!("authorize-scope-{suffix}");
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            true,
+            true,
+        )
+        .await;
+    let user = fixture.create_user(&suffix, "user", 0).await;
+    let sid = format!("sid-{suffix}");
+    fixture
+        .store_session(&user, &sid, Utc::now().timestamp())
+        .await;
+    let uri = format!(
+        "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code&scope=openid%20email&state=invalid-scope",
+        urlencoding::encode(&client_id)
+    );
+    let req = fixture.session_request(&sid, &uri);
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("redirect_uri", "https://client.example/callback"),
+        ("response_type", "code"),
+        ("scope", "openid email"),
+        ("state", "invalid-scope"),
+    ]);
+
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+
+    assert_authorization_error_redirect(response, "invalid_scope", Some("invalid-scope"));
+}
+
+#[actix_web::test]
+async fn authorization_request_redirects_invalid_authorization_details_for_authenticated_session() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let client_id = format!("authorize-details-{suffix}");
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            true,
+            true,
+        )
+        .await;
+    let user = fixture.create_user(&suffix, "user", 0).await;
+    let sid = format!("sid-{suffix}");
+    fixture
+        .store_session(&user, &sid, Utc::now().timestamp())
+        .await;
+    let uri = format!(
+        "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code&authorization_details=not-json&state=bad-details",
+        urlencoding::encode(&client_id)
+    );
+    let req = fixture.session_request(&sid, &uri);
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("redirect_uri", "https://client.example/callback"),
+        ("response_type", "code"),
+        ("authorization_details", "not-json"),
+        ("state", "bad-details"),
+    ]);
+
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+
+    assert_authorization_error_redirect(response, "invalid_request", Some("bad-details"));
+}
+
+#[actix_web::test]
+async fn authorization_request_prompt_none_without_prior_grant_returns_consent_required() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let client_id = format!("authorize-consent-{suffix}");
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code", "refresh_token"],
+            true,
+            true,
+        )
+        .await;
+    let user = fixture.create_user(&suffix, "user", 0).await;
+    let sid = format!("sid-{suffix}");
+    fixture
+        .store_session(&user, &sid, Utc::now().timestamp())
+        .await;
+    let uri = format!(
+        "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code&prompt=none&scope=openid&state=consent-required",
+        urlencoding::encode(&client_id)
+    );
+    let req = fixture.session_request(&sid, &uri);
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("redirect_uri", "https://client.example/callback"),
+        ("response_type", "code"),
+        ("prompt", "none"),
+        ("scope", "openid"),
+        ("state", "consent-required"),
+    ]);
+
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+
+    assert_authorization_error_redirect(response, "consent_required", Some("consent-required"));
+}
+
+#[actix_web::test]
+async fn authorization_request_persists_consent_payload_for_authenticated_interaction() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let client_id = format!("authorize-interactive-{suffix}");
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            true,
+            true,
+        )
+        .await;
+    let user = fixture.create_user(&suffix, "user", 0).await;
+    let sid = format!("sid-{suffix}");
+    fixture
+        .store_session(&user, &sid, Utc::now().timestamp())
+        .await;
+    let uri = format!(
+        "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code&scope=openid&state=interactive",
+        urlencoding::encode(&client_id)
+    );
+    let req = fixture.session_request(&sid, &uri);
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("redirect_uri", "https://client.example/callback"),
+        ("response_type", "code"),
+        ("scope", "openid"),
+        ("state", "interactive"),
+    ]);
+
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+    let location = authorization_location(&response);
+
+    assert_eq!(
+        location.origin().ascii_serialization(),
+        "https://app.example"
+    );
+    assert_eq!(location.path(), "/consent");
+    let request_id = location
+        .query_pairs()
+        .find_map(|(key, value)| (key == "request_id").then_some(value.into_owned()))
+        .expect("interactive authorization should persist a consent request");
+    let payload = fixture.stored_consent_payload(&request_id).await;
+    assert_eq!(payload.user_id, user.id);
+    assert_eq!(payload.client_id, client_id);
+    assert_eq!(payload.redirect_uri, "https://client.example/callback");
+    assert_eq!(payload.state.as_deref(), Some("interactive"));
+    assert_eq!(payload.scopes, vec!["openid"]);
+}
+
+#[actix_web::test]
+async fn consume_pushed_authorization_request_enforces_single_use_and_malformed_states() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
+    fixture
+        .store_pushed_request(
+            &request_uri,
+            "client-a",
+            query(&[
+                ("client_id", "client-a"),
+                ("redirect_uri", "https://client.example/callback"),
+                ("response_type", "code"),
+            ]),
+        )
+        .await;
+
+    assert_eq!(
+        consume_pushed_authorization_request(&fixture.state, &request_uri).await,
+        Ok(())
+    );
+    assert_eq!(
+        consume_pushed_authorization_request(&fixture.state, &request_uri).await,
+        Err(PushedAuthorizationRequestConsumeError::Missing)
+    );
+
+    let malformed_request_uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
+    fixture
+        .store_raw_pushed_request(&malformed_request_uri, "{not-json")
+        .await;
+    assert_eq!(
+        consume_pushed_authorization_request(&fixture.state, &malformed_request_uri).await,
+        Err(PushedAuthorizationRequestConsumeError::Malformed)
+    );
+
+    let broken_state = endpoint_state(false);
+    assert_eq!(
+        consume_pushed_authorization_request(
+            &broken_state,
+            "urn:ietf:params:oauth:request_uri:missing"
+        )
+        .await,
+        Err(PushedAuthorizationRequestConsumeError::ReadFailed)
+    );
+}
+
+#[actix_web::test]
+async fn authorization_response_redirect_emits_signed_jarm_response() {
+    let mut state = endpoint_state(false);
+    state.keyset = Arc::new(local_signing_keyset());
+    let state = Data::new(state);
+
+    let response = authorization_response_redirect(
+        &state,
+        "https://client.example/callback?existing=1",
+        "client-jarm",
+        Some("jwt"),
+        Some("code-123"),
+        None,
+        Some("state-123"),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::FOUND);
+    let location = authorization_location(&response);
+    let pairs = location.query_pairs().collect::<HashMap<_, _>>();
+    assert_eq!(pairs.get("existing").map(|value| value.as_ref()), Some("1"));
+    assert!(pairs.get("response").is_some());
+    assert!(!pairs.contains_key("code"));
+    assert!(!pairs.contains_key("state"));
+    assert!(!pairs.contains_key("iss"));
+
+    let claims = decode_jarm_claims(
+        &state,
+        pairs
+            .get("response")
+            .expect("JARM response parameter should be present"),
+    );
+    assert_eq!(claims["iss"], "https://issuer.example");
+    assert_eq!(claims["aud"], "client-jarm");
+    assert_eq!(claims["code"], "code-123");
+    assert_eq!(claims["state"], "state-123");
 }

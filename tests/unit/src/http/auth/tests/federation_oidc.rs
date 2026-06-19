@@ -1,5 +1,10 @@
 use super::*;
 use crate::settings::OidcFederationSettings;
+use crate::support::{generate_key_material, public_jwk_from_private_der};
+use jsonwebtoken::{Algorithm, EncodingKey, Header};
+use std::net::SocketAddr;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 
 fn provider() -> OidcFederationSettings {
     OidcFederationSettings {
@@ -99,4 +104,186 @@ fn audience_contains_returns_false_for_non_string_non_array() {
     assert!(!audience_contains(&json!(null), "client-1"));
     assert!(!audience_contains(&json!(42), "client-1"));
     assert!(!audience_contains(&json!({"key": "value"}), "client-1"));
+}
+
+async fn one_shot_json_server(
+    status: &'static str,
+    body: Value,
+) -> (String, tokio::task::JoinHandle<String>) {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("test server should bind");
+    let addr: SocketAddr = listener.local_addr().expect("test server address");
+    let handle = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("test request should arrive");
+        let mut buffer = vec![0_u8; 8192];
+        let read = stream.read(&mut buffer).await.expect("request should read");
+        let request = String::from_utf8_lossy(&buffer[..read]).to_string();
+        let response_body = body.to_string();
+        let response = format!(
+            "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            response_body.len(),
+            response_body
+        );
+        stream
+            .write_all(response.as_bytes())
+            .await
+            .expect("response should write");
+        request
+    });
+    (format!("http://{addr}"), handle)
+}
+
+#[actix_web::test]
+async fn exchange_oidc_code_posts_basic_authenticated_authorization_code_request() {
+    let (endpoint, request) =
+        one_shot_json_server("200 OK", json!({"id_token": "signed-id-token"})).await;
+    let mut provider = provider();
+    provider.token_endpoint = endpoint;
+
+    let token = exchange_oidc_code(&provider, "code-1", "verifier-1")
+        .await
+        .expect("valid token response should parse");
+    let request = request.await.expect("test server should finish");
+
+    assert_eq!(token.id_token, "signed-id-token");
+    assert!(request.starts_with("POST / HTTP/1.1"));
+    assert!(
+        request.contains("authorization: Basic Y2xpZW50LTE6c2VjcmV0")
+            || request.contains("Authorization: Basic Y2xpZW50LTE6c2VjcmV0")
+    );
+    assert!(request.contains("content-type: application/x-www-form-urlencoded"));
+    assert!(request.contains(
+        "grant_type=authorization_code&code=code-1&redirect_uri=https%3A%2F%2Fauth.example%2Ffederation%2Foidc%2Fcallback&code_verifier=verifier-1"
+    ));
+}
+
+#[actix_web::test]
+async fn fetch_oidc_jwks_requires_keys_array_from_provider_response() {
+    let (valid_endpoint, valid_request) = one_shot_json_server("200 OK", json!({"keys": []})).await;
+    let mut provider = provider();
+    provider.jwks_url = valid_endpoint;
+
+    assert_eq!(
+        fetch_oidc_jwks(&provider)
+            .await
+            .expect("keys array should be accepted"),
+        json!({"keys": []})
+    );
+    let valid_request = valid_request.await.expect("test server should finish");
+    assert!(valid_request.starts_with("GET / HTTP/1.1"));
+
+    let (invalid_endpoint, invalid_request) =
+        one_shot_json_server("200 OK", json!({"not_keys": []})).await;
+    provider.jwks_url = invalid_endpoint;
+
+    assert!(
+        fetch_oidc_jwks(&provider).await.is_err(),
+        "JWKS responses without a keys array must fail closed"
+    );
+    invalid_request
+        .await
+        .expect("invalid JWKS request should finish");
+}
+
+fn signed_id_token(
+    provider: &OidcFederationSettings,
+    kid: &str,
+    private_pkcs8_der: &[u8],
+    overrides: Value,
+) -> String {
+    let now = Utc::now().timestamp();
+    let mut claims = json!({
+        "iss": provider.issuer,
+        "sub": "subject-1",
+        "aud": provider.client_id,
+        "exp": now + 300,
+        "iat": now,
+        "nonce": "nonce-1",
+        "email": "user@example.com",
+        "email_verified": true,
+        "name": "User One"
+    });
+    let claims_object = claims
+        .as_object_mut()
+        .expect("test claims should be a JSON object");
+    for (key, value) in overrides.as_object().into_iter().flatten() {
+        claims_object.insert(key.clone(), value.clone());
+    }
+    let mut header = Header::new(Algorithm::RS256);
+    header.kid = Some(kid.to_owned());
+    jsonwebtoken::encode(
+        &header,
+        &claims,
+        &EncodingKey::from_rsa_der(private_pkcs8_der),
+    )
+    .expect("test ID token should sign")
+}
+
+#[test]
+fn verify_oidc_id_token_accepts_matching_signed_claims_and_rejects_policy_mismatches() {
+    let provider = provider();
+    let key = generate_key_material(Algorithm::RS256).expect("RSA key should generate");
+    let jwk = public_jwk_from_private_der("oidc-kid", Algorithm::RS256, &key.private_pkcs8_der)
+        .expect("public JWK should derive");
+    let jwks = json!({"keys": [jwk]});
+    let token = signed_id_token(&provider, "oidc-kid", &key.private_pkcs8_der, json!({}));
+
+    let claims = verify_oidc_id_token(&provider, &jwks, &token, "nonce-1")
+        .expect("matching issuer, audience, nonce, kid, and signature should pass");
+    assert_eq!(claims.sub, "subject-1");
+    assert_eq!(claims.email.as_deref(), Some("user@example.com"));
+    assert_eq!(claims.email_verified, Some(true));
+    assert_eq!(claims.name.as_deref(), Some("User One"));
+
+    let wrong_nonce = verify_oidc_id_token(&provider, &jwks, &token, "other-nonce");
+    assert!(wrong_nonce.is_err());
+
+    let wrong_audience = signed_id_token(
+        &provider,
+        "oidc-kid",
+        &key.private_pkcs8_der,
+        json!({"aud": "other-client"}),
+    );
+    assert!(verify_oidc_id_token(&provider, &jwks, &wrong_audience, "nonce-1").is_err());
+
+    let future_iat = signed_id_token(
+        &provider,
+        "oidc-kid",
+        &key.private_pkcs8_der,
+        json!({"iat": Utc::now().timestamp() + 120}),
+    );
+    assert!(verify_oidc_id_token(&provider, &jwks, &future_iat, "nonce-1").is_err());
+}
+
+#[test]
+fn verify_oidc_id_token_requires_kid_and_matching_supported_jwk() {
+    let provider = provider();
+    let key = generate_key_material(Algorithm::RS256).expect("RSA key should generate");
+    let jwk = public_jwk_from_private_der("oidc-kid", Algorithm::RS256, &key.private_pkcs8_der)
+        .expect("public JWK should derive");
+    let jwks = json!({"keys": [jwk]});
+    let unknown_kid = signed_id_token(&provider, "unknown-kid", &key.private_pkcs8_der, json!({}));
+    assert!(verify_oidc_id_token(&provider, &jwks, &unknown_kid, "nonce-1").is_err());
+
+    let mut header = Header::new(Algorithm::RS256);
+    header.kid = None;
+    let token_without_kid = jsonwebtoken::encode(
+        &header,
+        &json!({
+            "iss": provider.issuer,
+            "sub": "subject-1",
+            "aud": provider.client_id,
+            "exp": Utc::now().timestamp() + 300,
+            "nonce": "nonce-1"
+        }),
+        &EncodingKey::from_rsa_der(&key.private_pkcs8_der),
+    )
+    .expect("test token should sign");
+    assert!(verify_oidc_id_token(&provider, &jwks, &token_without_kid, "nonce-1").is_err());
+
+    let mut private_jwk = jwks.clone();
+    private_jwk["keys"][0]["d"] = json!("private-material");
+    let valid_token = signed_id_token(&provider, "oidc-kid", &key.private_pkcs8_der, json!({}));
+    assert!(verify_oidc_id_token(&provider, &private_jwk, &valid_token, "nonce-1").is_err());
 }

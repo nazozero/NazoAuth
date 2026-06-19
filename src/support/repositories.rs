@@ -20,7 +20,7 @@ pub(crate) async fn find_user_by_email_in_tenant(
     let mut conn = db.get().await?;
     Ok(users::table
         .filter(users::tenant_id.eq(tenant_id))
-        .filter(users::email.eq(email))
+        .filter(users::email.ilike(email.trim()))
         .select(UserRow::as_select())
         .first::<UserRow>(&mut conn)
         .await

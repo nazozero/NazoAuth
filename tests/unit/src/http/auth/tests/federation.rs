@@ -5,6 +5,19 @@ use crate::config::ConfigSource;
 use crate::db::create_pool;
 use crate::domain::{ActiveSigningKey, Keyset};
 use crate::settings::{OidcFederationSettings, SamlGatewaySettings};
+use crate::support::{generate_key_material, public_jwk_from_private_der};
+use actix_web::http::header;
+use diesel::sql_query;
+use diesel::sql_types::{Bool, Text, Uuid as SqlUuid};
+use fred::{
+    interfaces::ClientLike,
+    prelude::{
+        Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
+    },
+};
+use jsonwebtoken::{Algorithm, EncodingKey, Header};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 
 fn oidc_provider() -> OidcFederationSettings {
     OidcFederationSettings {
@@ -51,6 +64,353 @@ fn oidc_callback_state() -> AppState {
             verification_keys: Vec::new(),
         }),
     }
+}
+
+fn state_without_oidc_provider() -> AppState {
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.federation.oidc = None;
+    let mut valkey_builder = fred::prelude::Builder::default_centralized();
+    valkey_builder.with_performance_config(|performance| {
+        performance.default_command_timeout = Duration::from_millis(50);
+    });
+    valkey_builder.with_connection_config(|connection| {
+        connection.connection_timeout = Duration::from_millis(50);
+        connection.internal_command_timeout = Duration::from_millis(50);
+    });
+
+    AppState {
+        diesel_db: create_pool(
+            "postgres://nazo_federation_test_invalid:nazo_federation_test_invalid@127.0.0.1:1/nazo"
+                .to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey: valkey_builder
+            .build()
+            .expect("valkey client construction should not connect"),
+        settings: Arc::new(settings),
+        keyset: Arc::new(Keyset {
+            active_kid: "test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+            verification_keys: Vec::new(),
+        }),
+    }
+}
+
+async fn live_federation_state(
+    oidc: Option<OidcFederationSettings>,
+    saml_gateway: Option<SamlGatewaySettings>,
+) -> Option<AppState> {
+    let valkey_url = std::env::var("VALKEY_URL").ok()?;
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.federation.oidc = oidc;
+    settings.federation.saml_gateway = saml_gateway;
+    settings.rate_limit.auth_max_requests = 1_000;
+
+    let valkey_config = ValkeyConfig::from_url(&valkey_url).ok()?;
+    let mut valkey_builder = ValkeyBuilder::from_config(valkey_config);
+    valkey_builder.with_performance_config(|performance: &mut PerformanceConfig| {
+        performance.default_command_timeout = Duration::from_secs(2);
+    });
+    valkey_builder.with_connection_config(|connection: &mut ConnectionConfig| {
+        connection.connection_timeout = Duration::from_secs(2);
+        connection.internal_command_timeout = Duration::from_secs(2);
+    });
+    let valkey = valkey_builder.build().expect("valkey client should build");
+    valkey.init().await.expect("valkey should connect");
+
+    Some(AppState {
+        diesel_db: create_pool(
+            "postgres://nazo_federation_test_invalid:nazo_federation_test_invalid@127.0.0.1:1/nazo"
+                .to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey,
+        settings: Arc::new(settings),
+        keyset: Arc::new(Keyset {
+            active_kid: "test-kid".to_owned(),
+            active_alg: Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+            verification_keys: Vec::new(),
+        }),
+    })
+}
+
+struct LiveFederationFixture {
+    state: Data<AppState>,
+}
+
+impl LiveFederationFixture {
+    async fn new(
+        oidc: Option<OidcFederationSettings>,
+        saml_gateway: Option<SamlGatewaySettings>,
+    ) -> Option<Self> {
+        let database_url = std::env::var("DATABASE_URL").ok()?;
+        let valkey_url = std::env::var("VALKEY_URL").ok()?;
+        let mut settings =
+            Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+        settings.federation.oidc = oidc;
+        settings.federation.saml_gateway = saml_gateway;
+        settings.rate_limit.auth_max_requests = 1_000;
+        settings.session_cookie_name = "nazo_federation_session".to_owned();
+        settings.csrf_cookie_name = "nazo_federation_csrf".to_owned();
+        settings.cookie_secure = true;
+
+        let mut valkey_builder = ValkeyBuilder::from_config(
+            ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),
+        );
+        valkey_builder.with_performance_config(|performance: &mut PerformanceConfig| {
+            performance.default_command_timeout = Duration::from_secs(2);
+        });
+        valkey_builder.with_connection_config(|connection: &mut ConnectionConfig| {
+            connection.connection_timeout = Duration::from_secs(2);
+            connection.internal_command_timeout = Duration::from_secs(2);
+            connection.max_command_attempts = 1;
+        });
+        let valkey = valkey_builder.build().expect("valkey client should build");
+        valkey.init().await.expect("valkey should connect");
+
+        Some(Self {
+            state: Data::new(AppState {
+                diesel_db: create_pool(database_url, 4).expect("database pool should build"),
+                valkey,
+                settings: Arc::new(settings),
+                keyset: Arc::new(Keyset {
+                    active_kid: "test-kid".to_owned(),
+                    active_alg: Algorithm::EdDSA,
+                    active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+                    verification_keys: Vec::new(),
+                }),
+            }),
+        })
+    }
+
+    async fn create_user(&self, email: &str, is_active: bool) -> UserRow {
+        let username = format!("federation-{}", Uuid::now_v7().simple());
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        sql_query(
+            r#"
+            INSERT INTO users (
+                tenant_id, realm_id, organization_id, username, email,
+                password_hash, is_active, mfa_enabled, email_verified, role, admin_level
+            )
+            VALUES ($1, $2, $3, $4, $5, 'unused-federation-test-hash', $6, false, true, 'user', 0)
+            RETURNING *
+            "#,
+        )
+        .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+        .bind::<SqlUuid, _>(DEFAULT_REALM_ID)
+        .bind::<SqlUuid, _>(DEFAULT_ORGANIZATION_ID)
+        .bind::<Text, _>(username)
+        .bind::<Text, _>(email.to_owned())
+        .bind::<Bool, _>(is_active)
+        .get_result::<UserRow>(&mut conn)
+        .await
+        .expect("test user should insert")
+    }
+
+    async fn insert_external_identity_link(
+        &self,
+        user: &UserRow,
+        provider_type: &str,
+        provider_id: &str,
+        subject: &str,
+        email: &str,
+    ) -> ExternalIdentityLinkRow {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        diesel::insert_into(external_identity_links::table)
+            .values((
+                external_identity_links::tenant_id.eq(user.tenant_id),
+                external_identity_links::user_id.eq(user.id),
+                external_identity_links::provider_type.eq(provider_type),
+                external_identity_links::provider_id.eq(provider_id),
+                external_identity_links::subject.eq(subject),
+                external_identity_links::email.eq(email),
+                external_identity_links::claims.eq(json!({"sub": subject})),
+                external_identity_links::last_login_at.eq(Utc::now()),
+            ))
+            .returning(ExternalIdentityLinkRow::as_returning())
+            .get_result::<ExternalIdentityLinkRow>(&mut conn)
+            .await
+            .expect("external identity link should insert")
+    }
+
+    async fn user_by_email(&self, email: &str) -> Option<UserRow> {
+        find_user_by_email(&self.state.diesel_db, email)
+            .await
+            .expect("user lookup should succeed")
+    }
+
+    async fn external_identity_link(
+        &self,
+        provider_type: &str,
+        provider_id: &str,
+        subject: &str,
+    ) -> Option<ExternalIdentityLinkRow> {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        external_identity_links::table
+            .filter(external_identity_links::tenant_id.eq(DEFAULT_TENANT_ID))
+            .filter(external_identity_links::provider_type.eq(provider_type))
+            .filter(external_identity_links::provider_id.eq(provider_id))
+            .filter(external_identity_links::subject.eq(subject))
+            .select(ExternalIdentityLinkRow::as_select())
+            .first::<ExternalIdentityLinkRow>(&mut conn)
+            .await
+            .optional()
+            .expect("external identity link lookup should succeed")
+    }
+
+    async fn session_payload(&self, sid: &str) -> SessionPayload {
+        let raw = valkey_get(&self.state.valkey, format!("oauth:session:{sid}"))
+            .await
+            .expect("session lookup should succeed")
+            .expect("session should be present");
+        serde_json::from_str(&raw).expect("session payload should deserialize")
+    }
+}
+
+fn oauth_error_code(response: &HttpResponse) -> Option<String> {
+    response
+        .extensions()
+        .get::<OAuthJsonErrorFields>()
+        .map(|fields| fields.error.clone())
+}
+
+fn cookie_value_from_response(response: &HttpResponse, name: &str) -> Option<String> {
+    response
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .filter_map(|value| value.to_str().ok())
+        .find_map(|cookie| {
+            cookie
+                .strip_prefix(&format!("{name}="))
+                .and_then(|value| value.split(';').next())
+                .map(ToOwned::to_owned)
+        })
+}
+
+async fn response_json(response: HttpResponse) -> (StatusCode, Value) {
+    let status = response.status();
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should be readable");
+    let json = serde_json::from_slice(&body).expect("response should be json");
+    (status, json)
+}
+
+async fn store_oidc_state(state: &AppState, state_token: &str, created_at: i64) {
+    let body = serde_json::to_string(&OidcFederationState {
+        nonce: "nonce-1".to_owned(),
+        pkce_verifier: "verifier-1".to_owned(),
+        created_at,
+    })
+    .expect("test federation state should serialize");
+    valkey_set_ex(
+        &state.valkey,
+        oidc_state_key(state_token),
+        body,
+        FEDERATION_STATE_TTL_SECONDS,
+    )
+    .await
+    .expect("test OIDC state should be written");
+}
+
+async fn one_shot_json_server(body: Value) -> (String, tokio::task::JoinHandle<String>) {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("test server should bind");
+    let addr = listener.local_addr().expect("test server address");
+    let handle = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("test request should arrive");
+        let mut buffer = vec![0_u8; 8192];
+        let read = stream.read(&mut buffer).await.expect("request should read");
+        let request = String::from_utf8_lossy(&buffer[..read]).to_string();
+        let response_body = body.to_string();
+        let response = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            response_body.len(),
+            response_body
+        );
+        stream
+            .write_all(response.as_bytes())
+            .await
+            .expect("response should write");
+        request
+    });
+    (format!("http://{addr}"), handle)
+}
+
+fn signed_oidc_token(
+    provider: &OidcFederationSettings,
+    kid: &str,
+    private_pkcs8_der: &[u8],
+    overrides: Value,
+) -> String {
+    let now = Utc::now().timestamp();
+    let mut claims = json!({
+        "iss": provider.issuer,
+        "sub": "subject-1",
+        "aud": provider.client_id,
+        "exp": now + 300,
+        "iat": now,
+        "nonce": "nonce-1",
+        "email": "user@example.com",
+        "email_verified": true,
+        "name": "User One"
+    });
+    let claims_object = claims
+        .as_object_mut()
+        .expect("test claims should be a JSON object");
+    for (key, value) in overrides.as_object().into_iter().flatten() {
+        if value.is_null() {
+            claims_object.remove(key);
+        } else {
+            claims_object.insert(key.clone(), value.clone());
+        }
+    }
+    let mut header = Header::new(Algorithm::RS256);
+    header.kid = Some(kid.to_owned());
+    jsonwebtoken::encode(
+        &header,
+        &claims,
+        &EncodingKey::from_rsa_der(private_pkcs8_der),
+    )
+    .expect("test ID token should sign")
+}
+
+async fn provider_backed_by_local_oidc(
+    id_token_overrides: Value,
+) -> (
+    OidcFederationSettings,
+    tokio::task::JoinHandle<String>,
+    tokio::task::JoinHandle<String>,
+) {
+    let mut provider = oidc_provider();
+    let key = generate_key_material(Algorithm::RS256).expect("RSA key should generate");
+    let jwk = public_jwk_from_private_der("oidc-kid", Algorithm::RS256, &key.private_pkcs8_der)
+        .expect("public JWK should derive");
+    let id_token = signed_oidc_token(
+        &provider,
+        "oidc-kid",
+        &key.private_pkcs8_der,
+        id_token_overrides,
+    );
+    let (token_endpoint, token_request) =
+        one_shot_json_server(json!({ "id_token": id_token })).await;
+    let (jwks_url, jwks_request) = one_shot_json_server(json!({ "keys": [jwk] })).await;
+    provider.token_endpoint = token_endpoint;
+    provider.jwks_url = jwks_url;
+    (provider, token_request, jwks_request)
 }
 
 #[test]
@@ -186,6 +546,30 @@ async fn oidc_callback_after_rate_limit_rejects_provider_error_before_state_look
 }
 
 #[actix_web::test]
+async fn oidc_callback_after_rate_limit_requires_configured_provider_before_input_processing() {
+    let state = Data::new(state_without_oidc_provider());
+    let req = actix_web::test::TestRequest::get()
+        .uri("/auth/federation/oidc/callback?error=access_denied")
+        .to_http_request();
+    let query = OidcCallbackQuery {
+        code: None,
+        state: None,
+        error: Some("access_denied".to_owned()),
+    };
+
+    let response = federation_oidc_callback_after_rate_limit(state, req, query).await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("temporarily_unavailable")
+    );
+}
+
+#[actix_web::test]
 async fn oidc_callback_after_rate_limit_validates_input_before_state_storage_errors() {
     let state = Data::new(oidc_callback_state());
     let req = actix_web::test::TestRequest::get()
@@ -206,6 +590,162 @@ async fn oidc_callback_after_rate_limit_validates_input_before_state_storage_err
             .get::<OAuthJsonErrorFields>()
             .map(|fields| fields.error.as_str()),
         Some("server_error")
+    );
+}
+
+#[actix_web::test]
+async fn oidc_callback_treats_missing_state_as_expired_before_token_exchange() {
+    let Some(state) = live_federation_state(Some(oidc_provider()), None).await else {
+        return;
+    };
+    let state = Data::new(state);
+    let req = actix_web::test::TestRequest::get()
+        .uri("/auth/federation/oidc/callback?state=missing&code=code")
+        .to_http_request();
+    let query = OidcCallbackQuery {
+        code: Some("code-1".to_owned()),
+        state: Some(random_urlsafe_token()),
+        error: None,
+    };
+
+    let response = federation_oidc_callback_after_rate_limit(state, req, query).await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_request")
+    );
+}
+
+#[actix_web::test]
+async fn oidc_callback_rejects_malformed_stored_state_before_token_exchange() {
+    let Some(state) = live_federation_state(Some(oidc_provider()), None).await else {
+        return;
+    };
+    let state_token = random_urlsafe_token();
+    valkey_set_ex(
+        &state.valkey,
+        oidc_state_key(&state_token),
+        "{not-json",
+        FEDERATION_STATE_TTL_SECONDS,
+    )
+    .await
+    .expect("malformed test OIDC state should be written");
+    let state = Data::new(state);
+    let req = actix_web::test::TestRequest::get()
+        .uri("/auth/federation/oidc/callback?state=bad&code=code")
+        .to_http_request();
+    let query = OidcCallbackQuery {
+        code: Some("code-1".to_owned()),
+        state: Some(state_token),
+        error: None,
+    };
+
+    let response = federation_oidc_callback_after_rate_limit(state, req, query).await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_request")
+    );
+}
+
+#[actix_web::test]
+async fn oidc_callback_rejects_expired_stored_state_before_token_exchange() {
+    let Some(state) = live_federation_state(Some(oidc_provider()), None).await else {
+        return;
+    };
+    let state_token = random_urlsafe_token();
+    store_oidc_state(
+        &state,
+        &state_token,
+        Utc::now().timestamp() - FEDERATION_STATE_TTL_SECONDS as i64 - 1,
+    )
+    .await;
+    let state = Data::new(state);
+    let req = actix_web::test::TestRequest::get()
+        .uri("/auth/federation/oidc/callback?state=expired&code=code")
+        .to_http_request();
+    let query = OidcCallbackQuery {
+        code: Some("code-1".to_owned()),
+        state: Some(state_token),
+        error: None,
+    };
+
+    let response = federation_oidc_callback_after_rate_limit(state, req, query).await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_request")
+    );
+}
+
+#[actix_web::test]
+async fn oidc_callback_requires_normalized_email_claim_before_identity_resolution() {
+    let (provider, token_request, jwks_request) =
+        provider_backed_by_local_oidc(json!({"email": null})).await;
+    let Some(state) = live_federation_state(Some(provider), None).await else {
+        return;
+    };
+    let state_token = random_urlsafe_token();
+    store_oidc_state(&state, &state_token, Utc::now().timestamp()).await;
+    let state = Data::new(state);
+    let req = actix_web::test::TestRequest::get()
+        .uri("/auth/federation/oidc/callback?state=email&code=code")
+        .to_http_request();
+    let query = OidcCallbackQuery {
+        code: Some("code-1".to_owned()),
+        state: Some(state_token),
+        error: None,
+    };
+
+    let response = federation_oidc_callback_after_rate_limit(state, req, query).await;
+    token_request
+        .await
+        .expect("token request should finish before email validation");
+    jwks_request
+        .await
+        .expect("JWKS request should finish before email validation");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("access_denied")
+    );
+}
+
+#[actix_web::test]
+async fn oidc_callback_rejects_unverified_email_before_identity_resolution() {
+    let (provider, token_request, jwks_request) =
+        provider_backed_by_local_oidc(json!({"email_verified": false})).await;
+    let Some(state) = live_federation_state(Some(provider), None).await else {
+        return;
+    };
+    let state_token = random_urlsafe_token();
+    store_oidc_state(&state, &state_token, Utc::now().timestamp()).await;
+    let state = Data::new(state);
+    let req = actix_web::test::TestRequest::get()
+        .uri("/auth/federation/oidc/callback?state=email&code=code")
+        .to_http_request();
+    let query = OidcCallbackQuery {
+        code: Some("code-1".to_owned()),
+        state: Some(state_token),
+        error: None,
+    };
+
+    let response = federation_oidc_callback_after_rate_limit(state, req, query).await;
+    token_request
+        .await
+        .expect("token request should finish before email verification");
+    jwks_request
+        .await
+        .expect("JWKS request should finish before email verification");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("access_denied")
     );
 }
 
@@ -408,4 +948,680 @@ fn saml_gateway_assertion_rejects_expired_or_future_assertions() {
             "user@example.com"
         ));
     }
+}
+
+#[actix_web::test]
+async fn saml_acs_requires_gateway_configuration_before_payload_validation() {
+    let Some(state) = live_federation_state(None, None).await else {
+        return;
+    };
+    let req = actix_web::test::TestRequest::post()
+        .uri("/auth/federation/saml/acs")
+        .to_http_request();
+    let payload = SamlGatewayAssertion {
+        issuer: "gateway".to_owned(),
+        audience: "nazo".to_owned(),
+        subject: "subject".to_owned(),
+        email: "not-an-email".to_owned(),
+        name: None,
+        iat: Utc::now().timestamp(),
+        exp: Utc::now().timestamp() + 60,
+        signature: "invalid".to_owned(),
+    };
+
+    let response = federation_saml_acs(Data::new(state), req, Json(payload)).await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("temporarily_unavailable")
+    );
+}
+
+#[actix_web::test]
+async fn saml_acs_rejects_invalid_email_before_signature_or_identity_resolution() {
+    let settings = SamlGatewaySettings {
+        issuer: "gateway".to_owned(),
+        audience: "nazo".to_owned(),
+        secret: "01234567890123456789012345678901".to_owned(),
+    };
+    let Some(state) = live_federation_state(None, Some(settings)).await else {
+        return;
+    };
+    let req = actix_web::test::TestRequest::post()
+        .uri("/auth/federation/saml/acs")
+        .to_http_request();
+    let payload = SamlGatewayAssertion {
+        issuer: "gateway".to_owned(),
+        audience: "nazo".to_owned(),
+        subject: "subject".to_owned(),
+        email: "not-an-email".to_owned(),
+        name: None,
+        iat: Utc::now().timestamp(),
+        exp: Utc::now().timestamp() + 60,
+        signature: "invalid".to_owned(),
+    };
+
+    let response = federation_saml_acs(Data::new(state), req, Json(payload)).await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_request")
+    );
+}
+
+#[actix_web::test]
+async fn saml_acs_rejects_signed_assertion_with_wrong_audience_before_identity_resolution() {
+    let settings = SamlGatewaySettings {
+        issuer: "gateway".to_owned(),
+        audience: "nazo".to_owned(),
+        secret: "01234567890123456789012345678901".to_owned(),
+    };
+    let now = Utc::now().timestamp();
+    let mut payload = saml_assertion(&settings, "subject", "user@example.com", now, now + 60);
+    payload.audience = "other-audience".to_owned();
+    let Some(state) = live_federation_state(None, Some(settings)).await else {
+        return;
+    };
+    let req = actix_web::test::TestRequest::post()
+        .uri("/auth/federation/saml/acs")
+        .to_http_request();
+
+    let response = federation_saml_acs(Data::new(state), req, Json(payload)).await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("access_denied")
+    );
+}
+
+#[actix_web::test]
+async fn federation_oidc_start_requires_configured_provider_after_rate_limit() {
+    let Some(state) = live_federation_state(None, None).await else {
+        return;
+    };
+    let response = federation_oidc_start(
+        Data::new(state),
+        actix_web::test::TestRequest::get()
+            .peer_addr(
+                "198.51.100.10:443"
+                    .parse()
+                    .expect("peer address should parse"),
+            )
+            .to_http_request(),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("temporarily_unavailable")
+    );
+}
+
+#[actix_web::test]
+async fn federation_oidc_start_persists_state_nonce_and_pkce_binding() {
+    let Some(state) = live_federation_state(Some(oidc_provider()), None).await else {
+        return;
+    };
+    let state = Data::new(state);
+    let response = federation_oidc_start(
+        state.clone(),
+        actix_web::test::TestRequest::get()
+            .peer_addr(
+                "198.51.100.11:443"
+                    .parse()
+                    .expect("peer address should parse"),
+            )
+            .to_http_request(),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::FOUND);
+    let location = response
+        .headers()
+        .get(header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .expect("redirect should include location");
+    let url = url::Url::parse(location).expect("redirect should be a valid URL");
+    let params = url
+        .query_pairs()
+        .collect::<std::collections::HashMap<_, _>>();
+    let state_token = params
+        .get("state")
+        .map(|value| value.to_string())
+        .expect("OIDC start must bind a CSRF state token");
+    let nonce = params
+        .get("nonce")
+        .map(|value| value.as_ref())
+        .expect("OIDC start must bind a nonce");
+    let raw = valkey_get(&state.valkey, oidc_state_key(&state_token))
+        .await
+        .expect("state lookup should succeed")
+        .expect("OIDC start must persist callback state");
+    let stored: OidcFederationState =
+        serde_json::from_str(&raw).expect("stored state should deserialize");
+    let expected_challenge = pkce_s256(&stored.pkce_verifier);
+
+    assert_eq!(stored.nonce, nonce);
+    assert_eq!(
+        params
+            .get("code_challenge_method")
+            .map(|value| value.as_ref()),
+        Some("S256")
+    );
+    assert_eq!(
+        params.get("code_challenge").map(|value| value.as_ref()),
+        Some(expected_challenge.as_str())
+    );
+    assert!(stored.created_at <= Utc::now().timestamp());
+}
+
+#[actix_web::test]
+async fn oidc_callback_denies_failed_token_exchange_and_consumes_state() {
+    let (token_endpoint, token_request) = one_shot_json_server(json!({})).await;
+    let mut provider = oidc_provider();
+    provider.token_endpoint = token_endpoint;
+    let Some(state) = live_federation_state(Some(provider), None).await else {
+        return;
+    };
+    let state_token = random_urlsafe_token();
+    store_oidc_state(&state, &state_token, Utc::now().timestamp()).await;
+    let state = Data::new(state);
+
+    let response = federation_oidc_callback_after_rate_limit(
+        state.clone(),
+        actix_web::test::TestRequest::get()
+            .peer_addr(
+                "198.51.100.12:443"
+                    .parse()
+                    .expect("peer address should parse"),
+            )
+            .to_http_request(),
+        OidcCallbackQuery {
+            code: Some("code-1".to_owned()),
+            state: Some(state_token.clone()),
+            error: None,
+        },
+    )
+    .await;
+    token_request
+        .await
+        .expect("token endpoint should receive the exchange request");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("access_denied")
+    );
+    assert!(
+        valkey_get(&state.valkey, oidc_state_key(&state_token))
+            .await
+            .expect("state lookup should succeed")
+            .is_none(),
+        "callback state must be single-use even when the upstream token endpoint fails"
+    );
+}
+
+#[actix_web::test]
+async fn oidc_callback_returns_server_error_when_jwks_response_is_invalid() {
+    let mut provider = oidc_provider();
+    let key = generate_key_material(Algorithm::RS256).expect("RSA key should generate");
+    let id_token = signed_oidc_token(&provider, "oidc-kid", &key.private_pkcs8_der, json!({}));
+    let (token_endpoint, token_request) =
+        one_shot_json_server(json!({ "id_token": id_token })).await;
+    let (jwks_url, jwks_request) = one_shot_json_server(json!({ "not_keys": [] })).await;
+    provider.token_endpoint = token_endpoint;
+    provider.jwks_url = jwks_url;
+    let Some(state) = live_federation_state(Some(provider), None).await else {
+        return;
+    };
+    let state_token = random_urlsafe_token();
+    store_oidc_state(&state, &state_token, Utc::now().timestamp()).await;
+    let state = Data::new(state);
+
+    let response = federation_oidc_callback_after_rate_limit(
+        state,
+        actix_web::test::TestRequest::get()
+            .peer_addr(
+                "198.51.100.13:443"
+                    .parse()
+                    .expect("peer address should parse"),
+            )
+            .to_http_request(),
+        OidcCallbackQuery {
+            code: Some("code-1".to_owned()),
+            state: Some(state_token),
+            error: None,
+        },
+    )
+    .await;
+    token_request
+        .await
+        .expect("token endpoint should receive the exchange request");
+    jwks_request
+        .await
+        .expect("JWKS endpoint should receive the fetch request");
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(&response).as_deref(), Some("server_error"));
+}
+
+#[actix_web::test]
+async fn oidc_callback_rejects_id_token_policy_failures_and_consumes_state() {
+    let (provider, token_request, jwks_request) =
+        provider_backed_by_local_oidc(json!({"nonce": "wrong-nonce"})).await;
+    let Some(state) = live_federation_state(Some(provider), None).await else {
+        return;
+    };
+    let state_token = random_urlsafe_token();
+    store_oidc_state(&state, &state_token, Utc::now().timestamp()).await;
+    let state = Data::new(state);
+
+    let response = federation_oidc_callback_after_rate_limit(
+        state.clone(),
+        actix_web::test::TestRequest::get()
+            .peer_addr(
+                "198.51.100.14:443"
+                    .parse()
+                    .expect("peer address should parse"),
+            )
+            .to_http_request(),
+        OidcCallbackQuery {
+            code: Some("code-1".to_owned()),
+            state: Some(state_token.clone()),
+            error: None,
+        },
+    )
+    .await;
+    token_request
+        .await
+        .expect("token endpoint should receive the exchange request");
+    jwks_request
+        .await
+        .expect("JWKS endpoint should receive the fetch request");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("access_denied")
+    );
+    assert!(
+        valkey_get(&state.valkey, oidc_state_key(&state_token))
+            .await
+            .expect("state lookup should succeed")
+            .is_none(),
+        "callback state must be consumed before ID token verification to prevent replay"
+    );
+}
+
+#[actix_web::test]
+async fn oidc_callback_reports_identity_resolution_db_failure_without_session_cookie() {
+    let (provider, token_request, jwks_request) = provider_backed_by_local_oidc(json!({
+        "sub": format!("oidc-db-failure-subject-{}", Uuid::now_v7().simple()),
+        "email": format!("oidc-db-failure-{}@example.com", Uuid::now_v7().simple()),
+        "name": "Database Failure"
+    }))
+    .await;
+    let Some(state) = live_federation_state(Some(provider), None).await else {
+        return;
+    };
+    let state_token = random_urlsafe_token();
+    store_oidc_state(&state, &state_token, Utc::now().timestamp()).await;
+    let state = Data::new(state);
+
+    let response = federation_oidc_callback_after_rate_limit(
+        state.clone(),
+        actix_web::test::TestRequest::get()
+            .peer_addr(
+                "198.51.100.21:443"
+                    .parse()
+                    .expect("peer address should parse"),
+            )
+            .to_http_request(),
+        OidcCallbackQuery {
+            code: Some("code-1".to_owned()),
+            state: Some(state_token.clone()),
+            error: None,
+        },
+    )
+    .await;
+    token_request
+        .await
+        .expect("token endpoint should receive the exchange request");
+    jwks_request
+        .await
+        .expect("JWKS endpoint should receive the fetch request");
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(&response).as_deref(), Some("server_error"));
+    assert!(
+        cookie_value_from_response(&response, &state.settings.session_cookie_name).is_none(),
+        "identity-resolution database failures must not issue a federated session"
+    );
+    assert!(
+        valkey_get(&state.valkey, oidc_state_key(&state_token))
+            .await
+            .expect("state lookup should succeed")
+            .is_none(),
+        "callback state must remain single-use even when identity resolution fails closed"
+    );
+}
+
+#[actix_web::test]
+async fn oidc_callback_creates_new_federated_user_session_and_external_link() {
+    let suffix = Uuid::now_v7().simple().to_string();
+    let email = format!("oidc-new-{suffix}@example.com");
+    let subject = format!("oidc-subject-{suffix}");
+    let (provider, token_request, jwks_request) = provider_backed_by_local_oidc(json!({
+        "sub": subject,
+        "email": email,
+        "name": "Federated User"
+    }))
+    .await;
+    let Some(fixture) = LiveFederationFixture::new(Some(provider), None).await else {
+        return;
+    };
+    let state_token = random_urlsafe_token();
+    store_oidc_state(&fixture.state, &state_token, Utc::now().timestamp()).await;
+
+    let response = federation_oidc_callback_after_rate_limit(
+        fixture.state.clone(),
+        actix_web::test::TestRequest::get()
+            .peer_addr(
+                "198.51.100.15:443"
+                    .parse()
+                    .expect("peer address should parse"),
+            )
+            .to_http_request(),
+        OidcCallbackQuery {
+            code: Some("code-1".to_owned()),
+            state: Some(state_token),
+            error: None,
+        },
+    )
+    .await;
+    token_request
+        .await
+        .expect("token endpoint should receive the exchange request");
+    jwks_request
+        .await
+        .expect("JWKS endpoint should receive the fetch request");
+
+    let session_cookie =
+        cookie_value_from_response(&response, &fixture.state.settings.session_cookie_name)
+            .expect("federated login must set a session cookie");
+    let csrf_cookie =
+        cookie_value_from_response(&response, &fixture.state.settings.csrf_cookie_name)
+            .expect("federated login must set a CSRF cookie");
+    let (status, body) = response_json(response).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["mfa_required"], false);
+    assert_eq!(body["csrf_token"], csrf_cookie);
+    assert_eq!(
+        body["expires_in"],
+        fixture.state.settings.session_ttl_seconds
+    );
+    assert!(body.get("session_id").is_none());
+
+    let user = fixture
+        .user_by_email(&email)
+        .await
+        .expect("OIDC login should provision a user for a new verified email");
+    let link = fixture
+        .external_identity_link("oidc", "oidc", &subject)
+        .await
+        .expect("OIDC login should persist the external identity link");
+    let session = fixture.session_payload(&session_cookie).await;
+
+    assert_eq!(user.display_name.as_deref(), Some("Federated User"));
+    assert!(user.email_verified);
+    assert_eq!(link.user_id, user.id);
+    assert_eq!(link.email, email);
+    assert_eq!(session.user_id, user.id);
+    assert_eq!(session.amr, vec!["oidc".to_owned(), "federated".to_owned()]);
+    assert!(!session.pending_mfa);
+    assert!(session.oidc_sid.is_some());
+}
+
+#[actix_web::test]
+async fn oidc_callback_links_existing_active_email_account_without_creating_duplicate_user() {
+    let suffix = Uuid::now_v7().simple().to_string();
+    let email = format!("oidc-existing-{suffix}@example.com");
+    let subject = format!("oidc-existing-subject-{suffix}");
+    let (provider, token_request, jwks_request) = provider_backed_by_local_oidc(json!({
+        "sub": subject,
+        "email": email,
+        "name": "Existing User"
+    }))
+    .await;
+    let Some(fixture) = LiveFederationFixture::new(Some(provider), None).await else {
+        return;
+    };
+    let existing_user = fixture.create_user(&email, true).await;
+    let state_token = random_urlsafe_token();
+    store_oidc_state(&fixture.state, &state_token, Utc::now().timestamp()).await;
+
+    let response = federation_oidc_callback_after_rate_limit(
+        fixture.state.clone(),
+        actix_web::test::TestRequest::get()
+            .peer_addr(
+                "198.51.100.16:443"
+                    .parse()
+                    .expect("peer address should parse"),
+            )
+            .to_http_request(),
+        OidcCallbackQuery {
+            code: Some("code-1".to_owned()),
+            state: Some(state_token),
+            error: None,
+        },
+    )
+    .await;
+    token_request
+        .await
+        .expect("token endpoint should receive the exchange request");
+    jwks_request
+        .await
+        .expect("JWKS endpoint should receive the fetch request");
+
+    let session_cookie =
+        cookie_value_from_response(&response, &fixture.state.settings.session_cookie_name)
+            .expect("federated login must set a session cookie");
+    let (status, body) = response_json(response).await;
+    let linked_user = fixture
+        .user_by_email(&email)
+        .await
+        .expect("existing user should still be present");
+    let link = fixture
+        .external_identity_link("oidc", "oidc", &subject)
+        .await
+        .expect("existing account should receive an external identity link");
+    let session = fixture.session_payload(&session_cookie).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["mfa_required"], false);
+    assert_eq!(linked_user.id, existing_user.id);
+    assert_eq!(link.user_id, existing_user.id);
+    assert_eq!(session.user_id, existing_user.id);
+}
+
+#[actix_web::test]
+async fn oidc_callback_rejects_existing_inactive_email_account_without_link_or_session() {
+    let suffix = Uuid::now_v7().simple().to_string();
+    let email = format!("oidc-existing-inactive-{suffix}@example.com");
+    let subject = format!("oidc-existing-inactive-subject-{suffix}");
+    let (provider, token_request, jwks_request) = provider_backed_by_local_oidc(json!({
+        "sub": subject,
+        "email": email,
+        "name": "Inactive Existing User"
+    }))
+    .await;
+    let Some(fixture) = LiveFederationFixture::new(Some(provider), None).await else {
+        return;
+    };
+    let inactive_user = fixture.create_user(&email, false).await;
+    let state_token = random_urlsafe_token();
+    store_oidc_state(&fixture.state, &state_token, Utc::now().timestamp()).await;
+
+    let response = federation_oidc_callback_after_rate_limit(
+        fixture.state.clone(),
+        actix_web::test::TestRequest::get()
+            .peer_addr(
+                "198.51.100.19:443"
+                    .parse()
+                    .expect("peer address should parse"),
+            )
+            .to_http_request(),
+        OidcCallbackQuery {
+            code: Some("code-1".to_owned()),
+            state: Some(state_token),
+            error: None,
+        },
+    )
+    .await;
+    token_request
+        .await
+        .expect("token endpoint should receive the exchange request");
+    jwks_request
+        .await
+        .expect("JWKS endpoint should receive the fetch request");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("access_denied")
+    );
+    assert!(
+        cookie_value_from_response(&response, &fixture.state.settings.session_cookie_name)
+            .is_none(),
+        "inactive existing email accounts must not receive a federated session"
+    );
+    assert!(
+        fixture
+            .external_identity_link("oidc", "oidc", &subject)
+            .await
+            .is_none(),
+        "inactive local accounts must not be silently linked to a new OIDC subject"
+    );
+    let reloaded = fixture
+        .user_by_email(&email)
+        .await
+        .expect("inactive user should remain present");
+    assert_eq!(reloaded.id, inactive_user.id);
+    assert!(!reloaded.is_active);
+}
+
+#[actix_web::test]
+async fn oidc_callback_rejects_inactive_linked_user() {
+    let suffix = Uuid::now_v7().simple().to_string();
+    let email = format!("oidc-inactive-{suffix}@example.com");
+    let subject = format!("oidc-inactive-subject-{suffix}");
+    let (provider, token_request, jwks_request) = provider_backed_by_local_oidc(json!({
+        "sub": subject,
+        "email": email
+    }))
+    .await;
+    let Some(fixture) = LiveFederationFixture::new(Some(provider), None).await else {
+        return;
+    };
+    let inactive_user = fixture.create_user(&email, false).await;
+    fixture
+        .insert_external_identity_link(&inactive_user, "oidc", "oidc", &subject, &email)
+        .await;
+    let state_token = random_urlsafe_token();
+    store_oidc_state(&fixture.state, &state_token, Utc::now().timestamp()).await;
+
+    let response = federation_oidc_callback_after_rate_limit(
+        fixture.state.clone(),
+        actix_web::test::TestRequest::get()
+            .peer_addr(
+                "198.51.100.17:443"
+                    .parse()
+                    .expect("peer address should parse"),
+            )
+            .to_http_request(),
+        OidcCallbackQuery {
+            code: Some("code-1".to_owned()),
+            state: Some(state_token),
+            error: None,
+        },
+    )
+    .await;
+    token_request
+        .await
+        .expect("token endpoint should receive the exchange request");
+    jwks_request
+        .await
+        .expect("JWKS endpoint should receive the fetch request");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("access_denied")
+    );
+    assert!(
+        cookie_value_from_response(&response, &fixture.state.settings.session_cookie_name)
+            .is_none(),
+        "inactive linked users must not receive a session cookie"
+    );
+}
+
+#[actix_web::test]
+async fn saml_acs_creates_new_federated_user_session_and_external_link() {
+    let settings = SamlGatewaySettings {
+        issuer: "gateway".to_owned(),
+        audience: "nazo".to_owned(),
+        secret: "01234567890123456789012345678901".to_owned(),
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let email = format!("saml-{suffix}@example.com");
+    let subject = format!("saml-subject-{suffix}");
+    let Some(fixture) = LiveFederationFixture::new(None, Some(settings.clone())).await else {
+        return;
+    };
+    let now = Utc::now().timestamp();
+    let mut payload = saml_assertion(&settings, &subject, &email, now, now + 60);
+    payload.name = Some("SAML User".to_owned());
+
+    let response = federation_saml_acs(
+        fixture.state.clone(),
+        actix_web::test::TestRequest::post()
+            .peer_addr(
+                "198.51.100.18:443"
+                    .parse()
+                    .expect("peer address should parse"),
+            )
+            .to_http_request(),
+        Json(payload),
+    )
+    .await;
+
+    let session_cookie =
+        cookie_value_from_response(&response, &fixture.state.settings.session_cookie_name)
+            .expect("successful SAML federation must set a session cookie");
+    let csrf_cookie =
+        cookie_value_from_response(&response, &fixture.state.settings.csrf_cookie_name)
+            .expect("successful SAML federation must set a CSRF cookie");
+    let (status, body) = response_json(response).await;
+    let user = fixture
+        .user_by_email(&email)
+        .await
+        .expect("SAML federation should provision a user for a new verified email");
+    let link = fixture
+        .external_identity_link("saml", &settings.issuer, &subject)
+        .await
+        .expect("SAML federation should persist the external identity link");
+    let session = fixture.session_payload(&session_cookie).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["mfa_required"], false);
+    assert_eq!(body["csrf_token"], csrf_cookie);
+    assert_eq!(user.display_name.as_deref(), Some("SAML User"));
+    assert_eq!(link.user_id, user.id);
+    assert_eq!(session.user_id, user.id);
+    assert_eq!(session.amr, vec!["saml".to_owned(), "federated".to_owned()]);
 }

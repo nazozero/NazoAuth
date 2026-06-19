@@ -94,6 +94,101 @@ async fn missing_keyset_file_allows_initial_creation() {
 }
 
 #[tokio::test]
+async fn load_or_create_keyset_creates_keyset_when_no_keyset_exists() {
+    let keys_dir = temp_keys_dir("load_or_create_missing");
+    let settings = test_settings(keys_dir.clone());
+
+    let keyset = load_or_create_keyset(&settings).await.unwrap();
+    let keyset_json = tokio::fs::read_to_string(keys_dir.join("keyset.json"))
+        .await
+        .unwrap();
+    let _ = tokio::fs::remove_dir_all(&keys_dir).await;
+
+    assert_eq!(keyset.active_alg, jsonwebtoken::Algorithm::RS256);
+    assert!(
+        keyset_json.contains(&keyset.active_kid),
+        "persisted keyset should contain the active kid"
+    );
+}
+
+#[tokio::test]
+async fn keyset_read_and_json_parse_failures_are_reported() {
+    let read_error_dir = temp_keys_dir("read_error");
+    tokio::fs::create_dir_all(&read_error_dir).await.unwrap();
+    let settings = test_settings(read_error_dir.clone());
+    let read_error = match try_load_keyset(&settings, &read_error_dir).await {
+        Ok(_) => panic!("a directory in place of keyset.json must be a read error"),
+        Err(error) => error,
+    };
+    assert!(
+        format!("{read_error:#}").contains("failed to read"),
+        "unexpected read error: {read_error:#}"
+    );
+    let _ = tokio::fs::remove_dir_all(&read_error_dir).await;
+
+    let parse_error_dir = temp_keys_dir("parse_error");
+    tokio::fs::create_dir_all(&parse_error_dir).await.unwrap();
+    let keyset_path = parse_error_dir.join("keyset.json");
+    tokio::fs::write(&keyset_path, "not-json").await.unwrap();
+    let settings = test_settings(parse_error_dir.clone());
+    let parse_error = match try_load_keyset(&settings, &keyset_path).await {
+        Ok(_) => panic!("malformed keyset.json must not be accepted"),
+        Err(error) => error,
+    };
+    let _ = tokio::fs::remove_dir_all(&parse_error_dir).await;
+
+    assert!(
+        format!("{parse_error:#}").contains("failed to parse"),
+        "unexpected parse error: {parse_error:#}"
+    );
+}
+
+#[tokio::test]
+async fn keyset_schema_requires_active_kid_keys_and_entry_kid() {
+    let cases = [
+        (
+            "missing_active_kid",
+            json!({"keys": []}),
+            "missing active_kid",
+        ),
+        (
+            "missing_keys",
+            json!({"active_kid": "active"}),
+            "missing keys array",
+        ),
+        (
+            "missing_entry_kid",
+            json!({"active_kid": "active", "keys": [{"file": "active.pem"}]}),
+            "entry missing kid",
+        ),
+    ];
+
+    for (label, payload, expected) in cases {
+        let keys_dir = temp_keys_dir(label);
+        tokio::fs::create_dir_all(&keys_dir).await.unwrap();
+        let keyset_path = keys_dir.join("keyset.json");
+        tokio::fs::write(
+            &keyset_path,
+            serde_json::to_string_pretty(&payload).unwrap(),
+        )
+        .await
+        .unwrap();
+        let settings = test_settings(keys_dir.clone());
+
+        let error = match try_load_keyset(&settings, &keyset_path).await {
+            Ok(_) => panic!("invalid keyset schema must fail closed"),
+            Err(error) => error,
+        };
+        let _ = tokio::fs::remove_dir_all(&keys_dir).await;
+
+        assert!(
+            format!("{error:#}").contains(expected),
+            "unexpected schema error for {label}: {error:#}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn created_keyset_uses_oidc_mandatory_default_signing_alg() {
     let keys_dir = temp_keys_dir("create_default_alg");
     tokio::fs::create_dir_all(&keys_dir).await.unwrap();
@@ -266,6 +361,98 @@ async fn retired_active_key_entry_is_rejected() {
 }
 
 #[tokio::test]
+async fn active_kid_must_reference_a_live_signing_key() {
+    let keys_dir = temp_keys_dir("active_missing");
+    tokio::fs::create_dir_all(&keys_dir).await.unwrap();
+    let previous_der = ed25519_pkcs8_private_der(&[1u8; 32]);
+    tokio::fs::write(
+        keys_dir.join("previous.pem"),
+        der_to_pem(&previous_der, "PRIVATE KEY"),
+    )
+    .await
+    .unwrap();
+    tokio::fs::write(
+        keys_dir.join("keyset.json"),
+        serde_json::to_string_pretty(&json!({
+            "active_kid": "missing-active",
+            "keys": [
+                {"kid": "previous", "file": "previous.pem", "retire_at": null}
+            ]
+        }))
+        .unwrap(),
+    )
+    .await
+    .unwrap();
+    let settings = test_settings(keys_dir.clone());
+    let keyset_path = keys_dir.join("keyset.json");
+
+    let error = match try_load_keyset(&settings, &keyset_path).await {
+        Ok(_) => panic!("active_kid must identify the live signing key"),
+        Err(error) => error,
+    };
+    let _ = tokio::fs::remove_dir_all(&keys_dir).await;
+
+    assert!(
+        format!("{error:#}").contains("active_kid does not reference a live key"),
+        "unexpected active kid error: {error:#}"
+    );
+}
+
+#[tokio::test]
+async fn local_key_entry_rejects_invalid_pem_and_algorithm_mismatch() {
+    let cases = [
+        (
+            "invalid_pem",
+            "not a pem".to_owned(),
+            jsonwebtoken::Algorithm::EdDSA,
+            "not valid PEM",
+        ),
+        (
+            "algorithm_mismatch",
+            der_to_pem(&ed25519_pkcs8_private_der(&[3u8; 32]), "PRIVATE KEY"),
+            jsonwebtoken::Algorithm::RS256,
+            "private key does not match alg",
+        ),
+    ];
+
+    for (label, pem, alg, expected) in cases {
+        let keys_dir = temp_keys_dir(label);
+        tokio::fs::create_dir_all(&keys_dir).await.unwrap();
+        tokio::fs::write(keys_dir.join("active.pem"), pem)
+            .await
+            .unwrap();
+        tokio::fs::write(
+            keys_dir.join("keyset.json"),
+            serde_json::to_string_pretty(&json!({
+                "active_kid": "active",
+                "keys": [{
+                    "kid": "active",
+                    "alg": signing_algorithm_name(alg).unwrap(),
+                    "file": "active.pem",
+                    "retire_at": null
+                }]
+            }))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        let settings = test_settings(keys_dir.clone());
+        let keyset_path = keys_dir.join("keyset.json");
+
+        let error = match try_load_keyset(&settings, &keyset_path).await {
+            Ok(_) => panic!("invalid local signing material must fail closed"),
+            Err(error) => error,
+        };
+        let _ = tokio::fs::remove_dir_all(&keys_dir).await;
+
+        assert!(
+            format!("{error:#}").contains(expected),
+            "unexpected local key error for {label}: {error:#}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn active_external_command_key_requires_signer_command() {
     let keys_dir = temp_keys_dir("external_missing_command");
     tokio::fs::create_dir_all(&keys_dir).await.unwrap();
@@ -304,6 +491,62 @@ async fn active_external_command_key_requires_signer_command() {
     match result {
         Ok(_) => panic!("active external-command key without command should fail"),
         Err(error) => assert!(format!("{error:#}").contains("SIGNING_EXTERNAL_COMMAND")),
+    }
+}
+
+#[tokio::test]
+async fn external_public_jwk_metadata_is_bound_to_keyset_entry() {
+    let active_der = generate_key_material(jsonwebtoken::Algorithm::RS256)
+        .unwrap()
+        .private_pkcs8_der;
+    let mut public_jwk = public_jwk_from_private_der(
+        "external-active",
+        jsonwebtoken::Algorithm::RS256,
+        &active_der,
+    )
+    .unwrap();
+    let object = public_jwk.as_object_mut().unwrap();
+    object.remove("kid");
+    object.remove("alg");
+    object.remove("use");
+
+    let inherited = external_public_jwk(&json!({
+        "kid": "external-active",
+        "alg": "RS256",
+        "public_jwk": public_jwk
+    }))
+    .unwrap();
+    assert_eq!(inherited["kid"], "external-active");
+    assert_eq!(inherited["alg"], "RS256");
+    assert_eq!(inherited["use"], "sig");
+
+    for (label, public_jwk, expected) in [
+        (
+            "kid_mismatch",
+            json!({"kid": "other", "alg": "RS256", "use": "sig"}),
+            "kid does not match",
+        ),
+        (
+            "alg_mismatch",
+            json!({"kid": "external-active", "alg": "PS256", "use": "sig"}),
+            "alg does not match",
+        ),
+        (
+            "wrong_use",
+            json!({"kid": "external-active", "alg": "RS256", "use": "enc"}),
+            "use must be sig",
+        ),
+    ] {
+        let error = external_public_jwk(&json!({
+            "kid": "external-active",
+            "alg": "RS256",
+            "public_jwk": public_jwk
+        }))
+        .expect_err("external public JWK metadata must match the keyset entry");
+        assert!(
+            format!("{error:#}").contains(expected),
+            "unexpected external public JWK error for {label}: {error:#}"
+        );
     }
 }
 
@@ -422,6 +665,71 @@ async fn external_command_signer_signature_must_match_active_public_jwk() {
         Ok(_) => panic!("external signer signature mismatch should fail"),
         Err(error) => assert!(format!("{error}").contains("does not verify")),
     }
+}
+
+#[test]
+fn key_material_helpers_reject_unsupported_or_malformed_inputs() {
+    assert!(generate_key_material(jsonwebtoken::Algorithm::HS256).is_err());
+    assert!(
+        public_jwk_from_private_der("kid", jsonwebtoken::Algorithm::EdDSA, b"not-ed25519-pkcs8")
+            .is_err()
+    );
+    assert!(
+        public_jwk_from_private_der(
+            "kid",
+            jsonwebtoken::Algorithm::HS256,
+            &ed25519_pkcs8_private_der(&[4u8; 32])
+        )
+        .is_err()
+    );
+    assert!(
+        pem_to_der("-----BEGIN PRIVATE KEY-----\nnot-base64\n-----END PRIVATE KEY-----").is_none()
+    );
+}
+
+#[tokio::test]
+async fn sign_jwt_requires_active_algorithm_and_kid() {
+    let active_der = ed25519_pkcs8_private_der(&[5u8; 32]);
+    let keyset = Keyset {
+        active_kid: "active".to_owned(),
+        active_alg: jsonwebtoken::Algorithm::EdDSA,
+        active_signing_key: ActiveSigningKey::LocalPkcs8Der(active_der),
+        verification_keys: Vec::new(),
+    };
+    let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+    header.kid = Some("active".to_owned());
+
+    let error = keyset
+        .sign_jwt(&header, &json!({"sub": "subject-1"}))
+        .await
+        .expect_err("JWT signing must reject headers that do not match the active key");
+
+    assert!(matches!(
+        error.kind(),
+        jsonwebtoken::errors::ErrorKind::InvalidAlgorithm
+    ));
+}
+
+#[tokio::test]
+async fn local_signing_rejects_algorithms_outside_server_allowlist() {
+    let keyset = Keyset {
+        active_kid: "active".to_owned(),
+        active_alg: jsonwebtoken::Algorithm::HS256,
+        active_signing_key: ActiveSigningKey::LocalPkcs8Der(vec![1, 2, 3]),
+        verification_keys: Vec::new(),
+    };
+    let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256);
+    header.kid = Some("active".to_owned());
+
+    let error = keyset
+        .sign_jwt(&header, &json!({"sub": "subject-1"}))
+        .await
+        .expect_err("local JWT signing must reject symmetric algorithms");
+
+    assert!(matches!(
+        error.kind(),
+        jsonwebtoken::errors::ErrorKind::InvalidAlgorithm
+    ));
 }
 
 fn temp_keys_dir(label: &str) -> PathBuf {

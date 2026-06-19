@@ -8,6 +8,7 @@ use actix_web::test::TestRequest;
 use openssl::hash::MessageDigest;
 use openssl::pkey::{PKey, Private};
 use openssl::rsa::Rsa;
+use openssl::x509::extension::SubjectAlternativeName;
 use openssl::x509::{X509Builder, X509Name};
 
 struct TestCertificate {
@@ -88,6 +89,55 @@ fn test_certificate(
     }
 }
 
+fn certificate_pem(certificate: &TestCertificate) -> String {
+    format!(
+        "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
+        certificate.x5c
+    )
+}
+
+fn test_certificate_with_sans() -> TestCertificate {
+    let key = test_private_key();
+    let mut name = X509Name::builder().expect("x509 name builder");
+    name.append_entry_by_nid(Nid::COMMONNAME, "client, one")
+        .expect("test common name");
+    name.append_entry_by_nid(Nid::ORGANIZATIONNAME, "Example + Org")
+        .expect("test organization");
+    let name = name.build();
+    let mut builder = X509Builder::new().expect("x509 builder");
+    builder.set_version(2).expect("x509 version");
+    builder.set_subject_name(&name).expect("x509 subject");
+    builder.set_issuer_name(&name).expect("x509 issuer");
+    builder.set_pubkey(&key).expect("x509 pubkey");
+    let now = Utc::now().timestamp();
+    let not_before = Asn1Time::from_unix(now - 60).expect("x509 not_before");
+    let not_after = Asn1Time::from_unix(now + 3600).expect("x509 not_after");
+    builder
+        .set_not_before(&not_before)
+        .expect("set x509 not_before");
+    builder
+        .set_not_after(&not_after)
+        .expect("set x509 not_after");
+    let san = SubjectAlternativeName::new()
+        .dns("client.example")
+        .dns("api.client.example")
+        .uri("urn:client:one")
+        .email("client@example.com")
+        .ip("192.0.2.44")
+        .ip("2001:db8::44")
+        .build(&builder.x509v3_context(None, None))
+        .expect("subject alternative name");
+    builder.append_extension(san).expect("append san");
+    builder
+        .sign(&key, MessageDigest::sha256())
+        .expect("sign test cert");
+    let der = builder.build().to_der().expect("cert der");
+    TestCertificate {
+        x5c: STANDARD.encode(&der),
+        thumbprint: URL_SAFE_NO_PAD.encode(Sha256::digest(&der)),
+    }
+}
+
 fn trusted_proxy_settings() -> Settings {
     Settings {
         issuer: "https://issuer.example".to_owned(),
@@ -158,6 +208,14 @@ fn normalizes_colon_hex_sha256_to_x5t_s256() {
 }
 
 #[test]
+fn rejects_invalid_sha256_thumbprints() {
+    assert!(normalize_sha256_thumbprint("not-a-thumbprint").is_none());
+    assert!(normalize_sha256_thumbprint(&"a".repeat(63)).is_none());
+    assert!(normalize_sha256_thumbprint(&"!".repeat(43)).is_none());
+    assert!(normalize_sha256_thumbprint(&URL_SAFE_NO_PAD.encode([0u8; 31])).is_none());
+}
+
+#[test]
 fn rejects_unverified_proxy_certificate_headers() {
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -188,6 +246,62 @@ fn rejects_conflicting_forwarded_certificate_headers() {
 }
 
 #[test]
+fn rejects_successful_verification_without_binding_material() {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::HeaderName::from_static("x-ssl-client-verify"),
+        HeaderValue::from_static("SUCCESS"),
+    );
+
+    assert!(request_mtls_client_certificate_from_headers(&headers).is_none());
+}
+
+#[test]
+fn certificate_pem_identity_accepts_escaped_forwarded_pem() {
+    let certificate = test_certificate("client-pem", -60, 3600);
+    let escaped = certificate_pem(&certificate).replace('\n', "\\n");
+    let parsed = certificate_pem_identity(&escaped).expect("forwarded PEM should parse");
+
+    assert_eq!(
+        parsed.thumbprint.as_deref(),
+        Some(certificate.thumbprint.as_str())
+    );
+    assert_eq!(parsed.subject_dn.as_deref(), Some("CN=client-pem"));
+    assert!(parsed.verified_certificate_expiry);
+}
+
+#[test]
+fn certificate_pem_identity_extracts_san_values_and_escapes_subject_dn() {
+    let certificate = test_certificate_with_sans();
+    let parsed = certificate_pem_identity(&certificate_pem(&certificate))
+        .expect("forwarded PEM with SAN should parse");
+
+    assert_eq!(
+        parsed.subject_dn.as_deref(),
+        Some(r"CN=client\, one,O=Example \+ Org")
+    );
+    assert_eq!(
+        parsed.san_dns,
+        vec!["api.client.example".to_owned(), "client.example".to_owned()]
+    );
+    assert_eq!(parsed.san_uri, vec!["urn:client:one".to_owned()]);
+    assert_eq!(parsed.san_email, vec!["client@example.com".to_owned()]);
+    assert_eq!(
+        parsed.san_ip,
+        vec!["192.0.2.44".to_owned(), "2001:db8::44".to_owned()]
+    );
+}
+
+#[test]
+fn certificate_pem_identity_rejects_future_and_expired_certificates() {
+    let future = test_certificate("client-future", 3600, 7200);
+    let expired = test_certificate("client-expired", -7200, -3600);
+
+    assert!(certificate_pem_identity(&certificate_pem(&future)).is_none());
+    assert!(certificate_pem_identity(&certificate_pem(&expired)).is_none());
+}
+
+#[test]
 fn accepts_duplicate_matching_forwarded_certificate_headers() {
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -212,11 +326,44 @@ fn accepts_duplicate_matching_forwarded_certificate_headers() {
 }
 
 #[test]
+fn rejects_conflicting_forwarded_pem_and_direct_thumbprint() {
+    let certificate = test_certificate("client-pem", -60, 3600);
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::HeaderName::from_static("x-ssl-client-verify"),
+        HeaderValue::from_static("SUCCESS"),
+    );
+    headers.insert(
+        header::HeaderName::from_static("x-forwarded-tls-client-cert-sha256"),
+        HeaderValue::from_static("ABEiM0RVZneImaq7zN3u_wARIjNEVWZ3iJmqu8zd7v8"),
+    );
+    headers.insert(
+        header::HeaderName::from_static("x-forwarded-tls-client-cert"),
+        HeaderValue::from_str(&urlencoding::encode(&certificate_pem(&certificate))).unwrap(),
+    );
+
+    assert!(request_mtls_client_certificate_from_headers(&headers).is_none());
+}
+
+#[test]
 fn client_certificate_matches_registered_subject_dn() {
     let mut client = client();
     client.tls_client_auth_subject_dn = Some("CN=client-1,O=Example".to_owned());
     let certificate = MtlsClientCertificate {
         subject_dn: Some("CN=client-1,O=Example".to_owned()),
+        ..MtlsClientCertificate::default()
+    };
+
+    assert!(client_mtls_certificate_matches(&client, &certificate));
+}
+
+#[test]
+fn client_certificate_matches_registered_thumbprint() {
+    let mut client = client();
+    client.tls_client_auth_cert_sha256 =
+        Some("00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff".to_owned());
+    let certificate = MtlsClientCertificate {
+        thumbprint: Some("ABEiM0RVZneImaq7zN3u_wARIjNEVWZ3iJmqu8zd7v8".to_owned()),
         ..MtlsClientCertificate::default()
     };
 
@@ -233,6 +380,28 @@ fn client_certificate_matches_registered_san_dns() {
     };
 
     assert!(client_mtls_certificate_matches(&client, &certificate));
+}
+
+#[test]
+fn client_certificate_matches_registered_san_uri_ip_and_email() {
+    let certificate = MtlsClientCertificate {
+        san_uri: vec!["urn:client:one".to_owned()],
+        san_ip: vec!["192.0.2.44".to_owned()],
+        san_email: vec!["client@example.com".to_owned()],
+        ..MtlsClientCertificate::default()
+    };
+
+    let mut uri_client = client();
+    uri_client.tls_client_auth_san_uri = json!(["urn:client:one"]);
+    assert!(client_mtls_certificate_matches(&uri_client, &certificate));
+
+    let mut ip_client = client();
+    ip_client.tls_client_auth_san_ip = json!(["192.0.2.44"]);
+    assert!(client_mtls_certificate_matches(&ip_client, &certificate));
+
+    let mut email_client = client();
+    email_client.tls_client_auth_san_email = json!(["client@example.com"]);
+    assert!(client_mtls_certificate_matches(&email_client, &certificate));
 }
 
 #[test]
