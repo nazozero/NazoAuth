@@ -1,4 +1,27 @@
 use super::*;
+use actix_web::cookie::Cookie;
+use actix_web::test::TestRequest;
+use diesel::sql_query;
+use diesel::sql_types::{Bool, Int4, Text, Uuid as SqlUuid};
+use diesel_async::RunQueryDsl;
+use fred::interfaces::ClientLike;
+use fred::prelude::{
+    Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
+};
+use std::sync::Arc;
+use std::time::Duration as StdDuration;
+
+use crate::config::ConfigSource;
+use crate::db::{create_pool, get_conn};
+use crate::domain::UserRow;
+use crate::support::SessionPayload;
+
+fn query(values: &[(&str, &str)]) -> std::collections::HashMap<String, String> {
+    values
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+        .collect()
+}
 
 fn consent_payload(user_id: Uuid) -> ConsentPayload {
     ConsentPayload {
@@ -33,6 +56,138 @@ fn consent_payload(user_id: Uuid) -> ConsentPayload {
 
 fn uuid_fixture(value: u128) -> Uuid {
     Uuid::from_u128(value)
+}
+
+#[derive(Clone)]
+struct ConsentLiveFixture {
+    state: Data<AppState>,
+}
+
+impl ConsentLiveFixture {
+    async fn new() -> Option<Self> {
+        let database_url = std::env::var("DATABASE_URL").ok()?;
+        let valkey_url = std::env::var("VALKEY_URL").ok()?;
+        let mut settings =
+            Settings::from_config(&ConfigSource::default()).expect("test settings should load");
+        settings.issuer = "https://issuer.example".to_owned();
+        settings.frontend_base_url = "https://app.example".to_owned();
+        settings.auth_code_ttl_seconds = 60;
+
+        let mut valkey_builder = ValkeyBuilder::from_config(
+            ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),
+        );
+        valkey_builder.with_performance_config(|performance: &mut PerformanceConfig| {
+            performance.default_command_timeout = StdDuration::from_millis(1000);
+        });
+        valkey_builder.with_connection_config(|connection: &mut ConnectionConfig| {
+            connection.connection_timeout = StdDuration::from_millis(1000);
+            connection.internal_command_timeout = StdDuration::from_millis(1000);
+            connection.max_command_attempts = 1;
+        });
+        let valkey = valkey_builder.build().expect("valkey client should build");
+        valkey.init().await.expect("valkey should connect");
+
+        Some(Self {
+            state: Data::new(AppState {
+                diesel_db: create_pool(database_url, 4).expect("database pool should build"),
+                valkey,
+                settings: Arc::new(settings),
+                keyset: Arc::new(Keyset {
+                    active_kid: "test-kid".to_owned(),
+                    active_alg: jsonwebtoken::Algorithm::EdDSA,
+                    active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+                    verification_keys: Vec::new(),
+                }),
+            }),
+        })
+    }
+
+    async fn create_user(&self, suffix: &str, auth_role: &str, admin_level: i32) -> UserRow {
+        let email = format!("authorize-consent-{suffix}@example.com");
+        let username = format!("authorize-consent-{suffix}");
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        sql_query(
+            r#"
+            INSERT INTO users (
+                tenant_id, realm_id, organization_id, username, email,
+                password_hash, is_active, mfa_enabled, email_verified, role, admin_level
+            )
+            VALUES ($1, $2, $3, $4, $5, 'unused-consent-test-hash', true, false, true, $6, $7)
+            RETURNING *
+            "#,
+        )
+        .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+        .bind::<SqlUuid, _>(DEFAULT_REALM_ID)
+        .bind::<SqlUuid, _>(DEFAULT_ORGANIZATION_ID)
+        .bind::<Text, _>(username)
+        .bind::<Text, _>(email)
+        .bind::<Text, _>(auth_role.to_owned())
+        .bind::<Int4, _>(admin_level)
+        .get_result::<UserRow>(&mut conn)
+        .await
+        .expect("test user should insert")
+    }
+
+    async fn store_session(&self, user: &UserRow, sid: &str, auth_time: i64) {
+        let payload = SessionPayload {
+            user_id: user.id,
+            auth_time,
+            amr: vec!["pwd".to_owned()],
+            pending_mfa: false,
+            oidc_sid: Some(format!("oidc-{sid}")),
+        };
+        valkey_set_ex(
+            &self.state.valkey,
+            format!("oauth:session:{sid}"),
+            serde_json::to_string(&payload).expect("session should serialize"),
+            self.state.settings.session_ttl_seconds,
+        )
+        .await
+        .expect("session should store");
+    }
+
+    async fn store_consent_payload(&self, payload: &ConsentPayload) {
+        valkey_set_ex(
+            &self.state.valkey,
+            format!("oauth:consent:{}", payload.request_id),
+            serde_json::to_string(payload).expect("consent payload should serialize"),
+            self.state.settings.auth_code_ttl_seconds,
+        )
+        .await
+        .expect("consent payload should persist");
+    }
+
+    async fn store_raw_consent_payload(&self, request_id: &str, raw: &str) {
+        valkey_set_ex(
+            &self.state.valkey,
+            format!("oauth:consent:{request_id}"),
+            raw.to_owned(),
+            self.state.settings.auth_code_ttl_seconds,
+        )
+        .await
+        .expect("malformed consent payload should be written to valkey");
+    }
+
+    fn consent_request(&self, sid: &str, request_id: Option<&str>) -> TestRequest {
+        let uri = if let Some(request_id) = request_id {
+            format!("/authorize/consent?request_id={request_id}")
+        } else {
+            "/authorize/consent".to_owned()
+        };
+        TestRequest::get()
+            .uri(&uri)
+            .cookie(Cookie::new(
+                self.state.settings.session_cookie_name.clone(),
+                sid.to_owned(),
+            ))
+            .cookie(Cookie::new(
+                self.state.settings.csrf_cookie_name.clone(),
+                "csrf-token".to_owned(),
+            ))
+    }
+
 }
 
 async fn response_json(response: HttpResponse) -> (StatusCode, Value) {
@@ -144,4 +299,161 @@ async fn consent_page_response_exposes_only_page_safe_fields() {
             "{forbidden} must not be exposed to the browser consent page"
         );
     }
+}
+
+#[actix_web::test]
+async fn authorize_consent_requires_login() {
+    let state = AppState {
+        diesel_db: create_pool(
+            "postgres://nazo_consent_test_invalid:nazo_consent_test_invalid@127.0.0.1:1/nazo"
+                .to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey: ValkeyBuilder::default_centralized().build().expect("valkey client should construct"),
+        settings: Arc::new(Settings::from_config(&ConfigSource::default())
+            .expect("settings should load")),
+        keyset: Arc::new(Keyset {
+            active_kid: "test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+            verification_keys: Vec::new(),
+        }),
+    };
+    let state = Data::new(state);
+    let req = TestRequest::get().uri("/authorize/consent?request_id=req-login").to_http_request();
+    let (status, body) =
+        response_json(authorize_consent(state, req, Query(query(&[("request_id", "req-login")]))).await)
+            .await;
+
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(body["error"], "login_required");
+    assert_eq!(body["error_description"], "Request failed.");
+}
+
+#[actix_web::test]
+async fn authorize_consent_rejects_requests_without_request_id() {
+    let Some(fixture) = ConsentLiveFixture::new().await else {
+        return;
+    };
+    let user = fixture.create_user("missing-id", "user", 0).await;
+    fixture
+        .store_session(&user, "sid-no-request-id", Utc::now().timestamp())
+        .await;
+    let req = fixture
+        .consent_request("sid-no-request-id", None)
+        .to_http_request();
+    let (status, body) = response_json(authorize_consent(
+        fixture.state.clone(),
+        req,
+        Query(query(&[("foo", "bar")])),
+    ))
+    .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_request");
+}
+
+#[actix_web::test]
+async fn authorize_consent_rejects_missing_consent_payload() {
+    let Some(fixture) = ConsentLiveFixture::new().await else {
+        return;
+    };
+    let user = fixture.create_user("missing-payload", "user", 0).await;
+    fixture
+        .store_session(&user, "sid-missing-payload", Utc::now().timestamp())
+        .await;
+    let req = fixture
+        .consent_request("sid-missing-payload", Some("request-missing"))
+        .to_http_request();
+    let (status, body) = response_json(authorize_consent(
+        fixture.state.clone(),
+        req,
+        Query(query(&[("request_id", "request-missing")])),
+    ))
+    .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_request");
+}
+
+#[actix_web::test]
+async fn authorize_consent_rejects_malformed_consent_payload() {
+    let Some(fixture) = ConsentLiveFixture::new().await else {
+        return;
+    };
+    let user = fixture.create_user("malformed-payload", "user", 0).await;
+    fixture
+        .store_session(&user, "sid-malformed-payload", Utc::now().timestamp())
+        .await;
+    fixture
+        .store_raw_consent_payload("request-malformed", "not-json")
+        .await;
+    let req = fixture
+        .consent_request("sid-malformed-payload", Some("request-malformed"))
+        .to_http_request();
+    let (status, body) = response_json(authorize_consent(
+        fixture.state.clone(),
+        req,
+        Query(query(&[("request_id", "request-malformed")])),
+    ))
+    .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_request");
+}
+
+#[actix_web::test]
+async fn authorize_consent_rejects_payload_owned_by_other_user() {
+    let Some(fixture) = ConsentLiveFixture::new().await else {
+        return;
+    };
+    let owner = fixture.create_user("payload-owner", "user", 0).await;
+    let viewer = fixture.create_user("payload-viewer", "user", 0).await;
+    fixture
+        .store_session(&viewer, "sid-wrong-user", Utc::now().timestamp())
+        .await;
+    let mut payload = consent_payload(owner.id);
+    payload.request_id = "request-other-user".to_owned();
+    fixture.store_consent_payload(&payload).await;
+
+    let req = fixture
+        .consent_request("sid-wrong-user", Some("request-other-user"))
+        .to_http_request();
+    let (status, body) = response_json(authorize_consent(
+        fixture.state.clone(),
+        req,
+        Query(query(&[("request_id", "request-other-user")])),
+    ))
+    .await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["error"], "access_denied");
+}
+
+#[actix_web::test]
+async fn authorize_consent_returns_payload_for_current_user() {
+    let Some(fixture) = ConsentLiveFixture::new().await else {
+        return;
+    };
+    let user = fixture.create_user("valid-owner", "user", 0).await;
+    fixture
+        .store_session(&user, "sid-valid-owner", Utc::now().timestamp())
+        .await;
+    let payload = consent_payload(user.id);
+    fixture.store_consent_payload(&payload).await;
+    let req = fixture
+        .consent_request("sid-valid-owner", Some(&payload.request_id))
+        .to_http_request();
+    let (status, body) = response_json(authorize_consent(
+        fixture.state.clone(),
+        req,
+        Query(query(&[("request_id", payload.request_id.as_str())])),
+    ))
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["request_id"], payload.request_id);
+    assert_eq!(body["client_id"], payload.client_id);
+    assert_eq!(body["csrf_token"], "csrf-token");
 }

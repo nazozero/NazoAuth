@@ -4,6 +4,7 @@ use std::sync::Arc;
 use crate::config::ConfigSource;
 use crate::db::create_pool;
 use crate::domain::{ActiveSigningKey, Keyset};
+use crate::http::authorization::request::pushed_authorization_request_key;
 use actix_web::test::TestRequest;
 use fred::interfaces::ClientLike;
 use fred::prelude::{
@@ -276,4 +277,71 @@ async fn prompt_none_fails_closed_when_authorization_code_cannot_be_persisted() 
         response.headers().get(header::LOCATION).is_none(),
         "prompt=none must not redirect with a code when the authorization code was not stored"
     );
+}
+
+#[actix_web::test]
+async fn prompt_none_redirects_invalid_request_uri_when_request_uri_is_missing() {
+    let Some(state) = live_prompt_none_state().await else {
+        return;
+    };
+    let mut payload = prompt_none_payload();
+    let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
+    payload.pushed_request_uri = Some(request_uri);
+
+    let response = issue_authorization_code_without_interaction(
+        &state,
+        &prompt_none_request(),
+        payload,
+    )
+    .await;
+
+    let query = redirect_query(&response);
+    assert_eq!(query.get("error").map(String::as_str), Some("invalid_request_uri"));
+    assert_eq!(query.get("state").map(String::as_str), Some("opaque-state"));
+}
+
+#[actix_web::test]
+async fn prompt_none_redirects_server_error_when_request_uri_is_malformed() {
+    let Some(state) = live_prompt_none_state().await else {
+        return;
+    };
+    let mut payload = prompt_none_payload();
+    let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
+    valkey_set_ex(
+        &state.valkey,
+        pushed_authorization_request_key(&request_uri),
+        "{not-json".to_owned(),
+        state.settings.auth_code_ttl_seconds,
+    )
+    .await
+    .expect("malformed request_uri should persist");
+    payload.pushed_request_uri = Some(request_uri);
+
+    let response = issue_authorization_code_without_interaction(
+        &state,
+        &prompt_none_request(),
+        payload,
+    )
+    .await;
+
+    let query = redirect_query(&response);
+    assert_eq!(query.get("error").map(String::as_str), Some("server_error"));
+    assert_eq!(query.get("state").map(String::as_str), Some("opaque-state"));
+}
+
+#[actix_web::test]
+async fn prompt_none_redirects_server_error_when_request_uri_read_fails() {
+    let state = unavailable_prompt_none_state();
+    let mut payload = prompt_none_payload();
+    payload.pushed_request_uri = Some(format!(
+        "urn:ietf:params:oauth:request_uri:{}",
+        Uuid::now_v7()
+    ));
+
+    let response =
+        issue_authorization_code_without_interaction(&state, &prompt_none_request(), payload).await;
+
+    let query = redirect_query(&response);
+    assert_eq!(query.get("error").map(String::as_str), Some("server_error"));
+    assert_eq!(query.get("state").map(String::as_str), Some("opaque-state"));
 }
