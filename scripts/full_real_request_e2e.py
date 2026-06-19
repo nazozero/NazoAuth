@@ -990,10 +990,10 @@ def assert_destructive_targets_are_e2e() -> None:
     allowed_targets = [
         {
             "database_host": "nazo-oauth-e2e-postgres",
-            "database_port": None,
+            "database_port": 5432,
             "database_name": "oauth",
             "valkey_host": "nazo-oauth-e2e-valkey",
-            "valkey_port": None,
+            "valkey_port": 6379,
             "valkey_db": "/0",
             "base_host": "nazo-oauth-e2e-server",
             "base_port": 8000,
