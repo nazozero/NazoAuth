@@ -35,6 +35,10 @@ from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
 
 BASE_URL = os.environ.get("E2E_BASE_URL", "http://nazo-oauth-e2e-server:8000")
 ISSUER_URL = os.environ.get("E2E_ISSUER_URL", BASE_URL)
+OIDC_REDIRECT_URI = os.environ.get(
+    "E2E_OIDC_REDIRECT_URI",
+    f"{ISSUER_URL}/auth/federation/oidc/callback",
+)
 DATABASE_URL = os.environ.get(
     "E2E_DATABASE_URL",
     "postgresql://postgres:postgres@nazo-oauth-e2e-postgres:5432/oauth",
@@ -907,7 +911,7 @@ def exercise_oidc_federation_start() -> None:
         and parsed.path == "/authorize"
         and query.get("response_type") == ["code"]
         and query.get("client_id") == ["codecov-oidc-client"]
-        and query.get("redirect_uri") == [f"{BASE_URL}/auth/federation/oidc/callback"]
+        and query.get("redirect_uri") == [OIDC_REDIRECT_URI]
         and query.get("scope") == ["openid email profile"]
         and query.get("code_challenge_method") == ["S256"]
         and bool(query.get("code_challenge", [""])[0])
