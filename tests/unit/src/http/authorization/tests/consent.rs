@@ -2,7 +2,7 @@ use super::*;
 use actix_web::cookie::Cookie;
 use actix_web::test::TestRequest;
 use diesel::sql_query;
-use diesel::sql_types::{Bool, Int4, Text, Uuid as SqlUuid};
+use diesel::sql_types::{Int4, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
 use fred::interfaces::ClientLike;
 use fred::prelude::{
@@ -13,7 +13,7 @@ use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::UserRow;
+use crate::domain::{ActiveSigningKey, Keyset, UserRow};
 use crate::support::SessionPayload;
 
 fn query(values: &[(&str, &str)]) -> std::collections::HashMap<String, String> {
@@ -343,12 +343,13 @@ async fn authorize_consent_rejects_requests_without_request_id() {
     let req = fixture
         .consent_request("sid-no-request-id", None)
         .to_http_request();
-    let (status, body) = response_json(authorize_consent(
+    let response = authorize_consent(
         fixture.state.clone(),
         req,
         Query(query(&[("foo", "bar")])),
-    ))
+    )
     .await;
+    let (status, body) = response_json(response).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"], "invalid_request");
@@ -366,12 +367,13 @@ async fn authorize_consent_rejects_missing_consent_payload() {
     let req = fixture
         .consent_request("sid-missing-payload", Some("request-missing"))
         .to_http_request();
-    let (status, body) = response_json(authorize_consent(
+    let response = authorize_consent(
         fixture.state.clone(),
         req,
         Query(query(&[("request_id", "request-missing")])),
-    ))
+    )
     .await;
+    let (status, body) = response_json(response).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"], "invalid_request");
@@ -392,12 +394,13 @@ async fn authorize_consent_rejects_malformed_consent_payload() {
     let req = fixture
         .consent_request("sid-malformed-payload", Some("request-malformed"))
         .to_http_request();
-    let (status, body) = response_json(authorize_consent(
+    let response = authorize_consent(
         fixture.state.clone(),
         req,
         Query(query(&[("request_id", "request-malformed")])),
-    ))
+    )
     .await;
+    let (status, body) = response_json(response).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"], "invalid_request");
@@ -420,12 +423,13 @@ async fn authorize_consent_rejects_payload_owned_by_other_user() {
     let req = fixture
         .consent_request("sid-wrong-user", Some("request-other-user"))
         .to_http_request();
-    let (status, body) = response_json(authorize_consent(
+    let response = authorize_consent(
         fixture.state.clone(),
         req,
         Query(query(&[("request_id", "request-other-user")])),
-    ))
+    )
     .await;
+    let (status, body) = response_json(response).await;
 
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(body["error"], "access_denied");
@@ -445,12 +449,13 @@ async fn authorize_consent_returns_payload_for_current_user() {
     let req = fixture
         .consent_request("sid-valid-owner", Some(&payload.request_id))
         .to_http_request();
-    let (status, body) = response_json(authorize_consent(
+    let response = authorize_consent(
         fixture.state.clone(),
         req,
         Query(query(&[("request_id", payload.request_id.as_str())])),
-    ))
+    )
     .await;
+    let (status, body) = response_json(response).await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["request_id"], payload.request_id);
