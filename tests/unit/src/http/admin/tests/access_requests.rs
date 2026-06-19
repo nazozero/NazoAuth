@@ -611,7 +611,7 @@ async fn approve_access_request_validates_client_request_before_mutation() {
         .await;
     let sid = format!("sid-{suffix}");
     let csrf = format!("csrf-{suffix}");
-    fixture.store_session(&admin, sid).await;
+    fixture.store_session(&admin, &sid).await;
     let request_id = fixture
         .insert_access_request(&applicant, "InvalidClient", AccessRequestStatus::Pending)
         .await;
@@ -922,7 +922,7 @@ async fn approve_access_request_surfaces_pending_request_lookup_failure_after_ad
     let applicant = fixture.create_user("lookup-user", "user", 0).await;
     let sid = "sid-lookup";
     let csrf = "csrf-lookup";
-    fixture.store_session(&admin, &sid).await;
+    fixture.store_session(&admin, sid).await;
     let request_id = fixture
         .insert_access_request(&applicant, "LookupFailure", AccessRequestStatus::Pending)
         .await;
