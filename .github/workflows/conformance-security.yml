@@ -192,6 +192,19 @@ jobs:
           PAR_TTL_SECONDS: 90
           REQUIRE_PUSHED_AUTHORIZATION_REQUESTS: false
           SCIM_BEARER_TOKEN: "codecov-scim-secret"
+          FEDERATION_OIDC_PROVIDER_ID: "codecov-oidc"
+          FEDERATION_OIDC_ISSUER: "https://issuer.example"
+          FEDERATION_OIDC_AUTHORIZATION_ENDPOINT: "https://issuer.example/authorize"
+          FEDERATION_OIDC_TOKEN_ENDPOINT: "https://issuer.example/token"
+          FEDERATION_OIDC_JWKS_URL: "https://issuer.example/jwks"
+          FEDERATION_OIDC_CLIENT_ID: "codecov-oidc-client"
+          FEDERATION_OIDC_CLIENT_SECRET: "codecov-oidc-secret"
+          FEDERATION_OIDC_REDIRECT_URI: "http://127.0.0.1:8000/auth/federation/oidc/callback"
+          FEDERATION_OIDC_SCOPES: "openid email profile"
+          FEDERATION_SAML_GATEWAY_ENABLED: true
+          FEDERATION_SAML_GATEWAY_ISSUER: "codecov-saml-gateway"
+          FEDERATION_SAML_GATEWAY_AUDIENCE: "nazo-oauth-codecov"
+          FEDERATION_SAML_GATEWAY_SECRET: "codecov-saml-gateway-secret-000000"
           EMAIL_DELIVERY: "smtp"
           EMAIL_CODE_TTL_SECONDS: 900
           EMAIL_CODE_SEND_COOLDOWN_SECONDS: 1
