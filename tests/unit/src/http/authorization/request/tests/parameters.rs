@@ -418,10 +418,7 @@ fn requested_acr_claim_rejects_non_object_id_token_claims() {
 fn requested_acr_claim_ignores_absent_or_whitespace_only_acr_claims() {
     assert_eq!(requested_acr_claim(Some(&json!({}))), Ok(None));
     assert_eq!(requested_acr_claim(Some(&json!({"acr":"phr"}))), Err(()));
-    assert_eq!(
-        requested_acr_claim(Some(&json!({"acr":null}))),
-        Ok(None)
-    );
+    assert_eq!(requested_acr_claim(Some(&json!({"acr":null}))), Ok(None));
     assert_eq!(
         requested_acr_claim(Some(&json!({"acr":{"values":[" ",""]}}))),
         Ok(None)
