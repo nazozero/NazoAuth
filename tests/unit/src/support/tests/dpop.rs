@@ -517,6 +517,7 @@ fn signed_test_proof(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn signed_test_proof_with_typ(
     signing_key: &SigningKey,
     typ: &str,

@@ -110,8 +110,7 @@ pub(crate) async fn revoke_after_rate_limit(
         && let Some(claims) = decode_access_claims(&state, &form.token)
         && claims.client_id == client.client_id
         && let Some(expires_at) = DateTime::<Utc>::from_timestamp(claims.exp, 0)
-    {
-        if let Err(error) = diesel::insert_into(access_token_revocations::table)
+        && let Err(error) = diesel::insert_into(access_token_revocations::table)
             .values((
                 access_token_revocations::access_token_jti_blake3.eq(blake3_hex(&claims.jti)),
                 access_token_revocations::tenant_id.eq(client.tenant_id),
@@ -126,14 +125,13 @@ pub(crate) async fn revoke_after_rate_limit(
             .do_nothing()
             .execute(&mut conn)
             .await
-        {
-            tracing::warn!(%error, "failed to revoke access token");
-            return token_management_oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "token 撤销失败.",
-            );
-        }
+    {
+        tracing::warn!(%error, "failed to revoke access token");
+        return token_management_oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "token 撤销失败.",
+        );
     }
     audit_event(
         "token_revoked",
