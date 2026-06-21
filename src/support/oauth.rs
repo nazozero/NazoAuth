@@ -187,10 +187,8 @@ pub(crate) fn validate_client_metadata(metadata: ClientMetadata<'_>) -> anyhow::
     {
         validate_client_jwks(jwks)?;
     }
-    if token_endpoint_auth_method == "private_key_jwt" {
-        if jwks.is_none() {
-            anyhow::bail!("private_key_jwt 客户端必须配置 jwks");
-        }
+    if token_endpoint_auth_method == "private_key_jwt" && jwks.is_none() {
+        anyhow::bail!("private_key_jwt 客户端必须配置 jwks");
     }
     if token_endpoint_auth_method == "tls_client_auth"
         && !mtls_binding.is_some_and(ClientMtlsMetadata::has_binding_material)
