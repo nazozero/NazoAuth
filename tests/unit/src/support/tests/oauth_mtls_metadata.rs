@@ -352,3 +352,30 @@ fn client_metadata_requires_self_signed_mtls_x5c_jwks() {
     });
     assert!(!validate_self_signed_mtls_jwks(&expired_jwks));
 }
+
+#[test]
+fn client_metadata_rejects_duplicate_san_email_bindings() {
+    let duplicate_email = ClientMtlsMetadata {
+        tls_client_auth_san_email: vec![
+            "client@example.com".to_owned(),
+            "client@example.com".to_owned(),
+        ],
+        ..ClientMtlsMetadata::default()
+    };
+    let result = validate_client_metadata(metadata(
+        "confidential",
+        &["https://client.example/callback".to_owned()],
+        &["accounts".to_owned()],
+        &["resource://default".to_owned()],
+        &["authorization_code".to_owned()],
+        "client_secret_basic",
+        None,
+        Some(&duplicate_email),
+    ));
+    assert!(
+        result
+            .expect_err("duplicate SAN email bindings must fail")
+            .to_string()
+            .contains("tls_client_auth_san_email 不能重复")
+    );
+}

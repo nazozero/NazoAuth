@@ -180,3 +180,37 @@ fn request_authorizer_requires_verified_mtls_binding_context() {
 
     assert_eq!(verified.cnf.unwrap().x5t_s256, Some("thumb-1".to_owned()));
 }
+
+#[test]
+fn dpop_request_authorizer_rejects_query_access_tokens() {
+    let fixture = fixture();
+    let error = authorize_dpop_resource_request(
+        &fixture.verifier,
+        &DpopProofVerifier::new(DpopProofVerifierConfig::default()),
+        &["DPoP access-token"],
+        "ignored-proof",
+        Some("access_token=query-token"),
+        "GET",
+        "https://resource.example/data",
+    )
+    .unwrap_err();
+
+    assert_eq!(error, ResourceServerRequestError::InvalidRequest);
+}
+
+#[test]
+fn dpop_request_authorizer_rejects_bearer_scheme() {
+    let fixture = fixture();
+    let error = authorize_dpop_resource_request(
+        &fixture.verifier,
+        &DpopProofVerifier::new(DpopProofVerifierConfig::default()),
+        &["Bearer access-token"],
+        "ignored-proof",
+        None,
+        "GET",
+        "https://resource.example/data",
+    )
+    .unwrap_err();
+
+    assert_eq!(error, ResourceServerRequestError::MissingSenderConstraint);
+}

@@ -353,3 +353,83 @@ fn rejects_dpop_jkt_mismatch() {
 
     assert_eq!(error, ResourceServerVerifierError::DpopBindingMismatch);
 }
+
+#[test]
+fn enforces_require_any_sender_constraint_with_none_cnf() {
+    assert_eq!(
+        validate_confirmation_policy(&ConfirmationPolicy::RequireAnySenderConstraint, None,),
+        Err(ResourceServerVerifierError::MissingSenderConstraint)
+    );
+}
+
+#[test]
+fn enforces_require_any_sender_constraint_with_jkt() {
+    assert_eq!(
+        validate_confirmation_policy(
+            &ConfirmationPolicy::RequireAnySenderConstraint,
+            Some(&ConfirmationClaims {
+                jkt: Some("jkt-1".to_owned()),
+                x5t_s256: None,
+            }),
+        ),
+        Ok(())
+    );
+}
+
+#[test]
+fn enforces_require_any_sender_constraint_with_x5t() {
+    assert_eq!(
+        validate_confirmation_policy(
+            &ConfirmationPolicy::RequireAnySenderConstraint,
+            Some(&ConfirmationClaims {
+                jkt: None,
+                x5t_s256: Some("thumb-1".to_owned()),
+            }),
+        ),
+        Ok(())
+    );
+}
+
+#[test]
+fn enforces_require_mtls_with_none_cnf() {
+    assert_eq!(
+        validate_confirmation_policy(&ConfirmationPolicy::RequireMtls, None,),
+        Err(ResourceServerVerifierError::MissingSenderConstraint)
+    );
+}
+
+#[test]
+fn enforces_require_mtls_thumbprint_with_none_cnf() {
+    assert_eq!(
+        validate_confirmation_policy(
+            &ConfirmationPolicy::RequireMtlsThumbprint("thumb-1".to_owned()),
+            None,
+        ),
+        Err(ResourceServerVerifierError::MissingSenderConstraint)
+    );
+}
+
+#[test]
+fn enforces_require_mtls_thumbprint_with_matching_cnf() {
+    assert_eq!(
+        validate_confirmation_policy(
+            &ConfirmationPolicy::RequireMtlsThumbprint("thumb-1".to_owned()),
+            Some(&ConfirmationClaims {
+                jkt: None,
+                x5t_s256: Some("thumb-1".to_owned()),
+            }),
+        ),
+        Ok(())
+    );
+}
+
+#[test]
+fn enforces_require_dpop_jkt_with_none_cnf() {
+    assert_eq!(
+        validate_confirmation_policy(
+            &ConfirmationPolicy::RequireDpopJkt("jkt-1".to_owned()),
+            None,
+        ),
+        Err(ResourceServerVerifierError::MissingSenderConstraint)
+    );
+}
