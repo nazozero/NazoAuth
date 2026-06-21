@@ -5,7 +5,7 @@ use crate::config::ConfigSource;
 use crate::db::create_pool;
 use crate::domain::{ActiveSigningKey, Keyset};
 use crate::settings::{OidcFederationSettings, SamlGatewaySettings};
-use crate::support::{generate_key_material, public_jwk_from_private_der};
+use crate::support::{generate_key_material, public_jwk_from_private_der, random_urlsafe_token};
 use actix_web::http::header;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Text, Uuid as SqlUuid};
@@ -287,13 +287,14 @@ fn oauth_error_code(response: &HttpResponse) -> Option<String> {
 }
 
 fn cookie_value_from_response(response: &HttpResponse, name: &str) -> Option<String> {
+    let prefix = format!("{name}=");
     response
         .headers()
         .get_all(header::SET_COOKIE)
         .filter_map(|value| value.to_str().ok())
         .find_map(|cookie| {
             cookie
-                .strip_prefix(&format!("{}=", name))
+                .strip_prefix(&prefix)
                 .and_then(|value| value.split(';').next())
                 .map(ToOwned::to_owned)
         })
@@ -309,8 +310,18 @@ async fn response_json(response: HttpResponse) -> (StatusCode, Value) {
 }
 
 async fn store_oidc_state(state: &AppState, state_token: &str, created_at: i64) {
+    let nonce = random_urlsafe_token();
+    store_oidc_state_with_nonce(state, state_token, &nonce, created_at).await;
+}
+
+async fn store_oidc_state_with_nonce(
+    state: &AppState,
+    state_token: &str,
+    nonce: &str,
+    created_at: i64,
+) {
     let body = serde_json::to_string(&OidcFederationState {
-        nonce: "nonce-1".to_owned(),
+        nonce: nonce.to_owned(),
         pkce_verifier: "verifier-1".to_owned(),
         created_at,
     })
@@ -354,6 +365,7 @@ fn signed_oidc_token(
     provider: &OidcFederationSettings,
     kid: &str,
     private_pkcs8_der: &[u8],
+    nonce: &str,
     overrides: Value,
 ) -> String {
     let now = Utc::now().timestamp();
@@ -363,7 +375,7 @@ fn signed_oidc_token(
         "aud": provider.client_id,
         "exp": now + 300,
         "iat": now,
-        "nonce": "nonce-1",
+        "nonce": nonce,
         "email": "user@example.com",
         "email_verified": true,
         "name": "User One"
@@ -394,8 +406,10 @@ async fn provider_backed_by_local_oidc(
     OidcFederationSettings,
     tokio::task::JoinHandle<String>,
     tokio::task::JoinHandle<String>,
+    String,
 ) {
     let mut provider = oidc_provider();
+    let nonce = random_urlsafe_token();
     let key = generate_key_material(Algorithm::RS256).expect("RSA key should generate");
     let jwk = public_jwk_from_private_der("oidc-kid", Algorithm::RS256, &key.private_pkcs8_der)
         .expect("public JWK should derive");
@@ -403,6 +417,7 @@ async fn provider_backed_by_local_oidc(
         &provider,
         "oidc-kid",
         &key.private_pkcs8_der,
+        &nonce,
         id_token_overrides,
     );
     let (token_endpoint, token_request) =
@@ -410,7 +425,7 @@ async fn provider_backed_by_local_oidc(
     let (jwks_url, jwks_request) = one_shot_json_server(json!({ "keys": [jwk] })).await;
     provider.token_endpoint = token_endpoint;
     provider.jwks_url = jwks_url;
-    (provider, token_request, jwks_request)
+    (provider, token_request, jwks_request, nonce)
 }
 
 #[test]
@@ -683,13 +698,13 @@ async fn oidc_callback_rejects_expired_stored_state_before_token_exchange() {
 
 #[actix_web::test]
 async fn oidc_callback_requires_normalized_email_claim_before_identity_resolution() {
-    let (provider, token_request, jwks_request) =
+    let (provider, token_request, jwks_request, nonce) =
         provider_backed_by_local_oidc(json!({"email": null})).await;
     let Some(state) = live_federation_state(Some(provider), None).await else {
         return;
     };
     let state_token = random_urlsafe_token();
-    store_oidc_state(&state, &state_token, Utc::now().timestamp()).await;
+    store_oidc_state_with_nonce(&state, &state_token, &nonce, Utc::now().timestamp()).await;
     let state = Data::new(state);
     let req = actix_web::test::TestRequest::get()
         .uri("/auth/federation/oidc/callback?state=email&code=code")
@@ -717,13 +732,13 @@ async fn oidc_callback_requires_normalized_email_claim_before_identity_resolutio
 
 #[actix_web::test]
 async fn oidc_callback_rejects_unverified_email_before_identity_resolution() {
-    let (provider, token_request, jwks_request) =
+    let (provider, token_request, jwks_request, nonce) =
         provider_backed_by_local_oidc(json!({"email_verified": false})).await;
     let Some(state) = live_federation_state(Some(provider), None).await else {
         return;
     };
     let state_token = random_urlsafe_token();
-    store_oidc_state(&state, &state_token, Utc::now().timestamp()).await;
+    store_oidc_state_with_nonce(&state, &state_token, &nonce, Utc::now().timestamp()).await;
     let state = Data::new(state);
     let req = actix_web::test::TestRequest::get()
         .uri("/auth/federation/oidc/callback?state=email&code=code")
@@ -752,8 +767,9 @@ async fn oidc_callback_rejects_unverified_email_before_identity_resolution() {
 #[test]
 fn oidc_authorization_url_binds_state_nonce_and_s256_pkce() {
     let provider = oidc_provider();
+    let nonce = random_urlsafe_token();
 
-    let location = oidc_authorization_url(&provider, "state-1", "nonce-1", "verifier-1");
+    let location = oidc_authorization_url(&provider, "state-1", &nonce, "verifier-1");
     let url = url::Url::parse(&location).unwrap();
     let params = url
         .query_pairs()
@@ -773,7 +789,7 @@ fn oidc_authorization_url_binds_state_nonce_and_s256_pkce() {
     );
     assert_eq!(
         params.get("nonce").map(|value| value.as_ref()),
-        Some("nonce-1")
+        Some(nonce.as_str())
     );
     assert_eq!(
         params
@@ -1169,7 +1185,14 @@ async fn oidc_callback_denies_failed_token_exchange_and_consumes_state() {
 async fn oidc_callback_returns_server_error_when_jwks_response_is_invalid() {
     let mut provider = oidc_provider();
     let key = generate_key_material(Algorithm::RS256).expect("RSA key should generate");
-    let id_token = signed_oidc_token(&provider, "oidc-kid", &key.private_pkcs8_der, json!({}));
+    let nonce = random_urlsafe_token();
+    let id_token = signed_oidc_token(
+        &provider,
+        "oidc-kid",
+        &key.private_pkcs8_der,
+        &nonce,
+        json!({}),
+    );
     let (token_endpoint, token_request) =
         one_shot_json_server(json!({ "id_token": id_token })).await;
     let (jwks_url, jwks_request) = one_shot_json_server(json!({ "not_keys": [] })).await;
@@ -1179,7 +1202,7 @@ async fn oidc_callback_returns_server_error_when_jwks_response_is_invalid() {
         return;
     };
     let state_token = random_urlsafe_token();
-    store_oidc_state(&state, &state_token, Utc::now().timestamp()).await;
+    store_oidc_state_with_nonce(&state, &state_token, &nonce, Utc::now().timestamp()).await;
     let state = Data::new(state);
 
     let response = federation_oidc_callback_after_rate_limit(
@@ -1211,13 +1234,14 @@ async fn oidc_callback_returns_server_error_when_jwks_response_is_invalid() {
 
 #[actix_web::test]
 async fn oidc_callback_rejects_id_token_policy_failures_and_consumes_state() {
-    let (provider, token_request, jwks_request) =
-        provider_backed_by_local_oidc(json!({"nonce": "wrong-nonce"})).await;
+    let wrong_nonce = random_urlsafe_token();
+    let (provider, token_request, jwks_request, nonce) =
+        provider_backed_by_local_oidc(json!({"nonce": wrong_nonce})).await;
     let Some(state) = live_federation_state(Some(provider), None).await else {
         return;
     };
     let state_token = random_urlsafe_token();
-    store_oidc_state(&state, &state_token, Utc::now().timestamp()).await;
+    store_oidc_state_with_nonce(&state, &state_token, &nonce, Utc::now().timestamp()).await;
     let state = Data::new(state);
 
     let response = federation_oidc_callback_after_rate_limit(
@@ -1259,7 +1283,7 @@ async fn oidc_callback_rejects_id_token_policy_failures_and_consumes_state() {
 
 #[actix_web::test]
 async fn oidc_callback_reports_identity_resolution_db_failure_without_session_cookie() {
-    let (provider, token_request, jwks_request) = provider_backed_by_local_oidc(json!({
+    let (provider, token_request, jwks_request, nonce) = provider_backed_by_local_oidc(json!({
         "sub": format!("oidc-db-failure-subject-{}", Uuid::now_v7().simple()),
         "email": format!("oidc-db-failure-{}@example.com", Uuid::now_v7().simple()),
         "name": "Database Failure"
@@ -1269,7 +1293,7 @@ async fn oidc_callback_reports_identity_resolution_db_failure_without_session_co
         return;
     };
     let state_token = random_urlsafe_token();
-    store_oidc_state(&state, &state_token, Utc::now().timestamp()).await;
+    store_oidc_state_with_nonce(&state, &state_token, &nonce, Utc::now().timestamp()).await;
     let state = Data::new(state);
 
     let response = federation_oidc_callback_after_rate_limit(
@@ -1315,7 +1339,7 @@ async fn oidc_callback_creates_new_federated_user_session_and_external_link() {
     let suffix = Uuid::now_v7().simple().to_string();
     let email = format!("oidc-new-{suffix}@example.com");
     let subject = format!("oidc-subject-{suffix}");
-    let (provider, token_request, jwks_request) = provider_backed_by_local_oidc(json!({
+    let (provider, token_request, jwks_request, nonce) = provider_backed_by_local_oidc(json!({
         "sub": subject,
         "email": email,
         "name": "Federated User"
@@ -1325,7 +1349,7 @@ async fn oidc_callback_creates_new_federated_user_session_and_external_link() {
         return;
     };
     let state_token = random_urlsafe_token();
-    store_oidc_state(&fixture.state, &state_token, Utc::now().timestamp()).await;
+    store_oidc_state_with_nonce(&fixture.state, &state_token, &nonce, Utc::now().timestamp()).await;
 
     let response = federation_oidc_callback_after_rate_limit(
         fixture.state.clone(),
@@ -1392,7 +1416,7 @@ async fn oidc_callback_links_existing_active_email_account_without_creating_dupl
     let suffix = Uuid::now_v7().simple().to_string();
     let email = format!("oidc-existing-{suffix}@example.com");
     let subject = format!("oidc-existing-subject-{suffix}");
-    let (provider, token_request, jwks_request) = provider_backed_by_local_oidc(json!({
+    let (provider, token_request, jwks_request, nonce) = provider_backed_by_local_oidc(json!({
         "sub": subject,
         "email": email,
         "name": "Existing User"
@@ -1403,7 +1427,7 @@ async fn oidc_callback_links_existing_active_email_account_without_creating_dupl
     };
     let existing_user = fixture.create_user(&email, true).await;
     let state_token = random_urlsafe_token();
-    store_oidc_state(&fixture.state, &state_token, Utc::now().timestamp()).await;
+    store_oidc_state_with_nonce(&fixture.state, &state_token, &nonce, Utc::now().timestamp()).await;
 
     let response = federation_oidc_callback_after_rate_limit(
         fixture.state.clone(),
@@ -1454,7 +1478,7 @@ async fn oidc_callback_rejects_existing_inactive_email_account_without_link_or_s
     let suffix = Uuid::now_v7().simple().to_string();
     let email = format!("oidc-existing-inactive-{suffix}@example.com");
     let subject = format!("oidc-existing-inactive-subject-{suffix}");
-    let (provider, token_request, jwks_request) = provider_backed_by_local_oidc(json!({
+    let (provider, token_request, jwks_request, nonce) = provider_backed_by_local_oidc(json!({
         "sub": subject,
         "email": email,
         "name": "Inactive Existing User"
@@ -1465,7 +1489,7 @@ async fn oidc_callback_rejects_existing_inactive_email_account_without_link_or_s
     };
     let inactive_user = fixture.create_user(&email, false).await;
     let state_token = random_urlsafe_token();
-    store_oidc_state(&fixture.state, &state_token, Utc::now().timestamp()).await;
+    store_oidc_state_with_nonce(&fixture.state, &state_token, &nonce, Utc::now().timestamp()).await;
 
     let response = federation_oidc_callback_after_rate_limit(
         fixture.state.clone(),
@@ -1520,7 +1544,7 @@ async fn oidc_callback_rejects_inactive_linked_user() {
     let suffix = Uuid::now_v7().simple().to_string();
     let email = format!("oidc-inactive-{suffix}@example.com");
     let subject = format!("oidc-inactive-subject-{suffix}");
-    let (provider, token_request, jwks_request) = provider_backed_by_local_oidc(json!({
+    let (provider, token_request, jwks_request, nonce) = provider_backed_by_local_oidc(json!({
         "sub": subject,
         "email": email
     }))
@@ -1533,7 +1557,7 @@ async fn oidc_callback_rejects_inactive_linked_user() {
         .insert_external_identity_link(&inactive_user, "oidc", "oidc", &subject, &email)
         .await;
     let state_token = random_urlsafe_token();
-    store_oidc_state(&fixture.state, &state_token, Utc::now().timestamp()).await;
+    store_oidc_state_with_nonce(&fixture.state, &state_token, &nonce, Utc::now().timestamp()).await;
 
     let response = federation_oidc_callback_after_rate_limit(
         fixture.state.clone(),

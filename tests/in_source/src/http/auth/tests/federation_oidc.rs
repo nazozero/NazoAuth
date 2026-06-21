@@ -1,6 +1,6 @@
 use super::*;
 use crate::settings::OidcFederationSettings;
-use crate::support::{generate_key_material, public_jwk_from_private_der};
+use crate::support::{generate_key_material, public_jwk_from_private_der, random_urlsafe_token};
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use std::net::SocketAddr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -23,7 +23,8 @@ fn provider() -> OidcFederationSettings {
 #[test]
 fn oidc_authorization_url_includes_all_required_params() {
     let provider = provider();
-    let location = oidc_authorization_url(&provider, "state-1", "nonce-1", "verifier-1");
+    let nonce = random_urlsafe_token();
+    let location = oidc_authorization_url(&provider, "state-1", &nonce, "verifier-1");
     let url = url::Url::parse(&location).unwrap();
     let params = url
         .query_pairs()
@@ -50,7 +51,10 @@ fn oidc_authorization_url_includes_all_required_params() {
         Some("openid email")
     );
     assert_eq!(params.get("state").map(|v| v.as_ref()), Some("state-1"));
-    assert_eq!(params.get("nonce").map(|v| v.as_ref()), Some("nonce-1"));
+    assert_eq!(
+        params.get("nonce").map(|v| v.as_ref()),
+        Some(nonce.as_str())
+    );
     assert_eq!(
         params.get("code_challenge_method").map(|v| v.as_ref()),
         Some("S256")
@@ -190,6 +194,7 @@ fn signed_id_token(
     provider: &OidcFederationSettings,
     kid: &str,
     private_pkcs8_der: &[u8],
+    nonce: &str,
     overrides: Value,
 ) -> String {
     let now = Utc::now().timestamp();
@@ -199,7 +204,7 @@ fn signed_id_token(
         "aud": provider.client_id,
         "exp": now + 300,
         "iat": now,
-        "nonce": "nonce-1",
+        "nonce": nonce,
         "email": "user@example.com",
         "email_verified": true,
         "name": "User One"
@@ -227,33 +232,42 @@ fn verify_oidc_id_token_accepts_matching_signed_claims_and_rejects_policy_mismat
     let jwk = public_jwk_from_private_der("oidc-kid", Algorithm::RS256, &key.private_pkcs8_der)
         .expect("public JWK should derive");
     let jwks = json!({"keys": [jwk]});
-    let token = signed_id_token(&provider, "oidc-kid", &key.private_pkcs8_der, json!({}));
+    let nonce = random_urlsafe_token();
+    let token = signed_id_token(
+        &provider,
+        "oidc-kid",
+        &key.private_pkcs8_der,
+        &nonce,
+        json!({}),
+    );
 
-    let claims = verify_oidc_id_token(&provider, &jwks, &token, "nonce-1")
+    let claims = verify_oidc_id_token(&provider, &jwks, &token, &nonce)
         .expect("matching issuer, audience, nonce, kid, and signature should pass");
     assert_eq!(claims.sub, "subject-1");
     assert_eq!(claims.email.as_deref(), Some("user@example.com"));
     assert_eq!(claims.email_verified, Some(true));
     assert_eq!(claims.name.as_deref(), Some("User One"));
 
-    let wrong_nonce = verify_oidc_id_token(&provider, &jwks, &token, "other-nonce");
-    assert!(wrong_nonce.is_err());
+    let mismatched_nonce = random_urlsafe_token();
+    assert!(verify_oidc_id_token(&provider, &jwks, &token, &mismatched_nonce).is_err());
 
     let wrong_audience = signed_id_token(
         &provider,
         "oidc-kid",
         &key.private_pkcs8_der,
+        &nonce,
         json!({"aud": "other-client"}),
     );
-    assert!(verify_oidc_id_token(&provider, &jwks, &wrong_audience, "nonce-1").is_err());
+    assert!(verify_oidc_id_token(&provider, &jwks, &wrong_audience, &nonce).is_err());
 
     let future_iat = signed_id_token(
         &provider,
         "oidc-kid",
         &key.private_pkcs8_der,
+        &nonce,
         json!({"iat": Utc::now().timestamp() + 120}),
     );
-    assert!(verify_oidc_id_token(&provider, &jwks, &future_iat, "nonce-1").is_err());
+    assert!(verify_oidc_id_token(&provider, &jwks, &future_iat, &nonce).is_err());
 }
 
 #[test]
@@ -263,8 +277,15 @@ fn verify_oidc_id_token_requires_kid_and_matching_supported_jwk() {
     let jwk = public_jwk_from_private_der("oidc-kid", Algorithm::RS256, &key.private_pkcs8_der)
         .expect("public JWK should derive");
     let jwks = json!({"keys": [jwk]});
-    let unknown_kid = signed_id_token(&provider, "unknown-kid", &key.private_pkcs8_der, json!({}));
-    assert!(verify_oidc_id_token(&provider, &jwks, &unknown_kid, "nonce-1").is_err());
+    let nonce = random_urlsafe_token();
+    let unknown_kid = signed_id_token(
+        &provider,
+        "unknown-kid",
+        &key.private_pkcs8_der,
+        &nonce,
+        json!({}),
+    );
+    assert!(verify_oidc_id_token(&provider, &jwks, &unknown_kid, &nonce).is_err());
 
     let mut header = Header::new(Algorithm::RS256);
     header.kid = None;
@@ -275,15 +296,21 @@ fn verify_oidc_id_token_requires_kid_and_matching_supported_jwk() {
             "sub": "subject-1",
             "aud": provider.client_id,
             "exp": Utc::now().timestamp() + 300,
-            "nonce": "nonce-1"
+            "nonce": nonce
         }),
         &EncodingKey::from_rsa_der(&key.private_pkcs8_der),
     )
     .expect("test token should sign");
-    assert!(verify_oidc_id_token(&provider, &jwks, &token_without_kid, "nonce-1").is_err());
+    assert!(verify_oidc_id_token(&provider, &jwks, &token_without_kid, &nonce).is_err());
 
     let mut private_jwk = jwks.clone();
     private_jwk["keys"][0]["d"] = json!("private-material");
-    let valid_token = signed_id_token(&provider, "oidc-kid", &key.private_pkcs8_der, json!({}));
-    assert!(verify_oidc_id_token(&provider, &private_jwk, &valid_token, "nonce-1").is_err());
+    let valid_token = signed_id_token(
+        &provider,
+        "oidc-kid",
+        &key.private_pkcs8_der,
+        &nonce,
+        json!({}),
+    );
+    assert!(verify_oidc_id_token(&provider, &private_jwk, &valid_token, &nonce).is_err());
 }
