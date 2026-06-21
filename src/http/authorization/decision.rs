@@ -250,5 +250,5 @@ pub(crate) async fn authorize_decision(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/authorization/tests/decision.rs"]
+#[path = "../../../tests/in_source/src/http/authorization/tests/decision.rs"]
 mod tests;

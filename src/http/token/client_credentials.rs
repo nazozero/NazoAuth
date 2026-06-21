@@ -135,5 +135,5 @@ pub(crate) async fn token_client_credentials(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/token/tests/client_credentials.rs"]
+#[path = "../../../tests/in_source/src/http/token/tests/client_credentials.rs"]
 mod tests;

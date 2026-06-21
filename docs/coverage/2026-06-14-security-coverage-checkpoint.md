@@ -30,7 +30,7 @@ Coverage is treated as a signal. The actual objective is to prove security invar
 - Files over 1000 lines require an explicit reason if not split.
 - Files over 1500 lines should be split unless there is a specific exceptional reason.
 - File names should express a security semantic boundary.
-- Tests should live under the `tests/` tree. Unit tests that need private or `pub(crate)` implementation access are stored under `tests/unit/src/**` and mounted from the owning module with `#[cfg(test)]`, instead of living inline in `src/**/tests`.
+- Tests should live under the `tests/` tree. Source-mounted tests that need private or `pub(crate)` implementation access are stored under `tests/in_source/src/**` and mounted from the owning module with `#[cfg(test)]`. Top-level `tests/*.rs` files are reserved for integration tests that exercise the public crate or process boundary.
 
 Current length check: no Rust file under `src/` or `tests/` exceeds 600 lines.
 
@@ -38,7 +38,7 @@ Current length check: no Rust file under `src/` or `tests/` exceeds 600 lines.
 
 Token endpoint security-boundary coverage was expanded:
 
-- `tests/unit/src/http/token/tests/introspect.rs`
+- `tests/in_source/src/http/token/tests/introspect.rs`
   - malformed content type returns `400 invalid_request`
   - invalid UTF-8 returns `400 invalid_request`
   - duplicate `token` returns `400 invalid_request`
@@ -47,7 +47,7 @@ Token endpoint security-boundary coverage was expanded:
   - missing client authentication returns `401 invalid_client`
   - assertions verify no `active`, `client_id`, or `sub` metadata is leaked on failures
 
-- `tests/unit/src/http/token/tests/revoke.rs`
+- `tests/in_source/src/http/token/tests/revoke.rs`
   - malformed content type returns `400 invalid_request`
   - invalid UTF-8 returns `400 invalid_request`
   - duplicate `token` returns `400 invalid_request`
@@ -106,7 +106,7 @@ CARGO_BUILD_JOBS=1 CARGO_TERM_COLOR=never rtk bash -lc '
   cargo llvm-cov clean --workspace
   eval "$(cargo llvm-cov show-env --sh)"
   cargo clean
-  cargo test --locked --workspace --all-features --lib --test oidf_seed --test resource_server
+  cargo test --locked --workspace --all-features --lib
   cargo llvm-cov report --lcov --output-path lcov.info \
     --ignore-filename-regex '"'"'(^|/)(tests?|benches|examples|migrations)(/|\.rs$)|src/(schema|db)\.rs$|src/domain/rows\.rs$|src/bootstrap/routes\.rs$|src/support/valkey\.rs$|src/main\.rs$|src/bin/nazo_oauth_(keyctl|migrate|seed_oidf)\.rs$'"'"'
 '
@@ -124,21 +124,21 @@ The earlier `0.65%` result is invalid because tests reused non-instrumented bina
 
 Additional security-invariant tests were added after the initial checkpoint:
 
-- `tests/unit/src/http/token/tests/client_auth.rs`
+- `tests/in_source/src/http/token/tests/client_auth.rs`
   - confidential `client_secret_basic` succeeds only when the client is confidential, uses the registered method, and supplies the correct secret
   - wrong secret is rejected as `InvalidClient`
   - wrong authentication method is rejected as `InvalidClient`
   - public clients are rejected even if they present a valid secret
   - unsupported registered authentication methods fail closed
 
-- `tests/unit/src/http/token/tests/dispatch.rs`
+- `tests/in_source/src/http/token/tests/dispatch.rs`
   - FAPI2 rejects `client_secret_basic` with `401 invalid_client`
   - FAPI2 rejects bearer-only clients with `400 invalid_request`
   - FAPI2 rejects public clients with `400 unauthorized_client`
   - FAPI2 accepts confidential mTLS clients when tokens are sender constrained
   - malformed `grant_types` registration fails closed as `400 unauthorized_client` without panicking or dispatching a grant
 
-- `tests/unit/src/http/token/tests/issue.rs`
+- `tests/in_source/src/http/token/tests/issue.rs`
   - access-token signing failure returns `500 server_error`
   - signing failure does not return `access_token`, `refresh_token`, or `id_token`
   - invalid persisted `authorization_details` state fails before token signing
@@ -306,7 +306,7 @@ The session fail-closed batch was resumed and completed.
 
 Additional tests:
 
-- `tests/unit/src/support/tests/sessions.rs`
+- `tests/in_source/src/support/tests/sessions.rs`
   - missing session cookies return anonymous state without touching Valkey or Postgres
   - missing session cookies cannot complete MFA or perform MFA step-up
   - anonymous requests receive exact `401 login_required` for user-only paths
@@ -320,13 +320,13 @@ Validation for this continuation:
 ```sh
 rtk cargo fmt --all -- --check
 rtk cargo test --workspace --all-features support::sessions::tests
-CARGO_BUILD_JOBS=1 CARGO_TARGET_DIR=target/codex-coverage rtk proxy bash -lc 'cargo llvm-cov clean --workspace && eval "$(cargo llvm-cov show-env --sh)" && cargo test --locked --workspace --all-features --lib --test oidf_seed --test resource_server && cargo llvm-cov report --lcov --output-path lcov.info --ignore-filename-regex ...'
+CARGO_BUILD_JOBS=1 CARGO_TARGET_DIR=target/codex-coverage rtk proxy bash -lc 'cargo llvm-cov clean --workspace && eval "$(cargo llvm-cov show-env --sh)" && cargo test --locked --workspace --all-features --lib && cargo llvm-cov report --lcov --output-path lcov.info --ignore-filename-regex ...'
 ```
 
 Observed result:
 
 - `support::sessions::tests`: 10 passed
-- coverage test target set: 568 lib tests + 8 `oidf_seed` tests + 10 `resource_server` tests passed
+- coverage test target set: source-mounted lib tests include the OIDF seed and resource-server coverage; the former duplicate top-level integration test targets are no longer part of the command
 
 Coverage after this continuation:
 

@@ -145,5 +145,5 @@ fn register_success_response(user: UserRow) -> HttpResponse {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/auth/tests/register.rs"]
+#[path = "../../../tests/in_source/src/http/auth/tests/register.rs"]
 mod tests;

@@ -457,17 +457,17 @@ pub(crate) async fn upsert_grant(
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/src/support/tests/oauth_client_jwks.rs"]
+#[path = "../../tests/in_source/src/support/tests/oauth_client_jwks.rs"]
 mod oauth_client_jwks_tests;
 
 #[cfg(test)]
-#[path = "../../tests/unit/src/support/tests/oauth_client_metadata.rs"]
+#[path = "../../tests/in_source/src/support/tests/oauth_client_metadata.rs"]
 mod oauth_client_metadata_tests;
 
 #[cfg(test)]
-#[path = "../../tests/unit/src/support/tests/oauth_mtls_metadata.rs"]
+#[path = "../../tests/in_source/src/support/tests/oauth_mtls_metadata.rs"]
 mod oauth_mtls_metadata_tests;
 
 #[cfg(test)]
-#[path = "../../tests/unit/src/support/tests/oauth_redirect_pkce.rs"]
+#[path = "../../tests/in_source/src/support/tests/oauth_redirect_pkce.rs"]
 mod oauth_redirect_pkce_tests;

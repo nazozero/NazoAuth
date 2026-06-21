@@ -484,5 +484,5 @@ fn valid_client_assertion_jti(jti: &str) -> bool {
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/src/support/tests/security.rs"]
+#[path = "../../tests/in_source/src/support/tests/security.rs"]
 mod tests;

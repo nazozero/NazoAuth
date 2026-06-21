@@ -333,5 +333,5 @@ pub(crate) async fn issue_token_response(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/token/tests/issue.rs"]
+#[path = "../../../tests/in_source/src/http/token/tests/issue.rs"]
 mod tests;

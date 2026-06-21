@@ -394,5 +394,5 @@ fn base32_decode(value: &str) -> Option<Vec<u8>> {
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/src/support/tests/mfa.rs"]
+#[path = "../../tests/in_source/src/support/tests/mfa.rs"]
 mod tests;

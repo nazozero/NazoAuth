@@ -212,8 +212,14 @@ async fn login_form_request_creates_session_and_redirects_to_safe_next() {
     };
 
     let password = test_login_password();
-    let _user = fixture
-        .create_user("form-success", "User@Example.com", &password, true, false)
+    let user = fixture
+        .create_user(
+            "form-success",
+            "form-success@example.com",
+            &password,
+            true,
+            false,
+        )
         .await;
     let req = actix_web::test::TestRequest::default()
         .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
@@ -223,7 +229,8 @@ async fn login_form_request_creates_session_and_redirects_to_safe_next() {
         ))
         .to_http_request();
     let body = Bytes::from(format!(
-        "email=User%40Example.com&password={}&next=%2Fauthorize%3Fclient_id%3Dabc",
+        "email={}&password={}&next=%2Fauthorize%3Fclient_id%3Dabc",
+        urlencoding::encode(&user.email),
         form_encoded_test_login_password()
     ));
 
@@ -521,7 +528,9 @@ impl LiveLoginFixture {
         is_active: bool,
         mfa_enabled: bool,
     ) -> UserRow {
-        let username = format!("login-{suffix}");
+        let unique = Uuid::now_v7().simple().to_string();
+        let username = format!("login-{suffix}-{unique}");
+        let email = unique_test_email(email, &unique);
         let password_hash =
             hash_password(password).expect("password hash should be generated for test user");
         let mut conn = get_conn(&self.state.diesel_db)
@@ -541,7 +550,7 @@ impl LiveLoginFixture {
         .bind::<SqlUuid, _>(DEFAULT_REALM_ID)
         .bind::<SqlUuid, _>(DEFAULT_ORGANIZATION_ID)
         .bind::<Text, _>(username)
-        .bind::<Text, _>(email.to_owned())
+        .bind::<Text, _>(email)
         .bind::<Text, _>(password_hash)
         .bind::<Bool, _>(is_active)
         .bind::<Bool, _>(mfa_enabled)
@@ -549,6 +558,13 @@ impl LiveLoginFixture {
         .await
         .expect("test user should insert")
     }
+}
+
+fn unique_test_email(email: &str, unique: &str) -> String {
+    let Some((local, domain)) = email.split_once('@') else {
+        return format!("{email}-{unique}");
+    };
+    format!("{local}+{unique}@{domain}")
 }
 
 struct LoginBadValkeyState {

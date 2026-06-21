@@ -84,5 +84,5 @@ fn supported_algorithm(alg: Algorithm) -> Option<(&'static str, SupportedJwkAlgo
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/src/resource_server/tests/jwk.rs"]
+#[path = "../../tests/in_source/src/resource_server/tests/jwk.rs"]
 mod tests;

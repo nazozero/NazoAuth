@@ -570,5 +570,5 @@ fn authorization_login_url(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/authorization/tests/request.rs"]
+#[path = "../../../tests/in_source/src/http/authorization/tests/request.rs"]
 mod tests;

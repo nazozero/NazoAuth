@@ -152,5 +152,5 @@ fn send_code_success_response(dev_response_enabled: bool, code: Option<&str>) ->
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/auth/tests/email_code.rs"]
+#[path = "../../../tests/in_source/src/http/auth/tests/email_code.rs"]
 mod tests;

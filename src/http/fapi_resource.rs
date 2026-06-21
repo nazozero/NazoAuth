@@ -191,5 +191,5 @@ fn resource_form_body_access_token(req: &HttpRequest, body: &Bytes) -> ResourceF
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/src/http/tests/fapi_resource.rs"]
+#[path = "../../tests/in_source/src/http/tests/fapi_resource.rs"]
 mod tests;

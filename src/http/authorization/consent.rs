@@ -97,5 +97,5 @@ pub(crate) async fn authorize_consent(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/authorization/tests/consent.rs"]
+#[path = "../../../tests/in_source/src/http/authorization/tests/consent.rs"]
 mod tests;

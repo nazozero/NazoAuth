@@ -292,5 +292,5 @@ fn parse_resource_parameter(value: String) -> Result<String, TokenFormError> {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/token/tests/forms.rs"]
+#[path = "../../../tests/in_source/src/http/token/tests/forms.rs"]
 mod tests;

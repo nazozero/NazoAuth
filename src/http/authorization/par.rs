@@ -329,5 +329,5 @@ fn validate_pushed_authorization_request_profile(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/authorization/tests/par.rs"]
+#[path = "../../../tests/in_source/src/http/authorization/tests/par.rs"]
 mod tests;

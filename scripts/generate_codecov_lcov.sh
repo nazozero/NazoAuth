@@ -6,6 +6,7 @@ IGNORE_REGEX='(^|/)(tests?|benches|examples|migrations)(/|\.rs$)|(^|/)cargo/regi
 export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
 export CARGO_TERM_COLOR="${CARGO_TERM_COLOR:-never}"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target/codecov-coverage}"
+export RUST_TEST_THREADS="${RUST_TEST_THREADS:-1}"
 
 COVERAGE_DIR="${CARGO_TARGET_DIR%/}/llvm-cov-target"
 BIN_DIR="${CARGO_TARGET_DIR%/}/debug"
@@ -162,7 +163,7 @@ kill -INT "$SERVER_PID"
 wait "$SERVER_PID" || true
 SERVER_PID=""
 
-cargo test --locked --workspace --all-features --lib --test oidf_seed --test resource_server
+cargo test --locked --workspace --all-features --lib
 
 RUST_HOST="$(rustc -vV | sed -n 's/^host: //p')"
 LLVM_TOOLS_DIR="$(rustc --print sysroot)/lib/rustlib/$RUST_HOST/bin"
@@ -177,9 +178,7 @@ objects=("$BIN_DIR/nazo-oauth-server")
 while IFS= read -r object; do
   objects+=("$object")
 done < <(find "$BIN_DIR/deps" -maxdepth 1 -type f \( \
-  -name 'nazo_oauth_server-*' -o \
-  -name 'oidf_seed-*' -o \
-  -name 'resource_server-*' \
+  -name 'nazo_oauth_server-*' \
 \) ! -name '*.d' ! -name '*.rlib' ! -name '*.rmeta')
 
 if [[ ! -x "${objects[0]}" ]]; then

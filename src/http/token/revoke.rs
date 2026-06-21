@@ -149,5 +149,5 @@ pub(crate) async fn revoke_after_rate_limit(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/token/tests/revoke.rs"]
+#[path = "../../../tests/in_source/src/http/token/tests/revoke.rs"]
 mod tests;

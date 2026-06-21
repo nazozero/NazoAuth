@@ -318,5 +318,5 @@ pub(crate) async fn load_user_passkeys(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/profile/tests/passkeys.rs"]
+#[path = "../../../tests/in_source/src/http/profile/tests/passkeys.rs"]
 mod tests;

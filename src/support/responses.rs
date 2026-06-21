@@ -228,5 +228,5 @@ pub(crate) fn empty_response(status: StatusCode) -> HttpResponse {
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/src/support/tests/responses.rs"]
+#[path = "../../tests/in_source/src/support/tests/responses.rs"]
 mod tests;

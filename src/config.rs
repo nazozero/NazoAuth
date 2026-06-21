@@ -245,5 +245,5 @@ pub fn database_url(source: &ConfigSource) -> String {
 }
 
 #[cfg(test)]
-#[path = "../tests/unit/src/config/tests/config.rs"]
+#[path = "../tests/in_source/src/config/tests/config.rs"]
 mod tests;

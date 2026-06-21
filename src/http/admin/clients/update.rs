@@ -283,5 +283,5 @@ fn prepare_client_patch(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/src/http/admin/clients/tests/update.rs"]
+#[path = "../../../../tests/in_source/src/http/admin/clients/tests/update.rs"]
 mod tests;

@@ -370,5 +370,5 @@ fn key_is_retired(key: &Value) -> bool {
 }
 
 #[cfg(test)]
-#[path = "../tests/unit/src/keyctl/tests/keyctl.rs"]
+#[path = "../tests/in_source/src/keyctl/tests/keyctl.rs"]
 mod tests;

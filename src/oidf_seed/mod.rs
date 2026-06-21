@@ -50,5 +50,5 @@ pub fn callback_uris(suite_base_urls: &[String], alias: &str) -> Vec<String> {
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/src/oidf_seed/tests/oidf_seed.rs"]
+#[path = "../../tests/in_source/src/oidf_seed/tests/oidf_seed.rs"]
 mod tests;

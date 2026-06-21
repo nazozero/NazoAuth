@@ -179,5 +179,5 @@ pub(crate) async fn jwks(state: Data<AppState>) -> Json<Value> {
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/src/http/tests/well_known.rs"]
+#[path = "../../tests/in_source/src/http/tests/well_known.rs"]
 mod tests;

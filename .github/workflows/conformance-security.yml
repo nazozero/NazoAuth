@@ -53,6 +53,65 @@ on:
 jobs:
   rust-gate:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: oauth
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d oauth"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      valkey:
+        image: valkey/valkey:9-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/oauth
+      VALKEY_URL: redis://127.0.0.1:6379/0
+      VALKEY_COMMAND_TIMEOUT_MS: "1000"
+      BIND: 127.0.0.1:18000
+      ISSUER: http://127.0.0.1:18000
+      MTLS_ENDPOINT_BASE_URL: http://127.0.0.1:18000
+      FRONTEND_BASE_URL: http://127.0.0.1:3000
+      CORS_ALLOWED_ORIGINS: http://127.0.0.1:3000
+      COOKIE_SECURE: "false"
+      SESSION_COOKIE_NAME: nazo_oauth_session
+      CSRF_COOKIE_NAME: nazo_oauth_csrf
+      EMAIL_DELIVERY: disabled
+      EMAIL_CODE_DEV_RESPONSE_ENABLED: "false"
+      AVATAR_STORAGE_DIR: runtime/ci/avatars
+      JWK_KEYS_DIR: runtime/ci/keys
+      AUTH_RATE_LIMIT_MAX_REQUESTS: "100000"
+      TOKEN_RATE_LIMIT_MAX_REQUESTS: "100000"
+      TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS: "100000"
+      REQUIRE_PUSHED_AUTHORIZATION_REQUESTS: "false"
+      SCIM_BEARER_TOKEN: ci-scim-secret
+      FEDERATION_OIDC_PROVIDER_ID: ci-oidc
+      FEDERATION_OIDC_ISSUER: https://issuer.example
+      FEDERATION_OIDC_AUTHORIZATION_ENDPOINT: https://issuer.example/authorize
+      FEDERATION_OIDC_TOKEN_ENDPOINT: https://issuer.example/token
+      FEDERATION_OIDC_JWKS_URL: https://issuer.example/jwks
+      FEDERATION_OIDC_CLIENT_ID: ci-oidc-client
+      FEDERATION_OIDC_CLIENT_SECRET: ci-oidc-secret
+      FEDERATION_OIDC_REDIRECT_URI: http://127.0.0.1:18000/auth/federation/oidc/callback
+      FEDERATION_OIDC_SCOPES: openid email profile
+      FEDERATION_SAML_GATEWAY_ENABLED: "true"
+      FEDERATION_SAML_GATEWAY_ISSUER: ci-saml-gateway
+      FEDERATION_SAML_GATEWAY_AUDIENCE: nazo-oauth-ci
+      FEDERATION_SAML_GATEWAY_SECRET: ci-saml-gateway-secret-000000000000
+      RUST_TEST_THREADS: "1"
+      CARGO_TERM_COLOR: never
     steps:
       - uses: actions/checkout@v6.0.3
       - uses: dtolnay/rust-toolchain@1.96.0
@@ -60,14 +119,18 @@ jobs:
           components: rustfmt, clippy
       - name: Install native dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev
+      - name: Prepare runtime directories
+        run: mkdir -p runtime/ci/avatars runtime/ci/keys
       - name: Format
         run: cargo fmt --check
       - name: Check
-        run: cargo check
+        run: cargo check --workspace --all-targets --all-features --locked
       - name: Clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - name: Run migrations
+        run: cargo run --locked --bin nazo-oauth-migrate
       - name: Test
-        run: cargo test --locked
+        run: cargo test --locked --workspace --all-features --lib
 
   supply-chain-gate:
     runs-on: ubuntu-latest

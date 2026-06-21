@@ -453,5 +453,5 @@ fn validate_token_request_profile(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/token/tests/dispatch.rs"]
+#[path = "../../../tests/in_source/src/http/token/tests/dispatch.rs"]
 mod tests;

@@ -193,5 +193,5 @@ fn active_refresh_token_introspection_body(token: &TokenRow, client_id: &str) ->
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/token/tests/introspect.rs"]
+#[path = "../../../tests/in_source/src/http/token/tests/introspect.rs"]
 mod tests;
