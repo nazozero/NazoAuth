@@ -1,11 +1,15 @@
 use super::*;
 use std::path::PathBuf;
+use std::sync::Arc;
 
+use crate::db::create_pool;
+use crate::domain::{ActiveSigningKey, Keyset};
 use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, PasskeySettings,
     RateLimitSettings, RequestObjectJtiPolicy, SubjectType,
 };
 use crate::support::{ClientIpHeaderMode, IpCidr};
+use actix_web::test::TestRequest;
 
 fn settings(profile: AuthorizationServerProfile) -> Settings {
     Settings {
@@ -77,7 +81,7 @@ fn client() -> ClientRow {
         client_type: "confidential".to_owned(),
         client_secret_argon2_hash: None,
         redirect_uris: json!(["https://client.example/callback"]),
-        scopes: json!(["accounts", "payments", "openid"]),
+        scopes: json!(["accounts", "payments"]),
         allowed_audiences: json!(["resource://default", "https://api.example.com"]),
         grant_types: json!(["client_credentials"]),
         token_endpoint_auth_method: "private_key_jwt".to_owned(),
@@ -125,6 +129,31 @@ fn oauth_error_code(response: &HttpResponse) -> String {
         .expect("OAuth error response should record its error code")
 }
 
+fn client_credentials_state() -> AppState {
+    AppState {
+        diesel_db: create_pool(
+            "postgres://nazo_client_credentials_test_invalid:nazo_client_credentials_test_invalid@127.0.0.1:1/nazo"
+                .to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey: fred::prelude::Builder::default_centralized()
+            .build()
+            .expect("valkey client construction should not connect"),
+        settings: Arc::new(settings(AuthorizationServerProfile::Oauth2Baseline)),
+        keyset: Arc::new(Keyset {
+            active_kid: "test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+            verification_keys: Vec::new(),
+        }),
+    }
+}
+
+fn token_request() -> HttpRequest {
+    TestRequest::post().uri("/token").to_http_request()
+}
+
 #[test]
 fn client_credentials_defaults_to_allowed_scopes_and_default_audience() {
     let settings = settings(AuthorizationServerProfile::Oauth2Baseline);
@@ -135,11 +164,7 @@ fn client_credentials_defaults_to_allowed_scopes_and_default_audience() {
 
     assert_eq!(
         issue.scopes,
-        vec![
-            "accounts".to_owned(),
-            "payments".to_owned(),
-            "openid".to_owned()
-        ]
+        vec!["accounts".to_owned(), "payments".to_owned()]
     );
     assert_eq!(issue.audiences, vec!["resource://default".to_owned()]);
 }
@@ -166,6 +191,24 @@ fn client_credentials_scope_request_may_only_narrow_registered_scopes() {
         .expect_err("client_credentials must reject scope privilege expansion");
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(oauth_error_code(&response), "invalid_scope");
+}
+
+#[test]
+fn client_credentials_rejects_openid_scope_even_if_registered() {
+    let settings = settings(AuthorizationServerProfile::Oauth2Baseline);
+    let mut client = client();
+    client.scopes = json!(["accounts", "openid"]);
+
+    let default_response = client_credentials_issue_request(&settings, &client, &form(None, &[]))
+        .expect_err("client_credentials must not inherit openid from legacy client metadata");
+    assert_eq!(default_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(&default_response), "invalid_scope");
+
+    let explicit_response =
+        client_credentials_issue_request(&settings, &client, &form(Some("openid"), &[]))
+            .expect_err("client_credentials must not accept explicit openid scope");
+    assert_eq!(explicit_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(&explicit_response), "invalid_scope");
 }
 
 #[test]
@@ -202,4 +245,91 @@ fn client_credentials_rejects_unregistered_audience() {
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(oauth_error_code(&response), "invalid_target");
+}
+
+#[actix_web::test]
+async fn token_client_credentials_rejects_public_clients_at_endpoint_boundary() {
+    let state = client_credentials_state();
+    let mut client = client();
+    client.client_type = "public".to_owned();
+    client.token_endpoint_auth_method = "none".to_owned();
+
+    let response =
+        token_client_credentials(&state, &token_request(), &client, &form(None, &[]), None).await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(&response), "unauthorized_client");
+}
+
+#[actix_web::test]
+async fn token_client_credentials_requires_configured_sender_constraints() {
+    let state = client_credentials_state();
+    let mut dpop_client = client();
+    dpop_client.require_dpop_bound_tokens = true;
+
+    let response = token_client_credentials(
+        &state,
+        &token_request(),
+        &dpop_client,
+        &form(None, &[]),
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(&response), "invalid_dpop_proof");
+
+    let mut mtls_client = client();
+    mtls_client.require_mtls_bound_tokens = true;
+    let response = token_client_credentials(
+        &state,
+        &token_request(),
+        &mtls_client,
+        &form(None, &[]),
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(&response), "invalid_grant");
+}
+
+#[actix_web::test]
+async fn token_client_credentials_binds_mtls_thumbprint_from_verified_certificate() {
+    let mut state = client_credentials_state();
+    let mut settings = (*state.settings).clone();
+    settings.trusted_proxy_cidrs =
+        vec![IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse")];
+    state.settings = Arc::new(settings);
+    let state = Data::new(state);
+    let mut client = client();
+    client.require_mtls_bound_tokens = true;
+    let thumbprint = "ABEiM0RVZneImaq7zN3u_wARIjNEVWZ3iJmqu8zd7v8";
+    let req = TestRequest::post()
+        .uri("/token")
+        .peer_addr("127.0.0.1:12345".parse().expect("peer addr should parse"))
+        .insert_header(("x-ssl-client-verify", "SUCCESS"))
+        .insert_header(("x-ssl-client-cert-sha256", thumbprint))
+        .to_http_request();
+
+    let response = token_client_credentials(&state, &req, &client, &form(None, &[]), None).await;
+
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(oauth_error_code(&response), "server_error");
+}
+
+#[actix_web::test]
+async fn token_client_credentials_rejects_invalid_scope_before_issuing_token() {
+    let state = client_credentials_state();
+    let client = client();
+
+    let response = token_client_credentials(
+        &state,
+        &token_request(),
+        &client,
+        &form(Some("admin"), &[]),
+        None,
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(&response), "invalid_scope");
 }

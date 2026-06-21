@@ -184,19 +184,10 @@ pub(crate) async fn authorize_decision(
         issued_at: now,
         expires_at: now + Duration::seconds(state.settings.auth_code_ttl_seconds as i64),
     };
-    let body = match serde_json::to_string(&AuthorizationCodeState::Pending {
+    let body = serde_json::to_string(&AuthorizationCodeState::Pending {
         payload: code_payload,
-    }) {
-        Ok(body) => body,
-        Err(error) => {
-            tracing::warn!(%error, "failed to serialize authorization code state");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "授权码创建失败.",
-            );
-        }
-    };
+    })
+    .expect("authorization code state serialization must be infallible");
     let code_key = authorization_code_key(&code);
     if let Err(error) = valkey_set_ex(
         &state.valkey,

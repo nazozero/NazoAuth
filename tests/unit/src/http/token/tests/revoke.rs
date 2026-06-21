@@ -9,6 +9,8 @@ use actix_web::test::TestRequest;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Jsonb, Nullable, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
+use fred::interfaces::ClientLike;
+use fred::prelude::{Builder as ValkeyBuilder, Config as ValkeyConfig};
 
 fn revocation_state() -> Data<AppState> {
     Data::new(AppState {
@@ -35,6 +37,10 @@ fn revocation_state() -> Data<AppState> {
 
 fn live_revocation_state() -> Option<Data<AppState>> {
     let database_url = std::env::var("DATABASE_URL").ok()?;
+    live_revocation_state_from_database_url(database_url)
+}
+
+fn live_revocation_state_from_database_url(database_url: String) -> Option<Data<AppState>> {
     let key_material =
         generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
     let public_jwk = public_jwk_from_private_der(
@@ -60,6 +66,81 @@ fn live_revocation_state() -> Option<Data<AppState>> {
                 public_jwk,
             }],
         }),
+    }))
+}
+
+fn database_url_with_search_path(schema: &str) -> Option<String> {
+    let base = std::env::var("DATABASE_URL").ok()?;
+    let separator = if base.contains('?') { "&" } else { "?" };
+    Some(format!(
+        "{base}{separator}options=-csearch_path%3D{schema}%2Cpublic"
+    ))
+}
+
+async fn create_isolated_schema(state: &Data<AppState>, schema: &str, tables: &[&str]) {
+    exec_sql(
+        state,
+        &format!(r#"CREATE SCHEMA IF NOT EXISTS "{}""#, schema),
+    )
+    .await;
+    for table in tables {
+        exec_sql(
+            state,
+            &format!(
+                r#"CREATE TABLE "{}"."{}" (LIKE public."{}" INCLUDING ALL)"#,
+                schema, table, table
+            ),
+        )
+        .await;
+    }
+}
+
+async fn exec_sql(state: &Data<AppState>, sql: &str) {
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    sql_query(sql)
+        .execute(&mut conn)
+        .await
+        .expect("schema mutation should succeed");
+}
+
+async fn rename_column(state: &Data<AppState>, schema: &str, table: &str, from: &str, to: &str) {
+    exec_sql(
+        state,
+        &format!(
+            r#"ALTER TABLE "{}"."{}" RENAME COLUMN "{}" TO "{}""#,
+            schema, table, from, to
+        ),
+    )
+    .await;
+}
+
+async fn drop_schema(state: &Data<AppState>, schema: &str) {
+    exec_sql(
+        state,
+        &format!(r#"DROP SCHEMA IF EXISTS "{}" CASCADE"#, schema),
+    )
+    .await;
+}
+
+async fn live_rate_limited_revocation_state() -> Option<Data<AppState>> {
+    let state = live_revocation_state()?;
+    let valkey_url = std::env::var("VALKEY_URL").ok()?;
+    let valkey = ValkeyBuilder::from_config(
+        ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),
+    )
+    .build()
+    .expect("valkey client should build");
+    valkey.init().await.expect("valkey should connect");
+    let mut settings = (*state.settings).clone();
+    settings.rate_limit.token_management_max_requests = 0;
+
+    Some(Data::new(AppState {
+        diesel_db: state.diesel_db.clone(),
+        valkey,
+        settings: Arc::new(settings),
+        keyset: state.keyset.clone(),
     }))
 }
 
@@ -414,6 +495,24 @@ async fn revocation_rejects_malformed_form_before_client_or_token_lookup() {
 }
 
 #[actix_web::test]
+async fn revocation_rate_limit_short_circuits_before_client_or_token_lookup() {
+    let Some(state) = live_rate_limited_revocation_state().await else {
+        return;
+    };
+    let response = revoke(
+        state,
+        form_request(),
+        Bytes::from_static(
+            b"token=refresh-token&client_id=rate-limited-client&client_secret=secret",
+        ),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(oauth_error_code(&response), "temporarily_unavailable");
+}
+
+#[actix_web::test]
 async fn revocation_rejects_conflicting_client_auth_without_token_state_lookup() {
     let response = revoke_after_rate_limit(
         revocation_state(),
@@ -476,6 +575,184 @@ async fn revocation_client_lookup_failures_return_server_error() {
     assert_eq!(body.get("error"), Some(&json!("server_error")));
     assert!(body.get("access_token").is_none());
     assert!(body.get("refresh_token").is_none());
+}
+
+#[actix_web::test]
+async fn revocation_rejects_unknown_client_before_token_state_lookup() {
+    let Some(state) = live_revocation_state() else {
+        return;
+    };
+    let body = Bytes::from(format!(
+        "token={}&client_id={}&client_secret=secret",
+        urlencoding::encode("token-1"),
+        urlencoding::encode(&format!("missing-revoke-client-{}", Uuid::now_v7()))
+    ));
+
+    let response = revoke_after_rate_limit(state, form_request(), body).await;
+
+    assert_eq!(oauth_error_code(&response), "invalid_client");
+    let (status, body) = json_body(response).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(body.get("error"), Some(&json!("invalid_client")));
+    assert_eq!(
+        body.get("error_description"),
+        Some(&json!("Request failed."))
+    );
+    assert!(body.get("access_token").is_none());
+    assert!(body.get("refresh_token").is_none());
+}
+
+#[actix_web::test]
+async fn revocation_rejects_wrong_client_secret_before_token_state_lookup() {
+    let Some(state) = live_revocation_state() else {
+        return;
+    };
+    let client = insert_revocation_client(
+        &state,
+        &format!("revoke-wrong-secret-{}", Uuid::now_v7()),
+        "correct-secret",
+    )
+    .await;
+
+    let response = revoke_with_client(state, &client, "wrong-secret", "token-1").await;
+
+    assert_eq!(oauth_error_code(&response), "invalid_client");
+    let (status, body) = json_body(response).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(body.get("error"), Some(&json!("invalid_client")));
+    assert_eq!(
+        body.get("error_description"),
+        Some(&json!("Request failed."))
+    );
+    assert!(body.get("access_token").is_none());
+    assert!(body.get("refresh_token").is_none());
+}
+
+#[actix_web::test]
+async fn revocation_fails_closed_when_client_lookup_query_fails() {
+    let schema = format!("revoke_client_lookup_failure_{}", Uuid::now_v7().simple());
+    let Some(database_url) = database_url_with_search_path(&schema) else {
+        return;
+    };
+    let Some(state) = live_revocation_state_from_database_url(database_url) else {
+        return;
+    };
+    create_isolated_schema(
+        &state,
+        &schema,
+        &["oauth_clients", "oauth_tokens", "access_token_revocations"],
+    )
+    .await;
+    let client = insert_revocation_client(
+        &state,
+        &format!("revoke-client-query-failure-{}", Uuid::now_v7()),
+        "correct-secret",
+    )
+    .await;
+    rename_column(
+        &state,
+        &schema,
+        "oauth_clients",
+        "client_id",
+        "client_id_broken",
+    )
+    .await;
+
+    let response =
+        revoke_with_client(state.clone(), &client, "correct-secret", "opaque-token").await;
+    let (status, body) = json_body(response).await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body.get("error"), Some(&json!("server_error")));
+    assert!(body.get("access_token").is_none());
+    assert!(body.get("refresh_token").is_none());
+    drop_schema(&state, &schema).await;
+}
+
+#[actix_web::test]
+async fn revocation_fails_closed_when_refresh_token_update_query_fails() {
+    let schema = format!("revoke_refresh_update_failure_{}", Uuid::now_v7().simple());
+    let Some(database_url) = database_url_with_search_path(&schema) else {
+        return;
+    };
+    let Some(state) = live_revocation_state_from_database_url(database_url) else {
+        return;
+    };
+    create_isolated_schema(
+        &state,
+        &schema,
+        &["oauth_clients", "oauth_tokens", "access_token_revocations"],
+    )
+    .await;
+    let client = insert_revocation_client(
+        &state,
+        &format!("revoke-refresh-query-failure-{}", Uuid::now_v7()),
+        "correct-secret",
+    )
+    .await;
+    rename_column(
+        &state,
+        &schema,
+        "oauth_tokens",
+        "revoked_at",
+        "revoked_at_broken",
+    )
+    .await;
+
+    let response =
+        revoke_with_client(state.clone(), &client, "correct-secret", "opaque-refresh").await;
+    let (status, body) = json_body(response).await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body.get("error"), Some(&json!("server_error")));
+    assert!(body.get("access_token").is_none());
+    assert!(body.get("refresh_token").is_none());
+    drop_schema(&state, &schema).await;
+}
+
+#[actix_web::test]
+async fn revocation_fails_closed_when_access_token_blacklist_insert_fails() {
+    let schema = format!(
+        "revoke_access_blacklist_failure_{}",
+        Uuid::now_v7().simple()
+    );
+    let Some(database_url) = database_url_with_search_path(&schema) else {
+        return;
+    };
+    let Some(state) = live_revocation_state_from_database_url(database_url) else {
+        return;
+    };
+    create_isolated_schema(
+        &state,
+        &schema,
+        &["oauth_clients", "oauth_tokens", "access_token_revocations"],
+    )
+    .await;
+    let client = insert_revocation_client(
+        &state,
+        &format!("revoke-access-insert-failure-{}", Uuid::now_v7()),
+        "correct-secret",
+    )
+    .await;
+    let access = sign_access_token(&state, &client).await;
+    rename_column(
+        &state,
+        &schema,
+        "access_token_revocations",
+        "access_token_jti_blake3",
+        "access_token_jti_blake3_broken",
+    )
+    .await;
+
+    let response =
+        revoke_with_client(state.clone(), &client, "correct-secret", &access.token).await;
+    let (status, body) = json_body(response).await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body.get("error"), Some(&json!("server_error")));
+    assert!(body.get("access_token").is_none());
+    assert!(body.get("refresh_token").is_none());
+    drop_schema(&state, &schema).await;
 }
 
 #[actix_web::test]

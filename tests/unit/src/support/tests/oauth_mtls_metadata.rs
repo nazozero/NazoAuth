@@ -97,6 +97,162 @@ fn client_metadata_requires_mtls_binding_material() {
 }
 
 #[test]
+fn client_metadata_rejects_mtls_auth_for_public_clients() {
+    let subject_mtls = ClientMtlsMetadata {
+        tls_client_auth_subject_dn: Some("CN=client-1,O=Example".to_owned()),
+        ..ClientMtlsMetadata::default()
+    };
+    let result = validate_client_metadata(metadata(
+        "public",
+        &["https://client.example/callback".to_owned()],
+        &["accounts".to_owned()],
+        &["resource://default".to_owned()],
+        &["authorization_code".to_owned()],
+        "tls_client_auth",
+        None,
+        Some(&subject_mtls),
+    ));
+    assert!(
+        result
+            .expect_err("public clients must not use mTLS client authentication")
+            .to_string()
+            .contains("public 客户端只能使用 none 认证方式")
+    );
+}
+
+#[test]
+fn client_metadata_validates_mtls_binding_material_shape() {
+    let blank_subject = ClientMtlsMetadata {
+        tls_client_auth_subject_dn: Some("  ".to_owned()),
+        ..ClientMtlsMetadata::default()
+    };
+    let result = validate_client_metadata(metadata(
+        "confidential",
+        &["https://client.example/callback".to_owned()],
+        &["accounts".to_owned()],
+        &["resource://default".to_owned()],
+        &["authorization_code".to_owned()],
+        "client_secret_basic",
+        None,
+        Some(&blank_subject),
+    ));
+    assert!(
+        result
+            .expect_err("blank subject DN must fail closed")
+            .to_string()
+            .contains("tls_client_auth_subject_dn 不能为空")
+    );
+
+    let malformed_thumbprint = ClientMtlsMetadata {
+        tls_client_auth_cert_sha256: Some("not-a-thumbprint".to_owned()),
+        ..ClientMtlsMetadata::default()
+    };
+    let result = validate_client_metadata(metadata(
+        "confidential",
+        &["https://client.example/callback".to_owned()],
+        &["accounts".to_owned()],
+        &["resource://default".to_owned()],
+        &["authorization_code".to_owned()],
+        "client_secret_basic",
+        None,
+        Some(&malformed_thumbprint),
+    ));
+    assert!(
+        result
+            .expect_err("malformed certificate SHA-256 binding must fail")
+            .to_string()
+            .contains("tls_client_auth_cert_sha256 必须是 SHA-256 证书指纹")
+    );
+
+    let duplicate_dns = ClientMtlsMetadata {
+        tls_client_auth_san_dns: vec!["client.example".to_owned(), "client.example".to_owned()],
+        ..ClientMtlsMetadata::default()
+    };
+    let result = validate_client_metadata(metadata(
+        "confidential",
+        &["https://client.example/callback".to_owned()],
+        &["accounts".to_owned()],
+        &["resource://default".to_owned()],
+        &["authorization_code".to_owned()],
+        "client_secret_basic",
+        None,
+        Some(&duplicate_dns),
+    ));
+    assert!(
+        result
+            .expect_err("duplicate SAN DNS bindings must fail")
+            .to_string()
+            .contains("tls_client_auth_san_dns 不能重复")
+    );
+
+    let blank_uri = ClientMtlsMetadata {
+        tls_client_auth_san_uri: vec![
+            "spiffe://client.example/workload".to_owned(),
+            " ".to_owned(),
+        ],
+        ..ClientMtlsMetadata::default()
+    };
+    let result = validate_client_metadata(metadata(
+        "confidential",
+        &["https://client.example/callback".to_owned()],
+        &["accounts".to_owned()],
+        &["resource://default".to_owned()],
+        &["authorization_code".to_owned()],
+        "client_secret_basic",
+        None,
+        Some(&blank_uri),
+    ));
+    assert!(
+        result
+            .expect_err("blank SAN URI binding must fail")
+            .to_string()
+            .contains("tls_client_auth_san_uri 不能为空或包含空白字符")
+    );
+
+    let blank_email = ClientMtlsMetadata {
+        tls_client_auth_san_email: vec!["client@example.com".to_owned(), "\t".to_owned()],
+        ..ClientMtlsMetadata::default()
+    };
+    let result = validate_client_metadata(metadata(
+        "confidential",
+        &["https://client.example/callback".to_owned()],
+        &["accounts".to_owned()],
+        &["resource://default".to_owned()],
+        &["authorization_code".to_owned()],
+        "client_secret_basic",
+        None,
+        Some(&blank_email),
+    ));
+    assert!(
+        result
+            .expect_err("blank SAN email binding must fail")
+            .to_string()
+            .contains("tls_client_auth_san_email 不能为空或包含空白字符")
+    );
+
+    let invalid_ip = ClientMtlsMetadata {
+        tls_client_auth_san_ip: vec!["not-an-ip".to_owned()],
+        ..ClientMtlsMetadata::default()
+    };
+    let result = validate_client_metadata(metadata(
+        "confidential",
+        &["https://client.example/callback".to_owned()],
+        &["accounts".to_owned()],
+        &["resource://default".to_owned()],
+        &["authorization_code".to_owned()],
+        "client_secret_basic",
+        None,
+        Some(&invalid_ip),
+    ));
+    assert!(
+        result
+            .expect_err("SAN IP bindings must parse as IP addresses")
+            .to_string()
+            .contains("tls_client_auth_san_ip 必须是合法 IP 地址")
+    );
+}
+
+#[test]
 fn client_metadata_requires_self_signed_mtls_x5c_jwks() {
     let subject_only = ClientMtlsMetadata {
         tls_client_auth_subject_dn: Some("CN=client-1,O=Example".to_owned()),

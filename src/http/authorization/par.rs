@@ -211,17 +211,8 @@ pub(crate) async fn par_after_rate_limit(
         issued_at: now,
         expires_at: now + Duration::seconds(state.settings.par_ttl_seconds as i64),
     };
-    let body = match serde_json::to_string(&payload) {
-        Ok(body) => body,
-        Err(error) => {
-            tracing::warn!(%error, "failed to serialize PAR payload");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "PAR 写入失败.",
-            );
-        }
-    };
+    let body = serde_json::to_string(&payload)
+        .expect("pushed authorization request serialization must be infallible");
     if let Err(error) = valkey_set_ex(
         &state.valkey,
         pushed_authorization_request_key(&request_uri),

@@ -4,9 +4,20 @@ use std::sync::Arc;
 use crate::config::ConfigSource;
 use crate::db::create_pool;
 use crate::domain::{ActiveSigningKey, Keyset};
+use crate::support::{IpCidr, generate_key_material, public_jwk_from_private_der};
 use actix_web::test::TestRequest;
+use fred::prelude::{
+    Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
+};
+use std::time::Duration as StdDuration;
 
 fn token_management_state() -> AppState {
+    token_management_state_with_settings(
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
+    )
+}
+
+fn token_management_state_with_settings(settings: Settings) -> AppState {
     AppState {
         diesel_db: create_pool(
             "postgres://nazo_client_auth_test_invalid:nazo_client_auth_test_invalid@127.0.0.1:1/nazo"
@@ -17,9 +28,7 @@ fn token_management_state() -> AppState {
         valkey: fred::prelude::Builder::default_centralized()
             .build()
             .expect("valkey client construction should not connect"),
-        settings: Arc::new(
-            Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
-        ),
+        settings: Arc::new(settings),
         keyset: Arc::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
@@ -27,6 +36,31 @@ fn token_management_state() -> AppState {
             verification_keys: Vec::new(),
         }),
     }
+}
+
+fn token_management_state_with_trusted_proxy() -> AppState {
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.trusted_proxy_cidrs =
+        vec![IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse")];
+    token_management_state_with_settings(settings)
+}
+
+fn unavailable_valkey_client() -> fred::prelude::Client {
+    let mut builder = ValkeyBuilder::from_config(
+        ValkeyConfig::from_url("redis://127.0.0.1:1").expect("unavailable Valkey URL should parse"),
+    );
+    builder.with_performance_config(|performance: &mut PerformanceConfig| {
+        performance.default_command_timeout = StdDuration::from_millis(200);
+    });
+    builder.with_connection_config(|connection: &mut ConnectionConfig| {
+        connection.connection_timeout = StdDuration::from_millis(200);
+        connection.internal_command_timeout = StdDuration::from_millis(200);
+        connection.max_command_attempts = 1;
+    });
+    builder
+        .build()
+        .expect("unavailable valkey client construction should not connect")
 }
 
 fn confidential_client_with_secret(secret: &str) -> ClientRow {
@@ -71,6 +105,33 @@ fn client_credentials(method: &str) -> ClientCredentials {
         client_assertion: None,
         method: method.to_owned(),
     }
+}
+
+fn signed_client_assertion(
+    client_id: &str,
+    audience: &str,
+    kid: &str,
+    private_pkcs8_der: &[u8],
+    jti: &str,
+) -> String {
+    let now = Utc::now().timestamp();
+    let claims = json!({
+        "iss": client_id,
+        "sub": client_id,
+        "aud": audience,
+        "iat": now,
+        "nbf": now,
+        "exp": now + 120,
+        "jti": jti
+    });
+    let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+    header.kid = Some(kid.to_owned());
+    jsonwebtoken::encode(
+        &header,
+        &claims,
+        &jsonwebtoken::EncodingKey::from_rsa_der(private_pkcs8_der),
+    )
+    .expect("client assertion should sign")
 }
 
 #[test]
@@ -149,6 +210,20 @@ fn token_management_store_failure_has_no_basic_challenge() {
 }
 
 #[test]
+fn token_management_auth_error_maps_store_unavailable_to_server_error() {
+    let response = token_management_auth_error(TokenManagementClientAuthError::StoreUnavailable);
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("server_error")
+    );
+}
+
+#[test]
 fn client_assertion_replay_maps_to_invalid_client_not_server_error() {
     let error = token_management_client_assertion_error(ClientAssertionError::ReplayDetected);
     let response = token_management_client_auth_error(error, false);
@@ -179,6 +254,50 @@ fn client_assertion_store_failure_maps_to_server_error_without_challenge() {
         response.headers().get(header::CACHE_CONTROL).unwrap(),
         HeaderValue::from_static("no-store")
     );
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("server_error")
+    );
+}
+
+#[actix_web::test]
+async fn token_client_assertion_store_failure_fails_token_grant_as_server_error() {
+    let mut state = token_management_state();
+    state.valkey = unavailable_valkey_client();
+    let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
+        .expect("test client key should generate")
+        .private_pkcs8_der;
+    let public_jwk =
+        public_jwk_from_private_der("client-kid", jsonwebtoken::Algorithm::RS256, &key)
+            .expect("test client jwk should derive");
+    let mut client = confidential_client_with_secret("unused-secret");
+    client.token_endpoint_auth_method = "private_key_jwt".to_owned();
+    client.client_secret_argon2_hash = None;
+    client.jwks = Some(json!({"keys": [public_jwk]}));
+    let req = TestRequest::post().uri("/token").to_http_request();
+    let assertion = signed_client_assertion(
+        &client.client_id,
+        &state.settings.issuer,
+        "client-kid",
+        &key,
+        "token-store-unavailable-jti",
+    );
+    let mut credentials = client_credentials("private_key_jwt");
+    credentials.client_assertion = Some(assertion);
+    let assertion = match verify_confidential_client(&state, &req, &client, &credentials) {
+        Ok(Some(assertion)) => assertion,
+        Ok(None) => panic!("private_key_jwt verification should return replay material"),
+        Err(_) => panic!("signed private_key_jwt assertion should verify"),
+    };
+
+    let response = consume_token_client_assertion(&state, &client, Some(&assertion))
+        .await
+        .expect_err("unavailable replay store must fail the token grant");
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(
         response
             .extensions()
@@ -237,4 +356,67 @@ fn confidential_client_auth_rejects_public_or_unknown_auth_method_even_with_secr
         verify_confidential_client(&state, &req, &client, &credentials),
         Err(TokenManagementClientAuthError::InvalidClient)
     ));
+}
+
+#[test]
+fn private_key_jwt_requires_present_and_well_formed_assertion() {
+    let state = token_management_state();
+    let req = TestRequest::default().to_http_request();
+    let mut client = confidential_client_with_secret("unused-secret");
+    client.token_endpoint_auth_method = "private_key_jwt".to_owned();
+    client.client_secret_argon2_hash = None;
+
+    let mut missing_assertion = client_credentials("private_key_jwt");
+    assert!(matches!(
+        verify_confidential_client(&state, &req, &client, &missing_assertion),
+        Err(TokenManagementClientAuthError::InvalidClient)
+    ));
+
+    missing_assertion.client_assertion = Some("not-a-jwt".to_owned());
+    assert!(matches!(
+        verify_confidential_client(&state, &req, &client, &missing_assertion),
+        Err(TokenManagementClientAuthError::InvalidClient)
+    ));
+}
+
+#[test]
+fn mtls_client_auth_requires_certificate_from_trusted_request_context() {
+    let state = token_management_state();
+    let req = TestRequest::default()
+        .insert_header(("x-ssl-client-verify", "SUCCESS"))
+        .insert_header((
+            "x-forwarded-tls-client-cert-sha256",
+            "ABEiM0RVZneImaq7zN3u_wARIjNEVWZ3iJmqu8zd7v8",
+        ))
+        .to_http_request();
+    let mut client = confidential_client_with_secret("unused-secret");
+    client.token_endpoint_auth_method = "tls_client_auth".to_owned();
+    client.client_secret_argon2_hash = None;
+    let credentials = client_credentials("tls_client_auth");
+
+    assert!(matches!(
+        verify_confidential_client(&state, &req, &client, &credentials),
+        Err(TokenManagementClientAuthError::InvalidClient)
+    ));
+}
+
+#[test]
+fn mtls_client_auth_accepts_matching_certificate_from_trusted_proxy() {
+    let state = token_management_state_with_trusted_proxy();
+    let thumbprint = "ABEiM0RVZneImaq7zN3u_wARIjNEVWZ3iJmqu8zd7v8";
+    let req = TestRequest::default()
+        .peer_addr("127.0.0.1:443".parse().unwrap())
+        .insert_header(("x-ssl-client-verify", "SUCCESS"))
+        .insert_header(("x-forwarded-tls-client-cert-sha256", thumbprint))
+        .to_http_request();
+    let mut client = confidential_client_with_secret("unused-secret");
+    client.token_endpoint_auth_method = "tls_client_auth".to_owned();
+    client.client_secret_argon2_hash = None;
+    client.tls_client_auth_cert_sha256 = Some(thumbprint.to_owned());
+    let credentials = client_credentials("tls_client_auth");
+
+    assert!(
+        verify_confidential_client(&state, &req, &client, &credentials).is_ok(),
+        "matching mTLS certificate from trusted proxy should authenticate the client"
+    );
 }

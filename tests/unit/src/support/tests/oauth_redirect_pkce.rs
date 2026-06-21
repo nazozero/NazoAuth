@@ -66,6 +66,23 @@ fn public_loopback_redirect_uri_allows_runtime_port() {
 }
 
 #[test]
+fn token_audience_helpers_ignore_malformed_audience_values() {
+    assert!(token_audience_values(&json!(true)).is_empty());
+    assert!(token_audience_values(&json!({"aud": "resource://default"})).is_empty());
+    assert_eq!(
+        token_audience_values(&json!(["resource://default", 1, null, "resource://admin"])),
+        vec![
+            "resource://default".to_owned(),
+            "resource://admin".to_owned()
+        ]
+    );
+    assert!(!token_audience_contains(
+        &json!(["resource://other", 1]),
+        "resource://default"
+    ));
+}
+
+#[test]
 fn pkce_values_follow_rfc7636_length_and_charset() {
     assert!(is_valid_pkce_value(
         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"

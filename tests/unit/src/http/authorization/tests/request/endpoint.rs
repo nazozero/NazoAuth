@@ -230,6 +230,32 @@ impl LiveAuthorizationFixture {
         .expect("test client insert should succeed");
     }
 
+    async fn mark_client_sender_constrained(
+        &self,
+        client_id: &str,
+        require_dpop_bound_tokens: bool,
+        require_mtls_bound_tokens: bool,
+    ) {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        sql_query(
+            r#"
+            UPDATE oauth_clients
+            SET require_dpop_bound_tokens = $1,
+                require_mtls_bound_tokens = $2
+            WHERE tenant_id = $3 AND client_id = $4
+            "#,
+        )
+        .bind::<Bool, _>(require_dpop_bound_tokens)
+        .bind::<Bool, _>(require_mtls_bound_tokens)
+        .bind::<diesel::sql_types::Uuid, _>(DEFAULT_TENANT_ID)
+        .bind::<Text, _>(client_id)
+        .execute(&mut conn)
+        .await
+        .expect("test client sender constraint update should succeed");
+    }
+
     async fn store_session(&self, user: &UserRow, sid: &str, auth_time: i64) {
         let payload = SessionPayload {
             user_id: user.id,
@@ -871,6 +897,43 @@ async fn authorization_request_rejects_invalid_dpop_jkt_before_redirect_response
 }
 
 #[actix_web::test]
+async fn authorization_request_rejects_sender_constrained_client_without_par_or_jar() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let client_id = format!("authorize-holder-bound-{}", Uuid::now_v7());
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            true,
+            true,
+        )
+        .await;
+    fixture
+        .mark_client_sender_constrained(&client_id, true, false)
+        .await;
+    let uri = format!(
+        "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code&state=holder-required",
+        urlencoding::encode(&client_id)
+    );
+    let req = actix_web::test::TestRequest::get()
+        .uri(&uri)
+        .to_http_request();
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("redirect_uri", "https://client.example/callback"),
+        ("response_type", "code"),
+        ("state", "holder-required"),
+    ]);
+
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+
+    assert_authorization_error_redirect(response, "invalid_request", Some("holder-required"));
+}
+
+#[actix_web::test]
 async fn authorization_request_rejects_par_dpop_binding_mismatch_without_redirect() {
     let Some(fixture) = LiveAuthorizationFixture::new().await else {
         return;
@@ -964,6 +1027,86 @@ async fn authorization_request_redirects_prompt_max_age_and_claims_parse_errors(
         let response = authorize_request(fixture.state.clone(), req, &mut q).await;
 
         assert_authorization_error_redirect(response, "invalid_request", Some(name));
+    }
+}
+
+#[actix_web::test]
+async fn authorization_request_redirects_core_protocol_validation_errors_after_redirect_resolution()
+{
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let client_id = format!("authorize-core-validation-{}", Uuid::now_v7());
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            false,
+            true,
+        )
+        .await;
+
+    let long_nonce = "n".repeat(513);
+    for (name, mut params) in [
+        (
+            "bad-nonce",
+            query(&[
+                ("client_id", client_id.as_str()),
+                ("redirect_uri", "https://client.example/callback"),
+                ("response_type", "code"),
+                ("nonce", long_nonce.as_str()),
+                ("state", "bad-nonce"),
+            ]),
+        ),
+        (
+            "bad-response-type",
+            query(&[
+                ("client_id", client_id.as_str()),
+                ("redirect_uri", "https://client.example/callback"),
+                ("response_type", "token"),
+                ("state", "bad-response-type"),
+            ]),
+        ),
+        (
+            "bad-response-mode",
+            query(&[
+                ("client_id", client_id.as_str()),
+                ("redirect_uri", "https://client.example/callback"),
+                ("response_type", "code"),
+                ("response_mode", "fragment"),
+                ("state", "bad-response-mode"),
+            ]),
+        ),
+        (
+            "bad-pkce",
+            query(&[
+                ("client_id", client_id.as_str()),
+                ("redirect_uri", "https://client.example/callback"),
+                ("response_type", "code"),
+                ("code_challenge", "too-short"),
+                ("code_challenge_method", "plain"),
+                ("state", "bad-pkce"),
+            ]),
+        ),
+    ] {
+        let uri = format!(
+            "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&state={}",
+            urlencoding::encode(&client_id),
+            name
+        );
+        let req = actix_web::test::TestRequest::get()
+            .uri(&uri)
+            .to_http_request();
+
+        let response = authorize_request(fixture.state.clone(), req, &mut params).await;
+
+        let expected_error = if name == "bad-response-type" {
+            "unsupported_response_type"
+        } else {
+            "invalid_request"
+        };
+        assert_authorization_error_redirect(response, expected_error, Some(name));
     }
 }
 

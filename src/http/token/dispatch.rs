@@ -306,32 +306,16 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
         }
         match client.token_endpoint_auth_method.as_str() {
             "private_key_jwt" => {
-                let Some(assertion) = credentials.client_assertion.as_deref() else {
-                    return oauth_token_error(
-                        StatusCode::UNAUTHORIZED,
-                        "invalid_client",
-                        "客户端认证失败.",
-                        false,
-                    );
-                };
+                let assertion = credentials
+                    .client_assertion
+                    .as_deref()
+                    .expect("private_key_jwt credentials must include an assertion");
                 match verify_private_key_jwt_claims(&state, &req, &client, assertion) {
                     Ok(assertion) => client_assertion = Some(assertion),
-                    Err(error) => {
-                        let store_unavailable =
-                            matches!(error, ClientAssertionError::StoreUnavailable);
-                        let status = if store_unavailable {
-                            StatusCode::SERVICE_UNAVAILABLE
-                        } else {
-                            StatusCode::UNAUTHORIZED
-                        };
-                        let oauth_error_code = if store_unavailable {
-                            "server_error"
-                        } else {
-                            "invalid_client"
-                        };
+                    Err(_) => {
                         return oauth_token_error(
-                            status,
-                            oauth_error_code,
+                            StatusCode::UNAUTHORIZED,
+                            "invalid_client",
                             "客户端认证失败.",
                             false,
                         );
@@ -339,14 +323,10 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
                 }
             }
             "client_secret_basic" | "client_secret_post" => {
-                let Some(secret) = credentials.client_secret.as_deref() else {
-                    return oauth_token_error(
-                        StatusCode::UNAUTHORIZED,
-                        "invalid_client",
-                        "机密客户端必须提供 client_secret.",
-                        has_basic,
-                    );
-                };
+                let secret = credentials
+                    .client_secret
+                    .as_deref()
+                    .expect("secret-based client credentials must include client_secret");
                 if !verify_password(
                     secret,
                     client.client_secret_argon2_hash.as_deref().unwrap_or(""),
@@ -360,15 +340,8 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
                 }
             }
             "tls_client_auth" | "self_signed_tls_client_auth" => {
-                let Some(certificate) = request_mtls_client_certificate(&req, &state.settings)
-                else {
-                    return oauth_token_error(
-                        StatusCode::UNAUTHORIZED,
-                        "invalid_client",
-                        "客户端认证失败.",
-                        false,
-                    );
-                };
+                let certificate = request_mtls_client_certificate(&req, &state.settings)
+                    .expect("mTLS client credentials must include a verified certificate");
                 if !client_mtls_certificate_matches(&client, &certificate) {
                     return oauth_token_error(
                         StatusCode::UNAUTHORIZED,

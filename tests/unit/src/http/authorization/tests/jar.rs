@@ -1,8 +1,13 @@
 use super::*;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use fred::interfaces::ClientLike;
+use fred::prelude::{
+    Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
+};
 use proptest::prelude::*;
 use serde_json::json;
 use std::sync::Arc;
+use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
 use crate::db::create_pool;
@@ -72,15 +77,26 @@ fn jar_state(issuer: &str) -> AppState {
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.issuer = issuer.to_owned();
 
+    jar_state_with_valkey(
+        issuer,
+        fred::prelude::Builder::default_centralized()
+            .build()
+            .expect("valkey client construction should not connect"),
+    )
+}
+
+fn jar_state_with_valkey(issuer: &str, valkey: fred::prelude::Client) -> AppState {
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.issuer = issuer.to_owned();
+
     AppState {
         diesel_db: create_pool(
             "postgres://nazo_jar_test_invalid:nazo_jar_test_invalid@127.0.0.1:1/nazo".to_owned(),
             1,
         )
         .expect("pool construction should not connect"),
-        valkey: fred::prelude::Builder::default_centralized()
-            .build()
-            .expect("valkey client construction should not connect"),
+        valkey,
         settings: Arc::new(settings),
         keyset: Arc::new(Keyset {
             active_kid: "test-kid".to_owned(),
@@ -89,6 +105,43 @@ fn jar_state(issuer: &str) -> AppState {
             verification_keys: Vec::new(),
         }),
     }
+}
+
+async fn live_jar_state(issuer: &str) -> Option<AppState> {
+    let valkey_url = std::env::var("VALKEY_URL").ok()?;
+    let mut builder =
+        ValkeyBuilder::from_config(ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL"));
+    builder.with_performance_config(|performance: &mut PerformanceConfig| {
+        performance.default_command_timeout = StdDuration::from_millis(1000);
+    });
+    builder.with_connection_config(|connection: &mut ConnectionConfig| {
+        connection.connection_timeout = StdDuration::from_millis(1000);
+        connection.internal_command_timeout = StdDuration::from_millis(1000);
+        connection.max_command_attempts = 1;
+    });
+    let valkey = builder.build().expect("valkey client should build");
+    valkey.init().await.expect("valkey should connect");
+    Some(jar_state_with_valkey(issuer, valkey))
+}
+
+fn unavailable_jar_state(issuer: &str) -> AppState {
+    let mut builder = ValkeyBuilder::from_config(
+        ValkeyConfig::from_url("redis://127.0.0.1:1").expect("unavailable Valkey URL should parse"),
+    );
+    builder.with_performance_config(|performance: &mut PerformanceConfig| {
+        performance.default_command_timeout = StdDuration::from_millis(50);
+    });
+    builder.with_connection_config(|connection: &mut ConnectionConfig| {
+        connection.connection_timeout = StdDuration::from_millis(50);
+        connection.internal_command_timeout = StdDuration::from_millis(50);
+        connection.max_command_attempts = 1;
+    });
+    jar_state_with_valkey(
+        issuer,
+        builder
+            .build()
+            .expect("unavailable Valkey client should construct"),
+    )
 }
 
 fn signed_request_object_token(kid: &str, private_pkcs8_der: &[u8], claims: Value) -> String {
@@ -178,6 +231,67 @@ async fn apply_request_object_rejects_malformed_compact_or_decoding_before_claim
         );
         assert!(!outer.contains_key("response_type"));
     }
+}
+
+#[actix_web::test]
+async fn apply_request_object_rejects_unknown_signed_alg_before_claims_are_trusted() {
+    let state = jar_state("https://issuer.example");
+    let client = jar_client("client-a");
+    let request_object = request_object(
+        json!({
+            "client_id": "client-a",
+            "response_type": "code",
+            "redirect_uri": "https://client.example/callback"
+        }),
+        "not-real",
+        &URL_SAFE_NO_PAD.encode("signature"),
+    );
+    let mut outer = HashMap::from([
+        ("client_id".to_owned(), "client-a".to_owned()),
+        ("request".to_owned(), request_object),
+    ]);
+
+    let response = apply_request_object(&state, &mut outer, &client)
+        .await
+        .expect_err("unknown JWS alg must fail before request claims are trusted");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_request_object")
+    );
+    assert!(!outer.contains_key("response_type"));
+}
+
+#[actix_web::test]
+async fn holder_bound_client_rejects_unsigned_request_object_at_endpoint_boundary() {
+    let state = jar_state("https://issuer.example");
+    let mut client = jar_client("client-a");
+    client.require_dpop_bound_tokens = true;
+    let request_object = request_object(
+        json!({
+            "client_id": "client-a",
+            "response_type": "code",
+            "redirect_uri": "https://client.example/callback"
+        }),
+        "none",
+        "",
+    );
+    let mut outer = HashMap::from([
+        ("client_id".to_owned(), "client-a".to_owned()),
+        ("request".to_owned(), request_object),
+    ]);
+
+    let response = apply_request_object(&state, &mut outer, &client)
+        .await
+        .expect_err("holder-bound authorization requests must not accept unsigned JAR");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_request_object")
+    );
+    assert!(!outer.contains_key("response_type"));
 }
 
 #[actix_web::test]
@@ -724,6 +838,109 @@ fn signed_request_object_rejects_missing_or_unknown_key_id() {
         oauth_error_code(&unknown_kid).as_deref(),
         Some("invalid_request_object")
     );
+}
+
+#[test]
+fn signed_request_object_rejects_invalid_signature_with_registered_kid() {
+    let trusted_key = generate_key_material(jsonwebtoken::Algorithm::RS256)
+        .expect("trusted request object key should generate")
+        .private_pkcs8_der;
+    let attacker_key = generate_key_material(jsonwebtoken::Algorithm::RS256)
+        .expect("attacker request object key should generate")
+        .private_pkcs8_der;
+    let token = signed_request_object_token(
+        "jar-kid",
+        &attacker_key,
+        signed_request_object_claims(json!({
+            "redirect_uri": "https://client.example/callback"
+        })),
+    );
+    let client = signed_jar_client("client-a", "jar-kid", &trusted_key);
+    let header = jsonwebtoken::decode_header(&token).expect("signed token header");
+
+    let response = match super::signed_request_object_claims(&token, &client, header) {
+        Ok(_) => panic!("JAR must reject signatures that do not verify against registered JWKS"),
+        Err(response) => response,
+    };
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_request_object")
+    );
+}
+
+#[actix_web::test]
+async fn request_object_jti_store_failure_fails_closed_without_applying_claims() {
+    let state = unavailable_jar_state("https://issuer.example");
+    let client = jar_client("client-a");
+    let request_object = request_object(
+        json!({
+            "client_id": "client-a",
+            "response_type": "code",
+            "redirect_uri": "https://client.example/callback",
+            "jti": format!("jar-jti-{}", Uuid::now_v7())
+        }),
+        "none",
+        "",
+    );
+    let mut outer = HashMap::from([
+        ("client_id".to_owned(), "client-a".to_owned()),
+        ("request".to_owned(), request_object),
+    ]);
+
+    let response = apply_request_object(&state, &mut outer, &client)
+        .await
+        .expect_err("request object jti replay store outage must fail closed");
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(&response).as_deref(), Some("server_error"));
+    assert!(!outer.contains_key("response_type"));
+}
+
+#[actix_web::test]
+async fn request_object_jti_replay_is_client_scoped_and_rejected() {
+    let Some(state) = live_jar_state("https://issuer.example").await else {
+        return;
+    };
+    let client = jar_client("client-a");
+    let request_object = request_object(
+        json!({
+            "client_id": "client-a",
+            "response_type": "code",
+            "redirect_uri": "https://client.example/callback",
+            "jti": format!("jar-jti-{}", Uuid::now_v7())
+        }),
+        "none",
+        "",
+    );
+
+    let mut first_outer = HashMap::from([
+        ("client_id".to_owned(), "client-a".to_owned()),
+        ("request".to_owned(), request_object.clone()),
+    ]);
+    apply_request_object(&state, &mut first_outer, &client)
+        .await
+        .expect("first request object jti use should be accepted");
+    assert_eq!(
+        first_outer.get("redirect_uri").map(String::as_str),
+        Some("https://client.example/callback")
+    );
+
+    let mut replay_outer = HashMap::from([
+        ("client_id".to_owned(), "client-a".to_owned()),
+        ("request".to_owned(), request_object),
+    ]);
+    let response = apply_request_object(&state, &mut replay_outer, &client)
+        .await
+        .expect_err("replayed request object jti must fail closed");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_request_object")
+    );
+    assert!(!replay_outer.contains_key("redirect_uri"));
 }
 
 fn time_claims(exp: Option<i64>, nbf: Option<i64>, iat: Option<i64>) -> RequestObjectClaims {

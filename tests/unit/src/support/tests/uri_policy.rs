@@ -9,25 +9,35 @@ fn valid_dns_host() -> impl Strategy<Value = String> {
 fn issuer_requires_https_except_loopback_http() {
     assert!(validate_issuer_url("https://auth.example").is_ok());
     assert!(validate_issuer_url("http://127.0.0.1:8000").is_ok());
+    assert!(validate_issuer_url("https://").is_err());
+    assert!(validate_issuer_url("file:///tmp/issuer").is_err());
     assert!(validate_issuer_url("http://auth.example").is_err());
     assert!(validate_issuer_url("https://auth.example/").is_err());
     assert!(validate_issuer_url("https://auth.example/oauth/").is_err());
     assert!(validate_issuer_url("https://auth.example?x=1").is_err());
     assert!(validate_issuer_url("https://user:pass@auth.example").is_err());
+    assert!(validate_frontend_base_url("file:///tmp/app").is_err());
     assert!(validate_frontend_base_url("https://frontend.example/app?x=1").is_err());
+    assert!(validate_cors_origin("file:///tmp/app").is_err());
     assert!(validate_cors_origin("https://user@frontend.example").is_err());
+    assert!(validate_cors_origin("https://frontend.example/app").is_err());
+    assert!(validate_cors_origin("https://").is_err());
 }
 
 #[test]
 fn redirect_uri_policy_allows_only_oauth_bcp_exceptions() {
     assert!(validate_oauth_redirect_uri("confidential", "https://client.example/cb").is_ok());
     assert!(validate_oauth_redirect_uri("public", "http://127.0.0.1:49152/cb").is_ok());
+    assert!(validate_oauth_redirect_uri("public", "http://[::1]:49152/cb").is_ok());
     assert!(validate_oauth_redirect_uri("public", "com.example.app:/oauth2redirect").is_ok());
     assert!(validate_oauth_redirect_uri("confidential", "http://127.0.0.1:49152/cb").is_err());
     assert!(validate_oauth_redirect_uri("public", "http://client.example/cb").is_err());
     assert!(validate_oauth_redirect_uri("public", "https://client.example/cb#frag").is_err());
     assert!(validate_oauth_redirect_uri("public", "https://user@client.example/cb").is_err());
     assert!(validate_oauth_redirect_uri("public", " https://client.example/cb ").is_err());
+    assert!(
+        validate_oauth_redirect_uri("confidential", "com.example.app:/oauth2redirect").is_err()
+    );
 }
 
 #[test]
@@ -56,6 +66,21 @@ fn loopback_redirect_matching_ignores_only_port() {
         "confidential",
         "http://127.0.0.1:3000/callback",
         "http://127.0.0.1:49152/callback"
+    ));
+    assert!(!oauth_redirect_uri_matches(
+        "public",
+        "not a uri",
+        "also not a uri"
+    ));
+    assert!(oauth_redirect_uri_matches(
+        "public",
+        "http://[::1]:3000/callback",
+        "http://[::1]:49152/callback"
+    ));
+    assert!(!is_loopback_http_url("http:/callback"));
+    assert!(!is_loopback_http_url("http:///callback"));
+    assert!(!is_loopback_host(
+        &url::Url::parse("file:///callback").unwrap()
     ));
 }
 

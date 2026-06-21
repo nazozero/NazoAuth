@@ -46,6 +46,21 @@ pub(crate) async fn issue_token_response(
             );
         }
     };
+    let issue_includes_openid = issue.scopes.iter().any(|s| s == "openid");
+    if issue_includes_openid && issue.user_id.is_none() {
+        mark_failed_authorization_code_if_needed(
+            state,
+            issue.authorization_code_hash.as_deref(),
+            "id_token_subject_missing",
+        )
+        .await;
+        return oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "openid 授权缺少用户主体.",
+            false,
+        );
+    }
     let now = Utc::now();
     let next_dpop_nonce = if issue.dpop_jkt.is_some() {
         match issue_dpop_nonce(state).await {
@@ -115,47 +130,47 @@ pub(crate) async fn issue_token_response(
         "scope": issue.scopes.join(" ")
     });
     let mut refresh_token_family_id = None;
-    if issue.scopes.iter().any(|s| s == "openid") {
-        let user_claims = match issue.user_id {
-            Some(user_id) => match find_user_by_id(&state.diesel_db, user_id).await {
-                Ok(Some(user)) if user.is_active => Some(oidc_id_token_user_claims(
-                    &user,
-                    &issue.scopes,
-                    &issue.subject,
-                    &issue.id_token_claims,
-                    &issue.id_token_claim_requests,
-                )),
-                Ok(_) => {
-                    mark_failed_authorization_code_if_needed(
-                        state,
-                        issue.authorization_code_hash.as_deref(),
-                        "id_token_subject_invalid",
-                    )
-                    .await;
-                    return oauth_token_error(
-                        StatusCode::BAD_REQUEST,
-                        "invalid_grant",
-                        "授权用户不存在或已停用.",
-                        false,
-                    );
-                }
-                Err(error) => {
-                    tracing::warn!(%error, "failed to load id_token subject");
-                    mark_failed_authorization_code_if_needed(
-                        state,
-                        issue.authorization_code_hash.as_deref(),
-                        "id_token_subject_load_failed",
-                    )
-                    .await;
-                    return oauth_token_error(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "server_error",
-                        "id_token 用户声明加载失败.",
-                        false,
-                    );
-                }
-            },
-            None => None,
+    if issue_includes_openid {
+        let user_id = issue
+            .user_id
+            .expect("openid token issues are rejected before signing without a user subject");
+        let user_claims = match find_user_by_id(&state.diesel_db, user_id).await {
+            Ok(Some(user)) if user.is_active => Some(oidc_id_token_user_claims(
+                &user,
+                &issue.scopes,
+                &issue.subject,
+                &issue.id_token_claims,
+                &issue.id_token_claim_requests,
+            )),
+            Ok(_) => {
+                mark_failed_authorization_code_if_needed(
+                    state,
+                    issue.authorization_code_hash.as_deref(),
+                    "id_token_subject_invalid",
+                )
+                .await;
+                return oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    "授权用户不存在或已停用.",
+                    false,
+                );
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to load id_token subject");
+                mark_failed_authorization_code_if_needed(
+                    state,
+                    issue.authorization_code_hash.as_deref(),
+                    "id_token_subject_load_failed",
+                )
+                .await;
+                return oauth_token_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "id_token 用户声明加载失败.",
+                    false,
+                );
+            }
         };
         let id_token = match make_id_token(
             state,
@@ -192,69 +207,65 @@ pub(crate) async fn issue_token_response(
         body["id_token"] = json!(id_token);
     }
     let mut refresh_rotated = None;
-    if issue.include_refresh
-        && should_issue_refresh_token(client, &issue.scopes)
-        && !matches!(
-            issue.refresh_token_policy,
-            RefreshTokenPolicy::PreserveExisting
-        )
-    {
-        let (family, rotated_from) = match issue.refresh_token_policy {
-            RefreshTokenPolicy::IssueNew => (Uuid::now_v7(), None),
+    if issue.include_refresh && should_issue_refresh_token(client, &issue.scopes) {
+        let refresh_family = match issue.refresh_token_policy {
+            RefreshTokenPolicy::IssueNew => Some((Uuid::now_v7(), None)),
             RefreshTokenPolicy::Rotate {
                 family_id,
                 rotated_from_id,
-            } => (family_id, Some(rotated_from_id)),
-            RefreshTokenPolicy::PreserveExisting => unreachable!("handled above"),
+            } => Some((family_id, Some(rotated_from_id))),
+            RefreshTokenPolicy::PreserveExisting => None,
         };
-        let refresh = PendingRefreshToken {
-            raw: format!("{}.{}", random_urlsafe_token(), random_urlsafe_token()),
-            family,
-            rotated_from,
-            issued_at: now,
-            expires_at: now + Duration::seconds(state.settings.refresh_token_ttl_seconds),
-        };
-        match persist_refresh_token(state, client, &issue, &refresh).await {
-            Ok(RefreshPersistResult::Inserted) => {
-                body["refresh_token"] = json!(refresh.raw);
-                refresh_token_family_id = Some(refresh.family);
-                refresh_rotated = refresh
-                    .rotated_from
-                    .map(|rotated_from_id| (refresh.family, rotated_from_id));
-            }
-            Ok(RefreshPersistResult::RotationConflict) => {
-                mark_failed_authorization_code_if_needed(
-                    state,
-                    issue.authorization_code_hash.as_deref(),
-                    "refresh_rotation_conflict",
-                )
-                .await;
-                return oauth_token_error(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_grant",
-                    "refresh_token 无效或已撤销.",
-                    false,
-                );
-            }
-            Err(error) => {
-                tracing::warn!(%error, "failed to persist refresh token");
-                mark_failed_authorization_code_if_needed(
-                    state,
-                    issue.authorization_code_hash.as_deref(),
-                    "refresh_persist_failed",
-                )
-                .await;
-                let description = if refresh.rotated_from.is_some() {
-                    "refresh_token 轮换失败."
-                } else {
-                    "refresh token 持久化失败."
-                };
-                return oauth_token_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    description,
-                    false,
-                );
+        if let Some((family, rotated_from)) = refresh_family {
+            let refresh = PendingRefreshToken {
+                raw: format!("{}.{}", random_urlsafe_token(), random_urlsafe_token()),
+                family,
+                rotated_from,
+                issued_at: now,
+                expires_at: now + Duration::seconds(state.settings.refresh_token_ttl_seconds),
+            };
+            match persist_refresh_token(state, client, &issue, &refresh).await {
+                Ok(RefreshPersistResult::Inserted) => {
+                    body["refresh_token"] = json!(refresh.raw);
+                    refresh_token_family_id = Some(refresh.family);
+                    refresh_rotated = refresh
+                        .rotated_from
+                        .map(|rotated_from_id| (refresh.family, rotated_from_id));
+                }
+                Ok(RefreshPersistResult::RotationConflict) => {
+                    mark_failed_authorization_code_if_needed(
+                        state,
+                        issue.authorization_code_hash.as_deref(),
+                        "refresh_rotation_conflict",
+                    )
+                    .await;
+                    return oauth_token_error(
+                        StatusCode::BAD_REQUEST,
+                        "invalid_grant",
+                        "refresh_token 无效或已撤销.",
+                        false,
+                    );
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "failed to persist refresh token");
+                    mark_failed_authorization_code_if_needed(
+                        state,
+                        issue.authorization_code_hash.as_deref(),
+                        "refresh_persist_failed",
+                    )
+                    .await;
+                    let description = if refresh.rotated_from.is_some() {
+                        "refresh_token 轮换失败."
+                    } else {
+                        "refresh token 持久化失败."
+                    };
+                    return oauth_token_error(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "server_error",
+                        description,
+                        false,
+                    );
+                }
             }
         }
     }

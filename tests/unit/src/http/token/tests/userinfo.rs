@@ -37,6 +37,10 @@ fn userinfo_test_state() -> AppState {
 
 fn live_userinfo_state() -> Option<Data<AppState>> {
     let database_url = std::env::var("DATABASE_URL").ok()?;
+    live_userinfo_state_from_database_url(database_url)
+}
+
+fn live_userinfo_state_from_database_url(database_url: String) -> Option<Data<AppState>> {
     let key_material =
         generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
     let public_jwk = public_jwk_from_private_der(
@@ -66,6 +70,61 @@ fn live_userinfo_state() -> Option<Data<AppState>> {
             }],
         }),
     }))
+}
+
+fn database_url_with_search_path(schema: &str) -> Option<String> {
+    let base = std::env::var("DATABASE_URL").ok()?;
+    let separator = if base.contains('?') { "&" } else { "?" };
+    Some(format!(
+        "{base}{separator}options=-csearch_path%3D{schema}%2Cpublic"
+    ))
+}
+
+async fn create_isolated_schema(state: &Data<AppState>, schema: &str, tables: &[&str]) {
+    exec_sql(
+        state,
+        &format!(r#"CREATE SCHEMA IF NOT EXISTS "{}""#, schema),
+    )
+    .await;
+    for table in tables {
+        exec_sql(
+            state,
+            &format!(
+                r#"CREATE TABLE "{}"."{}" (LIKE public."{}" INCLUDING ALL)"#,
+                schema, table, table
+            ),
+        )
+        .await;
+    }
+}
+
+async fn exec_sql(state: &Data<AppState>, sql: &str) {
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    sql_query(sql)
+        .execute(&mut conn)
+        .await
+        .expect("schema mutation should succeed");
+}
+
+async fn rename_column(state: &Data<AppState>, schema: &str, table: &str, from: &str, to: &str) {
+    exec_sql(
+        state,
+        &format!(
+            r#"ALTER TABLE "{}"."{}" RENAME COLUMN "{}" TO "{}""#,
+            schema, table, from, to
+        ),
+    )
+    .await;
+}
+
+async fn drop_schema(state: &Data<AppState>, schema: &str) {
+    exec_sql(
+        state,
+        &format!(r#"DROP SCHEMA IF EXISTS "{}" CASCADE"#, schema),
+    )
+    .await;
 }
 
 fn userinfo_state_with_valid_signing_key_invalid_db() -> Data<AppState> {
@@ -633,6 +692,89 @@ async fn userinfo_returns_server_error_when_revocation_lookup_fails_after_decode
 }
 
 #[actix_web::test]
+async fn userinfo_returns_server_error_when_revocation_query_fails_after_decode() {
+    let schema = format!(
+        "userinfo_revocation_query_failure_{}",
+        Uuid::now_v7().simple()
+    );
+    let Some(database_url) = database_url_with_search_path(&schema) else {
+        return;
+    };
+    let Some(state) = live_userinfo_state_from_database_url(database_url) else {
+        return;
+    };
+    create_isolated_schema(
+        &state,
+        &schema,
+        &["users", "oauth_clients", "access_token_revocations"],
+    )
+    .await;
+    let token = signed_userinfo_access_token(
+        &state,
+        DEFAULT_TENANT_ID,
+        &Uuid::now_v7().to_string(),
+        None,
+        "user",
+        &["resource://default".to_owned()],
+        &["openid".to_owned()],
+        None,
+        None,
+    )
+    .await;
+    rename_column(
+        &state,
+        &schema,
+        "access_token_revocations",
+        "access_token_jti_blake3",
+        "access_token_jti_blake3_broken",
+    )
+    .await;
+
+    let response = userinfo_error_for_token(state.clone(), "Bearer", &token.token).await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(&response).as_deref(), Some("server_error"));
+    drop_schema(&state, &schema).await;
+}
+
+#[actix_web::test]
+async fn userinfo_returns_server_error_when_subject_lookup_fails_after_token_validation() {
+    let schema = format!("userinfo_subject_query_failure_{}", Uuid::now_v7().simple());
+    let Some(database_url) = database_url_with_search_path(&schema) else {
+        return;
+    };
+    let Some(state) = live_userinfo_state_from_database_url(database_url) else {
+        return;
+    };
+    create_isolated_schema(
+        &state,
+        &schema,
+        &["users", "oauth_clients", "access_token_revocations"],
+    )
+    .await;
+    let user = insert_userinfo_user(&state, true).await;
+    let token = signed_userinfo_access_token(
+        &state,
+        DEFAULT_TENANT_ID,
+        &user.id.to_string(),
+        Some(user.id),
+        "user",
+        &["resource://default".to_owned()],
+        &["openid".to_owned()],
+        None,
+        None,
+    )
+    .await;
+    rename_column(&state, &schema, "users", "id", "id_broken").await;
+
+    let response = userinfo_error_for_token(state.clone(), "Bearer", &token.token).await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(&response).as_deref(), Some("server_error"));
+    drop_schema(&state, &schema).await;
+}
+
+#[actix_web::test]
 async fn userinfo_rejects_mtls_bound_token_with_mismatched_verified_certificate() {
     let Some(state) = live_userinfo_state_with_trusted_proxy() else {
         return;
@@ -659,7 +801,7 @@ async fn userinfo_rejects_mtls_bound_token_with_mismatched_verified_certificate(
         ))
         .insert_header((
             header::HeaderName::from_static("x-ssl-client-cert-sha256"),
-            "___________________________________________0",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         ))
         .insert_header((
             header::HeaderName::from_static("x-ssl-client-subject-dn"),
@@ -771,6 +913,16 @@ fn post_body_access_token_treats_blank_value_as_missing() {
         .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
         .to_http_request();
     let token = userinfo_access_token(&req, &Bytes::from_static(b"access_token=%20%20%09"));
+
+    assert!(matches!(token, UserInfoAccessToken::Missing));
+}
+
+#[test]
+fn post_body_access_token_ignores_unrelated_form_fields() {
+    let req = actix_web::test::TestRequest::post()
+        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+        .to_http_request();
+    let token = userinfo_access_token(&req, &Bytes::from_static(b"scope=openid&token_type=Bearer"));
 
     assert!(matches!(token, UserInfoAccessToken::Missing));
 }

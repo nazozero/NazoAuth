@@ -6,6 +6,11 @@ use crate::db::create_pool;
 use crate::domain::{ActiveSigningKey, Keyset};
 use crate::support::OAuthJsonErrorFields;
 use actix_web::test::TestRequest;
+use fred::interfaces::ClientLike;
+use fred::prelude::{
+    Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
+};
+use std::time::Duration as StdDuration;
 
 fn valid_payload() -> SessionPayload {
     SessionPayload {
@@ -17,6 +22,23 @@ fn valid_payload() -> SessionPayload {
     }
 }
 
+fn unavailable_valkey_client() -> fred::prelude::Client {
+    let mut builder = ValkeyBuilder::from_config(
+        ValkeyConfig::from_url("redis://127.0.0.1:1").expect("unavailable Valkey URL should parse"),
+    );
+    builder.with_performance_config(|performance: &mut PerformanceConfig| {
+        performance.default_command_timeout = StdDuration::from_millis(200);
+    });
+    builder.with_connection_config(|connection: &mut ConnectionConfig| {
+        connection.connection_timeout = StdDuration::from_millis(200);
+        connection.internal_command_timeout = StdDuration::from_millis(200);
+        connection.max_command_attempts = 1;
+    });
+    builder
+        .build()
+        .expect("unavailable valkey client construction should not connect")
+}
+
 fn session_state() -> AppState {
     AppState {
         diesel_db: create_pool(
@@ -25,9 +47,7 @@ fn session_state() -> AppState {
             1,
         )
         .expect("pool construction should not connect"),
-        valkey: fred::prelude::Builder::default_centralized()
-            .build()
-            .expect("valkey client construction should not connect"),
+        valkey: unavailable_valkey_client(),
         settings: Arc::new(
             Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
         ),
@@ -38,6 +58,45 @@ fn session_state() -> AppState {
             verification_keys: Vec::new(),
         }),
     }
+}
+
+async fn live_session_state() -> Option<AppState> {
+    let valkey_url = std::env::var("VALKEY_URL").ok()?;
+    let mut state = session_state();
+    let mut builder =
+        ValkeyBuilder::from_config(ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL"));
+    builder.with_performance_config(|performance: &mut PerformanceConfig| {
+        performance.default_command_timeout = StdDuration::from_millis(1000);
+    });
+    builder.with_connection_config(|connection: &mut ConnectionConfig| {
+        connection.connection_timeout = StdDuration::from_millis(1000);
+        connection.internal_command_timeout = StdDuration::from_millis(1000);
+        connection.max_command_attempts = 1;
+    });
+    let valkey = builder.build().expect("valkey client should build");
+    valkey.init().await.expect("valkey should connect");
+    state.valkey = valkey;
+    Some(state)
+}
+
+fn session_request(state: &AppState, sid: &str) -> HttpRequest {
+    TestRequest::default()
+        .cookie(actix_web::cookie::Cookie::new(
+            state.settings.session_cookie_name.clone(),
+            sid.to_owned(),
+        ))
+        .to_http_request()
+}
+
+async fn store_raw_session(state: &AppState, sid: &str, raw: &str) {
+    valkey_set_ex(
+        &state.valkey,
+        format!("oauth:session:{sid}"),
+        raw.to_owned(),
+        state.settings.session_ttl_seconds,
+    )
+    .await
+    .expect("raw session payload should store");
 }
 
 #[test]
@@ -180,6 +239,146 @@ async fn missing_session_cookie_is_anonymous_without_backend_lookup() {
 }
 
 #[actix_web::test]
+async fn missing_session_key_is_anonymous_even_when_cookie_is_present() {
+    let Some(state) = live_session_state().await else {
+        return;
+    };
+    let sid = format!("missing-session-{}", Uuid::now_v7());
+    let req = session_request(&state, &sid);
+
+    assert!(
+        current_session(&state, &req)
+            .await
+            .expect("missing session key should not be a backend failure")
+            .is_none()
+    );
+    assert!(
+        !step_up_current_session(&state, &req, "otp")
+            .await
+            .expect("missing session key cannot step up MFA")
+    );
+}
+
+#[actix_web::test]
+async fn invalid_or_malformed_session_payloads_are_cleared_and_anonymous() {
+    let Some(state) = live_session_state().await else {
+        return;
+    };
+
+    let invalid_sid = format!("invalid-session-{}", Uuid::now_v7());
+    let invalid_payload = SessionPayload {
+        oidc_sid: None,
+        ..valid_payload()
+    };
+    store_raw_session(
+        &state,
+        &invalid_sid,
+        &serde_json::to_string(&invalid_payload).expect("invalid payload should serialize"),
+    )
+    .await;
+    let invalid_req = session_request(&state, &invalid_sid);
+    assert!(
+        current_session(&state, &invalid_req)
+            .await
+            .expect("invalid session payload should be handled")
+            .is_none()
+    );
+    assert_eq!(
+        valkey_get(&state.valkey, format!("oauth:session:{invalid_sid}"))
+            .await
+            .expect("invalid session cleanup lookup should succeed"),
+        None
+    );
+
+    let invalid_pending_sid = format!("invalid-pending-mfa-{}", Uuid::now_v7());
+    let invalid_pending_payload = SessionPayload {
+        pending_mfa: true,
+        oidc_sid: None,
+        ..valid_payload()
+    };
+    store_raw_session(
+        &state,
+        &invalid_pending_sid,
+        &serde_json::to_string(&invalid_pending_payload)
+            .expect("invalid pending MFA payload should serialize"),
+    )
+    .await;
+    let invalid_pending_req = session_request(&state, &invalid_pending_sid);
+    assert!(
+        current_pending_mfa_session(&state, &invalid_pending_req)
+            .await
+            .expect("invalid pending MFA payload should be handled")
+            .is_none()
+    );
+    assert_eq!(
+        valkey_get(
+            &state.valkey,
+            format!("oauth:session:{invalid_pending_sid}")
+        )
+        .await
+        .expect("invalid pending MFA cleanup lookup should succeed"),
+        None
+    );
+
+    let malformed_sid = format!("malformed-pending-mfa-{}", Uuid::now_v7());
+    store_raw_session(&state, &malformed_sid, "not-json").await;
+    let malformed_req = session_request(&state, &malformed_sid);
+    assert!(
+        current_pending_mfa_session(&state, &malformed_req)
+            .await
+            .expect("malformed pending MFA payload should be handled")
+            .is_none()
+    );
+    assert_eq!(
+        valkey_get(&state.valkey, format!("oauth:session:{malformed_sid}"))
+            .await
+            .expect("malformed pending MFA cleanup lookup should succeed"),
+        None
+    );
+}
+
+#[actix_web::test]
+async fn mfa_step_up_rejects_invalid_or_malformed_session_state() {
+    let Some(state) = live_session_state().await else {
+        return;
+    };
+
+    let invalid_sid = format!("invalid-mfa-session-{}", Uuid::now_v7());
+    let invalid_payload = SessionPayload {
+        pending_mfa: false,
+        oidc_sid: None,
+        ..valid_payload()
+    };
+    store_raw_session(
+        &state,
+        &invalid_sid,
+        &serde_json::to_string(&invalid_payload).expect("invalid payload should serialize"),
+    )
+    .await;
+    let invalid_req = session_request(&state, &invalid_sid);
+    assert!(
+        !complete_mfa_session(&state, &invalid_req, "otp")
+            .await
+            .expect("invalid MFA payload should not complete")
+    );
+
+    let malformed_sid = format!("malformed-mfa-session-{}", Uuid::now_v7());
+    store_raw_session(&state, &malformed_sid, "not-json").await;
+    let malformed_req = session_request(&state, &malformed_sid);
+    assert!(
+        !step_up_current_session(&state, &malformed_req, "otp")
+            .await
+            .expect("malformed MFA payload should not step up")
+    );
+    assert_eq!(
+        valkey_get(&state.valkey, format!("oauth:session:{malformed_sid}"))
+            .await
+            .expect("malformed MFA cleanup lookup should succeed"),
+        None
+    );
+}
+
+#[actix_web::test]
 async fn missing_session_cookie_cannot_complete_or_step_up_mfa() {
     let state = session_state();
     let req = TestRequest::default().to_http_request();
@@ -222,4 +421,18 @@ async fn missing_session_cookie_requires_login_or_admin_denial_without_storage_l
         .expect("forbidden response body should collect");
     let value: Value = serde_json::from_slice(&body).expect("OAuth error body should be JSON");
     assert_eq!(value.get("error"), Some(&json!("access_denied")));
+}
+
+#[actix_web::test]
+async fn admin_gate_propagates_session_lookup_failures_as_server_errors() {
+    let state = session_state();
+    let req = session_request(&state, "session-backend-unavailable");
+
+    let response = require_admin_or_forbidden(&state, &req)
+        .await
+        .expect_err("backend session lookup failure must not become access_denied");
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(&response), "server_error");
+    assert!(response.headers().get(header::WWW_AUTHENTICATE).is_none());
 }

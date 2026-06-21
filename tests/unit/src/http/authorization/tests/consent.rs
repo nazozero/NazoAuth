@@ -58,14 +58,34 @@ fn uuid_fixture(value: u128) -> Uuid {
     Uuid::from_u128(value)
 }
 
+fn database_url_with_search_path(schema: &str) -> Option<String> {
+    let base = std::env::var("DATABASE_URL").ok()?;
+    let separator = if base.contains('?') { "&" } else { "?" };
+    Some(format!(
+        "{base}{separator}options=-csearch_path%3D{schema}%2Cpublic"
+    ))
+}
+
 #[derive(Clone)]
 struct ConsentLiveFixture {
     state: Data<AppState>,
+    schema: Option<String>,
 }
 
 impl ConsentLiveFixture {
     async fn new() -> Option<Self> {
         let database_url = std::env::var("DATABASE_URL").ok()?;
+        Self::from_database_url(database_url, None).await
+    }
+
+    async fn new_isolated(schema: &str) -> Option<Self> {
+        let database_url = database_url_with_search_path(schema)?;
+        let fixture = Self::from_database_url(database_url, Some(schema.to_owned())).await?;
+        fixture.create_isolated_schema(&["users"]).await;
+        Some(fixture)
+    }
+
+    async fn from_database_url(database_url: String, schema: Option<String>) -> Option<Self> {
         let valkey_url = std::env::var("VALKEY_URL").ok()?;
         let mut settings =
             Settings::from_config(&ConfigSource::default()).expect("test settings should load");
@@ -99,7 +119,111 @@ impl ConsentLiveFixture {
                     verification_keys: Vec::new(),
                 }),
             }),
+            schema,
         })
+    }
+
+    async fn restricted_valkey_client(
+        &self,
+        username: &str,
+        password: &str,
+        rules: Vec<String>,
+    ) -> fred::prelude::Client {
+        let mut args = vec!["SETUSER".to_owned(), username.to_owned()];
+        args.extend(rules);
+        self.state
+            .valkey
+            .custom::<(), _>(fred::cmd!("ACL"), args)
+            .await
+            .expect("restricted Valkey ACL user should be configured");
+        let valkey_url = std::env::var("VALKEY_URL").expect("VALKEY_URL should be set");
+        let restricted_url =
+            valkey_url.replacen("redis://", &format!("redis://{username}:{password}@"), 1);
+        let mut valkey_builder = ValkeyBuilder::from_config(
+            ValkeyConfig::from_url(&restricted_url).expect("restricted VALKEY_URL should parse"),
+        );
+        valkey_builder.with_performance_config(|performance: &mut PerformanceConfig| {
+            performance.default_command_timeout = StdDuration::from_millis(1000);
+        });
+        valkey_builder.with_connection_config(|connection: &mut ConnectionConfig| {
+            connection.connection_timeout = StdDuration::from_millis(1000);
+            connection.internal_command_timeout = StdDuration::from_millis(1000);
+            connection.max_command_attempts = 1;
+        });
+        let valkey = valkey_builder
+            .build()
+            .expect("restricted Valkey client should build");
+        valkey
+            .init()
+            .await
+            .expect("restricted Valkey client should connect");
+        valkey
+    }
+
+    fn state_with_valkey(&self, valkey: fred::prelude::Client) -> Data<AppState> {
+        Data::new(AppState {
+            diesel_db: self.state.diesel_db.clone(),
+            valkey,
+            settings: self.state.settings.clone(),
+            keyset: self.state.keyset.clone(),
+        })
+    }
+
+    async fn create_isolated_schema(&self, tables: &[&str]) {
+        let Some(schema) = self.schema.as_deref() else {
+            return;
+        };
+        self.exec_sql(&format!(r#"CREATE SCHEMA IF NOT EXISTS "{}""#, schema))
+            .await;
+        for table in tables {
+            self.exec_sql(&format!(
+                r#"CREATE TABLE "{}"."{}" (LIKE public."{}" INCLUDING ALL)"#,
+                schema, table, table
+            ))
+            .await;
+        }
+    }
+
+    async fn exec_sql(&self, sql: &str) {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        sql_query(sql)
+            .execute(&mut conn)
+            .await
+            .expect("schema mutation should succeed");
+    }
+
+    async fn rename_column(&self, table: &str, from: &str, to: &str) {
+        let schema = self
+            .schema
+            .as_deref()
+            .expect("isolated fixture should provide schema");
+        self.exec_sql(&format!(
+            r#"ALTER TABLE "{}"."{}" RENAME COLUMN "{}" TO "{}""#,
+            schema, table, from, to
+        ))
+        .await;
+    }
+
+    async fn cleanup(&self) {
+        let Some(schema) = self.schema.as_deref() else {
+            return;
+        };
+        self.exec_sql(&format!(r#"DROP SCHEMA IF EXISTS "{}" CASCADE"#, schema))
+            .await;
+    }
+
+    async fn delete_acl_user(&self, username: &str) {
+        let _: i64 = self
+            .state
+            .valkey
+            .custom(
+                fred::cmd!("ACL"),
+                vec!["DELUSER".to_owned(), username.to_owned()],
+            )
+            .await
+            .expect("restricted Valkey ACL user should be deleted");
     }
 
     async fn create_user(&self, suffix: &str, auth_role: &str, admin_level: i32) -> UserRow {
@@ -334,6 +458,82 @@ async fn authorize_consent_requires_login() {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(body["error"], "login_required");
     assert_eq!(body["error_description"], "Request failed.");
+}
+
+#[actix_web::test]
+async fn authorize_consent_fails_closed_when_session_user_lookup_fails() {
+    let schema = format!("consent_user_lookup_failure_{}", Uuid::now_v7().simple());
+    let Some(fixture) = ConsentLiveFixture::new_isolated(&schema).await else {
+        return;
+    };
+    let user = fixture.create_user("lookup-failure", "user", 0).await;
+    fixture
+        .store_session(&user, "sid-user-lookup-failure", Utc::now().timestamp())
+        .await;
+    fixture
+        .rename_column("users", "email", "email_broken")
+        .await;
+
+    let req = fixture
+        .consent_request("sid-user-lookup-failure", Some("request-never-read"))
+        .to_http_request();
+    let response = authorize_consent(
+        fixture.state.clone(),
+        req,
+        Query(query(&[("request_id", "request-never-read")])),
+    )
+    .await;
+    let (status, body) = response_json(response).await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"], "server_error");
+    fixture.cleanup().await;
+}
+
+#[actix_web::test]
+async fn authorize_consent_fails_closed_when_consent_state_read_fails() {
+    let Some(fixture) = ConsentLiveFixture::new().await else {
+        return;
+    };
+    let user = fixture.create_user("consent-read-failure", "user", 0).await;
+    let sid = format!("sid-consent-read-failure-{}", Uuid::now_v7());
+    fixture
+        .store_session(&user, &sid, Utc::now().timestamp())
+        .await;
+    let mut payload = consent_payload(user.id);
+    payload.request_id = format!("request-consent-read-failure-{}", Uuid::now_v7());
+    fixture.store_consent_payload(&payload).await;
+
+    let username = format!("consent_read_failure_{}", Uuid::now_v7().simple());
+    let password = format!("pw{}", Uuid::now_v7().simple());
+    let restricted = fixture
+        .restricted_valkey_client(
+            &username,
+            &password,
+            vec![
+                "reset".to_owned(),
+                "on".to_owned(),
+                format!(">{password}"),
+                "~oauth:session:*".to_owned(),
+                "+@all".to_owned(),
+            ],
+        )
+        .await;
+    let req = fixture
+        .consent_request(&sid, Some(&payload.request_id))
+        .to_http_request();
+    let response = authorize_consent(
+        fixture.state_with_valkey(restricted),
+        req,
+        Query(query(&[("request_id", payload.request_id.as_str())])),
+    )
+    .await;
+    let (status, body) = response_json(response).await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"], "server_error");
+    assert!(body.get("request_id").is_none());
+    fixture.delete_acl_user(&username).await;
 }
 
 #[actix_web::test]

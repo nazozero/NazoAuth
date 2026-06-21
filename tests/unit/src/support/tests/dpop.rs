@@ -1,6 +1,36 @@
 use super::*;
+use crate::config::ConfigSource;
+use crate::db::create_pool;
+use crate::domain::{ActiveSigningKey, Keyset};
 use ed25519_dalek::{Signer, SigningKey};
 use proptest::prelude::*;
+use std::sync::Arc;
+
+fn dpop_state(nonce_policy: DpopNoncePolicy) -> AppState {
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.issuer = "https://issuer.example".to_owned();
+    settings.mtls_endpoint_base_url = "https://mtls.example".to_owned();
+    settings.dpop_nonce_policy = nonce_policy;
+
+    AppState {
+        diesel_db: create_pool(
+            "postgres://nazo_dpop_test_invalid:nazo_dpop_test_invalid@127.0.0.1:1/nazo".to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey: fred::prelude::Builder::default_centralized()
+            .build()
+            .expect("valkey client construction should not connect"),
+        settings: Arc::new(settings),
+        keyset: Arc::new(Keyset {
+            active_kid: "test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+            verification_keys: Vec::new(),
+        }),
+    }
+}
 
 #[test]
 fn authorization_scheme_is_case_insensitive() {
@@ -63,6 +93,55 @@ fn protected_resource_nonce_challenge_uses_unauthorized() {
 }
 
 #[test]
+fn dpop_error_response_maps_reject_reasons_without_secret_material() {
+    let cases = [
+        (
+            DpopError::MalformedProof,
+            StatusCode::BAD_REQUEST,
+            r#"DPoP error="invalid_dpop_proof""#,
+        ),
+        (
+            DpopError::InvalidProof,
+            StatusCode::BAD_REQUEST,
+            r#"DPoP error="invalid_dpop_proof""#,
+        ),
+        (
+            DpopError::ReplayDetected,
+            StatusCode::BAD_REQUEST,
+            r#"DPoP error="invalid_dpop_proof""#,
+        ),
+        (
+            DpopError::BindingMismatch,
+            StatusCode::BAD_REQUEST,
+            r#"DPoP error="invalid_dpop_proof""#,
+        ),
+        (
+            DpopError::TokenNotBound,
+            StatusCode::BAD_REQUEST,
+            r#"DPoP error="invalid_dpop_proof""#,
+        ),
+        (
+            DpopError::NonceStoreUnavailable,
+            StatusCode::SERVICE_UNAVAILABLE,
+            r#"DPoP error="server_error""#,
+        ),
+    ];
+
+    for (error, status, authenticate) in cases {
+        let response = dpop_error_response(error, DpopErrorContext::TokenEndpoint);
+        assert_eq!(response.status(), status);
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            HeaderValue::from_static("no-store")
+        );
+        assert_eq!(
+            response.headers().get(header::WWW_AUTHENTICATE).unwrap(),
+            HeaderValue::from_static(authenticate)
+        );
+    }
+}
+
+#[test]
 fn token_endpoint_missing_proof_uses_bad_request() {
     let response = dpop_error_response(DpopError::MissingProof, DpopErrorContext::TokenEndpoint);
 
@@ -71,6 +150,25 @@ fn token_endpoint_missing_proof_uses_bad_request() {
         response.headers().get(header::WWW_AUTHENTICATE).unwrap(),
         HeaderValue::from_static(r#"DPoP error="invalid_dpop_proof""#)
     );
+}
+
+#[test]
+fn authorization_header_rejects_empty_multi_token_and_unknown_schemes() {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::AUTHORIZATION, HeaderValue::from_static("DPoP"));
+    assert!(authorization_access_token(&headers).is_none());
+
+    headers.insert(
+        header::AUTHORIZATION,
+        HeaderValue::from_static("DPoP one two"),
+    );
+    assert!(authorization_access_token(&headers).is_none());
+
+    headers.insert(
+        header::AUTHORIZATION,
+        HeaderValue::from_static("PoP abc.def"),
+    );
+    assert!(authorization_access_token(&headers).is_none());
 }
 
 #[test]
@@ -161,6 +259,40 @@ fn signed_dpop_proof_verifies_signature_thumbprint_and_claims() {
     .unwrap();
 }
 
+#[actix_web::test]
+async fn dpop_proof_rejects_non_dpop_typ_before_nonce_or_replay_state() {
+    let signing_key = SigningKey::from_bytes(&[13u8; 32]);
+    let proof = signed_test_proof_with_typ(
+        &signing_key,
+        "jwt",
+        "GET",
+        "https://issuer.example/userinfo",
+        Utc::now().timestamp(),
+        "proof-wrong-typ",
+        None,
+        None,
+    );
+    let state = dpop_state(DpopNoncePolicy::Optional);
+    let req = actix_web::test::TestRequest::get()
+        .uri("/userinfo")
+        .insert_header(("DPoP", proof))
+        .to_http_request();
+
+    assert!(matches!(
+        validate_dpop_proof(&state, &req, None, None).await,
+        Err(DpopError::InvalidProof)
+    ));
+}
+
+#[actix_web::test]
+async fn optional_dpop_nonce_policy_accepts_missing_nonce_without_store_access() {
+    let state = dpop_state(DpopNoncePolicy::Optional);
+
+    validate_dpop_nonce(&state, None)
+        .await
+        .expect("optional nonce policy must not require valkey access for absent nonce");
+}
+
 #[test]
 fn dpop_claim_validation_rejects_wrong_method_htu_and_ath() {
     let signing_key = SigningKey::from_bytes(&[9u8; 32]);
@@ -196,6 +328,104 @@ fn dpop_claim_validation_rejects_wrong_method_htu_and_ath() {
             "/token",
             &claims,
             Some("other-token")
+        ),
+        Err(DpopError::InvalidProof)
+    ));
+}
+
+#[test]
+fn dpop_claim_validation_rejects_stale_iat_and_blank_jti() {
+    let claims = DpopClaims {
+        htm: "GET".to_owned(),
+        htu: "https://issuer.example/userinfo".to_owned(),
+        iat: Utc::now().timestamp() - DPOP_TTL_SECONDS - 1,
+        jti: "proof-stale".to_owned(),
+        ath: None,
+        nonce: None,
+    };
+    assert!(matches!(
+        validate_dpop_claims(
+            &["https://issuer.example"],
+            "GET",
+            "/userinfo",
+            &claims,
+            None
+        ),
+        Err(DpopError::InvalidProof)
+    ));
+
+    let claims = DpopClaims {
+        iat: Utc::now().timestamp(),
+        jti: "   ".to_owned(),
+        ..claims
+    };
+    assert!(matches!(
+        validate_dpop_claims(
+            &["https://issuer.example"],
+            "GET",
+            "/userinfo",
+            &claims,
+            None
+        ),
+        Err(DpopError::InvalidProof)
+    ));
+}
+
+#[test]
+fn dpop_decode_rejects_extra_jwt_segments() {
+    let proof = signed_test_proof(
+        &SigningKey::from_bytes(&[15u8; 32]),
+        "GET",
+        "https://issuer.example/userinfo",
+        Utc::now().timestamp(),
+        "proof-extra-segment",
+        None,
+        None,
+    );
+
+    assert!(matches!(
+        decode_proof(&format!("{proof}.extra")),
+        Err(DpopError::MalformedProof)
+    ));
+}
+
+#[test]
+fn dpop_thumbprint_rejects_wrong_curve_and_unknown_key_type() {
+    assert!(matches!(
+        jwk_thumbprint(&json!({"kty": "OKP", "crv": "X25519", "x": "abc"})),
+        Err(DpopError::InvalidProof)
+    ));
+    assert!(matches!(
+        jwk_thumbprint(&json!({"kty": "EC", "crv": "P-384", "x": "abc", "y": "def"})),
+        Err(DpopError::InvalidProof)
+    ));
+    assert!(matches!(
+        jwk_thumbprint(&json!({"kty": "oct", "k": "abc"})),
+        Err(DpopError::InvalidProof)
+    ));
+}
+
+#[test]
+fn dpop_signature_rejects_wrong_signature_bytes() {
+    let proof = signed_test_proof(
+        &SigningKey::from_bytes(&[17u8; 32]),
+        "GET",
+        "https://issuer.example/userinfo",
+        Utc::now().timestamp(),
+        "proof-invalid-signature",
+        None,
+        None,
+    );
+    let (header, _, signing_input, _) = decode_proof(&proof).unwrap();
+    let invalid_signature = URL_SAFE_NO_PAD.encode([0u8; 64]);
+    let algorithm = client_jwt_algorithm_from_name(&header.alg).unwrap();
+
+    assert!(matches!(
+        verify_signature(
+            &header.jwk,
+            algorithm,
+            signing_input.as_bytes(),
+            &invalid_signature
         ),
         Err(DpopError::InvalidProof)
     ));
@@ -275,9 +505,31 @@ fn signed_test_proof(
     token_for_ath: Option<&str>,
     nonce: Option<&str>,
 ) -> String {
+    signed_test_proof_with_typ(
+        signing_key,
+        "dpop+jwt",
+        method,
+        htu,
+        iat,
+        jti,
+        token_for_ath,
+        nonce,
+    )
+}
+
+fn signed_test_proof_with_typ(
+    signing_key: &SigningKey,
+    typ: &str,
+    method: &str,
+    htu: &str,
+    iat: i64,
+    jti: &str,
+    token_for_ath: Option<&str>,
+    nonce: Option<&str>,
+) -> String {
     let public_key = URL_SAFE_NO_PAD.encode(signing_key.verifying_key().to_bytes());
     let header = json!({
-        "typ": "dpop+jwt",
+        "typ": typ,
         "alg": "EdDSA",
         "jwk": {
             "kty": "OKP",

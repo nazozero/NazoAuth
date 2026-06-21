@@ -2,8 +2,14 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use jsonwebtoken::{Algorithm, DecodingKey};
 use serde_json::Value;
 
+enum SupportedJwkAlgorithm {
+    EdDsa,
+    Rsa,
+    Ec,
+}
+
 pub(super) fn decoding_key(key: &Value, alg: Algorithm) -> Option<DecodingKey> {
-    let expected_alg = algorithm_name(alg)?;
+    let (expected_alg, supported_alg) = supported_algorithm(alg)?;
     if key.get("alg").and_then(Value::as_str) != Some(expected_alg) {
         return None;
     }
@@ -17,8 +23,8 @@ pub(super) fn decoding_key(key: &Value, alg: Algorithm) -> Option<DecodingKey> {
     {
         return None;
     }
-    match alg {
-        Algorithm::EdDSA => {
+    match supported_alg {
+        SupportedJwkAlgorithm::EdDsa => {
             if key.get("kty").and_then(Value::as_str) != Some("OKP")
                 || key.get("crv").and_then(Value::as_str) != Some("Ed25519")
             {
@@ -31,7 +37,7 @@ pub(super) fn decoding_key(key: &Value, alg: Algorithm) -> Option<DecodingKey> {
             }
             DecodingKey::from_ed_components(x).ok()
         }
-        Algorithm::RS256 | Algorithm::PS256 => {
+        SupportedJwkAlgorithm::Rsa => {
             if key.get("kty").and_then(Value::as_str) != Some("RSA") {
                 return None;
             }
@@ -44,7 +50,7 @@ pub(super) fn decoding_key(key: &Value, alg: Algorithm) -> Option<DecodingKey> {
             }
             DecodingKey::from_rsa_components(n, e).ok()
         }
-        Algorithm::ES256 => {
+        SupportedJwkAlgorithm::Ec => {
             if key.get("kty").and_then(Value::as_str) != Some("EC")
                 || key.get("crv").and_then(Value::as_str) != Some("P-256")
             {
@@ -59,16 +65,20 @@ pub(super) fn decoding_key(key: &Value, alg: Algorithm) -> Option<DecodingKey> {
             }
             DecodingKey::from_ec_components(x, y).ok()
         }
-        _ => None,
     }
 }
 
+#[cfg(test)]
 pub(super) fn algorithm_name(alg: Algorithm) -> Option<&'static str> {
+    supported_algorithm(alg).map(|(name, _)| name)
+}
+
+fn supported_algorithm(alg: Algorithm) -> Option<(&'static str, SupportedJwkAlgorithm)> {
     match alg {
-        Algorithm::EdDSA => Some("EdDSA"),
-        Algorithm::RS256 => Some("RS256"),
-        Algorithm::ES256 => Some("ES256"),
-        Algorithm::PS256 => Some("PS256"),
+        Algorithm::EdDSA => Some(("EdDSA", SupportedJwkAlgorithm::EdDsa)),
+        Algorithm::RS256 => Some(("RS256", SupportedJwkAlgorithm::Rsa)),
+        Algorithm::ES256 => Some(("ES256", SupportedJwkAlgorithm::Ec)),
+        Algorithm::PS256 => Some(("PS256", SupportedJwkAlgorithm::Rsa)),
         _ => None,
     }
 }

@@ -388,6 +388,48 @@ fn requested_claims_parses_acr_claim_with_values() {
 }
 
 #[test]
+fn requested_claims_ignores_blank_acr_value() {
+    let mut q = HashMap::new();
+    q.insert(
+        "claims".to_owned(),
+        r#"{"id_token":{"acr":{"value":"   "}}}"#.to_owned(),
+    );
+    let result = requested_claims(&q).unwrap();
+    assert_eq!(result.acr, None);
+}
+
+#[test]
+fn requested_claims_uses_first_non_blank_acr_value() {
+    let mut q = HashMap::new();
+    q.insert(
+        "claims".to_owned(),
+        r#"{"id_token":{"acr":{"values":["  ","phr","phrh"]}}}"#.to_owned(),
+    );
+    let result = requested_claims(&q).unwrap();
+    assert_eq!(result.acr, Some("phr".to_owned()));
+}
+
+#[test]
+fn requested_acr_claim_rejects_non_object_id_token_claims() {
+    assert_eq!(requested_acr_claim(Some(&json!("invalid"))), Err(()));
+}
+
+#[test]
+fn requested_acr_claim_ignores_absent_or_whitespace_only_acr_claims() {
+    assert_eq!(requested_acr_claim(Some(&json!({}))), Ok(None));
+    assert_eq!(requested_acr_claim(Some(&json!({"acr":"phr"}))), Err(()));
+    assert_eq!(
+        requested_acr_claim(Some(&json!({"acr":{"values":[" ",""]}}))),
+        Ok(None)
+    );
+}
+
+#[test]
+fn requested_auth_time_claim_rejects_non_object_id_token_claims() {
+    assert_eq!(requested_auth_time_claim(Some(&json!("invalid"))), Err(()));
+}
+
+#[test]
 fn requested_claims_parses_auth_time_claim() {
     let mut q = HashMap::new();
     q.insert(

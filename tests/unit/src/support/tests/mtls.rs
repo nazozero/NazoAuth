@@ -138,6 +138,44 @@ fn test_certificate_with_sans() -> TestCertificate {
     }
 }
 
+fn test_certificate_with_full_subject() -> TestCertificate {
+    let key = test_private_key();
+    let mut name = X509Name::builder().expect("x509 name builder");
+    name.append_entry_by_nid(Nid::COUNTRYNAME, "US")
+        .expect("test country");
+    name.append_entry_by_nid(Nid::STATEORPROVINCENAME, "CA")
+        .expect("test state");
+    name.append_entry_by_nid(Nid::LOCALITYNAME, "San Francisco")
+        .expect("test locality");
+    name.append_entry_by_nid(Nid::ORGANIZATIONALUNITNAME, "Security")
+        .expect("test organizational unit");
+    name.append_entry_by_nid(Nid::PKCS9_EMAILADDRESS, "client@example.com")
+        .expect("test email address");
+    let name = name.build();
+    let mut builder = X509Builder::new().expect("x509 builder");
+    builder.set_version(2).expect("x509 version");
+    builder.set_subject_name(&name).expect("x509 subject");
+    builder.set_issuer_name(&name).expect("x509 issuer");
+    builder.set_pubkey(&key).expect("x509 pubkey");
+    let now = Utc::now().timestamp();
+    let not_before = Asn1Time::from_unix(now - 60).expect("x509 not_before");
+    let not_after = Asn1Time::from_unix(now + 3600).expect("x509 not_after");
+    builder
+        .set_not_before(&not_before)
+        .expect("set x509 not_before");
+    builder
+        .set_not_after(&not_after)
+        .expect("set x509 not_after");
+    builder
+        .sign(&key, MessageDigest::sha256())
+        .expect("sign test cert");
+    let der = builder.build().to_der().expect("cert der");
+    TestCertificate {
+        x5c: STANDARD.encode(&der),
+        thumbprint: URL_SAFE_NO_PAD.encode(Sha256::digest(&der)),
+    }
+}
+
 fn trusted_proxy_settings() -> Settings {
     Settings {
         issuer: "https://issuer.example".to_owned(),
@@ -293,6 +331,26 @@ fn certificate_pem_identity_extracts_san_values_and_escapes_subject_dn() {
 }
 
 #[test]
+fn certificate_pem_identity_extracts_full_subject_dn_names() {
+    let certificate = test_certificate_with_full_subject();
+    let parsed =
+        certificate_pem_identity(&certificate_pem(&certificate)).expect("certificate should parse");
+
+    assert_eq!(
+        parsed.subject_dn.as_deref(),
+        Some("C=US,ST=CA,L=San Francisco,OU=Security,emailAddress=client@example.com")
+    );
+}
+
+#[test]
+fn certificate_pem_identity_rejects_reversed_pem_markers() {
+    assert!(
+        certificate_pem_identity("-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\ninvalid")
+            .is_none()
+    );
+}
+
+#[test]
 fn certificate_pem_identity_rejects_future_and_expired_certificates() {
     let future = test_certificate("client-future", 3600, 7200);
     let expired = test_certificate("client-expired", -7200, -3600);
@@ -343,6 +401,68 @@ fn rejects_conflicting_forwarded_pem_and_direct_thumbprint() {
     );
 
     assert!(request_mtls_client_certificate_from_headers(&headers).is_none());
+}
+
+#[test]
+fn accepts_matching_forwarded_pem_and_direct_identity_material() {
+    let certificate = test_certificate_with_sans();
+    let parsed = certificate_pem_identity(&certificate_pem(&certificate))
+        .expect("test certificate should parse");
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::HeaderName::from_static("x-ssl-client-verify"),
+        HeaderValue::from_static("SUCCESS"),
+    );
+    headers.insert(
+        header::HeaderName::from_static("x-forwarded-tls-client-cert-sha256"),
+        HeaderValue::from_str(parsed.thumbprint.as_deref().unwrap()).unwrap(),
+    );
+    headers.insert(
+        header::HeaderName::from_static("x-forwarded-tls-client-cert-subject-dn"),
+        HeaderValue::from_str(parsed.subject_dn.as_deref().unwrap()).unwrap(),
+    );
+    headers.insert(
+        header::HeaderName::from_static("x-forwarded-tls-client-cert"),
+        HeaderValue::from_str(&urlencoding::encode(&certificate_pem(&certificate))).unwrap(),
+    );
+
+    let merged =
+        request_mtls_client_certificate_from_headers(&headers).expect("matching material accepted");
+    assert_eq!(merged.thumbprint, parsed.thumbprint);
+    assert_eq!(merged.subject_dn, parsed.subject_dn);
+    assert_eq!(merged.san_dns, parsed.san_dns);
+    assert_eq!(merged.san_uri, parsed.san_uri);
+    assert_eq!(merged.san_ip, parsed.san_ip);
+    assert_eq!(merged.san_email, parsed.san_email);
+    assert!(merged.verified_certificate_expiry);
+}
+
+#[test]
+fn mtls_identity_merge_helpers_are_fail_closed() {
+    let mut current = None;
+    assert_eq!(merge_matching(&mut current, None), Some(()));
+    assert_eq!(current, None);
+
+    assert_eq!(
+        merge_matching(&mut current, Some("CN=client".to_owned())),
+        Some(())
+    );
+    assert_eq!(current.as_deref(), Some("CN=client"));
+    assert_eq!(
+        merge_matching(&mut current, Some("CN=client".to_owned())),
+        Some(())
+    );
+    assert_eq!(
+        merge_matching(&mut current, Some("CN=other".to_owned())),
+        None
+    );
+
+    let mut values = vec!["b.example".to_owned()];
+    merge_sorted_unique(
+        &mut values,
+        vec!["a.example".to_owned(), "b.example".to_owned()],
+    );
+    assert_eq!(values, vec!["a.example".to_owned(), "b.example".to_owned()]);
 }
 
 #[test]
@@ -561,6 +681,11 @@ fn extracts_forwarded_subject_dn_and_san_values() {
     assert_eq!(certificate.san_uri, vec!["urn:client:1".to_owned()]);
     assert_eq!(certificate.san_ip, vec!["192.0.2.44".to_owned()]);
     assert_eq!(certificate.san_email, vec!["client@example.com".to_owned()]);
+}
+
+#[test]
+fn mtls_ipaddress_parser_rejects_invalid_san_lengths() {
+    assert!(ipaddress_to_string(&[192, 0, 2]).is_none());
 }
 
 #[test]

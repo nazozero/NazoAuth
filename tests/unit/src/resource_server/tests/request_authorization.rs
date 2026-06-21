@@ -21,6 +21,10 @@ fn authorization_header_parser_rejects_missing_duplicate_and_malformed_values() 
         ResourceServerRequestError::MissingToken
     );
     assert_eq!(
+        presented_authorization_token(&["   "]).unwrap_err(),
+        ResourceServerRequestError::MissingToken
+    );
+    assert_eq!(
         presented_authorization_token(&["Bearer token extra"]).unwrap_err(),
         ResourceServerRequestError::InvalidRequest
     );

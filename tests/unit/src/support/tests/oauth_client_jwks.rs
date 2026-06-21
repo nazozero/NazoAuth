@@ -2,6 +2,13 @@ use super::*;
 
 #[test]
 fn client_jwks_requires_non_empty_unique_kids() {
+    let empty = json!({ "keys": [] });
+    let error = validate_client_jwks(&empty).expect_err("empty jwks keys must fail closed");
+    assert!(
+        error.to_string().contains("jwks.keys 不能为空"),
+        "unexpected error: {error}"
+    );
+
     let missing_kid = json!({
         "keys": [{
             "kty": "OKP",
@@ -41,6 +48,57 @@ fn client_jwks_requires_non_empty_unique_kids() {
         validate_client_jwks(&duplicate_kid).expect_err("duplicate JWK kid must fail closed");
     assert!(
         error.to_string().contains("jwks kid 不能重复: key-1"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn client_jwks_requires_signing_use_and_declared_algorithm() {
+    let encryption_use = json!({
+        "keys": [{
+            "kty": "OKP",
+            "crv": "Ed25519",
+            "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+            "alg": "EdDSA",
+            "use": "enc",
+            "kid": "enc-key"
+        }]
+    });
+    let error = validate_client_jwks(&encryption_use).expect_err("JWK use must be absent or sig");
+    assert!(
+        error.to_string().contains("jwks 公钥 use 必须为 sig"),
+        "unexpected error: {error}"
+    );
+
+    let missing_alg = json!({
+        "keys": [{
+            "kty": "OKP",
+            "crv": "Ed25519",
+            "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+            "use": "sig",
+            "kid": "no-alg"
+        }]
+    });
+    let error = validate_client_jwks(&missing_alg).expect_err("registered JWKs must declare alg");
+    assert!(
+        error.to_string().contains("jwks 公钥必须声明 alg"),
+        "unexpected error: {error}"
+    );
+
+    let unsupported_alg = json!({
+        "keys": [{
+            "kty": "RSA",
+            "n": URL_SAFE_NO_PAD.encode([0x91u8; 256]),
+            "e": URL_SAFE_NO_PAD.encode([0x01u8, 0x00, 0x01]),
+            "alg": "HS256",
+            "use": "sig",
+            "kid": "unsupported-alg"
+        }]
+    });
+    let error =
+        validate_client_jwks(&unsupported_alg).expect_err("unsupported JWS alg must fail closed");
+    assert!(
+        error.to_string().contains("jwks alg 必须是"),
         "unexpected error: {error}"
     );
 }

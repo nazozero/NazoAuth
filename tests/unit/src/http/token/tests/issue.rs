@@ -366,6 +366,28 @@ async fn invalid_authorization_details_state_fails_before_token_signing() {
 }
 
 #[actix_web::test]
+async fn openid_issue_without_user_subject_fails_before_token_signing() {
+    let state = issue_state_with_invalid_signing_key();
+    let client = client_with_grants(&["authorization_code"]);
+    let mut issue = token_issue_with_sid(Vec::new());
+    issue.user_id = None;
+    issue.authorization_code_hash = Some("code-hash".to_owned());
+
+    let response = issue_token_response(&state, &client, issue).await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(&response), "invalid_grant");
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should collect");
+    let value: Value = serde_json::from_slice(&body).expect("OAuth error body should be JSON");
+    assert_eq!(value.get("error"), Some(&json!("invalid_grant")));
+    assert!(value.get("access_token").is_none());
+    assert!(value.get("refresh_token").is_none());
+    assert!(value.get("id_token").is_none());
+}
+
+#[actix_web::test]
 async fn client_credentials_issue_returns_minimal_bearer_token_response_without_oidc_artifacts() {
     let state = issue_state_with_valid_signing_key();
     let client = client_with_grants(&["client_credentials"]);

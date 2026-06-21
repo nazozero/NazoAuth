@@ -15,6 +15,7 @@ use std::time::Duration as StdDuration;
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
 use crate::domain::{ActiveSigningKey, Keyset};
+use crate::http::authorization::pushed_authorization_request_key;
 
 fn decision_state() -> AppState {
     let mut settings =
@@ -106,14 +107,36 @@ fn consent_payload_for_user(client_id: &str, user_id: Uuid) -> ConsentPayload {
     }
 }
 
+fn database_url_with_search_path(schema: &str) -> Option<String> {
+    let base = std::env::var("DATABASE_URL").ok()?;
+    let separator = if base.contains('?') { "&" } else { "?" };
+    Some(format!(
+        "{base}{separator}options=-csearch_path%3D{schema}%2Cpublic"
+    ))
+}
+
 #[derive(Clone)]
 struct DecisionLiveFixture {
     state: Data<AppState>,
+    schema: Option<String>,
 }
 
 impl DecisionLiveFixture {
     async fn new() -> Option<Self> {
         let database_url = std::env::var("DATABASE_URL").ok()?;
+        Self::from_database_url(database_url, None).await
+    }
+
+    async fn new_isolated(schema: &str) -> Option<Self> {
+        let database_url = database_url_with_search_path(schema)?;
+        let fixture = Self::from_database_url(database_url, Some(schema.to_owned())).await?;
+        fixture
+            .create_isolated_schema(&["users", "oauth_clients", "user_client_grants"])
+            .await;
+        Some(fixture)
+    }
+
+    async fn from_database_url(database_url: String, schema: Option<String>) -> Option<Self> {
         let valkey_url = std::env::var("VALKEY_URL").ok()?;
         let mut settings =
             Settings::from_config(&ConfigSource::default()).expect("test settings should load");
@@ -147,7 +170,111 @@ impl DecisionLiveFixture {
                     verification_keys: Vec::new(),
                 }),
             }),
+            schema,
         })
+    }
+
+    async fn restricted_valkey_client(
+        &self,
+        username: &str,
+        password: &str,
+        rules: Vec<String>,
+    ) -> fred::prelude::Client {
+        let mut args = vec!["SETUSER".to_owned(), username.to_owned()];
+        args.extend(rules);
+        self.state
+            .valkey
+            .custom::<(), _>(fred::cmd!("ACL"), args)
+            .await
+            .expect("restricted Valkey ACL user should be configured");
+        let valkey_url = std::env::var("VALKEY_URL").expect("VALKEY_URL should be set");
+        let restricted_url =
+            valkey_url.replacen("redis://", &format!("redis://{username}:{password}@"), 1);
+        let mut valkey_builder = ValkeyBuilder::from_config(
+            ValkeyConfig::from_url(&restricted_url).expect("restricted VALKEY_URL should parse"),
+        );
+        valkey_builder.with_performance_config(|performance: &mut PerformanceConfig| {
+            performance.default_command_timeout = StdDuration::from_millis(1000);
+        });
+        valkey_builder.with_connection_config(|connection: &mut ConnectionConfig| {
+            connection.connection_timeout = StdDuration::from_millis(1000);
+            connection.internal_command_timeout = StdDuration::from_millis(1000);
+            connection.max_command_attempts = 1;
+        });
+        let valkey = valkey_builder
+            .build()
+            .expect("restricted Valkey client should build");
+        valkey
+            .init()
+            .await
+            .expect("restricted Valkey client should connect");
+        valkey
+    }
+
+    fn state_with_valkey(&self, valkey: fred::prelude::Client) -> Data<AppState> {
+        Data::new(AppState {
+            diesel_db: self.state.diesel_db.clone(),
+            valkey,
+            settings: self.state.settings.clone(),
+            keyset: self.state.keyset.clone(),
+        })
+    }
+
+    async fn create_isolated_schema(&self, tables: &[&str]) {
+        let Some(schema) = self.schema.as_deref() else {
+            return;
+        };
+        self.exec_sql(&format!(r#"CREATE SCHEMA IF NOT EXISTS "{}""#, schema))
+            .await;
+        for table in tables {
+            self.exec_sql(&format!(
+                r#"CREATE TABLE "{}"."{}" (LIKE public."{}" INCLUDING ALL)"#,
+                schema, table, table
+            ))
+            .await;
+        }
+    }
+
+    async fn exec_sql(&self, sql: &str) {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection should open");
+        sql_query(sql)
+            .execute(&mut conn)
+            .await
+            .expect("schema mutation should succeed");
+    }
+
+    async fn rename_column(&self, table: &str, from: &str, to: &str) {
+        let schema = self
+            .schema
+            .as_deref()
+            .expect("isolated fixture should provide schema");
+        self.exec_sql(&format!(
+            r#"ALTER TABLE "{}"."{}" RENAME COLUMN "{}" TO "{}""#,
+            schema, table, from, to
+        ))
+        .await;
+    }
+
+    async fn cleanup(&self) {
+        let Some(schema) = self.schema.as_deref() else {
+            return;
+        };
+        self.exec_sql(&format!(r#"DROP SCHEMA IF EXISTS "{}" CASCADE"#, schema))
+            .await;
+    }
+
+    async fn delete_acl_user(&self, username: &str) {
+        let _: i64 = self
+            .state
+            .valkey
+            .custom(
+                fred::cmd!("ACL"),
+                vec!["DELUSER".to_owned(), username.to_owned()],
+            )
+            .await
+            .expect("restricted Valkey ACL user should be deleted");
     }
 
     async fn create_user(&self, suffix: &str, auth_role: &str, admin_level: i32) -> UserRow {
@@ -253,6 +380,17 @@ impl DecisionLiveFixture {
         )
         .await
         .expect("consent payload should persist");
+    }
+
+    async fn store_raw_pushed_request(&self, request_uri: &str, raw: &str) {
+        valkey_set_ex(
+            &self.state.valkey,
+            pushed_authorization_request_key(request_uri),
+            raw.to_owned(),
+            60,
+        )
+        .await
+        .expect("raw PAR payload should persist");
     }
 
     fn auth_request(&self, sid: &str, csrf_token: Option<&str>) -> HttpRequest {
@@ -479,6 +617,107 @@ async fn authorization_decision_rejects_request_if_user_not_match() {
 }
 
 #[actix_web::test]
+async fn authorization_decision_fails_closed_when_consent_state_read_fails() {
+    let Some(fixture) = DecisionLiveFixture::new().await else {
+        return;
+    };
+    let user = fixture.create_user("consent-read-failure", "user", 0).await;
+    let sid = format!("sid-consent-read-failure-{}", Uuid::now_v7());
+    fixture
+        .store_session(&user, &sid, Utc::now().timestamp())
+        .await;
+    let payload = consent_payload_for_user("client-1", user.id);
+    fixture.store_consent_payload(&payload).await;
+
+    let username = format!("decision_read_failure_{}", Uuid::now_v7().simple());
+    let password = format!("pw{}", Uuid::now_v7().simple());
+    let restricted = fixture
+        .restricted_valkey_client(
+            &username,
+            &password,
+            vec![
+                "reset".to_owned(),
+                "on".to_owned(),
+                format!(">{password}"),
+                "~oauth:session:*".to_owned(),
+                "+@all".to_owned(),
+            ],
+        )
+        .await;
+    let req = fixture.auth_request(&sid, Some("csrf-session-token"));
+    let form = DecisionForm {
+        request_id: payload.request_id.clone(),
+        decision: "approve".to_owned(),
+        csrf_token: None,
+    };
+
+    let (status, body) = json_error(
+        authorize_decision(fixture.state_with_valkey(restricted), req, Form(form)).await,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"], "server_error");
+    assert!(
+        body.get("code").is_none(),
+        "consent state read failures must not issue authorization codes"
+    );
+    fixture.delete_acl_user(&username).await;
+}
+
+#[actix_web::test]
+async fn authorization_decision_fails_closed_when_consent_state_consume_fails() {
+    let Some(fixture) = DecisionLiveFixture::new().await else {
+        return;
+    };
+    let user = fixture
+        .create_user("consent-consume-failure", "user", 0)
+        .await;
+    let sid = format!("sid-consent-consume-failure-{}", Uuid::now_v7());
+    fixture
+        .store_session(&user, &sid, Utc::now().timestamp())
+        .await;
+    let payload = consent_payload_for_user("client-1", user.id);
+    fixture.store_consent_payload(&payload).await;
+
+    let username = format!("decision_consume_failure_{}", Uuid::now_v7().simple());
+    let password = format!("pw{}", Uuid::now_v7().simple());
+    let restricted = fixture
+        .restricted_valkey_client(
+            &username,
+            &password,
+            vec![
+                "reset".to_owned(),
+                "on".to_owned(),
+                format!(">{password}"),
+                "~oauth:*".to_owned(),
+                "+@all".to_owned(),
+                "-getdel".to_owned(),
+            ],
+        )
+        .await;
+    let req = fixture.auth_request(&sid, Some("csrf-session-token"));
+    let form = DecisionForm {
+        request_id: payload.request_id.clone(),
+        decision: "approve".to_owned(),
+        csrf_token: None,
+    };
+
+    let (status, body) = json_error(
+        authorize_decision(fixture.state_with_valkey(restricted), req, Form(form)).await,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"], "server_error");
+    assert!(
+        body.get("code").is_none(),
+        "consent state consume failures must not issue authorization codes"
+    );
+    fixture.delete_acl_user(&username).await;
+}
+
+#[actix_web::test]
 async fn authorization_decision_rejects_request_with_invalid_pushed_request_uri() {
     let Some(fixture) = DecisionLiveFixture::new().await else {
         return;
@@ -509,6 +748,49 @@ async fn authorization_decision_rejects_request_with_invalid_pushed_request_uri(
     assert_eq!(
         pairs.get("error").map(String::as_str),
         Some("invalid_request_uri")
+    );
+}
+
+#[actix_web::test]
+async fn authorization_decision_rejects_malformed_consumed_par_without_issuing_code() {
+    let Some(fixture) = DecisionLiveFixture::new().await else {
+        return;
+    };
+    let user = fixture.create_user("pushed-malformed", "user", 0).await;
+    fixture
+        .store_session(&user, "sid-pushed-malformed", Utc::now().timestamp())
+        .await;
+
+    let request_uri = format!(
+        "urn:ietf:params:oauth:request_uri:malformed-{}",
+        Uuid::now_v7()
+    );
+    let payload = ConsentPayload {
+        pushed_request_uri: Some(request_uri.clone()),
+        ..consent_payload_for_user("client-1", user.id)
+    };
+    fixture.store_consent_payload(&payload).await;
+    fixture
+        .store_raw_pushed_request(&request_uri, "not-json")
+        .await;
+
+    let req = fixture.auth_request("sid-pushed-malformed", Some("csrf-session-token"));
+    let form = DecisionForm {
+        request_id: payload.request_id.clone(),
+        decision: "approve".to_owned(),
+        csrf_token: None,
+    };
+    let response = authorize_decision(fixture.state.clone(), req, Form(form)).await;
+
+    assert_eq!(response.status(), StatusCode::FOUND);
+    let pairs = redirect_location(&response)
+        .query_pairs()
+        .into_owned()
+        .collect::<HashMap<_, _>>();
+    assert_eq!(pairs.get("error").map(String::as_str), Some("server_error"));
+    assert!(
+        !pairs.contains_key("code"),
+        "malformed consumed PAR state must not result in an authorization code"
     );
 }
 
@@ -573,4 +855,96 @@ async fn authorization_decision_issues_code_for_matching_user_and_client() {
     assert!(pairs.contains_key("code"));
     assert!(pairs.contains_key("iss"));
     assert!(!pairs.contains_key("error"));
+}
+
+#[actix_web::test]
+async fn authorization_decision_fails_closed_when_authorization_code_store_fails() {
+    let Some(fixture) = DecisionLiveFixture::new().await else {
+        return;
+    };
+    let user = fixture.create_user("code-store-failure", "user", 0).await;
+    let client_id = "client-decision-code-store-failure";
+    fixture.insert_client(client_id, true).await;
+    let sid = format!("sid-code-store-failure-{}", Uuid::now_v7());
+    fixture
+        .store_session(&user, &sid, Utc::now().timestamp())
+        .await;
+    let payload = consent_payload_for_user(client_id, user.id);
+    fixture.store_consent_payload(&payload).await;
+
+    let username = format!("decision_code_store_failure_{}", Uuid::now_v7().simple());
+    let password = format!("pw{}", Uuid::now_v7().simple());
+    let restricted = fixture
+        .restricted_valkey_client(
+            &username,
+            &password,
+            vec![
+                "reset".to_owned(),
+                "on".to_owned(),
+                format!(">{password}"),
+                "~oauth:*".to_owned(),
+                "+@all".to_owned(),
+                "-set".to_owned(),
+            ],
+        )
+        .await;
+    let req = fixture.auth_request(&sid, Some("csrf-session-token"));
+    let form = DecisionForm {
+        request_id: payload.request_id.clone(),
+        decision: "approve".to_owned(),
+        csrf_token: None,
+    };
+
+    let response = authorize_decision(fixture.state_with_valkey(restricted), req, Form(form)).await;
+    let (status, body) = json_error(response).await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"], "server_error");
+    assert!(
+        body.get("code").is_none(),
+        "authorization code store failures must not expose a redeemable code"
+    );
+    fixture.delete_acl_user(&username).await;
+}
+
+#[actix_web::test]
+async fn authorization_decision_fails_closed_when_grant_persistence_fails() {
+    let schema = format!("decision_grant_failure_{}", Uuid::now_v7().simple());
+    let Some(fixture) = DecisionLiveFixture::new_isolated(&schema).await else {
+        return;
+    };
+
+    let user = fixture.create_user("grant-failure", "user", 0).await;
+    let client_id = "client-decision-grant-failure";
+    fixture.insert_client(client_id, true).await;
+    fixture
+        .rename_column(
+            "user_client_grants",
+            "authorization_count",
+            "authorization_count_broken",
+        )
+        .await;
+    fixture
+        .store_session(&user, "sid-grant-failure", Utc::now().timestamp())
+        .await;
+    let payload = consent_payload_for_user(client_id, user.id);
+    fixture.store_consent_payload(&payload).await;
+
+    let req = fixture.auth_request("sid-grant-failure", Some("csrf-session-token"));
+    let form = DecisionForm {
+        request_id: payload.request_id.clone(),
+        decision: "approve".to_owned(),
+        csrf_token: None,
+    };
+
+    let response = authorize_decision(fixture.state.clone(), req, Form(form)).await;
+    let (status, body) = json_error(response).await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"], "server_error");
+    assert!(
+        body.get("code").is_none(),
+        "grant persistence failure must not expose a redeemable authorization code"
+    );
+    fixture.cleanup().await;
 }

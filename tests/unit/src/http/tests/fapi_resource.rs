@@ -2,8 +2,12 @@ use super::*;
 use std::sync::Arc;
 
 use crate::config::ConfigSource;
-use crate::db::create_pool;
-use crate::domain::{ActiveSigningKey, ConfirmationClaims, Keyset};
+use crate::db::{create_pool, get_conn};
+use crate::domain::{ActiveSigningKey, ConfirmationClaims, Keyset, VerificationKey};
+use crate::support::{generate_key_material, public_jwk_from_private_der};
+use diesel::sql_query;
+use diesel::sql_types::{Text, Timestamptz, Uuid as SqlUuid};
+use diesel_async::RunQueryDsl;
 
 fn fapi_test_state() -> AppState {
     fapi_test_state_with_settings(
@@ -31,6 +35,133 @@ fn fapi_test_state_with_settings(settings: Settings) -> AppState {
     }
 }
 
+fn fapi_signing_state_with_invalid_db() -> Data<AppState> {
+    let key_material =
+        generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
+    let public_jwk = public_jwk_from_private_der(
+        "fapi-resource-test-kid",
+        jsonwebtoken::Algorithm::EdDSA,
+        &key_material.private_pkcs8_der,
+    )
+    .expect("test public JWK should derive");
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.issuer = "https://issuer.example".to_owned();
+    settings.default_audience = "resource://default".to_owned();
+
+    Data::new(AppState {
+        diesel_db: create_pool(
+            "postgres://nazo_fapi_test_invalid:nazo_fapi_test_invalid@127.0.0.1:1/nazo".to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey: fred::prelude::Builder::default_centralized()
+            .build()
+            .expect("valkey client construction should not connect"),
+        settings: Arc::new(settings),
+        keyset: Arc::new(Keyset {
+            active_kid: "fapi-resource-test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),
+            verification_keys: vec![VerificationKey {
+                kid: "fapi-resource-test-kid".to_owned(),
+                public_jwk,
+            }],
+        }),
+    })
+}
+
+fn live_fapi_signing_state() -> Option<Data<AppState>> {
+    live_fapi_signing_state_from_database_url(std::env::var("DATABASE_URL").ok()?)
+}
+
+fn live_fapi_signing_state_from_database_url(database_url: String) -> Option<Data<AppState>> {
+    let key_material =
+        generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
+    let public_jwk = public_jwk_from_private_der(
+        "fapi-resource-test-kid",
+        jsonwebtoken::Algorithm::EdDSA,
+        &key_material.private_pkcs8_der,
+    )
+    .expect("test public JWK should derive");
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.issuer = "https://issuer.example".to_owned();
+    settings.default_audience = "resource://default".to_owned();
+
+    Some(Data::new(AppState {
+        diesel_db: create_pool(database_url, 1).expect("database pool should build"),
+        valkey: fred::prelude::Builder::default_centralized()
+            .build()
+            .expect("valkey client construction should not connect"),
+        settings: Arc::new(settings),
+        keyset: Arc::new(Keyset {
+            active_kid: "fapi-resource-test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),
+            verification_keys: vec![VerificationKey {
+                kid: "fapi-resource-test-kid".to_owned(),
+                public_jwk,
+            }],
+        }),
+    }))
+}
+
+fn database_url_with_search_path(schema: &str) -> Option<String> {
+    let base = std::env::var("DATABASE_URL").ok()?;
+    let separator = if base.contains('?') { "&" } else { "?" };
+    Some(format!(
+        "{base}{separator}options=-csearch_path%3D{schema}%2Cpublic"
+    ))
+}
+
+async fn exec_sql(state: &Data<AppState>, sql: &str) {
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    sql_query(sql)
+        .execute(&mut conn)
+        .await
+        .expect("schema mutation should succeed");
+}
+
+async fn create_isolated_schema(state: &Data<AppState>, schema: &str, tables: &[&str]) {
+    exec_sql(
+        state,
+        &format!(r#"CREATE SCHEMA IF NOT EXISTS "{}""#, schema),
+    )
+    .await;
+    for table in tables {
+        exec_sql(
+            state,
+            &format!(
+                r#"CREATE TABLE "{}"."{}" (LIKE public."{}" INCLUDING ALL)"#,
+                schema, table, table
+            ),
+        )
+        .await;
+    }
+}
+
+async fn rename_column(state: &Data<AppState>, schema: &str, table: &str, from: &str, to: &str) {
+    exec_sql(
+        state,
+        &format!(
+            r#"ALTER TABLE "{}"."{}" RENAME COLUMN "{}" TO "{}""#,
+            schema, table, from, to
+        ),
+    )
+    .await;
+}
+
+async fn drop_schema(state: &Data<AppState>, schema: &str) {
+    exec_sql(
+        state,
+        &format!(r#"DROP SCHEMA IF EXISTS "{}" CASCADE"#, schema),
+    )
+    .await;
+}
+
 fn fapi_trusted_proxy_state() -> AppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
@@ -38,6 +169,127 @@ fn fapi_trusted_proxy_state() -> AppState {
     settings.trusted_proxy_cidrs =
         parse_trusted_proxy_cidrs(Some("192.0.2.0/24".to_owned())).unwrap();
     fapi_test_state_with_settings(settings)
+}
+
+async fn signed_fapi_access_token(
+    state: &Data<AppState>,
+    tenant_id: Uuid,
+    audiences: &[String],
+    ttl: i64,
+) -> IssuedAccessToken {
+    make_jwt(
+        state,
+        AccessTokenJwtInput {
+            tenant_id,
+            subject: "fapi-subject",
+            user_id: None,
+            subject_type: "client",
+            client_id: "fapi-client",
+            audiences,
+            scopes: &["openid".to_owned()],
+            authorization_details: &json!([]),
+            userinfo_claims: &[],
+            userinfo_claim_requests: &[],
+            ttl,
+            dpop_jkt: None,
+            mtls_x5t_s256: None,
+        },
+    )
+    .await
+    .expect("FAPI resource access token should sign")
+}
+
+async fn signed_fapi_claims(state: &Data<AppState>, claims: Claims) -> String {
+    let mut header = jsonwebtoken::Header::new(state.keyset.active_alg);
+    header.typ = Some("at+jwt".to_owned());
+    header.kid = Some(state.keyset.active_kid.clone());
+    state
+        .keyset
+        .sign_jwt(&header, &claims)
+        .await
+        .expect("FAPI resource claims should sign")
+}
+
+async fn insert_fapi_client_and_revocation(
+    state: &Data<AppState>,
+    client_id: &str,
+    access_token_jti: &str,
+) {
+    #[derive(diesel::QueryableByName)]
+    struct IdRow {
+        #[diesel(sql_type = SqlUuid)]
+        id: Uuid,
+    }
+
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    sql_query(
+        r#"
+        DELETE FROM access_token_revocations
+        USING oauth_clients
+        WHERE access_token_revocations.client_id = oauth_clients.id
+          AND oauth_clients.tenant_id = $1
+          AND oauth_clients.client_id = $2
+        "#,
+    )
+    .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+    .bind::<Text, _>(client_id)
+    .execute(&mut conn)
+    .await
+    .expect("FAPI resource revocation cleanup should succeed");
+    sql_query("DELETE FROM oauth_clients WHERE tenant_id = $1 AND client_id = $2")
+        .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+        .bind::<Text, _>(client_id)
+        .execute(&mut conn)
+        .await
+        .expect("FAPI resource client cleanup should succeed");
+    let row = sql_query(
+        r#"
+        INSERT INTO oauth_clients (
+            tenant_id, realm_id, organization_id, client_id, client_name, client_type,
+            client_secret_argon2_hash, redirect_uris, scopes, allowed_audiences,
+            grant_types, token_endpoint_auth_method, require_dpop_bound_tokens,
+            require_mtls_bound_tokens, tls_client_auth_san_dns, tls_client_auth_san_uri,
+            tls_client_auth_san_ip, tls_client_auth_san_email,
+            allow_client_assertion_audience_array,
+            allow_client_assertion_endpoint_audience, require_par_request_object,
+            allow_authorization_code_without_pkce, is_active,
+            post_logout_redirect_uris, backchannel_logout_session_required
+        )
+        VALUES (
+            $1, $2, $3, $4, 'FAPI Resource Test Client', 'confidential',
+            NULL, '["https://client.example/callback"]'::jsonb, '["openid"]'::jsonb,
+            '["resource://default"]'::jsonb, '["client_credentials"]'::jsonb,
+            'client_secret_post', false, false, '[]'::jsonb, '[]'::jsonb,
+            '[]'::jsonb, '[]'::jsonb, false, false, false, false, true,
+            '[]'::jsonb, true
+        )
+        RETURNING id
+        "#,
+    )
+    .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+    .bind::<SqlUuid, _>(DEFAULT_REALM_ID)
+    .bind::<SqlUuid, _>(DEFAULT_ORGANIZATION_ID)
+    .bind::<Text, _>(client_id)
+    .get_result::<IdRow>(&mut conn)
+    .await
+    .expect("FAPI resource client insert should succeed");
+    sql_query(
+        r#"
+        INSERT INTO access_token_revocations (
+            tenant_id, client_id, access_token_jti_blake3, revoked_at, expires_at
+        )
+        VALUES ($1, $2, $3, now(), $4)
+        "#,
+    )
+    .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+    .bind::<SqlUuid, _>(row.id)
+    .bind::<Text, _>(blake3_hex(access_token_jti))
+    .bind::<Timestamptz, _>(Utc::now() + Duration::minutes(5))
+    .execute(&mut conn)
+    .await
+    .expect("FAPI resource revocation insert should succeed");
 }
 
 fn access_claims(cnf: Option<ConfirmationClaims>) -> Claims {
@@ -115,6 +367,163 @@ async fn fapi_resource_rejects_unverifiable_access_token_before_revocation_looku
     );
 }
 
+#[actix_web::test]
+async fn fapi_resource_rejects_signed_token_with_wrong_resource_audience_before_db_lookup() {
+    let state = fapi_signing_state_with_invalid_db();
+    let token = signed_fapi_access_token(
+        &state,
+        DEFAULT_TENANT_ID,
+        &["https://issuer.example/userinfo".to_owned()],
+        300,
+    )
+    .await;
+    let req = actix_web::test::TestRequest::get()
+        .uri("/fapi/resource")
+        .insert_header((header::AUTHORIZATION, format!("Bearer {}", token.token)))
+        .to_http_request();
+
+    let response = fapi_resource(state, req, Bytes::new()).await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_token")
+    );
+}
+
+#[actix_web::test]
+async fn fapi_resource_rejects_signed_token_with_invalid_tenant_boundary_before_db_lookup() {
+    let state = fapi_signing_state_with_invalid_db();
+    let mut claims = access_claims(None);
+    claims.iss = state.settings.issuer.clone();
+    claims.tenant_id = "not-a-uuid".to_owned();
+    claims.aud = json!("resource://default");
+    let token = signed_fapi_claims(&state, claims).await;
+    let req = actix_web::test::TestRequest::get()
+        .uri("/fapi/resource")
+        .insert_header((header::AUTHORIZATION, format!("Bearer {token}")))
+        .to_http_request();
+
+    let response = fapi_resource(state, req, Bytes::new()).await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_token")
+    );
+}
+
+#[actix_web::test]
+async fn fapi_resource_rejects_revoked_access_token() {
+    let Some(state) = live_fapi_signing_state() else {
+        return;
+    };
+    let token = signed_fapi_access_token(
+        &state,
+        DEFAULT_TENANT_ID,
+        &["resource://default".to_owned()],
+        300,
+    )
+    .await;
+    insert_fapi_client_and_revocation(&state, "fapi-client", &token.jti).await;
+    let req = actix_web::test::TestRequest::get()
+        .uri("/fapi/resource")
+        .insert_header((header::AUTHORIZATION, format!("Bearer {}", token.token)))
+        .to_http_request();
+
+    let response = fapi_resource(state, req, Bytes::new()).await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_token")
+    );
+}
+
+#[actix_web::test]
+async fn fapi_resource_rejects_expired_access_token_after_revocation_lookup() {
+    let Some(state) = live_fapi_signing_state() else {
+        return;
+    };
+    let token = signed_fapi_access_token(
+        &state,
+        DEFAULT_TENANT_ID,
+        &["resource://default".to_owned()],
+        -1,
+    )
+    .await;
+    let req = actix_web::test::TestRequest::get()
+        .uri("/fapi/resource")
+        .insert_header((header::AUTHORIZATION, format!("Bearer {}", token.token)))
+        .to_http_request();
+
+    let response = fapi_resource(state, req, Bytes::new()).await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_token")
+    );
+}
+
+#[actix_web::test]
+async fn fapi_resource_returns_server_error_when_revocation_lookup_cannot_connect() {
+    let state = fapi_signing_state_with_invalid_db();
+    let token = signed_fapi_access_token(
+        &state,
+        DEFAULT_TENANT_ID,
+        &["resource://default".to_owned()],
+        300,
+    )
+    .await;
+    let req = actix_web::test::TestRequest::get()
+        .uri("/fapi/resource")
+        .insert_header((header::AUTHORIZATION, format!("Bearer {}", token.token)))
+        .to_http_request();
+
+    let response = fapi_resource(state, req, Bytes::new()).await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(&response).as_deref(), Some("server_error"));
+}
+
+#[actix_web::test]
+async fn fapi_resource_returns_server_error_when_revocation_query_fails_after_token_validation() {
+    let schema = format!("fapi_revocation_failure_{}", Uuid::now_v7().simple());
+    let Some(database_url) = database_url_with_search_path(&schema) else {
+        return;
+    };
+    let Some(state) = live_fapi_signing_state_from_database_url(database_url) else {
+        return;
+    };
+    create_isolated_schema(&state, &schema, &["access_token_revocations"]).await;
+    rename_column(
+        &state,
+        &schema,
+        "access_token_revocations",
+        "access_token_jti_blake3",
+        "access_token_jti_blake3_broken",
+    )
+    .await;
+    let token = signed_fapi_access_token(
+        &state,
+        DEFAULT_TENANT_ID,
+        &["resource://default".to_owned()],
+        300,
+    )
+    .await;
+    let req = actix_web::test::TestRequest::get()
+        .uri("/fapi/resource")
+        .insert_header((header::AUTHORIZATION, format!("Bearer {}", token.token)))
+        .to_http_request();
+
+    let response = fapi_resource(state.clone(), req, Bytes::new()).await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(&response).as_deref(), Some("server_error"));
+    drop_schema(&state, &schema).await;
+}
+
 #[test]
 fn post_body_access_token_accepts_single_form_value() {
     let req = actix_web::test::TestRequest::post()
@@ -147,6 +556,19 @@ fn post_body_access_token_rejects_duplicate_value() {
     );
 
     assert!(matches!(token, ResourceAccessToken::InvalidRequest));
+}
+
+#[test]
+fn post_body_access_token_treats_blank_or_absent_value_as_missing() {
+    let req = actix_web::test::TestRequest::post()
+        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+        .to_http_request();
+
+    let blank = resource_access_token(&req, &Bytes::from_static(b"access_token=%20%09"));
+    assert!(matches!(blank, ResourceAccessToken::Missing));
+
+    let absent = resource_access_token(&req, &Bytes::from_static(b"scope=openid"));
+    assert!(matches!(absent, ResourceAccessToken::Missing));
 }
 
 #[test]

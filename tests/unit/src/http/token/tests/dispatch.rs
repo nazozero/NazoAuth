@@ -3,7 +3,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
-use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
+use base64::{
+    Engine as _,
+    engine::general_purpose::{STANDARD as B64, URL_SAFE_NO_PAD},
+};
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Jsonb, Nullable, Text};
 use diesel_async::RunQueryDsl;
@@ -129,6 +132,24 @@ fn unavailable_token_valkey() -> fred::prelude::Client {
     builder
         .build()
         .expect("unavailable valkey client construction should not connect")
+}
+
+fn parseable_invalid_client_assertion(client_id: &str) -> String {
+    let now = Utc::now().timestamp();
+    let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"HS256","typ":"JWT"}"#);
+    let payload = URL_SAFE_NO_PAD.encode(
+        json!({
+            "iss": client_id,
+            "sub": client_id,
+            "aud": "https://issuer.example/token",
+            "exp": now + 60,
+            "nbf": now - 1,
+            "iat": now,
+            "jti": format!("invalid-assertion-{}", Uuid::now_v7())
+        })
+        .to_string(),
+    );
+    format!("{header}.{payload}.signature")
 }
 
 fn unavailable_valkey_token_state(profile: AuthorizationServerProfile) -> AppState {
@@ -1308,9 +1329,13 @@ async fn token_endpoint_rejects_private_key_jwt_with_invalid_assertion() {
     let Some(state) = live_token_state(AuthorizationServerProfile::Oauth2Baseline).await else {
         return;
     };
+    let client_id = format!(
+        "private-key-jwt-invalid-assertion-client-{}",
+        Uuid::now_v7()
+    );
     insert_token_client(
         &state,
-        "private-key-jwt-invalid-assertion-client",
+        &client_id,
         "confidential",
         "private_key_jwt",
         None,
@@ -1322,9 +1347,12 @@ async fn token_endpoint_rejects_private_key_jwt_with_invalid_assertion() {
     .await;
 
     let req = token_request("application/x-www-form-urlencoded");
-    let body = Bytes::from_static(
-        b"grant_type=client_credentials&client_id=private-key-jwt-invalid-assertion-client&client_assertion=invalid.jwt",
-    );
+    let assertion = parseable_invalid_client_assertion(&client_id);
+    let body = Bytes::from(format!(
+        "grant_type=client_credentials&client_assertion_type={}&client_assertion={}",
+        urlencoding::encode(CLIENT_ASSERTION_TYPE_JWT_BEARER),
+        urlencoding::encode(&assertion)
+    ));
 
     assert_token_error(
         token(state, req, body).await,

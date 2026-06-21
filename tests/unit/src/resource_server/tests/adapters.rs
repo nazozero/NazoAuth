@@ -1,7 +1,10 @@
 use super::fixtures::*;
 use super::*;
 use actix_web::{FromRequest, http::StatusCode};
-use futures_util::future::{Ready, ready};
+use futures_util::{
+    future::{Ready, ready},
+    task::noop_waker_ref,
+};
 use serde_json::json;
 use std::task::{Context, Poll};
 use tower::{Layer, Service};
@@ -53,6 +56,44 @@ async fn actix_request_authorizer_inserts_verified_claims() {
     );
 }
 
+#[actix_web::test]
+async fn actix_request_authorizer_includes_query_token_transport_in_validation() {
+    let fixture = fixture();
+    let token = bearer(&token(&fixture, json!({}), None));
+    let request = actix_web::test::TestRequest::get()
+        .uri("/orders?access_token=query-token")
+        .insert_header((actix_web::http::header::AUTHORIZATION, token))
+        .to_http_request();
+
+    let error = authorize_actix_request(&fixture.verifier, &request).unwrap_err();
+
+    assert!(matches!(error, ResourceServerRequestError::InvalidRequest));
+}
+
+#[actix_web::test]
+async fn actix_extractor_maps_authorization_failure_to_bearer_response() {
+    let fixture = fixture();
+    let request = actix_web::test::TestRequest::get()
+        .uri("/orders")
+        .app_data(actix_web::web::Data::new(fixture.verifier))
+        .to_http_request();
+    let mut payload = actix_web::dev::Payload::None;
+
+    let error = ActixVerifiedAccessToken::from_request(&request, &mut payload)
+        .await
+        .unwrap_err();
+    let response = error.as_response_error().error_response();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        response
+            .headers()
+            .get(actix_web::http::header::WWW_AUTHENTICATE)
+            .unwrap(),
+        r#"Bearer error="invalid_token", error_description="Missing bearer access token.""#
+    );
+}
+
 #[tokio::test]
 async fn tower_layer_inserts_verified_claims_before_inner_service() {
     #[derive(Clone)]
@@ -87,6 +128,39 @@ async fn tower_layer_inserts_verified_claims_before_inner_service() {
     let saw_claims = service.call(request).await.unwrap();
 
     assert!(saw_claims);
+}
+
+#[test]
+fn tower_layer_poll_ready_propagates_inner_service_errors() {
+    #[derive(Clone)]
+    struct NotReadyService;
+
+    impl Service<http::Request<()>> for NotReadyService {
+        type Response = ();
+        type Error = &'static str;
+        type Future = Ready<Result<(), &'static str>>;
+
+        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Err("not ready"))
+        }
+
+        fn call(&mut self, _request: http::Request<()>) -> Self::Future {
+            ready(Ok(()))
+        }
+    }
+
+    let fixture = fixture();
+    let mut service = TowerResourceServerLayer::new(fixture.verifier).layer(NotReadyService);
+    let mut cx = Context::from_waker(noop_waker_ref());
+
+    let Poll::Ready(Err(error)) = service.poll_ready(&mut cx) else {
+        panic!("inner readiness failure should be returned immediately");
+    };
+
+    assert!(matches!(
+        error,
+        TowerResourceServerError::Inner("not ready")
+    ));
 }
 
 #[test]
@@ -152,6 +226,35 @@ fn bearer_error_mappers_hide_internal_reasons_but_preserve_protocol_category() {
         dpop_mismatch.body(),
         r#"{"error":"invalid_token","error_description":"DPoP proof does not match access token."}"#
     );
+
+    let missing_token = http_bearer_error_response(&ResourceServerRequestError::MissingToken);
+    assert_eq!(
+        missing_token.body(),
+        r#"{"error":"invalid_token","error_description":"Missing bearer access token."}"#
+    );
+
+    let missing_sender_constraint =
+        http_bearer_error_response(&ResourceServerRequestError::MissingSenderConstraint);
+    assert_eq!(
+        missing_sender_constraint.body(),
+        r#"{"error":"invalid_token","error_description":"Sender-constrained access token requires verified proof."}"#
+    );
+
+    let mtls_mismatch =
+        http_bearer_error_response(&ResourceServerRequestError::MtlsBindingMismatch);
+    assert_eq!(
+        mtls_mismatch.body(),
+        r#"{"error":"invalid_token","error_description":"Client certificate does not match access token."}"#
+    );
+
+    let invalid_token = http_bearer_error_response(&ResourceServerRequestError::InvalidToken(
+        ResourceServerVerifierError::InvalidToken,
+    ));
+    assert_eq!(
+        invalid_token.body(),
+        r#"{"error":"invalid_token","error_description":"Access token is invalid."}"#
+    );
+    assert!(!invalid_token.body().contains("signature details"));
 
     let invalid_dpop = http_bearer_error_response(&ResourceServerRequestError::InvalidDpopProof(
         DpopProofVerifierError::InvalidSignature,

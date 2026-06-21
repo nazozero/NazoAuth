@@ -1,6 +1,8 @@
 use super::fixtures::*;
 use super::*;
-use crate::resource_server::dpop::{dpop_jwk_decoding_key, dpop_jwk_thumbprint};
+use crate::resource_server::dpop::{
+    decode_and_verify_dpop_proof, dpop_jwk_decoding_key, dpop_jwk_thumbprint,
+};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use jsonwebtoken::{Algorithm, Header};
 use serde_json::json;
@@ -379,6 +381,40 @@ fn dpop_public_jwk_decoder_rejects_algorithm_use_and_shape_mismatches() {
     assert!(dpop_jwk_decoding_key(&missing_exponent, Algorithm::RS256).is_none());
 
     assert!(dpop_jwk_decoding_key(&json!({"kty":"oct","k":"secret"}), Algorithm::RS256).is_none());
+
+    let ed_jwk = json!({
+        "kty": "OKP",
+        "crv": "X25519",
+        "x": URL_SAFE_NO_PAD.encode([1u8; 32]),
+        "alg": "EdDSA",
+        "use": "sig"
+    });
+    assert!(dpop_jwk_decoding_key(&ed_jwk, Algorithm::EdDSA).is_none());
+
+    let short_ed_jwk = json!({
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": URL_SAFE_NO_PAD.encode([1u8; 31]),
+        "alg": "EdDSA",
+        "use": "sig"
+    });
+    assert!(dpop_jwk_decoding_key(&short_ed_jwk, Algorithm::EdDSA).is_none());
+
+    let mut wrong_ec_curve = p256_public_jwk();
+    wrong_ec_curve["crv"] = json!("P-384");
+    assert!(dpop_jwk_decoding_key(&wrong_ec_curve, Algorithm::ES256).is_none());
+
+    let short_ec = json!({
+        "kty": "EC",
+        "crv": "P-256",
+        "x": URL_SAFE_NO_PAD.encode([1u8; 31]),
+        "y": URL_SAFE_NO_PAD.encode([2u8; 32]),
+        "alg": "ES256",
+        "use": "sig"
+    });
+    assert!(dpop_jwk_decoding_key(&short_ec, Algorithm::ES256).is_none());
+
+    assert!(dpop_jwk_decoding_key(&json!({"kty":"EC"}), Algorithm::PS256).is_none());
 }
 
 #[test]
@@ -483,6 +519,52 @@ fn dpop_proof_verifier_rejects_malformed_compact_jwt_parts() {
             .unwrap_err();
         assert_eq!(error, DpopProofVerifierError::MalformedProof);
     }
+}
+
+#[test]
+fn dpop_low_level_decoder_rejects_malformed_compact_jws_parts() {
+    let dpop = dpop_fixture();
+    let key = dpop_jwk_decoding_key(
+        &serde_json::to_value(&dpop.public_jwk).unwrap(),
+        Algorithm::RS256,
+    )
+    .expect("fixture JWK should decode");
+
+    for proof in [
+        ".payload.signature",
+        "header..signature",
+        "header.payload.",
+        "header.payload.signature.extra",
+    ] {
+        let error = decode_and_verify_dpop_proof(proof, &key, Algorithm::RS256)
+            .expect_err("malformed compact JWS must fail closed");
+        assert_eq!(error, DpopProofVerifierError::MalformedProof);
+    }
+}
+
+#[test]
+fn dpop_low_level_decoder_rejects_valid_compact_jws_with_wrong_key() {
+    let signer = dpop_fixture();
+    let verifier_key_source = dpop_fixture();
+    let proof = dpop_proof(
+        &signer,
+        "access-token",
+        "GET",
+        "https://api.example/orders",
+        "wrong-key-signature",
+        None,
+        None,
+    );
+    let key = dpop_jwk_decoding_key(
+        &serde_json::to_value(&verifier_key_source.public_jwk).unwrap(),
+        Algorithm::RS256,
+    )
+    .expect("fixture JWK should decode");
+
+    let error = decode_and_verify_dpop_proof(&proof, &key, Algorithm::RS256)
+        .expect_err("JWS signed by another key must fail signature validation");
+
+    assert_eq!(error, DpopProofVerifierError::InvalidSignature);
 }
 
 #[test]

@@ -313,13 +313,7 @@ fn unverified_client_assertion_client_id(assertion: &str) -> Option<String> {
 pub(crate) fn supported_client_jwt_algorithm_name(
     alg: jsonwebtoken::Algorithm,
 ) -> Option<&'static str> {
-    match alg {
-        jsonwebtoken::Algorithm::EdDSA => Some("EdDSA"),
-        jsonwebtoken::Algorithm::RS256 => Some("RS256"),
-        jsonwebtoken::Algorithm::ES256 => Some("ES256"),
-        jsonwebtoken::Algorithm::PS256 => Some("PS256"),
-        _ => None,
-    }
+    supported_client_jwt_algorithm(alg).map(|(name, _)| name)
 }
 
 pub(crate) fn client_jwt_algorithm_from_name(value: &str) -> Option<jsonwebtoken::Algorithm> {
@@ -330,6 +324,12 @@ pub(crate) fn client_jwt_algorithm_from_name(value: &str) -> Option<jsonwebtoken
         "PS256" => Some(jsonwebtoken::Algorithm::PS256),
         _ => None,
     }
+}
+
+enum SupportedClientJwtAlgorithm {
+    EdDsa,
+    Rsa,
+    Ec,
 }
 
 pub(crate) fn client_jwt_decoding_key(
@@ -348,7 +348,7 @@ pub(crate) fn jwt_decoding_key_from_jwk(
     key: &Value,
     alg: jsonwebtoken::Algorithm,
 ) -> Option<jsonwebtoken::DecodingKey> {
-    let expected_alg = supported_client_jwt_algorithm_name(alg)?;
+    let (expected_alg, supported_alg) = supported_client_jwt_algorithm(alg)?;
     if let Some(key_alg) = key.get("alg").and_then(Value::as_str)
         && key_alg != expected_alg
     {
@@ -362,8 +362,8 @@ pub(crate) fn jwt_decoding_key_from_jwk(
     {
         return None;
     }
-    match alg {
-        jsonwebtoken::Algorithm::EdDSA => {
+    match supported_alg {
+        SupportedClientJwtAlgorithm::EdDsa => {
             if key.get("kty").and_then(Value::as_str) != Some("OKP")
                 || key.get("crv").and_then(Value::as_str) != Some("Ed25519")
             {
@@ -376,7 +376,7 @@ pub(crate) fn jwt_decoding_key_from_jwk(
             }
             jsonwebtoken::DecodingKey::from_ed_components(x).ok()
         }
-        jsonwebtoken::Algorithm::RS256 | jsonwebtoken::Algorithm::PS256 => {
+        SupportedClientJwtAlgorithm::Rsa => {
             if key.get("kty").and_then(Value::as_str) != Some("RSA") {
                 return None;
             }
@@ -389,7 +389,7 @@ pub(crate) fn jwt_decoding_key_from_jwk(
             }
             jsonwebtoken::DecodingKey::from_rsa_components(n, e).ok()
         }
-        jsonwebtoken::Algorithm::ES256 => {
+        SupportedClientJwtAlgorithm::Ec => {
             if key.get("kty").and_then(Value::as_str) != Some("EC")
                 || key.get("crv").and_then(Value::as_str) != Some("P-256")
             {
@@ -404,6 +404,17 @@ pub(crate) fn jwt_decoding_key_from_jwk(
             }
             jsonwebtoken::DecodingKey::from_ec_components(x, y).ok()
         }
+    }
+}
+
+fn supported_client_jwt_algorithm(
+    alg: jsonwebtoken::Algorithm,
+) -> Option<(&'static str, SupportedClientJwtAlgorithm)> {
+    match alg {
+        jsonwebtoken::Algorithm::EdDSA => Some(("EdDSA", SupportedClientJwtAlgorithm::EdDsa)),
+        jsonwebtoken::Algorithm::RS256 => Some(("RS256", SupportedClientJwtAlgorithm::Rsa)),
+        jsonwebtoken::Algorithm::ES256 => Some(("ES256", SupportedClientJwtAlgorithm::Ec)),
+        jsonwebtoken::Algorithm::PS256 => Some(("PS256", SupportedClientJwtAlgorithm::Rsa)),
         _ => None,
     }
 }

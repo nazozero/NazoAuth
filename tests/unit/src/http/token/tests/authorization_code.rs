@@ -132,7 +132,10 @@ impl LiveAuthorizationCodeFixture {
             ("COOKIE_SECURE", "true"),
             ("TOKEN_RATE_LIMIT_MAX_REQUESTS", "100000"),
         ]);
-        let settings = Settings::from_config(&config).expect("test settings should load");
+        let mut settings = Settings::from_config(&config).expect("test settings should load");
+        settings.trusted_proxy_cidrs = vec![
+            crate::support::IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse"),
+        ];
         let mut valkey_builder = ValkeyBuilder::from_config(
             ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),
         );
@@ -667,6 +670,10 @@ async fn authorization_code_grant_requires_code_before_state_lookup() {
 async fn authorization_code_helpers_fail_closed_when_valkey_is_unavailable() {
     let state = test_state();
     let code_hash = blake3_hex("code-unavailable");
+    let client = pkce_policy_client();
+    let req = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .to_http_request();
 
     let pending = load_pending_authorization_code_payload(&state, &code_hash)
         .await
@@ -680,6 +687,17 @@ async fn authorization_code_helpers_fail_closed_when_valkey_is_unavailable() {
     };
     assert_eq!(consuming.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(oauth_error_code(&consuming), "server_error");
+
+    let endpoint = token_authorization_code(
+        &state,
+        &req,
+        &client,
+        &form_for_code("code-unavailable"),
+        None,
+    )
+    .await;
+    assert_eq!(endpoint.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(&endpoint), "server_error");
 }
 
 #[actix_web::test]
@@ -888,6 +906,7 @@ async fn token_authorization_code_enforces_client_mtls_policy_before_consumption
         .to_http_request();
     let mut client = live_client(&format!("client-mtls-policy-{}", Uuid::now_v7()));
     client.require_mtls_bound_tokens = true;
+    fixture.insert_client(&client).await;
     let code = format!("code-{}", Uuid::now_v7());
     fixture
         .store_code_state(
@@ -908,6 +927,94 @@ async fn token_authorization_code_enforces_client_mtls_policy_before_consumption
         fixture.code_state(&code).await,
         AuthorizationCodeState::Pending { .. }
     ));
+
+    let bound_code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_code_state(
+            &bound_code,
+            &AuthorizationCodeState::Pending {
+                payload: payload_for_client(&client),
+            },
+        )
+        .await;
+    let thumbprint = "REREREREREREREREREREREREREREREREREREREREREQ";
+    let verified_req = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .peer_addr("127.0.0.1:12345".parse().expect("peer addr should parse"))
+        .insert_header((
+            header::HeaderName::from_static("x-ssl-client-verify"),
+            "SUCCESS",
+        ))
+        .insert_header((
+            header::HeaderName::from_static("x-ssl-client-cert-sha256"),
+            thumbprint,
+        ))
+        .insert_header((
+            header::HeaderName::from_static("x-ssl-client-subject-dn"),
+            "CN=authorization-code-mtls-policy",
+        ))
+        .to_http_request();
+
+    let bound_response = token_authorization_code(
+        &fixture.state,
+        &verified_req,
+        &client,
+        &form_for_code(&bound_code),
+        None,
+    )
+    .await;
+    let (bound_status, bound_body) = token_json_body(bound_response).await;
+
+    assert_eq!(
+        bound_status,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "holder binding should succeed before the fixture reaches its intentionally invalid signing key: {bound_body}"
+    );
+    assert_eq!(bound_body["error"], "server_error");
+}
+
+#[actix_web::test]
+async fn token_authorization_code_accepts_matching_mtls_bound_code_before_issuing_response() {
+    let Some(fixture) = LiveAuthorizationCodeFixture::new().await else {
+        return;
+    };
+    let client = live_client(&format!("client-mtls-bound-{}", Uuid::now_v7()));
+    fixture.insert_client(&client).await;
+    let thumbprint = "REREREREREREREREREREREREREREREREREREREREREQ";
+    let mut payload = payload_for_client(&client);
+    payload.mtls_x5t_s256 = Some(thumbprint.to_owned());
+    payload.scopes = vec!["accounts".to_owned()];
+    let code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_code_state(&code, &AuthorizationCodeState::Pending { payload })
+        .await;
+    let req = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .peer_addr("127.0.0.1:12345".parse().expect("peer addr should parse"))
+        .insert_header((
+            header::HeaderName::from_static("x-ssl-client-verify"),
+            "SUCCESS",
+        ))
+        .insert_header((
+            header::HeaderName::from_static("x-ssl-client-cert-sha256"),
+            thumbprint,
+        ))
+        .insert_header((
+            header::HeaderName::from_static("x-ssl-client-subject-dn"),
+            "CN=authorization-code-actual",
+        ))
+        .to_http_request();
+
+    let response =
+        token_authorization_code(&fixture.state, &req, &client, &form_for_code(&code), None).await;
+    let (status, body) = token_json_body(response).await;
+
+    assert_eq!(
+        status,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "the fixture uses an intentionally invalid signing key after holder binding succeeds: {body}"
+    );
+    assert_eq!(body["error"], "server_error");
 }
 
 #[actix_web::test]
@@ -1221,6 +1328,21 @@ async fn token_authorization_code_reports_busy_failed_and_missing_states() {
     .await;
     assert_eq!(missing_response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(oauth_error_code(&missing_response), "invalid_grant");
+
+    let malformed_code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_raw_code_state(&malformed_code, r#"{"status":"unknown"}"#)
+        .await;
+    let malformed_response = token_authorization_code(
+        &fixture.state,
+        &req,
+        &client,
+        &form_for_code(&malformed_code),
+        None,
+    )
+    .await;
+    assert_eq!(malformed_response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(&malformed_response), "server_error");
 }
 
 #[path = "authorization_code/consumption.rs"]

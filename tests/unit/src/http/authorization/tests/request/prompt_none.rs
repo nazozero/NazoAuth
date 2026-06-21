@@ -2,10 +2,12 @@ use super::*;
 use std::sync::Arc;
 
 use crate::config::ConfigSource;
-use crate::db::create_pool;
+use crate::db::{create_pool, get_conn};
 use crate::domain::{ActiveSigningKey, Keyset};
 use crate::http::authorization::request::pushed_authorization_request_key;
 use actix_web::test::TestRequest;
+use diesel::sql_query;
+use diesel_async::RunQueryDsl;
 use fred::interfaces::ClientLike;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
@@ -103,6 +105,83 @@ fn unavailable_prompt_none_state() -> AppState {
             .build()
             .expect("valkey client construction should not connect"),
     )
+}
+
+fn database_url_with_search_path(schema: &str) -> Option<String> {
+    let base = std::env::var("DATABASE_URL").ok()?;
+    let separator = if base.contains('?') { "&" } else { "?" };
+    Some(format!(
+        "{base}{separator}options=-csearch_path%3D{schema}%2Cpublic"
+    ))
+}
+
+fn prompt_none_state_with_database_url(database_url: String) -> AppState {
+    let valkey = fred::prelude::Builder::default_centralized()
+        .build()
+        .expect("valkey client construction should not connect");
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.issuer = "https://issuer.example".to_owned();
+    settings.auth_code_ttl_seconds = 60;
+
+    AppState {
+        diesel_db: create_pool(database_url, 1).expect("database pool should build"),
+        valkey,
+        settings: Arc::new(settings),
+        keyset: Arc::new(Keyset {
+            active_kid: "test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+            verification_keys: Vec::new(),
+        }),
+    }
+}
+
+async fn exec_sql(state: &AppState, sql: &str) {
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    sql_query(sql)
+        .execute(&mut conn)
+        .await
+        .expect("schema mutation should succeed");
+}
+
+async fn create_isolated_schema(state: &AppState, schema: &str, tables: &[&str]) {
+    exec_sql(
+        state,
+        &format!(r#"CREATE SCHEMA IF NOT EXISTS "{}""#, schema),
+    )
+    .await;
+    for table in tables {
+        exec_sql(
+            state,
+            &format!(
+                r#"CREATE TABLE "{}"."{}" (LIKE public."{}" INCLUDING ALL)"#,
+                schema, table, table
+            ),
+        )
+        .await;
+    }
+}
+
+async fn rename_column(state: &AppState, schema: &str, table: &str, from: &str, to: &str) {
+    exec_sql(
+        state,
+        &format!(
+            r#"ALTER TABLE "{}"."{}" RENAME COLUMN "{}" TO "{}""#,
+            schema, table, from, to
+        ),
+    )
+    .await;
+}
+
+async fn drop_schema(state: &AppState, schema: &str) {
+    exec_sql(
+        state,
+        &format!(r#"DROP SCHEMA IF EXISTS "{}" CASCADE"#, schema),
+    )
+    .await;
 }
 
 fn prompt_none_request() -> HttpRequest {
@@ -205,6 +284,74 @@ fn stored_grant_never_silently_reuses_high_risk_authorization_details() {
 }
 
 #[actix_web::test]
+async fn prompt_none_grant_lookup_fails_closed_when_database_connection_fails() {
+    let state = prompt_none_state_with_database_url(
+        "postgres://nazo_prompt_none_test_invalid:nazo_prompt_none_test_invalid@127.0.0.1:1/nazo"
+            .to_owned(),
+    );
+
+    let result = user_grant_covers_requested_scopes(
+        &state,
+        Uuid::now_v7(),
+        Uuid::now_v7(),
+        &parse_scope("openid"),
+        &json!([]),
+    )
+    .await;
+
+    let response = result.expect_err("database failures must fail closed");
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("server_error")
+    );
+}
+
+#[actix_web::test]
+async fn prompt_none_grant_lookup_fails_closed_when_query_fails() {
+    let schema = format!(
+        "prompt_none_grant_query_failure_{}",
+        Uuid::now_v7().simple()
+    );
+    let Some(database_url) = database_url_with_search_path(&schema) else {
+        return;
+    };
+    let state = prompt_none_state_with_database_url(database_url);
+    create_isolated_schema(&state, &schema, &["user_client_grants"]).await;
+    rename_column(
+        &state,
+        &schema,
+        "user_client_grants",
+        "last_scopes",
+        "last_scopes_broken",
+    )
+    .await;
+
+    let result = user_grant_covers_requested_scopes(
+        &state,
+        Uuid::now_v7(),
+        Uuid::now_v7(),
+        &parse_scope("openid"),
+        &json!([]),
+    )
+    .await;
+
+    let response = result.expect_err("query failures must fail closed");
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("server_error")
+    );
+    drop_schema(&state, &schema).await;
+}
+
+#[actix_web::test]
 async fn prompt_none_issues_single_use_authorization_code_without_user_interaction() {
     let Some(state) = live_prompt_none_state().await else {
         return;
@@ -252,6 +399,55 @@ async fn prompt_none_issues_single_use_authorization_code_without_user_interacti
         }
         _ => panic!("prompt=none must create a pending authorization code state"),
     }
+}
+
+#[actix_web::test]
+async fn prompt_none_consumes_valid_pushed_request_uri_before_issuing_code() {
+    let Some(state) = live_prompt_none_state().await else {
+        return;
+    };
+    let mut payload = prompt_none_payload();
+    let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
+    payload.pushed_request_uri = Some(request_uri.clone());
+    let pushed = PushedAuthorizationRequest {
+        client_id: payload.client_id.clone(),
+        params: HashMap::from([
+            ("client_id".to_owned(), payload.client_id.clone()),
+            ("response_type".to_owned(), "code".to_owned()),
+            ("redirect_uri".to_owned(), payload.redirect_uri.clone()),
+            ("scope".to_owned(), payload.scopes.join(" ")),
+        ]),
+        dpop_jkt: payload.dpop_jkt.clone(),
+        mtls_x5t_s256: payload.mtls_x5t_s256.clone(),
+        issued_at: payload.issued_at,
+        expires_at: payload.expires_at,
+    };
+    valkey_set_ex(
+        &state.valkey,
+        pushed_authorization_request_key(&request_uri),
+        serde_json::to_string(&pushed).expect("PAR payload should serialize"),
+        state.settings.auth_code_ttl_seconds,
+    )
+    .await
+    .expect("valid request_uri should persist");
+
+    let response =
+        issue_authorization_code_without_interaction(&state, &prompt_none_request(), payload).await;
+
+    assert_eq!(response.status(), StatusCode::FOUND);
+    let query = redirect_query(&response);
+    assert!(query.contains_key("code"));
+    assert_eq!(query.get("state").map(String::as_str), Some("opaque-state"));
+    assert_eq!(
+        valkey_get(
+            &state.valkey,
+            pushed_authorization_request_key(&request_uri)
+        )
+        .await
+        .expect("PAR key lookup should succeed"),
+        None,
+        "prompt=none must consume PAR request_uri exactly once before issuing a code"
+    );
 }
 
 #[actix_web::test]

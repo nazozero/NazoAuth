@@ -27,6 +27,23 @@ fn metadata<'a>(
 
 #[test]
 fn client_metadata_rejects_removed_or_unsafe_grants() {
+    let invalid_type = validate_client_metadata(metadata(
+        "native",
+        &["https://client.example/callback".to_owned()],
+        &["openid".to_owned()],
+        &["resource://default".to_owned()],
+        &["authorization_code".to_owned()],
+        "none",
+        None,
+        None,
+    ));
+    assert!(
+        invalid_type
+            .expect_err("unknown client_type must fail closed")
+            .to_string()
+            .contains("客户端类型无效")
+    );
+
     let result = validate_client_metadata(metadata(
         "public",
         &["https://client.example/callback".to_owned()],
@@ -42,6 +59,94 @@ fn client_metadata_rejects_removed_or_unsafe_grants() {
     assert!(
         error.to_string().contains("不支持的 grant_type: password"),
         "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn client_metadata_rejects_unsupported_auth_and_unsafe_grant_combinations() {
+    let invalid_auth = validate_client_metadata(metadata(
+        "confidential",
+        &["https://client.example/callback".to_owned()],
+        &["openid".to_owned()],
+        &["resource://default".to_owned()],
+        &["authorization_code".to_owned()],
+        "client_secret_jwt",
+        None,
+        None,
+    ));
+    assert!(
+        invalid_auth
+            .expect_err("unsupported token endpoint auth method must fail")
+            .to_string()
+            .contains("客户端认证方式无效")
+    );
+
+    let public_client_credentials = validate_client_metadata(metadata(
+        "public",
+        &[],
+        &["accounts".to_owned()],
+        &["resource://default".to_owned()],
+        &["client_credentials".to_owned()],
+        "none",
+        None,
+        None,
+    ));
+    assert!(
+        public_client_credentials
+            .expect_err("public clients must not use client_credentials")
+            .to_string()
+            .contains("public 客户端不能使用 client_credentials 授权类型")
+    );
+
+    let client_credentials_openid = validate_client_metadata(metadata(
+        "confidential",
+        &[],
+        &["openid".to_owned()],
+        &["resource://default".to_owned()],
+        &["client_credentials".to_owned()],
+        "client_secret_basic",
+        None,
+        None,
+    ));
+    assert!(
+        client_credentials_openid
+            .expect_err("client_credentials must not issue OIDC user scopes")
+            .to_string()
+            .contains("client_credentials 客户端不能申请 openid 作用域")
+    );
+
+    let refresh_without_authorization_code = validate_client_metadata(metadata(
+        "confidential",
+        &[],
+        &["accounts".to_owned()],
+        &["resource://default".to_owned()],
+        &["refresh_token".to_owned()],
+        "client_secret_basic",
+        None,
+        None,
+    ));
+    assert!(
+        refresh_without_authorization_code
+            .expect_err("refresh_token grant must be paired with authorization_code")
+            .to_string()
+            .contains("refresh_token 授权类型必须与 authorization_code 一起启用")
+    );
+
+    let auth_code_without_redirect = validate_client_metadata(metadata(
+        "confidential",
+        &[],
+        &["openid".to_owned()],
+        &["resource://default".to_owned()],
+        &["authorization_code".to_owned()],
+        "client_secret_basic",
+        None,
+        None,
+    ));
+    assert!(
+        auth_code_without_redirect
+            .expect_err("authorization_code clients must register redirect_uri")
+            .to_string()
+            .contains("authorization_code 客户端必须注册 redirect_uri")
     );
 }
 
@@ -143,6 +248,23 @@ fn client_metadata_requires_public_jwks_for_private_key_jwt() {
         None,
     ))
     .expect("private_key_jwt with a supported public jwks should be accepted");
+
+    let public_private_key_jwt = validate_client_metadata(metadata(
+        "public",
+        &["https://client.example/callback".to_owned()],
+        &["openid".to_owned()],
+        &["resource://default".to_owned()],
+        &["authorization_code".to_owned()],
+        "private_key_jwt",
+        Some(&jwks),
+        None,
+    ));
+    assert!(
+        public_private_key_jwt
+            .expect_err("private_key_jwt must not be available to public clients")
+            .to_string()
+            .contains("public 客户端只能使用 none 认证方式")
+    );
 }
 
 #[test]
@@ -233,6 +355,26 @@ fn client_metadata_rejects_backchannel_logout_uri_with_fragment_or_insecure_host
             .contains("backchannel_logout_uri 必须使用 https 或 loopback http"),
         "unexpected error: {error}"
     );
+
+    for uri in [
+        "http://localhost/backchannel",
+        "http://127.0.0.1:8080/backchannel",
+        "http://app.localhost/backchannel",
+    ] {
+        let mut loopback_metadata = metadata(
+            "confidential",
+            &redirect_uris,
+            &scopes,
+            &audiences,
+            &grants,
+            "client_secret_basic",
+            None,
+            None,
+        );
+        loopback_metadata.backchannel_logout_uri = Some(uri);
+        validate_client_metadata(loopback_metadata)
+            .expect("OIDC backchannel logout may use loopback HTTP endpoints for local clients");
+    }
 }
 
 #[test]

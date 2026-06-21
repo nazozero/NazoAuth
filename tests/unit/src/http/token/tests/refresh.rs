@@ -43,7 +43,13 @@ fn test_state() -> AppState {
 }
 
 fn live_refresh_state(profile: AuthorizationServerProfile) -> Option<AppState> {
-    let database_url = std::env::var("DATABASE_URL").ok()?;
+    live_refresh_state_from_database_url(profile, std::env::var("DATABASE_URL").ok()?)
+}
+
+fn live_refresh_state_from_database_url(
+    profile: AuthorizationServerProfile,
+    database_url: String,
+) -> Option<AppState> {
     let key_material =
         generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
     let active_kid = "refresh-test-kid".to_owned();
@@ -71,6 +77,61 @@ fn live_refresh_state(profile: AuthorizationServerProfile) -> Option<AppState> {
             }],
         }),
     })
+}
+
+fn database_url_with_search_path(schema: &str) -> Option<String> {
+    let base = std::env::var("DATABASE_URL").ok()?;
+    let separator = if base.contains('?') { "&" } else { "?" };
+    Some(format!(
+        "{base}{separator}options=-csearch_path%3D{schema}%2Cpublic"
+    ))
+}
+
+async fn exec_sql(state: &AppState, sql: &str) {
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    sql_query(sql)
+        .execute(&mut conn)
+        .await
+        .expect("schema mutation should succeed");
+}
+
+async fn create_isolated_schema(state: &AppState, schema: &str, tables: &[&str]) {
+    exec_sql(
+        state,
+        &format!(r#"CREATE SCHEMA IF NOT EXISTS "{}""#, schema),
+    )
+    .await;
+    for table in tables {
+        exec_sql(
+            state,
+            &format!(
+                r#"CREATE TABLE "{}"."{}" (LIKE public."{}" INCLUDING ALL)"#,
+                schema, table, table
+            ),
+        )
+        .await;
+    }
+}
+
+async fn rename_column(state: &AppState, schema: &str, table: &str, from: &str, to: &str) {
+    exec_sql(
+        state,
+        &format!(
+            r#"ALTER TABLE "{}"."{}" RENAME COLUMN "{}" TO "{}""#,
+            schema, table, from, to
+        ),
+    )
+    .await;
+}
+
+async fn drop_schema(state: &AppState, schema: &str) {
+    exec_sql(
+        state,
+        &format!(r#"DROP SCHEMA IF EXISTS "{}" CASCADE"#, schema),
+    )
+    .await;
 }
 
 fn live_trusted_proxy_refresh_state(profile: AuthorizationServerProfile) -> Option<AppState> {
@@ -607,6 +668,46 @@ async fn refresh_grant_reports_lookup_failure_without_issuing_tokens() {
 }
 
 #[actix_web::test]
+async fn refresh_grant_reports_lookup_query_failure_without_issuing_tokens() {
+    let schema = format!("refresh_lookup_failure_{}", Uuid::now_v7().simple());
+    let Some(database_url) = database_url_with_search_path(&schema) else {
+        return;
+    };
+    let Some(state) = live_refresh_state_from_database_url(
+        AuthorizationServerProfile::Oauth2Baseline,
+        database_url,
+    ) else {
+        return;
+    };
+    create_isolated_schema(&state, &schema, &["oauth_tokens"]).await;
+    rename_column(
+        &state,
+        &schema,
+        "oauth_tokens",
+        "refresh_token_blake3",
+        "refresh_token_blake3_broken",
+    )
+    .await;
+    let req = actix_web::test::TestRequest::post()
+        .uri("/oauth/token")
+        .to_http_request();
+    let client = client_row();
+    let mut form = refresh_form_without_token();
+    form.refresh_token = Some("refresh-token-value".to_owned());
+
+    let (status, body) =
+        response_json(token_refresh(&state, &req, &client, &form, None).await).await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"], "server_error");
+    assert!(body.get("access_token").is_none());
+    assert!(body.get("refresh_token").is_none());
+    assert!(body.get("id_token").is_none());
+    assert!(body.get("token_type").is_none());
+    drop_schema(&state, &schema).await;
+}
+
+#[actix_web::test]
 async fn refresh_grant_rejects_unknown_expired_and_wrong_client_tokens() {
     let Some(state) = live_refresh_state(AuthorizationServerProfile::Oauth2Baseline) else {
         return;
@@ -717,6 +818,83 @@ async fn refresh_grant_marks_family_reuse_and_revokes_active_family_tokens() {
             .all(|row| row.revoked_at.is_some()),
         "active family members must be revoked after reuse detection"
     );
+}
+
+#[actix_web::test]
+async fn refresh_grant_fails_closed_when_reuse_marker_cannot_be_persisted() {
+    let schema = format!("refresh_reuse_marker_failure_{}", Uuid::now_v7().simple());
+    let Some(database_url) = database_url_with_search_path(&schema) else {
+        return;
+    };
+    let Some(state) = live_refresh_state_from_database_url(
+        AuthorizationServerProfile::Oauth2Baseline,
+        database_url,
+    ) else {
+        return;
+    };
+    create_isolated_schema(&state, &schema, &["oauth_tokens"]).await;
+
+    let req = actix_web::test::TestRequest::post()
+        .uri("/oauth/token")
+        .to_http_request();
+    let mut client = client_row();
+    client.require_dpop_bound_tokens = false;
+    let family_id = Uuid::now_v7();
+
+    let mut reused = token_row();
+    reused.client_id = client.id;
+    reused.token_family_id = family_id;
+    reused.scopes = json!(["accounts", "offline_access"]);
+    reused.subject = client.client_id.clone();
+    reused.user_id = None;
+    reused.dpop_jkt = None;
+    reused.revoked_at = Some(Utc::now() - Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS + 5));
+    let reused_raw = "refresh-token-reuse-marker-failure";
+    insert_refresh_token_row(&state, reused_raw, &reused, None, None).await;
+
+    exec_sql(
+        &state,
+        &format!(
+            r#"
+            CREATE OR REPLACE FUNCTION "{}".reject_refresh_reuse_marker()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                RAISE EXCEPTION 'reject refresh reuse marker in coverage test';
+            END;
+            $$;
+            "#,
+            schema
+        ),
+    )
+    .await;
+    exec_sql(
+        &state,
+        &format!(
+            r#"
+            CREATE TRIGGER reject_refresh_reuse_marker
+            BEFORE UPDATE OF reuse_detected_at ON "{}".oauth_tokens
+            FOR EACH ROW
+            WHEN (NEW.reuse_detected_at IS NOT NULL)
+            EXECUTE FUNCTION "{}".reject_refresh_reuse_marker();
+            "#,
+            schema, schema
+        ),
+    )
+    .await;
+
+    let mut form = refresh_form_without_token();
+    form.refresh_token = Some(reused_raw.to_owned());
+    let (status, body) =
+        response_json(token_refresh(&state, &req, &client, &form, None).await).await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"], "server_error");
+    assert!(body.get("access_token").is_none());
+    assert!(body.get("refresh_token").is_none());
+    assert!(body.get("id_token").is_none());
+    drop_schema(&state, &schema).await;
 }
 
 #[actix_web::test]
@@ -931,6 +1109,65 @@ async fn refresh_grant_requires_verified_certificate_when_client_policy_demands_
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"], "invalid_grant");
     assert!(body.get("access_token").is_none());
+}
+
+#[actix_web::test]
+async fn refresh_grant_accepts_existing_mtls_bound_token_with_matching_certificate() {
+    let Some(state) = live_trusted_proxy_refresh_state(AuthorizationServerProfile::Oauth2Baseline)
+    else {
+        return;
+    };
+    let thumbprint = "REREREREREREREREREREREREREREREREREREREREREQ";
+    let mut client = client_row();
+    client.require_dpop_bound_tokens = false;
+    insert_refresh_client(&state, &client).await;
+
+    let raw_refresh_token = format!("refresh-token-mtls-bound-{}", Uuid::now_v7());
+    let mut token = token_row();
+    token.client_id = client.id;
+    token.subject = client.client_id.clone();
+    token.user_id = None;
+    token.scopes = json!(["accounts", "offline_access"]);
+    token.dpop_jkt = None;
+    token.mtls_x5t_s256 = Some(thumbprint.to_owned());
+    insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
+
+    let mut form = refresh_form_without_token();
+    form.refresh_token = Some(raw_refresh_token);
+    let req = actix_web::test::TestRequest::post()
+        .uri("/oauth/token")
+        .peer_addr("127.0.0.1:12345".parse().expect("peer addr should parse"))
+        .insert_header((
+            header::HeaderName::from_static("x-ssl-client-verify"),
+            "SUCCESS",
+        ))
+        .insert_header((
+            header::HeaderName::from_static("x-ssl-client-cert-sha256"),
+            thumbprint,
+        ))
+        .insert_header((
+            header::HeaderName::from_static("x-ssl-client-subject-dn"),
+            "CN=refresh-existing-binding",
+        ))
+        .to_http_request();
+
+    let (status, body) =
+        response_json(token_refresh(&state, &req, &client, &form, None).await).await;
+
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "unexpected refresh response: {body}"
+    );
+    let access_token = body["access_token"]
+        .as_str()
+        .expect("successful refresh response should return an access token");
+    let claims = decode_access_claims(&state, access_token)
+        .expect("newly issued access token should be verifiable");
+    assert_eq!(
+        claims.cnf.as_ref().and_then(|cnf| cnf.x5t_s256.as_deref()),
+        Some(thumbprint)
+    );
 }
 
 #[actix_web::test]

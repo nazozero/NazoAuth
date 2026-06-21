@@ -117,7 +117,8 @@ docker exec nazo-oauth-codecov-postgres pg_isready -U postgres -d oauth
 docker exec nazo-oauth-codecov-valkey valkey-cli ping
 ```
 
-Then pass the service URLs into the targeted test runner:
+Then run migrations before DB-backed tests and pass the service URLs into the
+targeted test runner:
 
 ```powershell
 docker run --rm --network nazo-oauth-codecov-net `
@@ -132,8 +133,27 @@ docker run --rm --network nazo-oauth-codecov-net `
   -e CARGO_BUILD_JOBS=1 `
   -e CARGO_TERM_COLOR=never `
   nazo-oauth-codecov-runner:local `
-  bash -lc '. /usr/local/cargo/env && cargo test --locked --workspace --all-features --lib <test-filter> -- --nocapture'
+  bash -lc '. /usr/local/cargo/env && cargo run --locked --bin nazo-oauth-migrate && cargo test --locked --workspace --all-features --lib <test-filter> -- --nocapture'
 ```
 
 If another agent holds `/docker-target/check`, wait for it to finish. Using a
 fresh target directory avoids the lock but triggers a slow full rebuild.
+
+If the host checkout has local ignored files that break configuration loading
+such as `.env.yaml` being a directory, run the targeted test from a temporary
+workspace just like the coverage flow:
+
+```powershell
+docker run --rm --network nazo-oauth-codecov-net `
+  -v F:/projects/nazo_oauth/oauth_backend_rust:/host `
+  -v nazo-oauth-cargo-registry:/usr/local/cargo/registry `
+  -v nazo-oauth-cargo-git:/usr/local/cargo/git `
+  -v nazo-oauth-codecov-target:/docker-target `
+  -e DATABASE_URL=postgresql://postgres:postgres@nazo-oauth-codecov-postgres:5432/oauth `
+  -e VALKEY_URL=redis://nazo-oauth-codecov-valkey:6379/0 `
+  -e CARGO_TARGET_DIR=/docker-target/check `
+  -e CARGO_BUILD_JOBS=1 `
+  -e CARGO_TERM_COLOR=never `
+  nazo-oauth-codecov-runner:local `
+  bash -lc 'set -euo pipefail; rm -rf /workspace-check; mkdir -p /workspace-check; git -C /host archive HEAD | tar -x -C /workspace-check; git -C /host diff | git -C /workspace-check apply; cp /workspace-check/.env.yaml.example /workspace-check/.env.yaml; cd /workspace-check; . /usr/local/cargo/env; cargo run --locked --bin nazo-oauth-migrate; cargo test --locked --workspace --all-features --lib <test-filter> -- --nocapture'
+```

@@ -188,19 +188,9 @@ pub(crate) fn validate_client_metadata(metadata: ClientMetadata<'_>) -> anyhow::
         validate_client_jwks(jwks)?;
     }
     if token_endpoint_auth_method == "private_key_jwt" {
-        if client_type != "confidential" {
-            anyhow::bail!("private_key_jwt 只适用于 confidential 客户端");
-        }
         if jwks.is_none() {
             anyhow::bail!("private_key_jwt 客户端必须配置 jwks");
         }
-    }
-    if matches!(
-        token_endpoint_auth_method,
-        "tls_client_auth" | "self_signed_tls_client_auth"
-    ) && client_type != "confidential"
-    {
-        anyhow::bail!("mTLS 客户端认证只适用于 confidential 客户端");
     }
     if token_endpoint_auth_method == "tls_client_auth"
         && !mtls_binding.is_some_and(ClientMtlsMetadata::has_binding_material)

@@ -15,6 +15,10 @@ fn password_hash_policy_is_explicit_argon2id_v19() {
     assert!(hash.starts_with("$argon2id$v=19$m=19456,t=2,p=1$"));
     assert!(verify_password("correct horse battery staple", &hash));
     assert!(!verify_password("wrong password", &hash));
+    assert!(!verify_password(
+        "correct horse battery staple",
+        "not-an-argon2-password-hash"
+    ));
 }
 
 #[test]
