@@ -75,7 +75,6 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
     );
     let mut metadata = json!({
         "issuer": issuer,
-        "authorization_server_profile": settings.authorization_server_profile.as_str(),
         "authorization_endpoint": format!("{issuer}/authorize"),
         "token_endpoint": format!("{issuer}/token"),
         "end_session_endpoint": format!("{issuer}/logout"),
