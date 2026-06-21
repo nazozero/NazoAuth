@@ -729,7 +729,7 @@ async fn authorization_decision_rejects_malformed_consent_payload() {
         .await;
     valkey_set_ex(
         &fixture.state.valkey,
-        format!("oauth:consent:malformed-request"),
+        "oauth:consent:malformed-request",
         "not-valid-json",
         60,
     )
