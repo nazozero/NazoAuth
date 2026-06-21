@@ -718,6 +718,37 @@ async fn authorization_decision_fails_closed_when_consent_state_consume_fails() 
 }
 
 #[actix_web::test]
+async fn authorization_decision_rejects_malformed_consent_payload() {
+    let Some(fixture) = DecisionLiveFixture::new().await else {
+        return;
+    };
+    let user = fixture.create_user("bad-consent-json", "user", 0).await;
+    let sid = format!("sid-bad-consent-{}", Uuid::now_v7());
+    fixture
+        .store_session(&user, &sid, Utc::now().timestamp())
+        .await;
+    valkey_set_ex(
+        &fixture.state.valkey,
+        format!("oauth:consent:malformed-request"),
+        "not-valid-json",
+        60,
+    )
+    .await
+    .expect("malformed consent payload should store");
+    let req = fixture.auth_request(&sid, Some("csrf-session-token"));
+    let form = DecisionForm {
+        request_id: "malformed-request".to_owned(),
+        decision: "approve".to_owned(),
+        csrf_token: None,
+    };
+    let (status, body) =
+        json_error(authorize_decision(fixture.state.clone(), req, Form(form)).await).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_request");
+}
+
+#[actix_web::test]
 async fn authorization_decision_rejects_request_with_invalid_pushed_request_uri() {
     let Some(fixture) = DecisionLiveFixture::new().await else {
         return;
