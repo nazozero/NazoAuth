@@ -171,12 +171,7 @@ fn discovery_does_not_advertise_mtls_when_no_trusted_proxy_is_configured() {
         &keyset(jsonwebtoken::Algorithm::RS256),
     );
 
-    assert_eq!(
-        metadata
-            .get("authorization_server_profile")
-            .and_then(Value::as_str),
-        Some("oauth2-baseline")
-    );
+    assert!(metadata.get("authorization_server_profile").is_none());
     assert!(
         metadata
             .get("token_endpoint_auth_methods_supported")
@@ -227,12 +222,7 @@ fn discovery_fapi2_security_metadata_is_profile_scoped() {
         &keyset(jsonwebtoken::Algorithm::RS256),
     );
 
-    assert_eq!(
-        metadata
-            .get("authorization_server_profile")
-            .and_then(Value::as_str),
-        Some("fapi2-security")
-    );
+    assert!(metadata.get("authorization_server_profile").is_none());
     assert_eq!(
         metadata
             .get("require_pushed_authorization_requests")
@@ -295,12 +285,7 @@ fn discovery_message_signing_profile_requires_signed_request_object_algs() {
         &keyset(jsonwebtoken::Algorithm::PS256),
     );
 
-    assert_eq!(
-        metadata
-            .get("authorization_server_profile")
-            .and_then(Value::as_str),
-        Some("fapi2-message-signing-authz-request")
-    );
+    assert!(metadata.get("authorization_server_profile").is_none());
     assert_eq!(
         metadata
             .get("request_object_signing_alg_values_supported")
