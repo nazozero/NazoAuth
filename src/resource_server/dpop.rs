@@ -311,3 +311,16 @@ pub(super) fn dpop_jwk_thumbprint(key: &Value) -> Option<String> {
 pub(super) fn access_token_hash(access_token: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(access_token.as_bytes()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jsonwebtoken::Algorithm;
+
+    #[test]
+    fn supported_dpop_algorithm_rejects_unsupported_algs() {
+        assert!(supported_dpop_algorithm(Algorithm::HS256).is_none());
+        assert!(supported_dpop_algorithm(Algorithm::ES384).is_none());
+        assert!(supported_dpop_algorithm(Algorithm::RS384).is_none());
+    }
+}
