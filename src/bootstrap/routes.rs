@@ -4,9 +4,13 @@
 use actix_web::web;
 
 use crate::http::*;
+use crate::settings::Settings;
 
-pub(crate) fn configure(cfg: &mut web::ServiceConfig) {
+use super::cors;
+
+pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
     cfg.route("/health", web::get().to(health))
+        // NO CORS: /authorize
         .service(
             web::resource("/authorize")
                 .route(web::get().to(authorize_get))
@@ -14,52 +18,78 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig) {
         )
         .route("/authorize/consent", web::get().to(authorize_consent))
         .route("/authorize/decision", web::post().to(authorize_decision))
+        // NO CORS: /par
         .route("/par", web::post().to(par))
-        .route("/token", web::post().to(token))
+        // CORS: cors_browser_oauth — /token
+        .service(
+            web::resource("/token")
+                .wrap(cors::cors_browser_oauth(settings))
+                .route(web::post().to(token)),
+        )
+        // NO CORS: /logout (backchannel)
         .service(
             web::resource("/logout")
                 .route(web::get().to(oidc_logout))
                 .route(web::post().to(oidc_logout)),
         )
-        .route("/revoke", web::post().to(revoke))
+        // CORS: cors_browser_oauth — /revoke
+        .service(
+            web::resource("/revoke")
+                .wrap(cors::cors_browser_oauth(settings))
+                .route(web::post().to(revoke)),
+        )
+        // NO CORS: /introspect (backchannel)
         .route("/introspect", web::post().to(introspect))
+        // NO CORS: /fapi/resource
         .service(
             web::resource("/fapi/resource")
                 .route(web::get().to(fapi_resource))
                 .route(web::post().to(fapi_resource)),
         )
-        .route(
-            "/.well-known/openid-configuration",
-            web::get().to(discovery),
+        // CORS: cors_well_known — /.well-known/*
+        .service(
+            web::scope("/.well-known")
+                .wrap(cors::cors_well_known(settings))
+                .route("/openid-configuration", web::get().to(discovery))
+                .route(
+                    "/oauth-authorization-server",
+                    web::get().to(oauth_authorization_server_metadata),
+                ),
         )
-        .route(
-            "/.well-known/oauth-authorization-server",
-            web::get().to(oauth_authorization_server_metadata),
+        // CORS: cors_well_known — /jwks.json
+        .service(
+            web::resource("/jwks.json")
+                .wrap(cors::cors_well_known(settings))
+                .route(web::get().to(jwks)),
         )
-        .route("/jwks.json", web::get().to(jwks))
+        // CORS: cors_browser_oauth — /userinfo
         .service(
             web::resource("/userinfo")
+                .wrap(cors::cors_browser_oauth(settings))
                 .route(web::get().to(userinfo))
                 .route(web::post().to(userinfo)),
         )
-        .route(
-            "/scim/v2/ServiceProviderConfig",
-            web::get().to(scim_service_provider_config),
-        )
-        .route("/scim/v2/Schemas", web::get().to(scim_schemas))
-        .route("/scim/v2/ResourceTypes", web::get().to(scim_resource_types))
+        // CORS: cors_scim — /scim/v2/*
         .service(
-            web::resource("/scim/v2/Users")
-                .route(web::get().to(scim_list_users))
-                .route(web::post().to(scim_create_user)),
+            web::scope("/scim/v2")
+                .wrap(cors::cors_scim(settings))
+                .route("/ServiceProviderConfig", web::get().to(scim_service_provider_config))
+                .route("/Schemas", web::get().to(scim_schemas))
+                .route("/ResourceTypes", web::get().to(scim_resource_types))
+                .service(
+                    web::resource("/Users")
+                        .route(web::get().to(scim_list_users))
+                        .route(web::post().to(scim_create_user)),
+                )
+                .service(
+                    web::resource("/Users/{user_id}")
+                        .route(web::get().to(scim_get_user))
+                        .route(web::put().to(scim_replace_user))
+                        .route(web::patch().to(scim_patch_user))
+                        .route(web::delete().to(scim_delete_user)),
+                ),
         )
-        .service(
-            web::resource("/scim/v2/Users/{user_id}")
-                .route(web::get().to(scim_get_user))
-                .route(web::put().to(scim_replace_user))
-                .route(web::patch().to(scim_patch_user))
-                .route(web::delete().to(scim_delete_user)),
-        )
+        // /auth scope — NO CORS for UI routes, cors_auth_api for /auth/me
         .service(
             web::scope("/auth")
                 .route("/captcha-config", web::get().to(captcha_config))
@@ -79,39 +109,46 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig) {
                 .route("/passkey/finish", web::post().to(passkey_login_finish))
                 .route("/mfa/verify", web::post().to(mfa_verify))
                 .route("/csrf", web::get().to(csrf))
-                .route("/me", web::get().to(me))
-                .route("/me", web::patch().to(update_me))
-                .route("/me/passkeys", web::get().to(passkey_list))
-                .route(
-                    "/me/passkeys/registration/begin",
-                    web::post().to(passkey_registration_begin),
+                // CORS: cors_auth_api — /auth/me/*
+                .service(
+                    web::scope("/me")
+                        .wrap(cors::cors_auth_api(settings))
+                        .route("", web::get().to(me))
+                        .route("", web::patch().to(update_me))
+                        .route("/passkeys", web::get().to(passkey_list))
+                        .route(
+                            "/passkeys/registration/begin",
+                            web::post().to(passkey_registration_begin),
+                        )
+                        .route(
+                            "/passkeys/registration/finish",
+                            web::post().to(passkey_registration_finish),
+                        )
+                        .route(
+                            "/passkeys/{passkey_id}",
+                            web::delete().to(passkey_delete),
+                        )
+                        .route("/mfa/totp/begin", web::post().to(mfa_totp_begin))
+                        .route("/mfa/totp/confirm", web::post().to(mfa_totp_confirm))
+                        .route(
+                            "/mfa/backup-codes/regenerate",
+                            web::post().to(mfa_backup_codes_regenerate),
+                        )
+                        .route("/mfa/disable", web::post().to(mfa_disable))
+                        .route("/avatar", web::post().to(upload_avatar))
+                        .route("/avatar", web::get().to(get_avatar))
+                        .route("/avatar", web::delete().to(delete_avatar))
+                        .route("/applications", web::get().to(my_applications))
+                        .route("/access-requests", web::get().to(my_access_requests))
+                        .route("/access-requests", web::post().to(create_access_request))
+                        .route("/access-delivery", web::get().to(access_delivery)),
                 )
-                .route(
-                    "/me/passkeys/registration/finish",
-                    web::post().to(passkey_registration_finish),
-                )
-                .route(
-                    "/me/passkeys/{passkey_id}",
-                    web::delete().to(passkey_delete),
-                )
-                .route("/me/mfa/totp/begin", web::post().to(mfa_totp_begin))
-                .route("/me/mfa/totp/confirm", web::post().to(mfa_totp_confirm))
-                .route(
-                    "/me/mfa/backup-codes/regenerate",
-                    web::post().to(mfa_backup_codes_regenerate),
-                )
-                .route("/me/mfa/disable", web::post().to(mfa_disable))
-                .route("/me/avatar", web::post().to(upload_avatar))
-                .route("/me/avatar", web::get().to(get_avatar))
-                .route("/me/avatar", web::delete().to(delete_avatar))
-                .route("/me/applications", web::get().to(my_applications))
-                .route("/me/access-requests", web::get().to(my_access_requests))
-                .route("/me/access-requests", web::post().to(create_access_request))
-                .route("/me/access-delivery", web::get().to(access_delivery))
                 .route("/logout", web::post().to(logout)),
         )
+        // CORS: cors_admin — /admin/*
         .service(
             web::scope("/admin")
+                .wrap(cors::cors_admin(settings))
                 .route("/users", web::get().to(admin_users))
                 .route("/users/{user_id}", web::patch().to(admin_patch_user))
                 .route("/clients", web::get().to(admin_clients))

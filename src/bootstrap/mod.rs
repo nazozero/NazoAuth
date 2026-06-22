@@ -98,9 +98,8 @@ pub async fn run() -> anyhow::Result<()> {
                 .instrument(span)
             })
             .wrap(security_headers())
-            .wrap(cors::build(&state.settings))
             .app_data(state.clone())
-            .configure(routes::configure)
+            .configure(|cfg| routes::configure(cfg, &state.settings))
     })
     .bind(addr)?
     .run()
