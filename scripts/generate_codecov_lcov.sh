@@ -75,7 +75,7 @@ docker run -d --name "$POSTGRES_CONTAINER" \
 docker run -d --name "$VALKEY_CONTAINER" \
   "${docker_args[@]}" \
   "${valkey_port_args[@]}" \
-  valkey/valkey:9-alpine
+  valkey/valkey:8-alpine
 
 services_ready=false
 for attempt in $(seq 1 60); do
