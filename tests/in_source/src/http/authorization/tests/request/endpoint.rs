@@ -43,6 +43,8 @@ fn endpoint_state(require_par: bool) -> AppState {
     settings.require_pushed_authorization_requests = require_par;
     settings.enable_request_uri_parameter = true;
     settings.enable_request_object = true;
+    settings.enable_par_request_object = true;
+    settings.enable_authorization_details = true;
     settings.issuer = "https://issuer.example".to_owned();
     settings.frontend_base_url = "https://app.example".to_owned();
     settings.auth_code_ttl_seconds = 60;
@@ -115,6 +117,10 @@ impl LiveAuthorizationFixture {
         ]);
         let mut settings = Settings::from_config(&config).expect("test settings should load");
         settings.require_pushed_authorization_requests = false;
+        settings.enable_request_object = true;
+        settings.enable_request_uri_parameter = true;
+        settings.enable_par_request_object = true;
+        settings.enable_authorization_details = true;
 
         let mut valkey_builder = ValkeyBuilder::from_config(
             ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),

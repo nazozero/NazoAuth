@@ -9,7 +9,11 @@ use crate::settings::Settings;
 use super::cors;
 
 pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
-    cfg.route("/health", web::get().to(health))
+    cfg.service(
+            web::resource("/health")
+                .wrap(cors::cors_well_known(settings))
+                .route(web::get().to(health)),
+        )
         // NO CORS: /authorize
         .service(
             web::resource("/authorize")

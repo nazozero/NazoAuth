@@ -741,7 +741,7 @@ async fn par_rejects_invalid_dpop_jkt_after_client_authentication() {
 
 #[actix_web::test]
 async fn par_rejects_request_uri_from_request_object_after_client_authentication() {
-    let Some(fixture) = LiveParFixture::new().await else {
+    let Some(fixture) = LiveParFixture::new_with_settings(|s| s.enable_par_request_object = true).await else {
         return;
     };
     let client_id = format!("par-request-object-uri-{}", Uuid::now_v7().simple());

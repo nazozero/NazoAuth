@@ -17,6 +17,7 @@ pub(crate) fn cors_well_known(settings: &Settings) -> Cors {
     let cors = Cors::default()
         .allowed_methods(vec!["GET", "HEAD"])
         .allowed_headers(vec![header::ACCEPT])
+        .expose_headers(vec![header::RETRY_AFTER])
         .max_age(3600);
     apply_allowed_origins(cors, settings)
 }
