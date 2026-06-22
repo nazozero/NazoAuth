@@ -201,5 +201,5 @@ fn patch_user_validation_error(payload: &PatchUserRequest) -> Option<HttpRespons
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/admin/tests/users.rs"]
+#[path = "../../../tests/in_source/src/http/admin/tests/users.rs"]
 mod tests;

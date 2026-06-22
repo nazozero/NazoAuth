@@ -403,5 +403,5 @@ fn registered_values_match(registered: &Value, actual: &[String]) -> bool {
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/src/support/tests/mtls.rs"]
+#[path = "../../tests/in_source/src/support/tests/mtls.rs"]
 mod tests;

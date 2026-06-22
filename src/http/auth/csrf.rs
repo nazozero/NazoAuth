@@ -26,5 +26,5 @@ fn csrf_response(settings: &Settings, csrf_token: String) -> HttpResponse {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/auth/tests/csrf.rs"]
+#[path = "../../../tests/in_source/src/http/auth/tests/csrf.rs"]
 mod tests;

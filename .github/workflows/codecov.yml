@@ -10,6 +10,8 @@ on:
       - "rust-toolchain"
       - "rust-toolchain.toml"
       - "src/**"
+      - "scripts/generate_codecov_lcov.sh"
+      - "scripts/full_real_request_e2e.py"
       - "tests/**"
       - "benches/**"
       - "examples/**/*.rs"
@@ -24,6 +26,8 @@ on:
       - "rust-toolchain"
       - "rust-toolchain.toml"
       - "src/**"
+      - "scripts/generate_codecov_lcov.sh"
+      - "scripts/full_real_request_e2e.py"
       - "tests/**"
       - "benches/**"
       - "examples/**/*.rs"
@@ -39,7 +43,7 @@ jobs:
   coverage:
     name: Rust coverage
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6.0.3
 
@@ -50,6 +54,11 @@ jobs:
       - name: Install native dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev
 
+      - name: Install Python E2E dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install requests "psycopg[binary]" redis argon2-cffi pyjwt cryptography aiosmtpd
+
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
@@ -58,13 +67,8 @@ jobs:
         env:
           CARGO_BUILD_JOBS: 1
           CARGO_TERM_COLOR: never
-        run: |
-          cargo llvm-cov clean --workspace
-          eval "$(cargo llvm-cov show-env --sh)"
-          cargo clean
-          cargo test --locked --workspace --all-features --lib --test oidf_seed --test resource_server
-          cargo llvm-cov report --lcov --output-path lcov.info \
-            --ignore-filename-regex '(^|/)(tests?|benches|examples|migrations)(/|\.rs$)|src/(schema|db|lib)\.rs$|src/domain/(rows|mod|state|keyset)\.rs$|src/bootstrap/routes\.rs$|src/support/(valkey|mod)\.rs$|src/http/(mod|admin|profile|token)\.rs$|src/http/admin/clients/mod\.rs$|src/http/auth/mod\.rs$|src/http/authorization/mod\.rs$|src/main\.rs$|src/bin/nazo_oauth_(keyctl|migrate|seed_oidf)\.rs$'
+          CARGO_TARGET_DIR: target/codecov-coverage
+        run: bash scripts/generate_codecov_lcov.sh
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5

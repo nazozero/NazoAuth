@@ -28,4 +28,10 @@ Desktop.ini
 *.profraw
 *.profdata
 lcov.info
+coverage_from_linux.info
+coverage_from_linux*.info
+tmp_cov*.txt
+tmp_cov*.log
+_tmp_coverage_run.log
+tmp_coverage_linux.sh
 flamegraph.svg

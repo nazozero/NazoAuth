@@ -20,5 +20,5 @@ fn logout_response(settings: &Settings) -> HttpResponse {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/profile/tests/session.rs"]
+#[path = "../../../tests/in_source/src/http/profile/tests/session.rs"]
 mod tests;

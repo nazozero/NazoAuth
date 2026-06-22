@@ -188,5 +188,5 @@ fn grant_revocation_response(revoked_refresh_tokens: usize, removed_grants: usiz
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/admin/tests/grants.rs"]
+#[path = "../../../tests/in_source/src/http/admin/tests/grants.rs"]
 mod tests;

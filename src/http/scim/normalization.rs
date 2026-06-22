@@ -367,5 +367,5 @@ fn normalize_scim_path(value: &str) -> String {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/scim/tests/normalization.rs"]
+#[path = "../../../tests/in_source/src/http/scim/tests/normalization.rs"]
 mod tests;

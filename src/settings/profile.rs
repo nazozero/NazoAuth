@@ -42,14 +42,6 @@ impl AuthorizationServerProfile {
         }
     }
 
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::Oauth2Baseline => "oauth2-baseline",
-            Self::Fapi2Security => "fapi2-security",
-            Self::Fapi2MessageSigningAuthzRequest => "fapi2-message-signing-authz-request",
-        }
-    }
-
     pub(crate) fn requires_fapi2_security(self) -> bool {
         matches!(
             self,

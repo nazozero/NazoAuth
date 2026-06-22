@@ -373,5 +373,5 @@ pub(super) fn authorization_login_url_for_frontend(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/src/http/authorization/request/tests/parameters.rs"]
+#[path = "../../../../tests/in_source/src/http/authorization/request/tests/parameters.rs"]
 mod tests;

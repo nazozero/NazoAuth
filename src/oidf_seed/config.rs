@@ -99,5 +99,5 @@ pub fn read_plan_config(runtime_dir: &Path, file_name: &str) -> anyhow::Result<V
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/src/oidf_seed/tests/config.rs"]
+#[path = "../../tests/in_source/src/oidf_seed/tests/config.rs"]
 mod tests;

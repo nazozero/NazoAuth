@@ -145,5 +145,5 @@ fn create_access_request_response(row: UserAccessRequestRow) -> HttpResponse {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/profile/tests/access_requests.rs"]
+#[path = "../../../tests/in_source/src/http/profile/tests/access_requests.rs"]
 mod tests;

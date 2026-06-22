@@ -378,5 +378,5 @@ pub(crate) fn oidc_id_token_user_claims(
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/src/support/tests/oidc_claims.rs"]
+#[path = "../../tests/in_source/src/support/tests/oidc_claims.rs"]
 mod tests;

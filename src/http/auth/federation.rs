@@ -68,13 +68,14 @@ pub(crate) async fn federation_oidc_callback(
     if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
         return response;
     }
-    if query.error.is_some() {
-        return oauth_error(
-            StatusCode::UNAUTHORIZED,
-            "access_denied",
-            "OIDC federation failed.",
-        );
-    }
+    federation_oidc_callback_after_rate_limit(state, req, query).await
+}
+
+async fn federation_oidc_callback_after_rate_limit(
+    state: Data<AppState>,
+    req: HttpRequest,
+    query: OidcCallbackQuery,
+) -> HttpResponse {
     let Some(provider) = state.settings.federation.oidc.clone() else {
         return oauth_error(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -82,30 +83,9 @@ pub(crate) async fn federation_oidc_callback(
             "OIDC federation is not configured.",
         );
     };
-    let state_token = match query.state.as_deref().and_then(normalize_federation_token) {
-        Some(value) => value,
-        None => {
-            return oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "invalid federation state.",
-            );
-        }
-    };
-    let code = match query
-        .code
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        Some(value) if value.len() <= 4096 => value.to_owned(),
-        _ => {
-            return oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "authorization code required.",
-            );
-        }
+    let OidcCallbackInput { state_token, code } = match validate_oidc_callback_input(&query) {
+        Ok(input) => input,
+        Err(response) => return response,
     };
     let stored = match take_oidc_state(&state, &state_token).await {
         Ok(Some(stored)) => stored,
@@ -258,6 +238,50 @@ pub(crate) async fn federation_saml_acs(
         Err(response) => return response,
     };
     create_federated_session(&state, &req, &user, "saml").await
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct OidcCallbackInput {
+    state_token: String,
+    code: String,
+}
+
+fn validate_oidc_callback_input(
+    query: &OidcCallbackQuery,
+) -> Result<OidcCallbackInput, HttpResponse> {
+    if query.error.is_some() {
+        return Err(oauth_error(
+            StatusCode::UNAUTHORIZED,
+            "access_denied",
+            "OIDC federation failed.",
+        ));
+    }
+    let state_token = query
+        .state
+        .as_deref()
+        .and_then(normalize_federation_token)
+        .ok_or_else(|| {
+            oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "invalid federation state.",
+            )
+        })?;
+    let code = query
+        .code
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .filter(|value| value.len() <= 4096)
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| {
+            oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "authorization code required.",
+            )
+        })?;
+    Ok(OidcCallbackInput { state_token, code })
 }
 
 async fn take_oidc_state(
@@ -518,5 +542,5 @@ async fn create_federated_session(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/auth/tests/federation.rs"]
+#[path = "../../../tests/in_source/src/http/auth/tests/federation.rs"]
 mod tests;

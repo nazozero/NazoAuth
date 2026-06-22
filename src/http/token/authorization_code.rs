@@ -472,5 +472,5 @@ async fn mark_failed_authorization_code(state: &AppState, code_hash: &str, error
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/token/tests/authorization_code.rs"]
+#[path = "../../../tests/in_source/src/http/token/tests/authorization_code.rs"]
 mod tests;

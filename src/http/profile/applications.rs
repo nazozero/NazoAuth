@@ -58,5 +58,5 @@ fn my_application_json(row: MyApplicationRow) -> Value {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/profile/tests/applications.rs"]
+#[path = "../../../tests/in_source/src/http/profile/tests/applications.rs"]
 mod tests;

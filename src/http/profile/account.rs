@@ -269,5 +269,5 @@ fn normalize_profile_url(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/profile/tests/account.rs"]
+#[path = "../../../tests/in_source/src/http/profile/tests/account.rs"]
 mod tests;

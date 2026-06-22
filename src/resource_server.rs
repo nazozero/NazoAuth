@@ -403,5 +403,5 @@ fn scope_values(value: &str) -> Vec<String> {
 }
 
 #[cfg(test)]
-#[path = "../tests/unit/src/resource_server/tests/resource_server.rs"]
+#[path = "../tests/in_source/src/resource_server/tests/resource_server.rs"]
 mod tests;

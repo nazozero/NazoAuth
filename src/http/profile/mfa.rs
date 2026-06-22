@@ -429,5 +429,5 @@ async fn load_totp_credential(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/profile/tests/mfa.rs"]
+#[path = "../../../tests/in_source/src/http/profile/tests/mfa.rs"]
 mod tests;

@@ -101,5 +101,5 @@ fn html_part(body: String) -> SinglePart {
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/src/support/tests/email.rs"]
+#[path = "../../tests/in_source/src/support/tests/email.rs"]
 mod tests;

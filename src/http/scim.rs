@@ -496,5 +496,5 @@ async fn load_scim_user(state: &AppState, user_id: Uuid) -> Result<Option<UserRo
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/src/http/tests/scim.rs"]
+#[path = "../../tests/in_source/src/http/tests/scim.rs"]
 mod tests;

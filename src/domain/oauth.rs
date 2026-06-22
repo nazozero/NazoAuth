@@ -222,5 +222,5 @@ pub(crate) struct TokenIssue {
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/src/domain/oauth/tests/oauth.rs"]
+#[path = "../../tests/in_source/src/domain/oauth/tests/oauth.rs"]
 mod tests;

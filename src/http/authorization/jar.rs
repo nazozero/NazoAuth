@@ -498,5 +498,5 @@ fn is_valid_request_object_jti(jti: &str) -> bool {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/authorization/tests/jar.rs"]
+#[path = "../../../tests/in_source/src/http/authorization/tests/jar.rs"]
 mod tests;

@@ -469,5 +469,5 @@ pub(crate) async fn delete_avatar(state: Data<AppState>, req: HttpRequest) -> Ht
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/profile/tests/avatar.rs"]
+#[path = "../../../tests/in_source/src/http/profile/tests/avatar.rs"]
 mod tests;

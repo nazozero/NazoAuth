@@ -144,5 +144,5 @@ pub(super) fn jwt_provider_error(message: impl Into<String>) -> jsonwebtoken::er
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/support/tests/keyset_external.rs"]
+#[path = "../../../tests/in_source/src/support/tests/keyset_external.rs"]
 mod tests;
