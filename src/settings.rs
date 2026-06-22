@@ -105,7 +105,9 @@ impl Settings {
         if subject_type == SubjectType::Pairwise && pairwise_subject_secret.is_none() {
             bail!("PAIRWISE_SUBJECT_SECRET is required when SUBJECT_TYPE=pairwise");
         }
-        if let Some(secret) = &pairwise_subject_secret && secret.len() < 32 {
+        if let Some(secret) = &pairwise_subject_secret
+            && secret.len() < 32
+        {
             bail!("pairwise_subject_secret must be at least 32 bytes");
         }
         let authorization_server_profile = AuthorizationServerProfile::from_config(config)?;

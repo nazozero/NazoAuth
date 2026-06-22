@@ -105,5 +105,4 @@ impl SubjectType {
             value => bail!("SUBJECT_TYPE must be public or pairwise, got {value}"),
         }
     }
-
 }
