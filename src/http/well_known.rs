@@ -1,9 +1,9 @@
 use super::prelude::*;
-use crate::domain::{Keyset, SUPPORTED_AUTHORIZATION_DETAILS_TYPES};
+use crate::domain::Keyset;
 use crate::settings::{AuthorizationServerProfile, Settings};
 
 const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
-const REQUEST_OBJECT_SIGNING_ALGS: [&str; 5] = ["none", "EdDSA", "RS256", "ES256", "PS256"];
+const REQUEST_OBJECT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
 const PROMPT_VALUES_SUPPORTED: [&str; 4] = ["login", "consent", "select_account", "none"];
 const CLAIMS_SUPPORTED: [&str; 24] = [
     "sub",
@@ -73,6 +73,12 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
         settings.authorization_server_profile,
         authorization_signing_algs.as_slice(),
     );
+    let show_request_object_signing_algs = settings.enable_request_object
+        || settings.enable_request_uri_parameter
+        || settings.enable_par_request_object
+        || settings
+            .authorization_server_profile
+            .requires_signed_request_object_at_par();
     let mut metadata = json!({
         "issuer": issuer,
         "authorization_endpoint": format!("{issuer}/authorize"),
@@ -100,16 +106,28 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
         "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
         "authorization_response_iss_parameter_supported": true,
         "claims_parameter_supported": true,
-        "authorization_details_types_supported": SUPPORTED_AUTHORIZATION_DETAILS_TYPES,
         "backchannel_logout_supported": true,
         "backchannel_logout_session_supported": true,
-        "request_parameter_supported": true,
-        "request_uri_parameter_supported": false,
         "require_pushed_authorization_requests": settings.require_pushed_authorization_requests,
         "code_challenge_methods_supported": ["S256"],
         "dpop_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS,
         "request_object_signing_alg_values_supported": request_object_signing_algs
     });
+    if settings.enable_authorization_details {
+        metadata["authorization_details_types_supported"] = json!(["account_information", "payment_initiation"]);
+    }
+    if settings.enable_request_object {
+        metadata["request_parameter_supported"] = json!(true);
+    }
+    if settings.enable_request_uri_parameter {
+        metadata["request_uri_parameter_supported"] = json!(true);
+        metadata["require_request_uri_registration"] = json!(true);
+    } else {
+        metadata["request_uri_parameter_supported"] = json!(false);
+    }
+    if !show_request_object_signing_algs {
+        metadata.as_object_mut().unwrap().remove("request_object_signing_alg_values_supported");
+    }
     if mtls_enabled {
         metadata["tls_client_certificate_bound_access_tokens"] = json!(true);
         metadata["mtls_endpoint_aliases"] = json!({

@@ -200,6 +200,15 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
             );
         }
     };
+    if form.has_audience_param && !state.settings.enable_legacy_audience_param {
+        return oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "audience 参数未启用.",
+            false,
+        );
+    }
+
     if state
         .settings
         .authorization_server_profile

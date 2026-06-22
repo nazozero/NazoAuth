@@ -50,6 +50,28 @@ async fn authorize_request(
         );
     }
 
+    if !state.settings.enable_request_object && q.contains_key("request") {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "request 参数未启用.",
+        );
+    }
+    if !state.settings.enable_request_uri_parameter && q.contains_key("request_uri") {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "request_uri 参数未启用.",
+        );
+    }
+    if !state.settings.enable_authorization_details && q.contains_key("authorization_details") {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "authorization_details 参数未启用.",
+        );
+    }
+
     let original_authorization_query = q.clone();
     let reauth_started_at = q
         .get(reauth_started_at_parameter())

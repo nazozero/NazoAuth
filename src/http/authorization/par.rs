@@ -93,6 +93,28 @@ pub(crate) async fn par_after_rate_limit(
         }
         params.insert(key, value.into_owned());
     }
+    if !state.settings.enable_par_request_object
+        && !state
+            .settings
+            .authorization_server_profile
+            .requires_signed_request_object_at_par()
+        && params.contains_key("request")
+    {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "PAR request object 未启用.",
+        );
+    }
+    if !state.settings.enable_authorization_details && params.contains_key("authorization_details")
+    {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "authorization_details 未启用.",
+        );
+    }
+
     if !params.contains_key("client_id")
         && let Some(request_object) = params.get("request")
         && let Some(client_id) = unverified_request_object_client_id(request_object)
