@@ -19,6 +19,7 @@ struct BackchannelLogoutClient {
     redirect_uris: Value,
     post_logout_redirect_uris: Value,
     backchannel_logout_uri: Option<String>,
+    sector_identifier_host: Option<String>,
 }
 
 pub(crate) async fn oidc_logout(
@@ -429,6 +430,7 @@ async fn backchannel_logout_clients_for_user(
             oauth_clients::redirect_uris,
             oauth_clients::post_logout_redirect_uris,
             oauth_clients::backchannel_logout_uri,
+            oauth_clients::sector_identifier_host,
         ))
         .load::<BackchannelLogoutClient>(&mut conn)
         .await?)
@@ -476,9 +478,10 @@ fn logout_subjects_for_client(
     if redirect_uris.is_empty() {
         redirect_uris.push(String::new());
     }
+    let sector_host = client.sector_identifier_host.as_deref();
     let mut subjects = redirect_uris
         .iter()
-        .map(|redirect_uri| oidc_subject(settings, user_id, redirect_uri))
+        .map(|redirect_uri| compute_subject_for_client(settings, user_id, sector_host, redirect_uri))
         .collect::<Vec<_>>();
     subjects.sort();
     subjects.dedup();

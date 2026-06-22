@@ -1,6 +1,6 @@
 //! 管理端客户端更新端点。
 // PATCH 请求只覆盖显式提交的字段，其余字段保持数据库当前值。
-use super::create::{trim_optional_string, validate_pkce_compatibility_policy};
+use super::create::{all_same_host, trim_optional_string, validate_pkce_compatibility_policy};
 use crate::http::prelude::*;
 
 #[derive(Deserialize)]
@@ -16,6 +16,8 @@ pub(crate) struct PatchClientRequest {
     allow_client_assertion_endpoint_audience: Option<bool>,
     require_par_request_object: Option<bool>,
     allow_authorization_code_without_pkce: Option<bool>,
+    subject_type: Option<String>,
+    sector_identifier_uri: Option<String>,
     backchannel_logout_uri: Option<String>,
     backchannel_logout_session_required: Option<bool>,
     tls_client_auth_subject_dn: Option<String>,
@@ -40,6 +42,9 @@ struct PreparedClientPatch {
     allow_client_assertion_endpoint_audience: bool,
     require_par_request_object: bool,
     allow_authorization_code_without_pkce: bool,
+    subject_type: String,
+    sector_identifier_uri: Option<String>,
+    sector_identifier_host: Option<String>,
     backchannel_logout_uri: Option<String>,
     backchannel_logout_session_required: bool,
     tls_client_auth_subject_dn: Option<String>,
@@ -82,7 +87,14 @@ pub(crate) async fn admin_patch_client(
         }
     };
 
-    let prepared = match prepare_client_patch(&current, payload) {
+    let prepared = match prepare_client_patch(
+        &current,
+        payload,
+        state.settings.pairwise_subject_secret.as_deref(),
+        &state.settings.issuer,
+    )
+    .await
+    {
         Ok(prepared) => prepared,
         Err(error) => {
             return oauth_error(
@@ -113,6 +125,9 @@ pub(crate) async fn admin_patch_client(
         oauth_clients::scopes.eq(prepared.scopes),
         oauth_clients::allowed_audiences.eq(prepared.allowed_audiences),
         oauth_clients::grant_types.eq(prepared.grant_types),
+        oauth_clients::subject_type.eq(&prepared.subject_type),
+        oauth_clients::sector_identifier_uri.eq(&prepared.sector_identifier_uri),
+        oauth_clients::sector_identifier_host.eq(&prepared.sector_identifier_host),
         oauth_clients::require_dpop_bound_tokens.eq(prepared.require_dpop_bound_tokens),
         oauth_clients::allow_client_assertion_audience_array
             .eq(prepared.allow_client_assertion_audience_array),
@@ -162,9 +177,11 @@ pub(crate) async fn admin_patch_client(
     json_response(client_json(client))
 }
 
-fn prepare_client_patch(
+async fn prepare_client_patch(
     current: &ClientRow,
     payload: PatchClientRequest,
+    pairwise_subject_secret: Option<&str>,
+    issuer: &str,
 ) -> anyhow::Result<PreparedClientPatch> {
     let new_client_name = payload
         .client_name
@@ -231,6 +248,53 @@ fn prepare_client_patch(
         .unwrap_or_else(|| json_array_to_strings(&current.tls_client_auth_san_email));
     let new_jwks = payload.jwks.or_else(|| current.jwks.clone());
     let new_is_active = payload.is_active.unwrap_or(current.is_active);
+
+    let new_subject_type = payload.subject_type.unwrap_or_else(|| current.subject_type.clone());
+    let new_sector_identifier_uri = match payload.sector_identifier_uri {
+        Some(ref uri) if current.sector_identifier_uri.is_some() => {
+            anyhow::bail!("已配置 pairwise 客户端的 sector_identifier_uri 不可修改");
+        }
+        Some(uri) => Some(uri),
+        None => current.sector_identifier_uri.clone(),
+    };
+    let new_sector_identifier_host = if new_subject_type != "pairwise" {
+        None
+    } else {
+        if pairwise_subject_secret.is_none() {
+            anyhow::bail!("pairwise 主题类型需要配置 PAIRWISE_SUBJECT_SECRET");
+        }
+        Some(match &new_sector_identifier_uri {
+            Some(uri) => {
+                let uris = fetch_sector_identifier_uris(uri).await.map_err(|e| {
+                    anyhow::anyhow!("sector_identifier_uri 获取失败: {:?}", e)
+                })?;
+                for redirect_uri in &new_redirect_uri_values {
+                    if !uris.contains(redirect_uri) {
+                        anyhow::bail!(
+                            "redirect_uri {} 不在 sector_identifier_uri 返回列表中",
+                            redirect_uri
+                        );
+                    }
+                }
+                sector_identifier_hostname(uri).map_err(|e| {
+                    anyhow::anyhow!("sector_identifier_uri host 解析失败: {:?}", e)
+                })?
+            }
+            None => {
+                if let Some(ref host) = current.sector_identifier_host {
+                    host.clone()
+                } else {
+                    let host = all_same_host(&new_redirect_uri_values).ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "pairwise 主题需要 sector_identifier_uri 或所有 redirect_uri 使用同一 host"
+                        )
+                    })?;
+                    host
+                }
+            }
+        })
+    }
+
     validate_pkce_compatibility_policy(
         new_allow_authorization_code_without_pkce,
         &current.client_type,
@@ -269,6 +333,9 @@ fn prepare_client_patch(
         allow_client_assertion_endpoint_audience: new_allow_client_assertion_endpoint_audience,
         require_par_request_object: new_require_par_request_object,
         allow_authorization_code_without_pkce: new_allow_authorization_code_without_pkce,
+        subject_type: new_subject_type,
+        sector_identifier_uri: new_sector_identifier_uri,
+        sector_identifier_host: new_sector_identifier_host,
         backchannel_logout_uri: new_backchannel_logout_uri,
         backchannel_logout_session_required: new_backchannel_logout_session_required,
         tls_client_auth_subject_dn: new_tls_client_auth_subject_dn,
