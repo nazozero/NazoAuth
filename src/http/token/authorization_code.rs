@@ -447,7 +447,12 @@ pub(crate) async fn token_authorization_code(
     }
     let refresh_token_dpop_jkt = refresh_token_dpop_binding(client, &payload, dpop_jkt.clone());
     let refresh_token_mtls_x5t_s256 = mtls_x5t_s256.clone();
-    let subject = oidc_subject(&state.settings, payload.user_id, &payload.redirect_uri);
+    let subject = compute_subject_for_client(
+        &state.settings,
+        payload.user_id,
+        client.sector_identifier_host.as_deref(),
+        &payload.redirect_uri,
+    );
     issue_token_response(
         state,
         client,

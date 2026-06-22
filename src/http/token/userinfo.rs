@@ -161,6 +161,7 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Byte
         &claims.sub,
         &claims.userinfo_claims,
         &claims.userinfo_claim_requests,
+        None,
     ));
     if let Some(nonce) = next_dpop_nonce
         && let Ok(value) = HeaderValue::from_str(&nonce)

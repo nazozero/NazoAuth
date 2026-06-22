@@ -132,7 +132,13 @@ pub(crate) async fn admin_approve_access_request(
     };
     let request_user_id = pending_request.user_id;
     let site_name = pending_request.site_name;
-    let prepared = match prepare_client_insert(payload) {
+    let prepared = match prepare_client_insert(
+        payload,
+        state.settings.pairwise_subject_secret.as_deref(),
+        &state.settings.issuer,
+    )
+    .await
+    {
         Ok(prepared) => prepared,
         Err(error) => return insert_client_error_response(error),
     };

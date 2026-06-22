@@ -1,6 +1,6 @@
 use super::prelude::*;
 use crate::domain::Keyset;
-use crate::settings::{AuthorizationServerProfile, Settings};
+use crate::settings::{AuthorizationServerProfile, Settings, SubjectType};
 
 const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
 const REQUEST_OBJECT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
@@ -91,7 +91,11 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
         "jwks_uri": format!("{issuer}/jwks.json"),
         "response_types_supported": ["code"],
         "response_modes_supported": ["query", "jwt"],
-        "subject_types_supported": [settings.subject_type.as_str()],
+        "subject_types_supported": match (&settings.pairwise_subject_secret, &settings.subject_type) {
+            (None, _) => vec!["public"],
+            (Some(_), SubjectType::Pairwise) => vec!["pairwise"],
+            (Some(_), _) => vec!["public", "pairwise"],
+        },
         "id_token_signing_alg_values_supported": id_token_signing_algs,
         "authorization_signing_alg_values_supported": authorization_signing_algs,
         "token_endpoint_auth_methods_supported": token_auth_methods,
