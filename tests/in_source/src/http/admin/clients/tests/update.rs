@@ -489,6 +489,32 @@ async fn patch_rejects_pairwise_redirects_with_multiple_hosts_without_sector_uri
 }
 
 #[actix_web::test]
+async fn patch_reports_sector_identifier_fetch_failure_for_new_pairwise_uri() {
+    let mut patch = empty_patch();
+    patch.subject_type = Some("pairwise".to_owned());
+    patch.redirect_uris = Some(vec![
+        "https://client.example/callback".to_owned(),
+        "https://other.example/callback".to_owned(),
+    ]);
+    patch.sector_identifier_uri = Some("https://sector.invalid/client.json".to_owned());
+
+    let error = prepare_client_patch(
+        &current_client(),
+        patch,
+        Some("01234567890123456789012345678901"),
+        "http://localhost:8000",
+    )
+    .await
+    .err()
+    .expect("unresolvable sector_identifier_uri must fail patch validation");
+
+    assert!(
+        error.to_string().contains("sector_identifier_uri 获取失败"),
+        "error should identify sector identifier retrieval: {error}"
+    );
+}
+
+#[actix_web::test]
 async fn patch_preserves_existing_pairwise_sector_host_without_refetching_uri() {
     let mut patch = empty_patch();
     patch.client_name = Some("Renamed pairwise client".to_owned());

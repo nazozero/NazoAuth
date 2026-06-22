@@ -268,6 +268,38 @@ async fn prepare_client_insert_rejects_pairwise_redirects_with_multiple_hosts_wi
 }
 
 #[actix_web::test]
+async fn prepare_client_insert_reports_sector_identifier_fetch_failure() {
+    let mut payload = create_request();
+    payload.token_endpoint_auth_method = "client_secret_basic".to_owned();
+    payload.jwks = None;
+    payload.subject_type = Some("pairwise".to_owned());
+    payload.redirect_uris = vec![
+        "https://client.example/callback".to_owned(),
+        "https://other.example/callback".to_owned(),
+    ];
+    payload.sector_identifier_uri = Some("https://sector.invalid/client.json".to_owned());
+
+    let err = prepare_client_insert(
+        payload,
+        Some("01234567890123456789012345678901"),
+        "http://localhost:8000",
+    )
+    .await
+    .err()
+    .expect("unresolvable sector_identifier_uri must fail registration");
+
+    match err {
+        InsertClientError::InvalidRequest(message) => assert!(
+            message.contains("sector_identifier_uri 获取失败"),
+            "error should identify sector identifier retrieval: {message}"
+        ),
+        InsertClientError::Server(message) => {
+            panic!("sector identifier validation must not be reported as server error: {message}")
+        }
+    }
+}
+
+#[actix_web::test]
 async fn prepare_client_insert_discards_sector_identifier_for_public_subjects() {
     let mut payload = create_request();
     payload.client_type = "public".to_owned();

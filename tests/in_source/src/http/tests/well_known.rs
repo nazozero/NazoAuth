@@ -118,6 +118,55 @@ fn discovery_advertises_supported_rar_types() {
 }
 
 #[test]
+fn discovery_subject_types_follow_pairwise_configuration() {
+    let keyset = keyset(jsonwebtoken::Algorithm::RS256);
+
+    let public_only = authorization_server_metadata(
+        &settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new()),
+        &keyset,
+    );
+    assert_eq!(
+        public_only
+            .get("subject_types_supported")
+            .and_then(Value::as_array)
+            .expect("subject type metadata should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["public"]
+    );
+
+    let mut pairwise_default = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
+    pairwise_default.pairwise_subject_secret = Some("01234567890123456789012345678901".to_owned());
+    let pairwise_default = authorization_server_metadata(&pairwise_default, &keyset);
+    assert_eq!(
+        pairwise_default
+            .get("subject_types_supported")
+            .and_then(Value::as_array)
+            .expect("subject type metadata should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["public", "pairwise"]
+    );
+
+    let mut pairwise_only = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
+    pairwise_only.subject_type = SubjectType::Pairwise;
+    pairwise_only.pairwise_subject_secret = Some("01234567890123456789012345678901".to_owned());
+    let pairwise_only = authorization_server_metadata(&pairwise_only, &keyset);
+    assert_eq!(
+        pairwise_only
+            .get("subject_types_supported")
+            .and_then(Value::as_array)
+            .expect("subject type metadata should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["pairwise"]
+    );
+}
+
+#[test]
 fn discovery_advertises_oidc_logout_endpoints_and_backchannel_support() {
     let metadata = authorization_server_metadata(
         &settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new()),

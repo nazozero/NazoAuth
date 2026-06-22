@@ -84,6 +84,54 @@ fn invalid_request_object_jti_policy_is_rejected() {
     assert!(Settings::from_config(&config).is_err());
 }
 
+#[test]
+fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
+    let defaults = Settings::from_config(&ConfigSource::default()).unwrap();
+    assert!(!defaults.enable_request_object);
+    assert!(!defaults.enable_request_uri_parameter);
+    assert!(!defaults.enable_par_request_object);
+    assert!(!defaults.enable_authorization_details);
+    assert!(!defaults.enable_legacy_audience_param);
+
+    let config = ConfigSource::from_pairs_for_test([
+        ("ENABLE_REQUEST_OBJECT", "true"),
+        ("ENABLE_REQUEST_URI_PARAMETER", "true"),
+        ("ENABLE_PAR_REQUEST_OBJECT", "true"),
+        ("ENABLE_AUTHORIZATION_DETAILS", "true"),
+        ("ENABLE_LEGACY_AUDIENCE_PARAM", "true"),
+    ]);
+    let settings = Settings::from_config(&config).unwrap();
+
+    assert!(settings.enable_request_object);
+    assert!(settings.enable_request_uri_parameter);
+    assert!(settings.enable_par_request_object);
+    assert!(settings.enable_authorization_details);
+    assert!(settings.enable_legacy_audience_param);
+}
+
+#[test]
+fn pairwise_subject_secret_must_be_configured_and_strong_enough() {
+    let missing = ConfigSource::from_pairs_for_test([("SUBJECT_TYPE", "pairwise")]);
+    let error = settings_error(
+        &missing,
+        "pairwise subject type must not start without a server secret",
+    );
+    assert_eq!(
+        error.to_string(),
+        "PAIRWISE_SUBJECT_SECRET is required when SUBJECT_TYPE=pairwise"
+    );
+
+    let weak = ConfigSource::from_pairs_for_test([
+        ("SUBJECT_TYPE", "public"),
+        ("PAIRWISE_SUBJECT_SECRET", "short"),
+    ]);
+    let error = settings_error(&weak, "weak pairwise subject secret must fail startup");
+    assert_eq!(
+        error.to_string(),
+        "pairwise_subject_secret must be at least 32 bytes"
+    );
+}
+
 fn settings_error(config: &ConfigSource, expected_context: &str) -> anyhow::Error {
     match Settings::from_config(config) {
         Ok(_) => panic!("{expected_context}"),
