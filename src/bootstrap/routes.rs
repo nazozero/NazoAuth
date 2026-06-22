@@ -16,7 +16,7 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
     );
     // NO CORS: /authorize
     cfg.route("/authorize", web::get().to(authorize_get))
-        .route(web::post().to(authorize_post))
+        .route("/authorize", web::post().to(authorize_post))
         .route("/authorize/consent", web::get().to(authorize_consent))
         .route("/authorize/decision", web::post().to(authorize_decision))
         // NO CORS: /par
