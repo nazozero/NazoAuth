@@ -547,6 +547,25 @@ async fn token_endpoint_rejects_malformed_form_requests_before_client_lookup() {
 }
 
 #[actix_web::test]
+async fn token_endpoint_rejects_legacy_audience_parameter_when_disabled() {
+    let Some(state) = live_token_state(AuthorizationServerProfile::Oauth2Baseline).await else {
+        return;
+    };
+    let req = token_request("application/x-www-form-urlencoded");
+    let body = Bytes::from_static(
+        b"grant_type=client_credentials&client_id=client-1&audience=https%3A%2F%2Fapi.example",
+    );
+
+    assert_token_error(
+        token(state, req, body).await,
+        StatusCode::BAD_REQUEST,
+        "invalid_request",
+        false,
+    )
+    .await;
+}
+
+#[actix_web::test]
 async fn token_endpoint_rejects_disallowed_fapi_password_grant_before_client_auth() {
     let Some(state) = live_token_state(AuthorizationServerProfile::Fapi2Security).await else {
         return;

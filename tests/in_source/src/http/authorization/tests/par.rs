@@ -596,6 +596,34 @@ async fn par_rejects_malformed_or_ambiguous_authorization_parameters_before_clie
 }
 
 #[actix_web::test]
+async fn par_rejects_disabled_request_object_before_client_lookup() {
+    let response = par_after_rate_limit(
+        par_state_without_live_services(),
+        par_form_request(),
+        Bytes::from_static(b"client_id=client-a&response_type=code&request=jwt"),
+    )
+    .await;
+
+    let (status, value) = par_json_body(response).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(value.get("error"), Some(&json!("invalid_request")));
+}
+
+#[actix_web::test]
+async fn par_rejects_disabled_authorization_details_before_client_lookup() {
+    let response = par_after_rate_limit(
+        par_state_without_live_services(),
+        par_form_request(),
+        Bytes::from_static(b"client_id=client-a&response_type=code&authorization_details=%5B%5D"),
+    )
+    .await;
+
+    let (status, value) = par_json_body(response).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(value.get("error"), Some(&json!("invalid_request")));
+}
+
+#[actix_web::test]
 async fn par_rate_limit_failure_short_circuits_before_client_lookup() {
     let response = par(
         par_state_without_live_services(),

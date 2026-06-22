@@ -451,6 +451,63 @@ async fn authorization_get_requires_par_before_untrusted_runtime_parameters() {
 }
 
 #[actix_web::test]
+async fn authorization_request_rejects_disabled_request_object_parameters_before_client_lookup() {
+    let mut state = endpoint_state(false);
+    Arc::get_mut(&mut state.settings)
+        .expect("test state owns its settings")
+        .enable_request_object = false;
+    let state = Data::new(state);
+    let req = actix_web::test::TestRequest::get()
+        .uri("/authorize?request=jwt")
+        .to_http_request();
+    let mut q = query(&[("request", "jwt")]);
+
+    let (status, body) = json_body(authorize_request(state, req, &mut q).await).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_request");
+    assert!(body.get("code").is_none());
+}
+
+#[actix_web::test]
+async fn authorization_request_rejects_disabled_request_uri_parameter_before_client_lookup() {
+    let mut state = endpoint_state(false);
+    Arc::get_mut(&mut state.settings)
+        .expect("test state owns its settings")
+        .enable_request_uri_parameter = false;
+    let state = Data::new(state);
+    let req = actix_web::test::TestRequest::get()
+        .uri("/authorize?request_uri=urn%3Aietf%3Aparams%3Aoauth%3Arequest_uri%3Aabc")
+        .to_http_request();
+    let mut q = query(&[("request_uri", "urn:ietf:params:oauth:request_uri:abc")]);
+
+    let (status, body) = json_body(authorize_request(state, req, &mut q).await).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_request");
+    assert!(body.get("code").is_none());
+}
+
+#[actix_web::test]
+async fn authorization_request_rejects_disabled_authorization_details_before_client_lookup() {
+    let mut state = endpoint_state(false);
+    Arc::get_mut(&mut state.settings)
+        .expect("test state owns its settings")
+        .enable_authorization_details = false;
+    let state = Data::new(state);
+    let req = actix_web::test::TestRequest::get()
+        .uri("/authorize?authorization_details=%5B%5D")
+        .to_http_request();
+    let mut q = query(&[("authorization_details", "[]")]);
+
+    let (status, body) = json_body(authorize_request(state, req, &mut q).await).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_request");
+    assert!(body.get("code").is_none());
+}
+
+#[actix_web::test]
 async fn authorization_request_reports_request_uri_storage_failure_without_redirect() {
     let state = Data::new(endpoint_state(false));
     let request_uri = "urn:ietf:params:oauth:request_uri:broken-storage";
