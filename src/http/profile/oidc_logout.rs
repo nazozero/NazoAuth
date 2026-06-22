@@ -288,6 +288,7 @@ async fn lookup_logout_client(
             oauth_clients::redirect_uris,
             oauth_clients::post_logout_redirect_uris,
             oauth_clients::backchannel_logout_uri,
+            oauth_clients::sector_identifier_host,
         ))
         .first::<BackchannelLogoutClient>(&mut conn)
         .await

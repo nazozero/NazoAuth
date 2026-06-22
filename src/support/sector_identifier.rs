@@ -16,7 +16,7 @@ pub(crate) enum SectorIdentifierError {
     InvalidEntry(String),
 }
 
-fn is_blocked_host(host: &str) -> bool {
+pub(crate) fn is_blocked_host(host: &str) -> bool {
     if host.eq_ignore_ascii_case("localhost")
         || host.eq_ignore_ascii_case("127.0.0.1")
         || host == "0.0.0.0"
@@ -31,7 +31,7 @@ fn is_blocked_host(host: &str) -> bool {
     false
 }
 
-fn is_blocked_ip(ip: IpAddr) -> bool {
+pub(crate) fn is_blocked_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
             if v4.is_loopback() || v4.is_link_local() || v4.is_unspecified() {
@@ -56,14 +56,14 @@ fn is_blocked_ip(ip: IpAddr) -> bool {
             false
         }
         IpAddr::V6(v6) => {
+            let segments = v6.segments();
             if v6.is_loopback()
-                || v6.is_link_local()
+                || segments[0] & 0xffc0 == 0xfe80  // link-local (fe80::/10)
                 || v6.is_unspecified()
                 || v6.is_multicast()
             {
                 return true;
             }
-            let segments = v6.segments();
             if segments[0] & 0xfe00 == 0xfc00 {
                 return true;
             }

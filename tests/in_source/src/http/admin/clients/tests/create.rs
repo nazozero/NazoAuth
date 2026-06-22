@@ -24,6 +24,8 @@ fn create_request() -> CreateClientRequest {
         tls_client_auth_san_ip: Vec::new(),
         tls_client_auth_san_email: Vec::new(),
         jwks: Some(json!({"keys": []})),
+        subject_type: None,
+        sector_identifier_uri: None,
     }
 }
 
@@ -42,14 +44,14 @@ fn pkce_legacy_exception_is_limited_to_confidential_non_dpop_clients() {
     assert_eq!(dpop_err.to_string(), "DPoP-bound clients must use PKCE");
 }
 
-#[test]
-fn prepare_client_insert_issues_secret_only_for_secret_based_confidential_clients() {
+#[actix_web::test]
+async fn prepare_client_insert_issues_secret_only_for_secret_based_confidential_clients() {
     for method in ["client_secret_basic", "client_secret_post"] {
         let mut payload = create_request();
         payload.token_endpoint_auth_method = method.to_owned();
         payload.jwks = None;
 
-        let prepared = match prepare_client_insert(payload) {
+        let prepared = match prepare_client_insert(payload, None, "http://localhost:8000").await {
             Ok(prepared) => prepared,
             Err(_) => {
                 panic!("secret-based confidential client registration should be accepted")
@@ -77,13 +79,13 @@ fn prepare_client_insert_issues_secret_only_for_secret_based_confidential_client
     }
 }
 
-#[test]
-fn prepare_client_insert_does_not_issue_secret_for_public_or_mtls_clients() {
+#[actix_web::test]
+async fn prepare_client_insert_does_not_issue_secret_for_public_or_mtls_clients() {
     let mut public = create_request();
     public.client_type = "public".to_owned();
     public.token_endpoint_auth_method = "none".to_owned();
     public.jwks = None;
-    let public = match prepare_client_insert(public) {
+    let public = match prepare_client_insert(public, None, "http://localhost:8000").await {
         Ok(prepared) => prepared,
         Err(_) => panic!("public client registration without secret is valid"),
     };
@@ -94,7 +96,7 @@ fn prepare_client_insert_does_not_issue_secret_for_public_or_mtls_clients() {
     mtls.token_endpoint_auth_method = "tls_client_auth".to_owned();
     mtls.jwks = None;
     mtls.tls_client_auth_subject_dn = Some("CN=client.example".to_owned());
-    let mtls = match prepare_client_insert(mtls) {
+    let mtls = match prepare_client_insert(mtls, None, "http://localhost:8000").await {
         Ok(prepared) => prepared,
         Err(_) => panic!("mTLS client registration should be accepted without client secret"),
     };
@@ -102,8 +104,8 @@ fn prepare_client_insert_does_not_issue_secret_for_public_or_mtls_clients() {
     assert!(mtls.client_secret_argon2_hash.is_none());
 }
 
-#[test]
-fn prepare_client_insert_normalizes_optional_string_metadata() {
+#[actix_web::test]
+async fn prepare_client_insert_normalizes_optional_string_metadata() {
     let mut payload = create_request();
     payload.token_endpoint_auth_method = "tls_client_auth".to_owned();
     payload.jwks = None;
@@ -116,7 +118,7 @@ fn prepare_client_insert_normalizes_optional_string_metadata() {
     payload.tls_client_auth_san_ip = vec!["192.0.2.10".to_owned()];
     payload.tls_client_auth_san_email = vec!["ops@example.com".to_owned()];
 
-    let prepared = match prepare_client_insert(payload) {
+    let prepared = match prepare_client_insert(payload, None, "http://localhost:8000").await {
         Ok(prepared) => prepared,
         Err(_) => panic!("mTLS metadata with surrounding whitespace should be normalizable"),
     };
@@ -140,14 +142,14 @@ fn prepare_client_insert_normalizes_optional_string_metadata() {
     assert_eq!(prepared.tls_client_auth_san_email, vec!["ops@example.com"]);
 }
 
-#[test]
-fn prepare_client_insert_rejects_empty_array_metadata_before_storage() {
+#[actix_web::test]
+async fn prepare_client_insert_rejects_empty_array_metadata_before_storage() {
     let mut payload = create_request();
     payload.token_endpoint_auth_method = "client_secret_basic".to_owned();
     payload.jwks = None;
     payload.post_logout_redirect_uris = vec![" ".to_owned()];
 
-    let err = prepare_client_insert(payload)
+    let err = prepare_client_insert(payload, None, "http://localhost:8000").await
         .err()
         .expect("empty array metadata must fail closed");
     match err {
@@ -161,14 +163,14 @@ fn prepare_client_insert_rejects_empty_array_metadata_before_storage() {
     }
 }
 
-#[test]
-fn prepare_client_insert_rejects_secret_auth_for_public_clients() {
+#[actix_web::test]
+async fn prepare_client_insert_rejects_secret_auth_for_public_clients() {
     let mut payload = create_request();
     payload.client_type = "public".to_owned();
     payload.token_endpoint_auth_method = "client_secret_post".to_owned();
     payload.jwks = None;
 
-    let err = prepare_client_insert(payload)
+    let err = prepare_client_insert(payload, None, "http://localhost:8000").await
         .err()
         .expect("public clients must not be registered with client secrets");
     match err {

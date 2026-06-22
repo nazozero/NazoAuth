@@ -436,6 +436,7 @@ fn post_logout_redirect_requires_exact_registered_uri_and_preserves_state() {
         redirect_uris: json!(["https://client.example/callback"]),
         post_logout_redirect_uris: json!(["https://client.example/logout/callback"]),
         backchannel_logout_uri: None,
+        sector_identifier_host: None,
     };
     let form = LogoutRequest {
         post_logout_redirect_uri: Some("https://client.example/logout/callback".to_owned()),
@@ -462,6 +463,7 @@ fn post_logout_redirect_appends_state_without_discarding_registered_query() {
         redirect_uris: json!(["https://client.example/callback"]),
         post_logout_redirect_uris: json!(["https://client.example/logout/callback?flow=rp"]),
         backchannel_logout_uri: None,
+        sector_identifier_host: None,
     };
     let form = LogoutRequest {
         post_logout_redirect_uri: Some("https://client.example/logout/callback?flow=rp".to_owned()),
@@ -494,6 +496,7 @@ fn post_logout_redirect_rejects_missing_client_and_invalid_registered_uri() {
         redirect_uris: json!(["https://client.example/callback"]),
         post_logout_redirect_uris: json!(["not a uri"]),
         backchannel_logout_uri: None,
+        sector_identifier_host: None,
     };
     let invalid = LogoutRequest {
         post_logout_redirect_uri: Some("not a uri".to_owned()),
@@ -729,15 +732,17 @@ fn id_token_hint_subject_matches_pairwise_subject_for_registered_client_sector()
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.subject_type = SubjectType::Pairwise;
-    settings.pairwise_subject_secret = Some("secret".to_owned());
+    settings.pairwise_subject_secret = Some("0123456789012345678901234567890123456789".to_owned());
     let user_id = Uuid::now_v7();
     let client = BackchannelLogoutClient {
         client_id: "client-1".to_owned(),
         redirect_uris: json!(["https://client.example/callback"]),
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: Some("https://client.example/backchannel-logout".to_owned()),
+        sector_identifier_host: None,
     };
-    let subject = oidc_subject(&settings, user_id, "https://client.example/callback");
+    let subject = unique_logout_subject_for_client(&settings, user_id, &client)
+        .expect("pairwise subject should be unique");
     let hint = IdTokenHintClaims {
         sub: subject,
         aud: json!("client-1"),
@@ -789,7 +794,7 @@ fn backchannel_logout_subject_is_omitted_when_pairwise_sector_is_ambiguous() {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.subject_type = SubjectType::Pairwise;
-    settings.pairwise_subject_secret = Some("secret".to_owned());
+    settings.pairwise_subject_secret = Some("0123456789012345678901234567890123456789".to_owned());
     let client = BackchannelLogoutClient {
         client_id: "client-1".to_owned(),
         redirect_uris: json!([
@@ -798,6 +803,7 @@ fn backchannel_logout_subject_is_omitted_when_pairwise_sector_is_ambiguous() {
         ]),
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: Some("https://client.example/backchannel-logout".to_owned()),
+        sector_identifier_host: None,
     };
 
     assert!(unique_logout_subject_for_client(&settings, Uuid::now_v7(), &client).is_none());
@@ -815,6 +821,7 @@ fn backchannel_logout_subject_uses_public_subject_when_configured() {
         redirect_uris: json!([]),
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: Some("https://client.example/backchannel-logout".to_owned()),
+        sector_identifier_host: None,
     };
 
     assert_eq!(

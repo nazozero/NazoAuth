@@ -97,6 +97,8 @@ fn create_client_request(client_name: &str) -> CreateClientRequest {
         tls_client_auth_san_ip: Vec::new(),
         tls_client_auth_san_email: Vec::new(),
         jwks: None,
+        subject_type: None,
+        sector_identifier_uri: None,
     }
 }
 
@@ -299,7 +301,7 @@ impl LiveAdminGrantFixture {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
-        let prepared = match prepare_client_insert(create_client_request(client_name)) {
+        let prepared = match prepare_client_insert(create_client_request(client_name), None, "http://localhost:8000").await {
             Ok(prepared) => prepared,
             Err(_) => panic!("client creation payload should be valid"),
         };
