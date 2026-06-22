@@ -96,6 +96,26 @@ pub(crate) fn sector_identifier_hostname(uri: &str) -> Result<String, SectorIden
         .ok_or(SectorIdentifierError::InvalidUri)
 }
 
+pub(crate) fn parse_sector_identifier_document(
+    content_type: &str,
+    body: &[u8],
+) -> Result<Vec<String>, SectorIdentifierError> {
+    if !content_type.contains("application/json") {
+        return Err(SectorIdentifierError::InvalidContentType);
+    }
+    if body.len() as u64 > MAX_RESPONSE_BYTES {
+        return Err(SectorIdentifierError::ResponseTooLarge);
+    }
+    let uris: Vec<String> =
+        serde_json::from_slice(body).map_err(|_| SectorIdentifierError::InvalidJson)?;
+    for entry in &uris {
+        if url::Url::parse(entry).is_err() {
+            return Err(SectorIdentifierError::InvalidEntry(entry.clone()));
+        }
+    }
+    Ok(uris)
+}
+
 pub(crate) async fn fetch_sector_identifier_uris(
     uri: &str,
 ) -> Result<Vec<String>, SectorIdentifierError> {
@@ -138,25 +158,13 @@ pub(crate) async fn fetch_sector_identifier_uris(
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
-        .unwrap_or("");
-    if !content_type.contains("application/json") {
-        return Err(SectorIdentifierError::InvalidContentType);
-    }
+        .unwrap_or("")
+        .to_owned();
     let body = response
         .bytes()
         .await
         .map_err(|_| SectorIdentifierError::HttpError)?;
-    if body.len() as u64 > MAX_RESPONSE_BYTES {
-        return Err(SectorIdentifierError::ResponseTooLarge);
-    }
-    let uris: Vec<String> =
-        serde_json::from_slice(&body).map_err(|_| SectorIdentifierError::InvalidJson)?;
-    for entry in &uris {
-        if url::Url::parse(entry).is_err() {
-            return Err(SectorIdentifierError::InvalidEntry(entry.clone()));
-        }
-    }
-    Ok(uris)
+    parse_sector_identifier_document(&content_type, &body)
 }
 
 #[cfg(test)]

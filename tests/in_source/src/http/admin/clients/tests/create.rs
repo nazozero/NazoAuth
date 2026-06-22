@@ -286,6 +286,63 @@ async fn prepare_client_insert_discards_sector_identifier_for_public_subjects() 
 }
 
 #[test]
+fn sector_identifier_host_for_redirects_accepts_registered_redirects() {
+    let redirect_uris = vec![
+        "https://client.example/callback".to_owned(),
+        "https://client.example/alternate".to_owned(),
+    ];
+    let sector_uris = vec![
+        "https://client.example/callback".to_owned(),
+        "https://client.example/alternate".to_owned(),
+        "https://client.example/unused".to_owned(),
+    ];
+
+    let host = sector_identifier_host_for_redirects(
+        "https://sector.example/client.json",
+        &redirect_uris,
+        &sector_uris,
+    )
+    .expect("all registered redirects are present in sector document");
+
+    assert_eq!(host, "sector.example");
+}
+
+#[test]
+fn sector_identifier_host_for_redirects_rejects_missing_redirect() {
+    let redirect_uris = vec![
+        "https://client.example/callback".to_owned(),
+        "https://other.example/callback".to_owned(),
+    ];
+    let sector_uris = vec!["https://client.example/callback".to_owned()];
+
+    let error = sector_identifier_host_for_redirects(
+        "https://sector.example/client.json",
+        &redirect_uris,
+        &sector_uris,
+    )
+    .expect_err("every redirect must be listed by the sector document");
+
+    assert!(
+        error.to_string().contains("other.example"),
+        "error should identify the missing redirect URI: {error}"
+    );
+}
+
+#[test]
+fn sector_identifier_host_for_redirects_rejects_invalid_sector_uri() {
+    let redirect_uris = vec!["https://client.example/callback".to_owned()];
+    let sector_uris = vec!["https://client.example/callback".to_owned()];
+
+    let error = sector_identifier_host_for_redirects("not-a-uri", &redirect_uris, &sector_uris)
+        .expect_err("sector_identifier_uri itself must have a host");
+
+    assert!(
+        error.to_string().contains("host"),
+        "error should identify the sector host parsing boundary: {error}"
+    );
+}
+
+#[test]
 fn insert_client_error_response_preserves_oauth_error_category() {
     let invalid = insert_client_error_response(InsertClientError::InvalidRequest(
         "redirect_uri is invalid".to_owned(),

@@ -357,6 +357,23 @@ pub(crate) fn all_same_host(uris: &[String]) -> Option<String> {
     }
 }
 
+pub(crate) fn sector_identifier_host_for_redirects(
+    uri: &str,
+    redirect_uris: &[String],
+    sector_uris: &[String],
+) -> anyhow::Result<String> {
+    for redirect_uri in redirect_uris {
+        if !sector_uris.contains(redirect_uri) {
+            anyhow::bail!(
+                "redirect_uri {} 不在 sector_identifier_uri 返回列表中",
+                redirect_uri
+            );
+        }
+    }
+    sector_identifier_hostname(uri)
+        .map_err(|error| anyhow::anyhow!("sector_identifier_uri host 解析失败: {:?}", error))
+}
+
 async fn validate_pairwise_subject(
     subject_type: &str,
     sector_identifier_uri: Option<String>,
@@ -380,20 +397,8 @@ async fn validate_pairwise_subject(
                     error
                 ))
             })?;
-            for redirect_uri in redirect_uris {
-                if !uris.contains(redirect_uri) {
-                    return Err(InsertClientError::InvalidRequest(format!(
-                        "redirect_uri {} 不在 sector_identifier_uri 返回列表中",
-                        redirect_uri
-                    )));
-                }
-            }
-            sector_identifier_hostname(uri).map_err(|error| {
-                InsertClientError::InvalidRequest(format!(
-                    "sector_identifier_uri host 解析失败: {:?}",
-                    error
-                ))
-            })?
+            sector_identifier_host_for_redirects(uri, redirect_uris, &uris)
+                .map_err(|error| InsertClientError::InvalidRequest(error.to_string()))?
         }
         None => all_same_host(redirect_uris).ok_or_else(|| {
             InsertClientError::InvalidRequest(
