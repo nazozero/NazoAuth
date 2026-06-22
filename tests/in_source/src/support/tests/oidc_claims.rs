@@ -349,7 +349,12 @@ fn pairwise_subject_is_stable_within_sector_and_distinct_across_sectors() {
 fn compute_subject_for_client_public_returns_uuid() {
     let user_id = Uuid::now_v7();
     let settings = settings();
-    let subject = compute_subject_for_client(&settings, user_id, Some("example.com"), "https://example.com/callback");
+    let subject = compute_subject_for_client(
+        &settings,
+        user_id,
+        Some("example.com"),
+        "https://example.com/callback",
+    );
     assert_eq!(subject, user_id.to_string());
 }
 
@@ -358,8 +363,14 @@ fn compute_subject_for_client_pairwise_uses_sector_host() {
     let user_id = Uuid::now_v7();
     let mut settings = settings();
     settings.subject_type = SubjectType::Pairwise;
-    settings.pairwise_subject_secret = Some("this-is-a-long-enough-secret-key-for-hmac-sha256!!".to_owned());
-    let subject = compute_subject_for_client(&settings, user_id, Some("pairwise.example"), "https://client.example/callback");
+    settings.pairwise_subject_secret =
+        Some("this-is-a-long-enough-secret-key-for-hmac-sha256!!".to_owned());
+    let subject = compute_subject_for_client(
+        &settings,
+        user_id,
+        Some("pairwise.example"),
+        "https://client.example/callback",
+    );
     assert_ne!(subject, user_id.to_string());
     assert!(subject.len() > 20);
 }
@@ -369,10 +380,17 @@ fn compute_subject_for_client_pairwise_falls_back_to_redirect_uri_host() {
     let user_id = Uuid::now_v7();
     let mut settings = settings();
     settings.subject_type = SubjectType::Pairwise;
-    settings.pairwise_subject_secret = Some("this-is-a-long-enough-secret-key-for-hmac-sha256!!".to_owned());
-    let subject = compute_subject_for_client(&settings, user_id, None, "https://fallback.example/callback");
+    settings.pairwise_subject_secret =
+        Some("this-is-a-long-enough-secret-key-for-hmac-sha256!!".to_owned());
+    let subject = compute_subject_for_client(
+        &settings,
+        user_id,
+        None,
+        "https://fallback.example/callback",
+    );
     assert_ne!(subject, user_id.to_string());
     // Ensure the same host produces the same sub when sector_host is None
-    let same_subject = compute_subject_for_client(&settings, user_id, None, "https://fallback.example/other");
+    let same_subject =
+        compute_subject_for_client(&settings, user_id, None, "https://fallback.example/other");
     assert_eq!(subject, same_subject);
 }

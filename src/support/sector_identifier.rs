@@ -102,9 +102,7 @@ pub(crate) async fn fetch_sector_identifier_uris(
     if parsed.scheme() != "https" {
         return Err(SectorIdentifierError::SchemeNotHttps);
     }
-    let host = parsed
-        .host_str()
-        .ok_or(SectorIdentifierError::InvalidUri)?;
+    let host = parsed.host_str().ok_or(SectorIdentifierError::InvalidUri)?;
     if is_blocked_host(host) {
         return Err(SectorIdentifierError::BlockedHost);
     }

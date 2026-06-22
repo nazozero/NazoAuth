@@ -78,8 +78,5 @@ fn hostname_rejects_invalid_uri() {
 
 #[test]
 fn hostname_from_uri_with_empty_authority() {
-    assert_eq!(
-        sector_identifier_hostname("https:///path").unwrap(),
-        "path"
-    );
+    assert_eq!(sector_identifier_hostname("https:///path").unwrap(), "path");
 }

@@ -149,7 +149,8 @@ async fn prepare_client_insert_rejects_empty_array_metadata_before_storage() {
     payload.jwks = None;
     payload.post_logout_redirect_uris = vec![" ".to_owned()];
 
-    let err = prepare_client_insert(payload, None, "http://localhost:8000").await
+    let err = prepare_client_insert(payload, None, "http://localhost:8000")
+        .await
         .err()
         .expect("empty array metadata must fail closed");
     match err {
@@ -170,7 +171,8 @@ async fn prepare_client_insert_rejects_secret_auth_for_public_clients() {
     payload.token_endpoint_auth_method = "client_secret_post".to_owned();
     payload.jwks = None;
 
-    let err = prepare_client_insert(payload, None, "http://localhost:8000").await
+    let err = prepare_client_insert(payload, None, "http://localhost:8000")
+        .await
         .err()
         .expect("public clients must not be registered with client secrets");
     match err {

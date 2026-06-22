@@ -374,14 +374,12 @@ async fn validate_pairwise_subject(
     }
     let sector_identifier_host = match sector_identifier_uri {
         Some(ref uri) => {
-            let uris = fetch_sector_identifier_uris(uri)
-                .await
-                .map_err(|error| {
-                    InsertClientError::InvalidRequest(format!(
-                        "sector_identifier_uri 获取失败: {:?}",
-                        error
-                    ))
-                })?;
+            let uris = fetch_sector_identifier_uris(uri).await.map_err(|error| {
+                InsertClientError::InvalidRequest(format!(
+                    "sector_identifier_uri 获取失败: {:?}",
+                    error
+                ))
+            })?;
             for redirect_uri in redirect_uris {
                 if !uris.contains(redirect_uri) {
                     return Err(InsertClientError::InvalidRequest(format!(

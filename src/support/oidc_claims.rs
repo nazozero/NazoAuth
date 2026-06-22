@@ -16,8 +16,8 @@ pub(crate) fn oidc_subject(
     user_id: Uuid,
 ) -> String {
     debug_assert!(pairwise_subject_secret.len() >= 32);
-    let mut mac =
-        HmacSha256::new_from_slice(pairwise_subject_secret).expect("pairwise_subject_secret should be valid");
+    let mut mac = HmacSha256::new_from_slice(pairwise_subject_secret)
+        .expect("pairwise_subject_secret should be valid");
     mac.update(issuer.as_bytes());
     mac.update(b"\x1f");
     mac.update(sector_identifier_host.as_bytes());

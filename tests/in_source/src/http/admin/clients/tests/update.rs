@@ -250,9 +250,13 @@ impl LiveAdminClientUpdateFixture {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
-        let prepared = prepare_client_insert(create_client_request(client_name), None, "http://localhost:8000")
-            .await
-            .expect("client creation payload should be valid");
+        let prepared = prepare_client_insert(
+            create_client_request(client_name),
+            None,
+            "http://localhost:8000",
+        )
+        .await
+        .expect("client creation payload should be valid");
         insert_prepared_client(&mut conn, &prepared)
             .await
             .expect("client should insert")
@@ -352,7 +356,8 @@ async fn patch_preserves_unsubmitted_security_metadata() {
     patch.client_name = Some("Renamed client".to_owned());
     patch.is_active = Some(false);
 
-    let prepared = prepare_client_patch(&current_client(), patch, None, "http://localhost:8000").await
+    let prepared = prepare_client_patch(&current_client(), patch, None, "http://localhost:8000")
+        .await
         .expect("renaming a client must not require resubmitting security metadata");
 
     assert_eq!(prepared.client_name, "Renamed client");
@@ -381,7 +386,8 @@ async fn patch_rejects_redirect_uri_with_surrounding_whitespace() {
     let mut patch = empty_patch();
     patch.redirect_uris = Some(vec![" https://client.example/callback ".to_owned()]);
 
-    let error = prepare_client_patch(&current_client(), patch, None, "http://localhost:8000").await
+    let error = prepare_client_patch(&current_client(), patch, None, "http://localhost:8000")
+        .await
         .err()
         .expect("redirect_uri metadata must be an exact registered value");
 
@@ -396,7 +402,8 @@ async fn patch_rejects_post_logout_redirect_uri_with_surrounding_whitespace() {
     let mut patch = empty_patch();
     patch.post_logout_redirect_uris = Some(vec![" https://client.example/logout ".to_owned()]);
 
-    let error = prepare_client_patch(&current_client(), patch, None, "http://localhost:8000").await
+    let error = prepare_client_patch(&current_client(), patch, None, "http://localhost:8000")
+        .await
         .err()
         .expect("post_logout_redirect_uri metadata must not be silently normalized");
 

@@ -231,7 +231,13 @@ impl LiveAdminClientDetailFixture {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
-        let prepared = match prepare_client_insert(create_client_request(client_name), None, "http://localhost:8000").await {
+        let prepared = match prepare_client_insert(
+            create_client_request(client_name),
+            None,
+            "http://localhost:8000",
+        )
+        .await
+        {
             Ok(prepared) => prepared,
             Err(_) => panic!("client creation payload should be valid"),
         };

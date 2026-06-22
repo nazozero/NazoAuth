@@ -73,12 +73,6 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
         settings.authorization_server_profile,
         authorization_signing_algs.as_slice(),
     );
-    let show_request_object_signing_algs = settings.enable_request_object
-        || settings.enable_request_uri_parameter
-        || settings.enable_par_request_object
-        || settings
-            .authorization_server_profile
-            .requires_signed_request_object_at_par();
     let mut metadata = json!({
         "issuer": issuer,
         "authorization_endpoint": format!("{issuer}/authorize"),
@@ -118,7 +112,8 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
         "request_object_signing_alg_values_supported": request_object_signing_algs
     });
     if settings.enable_authorization_details {
-        metadata["authorization_details_types_supported"] = json!(["account_information", "payment_initiation"]);
+        metadata["authorization_details_types_supported"] =
+            json!(["account_information", "payment_initiation"]);
     }
     if settings.enable_request_object {
         metadata["request_parameter_supported"] = json!(true);
@@ -128,9 +123,6 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
         metadata["require_request_uri_registration"] = json!(true);
     } else {
         metadata["request_uri_parameter_supported"] = json!(false);
-    }
-    if !show_request_object_signing_algs {
-        metadata.as_object_mut().unwrap().remove("request_object_signing_alg_values_supported");
     }
     if mtls_enabled {
         metadata["tls_client_certificate_bound_access_tokens"] = json!(true);

@@ -54,7 +54,10 @@ impl AuthorizationServerProfile {
     }
 
     pub(crate) fn requires_par(self) -> bool {
-        matches!(self, Self::Fapi2Security | Self::Fapi2MessageSigningAuthzRequest)
+        matches!(
+            self,
+            Self::Fapi2Security | Self::Fapi2MessageSigningAuthzRequest
+        )
     }
 
     pub(crate) fn requires_signed_request_object_at_par(self) -> bool {

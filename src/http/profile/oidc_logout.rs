@@ -482,7 +482,9 @@ fn logout_subjects_for_client(
     let sector_host = client.sector_identifier_host.as_deref();
     let mut subjects = redirect_uris
         .iter()
-        .map(|redirect_uri| compute_subject_for_client(settings, user_id, sector_host, redirect_uri))
+        .map(|redirect_uri| {
+            compute_subject_for_client(settings, user_id, sector_host, redirect_uri)
+        })
         .collect::<Vec<_>>();
     subjects.sort();
     subjects.dedup();

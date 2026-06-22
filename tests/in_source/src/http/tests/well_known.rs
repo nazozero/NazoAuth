@@ -1,12 +1,12 @@
 use super::*;
 use std::path::PathBuf;
 
+use crate::domain::SUPPORTED_AUTHORIZATION_DETAILS_TYPES;
 use crate::domain::VerificationKey;
 use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, RateLimitSettings,
     RequestObjectJtiPolicy, SubjectType,
 };
-use crate::domain::SUPPORTED_AUTHORIZATION_DETAILS_TYPES;
 use crate::support::{ClientIpHeaderMode, IpCidr};
 
 fn keyset(alg: jsonwebtoken::Algorithm) -> Keyset {
@@ -103,10 +103,7 @@ fn discovery_claims_include_supported_id_token_acr() {
 fn discovery_advertises_supported_rar_types() {
     let mut s = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
     s.enable_authorization_details = true;
-    let metadata = authorization_server_metadata(
-        &s,
-        &keyset(jsonwebtoken::Algorithm::RS256),
-    );
+    let metadata = authorization_server_metadata(&s, &keyset(jsonwebtoken::Algorithm::RS256));
 
     assert_eq!(
         metadata

@@ -11,11 +11,10 @@ use crate::support::ClientIpHeaderMode;
 #[actix_web::test]
 async fn cors_preflight_allows_only_configured_origin_methods_and_security_headers() {
     let settings = test_settings(vec!["https://app.example".to_owned()]);
-    let app = test::init_service(
-        App::new()
-            .wrap(cors_browser_oauth(&settings))
-            .route("/token", web::post().to(|| async { HttpResponse::Ok().finish() })),
-    )
+    let app = test::init_service(App::new().wrap(cors_browser_oauth(&settings)).route(
+        "/token",
+        web::post().to(|| async { HttpResponse::Ok().finish() }),
+    ))
     .await;
 
     let allowed = test::TestRequest::default()
@@ -35,7 +34,10 @@ async fn cors_preflight_allows_only_configured_origin_methods_and_security_heade
         "https://app.example"
     );
     assert!(
-        response.headers().get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS).is_none(),
+        response
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+            .is_none(),
         "cors_browser_oauth must NOT allow credentials (no cookies)"
     );
     assert!(
@@ -69,17 +71,16 @@ async fn cors_preflight_allows_only_configured_origin_methods_and_security_heade
 #[actix_web::test]
 async fn cors_actual_response_exposes_oauth_challenge_nonce_and_retry_headers() {
     let settings = test_settings(vec!["https://app.example".to_owned()]);
-    let app = test::init_service(
-        App::new()
-            .wrap(cors_browser_oauth(&settings))
-            .route("/resource", web::get().to(|| async {
-                HttpResponse::Unauthorized()
-                    .insert_header((header::WWW_AUTHENTICATE, "DPoP error=\"use_dpop_nonce\""))
-                    .insert_header(("dpop-nonce", "nonce-1"))
-                    .insert_header((header::RETRY_AFTER, "5"))
-                    .finish()
-            })),
-    )
+    let app = test::init_service(App::new().wrap(cors_browser_oauth(&settings)).route(
+        "/resource",
+        web::get().to(|| async {
+            HttpResponse::Unauthorized()
+                .insert_header((header::WWW_AUTHENTICATE, "DPoP error=\"use_dpop_nonce\""))
+                .insert_header(("dpop-nonce", "nonce-1"))
+                .insert_header((header::RETRY_AFTER, "5"))
+                .finish()
+        }),
+    ))
     .await;
 
     let request = test::TestRequest::get()
@@ -103,11 +104,10 @@ async fn cors_actual_response_exposes_oauth_challenge_nonce_and_retry_headers() 
 #[actix_web::test]
 async fn cors_well_known_allows_get_and_head_only() {
     let settings = test_settings(vec!["https://app.example".to_owned()]);
-    let app = test::init_service(
-        App::new()
-            .wrap(cors_well_known(&settings))
-            .route("/.well-known/openid-configuration", web::get().to(|| async { HttpResponse::Ok().finish() })),
-    )
+    let app = test::init_service(App::new().wrap(cors_well_known(&settings)).route(
+        "/.well-known/openid-configuration",
+        web::get().to(|| async { HttpResponse::Ok().finish() }),
+    ))
     .await;
 
     let allowed = test::TestRequest::default()
@@ -119,7 +119,10 @@ async fn cors_well_known_allows_get_and_head_only() {
     let response = test::call_service(&app, allowed).await;
     assert_eq!(response.status(), StatusCode::OK);
     assert!(
-        response.headers().get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS).is_none(),
+        response
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+            .is_none(),
         "cors_well_known must NOT allow credentials"
     );
 }

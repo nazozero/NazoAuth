@@ -249,7 +249,9 @@ async fn prepare_client_patch(
     let new_jwks = payload.jwks.or_else(|| current.jwks.clone());
     let new_is_active = payload.is_active.unwrap_or(current.is_active);
 
-    let new_subject_type = payload.subject_type.unwrap_or_else(|| current.subject_type.clone());
+    let new_subject_type = payload
+        .subject_type
+        .unwrap_or_else(|| current.subject_type.clone());
     let new_sector_identifier_uri = match payload.sector_identifier_uri {
         Some(ref uri) if current.sector_identifier_uri.is_some() => {
             anyhow::bail!("已配置 pairwise 客户端的 sector_identifier_uri 不可修改");
@@ -265,9 +267,9 @@ async fn prepare_client_patch(
         }
         Some(match &new_sector_identifier_uri {
             Some(uri) => {
-                let uris = fetch_sector_identifier_uris(uri).await.map_err(|e| {
-                    anyhow::anyhow!("sector_identifier_uri 获取失败: {:?}", e)
-                })?;
+                let uris = fetch_sector_identifier_uris(uri)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("sector_identifier_uri 获取失败: {:?}", e))?;
                 for redirect_uri in &new_redirect_uri_values {
                     if !uris.contains(redirect_uri) {
                         anyhow::bail!(
@@ -276,9 +278,8 @@ async fn prepare_client_patch(
                         );
                     }
                 }
-                sector_identifier_hostname(uri).map_err(|e| {
-                    anyhow::anyhow!("sector_identifier_uri host 解析失败: {:?}", e)
-                })?
+                sector_identifier_hostname(uri)
+                    .map_err(|e| anyhow::anyhow!("sector_identifier_uri host 解析失败: {:?}", e))?
             }
             None => {
                 if let Some(ref host) = current.sector_identifier_host {

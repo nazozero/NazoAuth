@@ -73,7 +73,10 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
         .service(
             web::scope("/scim/v2")
                 .wrap(cors::cors_scim(settings))
-                .route("/ServiceProviderConfig", web::get().to(scim_service_provider_config))
+                .route(
+                    "/ServiceProviderConfig",
+                    web::get().to(scim_service_provider_config),
+                )
                 .route("/Schemas", web::get().to(scim_schemas))
                 .route("/ResourceTypes", web::get().to(scim_resource_types))
                 .service(
@@ -124,10 +127,7 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
                             "/passkeys/registration/finish",
                             web::post().to(passkey_registration_finish),
                         )
-                        .route(
-                            "/passkeys/{passkey_id}",
-                            web::delete().to(passkey_delete),
-                        )
+                        .route("/passkeys/{passkey_id}", web::delete().to(passkey_delete))
                         .route("/mfa/totp/begin", web::post().to(mfa_totp_begin))
                         .route("/mfa/totp/confirm", web::post().to(mfa_totp_confirm))
                         .route(
