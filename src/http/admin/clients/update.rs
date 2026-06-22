@@ -285,12 +285,11 @@ async fn prepare_client_patch(
                 if let Some(ref host) = current.sector_identifier_host {
                     host.clone()
                 } else {
-                    let host = all_same_host(&new_redirect_uri_values).ok_or_else(|| {
+                    all_same_host(&new_redirect_uri_values).ok_or_else(|| {
                         anyhow::anyhow!(
                             "pairwise 主题需要 sector_identifier_uri 或所有 redirect_uri 使用同一 host"
                         )
-                    })?;
-                    host
+                    })?
                 }
             }
         })
