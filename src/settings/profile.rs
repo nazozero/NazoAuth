@@ -53,13 +53,6 @@ impl AuthorizationServerProfile {
         self == Self::Fapi2MessageSigningAuthzRequest
     }
 
-    pub(crate) fn requires_par(self) -> bool {
-        matches!(
-            self,
-            Self::Fapi2Security | Self::Fapi2MessageSigningAuthzRequest
-        )
-    }
-
     pub(crate) fn requires_signed_request_object_at_par(self) -> bool {
         self == Self::Fapi2MessageSigningAuthzRequest
     }
@@ -113,10 +106,4 @@ impl SubjectType {
         }
     }
 
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::Public => "public",
-            Self::Pairwise => "pairwise",
-        }
-    }
 }

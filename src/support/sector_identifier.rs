@@ -13,6 +13,7 @@ pub(crate) enum SectorIdentifierError {
     InvalidContentType,
     ResponseTooLarge,
     InvalidJson,
+    #[allow(dead_code)]
     InvalidEntry(String),
 }
 

@@ -395,15 +395,12 @@ async fn validate_pairwise_subject(
                 ))
             })?
         }
-        None => {
-            let host = all_same_host(redirect_uris).ok_or_else(|| {
-                InsertClientError::InvalidRequest(
-                    "pairwise 主题需要 sector_identifier_uri 或所有 redirect_uri 使用同一 host"
-                        .to_owned(),
-                )
-            })?;
-            host
-        }
+        None => all_same_host(redirect_uris).ok_or_else(|| {
+            InsertClientError::InvalidRequest(
+                "pairwise 主题需要 sector_identifier_uri 或所有 redirect_uri 使用同一 host"
+                    .to_owned(),
+            )
+        })?,
     };
     Ok((sector_identifier_uri, Some(sector_identifier_host)))
 }
