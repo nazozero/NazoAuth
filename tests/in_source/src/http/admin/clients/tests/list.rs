@@ -47,6 +47,9 @@ fn client_row(client_id: &str, secret_hash: Option<&str>) -> ClientRow {
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: None,
         backchannel_logout_session_required: true,
+        subject_type: "public".to_owned(),
+        sector_identifier_uri: None,
+        sector_identifier_host: None,
     }
 }
 
@@ -112,6 +115,8 @@ fn create_client_request(client_name: &str) -> CreateClientRequest {
         tls_client_auth_san_ip: Vec::new(),
         tls_client_auth_san_email: Vec::new(),
         jwks: None,
+        subject_type: None,
+        sector_identifier_uri: None,
     }
 }
 
@@ -226,7 +231,7 @@ impl LiveAdminClientListFixture {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
-        let prepared = match prepare_client_insert(create_client_request(client_name)) {
+        let prepared = match prepare_client_insert(create_client_request(client_name), None, "http://localhost:8000").await {
             Ok(prepared) => prepared,
             Err(_) => panic!("client creation payload should be valid"),
         };

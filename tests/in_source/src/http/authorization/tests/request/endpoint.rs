@@ -41,6 +41,8 @@ fn endpoint_state(require_par: bool) -> AppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.require_pushed_authorization_requests = require_par;
+    settings.enable_request_uri_parameter = true;
+    settings.enable_request_object = true;
     settings.issuer = "https://issuer.example".to_owned();
     settings.frontend_base_url = "https://app.example".to_owned();
     settings.auth_code_ttl_seconds = 60;

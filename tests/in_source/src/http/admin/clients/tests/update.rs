@@ -85,6 +85,8 @@ fn create_client_request(client_name: &str) -> CreateClientRequest {
         tls_client_auth_san_ip: Vec::new(),
         tls_client_auth_san_email: Vec::new(),
         jwks: None,
+        subject_type: None,
+        sector_identifier_uri: None,
     }
 }
 
@@ -248,7 +250,8 @@ impl LiveAdminClientUpdateFixture {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
-        let prepared = prepare_client_insert(create_client_request(client_name))
+        let prepared = prepare_client_insert(create_client_request(client_name), None, "http://localhost:8000")
+            .await
             .expect("client creation payload should be valid");
         insert_prepared_client(&mut conn, &prepared)
             .await
@@ -309,6 +312,9 @@ fn current_client() -> ClientRow {
         post_logout_redirect_uris: json!(["https://client.example/logout"]),
         backchannel_logout_uri: Some("https://client.example/backchannel".to_owned()),
         backchannel_logout_session_required: true,
+        subject_type: "public".to_owned(),
+        sector_identifier_uri: None,
+        sector_identifier_host: None,
     }
 }
 
@@ -335,16 +341,18 @@ fn empty_patch() -> PatchClientRequest {
         tls_client_auth_san_email: None,
         jwks: None,
         is_active: None,
+        subject_type: None,
+        sector_identifier_uri: None,
     }
 }
 
-#[test]
-fn patch_preserves_unsubmitted_security_metadata() {
+#[actix_web::test]
+async fn patch_preserves_unsubmitted_security_metadata() {
     let mut patch = empty_patch();
     patch.client_name = Some("Renamed client".to_owned());
     patch.is_active = Some(false);
 
-    let prepared = prepare_client_patch(&current_client(), patch)
+    let prepared = prepare_client_patch(&current_client(), patch, None, "http://localhost:8000").await
         .expect("renaming a client must not require resubmitting security metadata");
 
     assert_eq!(prepared.client_name, "Renamed client");
@@ -368,12 +376,12 @@ fn patch_preserves_unsubmitted_security_metadata() {
     assert!(!prepared.is_active);
 }
 
-#[test]
-fn patch_rejects_redirect_uri_with_surrounding_whitespace() {
+#[actix_web::test]
+async fn patch_rejects_redirect_uri_with_surrounding_whitespace() {
     let mut patch = empty_patch();
     patch.redirect_uris = Some(vec![" https://client.example/callback ".to_owned()]);
 
-    let error = prepare_client_patch(&current_client(), patch)
+    let error = prepare_client_patch(&current_client(), patch, None, "http://localhost:8000").await
         .err()
         .expect("redirect_uri metadata must be an exact registered value");
 
@@ -383,12 +391,12 @@ fn patch_rejects_redirect_uri_with_surrounding_whitespace() {
     );
 }
 
-#[test]
-fn patch_rejects_post_logout_redirect_uri_with_surrounding_whitespace() {
+#[actix_web::test]
+async fn patch_rejects_post_logout_redirect_uri_with_surrounding_whitespace() {
     let mut patch = empty_patch();
     patch.post_logout_redirect_uris = Some(vec![" https://client.example/logout ".to_owned()]);
 
-    let error = prepare_client_patch(&current_client(), patch)
+    let error = prepare_client_patch(&current_client(), patch, None, "http://localhost:8000").await
         .err()
         .expect("post_logout_redirect_uri metadata must not be silently normalized");
 

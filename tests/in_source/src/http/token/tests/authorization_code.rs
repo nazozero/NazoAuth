@@ -83,6 +83,9 @@ fn pkce_policy_client() -> ClientRow {
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: None,
         backchannel_logout_session_required: true,
+        subject_type: "public".to_owned(),
+        sector_identifier_uri: None,
+        sector_identifier_host: None,
     }
 }
 
@@ -360,6 +363,7 @@ fn form_for_code(code: &str) -> TokenForm {
         client_assertion_type: None,
         client_assertion: None,
         audiences: Vec::new(),
+        has_audience_param: false,
     }
 }
 
@@ -658,6 +662,7 @@ async fn authorization_code_grant_requires_code_before_state_lookup() {
         client_assertion_type: None,
         client_assertion: None,
         audiences: Vec::new(),
+        has_audience_param: false,
     };
 
     let response = token_authorization_code(&state, &req, &client, &form, None).await;

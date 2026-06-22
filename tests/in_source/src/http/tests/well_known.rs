@@ -6,6 +6,7 @@ use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, RateLimitSettings,
     RequestObjectJtiPolicy, SubjectType,
 };
+use crate::domain::SUPPORTED_AUTHORIZATION_DETAILS_TYPES;
 use crate::support::{ClientIpHeaderMode, IpCidr};
 
 fn keyset(alg: jsonwebtoken::Algorithm) -> Keyset {
@@ -77,6 +78,11 @@ fn settings(profile: AuthorizationServerProfile, trusted_proxy_cidrs: Vec<IpCidr
             oidc: None,
             saml_gateway: None,
         },
+        enable_request_object: false,
+        enable_request_uri_parameter: false,
+        enable_par_request_object: false,
+        enable_authorization_details: false,
+        enable_legacy_audience_param: false,
     }
 }
 
@@ -95,8 +101,10 @@ fn discovery_claims_include_supported_id_token_acr() {
 
 #[test]
 fn discovery_advertises_supported_rar_types() {
+    let mut s = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
+    s.enable_authorization_details = true;
     let metadata = authorization_server_metadata(
-        &settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new()),
+        &s,
         &keyset(jsonwebtoken::Algorithm::RS256),
     );
 

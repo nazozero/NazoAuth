@@ -181,7 +181,7 @@ async fn prepare_client_patch(
     current: &ClientRow,
     payload: PatchClientRequest,
     pairwise_subject_secret: Option<&str>,
-    issuer: &str,
+    _issuer: &str,
 ) -> anyhow::Result<PreparedClientPatch> {
     let new_client_name = payload
         .client_name
@@ -293,7 +293,7 @@ async fn prepare_client_patch(
                 }
             }
         })
-    }
+    };
 
     validate_pkce_compatibility_policy(
         new_allow_authorization_code_without_pkce,
