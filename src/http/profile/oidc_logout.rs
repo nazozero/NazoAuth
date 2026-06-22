@@ -19,6 +19,7 @@ struct BackchannelLogoutClient {
     redirect_uris: Value,
     post_logout_redirect_uris: Value,
     backchannel_logout_uri: Option<String>,
+    subject_type: String,
     sector_identifier_host: Option<String>,
 }
 
@@ -199,7 +200,8 @@ fn decode_id_token_hint(state: &AppState, token: &str) -> Option<IdTokenHintClai
     {
         return None;
     }
-    let verification_key = state.keyset.verification_key(header.kid.as_deref()?)?;
+    let keyset = state.keyset.snapshot();
+    let verification_key = keyset.verification_key(header.kid.as_deref()?)?;
     let decoding_key = jwt_decoding_key_from_jwk(&verification_key.public_jwk, header.alg)?;
     let mut validation = jsonwebtoken::Validation::new(header.alg);
     validation.validate_aud = false;
@@ -288,6 +290,7 @@ async fn lookup_logout_client(
             oauth_clients::redirect_uris,
             oauth_clients::post_logout_redirect_uris,
             oauth_clients::backchannel_logout_uri,
+            oauth_clients::subject_type,
             oauth_clients::sector_identifier_host,
         ))
         .first::<BackchannelLogoutClient>(&mut conn)
@@ -390,7 +393,11 @@ async fn dispatch_backchannel_logout(
         let Some(uri) = client.backchannel_logout_uri.clone() else {
             continue;
         };
-        let subject = unique_logout_subject_for_client(&state.settings, session.user.id, &client);
+        let subject =
+            match unique_logout_subject_for_client(&state.settings, session.user.id, &client) {
+                Ok(subject) => subject,
+                Err(_) => continue,
+            };
         let token = match make_backchannel_logout_token(
             state,
             BackchannelLogoutTokenInput {
@@ -431,6 +438,7 @@ async fn backchannel_logout_clients_for_user(
             oauth_clients::redirect_uris,
             oauth_clients::post_logout_redirect_uris,
             oauth_clients::backchannel_logout_uri,
+            oauth_clients::subject_type,
             oauth_clients::sector_identifier_host,
         ))
         .load::<BackchannelLogoutClient>(&mut conn)
@@ -453,8 +461,7 @@ fn id_token_hint_matches_current_session(
     }
     client.is_some_and(|client| {
         logout_subjects_for_client(settings, user_id, client)
-            .iter()
-            .any(|subject| subject == &hint.sub)
+            .is_ok_and(|subjects| subjects.iter().any(|subject| subject == &hint.sub))
     })
 }
 
@@ -462,11 +469,11 @@ fn unique_logout_subject_for_client(
     settings: &Settings,
     user_id: Uuid,
     client: &BackchannelLogoutClient,
-) -> Option<String> {
-    let subjects = logout_subjects_for_client(settings, user_id, client);
+) -> anyhow::Result<Option<String>> {
+    let subjects = logout_subjects_for_client(settings, user_id, client)?;
     match subjects.as_slice() {
-        [subject] => Some(subject.clone()),
-        _ => None,
+        [subject] => Ok(Some(subject.clone())),
+        _ => Ok(None),
     }
 }
 
@@ -474,21 +481,23 @@ fn logout_subjects_for_client(
     settings: &Settings,
     user_id: Uuid,
     client: &BackchannelLogoutClient,
-) -> Vec<String> {
+) -> anyhow::Result<Vec<String>> {
     let mut redirect_uris = json_array_to_strings(&client.redirect_uris);
     if redirect_uris.is_empty() {
         redirect_uris.push(String::new());
     }
     let sector_host = client.sector_identifier_host.as_deref();
-    let mut subjects = redirect_uris
-        .iter()
-        .map(|redirect_uri| {
-            compute_subject_for_client(settings, user_id, sector_host, redirect_uri)
-        })
-        .collect::<Vec<_>>();
+    let subject_type = client.subject_type.as_str();
+    let mut subjects = Vec::with_capacity(redirect_uris.len());
+    for redirect_uri in redirect_uris {
+        let redirect_uri = redirect_uri.as_str();
+        let subject =
+            compute_subject_for_client(settings, user_id, subject_type, sector_host, redirect_uri)?;
+        subjects.push(subject);
+    }
     subjects.sort();
     subjects.dedup();
-    subjects
+    Ok(subjects)
 }
 
 async fn post_backchannel_logout(uri: &str, token: &str) -> anyhow::Result<()> {

@@ -53,6 +53,8 @@ pub(crate) struct Settings {
     pub(crate) jwk_keys_dir: PathBuf,
     pub(crate) signing_external_command: Vec<String>,
     pub(crate) signing_external_timeout_ms: u64,
+    pub(crate) signing_key_rotation_interval_seconds: i64,
+    pub(crate) signing_key_prepublish_seconds: i64,
     pub(crate) trusted_proxy_cidrs: Vec<IpCidr>,
     pub(crate) client_ip_header_mode: ClientIpHeaderMode,
     pub(crate) subject_type: SubjectType,
@@ -127,6 +129,21 @@ impl Settings {
             || authorization_server_profile.requires_fapi2_security();
         let passkey = PasskeySettings::from_config(config, &issuer)?;
         let federation = FederationSettings::from_config(config)?;
+        let signing_key_rotation_interval_seconds =
+            config.parse("SIGNING_KEY_ROTATION_INTERVAL_SECONDS", 7_776_000)?;
+        let signing_key_prepublish_seconds =
+            config.parse("SIGNING_KEY_PREPUBLISH_SECONDS", 86_400)?;
+        if signing_key_rotation_interval_seconds <= 0 {
+            bail!("SIGNING_KEY_ROTATION_INTERVAL_SECONDS must be positive");
+        }
+        if signing_key_prepublish_seconds <= 0 {
+            bail!("SIGNING_KEY_PREPUBLISH_SECONDS must be positive");
+        }
+        if signing_key_prepublish_seconds >= signing_key_rotation_interval_seconds {
+            bail!(
+                "SIGNING_KEY_PREPUBLISH_SECONDS must be less than SIGNING_KEY_ROTATION_INTERVAL_SECONDS"
+            );
+        }
 
         Ok(Self {
             issuer,
@@ -159,6 +176,8 @@ impl Settings {
                 config.optional_string("SIGNING_EXTERNAL_COMMAND"),
             ),
             signing_external_timeout_ms: config.parse("SIGNING_EXTERNAL_TIMEOUT_MS", 2_000)?,
+            signing_key_rotation_interval_seconds,
+            signing_key_prepublish_seconds,
             trusted_proxy_cidrs: parse_trusted_proxy_cidrs(config.get("TRUSTED_PROXY_CIDRS"))?,
             client_ip_header_mode: ClientIpHeaderMode::parse(
                 &config.string("CLIENT_IP_HEADER_MODE", "none"),

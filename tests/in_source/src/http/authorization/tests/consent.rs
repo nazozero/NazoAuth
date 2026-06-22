@@ -13,7 +13,7 @@ use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{ActiveSigningKey, Keyset, UserRow};
+use crate::domain::{ActiveSigningKey, Keyset, KeysetStore, UserRow};
 use crate::support::SessionPayload;
 
 fn query(values: &[(&str, &str)]) -> std::collections::HashMap<String, String> {
@@ -112,7 +112,7 @@ impl ConsentLiveFixture {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
-                keyset: Arc::new(Keyset {
+                keyset: KeysetStore::new(Keyset {
                     active_kid: "test-kid".to_owned(),
                     active_alg: jsonwebtoken::Algorithm::EdDSA,
                     active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -439,7 +439,7 @@ async fn authorize_consent_requires_login() {
         settings: Arc::new(
             Settings::from_config(&ConfigSource::default()).expect("settings should load"),
         ),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),

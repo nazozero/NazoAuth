@@ -1,4 +1,5 @@
 use super::*;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Jsonb, Nullable, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
@@ -11,7 +12,8 @@ use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{ActiveSigningKey, Keyset};
+use crate::domain::{ActiveSigningKey, Keyset, KeysetStore, UserRow, VerificationKey};
+use crate::support::{generate_key_material, oidc_subject, public_jwk_from_private_der};
 
 fn unavailable_valkey_client() -> fred::prelude::Client {
     let mut builder = ValkeyBuilder::from_config(
@@ -42,7 +44,7 @@ fn test_state() -> AppState {
         settings: Arc::new(
             Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
         ),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -126,8 +128,20 @@ struct LiveAuthorizationCodeFixture {
 
 impl LiveAuthorizationCodeFixture {
     async fn new() -> Option<Self> {
-        let database_url = std::env::var("DATABASE_URL").ok()?;
-        let valkey_url = std::env::var("VALKEY_URL").ok()?;
+        let settings = Self::settings();
+        Self::new_with_settings_and_keyset(
+            settings,
+            Keyset {
+                active_kid: "test-kid".to_owned(),
+                active_alg: jsonwebtoken::Algorithm::EdDSA,
+                active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+                verification_keys: Vec::new(),
+            },
+        )
+        .await
+    }
+
+    fn settings() -> Settings {
         let config = ConfigSource::from_pairs_for_test([
             ("ISSUER", "https://issuer.example"),
             ("MTLS_ENDPOINT_BASE_URL", "https://issuer.example"),
@@ -139,6 +153,12 @@ impl LiveAuthorizationCodeFixture {
         settings.trusted_proxy_cidrs = vec![
             crate::support::IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse"),
         ];
+        settings
+    }
+
+    async fn new_with_settings_and_keyset(settings: Settings, keyset: Keyset) -> Option<Self> {
+        let database_url = std::env::var("DATABASE_URL").ok()?;
+        let valkey_url = std::env::var("VALKEY_URL").ok()?;
         let mut valkey_builder = ValkeyBuilder::from_config(
             ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),
         );
@@ -158,12 +178,7 @@ impl LiveAuthorizationCodeFixture {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
-                keyset: Arc::new(Keyset {
-                    active_kid: "test-kid".to_owned(),
-                    active_alg: jsonwebtoken::Algorithm::EdDSA,
-                    active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-                    verification_keys: Vec::new(),
-                }),
+                keyset: KeysetStore::new(keyset),
             }),
         })
     }
@@ -191,7 +206,8 @@ impl LiveAuthorizationCodeFixture {
                 allow_client_assertion_endpoint_audience, require_par_request_object,
                 allow_authorization_code_without_pkce, is_active, jwks,
                 post_logout_redirect_uris, backchannel_logout_uri,
-                backchannel_logout_session_required
+                backchannel_logout_session_required, subject_type, sector_identifier_uri,
+                sector_identifier_host
             )
             VALUES (
                 $1, $2, $3, $4, $5, $6, $7,
@@ -203,7 +219,7 @@ impl LiveAuthorizationCodeFixture {
                 false, false,
                 $16, $17, NULL,
                 '[]'::jsonb, NULL,
-                true
+                true, $18, $19, $20
             )
             "#,
         )
@@ -224,9 +240,41 @@ impl LiveAuthorizationCodeFixture {
         .bind::<Bool, _>(client.require_mtls_bound_tokens)
         .bind::<Bool, _>(client.allow_authorization_code_without_pkce)
         .bind::<Bool, _>(client.is_active)
+        .bind::<Text, _>(client.subject_type.as_str())
+        .bind::<Nullable<Text>, _>(client.sector_identifier_uri.as_deref())
+        .bind::<Nullable<Text>, _>(client.sector_identifier_host.as_deref())
         .execute(&mut conn)
         .await
         .expect("test client insert should succeed");
+    }
+
+    async fn insert_user(&self) -> UserRow {
+        let suffix = Uuid::now_v7();
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        sql_query(
+            r#"
+            INSERT INTO users (
+                id, tenant_id, realm_id, organization_id, username, email,
+                password_hash, is_active, mfa_enabled, email_verified, role, admin_level
+            )
+            VALUES (
+                $1, $2, $3, $4, $5, $6,
+                'unused-auth-code-test-hash', true, false, true, 'user', 0
+            )
+            RETURNING *
+            "#,
+        )
+        .bind::<SqlUuid, _>(suffix)
+        .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+        .bind::<SqlUuid, _>(DEFAULT_REALM_ID)
+        .bind::<SqlUuid, _>(DEFAULT_ORGANIZATION_ID)
+        .bind::<Text, _>(format!("auth-code-{suffix}"))
+        .bind::<Text, _>(format!("auth-code-{suffix}@example.com"))
+        .get_result::<UserRow>(&mut conn)
+        .await
+        .expect("test user should insert")
     }
 
     async fn store_code_state(&self, code: &str, state: &AuthorizationCodeState) {
@@ -327,6 +375,26 @@ impl LiveAuthorizationCodeFixture {
     }
 }
 
+fn valid_keyset(kid: &str) -> Keyset {
+    let key_material =
+        generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
+    let public_jwk = public_jwk_from_private_der(
+        kid,
+        jsonwebtoken::Algorithm::EdDSA,
+        &key_material.private_pkcs8_der,
+    )
+    .expect("test public JWK should derive");
+    Keyset {
+        active_kid: kid.to_owned(),
+        active_alg: jsonwebtoken::Algorithm::EdDSA,
+        active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),
+        verification_keys: vec![VerificationKey {
+            kid: kid.to_owned(),
+            public_jwk,
+        }],
+    }
+}
+
 fn live_client(client_id: &str) -> ClientRow {
     let mut client = pkce_policy_client();
     client.id = Uuid::now_v7();
@@ -374,6 +442,126 @@ async fn token_json_body(response: HttpResponse) -> (StatusCode, Value) {
         .expect("response body should be readable");
     let value = serde_json::from_slice(&body).expect("response should be JSON");
     (status, value)
+}
+
+fn jwt_payload(token: &str) -> Value {
+    let payload = token
+        .split('.')
+        .nth(1)
+        .expect("JWT should contain a payload segment");
+    let decoded = URL_SAFE_NO_PAD
+        .decode(payload)
+        .expect("JWT payload should be base64url");
+    serde_json::from_slice(&decoded).expect("JWT payload should be JSON")
+}
+
+#[actix_web::test]
+async fn token_authorization_code_uses_client_pairwise_subject_sector() {
+    let mut settings = LiveAuthorizationCodeFixture::settings();
+    settings.pairwise_subject_secret = Some("0123456789012345678901234567890123456789".to_owned());
+    let Some(fixture) = LiveAuthorizationCodeFixture::new_with_settings_and_keyset(
+        settings,
+        valid_keyset("auth-code-pairwise-test-kid"),
+    )
+    .await
+    else {
+        return;
+    };
+
+    let user = fixture.insert_user().await;
+    let mut client = live_client(&format!("client-pairwise-{}", Uuid::now_v7()));
+    client.subject_type = "pairwise".to_owned();
+    client.sector_identifier_host = Some("registered-sector.example".to_owned());
+    fixture.insert_client(&client).await;
+
+    let mut payload = payload_for_client(&client);
+    payload.user_id = user.id;
+    payload.scopes = vec!["openid".to_owned()];
+    let code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_code_state(&code, &AuthorizationCodeState::Pending { payload })
+        .await;
+
+    let req = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .to_http_request();
+    let mut form = form_for_code(&code);
+    form.client_id = Some(client.client_id.clone());
+    let response = token_authorization_code(&fixture.state, &req, &client, &form, None).await;
+    let (status, body) = token_json_body(response).await;
+
+    assert_eq!(status, StatusCode::OK, "unexpected token response: {body}");
+    let expected_subject = oidc_subject(
+        fixture
+            .state
+            .settings
+            .pairwise_subject_secret
+            .as_ref()
+            .expect("pairwise secret should be configured")
+            .as_bytes(),
+        &fixture.state.settings.issuer,
+        "registered-sector.example",
+        user.id,
+    );
+    assert_ne!(expected_subject, user.id.to_string());
+    assert_eq!(
+        jwt_payload(
+            body["access_token"]
+                .as_str()
+                .expect("access token should be returned")
+        )["sub"],
+        json!(expected_subject)
+    );
+    assert_eq!(
+        jwt_payload(
+            body["id_token"]
+                .as_str()
+                .expect("id token should be returned")
+        )["sub"],
+        json!(expected_subject)
+    );
+}
+
+#[actix_web::test]
+async fn token_authorization_code_fails_closed_when_pairwise_secret_is_missing() {
+    let Some(fixture) = LiveAuthorizationCodeFixture::new_with_settings_and_keyset(
+        LiveAuthorizationCodeFixture::settings(),
+        valid_keyset("auth-code-subject-policy-test-kid"),
+    )
+    .await
+    else {
+        return;
+    };
+
+    let user = fixture.insert_user().await;
+    let mut client = live_client(&format!("client-subject-policy-{}", Uuid::now_v7()));
+    client.subject_type = "pairwise".to_owned();
+    client.sector_identifier_host = Some("registered-sector.example".to_owned());
+    fixture.insert_client(&client).await;
+
+    let mut payload = payload_for_client(&client);
+    payload.user_id = user.id;
+    payload.scopes = vec!["openid".to_owned()];
+    let code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_code_state(&code, &AuthorizationCodeState::Pending { payload })
+        .await;
+
+    let req = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .to_http_request();
+    let mut form = form_for_code(&code);
+    form.client_id = Some(client.client_id.clone());
+    let response = token_authorization_code(&fixture.state, &req, &client, &form, None).await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(&response), "server_error");
+    match fixture.code_state(&code).await {
+        AuthorizationCodeState::Failed { error, .. } => {
+            assert_eq!(error, "subject_policy_invalid");
+        }
+        _ => panic!("invalid subject policy should mark the authorization code as failed"),
+    }
 }
 
 #[test]

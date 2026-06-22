@@ -257,7 +257,7 @@ async fn prepare_client_patch(
         .subject_type
         .unwrap_or_else(|| current.subject_type.clone());
     let requested_sector_identifier_uri = match payload.sector_identifier_uri {
-        Some(ref uri) if current.sector_identifier_uri.is_some() => {
+        Some(_) if current.sector_identifier_uri.is_some() => {
             anyhow::bail!("已配置 pairwise 客户端的 sector_identifier_uri 不可修改");
         }
         Some(uri) => Some(uri),

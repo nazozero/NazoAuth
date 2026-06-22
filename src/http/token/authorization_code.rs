@@ -447,12 +447,16 @@ pub(crate) async fn token_authorization_code(
     }
     let refresh_token_dpop_jkt = refresh_token_dpop_binding(client, &payload, dpop_jkt.clone());
     let refresh_token_mtls_x5t_s256 = mtls_x5t_s256.clone();
-    let subject = compute_subject_for_client(
-        &state.settings,
-        payload.user_id,
-        client.sector_identifier_host.as_deref(),
-        &payload.redirect_uri,
-    );
+    let subject = match authorization_code_subject(&state.settings, &payload, client) {
+        Ok(subject) => subject,
+        Err(_) => {
+            mark_failed_authorization_code(state, &code_hash, "subject_policy_invalid").await;
+            let status = StatusCode::SERVICE_UNAVAILABLE;
+            let error = "server_error";
+            let description = "subject invalid";
+            return oauth_token_error(status, error, description, false);
+        }
+    };
     issue_token_response(
         state,
         client,
@@ -474,6 +478,18 @@ async fn mark_failed_authorization_code(state: &AppState, code_hash: &str, error
     if let Err(error) = super::mark_failed_authorization_code(state, code_hash, error_code).await {
         tracing::warn!(%error, "failed to mark authorization code exchange as failed");
     }
+}
+
+fn authorization_code_subject(
+    settings: &Settings,
+    payload: &CodePayload,
+    client: &ClientRow,
+) -> anyhow::Result<String> {
+    let subject_type = client.subject_type.as_str();
+    let sector_host = client.sector_identifier_host.as_deref();
+    let redirect_uri = payload.redirect_uri.as_str();
+    let user_id = payload.user_id;
+    compute_subject_for_client(settings, user_id, subject_type, sector_host, redirect_uri)
 }
 
 #[cfg(test)]

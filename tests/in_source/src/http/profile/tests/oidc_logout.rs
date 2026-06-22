@@ -16,7 +16,7 @@ use tokio::net::TcpListener;
 
 use crate::config::ConfigSource;
 use crate::db::create_pool;
-use crate::domain::{ActiveSigningKey, Keyset, VerificationKey};
+use crate::domain::{ActiveSigningKey, Keyset, KeysetStore, VerificationKey};
 use crate::support::{generate_key_material, public_jwk_from_private_der};
 
 #[derive(QueryableByName)]
@@ -39,7 +39,7 @@ fn test_state_with_keyset(keyset: Keyset) -> AppState {
         settings: Arc::new(
             Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
         ),
-        keyset: Arc::new(keyset),
+        keyset: KeysetStore::new(keyset),
     }
 }
 
@@ -89,7 +89,7 @@ impl LiveLogoutFixture {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
-                keyset: Arc::new(Keyset {
+                keyset: KeysetStore::new(Keyset {
                     active_kid: "logout-kid".to_owned(),
                     active_alg: Algorithm::EdDSA,
                     active_signing_key: ActiveSigningKey::LocalPkcs8Der(
@@ -156,6 +156,26 @@ impl LiveLogoutFixture {
         post_logout_redirect_uri: &str,
         backchannel_logout_uri: Option<&str>,
     ) -> Uuid {
+        self.insert_client_with_subject(
+            client_id,
+            redirect_uri,
+            post_logout_redirect_uri,
+            backchannel_logout_uri,
+            "public",
+            None,
+        )
+        .await
+    }
+
+    async fn insert_client_with_subject(
+        &self,
+        client_id: &str,
+        redirect_uri: &str,
+        post_logout_redirect_uri: &str,
+        backchannel_logout_uri: Option<&str>,
+        subject_type: &str,
+        sector_identifier_host: Option<&str>,
+    ) -> Uuid {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
@@ -170,14 +190,15 @@ impl LiveLogoutFixture {
                 allow_client_assertion_audience_array,
                 allow_client_assertion_endpoint_audience, require_par_request_object,
                 allow_authorization_code_without_pkce, is_active, post_logout_redirect_uris,
-                backchannel_logout_uri, backchannel_logout_session_required
+                backchannel_logout_uri, backchannel_logout_session_required,
+                subject_type, sector_identifier_host
             )
             VALUES (
                 $1, $2, $3, $4, 'OIDC Logout Test Client', 'confidential',
                 NULL, $5, '["openid"]'::jsonb, '["resource://default"]'::jsonb,
                 '["authorization_code"]'::jsonb, 'client_secret_post', false,
                 false, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb,
-                false, false, false, false, true, $6, $7, true
+                false, false, false, false, true, $6, $7, true, $8, $9
             )
             RETURNING id
             "#,
@@ -189,6 +210,8 @@ impl LiveLogoutFixture {
         .bind::<Jsonb, _>(json!([redirect_uri]))
         .bind::<Jsonb, _>(json!([post_logout_redirect_uri]))
         .bind::<Nullable<Text>, _>(backchannel_logout_uri.map(str::to_owned))
+        .bind::<Text, _>(subject_type.to_owned())
+        .bind::<Nullable<Text>, _>(sector_identifier_host.map(str::to_owned))
         .get_result::<IdRow>(&mut conn)
         .await
         .expect("test client should insert")
@@ -217,11 +240,11 @@ impl LiveLogoutFixture {
     }
 
     async fn issue_id_token_hint(&self, user_id: Uuid, client_id: &str, oidc_sid: &str) -> String {
+        let keyset = self.state.keyset.snapshot();
         let mut header = Header::new(Algorithm::EdDSA);
         header.typ = Some("JWT".to_owned());
-        header.kid = Some(self.state.keyset.active_kid.clone());
-        self.state
-            .keyset
+        header.kid = Some(keyset.active_kid.clone());
+        keyset
             .sign_jwt(
                 &header,
                 &json!({
@@ -436,6 +459,7 @@ fn post_logout_redirect_requires_exact_registered_uri_and_preserves_state() {
         redirect_uris: json!(["https://client.example/callback"]),
         post_logout_redirect_uris: json!(["https://client.example/logout/callback"]),
         backchannel_logout_uri: None,
+        subject_type: "public".to_owned(),
         sector_identifier_host: None,
     };
     let form = LogoutRequest {
@@ -463,6 +487,7 @@ fn post_logout_redirect_appends_state_without_discarding_registered_query() {
         redirect_uris: json!(["https://client.example/callback"]),
         post_logout_redirect_uris: json!(["https://client.example/logout/callback?flow=rp"]),
         backchannel_logout_uri: None,
+        subject_type: "public".to_owned(),
         sector_identifier_host: None,
     };
     let form = LogoutRequest {
@@ -496,6 +521,7 @@ fn post_logout_redirect_rejects_missing_client_and_invalid_registered_uri() {
         redirect_uris: json!(["https://client.example/callback"]),
         post_logout_redirect_uris: json!(["not a uri"]),
         backchannel_logout_uri: None,
+        subject_type: "public".to_owned(),
         sector_identifier_host: None,
     };
     let invalid = LogoutRequest {
@@ -727,11 +753,9 @@ fn single_audience_accepts_string_or_single_string_array_only() {
 #[test]
 fn id_token_hint_subject_matches_pairwise_subject_for_registered_client_sector() {
     use crate::config::ConfigSource;
-    use crate::settings::SubjectType;
 
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.subject_type = SubjectType::Pairwise;
     settings.pairwise_subject_secret = Some("0123456789012345678901234567890123456789".to_owned());
     let user_id = Uuid::now_v7();
     let client = BackchannelLogoutClient {
@@ -739,9 +763,11 @@ fn id_token_hint_subject_matches_pairwise_subject_for_registered_client_sector()
         redirect_uris: json!(["https://client.example/callback"]),
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: Some("https://client.example/backchannel-logout".to_owned()),
+        subject_type: "pairwise".to_owned(),
         sector_identifier_host: None,
     };
     let subject = unique_logout_subject_for_client(&settings, user_id, &client)
+        .expect("pairwise subject computation should succeed")
         .expect("pairwise subject should be unique");
     let hint = IdTokenHintClaims {
         sub: subject,
@@ -787,13 +813,45 @@ fn id_token_hint_without_registered_client_never_matches_session() {
 }
 
 #[test]
+fn id_token_hint_subject_policy_error_never_matches_session() {
+    use crate::config::ConfigSource;
+
+    let settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let user_id = Uuid::now_v7();
+    let client = BackchannelLogoutClient {
+        client_id: "client-1".to_owned(),
+        redirect_uris: json!(["https://client.example/callback"]),
+        post_logout_redirect_uris: json!([]),
+        backchannel_logout_uri: Some("https://client.example/backchannel-logout".to_owned()),
+        subject_type: "pairwise".to_owned(),
+        sector_identifier_host: Some("client.example".to_owned()),
+    };
+    let hint = IdTokenHintClaims {
+        sub: user_id.to_string(),
+        aud: json!("client-1"),
+        sid: Some("sid-1".to_owned()),
+    };
+
+    assert!(
+        unique_logout_subject_for_client(&settings, user_id, &client).is_err(),
+        "pairwise logout subject must fail closed when the server secret is missing"
+    );
+    assert!(!id_token_hint_matches_current_session(
+        &settings,
+        Some(&client),
+        user_id,
+        "sid-1",
+        &hint
+    ));
+}
+
+#[test]
 fn backchannel_logout_subject_is_omitted_when_pairwise_sector_is_ambiguous() {
     use crate::config::ConfigSource;
-    use crate::settings::SubjectType;
 
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.subject_type = SubjectType::Pairwise;
     settings.pairwise_subject_secret = Some("0123456789012345678901234567890123456789".to_owned());
     let client = BackchannelLogoutClient {
         client_id: "client-1".to_owned(),
@@ -803,10 +861,15 @@ fn backchannel_logout_subject_is_omitted_when_pairwise_sector_is_ambiguous() {
         ]),
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: Some("https://client.example/backchannel-logout".to_owned()),
+        subject_type: "pairwise".to_owned(),
         sector_identifier_host: None,
     };
 
-    assert!(unique_logout_subject_for_client(&settings, Uuid::now_v7(), &client).is_none());
+    assert!(
+        unique_logout_subject_for_client(&settings, Uuid::now_v7(), &client)
+            .expect("pairwise subjects should compute")
+            .is_none()
+    );
 }
 
 #[test]
@@ -821,11 +884,14 @@ fn backchannel_logout_subject_uses_public_subject_when_configured() {
         redirect_uris: json!([]),
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: Some("https://client.example/backchannel-logout".to_owned()),
+        subject_type: "public".to_owned(),
         sector_identifier_host: None,
     };
 
     assert_eq!(
-        unique_logout_subject_for_client(&settings, user_id, &client).as_deref(),
+        unique_logout_subject_for_client(&settings, user_id, &client)
+            .expect("public subject should compute")
+            .as_deref(),
         Some(user_id.to_string().as_str())
     );
 }
@@ -1013,9 +1079,8 @@ async fn oidc_logout_clears_session_and_sends_backchannel_logout_token_with_regi
     assert_eq!(header.typ.as_deref(), Some("logout+jwt"));
     assert_eq!(header.kid.as_deref(), Some("logout-kid"));
 
-    let verification_key = fixture
-        .state
-        .keyset
+    let keyset = fixture.state.keyset.snapshot();
+    let verification_key = keyset
         .verification_key("logout-kid")
         .expect("verification key should load");
     let decoding_key = jwt_decoding_key_from_jwk(&verification_key.public_jwk, Algorithm::EdDSA)
@@ -1035,4 +1100,62 @@ async fn oidc_logout_clears_session_and_sends_backchannel_logout_token_with_regi
         json!({"http://schemas.openid.net/event/backchannel-logout": {}})
     );
     assert!(claims["jti"].as_str().is_some());
+}
+
+#[actix_web::test]
+async fn oidc_logout_skips_backchannel_client_when_subject_policy_is_invalid() {
+    let Some(fixture) = LiveLogoutFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let sid = format!("logout-{suffix}");
+    let oidc_sid = format!("op-session-{suffix}");
+    let redirect_uri = "https://client.example/callback";
+    let post_logout_redirect_uri = "https://client.example/logout/callback";
+    let user = fixture.create_user(&suffix).await;
+    fixture.store_session(&user, &sid, &oidc_sid).await;
+    let client_public_id = format!("logout-client-{suffix}");
+    let client_id = fixture
+        .insert_client_with_subject(
+            &client_public_id,
+            redirect_uri,
+            post_logout_redirect_uri,
+            Some("https://client.example/backchannel-logout"),
+            "pairwise",
+            Some("client.example"),
+        )
+        .await;
+    fixture.grant_client(&user, client_id).await;
+    let uri = format!(
+        "/oidc/logout?client_id={}&post_logout_redirect_uri={}&state=logout-state",
+        urlencoding::encode(&client_public_id),
+        urlencoding::encode(post_logout_redirect_uri),
+    );
+    let (req, payload) = fixture.logout_request(&uri, Some(&sid)).await;
+
+    let response = oidc_logout(fixture.state.clone(), req, payload).await;
+    let status = response.status();
+    let location = response
+        .headers()
+        .get(header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let session_cookies = set_cookie_values(&response, &fixture.state.settings.session_cookie_name);
+    let csrf_cookies = set_cookie_values(&response, &fixture.state.settings.csrf_cookie_name);
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should read");
+
+    assert_eq!(status, StatusCode::FOUND);
+    assert_eq!(
+        location.as_deref(),
+        Some("https://client.example/logout/callback?state=logout-state")
+    );
+    assert!(body.is_empty());
+    assert_eq!(session_cookies.as_slice(), [""]);
+    assert_eq!(csrf_cookies.as_slice(), [""]);
+    assert!(
+        !fixture.session_exists(&sid).await,
+        "invalid backchannel subject policy must not prevent local logout"
+    );
 }

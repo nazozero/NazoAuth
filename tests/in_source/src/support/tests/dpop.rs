@@ -1,7 +1,7 @@
 use super::*;
 use crate::config::ConfigSource;
 use crate::db::create_pool;
-use crate::domain::{ActiveSigningKey, Keyset};
+use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
 use ed25519_dalek::{Signer, SigningKey};
 use proptest::prelude::*;
 use std::sync::Arc;
@@ -23,7 +23,7 @@ fn dpop_state(nonce_policy: DpopNoncePolicy) -> AppState {
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),

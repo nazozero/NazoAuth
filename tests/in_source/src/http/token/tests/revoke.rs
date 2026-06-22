@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{ActiveSigningKey, Keyset, VerificationKey};
+use crate::domain::{ActiveSigningKey, Keyset, KeysetStore, VerificationKey};
 use crate::support::{generate_key_material, public_jwk_from_private_der};
 use actix_web::test::TestRequest;
 use diesel::sql_query;
@@ -26,7 +26,7 @@ fn revocation_state() -> Data<AppState> {
         settings: Arc::new(
             Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
         ),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -57,7 +57,7 @@ fn live_revocation_state_from_database_url(database_url: String) -> Option<Data<
         settings: Arc::new(
             Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
         ),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "revoke-test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),

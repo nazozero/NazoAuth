@@ -110,6 +110,47 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
 }
 
 #[test]
+fn signing_key_rotation_settings_default_to_automatic_lifecycle() {
+    let settings = Settings::from_config(&ConfigSource::default()).unwrap();
+
+    assert_eq!(settings.signing_key_rotation_interval_seconds, 7_776_000);
+    assert_eq!(settings.signing_key_prepublish_seconds, 86_400);
+}
+
+#[test]
+fn signing_key_rotation_settings_reject_unsafe_windows() {
+    for (key, value, expected) in [
+        (
+            "SIGNING_KEY_ROTATION_INTERVAL_SECONDS",
+            "0",
+            "SIGNING_KEY_ROTATION_INTERVAL_SECONDS must be positive",
+        ),
+        (
+            "SIGNING_KEY_PREPUBLISH_SECONDS",
+            "0",
+            "SIGNING_KEY_PREPUBLISH_SECONDS must be positive",
+        ),
+    ] {
+        let config = ConfigSource::from_pairs_for_test([(key, value)]);
+        let error = settings_error(&config, "invalid signing key lifecycle setting must fail");
+        assert_eq!(error.to_string(), expected);
+    }
+
+    let config = ConfigSource::from_pairs_for_test([
+        ("SIGNING_KEY_ROTATION_INTERVAL_SECONDS", "3600"),
+        ("SIGNING_KEY_PREPUBLISH_SECONDS", "3600"),
+    ]);
+    let error = settings_error(
+        &config,
+        "prepublish window must be shorter than rotation interval",
+    );
+    assert_eq!(
+        error.to_string(),
+        "SIGNING_KEY_PREPUBLISH_SECONDS must be less than SIGNING_KEY_ROTATION_INTERVAL_SECONDS"
+    );
+}
+
+#[test]
 fn pairwise_subject_secret_must_be_configured_and_strong_enough() {
     let missing = ConfigSource::from_pairs_for_test([("SUBJECT_TYPE", "pairwise")]);
     let error = settings_error(

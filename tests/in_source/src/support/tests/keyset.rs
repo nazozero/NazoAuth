@@ -2,6 +2,7 @@ use super::*;
 use proptest::prelude::*;
 use std::path::{Path, PathBuf};
 
+use crate::domain::KeysetStore;
 use crate::settings::{EmailDelivery, EmailSettings, RateLimitSettings};
 use crate::support::ClientIpHeaderMode;
 
@@ -41,12 +42,50 @@ fn jwks_publishes_active_and_previous_verification_keys() {
 }
 
 #[test]
+fn keyset_store_replaces_runtime_signing_snapshot() {
+    let first = Keyset {
+        active_kid: "first".to_owned(),
+        active_alg: jsonwebtoken::Algorithm::EdDSA,
+        active_signing_key: ActiveSigningKey::LocalPkcs8Der(ed25519_pkcs8_private_der(&[1u8; 32])),
+        verification_keys: Vec::new(),
+    };
+    let second = Keyset {
+        active_kid: "second".to_owned(),
+        active_alg: jsonwebtoken::Algorithm::RS256,
+        active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+        verification_keys: Vec::new(),
+    };
+
+    let store = KeysetStore::new(first);
+    assert_eq!(store.snapshot().active_kid, "first");
+
+    store.replace(second);
+
+    let snapshot = store.snapshot();
+    assert_eq!(snapshot.active_kid, "second");
+    assert_eq!(snapshot.active_alg, jsonwebtoken::Algorithm::RS256);
+}
+
+#[test]
 fn retired_non_active_key_entries_are_detected() {
     let retired = json!({"retire_at": "2000-01-01T00:00:00Z"});
     let live = json!({"retire_at": "2999-01-01T00:00:00Z"});
+    let missing = json!({});
 
-    assert!(key_entry_is_retired(&retired));
-    assert!(!key_entry_is_retired(&live));
+    assert!(
+        key_entry_retire_at(&retired)
+            .unwrap()
+            .is_some_and(|retire_at| retire_at <= Utc::now())
+    );
+    assert!(
+        key_entry_retire_at(&live)
+            .unwrap()
+            .is_none_or(|retire_at| retire_at > Utc::now())
+    );
+    assert!(
+        key_entry_retire_at(&missing).unwrap().is_none(),
+        "missing retire_at should mean the key is still publishable"
+    );
 }
 
 proptest! {
@@ -109,6 +148,390 @@ async fn load_or_create_keyset_creates_keyset_when_no_keyset_exists() {
         keyset_json.contains(&keyset.active_kid),
         "persisted keyset should contain the active kid"
     );
+}
+
+#[tokio::test]
+async fn load_or_create_keyset_prepublishes_next_local_key_before_rotation_deadline() {
+    let keys_dir = temp_keys_dir("automatic_prepublish");
+    tokio::fs::create_dir_all(&keys_dir).await.unwrap();
+    let mut settings = test_settings(keys_dir.clone());
+    settings.signing_key_rotation_interval_seconds = 10;
+    settings.signing_key_prepublish_seconds = 3;
+    write_local_key_entry(
+        &keys_dir,
+        "active",
+        "RS256",
+        "active.pem",
+        Utc::now() - chrono::Duration::seconds(8),
+    )
+    .await;
+    tokio::fs::write(
+        keys_dir.join("keyset.json"),
+        serde_json::to_string_pretty(&json!({
+            "active_kid": "active",
+            "keys": [{
+                "kid": "active",
+                "alg": "RS256",
+                "file": "active.pem",
+                "created_at": timestamp(Utc::now() - chrono::Duration::seconds(8)),
+                "retire_at": null
+            }]
+        }))
+        .unwrap(),
+    )
+    .await
+    .unwrap();
+
+    let keyset = load_or_create_keyset(&settings).await.unwrap();
+    let payload: Value = serde_json::from_str(
+        &tokio::fs::read_to_string(keys_dir.join("keyset.json"))
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    let _ = tokio::fs::remove_dir_all(&keys_dir).await;
+
+    assert_eq!(keyset.active_kid, "active");
+    let keys = payload["keys"].as_array().unwrap();
+    assert_eq!(keys.len(), 2);
+    let prepublished = keys.iter().find(|key| key["kid"] != "active").unwrap();
+    assert_eq!(prepublished["alg"], "RS256");
+    assert!(prepublished["file"].as_str().unwrap().starts_with("rs256-"));
+    assert_eq!(keyset.verification_keys.len(), 2);
+}
+
+#[tokio::test]
+async fn load_or_create_keyset_records_missing_active_created_at_without_rotating() {
+    let keys_dir = temp_keys_dir("automatic_missing_created_at");
+    tokio::fs::create_dir_all(&keys_dir).await.unwrap();
+    let mut settings = test_settings(keys_dir.clone());
+    settings.signing_key_rotation_interval_seconds = 10;
+    settings.signing_key_prepublish_seconds = 3;
+    write_local_key_entry(&keys_dir, "active", "RS256", "active.pem", Utc::now()).await;
+    tokio::fs::write(
+        keys_dir.join("keyset.json"),
+        serde_json::to_string_pretty(&json!({
+            "active_kid": "active",
+            "keys": [{
+                "kid": "active",
+                "alg": "RS256",
+                "file": "active.pem",
+                "retire_at": null
+            }]
+        }))
+        .unwrap(),
+    )
+    .await
+    .unwrap();
+
+    let keyset = load_or_create_keyset(&settings).await.unwrap();
+    let payload: Value = serde_json::from_str(
+        &tokio::fs::read_to_string(keys_dir.join("keyset.json"))
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    let _ = tokio::fs::remove_dir_all(&keys_dir).await;
+
+    assert_eq!(keyset.active_kid, "active");
+    assert!(payload["keys"][0]["created_at"].as_str().is_some());
+    assert_eq!(payload["keys"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn load_or_create_keyset_due_without_candidate_prepublishes_without_activation() {
+    let keys_dir = temp_keys_dir("automatic_due_no_candidate");
+    tokio::fs::create_dir_all(&keys_dir).await.unwrap();
+    let mut settings = test_settings(keys_dir.clone());
+    settings.signing_key_rotation_interval_seconds = 10;
+    settings.signing_key_prepublish_seconds = 3;
+    write_local_key_entry(
+        &keys_dir,
+        "active",
+        "RS256",
+        "active.pem",
+        Utc::now() - chrono::Duration::seconds(11),
+    )
+    .await;
+    tokio::fs::write(
+        keys_dir.join("keyset.json"),
+        serde_json::to_string_pretty(&json!({
+            "active_kid": "active",
+            "keys": [{
+                "kid": "active",
+                "alg": "RS256",
+                "file": "active.pem",
+                "created_at": timestamp(Utc::now() - chrono::Duration::seconds(11)),
+                "retire_at": null
+            }]
+        }))
+        .unwrap(),
+    )
+    .await
+    .unwrap();
+
+    let keyset = load_or_create_keyset(&settings).await.unwrap();
+    let payload: Value = serde_json::from_str(
+        &tokio::fs::read_to_string(keys_dir.join("keyset.json"))
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    let _ = tokio::fs::remove_dir_all(&keys_dir).await;
+
+    assert_eq!(keyset.active_kid, "active");
+    assert_eq!(payload["active_kid"], "active");
+    assert_eq!(payload["keys"].as_array().unwrap().len(), 2);
+    assert!(
+        payload["keys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|key| key["kid"] != "active" && key["alg"] == "RS256")
+    );
+}
+
+#[tokio::test]
+async fn load_or_create_keyset_activates_prepublished_key_after_window_and_graces_old_active() {
+    let keys_dir = temp_keys_dir("automatic_activate");
+    tokio::fs::create_dir_all(&keys_dir).await.unwrap();
+    let mut settings = test_settings(keys_dir.clone());
+    settings.signing_key_rotation_interval_seconds = 10;
+    settings.signing_key_prepublish_seconds = 3;
+    write_local_key_entry(
+        &keys_dir,
+        "active",
+        "RS256",
+        "active.pem",
+        Utc::now() - chrono::Duration::seconds(11),
+    )
+    .await;
+    write_local_key_entry(
+        &keys_dir,
+        "next",
+        "RS256",
+        "next.pem",
+        Utc::now() - chrono::Duration::seconds(4),
+    )
+    .await;
+    tokio::fs::write(
+        keys_dir.join("keyset.json"),
+        serde_json::to_string_pretty(&json!({
+            "active_kid": "active",
+            "keys": [
+                {
+                    "kid": "active",
+                    "alg": "RS256",
+                    "file": "active.pem",
+                    "created_at": timestamp(Utc::now() - chrono::Duration::seconds(11)),
+                    "retire_at": null
+                },
+                {
+                    "kid": "next",
+                    "alg": "RS256",
+                    "file": "next.pem",
+                    "created_at": timestamp(Utc::now() - chrono::Duration::seconds(4)),
+                    "retire_at": null
+                }
+            ]
+        }))
+        .unwrap(),
+    )
+    .await
+    .unwrap();
+
+    let before_activation = Utc::now() - chrono::Duration::seconds(1);
+    let keyset = load_or_create_keyset(&settings).await.unwrap();
+    let payload: Value = serde_json::from_str(
+        &tokio::fs::read_to_string(keys_dir.join("keyset.json"))
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    let _ = tokio::fs::remove_dir_all(&keys_dir).await;
+
+    assert_eq!(keyset.active_kid, "next");
+    assert_eq!(payload["active_kid"], "next");
+    let old_active = payload["keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|key| key["kid"] == "active")
+        .unwrap();
+    let retire_at = DateTime::parse_from_rfc3339(old_active["retire_at"].as_str().unwrap())
+        .unwrap()
+        .with_timezone(&Utc);
+    assert!(retire_at >= before_activation + chrono::Duration::seconds(600));
+    assert!(retire_at <= Utc::now() + chrono::Duration::seconds(601));
+    assert_eq!(keyset.verification_keys.len(), 2);
+}
+
+#[tokio::test]
+async fn load_or_create_keyset_activates_oldest_local_candidate_and_ignores_external_without_signer()
+ {
+    let keys_dir = temp_keys_dir("automatic_candidate_selection");
+    tokio::fs::create_dir_all(&keys_dir).await.unwrap();
+    let mut settings = test_settings(keys_dir.clone());
+    settings.signing_key_rotation_interval_seconds = 10;
+    settings.signing_key_prepublish_seconds = 3;
+    write_local_key_entry(
+        &keys_dir,
+        "active",
+        "RS256",
+        "active.pem",
+        Utc::now() - chrono::Duration::seconds(11),
+    )
+    .await;
+    write_local_key_entry(
+        &keys_dir,
+        "next-old",
+        "RS256",
+        "next-old.pem",
+        Utc::now() - chrono::Duration::seconds(5),
+    )
+    .await;
+    write_local_key_entry(
+        &keys_dir,
+        "next-new",
+        "RS256",
+        "next-new.pem",
+        Utc::now() - chrono::Duration::seconds(4),
+    )
+    .await;
+    tokio::fs::write(
+        keys_dir.join("keyset.json"),
+        serde_json::to_string_pretty(&json!({
+            "active_kid": "active",
+            "keys": [
+                {
+                    "kid": "active",
+                    "alg": "RS256",
+                    "file": "active.pem",
+                    "created_at": timestamp(Utc::now() - chrono::Duration::seconds(11)),
+                    "retire_at": null
+                },
+                {
+                    "kid": "external-next",
+                    "alg": "RS256",
+                    "backend": "external-command",
+                    "key_ref": "kms://prod/oauth/external-next",
+                    "public_jwk": public_jwk_from_private_der(
+                        "external-next",
+                        jsonwebtoken::Algorithm::RS256,
+                        &generate_key_material(jsonwebtoken::Algorithm::RS256).unwrap().private_pkcs8_der
+                    ).unwrap(),
+                    "created_at": timestamp(Utc::now() - chrono::Duration::seconds(6)),
+                    "retire_at": null
+                },
+                {
+                    "kid": "next-old",
+                    "alg": "RS256",
+                    "file": "next-old.pem",
+                    "created_at": timestamp(Utc::now() - chrono::Duration::seconds(5)),
+                    "retire_at": null
+                },
+                {
+                    "kid": "next-new",
+                    "alg": "RS256",
+                    "file": "next-new.pem",
+                    "created_at": timestamp(Utc::now() - chrono::Duration::seconds(4)),
+                    "retire_at": null
+                }
+            ]
+        }))
+        .unwrap(),
+    )
+    .await
+    .unwrap();
+
+    let keyset = load_or_create_keyset(&settings).await.unwrap();
+    let payload: Value = serde_json::from_str(
+        &tokio::fs::read_to_string(keys_dir.join("keyset.json"))
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    let _ = tokio::fs::remove_dir_all(&keys_dir).await;
+
+    assert_eq!(keyset.active_kid, "next-old");
+    assert_eq!(payload["active_kid"], "next-old");
+    let next_new = payload["keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|key| key["kid"] == "next-new")
+        .unwrap();
+    assert!(next_new["retire_at"].is_null());
+}
+
+#[tokio::test]
+async fn load_or_create_keyset_does_not_activate_fresh_prepublished_key() {
+    let keys_dir = temp_keys_dir("automatic_fresh_candidate");
+    tokio::fs::create_dir_all(&keys_dir).await.unwrap();
+    let mut settings = test_settings(keys_dir.clone());
+    settings.signing_key_rotation_interval_seconds = 10;
+    settings.signing_key_prepublish_seconds = 3;
+    write_local_key_entry(
+        &keys_dir,
+        "active",
+        "RS256",
+        "active.pem",
+        Utc::now() - chrono::Duration::seconds(11),
+    )
+    .await;
+    write_local_key_entry(
+        &keys_dir,
+        "next",
+        "RS256",
+        "next.pem",
+        Utc::now() - chrono::Duration::seconds(1),
+    )
+    .await;
+    tokio::fs::write(
+        keys_dir.join("keyset.json"),
+        serde_json::to_string_pretty(&json!({
+            "active_kid": "active",
+            "keys": [
+                {
+                    "kid": "active",
+                    "alg": "RS256",
+                    "file": "active.pem",
+                    "created_at": timestamp(Utc::now() - chrono::Duration::seconds(11)),
+                    "retire_at": null
+                },
+                {
+                    "kid": "next",
+                    "alg": "RS256",
+                    "file": "next.pem",
+                    "created_at": timestamp(Utc::now() - chrono::Duration::seconds(1)),
+                    "retire_at": null
+                }
+            ]
+        }))
+        .unwrap(),
+    )
+    .await
+    .unwrap();
+
+    let keyset = load_or_create_keyset(&settings).await.unwrap();
+    let payload: Value = serde_json::from_str(
+        &tokio::fs::read_to_string(keys_dir.join("keyset.json"))
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    let _ = tokio::fs::remove_dir_all(&keys_dir).await;
+
+    assert_eq!(keyset.active_kid, "active");
+    assert_eq!(payload["active_kid"], "active");
+    assert_eq!(payload["keys"].as_array().unwrap().len(), 2);
+    let old_active = payload["keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|key| key["kid"] == "active")
+        .unwrap();
+    assert!(old_active["retire_at"].is_null());
 }
 
 #[tokio::test]
@@ -325,6 +748,52 @@ async fn retired_previous_key_entry_is_skipped() {
 }
 
 #[tokio::test]
+async fn malformed_retire_at_in_keyset_fails_closed() {
+    let keys_dir = temp_keys_dir("malformed_retire_at");
+    tokio::fs::create_dir_all(&keys_dir).await.unwrap();
+    let active_der = ed25519_pkcs8_private_der(&[1u8; 32]);
+    let previous_der = ed25519_pkcs8_private_der(&[2u8; 32]);
+    tokio::fs::write(
+        keys_dir.join("active.pem"),
+        der_to_pem(&active_der, "PRIVATE KEY"),
+    )
+    .await
+    .unwrap();
+    tokio::fs::write(
+        keys_dir.join("previous.pem"),
+        der_to_pem(&previous_der, "PRIVATE KEY"),
+    )
+    .await
+    .unwrap();
+    tokio::fs::write(
+        keys_dir.join("keyset.json"),
+        serde_json::to_string_pretty(&json!({
+            "active_kid": "active",
+            "keys": [
+                {"kid": "active", "file": "active.pem", "retire_at": null},
+                {"kid": "previous", "file": "previous.pem", "retire_at": "not-rfc3339"}
+            ]
+        }))
+        .unwrap(),
+    )
+    .await
+    .unwrap();
+    let settings = test_settings(keys_dir.clone());
+    let keyset_path = keys_dir.join("keyset.json");
+
+    let error = match try_load_keyset(&settings, &keyset_path).await {
+        Ok(_) => panic!("malformed key retirement metadata must fail closed"),
+        Err(error) => error,
+    };
+    let _ = tokio::fs::remove_dir_all(&keys_dir).await;
+
+    assert!(
+        format!("{error:#}").contains("retire_at"),
+        "unexpected malformed retire_at error: {error:#}"
+    );
+}
+
+#[tokio::test]
 async fn retired_active_key_entry_is_rejected() {
     let keys_dir = temp_keys_dir("retired_active");
     tokio::fs::create_dir_all(&keys_dir).await.unwrap();
@@ -358,6 +827,48 @@ async fn retired_active_key_entry_is_rejected() {
     let _ = tokio::fs::remove_dir_all(&keys_dir).await;
 
     assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn active_key_with_future_retirement_metadata_is_rejected() {
+    let keys_dir = temp_keys_dir("active_future_retire_at");
+    tokio::fs::create_dir_all(&keys_dir).await.unwrap();
+    let active_der = ed25519_pkcs8_private_der(&[1u8; 32]);
+    tokio::fs::write(
+        keys_dir.join("active.pem"),
+        der_to_pem(&active_der, "PRIVATE KEY"),
+    )
+    .await
+    .unwrap();
+    tokio::fs::write(
+        keys_dir.join("keyset.json"),
+        serde_json::to_string_pretty(&json!({
+            "active_kid": "active",
+            "keys": [
+                {
+                    "kid": "active",
+                    "file": "active.pem",
+                    "retire_at": "2999-01-01T00:00:00Z"
+                }
+            ]
+        }))
+        .unwrap(),
+    )
+    .await
+    .unwrap();
+    let settings = test_settings(keys_dir.clone());
+    let keyset_path = keys_dir.join("keyset.json");
+
+    let error = match try_load_keyset(&settings, &keyset_path).await {
+        Ok(_) => panic!("active signing key must not carry retirement metadata"),
+        Err(error) => error,
+    };
+    let _ = tokio::fs::remove_dir_all(&keys_dir).await;
+
+    assert!(
+        format!("{error:#}").contains("active key active cannot have retire_at"),
+        "unexpected active-key retirement error: {error:#}"
+    );
 }
 
 #[tokio::test]
@@ -797,6 +1308,27 @@ try {
     ]
 }
 
+async fn write_local_key_entry(
+    keys_dir: &Path,
+    _kid: &str,
+    alg: &str,
+    file_name: &str,
+    _created_at: DateTime<Utc>,
+) {
+    let alg = signing_algorithm_from_name(alg).unwrap();
+    let private_pkcs8_der = generate_key_material(alg).unwrap().private_pkcs8_der;
+    tokio::fs::write(
+        keys_dir.join(file_name),
+        der_to_pem(&private_pkcs8_der, "PRIVATE KEY"),
+    )
+    .await
+    .unwrap();
+}
+
+fn timestamp(value: DateTime<Utc>) -> String {
+    value.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
+
 fn test_settings(jwk_keys_dir: PathBuf) -> Settings {
     Settings {
         issuer: "https://issuer.example".to_owned(),
@@ -834,6 +1366,8 @@ fn test_settings(jwk_keys_dir: PathBuf) -> Settings {
         jwk_keys_dir,
         signing_external_command: Vec::new(),
         signing_external_timeout_ms: 2_000,
+        signing_key_rotation_interval_seconds: 7_776_000,
+        signing_key_prepublish_seconds: 86_400,
         trusted_proxy_cidrs: Vec::new(),
         client_ip_header_mode: ClientIpHeaderMode::None,
         subject_type: crate::settings::SubjectType::Public,

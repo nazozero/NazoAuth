@@ -14,7 +14,8 @@ use std::time::Duration as StdDuration;
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
 use crate::domain::{
-    ActiveSigningKey, ConsentPayload, Keyset, PushedAuthorizationRequest, VerificationKey,
+    ActiveSigningKey, ConsentPayload, Keyset, KeysetStore, PushedAuthorizationRequest,
+    VerificationKey,
 };
 use crate::support::{
     generate_key_material, jwt_decoding_key_from_jwk, public_jwk_from_private_der,
@@ -58,7 +59,7 @@ fn endpoint_state(require_par: bool) -> AppState {
         .expect("pool construction should not connect"),
         valkey: unavailable_valkey_client(),
         settings: Arc::new(settings),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -141,7 +142,7 @@ impl LiveAuthorizationFixture {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
-                keyset: Arc::new(Keyset {
+                keyset: KeysetStore::new(Keyset {
                     active_kid: "test-kid".to_owned(),
                     active_alg: jsonwebtoken::Algorithm::EdDSA,
                     active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -404,8 +405,9 @@ async fn assert_authorization_invalid_request(response: HttpResponse) {
 fn decode_jarm_claims(state: &AppState, response_jwt: &str) -> Value {
     let header =
         jsonwebtoken::decode_header(response_jwt).expect("JARM response header should decode");
-    let decoding_key = jwt_decoding_key_from_jwk(&state.keyset.jwks()["keys"][0], header.alg)
-        .expect("JARM decoding key should derive from test JWKS");
+    let decoding_key =
+        jwt_decoding_key_from_jwk(&state.keyset.snapshot().jwks()["keys"][0], header.alg)
+            .expect("JARM decoding key should derive from test JWKS");
     let mut validation = jsonwebtoken::Validation::new(header.alg);
     validation.validate_exp = false;
     validation.set_audience(&["client-jarm"]);
@@ -1614,8 +1616,8 @@ async fn consume_pushed_authorization_request_enforces_single_use_and_malformed_
 
 #[actix_web::test]
 async fn authorization_response_redirect_emits_signed_jarm_response() {
-    let mut state = endpoint_state(false);
-    state.keyset = Arc::new(local_signing_keyset());
+    let state = endpoint_state(false);
+    state.keyset.replace(local_signing_keyset());
     let state = Data::new(state);
 
     let response = authorization_response_redirect(

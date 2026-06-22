@@ -36,8 +36,9 @@ pub(crate) async fn make_jwt(
     let jti = Uuid::now_v7().to_string();
     let exp = now + input.ttl;
     let claims = access_token_claims(&state.settings.issuer, input, now, &jti);
-    let header = access_token_header(state.keyset.active_alg, &state.keyset.active_kid);
-    let token = state.keyset.sign_jwt(&header, &claims).await?;
+    let keyset = state.keyset.snapshot();
+    let header = access_token_header(keyset.active_alg, &keyset.active_kid);
+    let token = keyset.sign_jwt(&header, &claims).await?;
     Ok(IssuedAccessToken { token, jti, exp })
 }
 
@@ -110,10 +111,11 @@ pub(crate) async fn make_id_token(
 ) -> jsonwebtoken::errors::Result<String> {
     let now = Utc::now().timestamp();
     let claims = id_token_claims(&state.settings.issuer, &input, now);
-    let mut header = jsonwebtoken::Header::new(state.keyset.active_alg);
+    let keyset = state.keyset.snapshot();
+    let mut header = jsonwebtoken::Header::new(keyset.active_alg);
     header.typ = Some("JWT".to_string());
-    header.kid = Some(state.keyset.active_kid.clone());
-    state.keyset.sign_jwt(&header, &Value::Object(claims)).await
+    header.kid = Some(keyset.active_kid.clone());
+    keyset.sign_jwt(&header, &Value::Object(claims)).await
 }
 
 pub(super) fn id_token_claims(
@@ -190,10 +192,11 @@ pub(crate) async fn make_backchannel_logout_token(
 ) -> jsonwebtoken::errors::Result<String> {
     let now = Utc::now().timestamp();
     let claims = backchannel_logout_token_claims(&state.settings.issuer, &input, now);
-    let mut header = jsonwebtoken::Header::new(state.keyset.active_alg);
+    let keyset = state.keyset.snapshot();
+    let mut header = jsonwebtoken::Header::new(keyset.active_alg);
     header.typ = Some("logout+jwt".to_string());
-    header.kid = Some(state.keyset.active_kid.clone());
-    state.keyset.sign_jwt(&header, &Value::Object(claims)).await
+    header.kid = Some(keyset.active_kid.clone());
+    keyset.sign_jwt(&header, &Value::Object(claims)).await
 }
 
 pub(super) fn backchannel_logout_token_claims(
@@ -227,10 +230,11 @@ pub(crate) async fn make_authorization_response_jwt(
 ) -> jsonwebtoken::errors::Result<String> {
     let now = Utc::now().timestamp();
     let claims = authorization_response_jwt_claims(&state.settings.issuer, &input, now);
-    let mut header = jsonwebtoken::Header::new(state.keyset.active_alg);
+    let keyset = state.keyset.snapshot();
+    let mut header = jsonwebtoken::Header::new(keyset.active_alg);
     header.typ = Some("oauth-authz-resp+jwt".to_string());
-    header.kid = Some(state.keyset.active_kid.clone());
-    state.keyset.sign_jwt(&header, &Value::Object(claims)).await
+    header.kid = Some(keyset.active_kid.clone());
+    keyset.sign_jwt(&header, &Value::Object(claims)).await
 }
 
 pub(super) fn authorization_response_jwt_claims(
@@ -262,7 +266,8 @@ pub(crate) fn decode_access_claims(state: &AppState, token: &str) -> Option<Clai
     if header.typ.as_deref() != Some("at+jwt") || signing_algorithm_name(header.alg).is_none() {
         return None;
     }
-    let verification_key = state.keyset.verification_key(header.kid.as_deref()?)?;
+    let keyset = state.keyset.snapshot();
+    let verification_key = keyset.verification_key(header.kid.as_deref()?)?;
     let decoding_key = jwt_decoding_key_from_jwk(&verification_key.public_jwk, header.alg)?;
     let mut validation = jsonwebtoken::Validation::new(header.alg);
     validation.validate_aud = false;

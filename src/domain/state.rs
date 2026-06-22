@@ -7,7 +7,7 @@ use fred::prelude::Client as ValkeyClient;
 use crate::db::DbPool;
 use crate::settings::Settings;
 
-use super::Keyset;
+use super::KeysetStore;
 
 /// 每个 HTTP worker 共享的后端资源句柄。
 #[derive(Clone)]
@@ -15,5 +15,5 @@ pub(crate) struct AppState {
     pub(crate) diesel_db: DbPool,
     pub(crate) valkey: ValkeyClient,
     pub(crate) settings: Arc<Settings>,
-    pub(crate) keyset: Arc<Keyset>,
+    pub(crate) keyset: KeysetStore,
 }

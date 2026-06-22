@@ -1,7 +1,7 @@
 use super::*;
 use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, RateLimitSettings,
-    RequestObjectJtiPolicy,
+    RequestObjectJtiPolicy, SubjectType,
 };
 use crate::support::ClientIpHeaderMode;
 
@@ -84,6 +84,8 @@ fn settings() -> Settings {
         jwk_keys_dir: std::env::temp_dir().join("unused-keys"),
         signing_external_command: Vec::new(),
         signing_external_timeout_ms: 2_000,
+        signing_key_rotation_interval_seconds: 7_776_000,
+        signing_key_prepublish_seconds: 86_400,
         trusted_proxy_cidrs: Vec::new(),
         client_ip_header_mode: ClientIpHeaderMode::None,
         subject_type: SubjectType::Public,
@@ -348,13 +350,17 @@ fn pairwise_subject_is_stable_within_sector_and_distinct_across_sectors() {
 #[test]
 fn compute_subject_for_client_public_returns_uuid() {
     let user_id = Uuid::now_v7();
-    let settings = settings();
+    let mut settings = settings();
+    settings.pairwise_subject_secret =
+        Some("this-is-a-long-enough-secret-key-for-hmac-sha256!!".to_owned());
     let subject = compute_subject_for_client(
         &settings,
         user_id,
+        "public",
         Some("example.com"),
         "https://example.com/callback",
-    );
+    )
+    .expect("public client subject should compute");
     assert_eq!(subject, user_id.to_string());
 }
 
@@ -362,35 +368,88 @@ fn compute_subject_for_client_public_returns_uuid() {
 fn compute_subject_for_client_pairwise_uses_sector_host() {
     let user_id = Uuid::now_v7();
     let mut settings = settings();
-    settings.subject_type = SubjectType::Pairwise;
     settings.pairwise_subject_secret =
         Some("this-is-a-long-enough-secret-key-for-hmac-sha256!!".to_owned());
     let subject = compute_subject_for_client(
         &settings,
         user_id,
+        "pairwise",
         Some("pairwise.example"),
         "https://client.example/callback",
-    );
+    )
+    .expect("pairwise client subject should compute");
     assert_ne!(subject, user_id.to_string());
-    assert!(subject.len() > 20);
+    assert_eq!(
+        subject,
+        oidc_subject(
+            settings
+                .pairwise_subject_secret
+                .as_ref()
+                .unwrap()
+                .as_bytes(),
+            &settings.issuer,
+            "pairwise.example",
+            user_id
+        )
+    );
 }
 
 #[test]
 fn compute_subject_for_client_pairwise_falls_back_to_redirect_uri_host() {
     let user_id = Uuid::now_v7();
     let mut settings = settings();
-    settings.subject_type = SubjectType::Pairwise;
     settings.pairwise_subject_secret =
         Some("this-is-a-long-enough-secret-key-for-hmac-sha256!!".to_owned());
     let subject = compute_subject_for_client(
         &settings,
         user_id,
+        "pairwise",
         None,
         "https://fallback.example/callback",
-    );
+    )
+    .expect("pairwise client subject should compute");
     assert_ne!(subject, user_id.to_string());
-    // Ensure the same host produces the same sub when sector_host is None
-    let same_subject =
-        compute_subject_for_client(&settings, user_id, None, "https://fallback.example/other");
+    let same_subject = compute_subject_for_client(
+        &settings,
+        user_id,
+        "pairwise",
+        None,
+        "https://fallback.example/other",
+    )
+    .expect("pairwise subject should be stable for the same redirect host");
     assert_eq!(subject, same_subject);
+}
+
+#[test]
+fn compute_subject_for_client_rejects_pairwise_without_server_secret() {
+    let err = compute_subject_for_client(
+        &settings(),
+        Uuid::now_v7(),
+        "pairwise",
+        Some("pairwise.example"),
+        "https://client.example/callback",
+    )
+    .expect_err("pairwise clients must fail closed when the server secret is missing");
+
+    assert!(
+        err.to_string().contains("PAIRWISE_SUBJECT_SECRET"),
+        "error should identify the missing pairwise secret: {err}"
+    );
+}
+
+#[test]
+fn compute_subject_for_client_rejects_unsupported_subject_type() {
+    let err = compute_subject_for_client(
+        &settings(),
+        Uuid::now_v7(),
+        "transient",
+        Some("client.example"),
+        "https://client.example/callback",
+    )
+    .expect_err("unsupported client subject_type must fail closed");
+
+    assert!(
+        err.to_string().contains("unsupported client subject_type"),
+        "error should identify the invalid client subject_type: {err}"
+    );
 }

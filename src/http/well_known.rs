@@ -58,7 +58,8 @@ pub(crate) async fn captcha_config() -> Json<Value> {
 }
 
 fn authorization_server_metadata_value(state: &AppState) -> Value {
-    authorization_server_metadata(&state.settings, &state.keyset)
+    let keyset = state.keyset.snapshot();
+    authorization_server_metadata(&state.settings, &keyset)
 }
 
 fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value {
@@ -188,7 +189,7 @@ pub(crate) async fn oauth_authorization_server_metadata(state: Data<AppState>) -
 }
 
 pub(crate) async fn jwks(state: Data<AppState>) -> Json<Value> {
-    Json(state.keyset.jwks())
+    Json(state.keyset.snapshot().jwks())
 }
 
 #[cfg(test)]

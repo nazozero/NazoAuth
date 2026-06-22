@@ -1,59 +1,30 @@
-//! JWT key rotation CLI implementation.
+//! JWT key inspection and external signing-key registration CLI implementation.
 
 use std::path::PathBuf;
 
 use anyhow::{Context, bail};
-use chrono::{SecondsFormat, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Value, json};
-use uuid::Uuid;
 
 use crate::config::ConfigSource;
 use crate::settings::Settings;
 use crate::support::{
-    der_to_pem, generate_key_material, signing_algorithm_from_name, signing_algorithm_name,
-    try_load_keyset, write_json_atomic, write_private_key_pem_atomic,
+    signing_algorithm_from_name, signing_algorithm_name, try_load_keyset, write_json_atomic,
 };
 
 pub async fn run(args: impl IntoIterator<Item = String>) -> anyhow::Result<()> {
     let mut args = args.into_iter();
     let _program = args.next();
     let Some(command) = args.next() else {
-        bail!(
-            "usage: nazo-oauth-keyctl <list|generate|register-external|activate|retire|validate>"
-        );
+        bail!("usage: nazo-oauth-keyctl <list|register-external|validate>");
     };
     let config = ConfigSource::load()?;
     let settings = Settings::from_config(&config)?;
     match command.as_str() {
         "list" => list_keys(&settings).await,
-        "generate" => {
-            let alg = parse_generate_alg(args.collect::<Vec<_>>())?;
-            generate_key(&settings, alg).await
-        }
         "register-external" => {
             let options = parse_register_external_args(args.collect::<Vec<_>>())?;
             register_external_key(&settings, options).await
-        }
-        "activate" => {
-            let kid = args
-                .next()
-                .ok_or_else(|| anyhow::anyhow!("usage: nazo-oauth-keyctl activate <kid>"))?;
-            activate_key(&settings, &kid).await
-        }
-        "retire" => {
-            let kid = args.next().ok_or_else(|| {
-                anyhow::anyhow!("usage: nazo-oauth-keyctl retire <kid> --at <rfc3339>")
-            })?;
-            let flag = args.next().ok_or_else(|| {
-                anyhow::anyhow!("usage: nazo-oauth-keyctl retire <kid> --at <rfc3339>")
-            })?;
-            if flag != "--at" {
-                bail!("usage: nazo-oauth-keyctl retire <kid> --at <rfc3339>");
-            }
-            let at = args.next().ok_or_else(|| {
-                anyhow::anyhow!("usage: nazo-oauth-keyctl retire <kid> --at <rfc3339>")
-            })?;
-            retire_key(&settings, &kid, &at).await
         }
         "validate" => validate_keyset(&settings).await,
         _ => bail!("unknown keyctl command {command}"),
@@ -79,10 +50,12 @@ async fn list_keys(settings: &Settings) -> anyhow::Result<()> {
         let retire_at = key.get("retire_at").and_then(Value::as_str).unwrap_or("");
         let status = if kid == active_kid {
             "active"
-        } else if key_is_retired(key) {
+        } else if key_is_retired(key)? {
             "retired"
+        } else if key_retire_at(key)?.is_some() {
+            "grace"
         } else {
-            "previous"
+            "prepublished"
         };
         println!("{kid}\t{status}\t{alg}\t{backend}\t{locator}\t{retire_at}");
     }
@@ -129,69 +102,6 @@ async fn register_external_key(
     validate_keyset_json(&keyset)?;
     write_json_atomic(&keyset_path(settings), &keyset).await?;
     println!("{}", options.kid);
-    Ok(())
-}
-
-async fn generate_key(settings: &Settings, alg: jsonwebtoken::Algorithm) -> anyhow::Result<()> {
-    let alg_name =
-        signing_algorithm_name(alg).ok_or_else(|| anyhow::anyhow!("unsupported signing alg"))?;
-    let kid = format!("{}-{}", alg_name.to_ascii_lowercase(), Uuid::now_v7());
-    let file_name = format!("{kid}.pem");
-    let private_pkcs8_der = generate_key_material(alg)?.private_pkcs8_der;
-    let pem = der_to_pem(&private_pkcs8_der, "PRIVATE KEY");
-    write_private_key_pem_atomic(&settings.jwk_keys_dir.join(&file_name), &pem).await?;
-    let mut keyset = if keyset_path(settings).exists() {
-        load_keyset_json(settings).await?
-    } else {
-        json!({
-            "active_kid": kid,
-            "keys": []
-        })
-    };
-    let entry = json!({
-        "kid": kid,
-        "alg": alg_name,
-        "file": file_name,
-        "created_at": Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
-        "retire_at": null
-    });
-    keys_array_mut(&mut keyset)?.push(entry);
-    validate_keyset_json(&keyset)?;
-    write_json_atomic(&keyset_path(settings), &keyset).await?;
-    println!("{kid}");
-    Ok(())
-}
-
-async fn activate_key(settings: &Settings, kid: &str) -> anyhow::Result<()> {
-    let mut keyset = load_keyset_json(settings).await?;
-    let key = keys_array(&keyset)?
-        .iter()
-        .find(|key| key.get("kid").and_then(Value::as_str) == Some(kid))
-        .ok_or_else(|| anyhow::anyhow!("key {kid} does not exist"))?;
-    if key_is_retired(key) {
-        bail!("retired key {kid} cannot be activated");
-    }
-    keyset["active_kid"] = json!(kid);
-    validate_keyset_json(&keyset)?;
-    write_json_atomic(&keyset_path(settings), &keyset).await?;
-    println!("{kid}");
-    Ok(())
-}
-
-async fn retire_key(settings: &Settings, kid: &str, at: &str) -> anyhow::Result<()> {
-    chrono::DateTime::parse_from_rfc3339(at).context("--at must be RFC3339")?;
-    let mut keyset = load_keyset_json(settings).await?;
-    if active_kid(&keyset)? == kid {
-        bail!("active key {kid} cannot be retired");
-    }
-    let key = keys_array_mut(&mut keyset)?
-        .iter_mut()
-        .find(|key| key.get("kid").and_then(Value::as_str) == Some(kid))
-        .ok_or_else(|| anyhow::anyhow!("key {kid} does not exist"))?;
-    key["retire_at"] = json!(at);
-    validate_keyset_json(&keyset)?;
-    write_json_atomic(&keyset_path(settings), &keyset).await?;
-    println!("{kid}");
     Ok(())
 }
 
@@ -256,24 +166,17 @@ fn validate_keyset_json(value: &Value) -> anyhow::Result<()> {
         }
         if kid == active {
             active_exists = true;
-            if key_is_retired(key) {
-                bail!("active key {kid} cannot be retired");
+            if key_retire_at(key)?.is_some() {
+                bail!("active key {kid} cannot have retire_at");
             }
+            continue;
         }
+        let _ = key_retire_at(key)?;
     }
     if !active_exists {
         bail!("active key {active} does not exist");
     }
     Ok(())
-}
-
-fn parse_generate_alg(args: Vec<String>) -> anyhow::Result<jsonwebtoken::Algorithm> {
-    match args.as_slice() {
-        [] => Ok(jsonwebtoken::Algorithm::EdDSA),
-        [flag, value] if flag == "--alg" => signing_algorithm_from_name(value)
-            .ok_or_else(|| anyhow::anyhow!("unsupported signing alg {value}")),
-        _ => bail!("usage: nazo-oauth-keyctl generate [--alg EdDSA|RS256|ES256|PS256]"),
-    }
 }
 
 fn parse_register_external_args(args: Vec<String>) -> anyhow::Result<RegisterExternalKeyOptions> {
@@ -362,11 +265,24 @@ fn keys_array_mut(value: &mut Value) -> anyhow::Result<&mut Vec<Value>> {
         .ok_or_else(|| anyhow::anyhow!("keyset.json missing keys array"))
 }
 
-fn key_is_retired(key: &Value) -> bool {
-    key.get("retire_at")
-        .and_then(Value::as_str)
-        .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
-        .is_some_and(|retire_at| retire_at.with_timezone(&Utc) <= Utc::now())
+fn key_retire_at(key: &Value) -> anyhow::Result<Option<DateTime<Utc>>> {
+    let Some(value) = key.get("retire_at") else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let raw = value
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("key retire_at must be RFC3339 or null"))?;
+    let retire_at = DateTime::parse_from_rfc3339(raw)
+        .with_context(|| format!("key retire_at is not RFC3339: {raw}"))?
+        .with_timezone(&Utc);
+    Ok(Some(retire_at))
+}
+
+fn key_is_retired(key: &Value) -> anyhow::Result<bool> {
+    Ok(key_retire_at(key)?.is_some_and(|retire_at| retire_at <= Utc::now()))
 }
 
 #[cfg(test)]

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{ActiveSigningKey, ConfirmationClaims, Keyset, VerificationKey};
+use crate::domain::{ActiveSigningKey, ConfirmationClaims, Keyset, KeysetStore, VerificationKey};
 use crate::support::{generate_key_material, public_jwk_from_private_der};
 use diesel::sql_query;
 use diesel::sql_types::{Text, Timestamptz, Uuid as SqlUuid};
@@ -26,7 +26,7 @@ fn fapi_test_state_with_settings(settings: Settings) -> AppState {
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -59,7 +59,7 @@ fn fapi_signing_state_with_invalid_db() -> Data<AppState> {
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "fapi-resource-test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),
@@ -95,7 +95,7 @@ fn live_fapi_signing_state_from_database_url(database_url: String) -> Option<Dat
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "fapi-resource-test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),
@@ -200,11 +200,11 @@ async fn signed_fapi_access_token(
 }
 
 async fn signed_fapi_claims(state: &Data<AppState>, claims: Claims) -> String {
-    let mut header = jsonwebtoken::Header::new(state.keyset.active_alg);
+    let keyset = state.keyset.snapshot();
+    let mut header = jsonwebtoken::Header::new(keyset.active_alg);
     header.typ = Some("at+jwt".to_owned());
-    header.kid = Some(state.keyset.active_kid.clone());
-    state
-        .keyset
+    header.kid = Some(keyset.active_kid.clone());
+    keyset
         .sign_jwt(&header, &claims)
         .await
         .expect("FAPI resource claims should sign")

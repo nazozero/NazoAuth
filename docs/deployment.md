@@ -63,6 +63,8 @@ AVATAR_STORAGE_DIR: "/var/lib/nazo_oauth/avatars"
 JWK_KEYS_DIR: "/var/lib/nazo_oauth/keys"
 SIGNING_EXTERNAL_COMMAND: ""
 SIGNING_EXTERNAL_TIMEOUT_MS: 2000
+SIGNING_KEY_ROTATION_INTERVAL_SECONDS: 7776000
+SIGNING_KEY_PREPUBLISH_SECONDS: 86400
 RUST_LOG: "info"
 OTEL_ENABLED: false
 OTEL_EXPORTER_OTLP_ENDPOINT: ""
@@ -191,22 +193,31 @@ other peer is treated as not having verified client certificate evidence.
 
 ## Key Rotation
 
-Initial startup creates a signing key if no keyset exists. Controlled rotation:
+Initial startup creates a local RS256 signing key if no keyset exists. Local
+PEM keysets rotate automatically through the in-process lifecycle task. The
+service refreshes its runtime keyset snapshot periodically, prepublishes the
+next local key when the active key enters the prepublication window, activates
+it after the window has elapsed, and keeps the previous active key published in
+JWKS until
+`max(ACCESS_TOKEN_TTL_SECONDS, ID_TOKEN_TTL_SECONDS)` has elapsed.
+
+Default lifecycle settings:
+
+- `SIGNING_KEY_ROTATION_INTERVAL_SECONDS=7776000` (90 days)
+- `SIGNING_KEY_PREPUBLISH_SECONDS=86400` (1 day)
+
+The prepublication window must be positive and shorter than the rotation
+interval. The runtime refresh interval is derived from the prepublication
+window and capped at one hour. Validate the keyset after deployment or backup
+restoration:
 
 ```sh
-nazo-oauth-keyctl generate --alg RS256
-nazo-oauth-keyctl validate
-nazo-oauth-keyctl activate <kid>
-```
-
-After the maximum access-token and ID-token TTL has elapsed:
-
-```sh
-nazo-oauth-keyctl retire <old-kid> --at <timestamp>
 nazo-oauth-keyctl validate
 ```
 
-Back up the key directory before and after rotation. Losing active private keys invalidates token signing continuity.
+Validation rejects malformed `retire_at` values and any active key that carries
+`retire_at`. Back up the key directory regularly. Losing active private keys
+invalidates token signing continuity.
 
 ### External KMS/HSM Signing
 
@@ -221,13 +232,14 @@ nazo-oauth-keyctl register-external \
   --key-ref kms://prod/oauth/rs256-kms-2026-06 \
   --public-jwk /secure/exported-public-jwk.json
 nazo-oauth-keyctl validate
-nazo-oauth-keyctl activate rs256-kms-2026-06
 ```
 
 Configure `SIGNING_EXTERNAL_COMMAND` as a comma-separated argv list, for example
 `/usr/local/bin/oauth-kms-signer,--profile,prod`, and set
-`SIGNING_EXTERNAL_TIMEOUT_MS` to the maximum allowed signing latency. The
-service sends one JSON request on stdin:
+`SIGNING_EXTERNAL_TIMEOUT_MS` to the maximum allowed signing latency. External
+keys are activated only by the automatic lifecycle after their prepublication
+window has elapsed and only when the signer command is configured. The service
+sends one JSON request on stdin:
 
 ```json
 {"version":1,"kid":"rs256-kms-2026-06","alg":"RS256","key_ref":"kms://prod/oauth/rs256-kms-2026-06","signing_input":"<base64url(header)>.<base64url(payload)>"}

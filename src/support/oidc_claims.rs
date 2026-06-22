@@ -5,7 +5,6 @@ use hmac::{Hmac, Mac};
 
 use super::prelude::*;
 use crate::domain::OidcClaimRequest;
-use crate::settings::SubjectType;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -36,12 +35,13 @@ fn sector_host_from_redirect_uri(redirect_uri: &str) -> String {
 pub(crate) fn compute_subject_for_client(
     settings: &Settings,
     user_id: Uuid,
+    client_subject_type: &str,
     sector_identifier_host: Option<&str>,
     redirect_uri: &str,
-) -> String {
-    match settings.subject_type {
-        SubjectType::Public => user_id.to_string(),
-        SubjectType::Pairwise => {
+) -> anyhow::Result<String> {
+    match client_subject_type {
+        "public" => Ok(user_id.to_string()),
+        "pairwise" => {
             let host = sector_identifier_host
                 .filter(|h| !h.is_empty())
                 .map(ToOwned::to_owned)
@@ -49,10 +49,16 @@ pub(crate) fn compute_subject_for_client(
             let secret = settings
                 .pairwise_subject_secret
                 .as_deref()
-                .map(|s| s.as_bytes())
-                .unwrap_or_default();
-            oidc_subject(secret, &settings.issuer, &host, user_id)
+                .filter(|secret| secret.len() >= 32)
+                .ok_or_else(|| anyhow::anyhow!("PAIRWISE_SUBJECT_SECRET is required"))?;
+            Ok(oidc_subject(
+                secret.as_bytes(),
+                &settings.issuer,
+                &host,
+                user_id,
+            ))
         }
+        value => anyhow::bail!("unsupported client subject_type {value}"),
     }
 }
 
