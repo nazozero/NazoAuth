@@ -1,6 +1,9 @@
 //! 管理端客户端更新端点。
 // PATCH 请求只覆盖显式提交的字段，其余字段保持数据库当前值。
-use super::create::{all_same_host, trim_optional_string, validate_pkce_compatibility_policy};
+use super::create::{
+    all_same_host, sector_identifier_host_for_redirects, trim_optional_string,
+    validate_pkce_compatibility_policy,
+};
 use crate::http::prelude::*;
 
 #[derive(Deserialize)]
@@ -282,16 +285,7 @@ async fn prepare_client_patch(
                 let uris = fetch_sector_identifier_uris(uri)
                     .await
                     .map_err(|e| anyhow::anyhow!("sector_identifier_uri 获取失败: {:?}", e))?;
-                for redirect_uri in &new_redirect_uri_values {
-                    if !uris.contains(redirect_uri) {
-                        anyhow::bail!(
-                            "redirect_uri {} 不在 sector_identifier_uri 返回列表中",
-                            redirect_uri
-                        );
-                    }
-                }
-                sector_identifier_hostname(uri)
-                    .map_err(|e| anyhow::anyhow!("sector_identifier_uri host 解析失败: {:?}", e))?
+                sector_identifier_host_for_redirects(uri, &new_redirect_uri_values, &uris)?
             }
             None => {
                 if let Some(ref host) = current.sector_identifier_host {

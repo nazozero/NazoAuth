@@ -1,6 +1,6 @@
 use super::{
     SectorIdentifierError, fetch_sector_identifier_uris, is_blocked_host, is_blocked_ip,
-    sector_identifier_hostname,
+    parse_sector_identifier_document, sector_identifier_hostname,
 };
 use std::net::IpAddr;
 
@@ -92,6 +92,11 @@ fn block_ipv6_multicast_and_mapped_unspecified() {
 }
 
 #[test]
+fn block_ipv6_mapped_unspecified_without_ipv4_text() {
+    assert!(is_blocked_ip("::ffff:0:0".parse::<IpAddr>().unwrap()));
+}
+
+#[test]
 fn block_literal_private_hosts() {
     assert!(is_blocked_host("0.0.0.0"));
     assert!(is_blocked_host("::1"));
@@ -123,4 +128,63 @@ async fn fetch_rejects_loopback_sector_identifier_uri_before_dns() {
         .expect_err("loopback sector_identifier_uri must be blocked before DNS");
 
     assert!(matches!(err, SectorIdentifierError::BlockedHost));
+}
+
+#[actix_web::test]
+async fn fetch_reports_dns_resolution_failure_for_unresolvable_public_host() {
+    let err = fetch_sector_identifier_uris("https://sector.invalid/sector.json")
+        .await
+        .expect_err("unresolvable public host must fail at DNS resolution");
+
+    assert!(matches!(err, SectorIdentifierError::DnsResolutionFailed));
+}
+
+#[test]
+fn parse_sector_identifier_document_accepts_json_content_type_with_parameters() {
+    let uris = parse_sector_identifier_document(
+        "application/json; charset=utf-8",
+        br#"["https://client.example/callback","https://client.example/alt"]"#,
+    )
+    .expect("valid sector identifier document should parse");
+
+    assert_eq!(
+        uris,
+        vec![
+            "https://client.example/callback".to_owned(),
+            "https://client.example/alt".to_owned()
+        ]
+    );
+}
+
+#[test]
+fn parse_sector_identifier_document_rejects_non_json_content_type() {
+    let err = parse_sector_identifier_document("text/plain", br#"[]"#)
+        .expect_err("sector identifier document must be JSON");
+
+    assert!(matches!(err, SectorIdentifierError::InvalidContentType));
+}
+
+#[test]
+fn parse_sector_identifier_document_rejects_oversized_body_before_json_parse() {
+    let body = vec![b' '; 128 * 1024 + 1];
+    let err = parse_sector_identifier_document("application/json", &body)
+        .expect_err("oversized sector identifier document must be rejected");
+
+    assert!(matches!(err, SectorIdentifierError::ResponseTooLarge));
+}
+
+#[test]
+fn parse_sector_identifier_document_rejects_invalid_json() {
+    let err = parse_sector_identifier_document("application/json", br#"{"redirect_uris":[]}"#)
+        .expect_err("sector identifier document must be a JSON array");
+
+    assert!(matches!(err, SectorIdentifierError::InvalidJson));
+}
+
+#[test]
+fn parse_sector_identifier_document_rejects_invalid_uri_entry() {
+    let err = parse_sector_identifier_document("application/json", br#"["not a uri"]"#)
+        .expect_err("sector identifier entries must be absolute URIs");
+
+    assert!(matches!(err, SectorIdentifierError::InvalidEntry(entry) if entry == "not a uri"));
 }
