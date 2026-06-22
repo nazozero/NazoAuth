@@ -62,6 +62,11 @@ pub(crate) struct Settings {
     pub(crate) scim_bearer_token: Option<String>,
     pub(crate) passkey: PasskeySettings,
     pub(crate) federation: FederationSettings,
+    pub(crate) enable_request_object: bool,
+    pub(crate) enable_request_uri_parameter: bool,
+    pub(crate) enable_par_request_object: bool,
+    pub(crate) enable_authorization_details: bool,
+    pub(crate) enable_legacy_audience_param: bool,
 }
 
 impl Settings {
@@ -160,6 +165,11 @@ impl Settings {
             scim_bearer_token: config.optional_string("SCIM_BEARER_TOKEN"),
             passkey,
             federation,
+            enable_request_object: config.bool("ENABLE_REQUEST_OBJECT", false)?,
+            enable_request_uri_parameter: config.bool("ENABLE_REQUEST_URI_PARAMETER", false)?,
+            enable_par_request_object: config.bool("ENABLE_PAR_REQUEST_OBJECT", false)?,
+            enable_authorization_details: config.bool("ENABLE_AUTHORIZATION_DETAILS", false)?,
+            enable_legacy_audience_param: config.bool("ENABLE_LEGACY_AUDIENCE_PARAM", false)?,
         })
     }
 }
