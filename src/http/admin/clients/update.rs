@@ -186,6 +186,7 @@ async fn prepare_client_patch(
     let new_client_name = payload
         .client_name
         .unwrap_or_else(|| current.client_name.clone());
+    let redirect_uris_changed = payload.redirect_uris.is_some();
     let new_redirect_uri_values = payload
         .redirect_uris
         .unwrap_or_else(|| json_array_to_strings(&current.redirect_uris));
@@ -252,20 +253,31 @@ async fn prepare_client_patch(
     let new_subject_type = payload
         .subject_type
         .unwrap_or_else(|| current.subject_type.clone());
-    let new_sector_identifier_uri = match payload.sector_identifier_uri {
+    let requested_sector_identifier_uri = match payload.sector_identifier_uri {
         Some(ref uri) if current.sector_identifier_uri.is_some() => {
             anyhow::bail!("已配置 pairwise 客户端的 sector_identifier_uri 不可修改");
         }
         Some(uri) => Some(uri),
         None => current.sector_identifier_uri.clone(),
     };
-    let new_sector_identifier_host = if new_subject_type != "pairwise" {
-        None
+    let (new_sector_identifier_uri, new_sector_identifier_host) = if new_subject_type != "pairwise"
+    {
+        (None, None)
     } else {
         if pairwise_subject_secret.is_none() {
             anyhow::bail!("pairwise 主题类型需要配置 PAIRWISE_SUBJECT_SECRET");
         }
-        Some(match &new_sector_identifier_uri {
+        let sector_identifier_host = match &requested_sector_identifier_uri {
+            Some(uri)
+                if !redirect_uris_changed
+                    && current.sector_identifier_uri.as_deref() == Some(uri.as_str())
+                    && current.sector_identifier_host.is_some() =>
+            {
+                current
+                    .sector_identifier_host
+                    .clone()
+                    .expect("checked sector_identifier_host is present")
+            }
             Some(uri) => {
                 let uris = fetch_sector_identifier_uris(uri)
                     .await
@@ -292,7 +304,11 @@ async fn prepare_client_patch(
                     })?
                 }
             }
-        })
+        };
+        (
+            requested_sector_identifier_uri,
+            Some(sector_identifier_host),
+        )
     };
 
     validate_pkce_compatibility_policy(

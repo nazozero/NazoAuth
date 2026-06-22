@@ -1,4 +1,7 @@
-use super::{is_blocked_host, is_blocked_ip, sector_identifier_hostname};
+use super::{
+    SectorIdentifierError, fetch_sector_identifier_uris, is_blocked_host, is_blocked_ip,
+    sector_identifier_hostname,
+};
 use std::net::IpAddr;
 
 #[test]
@@ -61,6 +64,7 @@ fn block_127_domain() {
 #[test]
 fn allow_public_domain() {
     assert!(!is_blocked_host("example.com"));
+    assert!(!is_blocked_host("2001:4860:4860::8888"));
 }
 
 #[test]
@@ -79,4 +83,44 @@ fn hostname_rejects_invalid_uri() {
 #[test]
 fn hostname_from_uri_with_empty_authority() {
     assert_eq!(sector_identifier_hostname("https:///path").unwrap(), "path");
+}
+
+#[test]
+fn block_ipv6_multicast_and_mapped_unspecified() {
+    assert!(is_blocked_ip("ff02::1".parse::<IpAddr>().unwrap()));
+    assert!(is_blocked_ip("::ffff:0.0.0.0".parse::<IpAddr>().unwrap()));
+}
+
+#[test]
+fn block_literal_private_hosts() {
+    assert!(is_blocked_host("0.0.0.0"));
+    assert!(is_blocked_host("::1"));
+    assert!(is_blocked_host("::"));
+}
+
+#[actix_web::test]
+async fn fetch_rejects_invalid_sector_identifier_uri_before_network() {
+    let err = fetch_sector_identifier_uris("not-a-uri")
+        .await
+        .expect_err("invalid URI must fail before DNS or HTTP");
+
+    assert!(matches!(err, SectorIdentifierError::InvalidUri));
+}
+
+#[actix_web::test]
+async fn fetch_rejects_non_https_sector_identifier_uri() {
+    let err = fetch_sector_identifier_uris("http://example.com/sector.json")
+        .await
+        .expect_err("sector_identifier_uri must be HTTPS");
+
+    assert!(matches!(err, SectorIdentifierError::SchemeNotHttps));
+}
+
+#[actix_web::test]
+async fn fetch_rejects_loopback_sector_identifier_uri_before_dns() {
+    let err = fetch_sector_identifier_uris("https://127.0.0.1/sector.json")
+        .await
+        .expect_err("loopback sector_identifier_uri must be blocked before DNS");
+
+    assert!(matches!(err, SectorIdentifierError::BlockedHost));
 }

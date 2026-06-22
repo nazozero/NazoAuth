@@ -186,6 +186,105 @@ async fn prepare_client_insert_rejects_secret_auth_for_public_clients() {
     }
 }
 
+#[actix_web::test]
+async fn prepare_client_insert_rejects_pairwise_when_secret_is_not_configured() {
+    let mut payload = create_request();
+    payload.token_endpoint_auth_method = "client_secret_basic".to_owned();
+    payload.jwks = None;
+    payload.subject_type = Some("pairwise".to_owned());
+
+    let err = prepare_client_insert(payload, None, "http://localhost:8000")
+        .await
+        .err()
+        .expect("pairwise subject registration requires a configured server secret");
+
+    match err {
+        InsertClientError::InvalidRequest(message) => assert!(
+            message.contains("PAIRWISE_SUBJECT_SECRET"),
+            "error should identify the missing pairwise server secret: {message}"
+        ),
+        InsertClientError::Server(message) => {
+            panic!("pairwise metadata validation must not be reported as server error: {message}")
+        }
+    }
+}
+
+#[actix_web::test]
+async fn prepare_client_insert_derives_pairwise_sector_from_single_redirect_host() {
+    let mut payload = create_request();
+    payload.token_endpoint_auth_method = "client_secret_basic".to_owned();
+    payload.jwks = None;
+    payload.subject_type = Some("pairwise".to_owned());
+    payload.redirect_uris = vec![
+        "https://client.example/callback".to_owned(),
+        "https://client.example/alternate".to_owned(),
+    ];
+
+    let prepared = prepare_client_insert(
+        payload,
+        Some("01234567890123456789012345678901"),
+        "http://localhost:8000",
+    )
+    .await
+    .expect("pairwise registration with one redirect host should be accepted");
+
+    assert_eq!(prepared.subject_type, "pairwise");
+    assert!(prepared.sector_identifier_uri.is_none());
+    assert_eq!(
+        prepared.sector_identifier_host.as_deref(),
+        Some("client.example")
+    );
+}
+
+#[actix_web::test]
+async fn prepare_client_insert_rejects_pairwise_redirects_with_multiple_hosts_without_sector_uri() {
+    let mut payload = create_request();
+    payload.token_endpoint_auth_method = "client_secret_basic".to_owned();
+    payload.jwks = None;
+    payload.subject_type = Some("pairwise".to_owned());
+    payload.redirect_uris = vec![
+        "https://client.example/callback".to_owned(),
+        "https://other.example/callback".to_owned(),
+    ];
+
+    let err = prepare_client_insert(
+        payload,
+        Some("01234567890123456789012345678901"),
+        "http://localhost:8000",
+    )
+    .await
+    .err()
+    .expect("multi-host pairwise redirect set requires a sector_identifier_uri");
+
+    match err {
+        InsertClientError::InvalidRequest(message) => assert!(
+            message.contains("sector_identifier_uri"),
+            "error should identify the missing sector identifier boundary: {message}"
+        ),
+        InsertClientError::Server(message) => {
+            panic!("pairwise metadata validation must not be reported as server error: {message}")
+        }
+    }
+}
+
+#[actix_web::test]
+async fn prepare_client_insert_discards_sector_identifier_for_public_subjects() {
+    let mut payload = create_request();
+    payload.client_type = "public".to_owned();
+    payload.token_endpoint_auth_method = "none".to_owned();
+    payload.jwks = None;
+    payload.subject_type = Some("public".to_owned());
+    payload.sector_identifier_uri = Some("https://sector.example/client.json".to_owned());
+
+    let prepared = prepare_client_insert(payload, None, "http://localhost:8000")
+        .await
+        .expect("public subjects do not use sector identifiers");
+
+    assert_eq!(prepared.subject_type, "public");
+    assert!(prepared.sector_identifier_uri.is_none());
+    assert!(prepared.sector_identifier_host.is_none());
+}
+
 #[test]
 fn insert_client_error_response_preserves_oauth_error_category() {
     let invalid = insert_client_error_response(InsertClientError::InvalidRequest(

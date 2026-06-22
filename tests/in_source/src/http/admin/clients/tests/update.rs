@@ -322,6 +322,14 @@ fn current_client() -> ClientRow {
     }
 }
 
+fn pairwise_current_client() -> ClientRow {
+    let mut client = current_client();
+    client.subject_type = "pairwise".to_owned();
+    client.sector_identifier_uri = Some("https://sector.example/client.json".to_owned());
+    client.sector_identifier_host = Some("sector.example".to_owned());
+    client
+}
+
 fn empty_patch() -> PatchClientRequest {
     PatchClientRequest {
         client_name: None,
@@ -411,6 +419,138 @@ async fn patch_rejects_post_logout_redirect_uri_with_surrounding_whitespace() {
         error.to_string().contains("post_logout_redirect_uri"),
         "error should identify the exact post_logout_redirect_uri boundary: {error}"
     );
+}
+
+#[actix_web::test]
+async fn patch_rejects_pairwise_when_secret_is_not_configured() {
+    let mut patch = empty_patch();
+    patch.subject_type = Some("pairwise".to_owned());
+
+    let error = prepare_client_patch(&current_client(), patch, None, "http://localhost:8000")
+        .await
+        .err()
+        .expect("pairwise subject update requires a configured server secret");
+
+    assert!(
+        error.to_string().contains("PAIRWISE_SUBJECT_SECRET"),
+        "error should identify the missing pairwise server secret: {error}"
+    );
+}
+
+#[actix_web::test]
+async fn patch_derives_pairwise_sector_from_updated_single_redirect_host() {
+    let mut patch = empty_patch();
+    patch.subject_type = Some("pairwise".to_owned());
+    patch.redirect_uris = Some(vec![
+        "https://client.example/callback".to_owned(),
+        "https://client.example/alternate".to_owned(),
+    ]);
+
+    let prepared = prepare_client_patch(
+        &current_client(),
+        patch,
+        Some("01234567890123456789012345678901"),
+        "http://localhost:8000",
+    )
+    .await
+    .expect("pairwise update with one redirect host should be accepted");
+
+    assert_eq!(prepared.subject_type, "pairwise");
+    assert!(prepared.sector_identifier_uri.is_none());
+    assert_eq!(
+        prepared.sector_identifier_host.as_deref(),
+        Some("client.example")
+    );
+}
+
+#[actix_web::test]
+async fn patch_rejects_pairwise_redirects_with_multiple_hosts_without_sector_uri() {
+    let mut patch = empty_patch();
+    patch.subject_type = Some("pairwise".to_owned());
+    patch.redirect_uris = Some(vec![
+        "https://client.example/callback".to_owned(),
+        "https://other.example/callback".to_owned(),
+    ]);
+
+    let error = prepare_client_patch(
+        &current_client(),
+        patch,
+        Some("01234567890123456789012345678901"),
+        "http://localhost:8000",
+    )
+    .await
+    .err()
+    .expect("multi-host pairwise redirect set requires a sector_identifier_uri");
+
+    assert!(
+        error.to_string().contains("sector_identifier_uri"),
+        "error should identify the missing sector identifier boundary: {error}"
+    );
+}
+
+#[actix_web::test]
+async fn patch_preserves_existing_pairwise_sector_host_without_refetching_uri() {
+    let mut patch = empty_patch();
+    patch.client_name = Some("Renamed pairwise client".to_owned());
+
+    let prepared = prepare_client_patch(
+        &pairwise_current_client(),
+        patch,
+        Some("01234567890123456789012345678901"),
+        "http://localhost:8000",
+    )
+    .await
+    .expect("unrelated patch should preserve existing pairwise sector metadata");
+
+    assert_eq!(prepared.client_name, "Renamed pairwise client");
+    assert_eq!(
+        prepared.sector_identifier_uri.as_deref(),
+        Some("https://sector.example/client.json")
+    );
+    assert_eq!(
+        prepared.sector_identifier_host.as_deref(),
+        Some("sector.example")
+    );
+}
+
+#[actix_web::test]
+async fn patch_rejects_modifying_existing_sector_identifier_uri() {
+    let mut patch = empty_patch();
+    patch.sector_identifier_uri = Some("https://other-sector.example/client.json".to_owned());
+
+    let error = prepare_client_patch(
+        &pairwise_current_client(),
+        patch,
+        Some("01234567890123456789012345678901"),
+        "http://localhost:8000",
+    )
+    .await
+    .err()
+    .expect("existing sector_identifier_uri must be immutable");
+
+    assert!(
+        error.to_string().contains("不可修改"),
+        "error should identify immutable sector identifier metadata: {error}"
+    );
+}
+
+#[actix_web::test]
+async fn patch_clears_pairwise_sector_metadata_when_subject_becomes_public() {
+    let mut patch = empty_patch();
+    patch.subject_type = Some("public".to_owned());
+
+    let prepared = prepare_client_patch(
+        &pairwise_current_client(),
+        patch,
+        Some("01234567890123456789012345678901"),
+        "http://localhost:8000",
+    )
+    .await
+    .expect("switching back to public should remove pairwise-only metadata");
+
+    assert_eq!(prepared.subject_type, "public");
+    assert!(prepared.sector_identifier_uri.is_none());
+    assert!(prepared.sector_identifier_host.is_none());
 }
 
 #[actix_web::test]
