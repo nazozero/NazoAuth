@@ -10,16 +10,13 @@ use super::cors;
 
 pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
     cfg.service(
-            web::resource("/health")
-                .wrap(cors::cors_well_known(settings))
-                .route(web::get().to(health)),
-        )
-        // NO CORS: /authorize
-        .service(
-            web::resource("/authorize")
-                .route(web::get().to(authorize_get))
-                .route(web::post().to(authorize_post)),
-        )
+        web::resource("/health")
+            .wrap(cors::cors_well_known(settings))
+            .route(web::get().to(health)),
+    );
+    // NO CORS: /authorize
+    cfg.route("/authorize", web::get().to(authorize_get))
+        .route(web::post().to(authorize_post))
         .route("/authorize/consent", web::get().to(authorize_consent))
         .route("/authorize/decision", web::post().to(authorize_decision))
         // NO CORS: /par
