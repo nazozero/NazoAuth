@@ -55,12 +55,7 @@ pub(crate) fn validate_oauth_redirect_uri(client_type: &str, value: &str) -> any
     }
 
     match uri.scheme() {
-        "https" => {
-            if !uri.has_host() {
-                bail!("https redirect_uri 必须包含 host");
-            }
-            Ok(())
-        }
+        "https" => Ok(()),
         "http" => {
             if client_type != "public" || !is_loopback_host(&uri) {
                 bail!("http redirect_uri 只允许 public native client 使用 loopback 地址");
@@ -144,5 +139,5 @@ fn is_private_use_scheme(scheme: &str) -> bool {
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/src/support/tests/uri_policy.rs"]
+#[path = "../../tests/in_source/src/support/tests/uri_policy.rs"]
 mod tests;

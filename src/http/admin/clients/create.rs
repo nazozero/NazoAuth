@@ -43,6 +43,7 @@ pub(crate) struct CreateClientRequest {
     pub(crate) jwks: Option<Value>,
 }
 
+#[derive(Debug)]
 pub(crate) enum InsertClientError {
     InvalidRequest(String),
     Server(String),
@@ -309,5 +310,5 @@ pub(crate) fn trim_string_vec(values: Vec<String>) -> Vec<String> {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/unit/src/http/admin/clients/tests/create.rs"]
+#[path = "../../../../tests/in_source/src/http/admin/clients/tests/create.rs"]
 mod tests;

@@ -41,6 +41,14 @@ fn client_credentials_issue_request(
     } else {
         requested
     };
+    if scopes.iter().any(|scope| scope == "openid") {
+        return Err(oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_scope",
+            "client_credentials 不支持 openid scope.",
+            false,
+        ));
+    }
     let audiences = if form.audiences.is_empty() {
         vec![settings.default_audience.clone()]
     } else {
@@ -127,5 +135,5 @@ pub(crate) async fn token_client_credentials(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/token/tests/client_credentials.rs"]
+#[path = "../../../tests/in_source/src/http/token/tests/client_credentials.rs"]
 mod tests;

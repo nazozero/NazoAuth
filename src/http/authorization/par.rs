@@ -31,6 +31,14 @@ pub(crate) async fn par(state: Data<AppState>, req: HttpRequest, body: Bytes) ->
     {
         return response;
     }
+    par_after_rate_limit(state, req, body).await
+}
+
+pub(crate) async fn par_after_rate_limit(
+    state: Data<AppState>,
+    req: HttpRequest,
+    body: Bytes,
+) -> HttpResponse {
     let content_type = req
         .headers()
         .get(header::CONTENT_TYPE)
@@ -203,17 +211,8 @@ pub(crate) async fn par(state: Data<AppState>, req: HttpRequest, body: Bytes) ->
         issued_at: now,
         expires_at: now + Duration::seconds(state.settings.par_ttl_seconds as i64),
     };
-    let body = match serde_json::to_string(&payload) {
-        Ok(body) => body,
-        Err(error) => {
-            tracing::warn!(%error, "failed to serialize PAR payload");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "PAR 写入失败.",
-            );
-        }
-    };
+    let body = serde_json::to_string(&payload)
+        .expect("pushed authorization request serialization must be infallible");
     if let Err(error) = valkey_set_ex(
         &state.valkey,
         pushed_authorization_request_key(&request_uri),
@@ -330,5 +329,5 @@ fn validate_pushed_authorization_request_profile(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/authorization/tests/par.rs"]
+#[path = "../../../tests/in_source/src/http/authorization/tests/par.rs"]
 mod tests;

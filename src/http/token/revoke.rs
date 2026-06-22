@@ -47,7 +47,25 @@ pub(crate) async fn revoke_after_rate_limit(
             has_basic,
         );
     };
-    let client = match find_client(&state.diesel_db, client_id).await {
+    let mut conn = match get_conn(&state.diesel_db).await {
+        Ok(conn) => conn,
+        Err(error) => {
+            tracing::warn!(%error, "failed to get database connection for token revocation client lookup");
+            return token_management_oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "客户端查询失败.",
+            );
+        }
+    };
+    let client = match oauth_clients::table
+        .filter(oauth_clients::tenant_id.eq(DEFAULT_TENANT_ID))
+        .filter(oauth_clients::client_id.eq(client_id))
+        .select(ClientRow::as_select())
+        .first::<ClientRow>(&mut conn)
+        .await
+        .optional()
+    {
         Ok(Some(client)) => client,
         Ok(None) => {
             return token_management_client_auth_error(
@@ -68,29 +86,19 @@ pub(crate) async fn revoke_after_rate_limit(
         return token_management_client_auth_error(error, has_basic);
     }
     let refresh_hash = blake3_hex(&form.token);
-    let updated = match get_conn(&state.diesel_db).await {
-        Ok(mut conn) => match diesel::update(
-            oauth_tokens::table
-                .filter(oauth_tokens::tenant_id.eq(client.tenant_id))
-                .filter(oauth_tokens::refresh_token_blake3.eq(&refresh_hash))
-                .filter(oauth_tokens::client_id.eq(client.id)),
-        )
-        .set(oauth_tokens::revoked_at.eq(diesel_now))
-        .execute(&mut conn)
-        .await
-        {
-            Ok(updated) => updated,
-            Err(error) => {
-                tracing::warn!(%error, "failed to revoke refresh token");
-                return token_management_oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "token 撤销失败.",
-                );
-            }
-        },
+    let updated = match diesel::update(
+        oauth_tokens::table
+            .filter(oauth_tokens::tenant_id.eq(client.tenant_id))
+            .filter(oauth_tokens::refresh_token_blake3.eq(&refresh_hash))
+            .filter(oauth_tokens::client_id.eq(client.id)),
+    )
+    .set(oauth_tokens::revoked_at.eq(diesel_now))
+    .execute(&mut conn)
+    .await
+    {
+        Ok(updated) => updated,
         Err(error) => {
-            tracing::warn!(%error, "failed to get database connection for token revocation");
+            tracing::warn!(%error, "failed to revoke refresh token");
             return token_management_oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -102,22 +110,7 @@ pub(crate) async fn revoke_after_rate_limit(
         && let Some(claims) = decode_access_claims(&state, &form.token)
         && claims.client_id == client.client_id
         && let Some(expires_at) = DateTime::<Utc>::from_timestamp(claims.exp, 0)
-    {
-        let mut conn = match get_conn(&state.diesel_db).await {
-            Ok(conn) => conn,
-            Err(error) => {
-                tracing::warn!(
-                    %error,
-                    "failed to get database connection for access token revocation"
-                );
-                return token_management_oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "token 撤销失败.",
-                );
-            }
-        };
-        if let Err(error) = diesel::insert_into(access_token_revocations::table)
+        && let Err(error) = diesel::insert_into(access_token_revocations::table)
             .values((
                 access_token_revocations::access_token_jti_blake3.eq(blake3_hex(&claims.jti)),
                 access_token_revocations::tenant_id.eq(client.tenant_id),
@@ -132,14 +125,13 @@ pub(crate) async fn revoke_after_rate_limit(
             .do_nothing()
             .execute(&mut conn)
             .await
-        {
-            tracing::warn!(%error, "failed to revoke access token");
-            return token_management_oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "token 撤销失败.",
-            );
-        }
+    {
+        tracing::warn!(%error, "failed to revoke access token");
+        return token_management_oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "token 撤销失败.",
+        );
     }
     audit_event(
         "token_revoked",
@@ -157,5 +149,5 @@ pub(crate) async fn revoke_after_rate_limit(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/token/tests/revoke.rs"]
+#[path = "../../../tests/in_source/src/http/token/tests/revoke.rs"]
 mod tests;

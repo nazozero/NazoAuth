@@ -137,19 +137,10 @@ pub(super) async fn issue_authorization_code_without_interaction(
         issued_at: now,
         expires_at: now + Duration::seconds(state.settings.auth_code_ttl_seconds as i64),
     };
-    let body = match serde_json::to_string(&AuthorizationCodeState::Pending {
+    let body = serde_json::to_string(&AuthorizationCodeState::Pending {
         payload: code_payload,
-    }) {
-        Ok(body) => body,
-        Err(error) => {
-            tracing::warn!(%error, "failed to serialize prompt=none authorization code state");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "授权码创建失败.",
-            );
-        }
-    };
+    })
+    .expect("prompt=none authorization code state serialization must be infallible");
     if let Err(error) = valkey_set_ex(
         &state.valkey,
         authorization_code_key(&code),

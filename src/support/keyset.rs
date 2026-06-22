@@ -474,5 +474,5 @@ fn sign_local_jwt_input(
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/src/support/tests/keyset.rs"]
+#[path = "../../tests/in_source/src/support/tests/keyset.rs"]
 mod tests;

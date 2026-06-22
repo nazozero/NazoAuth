@@ -66,5 +66,5 @@ pub(super) fn scim_error(status: StatusCode, scim_type: &str, detail: &str) -> H
 }
 
 #[cfg(test)]
-#[path = "../../../tests/unit/src/http/scim/tests/schema.rs"]
+#[path = "../../../tests/in_source/src/http/scim/tests/schema.rs"]
 mod tests;

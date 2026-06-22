@@ -121,5 +121,5 @@ fn security_headers() -> DefaultHeaders {
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/src/bootstrap/tests/bootstrap.rs"]
+#[path = "../../tests/in_source/src/bootstrap/tests/bootstrap.rs"]
 mod tests;
