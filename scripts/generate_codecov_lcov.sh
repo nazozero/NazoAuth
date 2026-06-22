@@ -77,14 +77,23 @@ docker run -d --name "$VALKEY_CONTAINER" \
   "${valkey_port_args[@]}" \
   valkey/valkey:9-alpine
 
-for _ in $(seq 1 60); do
-  if docker exec "$POSTGRES_CONTAINER" pg_isready -U postgres -d oauth >/dev/null 2>&1 \
+services_ready=false
+for attempt in $(seq 1 60); do
+  if docker exec "$POSTGRES_CONTAINER" sh -lc \
+      'pg_isready -U postgres -d oauth >/dev/null && psql -U postgres -d oauth -c "select 1" >/dev/null' \
     && docker exec "$VALKEY_CONTAINER" valkey-cli ping >/dev/null 2>&1
   then
+    services_ready=true
     break
   fi
   sleep 2
 done
+if [[ "$services_ready" != "true" ]]; then
+  docker exec "$POSTGRES_CONTAINER" pg_isready -U postgres -d oauth || true
+  docker exec "$VALKEY_CONTAINER" valkey-cli ping || true
+  echo "Coverage dependencies did not become ready." >&2
+  exit 1
+fi
 docker exec "$POSTGRES_CONTAINER" pg_isready -U postgres -d oauth
 docker exec "$VALKEY_CONTAINER" valkey-cli ping
 
