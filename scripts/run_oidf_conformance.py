@@ -1622,6 +1622,9 @@ def run_official_runner(
     if monitor is not None and monitor.failure_message:
         return 1
 
+    if exit_code != 0:
+        return exit_code
+
     if aliases:
         final_failure = inspect_oidf_state(
             conformance_server,
@@ -1729,7 +1732,7 @@ def main() -> int:
         env,
         args.timeout_seconds,
         args.conformance_server,
-        set() if args.list else aliases,
+        set() if args.list or args.rerun else aliases,
         token,
         args.monitor_interval_seconds,
     )
