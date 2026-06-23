@@ -1,7 +1,8 @@
 //! 授权请求入口端点。
 // 该端点只创建 consent 临时状态，不签发授权码。
 use super::{
-    apply_request_object, pushed_authorization_request_key, unverified_request_object_client_id,
+    apply_request_object, is_pushed_authorization_request_uri, pushed_authorization_request_key,
+    unverified_request_object_client_id,
 };
 use crate::http::prelude::*;
 
@@ -57,7 +58,10 @@ async fn authorize_request(
             "request 参数未启用.",
         );
     }
-    if !state.settings.enable_request_uri_parameter && q.contains_key("request_uri") {
+    if !state.settings.enable_request_uri_parameter
+        && q.get("request_uri")
+            .is_some_and(|request_uri| !is_pushed_authorization_request_uri(request_uri))
+    {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
