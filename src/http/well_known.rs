@@ -1,15 +1,17 @@
 use super::prelude::*;
 use crate::domain::Keyset;
+use crate::http::authorization::request::BASELINE_ACR_VALUE;
 use crate::settings::{AuthorizationServerProfile, Settings, SubjectType};
 
 const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
 const REQUEST_OBJECT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
 const PROMPT_VALUES_SUPPORTED: [&str; 4] = ["login", "consent", "select_account", "none"];
-const CLAIMS_SUPPORTED: [&str; 23] = [
+const CLAIMS_SUPPORTED: [&str; 24] = [
     "sub",
     "auth_time",
     "amr",
     "nonce",
+    "acr",
     "preferred_username",
     "name",
     "given_name",
@@ -100,6 +102,7 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
         "introspection_endpoint_auth_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS,
         "scopes_supported": ["openid", "profile", "email", "address", "phone", "offline_access"],
         "claims_supported": CLAIMS_SUPPORTED,
+        "acr_values_supported": [BASELINE_ACR_VALUE],
         "prompt_values_supported": PROMPT_VALUES_SUPPORTED,
         "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
         "authorization_response_iss_parameter_supported": true,

@@ -1,4 +1,5 @@
 use super::*;
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -162,6 +163,28 @@ fn signed_request_object(client_id: &str, private_pkcs8_der: &[u8], extra: Value
         &jsonwebtoken::EncodingKey::from_rsa_der(private_pkcs8_der),
     )
     .expect("PAR request object should sign")
+}
+
+fn unsigned_request_object(client_id: &str) -> String {
+    let now = Utc::now().timestamp();
+    let header = json!({"alg": "none"});
+    let claims = json!({
+        "client_id": client_id,
+        "iss": client_id,
+        "sub": client_id,
+        "aud": "https://issuer.example",
+        "iat": now,
+        "nbf": now,
+        "exp": now + 120,
+        "jti": format!("par-unsigned-jti-{}", Uuid::now_v7()),
+        "response_type": "code",
+        "redirect_uri": "https://client.example/callback",
+    });
+    format!(
+        "{}.{}.",
+        URL_SAFE_NO_PAD.encode(header.to_string()),
+        URL_SAFE_NO_PAD.encode(claims.to_string())
+    )
 }
 
 fn unavailable_valkey_client(timeout_ms: u64) -> fred::prelude::Client {
@@ -840,6 +863,35 @@ async fn par_rejects_request_uri_from_request_object_after_client_authentication
     let body = Bytes::from(format!(
         "client_id={}&client_secret={}&request={}",
         urlencoding::encode(&client_id),
+        urlencoding::encode(&secret),
+        urlencoding::encode(&request_object)
+    ));
+
+    let response = par_after_rate_limit(fixture.state, par_form_request(), body).await;
+    let (status, value) = par_json_body(response).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(value.get("error"), Some(&json!("invalid_request_object")));
+    assert!(value.get("request_uri").is_none());
+}
+
+#[actix_web::test]
+async fn par_rejects_unsigned_request_object_without_outer_client_id_as_request_object_error() {
+    let Some(fixture) = LiveParFixture::new_with_settings(|s| {
+        s.enable_par_request_object = true;
+    })
+    .await
+    else {
+        return;
+    };
+    let client_id = format!("par-unsigned-request-object-{}", Uuid::now_v7().simple());
+    let secret = par_test_secret();
+    fixture
+        .insert_client_secret_post_client(&client_id, &secret)
+        .await;
+    let request_object = unsigned_request_object(&client_id);
+    let body = Bytes::from(format!(
+        "client_secret={}&request={}",
         urlencoding::encode(&secret),
         urlencoding::encode(&request_object)
     ));

@@ -335,7 +335,7 @@ async fn basic_request_object_rejects_unsigned_request_object_claims() {
 }
 
 #[test]
-fn unverified_client_id_rejects_unsigned_request_object_claims() {
+fn unverified_client_id_reads_unsigned_request_object_claims() {
     let token = request_object(
         json!({
             "client_id": "client-a",
@@ -348,7 +348,10 @@ fn unverified_client_id_rejects_unsigned_request_object_claims() {
         "none",
         "",
     );
-    assert!(unverified_request_object_client_id(&token).is_none());
+    assert_eq!(
+        unverified_request_object_client_id(&token).as_deref(),
+        Some("client-a")
+    );
 }
 
 #[test]
@@ -417,17 +420,13 @@ fn unverified_client_id_rejects_mismatched_party_claims() {
 }
 
 #[test]
-fn unverified_client_id_rejects_invalid_compact_signatures() {
+fn unverified_client_id_reads_claims_without_trusting_signature_state() {
     let payload = json!({"client_id": "client-a"});
-    let unsigned_with_signature = request_object(
-        payload.clone(),
-        "none",
-        &URL_SAFE_NO_PAD.encode("signature"),
-    );
-    assert!(unverified_request_object_client_id(&unsigned_with_signature).is_none());
-
     let signed_without_signature = request_object(payload, "EdDSA", "");
-    assert!(unverified_request_object_client_id(&signed_without_signature).is_none());
+    assert_eq!(
+        unverified_request_object_client_id(&signed_without_signature).as_deref(),
+        Some("client-a")
+    );
 }
 
 #[test]
