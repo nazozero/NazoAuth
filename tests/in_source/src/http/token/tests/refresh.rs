@@ -547,6 +547,15 @@ fn refresh_token_policy_uses_configured_authorization_server_profile() {
         "FAPI refresh-token grants rotate when the stored token has no stable sender constraint"
     );
 
+    let mut mtls_bound_token = token_row();
+    mtls_bound_token.dpop_jkt = None;
+    mtls_bound_token.mtls_x5t_s256 = Some("mtls-thumbprint".to_owned());
+    assert_eq!(
+        refresh_token_policy_for_profile(&settings, &client, &mtls_bound_token),
+        RefreshTokenPolicy::PreserveExisting,
+        "mTLS-bound refresh-token families are also stable sender-constrained tokens"
+    );
+
     settings.authorization_server_profile = AuthorizationServerProfile::Oauth2Baseline;
     assert_eq!(
         refresh_token_policy_for_profile(&settings, &client, &token),
@@ -1008,6 +1017,48 @@ async fn refresh_grant_rejects_tokens_for_inactive_users_without_openid_scope() 
     assert!(body.get("access_token").is_none());
     assert!(body.get("refresh_token").is_none());
     assert!(body.get("id_token").is_none());
+}
+
+#[actix_web::test]
+async fn refresh_grant_accepts_tokens_for_active_users_without_openid_scope() {
+    let Some(state) = live_refresh_state(AuthorizationServerProfile::Oauth2Baseline) else {
+        return;
+    };
+    let req = actix_web::test::TestRequest::post()
+        .uri("/oauth/token")
+        .to_http_request();
+    let mut client = client_row();
+    client.require_dpop_bound_tokens = false;
+    client.scopes = json!(["offline_access", "api"]);
+    insert_refresh_client(&state, &client).await;
+
+    let user_id = Uuid::now_v7();
+    insert_refresh_user(&state, user_id, true).await;
+    let raw_refresh_token = format!("refresh-active-user-{}", Uuid::now_v7());
+    let mut token = token_row();
+    token.client_id = client.id;
+    token.user_id = Some(user_id);
+    token.scopes = json!(["offline_access", "api"]);
+    token.subject = user_id.to_string();
+    token.dpop_jkt = None;
+    insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
+    let mut form = refresh_form_without_token();
+    form.refresh_token = Some(raw_refresh_token);
+
+    let (status, body) =
+        response_json(token_refresh(&state, &req, &client, &form, None).await).await;
+
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "unexpected refresh response: {body}"
+    );
+    assert_eq!(body["token_type"], "Bearer");
+    assert!(
+        body["access_token"]
+            .as_str()
+            .is_some_and(|value| !value.is_empty())
+    );
 }
 
 #[actix_web::test]

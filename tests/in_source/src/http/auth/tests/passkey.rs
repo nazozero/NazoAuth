@@ -671,6 +671,75 @@ async fn passkey_login_finish_requires_mfa_for_mfa_enabled_user_without_remember
 }
 
 #[actix_web::test]
+async fn passkey_login_finish_skips_pending_mfa_for_remembered_device() {
+    let Some(fixture) = LivePasskeyFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let user_agent = format!("passkey-remembered-mfa/{suffix}");
+    let user = fixture
+        .create_user(&format!("remembered-mfa-{suffix}"))
+        .await;
+    fixture.set_user_mfa_enabled(user.id, true).await;
+    let user = find_user_by_id(&fixture.state.diesel_db, user.id)
+        .await
+        .expect("user lookup should succeed")
+        .expect("user should exist");
+    let remember_request = actix_web::test::TestRequest::default()
+        .insert_header((header::USER_AGENT, user_agent.clone()))
+        .to_http_request();
+    let remember_token = remember_mfa_device(&fixture.state, &remember_request, &user)
+        .await
+        .expect("remembered device token should be generated");
+    let mut authenticator =
+        FakeAuthenticator::new(format!("remembered-mfa-credential-{suffix}").as_bytes());
+    let credential = fixture.register_credential(&user, &authenticator);
+    fixture.insert_credential(&user, &credential).await;
+    let (ceremony_id, challenge) = begin_passkey_login(&fixture, &user.email).await;
+
+    let finish_response = passkey_login_finish(
+        fixture.state.clone(),
+        actix_web::test::TestRequest::default()
+            .insert_header((header::USER_AGENT, user_agent))
+            .cookie(actix_web::cookie::Cookie::new(
+                MFA_REMEMBERED_COOKIE_NAME,
+                remember_token,
+            ))
+            .to_http_request(),
+        Json(PasskeyLoginFinishRequest {
+            ceremony_id,
+            response: authenticator.authentication_response(
+                &challenge,
+                &fixture.state.settings.passkey.origin,
+                Some(&passkey_user_handle(&user)),
+            ),
+        }),
+    )
+    .await;
+    assert_eq!(finish_response.status(), StatusCode::OK);
+    let session_id = session_cookie_value(
+        &finish_response,
+        &fixture.state.settings.session_cookie_name,
+    );
+    let body = actix_web::body::to_bytes(finish_response.into_body())
+        .await
+        .expect("response body should be readable");
+    let body: Value = serde_json::from_slice(&body).expect("response should be json");
+    assert_eq!(body["mfa_required"], false);
+
+    let session = fixture.session_payload(&session_id).await;
+    assert_eq!(
+        session.amr,
+        vec![
+            "passkey".to_owned(),
+            "remembered_mfa".to_owned(),
+            "mfa".to_owned()
+        ]
+    );
+    assert!(!session.pending_mfa);
+}
+
+#[actix_web::test]
 async fn passkey_login_finish_rejects_credential_mismatch_uniformly_and_consumes_ceremony() {
     let Some(fixture) = LivePasskeyFixture::new().await else {
         return;

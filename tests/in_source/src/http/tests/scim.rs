@@ -1210,6 +1210,87 @@ async fn scim_delete_revokes_refresh_tokens_and_removes_client_grants() {
 }
 
 #[actix_web::test]
+async fn scim_replace_deprovision_revokes_refresh_tokens_and_removes_client_grants() {
+    let suffix = Uuid::now_v7().simple().to_string();
+    let token = format!("legacy-scim-replace-revoke-{suffix}");
+    let Some(state) = live_state_with_scim_bearer_token(&token).await else {
+        return;
+    };
+    let email = format!("scim-replace-revoke-{suffix}@example.test");
+    cleanup_scim_user_by_email(&state, &email).await;
+    let req = bearer_request(&token);
+    let user_id = create_scim_user_id(state.clone(), &req, &email).await;
+    let client_id = insert_scim_user_oauth_credentials(&state, user_id, &suffix).await;
+
+    let replace_response = scim_replace_user(
+        state.clone(),
+        req.clone(),
+        actix_web::web::Path::from(user_id),
+        Json(ScimUserRequest {
+            user_name: Some(email.clone()),
+            active: Some(false),
+            name: Some(ScimName {
+                given_name: Some("Inactive".to_owned()),
+                family_name: Some("User".to_owned()),
+                formatted: Some("Inactive User".to_owned()),
+            }),
+            emails: Some(vec![ScimEmail {
+                value: Some(email),
+                primary: Some(true),
+            }]),
+        }),
+    )
+    .await;
+    assert_eq!(replace_response.status(), StatusCode::OK);
+    assert_eq!(
+        grant_count_for_user_client(&state, user_id, client_id).await,
+        0
+    );
+    assert_eq!(
+        active_refresh_token_count_for_user_client(&state, user_id, client_id).await,
+        0
+    );
+}
+
+#[actix_web::test]
+async fn scim_patch_deprovision_revokes_refresh_tokens_and_removes_client_grants() {
+    let suffix = Uuid::now_v7().simple().to_string();
+    let token = format!("legacy-scim-patch-revoke-{suffix}");
+    let Some(state) = live_state_with_scim_bearer_token(&token).await else {
+        return;
+    };
+    let email = format!("scim-patch-revoke-{suffix}@example.test");
+    cleanup_scim_user_by_email(&state, &email).await;
+    let req = bearer_request(&token);
+    let user_id = create_scim_user_id(state.clone(), &req, &email).await;
+    let client_id = insert_scim_user_oauth_credentials(&state, user_id, &suffix).await;
+
+    let patch_response = scim_patch_user(
+        state.clone(),
+        req.clone(),
+        actix_web::web::Path::from(user_id),
+        Json(ScimPatchRequest {
+            schemas: vec![SCIM_PATCH_SCHEMA.to_owned()],
+            operations: vec![ScimPatchOperation {
+                op: "replace".to_owned(),
+                path: Some("active".to_owned()),
+                value: json!(false),
+            }],
+        }),
+    )
+    .await;
+    assert_eq!(patch_response.status(), StatusCode::OK);
+    assert_eq!(
+        grant_count_for_user_client(&state, user_id, client_id).await,
+        0
+    );
+    assert_eq!(
+        active_refresh_token_count_for_user_client(&state, user_id, client_id).await,
+        0
+    );
+}
+
+#[actix_web::test]
 async fn scim_replace_and_patch_return_uniqueness_conflicts_without_internal_fields() {
     let suffix = Uuid::now_v7().simple().to_string();
     let token = format!("legacy-scim-uniqueness-{suffix}");
