@@ -1521,6 +1521,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--disable-ssl-verify", action="store_true")
     parser.add_argument("--no-parallel", action="store_true")
     parser.add_argument(
+        "--expected-failures-file",
+        default="",
+        help="pass through the official runner expected failures/warnings JSON file",
+    )
+    parser.add_argument(
+        "--expected-skips-file",
+        default="",
+        help="pass through the official runner expected skipped tests JSON file",
+    )
+    parser.add_argument(
         "--rerun",
         default="",
         help=(
@@ -1697,6 +1707,10 @@ def main() -> int:
         command.append("--no-parallel")
     if args.rerun:
         command.extend(["--rerun", args.rerun])
+    if args.expected_failures_file:
+        command.extend(["--expected-failures-file", args.expected_failures_file])
+    if args.expected_skips_file:
+        command.extend(["--expected-skips-file", args.expected_skips_file])
     if args.export_dir:
         export_dir = Path(args.export_dir).resolve()
         export_dir.mkdir(parents=True, exist_ok=True)
