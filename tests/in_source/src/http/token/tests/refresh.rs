@@ -1040,7 +1040,7 @@ async fn refresh_grant_rejects_unbound_refresh_tokens_for_dpop_required_clients(
     assert_eq!(body["error"], "invalid_grant");
     assert_eq!(
         body["error_description"],
-        "refresh_token is not DPoP-bound."
+        "refresh_token requires proof of possession."
     );
     assert!(body.get("access_token").is_none());
     assert!(body.get("refresh_token").is_none());

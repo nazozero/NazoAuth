@@ -294,7 +294,10 @@ pub(crate) async fn token_refresh(
     } else {
         None
     };
-    if client.require_dpop_bound_tokens && token.dpop_jkt.is_none() {
+    if client.client_type == "public"
+        && client.require_dpop_bound_tokens
+        && token.dpop_jkt.is_none()
+    {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
