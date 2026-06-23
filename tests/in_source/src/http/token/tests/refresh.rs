@@ -594,6 +594,84 @@ fn lost_refresh_retry_rejects_future_revocation_times() {
     ));
 }
 
+#[actix_web::test]
+async fn lost_refresh_token_successor_returns_none_for_non_retriable_states() {
+    let Some(state) = live_refresh_state(AuthorizationServerProfile::Oauth2Baseline) else {
+        return;
+    };
+    let mut client = client_row();
+    client.require_dpop_bound_tokens = false;
+    insert_refresh_client(&state, &client).await;
+
+    let mut active = token_row();
+    active.client_id = client.id;
+    active.user_id = None;
+    active.subject = client.client_id.clone();
+    active.scopes = json!(["accounts", "offline_access"]);
+    active.dpop_jkt = None;
+    assert!(
+        lost_refresh_token_successor(&state, &active, client.id)
+            .await
+            .expect("active token should inspect")
+            .is_none()
+    );
+
+    let mut old_revoked = token_row();
+    old_revoked.client_id = client.id;
+    old_revoked.user_id = None;
+    old_revoked.subject = client.client_id.clone();
+    old_revoked.scopes = json!(["accounts", "offline_access"]);
+    old_revoked.dpop_jkt = None;
+    old_revoked.revoked_at = Some(Utc::now() - Duration::seconds(61));
+    assert!(
+        lost_refresh_token_successor(&state, &old_revoked, client.id)
+            .await
+            .expect("old revoked token should inspect")
+            .is_none()
+    );
+
+    let mut reused = token_row();
+    reused.client_id = client.id;
+    reused.user_id = None;
+    reused.subject = client.client_id.clone();
+    reused.scopes = json!(["accounts", "offline_access"]);
+    reused.dpop_jkt = None;
+    reused.token_family_id = Uuid::now_v7();
+    reused.revoked_at = Some(Utc::now() - Duration::seconds(10));
+    let reused_raw = format!("refresh-token-reused-{}", Uuid::now_v7());
+    insert_refresh_token_row(
+        &state,
+        &reused_raw,
+        &reused,
+        None,
+        Some(Utc::now() - Duration::seconds(5)),
+    )
+    .await;
+    assert!(
+        lost_refresh_token_successor(&state, &reused, client.id)
+            .await
+            .expect("reuse-marked family should inspect")
+            .is_none()
+    );
+
+    let mut revoked_without_successor = token_row();
+    revoked_without_successor.client_id = client.id;
+    revoked_without_successor.user_id = None;
+    revoked_without_successor.subject = client.client_id.clone();
+    revoked_without_successor.scopes = json!(["accounts", "offline_access"]);
+    revoked_without_successor.dpop_jkt = None;
+    revoked_without_successor.token_family_id = Uuid::now_v7();
+    revoked_without_successor.revoked_at = Some(Utc::now() - Duration::seconds(10));
+    let revoked_raw = format!("refresh-token-no-successor-{}", Uuid::now_v7());
+    insert_refresh_token_row(&state, &revoked_raw, &revoked_without_successor, None, None).await;
+    assert!(
+        lost_refresh_token_successor(&state, &revoked_without_successor, client.id)
+            .await
+            .expect("revoked token without successor should inspect")
+            .is_none()
+    );
+}
+
 #[test]
 fn refresh_token_scope_request_defaults_to_original_authorization() {
     let original = vec![
@@ -1080,6 +1158,80 @@ async fn refresh_grant_rejects_unbound_refresh_tokens_for_dpop_required_clients(
     token.subject = client.client_id.clone();
     token.scopes = json!(["offline_access", "api"]);
     token.dpop_jkt = None;
+    insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
+
+    let mut form = refresh_form_without_token();
+    form.refresh_token = Some(raw_refresh_token);
+    let (status, body) =
+        response_json(token_refresh(&state, &req, &client, &form, None).await).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_grant");
+    assert_eq!(
+        body["error_description"],
+        "refresh_token requires proof of possession."
+    );
+    assert!(body.get("access_token").is_none());
+    assert!(body.get("refresh_token").is_none());
+}
+
+#[actix_web::test]
+async fn refresh_grant_rejects_public_dpop_required_clients_with_unbound_refresh_tokens() {
+    let Some(state) = live_refresh_state(AuthorizationServerProfile::Oauth2Baseline) else {
+        return;
+    };
+    let req = actix_web::test::TestRequest::post()
+        .uri("/oauth/token")
+        .to_http_request();
+    let mut client = client_row();
+    client.client_type = "public".to_owned();
+    client.token_endpoint_auth_method = "none".to_owned();
+    client.require_dpop_bound_tokens = true;
+    insert_refresh_client(&state, &client).await;
+
+    let raw_refresh_token = format!("refresh-public-unbound-dpop-{}", Uuid::now_v7());
+    let mut token = token_row();
+    token.client_id = client.id;
+    token.user_id = None;
+    token.subject = client.client_id.clone();
+    token.scopes = json!(["offline_access", "api"]);
+    token.dpop_jkt = None;
+    insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
+
+    let mut form = refresh_form_without_token();
+    form.refresh_token = Some(raw_refresh_token);
+    let (status, body) =
+        response_json(token_refresh(&state, &req, &client, &form, None).await).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_grant");
+    assert_eq!(
+        body["error_description"],
+        "refresh_token is not DPoP-bound."
+    );
+    assert!(body.get("access_token").is_none());
+    assert!(body.get("refresh_token").is_none());
+}
+
+#[actix_web::test]
+async fn refresh_grant_rejects_dpop_bound_refresh_token_without_proof() {
+    let Some(state) = live_refresh_state(AuthorizationServerProfile::Oauth2Baseline) else {
+        return;
+    };
+    let req = actix_web::test::TestRequest::post()
+        .uri("/oauth/token")
+        .to_http_request();
+    let mut client = client_row();
+    client.require_dpop_bound_tokens = false;
+    insert_refresh_client(&state, &client).await;
+
+    let raw_refresh_token = format!("refresh-token-bound-no-proof-{}", Uuid::now_v7());
+    let mut token = token_row();
+    token.client_id = client.id;
+    token.user_id = None;
+    token.subject = client.client_id.clone();
+    token.scopes = json!(["offline_access", "api"]);
+    token.dpop_jkt = Some("stored-dpop-jkt".to_owned());
     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
 
     let mut form = refresh_form_without_token();
