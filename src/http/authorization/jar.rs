@@ -373,6 +373,19 @@ async fn store_request_object_replay_state(
 pub(crate) fn unverified_request_object_client_id(request_object: &str) -> Option<String> {
     let (header, payload, _signature) = split_compact_jwt(request_object)?;
     let _header = decode_request_object_header(header).ok()?;
+    unverified_request_object_client_id_from_payload(payload)
+}
+
+pub(crate) fn unverified_signed_request_object_client_id(request_object: &str) -> Option<String> {
+    let (header, payload, signature) = split_compact_jwt(request_object)?;
+    let header = decode_request_object_header(header).ok()?;
+    if header.alg == "none" || signature.is_empty() {
+        return None;
+    }
+    unverified_request_object_client_id_from_payload(payload)
+}
+
+fn unverified_request_object_client_id_from_payload(payload: &str) -> Option<String> {
     let claims = decode_request_object_claims(payload).ok()?;
     let issuer_matches = claims
         .iss

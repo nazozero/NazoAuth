@@ -2,7 +2,7 @@
 // 该端点只创建 consent 临时状态，不签发授权码。
 use super::{
     apply_request_object, is_pushed_authorization_request_uri, pushed_authorization_request_key,
-    unverified_request_object_client_id,
+    unverified_signed_request_object_client_id,
 };
 use crate::http::prelude::*;
 
@@ -153,7 +153,7 @@ async fn authorize_request(
 
     if !q.contains_key("client_id")
         && let Some(request_object) = q.get("request")
-        && let Some(client_id) = unverified_request_object_client_id(request_object)
+        && let Some(client_id) = unverified_signed_request_object_client_id(request_object)
     {
         q.insert("client_id".to_owned(), client_id);
     }

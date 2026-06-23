@@ -352,6 +352,7 @@ fn unverified_client_id_reads_unsigned_request_object_claims() {
         unverified_request_object_client_id(&token).as_deref(),
         Some("client-a")
     );
+    assert!(unverified_signed_request_object_client_id(&token).is_none());
 }
 
 #[test]
@@ -427,6 +428,7 @@ fn unverified_client_id_reads_claims_without_trusting_signature_state() {
         unverified_request_object_client_id(&signed_without_signature).as_deref(),
         Some("client-a")
     );
+    assert!(unverified_signed_request_object_client_id(&signed_without_signature).is_none());
 }
 
 #[test]
