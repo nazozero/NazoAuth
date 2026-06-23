@@ -134,6 +134,7 @@ pub(crate) async fn issue_token_response(
         let user_id = issue
             .user_id
             .expect("openid token issues are rejected before signing without a user subject");
+        let sector_identifier_host = client.sector_identifier_host.as_deref();
         let user_claims = match find_user_by_id(&state.diesel_db, user_id).await {
             Ok(Some(user)) if user.is_active => Some(oidc_id_token_user_claims(
                 &user,
@@ -141,6 +142,7 @@ pub(crate) async fn issue_token_response(
                 &issue.subject,
                 &issue.id_token_claims,
                 &issue.id_token_claim_requests,
+                sector_identifier_host,
             )),
             Ok(_) => {
                 mark_failed_authorization_code_if_needed(

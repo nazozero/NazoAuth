@@ -11,7 +11,7 @@ use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
 use crate::db::create_pool;
-use crate::domain::{ActiveSigningKey, Keyset};
+use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
 use crate::support::{generate_key_material, public_jwk_from_private_der};
 
 fn request_object(payload: Value, alg: &str, signature: &str) -> String {
@@ -60,6 +60,9 @@ fn jar_client(client_id: &str) -> ClientRow {
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: None,
         backchannel_logout_session_required: true,
+        subject_type: "public".to_owned(),
+        sector_identifier_uri: None,
+        sector_identifier_host: None,
     }
 }
 
@@ -98,7 +101,7 @@ fn jar_state_with_valkey(issuer: &str, valkey: fred::prelude::Client) -> AppStat
         .expect("pool construction should not connect"),
         valkey,
         settings: Arc::new(settings),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),

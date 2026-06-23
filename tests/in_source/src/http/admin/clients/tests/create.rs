@@ -24,6 +24,8 @@ fn create_request() -> CreateClientRequest {
         tls_client_auth_san_ip: Vec::new(),
         tls_client_auth_san_email: Vec::new(),
         jwks: Some(json!({"keys": []})),
+        subject_type: None,
+        sector_identifier_uri: None,
     }
 }
 
@@ -42,14 +44,14 @@ fn pkce_legacy_exception_is_limited_to_confidential_non_dpop_clients() {
     assert_eq!(dpop_err.to_string(), "DPoP-bound clients must use PKCE");
 }
 
-#[test]
-fn prepare_client_insert_issues_secret_only_for_secret_based_confidential_clients() {
+#[actix_web::test]
+async fn prepare_client_insert_issues_secret_only_for_secret_based_confidential_clients() {
     for method in ["client_secret_basic", "client_secret_post"] {
         let mut payload = create_request();
         payload.token_endpoint_auth_method = method.to_owned();
         payload.jwks = None;
 
-        let prepared = match prepare_client_insert(payload) {
+        let prepared = match prepare_client_insert(payload, None, "http://localhost:8000").await {
             Ok(prepared) => prepared,
             Err(_) => {
                 panic!("secret-based confidential client registration should be accepted")
@@ -77,13 +79,13 @@ fn prepare_client_insert_issues_secret_only_for_secret_based_confidential_client
     }
 }
 
-#[test]
-fn prepare_client_insert_does_not_issue_secret_for_public_or_mtls_clients() {
+#[actix_web::test]
+async fn prepare_client_insert_does_not_issue_secret_for_public_or_mtls_clients() {
     let mut public = create_request();
     public.client_type = "public".to_owned();
     public.token_endpoint_auth_method = "none".to_owned();
     public.jwks = None;
-    let public = match prepare_client_insert(public) {
+    let public = match prepare_client_insert(public, None, "http://localhost:8000").await {
         Ok(prepared) => prepared,
         Err(_) => panic!("public client registration without secret is valid"),
     };
@@ -94,7 +96,7 @@ fn prepare_client_insert_does_not_issue_secret_for_public_or_mtls_clients() {
     mtls.token_endpoint_auth_method = "tls_client_auth".to_owned();
     mtls.jwks = None;
     mtls.tls_client_auth_subject_dn = Some("CN=client.example".to_owned());
-    let mtls = match prepare_client_insert(mtls) {
+    let mtls = match prepare_client_insert(mtls, None, "http://localhost:8000").await {
         Ok(prepared) => prepared,
         Err(_) => panic!("mTLS client registration should be accepted without client secret"),
     };
@@ -102,8 +104,8 @@ fn prepare_client_insert_does_not_issue_secret_for_public_or_mtls_clients() {
     assert!(mtls.client_secret_argon2_hash.is_none());
 }
 
-#[test]
-fn prepare_client_insert_normalizes_optional_string_metadata() {
+#[actix_web::test]
+async fn prepare_client_insert_normalizes_optional_string_metadata() {
     let mut payload = create_request();
     payload.token_endpoint_auth_method = "tls_client_auth".to_owned();
     payload.jwks = None;
@@ -116,7 +118,7 @@ fn prepare_client_insert_normalizes_optional_string_metadata() {
     payload.tls_client_auth_san_ip = vec!["192.0.2.10".to_owned()];
     payload.tls_client_auth_san_email = vec!["ops@example.com".to_owned()];
 
-    let prepared = match prepare_client_insert(payload) {
+    let prepared = match prepare_client_insert(payload, None, "http://localhost:8000").await {
         Ok(prepared) => prepared,
         Err(_) => panic!("mTLS metadata with surrounding whitespace should be normalizable"),
     };
@@ -140,14 +142,15 @@ fn prepare_client_insert_normalizes_optional_string_metadata() {
     assert_eq!(prepared.tls_client_auth_san_email, vec!["ops@example.com"]);
 }
 
-#[test]
-fn prepare_client_insert_rejects_empty_array_metadata_before_storage() {
+#[actix_web::test]
+async fn prepare_client_insert_rejects_empty_array_metadata_before_storage() {
     let mut payload = create_request();
     payload.token_endpoint_auth_method = "client_secret_basic".to_owned();
     payload.jwks = None;
     payload.post_logout_redirect_uris = vec![" ".to_owned()];
 
-    let err = prepare_client_insert(payload)
+    let err = prepare_client_insert(payload, None, "http://localhost:8000")
+        .await
         .err()
         .expect("empty array metadata must fail closed");
     match err {
@@ -161,14 +164,15 @@ fn prepare_client_insert_rejects_empty_array_metadata_before_storage() {
     }
 }
 
-#[test]
-fn prepare_client_insert_rejects_secret_auth_for_public_clients() {
+#[actix_web::test]
+async fn prepare_client_insert_rejects_secret_auth_for_public_clients() {
     let mut payload = create_request();
     payload.client_type = "public".to_owned();
     payload.token_endpoint_auth_method = "client_secret_post".to_owned();
     payload.jwks = None;
 
-    let err = prepare_client_insert(payload)
+    let err = prepare_client_insert(payload, None, "http://localhost:8000")
+        .await
         .err()
         .expect("public clients must not be registered with client secrets");
     match err {
@@ -180,6 +184,194 @@ fn prepare_client_insert_rejects_secret_auth_for_public_clients() {
             panic!("metadata validation failure must not be reported as server error: {message}")
         }
     }
+}
+
+#[actix_web::test]
+async fn prepare_client_insert_rejects_pairwise_when_secret_is_not_configured() {
+    let mut payload = create_request();
+    payload.token_endpoint_auth_method = "client_secret_basic".to_owned();
+    payload.jwks = None;
+    payload.subject_type = Some("pairwise".to_owned());
+
+    let err = prepare_client_insert(payload, None, "http://localhost:8000")
+        .await
+        .err()
+        .expect("pairwise subject registration requires a configured server secret");
+
+    match err {
+        InsertClientError::InvalidRequest(message) => assert!(
+            message.contains("PAIRWISE_SUBJECT_SECRET"),
+            "error should identify the missing pairwise server secret: {message}"
+        ),
+        InsertClientError::Server(message) => {
+            panic!("pairwise metadata validation must not be reported as server error: {message}")
+        }
+    }
+}
+
+#[actix_web::test]
+async fn prepare_client_insert_derives_pairwise_sector_from_single_redirect_host() {
+    let mut payload = create_request();
+    payload.token_endpoint_auth_method = "client_secret_basic".to_owned();
+    payload.jwks = None;
+    payload.subject_type = Some("pairwise".to_owned());
+    payload.redirect_uris = vec![
+        "https://client.example/callback".to_owned(),
+        "https://client.example/alternate".to_owned(),
+    ];
+
+    let prepared = prepare_client_insert(
+        payload,
+        Some("01234567890123456789012345678901"),
+        "http://localhost:8000",
+    )
+    .await
+    .expect("pairwise registration with one redirect host should be accepted");
+
+    assert_eq!(prepared.subject_type, "pairwise");
+    assert!(prepared.sector_identifier_uri.is_none());
+    assert_eq!(
+        prepared.sector_identifier_host.as_deref(),
+        Some("client.example")
+    );
+}
+
+#[actix_web::test]
+async fn prepare_client_insert_rejects_pairwise_redirects_with_multiple_hosts_without_sector_uri() {
+    let mut payload = create_request();
+    payload.token_endpoint_auth_method = "client_secret_basic".to_owned();
+    payload.jwks = None;
+    payload.subject_type = Some("pairwise".to_owned());
+    payload.redirect_uris = vec![
+        "https://client.example/callback".to_owned(),
+        "https://other.example/callback".to_owned(),
+    ];
+
+    let err = prepare_client_insert(
+        payload,
+        Some("01234567890123456789012345678901"),
+        "http://localhost:8000",
+    )
+    .await
+    .err()
+    .expect("multi-host pairwise redirect set requires a sector_identifier_uri");
+
+    match err {
+        InsertClientError::InvalidRequest(message) => assert!(
+            message.contains("sector_identifier_uri"),
+            "error should identify the missing sector identifier boundary: {message}"
+        ),
+        InsertClientError::Server(message) => {
+            panic!("pairwise metadata validation must not be reported as server error: {message}")
+        }
+    }
+}
+
+#[actix_web::test]
+async fn prepare_client_insert_reports_sector_identifier_fetch_failure() {
+    let mut payload = create_request();
+    payload.token_endpoint_auth_method = "client_secret_basic".to_owned();
+    payload.jwks = None;
+    payload.subject_type = Some("pairwise".to_owned());
+    payload.redirect_uris = vec![
+        "https://client.example/callback".to_owned(),
+        "https://other.example/callback".to_owned(),
+    ];
+    payload.sector_identifier_uri = Some("https://sector.invalid/client.json".to_owned());
+
+    let err = prepare_client_insert(
+        payload,
+        Some("01234567890123456789012345678901"),
+        "http://localhost:8000",
+    )
+    .await
+    .err()
+    .expect("unresolvable sector_identifier_uri must fail registration");
+
+    match err {
+        InsertClientError::InvalidRequest(message) => assert!(
+            message.contains("sector_identifier_uri 获取失败"),
+            "error should identify sector identifier retrieval: {message}"
+        ),
+        InsertClientError::Server(message) => {
+            panic!("sector identifier validation must not be reported as server error: {message}")
+        }
+    }
+}
+
+#[actix_web::test]
+async fn prepare_client_insert_discards_sector_identifier_for_public_subjects() {
+    let mut payload = create_request();
+    payload.client_type = "public".to_owned();
+    payload.token_endpoint_auth_method = "none".to_owned();
+    payload.jwks = None;
+    payload.subject_type = Some("public".to_owned());
+    payload.sector_identifier_uri = Some("https://sector.example/client.json".to_owned());
+
+    let prepared = prepare_client_insert(payload, None, "http://localhost:8000")
+        .await
+        .expect("public subjects do not use sector identifiers");
+
+    assert_eq!(prepared.subject_type, "public");
+    assert!(prepared.sector_identifier_uri.is_none());
+    assert!(prepared.sector_identifier_host.is_none());
+}
+
+#[test]
+fn sector_identifier_host_for_redirects_accepts_registered_redirects() {
+    let redirect_uris = vec![
+        "https://client.example/callback".to_owned(),
+        "https://client.example/alternate".to_owned(),
+    ];
+    let sector_uris = vec![
+        "https://client.example/callback".to_owned(),
+        "https://client.example/alternate".to_owned(),
+        "https://client.example/unused".to_owned(),
+    ];
+
+    let host = sector_identifier_host_for_redirects(
+        "https://sector.example/client.json",
+        &redirect_uris,
+        &sector_uris,
+    )
+    .expect("all registered redirects are present in sector document");
+
+    assert_eq!(host, "sector.example");
+}
+
+#[test]
+fn sector_identifier_host_for_redirects_rejects_missing_redirect() {
+    let redirect_uris = vec![
+        "https://client.example/callback".to_owned(),
+        "https://other.example/callback".to_owned(),
+    ];
+    let sector_uris = vec!["https://client.example/callback".to_owned()];
+
+    let error = sector_identifier_host_for_redirects(
+        "https://sector.example/client.json",
+        &redirect_uris,
+        &sector_uris,
+    )
+    .expect_err("every redirect must be listed by the sector document");
+
+    assert!(
+        error.to_string().contains("other.example"),
+        "error should identify the missing redirect URI: {error}"
+    );
+}
+
+#[test]
+fn sector_identifier_host_for_redirects_rejects_invalid_sector_uri() {
+    let redirect_uris = vec!["https://client.example/callback".to_owned()];
+    let sector_uris = vec!["https://client.example/callback".to_owned()];
+
+    let error = sector_identifier_host_for_redirects("not-a-uri", &redirect_uris, &sector_uris)
+        .expect_err("sector_identifier_uri itself must have a host");
+
+    assert!(
+        error.to_string().contains("host"),
+        "error should identify the sector host parsing boundary: {error}"
+    );
 }
 
 #[test]

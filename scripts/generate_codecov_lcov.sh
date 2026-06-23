@@ -75,16 +75,25 @@ docker run -d --name "$POSTGRES_CONTAINER" \
 docker run -d --name "$VALKEY_CONTAINER" \
   "${docker_args[@]}" \
   "${valkey_port_args[@]}" \
-  valkey/valkey:9-alpine
+  valkey/valkey:8-alpine
 
-for _ in $(seq 1 60); do
-  if docker exec "$POSTGRES_CONTAINER" pg_isready -U postgres -d oauth >/dev/null 2>&1 \
+services_ready=false
+for attempt in $(seq 1 60); do
+  if docker exec "$POSTGRES_CONTAINER" sh -lc \
+      'pg_isready -U postgres -d oauth >/dev/null && psql -U postgres -d oauth -c "select 1" >/dev/null' \
     && docker exec "$VALKEY_CONTAINER" valkey-cli ping >/dev/null 2>&1
   then
+    services_ready=true
     break
   fi
   sleep 2
 done
+if [[ "$services_ready" != "true" ]]; then
+  docker exec "$POSTGRES_CONTAINER" pg_isready -U postgres -d oauth || true
+  docker exec "$VALKEY_CONTAINER" valkey-cli ping || true
+  echo "Coverage dependencies did not become ready." >&2
+  exit 1
+fi
 docker exec "$POSTGRES_CONTAINER" pg_isready -U postgres -d oauth
 docker exec "$VALKEY_CONTAINER" valkey-cli ping
 
@@ -115,6 +124,11 @@ export AUTH_RATE_LIMIT_MAX_REQUESTS='100000'
 export TOKEN_RATE_LIMIT_MAX_REQUESTS='100000'
 export TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS='100000'
 export REQUIRE_PUSHED_AUTHORIZATION_REQUESTS='false'
+export ENABLE_REQUEST_OBJECT='true'
+export ENABLE_REQUEST_URI_PARAMETER='true'
+export ENABLE_PAR_REQUEST_OBJECT='true'
+export ENABLE_AUTHORIZATION_DETAILS='true'
+export ENABLE_LEGACY_AUDIENCE_PARAM='true'
 export SCIM_BEARER_TOKEN='codecov-scim-secret'
 export FEDERATION_OIDC_PROVIDER_ID='codecov-oidc'
 export FEDERATION_OIDC_ISSUER='https://issuer.example'

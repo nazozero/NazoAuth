@@ -196,6 +196,12 @@ pub(crate) struct ClientRow {
     pub(crate) backchannel_logout_uri: Option<String>,
     #[diesel(sql_type = diesel::sql_types::Bool)]
     pub(crate) backchannel_logout_session_required: bool,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub(crate) subject_type: String,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+    pub(crate) sector_identifier_uri: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+    pub(crate) sector_identifier_host: Option<String>,
 }
 
 /// oauth_tokens 表 token 行。

@@ -3,42 +3,9 @@ use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, FederationSettings,
     PasskeySettings, RateLimitSettings, RequestObjectJtiPolicy, SubjectType,
 };
-use crate::support::{ClientIpHeaderMode, try_load_keyset};
+use crate::support::{ClientIpHeaderMode, der_to_pem, generate_key_material, try_load_keyset};
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
-
-#[test]
-fn generate_alg_parser_accepts_only_supported_key_algorithms() {
-    assert_eq!(
-        parse_generate_alg(Vec::new()).unwrap(),
-        jsonwebtoken::Algorithm::EdDSA
-    );
-    assert_eq!(
-        parse_generate_alg(vec!["--alg".to_owned(), "RS256".to_owned()]).unwrap(),
-        jsonwebtoken::Algorithm::RS256
-    );
-    assert_eq!(
-        parse_generate_alg(vec!["--alg".to_owned(), "ES256".to_owned()]).unwrap(),
-        jsonwebtoken::Algorithm::ES256
-    );
-    assert_eq!(
-        parse_generate_alg(vec!["--alg".to_owned(), "PS256".to_owned()]).unwrap(),
-        jsonwebtoken::Algorithm::PS256
-    );
-
-    let err = parse_generate_alg(vec!["--alg".to_owned(), "HS256".to_owned()]).unwrap_err();
-    assert!(
-        err.to_string().contains("unsupported signing alg HS256"),
-        "symmetric or unsupported signing algorithms must fail closed"
-    );
-
-    let err = parse_generate_alg(vec!["RS256".to_owned()]).unwrap_err();
-    assert!(
-        err.to_string()
-            .contains("usage: nazo-oauth-keyctl generate"),
-        "malformed generate CLI syntax must not fall back to default key generation"
-    );
-}
 
 #[test]
 fn register_external_parser_requires_complete_metadata() {
@@ -124,7 +91,7 @@ async fn run_without_command_reports_usage_before_loading_configuration() {
 
     assert_error_contains(
         err,
-        "usage: nazo-oauth-keyctl <list|generate|register-external|activate|retire|validate>",
+        "usage: nazo-oauth-keyctl <list|register-external|validate>",
     );
 }
 
@@ -138,7 +105,7 @@ async fn run_dispatch_rejects_unknown_and_malformed_cli_subcommands_fail_closed(
     let err = run(["nazo-oauth-keyctl".to_owned(), "activate".to_owned()])
         .await
         .unwrap_err();
-    assert_error_contains(err, "usage: nazo-oauth-keyctl activate <kid>");
+    assert_error_contains(err, "unknown keyctl command activate");
 
     let err = run([
         "nazo-oauth-keyctl".to_owned(),
@@ -147,7 +114,7 @@ async fn run_dispatch_rejects_unknown_and_malformed_cli_subcommands_fail_closed(
     ])
     .await
     .unwrap_err();
-    assert_error_contains(err, "usage: nazo-oauth-keyctl retire <kid> --at <rfc3339>");
+    assert_error_contains(err, "unknown keyctl command retire");
 
     let err = run([
         "nazo-oauth-keyctl".to_owned(),
@@ -158,7 +125,7 @@ async fn run_dispatch_rejects_unknown_and_malformed_cli_subcommands_fail_closed(
     ])
     .await
     .unwrap_err();
-    assert_error_contains(err, "usage: nazo-oauth-keyctl retire <kid> --at <rfc3339>");
+    assert_error_contains(err, "unknown keyctl command retire");
 
     let err = run([
         "nazo-oauth-keyctl".to_owned(),
@@ -168,7 +135,7 @@ async fn run_dispatch_rejects_unknown_and_malformed_cli_subcommands_fail_closed(
     ])
     .await
     .unwrap_err();
-    assert_error_contains(err, "unsupported signing alg HS256");
+    assert_error_contains(err, "unknown keyctl command generate");
 
     let err = run([
         "nazo-oauth-keyctl".to_owned(),
@@ -242,7 +209,7 @@ fn keyset_validation_requires_active_unique_supported_non_retired_key() {
     );
     assert_error_contains(
         validate_keyset_json(&retired_active).unwrap_err(),
-        "active key active cannot be retired",
+        "active key active cannot have retire_at",
     );
 }
 
@@ -358,68 +325,20 @@ fn external_public_jwk_metadata_is_bound_to_keyset_entry() {
 }
 
 #[test]
-fn retired_key_detection_uses_rfc3339_time_and_fails_open_for_malformed_metadata() {
-    assert!(key_is_retired(&local_key(
-        "old",
-        "EdDSA",
-        "old.pem",
-        Some(past())
-    )));
-    assert!(!key_is_retired(&local_key(
-        "future",
-        "EdDSA",
-        "future.pem",
-        Some(future())
-    )));
-    assert!(!key_is_retired(&local_key(
-        "bad",
-        "EdDSA",
-        "bad.pem",
-        Some("not-rfc3339".to_owned())
-    )));
-    assert!(!key_is_retired(&local_key(
-        "none", "EdDSA", "none.pem", None
-    )));
-}
-
-#[tokio::test]
-async fn generate_key_writes_private_material_and_valid_keyset_without_reusing_kids() {
-    let dir = temp_keys_dir("generate");
-    tokio::fs::create_dir_all(&dir).await.unwrap();
-    let settings = test_settings(dir.clone());
-
-    generate_key(&settings, jsonwebtoken::Algorithm::RS256)
-        .await
-        .unwrap();
-    generate_key(&settings, jsonwebtoken::Algorithm::ES256)
-        .await
-        .unwrap();
-
-    let keyset = load_keyset_json(&settings).await.unwrap();
-    let active = active_kid(&keyset).unwrap().to_owned();
-    let keys = keys_array(&keyset).unwrap();
-    assert_eq!(keys.len(), 2);
-    assert!(keys.iter().any(|key| key["alg"] == "RS256"));
-    assert!(keys.iter().any(|key| key["alg"] == "ES256"));
-    assert_eq!(active, keys[0]["kid"].as_str().unwrap());
-
-    for key in keys {
-        let file = key["file"].as_str().unwrap();
-        let pem = tokio::fs::read_to_string(dir.join(file)).await.unwrap();
-        assert!(
-            pem.contains("BEGIN PRIVATE KEY") && pem.contains("END PRIVATE KEY"),
-            "generated signing key must be written as PKCS#8 private key PEM"
-        );
-    }
-    assert!(
-        try_load_keyset(&settings, &keyset_path(&settings))
-            .await
-            .unwrap()
-            .is_some(),
-        "generated keyset must be loadable by production signing-key loader"
+fn retired_key_detection_uses_rfc3339_time_and_rejects_malformed_metadata() {
+    assert!(key_is_retired(&local_key("old", "EdDSA", "old.pem", Some(past()))).unwrap());
+    assert!(!key_is_retired(&local_key("future", "EdDSA", "future.pem", Some(future()))).unwrap());
+    assert_error_contains(
+        key_is_retired(&local_key(
+            "bad",
+            "EdDSA",
+            "bad.pem",
+            Some("not-rfc3339".to_owned()),
+        ))
+        .unwrap_err(),
+        "retire_at",
     );
-
-    let _ = tokio::fs::remove_dir_all(&dir).await;
+    assert!(!key_is_retired(&local_key("none", "EdDSA", "none.pem", None)).unwrap());
 }
 
 #[tokio::test]
@@ -432,6 +351,7 @@ async fn list_keys_accepts_supported_keyset_states() {
         vec![
             local_key("active", "EdDSA", "active.pem", None),
             local_key("previous", "RS256", "previous.pem", None),
+            local_key("grace", "RS256", "grace.pem", Some(future())),
             local_key("retired", "PS256", "retired.pem", Some(past())),
             json!({
                 "kid": "external",
@@ -453,57 +373,42 @@ async fn list_keys_accepts_supported_keyset_states() {
     let _ = tokio::fs::remove_dir_all(&dir).await;
 }
 
-#[tokio::test]
-async fn activate_and_retire_enforce_signing_key_lifecycle_invariants() {
-    let dir = temp_keys_dir("lifecycle");
-    tokio::fs::create_dir_all(&dir).await.unwrap();
-    let settings = test_settings(dir.clone());
+#[test]
+fn keyset_validation_rejects_malformed_retire_at_metadata() {
     let keyset = keyset_with_keys(
         "active",
         vec![
             local_key("active", "EdDSA", "active.pem", None),
-            local_key("previous", "RS256", "previous.pem", None),
-            local_key("retired", "PS256", "retired.pem", Some(past())),
+            local_key(
+                "previous",
+                "RS256",
+                "previous.pem",
+                Some("not-rfc3339".to_owned()),
+            ),
         ],
     );
-    write_json_atomic(&keyset_path(&settings), &keyset)
-        .await
-        .unwrap();
 
-    let err = retire_key(&settings, "active", "2026-01-01T00:00:00Z")
-        .await
-        .unwrap_err();
-    assert_error_contains(err, "active key active cannot be retired");
+    let err = validate_keyset_json(&keyset)
+        .expect_err("malformed key retirement timestamps must fail closed");
+    assert_error_contains(err, "retire_at");
+}
 
-    let err = activate_key(&settings, "retired").await.unwrap_err();
-    assert_error_contains(err, "retired key retired cannot be activated");
+#[test]
+fn keyset_validation_accepts_non_active_key_without_retire_at() {
+    let keyset = keyset_with_keys(
+        "active",
+        vec![
+            local_key("active", "EdDSA", "active.pem", None),
+            json!({
+                "kid": "previous",
+                "alg": "RS256",
+                "file": "previous.pem",
+                "created_at": "2026-01-01T00:00:00Z"
+            }),
+        ],
+    );
 
-    activate_key(&settings, "previous").await.unwrap();
-    let keyset = load_keyset_json(&settings).await.unwrap();
-    assert_eq!(active_kid(&keyset).unwrap(), "previous");
-
-    retire_key(&settings, "active", "2026-01-01T00:00:00Z")
-        .await
-        .unwrap();
-    let retired = load_keyset_json(&settings).await.unwrap();
-    let old_active = keys_array(&retired)
-        .unwrap()
-        .iter()
-        .find(|key| key["kid"] == "active")
-        .unwrap();
-    assert_eq!(old_active["retire_at"], "2026-01-01T00:00:00Z");
-
-    let err = retire_key(&settings, "missing", "2026-01-01T00:00:00Z")
-        .await
-        .unwrap_err();
-    assert_error_contains(err, "key missing does not exist");
-
-    let err = retire_key(&settings, "active", "not-rfc3339")
-        .await
-        .unwrap_err();
-    assert_error_contains(err, "--at must be RFC3339");
-
-    let _ = tokio::fs::remove_dir_all(&dir).await;
+    validate_keyset_json(&keyset).expect("missing retire_at means the non-active key is live");
 }
 
 #[tokio::test]
@@ -819,6 +724,8 @@ fn test_settings(jwk_keys_dir: PathBuf) -> Settings {
         jwk_keys_dir,
         signing_external_command: vec!["/bin/false".to_owned()],
         signing_external_timeout_ms: 2_000,
+        signing_key_rotation_interval_seconds: 7_776_000,
+        signing_key_prepublish_seconds: 86_400,
         trusted_proxy_cidrs: Vec::new(),
         client_ip_header_mode: ClientIpHeaderMode::None,
         subject_type: SubjectType::Public,
@@ -838,5 +745,10 @@ fn test_settings(jwk_keys_dir: PathBuf) -> Settings {
             oidc: None,
             saml_gateway: None,
         },
+        enable_request_object: false,
+        enable_request_uri_parameter: false,
+        enable_par_request_object: false,
+        enable_authorization_details: false,
+        enable_legacy_audience_param: false,
     }
 }

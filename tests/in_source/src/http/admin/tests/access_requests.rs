@@ -14,7 +14,7 @@ use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{ActiveSigningKey, Keyset};
+use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
 
 #[derive(QueryableByName)]
 struct IdRow {
@@ -62,7 +62,7 @@ fn test_state() -> AppState {
             Settings::from_config(&ConfigSource::default())
                 .expect("default settings should load"),
         ),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -95,6 +95,8 @@ fn create_client_request() -> CreateClientRequest {
         tls_client_auth_san_ip: Vec::new(),
         tls_client_auth_san_email: Vec::new(),
         jwks: None,
+        subject_type: None,
+        sector_identifier_uri: None,
     }
 }
 
@@ -166,7 +168,7 @@ impl LiveAdminAccessRequestFixture {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
-                keyset: Arc::new(Keyset {
+                keyset: KeysetStore::new(Keyset {
                     active_kid: "test-kid".to_owned(),
                     active_alg: jsonwebtoken::Algorithm::EdDSA,
                     active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),

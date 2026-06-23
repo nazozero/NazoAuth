@@ -11,7 +11,7 @@ use crate::support::ClientIpHeaderMode;
 #[actix_web::test]
 async fn cors_preflight_allows_only_configured_origin_methods_and_security_headers() {
     let settings = test_settings(vec!["https://app.example".to_owned()]);
-    let app = test::init_service(App::new().wrap(build(&settings)).route(
+    let app = test::init_service(App::new().wrap(cors_browser_oauth(&settings)).route(
         "/token",
         web::post().to(|| async { HttpResponse::Ok().finish() }),
     ))
@@ -33,12 +33,12 @@ async fn cors_preflight_allows_only_configured_origin_methods_and_security_heade
             .unwrap(),
         "https://app.example"
     );
-    assert_eq!(
+    assert!(
         response
             .headers()
             .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
-            .unwrap(),
-        "true"
+            .is_none(),
+        "cors_browser_oauth must NOT allow credentials (no cookies)"
     );
     assert!(
         response
@@ -71,7 +71,7 @@ async fn cors_preflight_allows_only_configured_origin_methods_and_security_heade
 #[actix_web::test]
 async fn cors_actual_response_exposes_oauth_challenge_nonce_and_retry_headers() {
     let settings = test_settings(vec!["https://app.example".to_owned()]);
-    let app = test::init_service(App::new().wrap(build(&settings)).route(
+    let app = test::init_service(App::new().wrap(cors_browser_oauth(&settings)).route(
         "/resource",
         web::get().to(|| async {
             HttpResponse::Unauthorized()
@@ -99,6 +99,32 @@ async fn cors_actual_response_exposes_oauth_challenge_nonce_and_retry_headers() 
     assert!(expose.contains("www-authenticate"));
     assert!(expose.contains("dpop-nonce"));
     assert!(expose.contains("retry-after"));
+}
+
+#[actix_web::test]
+async fn cors_well_known_allows_get_and_head_only() {
+    let settings = test_settings(vec!["https://app.example".to_owned()]);
+    let app = test::init_service(App::new().wrap(cors_well_known(&settings)).route(
+        "/.well-known/openid-configuration",
+        web::get().to(|| async { HttpResponse::Ok().finish() }),
+    ))
+    .await;
+
+    let allowed = test::TestRequest::default()
+        .method(actix_web::http::Method::OPTIONS)
+        .uri("/.well-known/openid-configuration")
+        .insert_header((header::ORIGIN, "https://app.example"))
+        .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, "GET"))
+        .to_request();
+    let response = test::call_service(&app, allowed).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        response
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+            .is_none(),
+        "cors_well_known must NOT allow credentials"
+    );
 }
 
 fn test_settings(cors_allowed_origins: Vec<String>) -> Settings {
@@ -138,6 +164,8 @@ fn test_settings(cors_allowed_origins: Vec<String>) -> Settings {
         jwk_keys_dir: PathBuf::from("runtime/keys"),
         signing_external_command: Vec::new(),
         signing_external_timeout_ms: 2_000,
+        signing_key_rotation_interval_seconds: 7_776_000,
+        signing_key_prepublish_seconds: 86_400,
         trusted_proxy_cidrs: Vec::new(),
         client_ip_header_mode: ClientIpHeaderMode::None,
         subject_type: SubjectType::Public,
@@ -157,5 +185,10 @@ fn test_settings(cors_allowed_origins: Vec<String>) -> Settings {
             oidc: None,
             saml_gateway: None,
         },
+        enable_request_object: false,
+        enable_request_uri_parameter: false,
+        enable_par_request_object: false,
+        enable_authorization_details: false,
+        enable_legacy_audience_param: false,
     }
 }

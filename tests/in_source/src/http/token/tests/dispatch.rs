@@ -17,7 +17,7 @@ use fred::prelude::{
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{ActiveSigningKey, Keyset};
+use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
 use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, RateLimitSettings,
     RequestObjectJtiPolicy, SubjectType,
@@ -95,6 +95,8 @@ fn settings(profile: AuthorizationServerProfile) -> Settings {
         jwk_keys_dir: PathBuf::from("runtime/keys"),
         signing_external_command: Vec::new(),
         signing_external_timeout_ms: 2_000,
+        signing_key_rotation_interval_seconds: 7_776_000,
+        signing_key_prepublish_seconds: 86_400,
         trusted_proxy_cidrs: Vec::<IpCidr>::new(),
         client_ip_header_mode: ClientIpHeaderMode::None,
         subject_type: SubjectType::Public,
@@ -114,6 +116,11 @@ fn settings(profile: AuthorizationServerProfile) -> Settings {
             oidc: None,
             saml_gateway: None,
         },
+        enable_request_object: false,
+        enable_request_uri_parameter: false,
+        enable_par_request_object: false,
+        enable_authorization_details: false,
+        enable_legacy_audience_param: false,
     }
 }
 
@@ -162,7 +169,7 @@ fn unavailable_valkey_token_state(profile: AuthorizationServerProfile) -> AppSta
         .expect("pool construction should not connect"),
         valkey: unavailable_token_valkey(),
         settings: Arc::new(settings(profile)),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -204,7 +211,7 @@ async fn live_token_state(profile: AuthorizationServerProfile) -> Option<Data<Ap
         diesel_db: create_pool(database_url, 1).expect("database pool should build"),
         valkey,
         settings: Arc::new(settings),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -249,7 +256,7 @@ async fn live_valkey_invalid_db_token_state(
         .expect("pool construction should not connect"),
         valkey,
         settings: Arc::new(settings),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -489,6 +496,9 @@ fn client() -> ClientRow {
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: None,
         backchannel_logout_session_required: true,
+        subject_type: "public".to_owned(),
+        sector_identifier_uri: None,
+        sector_identifier_host: None,
     }
 }
 
@@ -536,6 +546,25 @@ async fn token_endpoint_rejects_malformed_form_requests_before_client_lookup() {
         )
         .await;
     }
+}
+
+#[actix_web::test]
+async fn token_endpoint_rejects_legacy_audience_parameter_when_disabled() {
+    let Some(state) = live_token_state(AuthorizationServerProfile::Oauth2Baseline).await else {
+        return;
+    };
+    let req = token_request("application/x-www-form-urlencoded");
+    let body = Bytes::from_static(
+        b"grant_type=client_credentials&client_id=client-1&audience=https%3A%2F%2Fapi.example",
+    );
+
+    assert_token_error(
+        token(state, req, body).await,
+        StatusCode::BAD_REQUEST,
+        "invalid_request",
+        false,
+    )
+    .await;
 }
 
 #[actix_web::test]
@@ -697,6 +726,7 @@ async fn missing_client_authorization_code_holder_check_fails_closed_when_valkey
         client_assertion_type: None,
         client_assertion: None,
         audiences: Vec::new(),
+        has_audience_param: false,
     };
 
     let response = missing_client_authorization_code_holder_error(&state, &form)
@@ -735,6 +765,7 @@ async fn missing_client_authorization_code_holder_check_fails_closed_when_client
         client_assertion_type: None,
         client_assertion: None,
         audiences: Vec::new(),
+        has_audience_param: false,
     };
 
     let response = missing_client_authorization_code_holder_error(&state, &form)
@@ -1236,6 +1267,7 @@ async fn missing_client_authorization_code_holder_error_returns_none_when_code_m
         client_assertion_type: None,
         client_assertion: None,
         audiences: Vec::new(),
+        has_audience_param: false,
     };
 
     assert!(
@@ -1283,6 +1315,7 @@ async fn missing_client_authorization_code_holder_error_returns_none_when_client
         client_assertion_type: None,
         client_assertion: None,
         audiences: Vec::new(),
+        has_audience_param: false,
     };
 
     assert!(
@@ -1611,6 +1644,7 @@ fn missing_client_client_credentials_without_dpop_uses_invalid_request() {
         client_assertion_type: None,
         client_assertion: None,
         audiences: Vec::new(),
+        has_audience_param: false,
     };
     let response = client_credentials_holder_missing_client_error(&form, false)
         .expect("missing DPoP proof should be reported before generic client auth");
@@ -1633,6 +1667,7 @@ fn missing_client_holder_check_ignores_non_client_credentials_grants() {
         client_assertion_type: None,
         client_assertion: None,
         audiences: Vec::new(),
+        has_audience_param: false,
     };
 
     assert!(client_credentials_holder_missing_client_error(&form, false).is_none());
@@ -1652,6 +1687,7 @@ fn missing_client_client_credentials_with_dpop_stays_client_auth_failure() {
         client_assertion_type: None,
         client_assertion: None,
         audiences: Vec::new(),
+        has_audience_param: false,
     };
 
     assert!(client_credentials_holder_missing_client_error(&form, true).is_none());
@@ -1671,6 +1707,7 @@ fn missing_client_mtls_client_credentials_uses_invalid_request() {
         client_assertion_type: None,
         client_assertion: None,
         audiences: Vec::new(),
+        has_audience_param: false,
     };
 
     let response = client_credentials_holder_missing_client_error(&form, false)
@@ -1694,6 +1731,7 @@ fn token_request_auth_material_detects_assertion_even_without_client_id() {
         client_assertion_type: None,
         client_assertion: Some("malformed-or-missing-sub".to_owned()),
         audiences: Vec::new(),
+        has_audience_param: false,
     };
 
     assert!(token_request_has_client_auth_material(false, &form));
@@ -1713,6 +1751,7 @@ fn token_request_auth_material_detects_each_registered_client_auth_channel() {
         client_assertion_type: None,
         client_assertion: None,
         audiences: Vec::new(),
+        has_audience_param: false,
     };
 
     assert!(token_request_has_client_auth_material(true, &base));
@@ -1753,6 +1792,7 @@ fn token_request_auth_material_allows_absent_client_credentials() {
         client_assertion_type: None,
         client_assertion: None,
         audiences: Vec::new(),
+        has_audience_param: false,
     };
 
     assert!(!token_request_has_client_auth_material(false, &form));

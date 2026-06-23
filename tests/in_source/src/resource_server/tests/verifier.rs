@@ -196,14 +196,15 @@ fn rejects_missing_required_scope() {
 fn rejects_expired_and_not_yet_valid_tokens_with_clock_skew() {
     let fixture = fixture();
     let now = Utc::now().timestamp();
+    let outside_skew = fixture.verifier.config.clock_skew_seconds + 60;
 
     let expired = fixture
         .verifier
-        .verify(&token(&fixture, json!({"exp": now - 61}), None))
+        .verify(&token(&fixture, json!({"exp": now - outside_skew}), None))
         .unwrap_err();
     let not_yet_valid = fixture
         .verifier
-        .verify(&token(&fixture, json!({"nbf": now + 61}), None))
+        .verify(&token(&fixture, json!({"nbf": now + outside_skew}), None))
         .unwrap_err();
 
     assert_eq!(expired, ResourceServerVerifierError::Expired);

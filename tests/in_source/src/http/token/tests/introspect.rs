@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
 use crate::domain::ConfirmationClaims;
-use crate::domain::{ActiveSigningKey, Claims, Keyset, VerificationKey};
+use crate::domain::{ActiveSigningKey, Claims, Keyset, KeysetStore, VerificationKey};
 use crate::support::{generate_key_material, public_jwk_from_private_der};
 use actix_web::test::TestRequest;
 use diesel::sql_query;
@@ -27,7 +27,7 @@ fn introspection_state() -> Data<AppState> {
         settings: Arc::new(
             Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
         ),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -61,7 +61,7 @@ fn live_introspection_state_from_database_url(database_url: String) -> Option<Da
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "introspect-test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),
@@ -184,6 +184,9 @@ async fn insert_introspection_client(
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: None,
         backchannel_logout_session_required: true,
+        subject_type: "public".to_owned(),
+        sector_identifier_uri: None,
+        sector_identifier_host: None,
     };
     let mut conn = get_conn(&state.diesel_db)
         .await

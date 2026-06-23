@@ -15,6 +15,10 @@ pub(crate) struct CreateClientRequest {
     pub(crate) grant_types: Vec<String>,
     pub(crate) token_endpoint_auth_method: String,
     #[serde(default)]
+    pub(crate) subject_type: Option<String>,
+    #[serde(default)]
+    pub(crate) sector_identifier_uri: Option<String>,
+    #[serde(default)]
     pub(crate) require_dpop_bound_tokens: bool,
     #[serde(default)]
     pub(crate) allow_client_assertion_audience_array: bool,
@@ -60,6 +64,9 @@ pub(crate) struct PreparedClientInsert {
     pub(crate) allowed_audiences: Vec<String>,
     pub(crate) grant_types: Vec<String>,
     pub(crate) token_endpoint_auth_method: String,
+    pub(crate) subject_type: String,
+    pub(crate) sector_identifier_uri: Option<String>,
+    pub(crate) sector_identifier_host: Option<String>,
     pub(crate) require_dpop_bound_tokens: bool,
     pub(crate) allow_client_assertion_audience_array: bool,
     pub(crate) allow_client_assertion_endpoint_audience: bool,
@@ -136,7 +143,13 @@ pub(crate) async fn insert_client_row(
     state: &AppState,
     payload: CreateClientRequest,
 ) -> Result<(ClientRow, Option<String>), InsertClientError> {
-    let prepared = prepare_client_insert(payload)?;
+    let pairwise_subject_secret = state.settings.pairwise_subject_secret.clone();
+    let prepared = prepare_client_insert(
+        payload,
+        pairwise_subject_secret.as_deref(),
+        &state.settings.issuer,
+    )
+    .await?;
     let issued_secret = prepared.issued_secret.clone();
     let mut conn = get_conn(&state.diesel_db)
         .await
@@ -152,8 +165,10 @@ pub(crate) async fn insert_client_row(
     Ok((client, issued_secret))
 }
 
-pub(crate) fn prepare_client_insert(
+pub(crate) async fn prepare_client_insert(
     payload: CreateClientRequest,
+    pairwise_subject_secret: Option<&str>,
+    issuer: &str,
 ) -> Result<PreparedClientInsert, InsertClientError> {
     validate_client_payload(&payload)
         .map_err(|error| InsertClientError::InvalidRequest(error.to_string()))?;
@@ -172,17 +187,31 @@ pub(crate) fn prepare_client_insert(
         issued_secret = Some(secret);
     }
 
+    let subject_type = payload.subject_type.unwrap_or_else(|| "public".to_owned());
+    let redirect_uris = payload.redirect_uris;
+    let (sector_identifier_uri, sector_identifier_host) = validate_pairwise_subject(
+        &subject_type,
+        payload.sector_identifier_uri,
+        &redirect_uris,
+        pairwise_subject_secret,
+        issuer,
+    )
+    .await?;
+
     Ok(PreparedClientInsert {
         tenant: default_tenant_context(),
         client_id: format!("client-{}", Uuid::now_v7()),
         client_name: payload.client_name,
         client_type: payload.client_type,
-        redirect_uris: payload.redirect_uris,
+        redirect_uris,
         post_logout_redirect_uris: trim_string_vec(payload.post_logout_redirect_uris),
         scopes: payload.scopes,
         allowed_audiences: payload.allowed_audiences,
         grant_types: payload.grant_types,
         token_endpoint_auth_method: payload.token_endpoint_auth_method,
+        subject_type,
+        sector_identifier_uri,
+        sector_identifier_host,
         require_dpop_bound_tokens: payload.require_dpop_bound_tokens,
         allow_client_assertion_audience_array: payload.allow_client_assertion_audience_array,
         allow_client_assertion_endpoint_audience: payload.allow_client_assertion_endpoint_audience,
@@ -221,6 +250,9 @@ pub(crate) async fn insert_prepared_client(
             oauth_clients::allowed_audiences.eq(json!(&prepared.allowed_audiences)),
             oauth_clients::grant_types.eq(json!(&prepared.grant_types)),
             oauth_clients::token_endpoint_auth_method.eq(&prepared.token_endpoint_auth_method),
+            oauth_clients::subject_type.eq(&prepared.subject_type),
+            oauth_clients::sector_identifier_uri.eq(&prepared.sector_identifier_uri),
+            oauth_clients::sector_identifier_host.eq(&prepared.sector_identifier_host),
             oauth_clients::require_dpop_bound_tokens.eq(prepared.require_dpop_bound_tokens),
             oauth_clients::allow_client_assertion_audience_array
                 .eq(prepared.allow_client_assertion_audience_array),
@@ -307,6 +339,75 @@ pub(crate) fn trim_string_vec(values: Vec<String>) -> Vec<String> {
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty())
         .collect()
+}
+
+pub(crate) fn redirect_uri_host(uri: &str) -> Option<String> {
+    url::Url::parse(uri)
+        .ok()
+        .and_then(|url| url.host_str().map(ToOwned::to_owned))
+}
+
+pub(crate) fn all_same_host(uris: &[String]) -> Option<String> {
+    let mut hosts = uris.iter().filter_map(|u| redirect_uri_host(u));
+    let first = hosts.next()?;
+    if hosts.all(|h| h == first) {
+        Some(first)
+    } else {
+        None
+    }
+}
+
+pub(crate) fn sector_identifier_host_for_redirects(
+    uri: &str,
+    redirect_uris: &[String],
+    sector_uris: &[String],
+) -> anyhow::Result<String> {
+    for redirect_uri in redirect_uris {
+        if !sector_uris.contains(redirect_uri) {
+            anyhow::bail!(
+                "redirect_uri {} 不在 sector_identifier_uri 返回列表中",
+                redirect_uri
+            );
+        }
+    }
+    sector_identifier_hostname(uri)
+        .map_err(|error| anyhow::anyhow!("sector_identifier_uri host 解析失败: {:?}", error))
+}
+
+async fn validate_pairwise_subject(
+    subject_type: &str,
+    sector_identifier_uri: Option<String>,
+    redirect_uris: &[String],
+    pairwise_subject_secret: Option<&str>,
+    _issuer: &str,
+) -> Result<(Option<String>, Option<String>), InsertClientError> {
+    if subject_type != "pairwise" {
+        return Ok((None, None));
+    }
+    if pairwise_subject_secret.is_none() {
+        return Err(InsertClientError::InvalidRequest(
+            "pairwise 主题类型需要配置 PAIRWISE_SUBJECT_SECRET".to_owned(),
+        ));
+    }
+    let sector_identifier_host = match sector_identifier_uri {
+        Some(ref uri) => {
+            let uris = fetch_sector_identifier_uris(uri).await.map_err(|error| {
+                InsertClientError::InvalidRequest(format!(
+                    "sector_identifier_uri 获取失败: {:?}",
+                    error
+                ))
+            })?;
+            sector_identifier_host_for_redirects(uri, redirect_uris, &uris)
+                .map_err(|error| InsertClientError::InvalidRequest(error.to_string()))?
+        }
+        None => all_same_host(redirect_uris).ok_or_else(|| {
+            InsertClientError::InvalidRequest(
+                "pairwise 主题需要 sector_identifier_uri 或所有 redirect_uri 使用同一 host"
+                    .to_owned(),
+            )
+        })?,
+    };
+    Ok((sector_identifier_uri, Some(sector_identifier_host)))
 }
 
 #[cfg(test)]

@@ -13,7 +13,7 @@ use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{ActiveSigningKey, Keyset};
+use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
 use crate::http::admin::{CreateClientRequest, insert_prepared_client, prepare_client_insert};
 
 fn grant_row() -> GrantRow {
@@ -64,7 +64,7 @@ fn test_state() -> AppState {
         settings: Arc::new(
             Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
         ),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -97,6 +97,8 @@ fn create_client_request(client_name: &str) -> CreateClientRequest {
         tls_client_auth_san_ip: Vec::new(),
         tls_client_auth_san_email: Vec::new(),
         jwks: None,
+        subject_type: None,
+        sector_identifier_uri: None,
     }
 }
 
@@ -168,7 +170,7 @@ impl LiveAdminGrantFixture {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
-                keyset: Arc::new(Keyset {
+                keyset: KeysetStore::new(Keyset {
                     active_kid: "test-kid".to_owned(),
                     active_alg: jsonwebtoken::Algorithm::EdDSA,
                     active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -299,7 +301,13 @@ impl LiveAdminGrantFixture {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
-        let prepared = match prepare_client_insert(create_client_request(client_name)) {
+        let prepared = match prepare_client_insert(
+            create_client_request(client_name),
+            None,
+            "http://localhost:8000",
+        )
+        .await
+        {
             Ok(prepared) => prepared,
             Err(_) => panic!("client creation payload should be valid"),
         };

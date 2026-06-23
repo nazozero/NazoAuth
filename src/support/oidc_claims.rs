@@ -1,25 +1,64 @@
 //! OIDC 标准 claims 构造。
 //! 只从已授权 scope 和本地用户事实源生成声明，不为缺失字段写入 null。
 
+use hmac::{Hmac, Mac};
+
 use super::prelude::*;
 use crate::domain::OidcClaimRequest;
-use crate::settings::SubjectType;
 
-pub(crate) fn oidc_subject(settings: &Settings, user_id: Uuid, redirect_uri: &str) -> String {
-    match settings.subject_type {
-        SubjectType::Public => user_id.to_string(),
-        SubjectType::Pairwise => {
-            let sector = url::Url::parse(redirect_uri)
-                .ok()
-                .and_then(|url| url.host_str().map(ToOwned::to_owned))
-                .unwrap_or_else(|| redirect_uri.to_owned());
+type HmacSha256 = Hmac<Sha256>;
+
+pub(crate) fn oidc_subject(
+    pairwise_subject_secret: &[u8],
+    issuer: &str,
+    sector_identifier_host: &str,
+    user_id: Uuid,
+) -> String {
+    debug_assert!(pairwise_subject_secret.len() >= 32);
+    let mut mac = HmacSha256::new_from_slice(pairwise_subject_secret)
+        .expect("pairwise_subject_secret should be valid");
+    mac.update(issuer.as_bytes());
+    mac.update(b"\x1f");
+    mac.update(sector_identifier_host.as_bytes());
+    mac.update(b"\x1f");
+    mac.update(user_id.to_string().as_bytes());
+    URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
+}
+
+fn sector_host_from_redirect_uri(redirect_uri: &str) -> String {
+    url::Url::parse(redirect_uri)
+        .ok()
+        .and_then(|url| url.host_str().map(ToOwned::to_owned))
+        .unwrap_or_default()
+}
+
+pub(crate) fn compute_subject_for_client(
+    settings: &Settings,
+    user_id: Uuid,
+    client_subject_type: &str,
+    sector_identifier_host: Option<&str>,
+    redirect_uri: &str,
+) -> anyhow::Result<String> {
+    match client_subject_type {
+        "public" => Ok(user_id.to_string()),
+        "pairwise" => {
+            let host = sector_identifier_host
+                .filter(|h| !h.is_empty())
+                .map(ToOwned::to_owned)
+                .unwrap_or_else(|| sector_host_from_redirect_uri(redirect_uri));
             let secret = settings
                 .pairwise_subject_secret
                 .as_deref()
-                .unwrap_or_default();
-            let material = format!("{secret}\x1f{sector}\x1f{user_id}");
-            URL_SAFE_NO_PAD.encode(Sha256::digest(material.as_bytes()))
+                .filter(|secret| secret.len() >= 32)
+                .ok_or_else(|| anyhow::anyhow!("PAIRWISE_SUBJECT_SECRET is required"))?;
+            Ok(oidc_subject(
+                secret.as_bytes(),
+                &settings.issuer,
+                &host,
+                user_id,
+            ))
         }
+        value => anyhow::bail!("unsupported client subject_type {value}"),
     }
 }
 
@@ -57,6 +96,7 @@ pub(crate) fn oidc_user_claims(
     subject: &str,
     requested_claims: &[String],
     requested_claim_requests: &[OidcClaimRequest],
+    _sector_identifier_host: Option<&str>,
 ) -> Value {
     let mut claims = json!({"sub": subject});
     let has_profile_scope = scopes.iter().any(|scope| scope == "profile");
@@ -345,6 +385,7 @@ pub(crate) fn oidc_id_token_user_claims(
     subject: &str,
     requested_claims: &[String],
     requested_claim_requests: &[OidcClaimRequest],
+    sector_identifier_host: Option<&str>,
 ) -> Value {
     let mut claims = oidc_user_claims(
         user,
@@ -352,6 +393,7 @@ pub(crate) fn oidc_id_token_user_claims(
         subject,
         requested_claims,
         requested_claim_requests,
+        sector_identifier_host,
     );
     if let Some(object) = claims.as_object_mut() {
         if !claim_requested(requested_claims, requested_claim_requests, "email") {

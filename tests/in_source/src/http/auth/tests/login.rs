@@ -1,7 +1,7 @@
 use super::*;
 use crate::config::ConfigSource;
 use crate::db::create_pool;
-use crate::domain::{ActiveSigningKey, Keyset};
+use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
@@ -178,7 +178,7 @@ fn form_login_next_uses_safe_referer_next_or_profile_fallback() {
             .build()
             .expect("valkey client construction should not connect"),
         settings: std::sync::Arc::new(settings),
-        keyset: std::sync::Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -510,7 +510,7 @@ impl LiveLoginFixture {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
-                keyset: Arc::new(Keyset {
+                keyset: KeysetStore::new(Keyset {
                     active_kid: "test-kid".to_owned(),
                     active_alg: jsonwebtoken::Algorithm::EdDSA,
                     active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -602,7 +602,7 @@ impl LoginBadValkeyState {
                 diesel_db: create_pool(database_url, 1).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
-                keyset: Arc::new(Keyset {
+                keyset: KeysetStore::new(Keyset {
                     active_kid: "test-kid".to_owned(),
                     active_alg: jsonwebtoken::Algorithm::EdDSA,
                     active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -652,7 +652,7 @@ impl LoginBadDatabaseState {
                 .expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
-                keyset: Arc::new(Keyset {
+                keyset: KeysetStore::new(Keyset {
                     active_kid: "test-kid".to_owned(),
                     active_alg: jsonwebtoken::Algorithm::EdDSA,
                     active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),

@@ -115,7 +115,7 @@ docker run -d --name nazo-oauth-codecov-postgres `
   postgres:18-alpine
 docker run -d --name nazo-oauth-codecov-valkey `
   --network nazo-oauth-codecov-net `
-  valkey/valkey:9-alpine
+  valkey/valkey:8-alpine
 Start-Sleep -Seconds 3
 docker exec nazo-oauth-codecov-postgres pg_isready -U postgres -d oauth
 docker exec nazo-oauth-codecov-valkey valkey-cli ping

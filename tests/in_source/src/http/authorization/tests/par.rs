@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{ActiveSigningKey, Keyset};
+use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
 use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, RateLimitSettings,
     RequestObjectJtiPolicy, SubjectType,
@@ -52,6 +52,9 @@ fn client(require_dpop_bound_tokens: bool) -> ClientRow {
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: None,
         backchannel_logout_session_required: true,
+        subject_type: "public".to_owned(),
+        sector_identifier_uri: None,
+        sector_identifier_host: None,
     }
 }
 
@@ -92,6 +95,8 @@ fn baseline_settings() -> Settings {
         jwk_keys_dir: PathBuf::from("runtime/keys"),
         signing_external_command: Vec::new(),
         signing_external_timeout_ms: 2_000,
+        signing_key_rotation_interval_seconds: 7_776_000,
+        signing_key_prepublish_seconds: 86_400,
         trusted_proxy_cidrs: Vec::<IpCidr>::new(),
         client_ip_header_mode: ClientIpHeaderMode::None,
         subject_type: SubjectType::Public,
@@ -111,6 +116,11 @@ fn baseline_settings() -> Settings {
             oidc: None,
             saml_gateway: None,
         },
+        enable_request_object: false,
+        enable_request_uri_parameter: false,
+        enable_par_request_object: false,
+        enable_authorization_details: false,
+        enable_legacy_audience_param: false,
     }
 }
 
@@ -196,7 +206,7 @@ impl LiveParFixture {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
-                keyset: Arc::new(Keyset {
+                keyset: KeysetStore::new(Keyset {
                     active_kid: "test-kid".to_owned(),
                     active_alg: jsonwebtoken::Algorithm::EdDSA,
                     active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -291,7 +301,7 @@ fn par_state_without_live_services() -> Data<AppState> {
         .expect("pool construction should not connect"),
         valkey: unavailable_valkey_client(50),
         settings: Arc::new(settings),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -588,6 +598,34 @@ async fn par_rejects_malformed_or_ambiguous_authorization_parameters_before_clie
 }
 
 #[actix_web::test]
+async fn par_rejects_disabled_request_object_before_client_lookup() {
+    let response = par_after_rate_limit(
+        par_state_without_live_services(),
+        par_form_request(),
+        Bytes::from_static(b"client_id=client-a&response_type=code&request=jwt"),
+    )
+    .await;
+
+    let (status, value) = par_json_body(response).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(value.get("error"), Some(&json!("invalid_request")));
+}
+
+#[actix_web::test]
+async fn par_rejects_disabled_authorization_details_before_client_lookup() {
+    let response = par_after_rate_limit(
+        par_state_without_live_services(),
+        par_form_request(),
+        Bytes::from_static(b"client_id=client-a&response_type=code&authorization_details=%5B%5D"),
+    )
+    .await;
+
+    let (status, value) = par_json_body(response).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(value.get("error"), Some(&json!("invalid_request")));
+}
+
+#[actix_web::test]
 async fn par_rate_limit_failure_short_circuits_before_client_lookup() {
     let response = par(
         par_state_without_live_services(),
@@ -733,7 +771,11 @@ async fn par_rejects_invalid_dpop_jkt_after_client_authentication() {
 
 #[actix_web::test]
 async fn par_rejects_request_uri_from_request_object_after_client_authentication() {
-    let Some(fixture) = LiveParFixture::new().await else {
+    let Some(fixture) = LiveParFixture::new_with_settings(|s| {
+        s.enable_par_request_object = true;
+    })
+    .await
+    else {
         return;
     };
     let client_id = format!("par-request-object-uri-{}", Uuid::now_v7().simple());

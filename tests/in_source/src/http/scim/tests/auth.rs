@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::config::ConfigSource;
 use crate::db::create_pool;
-use crate::domain::{ActiveSigningKey, Keyset};
+use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
 use crate::support::DEFAULT_TENANT_ID;
 use chrono::Utc;
 use diesel::QueryableByName;
@@ -33,7 +33,7 @@ fn test_state(scim_bearer_token: Option<&str>) -> AppState {
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -53,7 +53,7 @@ async fn live_state(scim_bearer_token: Option<&str>) -> Option<AppState> {
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),

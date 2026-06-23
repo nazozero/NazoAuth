@@ -52,6 +52,10 @@ impl AuthorizationServerProfile {
     pub(crate) fn requires_signed_authorization_request(self) -> bool {
         self == Self::Fapi2MessageSigningAuthzRequest
     }
+
+    pub(crate) fn requires_signed_request_object_at_par(self) -> bool {
+        self == Self::Fapi2MessageSigningAuthzRequest
+    }
 }
 
 impl DpopNoncePolicy {
@@ -99,13 +103,6 @@ impl SubjectType {
             "public" => Ok(Self::Public),
             "pairwise" => Ok(Self::Pairwise),
             value => bail!("SUBJECT_TYPE must be public or pairwise, got {value}"),
-        }
-    }
-
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::Public => "public",
-            Self::Pairwise => "pairwise",
         }
     }
 }

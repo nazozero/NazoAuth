@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, anyhow};
+use chrono::DateTime;
 use jsonwebtoken::jwk::{Jwk, PublicKeyUse};
 use openssl::rsa::Rsa;
 use p256::elliptic_curve::pkcs8::EncodePrivateKey as EncodeEcPrivateKey;
@@ -21,11 +22,178 @@ use external::{jwt_provider_error, sign_external_jwt_input};
 pub(crate) async fn load_or_create_keyset(settings: &Settings) -> anyhow::Result<Keyset> {
     tokio::fs::create_dir_all(&settings.jwk_keys_dir).await?;
     let keyset_path = settings.jwk_keys_dir.join("keyset.json");
-    if let Some(keyset) = try_load_keyset(settings, &keyset_path).await? {
-        Ok(keyset)
+    if try_load_keyset(settings, &keyset_path).await?.is_some() {
+        maintain_keyset_lifecycle(settings, &keyset_path).await?;
+        if let Some(keyset) = try_load_keyset(settings, &keyset_path).await? {
+            return Ok(keyset);
+        }
+        anyhow::bail!("keyset.json disappeared during signing key lifecycle maintenance");
     } else {
         create_new_keyset(settings).await
     }
+}
+
+async fn maintain_keyset_lifecycle(settings: &Settings, keyset_path: &Path) -> anyhow::Result<()> {
+    let raw = tokio::fs::read_to_string(keyset_path)
+        .await
+        .with_context(|| format!("failed to read {}", keyset_path.display()))?;
+    let mut payload = serde_json::from_str::<Value>(&raw)
+        .with_context(|| format!("failed to parse {}", keyset_path.display()))?;
+    let now = Utc::now();
+    let Some(active_kid) = payload
+        .get("active_kid")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+    else {
+        return Ok(());
+    };
+    let Some(active_index) = payload
+        .get("keys")
+        .and_then(Value::as_array)
+        .and_then(|keys| {
+            keys.iter()
+                .position(|entry| entry.get("kid").and_then(Value::as_str) == Some(&active_kid))
+        })
+    else {
+        return Ok(());
+    };
+    let mut changed = false;
+    let mut new_active_kid = None;
+    {
+        let Some(keys) = payload.get_mut("keys").and_then(Value::as_array_mut) else {
+            return Ok(());
+        };
+        let active_entry = &mut keys[active_index];
+        if key_entry_created_at(active_entry)?.is_none() {
+            active_entry["created_at"] = json!(timestamp(now));
+            changed = true;
+        }
+        let active_created_at = key_entry_created_at(&keys[active_index])?
+            .ok_or_else(|| anyhow!("active key created_at could not be determined"))?;
+        let active_alg = key_entry_algorithm(&keys[active_index])?;
+        let active_backend = key_entry_backend(&keys[active_index]).to_owned();
+        let rotation_interval =
+            chrono::Duration::seconds(settings.signing_key_rotation_interval_seconds);
+        let prepublish_window = chrono::Duration::seconds(settings.signing_key_prepublish_seconds);
+        let rotation_due_at = active_created_at + rotation_interval;
+        let prepublish_due_at = rotation_due_at - prepublish_window;
+        let candidate_index =
+            find_prepublished_candidate(settings, keys, &active_kid, active_alg, now)?;
+        if now >= rotation_due_at {
+            if let Some(candidate_index) = candidate_index {
+                let candidate_created_at = key_entry_created_at(&keys[candidate_index])?
+                    .ok_or_else(|| anyhow!("prepublished key missing created_at"))?;
+                if candidate_created_at + prepublish_window <= now {
+                    let next_kid = keys[candidate_index]
+                        .get("kid")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| anyhow!("prepublished key missing kid"))?
+                        .to_owned();
+                    activate_prepublished_key(settings, keys, &active_kid, &next_kid, now);
+                    new_active_kid = Some(next_kid);
+                    changed = true;
+                }
+            } else if active_backend == "local-pem" {
+                let entry = create_prepublished_local_key_entry(settings, active_alg, now).await?;
+                keys.push(entry);
+                changed = true;
+            }
+        } else if now >= prepublish_due_at
+            && candidate_index.is_none()
+            && active_backend == "local-pem"
+        {
+            let entry = create_prepublished_local_key_entry(settings, active_alg, now).await?;
+            keys.push(entry);
+            changed = true;
+        }
+    }
+    if let Some(next_kid) = new_active_kid {
+        payload["active_kid"] = json!(next_kid);
+    }
+
+    if changed {
+        write_json_atomic(keyset_path, &payload).await?;
+    }
+    Ok(())
+}
+
+fn find_prepublished_candidate(
+    settings: &Settings,
+    keys: &[Value],
+    active_kid: &str,
+    active_alg: jsonwebtoken::Algorithm,
+    now: DateTime<Utc>,
+) -> anyhow::Result<Option<usize>> {
+    let mut candidate = None;
+    for (index, entry) in keys.iter().enumerate() {
+        if entry.get("kid").and_then(Value::as_str) == Some(active_kid) {
+            continue;
+        }
+        if key_entry_retire_at(entry)?.is_some() || key_entry_algorithm(entry)? != active_alg {
+            continue;
+        }
+        let backend = key_entry_backend(entry);
+        if backend == "external-command" && settings.signing_external_command.is_empty() {
+            continue;
+        }
+        if backend != "local-pem" && backend != "external-command" {
+            continue;
+        }
+        let created_at = key_entry_created_at(entry)?.unwrap_or(now);
+        match candidate {
+            Some((_, selected_created_at)) if selected_created_at <= created_at => {}
+            _ => candidate = Some((index, created_at)),
+        }
+    }
+    Ok(candidate.map(|(index, _)| index))
+}
+
+async fn create_prepublished_local_key_entry(
+    settings: &Settings,
+    alg: jsonwebtoken::Algorithm,
+    now: DateTime<Utc>,
+) -> anyhow::Result<Value> {
+    let alg_name =
+        signing_algorithm_name(alg).ok_or_else(|| anyhow!("unsupported server signing alg"))?;
+    let private_pkcs8_der = generate_key_material(alg)?.private_pkcs8_der;
+    let kid = format!("{}-{}", alg_name.to_ascii_lowercase(), Uuid::now_v7());
+    let file_name = format!("{kid}.pem");
+    let pem = der_to_pem(&private_pkcs8_der, "PRIVATE KEY");
+    write_private_key_pem_atomic(&settings.jwk_keys_dir.join(&file_name), &pem).await?;
+    Ok(json!({
+        "kid": kid,
+        "alg": alg_name,
+        "file": file_name,
+        "created_at": timestamp(now),
+        "retire_at": null
+    }))
+}
+
+fn activate_prepublished_key(
+    settings: &Settings,
+    keys: &mut [Value],
+    previous_active_kid: &str,
+    next_kid: &str,
+    now: DateTime<Utc>,
+) {
+    let retire_at = timestamp(
+        now + chrono::Duration::seconds(
+            settings
+                .access_token_ttl_seconds
+                .max(settings.id_token_ttl_seconds),
+        ),
+    );
+    for entry in keys {
+        if entry.get("kid").and_then(Value::as_str) == Some(previous_active_kid) {
+            entry["retire_at"] = json!(retire_at);
+        } else if entry.get("kid").and_then(Value::as_str) == Some(next_kid) {
+            entry["retire_at"] = Value::Null;
+        }
+    }
+}
+
+fn timestamp(value: DateTime<Utc>) -> String {
+    value.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
 pub(crate) async fn try_load_keyset(
@@ -63,10 +231,15 @@ pub(crate) async fn try_load_keyset(
             anyhow::bail!("keyset.json contains duplicate kid {kid}");
         }
         let is_active = kid == active_kid;
-        if key_entry_is_retired(entry) {
-            if is_active {
-                anyhow::bail!("keyset.json active key {kid} is retired");
+        let retire_at = key_entry_retire_at(entry)
+            .with_context(|| format!("keyset entry {kid} has invalid retire_at"))?;
+        if is_active {
+            if retire_at.is_some() {
+                return Err(anyhow!(
+                    "keyset.json active key {kid} cannot have retire_at"
+                ));
             }
+        } else if retire_at.is_some_and(|retire_at| retire_at <= Utc::now()) {
             continue;
         }
 
@@ -357,12 +530,36 @@ fn external_public_jwk(entry: &Value) -> anyhow::Result<Value> {
     Ok(jwk)
 }
 
-fn key_entry_is_retired(entry: &Value) -> bool {
-    entry
-        .get("retire_at")
-        .and_then(Value::as_str)
-        .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
-        .is_some_and(|retire_at| retire_at.with_timezone(&Utc) <= Utc::now())
+fn key_entry_retire_at(entry: &Value) -> anyhow::Result<Option<DateTime<Utc>>> {
+    let Some(value) = entry.get("retire_at") else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let raw = value
+        .as_str()
+        .ok_or_else(|| anyhow!("retire_at must be RFC3339 or null"))?;
+    let retire_at = DateTime::parse_from_rfc3339(raw)
+        .with_context(|| format!("retire_at is not RFC3339: {raw}"))?
+        .with_timezone(&Utc);
+    Ok(Some(retire_at))
+}
+
+fn key_entry_created_at(entry: &Value) -> anyhow::Result<Option<DateTime<Utc>>> {
+    let Some(value) = entry.get("created_at") else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let raw = value
+        .as_str()
+        .ok_or_else(|| anyhow!("created_at must be RFC3339 or null"))?;
+    let created_at = DateTime::parse_from_rfc3339(raw)
+        .with_context(|| format!("created_at is not RFC3339: {raw}"))?
+        .with_timezone(&Utc);
+    Ok(Some(created_at))
 }
 
 pub(crate) fn ed25519_pkcs8_private_der(seed: &[u8; 32]) -> Vec<u8> {

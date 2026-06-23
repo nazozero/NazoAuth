@@ -31,10 +31,10 @@ deployment can satisfy.
 | PAR | Supported, not globally required by default |
 | JAR | Supported; unsigned request objects are baseline compatibility only |
 | JARM | Supported as `response_mode=jwt` when negotiated |
-| RAR | RFC 9396-style `authorization_details` accepted on authorization, PAR, and signed request object inputs for advertised supported types |
+| RAR | RFC 9396-style `authorization_details` accepted on authorization, PAR, and signed request object inputs only when `ENABLE_AUTHORIZATION_DETAILS=true` |
 | Refresh policy | Rotation by default for refresh-token grants |
 | Token TTLs | Authorization code <= configured `AUTH_CODE_TTL_SECONDS`; access token <= configured `ACCESS_TOKEN_TTL_SECONDS` |
-| Metadata | Generated from `AUTHORIZATION_SERVER_PROFILE`; mTLS capabilities advertised only when trusted proxy CIDRs are configured; `authorization_details_types_supported` must match parser allowlist |
+| Metadata | Generated from `AUTHORIZATION_SERVER_PROFILE`; mTLS capabilities advertised only when trusted proxy CIDRs are configured; `authorization_details_types_supported` is advertised only when `ENABLE_AUTHORIZATION_DETAILS=true` and must match the parser allowlist |
 
 Refresh-token rotation follows the state machine in `docs/refresh-token-rotation.md`. The lost-response retry window is a compatibility recovery path, not a replay bypass.
 
@@ -47,7 +47,7 @@ Required negative tests:
 - mixed client authentication methods
 - invalid client assertion audience
 - access token transport ambiguity
-- unknown or malformed `authorization_details`
+- disabled, unknown, or malformed `authorization_details`
 
 ## `oauth2-security-bcp`
 

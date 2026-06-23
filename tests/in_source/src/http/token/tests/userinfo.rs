@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{ActiveSigningKey, Claims, Keyset, VerificationKey};
+use crate::domain::{ActiveSigningKey, Claims, Keyset, KeysetStore, VerificationKey};
 use crate::support::{IpCidr, generate_key_material, public_jwk_from_private_der};
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Text, Timestamptz, Uuid as SqlUuid};
@@ -26,7 +26,7 @@ fn userinfo_test_state() -> AppState {
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -60,7 +60,7 @@ fn live_userinfo_state_from_database_url(database_url: String) -> Option<Data<Ap
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "userinfo-test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),
@@ -152,7 +152,7 @@ fn userinfo_state_with_valid_signing_key_invalid_db() -> Data<AppState> {
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "userinfo-test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),
@@ -393,11 +393,11 @@ async fn userinfo_rejects_signed_access_token_without_valid_tenant_boundary() {
         userinfo_claims: Vec::new(),
         userinfo_claim_requests: Vec::new(),
     };
-    let mut header = jsonwebtoken::Header::new(state.keyset.active_alg);
+    let keyset = state.keyset.snapshot();
+    let mut header = jsonwebtoken::Header::new(keyset.active_alg);
     header.typ = Some("at+jwt".to_owned());
-    header.kid = Some(state.keyset.active_kid.clone());
-    let token = state
-        .keyset
+    header.kid = Some(keyset.active_kid.clone());
+    let token = keyset
         .sign_jwt(&header, &claims)
         .await
         .expect("access token should sign");

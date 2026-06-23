@@ -15,6 +15,7 @@ pub(crate) struct TokenForm {
     pub(crate) client_assertion_type: Option<String>,
     pub(crate) client_assertion: Option<String>,
     pub(crate) audiences: Vec<String>,
+    pub(crate) has_audience_param: bool,
 }
 
 pub(crate) struct TokenOnlyForm {
@@ -115,6 +116,7 @@ pub(crate) fn parse_token_form(
         client_assertion_type: None,
         client_assertion: None,
         audiences: Vec::new(),
+        has_audience_param: false,
     };
 
     for (key, value) in url::form_urlencoded::parse(raw.as_bytes()) {
@@ -180,6 +182,7 @@ pub(crate) fn parse_token_form(
                 if let Some(value) = non_empty(value) {
                     form.audiences.push(value);
                 }
+                form.has_audience_param = true;
             }
             _ => continue,
         }

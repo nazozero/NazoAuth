@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{ActiveSigningKey, Keyset, VerificationKey};
+use crate::domain::{ActiveSigningKey, Keyset, KeysetStore, VerificationKey};
 use crate::support::{generate_key_material, public_jwk_from_private_der};
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Jsonb, Nullable, Text, Timestamptz, Uuid as SqlUuid};
@@ -33,7 +33,7 @@ fn test_state() -> AppState {
         settings: Arc::new(
             Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
         ),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -67,7 +67,7 @@ fn live_refresh_state_from_database_url(
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: active_kid.clone(),
             active_alg,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),
@@ -306,6 +306,7 @@ fn refresh_form_without_token() -> TokenForm {
         client_assertion_type: None,
         client_assertion: None,
         audiences: Vec::new(),
+        has_audience_param: false,
     }
 }
 
@@ -364,6 +365,9 @@ fn client_row() -> ClientRow {
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: None,
         backchannel_logout_session_required: true,
+        subject_type: "public".to_owned(),
+        sector_identifier_uri: None,
+        sector_identifier_host: None,
     }
 }
 

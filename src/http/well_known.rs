@@ -1,6 +1,6 @@
 use super::prelude::*;
-use crate::domain::{Keyset, SUPPORTED_AUTHORIZATION_DETAILS_TYPES};
-use crate::settings::{AuthorizationServerProfile, Settings};
+use crate::domain::Keyset;
+use crate::settings::{AuthorizationServerProfile, Settings, SubjectType};
 
 const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
 const REQUEST_OBJECT_SIGNING_ALGS: [&str; 5] = ["none", "EdDSA", "RS256", "ES256", "PS256"];
@@ -58,7 +58,8 @@ pub(crate) async fn captcha_config() -> Json<Value> {
 }
 
 fn authorization_server_metadata_value(state: &AppState) -> Value {
-    authorization_server_metadata(&state.settings, &state.keyset)
+    let keyset = state.keyset.snapshot();
+    authorization_server_metadata(&state.settings, &keyset)
 }
 
 fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value {
@@ -85,7 +86,11 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
         "jwks_uri": format!("{issuer}/jwks.json"),
         "response_types_supported": ["code"],
         "response_modes_supported": ["query", "jwt"],
-        "subject_types_supported": [settings.subject_type.as_str()],
+        "subject_types_supported": match (&settings.pairwise_subject_secret, &settings.subject_type) {
+            (None, _) => vec!["public"],
+            (Some(_), SubjectType::Pairwise) => vec!["pairwise"],
+            (Some(_), _) => vec!["public", "pairwise"],
+        },
         "id_token_signing_alg_values_supported": id_token_signing_algs,
         "authorization_signing_alg_values_supported": authorization_signing_algs,
         "token_endpoint_auth_methods_supported": token_auth_methods,
@@ -100,16 +105,26 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
         "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
         "authorization_response_iss_parameter_supported": true,
         "claims_parameter_supported": true,
-        "authorization_details_types_supported": SUPPORTED_AUTHORIZATION_DETAILS_TYPES,
         "backchannel_logout_supported": true,
         "backchannel_logout_session_supported": true,
-        "request_parameter_supported": true,
-        "request_uri_parameter_supported": false,
         "require_pushed_authorization_requests": settings.require_pushed_authorization_requests,
         "code_challenge_methods_supported": ["S256"],
         "dpop_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS,
         "request_object_signing_alg_values_supported": request_object_signing_algs
     });
+    if settings.enable_authorization_details {
+        metadata["authorization_details_types_supported"] =
+            json!(["account_information", "payment_initiation"]);
+    }
+    if settings.enable_request_object {
+        metadata["request_parameter_supported"] = json!(true);
+    }
+    if settings.enable_request_uri_parameter {
+        metadata["request_uri_parameter_supported"] = json!(true);
+        metadata["require_request_uri_registration"] = json!(true);
+    } else {
+        metadata["request_uri_parameter_supported"] = json!(false);
+    }
     if mtls_enabled {
         metadata["tls_client_certificate_bound_access_tokens"] = json!(true);
         metadata["mtls_endpoint_aliases"] = json!({
@@ -174,7 +189,7 @@ pub(crate) async fn oauth_authorization_server_metadata(state: Data<AppState>) -
 }
 
 pub(crate) async fn jwks(state: Data<AppState>) -> Json<Value> {
-    Json(state.keyset.jwks())
+    Json(state.keyset.snapshot().jwks())
 }
 
 #[cfg(test)]

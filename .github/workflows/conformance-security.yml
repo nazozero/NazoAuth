@@ -68,7 +68,7 @@ jobs:
           --health-timeout 5s
           --health-retries 20
       valkey:
-        image: valkey/valkey:9-alpine
+        image: valkey/valkey:8-alpine
         ports:
           - 6379:6379
         options: >-
@@ -254,6 +254,11 @@ jobs:
           PAIRWISE_SUBJECT_SECRET: ""
           PAR_TTL_SECONDS: 90
           REQUIRE_PUSHED_AUTHORIZATION_REQUESTS: false
+          ENABLE_REQUEST_OBJECT: true
+          ENABLE_REQUEST_URI_PARAMETER: true
+          ENABLE_PAR_REQUEST_OBJECT: true
+          ENABLE_AUTHORIZATION_DETAILS: true
+          ENABLE_LEGACY_AUDIENCE_PARAM: true
           SCIM_BEARER_TOKEN: "codecov-scim-secret"
           FEDERATION_OIDC_PROVIDER_ID: "codecov-oidc"
           FEDERATION_OIDC_ISSUER: "https://issuer.example"
@@ -287,7 +292,7 @@ jobs:
         run: |
           docker network create nazo-oauth-e2e-net
           docker run -d --name nazo-oauth-e2e-postgres --network nazo-oauth-e2e-net -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=oauth postgres:18-alpine
-          docker run -d --name nazo-oauth-e2e-valkey --network nazo-oauth-e2e-net valkey/valkey:9-alpine
+          docker run -d --name nazo-oauth-e2e-valkey --network nazo-oauth-e2e-net valkey/valkey:8-alpine
           ready=false
           for i in $(seq 1 60); do
             if docker run --rm --network nazo-oauth-e2e-net -e PGPASSWORD=postgres postgres:18-alpine \

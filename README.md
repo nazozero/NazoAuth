@@ -50,15 +50,15 @@ identity/admin data plane.
 - `client_secret_basic`, compatibility `client_secret_post`, `private_key_jwt`, public clients, and mTLS client authentication. High-security clients use `private_key_jwt` or mTLS rather than `client_secret_post`.
 - DPoP proof validation, nonce handling, sender-constrained access tokens, and DPoP-bound UserInfo.
 - mTLS sender-constrained access tokens through a trusted reverse-proxy certificate forwarding boundary.
-- Server signing key rotation with active and previous JWKS publication.
+- Server signing key rotation with prepublished, active, grace, and retired keyset states.
 - Pairwise subject identifiers.
 - Cookie sessions, CSRF protection, security response headers, and structured audit events.
 - HTTPOnly session cookie flow; login responses do not expose session identifiers in JSON.
 - PostgreSQL persistence with Rust-native migrations.
 - Valkey-backed sessions, security state, replay prevention, PAR handles, and rate limiting.
 - User, profile, avatar, OAuth client, grant, and access-request management APIs.
-- RFC 8707 `resource` parameter support for token requests, including repeated resource indicators mapped to JWT access-token `aud` arrays. The older `audience` parameter remains as a single-audience project extension.
-- RFC 9396-style Rich Authorization Requests through `authorization_details` on authorization, PAR, and signed request object inputs. Supported detail types are advertised in OAuth metadata and bound into consent, authorization codes, refresh tokens, and JWT access-token claims.
+- RFC 8707 `resource` parameter support for token requests, including repeated resource indicators mapped to JWT access-token `aud` arrays. The legacy `audience` parameter is disabled by default and is available only when `ENABLE_LEGACY_AUDIENCE_PARAM=true`.
+- RFC 9396-style Rich Authorization Requests through `authorization_details` on authorization, PAR, and signed request object inputs when `ENABLE_AUTHORIZATION_DETAILS=true`. Supported detail types are then advertised in OAuth metadata and bound into consent, authorization codes, refresh tokens, and JWT access-token claims.
 - Resource-server JWT access-token verifier core for Rust integrations. It
   validates `typ=at+jwt`, issuer, audience, expiry, scopes, algorithm/key
   selection, and optional DPoP or mTLS `cnf` sender constraints before
@@ -181,6 +181,11 @@ Common settings:
 | `COOKIE_SECURE` | derived from issuer | Must be `true` in HTTPS production |
 | `TRUSTED_PROXY_CIDRS` | empty | Required before trusting forwarded IP or mTLS headers |
 | `CLIENT_IP_HEADER_MODE` | `none` | `none`, `forwarded`, or `x-forwarded-for` |
+| `ENABLE_REQUEST_OBJECT` | `false` | Enables the authorization endpoint `request` parameter |
+| `ENABLE_REQUEST_URI_PARAMETER` | `false` | Enables the authorization endpoint `request_uri` parameter |
+| `ENABLE_PAR_REQUEST_OBJECT` | `false` | Enables signed request objects inside PAR requests |
+| `ENABLE_AUTHORIZATION_DETAILS` | `false` | Enables RFC 9396 `authorization_details` processing and metadata advertisement |
+| `ENABLE_LEGACY_AUDIENCE_PARAM` | `false` | Enables the non-standard token endpoint `audience` parameter |
 | `SUBJECT_TYPE` | `public` | `public` or `pairwise` |
 | `PAIRWISE_SUBJECT_SECRET` | empty | Required when `SUBJECT_TYPE=pairwise` |
 | `EMAIL_DELIVERY` | `disabled` | `smtp` enables registration email delivery |
@@ -188,6 +193,8 @@ Common settings:
 | `JWK_KEYS_DIR` | `runtime/keys` | Signing key storage path |
 | `SIGNING_EXTERNAL_COMMAND` | empty | Optional comma-separated argv for a KMS/HSM signing command or sidecar |
 | `SIGNING_EXTERNAL_TIMEOUT_MS` | `2000` | External signer timeout in milliseconds |
+| `SIGNING_KEY_ROTATION_INTERVAL_SECONDS` | `7776000` | Automatic signing key rotation interval |
+| `SIGNING_KEY_PREPUBLISH_SECONDS` | `86400` | JWKS prepublication window before activation |
 
 See [.env.yaml.example](.env.yaml.example) for the complete field list.
 
@@ -221,12 +228,13 @@ The token endpoint accepts the RFC 8707 `resource` parameter as an absolute URI
 without a fragment. A request may repeat `resource` to request multiple
 audiences; single-resource access tokens keep a string `aud`, and
 multi-resource access tokens use a JWT `aud` array. The legacy `audience`
-parameter remains available as a single-audience project extension. A request
-must not send both.
+parameter is a non-standard single-audience project extension and is rejected
+unless `ENABLE_LEGACY_AUDIENCE_PARAM=true`. A request must not send both.
 
 The authorization endpoint, PAR endpoint, and signed request objects accept RFC
-9396-style `authorization_details` arrays. Each item must be an object with a
-supported `type`; the server advertises `account_information` and
+9396-style `authorization_details` arrays only when
+`ENABLE_AUTHORIZATION_DETAILS=true`. Each item must be an object with a
+supported `type`; when enabled, the server advertises `account_information` and
 `payment_initiation` in `authorization_details_types_supported`. High-risk
 details such as payments or write actions require fresh transaction binding and
 are not silently covered by a previous broad consent.
@@ -240,26 +248,24 @@ signed as `logout+jwt` tokens.
 
 ## Key Management
 
-Generate keys:
+Initial startup creates a local RS256 signing key when `keyset.json` does not
+exist. Existing local PEM keysets are maintained by the in-process lifecycle
+task and published through the runtime keyset snapshot:
 
-```sh
-nazo-oauth-keyctl generate
-nazo-oauth-keyctl generate --alg RS256
-nazo-oauth-keyctl generate --alg ES256
-nazo-oauth-keyctl generate --alg PS256
-```
+- when the active key reaches
+  `SIGNING_KEY_ROTATION_INTERVAL_SECONDS - SIGNING_KEY_PREPUBLISH_SECONDS`, the
+  service prepublishes the next local key in JWKS without using it for signing;
+- after `SIGNING_KEY_PREPUBLISH_SECONDS` has elapsed and the active key reaches
+  `SIGNING_KEY_ROTATION_INTERVAL_SECONDS`, the service activates the
+  prepublished key;
+- the previous active key remains in JWKS until
+  `now + max(ACCESS_TOKEN_TTL_SECONDS, ID_TOKEN_TTL_SECONDS)`, then it is no
+  longer published.
 
-Activate a new key after it has been deployed and published in JWKS:
-
-```sh
-nazo-oauth-keyctl activate <kid>
-```
-
-Retire an old key after the maximum token TTL has elapsed:
-
-```sh
-nazo-oauth-keyctl retire <old-kid> --at 2026-06-01T00:00:00Z
-```
+Defaults are a 90-day rotation interval and 1-day prepublication window. The
+prepublication window must be positive and shorter than the rotation interval.
+The runtime refresh interval is derived from the prepublication window and is
+capped at one hour.
 
 Validate the keyset:
 
@@ -276,12 +282,21 @@ nazo-oauth-keyctl register-external \
   --key-ref kms://prod/oauth/rs256-kms-2026-06 \
   --public-jwk /secure/exported-public-jwk.json
 nazo-oauth-keyctl validate
-nazo-oauth-keyctl activate rs256-kms-2026-06
 ```
 
-When the active key uses `backend: external-command`, configure `SIGNING_EXTERNAL_COMMAND` to the signer argv. The signer receives JSON on stdin with `kid`, `alg`, `key_ref`, and the compact-JWS `signing_input`, and returns `{"signature":"<base64url-signature>"}` on stdout. Signing failures return protocol `server_error`; the server does not fall back to unsigned tokens or plain query responses.
+When the active key uses `backend: external-command`, configure
+`SIGNING_EXTERNAL_COMMAND` to the signer argv. A registered external key can be
+activated by the automatic lifecycle only after its prepublication window has
+elapsed and only when the signer command is configured. The signer receives JSON
+on stdin with `kid`, `alg`, `key_ref`, and the compact-JWS `signing_input`, and
+returns `{"signature":"<base64url-signature>"}` on stdout. Signing failures
+return protocol `server_error`; the server does not fall back to unsigned tokens
+or plain query responses.
 
-The keyset uses atomic file replacement. On Unix platforms, private key PEM files are written with `0600` permissions. Retired keys are not published in JWKS, and the active key cannot be retired.
+The keyset uses atomic file replacement. On Unix platforms, private key PEM
+files are written with `0600` permissions. Retired keys are not published in
+JWKS. The active key cannot carry `retire_at`, and malformed lifecycle metadata
+fails validation.
 
 ## Local Checks
 

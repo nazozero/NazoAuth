@@ -13,7 +13,7 @@ use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{ActiveSigningKey, Keyset};
+use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
 use crate::http::admin::{CreateClientRequest, insert_prepared_client, prepare_client_insert};
 
 fn unavailable_valkey_client() -> fred::prelude::Client {
@@ -45,7 +45,7 @@ fn test_state() -> AppState {
         settings: Arc::new(
             Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
         ),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -85,6 +85,8 @@ fn create_client_request(client_name: &str) -> CreateClientRequest {
         tls_client_auth_san_ip: Vec::new(),
         tls_client_auth_san_email: Vec::new(),
         jwks: None,
+        subject_type: None,
+        sector_identifier_uri: None,
     }
 }
 
@@ -130,7 +132,7 @@ impl LiveAdminClientUpdateFixture {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
-                keyset: Arc::new(Keyset {
+                keyset: KeysetStore::new(Keyset {
                     active_kid: "test-kid".to_owned(),
                     active_alg: jsonwebtoken::Algorithm::EdDSA,
                     active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -248,8 +250,13 @@ impl LiveAdminClientUpdateFixture {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
-        let prepared = prepare_client_insert(create_client_request(client_name))
-            .expect("client creation payload should be valid");
+        let prepared = prepare_client_insert(
+            create_client_request(client_name),
+            None,
+            "http://localhost:8000",
+        )
+        .await
+        .expect("client creation payload should be valid");
         insert_prepared_client(&mut conn, &prepared)
             .await
             .expect("client should insert")
@@ -309,7 +316,18 @@ fn current_client() -> ClientRow {
         post_logout_redirect_uris: json!(["https://client.example/logout"]),
         backchannel_logout_uri: Some("https://client.example/backchannel".to_owned()),
         backchannel_logout_session_required: true,
+        subject_type: "public".to_owned(),
+        sector_identifier_uri: None,
+        sector_identifier_host: None,
     }
+}
+
+fn pairwise_current_client() -> ClientRow {
+    let mut client = current_client();
+    client.subject_type = "pairwise".to_owned();
+    client.sector_identifier_uri = Some("https://sector.example/client.json".to_owned());
+    client.sector_identifier_host = Some("sector.example".to_owned());
+    client
 }
 
 fn empty_patch() -> PatchClientRequest {
@@ -335,16 +353,19 @@ fn empty_patch() -> PatchClientRequest {
         tls_client_auth_san_email: None,
         jwks: None,
         is_active: None,
+        subject_type: None,
+        sector_identifier_uri: None,
     }
 }
 
-#[test]
-fn patch_preserves_unsubmitted_security_metadata() {
+#[actix_web::test]
+async fn patch_preserves_unsubmitted_security_metadata() {
     let mut patch = empty_patch();
     patch.client_name = Some("Renamed client".to_owned());
     patch.is_active = Some(false);
 
-    let prepared = prepare_client_patch(&current_client(), patch)
+    let prepared = prepare_client_patch(&current_client(), patch, None, "http://localhost:8000")
+        .await
         .expect("renaming a client must not require resubmitting security metadata");
 
     assert_eq!(prepared.client_name, "Renamed client");
@@ -368,12 +389,13 @@ fn patch_preserves_unsubmitted_security_metadata() {
     assert!(!prepared.is_active);
 }
 
-#[test]
-fn patch_rejects_redirect_uri_with_surrounding_whitespace() {
+#[actix_web::test]
+async fn patch_rejects_redirect_uri_with_surrounding_whitespace() {
     let mut patch = empty_patch();
     patch.redirect_uris = Some(vec![" https://client.example/callback ".to_owned()]);
 
-    let error = prepare_client_patch(&current_client(), patch)
+    let error = prepare_client_patch(&current_client(), patch, None, "http://localhost:8000")
+        .await
         .err()
         .expect("redirect_uri metadata must be an exact registered value");
 
@@ -383,12 +405,13 @@ fn patch_rejects_redirect_uri_with_surrounding_whitespace() {
     );
 }
 
-#[test]
-fn patch_rejects_post_logout_redirect_uri_with_surrounding_whitespace() {
+#[actix_web::test]
+async fn patch_rejects_post_logout_redirect_uri_with_surrounding_whitespace() {
     let mut patch = empty_patch();
     patch.post_logout_redirect_uris = Some(vec![" https://client.example/logout ".to_owned()]);
 
-    let error = prepare_client_patch(&current_client(), patch)
+    let error = prepare_client_patch(&current_client(), patch, None, "http://localhost:8000")
+        .await
         .err()
         .expect("post_logout_redirect_uri metadata must not be silently normalized");
 
@@ -396,6 +419,164 @@ fn patch_rejects_post_logout_redirect_uri_with_surrounding_whitespace() {
         error.to_string().contains("post_logout_redirect_uri"),
         "error should identify the exact post_logout_redirect_uri boundary: {error}"
     );
+}
+
+#[actix_web::test]
+async fn patch_rejects_pairwise_when_secret_is_not_configured() {
+    let mut patch = empty_patch();
+    patch.subject_type = Some("pairwise".to_owned());
+
+    let error = prepare_client_patch(&current_client(), patch, None, "http://localhost:8000")
+        .await
+        .err()
+        .expect("pairwise subject update requires a configured server secret");
+
+    assert!(
+        error.to_string().contains("PAIRWISE_SUBJECT_SECRET"),
+        "error should identify the missing pairwise server secret: {error}"
+    );
+}
+
+#[actix_web::test]
+async fn patch_derives_pairwise_sector_from_updated_single_redirect_host() {
+    let mut patch = empty_patch();
+    patch.subject_type = Some("pairwise".to_owned());
+    patch.redirect_uris = Some(vec![
+        "https://client.example/callback".to_owned(),
+        "https://client.example/alternate".to_owned(),
+    ]);
+
+    let prepared = prepare_client_patch(
+        &current_client(),
+        patch,
+        Some("01234567890123456789012345678901"),
+        "http://localhost:8000",
+    )
+    .await
+    .expect("pairwise update with one redirect host should be accepted");
+
+    assert_eq!(prepared.subject_type, "pairwise");
+    assert!(prepared.sector_identifier_uri.is_none());
+    assert_eq!(
+        prepared.sector_identifier_host.as_deref(),
+        Some("client.example")
+    );
+}
+
+#[actix_web::test]
+async fn patch_rejects_pairwise_redirects_with_multiple_hosts_without_sector_uri() {
+    let mut patch = empty_patch();
+    patch.subject_type = Some("pairwise".to_owned());
+    patch.redirect_uris = Some(vec![
+        "https://client.example/callback".to_owned(),
+        "https://other.example/callback".to_owned(),
+    ]);
+
+    let error = prepare_client_patch(
+        &current_client(),
+        patch,
+        Some("01234567890123456789012345678901"),
+        "http://localhost:8000",
+    )
+    .await
+    .err()
+    .expect("multi-host pairwise redirect set requires a sector_identifier_uri");
+
+    assert!(
+        error.to_string().contains("sector_identifier_uri"),
+        "error should identify the missing sector identifier boundary: {error}"
+    );
+}
+
+#[actix_web::test]
+async fn patch_reports_sector_identifier_fetch_failure_for_new_pairwise_uri() {
+    let mut patch = empty_patch();
+    patch.subject_type = Some("pairwise".to_owned());
+    patch.redirect_uris = Some(vec![
+        "https://client.example/callback".to_owned(),
+        "https://other.example/callback".to_owned(),
+    ]);
+    patch.sector_identifier_uri = Some("https://sector.invalid/client.json".to_owned());
+
+    let error = prepare_client_patch(
+        &current_client(),
+        patch,
+        Some("01234567890123456789012345678901"),
+        "http://localhost:8000",
+    )
+    .await
+    .err()
+    .expect("unresolvable sector_identifier_uri must fail patch validation");
+
+    assert!(
+        error.to_string().contains("sector_identifier_uri 获取失败"),
+        "error should identify sector identifier retrieval: {error}"
+    );
+}
+
+#[actix_web::test]
+async fn patch_preserves_existing_pairwise_sector_host_without_refetching_uri() {
+    let mut patch = empty_patch();
+    patch.client_name = Some("Renamed pairwise client".to_owned());
+
+    let prepared = prepare_client_patch(
+        &pairwise_current_client(),
+        patch,
+        Some("01234567890123456789012345678901"),
+        "http://localhost:8000",
+    )
+    .await
+    .expect("unrelated patch should preserve existing pairwise sector metadata");
+
+    assert_eq!(prepared.client_name, "Renamed pairwise client");
+    assert_eq!(
+        prepared.sector_identifier_uri.as_deref(),
+        Some("https://sector.example/client.json")
+    );
+    assert_eq!(
+        prepared.sector_identifier_host.as_deref(),
+        Some("sector.example")
+    );
+}
+
+#[actix_web::test]
+async fn patch_rejects_modifying_existing_sector_identifier_uri() {
+    let mut patch = empty_patch();
+    patch.sector_identifier_uri = Some("https://other-sector.example/client.json".to_owned());
+
+    let error = prepare_client_patch(
+        &pairwise_current_client(),
+        patch,
+        Some("01234567890123456789012345678901"),
+        "http://localhost:8000",
+    )
+    .await
+    .err()
+    .expect("existing sector_identifier_uri must be immutable");
+
+    assert!(
+        error.to_string().contains("不可修改"),
+        "error should identify immutable sector identifier metadata: {error}"
+    );
+}
+
+#[actix_web::test]
+async fn patch_clears_pairwise_sector_metadata_when_subject_becomes_public() {
+    let mut patch = empty_patch();
+    patch.subject_type = Some("public".to_owned());
+
+    let prepared = prepare_client_patch(
+        &pairwise_current_client(),
+        patch,
+        Some("01234567890123456789012345678901"),
+        "http://localhost:8000",
+    )
+    .await
+    .expect("switching back to public should remove pairwise-only metadata");
+
+    assert_eq!(prepared.subject_type, "public");
+    assert!(prepared.sector_identifier_uri.is_none());
+    assert!(prepared.sector_identifier_host.is_none());
 }
 
 #[actix_web::test]

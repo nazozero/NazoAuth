@@ -14,7 +14,8 @@ use std::time::Duration as StdDuration;
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
 use crate::domain::{
-    ActiveSigningKey, ConsentPayload, Keyset, PushedAuthorizationRequest, VerificationKey,
+    ActiveSigningKey, ConsentPayload, Keyset, KeysetStore, PushedAuthorizationRequest,
+    VerificationKey,
 };
 use crate::support::{
     generate_key_material, jwt_decoding_key_from_jwk, public_jwk_from_private_der,
@@ -41,6 +42,10 @@ fn endpoint_state(require_par: bool) -> AppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.require_pushed_authorization_requests = require_par;
+    settings.enable_request_uri_parameter = true;
+    settings.enable_request_object = true;
+    settings.enable_par_request_object = true;
+    settings.enable_authorization_details = true;
     settings.issuer = "https://issuer.example".to_owned();
     settings.frontend_base_url = "https://app.example".to_owned();
     settings.auth_code_ttl_seconds = 60;
@@ -54,7 +59,7 @@ fn endpoint_state(require_par: bool) -> AppState {
         .expect("pool construction should not connect"),
         valkey: unavailable_valkey_client(),
         settings: Arc::new(settings),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -113,6 +118,10 @@ impl LiveAuthorizationFixture {
         ]);
         let mut settings = Settings::from_config(&config).expect("test settings should load");
         settings.require_pushed_authorization_requests = false;
+        settings.enable_request_object = true;
+        settings.enable_request_uri_parameter = true;
+        settings.enable_par_request_object = true;
+        settings.enable_authorization_details = true;
 
         let mut valkey_builder = ValkeyBuilder::from_config(
             ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),
@@ -133,7 +142,7 @@ impl LiveAuthorizationFixture {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
-                keyset: Arc::new(Keyset {
+                keyset: KeysetStore::new(Keyset {
                     active_kid: "test-kid".to_owned(),
                     active_alg: jsonwebtoken::Algorithm::EdDSA,
                     active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
@@ -396,8 +405,9 @@ async fn assert_authorization_invalid_request(response: HttpResponse) {
 fn decode_jarm_claims(state: &AppState, response_jwt: &str) -> Value {
     let header =
         jsonwebtoken::decode_header(response_jwt).expect("JARM response header should decode");
-    let decoding_key = jwt_decoding_key_from_jwk(&state.keyset.jwks()["keys"][0], header.alg)
-        .expect("JARM decoding key should derive from test JWKS");
+    let decoding_key =
+        jwt_decoding_key_from_jwk(&state.keyset.snapshot().jwks()["keys"][0], header.alg)
+            .expect("JARM decoding key should derive from test JWKS");
     let mut validation = jsonwebtoken::Validation::new(header.alg);
     validation.validate_exp = false;
     validation.set_audience(&["client-jarm"]);
@@ -439,6 +449,63 @@ async fn authorization_get_requires_par_before_untrusted_runtime_parameters() {
     assert_eq!(body["error"], "invalid_request");
     assert_eq!(body["error_description"], "Request failed.");
     assert!(body.get("redirect_uri").is_none());
+    assert!(body.get("code").is_none());
+}
+
+#[actix_web::test]
+async fn authorization_request_rejects_disabled_request_object_parameters_before_client_lookup() {
+    let mut state = endpoint_state(false);
+    Arc::get_mut(&mut state.settings)
+        .expect("test state owns its settings")
+        .enable_request_object = false;
+    let state = Data::new(state);
+    let req = actix_web::test::TestRequest::get()
+        .uri("/authorize?request=jwt")
+        .to_http_request();
+    let mut q = query(&[("request", "jwt")]);
+
+    let (status, body) = json_body(authorize_request(state, req, &mut q).await).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_request");
+    assert!(body.get("code").is_none());
+}
+
+#[actix_web::test]
+async fn authorization_request_rejects_disabled_request_uri_parameter_before_client_lookup() {
+    let mut state = endpoint_state(false);
+    Arc::get_mut(&mut state.settings)
+        .expect("test state owns its settings")
+        .enable_request_uri_parameter = false;
+    let state = Data::new(state);
+    let req = actix_web::test::TestRequest::get()
+        .uri("/authorize?request_uri=urn%3Aietf%3Aparams%3Aoauth%3Arequest_uri%3Aabc")
+        .to_http_request();
+    let mut q = query(&[("request_uri", "urn:ietf:params:oauth:request_uri:abc")]);
+
+    let (status, body) = json_body(authorize_request(state, req, &mut q).await).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_request");
+    assert!(body.get("code").is_none());
+}
+
+#[actix_web::test]
+async fn authorization_request_rejects_disabled_authorization_details_before_client_lookup() {
+    let mut state = endpoint_state(false);
+    Arc::get_mut(&mut state.settings)
+        .expect("test state owns its settings")
+        .enable_authorization_details = false;
+    let state = Data::new(state);
+    let req = actix_web::test::TestRequest::get()
+        .uri("/authorize?authorization_details=%5B%5D")
+        .to_http_request();
+    let mut q = query(&[("authorization_details", "[]")]);
+
+    let (status, body) = json_body(authorize_request(state, req, &mut q).await).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_request");
     assert!(body.get("code").is_none());
 }
 
@@ -1549,8 +1616,8 @@ async fn consume_pushed_authorization_request_enforces_single_use_and_malformed_
 
 #[actix_web::test]
 async fn authorization_response_redirect_emits_signed_jarm_response() {
-    let mut state = endpoint_state(false);
-    state.keyset = Arc::new(local_signing_keyset());
+    let state = endpoint_state(false);
+    state.keyset.replace(local_signing_keyset());
     let state = Data::new(state);
 
     let response = authorization_response_redirect(

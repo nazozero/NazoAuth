@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::config::ConfigSource;
 use crate::db::create_pool;
-use crate::domain::{ActiveSigningKey, Keyset};
+use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
 use crate::support::OAuthJsonErrorFields;
 use actix_web::test::TestRequest;
 use fred::interfaces::ClientLike;
@@ -51,7 +51,7 @@ fn session_state() -> AppState {
         settings: Arc::new(
             Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
         ),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),

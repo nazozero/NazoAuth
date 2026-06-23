@@ -53,6 +53,8 @@ pub(crate) struct Settings {
     pub(crate) jwk_keys_dir: PathBuf,
     pub(crate) signing_external_command: Vec<String>,
     pub(crate) signing_external_timeout_ms: u64,
+    pub(crate) signing_key_rotation_interval_seconds: i64,
+    pub(crate) signing_key_prepublish_seconds: i64,
     pub(crate) trusted_proxy_cidrs: Vec<IpCidr>,
     pub(crate) client_ip_header_mode: ClientIpHeaderMode,
     pub(crate) subject_type: SubjectType,
@@ -62,6 +64,11 @@ pub(crate) struct Settings {
     pub(crate) scim_bearer_token: Option<String>,
     pub(crate) passkey: PasskeySettings,
     pub(crate) federation: FederationSettings,
+    pub(crate) enable_request_object: bool,
+    pub(crate) enable_request_uri_parameter: bool,
+    pub(crate) enable_par_request_object: bool,
+    pub(crate) enable_authorization_details: bool,
+    pub(crate) enable_legacy_audience_param: bool,
 }
 
 impl Settings {
@@ -100,6 +107,11 @@ impl Settings {
         if subject_type == SubjectType::Pairwise && pairwise_subject_secret.is_none() {
             bail!("PAIRWISE_SUBJECT_SECRET is required when SUBJECT_TYPE=pairwise");
         }
+        if let Some(secret) = &pairwise_subject_secret
+            && secret.len() < 32
+        {
+            bail!("pairwise_subject_secret must be at least 32 bytes");
+        }
         let authorization_server_profile = AuthorizationServerProfile::from_config(config)?;
         let configured_dpop_nonce_policy = DpopNoncePolicy::from_config(config)?;
         let dpop_nonce_policy = if authorization_server_profile.requires_fapi2_security() {
@@ -117,6 +129,21 @@ impl Settings {
             || authorization_server_profile.requires_fapi2_security();
         let passkey = PasskeySettings::from_config(config, &issuer)?;
         let federation = FederationSettings::from_config(config)?;
+        let signing_key_rotation_interval_seconds =
+            config.parse("SIGNING_KEY_ROTATION_INTERVAL_SECONDS", 7_776_000)?;
+        let signing_key_prepublish_seconds =
+            config.parse("SIGNING_KEY_PREPUBLISH_SECONDS", 86_400)?;
+        if signing_key_rotation_interval_seconds <= 0 {
+            bail!("SIGNING_KEY_ROTATION_INTERVAL_SECONDS must be positive");
+        }
+        if signing_key_prepublish_seconds <= 0 {
+            bail!("SIGNING_KEY_PREPUBLISH_SECONDS must be positive");
+        }
+        if signing_key_prepublish_seconds >= signing_key_rotation_interval_seconds {
+            bail!(
+                "SIGNING_KEY_PREPUBLISH_SECONDS must be less than SIGNING_KEY_ROTATION_INTERVAL_SECONDS"
+            );
+        }
 
         Ok(Self {
             issuer,
@@ -149,6 +176,8 @@ impl Settings {
                 config.optional_string("SIGNING_EXTERNAL_COMMAND"),
             ),
             signing_external_timeout_ms: config.parse("SIGNING_EXTERNAL_TIMEOUT_MS", 2_000)?,
+            signing_key_rotation_interval_seconds,
+            signing_key_prepublish_seconds,
             trusted_proxy_cidrs: parse_trusted_proxy_cidrs(config.get("TRUSTED_PROXY_CIDRS"))?,
             client_ip_header_mode: ClientIpHeaderMode::parse(
                 &config.string("CLIENT_IP_HEADER_MODE", "none"),
@@ -160,6 +189,11 @@ impl Settings {
             scim_bearer_token: config.optional_string("SCIM_BEARER_TOKEN"),
             passkey,
             federation,
+            enable_request_object: config.bool("ENABLE_REQUEST_OBJECT", false)?,
+            enable_request_uri_parameter: config.bool("ENABLE_REQUEST_URI_PARAMETER", false)?,
+            enable_par_request_object: config.bool("ENABLE_PAR_REQUEST_OBJECT", false)?,
+            enable_authorization_details: config.bool("ENABLE_AUTHORIZATION_DETAILS", false)?,
+            enable_legacy_audience_param: config.bool("ENABLE_LEGACY_AUDIENCE_PARAM", false)?,
         })
     }
 }

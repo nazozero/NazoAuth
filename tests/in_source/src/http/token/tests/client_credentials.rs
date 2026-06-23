@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::db::create_pool;
-use crate::domain::{ActiveSigningKey, Keyset};
+use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
 use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, PasskeySettings,
     RateLimitSettings, RequestObjectJtiPolicy, SubjectType,
@@ -48,6 +48,8 @@ fn settings(profile: AuthorizationServerProfile) -> Settings {
         jwk_keys_dir: PathBuf::from("runtime/keys"),
         signing_external_command: Vec::new(),
         signing_external_timeout_ms: 2_000,
+        signing_key_rotation_interval_seconds: 7_776_000,
+        signing_key_prepublish_seconds: 86_400,
         trusted_proxy_cidrs: Vec::<IpCidr>::new(),
         client_ip_header_mode: ClientIpHeaderMode::None,
         subject_type: SubjectType::Public,
@@ -67,6 +69,11 @@ fn settings(profile: AuthorizationServerProfile) -> Settings {
             oidc: None,
             saml_gateway: None,
         },
+        enable_request_object: false,
+        enable_request_uri_parameter: false,
+        enable_par_request_object: false,
+        enable_authorization_details: false,
+        enable_legacy_audience_param: false,
     }
 }
 
@@ -102,6 +109,9 @@ fn client() -> ClientRow {
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: None,
         backchannel_logout_session_required: true,
+        subject_type: "public".to_owned(),
+        sector_identifier_uri: None,
+        sector_identifier_host: None,
     }
 }
 
@@ -118,6 +128,7 @@ fn form(scope: Option<&str>, audiences: &[&str]) -> TokenForm {
         client_assertion_type: None,
         client_assertion: None,
         audiences: audiences.iter().map(|value| (*value).to_owned()).collect(),
+        has_audience_param: false,
     }
 }
 
@@ -141,7 +152,7 @@ fn client_credentials_state() -> AppState {
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings(AuthorizationServerProfile::Oauth2Baseline)),
-        keyset: Arc::new(Keyset {
+        keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
             active_alg: jsonwebtoken::Algorithm::EdDSA,
             active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
