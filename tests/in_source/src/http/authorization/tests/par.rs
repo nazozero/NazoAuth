@@ -376,10 +376,10 @@ async fn par_json_body(response: HttpResponse) -> (StatusCode, Value) {
 }
 
 #[test]
-fn par_policy_requires_request_object_for_dpop_bound_clients() {
+fn par_policy_does_not_require_request_object_for_dpop_bound_clients() {
     let settings = baseline_settings();
 
-    assert!(pushed_authorization_request_requires_request_object(
+    assert!(!pushed_authorization_request_requires_request_object(
         &settings,
         &client(true)
     ));
