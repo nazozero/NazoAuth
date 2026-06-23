@@ -201,10 +201,13 @@ fn token_issue_from_authorization_code(input: AuthorizationCodeIssueInput) -> To
 
 fn refresh_token_dpop_binding(
     client: &ClientRow,
-    _payload: &CodePayload,
+    payload: &CodePayload,
     dpop_jkt: Option<String>,
 ) -> Option<String> {
-    if client.client_type == "public" {
+    if client.client_type == "public"
+        || client.require_dpop_bound_tokens
+        || payload.dpop_jkt.is_some()
+    {
         dpop_jkt
     } else {
         None

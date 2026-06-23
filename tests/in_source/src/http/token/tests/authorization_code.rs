@@ -781,16 +781,17 @@ fn authorization_code_holder_error_responses_preserve_oauth_error_classes() {
 }
 
 #[test]
-fn confidential_dpop_client_does_not_pin_refresh_token_to_initial_dpop_key() {
+fn confidential_required_dpop_client_pins_refresh_token_to_verified_dpop_key() {
     let mut client = pkce_policy_client();
     client.client_type = "confidential".to_owned();
     client.require_dpop_bound_tokens = true;
     let mut payload = code_payload(true);
     payload.dpop_jkt = Some("request-dpop-jkt".to_owned());
 
-    assert!(
+    assert_eq!(
         refresh_token_dpop_binding(&client, &payload, Some("verified-dpop-jkt".to_owned()))
-            .is_none()
+            .as_deref(),
+        Some("verified-dpop-jkt")
     );
 }
 
@@ -801,6 +802,21 @@ fn public_dpop_client_binds_refresh_token_to_dpop_key() {
     client.require_dpop_bound_tokens = false;
     let mut payload = code_payload(true);
     payload.dpop_jkt = None;
+
+    assert_eq!(
+        refresh_token_dpop_binding(&client, &payload, Some("verified-dpop-jkt".to_owned()))
+            .as_deref(),
+        Some("verified-dpop-jkt")
+    );
+}
+
+#[test]
+fn confidential_optional_dpop_code_pins_refresh_token_to_verified_dpop_key() {
+    let mut client = pkce_policy_client();
+    client.client_type = "confidential".to_owned();
+    client.require_dpop_bound_tokens = false;
+    let mut payload = code_payload(true);
+    payload.dpop_jkt = Some("request-dpop-jkt".to_owned());
 
     assert_eq!(
         refresh_token_dpop_binding(&client, &payload, Some("verified-dpop-jkt".to_owned()))
