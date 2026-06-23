@@ -6,7 +6,7 @@ use super::{
 use crate::http::prelude::*;
 use crate::settings::AuthorizationServerProfile;
 
-const LOST_REFRESH_TOKEN_RETRY_SECONDS: i64 = 30;
+const LOST_REFRESH_TOKEN_RETRY_SECONDS: i64 = 60;
 
 fn refresh_token_policy_for_authorization_server_profile(
     profile: AuthorizationServerProfile,

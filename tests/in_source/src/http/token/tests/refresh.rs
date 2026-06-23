@@ -936,7 +936,7 @@ async fn refresh_grant_rotates_unbound_successor_for_lost_response_retries() {
     revoked.subject = client.client_id.clone();
     revoked.user_id = None;
     revoked.dpop_jkt = None;
-    revoked.revoked_at = Some(Utc::now() - Duration::seconds(1));
+    revoked.revoked_at = Some(Utc::now() - Duration::seconds(35));
     let revoked_raw = format!("refresh-token-retry-original-{suffix}");
     insert_refresh_token_row(&state, &revoked_raw, &revoked, None, None).await;
 
