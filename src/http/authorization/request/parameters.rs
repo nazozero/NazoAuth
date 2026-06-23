@@ -1,3 +1,4 @@
+use crate::http::authorization::BASELINE_ACR_VALUE;
 use crate::http::prelude::*;
 
 pub(crate) const AUTHORIZED_REQUEST_PARAMETERS: &[&str] = &[
@@ -21,7 +22,6 @@ pub(crate) const AUTHORIZED_REQUEST_PARAMETERS: &[&str] = &[
 ];
 pub(super) const AUTHORIZATION_NONCE_MAX_BYTES: usize = 256;
 const REAUTH_STARTED_AT_PARAMETER: &str = "_nazo_reauth_started_at";
-pub(crate) const BASELINE_ACR_VALUE: &str = "1";
 
 pub(super) fn authorization_duplicate_parameters() -> Vec<&'static str> {
     let mut parameters = AUTHORIZED_REQUEST_PARAMETERS.to_vec();

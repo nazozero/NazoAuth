@@ -1,6 +1,6 @@
 use super::prelude::*;
 use crate::domain::Keyset;
-use crate::http::authorization::request::BASELINE_ACR_VALUE;
+use crate::http::authorization::BASELINE_ACR_VALUE;
 use crate::settings::{AuthorizationServerProfile, Settings, SubjectType};
 
 const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
