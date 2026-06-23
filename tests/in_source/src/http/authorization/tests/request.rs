@@ -51,11 +51,15 @@ fn pkce_policy_client() -> ClientRow {
 }
 
 #[test]
-fn requested_acr_is_not_derived_from_request_parameters() {
+fn requested_acr_selects_supported_request_value() {
     assert_eq!(
-        requested_acr(&query(&[("acr_values", "urn:one urn:two")]), None),
-        None
+        requested_acr(&query(&[("acr_values", "2 1")]), None).as_deref(),
+        Some("1")
     );
+}
+
+#[test]
+fn requested_acr_ignores_unsupported_request_values() {
     assert_eq!(
         requested_acr(
             &query(&[("acr_values", "urn:one urn:two")]),

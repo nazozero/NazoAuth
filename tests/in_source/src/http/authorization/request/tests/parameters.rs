@@ -171,10 +171,10 @@ fn authorization_response_mode_rejects_unknown_value() {
 }
 
 #[test]
-fn requested_acr_ignores_query_acr_values() {
+fn requested_acr_selects_supported_query_acr_value() {
     let mut q = HashMap::new();
-    q.insert("acr_values".to_owned(), "phr phrh".to_owned());
-    assert_eq!(requested_acr(&q, None), None);
+    q.insert("acr_values".to_owned(), "2 1".to_owned());
+    assert_eq!(requested_acr(&q, None).as_deref(), Some("1"));
 }
 
 #[test]

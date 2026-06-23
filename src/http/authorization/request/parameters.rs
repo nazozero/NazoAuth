@@ -21,6 +21,7 @@ pub(crate) const AUTHORIZED_REQUEST_PARAMETERS: &[&str] = &[
 ];
 pub(super) const AUTHORIZATION_NONCE_MAX_BYTES: usize = 256;
 const REAUTH_STARTED_AT_PARAMETER: &str = "_nazo_reauth_started_at";
+pub(crate) const BASELINE_ACR_VALUE: &str = "1";
 
 pub(super) fn authorization_duplicate_parameters() -> Vec<&'static str> {
     let mut parameters = AUTHORIZED_REQUEST_PARAMETERS.to_vec();
@@ -65,10 +66,16 @@ pub(super) fn authorization_response_mode(
 }
 
 pub(super) fn requested_acr(
-    _q: &HashMap<String, String>,
+    q: &HashMap<String, String>,
     _claims_acr: Option<String>,
 ) -> Option<String> {
-    None
+    q.get("acr_values")
+        .and_then(|values| {
+            values
+                .split_whitespace()
+                .find(|value| *value == BASELINE_ACR_VALUE)
+        })
+        .map(str::to_owned)
 }
 
 #[derive(Debug, PartialEq)]
