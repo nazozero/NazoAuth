@@ -404,6 +404,10 @@ fn unverified_client_id_rejects_mismatched_party_claims() {
         unverified_request_object_client_id(&token).as_deref(),
         Some("client-a")
     );
+    assert_eq!(
+        unverified_signed_request_object_client_id(&token).as_deref(),
+        Some("client-a")
+    );
 
     let mismatched = request_object(
         json!({
