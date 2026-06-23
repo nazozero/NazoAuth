@@ -501,6 +501,21 @@ fn key_entry_backend(entry: &Value) -> &str {
         .unwrap_or("local-pem")
 }
 
+pub(crate) fn reject_private_jwk_members(
+    jwk: &serde_json::Map<String, Value>,
+) -> anyhow::Result<()> {
+    const PRIVATE_JWK_MEMBERS: &[&str] = &["d", "p", "q", "dp", "dq", "qi", "oth", "k"];
+    if let Some(member) = PRIVATE_JWK_MEMBERS
+        .iter()
+        .find(|member| jwk.contains_key(**member))
+    {
+        anyhow::bail!(
+            "public_jwk must not contain private or symmetric key material member {member}"
+        );
+    }
+    Ok(())
+}
+
 fn external_public_jwk(entry: &Value) -> anyhow::Result<Value> {
     let kid = entry
         .get("kid")
@@ -511,6 +526,7 @@ fn external_public_jwk(entry: &Value) -> anyhow::Result<Value> {
         .get("public_jwk")
         .and_then(Value::as_object)
         .ok_or_else(|| anyhow!("public_jwk must be an object"))?;
+    reject_private_jwk_members(jwk)?;
     let mut jwk = Value::Object(jwk.clone());
     match jwk.get("kid").and_then(Value::as_str) {
         Some(value) if value != kid => anyhow::bail!("public_jwk kid does not match key entry"),

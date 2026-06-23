@@ -10,12 +10,10 @@ const LOST_REFRESH_TOKEN_RETRY_SECONDS: i64 = 30;
 
 fn refresh_token_policy_for_authorization_server_profile(
     profile: AuthorizationServerProfile,
-    client: &ClientRow,
+    _client: &ClientRow,
     token: &TokenRow,
 ) -> RefreshTokenPolicy {
-    if profile.requires_fapi2_security()
-        || confidential_client_has_sender_constrained_refresh_token(client, token)
-    {
+    if profile.requires_fapi2_security() && refresh_token_has_stable_sender_constraint(token) {
         RefreshTokenPolicy::PreserveExisting
     } else {
         RefreshTokenPolicy::Rotate {
@@ -25,23 +23,8 @@ fn refresh_token_policy_for_authorization_server_profile(
     }
 }
 
-fn confidential_client_has_sender_constrained_refresh_token(
-    client: &ClientRow,
-    token: &TokenRow,
-) -> bool {
-    if client.client_type != "confidential"
-        || !matches!(
-            client.token_endpoint_auth_method.as_str(),
-            "private_key_jwt" | "tls_client_auth" | "self_signed_tls_client_auth"
-        )
-    {
-        return false;
-    }
-
-    client.require_dpop_bound_tokens
-        || client.require_mtls_bound_tokens
-        || token.dpop_jkt.is_some()
-        || token.mtls_x5t_s256.is_some()
+fn refresh_token_has_stable_sender_constraint(token: &TokenRow) -> bool {
+    token.dpop_jkt.is_some() || token.mtls_x5t_s256.is_some()
 }
 
 fn refresh_token_policy_for_profile(
@@ -71,7 +54,9 @@ fn refresh_token_scopes(
     if requested.is_empty() {
         return Ok(original_scopes.to_vec());
     }
-    if is_subset(&requested, original_scopes) {
+    if is_subset(&requested, original_scopes)
+        && requested.iter().any(|scope| scope == "offline_access")
+    {
         Ok(requested)
     } else {
         Err(())
@@ -254,6 +239,46 @@ pub(crate) async fn token_refresh(
             }
         }
     }
+    if let Some(user_id) = token.user_id {
+        match get_conn(&state.diesel_db).await {
+            Ok(mut conn) => match users::table
+                .find(user_id)
+                .filter(users::tenant_id.eq(token.tenant_id))
+                .select(users::is_active)
+                .first::<bool>(&mut conn)
+                .await
+                .optional()
+            {
+                Ok(Some(true)) => {}
+                Ok(_) => {
+                    return oauth_token_error(
+                        StatusCode::BAD_REQUEST,
+                        "invalid_grant",
+                        "授权用户不存在或已停用.",
+                        false,
+                    );
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "failed to load refresh token user");
+                    return oauth_token_error(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "server_error",
+                        "refresh_token 用户校验失败.",
+                        false,
+                    );
+                }
+            },
+            Err(error) => {
+                tracing::warn!(%error, "failed to get database connection for refresh token user lookup");
+                return oauth_token_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "refresh_token 用户校验失败.",
+                    false,
+                );
+            }
+        }
+    }
     let dpop_jkt = if dpop_proof_present(req) {
         match validate_dpop_proof(state, req, None, token.dpop_jkt.as_deref()).await {
             Ok(value) => value.or(token.dpop_jkt.clone()),
@@ -269,6 +294,14 @@ pub(crate) async fn token_refresh(
     } else {
         None
     };
+    if client.require_dpop_bound_tokens && token.dpop_jkt.is_none() {
+        return oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "refresh_token is not DPoP-bound.",
+            false,
+        );
+    }
     if client.require_dpop_bound_tokens && dpop_jkt.is_none() {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,

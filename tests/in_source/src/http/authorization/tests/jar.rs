@@ -298,7 +298,7 @@ async fn holder_bound_client_rejects_unsigned_request_object_at_endpoint_boundar
 }
 
 #[actix_web::test]
-async fn basic_request_object_applies_claims_and_rejects_outer_client_id_conflict() {
+async fn basic_request_object_rejects_unsigned_request_object_claims() {
     let state = jar_state("https://issuer.example");
     let client = jar_client("client-a");
     let request_object = request_object(
@@ -315,44 +315,27 @@ async fn basic_request_object_applies_claims_and_rejects_outer_client_id_conflic
     );
     let mut outer = HashMap::from([
         ("client_id".to_owned(), "client-a".to_owned()),
-        ("request".to_owned(), request_object.clone()),
+        ("request".to_owned(), request_object),
         ("scope".to_owned(), "openid".to_owned()),
         ("nonce".to_owned(), "outer-nonce".to_owned()),
     ]);
 
-    apply_request_object(&state, &mut outer, &client)
+    let response = apply_request_object(&state, &mut outer, &client)
         .await
-        .expect("basic OIDC request object should apply");
-
-    assert_eq!(outer.get("client_id").map(String::as_str), Some("client-a"));
-    assert_eq!(
-        outer.get("scope").map(String::as_str),
-        Some("openid profile")
-    );
-    assert_eq!(
-        outer.get("redirect_uri").map(String::as_str),
-        Some("https://client.example/callback")
-    );
-    assert_eq!(outer.get("nonce").map(String::as_str), Some("outer-nonce"));
-    assert_eq!(outer.get("max_age").map(String::as_str), Some("300"));
-
-    let mut conflicting_outer = HashMap::from([
-        ("client_id".to_owned(), "client-b".to_owned()),
-        ("request".to_owned(), request_object),
-    ]);
-    let response = apply_request_object(&state, &mut conflicting_outer, &client)
-        .await
-        .expect_err("outer client_id must remain bound to the authenticated client");
+        .expect_err("unsigned request object must be rejected");
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(
         oauth_error_code(&response).as_deref(),
-        Some("invalid_request")
+        Some("invalid_request_object")
     );
+    assert_eq!(outer.get("scope").map(String::as_str), Some("openid"));
+    assert_eq!(outer.get("nonce").map(String::as_str), Some("outer-nonce"));
+    assert!(!outer.contains_key("response_type"));
 }
 
 #[test]
-fn unverified_client_id_allows_basic_unsigned_request_object_claims() {
+fn unverified_client_id_rejects_unsigned_request_object_claims() {
     let token = request_object(
         json!({
             "client_id": "client-a",
@@ -365,22 +348,16 @@ fn unverified_client_id_allows_basic_unsigned_request_object_claims() {
         "none",
         "",
     );
-    assert_eq!(
-        unverified_request_object_client_id(&token).as_deref(),
-        Some("client-a")
-    );
+    assert!(unverified_request_object_client_id(&token).is_none());
 }
 
 #[test]
-fn request_object_alg_none_requires_payload_and_empty_signature() {
+fn request_object_alg_none_is_rejected() {
     let header = RequestObjectHeader {
         alg: "none".to_owned(),
     };
 
-    assert!(
-        request_object_uses_none_algorithm(&header, "payload", "")
-            .expect("valid unsigned request object")
-    );
+    assert!(request_object_uses_none_algorithm(&header, "payload", "").is_err());
     assert!(request_object_uses_none_algorithm(&header, "", "").is_err());
     assert!(request_object_uses_none_algorithm(&header, "payload", "signature").is_err());
 }
@@ -876,16 +853,17 @@ fn signed_request_object_rejects_invalid_signature_with_registered_kid() {
 #[actix_web::test]
 async fn request_object_jti_store_failure_fails_closed_without_applying_claims() {
     let state = unavailable_jar_state("https://issuer.example");
-    let client = jar_client("client-a");
-    let request_object = request_object(
-        json!({
-            "client_id": "client-a",
-            "response_type": "code",
+    let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
+        .expect("request object key should generate")
+        .private_pkcs8_der;
+    let client = signed_jar_client("client-a", "jar-kid", &key);
+    let request_object = signed_request_object_token(
+        "jar-kid",
+        &key,
+        signed_request_object_claims(json!({
             "redirect_uri": "https://client.example/callback",
             "jti": format!("jar-jti-{}", Uuid::now_v7())
-        }),
-        "none",
-        "",
+        })),
     );
     let mut outer = HashMap::from([
         ("client_id".to_owned(), "client-a".to_owned()),
@@ -906,16 +884,17 @@ async fn request_object_jti_replay_is_client_scoped_and_rejected() {
     let Some(state) = live_jar_state("https://issuer.example").await else {
         return;
     };
-    let client = jar_client("client-a");
-    let request_object = request_object(
-        json!({
-            "client_id": "client-a",
-            "response_type": "code",
+    let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
+        .expect("request object key should generate")
+        .private_pkcs8_der;
+    let client = signed_jar_client("client-a", "jar-kid", &key);
+    let request_object = signed_request_object_token(
+        "jar-kid",
+        &key,
+        signed_request_object_claims(json!({
             "redirect_uri": "https://client.example/callback",
             "jti": format!("jar-jti-{}", Uuid::now_v7())
-        }),
-        "none",
-        "",
+        })),
     );
 
     let mut first_outer = HashMap::from([
@@ -1060,21 +1039,25 @@ fn dpop_bound_client_rejects_unsigned_request_objects() {
 
     assert!(request_object_mode_allowed(
         &client,
-        RequestObjectMode::BasicOidc
+        RequestObjectMode::BasicOidc,
+        false
     ));
     assert!(request_object_mode_allowed(
         &client,
-        RequestObjectMode::SignedJar
+        RequestObjectMode::SignedJar,
+        false
     ));
 
     client.require_dpop_bound_tokens = true;
     assert!(!request_object_mode_allowed(
         &client,
-        RequestObjectMode::BasicOidc
+        RequestObjectMode::BasicOidc,
+        false
     ));
     assert!(request_object_mode_allowed(
         &client,
-        RequestObjectMode::SignedJar
+        RequestObjectMode::SignedJar,
+        false
     ));
 }
 
@@ -1084,17 +1067,36 @@ fn par_request_object_policy_rejects_unsigned_request_objects() {
 
     assert!(request_object_mode_allowed(
         &client,
-        RequestObjectMode::BasicOidc
+        RequestObjectMode::BasicOidc,
+        false
     ));
 
     client.require_par_request_object = true;
     assert!(!request_object_mode_allowed(
         &client,
-        RequestObjectMode::BasicOidc
+        RequestObjectMode::BasicOidc,
+        false
     ));
     assert!(request_object_mode_allowed(
         &client,
-        RequestObjectMode::SignedJar
+        RequestObjectMode::SignedJar,
+        false
+    ));
+}
+
+#[test]
+fn signed_authorization_request_profile_rejects_unsigned_request_objects() {
+    let client = jar_client("client-a");
+
+    assert!(!request_object_mode_allowed(
+        &client,
+        RequestObjectMode::BasicOidc,
+        true
+    ));
+    assert!(request_object_mode_allowed(
+        &client,
+        RequestObjectMode::SignedJar,
+        true
     ));
 }
 

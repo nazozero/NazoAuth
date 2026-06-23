@@ -34,7 +34,8 @@ Endpoints:
 The flow uses authorization code, PKCE S256, nonce, short-lived Valkey state,
 token endpoint exchange, JWKS lookup, and ID Token verification. The server
 checks issuer, audience, expiry, nonce, `kid`, and signature. The ID Token must
-contain an email claim. Explicitly unverified email is rejected.
+contain an email claim and `email_verified=true`; absent or false verification
+claims are rejected before account lookup, linking, or provisioning.
 
 ## SAML Gateway Federation
 

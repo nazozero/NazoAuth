@@ -97,8 +97,8 @@ fn discovery_prompt_values_match_authorization_request_parser() {
 }
 
 #[test]
-fn discovery_claims_include_supported_id_token_acr() {
-    assert!(CLAIMS_SUPPORTED.contains(&"acr"));
+fn discovery_claims_do_not_advertise_unsupported_id_token_acr() {
+    assert!(!CLAIMS_SUPPORTED.contains(&"acr"));
 }
 
 #[test]

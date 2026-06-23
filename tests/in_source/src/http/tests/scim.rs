@@ -1,6 +1,6 @@
 use super::*;
 use diesel::sql_query;
-use diesel::sql_types::Text;
+use diesel::sql_types::{BigInt, Nullable, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
 use std::sync::Arc;
 
@@ -37,6 +37,12 @@ fn test_state_with_scim_bearer_token(scim_bearer_token: Option<&str>) -> AppStat
 
 fn test_state() -> AppState {
     test_state_with_scim_bearer_token(None)
+}
+
+#[derive(diesel::QueryableByName)]
+struct CountRow {
+    #[diesel(sql_type = BigInt)]
+    count: i64,
 }
 
 fn database_url_with_search_path(schema: &str) -> Option<String> {
@@ -246,6 +252,129 @@ async fn create_scim_user_id(state: Data<AppState>, req: &HttpRequest, email: &s
     assert_eq!(status, StatusCode::CREATED);
     serde_json::from_value::<Uuid>(body["id"].clone())
         .expect("SCIM create response should include a UUID id")
+}
+
+async fn insert_scim_user_oauth_credentials(state: &AppState, user_id: Uuid, suffix: &str) -> Uuid {
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    let tenant = default_tenant_context();
+    let client_id = Uuid::now_v7();
+    let client_identifier = format!("scim-deprovision-client-{suffix}");
+
+    sql_query("DELETE FROM oauth_clients WHERE tenant_id = $1 AND client_id = $2")
+        .bind::<SqlUuid, _>(tenant.tenant_id)
+        .bind::<Text, _>(&client_identifier)
+        .execute(&mut conn)
+        .await
+        .expect("SCIM credential test client cleanup should succeed");
+
+    sql_query(
+        r#"
+        INSERT INTO oauth_clients (
+            id, tenant_id, realm_id, organization_id, client_id, client_name, client_type,
+            client_secret_argon2_hash, redirect_uris, scopes, allowed_audiences,
+            grant_types, token_endpoint_auth_method, require_dpop_bound_tokens,
+            require_mtls_bound_tokens, tls_client_auth_san_dns, tls_client_auth_san_uri,
+            tls_client_auth_san_ip, tls_client_auth_san_email,
+            allow_client_assertion_audience_array,
+            allow_client_assertion_endpoint_audience, require_par_request_object,
+            allow_authorization_code_without_pkce, is_active,
+            post_logout_redirect_uris, backchannel_logout_session_required
+        )
+        VALUES (
+            $1, $2, $3, $4, $5, $6, 'public',
+            NULL, '["https://client.example/callback"]'::jsonb, '["openid","offline_access"]'::jsonb,
+            '["https://api.example"]'::jsonb, '["authorization_code","refresh_token"]'::jsonb,
+            'none', false, false, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb,
+            false, false, false, false, true, '[]'::jsonb, false
+        )
+        "#,
+    )
+    .bind::<SqlUuid, _>(client_id)
+    .bind::<SqlUuid, _>(tenant.tenant_id)
+    .bind::<SqlUuid, _>(tenant.realm_id)
+    .bind::<SqlUuid, _>(tenant.organization_id)
+    .bind::<Text, _>(&client_identifier)
+    .bind::<Text, _>("SCIM Deprovision Test Client")
+    .execute(&mut conn)
+    .await
+    .expect("SCIM credential test client should insert");
+
+    sql_query(
+        r#"
+        INSERT INTO user_client_grants (
+            tenant_id, user_id, client_id, first_authorized_at, last_authorized_at,
+            last_scopes, last_authorization_details, authorization_count
+        )
+        VALUES ($1, $2, $3, now(), now(), '["openid","offline_access"]'::jsonb, '[]'::jsonb, 1)
+        "#,
+    )
+    .bind::<SqlUuid, _>(tenant.tenant_id)
+    .bind::<SqlUuid, _>(user_id)
+    .bind::<SqlUuid, _>(client_id)
+    .execute(&mut conn)
+    .await
+    .expect("SCIM credential test grant should insert");
+
+    sql_query(
+        r#"
+        INSERT INTO oauth_tokens (
+            id, tenant_id, refresh_token_blake3, token_family_id, rotated_from_id,
+            client_id, user_id, scopes, authorization_details, issued_at, expires_at,
+            revoked_at, reuse_detected_at, subject, dpop_jkt, mtls_x5t_s256
+        )
+        VALUES (
+            $1, $2, $3, $4, NULL,
+            $5, $6, '["openid","offline_access"]'::jsonb, '[]'::jsonb, now(),
+            now() + interval '1 day', NULL, NULL, $7, NULL, NULL
+        )
+        "#,
+    )
+    .bind::<SqlUuid, _>(Uuid::now_v7())
+    .bind::<SqlUuid, _>(tenant.tenant_id)
+    .bind::<Text, _>(format!("scim-deprovision-refresh-{suffix}"))
+    .bind::<SqlUuid, _>(Uuid::now_v7())
+    .bind::<SqlUuid, _>(client_id)
+    .bind::<Nullable<SqlUuid>, _>(Some(user_id))
+    .bind::<Text, _>(user_id.to_string())
+    .execute(&mut conn)
+    .await
+    .expect("SCIM credential test token should insert");
+
+    client_id
+}
+
+async fn grant_count_for_user_client(state: &AppState, user_id: Uuid, client_id: Uuid) -> i64 {
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    sql_query(
+        "SELECT COUNT(*) AS count FROM user_client_grants WHERE user_id = $1 AND client_id = $2",
+    )
+    .bind::<SqlUuid, _>(user_id)
+    .bind::<SqlUuid, _>(client_id)
+    .get_result::<CountRow>(&mut conn)
+    .await
+    .expect("SCIM credential test grant count should load")
+    .count
+}
+
+async fn active_refresh_token_count_for_user_client(
+    state: &AppState,
+    user_id: Uuid,
+    client_id: Uuid,
+) -> i64 {
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    sql_query("SELECT COUNT(*) AS count FROM oauth_tokens WHERE user_id = $1 AND client_id = $2 AND revoked_at IS NULL")
+        .bind::<SqlUuid, _>(user_id)
+        .bind::<SqlUuid, _>(client_id)
+        .get_result::<CountRow>(&mut conn)
+        .await
+        .expect("SCIM credential test token count should load")
+        .count
 }
 
 async fn assert_missing_bearer_is_scim_unauthorized(response: HttpResponse) {
@@ -1038,6 +1167,46 @@ async fn scim_delete_is_a_soft_delete_and_keeps_resource_visible_as_inactive() {
     assert_eq!(list["totalResults"], 1);
     assert_eq!(list["Resources"][0]["id"], json!(user_id));
     assert_eq!(list["Resources"][0]["active"], false);
+}
+
+#[actix_web::test]
+async fn scim_delete_revokes_refresh_tokens_and_removes_client_grants() {
+    let suffix = Uuid::now_v7().simple().to_string();
+    let token = format!("legacy-scim-credential-revoke-{suffix}");
+    let Some(state) = live_state_with_scim_bearer_token(&token).await else {
+        return;
+    };
+    let email = format!("scim-credential-revoke-{suffix}@example.test");
+    cleanup_scim_user_by_email(&state, &email).await;
+    let req = bearer_request(&token);
+    let user_id = create_scim_user_id(state.clone(), &req, &email).await;
+    let client_id = insert_scim_user_oauth_credentials(&state, user_id, &suffix).await;
+
+    assert_eq!(
+        grant_count_for_user_client(&state, user_id, client_id).await,
+        1
+    );
+    assert_eq!(
+        active_refresh_token_count_for_user_client(&state, user_id, client_id).await,
+        1
+    );
+
+    let delete_response = scim_delete_user(
+        state.clone(),
+        req.clone(),
+        actix_web::web::Path::from(user_id),
+    )
+    .await;
+    assert_eq!(delete_response.status(), StatusCode::NO_CONTENT);
+
+    assert_eq!(
+        grant_count_for_user_client(&state, user_id, client_id).await,
+        0
+    );
+    assert_eq!(
+        active_refresh_token_count_for_user_client(&state, user_id, client_id).await,
+        0
+    );
 }
 
 #[actix_web::test]

@@ -448,6 +448,85 @@ fn accepts_matching_forwarded_pem_and_direct_identity_material() {
 }
 
 #[test]
+fn rejects_conflicting_forwarded_pem_and_san_header() {
+    let certificate = test_certificate_with_sans();
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::HeaderName::from_static("x-ssl-client-verify"),
+        HeaderValue::from_static("SUCCESS"),
+    );
+    headers.insert(
+        header::HeaderName::from_static("x-forwarded-tls-client-cert-san-dns"),
+        HeaderValue::from_static("victim.example"),
+    );
+    headers.insert(
+        header::HeaderName::from_static("x-forwarded-tls-client-cert"),
+        HeaderValue::from_str(&urlencoding::encode(&certificate_pem(&certificate))).unwrap(),
+    );
+
+    assert!(request_mtls_client_certificate_from_headers(&headers).is_none());
+}
+
+#[test]
+fn accepts_matching_forwarded_pem_and_san_headers() {
+    let certificate = test_certificate_with_sans();
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::HeaderName::from_static("x-ssl-client-verify"),
+        HeaderValue::from_static("SUCCESS"),
+    );
+    headers.insert(
+        header::HeaderName::from_static("x-forwarded-tls-client-cert-san-dns"),
+        HeaderValue::from_static("client.example, api.client.example"),
+    );
+    headers.insert(
+        header::HeaderName::from_static("x-forwarded-tls-client-cert-san-uri"),
+        HeaderValue::from_static("urn:client:one"),
+    );
+    headers.insert(
+        header::HeaderName::from_static("x-forwarded-tls-client-cert-san-ip"),
+        HeaderValue::from_static("2001:db8::44, 192.0.2.44"),
+    );
+    headers.insert(
+        header::HeaderName::from_static("x-forwarded-tls-client-cert-san-email"),
+        HeaderValue::from_static("client@example.com"),
+    );
+    headers.insert(
+        header::HeaderName::from_static("x-forwarded-tls-client-cert"),
+        HeaderValue::from_str(&urlencoding::encode(&certificate_pem(&certificate))).unwrap(),
+    );
+
+    let parsed = certificate_pem_identity(&certificate_pem(&certificate))
+        .expect("test certificate should parse");
+    let merged = request_mtls_client_certificate_from_headers(&headers)
+        .expect("matching SAN material accepted");
+
+    assert_eq!(merged.san_dns, parsed.san_dns);
+    assert_eq!(merged.san_uri, parsed.san_uri);
+    assert_eq!(merged.san_ip, parsed.san_ip);
+    assert_eq!(merged.san_email, parsed.san_email);
+}
+
+#[test]
+fn rejects_conflicting_duplicate_forwarded_san_headers() {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::HeaderName::from_static("x-ssl-client-verify"),
+        HeaderValue::from_static("SUCCESS"),
+    );
+    headers.insert(
+        header::HeaderName::from_static("x-forwarded-tls-client-cert-san-dns"),
+        HeaderValue::from_static("client.example"),
+    );
+    headers.append(
+        header::HeaderName::from_static("x-forwarded-tls-client-cert-san-dns"),
+        HeaderValue::from_static("victim.example"),
+    );
+
+    assert!(request_mtls_client_certificate_from_headers(&headers).is_none());
+}
+
+#[test]
 fn mtls_identity_merge_helpers_are_fail_closed() {
     let mut current = None;
     assert_eq!(merge_matching(&mut current, None), Some(()));

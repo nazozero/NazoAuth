@@ -234,6 +234,25 @@ impl LivePasskeyFixture {
             .expect("user activity state should update");
     }
 
+    async fn set_user_mfa_enabled(&self, user_id: Uuid, mfa_enabled: bool) {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        diesel::update(users::table.find(user_id))
+            .set(users::mfa_enabled.eq(mfa_enabled))
+            .execute(&mut conn)
+            .await
+            .expect("user MFA state should update");
+    }
+
+    async fn session_payload(&self, sid: &str) -> SessionPayload {
+        let raw = valkey_get(&self.state.valkey, format!("oauth:session:{sid}"))
+            .await
+            .expect("session lookup should succeed")
+            .expect("session should be present");
+        serde_json::from_str(&raw).expect("session payload should deserialize")
+    }
+
     fn register_credential(
         &self,
         user: &UserRow,
@@ -381,6 +400,20 @@ async fn response_json(response: HttpResponse) -> (StatusCode, Value) {
     (status, json)
 }
 
+fn session_cookie_value(response: &HttpResponse, cookie_name: &str) -> String {
+    response
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .filter_map(|value| value.to_str().ok())
+        .find_map(|cookie| {
+            cookie
+                .strip_prefix(&format!("{cookie_name}="))
+                .and_then(|tail| tail.split(';').next())
+                .map(str::to_owned)
+        })
+        .expect("response should include session cookie")
+}
+
 fn dummy_authentication_response() -> AuthenticationResponse {
     AuthenticationResponse {
         id: "not-used".to_owned(),
@@ -460,7 +493,7 @@ async fn expired_passkey_ceremony_is_invalid_request_without_session_material() 
 #[actix_web::test]
 async fn passkey_session_response_sets_bound_cookies_and_minimal_body() {
     let settings = settings();
-    let response = passkey_session_response(&settings, "session-secret", "csrf-secret", 900);
+    let response = passkey_session_response(&settings, "session-secret", "csrf-secret", 900, false);
 
     assert_eq!(response.status(), StatusCode::OK);
     let cookies = response
@@ -588,6 +621,53 @@ async fn passkey_login_finish_creates_session_updates_counter_and_consumes_cerem
         replay_body["error_description"],
         "passkey ceremony expired."
     );
+}
+
+#[actix_web::test]
+async fn passkey_login_finish_requires_mfa_for_mfa_enabled_user_without_remembered_device() {
+    let Some(fixture) = LivePasskeyFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let user = fixture.create_user(&format!("required-mfa-{suffix}")).await;
+    fixture.set_user_mfa_enabled(user.id, true).await;
+    let user = find_user_by_id(&fixture.state.diesel_db, user.id)
+        .await
+        .expect("user lookup should succeed")
+        .expect("user should exist");
+    let mut authenticator =
+        FakeAuthenticator::new(format!("mfa-login-credential-{suffix}").as_bytes());
+    let credential = fixture.register_credential(&user, &authenticator);
+    fixture.insert_credential(&user, &credential).await;
+    let (ceremony_id, challenge) = begin_passkey_login(&fixture, &user.email).await;
+
+    let finish_response = passkey_login_finish(
+        fixture.state.clone(),
+        actix_web::test::TestRequest::default().to_http_request(),
+        Json(PasskeyLoginFinishRequest {
+            ceremony_id,
+            response: authenticator.authentication_response(
+                &challenge,
+                &fixture.state.settings.passkey.origin,
+                Some(&passkey_user_handle(&user)),
+            ),
+        }),
+    )
+    .await;
+    assert_eq!(finish_response.status(), StatusCode::OK);
+    let session_id = session_cookie_value(
+        &finish_response,
+        &fixture.state.settings.session_cookie_name,
+    );
+    let body = actix_web::body::to_bytes(finish_response.into_body())
+        .await
+        .expect("response body should be readable");
+    let body: Value = serde_json::from_slice(&body).expect("response should be json");
+    assert_eq!(body["mfa_required"], true);
+
+    let session = fixture.session_payload(&session_id).await;
+    assert_eq!(session.amr, vec!["passkey".to_owned()]);
+    assert!(session.pending_mfa);
 }
 
 #[actix_web::test]

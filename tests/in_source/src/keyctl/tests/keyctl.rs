@@ -325,6 +325,20 @@ fn external_public_jwk_metadata_is_bound_to_keyset_entry() {
 }
 
 #[test]
+fn external_public_jwk_rejects_private_or_symmetric_key_material() {
+    for private_member in ["d", "p", "q", "dp", "dq", "qi", "oth", "k"] {
+        let mut jwk = public_jwk("active", "RS256", "sig");
+        jwk[private_member] = json!("secret");
+        let keyset = keyset_with_keys("active", vec![external_key("active", "RS256", jwk)]);
+
+        assert_error_contains(
+            validate_keyset_json(&keyset).unwrap_err(),
+            "private or symmetric key material",
+        );
+    }
+}
+
+#[test]
 fn retired_key_detection_uses_rfc3339_time_and_rejects_malformed_metadata() {
     assert!(key_is_retired(&local_key("old", "EdDSA", "old.pem", Some(past()))).unwrap());
     assert!(!key_is_retired(&local_key("future", "EdDSA", "future.pem", Some(future()))).unwrap());

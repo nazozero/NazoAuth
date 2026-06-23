@@ -581,7 +581,7 @@ async fn authorization_post_wrapper_rejects_duplicate_parameters_before_client_l
 }
 
 #[actix_web::test]
-async fn authorization_request_extracts_client_id_from_request_object_before_client_lookup() {
+async fn authorization_request_rejects_unsigned_request_object_without_client_id() {
     let state = Data::new(endpoint_state(false));
     let request_object = unsigned_request_object(json!({
         "client_id": "client-from-request-object",
@@ -601,12 +601,9 @@ async fn authorization_request_extracts_client_id_from_request_object_before_cli
 
     let (status, body) = json_body(authorize_request(state, req, &mut q).await).await;
 
-    assert_eq!(
-        q.get("client_id").map(String::as_str),
-        Some("client-from-request-object")
-    );
-    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(body["error"], "server_error");
+    assert!(q.get("client_id").is_none());
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_request");
     assert_eq!(body["error_description"], "Request failed.");
 }
 

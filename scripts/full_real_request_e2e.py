@@ -1330,7 +1330,7 @@ def run() -> None:
             and set(discovery["revocation_endpoint_auth_signing_alg_values_supported"])
             == {"EdDSA", "RS256", "ES256", "PS256"}
             and set(discovery["request_object_signing_alg_values_supported"])
-            == {"none", "EdDSA", "RS256", "ES256", "PS256"}
+            == {"EdDSA", "RS256", "ES256", "PS256"}
             and set(discovery["dpop_signing_alg_values_supported"])
             == {"EdDSA", "RS256", "ES256", "PS256"}
             and {"address", "phone"}.issubset(set(discovery["scopes_supported"]))
@@ -2092,7 +2092,7 @@ def run() -> None:
             "POST /token authorization_code after POST /authorize",
         )
         post_authorize_id_token = decode_jwt_unverified(post_authorize_token["id_token"])
-        check("post_authorize_id_token_acr", post_authorize_id_token.get("acr") == "urn:nazo:acr:password")
+        check("post_authorize_id_token_acr_absent", "acr" not in post_authorize_id_token)
         check("post_authorize_id_token_nonce", post_authorize_id_token.get("nonce") == "post-authorize-acr-nonce")
 
         par_confidential_unauthenticated = requests.post(
@@ -2783,29 +2783,8 @@ def run() -> None:
             allow_redirects=False,
             timeout=10,
         )
-        expect_status("GET /authorize JAR alg none", jar_none_authorize, 302)
-        jar_none_request_id = consent_request_from_redirect(
-            jar_none_authorize,
-            "GET /authorize JAR alg none",
-        )
-        jar_none_code, jar_none_verifier = approve_authorization(
-            user,
-            jar_none_request_id,
-            jar_verifier,
-            state="jar-none",
-        )
-        jar_none_tokens = token_plain(
-            {
-                "grant_type": "authorization_code",
-                "code": jar_none_code,
-                "code_verifier": jar_none_verifier,
-                "redirect_uri": CLIENT_REDIRECT_URI,
-                "client_assertion_type": CLIENT_ASSERTION_TYPE,
-                "client_assertion": client_assertion(private_auth_client_id, private_key),
-            },
-            "POST /token JAR alg none authorization_code private_key_jwt",
-        )
-        check("jar_alg_none_token_issued", bool(jar_none_tokens.get("access_token")))
+        expect_status("GET /authorize JAR alg none rejected", jar_none_authorize, 400)
+        check("jar_alg_none_rejected", expect_json(jar_none_authorize).get("error") == "invalid_request")
         jar_bad_aud = authorization_request_object(
             private_auth_client_id,
             private_key,

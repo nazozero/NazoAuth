@@ -314,7 +314,8 @@ fn pushed_authorization_request_requires_request_object(
     settings: &Settings,
     client: &ClientRow,
 ) -> bool {
-    client.require_par_request_object
+    client.require_dpop_bound_tokens
+        || client.require_par_request_object
         || settings
             .authorization_server_profile
             .requires_signed_authorization_request()

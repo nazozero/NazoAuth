@@ -51,24 +51,24 @@ fn pkce_policy_client() -> ClientRow {
 }
 
 #[test]
-fn first_acr_value_is_used_for_id_token_acr() {
+fn requested_acr_is_not_derived_from_request_parameters() {
     assert_eq!(
         requested_acr(&query(&[("acr_values", "urn:one urn:two")]), None),
-        Some("urn:one".to_owned())
+        None
     );
     assert_eq!(
         requested_acr(
             &query(&[("acr_values", "urn:one urn:two")]),
             Some("urn:claims".to_owned()),
         ),
-        Some("urn:one".to_owned())
+        None
     );
     assert_eq!(
         requested_acr(
             &query(&[("acr_values", "   ")]),
             Some("urn:claims".to_owned())
         ),
-        Some("urn:claims".to_owned())
+        None
     );
 }
 
@@ -84,7 +84,7 @@ fn claims_parameter_extracts_supported_user_claim_names() {
     assert!(requested.userinfo[0].essential);
     assert_eq!(claim_request_names(&requested.id_token), vec!["email"]);
     assert!(requested.id_token[0].essential);
-    assert_eq!(requested.acr, Some("urn:acr:1".to_owned()));
+    assert_eq!(requested.acr, None);
     assert!(requested.auth_time);
 }
 
@@ -120,7 +120,7 @@ fn claims_parameter_accepts_value_values_and_null_requests() {
         vec!["email_verified"]
     );
     assert!(!requested.id_token[0].essential);
-    assert_eq!(requested.acr, Some("urn:acr:2".to_owned()));
+    assert_eq!(requested.acr, None);
     assert!(!requested.auth_time);
 }
 
@@ -174,14 +174,14 @@ fn malformed_claims_parameter_is_invalid() {
 }
 
 #[test]
-fn claims_parameter_uses_first_non_empty_acr_values_entry() {
+fn claims_parameter_does_not_return_requested_acr_values() {
     let requested = requested_claims(&query(&[(
         "claims",
         r#"{"id_token":{"acr":{"values":["","urn:acr:2","urn:acr:3"]}}}"#,
     )]))
     .unwrap();
 
-    assert_eq!(requested.acr, Some("urn:acr:2".to_owned()));
+    assert_eq!(requested.acr, None);
 }
 
 #[test]

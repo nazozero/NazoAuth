@@ -65,17 +65,10 @@ pub(super) fn authorization_response_mode(
 }
 
 pub(super) fn requested_acr(
-    q: &HashMap<String, String>,
-    claims_acr: Option<String>,
+    _q: &HashMap<String, String>,
+    _claims_acr: Option<String>,
 ) -> Option<String> {
-    q.get("acr_values")
-        .and_then(|value| {
-            value
-                .split_whitespace()
-                .find(|value| !value.is_empty())
-                .map(str::to_owned)
-        })
-        .or(claims_acr)
+    None
 }
 
 #[derive(Debug, PartialEq)]
@@ -127,12 +120,12 @@ pub(super) fn requested_claims(q: &HashMap<String, String>) -> Result<RequestedC
     let claims: Value = serde_json::from_str(raw_claims).map_err(|_| ())?;
     let userinfo = requested_claim_requests(claims.get("userinfo"))?;
     let id_token = requested_claim_requests(claims.get("id_token"))?;
-    let acr = requested_acr_claim(claims.get("id_token"))?;
+    validate_acr_claim(claims.get("id_token"))?;
     let auth_time = requested_auth_time_claim(claims.get("id_token"))?;
     Ok(RequestedClaims {
         userinfo,
         id_token,
-        acr,
+        acr: None,
         auth_time,
     })
 }
@@ -157,34 +150,17 @@ fn requested_claim_requests(value: Option<&Value>) -> Result<Vec<OidcClaimReques
     Ok(requests)
 }
 
-fn requested_acr_claim(value: Option<&Value>) -> Result<Option<String>, ()> {
+fn validate_acr_claim(value: Option<&Value>) -> Result<(), ()> {
     let Some(value) = value else {
-        return Ok(None);
+        return Ok(());
     };
     let Some(object) = value.as_object() else {
         return Err(());
     };
-    let Some(acr) = object.get("acr") else {
-        return Ok(None);
-    };
-    validate_claim_request(acr)?;
-    let Some(acr) = acr.as_object() else {
-        return Ok(None);
-    };
-    if let Some(value) = acr.get("value") {
-        let value = value.as_str().ok_or(())?.trim();
-        return Ok((!value.is_empty()).then(|| value.to_owned()));
+    if let Some(acr) = object.get("acr") {
+        validate_claim_request(acr)?;
     }
-    if let Some(values) = acr.get("values") {
-        let values = values.as_array().ok_or(())?;
-        for value in values {
-            let value = value.as_str().ok_or(())?.trim();
-            if !value.is_empty() {
-                return Ok(Some(value.to_owned()));
-            }
-        }
-    }
-    Ok(None)
+    Ok(())
 }
 
 fn requested_auth_time_claim(value: Option<&Value>) -> Result<bool, ()> {

@@ -9,9 +9,10 @@ use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, RateLimitSettings,
     RequestObjectJtiPolicy, SubjectType,
 };
-use crate::support::{ClientIpHeaderMode, IpCidr};
+use crate::support::{
+    ClientIpHeaderMode, IpCidr, generate_key_material, public_jwk_from_private_der,
+};
 use actix_web::test::TestRequest;
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Nullable, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
@@ -135,10 +136,32 @@ fn par_test_secret() -> String {
     ["par", "client", "secret"].join("-")
 }
 
-fn unsigned_request_object(claims: Value) -> String {
-    let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"none"}"#);
-    let payload = URL_SAFE_NO_PAD.encode(claims.to_string());
-    format!("{header}.{payload}.")
+fn signed_request_object(client_id: &str, private_pkcs8_der: &[u8], extra: Value) -> String {
+    let now = Utc::now().timestamp();
+    let mut claims = json!({
+        "client_id": client_id,
+        "iss": client_id,
+        "sub": client_id,
+        "aud": "https://issuer.example",
+        "iat": now,
+        "nbf": now,
+        "exp": now + 120,
+        "jti": format!("par-jar-jti-{}", Uuid::now_v7()),
+        "response_type": "code",
+        "redirect_uri": "https://client.example/callback",
+    });
+    let target = claims.as_object_mut().expect("claims should be an object");
+    for (key, value) in extra.as_object().expect("extra should be an object") {
+        target.insert(key.clone(), value.clone());
+    }
+    let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+    header.kid = Some("par-request-object-kid".to_owned());
+    jsonwebtoken::encode(
+        &header,
+        &claims,
+        &jsonwebtoken::EncodingKey::from_rsa_der(private_pkcs8_der),
+    )
+    .expect("PAR request object should sign")
 }
 
 fn unavailable_valkey_client(timeout_ms: u64) -> fred::prelude::Client {
@@ -228,6 +251,19 @@ impl LiveParFixture {
     async fn insert_client_secret_post_client(&self, client_id: &str, secret: &str) {
         self.insert_client_secret_post_client_with_options(client_id, secret, false, false, true)
             .await;
+    }
+
+    async fn set_client_jwks(&self, client_id: &str, jwks: Value) {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection should open");
+        sql_query("UPDATE oauth_clients SET jwks = $1 WHERE tenant_id = $2 AND client_id = $3")
+            .bind::<diesel::sql_types::Jsonb, _>(jwks)
+            .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+            .bind::<Text, _>(client_id)
+            .execute(&mut conn)
+            .await
+            .expect("PAR test client jwks update should succeed");
     }
 
     async fn insert_client_secret_post_client_with_options(
@@ -340,14 +376,13 @@ async fn par_json_body(response: HttpResponse) -> (StatusCode, Value) {
 }
 
 #[test]
-fn par_does_not_require_request_object_for_dpop_bound_clients() {
-    let mut params = HashMap::new();
-    params.insert(
-        "redirect_uri".to_owned(),
-        "https://client.example/callback".to_owned(),
-    );
+fn par_policy_requires_request_object_for_dpop_bound_clients() {
+    let settings = baseline_settings();
 
-    assert!(validate_pushed_authorization_request(&client(true), &params).is_ok());
+    assert!(pushed_authorization_request_requires_request_object(
+        &settings,
+        &client(true)
+    ));
 }
 
 #[test]
@@ -358,7 +393,7 @@ fn par_policy_requires_request_object_when_enabled() {
 
     assert!(!pushed_authorization_request_requires_request_object(
         &settings,
-        &client(true)
+        &client(false)
     ));
     assert!(pushed_authorization_request_requires_request_object(
         &settings,
@@ -783,14 +818,25 @@ async fn par_rejects_request_uri_from_request_object_after_client_authentication
     fixture
         .insert_client_secret_post_client(&client_id, &secret)
         .await;
-    let request_object = unsigned_request_object(json!({
-        "client_id": client_id,
-        "iss": client_id,
-        "aud": "https://issuer.example",
-        "response_type": "code",
-        "redirect_uri": "https://client.example/callback",
-        "request_uri": "urn:ietf:params:oauth:request_uri:attacker"
-    }));
+    let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
+        .expect("request object key should generate")
+        .private_pkcs8_der;
+    let public_jwk = public_jwk_from_private_der(
+        "par-request-object-kid",
+        jsonwebtoken::Algorithm::RS256,
+        &key,
+    )
+    .expect("request object public jwk should derive");
+    fixture
+        .set_client_jwks(&client_id, json!({"keys": [public_jwk]}))
+        .await;
+    let request_object = signed_request_object(
+        &client_id,
+        &key,
+        json!({
+            "request_uri": "urn:ietf:params:oauth:request_uri:attacker"
+        }),
+    );
     let body = Bytes::from(format!(
         "client_id={}&client_secret={}&request={}",
         urlencoding::encode(&client_id),
@@ -824,14 +870,25 @@ async fn par_rejects_authorization_details_from_request_object_when_disabled() {
     fixture
         .insert_client_secret_post_client(&client_id, &secret)
         .await;
-    let request_object = unsigned_request_object(json!({
-        "client_id": client_id,
-        "iss": client_id,
-        "aud": "https://issuer.example",
-        "response_type": "code",
-        "redirect_uri": "https://client.example/callback",
-        "authorization_details": [{"type": "account_information", "actions": ["read"]}]
-    }));
+    let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
+        .expect("request object key should generate")
+        .private_pkcs8_der;
+    let public_jwk = public_jwk_from_private_der(
+        "par-request-object-kid",
+        jsonwebtoken::Algorithm::RS256,
+        &key,
+    )
+    .expect("request object public jwk should derive");
+    fixture
+        .set_client_jwks(&client_id, json!({"keys": [public_jwk]}))
+        .await;
+    let request_object = signed_request_object(
+        &client_id,
+        &key,
+        json!({
+            "authorization_details": [{"type": "account_information", "actions": ["read"]}]
+        }),
+    );
     let body = Bytes::from(format!(
         "client_id={}&client_secret={}&request={}",
         urlencoding::encode(&client_id),

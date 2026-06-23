@@ -171,10 +171,10 @@ fn authorization_response_mode_rejects_unknown_value() {
 }
 
 #[test]
-fn requested_acr_returns_first_acr_value_from_query() {
+fn requested_acr_ignores_query_acr_values() {
     let mut q = HashMap::new();
     q.insert("acr_values".to_owned(), "phr phrh".to_owned());
-    assert_eq!(requested_acr(&q, None), Some("phr".to_owned()));
+    assert_eq!(requested_acr(&q, None), None);
 }
 
 #[test]
@@ -185,21 +185,18 @@ fn requested_acr_returns_none_when_acr_values_are_all_empty() {
 }
 
 #[test]
-fn requested_acr_falls_back_to_claims_acr() {
+fn requested_acr_ignores_claims_acr() {
     let q = HashMap::new();
-    assert_eq!(
-        requested_acr(&q, Some("phr".to_owned())),
-        Some("phr".to_owned())
-    );
+    assert_eq!(requested_acr(&q, Some("phr".to_owned())), None);
 }
 
 #[test]
-fn requested_acr_prefers_query_over_claims() {
+fn requested_acr_does_not_trust_query_or_claims() {
     let mut q = HashMap::new();
     q.insert("acr_values".to_owned(), "phr".to_owned());
     assert_eq!(
         requested_acr(&q, Some("urn:mace:incommon:iap:bronze".to_owned())),
-        Some("phr".to_owned())
+        None
     );
 }
 
@@ -366,25 +363,25 @@ fn requested_claims_parses_id_token_claims() {
 }
 
 #[test]
-fn requested_claims_parses_acr_claim_with_value() {
+fn requested_claims_validates_acr_claim_with_value_without_returning_it() {
     let mut q = HashMap::new();
     q.insert(
         "claims".to_owned(),
         r#"{"id_token":{"acr":{"value":"phr"}}}"#.to_owned(),
     );
     let result = requested_claims(&q).unwrap();
-    assert_eq!(result.acr, Some("phr".to_owned()));
+    assert_eq!(result.acr, None);
 }
 
 #[test]
-fn requested_claims_parses_acr_claim_with_values() {
+fn requested_claims_validates_acr_claim_with_values_without_returning_them() {
     let mut q = HashMap::new();
     q.insert(
         "claims".to_owned(),
         r#"{"id_token":{"acr":{"values":["phr","phrh"]}}}"#.to_owned(),
     );
     let result = requested_claims(&q).unwrap();
-    assert_eq!(result.acr, Some("phr".to_owned()));
+    assert_eq!(result.acr, None);
 }
 
 #[test]
@@ -399,29 +396,29 @@ fn requested_claims_ignores_blank_acr_value() {
 }
 
 #[test]
-fn requested_claims_uses_first_non_blank_acr_value() {
+fn requested_claims_validates_acr_values_without_returning_them() {
     let mut q = HashMap::new();
     q.insert(
         "claims".to_owned(),
         r#"{"id_token":{"acr":{"values":["  ","phr","phrh"]}}}"#.to_owned(),
     );
     let result = requested_claims(&q).unwrap();
-    assert_eq!(result.acr, Some("phr".to_owned()));
+    assert_eq!(result.acr, None);
 }
 
 #[test]
-fn requested_acr_claim_rejects_non_object_id_token_claims() {
-    assert_eq!(requested_acr_claim(Some(&json!("invalid"))), Err(()));
+fn validate_acr_claim_rejects_non_object_id_token_claims() {
+    assert_eq!(validate_acr_claim(Some(&json!("invalid"))), Err(()));
 }
 
 #[test]
-fn requested_acr_claim_ignores_absent_or_whitespace_only_acr_claims() {
-    assert_eq!(requested_acr_claim(Some(&json!({}))), Ok(None));
-    assert_eq!(requested_acr_claim(Some(&json!({"acr":"phr"}))), Err(()));
-    assert_eq!(requested_acr_claim(Some(&json!({"acr":null}))), Ok(None));
+fn validate_acr_claim_accepts_valid_acr_claim_requests() {
+    assert_eq!(validate_acr_claim(Some(&json!({}))), Ok(()));
+    assert_eq!(validate_acr_claim(Some(&json!({"acr":"phr"}))), Err(()));
+    assert_eq!(validate_acr_claim(Some(&json!({"acr":null}))), Ok(()));
     assert_eq!(
-        requested_acr_claim(Some(&json!({"acr":{"values":[" ",""]}}))),
-        Ok(None)
+        validate_acr_claim(Some(&json!({"acr":{"values":[" ",""]}}))),
+        Ok(())
     );
 }
 

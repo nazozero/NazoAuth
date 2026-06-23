@@ -3,13 +3,12 @@ use crate::domain::Keyset;
 use crate::settings::{AuthorizationServerProfile, Settings, SubjectType};
 
 const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
-const REQUEST_OBJECT_SIGNING_ALGS: [&str; 5] = ["none", "EdDSA", "RS256", "ES256", "PS256"];
+const REQUEST_OBJECT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
 const PROMPT_VALUES_SUPPORTED: [&str; 4] = ["login", "consent", "select_account", "none"];
-const CLAIMS_SUPPORTED: [&str; 24] = [
+const CLAIMS_SUPPORTED: [&str; 23] = [
     "sub",
     "auth_time",
     "amr",
-    "acr",
     "nonce",
     "preferred_username",
     "name",

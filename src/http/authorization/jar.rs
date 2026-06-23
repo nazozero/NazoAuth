@@ -69,7 +69,14 @@ pub(crate) async fn apply_request_object(
                 RequestObjectMode::SignedJar,
             )
         };
-    if !request_object_mode_allowed(client, mode) {
+    if !request_object_mode_allowed(
+        client,
+        mode,
+        state
+            .settings
+            .authorization_server_profile
+            .requires_signed_authorization_request(),
+    ) {
         return Err(oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request_object",
@@ -123,18 +130,15 @@ fn signed_request_object_claims(
 
 fn request_object_uses_none_algorithm(
     header: &RequestObjectHeader,
-    payload: &str,
+    _payload: &str,
     signature: &str,
 ) -> Result<bool, HttpResponse> {
     if header.alg == "none" {
-        if !signature.is_empty() || payload.is_empty() {
-            return Err(oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request_object",
-                "unsigned request object 结构无效.",
-            ));
-        }
-        return Ok(true);
+        return Err(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request_object",
+            "unsigned request objects are not supported.",
+        ));
     }
     if signature.is_empty() {
         return Err(oauth_error(
@@ -146,8 +150,14 @@ fn request_object_uses_none_algorithm(
     Ok(false)
 }
 
-fn request_object_mode_allowed(client: &ClientRow, mode: RequestObjectMode) -> bool {
-    !((client.require_dpop_bound_tokens || client.require_par_request_object)
+fn request_object_mode_allowed(
+    client: &ClientRow,
+    mode: RequestObjectMode,
+    profile_requires_signed_authorization_request: bool,
+) -> bool {
+    !((client.require_dpop_bound_tokens
+        || client.require_par_request_object
+        || profile_requires_signed_authorization_request)
         && mode == RequestObjectMode::BasicOidc)
 }
 
@@ -363,10 +373,10 @@ async fn store_request_object_replay_state(
 pub(crate) fn unverified_request_object_client_id(request_object: &str) -> Option<String> {
     let (header, payload, signature) = split_compact_jwt(request_object)?;
     let header = decode_request_object_header(header).ok()?;
-    if header.alg == "none" && !signature.is_empty() {
+    if header.alg == "none" {
         return None;
     }
-    if header.alg != "none" && signature.is_empty() {
+    if signature.is_empty() {
         return None;
     }
     let claims = decode_request_object_claims(payload).ok()?;
