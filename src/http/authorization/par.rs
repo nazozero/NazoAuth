@@ -182,6 +182,14 @@ pub(crate) async fn par_after_rate_limit(
     if let Err(response) = apply_request_object(&state, &mut params, &client).await {
         return response;
     }
+    if !state.settings.enable_authorization_details && params.contains_key("authorization_details")
+    {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "authorization_details 未启用.",
+        );
+    }
     params.remove("request");
     if pushed_authorization_request_contains_request_uri(&params) {
         return oauth_error(

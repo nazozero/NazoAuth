@@ -807,6 +807,47 @@ async fn par_rejects_request_uri_from_request_object_after_client_authentication
 }
 
 #[actix_web::test]
+async fn par_rejects_authorization_details_from_request_object_when_disabled() {
+    let Some(fixture) = LiveParFixture::new_with_settings(|settings| {
+        settings.enable_par_request_object = true;
+        settings.enable_authorization_details = false;
+    })
+    .await
+    else {
+        return;
+    };
+    let client_id = format!(
+        "par-request-object-rar-disabled-{}",
+        Uuid::now_v7().simple()
+    );
+    let secret = par_test_secret();
+    fixture
+        .insert_client_secret_post_client(&client_id, &secret)
+        .await;
+    let request_object = unsigned_request_object(json!({
+        "client_id": client_id,
+        "iss": client_id,
+        "aud": "https://issuer.example",
+        "response_type": "code",
+        "redirect_uri": "https://client.example/callback",
+        "authorization_details": [{"type": "account_information", "actions": ["read"]}]
+    }));
+    let body = Bytes::from(format!(
+        "client_id={}&client_secret={}&request={}",
+        urlencoding::encode(&client_id),
+        urlencoding::encode(&secret),
+        urlencoding::encode(&request_object)
+    ));
+
+    let response = par_after_rate_limit(fixture.state, par_form_request(), body).await;
+    let (status, value) = par_json_body(response).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(value.get("error"), Some(&json!("invalid_request")));
+    assert!(value.get("request_uri").is_none());
+}
+
+#[actix_web::test]
 async fn par_rejects_unsupported_response_type_after_client_authentication() {
     let Some(fixture) = LiveParFixture::new().await else {
         return;

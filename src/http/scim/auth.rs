@@ -143,6 +143,20 @@ async fn authorize_scim_credential(
             "SCIM token lacks the required scope",
         ));
     }
+    if !scim_credential_targets_served_tenant(&credential) {
+        audit_scim_token_denied(
+            state,
+            req,
+            required_scope,
+            "tenant_mismatch",
+            credential.token_id,
+        );
+        return Err(scim_error(
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            "SCIM token is not valid for this tenant",
+        ));
+    }
     record_scim_token_use(state, req, required_scope, &credential).await;
     audit_event(
         "scim_token_used",
@@ -158,6 +172,10 @@ async fn authorize_scim_credential(
         ]),
     );
     Ok(credential)
+}
+
+pub(super) fn scim_credential_targets_served_tenant(credential: &ScimCredential) -> bool {
+    default_tenant_context().same_tenant(credential.tenant_id)
 }
 
 pub(super) fn scim_credential_allows(

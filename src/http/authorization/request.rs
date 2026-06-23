@@ -139,6 +139,14 @@ async fn authorize_request(
         );
     }
 
+    if !state.settings.enable_authorization_details && q.contains_key("authorization_details") {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "authorization_details 参数未启用.",
+        );
+    }
+
     if !q.contains_key("client_id")
         && let Some(request_object) = q.get("request")
         && let Some(client_id) = unverified_request_object_client_id(request_object)
@@ -187,6 +195,13 @@ async fn authorize_request(
         );
     }
     let request_object_error = apply_request_object(&state, q, &client).await.err();
+    if !state.settings.enable_authorization_details && q.contains_key("authorization_details") {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "authorization_details 参数未启用.",
+        );
+    }
     let request_dpop_jkt = match q.get("dpop_jkt") {
         Some(value) if is_valid_dpop_jkt(value) => Some(value.clone()),
         Some(_) => {

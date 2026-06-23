@@ -288,12 +288,12 @@ pub fn authorize_dpop_resource_request(
     if scheme != PresentedAccessTokenScheme::Dpop {
         return Err(ResourceServerRequestError::MissingSenderConstraint);
     }
-    let proof = dpop_verifier
-        .verify(dpop_proof_jwt, method, htu, access_token)
-        .map_err(ResourceServerRequestError::InvalidDpopProof)?;
     let verified = verifier
         .verify(access_token)
         .map_err(ResourceServerRequestError::InvalidToken)?;
+    let proof = dpop_verifier
+        .verify(dpop_proof_jwt, method, htu, access_token)
+        .map_err(ResourceServerRequestError::InvalidDpopProof)?;
     validate_presented_sender_constraint(scheme, &verified, &proof)?;
     Ok((verified, proof))
 }

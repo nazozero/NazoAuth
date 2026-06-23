@@ -118,6 +118,51 @@ fn dpop_authorizer_rejects_invalid_proof_before_token_binding() {
 }
 
 #[test]
+fn dpop_authorizer_rejects_invalid_token_before_recording_replay() {
+    let fixture = fixture();
+    let dpop_fixture = dpop_fixture();
+    let invalid_access_token = "attacker-controlled-invalid-token";
+    let proof_jwt = dpop_proof(
+        &dpop_fixture,
+        invalid_access_token,
+        "GET",
+        "https://api.example/orders",
+        "proof-jti-invalid-token",
+        None,
+        None,
+    );
+    let dpop_verifier = DpopProofVerifier::new(DpopProofVerifierConfig::default());
+    let authorization = dpop(invalid_access_token);
+
+    let first_error = authorize_dpop_resource_request(
+        &fixture.verifier,
+        &dpop_verifier,
+        &[authorization.as_str()],
+        &proof_jwt,
+        None,
+        "GET",
+        "https://api.example/orders",
+    )
+    .unwrap_err();
+    let second_error = authorize_dpop_resource_request(
+        &fixture.verifier,
+        &dpop_verifier,
+        &[authorization.as_str()],
+        &proof_jwt,
+        None,
+        "GET",
+        "https://api.example/orders",
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        first_error,
+        ResourceServerRequestError::InvalidToken(ResourceServerVerifierError::InvalidToken)
+    );
+    assert_eq!(second_error, first_error);
+}
+
+#[test]
 fn dpop_proof_verifier_rejects_replayed_jti() {
     let dpop = dpop_fixture();
     let access_token = "access-token";

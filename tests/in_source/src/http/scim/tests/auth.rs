@@ -285,6 +285,32 @@ async fn authorize_scim_credential_rejects_insufficient_scope() {
 }
 
 #[actix_web::test]
+async fn authorize_scim_credential_rejects_wrong_tenant_before_recording_use() {
+    let state = test_state(None);
+    let req = bearer_request("ignored");
+    let credential = ScimCredential {
+        token_id: Some(Uuid::now_v7()),
+        tenant_id: Uuid::from_u128(0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa),
+        scopes: vec![SCIM_SCOPE_READ.to_owned(), SCIM_SCOPE_WRITE.to_owned()],
+        source: "test",
+    };
+
+    let response =
+        match authorize_scim_credential(&state, &req, ScimRequiredScope::Write, credential).await {
+            Ok(_) => panic!("non-default tenant SCIM credential must not authorize this endpoint"),
+            Err(response) => response,
+        };
+
+    assert_scim_error_response(
+        response,
+        StatusCode::FORBIDDEN,
+        "forbidden",
+        "SCIM token is not valid for this tenant",
+    )
+    .await;
+}
+
+#[actix_web::test]
 async fn require_scim_bearer_accepts_database_token_and_records_use() {
     let Some(state) = live_state(None).await else {
         return;
@@ -434,6 +460,27 @@ async fn require_scim_bearer_rejects_revoked_and_expired_database_tokens() {
 }
 
 // scim_credential_allows
+
+#[test]
+fn credential_targets_only_served_default_tenant() {
+    let default_tenant_credential = ScimCredential {
+        token_id: None,
+        tenant_id: default_tenant_context().tenant_id,
+        scopes: vec![SCIM_SCOPE_READ.to_owned()],
+        source: "test",
+    };
+    let other_tenant_credential = ScimCredential {
+        tenant_id: Uuid::from_u128(0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb),
+        ..default_tenant_credential.clone()
+    };
+
+    assert!(scim_credential_targets_served_tenant(
+        &default_tenant_credential
+    ));
+    assert!(!scim_credential_targets_served_tenant(
+        &other_tenant_credential
+    ));
+}
 
 #[test]
 fn credential_allows_read_with_read_scope() {

@@ -62,6 +62,31 @@ struct LiveRegisterFixture {
     state: Data<AppState>,
 }
 
+#[actix_web::test]
+async fn find_user_by_email_treats_like_metacharacters_literally() {
+    let Some(fixture) = LiveRegisterFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple();
+    let victim_email = format!("wildxcard-{suffix}@example.com");
+    let wildcard_email = format!("wild_card-{suffix}@example.com");
+    let victim = fixture.create_user(&victim_email).await;
+
+    assert!(
+        fixture.user_by_email(&wildcard_email).await.is_none(),
+        "email lookup must not treat '_' as a wildcard and match {}",
+        victim.email
+    );
+    assert_eq!(
+        fixture
+            .user_by_email(&victim_email)
+            .await
+            .expect("literal victim email should still resolve")
+            .id,
+        victim.id
+    );
+}
+
 impl LiveRegisterFixture {
     async fn new() -> Option<Self> {
         let database_url = std::env::var("DATABASE_URL").ok()?;
