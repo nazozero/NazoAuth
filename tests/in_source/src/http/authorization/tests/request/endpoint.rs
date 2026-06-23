@@ -675,7 +675,7 @@ async fn authorization_request_rejects_unsigned_request_object_without_client_id
 
     let (status, body) = json_body(authorize_request(state, req, &mut q).await).await;
 
-    assert!(q.get("client_id").is_none());
+    assert!(!q.contains_key("client_id"));
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"], "invalid_request");
     assert_eq!(body["error_description"], "Request failed.");
