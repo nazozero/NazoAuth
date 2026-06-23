@@ -1708,9 +1708,11 @@ def main() -> int:
     if args.rerun:
         command.extend(["--rerun", args.rerun])
     if args.expected_failures_file:
-        command.extend(["--expected-failures-file", args.expected_failures_file])
+        expected_failures_file = Path(args.expected_failures_file).resolve()
+        command.extend(["--expected-failures-file", str(expected_failures_file)])
     if args.expected_skips_file:
-        command.extend(["--expected-skips-file", args.expected_skips_file])
+        expected_skips_file = Path(args.expected_skips_file).resolve()
+        command.extend(["--expected-skips-file", str(expected_skips_file)])
     if args.export_dir:
         export_dir = Path(args.export_dir).resolve()
         export_dir.mkdir(parents=True, exist_ok=True)
