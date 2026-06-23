@@ -97,8 +97,23 @@ fn discovery_prompt_values_match_authorization_request_parser() {
 }
 
 #[test]
-fn discovery_claims_do_not_advertise_unsupported_id_token_acr() {
-    assert!(!CLAIMS_SUPPORTED.contains(&"acr"));
+fn discovery_advertises_supported_id_token_acr() {
+    let metadata = authorization_server_metadata(
+        &settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new()),
+        &keyset(jsonwebtoken::Algorithm::RS256),
+    );
+
+    assert!(CLAIMS_SUPPORTED.contains(&"acr"));
+    assert_eq!(
+        metadata
+            .get("acr_values_supported")
+            .and_then(Value::as_array)
+            .expect("ACR value metadata should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["1"]
+    );
 }
 
 #[test]
