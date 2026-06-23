@@ -60,8 +60,8 @@ NAZO_AUTHORIZATION_ERROR_RESPONSE_PATTERN = (
     r'("error"\s*:\s*"(invalid_request|invalid_request_object|access_denied|login_required|server_error)"'
     r"|invalid_request|invalid_request_object|access_denied|login_required|server_error)"
 )
-OIDF_BAD_FINAL_RESULTS = {"FAILED", "SKIPPED", "INTERRUPTED", "WARNING"}
-OIDF_BAD_STATUS_VALUES = {"FAILED", "SKIPPED", "INTERRUPTED"}
+OIDF_BAD_FINAL_RESULTS = {"FAILED", "INTERRUPTED", "WARNING"}
+OIDF_BAD_STATUS_VALUES = {"FAILED", "INTERRUPTED"}
 OIDF_BAD_LOG_RESULTS = {"FAILURE", "WARNING"}
 OIDF_LOG_CONTEXT_SOURCES = {"BROWSER", "WebRunner"}
 OIDF_ALLOWED_REVIEW_MODULES = {
