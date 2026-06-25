@@ -12,16 +12,18 @@ in the repository.
 - [2026-06-09 OIDF full matrix](2026-06-09-oidf-full-matrix.md)
 - [2026-06-13 real public UI OIDF regression](2026-06-13-real-public-ui-regression.md)
 - [2026-06-14 security-coverage OIDF full matrix](2026-06-14-local-refactor-full-matrix.md)
+- [2026-06-25 PR 13 security hardening OIDF full matrix](2026-06-25-pr13-security-hardening-full-matrix.md)
 
-The latest official full-matrix workflow record before the current local
-security-coverage batch is run `27500481513` against `https://auth.nazo.run` at
-commit `8370f8123af310a7dae009609021c7320a19a725`. GitHub reported `success`.
+The latest recorded official full-matrix suite run is the 2026-06-25 PR 13
+security-hardening run against `https://auth.nazo.run` at commit
+`49467e3474b32c17603ed77ba63b570d07e794b2`. It exported all 16 plan archives
+from `https://www.certification.openid.net/`; every plan summary reported
+`0 failures` and `0 warnings`.
 
-The latest local full-matrix regression record is
-`runtime/oidf/results-local-full-20260614T140947Z`. It exported all 16 plan
-archives and a read-only Conformance Suite API audit found 562 module results:
-559 `PASSED`, 3 allowed `REVIEW`, and no `FAILED`, `WARNING`, `SKIPPED`, or
-`INTERRUPTED` results.
+The latest Hostinger-local full-matrix regression record is
+`oidf-local-results/run-20260625T230539Z` for the same public issuer and commit.
+It exported all 16 plan archives; the runner log contains 16 plan summaries,
+all with `0 failures` and `0 warnings`.
 
 ## Record Format
 
@@ -41,3 +43,14 @@ archives and a read-only Conformance Suite API audit found 562 module results:
 
 Official suite output is indexed here. The files are not OpenID Foundation
 certification statements.
+
+## Request Object Compatibility
+
+Baseline OIDC metadata advertises `none` in
+`request_object_signing_alg_values_supported` so the server can exercise OIDC
+conformance tests for unsigned Request Objects. This is a compatibility feature,
+not a high-security profile feature.
+
+Unsigned Request Objects remain disallowed for FAPI2 profiles, clients that
+require PAR request objects, and holder-bound clients. Those paths require
+signed Request Objects or reject the request object fail closed.

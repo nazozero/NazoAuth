@@ -97,8 +97,23 @@ fn discovery_prompt_values_match_authorization_request_parser() {
 }
 
 #[test]
-fn discovery_claims_include_supported_id_token_acr() {
+fn discovery_advertises_supported_id_token_acr() {
+    let metadata = authorization_server_metadata(
+        &settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new()),
+        &keyset(jsonwebtoken::Algorithm::RS256),
+    );
+
     assert!(CLAIMS_SUPPORTED.contains(&"acr"));
+    assert_eq!(
+        metadata
+            .get("acr_values_supported")
+            .and_then(Value::as_array)
+            .expect("ACR value metadata should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["1"]
+    );
 }
 
 #[test]
@@ -351,5 +366,36 @@ fn discovery_message_signing_profile_requires_signed_request_object_algs() {
             .filter_map(Value::as_str)
             .collect::<Vec<_>>(),
         vec!["PS256"]
+    );
+}
+
+#[test]
+fn discovery_baseline_advertises_unsigned_request_object_compatibility_only() {
+    let baseline = authorization_server_metadata(
+        &settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new()),
+        &keyset(jsonwebtoken::Algorithm::EdDSA),
+    );
+    assert_eq!(
+        baseline
+            .get("request_object_signing_alg_values_supported")
+            .and_then(Value::as_array)
+            .expect("request object algs should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["none", "EdDSA", "RS256", "ES256", "PS256"]
+    );
+
+    let fapi2 = authorization_server_metadata(
+        &settings(AuthorizationServerProfile::Fapi2Security, Vec::new()),
+        &keyset(jsonwebtoken::Algorithm::EdDSA),
+    );
+    assert!(
+        !fapi2
+            .get("request_object_signing_alg_values_supported")
+            .and_then(Value::as_array)
+            .expect("request object algs should be present")
+            .iter()
+            .any(|value| value.as_str() == Some("none"))
     );
 }

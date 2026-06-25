@@ -82,10 +82,10 @@ pub(crate) fn request_mtls_client_certificate_from_headers(
                 .collect::<Option<Vec<_>>>()?,
         )?,
         subject_dn: matching_forwarded_value(forwarded_values(headers, SUBJECT_DN_HEADERS))?,
-        san_dns: sorted_unique(forwarded_list_values(headers, SAN_DNS_HEADERS)),
-        san_uri: sorted_unique(forwarded_list_values(headers, SAN_URI_HEADERS)),
-        san_ip: sorted_unique(forwarded_list_values(headers, SAN_IP_HEADERS)),
-        san_email: sorted_unique(forwarded_list_values(headers, SAN_EMAIL_HEADERS)),
+        san_dns: matching_forwarded_list_values(headers, SAN_DNS_HEADERS)?,
+        san_uri: matching_forwarded_list_values(headers, SAN_URI_HEADERS)?,
+        san_ip: matching_forwarded_list_values(headers, SAN_IP_HEADERS)?,
+        san_email: matching_forwarded_list_values(headers, SAN_EMAIL_HEADERS)?,
         verified_certificate_expiry: false,
     };
 
@@ -93,10 +93,10 @@ pub(crate) fn request_mtls_client_certificate_from_headers(
         let parsed = certificate_pem_identity(&pem)?;
         merge_matching(&mut certificate.thumbprint, parsed.thumbprint)?;
         merge_matching(&mut certificate.subject_dn, parsed.subject_dn)?;
-        merge_sorted_unique(&mut certificate.san_dns, parsed.san_dns);
-        merge_sorted_unique(&mut certificate.san_uri, parsed.san_uri);
-        merge_sorted_unique(&mut certificate.san_ip, parsed.san_ip);
-        merge_sorted_unique(&mut certificate.san_email, parsed.san_email);
+        merge_matching_values(&mut certificate.san_dns, parsed.san_dns)?;
+        merge_matching_values(&mut certificate.san_uri, parsed.san_uri)?;
+        merge_matching_values(&mut certificate.san_ip, parsed.san_ip)?;
+        merge_matching_values(&mut certificate.san_email, parsed.san_email)?;
         certificate.verified_certificate_expiry |= parsed.verified_certificate_expiry;
     }
 
@@ -277,17 +277,26 @@ fn forwarded_values(headers: &HeaderMap, names: &[&str]) -> Vec<String> {
     values
 }
 
-fn forwarded_list_values(headers: &HeaderMap, names: &[&str]) -> Vec<String> {
-    forwarded_values(headers, names)
+fn matching_forwarded_list_values(headers: &HeaderMap, names: &[&str]) -> Option<Vec<String>> {
+    let values = forwarded_values(headers, names)
         .into_iter()
-        .flat_map(|value| {
-            value
-                .split(',')
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(ToOwned::to_owned)
-                .collect::<Vec<_>>()
-        })
+        .map(|value| sorted_unique(split_forwarded_list_value(&value)))
+        .collect::<Vec<_>>();
+    let Some(first) = values.as_slice().first() else {
+        return Some(Vec::new());
+    };
+    values
+        .iter()
+        .all(|value| string_slices_match(first, value))
+        .then(|| first.clone())
+}
+
+fn split_forwarded_list_value(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
         .collect()
 }
 
@@ -315,12 +324,29 @@ fn merge_matching(target: &mut Option<String>, incoming: Option<String>) -> Opti
     }
 }
 
+fn merge_matching_values(target: &mut Vec<String>, incoming: Vec<String>) -> Option<()> {
+    if target.is_empty() {
+        *target = incoming;
+        return Some(());
+    }
+    string_slices_match(target, &incoming).then_some(())
+}
+
 fn sorted_unique(mut values: Vec<String>) -> Vec<String> {
     values.sort();
     values.dedup();
     values
 }
 
+fn string_slices_match(left: &[String], right: &[String]) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .all(|(left, right)| constant_time_eq(left.as_bytes(), right.as_bytes()))
+}
+
+#[cfg(test)]
 fn merge_sorted_unique(target: &mut Vec<String>, incoming: Vec<String>) {
     target.extend(incoming);
     target.sort();

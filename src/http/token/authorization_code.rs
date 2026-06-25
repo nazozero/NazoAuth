@@ -204,10 +204,7 @@ fn refresh_token_dpop_binding(
     payload: &CodePayload,
     dpop_jkt: Option<String>,
 ) -> Option<String> {
-    if client.client_type == "public"
-        || client.require_dpop_bound_tokens
-        || payload.dpop_jkt.is_some()
-    {
+    if client.client_type == "public" || payload.dpop_jkt.is_some() {
         dpop_jkt
     } else {
         None

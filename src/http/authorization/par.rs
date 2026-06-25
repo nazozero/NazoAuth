@@ -1,7 +1,13 @@
 //! Pushed Authorization Request endpoint.
 
-use super::{apply_request_object, unverified_request_object_client_id};
+use super::{
+    apply_request_object, request_object_uses_unsigned_algorithm,
+    unverified_signed_request_object_client_id,
+};
 use crate::http::prelude::*;
+
+pub(crate) const PUSHED_AUTHORIZATION_REQUEST_URI_PREFIX: &str =
+    "urn:ietf:params:oauth:request_uri:";
 use crate::http::{
     consume_token_management_client_assertion, token_management_auth_error,
     verify_confidential_client,
@@ -115,9 +121,19 @@ pub(crate) async fn par_after_rate_limit(
         );
     }
 
+    if params
+        .get("request")
+        .is_some_and(|request| request_object_uses_unsigned_algorithm(request))
+    {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request_object",
+            "PAR request object 必须签名.",
+        );
+    }
     if !params.contains_key("client_id")
         && let Some(request_object) = params.get("request")
-        && let Some(client_id) = unverified_request_object_client_id(request_object)
+        && let Some(client_id) = unverified_signed_request_object_client_id(request_object)
     {
         params.insert("client_id".to_owned(), client_id);
     }
@@ -232,7 +248,7 @@ pub(crate) async fn par_after_rate_limit(
 
     let now = Utc::now();
     let request_token = random_urlsafe_token();
-    let request_uri = format!("urn:ietf:params:oauth:request_uri:{request_token}");
+    let request_uri = format!("{PUSHED_AUTHORIZATION_REQUEST_URI_PREFIX}{request_token}");
     let payload = PushedAuthorizationRequest {
         client_id,
         params,
@@ -269,6 +285,10 @@ pub(crate) async fn par_after_rate_limit(
 
 pub(crate) fn pushed_authorization_request_key(request_uri: &str) -> String {
     format!("oauth:par:{}", blake3_hex(request_uri))
+}
+
+pub(crate) fn is_pushed_authorization_request_uri(request_uri: &str) -> bool {
+    request_uri.starts_with(PUSHED_AUTHORIZATION_REQUEST_URI_PREFIX)
 }
 
 fn validate_pushed_authorization_request(
