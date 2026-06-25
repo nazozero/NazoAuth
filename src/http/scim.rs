@@ -6,6 +6,7 @@ mod normalization;
 mod schema;
 
 use auth::*;
+use diesel_async::AsyncConnection;
 use normalization::*;
 use schema::*;
 
@@ -302,24 +303,33 @@ pub(crate) async fn scim_replace_user(
             );
         }
     };
-    let updated = diesel::update(
-        users::table
-            .find(user_id)
-            .filter(users::tenant_id.eq(tenant.tenant_id)),
-    )
-    .set((
-        users::username.eq(input.user_name),
-        users::email.eq(input.email),
-        users::email_verified.eq(true),
-        users::is_active.eq(input.active),
-        users::display_name.eq(input.display_name),
-        users::given_name.eq(input.given_name),
-        users::family_name.eq(input.family_name),
-        users::updated_at.eq(diesel_now),
-    ))
-    .returning(UserRow::as_returning())
-    .get_result::<UserRow>(&mut conn)
-    .await;
+    let updated = conn
+        .transaction::<UserRow, diesel::result::Error, _>(async |conn| {
+            let updated = diesel::update(
+                users::table
+                    .find(user_id)
+                    .filter(users::tenant_id.eq(tenant.tenant_id)),
+            )
+            .set((
+                users::username.eq(input.user_name),
+                users::email.eq(input.email),
+                users::email_verified.eq(true),
+                users::is_active.eq(input.active),
+                users::display_name.eq(input.display_name),
+                users::given_name.eq(input.given_name),
+                users::family_name.eq(input.family_name),
+                users::updated_at.eq(diesel_now),
+            ))
+            .returning(UserRow::as_returning())
+            .get_result::<UserRow>(conn)
+            .await?;
+            if !updated.is_active {
+                revoke_scim_deprovisioned_user_credentials(conn, tenant.tenant_id, updated.id)
+                    .await?;
+            }
+            Ok(updated)
+        })
+        .await;
     match updated {
         Ok(user) => json_response(scim_user_json(user)),
         Err(diesel::result::Error::NotFound) => scim_user_not_found_response(),
@@ -381,24 +391,33 @@ pub(crate) async fn scim_patch_user(
             );
         }
     };
-    let updated = diesel::update(
-        users::table
-            .find(user_id)
-            .filter(users::tenant_id.eq(tenant.tenant_id)),
-    )
-    .set((
-        users::username.eq(patch.user_name.unwrap_or(current.username)),
-        users::email.eq(patch.email.unwrap_or(current.email)),
-        users::email_verified.eq(true),
-        users::is_active.eq(patch.active.unwrap_or(current.is_active)),
-        users::display_name.eq(patch.display_name.or(current.display_name)),
-        users::given_name.eq(patch.given_name.or(current.given_name)),
-        users::family_name.eq(patch.family_name.or(current.family_name)),
-        users::updated_at.eq(diesel_now),
-    ))
-    .returning(UserRow::as_returning())
-    .get_result::<UserRow>(&mut conn)
-    .await;
+    let updated = conn
+        .transaction::<UserRow, diesel::result::Error, _>(async |conn| {
+            let updated = diesel::update(
+                users::table
+                    .find(user_id)
+                    .filter(users::tenant_id.eq(tenant.tenant_id)),
+            )
+            .set((
+                users::username.eq(patch.user_name.unwrap_or(current.username)),
+                users::email.eq(patch.email.unwrap_or(current.email)),
+                users::email_verified.eq(true),
+                users::is_active.eq(patch.active.unwrap_or(current.is_active)),
+                users::display_name.eq(patch.display_name.or(current.display_name)),
+                users::given_name.eq(patch.given_name.or(current.given_name)),
+                users::family_name.eq(patch.family_name.or(current.family_name)),
+                users::updated_at.eq(diesel_now),
+            ))
+            .returning(UserRow::as_returning())
+            .get_result::<UserRow>(conn)
+            .await?;
+            if !updated.is_active {
+                revoke_scim_deprovisioned_user_credentials(conn, tenant.tenant_id, updated.id)
+                    .await?;
+            }
+            Ok(updated)
+        })
+        .await;
     match updated {
         Ok(user) => json_response(scim_user_json(user)),
         Err(diesel::result::Error::DatabaseError(
@@ -436,14 +455,23 @@ pub(crate) async fn scim_delete_user(
             );
         }
     };
-    match diesel::update(
-        users::table
-            .find(path.into_inner())
-            .filter(users::tenant_id.eq(tenant.tenant_id)),
-    )
-    .set((users::is_active.eq(false), users::updated_at.eq(diesel_now)))
-    .execute(&mut conn)
-    .await
+    let user_id = path.into_inner();
+    match conn
+        .transaction::<usize, diesel::result::Error, _>(async |conn| {
+            let updated = diesel::update(
+                users::table
+                    .find(user_id)
+                    .filter(users::tenant_id.eq(tenant.tenant_id)),
+            )
+            .set((users::is_active.eq(false), users::updated_at.eq(diesel_now)))
+            .execute(conn)
+            .await?;
+            if updated > 0 {
+                revoke_scim_deprovisioned_user_credentials(conn, tenant.tenant_id, user_id).await?;
+            }
+            Ok(updated)
+        })
+        .await
     {
         Ok(deleted) => scim_delete_user_response(deleted),
         Err(error) => {
@@ -455,6 +483,30 @@ pub(crate) async fn scim_delete_user(
             )
         }
     }
+}
+
+async fn revoke_scim_deprovisioned_user_credentials(
+    conn: &mut diesel_async::AsyncPgConnection,
+    tenant_id: Uuid,
+    user_id: Uuid,
+) -> Result<(), diesel::result::Error> {
+    diesel::update(
+        oauth_tokens::table
+            .filter(oauth_tokens::tenant_id.eq(tenant_id))
+            .filter(oauth_tokens::user_id.eq(user_id))
+            .filter(oauth_tokens::revoked_at.is_null()),
+    )
+    .set(oauth_tokens::revoked_at.eq(diesel_now))
+    .execute(conn)
+    .await?;
+    diesel::delete(
+        user_client_grants::table
+            .filter(user_client_grants::tenant_id.eq(tenant_id))
+            .filter(user_client_grants::user_id.eq(user_id)),
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
 }
 
 fn scim_user_not_found_response() -> HttpResponse {

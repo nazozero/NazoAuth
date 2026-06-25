@@ -35,6 +35,7 @@ fn consent_page_response(payload: ConsentPayload, csrf_token: Option<String>) ->
         "client_name": payload.client_name,
         "redirect_uri": payload.redirect_uri,
         "scopes": payload.scopes,
+        "authorization_details": payload.authorization_details,
         "csrf_token": csrf_token
     }))
 }

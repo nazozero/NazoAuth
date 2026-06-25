@@ -781,17 +781,16 @@ fn authorization_code_holder_error_responses_preserve_oauth_error_classes() {
 }
 
 #[test]
-fn confidential_required_dpop_client_pins_refresh_token_to_verified_dpop_key() {
+fn confidential_required_dpop_client_does_not_pin_refresh_token_to_access_token_dpop_key() {
     let mut client = pkce_policy_client();
     client.client_type = "confidential".to_owned();
     client.require_dpop_bound_tokens = true;
     let mut payload = code_payload(true);
-    payload.dpop_jkt = Some("request-dpop-jkt".to_owned());
+    payload.dpop_jkt = None;
 
-    assert_eq!(
+    assert!(
         refresh_token_dpop_binding(&client, &payload, Some("verified-dpop-jkt".to_owned()))
-            .as_deref(),
-        Some("verified-dpop-jkt")
+            .is_none()
     );
 }
 

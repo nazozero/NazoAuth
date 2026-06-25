@@ -380,7 +380,18 @@ fn matching_consent_payload_user_is_preserved_for_response_building() {
 
 #[actix_web::test]
 async fn consent_page_response_exposes_only_page_safe_fields() {
-    let payload = consent_payload(uuid_fixture(0x44444444444444444444444444444444));
+    let mut payload = consent_payload(uuid_fixture(0x44444444444444444444444444444444));
+    payload.authorization_details = json!([
+        {
+            "type": "payment_initiation",
+            "actions": ["write"],
+            "instructedAmount": {
+                "currency": "EUR",
+                "amount": "123.45"
+            },
+            "creditorName": "Example Payee"
+        }
+    ]);
 
     let (status, body) = response_json(consent_page_response(
         payload,
@@ -394,15 +405,28 @@ async fn consent_page_response_exposes_only_page_safe_fields() {
     assert_eq!(body["client_name"], "Client A");
     assert_eq!(body["redirect_uri"], "https://client.example/callback");
     assert_eq!(body["scopes"], json!(["openid", "profile"]));
+    assert_eq!(
+        body["authorization_details"],
+        json!([
+            {
+                "type": "payment_initiation",
+                "actions": ["write"],
+                "instructedAmount": {
+                    "currency": "EUR",
+                    "amount": "123.45"
+                },
+                "creditorName": "Example Payee"
+            }
+        ])
+    );
     assert_eq!(body["csrf_token"], "csrf-token");
 
     let object = body
         .as_object()
         .expect("consent response should be an object");
-    assert_eq!(object.len(), 6);
+    assert_eq!(object.len(), 7);
     for forbidden in [
         "user_id",
-        "authorization_details",
         "state",
         "nonce",
         "auth_time",

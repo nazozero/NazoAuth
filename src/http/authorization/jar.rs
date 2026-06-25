@@ -69,7 +69,14 @@ pub(crate) async fn apply_request_object(
                 RequestObjectMode::SignedJar,
             )
         };
-    if !request_object_mode_allowed(client, mode) {
+    if !request_object_mode_allowed(
+        client,
+        mode,
+        state
+            .settings
+            .authorization_server_profile
+            .requires_fapi2_security(),
+    ) {
         return Err(oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request_object",
@@ -127,11 +134,11 @@ fn request_object_uses_none_algorithm(
     signature: &str,
 ) -> Result<bool, HttpResponse> {
     if header.alg == "none" {
-        if !signature.is_empty() || payload.is_empty() {
+        if payload.is_empty() || !signature.is_empty() {
             return Err(oauth_error(
                 StatusCode::BAD_REQUEST,
                 "invalid_request_object",
-                "unsigned request object 结构无效.",
+                "request object 签名算法无效.",
             ));
         }
         return Ok(true);
@@ -146,8 +153,14 @@ fn request_object_uses_none_algorithm(
     Ok(false)
 }
 
-fn request_object_mode_allowed(client: &ClientRow, mode: RequestObjectMode) -> bool {
-    !((client.require_dpop_bound_tokens || client.require_par_request_object)
+fn request_object_mode_allowed(
+    client: &ClientRow,
+    mode: RequestObjectMode,
+    profile_disallows_unsigned_request_object: bool,
+) -> bool {
+    !((client.require_dpop_bound_tokens
+        || client.require_par_request_object
+        || profile_disallows_unsigned_request_object)
         && mode == RequestObjectMode::BasicOidc)
 }
 
@@ -360,15 +373,26 @@ async fn store_request_object_replay_state(
     }
 }
 
-pub(crate) fn unverified_request_object_client_id(request_object: &str) -> Option<String> {
+pub(crate) fn request_object_uses_unsigned_algorithm(request_object: &str) -> bool {
+    let Some((header, _payload, signature)) = split_compact_jwt(request_object) else {
+        return false;
+    };
+    let Ok(header) = decode_request_object_header(header) else {
+        return false;
+    };
+    header.alg == "none" && signature.is_empty()
+}
+
+pub(crate) fn unverified_signed_request_object_client_id(request_object: &str) -> Option<String> {
     let (header, payload, signature) = split_compact_jwt(request_object)?;
     let header = decode_request_object_header(header).ok()?;
-    if header.alg == "none" && !signature.is_empty() {
+    if header.alg == "none" || signature.is_empty() {
         return None;
     }
-    if header.alg != "none" && signature.is_empty() {
-        return None;
-    }
+    unverified_request_object_client_id_from_payload(payload)
+}
+
+fn unverified_request_object_client_id_from_payload(payload: &str) -> Option<String> {
     let claims = decode_request_object_claims(payload).ok()?;
     let issuer_matches = claims
         .iss

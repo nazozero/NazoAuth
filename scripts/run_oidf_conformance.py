@@ -60,8 +60,8 @@ NAZO_AUTHORIZATION_ERROR_RESPONSE_PATTERN = (
     r'("error"\s*:\s*"(invalid_request|invalid_request_object|access_denied|login_required|server_error)"'
     r"|invalid_request|invalid_request_object|access_denied|login_required|server_error)"
 )
-OIDF_BAD_FINAL_RESULTS = {"FAILED", "SKIPPED", "INTERRUPTED", "WARNING"}
-OIDF_BAD_STATUS_VALUES = {"FAILED", "SKIPPED", "INTERRUPTED"}
+OIDF_BAD_FINAL_RESULTS = {"FAILED", "INTERRUPTED", "WARNING"}
+OIDF_BAD_STATUS_VALUES = {"FAILED", "INTERRUPTED"}
 OIDF_BAD_LOG_RESULTS = {"FAILURE", "WARNING"}
 OIDF_LOG_CONTEXT_SOURCES = {"BROWSER", "WebRunner"}
 OIDF_ALLOWED_REVIEW_MODULES = {
@@ -1521,6 +1521,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--disable-ssl-verify", action="store_true")
     parser.add_argument("--no-parallel", action="store_true")
     parser.add_argument(
+        "--expected-failures-file",
+        default="",
+        help="pass through the official runner expected failures/warnings JSON file",
+    )
+    parser.add_argument(
+        "--expected-skips-file",
+        default="",
+        help="pass through the official runner expected skipped tests JSON file",
+    )
+    parser.add_argument(
         "--rerun",
         default="",
         help=(
@@ -1612,6 +1622,9 @@ def run_official_runner(
     if monitor is not None and monitor.failure_message:
         return 1
 
+    if exit_code != 0:
+        return exit_code
+
     if aliases:
         final_failure = inspect_oidf_state(
             conformance_server,
@@ -1697,6 +1710,12 @@ def main() -> int:
         command.append("--no-parallel")
     if args.rerun:
         command.extend(["--rerun", args.rerun])
+    if args.expected_failures_file:
+        expected_failures_file = Path(args.expected_failures_file).resolve()
+        command.extend(["--expected-failures-file", str(expected_failures_file)])
+    if args.expected_skips_file:
+        expected_skips_file = Path(args.expected_skips_file).resolve()
+        command.extend(["--expected-skips-file", str(expected_skips_file)])
     if args.export_dir:
         export_dir = Path(args.export_dir).resolve()
         export_dir.mkdir(parents=True, exist_ok=True)
@@ -1713,7 +1732,7 @@ def main() -> int:
         env,
         args.timeout_seconds,
         args.conformance_server,
-        set() if args.list else aliases,
+        set() if args.list or args.rerun else aliases,
         token,
         args.monitor_interval_seconds,
     )

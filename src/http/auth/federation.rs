@@ -154,11 +154,11 @@ async fn federation_oidc_callback_after_rate_limit(
             );
         }
     };
-    if claims.email_verified == Some(false) {
+    if claims.email_verified != Some(true) {
         return oauth_error(
             StatusCode::UNAUTHORIZED,
             "access_denied",
-            "OIDC email is not verified.",
+            "OIDC email must be verified.",
         );
     }
     let user = match resolve_external_identity(

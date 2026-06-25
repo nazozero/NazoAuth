@@ -764,6 +764,40 @@ async fn oidc_callback_rejects_unverified_email_before_identity_resolution() {
     );
 }
 
+#[actix_web::test]
+async fn oidc_callback_rejects_missing_email_verification_before_identity_resolution() {
+    let (provider, token_request, jwks_request, nonce) =
+        provider_backed_by_local_oidc(json!({"email_verified": null})).await;
+    let Some(state) = live_federation_state(Some(provider), None).await else {
+        return;
+    };
+    let state_token = random_urlsafe_token();
+    store_oidc_state_with_nonce(&state, &state_token, &nonce, Utc::now().timestamp()).await;
+    let state = Data::new(state);
+    let req = actix_web::test::TestRequest::get()
+        .uri("/auth/federation/oidc/callback?state=email&code=code")
+        .to_http_request();
+    let query = OidcCallbackQuery {
+        code: Some("code-1".to_owned()),
+        state: Some(state_token),
+        error: None,
+    };
+
+    let response = federation_oidc_callback_after_rate_limit(state, req, query).await;
+    token_request
+        .await
+        .expect("token request should finish before email verification");
+    jwks_request
+        .await
+        .expect("JWKS request should finish before email verification");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("access_denied")
+    );
+}
+
 #[test]
 fn oidc_authorization_url_binds_state_nonce_and_s256_pkce() {
     let provider = oidc_provider();

@@ -1062,6 +1062,33 @@ async fn external_public_jwk_metadata_is_bound_to_keyset_entry() {
 }
 
 #[tokio::test]
+async fn external_public_jwk_rejects_private_or_symmetric_key_material() {
+    for private_member in ["d", "p", "q", "dp", "dq", "qi", "oth", "k"] {
+        let mut public_jwk = json!({
+            "kty": "RSA",
+            "kid": "external-active",
+            "alg": "RS256",
+            "use": "sig",
+            "n": "modulus",
+            "e": "AQAB"
+        });
+        public_jwk[private_member] = json!("secret");
+
+        let error = external_public_jwk(&json!({
+            "kid": "external-active",
+            "alg": "RS256",
+            "public_jwk": public_jwk
+        }))
+        .expect_err("private JWK members must not be accepted for public JWKS publication");
+
+        assert!(
+            format!("{error:#}").contains("private or symmetric key material"),
+            "unexpected external public JWK error for {private_member}: {error:#}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn external_command_signer_produces_verifiable_jwt() {
     let keys_dir = temp_keys_dir("external_signer");
     tokio::fs::create_dir_all(&keys_dir).await.unwrap();

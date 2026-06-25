@@ -6,6 +6,8 @@ mod jar;
 mod par;
 mod request;
 
+pub(crate) const BASELINE_ACR_VALUE: &str = "1";
+
 pub(crate) use consent::*;
 pub(crate) use decision::*;
 pub(crate) use jar::*;

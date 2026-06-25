@@ -9,7 +9,8 @@ use serde_json::{Value, json};
 use crate::config::ConfigSource;
 use crate::settings::Settings;
 use crate::support::{
-    signing_algorithm_from_name, signing_algorithm_name, try_load_keyset, write_json_atomic,
+    reject_private_jwk_members, signing_algorithm_from_name, signing_algorithm_name,
+    try_load_keyset, write_json_atomic,
 };
 
 pub async fn run(args: impl IntoIterator<Item = String>) -> anyhow::Result<()> {
@@ -237,6 +238,7 @@ fn validate_public_jwk_metadata(key: &Value, kid: &str, alg: &str) -> anyhow::Re
     {
         bail!("key {kid} public_jwk use must be sig");
     }
+    reject_private_jwk_members(public_jwk)?;
     Ok(())
 }
 
