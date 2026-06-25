@@ -19,6 +19,10 @@ fn token_management_form_with_client_auth() -> TokenOnlyForm {
     }
 }
 
+fn test_secret(label: &str) -> String {
+    format!("{label}-{}", Uuid::now_v7())
+}
+
 async fn response_json(response: HttpResponse) -> Value {
     let body = actix_web::body::to_bytes(response.into_body())
         .await
@@ -98,14 +102,19 @@ fn token_form_maps_empty_optional_credentials_to_absent_values() {
 #[test]
 fn token_form_extracts_authorization_code_exchange_fields_without_reordering() {
     let req = form_request();
+    let client_secret = test_secret("token-form-secret");
+    let body = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("grant_type", "authorization_code")
+        .append_pair("code", "code-1")
+        .append_pair("redirect_uri", "https://client.example/cb")
+        .append_pair("code_verifier", "verifier-1")
+        .append_pair("scope", "openid profile")
+        .append_pair("client_id", "client-1")
+        .append_pair("client_secret", &client_secret)
+        .finish();
 
-    let form = parse_token_form(
-        &req,
-        &Bytes::from_static(
-            b"grant_type=authorization_code&code=code-1&redirect_uri=https%3A%2F%2Fclient.example%2Fcb&code_verifier=verifier-1&scope=openid%20profile&client_id=client-1&client_secret=secret-1",
-        ),
-    )
-    .expect("well-formed token request should parse");
+    let form =
+        parse_token_form(&req, &Bytes::from(body)).expect("well-formed token request should parse");
 
     assert_eq!(form.grant_type, "authorization_code");
     assert_eq!(form.code.as_deref(), Some("code-1"));
@@ -116,7 +125,7 @@ fn token_form_extracts_authorization_code_exchange_fields_without_reordering() {
     assert_eq!(form.code_verifier.as_deref(), Some("verifier-1"));
     assert_eq!(form.scope.as_deref(), Some("openid profile"));
     assert_eq!(form.client_id.as_deref(), Some("client-1"));
-    assert_eq!(form.client_secret.as_deref(), Some("secret-1"));
+    assert_eq!(form.client_secret.as_deref(), Some(client_secret.as_str()));
 }
 
 #[test]
@@ -322,19 +331,24 @@ fn token_management_form_rejects_invalid_utf8() {
 #[test]
 fn token_management_form_ignores_unknown_parameters_and_extracts_auth_fields() {
     let req = form_request();
+    let client_secret = test_secret("token-management-form-secret");
+    let body = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("token", "token-1")
+        .append_pair("token_type_hint", "refresh_token")
+        .append_pair("client_id", "client-1")
+        .append_pair("client_secret", &client_secret)
+        .append_pair("client_assertion_type", "jwt-bearer")
+        .append_pair("client_assertion", "assertion-1")
+        .append_pair("unknown", "value")
+        .finish();
 
-    let form = parse_token_management_form(
-        &req,
-        &Bytes::from_static(
-            b"token=token-1&token_type_hint=refresh_token&client_id=client-1&client_secret=secret-1&client_assertion_type=jwt-bearer&client_assertion=assertion-1&unknown=value",
-        ),
-    )
-    .expect("well-formed token management request should parse");
+    let form = parse_token_management_form(&req, &Bytes::from(body))
+        .expect("well-formed token management request should parse");
 
     assert_eq!(form.token, "token-1");
     assert_eq!(form.token_type_hint.as_deref(), Some("refresh_token"));
     assert_eq!(form.client_id.as_deref(), Some("client-1"));
-    assert_eq!(form.client_secret.as_deref(), Some("secret-1"));
+    assert_eq!(form.client_secret.as_deref(), Some(client_secret.as_str()));
     assert_eq!(form.client_assertion_type.as_deref(), Some("jwt-bearer"));
     assert_eq!(form.client_assertion.as_deref(), Some("assertion-1"));
 }
@@ -356,7 +370,7 @@ fn token_management_form_requires_non_empty_token() {
 #[test]
 fn token_management_rejects_conflicting_client_auth_before_token_state_lookup() {
     let mut basic_with_post = token_management_form_with_client_auth();
-    basic_with_post.client_secret = Some("secret".to_owned());
+    basic_with_post.client_secret = Some(test_secret("basic-post-secret"));
     assert!(token_management_has_conflicting_client_auth(
         true,
         &basic_with_post
@@ -371,7 +385,7 @@ fn token_management_rejects_conflicting_client_auth_before_token_state_lookup() 
     ));
 
     let mut post_with_assertion = token_management_form_with_client_auth();
-    post_with_assertion.client_secret = Some("secret".to_owned());
+    post_with_assertion.client_secret = Some(test_secret("post-assertion-secret"));
     post_with_assertion.client_assertion = Some("assertion".to_owned());
     assert!(token_management_has_conflicting_client_auth(
         false,
@@ -391,7 +405,7 @@ fn token_management_allows_exactly_one_client_auth_method() {
     ));
 
     let post_secret = TokenOnlyForm {
-        client_secret: Some("secret".to_owned()),
+        client_secret: Some(test_secret("post-only-secret")),
         ..token_management_form_with_client_auth()
     };
     assert!(!token_management_has_conflicting_client_auth(

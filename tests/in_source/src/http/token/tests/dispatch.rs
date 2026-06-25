@@ -464,6 +464,18 @@ fn token_request(content_type: &str) -> HttpRequest {
         .to_http_request()
 }
 
+fn test_secret(label: &str) -> String {
+    format!("{label}-{}", Uuid::now_v7())
+}
+
+fn client_credentials_body(client_id: &str, client_secret: &str) -> Bytes {
+    Bytes::from(format!(
+        "grant_type=client_credentials&client_id={}&client_secret={}",
+        urlencoding::encode(client_id),
+        urlencoding::encode(client_secret)
+    ))
+}
+
 fn client() -> ClientRow {
     ClientRow {
         id: Uuid::now_v7(),
@@ -573,7 +585,11 @@ async fn token_endpoint_rejects_disallowed_fapi_password_grant_before_client_aut
         return;
     };
     let req = token_request("application/x-www-form-urlencoded");
-    let body = Bytes::from_static(b"grant_type=password&username=alice&password=secret");
+    let password = test_secret("password-grant-secret");
+    let body = Bytes::from(format!(
+        "grant_type=password&username=alice&password={}",
+        urlencoding::encode(&password)
+    ));
 
     assert_token_error(
         token(state, req, body).await,
@@ -589,7 +605,8 @@ async fn token_endpoint_rejects_multiple_client_auth_methods_before_secret_verif
     let Some(state) = live_token_state(AuthorizationServerProfile::Oauth2Baseline).await else {
         return;
     };
-    let basic = format!("Basic {}", B64.encode("client-1:secret"));
+    let secret = test_secret("conflicting-basic-secret");
+    let basic = format!("Basic {}", B64.encode(format!("client-1:{secret}")));
     let req = actix_web::test::TestRequest::post()
         .uri("/token")
         .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
@@ -606,9 +623,10 @@ async fn token_endpoint_rejects_multiple_client_auth_methods_before_secret_verif
     .await;
 
     let req = token_request("application/x-www-form-urlencoded");
-    let body = Bytes::from_static(
-        b"grant_type=client_credentials&client_id=client-1&client_secret=secret&client_assertion=jwt",
-    );
+    let body = Bytes::from(format!(
+        "grant_type=client_credentials&client_id=client-1&client_secret={}&client_assertion=jwt",
+        urlencoding::encode(&secret)
+    ));
 
     assert_token_error(
         token(state, req, body).await,
@@ -781,12 +799,13 @@ async fn token_endpoint_reports_client_holder_policy_for_unbound_code_without_cl
     let Some(state) = live_token_state(AuthorizationServerProfile::Oauth2Baseline).await else {
         return;
     };
+    let correct_secret = test_secret("holder-policy-secret");
     insert_token_client(
         &state,
         "client-1",
         "confidential",
         "client_secret_post",
-        Some(hash_password("correct-secret").expect("secret should hash")),
+        Some(hash_password(&correct_secret).expect("secret should hash")),
         vec!["authorization_code"],
         true,
         false,
@@ -875,9 +894,8 @@ async fn token_endpoint_reports_unknown_client_after_extracting_client_secret_po
         return;
     };
     let req = token_request("application/x-www-form-urlencoded");
-    let body = Bytes::from_static(
-        b"grant_type=client_credentials&client_id=missing-token-client&client_secret=secret",
-    );
+    let secret = test_secret("missing-client-secret");
+    let body = client_credentials_body("missing-token-client", &secret);
 
     assert_token_error(
         token(state, req, body).await,
@@ -976,12 +994,14 @@ async fn token_endpoint_rejects_inactive_client_before_secret_verification() {
     let Some(state) = live_token_state(AuthorizationServerProfile::Oauth2Baseline).await else {
         return;
     };
+    let correct_secret = test_secret("inactive-client-secret");
+    let wrong_secret = test_secret("inactive-wrong-secret");
     insert_token_client(
         &state,
         "inactive-token-client",
         "confidential",
         "client_secret_post",
-        Some(hash_password("correct-secret").expect("secret should hash")),
+        Some(hash_password(&correct_secret).expect("secret should hash")),
         vec!["client_credentials"],
         false,
         false,
@@ -990,9 +1010,7 @@ async fn token_endpoint_rejects_inactive_client_before_secret_verification() {
     .await;
 
     let req = token_request("application/x-www-form-urlencoded");
-    let body = Bytes::from_static(
-        b"grant_type=client_credentials&client_id=inactive-token-client&client_secret=wrong-secret",
-    );
+    let body = client_credentials_body("inactive-token-client", &wrong_secret);
 
     assert_token_error(
         token(state, req, body).await,
@@ -1009,12 +1027,13 @@ async fn token_endpoint_applies_fapi_profile_checks_after_successful_client_secr
     let Some(state) = live_token_state(AuthorizationServerProfile::Fapi2Security).await else {
         return;
     };
+    let correct_secret = test_secret("fapi-client-secret");
     insert_token_client(
         &state,
         "fapi-secret-client",
         "confidential",
         "client_secret_post",
-        Some(hash_password("correct-secret").expect("secret should hash")),
+        Some(hash_password(&correct_secret).expect("secret should hash")),
         vec!["client_credentials"],
         false,
         false,
@@ -1022,9 +1041,7 @@ async fn token_endpoint_applies_fapi_profile_checks_after_successful_client_secr
     )
     .await;
     let req = token_request("application/x-www-form-urlencoded");
-    let body = Bytes::from_static(
-        b"grant_type=client_credentials&client_id=fapi-secret-client&client_secret=correct-secret",
-    );
+    let body = client_credentials_body("fapi-secret-client", &correct_secret);
 
     assert_token_error(
         token(state, req, body).await,
@@ -1071,12 +1088,14 @@ async fn token_endpoint_rejects_wrong_client_secret_before_grant_dispatch() {
     let Some(state) = live_token_state(AuthorizationServerProfile::Oauth2Baseline).await else {
         return;
     };
+    let correct_secret = test_secret("secret-post-client-secret");
+    let wrong_secret = test_secret("secret-post-wrong-secret");
     insert_token_client(
         &state,
         "secret-post-client",
         "confidential",
         "client_secret_post",
-        Some(hash_password("correct-secret").expect("secret should hash")),
+        Some(hash_password(&correct_secret).expect("secret should hash")),
         vec!["client_credentials"],
         false,
         false,
@@ -1085,9 +1104,7 @@ async fn token_endpoint_rejects_wrong_client_secret_before_grant_dispatch() {
     .await;
 
     let req = token_request("application/x-www-form-urlencoded");
-    let body = Bytes::from_static(
-        b"grant_type=client_credentials&client_id=secret-post-client&client_secret=wrong-secret",
-    );
+    let body = client_credentials_body("secret-post-client", &wrong_secret);
 
     assert_token_error(
         token(state, req, body).await,
@@ -1135,12 +1152,13 @@ async fn token_endpoint_returns_unsupported_grant_only_after_client_authenticati
     let Some(state) = live_token_state(AuthorizationServerProfile::Oauth2Baseline).await else {
         return;
     };
+    let correct_secret = test_secret("unsupported-grant-secret");
     insert_token_client(
         &state,
         "unsupported-grant-client",
         "confidential",
         "client_secret_post",
-        Some(hash_password("correct-secret").expect("secret should hash")),
+        Some(hash_password(&correct_secret).expect("secret should hash")),
         vec!["urn:example:unsupported"],
         false,
         false,
@@ -1149,9 +1167,10 @@ async fn token_endpoint_returns_unsupported_grant_only_after_client_authenticati
     .await;
 
     let req = token_request("application/x-www-form-urlencoded");
-    let body = Bytes::from_static(
-        b"grant_type=urn%3Aexample%3Aunsupported&client_id=unsupported-grant-client&client_secret=correct-secret",
-    );
+    let body = Bytes::from(format!(
+        "grant_type=urn%3Aexample%3Aunsupported&client_id=unsupported-grant-client&client_secret={}",
+        urlencoding::encode(&correct_secret)
+    ));
 
     assert_token_error(
         token(state, req, body).await,
@@ -1284,12 +1303,13 @@ async fn missing_client_authorization_code_holder_error_returns_none_when_client
         return;
     };
     let client_id = format!("holder-unbound-client-{}", Uuid::now_v7());
+    let correct_secret = test_secret("holder-unbound-secret");
     insert_token_client(
         &state,
         &client_id,
         "confidential",
         "client_secret_post",
-        Some(hash_password("correct-secret").expect("secret should hash")),
+        Some(hash_password(&correct_secret).expect("secret should hash")),
         vec!["authorization_code"],
         false,
         false,
@@ -1409,12 +1429,13 @@ async fn token_endpoint_rejects_client_auth_if_token_rate_limit_is_exceeded() {
         settings: Arc::new(settings),
         keyset: state.keyset.clone(),
     });
+    let correct_secret = test_secret("rate-limited-secret");
     insert_token_client(
         &state,
         "rate-limited-client",
         "confidential",
         "client_secret_post",
-        Some(hash_password("correct-secret").expect("secret should hash")),
+        Some(hash_password(&correct_secret).expect("secret should hash")),
         vec!["client_credentials"],
         false,
         false,
@@ -1423,9 +1444,7 @@ async fn token_endpoint_rejects_client_auth_if_token_rate_limit_is_exceeded() {
     .await;
 
     let req = token_request("application/x-www-form-urlencoded");
-    let body = Bytes::from_static(
-        b"grant_type=client_credentials&client_id=rate-limited-client&client_secret=correct-secret",
-    );
+    let body = client_credentials_body("rate-limited-client", &correct_secret);
 
     let response = token(state, req, body).await;
     assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
@@ -1440,9 +1459,8 @@ async fn token_endpoint_rejects_client_lookup_db_failure_with_server_error() {
         return;
     };
     let req = token_request("application/x-www-form-urlencoded");
-    let body = Bytes::from_static(
-        b"grant_type=client_credentials&client_id=db-fail-client&client_secret=secret",
-    );
+    let secret = test_secret("db-fail-secret");
+    let body = client_credentials_body("db-fail-client", &secret);
 
     assert_token_error(
         token(state, req, body).await,
@@ -1494,12 +1512,13 @@ async fn token_endpoint_rejects_confidential_client_without_required_client_secr
         return;
     };
     let client_id = format!("secret-required-{}", Uuid::now_v7());
+    let correct_secret = test_secret("secret-required-secret");
     insert_token_client(
         &state,
         &client_id,
         "confidential",
         "client_secret_post",
-        Some(hash_password("correct-secret").expect("secret should hash")),
+        Some(hash_password(&correct_secret).expect("secret should hash")),
         vec!["client_credentials"],
         false,
         false,
@@ -1655,12 +1674,13 @@ fn missing_client_client_credentials_without_dpop_uses_invalid_request() {
 
 #[test]
 fn missing_client_holder_check_ignores_non_client_credentials_grants() {
+    let refresh_token = test_secret("holder-refresh-token");
     let form = TokenForm {
         grant_type: "refresh_token".to_owned(),
         code: None,
         redirect_uri: None,
         code_verifier: None,
-        refresh_token: Some("refresh-token".to_owned()),
+        refresh_token: Some(refresh_token),
         scope: None,
         client_id: None,
         client_secret: None,
@@ -1765,7 +1785,7 @@ fn token_request_auth_material_detects_each_registered_client_auth_channel() {
 
     let mut with_secret = with_client_id;
     with_secret.client_id = None;
-    with_secret.client_secret = Some("secret".to_owned());
+    with_secret.client_secret = Some(test_secret("auth-material-secret"));
     assert!(token_request_has_client_auth_material(false, &with_secret));
 
     let mut with_assertion_type = with_secret;

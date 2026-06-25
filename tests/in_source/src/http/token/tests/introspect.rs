@@ -381,6 +381,19 @@ async fn introspect_with_client(
     json_body(introspect_after_rate_limit(state, form_request(), body).await).await
 }
 
+fn test_secret(label: &str) -> String {
+    format!("{label}-{}", Uuid::now_v7())
+}
+
+fn introspection_body(token: &str, client_id: &str, client_secret: &str) -> Bytes {
+    Bytes::from(format!(
+        "token={}&client_id={}&client_secret={}",
+        urlencoding::encode(token),
+        urlencoding::encode(client_id),
+        urlencoding::encode(client_secret)
+    ))
+}
+
 fn form_request() -> HttpRequest {
     TestRequest::default()
         .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
@@ -561,7 +574,7 @@ async fn introspection_rejects_malformed_form_before_token_lookup() {
             TestRequest::default()
                 .insert_header((header::CONTENT_TYPE, "application/json"))
                 .to_http_request(),
-            Bytes::from_static(br#"{"token":"secret"}"#),
+            Bytes::from(format!(r#"{{"token":"{}"}}"#, test_secret("json-token"))),
         )
         .await,
         introspect_form(b"token=\xff").await,
@@ -592,11 +605,14 @@ async fn introspection_rate_limit_short_circuits_before_client_or_token_lookup()
     let Some(state) = live_rate_limited_introspection_state().await else {
         return;
     };
+    let secret = test_secret("rate-limited-secret");
     let response = introspect(
         state,
         form_request(),
-        Bytes::from_static(
-            b"token=refresh-token&client_id=rate-limited-client&client_secret=secret",
+        introspection_body(
+            &test_secret("rate-limited-refresh"),
+            "rate-limited-client",
+            &secret,
         ),
     )
     .await;
@@ -662,10 +678,11 @@ async fn introspection_requires_client_authentication_before_token_lookup() {
 
 #[actix_web::test]
 async fn introspection_client_lookup_failures_return_server_error() {
+    let secret = test_secret("lookup-failure-secret");
     let response = introspect_after_rate_limit(
         introspection_state(),
         form_request(),
-        Bytes::from_static(b"token=token-1&client_id=introspect-lookup-error&client_secret=secret"),
+        introspection_body("token-1", "introspect-lookup-error", &secret),
     )
     .await;
 
@@ -683,10 +700,8 @@ async fn introspection_rejects_unknown_client_before_token_state_lookup() {
         return;
     };
     let missing_client = format!("missing-introspect-client-{}", Uuid::now_v7());
-    let body = Bytes::from(format!(
-        "token={}&client_id={missing_client}&client_secret=secret",
-        urlencoding::encode("token-1")
-    ));
+    let secret = test_secret("missing-client-secret");
+    let body = introspection_body("token-1", &missing_client, &secret);
 
     let response = introspect_after_rate_limit(state, form_request(), body).await;
 
@@ -707,15 +722,17 @@ async fn introspection_rejects_wrong_client_secret_before_token_state_lookup() {
     let Some(state) = live_introspection_state() else {
         return;
     };
+    let correct_secret = test_secret("introspect-correct-secret");
+    let wrong_secret = test_secret("introspect-wrong-secret");
     let client = insert_introspection_client(
         &state,
         &format!("introspect-wrong-secret-{}", Uuid::now_v7()),
-        "correct-secret",
+        &correct_secret,
     )
     .await;
 
     let (status, body) =
-        introspect_with_client(state, &client.client_id, "wrong-secret", "token-1").await;
+        introspect_with_client(state, &client.client_id, &wrong_secret, "token-1").await;
 
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(body.get("error"), Some(&json!("invalid_client")));
@@ -746,10 +763,11 @@ async fn introspection_fails_closed_when_client_lookup_query_fails() {
         &["oauth_clients", "oauth_tokens", "access_token_revocations"],
     )
     .await;
+    let correct_secret = test_secret("client-query-secret");
     let client = insert_introspection_client(
         &state,
         &format!("introspect-client-query-failure-{}", Uuid::now_v7()),
-        "correct-secret",
+        &correct_secret,
     )
     .await;
     rename_column(
@@ -761,13 +779,8 @@ async fn introspection_fails_closed_when_client_lookup_query_fails() {
     )
     .await;
 
-    let (status, body) = introspect_with_client(
-        state.clone(),
-        &client.client_id,
-        "correct-secret",
-        "token-1",
-    )
-    .await;
+    let (status, body) =
+        introspect_with_client(state.clone(), &client.client_id, &correct_secret, "token-1").await;
 
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(body.get("error"), Some(&json!("server_error")));
@@ -795,10 +808,11 @@ async fn introspection_fails_closed_when_access_token_revocation_query_fails() {
         &["oauth_clients", "oauth_tokens", "access_token_revocations"],
     )
     .await;
+    let correct_secret = test_secret("access-query-secret");
     let client = insert_introspection_client(
         &state,
         &format!("introspect-access-query-failure-{}", Uuid::now_v7()),
-        "correct-secret",
+        &correct_secret,
     )
     .await;
     let access_token = sign_access_token(
@@ -820,7 +834,7 @@ async fn introspection_fails_closed_when_access_token_revocation_query_fails() {
     let (status, body) = introspect_with_client(
         state.clone(),
         &client.client_id,
-        "correct-secret",
+        &correct_secret,
         &access_token.token,
     )
     .await;
@@ -851,10 +865,11 @@ async fn introspection_fails_closed_when_refresh_token_query_fails() {
         &["oauth_clients", "oauth_tokens", "access_token_revocations"],
     )
     .await;
+    let correct_secret = test_secret("refresh-query-secret");
     let client = insert_introspection_client(
         &state,
         &format!("introspect-refresh-query-failure-{}", Uuid::now_v7()),
-        "correct-secret",
+        &correct_secret,
     )
     .await;
     rename_column(
@@ -869,7 +884,7 @@ async fn introspection_fails_closed_when_refresh_token_query_fails() {
     let (status, body) = introspect_with_client(
         state.clone(),
         &client.client_id,
-        "correct-secret",
+        &correct_secret,
         "opaque-refresh",
     )
     .await;
@@ -887,7 +902,8 @@ async fn introspection_returns_inactive_for_access_tokens_outside_client_or_tena
     let Some(state) = live_introspection_state() else {
         return;
     };
-    let client = insert_introspection_client(&state, "introspect-client", "correct-secret").await;
+    let correct_secret = test_secret("introspect-client-secret");
+    let client = insert_introspection_client(&state, "introspect-client", &correct_secret).await;
 
     let foreign_audience_token = sign_access_token(
         &state,
@@ -899,7 +915,7 @@ async fn introspection_returns_inactive_for_access_tokens_outside_client_or_tena
     let (status, body) = introspect_with_client(
         state.clone(),
         &client.client_id,
-        "correct-secret",
+        &correct_secret,
         &foreign_audience_token.token,
     )
     .await;
@@ -916,7 +932,7 @@ async fn introspection_returns_inactive_for_access_tokens_outside_client_or_tena
     let (status, body) = introspect_with_client(
         state,
         &client.client_id,
-        "correct-secret",
+        &correct_secret,
         &foreign_tenant_token.token,
     )
     .await;
@@ -929,8 +945,9 @@ async fn introspection_respects_access_token_revocation_state() {
     let Some(state) = live_introspection_state() else {
         return;
     };
+    let correct_secret = test_secret("access-revocation-secret");
     let client =
-        insert_introspection_client(&state, "introspect-client-access", "correct-secret").await;
+        insert_introspection_client(&state, "introspect-client-access", &correct_secret).await;
     let access_token = sign_access_token(
         &state,
         client.tenant_id,
@@ -943,7 +960,7 @@ async fn introspection_respects_access_token_revocation_state() {
     let (status, body) = introspect_with_client(
         state,
         &client.client_id,
-        "correct-secret",
+        &correct_secret,
         &access_token.token,
     )
     .await;
@@ -957,14 +974,15 @@ async fn introspection_reports_refresh_token_activity_and_client_binding() {
     let Some(state) = live_introspection_state() else {
         return;
     };
+    let correct_secret = test_secret("refresh-introspection-secret");
     let client =
-        insert_introspection_client(&state, "introspect-client-refresh", "correct-secret").await;
+        insert_introspection_client(&state, "introspect-client-refresh", &correct_secret).await;
 
-    let active_refresh = "active-refresh-token";
+    let active_refresh = test_secret("active-refresh-token");
     insert_refresh_token_for_client(
         &state,
         client.id,
-        active_refresh,
+        &active_refresh,
         None,
         Utc::now() + Duration::minutes(30),
     )
@@ -972,8 +990,8 @@ async fn introspection_reports_refresh_token_activity_and_client_binding() {
     let (status, body) = introspect_with_client(
         state.clone(),
         &client.client_id,
-        "correct-secret",
-        active_refresh,
+        &correct_secret,
+        &active_refresh,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -985,11 +1003,11 @@ async fn introspection_reports_refresh_token_activity_and_client_binding() {
     assert_eq!(body.get("scope"), Some(&json!("openid offline_access")));
     assert!(body.get("token_type").is_none());
 
-    let revoked_refresh = "revoked-refresh-token";
+    let revoked_refresh = test_secret("revoked-refresh-token");
     insert_refresh_token_for_client(
         &state,
         client.id,
-        revoked_refresh,
+        &revoked_refresh,
         Some(Utc::now()),
         Utc::now() + Duration::minutes(30),
     )
@@ -997,21 +1015,21 @@ async fn introspection_reports_refresh_token_activity_and_client_binding() {
     let (status, body) = introspect_with_client(
         state.clone(),
         &client.client_id,
-        "correct-secret",
-        revoked_refresh,
+        &correct_secret,
+        &revoked_refresh,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, json!({"active": false}));
 
+    let other_secret = test_secret("other-refresh-client-secret");
     let other_client =
-        insert_introspection_client(&state, "introspect-client-refresh-other", "correct-secret")
-            .await;
-    let mismatched_refresh = "mismatched-refresh-token";
+        insert_introspection_client(&state, "introspect-client-refresh-other", &other_secret).await;
+    let mismatched_refresh = test_secret("mismatched-refresh-token");
     insert_refresh_token_for_client(
         &state,
         other_client.id,
-        mismatched_refresh,
+        &mismatched_refresh,
         None,
         Utc::now() + Duration::minutes(30),
     )
@@ -1019,8 +1037,8 @@ async fn introspection_reports_refresh_token_activity_and_client_binding() {
     let (status, body) = introspect_with_client(
         state,
         &client.client_id,
-        "correct-secret",
-        mismatched_refresh,
+        &correct_secret,
+        &mismatched_refresh,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -1032,17 +1050,18 @@ async fn introspection_returns_minimal_inactive_for_unknown_tokens() {
     let Some(state) = live_introspection_state() else {
         return;
     };
+    let correct_secret = test_secret("missing-refresh-secret");
     let client = insert_introspection_client(
         &state,
         &format!("introspect-client-missing-{}", Uuid::now_v7()),
-        "correct-secret",
+        &correct_secret,
     )
     .await;
 
     let (status, body) = introspect_with_client(
         state,
         &client.client_id,
-        "correct-secret",
+        &correct_secret,
         &format!("missing-refresh-{}", Uuid::now_v7()),
     )
     .await;
