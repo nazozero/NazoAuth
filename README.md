@@ -84,13 +84,20 @@ authorization errors were enabled:
 - [2026-06-09 OIDF full matrix](docs/conformance/2026-06-09-oidf-full-matrix.md)
 - [2026-06-13 real public UI OIDF regression](docs/conformance/2026-06-13-real-public-ui-regression.md)
 - [2026-06-14 local refactor OIDF full matrix](docs/conformance/2026-06-14-local-refactor-full-matrix.md)
+- [2026-06-25 PR 13 security hardening OIDF full matrix](docs/conformance/2026-06-25-pr13-security-hardening-full-matrix.md)
 
-The latest recorded official workflow conclusion was `success` on run
-`27491182262` for commit
-`31c3d0665ec72ffb4babedfea519ed175ef403ad`. The official runner reported 71
-test modules, 6375 successes, `0 failures`, and `0 warnings`. The records
-include commit SHA, run environment, plan IDs, exported artifact filenames,
-profile combinations, artifact digest, and pass counts.
+The latest recorded official full matrix was the 2026-06-25 PR 13
+security-hardening run for commit
+`49467e3474b32c17603ed77ba63b570d07e794b2` against `https://auth.nazo.run`.
+The official runner exported all 16 plan archives; every plan summary reported
+`0 failures` and `0 warnings`. A Hostinger-local suite run against the same
+public issuer and commit also exported all 16 plan archives with `0 failures`
+and `0 warnings`.
+
+Baseline OIDC metadata advertises `none` for unsigned Request Object
+compatibility. FAPI2, signed-authorization-request, PAR request-object, and
+holder-bound-token paths continue to reject unsigned Request Objects fail
+closed.
 
 ## Architecture
 
