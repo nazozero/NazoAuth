@@ -41,3 +41,14 @@ archives and a read-only Conformance Suite API audit found 562 module results:
 
 Official suite output is indexed here. The files are not OpenID Foundation
 certification statements.
+
+## Request Object Compatibility
+
+Baseline OIDC metadata advertises `none` in
+`request_object_signing_alg_values_supported` so the server can exercise OIDC
+conformance tests for unsigned Request Objects. This is a compatibility feature,
+not a high-security profile feature.
+
+Unsigned Request Objects remain disallowed for FAPI2 profiles, clients that
+require PAR request objects, and holder-bound clients. Those paths require
+signed Request Objects or reject the request object fail closed.

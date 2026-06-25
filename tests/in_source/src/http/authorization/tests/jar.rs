@@ -298,7 +298,7 @@ async fn holder_bound_client_rejects_unsigned_request_object_at_endpoint_boundar
 }
 
 #[actix_web::test]
-async fn basic_request_object_rejects_unsigned_request_object_claims() {
+async fn basic_request_object_applies_unsigned_request_object_claims() {
     let state = jar_state("https://issuer.example");
     let client = jar_client("client-a");
     let request_object = request_object(
@@ -320,22 +320,24 @@ async fn basic_request_object_rejects_unsigned_request_object_claims() {
         ("nonce".to_owned(), "outer-nonce".to_owned()),
     ]);
 
-    let response = apply_request_object(&state, &mut outer, &client)
+    apply_request_object(&state, &mut outer, &client)
         .await
-        .expect_err("unsigned request object must be rejected");
+        .expect("baseline OIDC accepts unsigned request objects for compatibility");
 
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(outer.get("response_type").map(String::as_str), Some("code"));
     assert_eq!(
-        oauth_error_code(&response).as_deref(),
-        Some("invalid_request_object")
+        outer.get("scope").map(String::as_str),
+        Some("openid profile")
     );
-    assert_eq!(outer.get("scope").map(String::as_str), Some("openid"));
     assert_eq!(outer.get("nonce").map(String::as_str), Some("outer-nonce"));
-    assert!(!outer.contains_key("response_type"));
+    assert_eq!(
+        outer.get("state").map(String::as_str),
+        Some("state-from-jar")
+    );
 }
 
 #[test]
-fn unverified_client_id_reads_unsigned_request_object_claims() {
+fn unverified_signed_client_id_rejects_unsigned_request_object_claims() {
     let token = request_object(
         json!({
             "client_id": "client-a",
@@ -348,20 +350,20 @@ fn unverified_client_id_reads_unsigned_request_object_claims() {
         "none",
         "",
     );
-    assert_eq!(
-        unverified_request_object_client_id(&token).as_deref(),
-        Some("client-a")
-    );
+    assert!(request_object_uses_unsigned_algorithm(&token));
     assert!(unverified_signed_request_object_client_id(&token).is_none());
 }
 
 #[test]
-fn request_object_alg_none_is_rejected() {
+fn request_object_alg_none_requires_unsecured_jwt_shape() {
     let header = RequestObjectHeader {
         alg: "none".to_owned(),
     };
 
-    assert!(request_object_uses_none_algorithm(&header, "payload", "").is_err());
+    assert!(
+        request_object_uses_none_algorithm(&header, "payload", "")
+            .expect("alg none with empty signature is an unsigned request object")
+    );
     assert!(request_object_uses_none_algorithm(&header, "", "").is_err());
     assert!(request_object_uses_none_algorithm(&header, "payload", "signature").is_err());
 }
@@ -401,10 +403,6 @@ fn unverified_client_id_rejects_mismatched_party_claims() {
         &URL_SAFE_NO_PAD.encode("signature"),
     );
     assert_eq!(
-        unverified_request_object_client_id(&token).as_deref(),
-        Some("client-a")
-    );
-    assert_eq!(
         unverified_signed_request_object_client_id(&token).as_deref(),
         Some("client-a")
     );
@@ -421,17 +419,16 @@ fn unverified_client_id_rejects_mismatched_party_claims() {
         "EdDSA",
         &URL_SAFE_NO_PAD.encode("signature"),
     );
-    assert!(unverified_request_object_client_id(&mismatched).is_none());
+    assert!(unverified_signed_request_object_client_id(&mismatched).is_none());
 }
 
 #[test]
-fn unverified_client_id_reads_claims_without_trusting_signature_state() {
+fn unverified_signed_client_id_requires_signature_part() {
     let payload = json!({"client_id": "client-a"});
     let signed_without_signature = request_object(payload, "EdDSA", "");
-    assert_eq!(
-        unverified_request_object_client_id(&signed_without_signature).as_deref(),
-        Some("client-a")
-    );
+    assert!(!request_object_uses_unsigned_algorithm(
+        &signed_without_signature
+    ));
     assert!(unverified_signed_request_object_client_id(&signed_without_signature).is_none());
 }
 
@@ -1090,7 +1087,7 @@ fn par_request_object_policy_rejects_unsigned_request_objects() {
 }
 
 #[test]
-fn signed_authorization_request_profile_rejects_unsigned_request_objects() {
+fn high_security_profiles_reject_unsigned_request_objects() {
     let client = jar_client("client-a");
 
     assert!(!request_object_mode_allowed(

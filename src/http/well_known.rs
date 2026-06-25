@@ -5,6 +5,8 @@ use crate::settings::{AuthorizationServerProfile, Settings, SubjectType};
 
 const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
 const REQUEST_OBJECT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
+const BASELINE_REQUEST_OBJECT_SIGNING_ALGS: [&str; 5] =
+    ["none", "EdDSA", "RS256", "ES256", "PS256"];
 const PROMPT_VALUES_SUPPORTED: [&str; 4] = ["login", "consent", "select_account", "none"];
 const CLAIMS_SUPPORTED: [&str; 24] = [
     "sub",
@@ -165,7 +167,10 @@ fn request_object_signing_alg_values_supported(
     if profile.requires_signed_authorization_request() {
         return active_signing_algs.to_vec();
     }
-    REQUEST_OBJECT_SIGNING_ALGS.to_vec()
+    if profile.requires_fapi2_security() {
+        return REQUEST_OBJECT_SIGNING_ALGS.to_vec();
+    }
+    BASELINE_REQUEST_OBJECT_SIGNING_ALGS.to_vec()
 }
 
 fn active_signing_alg_values_supported(keyset: &Keyset) -> Vec<&'static str> {

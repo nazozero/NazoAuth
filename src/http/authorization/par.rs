@@ -1,6 +1,9 @@
 //! Pushed Authorization Request endpoint.
 
-use super::{apply_request_object, unverified_request_object_client_id};
+use super::{
+    apply_request_object, request_object_uses_unsigned_algorithm,
+    unverified_signed_request_object_client_id,
+};
 use crate::http::prelude::*;
 
 pub(crate) const PUSHED_AUTHORIZATION_REQUEST_URI_PREFIX: &str =
@@ -118,9 +121,19 @@ pub(crate) async fn par_after_rate_limit(
         );
     }
 
+    if params
+        .get("request")
+        .is_some_and(|request| request_object_uses_unsigned_algorithm(request))
+    {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request_object",
+            "PAR request object 必须签名.",
+        );
+    }
     if !params.contains_key("client_id")
         && let Some(request_object) = params.get("request")
-        && let Some(client_id) = unverified_request_object_client_id(request_object)
+        && let Some(client_id) = unverified_signed_request_object_client_id(request_object)
     {
         params.insert("client_id".to_owned(), client_id);
     }
