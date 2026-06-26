@@ -477,7 +477,9 @@ async fn missing_id_token_subject_fails_closed_without_returning_credentials() {
     };
     let client = client_with_grants(&["authorization_code"]);
     let mut issue = token_issue_with_sid(vec!["sid".to_owned()]);
-    issue.user_id = Some(Uuid::now_v7());
+    let missing_user_id = Uuid::now_v7();
+    issue.user_id = Some(missing_user_id);
+    issue.subject = missing_user_id.to_string();
     issue.include_refresh = false;
 
     let response = issue_token_response(&state, &client, issue).await;

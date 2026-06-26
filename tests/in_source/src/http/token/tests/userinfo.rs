@@ -1,5 +1,6 @@
 use super::*;
 use std::sync::Arc;
+use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
@@ -8,6 +9,25 @@ use crate::support::{IpCidr, generate_key_material, public_jwk_from_private_der}
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Text, Timestamptz, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
+use fred::interfaces::ClientLike;
+use fred::prelude::{
+    Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
+};
+
+fn disconnected_valkey_client() -> fred::prelude::Client {
+    let mut builder = ValkeyBuilder::default_centralized();
+    builder.with_performance_config(|performance: &mut PerformanceConfig| {
+        performance.default_command_timeout = StdDuration::from_millis(50);
+    });
+    builder.with_connection_config(|connection: &mut ConnectionConfig| {
+        connection.connection_timeout = StdDuration::from_millis(50);
+        connection.internal_command_timeout = StdDuration::from_millis(50);
+        connection.max_command_attempts = 1;
+    });
+    builder
+        .build()
+        .expect("valkey client construction should not connect")
+}
 
 fn userinfo_test_state() -> AppState {
     let mut settings =
@@ -22,9 +42,7 @@ fn userinfo_test_state() -> AppState {
             1,
         )
         .expect("pool construction should not connect"),
-        valkey: fred::prelude::Builder::default_centralized()
-            .build()
-            .expect("valkey client construction should not connect"),
+        valkey: disconnected_valkey_client(),
         settings: Arc::new(settings),
         keyset: KeysetStore::new(Keyset {
             active_kid: "test-kid".to_owned(),
@@ -35,12 +53,26 @@ fn userinfo_test_state() -> AppState {
     }
 }
 
-fn live_userinfo_state() -> Option<Data<AppState>> {
+async fn live_userinfo_state() -> Option<Data<AppState>> {
     let database_url = std::env::var("DATABASE_URL").ok()?;
-    live_userinfo_state_from_database_url(database_url)
+    live_userinfo_state_from_database_url(database_url).await
 }
 
-fn live_userinfo_state_from_database_url(database_url: String) -> Option<Data<AppState>> {
+async fn live_userinfo_state_from_database_url(database_url: String) -> Option<Data<AppState>> {
+    let valkey_url = std::env::var("VALKEY_URL").ok()?;
+    let mut valkey_builder = ValkeyBuilder::from_config(
+        ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),
+    );
+    valkey_builder.with_performance_config(|performance: &mut PerformanceConfig| {
+        performance.default_command_timeout = StdDuration::from_millis(1000);
+    });
+    valkey_builder.with_connection_config(|connection: &mut ConnectionConfig| {
+        connection.connection_timeout = StdDuration::from_millis(1000);
+        connection.internal_command_timeout = StdDuration::from_millis(1000);
+        connection.max_command_attempts = 1;
+    });
+    let valkey = valkey_builder.build().expect("valkey client should build");
+    valkey.init().await.expect("valkey should connect");
     let key_material =
         generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
     let public_jwk = public_jwk_from_private_der(
@@ -56,9 +88,7 @@ fn live_userinfo_state_from_database_url(database_url: String) -> Option<Data<Ap
 
     Some(Data::new(AppState {
         diesel_db: create_pool(database_url, 1).expect("database pool should build"),
-        valkey: fred::prelude::Builder::default_centralized()
-            .build()
-            .expect("valkey client construction should not connect"),
+        valkey,
         settings: Arc::new(settings),
         keyset: KeysetStore::new(Keyset {
             active_kid: "userinfo-test-kid".to_owned(),
@@ -148,9 +178,7 @@ fn userinfo_state_with_valid_signing_key_invalid_db() -> Data<AppState> {
             1,
         )
         .expect("pool construction should not connect"),
-        valkey: fred::prelude::Builder::default_centralized()
-            .build()
-            .expect("valkey client construction should not connect"),
+        valkey: disconnected_valkey_client(),
         settings: Arc::new(settings),
         keyset: KeysetStore::new(Keyset {
             active_kid: "userinfo-test-kid".to_owned(),
@@ -164,8 +192,8 @@ fn userinfo_state_with_valid_signing_key_invalid_db() -> Data<AppState> {
     })
 }
 
-fn live_userinfo_state_with_trusted_proxy() -> Option<Data<AppState>> {
-    let state = live_userinfo_state()?;
+async fn live_userinfo_state_with_trusted_proxy() -> Option<Data<AppState>> {
+    let state = live_userinfo_state().await?;
     let mut settings = (*state.settings).clone();
     settings.trusted_proxy_cidrs =
         vec![IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse")];
@@ -344,7 +372,7 @@ fn oauth_error_code(response: &HttpResponse) -> Option<String> {
 
 #[actix_web::test]
 async fn userinfo_rejects_signed_access_token_with_wrong_audience() {
-    let Some(state) = live_userinfo_state() else {
+    let Some(state) = live_userinfo_state().await else {
         return;
     };
     let token = signed_userinfo_access_token(
@@ -371,7 +399,7 @@ async fn userinfo_rejects_signed_access_token_with_wrong_audience() {
 
 #[actix_web::test]
 async fn userinfo_rejects_signed_access_token_without_valid_tenant_boundary() {
-    let Some(state) = live_userinfo_state() else {
+    let Some(state) = live_userinfo_state().await else {
         return;
     };
     let claims = Claims {
@@ -413,7 +441,7 @@ async fn userinfo_rejects_signed_access_token_without_valid_tenant_boundary() {
 
 #[actix_web::test]
 async fn userinfo_rejects_revoked_access_token_before_subject_lookup() {
-    let Some(state) = live_userinfo_state() else {
+    let Some(state) = live_userinfo_state().await else {
         return;
     };
     let client_row_id = insert_userinfo_client(&state, "userinfo-client").await;
@@ -442,7 +470,7 @@ async fn userinfo_rejects_revoked_access_token_before_subject_lookup() {
 
 #[actix_web::test]
 async fn userinfo_rejects_sender_constrained_tokens_on_wrong_transport() {
-    let Some(state) = live_userinfo_state() else {
+    let Some(state) = live_userinfo_state().await else {
         return;
     };
     let bearer_with_dpop_cnf = signed_userinfo_access_token(
@@ -487,7 +515,7 @@ async fn userinfo_rejects_sender_constrained_tokens_on_wrong_transport() {
 
 #[actix_web::test]
 async fn userinfo_rejects_mtls_bound_token_without_verified_certificate() {
-    let Some(state) = live_userinfo_state() else {
+    let Some(state) = live_userinfo_state().await else {
         return;
     };
     let token = signed_userinfo_access_token(
@@ -514,7 +542,7 @@ async fn userinfo_rejects_mtls_bound_token_without_verified_certificate() {
 
 #[actix_web::test]
 async fn userinfo_requires_openid_scope_and_user_subject_type() {
-    let Some(state) = live_userinfo_state() else {
+    let Some(state) = live_userinfo_state().await else {
         return;
     };
     for (subject_type, scopes) in [
@@ -546,7 +574,7 @@ async fn userinfo_requires_openid_scope_and_user_subject_type() {
 
 #[actix_web::test]
 async fn userinfo_rejects_invalid_or_inactive_token_subject() {
-    let Some(state) = live_userinfo_state() else {
+    let Some(state) = live_userinfo_state().await else {
         return;
     };
     let invalid_subject = signed_userinfo_access_token(
@@ -591,7 +619,7 @@ async fn userinfo_rejects_invalid_or_inactive_token_subject() {
 
 #[actix_web::test]
 async fn userinfo_returns_claims_for_active_user_access_token() {
-    let Some(state) = live_userinfo_state() else {
+    let Some(state) = live_userinfo_state().await else {
         return;
     };
     let user = insert_userinfo_user(&state, true).await;
@@ -700,7 +728,7 @@ async fn userinfo_returns_server_error_when_revocation_query_fails_after_decode(
     let Some(database_url) = database_url_with_search_path(&schema) else {
         return;
     };
-    let Some(state) = live_userinfo_state_from_database_url(database_url) else {
+    let Some(state) = live_userinfo_state_from_database_url(database_url).await else {
         return;
     };
     create_isolated_schema(
@@ -743,7 +771,7 @@ async fn userinfo_returns_server_error_when_subject_lookup_fails_after_token_val
     let Some(database_url) = database_url_with_search_path(&schema) else {
         return;
     };
-    let Some(state) = live_userinfo_state_from_database_url(database_url) else {
+    let Some(state) = live_userinfo_state_from_database_url(database_url).await else {
         return;
     };
     create_isolated_schema(
@@ -776,7 +804,7 @@ async fn userinfo_returns_server_error_when_subject_lookup_fails_after_token_val
 
 #[actix_web::test]
 async fn userinfo_rejects_mtls_bound_token_with_mismatched_verified_certificate() {
-    let Some(state) = live_userinfo_state_with_trusted_proxy() else {
+    let Some(state) = live_userinfo_state_with_trusted_proxy().await else {
         return;
     };
     let token = signed_userinfo_access_token(
