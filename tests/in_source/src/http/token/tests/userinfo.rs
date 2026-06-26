@@ -9,7 +9,7 @@ use crate::support::{IpCidr, generate_key_material, public_jwk_from_private_der}
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Text, Timestamptz, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
-use fred::interfaces::ClientLike;
+use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
@@ -192,6 +192,29 @@ fn userinfo_state_with_valid_signing_key_invalid_db() -> Data<AppState> {
     })
 }
 
+fn userinfo_access_claims(user_id: Option<String>) -> Claims {
+    let now = Utc::now().timestamp();
+    Claims {
+        iss: "https://issuer.example".to_owned(),
+        sub: Uuid::now_v7().to_string(),
+        tenant_id: DEFAULT_TENANT_ID.to_string(),
+        user_id,
+        subject_type: "user".to_owned(),
+        aud: json!("resource://default"),
+        client_id: "userinfo-client".to_owned(),
+        scope: "openid".to_owned(),
+        authorization_details: json!([]),
+        token_use: "access".to_owned(),
+        jti: Uuid::now_v7().to_string(),
+        iat: now,
+        nbf: now,
+        exp: now + 300,
+        cnf: None,
+        userinfo_claims: Vec::new(),
+        userinfo_claim_requests: Vec::new(),
+    }
+}
+
 async fn live_userinfo_state_with_trusted_proxy() -> Option<Data<AppState>> {
     let state = live_userinfo_state().await?;
     let mut settings = (*state.settings).clone();
@@ -204,6 +227,57 @@ async fn live_userinfo_state_with_trusted_proxy() -> Option<Data<AppState>> {
         settings: Arc::new(settings),
         keyset: state.keyset.clone(),
     }))
+}
+
+#[actix_web::test]
+async fn access_token_user_id_prefers_valid_user_id_claim_without_valkey_lookup() {
+    let state = userinfo_test_state();
+    let expected_user_id = Uuid::now_v7();
+    let claims = userinfo_access_claims(Some(expected_user_id.to_string()));
+
+    let actual = access_token_user_id(&state, DEFAULT_TENANT_ID, &claims)
+        .await
+        .expect("valid user_id claim should not require valkey");
+
+    assert_eq!(actual, Some(expected_user_id));
+}
+
+#[actix_web::test]
+async fn access_token_user_id_uses_valkey_when_user_id_claim_is_absent() {
+    let Some(state) = live_userinfo_state().await else {
+        return;
+    };
+    let claims = userinfo_access_claims(None);
+    let expected_user_id = Uuid::now_v7();
+    state
+        .valkey
+        .set::<(), _, _>(
+            access_token_subject_key(DEFAULT_TENANT_ID, &claims.jti),
+            expected_user_id.to_string(),
+            None,
+            None,
+            false,
+        )
+        .await
+        .expect("subject mapping should be stored");
+
+    let actual = access_token_user_id(&state, DEFAULT_TENANT_ID, &claims)
+        .await
+        .expect("stored subject mapping should load");
+
+    assert_eq!(actual, Some(expected_user_id));
+}
+
+#[actix_web::test]
+async fn access_token_user_id_rejects_unavailable_subject_mapping_store() {
+    let state = userinfo_test_state();
+    let claims = userinfo_access_claims(None);
+
+    assert!(
+        access_token_user_id(&state, DEFAULT_TENANT_ID, &claims)
+            .await
+            .is_err()
+    );
 }
 
 async fn insert_userinfo_client(state: &Data<AppState>, client_id: &str) -> Uuid {
@@ -466,6 +540,36 @@ async fn userinfo_rejects_revoked_access_token_before_subject_lookup() {
         oauth_error_code(&response).as_deref(),
         Some("invalid_token")
     );
+}
+
+#[actix_web::test]
+async fn userinfo_returns_server_error_when_subject_mapping_store_is_unavailable() {
+    let Some(state) = live_userinfo_state().await else {
+        return;
+    };
+    let token = signed_userinfo_access_token(
+        &state,
+        DEFAULT_TENANT_ID,
+        &Uuid::now_v7().to_string(),
+        None,
+        "user",
+        &["resource://default".to_owned()],
+        &["openid".to_owned()],
+        None,
+        None,
+    )
+    .await;
+    let state = Data::new(AppState {
+        diesel_db: state.diesel_db.clone(),
+        valkey: disconnected_valkey_client(),
+        settings: state.settings.clone(),
+        keyset: state.keyset.clone(),
+    });
+
+    let response = userinfo_error_for_token(state, "Bearer", &token.token).await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(&response).as_deref(), Some("server_error"));
 }
 
 #[actix_web::test]
