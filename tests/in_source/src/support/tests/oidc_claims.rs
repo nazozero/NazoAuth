@@ -214,7 +214,7 @@ fn id_token_user_claims_do_not_expose_email_scope_claims() {
 }
 
 #[test]
-fn requested_userinfo_claims_do_not_bypass_profile_scope() {
+fn requested_userinfo_claims_allow_explicit_profile_claims_without_profile_scope() {
     let mut user = user();
     user.display_name = None;
     let claims = oidc_user_claims(
@@ -227,12 +227,12 @@ fn requested_userinfo_claims_do_not_bypass_profile_scope() {
     );
 
     assert_eq!(claims["sub"], "subject-1");
-    assert!(claims.get("name").is_none());
+    assert_eq!(claims["name"], "alice");
     assert!(claims.get("preferred_username").is_none());
 }
 
 #[test]
-fn requested_contact_claims_do_not_bypass_contact_scopes() {
+fn requested_contact_claims_allow_explicit_contact_claims_without_contact_scopes() {
     let user = user();
     let claims = oidc_user_claims(
         &user,
@@ -248,17 +248,20 @@ fn requested_contact_claims_do_not_bypass_contact_scopes() {
     );
 
     assert_eq!(claims["sub"], "subject-1");
-    assert!(claims.get("address").is_none());
-    assert!(claims.get("phone_number").is_none());
-    assert!(claims.get("phone_number_verified").is_none());
+    assert_eq!(
+        claims["address"]["formatted"],
+        "100 Universal City Plaza\nUniversal City, CA 91608\nUS"
+    );
+    assert_eq!(claims["phone_number"], "+15555550000");
+    assert_eq!(claims["phone_number_verified"], true);
 }
 
 #[test]
-fn requested_userinfo_claim_values_filter_output_even_when_scope_allows_claim() {
+fn requested_userinfo_claim_values_filter_output_even_without_matching_scope() {
     let user = user();
     let claims = oidc_user_claims(
         &user,
-        &["openid".to_owned(), "email".to_owned(), "phone".to_owned()],
+        &["openid".to_owned()],
         "subject-1",
         &[
             "email".to_owned(),

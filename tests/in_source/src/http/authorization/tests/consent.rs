@@ -405,6 +405,8 @@ async fn consent_page_response_exposes_only_page_safe_fields() {
     assert_eq!(body["client_name"], "Client A");
     assert_eq!(body["redirect_uri"], "https://client.example/callback");
     assert_eq!(body["scopes"], json!(["openid", "profile"]));
+    assert_eq!(body["userinfo_claims"], json!(["email"]));
+    assert_eq!(body["id_token_claims"], json!(["auth_time"]));
     assert_eq!(
         body["authorization_details"],
         json!([
@@ -424,7 +426,7 @@ async fn consent_page_response_exposes_only_page_safe_fields() {
     let object = body
         .as_object()
         .expect("consent response should be an object");
-    assert_eq!(object.len(), 7);
+    assert_eq!(object.len(), 9);
     for forbidden in [
         "user_id",
         "state",

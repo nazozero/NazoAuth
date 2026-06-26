@@ -1,5 +1,5 @@
 //! OIDC 标准 claims 构造。
-//! 只从已授权 scope 和本地用户事实源生成声明，不为缺失字段写入 null。
+//! 只从已授权 scope、显式授权的 claims 请求和本地用户事实源生成声明，不为缺失字段写入 null。
 
 use hmac::{Hmac, Mac};
 
@@ -335,17 +335,16 @@ fn claim_allowed(
     name: &str,
     actual: &Value,
 ) -> bool {
-    if !scope_allowed {
-        return false;
-    }
     if let Some(request) = requested_claim_requests
         .iter()
         .find(|request| request.name == name)
     {
         return claim_value_matches_request(request, actual);
     }
-    !claim_requested(requested_claims, requested_claim_requests, name)
-        || requested_claim(requested_claims, name)
+    if requested_claim(requested_claims, name) {
+        return true;
+    }
+    scope_allowed && !claim_requested(requested_claims, requested_claim_requests, name)
 }
 
 fn optional_string_claim_allowed(
