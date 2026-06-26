@@ -82,9 +82,14 @@ services:
   oidf_https:
     image: docker.io/library/nginx:1.27-alpine
     container_name: nazo-oauth-oidf-https
-    depends_on:
-      nazo_oauth_server:
-        condition: service_started
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        until getent hosts nazo_oauth_server >/dev/null; do
+          sleep 1
+        done
+        exec nginx -g 'daemon off;'
     volumes:
       - ./runtime/oidf/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./runtime/oidf/certs:/etc/nginx/certs:ro
