@@ -52,7 +52,7 @@ pub(super) fn access_token_claims(
         iss: issuer.to_owned(),
         sub: input.subject.to_string(),
         tenant_id: input.tenant_id.to_string(),
-        user_id: input.user_id.map(|id| id.to_string()),
+        user_id: access_token_public_user_id(input.user_id, input.subject),
         subject_type: input.subject_type.to_string(),
         aud: token_audience_claim(input.audiences),
         client_id: input.client_id.to_string(),
@@ -77,6 +77,11 @@ pub(super) fn access_token_claims(
         userinfo_claims: input.userinfo_claims.to_vec(),
         userinfo_claim_requests: input.userinfo_claim_requests.to_vec(),
     }
+}
+
+fn access_token_public_user_id(user_id: Option<Uuid>, subject: &str) -> Option<String> {
+    let user_id = user_id?;
+    (subject == user_id.to_string()).then_some(user_id.to_string())
 }
 
 fn token_audience_claim(audiences: &[String]) -> Value {

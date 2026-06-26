@@ -76,7 +76,7 @@ impl DpopNoncePolicy {
 impl RequestObjectJtiPolicy {
     pub(super) fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
         match config
-            .string("REQUEST_OBJECT_JTI_POLICY", "optional")
+            .string("REQUEST_OBJECT_JTI_POLICY", "required-for-signed-jar")
             .trim()
             .to_ascii_lowercase()
             .as_str()

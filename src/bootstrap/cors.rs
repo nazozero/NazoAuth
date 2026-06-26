@@ -56,7 +56,11 @@ pub(crate) fn cors_auth_api(settings: &Settings) -> Cors {
 pub(crate) fn cors_admin(settings: &Settings) -> Cors {
     let cors = Cors::default()
         .allowed_methods(vec!["GET", "POST", "PATCH", "DELETE"])
-        .allowed_headers(vec![header::AUTHORIZATION, header::CONTENT_TYPE])
+        .allowed_headers(vec![
+            header::AUTHORIZATION,
+            header::CONTENT_TYPE,
+            header::HeaderName::from_static("x-csrf-token"),
+        ])
         .supports_credentials()
         .max_age(3600);
     apply_allowed_origins(cors, settings)

@@ -64,6 +64,17 @@ OIDF_BAD_FINAL_RESULTS = {"FAILED", "INTERRUPTED", "WARNING"}
 OIDF_BAD_STATUS_VALUES = {"FAILED", "INTERRUPTED"}
 OIDF_BAD_LOG_RESULTS = {"FAILURE", "WARNING"}
 OIDF_LOG_CONTEXT_SOURCES = {"BROWSER", "WebRunner"}
+OIDF_SENSITIVE_LOG_FIELDS = {
+    "authorization",
+    "access_token",
+    "refresh_token",
+    "id_token",
+    "token",
+    "code",
+    "password",
+    "client_secret",
+    "request_uri",
+}
 OIDF_ALLOWED_REVIEW_MODULES = {
     "oidcc-prompt-login",
     "oidcc-max-age-1",
@@ -482,7 +493,7 @@ def task_matches_hosted_ui(task: dict[str, object], config_value: dict[str, obje
     if not isinstance(match, str):
         return False
     expected = nazo_ui_match(config_value, path)
-    return match == expected or f"/ui/{path.lstrip('/')}" in match
+    return match == expected
 
 
 def use_nazo_user_facing_task_commands(config_value: dict[str, object], task: object) -> None:
@@ -672,7 +683,7 @@ def mark_login_page_wait_as_placeholder_update(
 ) -> None:
     if not isinstance(task, dict):
         return
-    if isinstance(task.get("match"), str) and "/ui/auth" in task["match"]:
+    if task_matches_hosted_ui(task, config_value, "auth"):
         task["commands"] = nazo_login_page_commands(
             config_value,
             capture_placeholder=True,
@@ -690,7 +701,7 @@ def mark_login_page_wait_as_placeholder_update(
             continue
         if len(command) == 5:
             command.append("update-image-placeholder-optional")
-        elif command[5] in {None, ""}:
+        elif command[5] is None or command[5] == "":
             command[5] = "update-image-placeholder-optional"
         return
 
@@ -1007,6 +1018,30 @@ def value_as_upper(value: object) -> str:
     return value.strip().upper()
 
 
+def redact_url_query_and_fragment(value: str) -> str:
+    parsed = urllib.parse.urlsplit(value)
+    if not parsed.scheme or not parsed.netloc:
+        return value
+    query = "redacted=1" if parsed.query else ""
+    fragment = "redacted" if parsed.fragment else ""
+    return urllib.parse.urlunsplit(
+        (parsed.scheme, parsed.netloc, parsed.path, query, fragment)
+    )
+
+
+def redact_log_text(value: str) -> str:
+    redacted = re.sub(
+        r"https?://[^\s\"'<>]+",
+        lambda match: redact_url_query_and_fragment(match.group(0)),
+        value,
+    )
+    return re.sub(
+        r"(?i)\b(access_token|refresh_token|id_token|token|code|password|client_secret|request_uri|authorization)=([^&\s;]+)",
+        lambda match: f"{match.group(1)}=<redacted>",
+        redacted,
+    )
+
+
 def module_name_without_variant(test_name: str) -> str:
     return test_name.split("[", 1)[0]
 
@@ -1091,6 +1126,10 @@ def oidf_log_context(logs: object, *, max_entries: int = 6) -> str:
             if isinstance(value, (str, int, float, bool)):
                 text = str(value).replace("\n", " ").strip()
                 if text:
+                    if key.lower() in OIDF_SENSITIVE_LOG_FIELDS:
+                        text = "<redacted>"
+                    else:
+                        text = redact_log_text(text)
                     parts.append(f"{key}={text[:180]}")
         if parts:
             interesting.append("; ".join(parts))

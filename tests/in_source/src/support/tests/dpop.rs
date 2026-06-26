@@ -259,6 +259,14 @@ fn signed_dpop_proof_verifies_signature_thumbprint_and_claims() {
     .unwrap();
 }
 
+#[test]
+fn dpop_proof_algorithms_reject_rsa_families() {
+    assert!(dpop_algorithm_allowed(jsonwebtoken::Algorithm::EdDSA));
+    assert!(dpop_algorithm_allowed(jsonwebtoken::Algorithm::ES256));
+    assert!(!dpop_algorithm_allowed(jsonwebtoken::Algorithm::RS256));
+    assert!(!dpop_algorithm_allowed(jsonwebtoken::Algorithm::PS256));
+}
+
 #[actix_web::test]
 async fn dpop_proof_rejects_non_dpop_typ_before_nonce_or_replay_state() {
     let signing_key = SigningKey::from_bytes(&[13u8; 32]);

@@ -2,11 +2,7 @@ FROM docker.io/library/rust:1.96-slim AS builder
 
 WORKDIR /app
 
-RUN sed -i \
-        -e 's|http://deb.debian.org/debian|http://mirrors.aliyun.com/debian|g' \
-        -e 's|http://deb.debian.org/debian-security|http://mirrors.aliyun.com/debian-security|g' \
-        /etc/apt/sources.list.d/debian.sources \
-    && mkdir -p /usr/local/cargo \
+RUN mkdir -p /usr/local/cargo \
     && printf '[registries.crates-io]\nprotocol = "sparse"\n' > /usr/local/cargo/config.toml \
     && apt-get update \
     && apt-get install -y --no-install-recommends pkg-config libpq-dev \
@@ -20,11 +16,7 @@ RUN cargo build --release
 
 FROM docker.io/library/debian:trixie-slim
 
-RUN sed -i \
-        -e 's|http://deb.debian.org/debian|http://mirrors.aliyun.com/debian|g' \
-        -e 's|http://deb.debian.org/debian-security|http://mirrors.aliyun.com/debian-security|g' \
-        /etc/apt/sources.list.d/debian.sources \
-    && apt-get update \
+RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -33,7 +25,6 @@ WORKDIR /app
 COPY --from=builder /app/target/release/nazo-oauth-server /usr/local/bin/nazo-oauth-server
 COPY --from=builder /app/target/release/nazo-oauth-migrate /usr/local/bin/nazo-oauth-migrate
 COPY --from=builder /app/target/release/nazo-oauth-keyctl /usr/local/bin/nazo-oauth-keyctl
-COPY --from=builder /app/target/release/nazo_oauth_seed_oidf /usr/local/bin/nazo-oauth-seed-oidf
 
 EXPOSE 8000
 

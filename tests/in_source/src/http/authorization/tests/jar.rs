@@ -168,6 +168,7 @@ fn signed_request_object_claims(extra: Value) -> Value {
         "iat": now,
         "nbf": now,
         "exp": now + 120,
+        "jti": format!("request-object-{}", Uuid::now_v7()),
         "response_type": "code",
         "scope": "openid profile",
         "state": "state-1"
@@ -722,7 +723,9 @@ async fn holder_bound_signed_request_object_rejects_outer_authorization_paramete
 
 #[actix_web::test]
 async fn holder_bound_signed_request_object_applies_only_jwt_authorization_parameters() {
-    let state = jar_state("https://issuer.example");
+    let Some(state) = live_jar_state("https://issuer.example").await else {
+        return;
+    };
     let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
         .expect("request object key should generate")
         .private_pkcs8_der;
@@ -745,6 +748,77 @@ async fn holder_bound_signed_request_object_applies_only_jwt_authorization_param
     apply_request_object(&state, &mut outer, &client)
         .await
         .expect("holder-bound signed JAR should apply");
+
+    assert_eq!(outer.get("client_id").map(String::as_str), Some("client-a"));
+    assert_eq!(
+        outer.get("redirect_uri").map(String::as_str),
+        Some("https://client.example/callback")
+    );
+    assert_eq!(outer.get("nonce").map(String::as_str), Some("jwt-nonce"));
+    assert!(!outer.contains_key("prompt"));
+}
+
+#[actix_web::test]
+async fn par_policy_signed_request_object_rejects_outer_authorization_parameter_override() {
+    let state = jar_state("https://issuer.example");
+    let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
+        .expect("request object key should generate")
+        .private_pkcs8_der;
+    let mut client = signed_jar_client("client-a", "jar-kid", &key);
+    client.require_par_request_object = true;
+    let request_object = signed_request_object_token(
+        "jar-kid",
+        &key,
+        signed_request_object_claims(json!({
+            "redirect_uri": "https://client.example/callback",
+            "scope": "openid"
+        })),
+    );
+    let mut outer = HashMap::from([
+        ("client_id".to_owned(), "client-a".to_owned()),
+        ("request".to_owned(), request_object),
+        ("scope".to_owned(), "openid email".to_owned()),
+    ]);
+
+    let response = apply_request_object(&state, &mut outer, &client)
+        .await
+        .expect_err("PAR request object policy must reject unsigned outer overrides");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_request_object")
+    );
+    assert_eq!(outer.get("scope").map(String::as_str), Some("openid email"));
+}
+
+#[actix_web::test]
+async fn par_policy_signed_request_object_applies_only_jwt_authorization_parameters() {
+    let Some(state) = live_jar_state("https://issuer.example").await else {
+        return;
+    };
+    let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
+        .expect("request object key should generate")
+        .private_pkcs8_der;
+    let mut client = signed_jar_client("client-a", "jar-kid", &key);
+    client.require_par_request_object = true;
+    let request_object = signed_request_object_token(
+        "jar-kid",
+        &key,
+        signed_request_object_claims(json!({
+            "redirect_uri": "https://client.example/callback",
+            "nonce": "jwt-nonce"
+        })),
+    );
+    let mut outer = HashMap::from([
+        ("client_id".to_owned(), "client-a".to_owned()),
+        ("request".to_owned(), request_object),
+        ("prompt".to_owned(), "login".to_owned()),
+    ]);
+
+    apply_request_object(&state, &mut outer, &client)
+        .await
+        .expect("PAR request object policy should apply signed parameters");
 
     assert_eq!(outer.get("client_id").map(String::as_str), Some("client-a"));
     assert_eq!(

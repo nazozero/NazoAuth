@@ -14,6 +14,17 @@ use fred::prelude::{
 fn invalid_register_state() -> Data<AppState> {
     let settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let mut valkey_builder = ValkeyBuilder::from_config(
+        ValkeyConfig::from_url("redis://127.0.0.1:1").expect("unavailable Valkey URL should parse"),
+    );
+    valkey_builder.with_performance_config(|performance: &mut PerformanceConfig| {
+        performance.default_command_timeout = StdDuration::from_millis(200);
+    });
+    valkey_builder.with_connection_config(|connection: &mut ConnectionConfig| {
+        connection.connection_timeout = StdDuration::from_millis(200);
+        connection.internal_command_timeout = StdDuration::from_millis(200);
+        connection.max_command_attempts = 1;
+    });
     Data::new(AppState {
         diesel_db: create_pool(
             "postgres://nazo_register_test_invalid:nazo_register_test_invalid@127.0.0.1:1/nazo"
@@ -21,7 +32,7 @@ fn invalid_register_state() -> Data<AppState> {
             1,
         )
         .expect("pool construction should not connect"),
-        valkey: fred::prelude::Builder::default_centralized()
+        valkey: valkey_builder
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
@@ -252,7 +263,7 @@ async fn register_rejects_invalid_email_before_database_or_code_lookup() {
 }
 
 #[actix_web::test]
-async fn register_reports_user_lookup_failure_without_consuming_credentials() {
+async fn register_reports_code_lookup_failure_without_consuming_credentials() {
     let payload = register_request();
 
     let (status, body) =
@@ -320,6 +331,29 @@ async fn register_rejects_existing_email_without_consuming_verification_code() {
         fixture.verification_code_exists(&email).await,
         "email-already-registered rejections must not consume verification material"
     );
+}
+
+#[actix_web::test]
+async fn register_does_not_reveal_existing_email_without_valid_verification_code() {
+    let Some(fixture) = LiveRegisterFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let email = format!("register-existing-invalid-code-{suffix}@example.com");
+    fixture.create_user(&email).await;
+    fixture
+        .store_verification_code(&email, &alternate_verification_code())
+        .await;
+
+    let mut payload = register_request();
+    payload.email = email;
+
+    let (status, body) =
+        response_json(register_after_rate_limit(fixture.state.clone(), payload).await).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_grant");
+    assert!(body.get("id").is_none());
 }
 
 #[actix_web::test]

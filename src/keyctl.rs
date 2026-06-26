@@ -19,17 +19,27 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> anyhow::Result<()> {
     let Some(command) = args.next() else {
         bail!("usage: nazo-oauth-keyctl <list|register-external|validate>");
     };
-    let config = ConfigSource::load()?;
-    let settings = Settings::from_config(&config)?;
     match command.as_str() {
-        "list" => list_keys(&settings).await,
+        "list" => {
+            let settings = load_settings()?;
+            list_keys(&settings).await
+        }
         "register-external" => {
             let options = parse_register_external_args(args.collect::<Vec<_>>())?;
+            let settings = load_settings()?;
             register_external_key(&settings, options).await
         }
-        "validate" => validate_keyset(&settings).await,
+        "validate" => {
+            let settings = load_settings()?;
+            validate_keyset(&settings).await
+        }
         _ => bail!("unknown keyctl command {command}"),
     }
+}
+
+fn load_settings() -> anyhow::Result<Settings> {
+    let config = ConfigSource::load()?;
+    Settings::from_config(&config)
 }
 
 async fn list_keys(settings: &Settings) -> anyhow::Result<()> {

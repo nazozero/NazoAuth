@@ -335,13 +335,17 @@ fn claim_allowed(
     name: &str,
     actual: &Value,
 ) -> bool {
+    if !scope_allowed {
+        return false;
+    }
     if let Some(request) = requested_claim_requests
         .iter()
         .find(|request| request.name == name)
     {
         return claim_value_matches_request(request, actual);
     }
-    scope_allowed || requested_claim(requested_claims, name)
+    !claim_requested(requested_claims, requested_claim_requests, name)
+        || requested_claim(requested_claims, name)
 }
 
 fn optional_string_claim_allowed(

@@ -245,8 +245,9 @@ async fn validate_request_object_claims_and_apply(
             "signed request object 缺少 redirect_uri.",
         ));
     }
-    if client.require_dpop_bound_tokens
-        && mode == RequestObjectMode::SignedJar
+    let require_integrity_protected_parameters =
+        signed_request_object_requires_integrity_protected_parameters(state, client, mode);
+    if require_integrity_protected_parameters
         && outer_authorization_params_conflict(outer, &request_params)
     {
         return Err(oauth_error(
@@ -256,13 +257,27 @@ async fn validate_request_object_claims_and_apply(
         ));
     }
     store_request_object_replay_state(state, client, &claims, now, mode).await?;
-    if client.require_dpop_bound_tokens && mode == RequestObjectMode::SignedJar {
+    if require_integrity_protected_parameters {
         outer.retain(|key, _| matches!(key.as_str(), "request" | "client_id"));
     } else {
         outer.retain(|key, _| key == "request" || !request_params.contains_key(key));
     }
     outer.extend(request_params);
     Ok(())
+}
+
+fn signed_request_object_requires_integrity_protected_parameters(
+    state: &AppState,
+    client: &ClientRow,
+    mode: RequestObjectMode,
+) -> bool {
+    mode == RequestObjectMode::SignedJar
+        && (client.require_dpop_bound_tokens
+            || client.require_par_request_object
+            || state
+                .settings
+                .authorization_server_profile
+                .requires_signed_authorization_request())
 }
 
 fn request_object_party_claims_valid(

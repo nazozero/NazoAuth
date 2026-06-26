@@ -1,6 +1,8 @@
 //! OIDC userinfo 端点。
 // 根据 Bearer/DPoP access token 返回用户声明；DPoP-bound token 必须携带有效 proof。
+use super::access_token_subject_key;
 use crate::http::prelude::*;
+use crate::support::prelude::Claims;
 
 pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
     let (scheme, token) = match userinfo_access_token(&req, &body) {
@@ -126,14 +128,21 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Byte
         );
     }
     let scopes = parse_scope(&claims.scope);
-    let user_identifier = claims.user_id.as_deref().unwrap_or(&claims.sub);
-    let user_id = match Uuid::parse_str(user_identifier) {
-        Ok(user_id) => user_id,
-        Err(_) => {
+    let user_id = match access_token_user_id(&state, tenant_id, &claims).await {
+        Ok(Some(user_id)) => user_id,
+        Ok(None) => {
             return oauth_bearer_error(
                 StatusCode::UNAUTHORIZED,
                 "invalid_token",
                 "访问令牌主体无效.",
+            );
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to load access token subject mapping");
+            return oauth_bearer_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "userinfo 查询失败.",
             );
         }
     };
@@ -171,6 +180,29 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Byte
             .insert(header::HeaderName::from_static("dpop-nonce"), value);
     }
     response
+}
+
+async fn access_token_user_id(
+    state: &AppState,
+    tenant_id: Uuid,
+    claims: &Claims,
+) -> anyhow::Result<Option<Uuid>> {
+    if let Some(user_id) = claims
+        .user_id
+        .as_deref()
+        .and_then(|value| Uuid::parse_str(value).ok())
+    {
+        return Ok(Some(user_id));
+    }
+    match valkey_get(
+        &state.valkey,
+        access_token_subject_key(tenant_id, &claims.jti),
+    )
+    .await?
+    {
+        Some(user_id) => Ok(Uuid::parse_str(&user_id).ok()),
+        None => Ok(None),
+    }
 }
 
 enum UserInfoAccessToken {

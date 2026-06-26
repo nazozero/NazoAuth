@@ -8,8 +8,19 @@ fn otel_config_is_disabled_by_default() {
 }
 
 #[test]
+fn otel_config_explicit_false_overrides_inherited_endpoint() {
+    let config = ConfigSource::from_pairs_for_test([
+        ("OTEL_ENABLED", "false"),
+        ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318"),
+    ]);
+
+    assert!(OtelConfig::from_config(&config).unwrap().is_none());
+}
+
+#[test]
 fn otel_config_accepts_explicit_endpoint_and_timeout() {
     let config = ConfigSource::from_pairs_for_test([
+        ("OTEL_ENABLED", "true"),
         ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318"),
         ("OTEL_EXPORTER_OTLP_TIMEOUT", "2500"),
     ]);

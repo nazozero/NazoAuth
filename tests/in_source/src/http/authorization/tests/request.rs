@@ -279,7 +279,8 @@ fn max_age_zero_and_prompt_directives_require_reauthentication() {
 fn authorization_login_url_marks_reauthentication_start_once() {
     let q = query(&[("client_id", "client-1"), ("prompt", "login")]);
 
-    let url = authorization_login_url_for_frontend("https://auth.example", &q, true, None);
+    let url =
+        authorization_login_url_for_frontend("https://auth.example", &q, Some("server-nonce"));
 
     let url = url::Url::parse(&url).unwrap();
     assert!(url.as_str().starts_with("https://auth.example/auth?"));
@@ -287,7 +288,7 @@ fn authorization_login_url_marks_reauthentication_start_once() {
         .query_pairs()
         .find_map(|(key, value)| (key == "next").then_some(value.into_owned()))
         .unwrap();
-    assert!(next.contains("_nazo_reauth_started_at="));
+    assert!(next.contains("_nazo_reauth_nonce=server-nonce"));
 }
 
 #[test]
