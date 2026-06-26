@@ -19,11 +19,12 @@ services:
     build:
       context: .
       dockerfile: Containerfile
+      target: oidf-seed
     container_name: nazo-oauth-oidf-seed
     volumes:
       - ./.env.yaml:/app/.env.yaml:ro
       - ./runtime/oidf:/app/runtime/oidf:ro
-    command: ["nazo-oauth-seed-oidf"]
+    command: ["nazo_oauth_seed_oidf"]
     depends_on:
       migrate:
         condition: service_completed_successfully

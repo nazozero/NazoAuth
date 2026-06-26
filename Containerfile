@@ -14,7 +14,7 @@ COPY migrations ./migrations
 
 RUN cargo build --release
 
-FROM docker.io/library/debian:trixie-slim
+FROM docker.io/library/debian:trixie-slim AS runtime
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates libpq5 \
@@ -29,3 +29,7 @@ COPY --from=builder /app/target/release/nazo-oauth-keyctl /usr/local/bin/nazo-oa
 EXPOSE 8000
 
 CMD ["nazo-oauth-server"]
+
+FROM runtime AS oidf-seed
+
+COPY --from=builder /app/target/release/nazo_oauth_seed_oidf /usr/local/bin/nazo_oauth_seed_oidf
