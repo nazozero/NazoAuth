@@ -268,6 +268,31 @@ fn dpop_proof_algorithms_reject_rsa_families() {
 }
 
 #[actix_web::test]
+async fn dpop_proof_rejects_disallowed_algorithm_before_signature_or_nonce_state() {
+    let signing_key = SigningKey::from_bytes(&[17u8; 32]);
+    let proof = signed_test_proof_with_alg(
+        &signing_key,
+        "RS256",
+        "GET",
+        "https://issuer.example/userinfo",
+        Utc::now().timestamp(),
+        "proof-disallowed-alg",
+        None,
+        None,
+    );
+    let state = dpop_state(DpopNoncePolicy::Optional);
+    let req = actix_web::test::TestRequest::get()
+        .uri("/userinfo")
+        .insert_header(("DPoP", proof))
+        .to_http_request();
+
+    assert!(matches!(
+        validate_dpop_proof(&state, &req, None, None).await,
+        Err(DpopError::InvalidProof)
+    ));
+}
+
+#[actix_web::test]
 async fn dpop_proof_rejects_non_dpop_typ_before_nonce_or_replay_state() {
     let signing_key = SigningKey::from_bytes(&[13u8; 32]);
     let proof = signed_test_proof_with_typ(
@@ -536,10 +561,59 @@ fn signed_test_proof_with_typ(
     token_for_ath: Option<&str>,
     nonce: Option<&str>,
 ) -> String {
+    signed_test_proof_with_typ_and_alg(
+        signing_key,
+        typ,
+        "EdDSA",
+        method,
+        htu,
+        iat,
+        jti,
+        token_for_ath,
+        nonce,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn signed_test_proof_with_alg(
+    signing_key: &SigningKey,
+    alg: &str,
+    method: &str,
+    htu: &str,
+    iat: i64,
+    jti: &str,
+    token_for_ath: Option<&str>,
+    nonce: Option<&str>,
+) -> String {
+    signed_test_proof_with_typ_and_alg(
+        signing_key,
+        "dpop+jwt",
+        alg,
+        method,
+        htu,
+        iat,
+        jti,
+        token_for_ath,
+        nonce,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn signed_test_proof_with_typ_and_alg(
+    signing_key: &SigningKey,
+    typ: &str,
+    alg: &str,
+    method: &str,
+    htu: &str,
+    iat: i64,
+    jti: &str,
+    token_for_ath: Option<&str>,
+    nonce: Option<&str>,
+) -> String {
     let public_key = URL_SAFE_NO_PAD.encode(signing_key.verifying_key().to_bytes());
     let header = json!({
         "typ": typ,
-        "alg": "EdDSA",
+        "alg": alg,
         "jwk": {
             "kty": "OKP",
             "crv": "Ed25519",

@@ -1387,6 +1387,49 @@ async fn authorization_request_redirects_to_login_with_original_request_uri_afte
 }
 
 #[actix_web::test]
+async fn authorization_request_fails_closed_when_reauth_nonce_storage_is_unavailable() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let client_id = format!("authorize-reauth-nonce-fail-{}", Uuid::now_v7());
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            true,
+            true,
+        )
+        .await;
+
+    let mut broken_state = endpoint_state(false);
+    broken_state.diesel_db = fixture.state.diesel_db.clone();
+    let broken_state = Data::new(broken_state);
+    let uri = format!(
+        "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code&prompt=login&state=reauth-nonce-fail",
+        urlencoding::encode(&client_id)
+    );
+    let req = actix_web::test::TestRequest::get()
+        .uri(&uri)
+        .to_http_request();
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("redirect_uri", "https://client.example/callback"),
+        ("response_type", "code"),
+        ("prompt", "login"),
+        ("state", "reauth-nonce-fail"),
+    ]);
+
+    let response = authorize_request(broken_state, req, &mut q).await;
+    assert!(response.headers().get(header::LOCATION).is_none());
+    let (status, body) = json_body(response).await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"], "server_error");
+    assert!(body.get("code").is_none());
+}
+
+#[actix_web::test]
 async fn authorization_request_reports_session_lookup_failure_after_client_validation() {
     let Some(fixture) = LiveAuthorizationFixture::new().await else {
         return;
