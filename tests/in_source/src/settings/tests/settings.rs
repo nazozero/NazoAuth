@@ -57,12 +57,12 @@ fn dpop_nonce_policy_rejects_legacy_compatibility_alias() {
 }
 
 #[test]
-fn default_request_object_jti_policy_requires_signed_jar_jti() {
+fn default_request_object_jti_policy_is_oidf_compatible() {
     let settings = Settings::from_config(&ConfigSource::default()).unwrap();
 
     assert_eq!(
         settings.request_object_jti_policy,
-        RequestObjectJtiPolicy::RequiredForSignedJar
+        RequestObjectJtiPolicy::Optional
     );
 }
 
