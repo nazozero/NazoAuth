@@ -117,6 +117,25 @@ fn discovery_advertises_supported_id_token_acr() {
 }
 
 #[test]
+fn discovery_dpop_algorithms_match_authorization_server_validator() {
+    let metadata = authorization_server_metadata(
+        &settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new()),
+        &keyset(jsonwebtoken::Algorithm::RS256),
+    );
+
+    assert_eq!(
+        metadata
+            .get("dpop_signing_alg_values_supported")
+            .and_then(Value::as_array)
+            .expect("DPoP algorithm metadata should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["EdDSA", "ES256"]
+    );
+}
+
+#[test]
 fn discovery_advertises_supported_rar_types() {
     let mut s = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
     s.enable_authorization_details = true;
