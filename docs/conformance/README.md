@@ -13,15 +13,16 @@ in the repository.
 - [2026-06-13 real public UI OIDF regression](2026-06-13-real-public-ui-regression.md)
 - [2026-06-14 security-coverage OIDF full matrix](2026-06-14-local-refactor-full-matrix.md)
 - [2026-06-25 PR 13 security hardening OIDF full matrix](2026-06-25-pr13-security-hardening-full-matrix.md)
+- [2026-06-26 security findings OIDF full matrix](2026-06-26-security-findings-full-matrix.md)
 
-The latest recorded official full-matrix suite run is the 2026-06-25 PR 13
-security-hardening run against `https://auth.nazo.run` at commit
-`49467e3474b32c17603ed77ba63b570d07e794b2`. It exported all 16 plan archives
+The latest recorded official full-matrix suite run is the 2026-06-26
+security-findings run against `https://auth.nazo.run` at commit
+`be7ef9f6a9197520235a59d42866a0918a293014`. It exported all 16 plan archives
 from `https://www.certification.openid.net/`; every plan summary reported
 `0 failures` and `0 warnings`.
 
 The latest Hostinger-local full-matrix regression record is
-`oidf-local-results/run-20260625T230539Z` for the same public issuer and commit.
+`oidf-local-results/run-20260626T165725Z` for the same public issuer and commit.
 It exported all 16 plan archives; the runner log contains 16 plan summaries,
 all with `0 failures` and `0 warnings`.
 
