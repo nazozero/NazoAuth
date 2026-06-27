@@ -275,9 +275,14 @@ fn validate_dpop_claims(
     token_for_ath: Option<&str>,
 ) -> Result<(), DpopError> {
     let actual_htu = normalize_htu(&claims.htu)?;
-    let htu_matches = endpoint_bases
-        .iter()
-        .any(|base| actual_htu == format!("{}{}", base.trim_end_matches('/'), path));
+    let mut htu_matches = false;
+    for base in endpoint_bases {
+        let expected_htu = format!("{}{}", base.trim_end_matches('/'), path);
+        if actual_htu == expected_htu {
+            htu_matches = true;
+            break;
+        }
+    }
     if !htu_matches || !claims.htm.eq_ignore_ascii_case(method) {
         return Err(DpopError::InvalidProof);
     }

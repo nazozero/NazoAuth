@@ -353,13 +353,14 @@ fn required_email_value(value: Value, field: &str) -> Result<String, HttpRespons
 }
 
 fn required_bool_value(value: Value, field: &str) -> Result<bool, HttpResponse> {
-    value.as_bool().ok_or_else(|| {
-        scim_error(
+    match value.as_bool() {
+        Some(value) => Ok(value),
+        None => Err(scim_error(
             StatusCode::BAD_REQUEST,
             "invalidValue",
             &format!("{} must be boolean", field),
-        )
-    })
+        )),
+    }
 }
 
 fn normalize_scim_path(value: &str) -> String {
