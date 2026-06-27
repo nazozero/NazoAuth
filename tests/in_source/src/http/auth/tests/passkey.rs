@@ -401,17 +401,20 @@ async fn response_json(response: HttpResponse) -> (StatusCode, Value) {
 }
 
 fn session_cookie_value(response: &HttpResponse, cookie_name: &str) -> String {
-    response
+    let cookie_prefix = format!("{}=", cookie_name);
+    for cookie in response
         .headers()
         .get_all(header::SET_COOKIE)
         .filter_map(|value| value.to_str().ok())
-        .find_map(|cookie| {
-            cookie
-                .strip_prefix(&format!("{}=", cookie_name))
-                .and_then(|tail| tail.split(';').next())
-                .map(str::to_owned)
-        })
-        .expect("response should include session cookie")
+    {
+        if let Some(value) = cookie
+            .strip_prefix(&cookie_prefix)
+            .and_then(|tail| tail.split(';').next())
+        {
+            return value.to_owned();
+        }
+    }
+    panic!("response should include session cookie");
 }
 
 fn dummy_authentication_response() -> AuthenticationResponse {
