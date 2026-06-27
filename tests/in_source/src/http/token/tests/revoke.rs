@@ -40,6 +40,14 @@ fn live_revocation_state() -> Option<Data<AppState>> {
     live_revocation_state_from_database_url(database_url)
 }
 
+fn fixture_secret(label: &str) -> String {
+    format!("revocation-fixture-secret-{label}")
+}
+
+fn fixture_token(label: &str) -> String {
+    format!("revocation-fixture-token-{label}")
+}
+
 fn live_revocation_state_from_database_url(database_url: String) -> Option<Data<AppState>> {
     let key_material =
         generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
@@ -610,14 +618,17 @@ async fn revocation_rejects_wrong_client_secret_before_token_state_lookup() {
     let Some(state) = live_revocation_state() else {
         return;
     };
+    let correct_secret = fixture_secret("registered");
+    let wrong_secret = fixture_secret("presented");
+    let token = fixture_token("wrong-client-secret");
     let client = insert_revocation_client(
         &state,
-        &format!("revoke-wrong-secret-{}", Uuid::now_v7()),
-        "correct-secret",
+        &format!("revoke-auth-mismatch-{}", Uuid::now_v7()),
+        &correct_secret,
     )
     .await;
 
-    let response = revoke_with_client(state, &client, "wrong-secret", "token-1").await;
+    let response = revoke_with_client(state, &client, &wrong_secret, &token).await;
 
     assert_eq!(oauth_error_code(&response), "invalid_client");
     let (status, body) = json_body(response).await;
@@ -649,7 +660,7 @@ async fn revocation_fails_closed_when_client_lookup_query_fails() {
     let client = insert_revocation_client(
         &state,
         &format!("revoke-client-query-failure-{}", Uuid::now_v7()),
-        "correct-secret",
+        &fixture_secret("client-query-failure"),
     )
     .await;
     rename_column(
@@ -661,8 +672,13 @@ async fn revocation_fails_closed_when_client_lookup_query_fails() {
     )
     .await;
 
-    let response =
-        revoke_with_client(state.clone(), &client, "correct-secret", "opaque-token").await;
+    let response = revoke_with_client(
+        state.clone(),
+        &client,
+        &fixture_secret("client-query-failure"),
+        &fixture_token("client-query-failure"),
+    )
+    .await;
     let (status, body) = json_body(response).await;
 
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
@@ -690,7 +706,7 @@ async fn revocation_fails_closed_when_refresh_token_update_query_fails() {
     let client = insert_revocation_client(
         &state,
         &format!("revoke-refresh-query-failure-{}", Uuid::now_v7()),
-        "correct-secret",
+        &fixture_secret("refresh-update-failure"),
     )
     .await;
     rename_column(
@@ -702,8 +718,13 @@ async fn revocation_fails_closed_when_refresh_token_update_query_fails() {
     )
     .await;
 
-    let response =
-        revoke_with_client(state.clone(), &client, "correct-secret", "opaque-refresh").await;
+    let response = revoke_with_client(
+        state.clone(),
+        &client,
+        &fixture_secret("refresh-update-failure"),
+        &fixture_token("refresh-update-failure"),
+    )
+    .await;
     let (status, body) = json_body(response).await;
 
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
@@ -734,7 +755,7 @@ async fn revocation_fails_closed_when_access_token_blacklist_insert_fails() {
     let client = insert_revocation_client(
         &state,
         &format!("revoke-access-insert-failure-{}", Uuid::now_v7()),
-        "correct-secret",
+        &fixture_secret("access-insert-failure"),
     )
     .await;
     let access = sign_access_token(&state, &client).await;
@@ -747,8 +768,13 @@ async fn revocation_fails_closed_when_access_token_blacklist_insert_fails() {
     )
     .await;
 
-    let response =
-        revoke_with_client(state.clone(), &client, "correct-secret", &access.token).await;
+    let response = revoke_with_client(
+        state.clone(),
+        &client,
+        &fixture_secret("access-insert-failure"),
+        &access.token,
+    )
+    .await;
     let (status, body) = json_body(response).await;
 
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
@@ -763,12 +789,22 @@ async fn revocation_updates_refresh_token_state_for_authenticated_client() {
     let Some(state) = live_revocation_state() else {
         return;
     };
-    let client = insert_revocation_client(&state, "revoke-refresh-client", "correct-secret").await;
-    let refresh_token = "refresh-token-to-revoke";
-    insert_refresh_token_for_client(&state, &client, refresh_token).await;
+    let client = insert_revocation_client(
+        &state,
+        "revoke-refresh-client",
+        &fixture_secret("refresh-revoke"),
+    )
+    .await;
+    let refresh_token = fixture_token("refresh-revoke");
+    insert_refresh_token_for_client(&state, &client, &refresh_token).await;
 
-    let response =
-        revoke_with_client(state.clone(), &client, "correct-secret", refresh_token).await;
+    let response = revoke_with_client(
+        state.clone(),
+        &client,
+        &fixture_secret("refresh-revoke"),
+        &refresh_token,
+    )
+    .await;
 
     assert_eq!(response.status(), StatusCode::OK);
     let body = actix_web::body::to_bytes(response.into_body())
@@ -776,7 +812,7 @@ async fn revocation_updates_refresh_token_state_for_authenticated_client() {
         .expect("response body should collect");
     assert!(body.is_empty());
     assert!(
-        refresh_token_revoked_at(&state, refresh_token)
+        refresh_token_revoked_at(&state, &refresh_token)
             .await
             .is_some(),
         "refresh token revocation must persist revoked_at"
@@ -791,13 +827,13 @@ async fn revocation_does_not_revoke_foreign_refresh_tokens_or_leak_ownership() {
     let owner_client = insert_revocation_client(
         &state,
         &format!("revoke-owner-{}", Uuid::now_v7()),
-        "correct-secret",
+        &fixture_secret("foreign-owner"),
     )
     .await;
     let caller_client = insert_revocation_client(
         &state,
         &format!("revoke-caller-{}", Uuid::now_v7()),
-        "correct-secret",
+        &fixture_secret("foreign-caller"),
     )
     .await;
     let refresh_token = format!("foreign-refresh-{}", Uuid::now_v7());
@@ -806,7 +842,7 @@ async fn revocation_does_not_revoke_foreign_refresh_tokens_or_leak_ownership() {
     let response = revoke_with_client(
         state.clone(),
         &caller_client,
-        "correct-secret",
+        &fixture_secret("foreign-caller"),
         &refresh_token,
     )
     .await;
@@ -829,12 +865,22 @@ async fn revocation_blacklists_access_token_jti_idempotently() {
     let Some(state) = live_revocation_state() else {
         return;
     };
-    let client = insert_revocation_client(&state, "revoke-access-client", "correct-secret").await;
+    let client = insert_revocation_client(
+        &state,
+        "revoke-access-client",
+        &fixture_secret("access-idempotent"),
+    )
+    .await;
     let access = sign_access_token(&state, &client).await;
 
     for _ in 0..2 {
-        let response =
-            revoke_with_client(state.clone(), &client, "correct-secret", &access.token).await;
+        let response = revoke_with_client(
+            state.clone(),
+            &client,
+            &fixture_secret("access-idempotent"),
+            &access.token,
+        )
+        .await;
         assert_eq!(response.status(), StatusCode::OK);
         let body = actix_web::body::to_bytes(response.into_body())
             .await
