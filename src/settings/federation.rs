@@ -114,8 +114,14 @@ impl SamlGatewaySettings {
 }
 
 fn required_optional(value: Option<String>, key: &str) -> anyhow::Result<String> {
-    value
+    match value
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("{} is required when OIDC federation is configured", key))
+    {
+        Some(value) => Ok(value),
+        None => Err(anyhow::anyhow!(
+            "{} is required when OIDC federation is configured",
+            key
+        )),
+    }
 }
