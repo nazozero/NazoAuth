@@ -438,7 +438,8 @@ async fn dispatch_backchannel_logout(
         };
         tokio::spawn(async move {
             if let Err(error) = post_backchannel_logout(&uri, &token).await {
-                tracing::warn!(%error, backchannel_logout_uri = %uri, "backchannel logout delivery failed");
+                let error_message = error.to_string();
+                tracing::warn!(error = %error_message, backchannel_logout_uri = %uri, "backchannel logout delivery failed");
             }
         });
     }

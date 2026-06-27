@@ -407,7 +407,7 @@ fn session_cookie_value(response: &HttpResponse, cookie_name: &str) -> String {
         .filter_map(|value| value.to_str().ok())
         .find_map(|cookie| {
             cookie
-                .strip_prefix(&format!("{cookie_name}="))
+                .strip_prefix(&format!("{}=", cookie_name))
                 .and_then(|tail| tail.split(';').next())
                 .map(str::to_owned)
         })

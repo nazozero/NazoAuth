@@ -277,7 +277,7 @@ fn validate_dpop_claims(
     let actual_htu = normalize_htu(&claims.htu)?;
     let htu_matches = endpoint_bases
         .iter()
-        .any(|base| actual_htu == format!("{}{path}", base.trim_end_matches('/')));
+        .any(|base| actual_htu == format!("{}{}", base.trim_end_matches('/'), path));
     if !htu_matches || !claims.htm.eq_ignore_ascii_case(method) {
         return Err(DpopError::InvalidProof);
     }

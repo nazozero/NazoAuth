@@ -117,5 +117,5 @@ fn required_optional(value: Option<String>, key: &str) -> anyhow::Result<String>
     value
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("{key} is required when OIDC federation is configured"))
+        .ok_or_else(|| anyhow::anyhow!("{} is required when OIDC federation is configured", key))
 }
