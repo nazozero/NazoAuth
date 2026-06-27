@@ -325,12 +325,12 @@ fn normalize_scim_string(
         Some(_) => Err(scim_error(
             StatusCode::BAD_REQUEST,
             "invalidValue",
-            &format!("{field} too long"),
+            &format!("{} too long", field),
         )),
         None if required => Err(scim_error(
             StatusCode::BAD_REQUEST,
             "invalidValue",
-            &format!("{field} required"),
+            &format!("{} required", field),
         )),
         None => Ok(None),
     }
@@ -347,7 +347,7 @@ fn required_email_value(value: Value, field: &str) -> Result<String, HttpRespons
         scim_error(
             StatusCode::BAD_REQUEST,
             "invalidValue",
-            &format!("{field} must be an email address"),
+            &format!("{} must be an email address", field),
         )
     })
 }
@@ -357,7 +357,7 @@ fn required_bool_value(value: Value, field: &str) -> Result<bool, HttpResponse> 
         scim_error(
             StatusCode::BAD_REQUEST,
             "invalidValue",
-            &format!("{field} must be boolean"),
+            &format!("{} must be boolean", field),
         )
     })
 }

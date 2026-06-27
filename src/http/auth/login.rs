@@ -259,15 +259,14 @@ fn assign_once(slot: &mut Option<String>, value: String) -> Result<(), HttpRespo
 }
 
 fn safe_form_login_next(state: &AppState, req: &HttpRequest, submitted: Option<&str>) -> String {
+    let default_next = format!(
+        "{}/profile",
+        state.settings.frontend_base_url.trim_end_matches('/')
+    );
     submitted
         .and_then(safe_relative_next)
         .or_else(|| referer_login_next(req))
-        .unwrap_or_else(|| {
-            format!(
-                "{}/profile",
-                state.settings.frontend_base_url.trim_end_matches('/')
-            )
-        })
+        .unwrap_or(default_next)
 }
 
 fn safe_relative_next(value: &str) -> Option<String> {
