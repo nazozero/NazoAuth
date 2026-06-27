@@ -351,6 +351,8 @@ def write_env_yaml() -> None:
 DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/oauth"
 VALKEY_URL: "redis://valkey:6379/0"
 ISSUER: "{ISSUER}"
+ENABLE_REQUEST_OBJECT: true
+ENABLE_PAR_REQUEST_OBJECT: true
 MTLS_ENDPOINT_BASE_URL: "{MTLS_ISSUER}"
 FRONTEND_BASE_URL: "{ISSUER}/ui"
 CORS_ALLOWED_ORIGINS:

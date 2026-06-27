@@ -114,6 +114,9 @@ pub(crate) async fn mfa_totp_confirm(
         Ok(user) => user,
         Err(response) => return response,
     };
+    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
+        return response;
+    }
     let mut conn = match get_conn(&state.diesel_db).await {
         Ok(conn) => conn,
         Err(_) => {
@@ -222,9 +225,6 @@ pub(crate) async fn mfa_verify(
     if !has_valid_csrf_token(&state, &req, None) {
         return csrf_error();
     }
-    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
-        return response;
-    }
     let session = match current_pending_mfa_session(&state, &req).await {
         Ok(Some(session)) => session,
         Ok(None) => {
@@ -243,6 +243,9 @@ pub(crate) async fn mfa_verify(
             );
         }
     };
+    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
+        return response;
+    }
     let method = match verify_user_mfa_code(&state.diesel_db, &session.user, &payload.code).await {
         Ok(Some(method)) => method,
         Ok(None) => {
@@ -327,6 +330,9 @@ pub(crate) async fn mfa_backup_codes_regenerate(
         Ok(user) => user,
         Err(response) => return response,
     };
+    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
+        return response;
+    }
     if !user.mfa_enabled {
         return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "MFA 未启用.");
     }
@@ -375,6 +381,9 @@ pub(crate) async fn mfa_disable(
         Ok(user) => user,
         Err(response) => return response,
     };
+    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
+        return response;
+    }
     if !user.mfa_enabled {
         return json_response(json!({ "mfa_enabled": false }));
     }

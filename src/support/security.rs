@@ -440,11 +440,7 @@ fn client_assertion_audience_candidates(
         return vec![issuer.to_owned(), format!("{issuer}{path}")];
     }
     if allow_endpoint_audience {
-        return vec![
-            issuer.to_owned(),
-            format!("{issuer}/par"),
-            format!("{issuer}/token"),
-        ];
+        return vec![issuer.to_owned(), format!("{issuer}/par")];
     }
     vec![issuer.to_owned()]
 }

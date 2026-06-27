@@ -4,6 +4,7 @@ use crate::http::authorization::BASELINE_ACR_VALUE;
 use crate::settings::{AuthorizationServerProfile, Settings, SubjectType};
 
 const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
+const DPOP_SIGNING_ALGS: [&str; 2] = ["EdDSA", "ES256"];
 const REQUEST_OBJECT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
 const BASELINE_REQUEST_OBJECT_SIGNING_ALGS: [&str; 5] =
     ["none", "EdDSA", "RS256", "ES256", "PS256"];
@@ -113,7 +114,7 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
         "backchannel_logout_session_supported": true,
         "require_pushed_authorization_requests": settings.require_pushed_authorization_requests,
         "code_challenge_methods_supported": ["S256"],
-        "dpop_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS,
+        "dpop_signing_alg_values_supported": DPOP_SIGNING_ALGS,
         "request_object_signing_alg_values_supported": request_object_signing_algs
     });
     if settings.enable_authorization_details {

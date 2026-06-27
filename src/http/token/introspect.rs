@@ -87,10 +87,22 @@ pub(crate) async fn introspect_after_rate_limit(
             );
         }
     };
+    drop(conn);
     if let Err(error) = authenticate_introspection_client(&state, &req, &client, &credentials).await
     {
         return token_management_client_auth_error(error, has_basic);
     }
+    let mut conn = match get_conn(&state.diesel_db).await {
+        Ok(conn) => conn,
+        Err(error) => {
+            tracing::warn!(%error, "failed to get database connection for token introspection state lookup");
+            return token_management_oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "token 状态查询失败.",
+            );
+        }
+    };
     if let Some(claims) = decode_access_claims(&state, &form.token) {
         if claims.client_id != client.client_id && !token_audience_allowed(&client, &claims.aud) {
             return json_response_no_store(json!({"active": false}));

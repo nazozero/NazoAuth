@@ -63,6 +63,14 @@ fn unavailable_valkey_client() -> fred::prelude::Client {
         .expect("unavailable valkey client construction should not connect")
 }
 
+fn fixture_secret(label: &str) -> String {
+    format!("client-auth-fixture-secret-{label}")
+}
+
+fn fixture_mtls_thumbprint(label: &str) -> String {
+    blake3_hex(&format!("client-auth-fixture-thumbprint-{label}"))
+}
+
 fn confidential_client_with_secret(secret: &str) -> ClientRow {
     ClientRow {
         id: Uuid::now_v7(),
@@ -276,7 +284,7 @@ async fn token_client_assertion_store_failure_fails_token_grant_as_server_error(
     let public_jwk =
         public_jwk_from_private_der("client-kid", jsonwebtoken::Algorithm::RS256, &key)
             .expect("test client jwk should derive");
-    let mut client = confidential_client_with_secret("unused-secret");
+    let mut client = confidential_client_with_secret(&fixture_secret("unused"));
     client.token_endpoint_auth_method = "private_key_jwt".to_owned();
     client.client_secret_argon2_hash = None;
     client.jwks = Some(json!({"keys": [public_jwk]}));
@@ -314,9 +322,11 @@ async fn token_client_assertion_store_failure_fails_token_grant_as_server_error(
 fn confidential_client_secret_auth_accepts_only_registered_method_and_secret() {
     let state = token_management_state();
     let req = TestRequest::default().to_http_request();
-    let client = confidential_client_with_secret("correct-secret");
+    let correct_secret = fixture_secret("correct");
+    let wrong_secret_value = fixture_secret("wrong");
+    let client = confidential_client_with_secret(&correct_secret);
     let mut credentials = client_credentials("client_secret_basic");
-    credentials.client_secret = Some("correct-secret".to_owned());
+    credentials.client_secret = Some(correct_secret.clone());
 
     assert!(
         verify_confidential_client(&state, &req, &client, &credentials).is_ok(),
@@ -324,14 +334,14 @@ fn confidential_client_secret_auth_accepts_only_registered_method_and_secret() {
     );
 
     let mut wrong_secret = client_credentials("client_secret_basic");
-    wrong_secret.client_secret = Some("wrong-secret".to_owned());
+    wrong_secret.client_secret = Some(wrong_secret_value);
     assert!(matches!(
         verify_confidential_client(&state, &req, &client, &wrong_secret),
         Err(TokenManagementClientAuthError::InvalidClient)
     ));
 
     let mut wrong_method = client_credentials("client_secret_post");
-    wrong_method.client_secret = Some("correct-secret".to_owned());
+    wrong_method.client_secret = Some(correct_secret);
     assert!(matches!(
         verify_confidential_client(&state, &req, &client, &wrong_method),
         Err(TokenManagementClientAuthError::InvalidClient)
@@ -342,9 +352,10 @@ fn confidential_client_secret_auth_accepts_only_registered_method_and_secret() {
 fn confidential_client_auth_rejects_public_or_unknown_auth_method_even_with_secret() {
     let state = token_management_state();
     let req = TestRequest::default().to_http_request();
-    let mut client = confidential_client_with_secret("correct-secret");
+    let correct_secret = fixture_secret("correct");
+    let mut client = confidential_client_with_secret(&correct_secret);
     let mut credentials = client_credentials("client_secret_basic");
-    credentials.client_secret = Some("correct-secret".to_owned());
+    credentials.client_secret = Some(correct_secret);
 
     client.client_type = "public".to_owned();
     assert!(matches!(
@@ -365,7 +376,7 @@ fn confidential_client_auth_rejects_public_or_unknown_auth_method_even_with_secr
 fn private_key_jwt_requires_present_and_well_formed_assertion() {
     let state = token_management_state();
     let req = TestRequest::default().to_http_request();
-    let mut client = confidential_client_with_secret("unused-secret");
+    let mut client = confidential_client_with_secret(&fixture_secret("unused"));
     client.token_endpoint_auth_method = "private_key_jwt".to_owned();
     client.client_secret_argon2_hash = None;
 
@@ -385,14 +396,12 @@ fn private_key_jwt_requires_present_and_well_formed_assertion() {
 #[test]
 fn mtls_client_auth_requires_certificate_from_trusted_request_context() {
     let state = token_management_state();
+    let thumbprint = fixture_mtls_thumbprint("untrusted-context");
     let req = TestRequest::default()
         .insert_header(("x-ssl-client-verify", "SUCCESS"))
-        .insert_header((
-            "x-forwarded-tls-client-cert-sha256",
-            "ABEiM0RVZneImaq7zN3u_wARIjNEVWZ3iJmqu8zd7v8",
-        ))
+        .insert_header(("x-forwarded-tls-client-cert-sha256", thumbprint.as_str()))
         .to_http_request();
-    let mut client = confidential_client_with_secret("unused-secret");
+    let mut client = confidential_client_with_secret(&fixture_secret("unused"));
     client.token_endpoint_auth_method = "tls_client_auth".to_owned();
     client.client_secret_argon2_hash = None;
     let credentials = client_credentials("tls_client_auth");
@@ -406,16 +415,16 @@ fn mtls_client_auth_requires_certificate_from_trusted_request_context() {
 #[test]
 fn mtls_client_auth_accepts_matching_certificate_from_trusted_proxy() {
     let state = token_management_state_with_trusted_proxy();
-    let thumbprint = "ABEiM0RVZneImaq7zN3u_wARIjNEVWZ3iJmqu8zd7v8";
+    let thumbprint = fixture_mtls_thumbprint("trusted-proxy");
     let req = TestRequest::default()
         .peer_addr("127.0.0.1:443".parse().unwrap())
         .insert_header(("x-ssl-client-verify", "SUCCESS"))
-        .insert_header(("x-forwarded-tls-client-cert-sha256", thumbprint))
+        .insert_header(("x-forwarded-tls-client-cert-sha256", thumbprint.as_str()))
         .to_http_request();
-    let mut client = confidential_client_with_secret("unused-secret");
+    let mut client = confidential_client_with_secret(&fixture_secret("unused"));
     client.token_endpoint_auth_method = "tls_client_auth".to_owned();
     client.client_secret_argon2_hash = None;
-    client.tls_client_auth_cert_sha256 = Some(thumbprint.to_owned());
+    client.tls_client_auth_cert_sha256 = Some(thumbprint);
     let credentials = client_credentials("tls_client_auth");
 
     assert!(

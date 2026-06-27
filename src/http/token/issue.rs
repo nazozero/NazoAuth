@@ -23,6 +23,37 @@ fn id_token_session_sid(issue: &TokenIssue) -> Option<&str> {
     requested.then_some(issue.oidc_sid.as_deref()).flatten()
 }
 
+async fn persist_access_token_subject_mapping(
+    state: &AppState,
+    jti: &str,
+    tenant_id: Uuid,
+    user_id: Option<Uuid>,
+    subject: &str,
+) -> anyhow::Result<()> {
+    let Some(user_id) = user_id else {
+        return Ok(());
+    };
+    if subject == user_id.to_string() {
+        return Ok(());
+    }
+    valkey_set_ex(
+        &state.valkey,
+        access_token_subject_key(tenant_id, jti),
+        user_id.to_string(),
+        state.settings.access_token_ttl_seconds.max(1) as u64,
+    )
+    .await?;
+    Ok(())
+}
+
+pub(crate) fn access_token_subject_key(tenant_id: Uuid, jti: &str) -> String {
+    format!(
+        "oauth:access_token:subject:{}:{}",
+        tenant_id,
+        blake3_hex(jti)
+    )
+}
+
 pub(crate) async fn issue_token_response(
     state: &AppState,
     client: &ClientRow,
@@ -118,6 +149,29 @@ pub(crate) async fn issue_token_response(
             );
         }
     };
+    if let Err(error) = persist_access_token_subject_mapping(
+        state,
+        &issued_access_token.jti,
+        client.tenant_id,
+        issue.user_id,
+        &issue.subject,
+    )
+    .await
+    {
+        tracing::warn!(%error, "failed to persist access token subject mapping");
+        mark_failed_authorization_code_if_needed(
+            state,
+            issue.authorization_code_hash.as_deref(),
+            "access_token_subject_mapping_failed",
+        )
+        .await;
+        return oauth_token_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "令牌主体状态写入失败.",
+            false,
+        );
+    }
     let token_type = if issue.dpop_jkt.is_some() {
         "DPoP"
     } else {

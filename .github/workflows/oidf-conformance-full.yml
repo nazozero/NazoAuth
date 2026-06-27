@@ -10,7 +10,7 @@ jobs:
     env:
       CONFORMANCE_SERVER: ${{ vars.OIDF_CONFORMANCE_SERVER || 'https://www.certification.openid.net/' }}
       OIDF_REF: ${{ vars.OIDF_CONFORMANCE_SUITE_REF || 'master' }}
-      EXPORT_RESULTS: ${{ vars.OIDF_EXPORT_RESULTS || 'true' }}
+      EXPORT_RESULTS: ${{ vars.OIDF_EXPORT_RESULTS || 'false' }}
       VERBOSE: ${{ vars.OIDF_VERBOSE || 'true' }}
       DISABLE_SSL_VERIFY: ${{ vars.OIDF_DISABLE_SSL_VERIFY || 'false' }}
       OIDF_TARGET_ISSUER: ${{ vars.OIDF_TARGET_ISSUER || 'https://auth.nazo.run' }}
@@ -33,7 +33,7 @@ jobs:
         run: python -m pip install --upgrade -r oidf-conformance-suite/scripts/requirements.txt
 
       - name: Install age decryptor
-        run: cargo install rage --locked
+        run: cargo install rage --version 0.11.2 --locked
 
       - name: Write full OIDF matrix plan set
         run: |

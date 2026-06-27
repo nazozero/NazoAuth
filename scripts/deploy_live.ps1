@@ -63,9 +63,6 @@ $image = "${ImageRepository}:$ImageTag"
 $safeTag = $ImageTag -replace '[^A-Za-z0-9_.-]', '-'
 $archive = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-server-$safeTag.tar"
 $uiArchive = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-web-$safeTag.tar.gz"
-$remoteArchive = "/tmp/nazo-oauth-server-$safeTag.tar"
-$remoteUiArchive = "/tmp/nazo-oauth-web-$safeTag.tar.gz"
-$remoteScript = "/tmp/nazo-oauth-deploy-$safeTag.sh"
 $localRemoteScript = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-deploy-$safeTag.sh"
 
 Write-Host "Deploying $image to $RemoteHost"
@@ -86,6 +83,10 @@ if (Test-Path -LiteralPath $uiArchive) {
 }
 Invoke-Checked docker @("save", $image, "-o", $archive)
 Invoke-Checked tar @("-C", $LocalUiDist, "-czf", $uiArchive, ".")
+$remoteTempDir = Get-CommandOutput ssh $RemoteHost @("mktemp", "-d", "/tmp/nazo-oauth-deploy.XXXXXX")
+$remoteArchive = "$remoteTempDir/nazo-oauth-server-$safeTag.tar"
+$remoteUiArchive = "$remoteTempDir/nazo-oauth-web-$safeTag.tar.gz"
+$remoteScript = "$remoteTempDir/deploy.sh"
 Invoke-Checked scp $archive "${RemoteHost}:$remoteArchive"
 Invoke-Checked scp $uiArchive "${RemoteHost}:$remoteUiArchive"
 
@@ -108,6 +109,7 @@ SKIP_MIGRATE=$(ConvertTo-ShellLiteral $skipMigrateValue)
 
 cleanup() {
   rm -f "`$REMOTE_ARCHIVE" "`$REMOTE_UI_ARCHIVE" "`$REMOTE_SCRIPT"
+  rmdir "`$(dirname "`$REMOTE_SCRIPT")" 2>/dev/null || true
 }
 trap cleanup EXIT
 
