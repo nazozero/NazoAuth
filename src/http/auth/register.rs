@@ -30,20 +30,6 @@ pub(crate) async fn register_after_rate_limit(
         return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "邮箱格式无效.");
     };
     let code = verification_code_for_lookup(&payload);
-    match find_user_by_email(&state.diesel_db, &email).await {
-        Ok(Some(_)) => {
-            return oauth_error(StatusCode::CONFLICT, "invalid_request", "该邮箱已注册.");
-        }
-        Ok(None) => {}
-        Err(_) => {
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "数据库连接失败.",
-            );
-        }
-    }
-
     let key = format!("oauth:email_verify:code:{email}");
     let stored = match valkey_get(&state.valkey, &key).await {
         Ok(value) => value,
@@ -64,6 +50,20 @@ pub(crate) async fn register_after_rate_limit(
             "invalid_grant",
             "验证码错误或已过期.",
         );
+    }
+
+    match find_user_by_email(&state.diesel_db, &email).await {
+        Ok(Some(_)) => {
+            return oauth_error(StatusCode::CONFLICT, "invalid_request", "该邮箱已注册.");
+        }
+        Ok(None) => {}
+        Err(_) => {
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "数据库连接失败.",
+            );
+        }
     }
 
     let password_hash = match hash_password(&payload.password) {

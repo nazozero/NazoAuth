@@ -168,6 +168,7 @@ fn signed_request_object_claims(extra: Value) -> Value {
         "iat": now,
         "nbf": now,
         "exp": now + 120,
+        "jti": format!("request-object-{}", Uuid::now_v7()),
         "response_type": "code",
         "scope": "openid profile",
         "state": "state-1"
@@ -369,6 +370,21 @@ fn request_object_alg_none_requires_unsecured_jwt_shape() {
 }
 
 #[test]
+fn request_object_unsigned_algorithm_detection_fails_closed_for_malformed_inputs() {
+    assert!(!request_object_uses_unsigned_algorithm("not-a-compact-jwt"));
+    assert!(!request_object_uses_unsigned_algorithm(&format!(
+        "{}.{}.",
+        "not-base64",
+        URL_SAFE_NO_PAD.encode(json!({"client_id": "client-a"}).to_string())
+    )));
+    assert!(!request_object_uses_unsigned_algorithm(&format!(
+        "{}.{}.",
+        URL_SAFE_NO_PAD.encode("not-json"),
+        URL_SAFE_NO_PAD.encode(json!({"client_id": "client-a"}).to_string())
+    )));
+}
+
+#[test]
 fn signed_request_object_requires_signature_part() {
     let header = RequestObjectHeader {
         alg: "EdDSA".to_owned(),
@@ -386,6 +402,19 @@ fn compact_request_object_must_have_exactly_three_parts() {
     assert_eq!(split_compact_jwt("a.b.c"), Some(("a", "b", "c")));
     assert!(split_compact_jwt("a.b").is_none());
     assert!(split_compact_jwt("a.b.c.d").is_none());
+}
+
+#[test]
+fn outer_client_id_conflict_is_detected_before_claims_are_applied() {
+    assert!(!outer_client_id_conflicts(&HashMap::new(), "client-a"));
+    assert!(!outer_client_id_conflicts(
+        &HashMap::from([("client_id".to_owned(), "client-a".to_owned())]),
+        "client-a"
+    ));
+    assert!(outer_client_id_conflicts(
+        &HashMap::from([("client_id".to_owned(), "client-b".to_owned())]),
+        "client-a"
+    ));
 }
 
 #[test]
@@ -722,7 +751,9 @@ async fn holder_bound_signed_request_object_rejects_outer_authorization_paramete
 
 #[actix_web::test]
 async fn holder_bound_signed_request_object_applies_only_jwt_authorization_parameters() {
-    let state = jar_state("https://issuer.example");
+    let Some(state) = live_jar_state("https://issuer.example").await else {
+        return;
+    };
     let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
         .expect("request object key should generate")
         .private_pkcs8_der;
@@ -745,6 +776,77 @@ async fn holder_bound_signed_request_object_applies_only_jwt_authorization_param
     apply_request_object(&state, &mut outer, &client)
         .await
         .expect("holder-bound signed JAR should apply");
+
+    assert_eq!(outer.get("client_id").map(String::as_str), Some("client-a"));
+    assert_eq!(
+        outer.get("redirect_uri").map(String::as_str),
+        Some("https://client.example/callback")
+    );
+    assert_eq!(outer.get("nonce").map(String::as_str), Some("jwt-nonce"));
+    assert!(!outer.contains_key("prompt"));
+}
+
+#[actix_web::test]
+async fn par_policy_signed_request_object_rejects_outer_authorization_parameter_override() {
+    let state = jar_state("https://issuer.example");
+    let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
+        .expect("request object key should generate")
+        .private_pkcs8_der;
+    let mut client = signed_jar_client("client-a", "jar-kid", &key);
+    client.require_par_request_object = true;
+    let request_object = signed_request_object_token(
+        "jar-kid",
+        &key,
+        signed_request_object_claims(json!({
+            "redirect_uri": "https://client.example/callback",
+            "scope": "openid"
+        })),
+    );
+    let mut outer = HashMap::from([
+        ("client_id".to_owned(), "client-a".to_owned()),
+        ("request".to_owned(), request_object),
+        ("scope".to_owned(), "openid email".to_owned()),
+    ]);
+
+    let response = apply_request_object(&state, &mut outer, &client)
+        .await
+        .expect_err("PAR request object policy must reject unsigned outer overrides");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_request_object")
+    );
+    assert_eq!(outer.get("scope").map(String::as_str), Some("openid email"));
+}
+
+#[actix_web::test]
+async fn par_policy_signed_request_object_applies_only_jwt_authorization_parameters() {
+    let Some(state) = live_jar_state("https://issuer.example").await else {
+        return;
+    };
+    let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
+        .expect("request object key should generate")
+        .private_pkcs8_der;
+    let mut client = signed_jar_client("client-a", "jar-kid", &key);
+    client.require_par_request_object = true;
+    let request_object = signed_request_object_token(
+        "jar-kid",
+        &key,
+        signed_request_object_claims(json!({
+            "redirect_uri": "https://client.example/callback",
+            "nonce": "jwt-nonce"
+        })),
+    );
+    let mut outer = HashMap::from([
+        ("client_id".to_owned(), "client-a".to_owned()),
+        ("request".to_owned(), request_object),
+        ("prompt".to_owned(), "login".to_owned()),
+    ]);
+
+    apply_request_object(&state, &mut outer, &client)
+        .await
+        .expect("PAR request object policy should apply signed parameters");
 
     assert_eq!(outer.get("client_id").map(String::as_str), Some("client-a"));
     assert_eq!(
@@ -879,6 +981,39 @@ async fn request_object_jti_store_failure_fails_closed_without_applying_claims()
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(oauth_error_code(&response).as_deref(), Some("server_error"));
     assert!(!outer.contains_key("response_type"));
+}
+
+#[actix_web::test]
+async fn signed_request_object_replay_state_requires_exp_claim() {
+    let state = jar_state("https://issuer.example");
+    let client = jar_client("client-a");
+    let claims = RequestObjectClaims {
+        client_id: "client-a".to_owned(),
+        iss: Some("client-a".to_owned()),
+        sub: Some("client-a".to_owned()),
+        aud: Some(json!("https://issuer.example")),
+        exp: None,
+        nbf: Some(Utc::now().timestamp()),
+        iat: None,
+        jti: Some(format!("jar-jti-{}", Uuid::now_v7())),
+        params: HashMap::new(),
+    };
+
+    let response = store_request_object_replay_state(
+        &state,
+        &client,
+        &claims,
+        Utc::now().timestamp(),
+        RequestObjectMode::SignedJar,
+    )
+    .await
+    .expect_err("signed JAR replay state must not accept jti without exp");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_request_object")
+    );
 }
 
 #[actix_web::test]

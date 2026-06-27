@@ -157,6 +157,9 @@ pub(crate) async fn validate_dpop_proof(
     {
         return Err(DpopError::InvalidProof);
     }
+    if !dpop_algorithm_allowed(algorithm) {
+        return Err(DpopError::InvalidProof);
+    }
     let jkt = jwk_thumbprint(&header.jwk)?;
     if expected_jkt.is_some_and(|expected| expected != jkt.as_str()) {
         return Err(DpopError::BindingMismatch);
@@ -293,6 +296,13 @@ fn validate_dpop_claims(
 fn valid_jti(jti: &str) -> bool {
     let trimmed = jti.trim();
     !trimmed.is_empty() && trimmed.len() <= MAX_DPOP_JTI_BYTES
+}
+
+fn dpop_algorithm_allowed(algorithm: jsonwebtoken::Algorithm) -> bool {
+    matches!(
+        algorithm,
+        jsonwebtoken::Algorithm::EdDSA | jsonwebtoken::Algorithm::ES256
+    )
 }
 
 fn decode_proof(raw: &str) -> Result<(DpopHeader, DpopClaims, String, String), DpopError> {

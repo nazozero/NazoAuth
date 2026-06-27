@@ -201,10 +201,7 @@ fn access_token_claims_follow_jwt_profile_for_user_subjects() {
     assert_eq!(claims.client_id, "client-1");
     assert_eq!(claims.tenant_id, DEFAULT_TENANT_ID.to_string());
     assert_eq!(claims.sub, "pairwise-subject");
-    assert_eq!(
-        claims.user_id.as_deref(),
-        Some(user_id.to_string().as_str())
-    );
+    assert!(claims.user_id.is_none());
     assert_eq!(claims.subject_type, "user");
     assert_eq!(claims.scope, "openid profile");
     assert_eq!(claims.token_use, "access");

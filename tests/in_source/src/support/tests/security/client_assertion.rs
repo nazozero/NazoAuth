@@ -51,7 +51,7 @@ fn par_client_assertion_endpoint_audiences_require_client_policy() {
         &expected,
         false
     ));
-    assert!(audience_matches(
+    assert!(!audience_matches(
         &json!("https://issuer.example/token"),
         &expected,
         false

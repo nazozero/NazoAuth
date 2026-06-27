@@ -108,10 +108,10 @@ struct OtelConfig {
 impl OtelConfig {
     fn from_config(config: &ConfigSource) -> anyhow::Result<Option<Self>> {
         let enabled = config.bool("OTEL_ENABLED", false)?;
-        let endpoint = config.optional_string("OTEL_EXPORTER_OTLP_ENDPOINT");
-        if !enabled && endpoint.is_none() {
+        if !enabled {
             return Ok(None);
         }
+        let endpoint = config.optional_string("OTEL_EXPORTER_OTLP_ENDPOINT");
         let protocol = config.string("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf");
         if protocol != "http/protobuf" {
             bail!("OTEL_EXPORTER_OTLP_PROTOCOL must be http/protobuf");

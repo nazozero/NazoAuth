@@ -40,10 +40,7 @@ fn access_token_claims_includes_all_required_jwt_fields() {
     assert_eq!(claims.iss, "https://issuer.example");
     assert_eq!(claims.sub, "alice");
     assert_eq!(claims.tenant_id, DEFAULT_TENANT_ID.to_string());
-    assert_eq!(
-        claims.user_id.as_deref(),
-        Some(user_id.to_string().as_str())
-    );
+    assert!(claims.user_id.is_none());
     assert_eq!(claims.subject_type, "user");
     assert_eq!(claims.aud, json!("https://issuer.example/userinfo"));
     assert_eq!(claims.client_id, "client-1");
@@ -60,6 +57,40 @@ fn access_token_claims_includes_all_required_jwt_fields() {
     assert!(cnf.x5t_s256.is_none());
 
     assert_eq!(claims.userinfo_claims, vec!["email", "name"]);
+}
+
+#[test]
+fn access_token_claims_include_user_id_only_for_public_user_subject() {
+    let user_id = Uuid::now_v7();
+    let scopes = vec!["openid".to_owned()];
+    let audiences = vec!["https://issuer.example/userinfo".to_owned()];
+    let ad = json!([]);
+
+    let claims = access_token_claims(
+        "https://issuer.example",
+        AccessTokenJwtInput {
+            tenant_id: DEFAULT_TENANT_ID,
+            subject: &user_id.to_string(),
+            user_id: Some(user_id),
+            subject_type: "user",
+            client_id: "client-1",
+            audiences: &audiences,
+            scopes: &scopes,
+            authorization_details: &ad,
+            userinfo_claims: &[],
+            userinfo_claim_requests: &[],
+            ttl: 3600,
+            dpop_jkt: None,
+            mtls_x5t_s256: None,
+        },
+        1_000_000,
+        "jti-access-public",
+    );
+
+    assert_eq!(
+        claims.user_id.as_deref(),
+        Some(user_id.to_string().as_str())
+    );
 }
 
 #[test]

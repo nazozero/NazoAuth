@@ -8,7 +8,9 @@ on:
       - ".github/e2e-runner.Containerfile"
       - "Cargo.toml"
       - "Cargo.lock"
+      - "build.rs"
       - "deny.toml"
+      - ".cargo/**"
       - "rust-toolchain"
       - "rust-toolchain.toml"
       - "src/**"
@@ -31,7 +33,9 @@ on:
       - ".github/e2e-runner.Containerfile"
       - "Cargo.toml"
       - "Cargo.lock"
+      - "build.rs"
       - "deny.toml"
+      - ".cargo/**"
       - "rust-toolchain"
       - "rust-toolchain.toml"
       - "src/**"
@@ -180,14 +184,15 @@ jobs:
           cache-to: type=gha,mode=max,scope=nazo-oauth-service
       - name: Scan service image
         run: |
+          docker save nazo-oauth-supply-chain:${{ github.sha }} -o /tmp/nazo-oauth-supply-chain.tar
           docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            aquasec/trivy:0.65.0 image \
+            -v /tmp/nazo-oauth-supply-chain.tar:/image.tar:ro \
+            docker.io/aquasec/trivy@sha256:a22415a38938a56c379387a8163fcb0ce38b10ace73e593475d3658d578b2436 image \
               --format table \
               --exit-code 1 \
               --severity CRITICAL,HIGH \
               --ignore-unfixed \
-              nazo-oauth-supply-chain:${{ github.sha }}
+              --input /image.tar
       - name: Upload SBOM
         uses: actions/upload-artifact@v6.0.0
         with:

@@ -68,6 +68,15 @@ pub(crate) async fn oidc_logout(
         Ok(redirect) => redirect,
         Err(response) => return response,
     };
+    if current_session.as_ref().is_some_and(|session| {
+        !logout_request_authorizes_session_clear(&state, &req, session, hint.as_ref())
+    }) {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "logout request is not authorized for the current OP session.",
+        );
+    }
 
     if let Some(session_id) = session_cookie {
         let _ = valkey_del(&state.valkey, format!("oauth:session:{session_id}")).await;
@@ -183,6 +192,18 @@ fn set_once(field: &mut Option<String>, value: &str) -> Result<(), HttpResponse>
     }
     field.replace(value.to_owned());
     Ok(())
+}
+
+fn logout_request_authorizes_session_clear(
+    state: &AppState,
+    req: &HttpRequest,
+    session: &CurrentSession,
+    hint: Option<&IdTokenHintClaims>,
+) -> bool {
+    has_valid_csrf_token(state, req, None)
+        || hint
+            .and_then(|hint| hint.sid.as_deref())
+            .is_some_and(|sid| constant_time_eq(sid.as_bytes(), session.oidc_sid.as_bytes()))
 }
 
 #[derive(Deserialize)]

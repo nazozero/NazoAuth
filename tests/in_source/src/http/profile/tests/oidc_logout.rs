@@ -1131,7 +1131,19 @@ async fn oidc_logout_skips_backchannel_client_when_subject_policy_is_invalid() {
         urlencoding::encode(&client_public_id),
         urlencoding::encode(post_logout_redirect_uri),
     );
-    let (req, payload) = fixture.logout_request(&uri, Some(&sid)).await;
+    let csrf_token = "logout-csrf-token";
+    let request = actix_web::test::TestRequest::default()
+        .uri(&uri)
+        .insert_header(("x-csrf-token", csrf_token))
+        .cookie(Cookie::new(
+            fixture.state.settings.session_cookie_name.clone(),
+            sid.clone(),
+        ))
+        .cookie(Cookie::new(
+            fixture.state.settings.csrf_cookie_name.clone(),
+            csrf_token,
+        ));
+    let (req, payload) = logout_request_with_payload(request).await;
 
     let response = oidc_logout(fixture.state.clone(), req, payload).await;
     let status = response.status();

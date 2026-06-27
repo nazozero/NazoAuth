@@ -666,6 +666,27 @@ fn self_signed_client_certificate_matches_registered_x5c() {
 }
 
 #[test]
+fn self_signed_client_certificate_ignores_non_leaf_x5c_entries() {
+    let leaf = test_certificate("client-leaf", -60, 3600);
+    let chain_member = test_certificate("client-chain-member", -60, 3600);
+    let mut client = client();
+    client.token_endpoint_auth_method = "self_signed_tls_client_auth".to_owned();
+    client.jwks = Some(json!({
+        "keys": [{
+            "kid": "cert-chain",
+            "x5c": [chain_member.x5c, leaf.x5c]
+        }]
+    }));
+    let certificate = MtlsClientCertificate {
+        thumbprint: Some(leaf.thumbprint),
+        verified_certificate_expiry: true,
+        ..MtlsClientCertificate::default()
+    };
+
+    assert!(!client_mtls_certificate_matches(&client, &certificate));
+}
+
+#[test]
 fn self_signed_client_certificate_rotation_accepts_only_registered_x5c_set() {
     let old = test_certificate("client-old", -60, 3600);
     let new = test_certificate("client-new", -60, 3600);

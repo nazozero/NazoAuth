@@ -1,4 +1,35 @@
 use super::*;
+use std::sync::Arc;
+
+use crate::config::ConfigSource;
+use crate::db::create_pool;
+use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
+use fred::interfaces::ClientLike;
+use fred::prelude::{
+    Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
+};
+
+fn disconnected_valkey_client() -> fred::prelude::Client {
+    let mut builder = ValkeyBuilder::default_centralized();
+    builder.with_performance_config(|performance: &mut PerformanceConfig| {
+        performance.default_command_timeout = std::time::Duration::from_millis(50);
+    });
+    builder.with_connection_config(|connection: &mut ConnectionConfig| {
+        connection.connection_timeout = std::time::Duration::from_millis(50);
+        connection.internal_command_timeout = std::time::Duration::from_millis(50);
+        connection.max_command_attempts = 1;
+    });
+    builder
+        .build()
+        .expect("valkey client construction should not connect")
+}
+
+fn response_oauth_error_code(response: &HttpResponse) -> Option<String> {
+    response
+        .extensions()
+        .get::<OAuthJsonErrorFields>()
+        .map(|fields| fields.error.clone())
+}
 
 #[path = "request/endpoint.rs"]
 mod endpoint;
@@ -48,6 +79,46 @@ fn pkce_policy_client() -> ClientRow {
         sector_identifier_uri: None,
         sector_identifier_host: None,
     }
+}
+
+fn reauth_nonce_state_with_valkey(valkey: fred::prelude::Client) -> AppState {
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.frontend_base_url = "https://auth.example".to_owned();
+
+    AppState {
+        diesel_db: create_pool(
+            "postgres://nazo_reauth_nonce_test_invalid:nazo_reauth_nonce_test_invalid@127.0.0.1:1/nazo"
+                .to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey,
+        settings: Arc::new(settings),
+        keyset: KeysetStore::new(Keyset {
+            active_kid: "test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+            verification_keys: Vec::new(),
+        }),
+    }
+}
+
+async fn live_reauth_nonce_state() -> Option<AppState> {
+    let valkey_url = std::env::var("VALKEY_URL").ok()?;
+    let mut builder =
+        ValkeyBuilder::from_config(ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL"));
+    builder.with_performance_config(|performance: &mut PerformanceConfig| {
+        performance.default_command_timeout = std::time::Duration::from_millis(1000);
+    });
+    builder.with_connection_config(|connection: &mut ConnectionConfig| {
+        connection.connection_timeout = std::time::Duration::from_millis(1000);
+        connection.internal_command_timeout = std::time::Duration::from_millis(1000);
+        connection.max_command_attempts = 1;
+    });
+    let valkey = builder.build().expect("valkey client should build");
+    valkey.init().await.expect("valkey should connect");
+    Some(reauth_nonce_state_with_valkey(valkey))
 }
 
 #[test]
@@ -279,7 +350,8 @@ fn max_age_zero_and_prompt_directives_require_reauthentication() {
 fn authorization_login_url_marks_reauthentication_start_once() {
     let q = query(&[("client_id", "client-1"), ("prompt", "login")]);
 
-    let url = authorization_login_url_for_frontend("https://auth.example", &q, true, None);
+    let url =
+        authorization_login_url_for_frontend("https://auth.example", &q, Some("server-nonce"));
 
     let url = url::Url::parse(&url).unwrap();
     assert!(url.as_str().starts_with("https://auth.example/auth?"));
@@ -287,7 +359,65 @@ fn authorization_login_url_marks_reauthentication_start_once() {
         .query_pairs()
         .find_map(|(key, value)| (key == "next").then_some(value.into_owned()))
         .unwrap();
-    assert!(next.contains("_nazo_reauth_started_at="));
+    assert!(next.contains("_nazo_reauth_nonce=server-nonce"));
+}
+
+#[actix_web::test]
+async fn reauth_nonce_is_single_use_authorization_state() {
+    let Some(state) = live_reauth_nonce_state().await else {
+        return;
+    };
+
+    let location = authorization_login_url(
+        &state,
+        &query(&[("client_id", "client-1"), ("prompt", "login")]),
+        true,
+    )
+    .await
+    .expect("reauthentication nonce should be issued");
+    let login_url = url::Url::parse(&location).expect("login URL should parse");
+    let next = login_url
+        .query_pairs()
+        .find_map(|(key, value)| (key == "next").then_some(value.into_owned()))
+        .expect("login URL should carry next authorization request");
+    let next_url = url::Url::parse(&format!("https://issuer.example{next}"))
+        .expect("next authorization request should parse as path and query");
+    let nonce = next_url
+        .query_pairs()
+        .find_map(|(key, value)| (key == reauth_nonce_parameter()).then_some(value.into_owned()))
+        .expect("reauthentication redirect should carry opaque nonce");
+
+    let mut resumed = query(&[(reauth_nonce_parameter(), nonce.as_str())]);
+    let first_started_at = consume_reauth_nonce(&state, &mut resumed).await;
+    assert!(first_started_at.is_some());
+    assert!(!resumed.contains_key(reauth_nonce_parameter()));
+
+    let mut replayed = query(&[(reauth_nonce_parameter(), nonce.as_str())]);
+    assert_eq!(consume_reauth_nonce(&state, &mut replayed).await, None);
+    assert!(!replayed.contains_key(reauth_nonce_parameter()));
+}
+
+#[actix_web::test]
+async fn reauth_nonce_store_failure_returns_server_error() {
+    let state = reauth_nonce_state_with_valkey(disconnected_valkey_client());
+    let response = authorization_login_url(&state, &query(&[("client_id", "client-1")]), true)
+        .await
+        .expect_err("reauthentication nonce storage failure should fail closed");
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        response_oauth_error_code(&response).as_deref(),
+        Some("server_error")
+    );
+}
+
+#[actix_web::test]
+async fn reauth_nonce_consume_failure_removes_untrusted_nonce() {
+    let state = reauth_nonce_state_with_valkey(disconnected_valkey_client());
+    let mut resumed = query(&[(reauth_nonce_parameter(), "opaque-nonce")]);
+
+    assert_eq!(consume_reauth_nonce(&state, &mut resumed).await, None);
+    assert!(!resumed.contains_key(reauth_nonce_parameter()));
 }
 
 #[test]

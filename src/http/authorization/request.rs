@@ -15,6 +15,8 @@ pub(crate) use parameters::AUTHORIZED_REQUEST_PARAMETERS;
 use parameters::*;
 use prompt_none::*;
 
+const REAUTH_NONCE_TTL_SECONDS: u64 = 600;
+
 /// 校验 OAuth authorize 参数并创建待确认授权请求。
 pub(crate) async fn authorize_get(
     state: Data<AppState>,
@@ -77,11 +79,7 @@ async fn authorize_request(
     }
 
     let original_authorization_query = q.clone();
-    let reauth_started_at = q
-        .get(reauth_started_at_parameter())
-        .and_then(|value| value.parse::<i64>().ok())
-        .filter(|value| *value > 0);
-    q.remove(reauth_started_at_parameter());
+    let reauth_started_at = consume_reauth_nonce(&state, q).await;
     let mut pushed_dpop_jkt = None;
     let mut pushed_mtls_x5t_s256 = None;
     let mut consumed_request_uri_error: Option<&'static str> = None;
@@ -348,7 +346,7 @@ async fn authorize_request(
             )
             .await;
         }
-        return redirect_found(authorization_login_url(
+        return match authorization_login_url(
             &state,
             &authorization_login_query(
                 q,
@@ -356,8 +354,12 @@ async fn authorize_request(
                 pending_pushed_request_uri.as_ref(),
             ),
             prompt.login || prompt.select_account,
-            reauth_started_at,
-        ));
+        )
+        .await
+        {
+            Ok(location) => redirect_found(location),
+            Err(response) => response,
+        };
     };
     if session_requires_reauthentication(
         prompt,
@@ -378,7 +380,7 @@ async fn authorize_request(
             )
             .await;
         }
-        return redirect_found(authorization_login_url(
+        return match authorization_login_url(
             &state,
             &authorization_login_query(
                 q,
@@ -386,8 +388,12 @@ async fn authorize_request(
                 pending_pushed_request_uri.as_ref(),
             ),
             prompt.login || prompt.select_account,
-            reauth_started_at,
-        ));
+        )
+        .await
+        {
+            Ok(location) => redirect_found(location),
+            Err(response) => response,
+        };
     }
 
     let requested_scopes = parse_scope(q.get("scope").map(String::as_str).unwrap_or(""));
@@ -596,18 +602,59 @@ fn oauth_json_error(response: &HttpResponse) -> Option<String> {
         .map(|fields| fields.error.clone())
 }
 
-fn authorization_login_url(
+async fn consume_reauth_nonce(state: &AppState, q: &mut HashMap<String, String>) -> Option<i64> {
+    let nonce = q.remove(reauth_nonce_parameter())?;
+    let raw = match valkey_getdel(&state.valkey, reauth_nonce_key(&nonce)).await {
+        Ok(Some(raw)) => raw,
+        Ok(None) => return None,
+        Err(error) => {
+            tracing::warn!(%error, "failed to consume reauthentication nonce");
+            return None;
+        }
+    };
+    raw.parse::<i64>().ok().filter(|value| *value > 0)
+}
+
+async fn authorization_login_url(
     state: &AppState,
     q: &HashMap<String, String>,
     reauthentication_required: bool,
-    reauth_started_at: Option<i64>,
-) -> String {
-    authorization_login_url_for_frontend(
+) -> Result<String, HttpResponse> {
+    let reauth_nonce = if reauthentication_required {
+        Some(issue_reauth_nonce(state).await?)
+    } else {
+        None
+    };
+    Ok(authorization_login_url_for_frontend(
         &state.settings.frontend_base_url,
         q,
-        reauthentication_required,
-        reauth_started_at,
+        reauth_nonce.as_deref(),
+    ))
+}
+
+async fn issue_reauth_nonce(state: &AppState) -> Result<String, HttpResponse> {
+    let nonce = random_urlsafe_token();
+    let started_at = Utc::now().timestamp().to_string();
+    valkey_set_ex(
+        &state.valkey,
+        reauth_nonce_key(&nonce),
+        started_at,
+        REAUTH_NONCE_TTL_SECONDS,
     )
+    .await
+    .map_err(|error| {
+        tracing::warn!(%error, "failed to store reauthentication nonce");
+        oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "重新认证状态写入失败.",
+        )
+    })?;
+    Ok(nonce)
+}
+
+fn reauth_nonce_key(nonce: &str) -> String {
+    format!("oauth:authorization:reauth:{}", blake3_hex(nonce))
 }
 
 #[cfg(test)]

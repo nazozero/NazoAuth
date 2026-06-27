@@ -21,16 +21,16 @@ pub(crate) const AUTHORIZED_REQUEST_PARAMETERS: &[&str] = &[
     "request",
 ];
 pub(super) const AUTHORIZATION_NONCE_MAX_BYTES: usize = 256;
-const REAUTH_STARTED_AT_PARAMETER: &str = "_nazo_reauth_started_at";
+const REAUTH_NONCE_PARAMETER: &str = "_nazo_reauth_nonce";
 
 pub(super) fn authorization_duplicate_parameters() -> Vec<&'static str> {
     let mut parameters = AUTHORIZED_REQUEST_PARAMETERS.to_vec();
-    parameters.push(REAUTH_STARTED_AT_PARAMETER);
+    parameters.push(REAUTH_NONCE_PARAMETER);
     parameters
 }
 
-pub(super) fn reauth_started_at_parameter() -> &'static str {
-    REAUTH_STARTED_AT_PARAMETER
+pub(super) fn reauth_nonce_parameter() -> &'static str {
+    REAUTH_NONCE_PARAMETER
 }
 
 pub(super) fn authorization_request_requires_pkce(client: &ClientRow) -> bool {
@@ -326,17 +326,11 @@ pub(super) fn authorization_login_query(
 pub(super) fn authorization_login_url_for_frontend(
     frontend_base_url: &str,
     q: &HashMap<String, String>,
-    reauthentication_required: bool,
-    reauth_started_at: Option<i64>,
+    reauth_nonce: Option<&str>,
 ) -> String {
     let mut next_query = q.clone();
-    if reauthentication_required {
-        next_query.insert(
-            REAUTH_STARTED_AT_PARAMETER.to_owned(),
-            reauth_started_at
-                .unwrap_or_else(|| Utc::now().timestamp())
-                .to_string(),
-        );
+    if let Some(reauth_nonce) = reauth_nonce {
+        next_query.insert(REAUTH_NONCE_PARAMETER.to_owned(), reauth_nonce.to_owned());
     }
     let query = next_query
         .iter()

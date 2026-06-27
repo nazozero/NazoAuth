@@ -127,6 +127,46 @@ async fn cors_well_known_allows_get_and_head_only() {
     );
 }
 
+#[actix_web::test]
+async fn cors_admin_allows_csrf_header_for_credentialed_write_requests() {
+    let settings = test_settings(vec!["https://admin.example".to_owned()]);
+    let app = test::init_service(App::new().wrap(cors_admin(&settings)).route(
+        "/admin/clients",
+        web::post().to(|| async { HttpResponse::Ok().finish() }),
+    ))
+    .await;
+
+    let request = test::TestRequest::default()
+        .method(actix_web::http::Method::OPTIONS)
+        .uri("/admin/clients")
+        .insert_header((header::ORIGIN, "https://admin.example"))
+        .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, "POST"))
+        .insert_header((
+            header::ACCESS_CONTROL_REQUEST_HEADERS,
+            "x-csrf-token, content-type",
+        ))
+        .to_request();
+    let response = test::call_service(&app, request).await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+            .unwrap(),
+        "true"
+    );
+    assert!(
+        response
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_HEADERS)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("x-csrf-token")
+    );
+}
+
 fn test_settings(cors_allowed_origins: Vec<String>) -> Settings {
     Settings {
         issuer: "https://issuer.example".to_owned(),

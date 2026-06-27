@@ -19,14 +19,15 @@ Nazo Auth Server 已发布在 OpenID Foundation 官方认证列表中：
 - [2026-06-13 real public UI OIDF regression](2026-06-13-real-public-ui-regression.md)
 - [2026-06-14 security-coverage OIDF full matrix](2026-06-14-local-refactor-full-matrix.md)
 - [2026-06-25 PR 13 security hardening OIDF full matrix](2026-06-25-pr13-security-hardening-full-matrix.md)
+- [2026-06-26 security findings OIDF full matrix](2026-06-26-security-findings-full-matrix.md)
 
 `2026-06-09` full matrix 是当前官方认证证据，针对 `https://auth.nazo.run` 执行，覆盖 OIDC Basic、OIDC Config、FAPI2 Security Profile Final、FAPI2 Message Signing Final、mTLS、DPoP、`private_key_jwt`、client credentials 变体。结果为全计划完成，`0 failures`，`0 warnings`。
 
 `2026-06-13` 记录保存了移除 OIDF-only 前端页面、启用 JSON-only 后端授权错误响应后的真实公网 UI 回归结果。
 
-最新记录的官方 full-matrix suite run 是 2026-06-25 PR 13 安全加固运行，针对 `https://auth.nazo.run` 和 commit `49467e3474b32c17603ed77ba63b570d07e794b2` 执行。该运行从 `https://www.certification.openid.net/` 导出全部 16 个 plan archives，16 个 plan 汇总均为 `0 failures`、`0 warnings`。
+最新记录的官方 full-matrix suite run 是 2026-06-26 security findings 安全加固运行，针对 `https://auth.nazo.run` 和 commit `be7ef9f6a9197520235a59d42866a0918a293014` 执行。该运行从 `https://www.certification.openid.net/` 导出全部 16 个 plan archives，16 个 plan 汇总均为 `0 failures`、`0 warnings`。
 
-最新 Hostinger 本地 full-matrix 回归记录对应 `oidf-local-results/run-20260625T230539Z`，测试对象同样是公网 issuer 和同一 commit。该运行导出全部 16 个 plan archives，日志包含 16 个 plan 汇总，均为 `0 failures`、`0 warnings`。
+最新 Hostinger 本地 full-matrix 回归记录对应 `oidf-local-results/run-20260626T165725Z`，测试对象同样是公网 issuer 和同一 commit。该运行导出全部 16 个 plan archives，日志包含 16 个 plan 汇总，均为 `0 failures`、`0 warnings`。
 
 baseline OIDC metadata 会在 `request_object_signing_alg_values_supported` 中声明 `none`，用于 unsigned Request Object 的 OIDC 兼容路径。该能力不是高安全 profile 能力；FAPI2 Security Profile Final、FAPI2 Message Signing Final、要求 PAR request object 的客户端以及 holder-bound token 客户端仍然 fail closed，必须使用签名 Request Object 或被拒绝。
 

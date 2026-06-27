@@ -245,7 +245,7 @@ pub(crate) fn jwks_contains_current_x5c_thumbprint(jwks: &Value, thumbprint: &st
         .is_some_and(|keys| {
             keys.iter()
                 .filter_map(|key| key.get("x5c").and_then(Value::as_array))
-                .flat_map(|x5c| x5c.iter().filter_map(Value::as_str))
+                .filter_map(|x5c| x5c.as_slice().first().and_then(Value::as_str))
                 .filter_map(certificate_x5c_thumbprint)
                 .any(|registered| constant_time_eq(registered.as_bytes(), thumbprint.as_bytes()))
         })

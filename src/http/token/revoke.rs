@@ -82,9 +82,21 @@ pub(crate) async fn revoke_after_rate_limit(
             );
         }
     };
+    drop(conn);
     if let Err(error) = authenticate_revocation_client(&state, &req, &client, &credentials).await {
         return token_management_client_auth_error(error, has_basic);
     }
+    let mut conn = match get_conn(&state.diesel_db).await {
+        Ok(conn) => conn,
+        Err(error) => {
+            tracing::warn!(%error, "failed to get database connection for token revocation state update");
+            return token_management_oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "token 撤销失败.",
+            );
+        }
+    };
     let refresh_hash = blake3_hex(&form.token);
     let updated = match diesel::update(
         oauth_tokens::table

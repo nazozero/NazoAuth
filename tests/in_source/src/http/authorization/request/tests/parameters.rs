@@ -14,13 +14,13 @@ fn authorization_duplicate_parameters_includes_all_authorized_params_and_reauth(
     assert!(params.contains(&"response_mode"));
     assert!(params.contains(&"request_uri"));
     assert!(params.contains(&"request"));
-    assert!(params.contains(&reauth_started_at_parameter()));
+    assert!(params.contains(&reauth_nonce_parameter()));
     assert_eq!(params.len(), AUTHORIZED_REQUEST_PARAMETERS.len() + 1);
 }
 
 #[test]
-fn reauth_started_at_parameter_returns_expected_name() {
-    assert_eq!(reauth_started_at_parameter(), "_nazo_reauth_started_at");
+fn reauth_nonce_parameter_returns_expected_name() {
+    assert_eq!(reauth_nonce_parameter(), "_nazo_reauth_nonce");
 }
 
 #[test]
@@ -879,36 +879,28 @@ fn authorization_login_url_for_frontend_without_reauthentication() {
     let mut q = HashMap::new();
     q.insert("response_type".to_owned(), "code".to_owned());
     q.insert("client_id".to_owned(), "my-client".to_owned());
-    let url = authorization_login_url_for_frontend("https://app.example", &q, false, None);
+    let url = authorization_login_url_for_frontend("https://app.example", &q, None);
     assert!(url.starts_with("https://app.example/auth?next="));
     assert!(url.contains(urlencoding::encode("/authorize?").as_ref()));
     assert!(url.contains("response_type%3Dcode") || url.contains("response_type=code"));
     assert!(url.contains("client_id%3Dmy-client") || url.contains("client_id=my-client"));
-    assert!(!url.contains(reauth_started_at_parameter()));
+    assert!(!url.contains(reauth_nonce_parameter()));
 }
 
 #[test]
 fn authorization_login_url_for_frontend_with_reauthentication() {
     let mut q = HashMap::new();
     q.insert("client_id".to_owned(), "my-client".to_owned());
-    let url = authorization_login_url_for_frontend("https://app.example", &q, true, Some(12345));
+    let url = authorization_login_url_for_frontend("https://app.example", &q, Some("server-nonce"));
     assert!(url.starts_with("https://app.example/auth?next="));
-    assert!(url.contains(reauth_started_at_parameter()));
-    assert!(url.contains("12345"));
-}
-
-#[test]
-fn authorization_login_url_for_frontend_uses_now_when_reauth_started_at_not_given() {
-    let mut q = HashMap::new();
-    q.insert("client_id".to_owned(), "my-client".to_owned());
-    let url = authorization_login_url_for_frontend("https://app.example", &q, true, None);
-    assert!(url.contains(reauth_started_at_parameter()));
+    assert!(url.contains(reauth_nonce_parameter()));
+    assert!(url.contains("server-nonce"));
 }
 
 #[test]
 fn authorization_login_url_for_frontend_with_empty_query() {
     let q = HashMap::new();
-    let url = authorization_login_url_for_frontend("https://app.example", &q, false, None);
+    let url = authorization_login_url_for_frontend("https://app.example", &q, None);
     assert_eq!(url, "https://app.example/auth?next=%2Fauthorize");
 }
 
@@ -916,7 +908,7 @@ fn authorization_login_url_for_frontend_with_empty_query() {
 fn authorization_login_url_for_frontend_trims_trailing_slash_from_base() {
     let mut q = HashMap::new();
     q.insert("client_id".to_owned(), "c".to_owned());
-    let url = authorization_login_url_for_frontend("https://app.example/", &q, false, None);
+    let url = authorization_login_url_for_frontend("https://app.example/", &q, None);
     assert!(url.starts_with("https://app.example/auth?next="));
 }
 
