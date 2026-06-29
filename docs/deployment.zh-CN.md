@@ -31,53 +31,33 @@
 
 1. 创建 PostgreSQL 数据库和用户。
 2. 创建 Valkey 实例，并确定持久化 / HA 策略。
-3. 为签名密钥和头像分配持久目录。
+3. 分配持久化数据目录。
 4. 在仓库之外创建 `.env.yaml`。
-5. 将 `ISSUER` 设置为精确公开 HTTPS issuer，不带结尾斜杠。
-6. 设置 `FRONTEND_BASE_URL` 和 `CORS_ALLOWED_ORIGINS`。
-7. 设置 `COOKIE_SECURE=true`。
-8. `TRUSTED_PROXY_CIDRS` 只包含你控制的反向代理地址。
-9. 在代理正确清洗 forwarded headers 之前，保持 `CLIENT_IP_HEADER_MODE=none`。
-10. 先执行迁移，再切流量。
+5. 将 `PUBLIC_BASE_URL` 设置为精确公开 HTTPS origin，不带结尾斜杠。
+6. `TRUSTED_PROXY_CIDRS` 只包含你控制的反向代理地址。
+7. 在代理正确清洗 forwarded headers 之前，保持 `CLIENT_IP_HEADER_MODE=none`。
+8. 先执行迁移，再切流量。
 
 ## 配置基线
 
 ```yaml
 BIND: "0.0.0.0:8000"
+PUBLIC_BASE_URL: "https://auth.nazo.run"
 DATABASE_URL: "postgresql://nazo_oauth:<password>@postgres.example.internal:5432/oauth"
 VALKEY_URL: "redis://valkey.example.internal:6379/0"
-ISSUER: "https://auth.nazo.run"
-FRONTEND_BASE_URL: "https://auth.nazo.run/ui/"
-CORS_ALLOWED_ORIGINS:
-  - "https://auth.nazo.run"
-DEFAULT_AUDIENCE: "resource://default"
+DATA_DIR: "/var/lib/nazo_oauth"
 AUTHORIZATION_SERVER_PROFILE: "oauth2-baseline"
-COOKIE_SECURE: true
 TRUSTED_PROXY_CIDRS: "10.0.0.0/24"
 CLIENT_IP_HEADER_MODE: "forwarded"
-SUBJECT_TYPE: "pairwise"
-PAIRWISE_SUBJECT_SECRET: "<high-entropy-secret>"
-EMAIL_DELIVERY: "smtp"
-EMAIL_SMTP_HOST: "smtp.example.com"
-EMAIL_SMTP_PORT: 587
-EMAIL_SMTP_TLS: "starttls"
-EMAIL_SMTP_USERNAME: "<smtp-user>"
-EMAIL_SMTP_PASSWORD: "<smtp-password>"
-EMAIL_FROM: "Nazo Auth <no-reply@example.com>"
-AVATAR_STORAGE_DIR: "/var/lib/nazo_oauth/avatars"
-JWK_KEYS_DIR: "/var/lib/nazo_oauth/keys"
-SIGNING_EXTERNAL_COMMAND: ""
-SIGNING_EXTERNAL_TIMEOUT_MS: 2000
-SIGNING_KEY_ROTATION_INTERVAL_SECONDS: 7776000
-SIGNING_KEY_PREPUBLISH_SECONDS: 86400
 RUST_LOG: "info"
-OTEL_ENABLED: false
-OTEL_EXPORTER_OTLP_ENDPOINT: ""
-OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
-OTEL_EXPORTER_OTLP_TIMEOUT: 10000
 ```
 
 不要把生产 secret 提交到 Git。
+
+`ISSUER`、`FRONTEND_BASE_URL`、`CORS_ALLOWED_ORIGINS`、`COOKIE_SECURE`、
+`PASSKEY_ORIGIN`、`PASSKEY_RP_ID`、`JWK_KEYS_DIR`、`AVATAR_STORAGE_DIR`
+默认由 `PUBLIC_BASE_URL` 和 `DATA_DIR` 派生。高级配置见
+[configuration.md](configuration.md)。
 
 ## Profile 选择
 
@@ -221,7 +201,8 @@ curl -fsS https://auth.nazo.run/.well-known/oauth-authorization-server
 curl -fsS https://auth.nazo.run/jwks.json
 ```
 
-检查 discovery 的 `issuer` 必须精确等于 `ISSUER`。
+检查 discovery 的 `issuer` 必须精确等于 `PUBLIC_BASE_URL`，除非显式覆盖了
+`ISSUER`。
 
 ## OIDF 准备
 
@@ -238,8 +219,9 @@ curl -fsS https://auth.nazo.run/jwks.json
 ## 运维检查清单
 
 - 生产只使用 HTTPS issuer。
-- `COOKIE_SECURE=true`。
-- `CORS_ALLOWED_ORIGINS` 最小化。
+- 同域 `PUBLIC_BASE_URL`。
+- Secure cookie 已启用。HTTPS `PUBLIC_BASE_URL` 会默认开启。
+- CORS 暴露最小化。
 - 严格限制可信代理 CIDR。
 - 不存在 proxy header spoofing 路径。
 - PostgreSQL 备份与恢复演练完成。

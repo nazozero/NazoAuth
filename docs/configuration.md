@@ -1,0 +1,103 @@
+# Configuration
+
+## Model
+
+Nazo Auth Server is configured in two layers:
+
+- startup configuration: values needed before the process can run
+- runtime/application configuration: feature and integration settings that can
+  move to the administrator UI over time
+
+The default deployment is same-origin. The public URL is configured once and
+the server derives the related URLs from it:
+
+```text
+PUBLIC_BASE_URL=https://auth.example.com
+ISSUER=https://auth.example.com
+FRONTEND_BASE_URL=https://auth.example.com/ui/
+PASSKEY_ORIGIN=https://auth.example.com
+PASSKEY_RP_ID=auth.example.com
+```
+
+## Minimal deployment
+
+```yaml
+BIND: "0.0.0.0:8000"
+PUBLIC_BASE_URL: "https://auth.example.com"
+DATABASE_URL: "postgresql://nazo_oauth:<password>@postgres:5432/oauth"
+VALKEY_URL: "redis://valkey:6379/0"
+DATA_DIR: "/var/lib/nazo_oauth"
+AUTHORIZATION_SERVER_PROFILE: "oauth2-baseline"
+RUST_LOG: "info"
+```
+
+`DATA_DIR` defaults the persistent file locations:
+
+```text
+JWK_KEYS_DIR = DATA_DIR + "/keys"
+AVATAR_STORAGE_DIR = DATA_DIR + "/avatars"
+```
+
+## Startup settings
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `BIND` | `0.0.0.0:8000` | HTTP listener |
+| `PUBLIC_BASE_URL` | `http://127.0.0.1:8000` | Public same-origin base URL |
+| `DATABASE_URL` | `postgresql://postgres:postgres@127.0.0.1:5432/oauth` | PostgreSQL connection string |
+| `VALKEY_URL` | `redis://127.0.0.1:6379/0` | Valkey connection string |
+| `DATA_DIR` | `runtime` | Base directory for persistent local files |
+| `AUTHORIZATION_SERVER_PROFILE` | `oauth2-baseline` | `oauth2-baseline`, `fapi2-security`, or `fapi2-message-signing-authz-request` |
+| `RUST_LOG` | `info` | Tracing filter |
+
+## Derived settings
+
+| Derived value | Rule |
+| --- | --- |
+| `ISSUER` | `PUBLIC_BASE_URL`, unless explicitly overridden |
+| `FRONTEND_BASE_URL` | `PUBLIC_BASE_URL + "/ui/"`, unless explicitly overridden |
+| `CORS_ALLOWED_ORIGINS` | origin of `PUBLIC_BASE_URL`, unless explicitly overridden |
+| `COOKIE_SECURE` | `true` when issuer uses HTTPS |
+| `PASSKEY_ORIGIN` | issuer, unless explicitly overridden |
+| `PASSKEY_RP_ID` | host of `PASSKEY_ORIGIN`, unless explicitly overridden |
+| `JWK_KEYS_DIR` | `DATA_DIR + "/keys"`, unless explicitly overridden |
+| `AVATAR_STORAGE_DIR` | `DATA_DIR + "/avatars"`, unless explicitly overridden |
+
+Explicit overrides are retained for advanced deployments and backward
+compatibility. New deployments should prefer same-origin defaults.
+
+## Advanced settings
+
+The following settings are still supported but should not be part of a quick
+deployment path. They are candidates for the administrator UI:
+
+- OAuth/OIDC feature gates: `ENABLE_REQUEST_OBJECT`,
+  `ENABLE_REQUEST_URI_PARAMETER`, `ENABLE_PAR_REQUEST_OBJECT`,
+  `ENABLE_AUTHORIZATION_DETAILS`, `ENABLE_LEGACY_AUDIENCE_PARAM`
+- protocol tuning: `DPOP_NONCE_POLICY`, `REQUEST_OBJECT_JTI_POLICY`,
+  `REQUIRE_PUSHED_AUTHORIZATION_REQUESTS`, `PAR_TTL_SECONDS`
+- token and session lifetimes: `SESSION_TTL_SECONDS`, `AUTH_CODE_TTL_SECONDS`,
+  `ACCESS_TOKEN_TTL_SECONDS`, `ID_TOKEN_TTL_SECONDS`,
+  `REFRESH_TOKEN_TTL_SECONDS`
+- rate limits: `RATE_LIMIT_WINDOW_SECONDS`, `AUTH_RATE_LIMIT_MAX_REQUESTS`,
+  `TOKEN_RATE_LIMIT_MAX_REQUESTS`,
+  `TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS`
+- email delivery: `EMAIL_DELIVERY`, `EMAIL_SMTP_HOST`, `EMAIL_SMTP_PORT`,
+  `EMAIL_SMTP_TLS`, `EMAIL_SMTP_USERNAME`, `EMAIL_SMTP_PASSWORD`,
+  `EMAIL_FROM`
+- passkeys: `PASSKEY_RP_NAME`, `PASSKEY_REQUIRE_USER_VERIFICATION`,
+  `PASSKEY_REQUIRE_USER_HANDLE`, `PASSKEY_STRICT_BASE64`
+- federation: `FEDERATION_OIDC_*`, `FEDERATION_SAML_GATEWAY_*`
+- SCIM: `SCIM_BEARER_TOKEN`
+- external signing: `SIGNING_EXTERNAL_COMMAND`,
+  `SIGNING_EXTERNAL_TIMEOUT_MS`,
+  `SIGNING_KEY_ROTATION_INTERVAL_SECONDS`,
+  `SIGNING_KEY_PREPUBLISH_SECONDS`
+- observability: `OTEL_ENABLED`, `OTEL_EXPORTER_OTLP_ENDPOINT`,
+  `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_TIMEOUT`
+- proxy and client IP handling: `TRUSTED_PROXY_CIDRS`,
+  `CLIENT_IP_HEADER_MODE`
+
+Security-sensitive values such as `DATABASE_URL`, `VALKEY_URL`, SMTP
+credentials, federation client secrets, and SAML shared secrets must not be
+committed to Git.

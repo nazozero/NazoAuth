@@ -7,7 +7,7 @@ semantic versioning once public release tags are cut.
 
 ### Added
 
-- Added durable OpenID Foundation conformance evidence under `docs/conformance`, including the 2026-06-06 full 16-plan matrix result, workflow URLs, artifact metadata, plan IDs, profile combinations, pass counts, and exported artifact filenames.
+- Added durable OpenID Foundation conformance evidence under `docs/conformance`, including retained full 16-plan matrix records, workflow URLs, artifact metadata, plan IDs, profile combinations, pass counts, and exported artifact filenames.
 - Added a production deployment guide covering container deployment, reverse proxy boundaries, key rotation, database and Valkey operations, live verification, and OIDF readiness.
 - Added `SECURITY.md` with reporting guidance, vulnerability classes, production boundaries, and disclosure expectations.
 - Added `docs/roadmap.md` as the current scope record for implemented profiles, deployment controls, product boundaries, and evidence links.
@@ -16,13 +16,14 @@ semantic versioning once public release tags are cut.
 - Added `CHANGELOG.md`.
 - Added token endpoint support for the standard RFC 8707 `resource` parameter as the normative single-resource input, while retaining the legacy `audience` parameter as an extension.
 - Added supply-chain and release security gates with `cargo audit`, `cargo deny`, CycloneDX SBOM generation, Trivy image scanning, keyless artifact signing, and GitHub provenance attestations.
+- Added OpenSSF Scorecard workflow, SARIF upload, published Scorecard results, and README badge.
 - Added PostgreSQL and Valkey HA, backup, restore, timeout, and partial-outage operations guidance.
 
 ### Changed
 
-- Changed the project license metadata to Apache-2.0 and added the top-level
+- Changed the project license metadata to AGPL-3.0-or-later and added the top-level
   license text.
-- Reworked `README.md` into a project-level entry point for scope,
+- Reworked `README.md` and `README.zh-CN.md` into project-level entry points for scope,
   conformance, local setup, configuration, deployment, checks, and security
   boundaries.
 - Sanitized generic OAuth JSON `error_description` values so protocol responses use ASCII-safe descriptions consistently.

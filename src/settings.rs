@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 
 use anyhow::bail;
+use url::Url;
 
 use crate::config::ConfigSource;
 use crate::support::{
@@ -74,13 +75,18 @@ pub(crate) struct Settings {
 impl Settings {
     /// Builds settings from the startup configuration source.
     pub(crate) fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
-        let issuer = config.string("ISSUER", "http://127.0.0.1:8000");
+        let public_base_url = config.string("PUBLIC_BASE_URL", "http://127.0.0.1:8000");
+        validate_issuer_url(&public_base_url)?;
+        let public_origin = url_origin(&public_base_url)?;
+
+        let issuer = config.string("ISSUER", &public_base_url);
         validate_issuer_url(&issuer)?;
         let mtls_endpoint_base_url = config
             .optional_string("MTLS_ENDPOINT_BASE_URL")
             .unwrap_or_else(|| issuer.clone());
         validate_issuer_url(&mtls_endpoint_base_url)?;
-        let frontend_base_url = config.string("FRONTEND_BASE_URL", "http://127.0.0.1:3000");
+        let frontend_base_url =
+            config.string("FRONTEND_BASE_URL", &format!("{}/ui/", public_base_url));
         validate_frontend_base_url(&frontend_base_url)?;
         let cors_allowed_origins = config
             .get("CORS_ALLOWED_ORIGINS")
@@ -93,7 +99,7 @@ impl Settings {
                     .collect()
             })
             .filter(|values: &Vec<String>| !values.is_empty())
-            .unwrap_or_else(|| vec!["http://127.0.0.1:3000".into()]);
+            .unwrap_or_else(|| vec![public_origin]);
         for origin in &cors_allowed_origins {
             validate_cors_origin(origin)?;
         }
@@ -145,6 +151,16 @@ impl Settings {
             );
         }
 
+        let data_dir = PathBuf::from(config.string("DATA_DIR", "runtime"));
+        let avatar_storage_dir = config
+            .optional_string("AVATAR_STORAGE_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| data_dir.join("avatars"));
+        let jwk_keys_dir = config
+            .optional_string("JWK_KEYS_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| data_dir.join("keys"));
+
         Ok(Self {
             issuer,
             mtls_endpoint_base_url,
@@ -168,10 +184,8 @@ impl Settings {
             email: EmailSettings::from_config(config)?,
             email_code_dev_response_enabled: config
                 .bool("EMAIL_CODE_DEV_RESPONSE_ENABLED", false)?,
-            avatar_storage_dir: PathBuf::from(
-                config.string("AVATAR_STORAGE_DIR", "runtime/avatars"),
-            ),
-            jwk_keys_dir: PathBuf::from(config.string("JWK_KEYS_DIR", "runtime/keys")),
+            avatar_storage_dir,
+            jwk_keys_dir,
             signing_external_command: parse_signing_external_command(
                 config.optional_string("SIGNING_EXTERNAL_COMMAND"),
             ),
@@ -196,6 +210,19 @@ impl Settings {
             enable_legacy_audience_param: config.bool("ENABLE_LEGACY_AUDIENCE_PARAM", false)?,
         })
     }
+}
+
+fn url_origin(value: &str) -> anyhow::Result<String> {
+    let url = Url::parse(value).map_err(|_| anyhow::anyhow!("PUBLIC_BASE_URL must be absolute"))?;
+    let Some(host) = url.host_str() else {
+        bail!("PUBLIC_BASE_URL must include host");
+    };
+    let mut origin = format!("{}://{}", url.scheme(), host);
+    if let Some(port) = url.port() {
+        origin.push(':');
+        origin.push_str(&port.to_string());
+    }
+    Ok(origin)
 }
 
 fn parse_signing_external_command(value: Option<String>) -> Vec<String> {

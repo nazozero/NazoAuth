@@ -26,53 +26,33 @@ Before first deployment:
 
 1. Create PostgreSQL database and user.
 2. Create Valkey instance and decide persistence / HA policy.
-3. Allocate persistent directories for keys and avatars.
+3. Allocate a persistent data directory.
 4. Create `.env.yaml` outside the repository.
-5. Set `ISSUER` to the exact public HTTPS issuer, without a trailing slash.
-6. Set `FRONTEND_BASE_URL` and `CORS_ALLOWED_ORIGINS` to real HTTPS origins.
-7. Set `COOKIE_SECURE=true`.
-8. Configure `TRUSTED_PROXY_CIDRS` only for reverse proxies that you control.
-9. Keep `CLIENT_IP_HEADER_MODE=none` until forwarded headers are correctly sanitized by the proxy.
-10. Run migrations before serving traffic.
+5. Set `PUBLIC_BASE_URL` to the exact public HTTPS origin, without a trailing slash.
+6. Configure `TRUSTED_PROXY_CIDRS` only for reverse proxies that you control.
+7. Keep `CLIENT_IP_HEADER_MODE=none` until forwarded headers are correctly sanitized by the proxy.
+8. Run migrations before serving traffic.
 
 ## Configuration Baseline
 
 ```yaml
 BIND: "0.0.0.0:8000"
+PUBLIC_BASE_URL: "https://oauth.example.com"
 DATABASE_URL: "postgresql://nazo_oauth:<password>@postgres.example.internal:5432/oauth"
 VALKEY_URL: "redis://valkey.example.internal:6379/0"
-ISSUER: "https://oauth.example.com"
-FRONTEND_BASE_URL: "https://accounts.example.com"
-CORS_ALLOWED_ORIGINS:
-  - "https://accounts.example.com"
-DEFAULT_AUDIENCE: "resource://default"
+DATA_DIR: "/var/lib/nazo_oauth"
 AUTHORIZATION_SERVER_PROFILE: "oauth2-baseline"
-COOKIE_SECURE: true
 TRUSTED_PROXY_CIDRS: "10.0.0.0/24"
 CLIENT_IP_HEADER_MODE: "forwarded"
-SUBJECT_TYPE: "pairwise"
-PAIRWISE_SUBJECT_SECRET: "<high-entropy-secret>"
-EMAIL_DELIVERY: "smtp"
-EMAIL_SMTP_HOST: "smtp.example.com"
-EMAIL_SMTP_PORT: 587
-EMAIL_SMTP_TLS: "starttls"
-EMAIL_SMTP_USERNAME: "<smtp-user>"
-EMAIL_SMTP_PASSWORD: "<smtp-password>"
-EMAIL_FROM: "Nazo Auth <no-reply@example.com>"
-AVATAR_STORAGE_DIR: "/var/lib/nazo_oauth/avatars"
-JWK_KEYS_DIR: "/var/lib/nazo_oauth/keys"
-SIGNING_EXTERNAL_COMMAND: ""
-SIGNING_EXTERNAL_TIMEOUT_MS: 2000
-SIGNING_KEY_ROTATION_INTERVAL_SECONDS: 7776000
-SIGNING_KEY_PREPUBLISH_SECONDS: 86400
 RUST_LOG: "info"
-OTEL_ENABLED: false
-OTEL_EXPORTER_OTLP_ENDPOINT: ""
-OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
-OTEL_EXPORTER_OTLP_TIMEOUT: 10000
 ```
 
 Do not store production secrets in Git.
+
+`ISSUER`, `FRONTEND_BASE_URL`, `CORS_ALLOWED_ORIGINS`, `COOKIE_SECURE`,
+`PASSKEY_ORIGIN`, `PASSKEY_RP_ID`, `JWK_KEYS_DIR`, and `AVATAR_STORAGE_DIR`
+are derived from `PUBLIC_BASE_URL` and `DATA_DIR` unless explicitly overridden.
+Advanced settings are documented in [configuration.md](configuration.md).
 
 Use `AUTHORIZATION_SERVER_PROFILE=fapi2-security` only for client populations
 that support confidential-client-only operation, PAR-only authorization
@@ -292,7 +272,8 @@ curl -fsS https://oauth.example.com/.well-known/oauth-authorization-server
 curl -fsS https://oauth.example.com/jwks.json
 ```
 
-Check that discovery `issuer` exactly equals `ISSUER`.
+Check that discovery `issuer` exactly equals `PUBLIC_BASE_URL`, unless `ISSUER`
+was explicitly overridden.
 
 The `nazo.run` deployment helper [scripts/verify_live_full_interfaces.py](../scripts/verify_live_full_interfaces.py) exercises a broader HTTPS path against `https://auth.nazo.run`. It reads host-local secrets and runs only in the intended deployment environment.
 
@@ -311,8 +292,9 @@ Before launching a full OpenID Foundation conformance run:
 ## Operations Checklist
 
 - HTTPS issuer only in production.
-- `COOKIE_SECURE=true`.
-- Minimal `CORS_ALLOWED_ORIGINS`.
+- Same-origin `PUBLIC_BASE_URL`.
+- Secure cookies enabled. HTTPS `PUBLIC_BASE_URL` enables this by default.
+- Minimal CORS exposure.
 - Strict trusted proxy CIDRs.
 - No proxy header spoofing path.
 - PostgreSQL backup and restore tested.

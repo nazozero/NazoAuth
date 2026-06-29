@@ -18,7 +18,7 @@ The project separates three surfaces:
 | --- | --- | --- |
 | `oauth2-baseline` | Implemented | Authorization code, PKCE, token, refresh, revocation, introspection, discovery, JWKS |
 | `oauth2-security-bcp` | Implemented | Sender constraints, redirect policy, query-token rejection, replay controls |
-| `oidc-basic-op` | Implemented and OIDF-tested | [profile matrix](profile-matrix.md), [2026-06-08 OIDF record](conformance/2026-06-08-oidf-full-matrix.md) |
+| `oidc-basic-op` | Implemented and OIDF-tested | [profile matrix](profile-matrix.md), [2026-06-27 OIDF record](conformance/2026-06-27-pr15-official-oidf-full-matrix.md) |
 | `oidc-config` | Implemented and OIDF-tested | Runtime discovery metadata and metadata truth tests |
 | `fapi2-security` | Implemented and OIDF-tested | PAR, PKCE S256, confidential clients, DPoP/mTLS-bound tokens |
 | `fapi2-message-signing-authz-request` | Implemented and OIDF-tested | Signed request objects at PAR with `aud`, `nbf`, and bounded `exp` |
@@ -106,7 +106,7 @@ Each item has a threat-model and acceptance-test entry in
 ## Evidence
 
 - Official conformance record:
-  [2026-06-08 OIDF full matrix](conformance/2026-06-08-oidf-full-matrix.md).
+  [2026-06-27 PR 15 official OIDF full matrix](conformance/2026-06-27-pr15-official-oidf-full-matrix.md).
 - OAuth 2.1 and best-practice audit:
   [oauth2-1-self-audit.md](oauth2-1-self-audit.md).
 - Negative conformance fixtures:

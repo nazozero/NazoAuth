@@ -9,12 +9,9 @@ in the repository.
 
 ## Current Evidence
 
-- [2026-06-09 OIDF full matrix](2026-06-09-oidf-full-matrix.md)
-- [2026-06-13 real public UI OIDF regression](2026-06-13-real-public-ui-regression.md)
-- [2026-06-14 security-coverage OIDF full matrix](2026-06-14-local-refactor-full-matrix.md)
-- [2026-06-25 PR 13 security hardening OIDF full matrix](2026-06-25-pr13-security-hardening-full-matrix.md)
-- [2026-06-26 security findings OIDF full matrix](2026-06-26-security-findings-full-matrix.md)
-- [2026-06-27 PR 15 official OIDF full matrix](2026-06-27-pr15-official-oidf-full-matrix.md)
+- Certification baseline: [2026-06-09 OIDF full matrix](2026-06-09-oidf-full-matrix.md)
+- Latest Hostinger-local full matrix: [2026-06-26 security findings OIDF full matrix](2026-06-26-security-findings-full-matrix.md)
+- Latest official full matrix: [2026-06-27 PR 15 official OIDF full matrix](2026-06-27-pr15-official-oidf-full-matrix.md)
 
 The latest recorded official full-matrix suite run is the 2026-06-27 PR 15
 run against `https://auth.nazo.run`. The deployed runtime implementation was

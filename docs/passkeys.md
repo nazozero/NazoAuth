@@ -8,9 +8,9 @@ not bypass OAuth/OIDC authorization, consent, token, or tenant checks.
 
 ## Configuration
 
-- `PASSKEY_RP_ID`: bare relying-party host name, without scheme, port, or path.
+- `PASSKEY_RP_ID`: bare relying-party host name, without scheme, port, or path. Defaults to the host of `PASSKEY_ORIGIN`.
 - `PASSKEY_RP_NAME`: display name shown by the browser during the WebAuthn ceremony.
-- `PASSKEY_ORIGIN`: exact browser origin expected in `clientDataJSON.origin`.
+- `PASSKEY_ORIGIN`: exact browser origin expected in `clientDataJSON.origin`. Defaults to the issuer derived from `PUBLIC_BASE_URL`.
 - `PASSKEY_REQUIRE_USER_VERIFICATION`: requires authenticator user verification such as biometrics or PIN.
 - `PASSKEY_REQUIRE_USER_HANDLE`: requires assertions to include the expected user handle for username-first login.
 - `PASSKEY_STRICT_BASE64`: requires WebAuthn binary fields to use spec-compliant base64url without padding.

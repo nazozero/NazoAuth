@@ -90,6 +90,10 @@ fn missing_config_file_can_be_replaced_by_whitelisted_environment() {
     let result = ConfigSource::load_from_dir_with_env(
         &path,
         [
+            (
+                "PUBLIC_BASE_URL".to_owned(),
+                "https://auth.example".to_owned(),
+            ),
             ("ISSUER".to_owned(), "https://issuer.example".to_owned()),
             (
                 "FRONTEND_BASE_URL".to_owned(),
@@ -100,6 +104,10 @@ fn missing_config_file_can_be_replaced_by_whitelisted_environment() {
     let _ = std::fs::remove_dir_all(&path);
 
     let source = result.unwrap();
+    assert_eq!(
+        source.required_string("PUBLIC_BASE_URL").unwrap(),
+        "https://auth.example"
+    );
     assert_eq!(
         source.required_string("ISSUER").unwrap(),
         "https://issuer.example"
@@ -120,6 +128,7 @@ fn environment_overrides_yaml_by_allowlist() {
         .merge_env([
             ("ISSUER".to_owned(), "https://env.example".to_owned()),
             ("DPOP_NONCE_POLICY".to_owned(), "optional".to_owned()),
+            ("DATA_DIR".to_owned(), "/srv/nazo-oauth".to_owned()),
             ("OTEL_ENABLED".to_owned(), "true".to_owned()),
             (
                 "OTEL_EXPORTER_OTLP_ENDPOINT".to_owned(),
@@ -136,6 +145,7 @@ fn environment_overrides_yaml_by_allowlist() {
 
     assert_eq!(source.string("ISSUER", ""), "https://env.example");
     assert_eq!(source.string("DPOP_NONCE_POLICY", ""), "optional");
+    assert_eq!(source.string("DATA_DIR", ""), "/srv/nazo-oauth");
     assert_eq!(source.string("OTEL_ENABLED", ""), "true");
     assert_eq!(
         source.string("OTEL_EXPORTER_OTLP_ENDPOINT", ""),

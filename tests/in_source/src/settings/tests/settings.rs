@@ -110,6 +110,80 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
 }
 
 #[test]
+fn public_base_url_drives_same_origin_defaults() {
+    let config =
+        ConfigSource::from_pairs_for_test([("PUBLIC_BASE_URL", "https://auth.example.test")]);
+    let settings = Settings::from_config(&config).unwrap();
+
+    assert_eq!(settings.issuer, "https://auth.example.test");
+    assert_eq!(settings.mtls_endpoint_base_url, "https://auth.example.test");
+    assert_eq!(settings.frontend_base_url, "https://auth.example.test/ui/");
+    assert_eq!(
+        settings.cors_allowed_origins,
+        vec!["https://auth.example.test"]
+    );
+    assert!(settings.cookie_secure);
+    assert_eq!(settings.passkey.origin, "https://auth.example.test");
+    assert_eq!(settings.passkey.rp_id, "auth.example.test");
+}
+
+#[test]
+fn explicit_legacy_url_settings_override_public_base_url_derivations() {
+    let config = ConfigSource::from_pairs_for_test([
+        ("PUBLIC_BASE_URL", "https://auth.example.test"),
+        ("ISSUER", "https://issuer.example.test"),
+        ("FRONTEND_BASE_URL", "https://app.example.test/ui/"),
+        ("CORS_ALLOWED_ORIGINS", "https://app.example.test"),
+        ("PASSKEY_ORIGIN", "https://passkeys.example.test"),
+        ("PASSKEY_RP_ID", "passkeys.example.test"),
+    ]);
+    let settings = Settings::from_config(&config).unwrap();
+
+    assert_eq!(settings.issuer, "https://issuer.example.test");
+    assert_eq!(settings.frontend_base_url, "https://app.example.test/ui/");
+    assert_eq!(
+        settings.cors_allowed_origins,
+        vec!["https://app.example.test"]
+    );
+    assert_eq!(settings.passkey.origin, "https://passkeys.example.test");
+    assert_eq!(settings.passkey.rp_id, "passkeys.example.test");
+}
+
+#[test]
+fn data_dir_drives_default_persistent_storage_paths() {
+    let config = ConfigSource::from_pairs_for_test([("DATA_DIR", "/srv/nazo-oauth")]);
+    let settings = Settings::from_config(&config).unwrap();
+
+    assert_eq!(
+        settings.avatar_storage_dir,
+        std::path::PathBuf::from("/srv/nazo-oauth/avatars")
+    );
+    assert_eq!(
+        settings.jwk_keys_dir,
+        std::path::PathBuf::from("/srv/nazo-oauth/keys")
+    );
+}
+
+#[test]
+fn explicit_storage_paths_override_data_dir_derivations() {
+    let config = ConfigSource::from_pairs_for_test([
+        ("DATA_DIR", "/srv/nazo-oauth"),
+        ("AVATAR_STORAGE_DIR", "/data/avatars"),
+        ("JWK_KEYS_DIR", "/secure/keys"),
+    ]);
+    let settings = Settings::from_config(&config).unwrap();
+
+    assert_eq!(
+        settings.avatar_storage_dir,
+        std::path::PathBuf::from("/data/avatars")
+    );
+    assert_eq!(
+        settings.jwk_keys_dir,
+        std::path::PathBuf::from("/secure/keys")
+    );
+}
+
+#[test]
 fn signing_key_rotation_settings_default_to_automatic_lifecycle() {
     let settings = Settings::from_config(&ConfigSource::default()).unwrap();
 
