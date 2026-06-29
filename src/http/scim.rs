@@ -10,6 +10,9 @@ use diesel_async::AsyncConnection;
 use normalization::*;
 use schema::*;
 
+const SCIM_DEFAULT_PAGE_SIZE: i64 = 100;
+const SCIM_MAX_PAGE_SIZE: i64 = 200;
+
 #[derive(Deserialize)]
 pub(crate) struct ScimListQuery {
     #[serde(rename = "startIndex")]
@@ -34,10 +37,21 @@ fn scim_service_provider_config_response() -> HttpResponse {
         "schemas": [SCIM_SERVICE_PROVIDER_CONFIG_SCHEMA],
         "patch": {"supported": true},
         "bulk": {"supported": false, "maxOperations": 0, "maxPayloadSize": 0},
-        "filter": {"supported": true, "maxResults": 200},
+        "filter": {"supported": true, "maxResults": SCIM_MAX_PAGE_SIZE},
         "changePassword": {"supported": false},
         "sort": {"supported": false},
         "etag": {"supported": false},
+        "pagination": {
+            "cursor": false,
+            "index": true,
+            "defaultPaginationMethod": "index",
+            "defaultPageSize": SCIM_DEFAULT_PAGE_SIZE,
+            "maxPageSize": SCIM_MAX_PAGE_SIZE
+        },
+        "securityEvents": {
+            "asyncRequest": "none",
+            "eventUris": []
+        },
         "authenticationSchemes": [{
             "type": "oauthbearertoken",
             "name": "Bearer",
@@ -97,7 +111,10 @@ pub(crate) async fn scim_list_users(
         return response;
     }
     let start_index = query.start_index.unwrap_or(1).max(1);
-    let count = query.count.unwrap_or(100).clamp(0, 200);
+    let count = query
+        .count
+        .unwrap_or(SCIM_DEFAULT_PAGE_SIZE)
+        .clamp(0, SCIM_MAX_PAGE_SIZE);
     let offset = start_index.saturating_sub(1);
     let email_filter = match normalize_scim_user_filter(query.filter.as_deref()) {
         Ok(value) => value,

@@ -140,6 +140,7 @@ pwsh scripts/deploy_live.ps1 `
 反向代理要求：
 
 - 使用公开 issuer 域名终止 TLS。
+- 禁用 TLS 1.0 和 TLS 1.1；公开 issuer 监听器只允许 TLS 1.2 或 TLS 1.3。
 - 只向应用转发经过清洗的代理头。
 - 删除客户端传入的 `Forwarded`、`X-Forwarded-*`、mTLS 和证书相关头，再由代理写入可信值。
 - `TRUSTED_PROXY_CIDRS` 只包含允许转发 client IP 和 mTLS 证书信息的代理地址。

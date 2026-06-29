@@ -21,7 +21,7 @@ The verifier requires:
 - Required scope checks.
 - Optional sender-constraint policy for DPoP `cnf.jkt`, mTLS `cnf.x5t#S256`, or either sender constraint.
 
-The verifier returns structured errors such as `AudienceMismatch`, `MissingScope`, `WrongTokenType`, `DpopBindingMismatch`, and `MtlsBindingMismatch`. Application adapters map these to RFC 6750 `WWW-Authenticate` responses without leaking token contents.
+The verifier returns structured errors such as `AudienceMismatch`, `MissingScope`, `WrongTokenType`, `DpopBindingMismatch`, and `MtlsBindingMismatch`. Application adapters map these to OAuth bearer-token `WWW-Authenticate` challenges without leaking token contents.
 
 ## Core Usage
 

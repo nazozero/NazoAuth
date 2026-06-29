@@ -62,6 +62,14 @@ before creating, listing, updating, or deleting users.
 
 Listing supports pagination with `startIndex` and `count`, and supports only `userName eq "email@example.com"` filters.
 
+`/ServiceProviderConfig` advertises the SCIM pagination and event capability
+boundary explicitly:
+
+- RFC 9865 cursor pagination is not supported; index pagination is the default.
+- The default page size is 100 and the maximum page size is 200.
+- RFC 9967 asynchronous SCIM requests and SCIM Security Events are not supported;
+  `securityEvents.asyncRequest` is `none` and `eventUris` is empty.
+
 PATCH supports `replace` for:
 
 - `userName`

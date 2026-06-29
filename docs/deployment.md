@@ -154,6 +154,7 @@ before using it for another host.
 Proxy requirements:
 
 - Terminate TLS with the public issuer hostname.
+- Disable TLS 1.0 and TLS 1.1; allow only TLS 1.2 or TLS 1.3 on the public issuer listener.
 - Forward only sanitized proxy headers to the service.
 - Strip inbound client-supplied `Forwarded`, `X-Forwarded-*`, mTLS, and certificate headers before adding trusted values.
 - Configure `TRUSTED_PROXY_CIDRS` to include only the reverse proxy addresses that are allowed to forward client IP and mTLS certificate metadata.

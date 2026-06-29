@@ -1,10 +1,8 @@
-# Nazo Auth Server
-
-<p align="right">
-  <a href="https://openid.net/certification/#OPs">
-    <img src="https://openid.net/wordpress-content/uploads/2016/04/oid-l-certification-mark-l-rgb-150dpi-90mm-300x157.png" alt="OpenID Certified" width="140">
-  </a>
+<p align="center">
+  <img src="docs/assets/nazo-auth-cover.png" alt="Nazo Auth cover">
 </p>
+
+# Nazo Auth Server
 
 [![code-quality](https://github.com/bymoye/NazoAuth/actions/workflows/code-quality.yml/badge.svg?branch=main)](https://github.com/bymoye/NazoAuth/actions/workflows/code-quality.yml)
 [![codeql](https://github.com/bymoye/NazoAuth/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/bymoye/NazoAuth/actions/workflows/codeql.yml)
@@ -40,7 +38,7 @@ state and Valkey for short-lived protocol state.
 
 ## Standards
 
-Nazo Auth Server implements and tests the core standards expected from a modern
+Nazo Auth Server implements the core standards expected from a modern
 authorization server. Compatibility exceptions are documented instead of hidden
 behind discovery metadata.
 
@@ -48,23 +46,30 @@ IETF and RFCs:
 
 | Standard | Implementation |
 | --- | --- |
-| [RFC 6749](https://www.rfc-editor.org/rfc/rfc6749), OAuth 2.0 | authorization code, refresh token, and client credentials grants |
-| [RFC 6750](https://www.rfc-editor.org/rfc/rfc6750), Bearer Token Usage | bearer access-token handling |
 | [RFC 7009](https://www.rfc-editor.org/rfc/rfc7009), Token Revocation | `/revoke` |
 | [RFC 7523](https://www.rfc-editor.org/rfc/rfc7523), JWT Client Authentication | `private_key_jwt` |
 | [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636), PKCE | S256 PKCE |
 | [RFC 7662](https://www.rfc-editor.org/rfc/rfc7662), Token Introspection | `/introspect` |
+| [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252), OAuth 2.0 for Native Apps | public native-app redirect URI policy: claimed HTTPS, private-use schemes, and loopback HTTP with port variance |
 | [RFC 8414](https://www.rfc-editor.org/rfc/rfc8414), Authorization Server Metadata | `/.well-known/oauth-authorization-server` |
 | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705), OAuth 2.0 mTLS | mTLS client auth and sender-constrained tokens |
 | [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707), Resource Indicators | `resource` and JWT `aud` binding |
 | [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068), JWT Access Tokens | JWT access-token shape for resource servers |
+| [RFC 8996](https://www.rfc-editor.org/rfc/rfc8996), TLS 1.0 and TLS 1.1 Deprecation | public deployment config limits TLS to TLS 1.2 and TLS 1.3 |
 | [RFC 9101](https://www.rfc-editor.org/rfc/rfc9101), JAR | signed request objects where enabled |
 | [RFC 9126](https://www.rfc-editor.org/rfc/rfc9126), PAR | `/par` |
 | [RFC 9396](https://www.rfc-editor.org/rfc/rfc9396), Rich Authorization Requests | behind `ENABLE_AUTHORIZATION_DETAILS` |
 | [RFC 9449](https://www.rfc-editor.org/rfc/rfc9449), DPoP | proof validation and sender-constrained tokens |
+| [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700), OAuth 2.0 Security BCP | code-only authorization responses, no password or implicit grants, PKCE, redirect URI binding, bearer-token protections, and sender-constrained-token hardening |
 | OAuth 2.1 draft direction | OAuth 2.1-style defaults with explicit compatibility switches |
 
 OpenID Foundation:
+
+<p align="right">
+  <a href="https://openid.net/certification/certified-openid-providers-profiles/">
+    <img src="https://openid.net/wordpress-content/uploads/2016/04/oid-l-certification-mark-l-rgb-150dpi-90mm-300x157.png" alt="OpenID Certified" width="140">
+  </a>
+</p>
 
 | Specification | Implementation |
 | --- | --- |
@@ -80,7 +85,7 @@ Other protocol surfaces:
 
 | Standard | Implementation |
 | --- | --- |
-| SCIM 2.0, [RFC 7643](https://www.rfc-editor.org/rfc/rfc7643) and [RFC 7644](https://www.rfc-editor.org/rfc/rfc7644) | default-tenant user provisioning |
+| SCIM 2.0 provisioning with [RFC 9865](https://www.rfc-editor.org/rfc/rfc9865) / [RFC 9967](https://www.rfc-editor.org/rfc/rfc9967) capability discovery | default-tenant user provisioning; index pagination is advertised, cursor pagination and SCIM Security Events are explicitly disabled |
 | WebAuthn | passkey registration and login |
 
 ## Certification
@@ -92,10 +97,17 @@ Nazo Auth Server is listed by the OpenID Foundation as
 - [Certified OpenID Provider profiles](https://openid.net/certification/certified-openid-providers-profiles/)
 - [Certified FAPI 2.0 OP Security Profile Final and Message Signing Final](https://openid.net/certification/certified-fapi-2-0-op-security-profile-final-message-signing-final/)
 
-Durable records are kept in [docs/conformance](docs/conformance). The latest
-official full matrix tested `https://auth.nazo.run` at runtime commit
-`be7ef9f6a9197520235a59d42866a0918a293014`, exported all 16 plan archives, and
-reported `0 failures` and `0 warnings`.
+OpenID Foundation Conformance Suite result URLs:
+
+| Result | URL |
+| --- | --- |
+| OIDC Basic OP | <https://www.certification.openid.net/plan-detail.html?plan=Srk6iaVDVcqO5> |
+| OIDC Config OP | <https://www.certification.openid.net/plan-detail.html?plan=fGiz8QZYR1LVy> |
+| Full 16-plan official matrix | [docs/conformance/2026-06-27-pr15-official-oidf-full-matrix.md](docs/conformance/2026-06-27-pr15-official-oidf-full-matrix.md#official-plan-detail-urls) |
+
+The latest official full matrix tested `https://auth.nazo.run` at runtime
+commit `be7ef9f6a9197520235a59d42866a0918a293014`, exported all 16 plan
+archives, and reported `0 failures` and `0 warnings`.
 
 ## Features
 

@@ -593,6 +593,13 @@ async fn scim_service_provider_config_advertises_only_supported_capabilities() {
     assert_eq!(body["bulk"]["supported"], false);
     assert_eq!(body["filter"]["supported"], true);
     assert_eq!(body["filter"]["maxResults"], 200);
+    assert_eq!(body["pagination"]["cursor"], false);
+    assert_eq!(body["pagination"]["index"], true);
+    assert_eq!(body["pagination"]["defaultPaginationMethod"], "index");
+    assert_eq!(body["pagination"]["defaultPageSize"], 100);
+    assert_eq!(body["pagination"]["maxPageSize"], 200);
+    assert_eq!(body["securityEvents"]["asyncRequest"], "none");
+    assert_eq!(body["securityEvents"]["eventUris"], json!([]));
     assert_eq!(body["authenticationSchemes"][0]["type"], "oauthbearertoken");
     assert!(body.get("scim_bearer_token").is_none());
 }
