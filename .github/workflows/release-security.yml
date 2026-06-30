@@ -51,7 +51,7 @@ jobs:
           cosign sign-blob --yes --bundle target/nazo-oauth-server.cdx.json.bundle target/nazo-oauth-server.cdx.json
           cosign sign-blob --yes --bundle target/nazo-oauth-server-image.tar.bundle target/nazo-oauth-server-image.tar
       - name: Upload release artifacts
-        uses: actions/upload-artifact@v6.0.0
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: nazo-oauth-release-artifacts
           path: |
