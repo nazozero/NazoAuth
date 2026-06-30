@@ -55,6 +55,14 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
                 .route(
                     "/oauth-authorization-server",
                     web::get().to(oauth_authorization_server_metadata),
+                )
+                .route(
+                    "/oauth-protected-resource",
+                    web::get().to(oauth_protected_resource_metadata),
+                )
+                .route(
+                    "/oauth-protected-resource/{tail:.*}",
+                    web::get().to(oauth_protected_resource_metadata),
                 ),
         )
         // CORS: cors_well_known — /jwks.json

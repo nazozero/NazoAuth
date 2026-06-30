@@ -67,14 +67,14 @@ IETF and RFCs:
 | [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252), OAuth 2.0 for Native Apps | public native-app redirect URI policy: claimed HTTPS, private-use schemes, and loopback HTTP with port variance |
 | [RFC 8414](https://www.rfc-editor.org/rfc/rfc8414), Authorization Server Metadata | `/.well-known/oauth-authorization-server` |
 | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705), OAuth 2.0 mTLS | mTLS client auth and sender-constrained tokens |
-| [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707), Resource Indicators | `resource` and JWT `aud` binding |
+| [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707), Resource Indicators | authorization/PAR/token `resource` handling with JWT `aud` binding and refresh-token audience narrowing |
 | [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068), JWT Access Tokens | JWT access-token shape for resource servers |
-| [RFC 8996](https://www.rfc-editor.org/rfc/rfc8996), TLS 1.0 and TLS 1.1 Deprecation | public deployment config limits TLS to TLS 1.2 and TLS 1.3 |
 | [RFC 9101](https://www.rfc-editor.org/rfc/rfc9101), JAR | signed request objects where enabled |
 | [RFC 9126](https://www.rfc-editor.org/rfc/rfc9126), PAR | `/par` |
 | [RFC 9396](https://www.rfc-editor.org/rfc/rfc9396), Rich Authorization Requests | behind `ENABLE_AUTHORIZATION_DETAILS` |
 | [RFC 9449](https://www.rfc-editor.org/rfc/rfc9449), DPoP | proof validation and sender-constrained tokens |
 | [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700), OAuth 2.0 Security BCP | code-only authorization responses, no password or implicit grants, PKCE, redirect URI binding, bearer-token protections, and sender-constrained-token hardening |
+| [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728), Protected Resource Metadata | `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource/fapi/resource` |
 | OAuth 2.1 draft direction | OAuth 2.1-style defaults with explicit compatibility switches |
 
 OpenID Foundation:
@@ -92,8 +92,8 @@ OpenID Foundation:
 | [OpenID Connect RP-Initiated Logout 1.0](https://openid.net/specs/openid-connect-rpinitiated-1_0.html) | `/logout` |
 | [OpenID Connect Back-Channel Logout 1.0](https://openid.net/specs/openid-connect-backchannel-1_0.html) | best-effort logout notifications |
 | [JWT Secured Authorization Response Mode](https://openid.net/specs/oauth-v2-jarm.html) | JARM where advertised by the active profile |
-| [FAPI 2.0 Security Profile Final](https://openid.net/specs/fapi-2_0-security-profile-final.html) | `fapi2-security` profile |
-| [FAPI 2.0 Message Signing Final](https://openid.net/specs/fapi-2_0-message-signing-final.html) | signed authorization request and JARM profile support |
+| [FAPI 2.0 Security Profile Final](https://openid.net/specs/fapi-security-profile-2_0-final.html) | `fapi2-security` profile |
+| [FAPI 2.0 Message Signing Final](https://openid.net/specs/fapi-message-signing-2_0-final.html) | signed authorization request and JARM profile support |
 
 Other protocol surfaces:
 
@@ -126,7 +126,8 @@ archives, and reported `0 failures` and `0 warnings`.
 ## Features
 
 - Authorization code + PKCE, refresh tokens, client credentials, revocation,
-  introspection, discovery, JWKS, UserInfo, PAR, JAR, DPoP, and mTLS.
+  introspection, discovery, protected resource metadata, JWKS, UserInfo, PAR,
+  JAR, DPoP, and mTLS.
 - Runtime profiles: `oauth2-baseline`, `fapi2-security`, and
   `fapi2-message-signing-authz-request`.
 - Local users, profiles, OAuth clients, grants, access requests, TOTP MFA,
@@ -188,6 +189,7 @@ RUST_LOG: "info"
 | `CORS_ALLOWED_ORIGINS` | origin of `PUBLIC_BASE_URL` |
 | `COOKIE_SECURE` | `true` for HTTPS issuers |
 | `PASSKEY_ORIGIN` and `PASSKEY_RP_ID` | derived from issuer |
+| `PROTECTED_RESOURCE_IDENTIFIER` | `ISSUER + "/fapi/resource"` |
 
 `DATA_DIR` drives persistent local file paths:
 
@@ -221,6 +223,8 @@ See [docs/roadmap.md](docs/roadmap.md) for the current scope record.
 | Deployment | [docs/deployment.md](docs/deployment.md) |
 | Chinese deployment guide | [docs/deployment.zh-CN.md](docs/deployment.zh-CN.md) |
 | Conformance records | [docs/conformance](docs/conformance) |
+| OAuth/OIDC/FAPI best-practice matrix | [docs/rfc-compliance-matrix.md](docs/rfc-compliance-matrix.md) |
+| Best-practice implementation plan | [docs/oauth-best-practice-implementation-plan.zh-CN.md](docs/oauth-best-practice-implementation-plan.zh-CN.md) |
 | Profile matrix | [docs/profile-matrix.md](docs/profile-matrix.md) |
 | Threat model | [docs/threat-model.md](docs/threat-model.md) |
 | Release security | [docs/release-security.md](docs/release-security.md) |

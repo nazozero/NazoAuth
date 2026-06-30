@@ -174,6 +174,7 @@ fn test_settings(cors_allowed_origins: Vec<String>) -> Settings {
         frontend_base_url: "https://app.example".to_owned(),
         cors_allowed_origins,
         default_audience: "resource://default".to_owned(),
+        protected_resource_identifier: "https://issuer.example/fapi/resource".to_owned(),
         authorization_server_profile: AuthorizationServerProfile::Oauth2Baseline,
         dpop_nonce_policy: DpopNoncePolicy::Required,
         request_object_jti_policy: RequestObjectJtiPolicy::Optional,

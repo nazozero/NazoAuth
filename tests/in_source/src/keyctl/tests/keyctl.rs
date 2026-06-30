@@ -708,6 +708,7 @@ fn test_settings(jwk_keys_dir: PathBuf) -> Settings {
         frontend_base_url: "https://frontend.example".to_owned(),
         cors_allowed_origins: vec!["https://frontend.example".to_owned()],
         default_audience: "resource://default".to_owned(),
+        protected_resource_identifier: "https://issuer.example/fapi/resource".to_owned(),
         authorization_server_profile: AuthorizationServerProfile::Oauth2Baseline,
         dpop_nonce_policy: DpopNoncePolicy::Required,
         request_object_jti_policy: RequestObjectJtiPolicy::Optional,

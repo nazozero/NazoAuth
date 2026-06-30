@@ -100,3 +100,44 @@ fn authorization_post_form_preserves_unknown_parameters_without_duplicate_reject
     );
     assert_eq!(parsed.get("custom").map(String::as_str), Some("b"));
 }
+
+#[test]
+fn authorization_query_preserves_multiple_resource_indicators() {
+    let parsed = parse_authorization_query(
+        "response_type=code&resource=https%3A%2F%2Fapi.example%2Fone&resource=https%3A%2F%2Fapi.example%2Ftwo",
+        &authorization_duplicate_parameters(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        resource_indicators_from_parameter_value(parsed.get("resource").map(String::as_str))
+            .unwrap(),
+        vec![
+            "https://api.example/one".to_owned(),
+            "https://api.example/two".to_owned(),
+        ]
+    );
+}
+
+#[test]
+fn authorization_post_form_preserves_multiple_resource_indicators() {
+    let req = authorization_post_request("application/x-www-form-urlencoded", "");
+
+    let parsed = parse_authorization_post_form(
+        &req,
+        &Bytes::from_static(
+            b"response_type=code&resource=https%3A%2F%2Fapi.example%2Fone&resource=https%3A%2F%2Fapi.example%2Ftwo",
+        ),
+        &authorization_duplicate_parameters(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        resource_indicators_from_parameter_value(parsed.get("resource").map(String::as_str))
+            .unwrap(),
+        vec![
+            "https://api.example/one".to_owned(),
+            "https://api.example/two".to_owned(),
+        ]
+    );
+}

@@ -625,9 +625,8 @@ async fn authorization_get_wrapper_uses_same_pre_database_validation() {
     let req = actix_web::test::TestRequest::get()
         .uri("/authorize?response_type=code")
         .to_http_request();
-    let q = query(&[("response_type", "code")]);
 
-    let response = authorize_get(state, req, Query(q)).await;
+    let response = authorize_get(state, req).await;
     assert!(response.headers().get(header::LOCATION).is_none());
     let (status, body) = json_body(response).await;
 

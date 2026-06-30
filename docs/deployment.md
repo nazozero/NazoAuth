@@ -164,7 +164,7 @@ Proxy requirements:
 - For `self_signed_tls_client_auth`, register active client certificates in `jwks.keys[].x5c[0]`. Multiple active `x5c` certificates form the rotation window; removing an old certificate retires it. Expired or not-yet-valid registered certificates are ignored.
 - Preserve the exact path for OAuth endpoints.
 - Disable response caching for protocol endpoints unless the endpoint is explicitly cacheable.
-- Ensure `/.well-known/openid-configuration`, `/.well-known/oauth-authorization-server`, `/jwks.json`, `/authorize`, `/par`, `/token`, `/userinfo`, `/introspect`, and `/revoke` are reachable as intended.
+- Ensure `/.well-known/openid-configuration`, `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource`, `/.well-known/oauth-protected-resource/fapi/resource`, `/jwks.json`, `/authorize`, `/par`, `/token`, `/userinfo`, `/introspect`, and `/revoke` are reachable as intended.
 
 For mTLS sender constraint and mTLS client authentication, the service relies
 on a trusted reverse proxy to verify the client certificate and forward
@@ -270,6 +270,8 @@ After deployment:
 curl -fsS https://oauth.example.com/health
 curl -fsS https://oauth.example.com/.well-known/openid-configuration
 curl -fsS https://oauth.example.com/.well-known/oauth-authorization-server
+curl -fsS https://oauth.example.com/.well-known/oauth-protected-resource
+curl -fsS https://oauth.example.com/.well-known/oauth-protected-resource/fapi/resource
 curl -fsS https://oauth.example.com/jwks.json
 ```
 

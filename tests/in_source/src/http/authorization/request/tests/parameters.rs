@@ -7,6 +7,7 @@ fn authorization_duplicate_parameters_includes_all_authorized_params_and_reauth(
     assert!(params.contains(&"client_id"));
     assert!(params.contains(&"redirect_uri"));
     assert!(params.contains(&"scope"));
+    assert!(!params.contains(&"resource"));
     assert!(params.contains(&"code_challenge"));
     assert!(params.contains(&"nonce"));
     assert!(params.contains(&"claims"));
@@ -15,7 +16,8 @@ fn authorization_duplicate_parameters_includes_all_authorized_params_and_reauth(
     assert!(params.contains(&"request_uri"));
     assert!(params.contains(&"request"));
     assert!(params.contains(&reauth_nonce_parameter()));
-    assert_eq!(params.len(), AUTHORIZED_REQUEST_PARAMETERS.len() + 1);
+    assert!(AUTHORIZED_REQUEST_PARAMETERS.contains(&"resource"));
+    assert_eq!(params.len(), AUTHORIZED_REQUEST_PARAMETERS.len());
 }
 
 #[test]

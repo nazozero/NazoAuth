@@ -103,6 +103,7 @@ fn code_payload(redirect_uri_was_supplied: bool) -> CodePayload {
         redirect_uri: "https://client.example/callback".to_owned(),
         redirect_uri_was_supplied,
         scopes: vec!["openid".to_owned()],
+        resource_indicators: Vec::new(),
         authorization_details: json!([]),
         nonce: None,
         auth_time: now.timestamp(),
@@ -433,6 +434,50 @@ fn form_for_code(code: &str) -> TokenForm {
         audiences: Vec::new(),
         has_audience_param: false,
     }
+}
+
+#[test]
+fn authorization_code_audiences_inherit_authorized_resources_when_token_request_omits_resource() {
+    let settings = Settings::from_config(&ConfigSource::default()).unwrap();
+    let mut payload = code_payload(true);
+    payload.resource_indicators = vec![
+        "https://api.example/one".to_owned(),
+        "https://api.example/two".to_owned(),
+    ];
+    let form = form_for_code("code-1");
+
+    assert_eq!(
+        authorization_code_audiences(&settings, &payload, &form).unwrap(),
+        payload.resource_indicators
+    );
+}
+
+#[test]
+fn authorization_code_audiences_allow_token_request_to_narrow_authorized_resources() {
+    let settings = Settings::from_config(&ConfigSource::default()).unwrap();
+    let mut payload = code_payload(true);
+    payload.resource_indicators = vec![
+        "https://api.example/one".to_owned(),
+        "https://api.example/two".to_owned(),
+    ];
+    let mut form = form_for_code("code-1");
+    form.audiences = vec!["https://api.example/two".to_owned()];
+
+    assert_eq!(
+        authorization_code_audiences(&settings, &payload, &form).unwrap(),
+        vec!["https://api.example/two".to_owned()]
+    );
+}
+
+#[test]
+fn authorization_code_audiences_reject_token_request_resource_outside_authorization() {
+    let settings = Settings::from_config(&ConfigSource::default()).unwrap();
+    let mut payload = code_payload(true);
+    payload.resource_indicators = vec!["https://api.example/one".to_owned()];
+    let mut form = form_for_code("code-1");
+    form.audiences = vec!["https://api.example/two".to_owned()];
+
+    assert!(authorization_code_audiences(&settings, &payload, &form).is_err());
 }
 
 async fn token_json_body(response: HttpResponse) -> (StatusCode, Value) {

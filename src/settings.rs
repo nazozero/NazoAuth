@@ -10,6 +10,7 @@ use crate::config::ConfigSource;
 use crate::support::{
     ClientIpHeaderMode, IpCidr, is_loopback_http_url, parse_trusted_proxy_cidrs,
     validate_cors_origin, validate_frontend_base_url, validate_issuer_url,
+    validate_protected_resource_identifier,
 };
 
 mod email;
@@ -34,6 +35,7 @@ pub(crate) struct Settings {
     pub(crate) frontend_base_url: String,
     pub(crate) cors_allowed_origins: Vec<String>,
     pub(crate) default_audience: String,
+    pub(crate) protected_resource_identifier: String,
     pub(crate) authorization_server_profile: AuthorizationServerProfile,
     pub(crate) dpop_nonce_policy: DpopNoncePolicy,
     pub(crate) request_object_jti_policy: RequestObjectJtiPolicy,
@@ -119,6 +121,10 @@ impl Settings {
             bail!("pairwise_subject_secret must be at least 32 bytes");
         }
         let authorization_server_profile = AuthorizationServerProfile::from_config(config)?;
+        let protected_resource_identifier = config
+            .optional_string("PROTECTED_RESOURCE_IDENTIFIER")
+            .unwrap_or_else(|| default_protected_resource_identifier(&issuer));
+        validate_protected_resource_identifier(&protected_resource_identifier)?;
         let configured_dpop_nonce_policy = DpopNoncePolicy::from_config(config)?;
         let dpop_nonce_policy = if authorization_server_profile.requires_fapi2_security() {
             DpopNoncePolicy::Required
@@ -167,6 +173,7 @@ impl Settings {
             frontend_base_url,
             cors_allowed_origins,
             default_audience: config.string("DEFAULT_AUDIENCE", "resource://default"),
+            protected_resource_identifier,
             authorization_server_profile,
             dpop_nonce_policy,
             request_object_jti_policy,
@@ -236,6 +243,10 @@ fn parse_signing_external_command(value: Option<String>) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+fn default_protected_resource_identifier(issuer: &str) -> String {
+    format!("{}/fapi/resource", issuer.trim_end_matches('/'))
 }
 
 #[cfg(test)]

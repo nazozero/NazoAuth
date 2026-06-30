@@ -17,6 +17,7 @@ ISSUER=https://auth.example.com
 FRONTEND_BASE_URL=https://auth.example.com/ui/
 PASSKEY_ORIGIN=https://auth.example.com
 PASSKEY_RP_ID=auth.example.com
+PROTECTED_RESOURCE_IDENTIFIER=https://auth.example.com/fapi/resource
 ```
 
 ## Minimal deployment
@@ -60,6 +61,7 @@ AVATAR_STORAGE_DIR = DATA_DIR + "/avatars"
 | `COOKIE_SECURE` | `true` when issuer uses HTTPS |
 | `PASSKEY_ORIGIN` | issuer, unless explicitly overridden |
 | `PASSKEY_RP_ID` | host of `PASSKEY_ORIGIN`, unless explicitly overridden |
+| `PROTECTED_RESOURCE_IDENTIFIER` | `ISSUER + "/fapi/resource"`, unless explicitly overridden |
 | `JWK_KEYS_DIR` | `DATA_DIR + "/keys"`, unless explicitly overridden |
 | `AVATAR_STORAGE_DIR` | `DATA_DIR + "/avatars"`, unless explicitly overridden |
 
@@ -75,7 +77,8 @@ deployment path. They are candidates for the administrator UI:
   `ENABLE_REQUEST_URI_PARAMETER`, `ENABLE_PAR_REQUEST_OBJECT`,
   `ENABLE_AUTHORIZATION_DETAILS`, `ENABLE_LEGACY_AUDIENCE_PARAM`
 - protocol tuning: `DPOP_NONCE_POLICY`, `REQUEST_OBJECT_JTI_POLICY`,
-  `REQUIRE_PUSHED_AUTHORIZATION_REQUESTS`, `PAR_TTL_SECONDS`
+  `REQUIRE_PUSHED_AUTHORIZATION_REQUESTS`, `PAR_TTL_SECONDS`,
+  `PROTECTED_RESOURCE_IDENTIFIER`
 - token and session lifetimes: `SESSION_TTL_SECONDS`, `AUTH_CODE_TTL_SECONDS`,
   `ACCESS_TOKEN_TTL_SECONDS`, `ID_TOKEN_TTL_SECONDS`,
   `REFRESH_TOKEN_TTL_SECONDS`

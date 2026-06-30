@@ -43,7 +43,7 @@ References:
 | Sender-constrained tokens | Implemented | DPoP and mTLS-bound access tokens, UserInfo/resource checks, and resource-server verifier support. |
 | DPoP proof replay protection | Implemented | AS-side DPoP proof `jti` cache and resource-server `DpopProofVerifier` replay cache. |
 | mTLS proxy trust boundary | Implemented | Trusted proxy CIDRs, forwarded-certificate stripping/duplicate rejection, subject/SAN matching, and docs. |
-| Audience/resource binding | Implemented | RFC 8707 `resource` support, multi-audience JWT `aud`, and ambiguous/duplicate resource rejection. |
+| Audience/resource binding | Implemented | RFC 8707 `resource` support at authorization, PAR, token, and refresh-token boundaries; multi-audience JWT `aud`; ambiguous/duplicate resource rejection; refresh-token audience narrowing. |
 | Signed request objects | Implemented | Signed JAR at PAR with profile-specific requirements; request object `jti` is product hardening, not misdocumented as FAPI normative. |
 | PAR for high-security profiles | Implemented | `fapi2-security` requires client-authenticated PAR and rejects non-PAR authorization requests. |
 | JWT signing key lifecycle | Implemented | Active/previous/retired JWKS handling, KMS/HSM/external signer backends, and external signer self-verification. |

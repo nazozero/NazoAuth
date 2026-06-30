@@ -199,6 +199,26 @@ fn token_issue_from_authorization_code(input: AuthorizationCodeIssueInput) -> To
     }
 }
 
+fn authorization_code_audiences(
+    settings: &Settings,
+    payload: &CodePayload,
+    form: &TokenForm,
+) -> Result<Vec<String>, ()> {
+    if payload.resource_indicators.is_empty() {
+        return Ok(if form.audiences.is_empty() {
+            vec![settings.default_audience.clone()]
+        } else {
+            form.audiences.clone()
+        });
+    }
+    if form.audiences.is_empty() {
+        return Ok(payload.resource_indicators.clone());
+    }
+    is_subset(&form.audiences, &payload.resource_indicators)
+        .then(|| form.audiences.clone())
+        .ok_or(())
+}
+
 fn refresh_token_dpop_binding(
     client: &ClientRow,
     payload: &CodePayload,
@@ -431,10 +451,18 @@ pub(crate) async fn token_authorization_code(
             );
         }
     }
-    let audiences = if form.audiences.is_empty() {
-        vec![state.settings.default_audience.clone()]
-    } else {
-        form.audiences.clone()
+    let audiences = match authorization_code_audiences(&state.settings, &payload, form) {
+        Ok(audiences) => audiences,
+        Err(()) => {
+            mark_failed_authorization_code(state, &code_hash, "audience_exceeds_authorization")
+                .await;
+            return oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_target",
+                "请求的 resource 超出授权请求范围.",
+                false,
+            );
+        }
     };
     if !audiences_allowed(client, &audiences) {
         mark_failed_authorization_code(state, &code_hash, "audience_not_allowed").await;

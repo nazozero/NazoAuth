@@ -112,6 +112,7 @@ Required negative tests:
 | --- | --- |
 | Discovery | `/.well-known/openid-configuration` |
 | OAuth metadata | `/.well-known/oauth-authorization-server` |
+| Protected resource metadata | `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource/fapi/resource` |
 | JWKS | `/jwks.json` publishes active and previous non-retired keys |
 | Metadata truth | Discovery values must correspond to real endpoint behavior |
 
