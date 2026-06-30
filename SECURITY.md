@@ -10,6 +10,9 @@ versioned releases are established.
 
 ## Reporting a Vulnerability
 
+Use GitHub private vulnerability reporting when available:
+<https://github.com/bymoye/NazoAuth/security/advisories/new>.
+
 Send a private report to the repository maintainer through a non-public channel.
 Include:
 
