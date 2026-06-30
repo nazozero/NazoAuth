@@ -16,7 +16,7 @@ semantic versioning once public release tags are cut.
 - Added `CHANGELOG.md`.
 - Added token endpoint support for the standard RFC 8707 `resource` parameter as the normative single-resource input, while retaining the legacy `audience` parameter as an extension.
 - Added supply-chain and release security gates with `cargo audit`, `cargo deny`, CycloneDX SBOM generation, Trivy image scanning, keyless artifact signing, and GitHub provenance attestations.
-- Added OpenSSF Scorecard workflow, SARIF upload, published Scorecard results, and README badge.
+- Added README quality signals for CI quality gates, coverage, dependency review, CodeQL, conformance evidence, and release security controls.
 - Added PostgreSQL and Valkey HA, backup, restore, timeout, and partial-outage operations guidance.
 
 ### Changed
@@ -30,6 +30,7 @@ semantic versioning once public release tags are cut.
 - Made the Argon2 password hash policy explicit: Argon2id, version 19, 19456 KiB memory, time cost 2, parallelism 1.
 - Tightened proxy-terminated mTLS handling so forwarded certificate evidence is accepted only from configured trusted proxy CIDRs and duplicate forwarded certificate headers must agree on the same SHA-256 thumbprint.
 - Marked `client_secret_post` as a compatibility client authentication method in project documentation and recommended `private_key_jwt` or mTLS for high-security clients.
+- Grouped GitHub Actions Dependabot updates, ignored `dtolnay/rust-toolchain` toolchain tags, and skipped Codecov upload when `CODECOV_TOKEN` is unavailable while retaining local coverage generation.
 - Switched JWT signing and verification from the RustCrypto-backed `jsonwebtoken` provider to the AWS-LC-backed provider and removed the direct RustCrypto `rsa` dependency.
 
 ### Fixed

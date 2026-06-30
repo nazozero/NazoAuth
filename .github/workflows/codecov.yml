@@ -46,6 +46,8 @@ jobs:
     name: Rust coverage
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
     steps:
       - uses: actions/checkout@v6.0.3
 
@@ -71,8 +73,13 @@ jobs:
         run: bash scripts/generate_codecov_lcov.sh
 
       - name: Upload coverage to Codecov
+        if: ${{ env.CODECOV_TOKEN != '' }}
         uses: codecov/codecov-action@v5
         with:
           files: lcov.info
           fail_ci_if_error: true
-          token: ${{ secrets.CODECOV_TOKEN }}
+          token: ${{ env.CODECOV_TOKEN }}
+
+      - name: Note skipped Codecov upload
+        if: ${{ env.CODECOV_TOKEN == '' }}
+        run: echo "Codecov upload skipped because CODECOV_TOKEN is unavailable for this event."
