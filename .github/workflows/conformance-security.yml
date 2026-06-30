@@ -54,6 +54,9 @@ on:
       - ".env.yaml.example"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   rust-gate:
     runs-on: ubuntu-latest
@@ -138,10 +141,6 @@ jobs:
 
   supply-chain-gate:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
-      actions: read
     steps:
       - uses: actions/checkout@v6.0.3
       - uses: dtolnay/rust-toolchain@1.96.0
