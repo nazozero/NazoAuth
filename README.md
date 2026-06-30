@@ -10,7 +10,6 @@
 [![conformance-security](https://github.com/bymoye/NazoAuth/actions/workflows/conformance-security.yml/badge.svg?branch=main)](https://github.com/bymoye/NazoAuth/actions/workflows/conformance-security.yml)
 [![oidf-conformance-full](https://github.com/bymoye/NazoAuth/actions/workflows/oidf-conformance-full.yml/badge.svg?branch=main)](https://github.com/bymoye/NazoAuth/actions/workflows/oidf-conformance-full.yml)
 [![codecov](https://codecov.io/gh/bymoye/NazoAuth/branch/main/graph/badge.svg)](https://app.codecov.io/gh/bymoye/NazoAuth)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/bymoye/NazoAuth/badge)](https://scorecard.dev/viewer/?uri=github.com/bymoye/NazoAuth)
 
 [中文文档](README.zh-CN.md) · [Documentation](#documentation) · [Quick start](#quick-start) · [Security](SECURITY.md)
 
@@ -35,6 +34,21 @@ state and Valkey for short-lived protocol state.
 | Runtime services | PostgreSQL, Valkey |
 | Certified public issuer | `https://auth.nazo.run` |
 | Default deployment model | same-origin |
+
+## Quality Signals
+
+Project quality is tracked through direct, auditable checks rather than a
+composite score:
+
+| Signal | Evidence |
+| --- | --- |
+| Rust quality gate | `cargo fmt --check`, `cargo check --workspace --all-targets --all-features --locked`, `cargo clippy -D warnings`, migrations, and library tests in `code-quality`. |
+| Static security analysis | CodeQL Rust analysis with `security-extended` and `security-and-quality` queries. |
+| Dependency policy | GitHub dependency review, `cargo audit`, and `cargo deny` over advisories, bans, licenses, and sources. |
+| Runtime security behavior | Real HTTP E2E, load/race gate, and Valkey outage injection in `conformance-security`. |
+| Protocol conformance | OIDF/FAPI conformance workflows and archived official 16-plan matrix evidence. |
+| Coverage trend | Codecov LCOV upload from the dedicated coverage workflow. |
+| Release provenance | CycloneDX SBOM, Trivy image scan, Sigstore signing, and GitHub artifact attestations. |
 
 ## Standards
 
@@ -65,7 +79,7 @@ IETF and RFCs:
 
 OpenID Foundation:
 
-<p align="right">
+<p align="center">
   <a href="https://openid.net/certification/certified-openid-providers-profiles/">
     <img src="https://openid.net/wordpress-content/uploads/2016/04/oid-l-certification-mark-l-rgb-150dpi-90mm-300x157.png" alt="OpenID Certified" width="140">
   </a>
@@ -122,8 +136,8 @@ archives, and reported `0 failures` and `0 warnings`.
   states. External-command signing is available for KMS/HSM integrations.
 - Rust resource-server verifier with Actix Web, Axum/Tower, and tonic adapters.
 - Release security workflows for CodeQL, dependency review, cargo audit,
-  cargo deny, SBOM generation, Trivy image scanning, OpenSSF Scorecard,
-  keyless signing, and provenance attestations.
+  cargo deny, SBOM generation, Trivy image scanning, keyless signing, and
+  provenance attestations.
 
 ## Quick start
 

@@ -17,7 +17,6 @@ workflow changes:
 - container image build from `Containerfile`
 - Trivy vulnerability scan of the built image
 - SBOM upload as a workflow artifact
-- OpenSSF Scorecard analysis with published results and SARIF upload
 
 The supply-chain job is independent from the Rust unit/integration gate.
 Dependency and image regressions fail before a deployment-shaped release is
@@ -43,13 +42,11 @@ For each production release, preserve:
 
 - Git tag and commit SHA
 - `conformance-security` workflow URL and conclusion
-- `scorecard` workflow URL and conclusion
 - `release-security` workflow URL and conclusion
 - SBOM artifact name and digest
 - Trivy scan result
-- OpenSSF Scorecard result URL
 - Sigstore certificate identity and issuer
 - GitHub artifact attestation URLs or bundle references
 
 Do not publish a release image if audit, deny, SBOM generation, image scanning,
-Scorecard analysis, signing, or provenance attestation fails.
+signing, or provenance attestation fails.
