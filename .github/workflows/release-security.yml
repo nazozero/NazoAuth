@@ -65,7 +65,7 @@ jobs:
             target/*.bundle
           if-no-files-found: error
       - name: Attest release binaries and SBOM
-        uses: actions/attest-build-provenance@v3.0.0
+        uses: actions/attest-build-provenance@v4.1.1
         with:
           subject-path: |
             target/release/nazo-oauth-server
@@ -74,6 +74,6 @@ jobs:
             target/release/nazo_oauth_seed_oidf
             target/nazo-oauth-server.cdx.json
       - name: Attest release image archive
-        uses: actions/attest-build-provenance@v3.0.0
+        uses: actions/attest-build-provenance@v4.1.1
         with:
           subject-path: target/nazo-oauth-server-image.tar
