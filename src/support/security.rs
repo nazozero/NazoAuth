@@ -20,7 +20,7 @@ pub(crate) fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
         == 0
 }
 
-pub(crate) fn hash_password(password: &str) -> password_hash::Result<String> {
+pub(crate) fn hash_password(password: &str) -> argon2::password_hash::Result<String> {
     let salt = SaltString::generate(&mut OsRng);
     Ok(password_hasher()
         .hash_password(password.as_bytes(), &salt)?

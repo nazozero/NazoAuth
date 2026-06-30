@@ -513,7 +513,7 @@ fn dpop_jwk_thumbprint_covers_ec_okp_and_rsa_public_members_only() {
 fn p256_public_jwk() -> serde_json::Value {
     use p256::elliptic_curve::sec1::ToEncodedPoint;
 
-    let secret_key = p256::SecretKey::random(&mut rand_core::OsRng);
+    let secret_key = p256::SecretKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
     let public_key = secret_key.public_key();
     let point = public_key.to_encoded_point(false);
     json!({

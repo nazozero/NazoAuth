@@ -10,8 +10,7 @@ use anyhow::{Context, anyhow};
 use chrono::DateTime;
 use jsonwebtoken::jwk::{Jwk, PublicKeyUse};
 use openssl::rsa::Rsa;
-use p256::elliptic_curve::pkcs8::EncodePrivateKey as EncodeEcPrivateKey;
-use rand_core::OsRng;
+use p256::elliptic_curve::{pkcs8::EncodePrivateKey as EncodeEcPrivateKey, rand_core::OsRng};
 
 use super::prelude::*;
 
