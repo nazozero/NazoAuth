@@ -58,7 +58,10 @@ pub(crate) mod prelude {
         header::{self, HeaderMap, HeaderValue},
     };
     pub(crate) use actix_web::{HttpRequest, HttpResponse};
-    pub(crate) use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
+    pub(crate) use argon2::{
+        Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
+        password_hash::{SaltString, rand_core::OsRng},
+    };
     pub(crate) use base64::{
         Engine,
         engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
@@ -70,7 +73,6 @@ pub(crate) mod prelude {
     pub(crate) use fred::prelude::{
         Client as ValkeyClient, Error as ValkeyError, Expiration, KeysInterface, SetOptions,
     };
-    pub(crate) use password_hash::{SaltString, rand_core::OsRng};
     pub(crate) use serde::{Deserialize, Serialize};
     pub(crate) use serde_json::{Value, json};
     pub(crate) use sha2::{Digest, Sha256};

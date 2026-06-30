@@ -1,13 +1,15 @@
 #![forbid(unsafe_code)]
 
-use argon2::{Argon2, PasswordHasher};
+use argon2::{
+    Argon2, PasswordHasher,
+    password_hash::{SaltString, rand_core::OsRng},
+};
 use diesel::{Connection, PgConnection, RunQueryDsl, sql_query};
 use nazo_oauth_server::config::{ConfigSource, database_url};
 use nazo_oauth_server::oidf_seed::{
     callback_uris, config::client_scopes, config::mtls_thumbprint, config::plan_config_files,
     config::public_jwks, config::read_plan_config, config::string_value, suite_base_urls,
 };
-use password_hash::{SaltString, rand_core::OsRng};
 use serde_json::{Value, json};
 use std::{collections::BTreeSet, env, path::Path};
 
