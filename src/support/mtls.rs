@@ -375,7 +375,7 @@ fn subject_name_to_dn(name: &X509NameRef) -> Option<String> {
     let mut parts = Vec::new();
     for entry in name.entries() {
         let short_name = nid_short_name(entry.object().nid())?;
-        let value = entry.data().as_utf8().ok()?.to_string();
+        let value = entry.data().to_string().ok()?;
         parts.push(format!("{short_name}={}", escape_dn_value(&value)));
     }
     (!parts.is_empty()).then(|| parts.join(","))
