@@ -1,0 +1,7 @@
+requests
+psycopg[binary]
+redis
+argon2-cffi
+pyjwt
+cryptography
+aiosmtpd
