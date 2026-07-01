@@ -380,16 +380,16 @@ impl LiveAuthorizationCodeFixture {
 
 fn valid_keyset(kid: &str) -> Keyset {
     let key_material =
-        generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
+        generate_key_material(jsonwebtoken::Algorithm::RS256).expect("test key should generate");
     let public_jwk = public_jwk_from_private_der(
         kid,
-        jsonwebtoken::Algorithm::EdDSA,
+        jsonwebtoken::Algorithm::RS256,
         &key_material.private_pkcs8_der,
     )
     .expect("test public JWK should derive");
     Keyset {
         active_kid: kid.to_owned(),
-        active_alg: jsonwebtoken::Algorithm::EdDSA,
+        active_alg: jsonwebtoken::Algorithm::RS256,
         active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),
         verification_keys: vec![VerificationKey {
             kid: kid.to_owned(),
