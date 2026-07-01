@@ -434,9 +434,8 @@ async fn authorization_get_rejects_duplicate_oauth_parameters_before_client_look
     let req = actix_web::test::TestRequest::get()
         .uri("/authorize?client_id=client-a&client_id=client-b&response_type=code")
         .to_http_request();
-    let mut q = query(&[("client_id", "client-b"), ("response_type", "code")]);
 
-    let (status, body) = json_body(authorize_request(state, req, &mut q).await).await;
+    let (status, body) = json_body(authorize_get(state, req).await).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"], "invalid_request");
