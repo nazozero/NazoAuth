@@ -25,6 +25,7 @@ from urllib.parse import urlparse
 OIDCC_CONFIG_FILE = "oidf-oidcc-plan-config.json"
 FAPI_CONFIG_FILE = "oidf-fapi-plan-config.json"
 OIDCC_BASIC_CONFIG_FILE = "oidf-oidcc-basic-plan-config.json"
+OIDCC_DYNAMIC_CONFIG_FILE = "oidf-oidcc-dynamic-plan-config.json"
 OIDCC_CONFIG_CONFIG_FILE = "oidf-oidcc-config-plan-config.json"
 FAPI_SECURITY_FINAL_CONFIG_FILE = "oidf-fapi-security-final-plan-config.json"
 FAPI_MESSAGE_FINAL_CONFIG_FILE = "oidf-fapi-message-final-plan-config.json"
@@ -102,6 +103,7 @@ DEFAULT_PLAN_EXPRESSIONS = [
 ]
 PER_PLAN_CONFIG_EXPRESSIONS = [
     f"oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] {OIDCC_BASIC_CONFIG_FILE}",
+    f"oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=dynamic_client] {OIDCC_DYNAMIC_CONFIG_FILE}",
     f"oidcc-config-certification-test-plan {OIDCC_CONFIG_CONFIG_FILE}",
     f"fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=dpop][openid=openid_connect] {FAPI_SECURITY_FINAL_CONFIG_FILE}",
     f"fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] {FAPI_MESSAGE_FINAL_CONFIG_FILE}",
@@ -1443,6 +1445,7 @@ def cleanup_alias_plan(
 def default_plan_expressions(config_names: set[str], fallback_config_name: str) -> list[str]:
     per_plan_config_names = {
         OIDCC_BASIC_CONFIG_FILE,
+        OIDCC_DYNAMIC_CONFIG_FILE,
         OIDCC_CONFIG_CONFIG_FILE,
         FAPI_SECURITY_FINAL_CONFIG_FILE,
         FAPI_MESSAGE_FINAL_CONFIG_FILE,

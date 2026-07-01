@@ -183,4 +183,7 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
                     web::post().to(admin_reject_access_request),
                 ),
         );
+    if settings.enable_dynamic_client_registration {
+        cfg.route("/register", web::post().to(dynamic_client_registration));
+    }
 }

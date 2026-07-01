@@ -149,6 +149,9 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
     if settings.enable_device_authorization_grant {
         metadata["device_authorization_endpoint"] = json!(format!("{issuer}/device_authorization"));
     }
+    if settings.enable_dynamic_client_registration {
+        metadata["registration_endpoint"] = json!(format!("{issuer}/register"));
+    }
     if settings
         .authorization_server_profile
         .requires_signed_introspection()

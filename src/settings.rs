@@ -73,6 +73,8 @@ pub(crate) struct Settings {
     pub(crate) enable_authorization_details: bool,
     pub(crate) enable_legacy_audience_param: bool,
     pub(crate) enable_device_authorization_grant: bool,
+    pub(crate) enable_dynamic_client_registration: bool,
+    pub(crate) dynamic_client_registration_initial_access_token: Option<String>,
     pub(crate) device_authorization_ttl_seconds: u64,
     pub(crate) device_authorization_poll_interval_seconds: u64,
 }
@@ -239,6 +241,10 @@ impl Settings {
             enable_legacy_audience_param: config.bool("ENABLE_LEGACY_AUDIENCE_PARAM", false)?,
             enable_device_authorization_grant: config
                 .bool("ENABLE_DEVICE_AUTHORIZATION_GRANT", false)?,
+            enable_dynamic_client_registration: config
+                .bool("ENABLE_DYNAMIC_CLIENT_REGISTRATION", false)?,
+            dynamic_client_registration_initial_access_token: config
+                .optional_string("DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN"),
             device_authorization_ttl_seconds,
             device_authorization_poll_interval_seconds,
         })

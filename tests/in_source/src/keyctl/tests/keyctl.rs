@@ -766,6 +766,8 @@ fn test_settings(jwk_keys_dir: PathBuf) -> Settings {
         enable_authorization_details: false,
         enable_legacy_audience_param: false,
         enable_device_authorization_grant: false,
+        enable_dynamic_client_registration: false,
+        dynamic_client_registration_initial_access_token: None,
         device_authorization_ttl_seconds: 600,
         device_authorization_poll_interval_seconds: 5,
     }

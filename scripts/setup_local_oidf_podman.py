@@ -25,6 +25,10 @@ BASIC_ALIAS = os.environ.get("OIDF_LOCAL_BASIC_ALIAS", "local-nazo-oauth-oidf")
 USER_EMAIL = os.environ.get("OIDF_LOCAL_USER_EMAIL", "oidf-local@example.test")
 USER_PASSWORD = os.environ.get("OIDF_LOCAL_USER_PASSWORD", "oidf-local-password")
 CLIENT_SECRET = os.environ.get("OIDF_LOCAL_CLIENT_SECRET", "oidf-local-client-secret")
+DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN = os.environ.get(
+    "OIDF_LOCAL_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN",
+    "oidf-local-dynamic-registration-token",
+)
 FAPI_CLIENT_PREFIX = os.environ.get("OIDF_LOCAL_FAPI_CLIENT_PREFIX", "local-oidf-fapi")
 TRUSTED_PROXY_CIDRS = os.environ.get("OIDF_LOCAL_TRUSTED_PROXY_CIDRS", "10.89.0.0/16")
 WRITE_ENV_YAML = os.environ.get("OIDF_LOCAL_WRITE_ENV_YAML", "1") != "0"
@@ -47,6 +51,7 @@ FAPI_SECURITY_ID2_USER_REJECTS_AUTHENTICATION = (
 )
 PLAN_CONFIG_FILES = (
     "oidf-oidcc-basic-plan-config.json",
+    "oidf-oidcc-dynamic-plan-config.json",
     "oidf-oidcc-config-plan-config.json",
     "oidf-fapi-security-final-plan-config.json",
     "oidf-fapi-message-final-plan-config.json",
@@ -353,6 +358,8 @@ VALKEY_URL: "redis://valkey:6379/0"
 ISSUER: "{ISSUER}"
 ENABLE_REQUEST_OBJECT: true
 ENABLE_PAR_REQUEST_OBJECT: true
+ENABLE_DYNAMIC_CLIENT_REGISTRATION: true
+DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN: "{DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN}"
 MTLS_ENDPOINT_BASE_URL: "{MTLS_ISSUER}"
 FRONTEND_BASE_URL: "{ISSUER}/ui"
 CORS_ALLOWED_ORIGINS:
@@ -822,6 +829,40 @@ def write_basic_plan_config() -> dict[str, object]:
     return config
 
 
+def write_dynamic_plan_config() -> dict[str, object]:
+    browser = browser_automation()
+    config = {
+        "alias": f"{BASIC_ALIAS}-dynamic",
+        "description": "OIDC Basic OP: RFC 7591 dynamic client registration.",
+        "server": {"discoveryUrl": f"{ISSUER}/.well-known/openid-configuration"},
+        "client": {
+            "initial_access_token": DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN,
+            "scope": "openid profile email address phone offline_access",
+        },
+        "client2": {
+            "initial_access_token": DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN,
+            "scope": "openid profile email address phone offline_access",
+        },
+        "client_secret_post": {
+            "initial_access_token": DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN,
+            "scope": "openid profile email address phone offline_access",
+        },
+        "nazo": nazo_login_metadata(),
+        "browser": browser,
+        "override": {
+            module_name: {
+                "browser": copy.deepcopy(browser_automation_with_second_login_placeholder(browser))
+            }
+            for module_name in OIDCC_SECOND_LOGIN_SCREENSHOT_MODULES
+        },
+    }
+    config["override"][OIDCC_REGISTERED_REDIRECT_URI_MODULE] = {
+        "browser": redirect_error_browser_automation()
+    }
+    write_plan_config("oidf-oidcc-dynamic-plan-config.json", config)
+    return config
+
+
 def fapi_client_config(client_id: str, private_jwks: dict[str, object], scope: str) -> dict[str, object]:
     return {
         "client_id": client_id,
@@ -1117,6 +1158,7 @@ def write_fapi_matrix_plan_configs() -> dict[str, dict[str, object]]:
 def write_all_plan_configs() -> None:
     configs: dict[str, dict[str, object]] = {
         "oidf-oidcc-basic-plan-config.json": write_basic_plan_config(),
+        "oidf-oidcc-dynamic-plan-config.json": write_dynamic_plan_config(),
         "oidf-oidcc-config-plan-config.json": write_oidcc_config_plan_config(),
     }
     configs.update(write_fapi_plan_configs())
@@ -1151,6 +1193,8 @@ def plan_expressions_for_configs(configs: dict[str, dict[str, object]]) -> list[
     expressions = [
         "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] "
         "oidf-oidcc-basic-plan-config.json",
+        "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=dynamic_client] "
+        "oidf-oidcc-dynamic-plan-config.json",
         "oidcc-config-certification-test-plan oidf-oidcc-config-plan-config.json",
     ]
     for name, config in sorted(configs.items()):
@@ -1178,6 +1222,7 @@ def plan_manifest_for_expressions(
     plans: list[dict[str, object]] = []
     oidc_titles = {
         "oidf-oidcc-basic-plan-config.json": "OIDC Basic OP",
+        "oidf-oidcc-dynamic-plan-config.json": "OIDC Basic OP Dynamic Registration",
         "oidf-oidcc-config-plan-config.json": "OIDC Config OP",
     }
     oidc_focus = {
@@ -1185,6 +1230,12 @@ def plan_manifest_for_expressions(
             "discovery metadata",
             "authorization code flow",
             "static client registration",
+            "userinfo and ID token interoperability",
+        ],
+        "oidf-oidcc-dynamic-plan-config.json": [
+            "RFC 7591 dynamic client registration",
+            "registration endpoint metadata",
+            "authorization code flow",
             "userinfo and ID token interoperability",
         ],
         "oidf-oidcc-config-plan-config.json": [
@@ -1217,7 +1268,7 @@ def plan_manifest_for_expressions(
     return {
         "name": "NazoAuth OIDF full conformance matrix",
         "description": (
-            "Sixteen-plan OpenID Foundation regression matrix for the public issuer. "
+            "Seventeen-plan OpenID Foundation regression matrix for the public issuer. "
             "Targeted TP/PS checks are mapped onto these plans instead of being run as a separate matrix."
         ),
         "plans": plans,

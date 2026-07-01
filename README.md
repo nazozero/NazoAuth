@@ -216,7 +216,8 @@ They are documented in [docs/configuration.md](docs/configuration.md).
 The following capabilities are outside the default authorization-server surface
 and are not advertised unless implemented, tested, and explicitly enabled:
 
-- Dynamic Client Registration / RFC 7591.
+- Dynamic Client Registration / RFC 7591 unless `ENABLE_DYNAMIC_CLIENT_REGISTRATION=true`
+  and the registration endpoint is protected by an initial access token.
 - Client Configuration Management / RFC 7592.
 - Device Authorization Grant / RFC 8628 unless `ENABLE_DEVICE_AUTHORIZATION_GRANT=true`.
 - External-token, refresh-token, or ID-token Token Exchange profiles.
