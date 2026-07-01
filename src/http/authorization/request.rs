@@ -114,23 +114,24 @@ async fn authorize_request(
                 .is_some_and(|client_id| client_id != &pushed.client_id)
             {
                 consumed_request_uri_error = Some("invalid_request_uri");
-            } else if state
-                .settings
-                .authorization_server_profile
-                .requires_fapi2_security()
-                && !outer_request_uri_parameters_are_fapi_compliant(q)
-            {
-                consumed_request_uri_error = Some("invalid_request");
-                *q = pushed.params;
-            } else if !outer_request_uri_parameters_match_pushed(q, &pushed.params) {
-                consumed_request_uri_error = Some("invalid_request");
-                *q = pushed.params;
             } else {
-                pushed_dpop_jkt = pushed.dpop_jkt;
-                pushed_mtls_x5t_s256 = pushed.mtls_x5t_s256;
-                used_pushed_authorization_request = true;
-                pending_pushed_request_uri = Some(request_uri);
-                *q = pushed.params;
+                let outer_parameters_are_fapi_invalid = state
+                    .settings
+                    .authorization_server_profile
+                    .requires_fapi2_security()
+                    && !outer_request_uri_parameters_are_fapi_compliant(q);
+                let outer_parameters_mismatch =
+                    !outer_request_uri_parameters_match_pushed(q, &pushed.params);
+                if outer_parameters_are_fapi_invalid || outer_parameters_mismatch {
+                    consumed_request_uri_error = Some("invalid_request");
+                    *q = pushed.params;
+                } else {
+                    pushed_dpop_jkt = pushed.dpop_jkt;
+                    pushed_mtls_x5t_s256 = pushed.mtls_x5t_s256;
+                    used_pushed_authorization_request = true;
+                    pending_pushed_request_uri = Some(request_uri);
+                    *q = pushed.params;
+                }
             }
         }
     } else if state.settings.require_pushed_authorization_requests {
