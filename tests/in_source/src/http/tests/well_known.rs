@@ -86,6 +86,9 @@ fn settings(profile: AuthorizationServerProfile, trusted_proxy_cidrs: Vec<IpCidr
         enable_par_request_object: false,
         enable_authorization_details: false,
         enable_legacy_audience_param: false,
+        enable_device_authorization_grant: false,
+        device_authorization_ttl_seconds: 600,
+        device_authorization_poll_interval_seconds: 5,
     }
 }
 
@@ -394,6 +397,30 @@ fn discovery_does_not_advertise_unimplemented_protocol_extensions() {
         grant_types.contains(&"urn:ietf:params:oauth:grant-type:jwt-bearer"),
         "JWT bearer grant is implemented and must be advertised"
     );
+}
+
+#[test]
+fn discovery_advertises_device_authorization_only_when_enabled() {
+    let keyset = keyset(jsonwebtoken::Algorithm::RS256);
+    let mut enabled = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
+    enabled.enable_device_authorization_grant = true;
+    let metadata = authorization_server_metadata(&enabled, &keyset);
+
+    assert_eq!(
+        metadata
+            .get("device_authorization_endpoint")
+            .and_then(Value::as_str),
+        Some("https://issuer.example/device_authorization")
+    );
+
+    let grant_types = metadata
+        .get("grant_types_supported")
+        .and_then(Value::as_array)
+        .expect("grant type metadata should be present")
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>();
+    assert!(grant_types.contains(&"urn:ietf:params:oauth:grant-type:device_code"));
 }
 
 #[test]

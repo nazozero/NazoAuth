@@ -217,11 +217,13 @@ Last reviewed: 2026-07-01.
   - 当前边界：同源/BFF 默认边界、authorization endpoint 无 CORS、browser OAuth CORS 不带 credentials、code+PKCE、无 implicit/token response 已有测试
   - 下一步：纯 SPA token storage 不作为默认后端能力；若产品启用，必须单独配置、测试 refresh-token 风险和存储边界。
 
-## 未实现且不得广告的能力
+## 默认关闭或未实现且不得无条件广告的能力
 
-- [ ] **NI-002 RFC 8628 Device Authorization Grant**
-  - 状态：未实现
-  - 最小安全实现条件：device authorization endpoint、user-code UX、polling interval、`slow_down`、expiration、denial、rate limit、metadata。
+- [x] **NI-002 RFC 8628 Device Authorization Grant**
+  - 状态：完成，默认关闭；仅当 `ENABLE_DEVICE_AUTHORIZATION_GRANT=true` 且客户端注册包含 `urn:ietf:params:oauth:grant-type:device_code` 时广告和执行。
+  - 证据：`src/http/token/device.rs`、`src/http/token/dispatch.rs`、`src/bootstrap/routes.rs`、`src/http/well_known.rs`、`tests/in_source/src/http/token/tests/device.rs`、`tests/in_source/src/http/token/tests/forms.rs`、`tests/in_source/src/http/tests/well_known.rs`。
+  - OIDF 覆盖：2026-07-01 检索 OpenID Foundation Conformance Suite 公开 master 快照 `076fbf4`，未发现 RFC 8628 Device Authorization Grant AS-side 官方 plan；只发现 RFC 8414 metadata schema 字段和 CIBA/client 条件复用 `authorization_pending` / `slow_down`。本次不新增 OIDF 矩阵，记录见 `docs/conformance/2026-07-01-ni-002-oidf-coverage.md`。
+  - 保持要求：保持 user-code UX、登录+CSRF approval、轮询间隔、`slow_down`、expiration、denial、rate limit、metadata truth 和一次性 device_code 消费。
 - [ ] **NI-003 RFC 8693 Token Exchange**
   - 状态：未实现
   - 最小安全实现条件：subject/actor token 验证、impersonation/delegation policy、audience/resource 限制、issued token type policy。
@@ -354,7 +356,7 @@ rtk cargo test --locked
 候选任务：
 
 - RFC 7523 third-party JWT bearer assertion trust。
-- RFC 8628 Device Authorization Grant。
+- RFC 8628 Device Authorization Grant 已完成默认关闭实现；后续只做 UX、审计、限速观测和官方 OIDF 覆盖补充。
 - RFC 8693 Token Exchange。
 - RFC 7591 / OIDC DCR。
 - RFC 7592 DCR Management。

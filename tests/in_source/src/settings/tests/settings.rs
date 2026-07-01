@@ -121,6 +121,9 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     assert!(!defaults.enable_par_request_object);
     assert!(!defaults.enable_authorization_details);
     assert!(!defaults.enable_legacy_audience_param);
+    assert!(!defaults.enable_device_authorization_grant);
+    assert_eq!(defaults.device_authorization_ttl_seconds, 600);
+    assert_eq!(defaults.device_authorization_poll_interval_seconds, 5);
 
     let config = ConfigSource::from_pairs_for_test([
         ("ENABLE_REQUEST_OBJECT", "true"),
@@ -128,6 +131,9 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
         ("ENABLE_PAR_REQUEST_OBJECT", "true"),
         ("ENABLE_AUTHORIZATION_DETAILS", "true"),
         ("ENABLE_LEGACY_AUDIENCE_PARAM", "true"),
+        ("ENABLE_DEVICE_AUTHORIZATION_GRANT", "true"),
+        ("DEVICE_AUTHORIZATION_TTL_SECONDS", "300"),
+        ("DEVICE_AUTHORIZATION_POLL_INTERVAL_SECONDS", "7"),
     ]);
     let settings = Settings::from_config(&config).unwrap();
 
@@ -136,6 +142,9 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     assert!(settings.enable_par_request_object);
     assert!(settings.enable_authorization_details);
     assert!(settings.enable_legacy_audience_param);
+    assert!(settings.enable_device_authorization_grant);
+    assert_eq!(settings.device_authorization_ttl_seconds, 300);
+    assert_eq!(settings.device_authorization_poll_interval_seconds, 7);
 }
 
 #[test]

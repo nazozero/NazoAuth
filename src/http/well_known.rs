@@ -1,7 +1,7 @@
 use super::prelude::*;
 use crate::domain::Keyset;
 use crate::http::authorization::BASELINE_ACR_VALUE;
-use crate::http::token::JWT_BEARER_GRANT_TYPE;
+use crate::http::token::{DEVICE_CODE_GRANT_TYPE, JWT_BEARER_GRANT_TYPE};
 use crate::settings::{AuthorizationServerProfile, Settings, SubjectType};
 use crate::support::{
     SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
@@ -90,6 +90,15 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
         settings.authorization_server_profile,
         authorization_signing_algs.as_slice(),
     );
+    let mut grant_types = vec![
+        "authorization_code",
+        "refresh_token",
+        "client_credentials",
+        JWT_BEARER_GRANT_TYPE,
+    ];
+    if settings.enable_device_authorization_grant {
+        grant_types.push(DEVICE_CODE_GRANT_TYPE);
+    }
     let mut metadata = json!({
         "issuer": issuer,
         "authorization_endpoint": format!("{issuer}/authorize"),
@@ -119,7 +128,7 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
         "claims_supported": CLAIMS_SUPPORTED,
         "acr_values_supported": [BASELINE_ACR_VALUE],
         "prompt_values_supported": PROMPT_VALUES_SUPPORTED,
-        "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials", JWT_BEARER_GRANT_TYPE],
+        "grant_types_supported": grant_types,
         "protected_resources": [settings.protected_resource_identifier.as_str()],
         "authorization_response_iss_parameter_supported": true,
         "claims_parameter_supported": true,
@@ -133,6 +142,9 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
     if settings.enable_authorization_details {
         metadata["authorization_details_types_supported"] =
             json!(["account_information", "payment_initiation"]);
+    }
+    if settings.enable_device_authorization_grant {
+        metadata["device_authorization_endpoint"] = json!(format!("{issuer}/device_authorization"));
     }
     if settings
         .authorization_server_profile

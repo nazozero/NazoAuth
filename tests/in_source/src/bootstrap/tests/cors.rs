@@ -267,5 +267,8 @@ fn test_settings(cors_allowed_origins: Vec<String>) -> Settings {
         enable_par_request_object: false,
         enable_authorization_details: false,
         enable_legacy_audience_param: false,
+        enable_device_authorization_grant: false,
+        device_authorization_ttl_seconds: 600,
+        device_authorization_poll_interval_seconds: 5,
     }
 }

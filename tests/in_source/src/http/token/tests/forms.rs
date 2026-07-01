@@ -140,6 +140,26 @@ fn token_form_extracts_jwt_bearer_grant_assertion_separately_from_client_asserti
 }
 
 #[test]
+fn token_form_extracts_device_code_grant_field_separately_from_authorization_code() {
+    let req = form_request();
+
+    let form = parse_token_form(
+        &req,
+        &Bytes::from_static(
+            b"grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code&device_code=device-code-1&code=authorization-code-1",
+        ),
+    )
+    .expect("device_code grant request should parse");
+
+    assert_eq!(
+        form.grant_type,
+        "urn:ietf:params:oauth:grant-type:device_code"
+    );
+    assert_eq!(form.device_code.as_deref(), Some("device-code-1"));
+    assert_eq!(form.code.as_deref(), Some("authorization-code-1"));
+}
+
+#[test]
 fn token_form_rejects_duplicate_defined_parameters() {
     let req = TestRequest::default()
         .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))

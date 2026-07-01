@@ -62,9 +62,10 @@ complete implementation and threat model.
 
 ### Boundary
 
-The Device Authorization Grant is outside the default scope. It fits
-CLI, TV, appliance, and constrained-input clients after user-code phishing and
-polling-abuse controls are designed.
+The Device Authorization Grant is implemented but outside the default scope. It
+fits CLI, TV, appliance, and constrained-input clients only when
+`ENABLE_DEVICE_AUTHORIZATION_GRANT=true` and the client registration explicitly
+allows `urn:ietf:params:oauth:grant-type:device_code`.
 
 ### Activation Criteria
 
@@ -74,6 +75,7 @@ polling-abuse controls are designed.
 - Binding between the browser approval session, displayed client identity, requested scopes, `authorization_details`, resources, and the device code.
 - Phishing-resistant UI language and audit events for approved, denied, expired, and rate-limited flows.
 - Profile matrix changes for public versus confidential device clients.
+- Discovery metadata must remain absent unless `ENABLE_DEVICE_AUTHORIZATION_GRANT=true`.
 
 ### Required Tests
 
