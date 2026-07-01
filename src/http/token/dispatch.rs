@@ -1,9 +1,9 @@
 //! /token grant_type 分发入口。
 // 只负责客户端认证与 grant_type 分派，不直接签发令牌。
 use super::{
-    DEVICE_CODE_GRANT_TYPE, JWT_BEARER_GRANT_TYPE, TokenForm, TokenFormError, parse_token_form,
-    token_authorization_code, token_client_credentials, token_device_code, token_jwt_bearer,
-    token_refresh,
+    DEVICE_CODE_GRANT_TYPE, JWT_BEARER_GRANT_TYPE, TOKEN_EXCHANGE_GRANT_TYPE, TokenForm,
+    TokenFormError, parse_token_form, token_authorization_code, token_client_credentials,
+    token_device_code, token_exchange, token_jwt_bearer, token_refresh,
 };
 use crate::http::prelude::*;
 
@@ -201,7 +201,10 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
             );
         }
     };
-    if form.has_audience_param && !state.settings.enable_legacy_audience_param {
+    if form.has_audience_param
+        && form.grant_type != TOKEN_EXCHANGE_GRANT_TYPE
+        && !state.settings.enable_legacy_audience_param
+    {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -401,6 +404,9 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
         }
         DEVICE_CODE_GRANT_TYPE => {
             token_device_code(&state, &req, &client, &form, client_assertion.as_ref()).await
+        }
+        TOKEN_EXCHANGE_GRANT_TYPE => {
+            token_exchange(&state, &req, &client, &form, client_assertion.as_ref()).await
         }
         _ => oauth_token_error(
             StatusCode::BAD_REQUEST,

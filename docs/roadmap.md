@@ -100,7 +100,7 @@ core and are not advertised in discovery metadata:
 - Dynamic Client Registration / RFC 7591.
 - Client Configuration Management / RFC 7592.
 - Device Authorization Grant.
-- Token Exchange / RFC 8693.
+- External-token, refresh-token, or ID-token Token Exchange profiles.
 - Request-level dynamic tenant or issuer routing.
 - RFC 9701 encrypted introspection responses outside the signed-introspection
   profile, or without per-client JWE response metadata.

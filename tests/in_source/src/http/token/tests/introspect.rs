@@ -481,6 +481,7 @@ async fn sign_access_token(
             ttl: 300,
             dpop_jkt: None,
             mtls_x5t_s256: None,
+            actor: None,
         },
     )
     .await
@@ -669,6 +670,7 @@ fn access_claims(cnf: Option<ConfirmationClaims>) -> Claims {
         nbf: 1,
         exp: 2,
         cnf,
+        act: None,
         userinfo_claims: Vec::new(),
         userinfo_claim_requests: Vec::new(),
     }

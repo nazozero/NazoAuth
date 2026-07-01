@@ -210,6 +210,7 @@ fn userinfo_access_claims(user_id: Option<String>) -> Claims {
         nbf: now,
         exp: now + 300,
         cnf: None,
+        act: None,
         userinfo_claims: Vec::new(),
         userinfo_claim_requests: Vec::new(),
     }
@@ -419,6 +420,7 @@ async fn signed_userinfo_access_token(
             ttl: 300,
             dpop_jkt,
             mtls_x5t_s256,
+            actor: None,
         },
     )
     .await
@@ -492,6 +494,7 @@ async fn userinfo_rejects_signed_access_token_without_valid_tenant_boundary() {
         nbf: Utc::now().timestamp(),
         exp: Utc::now().timestamp() + 300,
         cnf: None,
+        act: None,
         userinfo_claims: Vec::new(),
         userinfo_claim_requests: Vec::new(),
     };

@@ -106,6 +106,11 @@ fn device_token_form(device_code: Option<&str>) -> TokenForm {
         client_assertion_type: None,
         client_assertion: None,
         assertion: None,
+        requested_token_type: None,
+        subject_token: None,
+        subject_token_type: None,
+        actor_token: None,
+        actor_token_type: None,
         audiences: Vec::new(),
         has_audience_param: false,
     }

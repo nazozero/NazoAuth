@@ -89,28 +89,31 @@ allows `urn:ietf:params:oauth:grant-type:device_code`.
 
 ### Boundary
 
-RFC 8693 Token Exchange is outside the default scope. It fits service
-delegation, impersonation, and actor-token deployments after policy and audit
-boundaries are specified.
+RFC 8693 Token Exchange is implemented for a bounded local profile: a
+confidential client registered for
+`urn:ietf:params:oauth:grant-type:token-exchange` can exchange a locally issued
+access token for a new locally issued access token. The request must include a
+valid `subject_token`, `subject_token_type`, and an explicit `resource` or
+`audience`. `actor_token` is optional and, when present, must also be a locally
+issued access token for the authenticated client.
+
+The implementation does not trust external issuers, does not exchange refresh
+tokens or ID tokens, and does not issue refresh tokens from token exchange.
 
 ### Activation Criteria
 
-- Allowed subject token types and actor token types.
-- Delegation versus impersonation semantics.
-- Audience narrowing and prohibition on privilege amplification.
-- Scope and `authorization_details` downscoping rules.
-- `act` claim shape for actor chains and maximum chain length.
-- Sender-constraint preservation or rebinding policy for DPoP and mTLS-bound tokens.
-- Introspection and revocation behavior for exchanged tokens.
-- Audit events that distinguish the requesting client, subject token client, subject, actor, audience, and policy decision.
+- External subject-token or actor-token issuer trust.
+- Refresh-token and ID-token exchange profiles.
+- `authorization_details` propagation beyond empty access-token exchanges.
+- Sender-constrained actor-token proof composition.
+- Product audit events that distinguish the requesting client, subject token client, subject, actor, audience, and policy decision.
 
 ### Required Tests
 
-- Exchange cannot mint a token for an audience not allowed to the requesting client and subject token.
-- Requested scopes and authorization details must be equal or narrower than the subject token unless an explicit policy grants escalation.
-- Expired, revoked, wrong-issuer, wrong-audience, and bearer-at-sender-constrained-boundary tokens are rejected.
-- Actor token chains are bounded and serialized consistently.
-- Introspection exposes enough data for a resource server to enforce delegated access.
+- Exchange cannot mint a token for a target not allowed to the requesting client.
+- Requested scopes must be equal to or narrower than both the subject token and client registration.
+- Expired, revoked, wrong-issuer, wrong-tenant, unauthorized-subject, and sender-constraint mismatch tokens are rejected.
+- Actor tokens are validated and serialized through the `act` claim when delegation is requested.
 
 ## Example Client Matrix
 
