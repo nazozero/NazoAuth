@@ -228,6 +228,7 @@ jobs:
       - name: Prepare isolated runtime config
         run: |
           mkdir -p runtime/e2e/keys runtime/e2e/avatars
+          python scripts/ensure_runtime_keyset.py --key-dir runtime/e2e/keys --active-alg RS256 --required-alg RS256 --required-alg PS256
           cat > runtime/e2e/.env.yaml <<'YAML'
           BIND: "0.0.0.0:8000"
           DATABASE_URL: "postgresql://postgres:postgres@nazo-oauth-e2e-postgres:5432/oauth"
