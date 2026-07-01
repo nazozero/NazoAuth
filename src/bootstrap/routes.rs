@@ -21,6 +21,13 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
         .route("/authorize/decision", web::post().to(authorize_decision))
         // NO CORS: /par
         .route("/par", web::post().to(par))
+        // NO CORS: /device_authorization and /device verification UI
+        .route(
+            "/device_authorization",
+            web::post().to(device_authorization),
+        )
+        .route("/device", web::get().to(device_verification_page))
+        .route("/device/decision", web::post().to(device_decision))
         // CORS: cors_browser_oauth — /token
         .service(
             web::resource("/token")

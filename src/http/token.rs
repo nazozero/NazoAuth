@@ -3,6 +3,7 @@
 mod authorization_code;
 mod client_auth;
 mod client_credentials;
+mod device;
 mod dispatch;
 mod forms;
 mod introspect;
@@ -15,6 +16,7 @@ mod userinfo;
 pub(crate) use authorization_code::*;
 pub(crate) use client_auth::*;
 pub(crate) use client_credentials::*;
+pub(crate) use device::*;
 pub(crate) use dispatch::*;
 pub(crate) use forms::*;
 pub(crate) use introspect::*;

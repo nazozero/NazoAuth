@@ -57,6 +57,7 @@ IETF 和 RFC：
 | [RFC 7662](https://www.rfc-editor.org/rfc/rfc7662), Token Introspection | `/introspect` |
 | [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252), OAuth 2.0 for Native Apps | public native app redirect URI 策略：claimed HTTPS、private-use scheme、允许端口变化的 loopback HTTP |
 | [RFC 8414](https://www.rfc-editor.org/rfc/rfc8414), Authorization Server Metadata | `/.well-known/oauth-authorization-server` |
+| [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628), Device Authorization Grant | `/device_authorization`、`/device` 和 `device_code` token grant，由 `ENABLE_DEVICE_AUTHORIZATION_GRANT` 控制 |
 | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705), OAuth 2.0 mTLS | mTLS client auth 和 sender-constrained token |
 | [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707), Resource Indicators | authorization/PAR/token `resource` 处理、JWT `aud` 绑定，以及 refresh token audience 收窄 |
 | [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068), JWT Access Tokens | 面向 resource server 的 JWT access token |
@@ -192,7 +193,7 @@ RUST_LOG: "info"
 
 - Dynamic Client Registration / RFC 7591。
 - Client Configuration Management / RFC 7592。
-- Device Authorization Grant。
+- Device Authorization Grant / RFC 8628，除非 `ENABLE_DEVICE_AUTHORIZATION_GRANT=true`。
 - Token Exchange / RFC 8693。
 - 请求级动态 tenant 或 issuer routing。
 - signed-introspection profile 外，或未配置 per-client JWE response metadata 的 RFC 9701 encrypted introspection response。

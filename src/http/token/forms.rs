@@ -6,6 +6,7 @@ use std::collections::HashSet;
 pub(crate) struct TokenForm {
     pub(crate) grant_type: String,
     pub(crate) code: Option<String>,
+    pub(crate) device_code: Option<String>,
     pub(crate) redirect_uri: Option<String>,
     pub(crate) code_verifier: Option<String>,
     pub(crate) refresh_token: Option<String>,
@@ -108,6 +109,7 @@ pub(crate) fn parse_token_form(
     let mut form = TokenForm {
         grant_type: String::new(),
         code: None,
+        device_code: None,
         redirect_uri: None,
         code_verifier: None,
         refresh_token: None,
@@ -147,6 +149,10 @@ pub(crate) fn parse_token_form(
             "code" => {
                 accept_token_parameter_once(&mut seen, key)?;
                 form.code = non_empty(value);
+            }
+            "device_code" => {
+                accept_token_parameter_once(&mut seen, key)?;
+                form.device_code = non_empty(value);
             }
             "redirect_uri" => {
                 accept_token_parameter_once(&mut seen, key)?;

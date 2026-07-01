@@ -23,7 +23,7 @@ deployment can satisfy.
 
 | Field | Policy |
 | --- | --- |
-| Grants | `authorization_code`, `refresh_token`, `client_credentials` |
+| Grants | `authorization_code`, `refresh_token`, `client_credentials`; RFC 8628 `urn:ietf:params:oauth:grant-type:device_code` only when `ENABLE_DEVICE_AUTHORIZATION_GRANT=true` and the client registration includes that grant |
 | Response types | `code` |
 | Client auth | `none`, `client_secret_basic`, `client_secret_post`, `private_key_jwt`, `tls_client_auth`, `self_signed_tls_client_auth` |
 | Token binding | Bearer, DPoP-bound, mTLS-bound |
@@ -34,7 +34,7 @@ deployment can satisfy.
 | RAR | RFC 9396-style `authorization_details` accepted on authorization, PAR, and signed request object inputs only when `ENABLE_AUTHORIZATION_DETAILS=true` |
 | Refresh policy | Rotation by default for refresh-token grants |
 | Token TTLs | Authorization code <= configured `AUTH_CODE_TTL_SECONDS`; access token <= configured `ACCESS_TOKEN_TTL_SECONDS` |
-| Metadata | Generated from `AUTHORIZATION_SERVER_PROFILE`; mTLS capabilities advertised only when trusted proxy CIDRs are configured; `authorization_details_types_supported` is advertised only when `ENABLE_AUTHORIZATION_DETAILS=true` and must match the parser allowlist |
+| Metadata | Generated from `AUTHORIZATION_SERVER_PROFILE`; mTLS capabilities advertised only when trusted proxy CIDRs are configured; `authorization_details_types_supported` is advertised only when `ENABLE_AUTHORIZATION_DETAILS=true`; `device_authorization_endpoint` and device_code grant metadata are advertised only when `ENABLE_DEVICE_AUTHORIZATION_GRANT=true` |
 
 Refresh-token rotation follows the state machine in `docs/refresh-token-rotation.md`. The lost-response retry window is a compatibility recovery path, not a replay bypass.
 
@@ -48,6 +48,7 @@ Required negative tests:
 - invalid client assertion audience
 - access token transport ambiguity
 - disabled, unknown, or malformed `authorization_details`
+- disabled Device Authorization Grant metadata or token dispatch overclaim
 
 ## `oauth2-security-bcp`
 

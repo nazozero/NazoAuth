@@ -72,6 +72,9 @@ pub(crate) struct Settings {
     pub(crate) enable_par_request_object: bool,
     pub(crate) enable_authorization_details: bool,
     pub(crate) enable_legacy_audience_param: bool,
+    pub(crate) enable_device_authorization_grant: bool,
+    pub(crate) device_authorization_ttl_seconds: u64,
+    pub(crate) device_authorization_poll_interval_seconds: u64,
 }
 
 impl Settings {
@@ -143,6 +146,21 @@ impl Settings {
         let require_pushed_authorization_requests = config
             .bool("REQUIRE_PUSHED_AUTHORIZATION_REQUESTS", false)?
             || authorization_server_profile.requires_fapi2_security();
+        let device_authorization_ttl_seconds =
+            config.parse("DEVICE_AUTHORIZATION_TTL_SECONDS", 600)?;
+        if device_authorization_ttl_seconds == 0 {
+            bail!("DEVICE_AUTHORIZATION_TTL_SECONDS must be positive");
+        }
+        let device_authorization_poll_interval_seconds =
+            config.parse("DEVICE_AUTHORIZATION_POLL_INTERVAL_SECONDS", 5)?;
+        if device_authorization_poll_interval_seconds == 0 {
+            bail!("DEVICE_AUTHORIZATION_POLL_INTERVAL_SECONDS must be positive");
+        }
+        if device_authorization_poll_interval_seconds >= device_authorization_ttl_seconds {
+            bail!(
+                "DEVICE_AUTHORIZATION_POLL_INTERVAL_SECONDS must be less than DEVICE_AUTHORIZATION_TTL_SECONDS"
+            );
+        }
         let passkey = PasskeySettings::from_config(config, &issuer)?;
         let federation = FederationSettings::from_config(config)?;
         let signing_key_rotation_interval_seconds =
@@ -219,6 +237,10 @@ impl Settings {
             enable_par_request_object: config.bool("ENABLE_PAR_REQUEST_OBJECT", false)?,
             enable_authorization_details: config.bool("ENABLE_AUTHORIZATION_DETAILS", false)?,
             enable_legacy_audience_param: config.bool("ENABLE_LEGACY_AUDIENCE_PARAM", false)?,
+            enable_device_authorization_grant: config
+                .bool("ENABLE_DEVICE_AUTHORIZATION_GRANT", false)?,
+            device_authorization_ttl_seconds,
+            device_authorization_poll_interval_seconds,
         })
     }
 }

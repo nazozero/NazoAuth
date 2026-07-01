@@ -425,6 +425,7 @@ fn form_for_code(code: &str) -> TokenForm {
     TokenForm {
         grant_type: "authorization_code".to_owned(),
         code: Some(code.to_owned()),
+        device_code: None,
         redirect_uri: Some("https://client.example/callback".to_owned()),
         code_verifier: Some(VALID_CODE_VERIFIER.to_owned()),
         refresh_token: None,
@@ -904,6 +905,7 @@ async fn authorization_code_grant_requires_code_before_state_lookup() {
     let form = TokenForm {
         grant_type: "authorization_code".to_owned(),
         code: None,
+        device_code: None,
         redirect_uri: Some("https://client.example/callback".to_owned()),
         code_verifier: Some("verifier".to_owned()),
         refresh_token: None,

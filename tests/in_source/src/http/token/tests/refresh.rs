@@ -329,6 +329,7 @@ fn refresh_form_without_token() -> TokenForm {
     TokenForm {
         grant_type: "refresh_token".to_owned(),
         code: None,
+        device_code: None,
         redirect_uri: None,
         code_verifier: None,
         refresh_token: None,

@@ -123,6 +123,9 @@ fn settings(profile: AuthorizationServerProfile) -> Settings {
         enable_par_request_object: false,
         enable_authorization_details: false,
         enable_legacy_audience_param: false,
+        enable_device_authorization_grant: false,
+        device_authorization_ttl_seconds: 600,
+        device_authorization_poll_interval_seconds: 5,
     }
 }
 
@@ -729,6 +732,7 @@ async fn missing_client_authorization_code_holder_check_fails_closed_when_valkey
     let form = TokenForm {
         grant_type: "authorization_code".to_owned(),
         code: Some("code-unavailable".to_owned()),
+        device_code: None,
         redirect_uri: None,
         code_verifier: Some("verifier".to_owned()),
         refresh_token: None,
@@ -769,6 +773,7 @@ async fn missing_client_authorization_code_holder_check_fails_closed_when_client
     let form = TokenForm {
         grant_type: "authorization_code".to_owned(),
         code: Some(code),
+        device_code: None,
         redirect_uri: None,
         code_verifier: Some("verifier".to_owned()),
         refresh_token: None,
@@ -1280,6 +1285,7 @@ async fn missing_client_authorization_code_holder_error_returns_none_when_code_m
     let form = TokenForm {
         grant_type: "authorization_code".to_owned(),
         code: Some("missing-code".to_owned()),
+        device_code: None,
         redirect_uri: None,
         code_verifier: Some("verifier".to_owned()),
         refresh_token: None,
@@ -1329,6 +1335,7 @@ async fn missing_client_authorization_code_holder_error_returns_none_when_client
     let form = TokenForm {
         grant_type: "authorization_code".to_owned(),
         code: Some(code),
+        device_code: None,
         redirect_uri: None,
         code_verifier: Some("verifier".to_owned()),
         refresh_token: None,
@@ -1663,6 +1670,7 @@ fn missing_client_client_credentials_without_dpop_uses_invalid_request() {
     let form = TokenForm {
         grant_type: "client_credentials".to_owned(),
         code: None,
+        device_code: None,
         redirect_uri: None,
         code_verifier: None,
         refresh_token: None,
@@ -1687,6 +1695,7 @@ fn missing_client_holder_check_ignores_non_client_credentials_grants() {
     let form = TokenForm {
         grant_type: "refresh_token".to_owned(),
         code: None,
+        device_code: None,
         redirect_uri: None,
         code_verifier: None,
         refresh_token: Some("refresh-token".to_owned()),
@@ -1708,6 +1717,7 @@ fn missing_client_client_credentials_with_dpop_stays_client_auth_failure() {
     let form = TokenForm {
         grant_type: "client_credentials".to_owned(),
         code: None,
+        device_code: None,
         redirect_uri: None,
         code_verifier: None,
         refresh_token: None,
@@ -1729,6 +1739,7 @@ fn missing_client_mtls_client_credentials_uses_invalid_request() {
     let form = TokenForm {
         grant_type: "client_credentials".to_owned(),
         code: None,
+        device_code: None,
         redirect_uri: None,
         code_verifier: None,
         refresh_token: None,
@@ -1754,6 +1765,7 @@ fn token_request_auth_material_detects_assertion_even_without_client_id() {
     let form = TokenForm {
         grant_type: "authorization_code".to_owned(),
         code: Some("code".to_owned()),
+        device_code: None,
         redirect_uri: None,
         code_verifier: None,
         refresh_token: None,
@@ -1775,6 +1787,7 @@ fn token_request_auth_material_detects_each_registered_client_auth_channel() {
     let base = TokenForm {
         grant_type: "authorization_code".to_owned(),
         code: Some("code".to_owned()),
+        device_code: None,
         redirect_uri: None,
         code_verifier: None,
         refresh_token: None,
@@ -1817,6 +1830,7 @@ fn token_request_auth_material_allows_absent_client_credentials() {
     let form = TokenForm {
         grant_type: "authorization_code".to_owned(),
         code: Some("code".to_owned()),
+        device_code: None,
         redirect_uri: None,
         code_verifier: None,
         refresh_token: None,

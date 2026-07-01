@@ -75,6 +75,9 @@ fn settings(profile: AuthorizationServerProfile) -> Settings {
         enable_par_request_object: false,
         enable_authorization_details: false,
         enable_legacy_audience_param: false,
+        enable_device_authorization_grant: false,
+        device_authorization_ttl_seconds: 600,
+        device_authorization_poll_interval_seconds: 5,
     }
 }
 
@@ -122,6 +125,7 @@ fn form(scope: Option<&str>, audiences: &[&str]) -> TokenForm {
     TokenForm {
         grant_type: "client_credentials".to_owned(),
         code: None,
+        device_code: None,
         redirect_uri: None,
         code_verifier: None,
         refresh_token: None,

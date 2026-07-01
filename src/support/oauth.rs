@@ -12,8 +12,12 @@ use super::{
     uri_policy::{oauth_redirect_uri_matches, validate_oauth_redirect_uri},
 };
 
-const SUPPORTED_GRANT_TYPES: &[&str] =
-    &["authorization_code", "refresh_token", "client_credentials"];
+const SUPPORTED_GRANT_TYPES: &[&str] = &[
+    "authorization_code",
+    "refresh_token",
+    "client_credentials",
+    "urn:ietf:params:oauth:grant-type:device_code",
+];
 const SUPPORTED_TOKEN_AUTH_METHODS: &[&str] = &[
     "none",
     "client_secret_basic",
