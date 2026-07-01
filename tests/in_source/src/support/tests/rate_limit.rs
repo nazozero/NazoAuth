@@ -1,5 +1,5 @@
 use super::*;
-use crate::support::{OAuthJsonErrorFields, valkey_set_ex};
+use crate::support::{OAuthJsonErrorFields, valkey_del, valkey_eval_string, valkey_set_ex};
 use std::sync::Arc;
 
 use crate::config::ConfigSource;
@@ -45,6 +45,30 @@ async fn live_rate_limit_state() -> Option<AppState> {
             verification_keys: Vec::new(),
         }),
     })
+}
+
+async fn eval_rate_limit_key_ttl(state: &AppState, key: &str) -> i64 {
+    valkey_eval_string(
+        &state.valkey,
+        "return tostring(redis.call('TTL', KEYS[1]))",
+        vec![key.to_owned()],
+        Vec::new(),
+    )
+    .await
+    .expect("rate limit key TTL should be readable")
+    .parse()
+    .expect("rate limit key TTL should be an integer")
+}
+
+async fn set_rate_limit_key_without_ttl(state: &AppState, key: &str, value: &str) {
+    valkey_eval_string(
+        &state.valkey,
+        "redis.call('SET', KEYS[1], ARGV[1]); return 'OK'",
+        vec![key.to_owned()],
+        vec![value.to_owned()],
+    )
+    .await
+    .expect("rate limit key should be staged without TTL");
 }
 
 #[test]
@@ -130,4 +154,56 @@ async fn corrupt_rate_limit_counter_fails_closed_as_server_error() {
         Some("server_error")
     );
     assert!(response.headers().get(header::WWW_AUTHENTICATE).is_none());
+}
+
+#[actix_web::test]
+async fn rate_limit_counter_is_created_with_window_ttl() {
+    let Some(state) = live_rate_limit_state().await else {
+        return;
+    };
+    let req = TestRequest::default().to_http_request();
+    let key = rate_limit_key(
+        RateLimitPolicy::Token,
+        &rate_limit_subject(&req, &state.settings),
+    );
+    valkey_del(&state.valkey, key.clone())
+        .await
+        .expect("rate limit key cleanup should succeed");
+
+    enforce_rate_limit(&state, &req, RateLimitPolicy::Token)
+        .await
+        .expect("first request in a fresh window should pass");
+
+    let ttl = eval_rate_limit_key_ttl(&state, &key).await;
+    assert!(
+        ttl > 0 && ttl <= state.settings.rate_limit.window_seconds as i64,
+        "rate limit counter must have a bounded TTL, got {ttl}"
+    );
+}
+
+#[actix_web::test]
+async fn rate_limit_counter_without_ttl_is_repaired() {
+    let Some(state) = live_rate_limit_state().await else {
+        return;
+    };
+    let req = TestRequest::default().to_http_request();
+    let key = rate_limit_key(
+        RateLimitPolicy::Token,
+        &rate_limit_subject(&req, &state.settings),
+    );
+    valkey_del(&state.valkey, key.clone())
+        .await
+        .expect("rate limit key cleanup should succeed");
+    set_rate_limit_key_without_ttl(&state, &key, "0").await;
+    assert_eq!(eval_rate_limit_key_ttl(&state, &key).await, -1);
+
+    enforce_rate_limit(&state, &req, RateLimitPolicy::Token)
+        .await
+        .expect("valid legacy counter should be incremented");
+
+    let ttl = eval_rate_limit_key_ttl(&state, &key).await;
+    assert!(
+        ttl > 0 && ttl <= state.settings.rate_limit.window_seconds as i64,
+        "legacy rate limit counter must be given a bounded TTL, got {ttl}"
+    );
 }
