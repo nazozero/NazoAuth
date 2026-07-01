@@ -201,7 +201,16 @@ pub(crate) fn prepare_dynamic_client_registration(
         .scope
         .as_deref()
         .map(parse_scope)
-        .unwrap_or_default();
+        .unwrap_or_else(|| {
+            if grant_types
+                .iter()
+                .any(|grant| grant == "authorization_code")
+            {
+                vec!["openid".to_owned()]
+            } else {
+                Vec::new()
+            }
+        });
     let client_name = request
         .client_name
         .map(|value| value.trim().to_owned())
@@ -269,7 +278,12 @@ impl PreparedDynamicClientRegistration {
             allow_client_assertion_audience_array: false,
             allow_client_assertion_endpoint_audience: false,
             require_par_request_object: false,
-            allow_authorization_code_without_pkce: false,
+            allow_authorization_code_without_pkce: self.client_type == "confidential"
+                && !self.require_dpop_bound_tokens
+                && matches!(
+                    self.token_endpoint_auth_method.as_str(),
+                    "client_secret_basic" | "client_secret_post"
+                ),
             backchannel_logout_uri: self.backchannel_logout_uri.clone(),
             backchannel_logout_session_required: self.backchannel_logout_session_required,
             tls_client_auth_subject_dn: self.tls_client_auth_subject_dn.clone(),

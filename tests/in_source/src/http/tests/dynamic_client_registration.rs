@@ -98,13 +98,13 @@ async fn dynamic_registration_accepts_oidf_inline_jwks_without_kid_for_secret_cl
     )
     .expect("OIDF Basic dynamic registration metadata should parse");
 
-    crate::http::admin::prepare_client_insert(
-        prepared.into_create_client_request(),
-        None,
-        "https://issuer.example",
-    )
-    .await
-    .expect("OIDF inline jwks without kid should be accepted for secret clients");
+    let create_request = prepared.to_create_client_request();
+    assert_eq!(create_request.scopes, vec!["openid"]);
+    assert!(create_request.allow_authorization_code_without_pkce);
+
+    crate::http::admin::prepare_client_insert(create_request, None, "https://issuer.example")
+        .await
+        .expect("OIDF inline jwks without kid should be accepted for secret clients");
 }
 
 #[test]
