@@ -128,6 +128,7 @@ fn form(scope: Option<&str>, audiences: &[&str]) -> TokenForm {
         client_secret: None,
         client_assertion_type: None,
         client_assertion: None,
+        assertion: None,
         audiences: audiences.iter().map(|value| (*value).to_owned()).collect(),
         has_audience_param: false,
     }

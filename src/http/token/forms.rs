@@ -14,6 +14,7 @@ pub(crate) struct TokenForm {
     pub(crate) client_secret: Option<String>,
     pub(crate) client_assertion_type: Option<String>,
     pub(crate) client_assertion: Option<String>,
+    pub(crate) assertion: Option<String>,
     pub(crate) audiences: Vec<String>,
     pub(crate) has_audience_param: bool,
 }
@@ -115,6 +116,7 @@ pub(crate) fn parse_token_form(
         client_secret: None,
         client_assertion_type: None,
         client_assertion: None,
+        assertion: None,
         audiences: Vec::new(),
         has_audience_param: false,
     };
@@ -177,6 +179,10 @@ pub(crate) fn parse_token_form(
             "client_assertion" => {
                 accept_token_parameter_once(&mut seen, key)?;
                 form.client_assertion = non_empty(value);
+            }
+            "assertion" => {
+                accept_token_parameter_once(&mut seen, key)?;
+                form.assertion = non_empty(value);
             }
             "audience" => {
                 accept_token_parameter_once(&mut seen, key)?;

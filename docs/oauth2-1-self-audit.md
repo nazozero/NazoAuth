@@ -58,7 +58,7 @@ References:
 | FAPI2 Security | Implemented and OIDF-tested | PAR, PKCE S256, confidential clients, sender-constrained tokens, and client auth policy are separated from Message Signing. |
 | FAPI2 Message Signing authz request | Implemented and OIDF-tested | Signed request objects at PAR with `aud`, `nbf`, and bounded `exp`. |
 | FAPI2 Message Signing JARM | Implemented and OIDF-tested where advertised | Signing failure must not fall back to plain query responses. |
-| FAPI2 signed introspection option | Deferred | Defined in the matrix but not advertised until implemented and tested. |
+| FAPI2 signed introspection option | Implemented/profile-scoped | Advertised only by `fapi2-message-signing-introspection` and only as signed JWT introspection, not JWE. |
 
 ## Outside OAuth 2.1 Core
 

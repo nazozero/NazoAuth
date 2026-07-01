@@ -224,6 +224,11 @@ pub(crate) async fn par_after_rate_limit(
             "PAR request object 不能包含 request_uri.",
         );
     }
+    if let Err(response) =
+        validate_pushed_authorization_request_profile_parameters(&state.settings, &params)
+    {
+        return response;
+    }
     if let Err(response) = validate_pushed_authorization_request(&client, &params) {
         return response;
     }
@@ -409,6 +414,24 @@ fn validate_pushed_authorization_request_profile(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "FAPI2 profiles require sender-constrained access tokens.",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_pushed_authorization_request_profile_parameters(
+    settings: &Settings,
+    params: &HashMap<String, String>,
+) -> Result<(), HttpResponse> {
+    if settings
+        .authorization_server_profile
+        .requires_fapi2_security()
+        && !params.contains_key("redirect_uri")
+    {
+        return Err(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "FAPI2 PAR 请求必须显式包含 redirect_uri.",
         ));
     }
     Ok(())

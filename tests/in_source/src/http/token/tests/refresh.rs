@@ -337,6 +337,7 @@ fn refresh_form_without_token() -> TokenForm {
         client_secret: None,
         client_assertion_type: None,
         client_assertion: None,
+        assertion: None,
         audiences: Vec::new(),
         has_audience_param: false,
     }
