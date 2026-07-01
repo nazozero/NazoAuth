@@ -206,7 +206,10 @@ pub(crate) fn prepare_dynamic_client_registration(
                 .iter()
                 .any(|grant| grant == "authorization_code")
             {
-                vec!["openid".to_owned()]
+                ["openid", "profile", "email", "address", "phone"]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect()
             } else {
                 Vec::new()
             }
