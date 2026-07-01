@@ -201,19 +201,7 @@ pub(crate) fn prepare_dynamic_client_registration(
         .scope
         .as_deref()
         .map(parse_scope)
-        .unwrap_or_else(|| {
-            if grant_types
-                .iter()
-                .any(|grant| grant == "authorization_code")
-            {
-                ["openid", "profile", "email", "address", "phone"]
-                    .into_iter()
-                    .map(str::to_owned)
-                    .collect()
-            } else {
-                Vec::new()
-            }
-        });
+        .unwrap_or_else(|| default_dynamic_client_scopes(&grant_types));
     let client_name = request
         .client_name
         .map(|value| value.trim().to_owned())
@@ -341,6 +329,23 @@ fn validate_response_type_relationship(
         ));
     }
     Ok(())
+}
+
+fn default_dynamic_client_scopes(grant_types: &[String]) -> Vec<String> {
+    if !grant_types
+        .iter()
+        .any(|grant| grant == "authorization_code")
+    {
+        return Vec::new();
+    }
+    let mut scopes = ["openid", "profile", "email", "address", "phone"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if grant_types.iter().any(|grant| grant == "refresh_token") {
+        scopes.push("offline_access".to_owned());
+    }
+    scopes
 }
 
 fn map_insert_error(message: String) -> DynamicRegistrationError {
