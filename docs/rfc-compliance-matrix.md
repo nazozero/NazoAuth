@@ -236,14 +236,22 @@ discovery metadata claims are updated:
 6. Update this matrix, `docs/profile-matrix.md`, README, discovery metadata tests,
    and conformance records in the same change when a public capability claim
    changes.
-7. For JWT-bearing features, add RFC 8725 negative tests for alg confusion, wrong
+7. For every newly supported RFC, OIDC/FAPI profile, or standards-track
+   protocol capability, search the OpenID Foundation Conformance Suite official
+   production/staging plans, public source, and release notes for matching
+   official tests. If matching coverage exists, update the repository OIDF
+   matrix execution, workflow/config inputs, and conformance records in the same
+   change. If no official coverage exists, record the negative search result and
+   date. This OIDF evidence is additive and never replaces local positive,
+   negative, metadata-truth, and security-boundary tests.
+8. For JWT-bearing features, add RFC 8725 negative tests for alg confusion, wrong
    key type, wrong `kid`, `none`, cross-JWT substitution, expired/future claims,
    and wrong audience/issuer.
-8. For FAPI features, add tests for exact FAPI profile requirements rather than
+9. For FAPI features, add tests for exact FAPI profile requirements rather than
    only general OAuth behavior: authenticated PAR, S256, `redirect_uri` in PAR,
    code lifetime, `request_uri` lifetime, sender constraints, client auth method,
    authorization endpoint parameters, and browser redirect status handling.
-9. For browser-facing changes, verify CORS, cookies, CSRF, HSTS/TLS, redirect
+10. For browser-facing changes, verify CORS, cookies, CSRF, HSTS/TLS, redirect
    handling, and token storage assumptions before advertising support.
 
 ## Current Bottom Line

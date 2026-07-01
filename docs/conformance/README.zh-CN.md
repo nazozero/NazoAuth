@@ -28,6 +28,12 @@ Nazo Auth Server 已发布在 OpenID Foundation 官方认证列表中：
 
 baseline OIDC metadata 会在 `request_object_signing_alg_values_supported` 中声明 `none`，用于 unsigned Request Object 的 OIDC 兼容路径。该能力不是高安全 profile 能力；FAPI2 Security Profile Final、FAPI2 Message Signing Final、要求 PAR request object 的客户端以及 holder-bound token 客户端仍然 fail closed，必须使用签名 Request Object 或被拒绝。
 
+## 覆盖更新规则
+
+每新增一个 RFC、OIDC/FAPI profile 或标准协议能力支持，都必须检查 OIDF 一致性套件覆盖。检查范围包括 OpenID Foundation Conformance Suite 的官方 production/staging 计划、公开源代码和 release notes，确认是否已有对应官方测试。
+
+如果已有官方覆盖，必须在同一变更中更新本仓库的 OIDF 矩阵执行内容，包括 workflow/config 输入、plan 列表、矩阵文档和 conformance 记录。如果暂无官方覆盖，必须在对应实现记录或 conformance 记录中写明未发现官方覆盖的检索结论和日期。无论 OIDF 是否已有覆盖，本地正向、负向、metadata truth 和安全边界测试仍然必须保留。
+
 ## 记录格式
 
 每份记录应包含：

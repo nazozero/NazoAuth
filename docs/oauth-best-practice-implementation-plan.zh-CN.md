@@ -413,4 +413,11 @@ rtk cargo test --locked
 - `README.zh-CN.md`
 - 对应 conformance 记录或本地测试证据
 
+每新增一个 RFC、OIDC/FAPI profile 或标准协议能力支持时，必须额外执行 OIDF 一致性套件覆盖检查：
+
+- 检索 OpenID Foundation Conformance Suite 的官方 production/staging 计划、公开源代码和 release notes，确认是否已有对应官方测试。
+- 如果 OIDF 已有对应官方测试、计划或矩阵，必须在同一变更中更新本仓库的 OIDF 执行内容，例如 `.github/workflows/oidf-conformance-full.yml`、`scripts/run_oidf_conformance.py` 输入、`docs/conformance/oidf-full-matrix*.md`、`docs/conformance/oidf-plan-config-template.json` 或对应 plan 列表，使新增官方覆盖被实际执行并归档。
+- 如果 OIDF 暂无对应官方测试，必须在任务证据或 conformance 记录中写明检索结论和日期；仍必须保留本地正向、负向、安全边界和 metadata truth 测试。
+- OIDF 官方套件覆盖是额外证据，不替代本地测试。
+
 不得只改 README 或 discovery metadata 而不补实现与测试。
