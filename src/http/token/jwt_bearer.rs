@@ -243,6 +243,8 @@ pub(crate) async fn token_jwt_bearer(
             mtls_x5t_s256,
             refresh_token_mtls_x5t_s256: None,
             authorization_code_hash: None,
+            actor: None,
+            issued_token_type: None,
         },
     )
     .await

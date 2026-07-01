@@ -224,9 +224,10 @@ Last reviewed: 2026-07-01.
   - 证据：`src/http/token/device.rs`、`src/http/token/dispatch.rs`、`src/bootstrap/routes.rs`、`src/http/well_known.rs`、`tests/in_source/src/http/token/tests/device.rs`、`tests/in_source/src/http/token/tests/forms.rs`、`tests/in_source/src/http/tests/well_known.rs`。
   - OIDF 覆盖：2026-07-01 检索 OpenID Foundation Conformance Suite 公开 master 快照 `076fbf4`，未发现 RFC 8628 Device Authorization Grant AS-side 官方 plan；只发现 RFC 8414 metadata schema 字段和 CIBA/client 条件复用 `authorization_pending` / `slow_down`。本次不新增 OIDF 矩阵，记录见 `docs/conformance/2026-07-01-ni-002-oidf-coverage.md`。
   - 保持要求：保持 user-code UX、登录+CSRF approval、轮询间隔、`slow_down`、expiration、denial、rate limit、metadata truth 和一次性 device_code 消费。
-- [ ] **NI-003 RFC 8693 Token Exchange**
-  - 状态：未实现
-  - 最小安全实现条件：subject/actor token 验证、impersonation/delegation policy、audience/resource 限制、issued token type policy。
+- [x] **NI-003 RFC 8693 Token Exchange**
+  - 状态：完成 / bounded local access-token profile
+  - 当前边界：仅接受本授权服务器签发且未撤销的 access token 作为 subject/actor token，仅签发新的本地 access token；要求显式 `resource` 或 RFC 8693 `audience`，scope 只能收窄，`actor_token` 会映射为 `act` claim。
+  - 下一步：外部 issuer trust、refresh-token exchange、ID-token exchange、`authorization_details` 传播和更细 audit event 需作为独立 profile 设计。
 - [ ] **NI-004 RFC 7591 / OIDC Dynamic Client Registration**
   - 状态：未实现
   - 最小安全实现条件：initial access token 或 software statement policy、metadata validation、默认低权限、审计日志。
@@ -357,7 +358,7 @@ rtk cargo test --locked
 
 - RFC 7523 third-party JWT bearer assertion trust。
 - RFC 8628 Device Authorization Grant 已完成默认关闭实现；后续只做 UX、审计、限速观测和官方 OIDF 覆盖补充。
-- RFC 8693 Token Exchange。
+- RFC 8693 Token Exchange 的外部 token、refresh-token、ID-token 和跨 issuer profile。
 - RFC 7591 / OIDC DCR。
 - RFC 7592 DCR Management。
 - OIDC CIBA / FAPI CIBA。

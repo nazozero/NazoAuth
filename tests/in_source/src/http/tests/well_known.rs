@@ -384,18 +384,17 @@ fn discovery_does_not_advertise_unimplemented_protocol_extensions() {
         .iter()
         .filter_map(Value::as_str)
         .collect::<Vec<_>>();
-    for grant_type in [
-        "urn:ietf:params:oauth:grant-type:device_code",
-        "urn:ietf:params:oauth:grant-type:token-exchange",
-    ] {
-        assert!(
-            !grant_types.contains(&grant_type),
-            "{grant_type} must not be advertised until it is implemented"
-        );
-    }
+    assert!(
+        !grant_types.contains(&"urn:ietf:params:oauth:grant-type:device_code"),
+        "device grant must not be advertised until it is enabled"
+    );
     assert!(
         grant_types.contains(&"urn:ietf:params:oauth:grant-type:jwt-bearer"),
         "JWT bearer grant is implemented and must be advertised"
+    );
+    assert!(
+        grant_types.contains(&"urn:ietf:params:oauth:grant-type:token-exchange"),
+        "Token Exchange grant is implemented and must be advertised"
     );
 }
 

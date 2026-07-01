@@ -50,6 +50,8 @@ pub(crate) struct Claims {
     pub(crate) exp: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) cnf: Option<ConfirmationClaims>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) act: Option<Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) userinfo_claims: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -223,6 +225,8 @@ pub(crate) struct TokenIssue {
     pub(crate) mtls_x5t_s256: Option<String>,
     pub(crate) refresh_token_mtls_x5t_s256: Option<String>,
     pub(crate) authorization_code_hash: Option<String>,
+    pub(crate) actor: Option<Value>,
+    pub(crate) issued_token_type: Option<String>,
 }
 
 #[cfg(test)]

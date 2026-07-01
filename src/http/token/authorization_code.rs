@@ -196,6 +196,8 @@ fn token_issue_from_authorization_code(input: AuthorizationCodeIssueInput) -> To
         mtls_x5t_s256: input.mtls_x5t_s256,
         refresh_token_mtls_x5t_s256: input.refresh_token_mtls_x5t_s256,
         authorization_code_hash: Some(input.code_hash),
+        actor: None,
+        issued_token_type: None,
     }
 }
 

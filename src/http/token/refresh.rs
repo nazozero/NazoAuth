@@ -429,6 +429,8 @@ pub(crate) async fn token_refresh(
             mtls_x5t_s256: mtls_x5t_s256.clone(),
             refresh_token_mtls_x5t_s256: mtls_x5t_s256,
             authorization_code_hash: None,
+            actor: None,
+            issued_token_type: None,
         },
     )
     .await

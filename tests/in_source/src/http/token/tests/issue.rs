@@ -264,6 +264,8 @@ fn token_issue_with_sid(id_token_claims: Vec<String>) -> TokenIssue {
         mtls_x5t_s256: None,
         refresh_token_mtls_x5t_s256: None,
         authorization_code_hash: None,
+        actor: None,
+        issued_token_type: None,
     }
 }
 
@@ -290,6 +292,8 @@ fn token_issue_without_openid() -> TokenIssue {
         mtls_x5t_s256: None,
         refresh_token_mtls_x5t_s256: None,
         authorization_code_hash: None,
+        actor: None,
+        issued_token_type: None,
     }
 }
 

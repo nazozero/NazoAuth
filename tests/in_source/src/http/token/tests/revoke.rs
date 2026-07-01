@@ -348,6 +348,7 @@ async fn sign_access_token(state: &Data<AppState>, client: &ClientRow) -> Issued
             ttl: 300,
             dpop_jkt: None,
             mtls_x5t_s256: None,
+            actor: None,
         },
     )
     .await

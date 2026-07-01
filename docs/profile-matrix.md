@@ -23,7 +23,7 @@ deployment can satisfy.
 
 | Field | Policy |
 | --- | --- |
-| Grants | `authorization_code`, `refresh_token`, `client_credentials`; RFC 8628 `urn:ietf:params:oauth:grant-type:device_code` only when `ENABLE_DEVICE_AUTHORIZATION_GRANT=true` and the client registration includes that grant |
+| Grants | `authorization_code`, `refresh_token`, `client_credentials`, bounded RFC 8693 `urn:ietf:params:oauth:grant-type:token-exchange`; RFC 8628 `urn:ietf:params:oauth:grant-type:device_code` only when `ENABLE_DEVICE_AUTHORIZATION_GRANT=true` and the client registration includes that grant |
 | Response types | `code` |
 | Client auth | `none`, `client_secret_basic`, `client_secret_post`, `private_key_jwt`, `tls_client_auth`, `self_signed_tls_client_auth` |
 | Token binding | Bearer, DPoP-bound, mTLS-bound |
@@ -49,6 +49,7 @@ Required negative tests:
 - access token transport ambiguity
 - disabled, unknown, or malformed `authorization_details`
 - disabled Device Authorization Grant metadata or token dispatch overclaim
+- Token Exchange subject/actor token type, target, scope, and sender-constraint boundary violations
 
 ## `oauth2-security-bcp`
 
