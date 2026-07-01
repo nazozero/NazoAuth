@@ -44,6 +44,18 @@ pub(crate) fn validate_cors_origin(value: &str) -> anyhow::Result<()> {
     validate_https_or_loopback_http("CORS_ALLOWED_ORIGINS", &url)
 }
 
+pub(crate) fn validate_protected_resource_identifier(value: &str) -> anyhow::Result<()> {
+    let url = parse_url("PROTECTED_RESOURCE_IDENTIFIER", value)?;
+    if !url.has_host() {
+        bail!("PROTECTED_RESOURCE_IDENTIFIER 必须包含 host");
+    }
+    reject_url_credentials("PROTECTED_RESOURCE_IDENTIFIER", &url)?;
+    if url.fragment().is_some() {
+        bail!("PROTECTED_RESOURCE_IDENTIFIER 不能包含 fragment");
+    }
+    validate_https_or_loopback_http("PROTECTED_RESOURCE_IDENTIFIER", &url)
+}
+
 pub(crate) fn validate_oauth_redirect_uri(client_type: &str, value: &str) -> anyhow::Result<()> {
     if value.contains('*') {
         bail!("redirect_uri 不支持通配符");

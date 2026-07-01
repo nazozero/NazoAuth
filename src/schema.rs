@@ -174,6 +174,7 @@ diesel::table! {
         client_id -> Uuid,
         user_id -> Nullable<Uuid>,
         scopes -> Jsonb,
+        audience -> Jsonb,
         authorization_details -> Jsonb,
         issued_at -> Timestamptz,
         expires_at -> Timestamptz,

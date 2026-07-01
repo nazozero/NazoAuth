@@ -44,7 +44,11 @@ The project separates three surfaces:
   scope or `authorization_details`, and DPoP or mTLS confirmation where
   required.
 - RFC 8707 resource indicators support single-resource and multi-resource
-  audience derivation.
+  audience derivation across authorization requests, PAR, token exchange, and
+  refresh-token audience narrowing.
+- RFC 9728 protected resource metadata publishes the FAPI resource identifier,
+  supported token presentation methods, DPoP algorithms, and optional mTLS/RAR
+  capabilities.
 - RFC 9396-style `authorization_details` are parsed, consent-bound, and carried
   into tokens for supported detail types.
 

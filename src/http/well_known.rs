@@ -48,6 +48,14 @@ const FAPI2_CLIENT_AUTH_METHODS: [&str; 3] = [
     "tls_client_auth",
     "self_signed_tls_client_auth",
 ];
+const SCOPES_SUPPORTED: [&str; 6] = [
+    "openid",
+    "profile",
+    "email",
+    "address",
+    "phone",
+    "offline_access",
+];
 
 pub(crate) async fn health() -> Json<Value> {
     Json(json!({"status": "正常"}))
@@ -103,11 +111,12 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
         "revocation_endpoint_auth_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS,
         "introspection_endpoint_auth_methods_supported": token_auth_methods,
         "introspection_endpoint_auth_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS,
-        "scopes_supported": ["openid", "profile", "email", "address", "phone", "offline_access"],
+        "scopes_supported": SCOPES_SUPPORTED,
         "claims_supported": CLAIMS_SUPPORTED,
         "acr_values_supported": [BASELINE_ACR_VALUE],
         "prompt_values_supported": PROMPT_VALUES_SUPPORTED,
         "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
+        "protected_resources": [settings.protected_resource_identifier.as_str()],
         "authorization_response_iss_parameter_supported": true,
         "claims_parameter_supported": true,
         "backchannel_logout_supported": true,
@@ -139,6 +148,26 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
             "introspection_endpoint": format!("{mtls_base}/introspect"),
             "userinfo_endpoint": format!("{mtls_base}/userinfo")
         });
+    }
+    metadata
+}
+
+fn protected_resource_metadata(settings: &Settings, _keyset: &Keyset) -> Value {
+    let mtls_enabled = !settings.trusted_proxy_cidrs.is_empty();
+    let mut metadata = json!({
+        "resource": settings.protected_resource_identifier.as_str(),
+        "authorization_servers": [settings.issuer.as_str()],
+        "resource_name": "Nazo OAuth Protected Resource",
+        "bearer_methods_supported": ["header", "body"],
+        "scopes_supported": SCOPES_SUPPORTED,
+        "dpop_signing_alg_values_supported": DPOP_SIGNING_ALGS
+    });
+    if mtls_enabled {
+        metadata["tls_client_certificate_bound_access_tokens"] = json!(true);
+    }
+    if settings.enable_authorization_details {
+        metadata["authorization_details_types_supported"] =
+            json!(["account_information", "payment_initiation"]);
     }
     metadata
 }
@@ -194,6 +223,13 @@ pub(crate) async fn discovery(state: Data<AppState>) -> Json<Value> {
 
 pub(crate) async fn oauth_authorization_server_metadata(state: Data<AppState>) -> Json<Value> {
     Json(authorization_server_metadata_value(&state))
+}
+
+pub(crate) async fn oauth_protected_resource_metadata(state: Data<AppState>) -> Json<Value> {
+    Json(protected_resource_metadata(
+        &state.settings,
+        &state.keyset.snapshot(),
+    ))
 }
 
 pub(crate) async fn jwks(state: Data<AppState>) -> Json<Value> {

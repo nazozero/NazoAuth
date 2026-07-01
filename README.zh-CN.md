@@ -58,14 +58,14 @@ IETF 和 RFC：
 | [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252), OAuth 2.0 for Native Apps | public native app redirect URI 策略：claimed HTTPS、private-use scheme、允许端口变化的 loopback HTTP |
 | [RFC 8414](https://www.rfc-editor.org/rfc/rfc8414), Authorization Server Metadata | `/.well-known/oauth-authorization-server` |
 | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705), OAuth 2.0 mTLS | mTLS client auth 和 sender-constrained token |
-| [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707), Resource Indicators | `resource` 和 JWT `aud` 绑定 |
+| [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707), Resource Indicators | authorization/PAR/token `resource` 处理、JWT `aud` 绑定，以及 refresh token audience 收窄 |
 | [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068), JWT Access Tokens | 面向 resource server 的 JWT access token |
-| [RFC 8996](https://www.rfc-editor.org/rfc/rfc8996), TLS 1.0 and TLS 1.1 Deprecation | 公开部署配置将 TLS 限制为 TLS 1.2 和 TLS 1.3 |
 | [RFC 9101](https://www.rfc-editor.org/rfc/rfc9101), JAR | 启用后支持 signed request object |
 | [RFC 9126](https://www.rfc-editor.org/rfc/rfc9126), PAR | `/par` |
 | [RFC 9396](https://www.rfc-editor.org/rfc/rfc9396), Rich Authorization Requests | 由 `ENABLE_AUTHORIZATION_DETAILS` 控制 |
 | [RFC 9449](https://www.rfc-editor.org/rfc/rfc9449), DPoP | proof 校验和 sender-constrained token |
 | [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700), OAuth 2.0 Security BCP | code-only authorization response、无 password/implicit grant、PKCE、redirect URI 绑定、bearer token 防护和 sender-constrained token 加固 |
+| [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728), Protected Resource Metadata | `/.well-known/oauth-protected-resource` 和 `/.well-known/oauth-protected-resource/fapi/resource` |
 | OAuth 2.1 draft 方向 | OAuth 2.1 风格默认值，兼容例外需要显式开关 |
 
 OpenID Foundation：
@@ -83,8 +83,8 @@ OpenID Foundation：
 | [OpenID Connect RP-Initiated Logout 1.0](https://openid.net/specs/openid-connect-rpinitiated-1_0.html) | `/logout` |
 | [OpenID Connect Back-Channel Logout 1.0](https://openid.net/specs/openid-connect-backchannel-1_0.html) | best-effort logout notification |
 | [JWT Secured Authorization Response Mode](https://openid.net/specs/oauth-v2-jarm.html) | active profile 声明时支持 JARM |
-| [FAPI 2.0 Security Profile Final](https://openid.net/specs/fapi-2_0-security-profile-final.html) | `fapi2-security` profile |
-| [FAPI 2.0 Message Signing Final](https://openid.net/specs/fapi-2_0-message-signing-final.html) | signed authorization request 和 JARM profile support |
+| [FAPI 2.0 Security Profile Final](https://openid.net/specs/fapi-security-profile-2_0-final.html) | `fapi2-security` profile |
+| [FAPI 2.0 Message Signing Final](https://openid.net/specs/fapi-message-signing-2_0-final.html) | signed authorization request 和 JARM profile support |
 
 其他协议能力：
 
@@ -114,7 +114,7 @@ OpenID Foundation Conformance Suite 结果 URL：
 
 ## 功能
 
-- Authorization code + PKCE、refresh token、client credentials、revocation、introspection、discovery、JWKS、UserInfo、PAR、JAR、DPoP、mTLS。
+- Authorization code + PKCE、refresh token、client credentials、revocation、introspection、discovery、protected resource metadata、JWKS、UserInfo、PAR、JAR、DPoP、mTLS。
 - Runtime profile：`oauth2-baseline`、`fapi2-security`、`fapi2-message-signing-authz-request`。
 - 本地用户、资料、OAuth client、grant、access request、TOTP MFA、backup code、remembered MFA、WebAuthn/passkeys、外部 OIDC/SAML federation、SCIM provisioning。
 - 本地签名密钥生命周期，包含 prepublish、active、grace、retired 状态。也可以用 external-command signer 接 KMS/HSM。
@@ -169,6 +169,7 @@ RUST_LOG: "info"
 | `CORS_ALLOWED_ORIGINS` | `PUBLIC_BASE_URL` 的 origin |
 | `COOKIE_SECURE` | HTTPS issuer 下为 `true` |
 | `PASSKEY_ORIGIN` 和 `PASSKEY_RP_ID` | 从 issuer 派生 |
+| `PROTECTED_RESOURCE_IDENTIFIER` | `ISSUER + "/fapi/resource"` |
 
 `DATA_DIR` 派生本地持久化路径：
 
@@ -201,6 +202,8 @@ RUST_LOG: "info"
 | 部署 | [docs/deployment.zh-CN.md](docs/deployment.zh-CN.md) |
 | 英文部署文档 | [docs/deployment.md](docs/deployment.md) |
 | Conformance 记录 | [docs/conformance](docs/conformance) |
+| OAuth/OIDC/FAPI best-practice matrix | [docs/rfc-compliance-matrix.md](docs/rfc-compliance-matrix.md) |
+| 最佳实践实施任务书 | [docs/oauth-best-practice-implementation-plan.zh-CN.md](docs/oauth-best-practice-implementation-plan.zh-CN.md) |
 | Profile matrix | [docs/profile-matrix.md](docs/profile-matrix.md) |
 | Threat model | [docs/threat-model.md](docs/threat-model.md) |
 | 发布安全 | [docs/release-security.md](docs/release-security.md) |

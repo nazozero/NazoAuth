@@ -35,10 +35,30 @@ pub(super) fn parse_authorization_post_form(
             "OAuth 参数不能重复.",
         ));
     }
+    parse_authorization_form_encoded(raw, duplicate_parameters)
+}
+
+pub(super) fn parse_authorization_query(
+    raw: &str,
+    duplicate_parameters: &[&str],
+) -> Result<HashMap<String, String>, HttpResponse> {
+    parse_authorization_form_encoded(raw, duplicate_parameters)
+}
+
+fn parse_authorization_form_encoded(
+    raw: &str,
+    duplicate_parameters: &[&str],
+) -> Result<HashMap<String, String>, HttpResponse> {
     let mut q = HashMap::new();
     let mut seen = std::collections::HashSet::new();
+    let mut resource_values = Vec::new();
     for (key, value) in url::form_urlencoded::parse(raw.as_bytes()) {
         let key = key.into_owned();
+        let value = value.into_owned();
+        if key == "resource" {
+            resource_values.push(value);
+            continue;
+        }
         if duplicate_parameters.contains(&key.as_str()) && !seen.insert(key.clone()) {
             return Err(oauth_error(
                 StatusCode::BAD_REQUEST,
@@ -46,7 +66,10 @@ pub(super) fn parse_authorization_post_form(
                 "OAuth 参数不能重复.",
             ));
         }
-        q.insert(key, value.into_owned());
+        q.insert(key, value);
+    }
+    if let Some(encoded) = encoded_resource_indicators(&resource_values) {
+        q.insert("resource".to_owned(), encoded);
     }
     Ok(q)
 }

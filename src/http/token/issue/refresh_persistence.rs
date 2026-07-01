@@ -54,6 +54,7 @@ async fn insert_refresh_token(
             oauth_tokens::client_id.eq(client.id),
             oauth_tokens::user_id.eq(issue.user_id),
             oauth_tokens::scopes.eq(json!(issue.scopes)),
+            oauth_tokens::audience.eq(json!(issue.audiences)),
             oauth_tokens::authorization_details.eq(issue.authorization_details.clone()),
             oauth_tokens::issued_at.eq(refresh.issued_at),
             oauth_tokens::expires_at.eq(refresh.expires_at),

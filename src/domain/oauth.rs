@@ -66,6 +66,8 @@ pub(crate) struct ConsentPayload {
     pub(crate) redirect_uri: String,
     pub(crate) redirect_uri_was_supplied: bool,
     pub(crate) scopes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) resource_indicators: Vec<String>,
     #[serde(
         default = "crate::domain::empty_authorization_details",
         deserialize_with = "crate::domain::deserialize_authorization_details"
@@ -124,6 +126,8 @@ pub(crate) struct CodePayload {
     pub(crate) redirect_uri: String,
     pub(crate) redirect_uri_was_supplied: bool,
     pub(crate) scopes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) resource_indicators: Vec<String>,
     #[serde(
         default = "crate::domain::empty_authorization_details",
         deserialize_with = "crate::domain::deserialize_authorization_details"

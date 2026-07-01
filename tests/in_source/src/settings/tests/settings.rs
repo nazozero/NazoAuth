@@ -125,6 +125,10 @@ fn public_base_url_drives_same_origin_defaults() {
     assert!(settings.cookie_secure);
     assert_eq!(settings.passkey.origin, "https://auth.example.test");
     assert_eq!(settings.passkey.rp_id, "auth.example.test");
+    assert_eq!(
+        settings.protected_resource_identifier,
+        "https://auth.example.test/fapi/resource"
+    );
 }
 
 #[test]
@@ -147,6 +151,49 @@ fn explicit_legacy_url_settings_override_public_base_url_derivations() {
     );
     assert_eq!(settings.passkey.origin, "https://passkeys.example.test");
     assert_eq!(settings.passkey.rp_id, "passkeys.example.test");
+    assert_eq!(
+        settings.protected_resource_identifier,
+        "https://issuer.example.test/fapi/resource"
+    );
+}
+
+#[test]
+fn explicit_protected_resource_identifier_overrides_issuer_default() {
+    let config = ConfigSource::from_pairs_for_test([
+        ("PUBLIC_BASE_URL", "https://auth.example.test"),
+        (
+            "PROTECTED_RESOURCE_IDENTIFIER",
+            "https://api.example.test/payments",
+        ),
+    ]);
+    let settings = Settings::from_config(&config).unwrap();
+
+    assert_eq!(
+        settings.protected_resource_identifier,
+        "https://api.example.test/payments"
+    );
+}
+
+#[test]
+fn protected_resource_identifier_rejects_fragment_and_non_https_remote_url() {
+    for (value, expected) in [
+        (
+            "https://api.example.test/payments#frag",
+            "PROTECTED_RESOURCE_IDENTIFIER 不能包含 fragment",
+        ),
+        (
+            "http://api.example.test/payments",
+            "PROTECTED_RESOURCE_IDENTIFIER 必须使用 https，只有 loopback 本地开发地址允许 http",
+        ),
+    ] {
+        let config = ConfigSource::from_pairs_for_test([("PROTECTED_RESOURCE_IDENTIFIER", value)]);
+
+        let error = settings_error(
+            &config,
+            "invalid protected resource identifier must fail startup",
+        );
+        assert_eq!(error.to_string(), expected);
+    }
 }
 
 #[test]

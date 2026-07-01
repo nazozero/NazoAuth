@@ -334,9 +334,16 @@ fn outer_authorization_params_conflict(
         }
         if let (Some(outer_value), Some(request_value)) =
             (outer.get(*key), request_params.get(*key))
-            && outer_value != request_value
         {
-            return true;
+            if *key == "resource" {
+                if resource_indicators_from_parameter_value(Some(outer_value)).ok()
+                    != resource_indicators_from_parameter_value(Some(request_value)).ok()
+                {
+                    return true;
+                }
+            } else if outer_value != request_value {
+                return true;
+            }
         }
     }
     false
@@ -442,7 +449,9 @@ fn request_object_params(
                 Value::String(value) => value.clone(),
                 Value::Number(value) => value.to_string(),
                 Value::Object(_) if *key == "claims" => value.to_string(),
-                Value::Array(_) if *key == "authorization_details" => value.to_string(),
+                Value::Array(_) if matches!(*key, "authorization_details" | "resource") => {
+                    value.to_string()
+                }
                 _ => {
                     return Err(oauth_error(
                         StatusCode::BAD_REQUEST,

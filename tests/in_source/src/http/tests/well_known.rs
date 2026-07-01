@@ -29,6 +29,7 @@ fn settings(profile: AuthorizationServerProfile, trusted_proxy_cidrs: Vec<IpCidr
         frontend_base_url: "https://app.example".to_owned(),
         cors_allowed_origins: vec!["https://app.example".to_owned()],
         default_audience: "resource://default".to_owned(),
+        protected_resource_identifier: "https://issuer.example/fapi/resource".to_owned(),
         authorization_server_profile: profile,
         dpop_nonce_policy: DpopNoncePolicy::Required,
         request_object_jti_policy: RequestObjectJtiPolicy::Optional,
@@ -146,6 +147,122 @@ fn discovery_advertises_supported_rar_types() {
             .get("authorization_details_types_supported")
             .and_then(Value::as_array)
             .expect("RAR type metadata should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        SUPPORTED_AUTHORIZATION_DETAILS_TYPES
+    );
+}
+
+#[test]
+fn authorization_server_metadata_lists_configured_protected_resource() {
+    let s = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
+    let metadata = authorization_server_metadata(&s, &keyset(jsonwebtoken::Algorithm::RS256));
+
+    assert_eq!(
+        metadata
+            .get("protected_resources")
+            .and_then(Value::as_array)
+            .expect("protected resource metadata should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["https://issuer.example/fapi/resource"]
+    );
+}
+
+#[test]
+fn protected_resource_metadata_matches_runtime_resource_boundary() {
+    let metadata = protected_resource_metadata(
+        &settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new()),
+        &keyset(jsonwebtoken::Algorithm::RS256),
+    );
+
+    assert_eq!(
+        metadata.get("resource").and_then(Value::as_str),
+        Some("https://issuer.example/fapi/resource")
+    );
+    assert_eq!(
+        metadata
+            .get("authorization_servers")
+            .and_then(Value::as_array)
+            .expect("authorization server list should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["https://issuer.example"]
+    );
+    assert_eq!(
+        metadata
+            .get("bearer_methods_supported")
+            .and_then(Value::as_array)
+            .expect("bearer token transport metadata should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["header", "body"]
+    );
+    assert_eq!(
+        metadata
+            .get("dpop_signing_alg_values_supported")
+            .and_then(Value::as_array)
+            .expect("DPoP metadata should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["EdDSA", "ES256"]
+    );
+    assert_eq!(
+        metadata
+            .get("scopes_supported")
+            .and_then(Value::as_array)
+            .expect("scope metadata should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec![
+            "openid",
+            "profile",
+            "email",
+            "address",
+            "phone",
+            "offline_access"
+        ]
+    );
+    assert!(metadata.get("jwks_uri").is_none());
+    assert!(
+        metadata
+            .get("tls_client_certificate_bound_access_tokens")
+            .is_none()
+    );
+    assert!(
+        metadata
+            .get("authorization_details_types_supported")
+            .is_none()
+    );
+    assert!(metadata.get("dpop_bound_access_tokens_required").is_none());
+}
+
+#[test]
+fn protected_resource_metadata_reflects_mtls_and_rar_configuration() {
+    let mut s = settings(
+        AuthorizationServerProfile::Oauth2Baseline,
+        vec![IpCidr::parse("192.0.2.0/24").unwrap()],
+    );
+    s.enable_authorization_details = true;
+    let metadata = protected_resource_metadata(&s, &keyset(jsonwebtoken::Algorithm::RS256));
+
+    assert_eq!(
+        metadata
+            .get("tls_client_certificate_bound_access_tokens")
+            .and_then(Value::as_bool),
+        Some(true)
+    );
+    assert_eq!(
+        metadata
+            .get("authorization_details_types_supported")
+            .and_then(Value::as_array)
+            .expect("RAR metadata should be present")
             .iter()
             .filter_map(Value::as_str)
             .collect::<Vec<_>>(),

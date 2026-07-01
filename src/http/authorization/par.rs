@@ -18,6 +18,7 @@ const PAR_AUTHORIZATION_PARAMETERS: &[&str] = &[
     "client_id",
     "redirect_uri",
     "scope",
+    "resource",
     "authorization_details",
     "state",
     "code_challenge",
@@ -69,8 +70,10 @@ pub(crate) async fn par_after_rate_limit(
     };
     let mut params = HashMap::new();
     let mut seen = std::collections::HashSet::new();
+    let mut resource_values = Vec::new();
     for (key, value) in url::form_urlencoded::parse(raw.as_bytes()) {
         let key = key.into_owned();
+        let value = value.into_owned();
         if key == "request_uri" {
             return oauth_error(
                 StatusCode::BAD_REQUEST,
@@ -90,6 +93,10 @@ pub(crate) async fn par_after_rate_limit(
                 "PAR 请求包含不支持的参数.",
             );
         }
+        if key == "resource" {
+            resource_values.push(value);
+            continue;
+        }
         if !seen.insert(key.clone()) {
             return oauth_error(
                 StatusCode::BAD_REQUEST,
@@ -97,7 +104,10 @@ pub(crate) async fn par_after_rate_limit(
                 "PAR 参数不能重复.",
             );
         }
-        params.insert(key, value.into_owned());
+        params.insert(key, value);
+    }
+    if let Some(encoded) = encoded_resource_indicators(&resource_values) {
+        params.insert("resource".to_owned(), encoded);
     }
     if !state.settings.enable_par_request_object
         && !state
@@ -217,6 +227,9 @@ pub(crate) async fn par_after_rate_limit(
     if let Err(response) = validate_pushed_authorization_request(&client, &params) {
         return response;
     }
+    if let Err(response) = validate_pushed_authorization_request_resources(&client, &params) {
+        return response;
+    }
     let request_dpop_jkt = match params.get("dpop_jkt") {
         Some(value) if is_valid_dpop_jkt(value) => Some(value.clone()),
         Some(_) => {
@@ -328,6 +341,29 @@ fn pushed_authorization_request_has_unsupported_response_type(
 
 fn pushed_authorization_request_contains_request_uri(params: &HashMap<String, String>) -> bool {
     params.contains_key("request_uri")
+}
+
+fn validate_pushed_authorization_request_resources(
+    client: &ClientRow,
+    params: &HashMap<String, String>,
+) -> Result<(), HttpResponse> {
+    let resources =
+        resource_indicators_from_parameter_value(params.get("resource").map(String::as_str))
+            .map_err(|_| {
+                oauth_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_target",
+                    "resource must be an absolute URI without a fragment.",
+                )
+            })?;
+    if !resources.is_empty() && !audiences_allowed(client, &resources) {
+        return Err(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_target",
+            "请求的 resource 不在客户端允许范围内.",
+        ));
+    }
+    Ok(())
 }
 
 fn pushed_authorization_request_requires_request_object(

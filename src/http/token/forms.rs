@@ -124,7 +124,11 @@ pub(crate) fn parse_token_form(
         let value = value.into_owned();
         match key.as_str() {
             "resource" => {
-                let resource = parse_resource_parameter(value)?;
+                let resource = parse_resource_indicators(&[value])
+                    .map_err(|_| TokenFormError::InvalidResourceParameter)?
+                    .into_iter()
+                    .next()
+                    .expect("single resource parameter must produce one resource");
                 if seen.contains("audience") {
                     return Err(TokenFormError::DuplicateParameter);
                 }
@@ -284,14 +288,6 @@ fn accept_token_management_parameter_once(
     } else {
         Err(TokenManagementFormError::DuplicateParameter)
     }
-}
-
-fn parse_resource_parameter(value: String) -> Result<String, TokenFormError> {
-    let parsed = url::Url::parse(&value).map_err(|_| TokenFormError::InvalidResourceParameter)?;
-    if parsed.fragment().is_some() {
-        return Err(TokenFormError::InvalidResourceParameter);
-    }
-    Ok(value)
 }
 
 #[cfg(test)]

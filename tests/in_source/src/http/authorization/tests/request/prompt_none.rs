@@ -23,6 +23,7 @@ fn prompt_none_payload() -> ConsentPayload {
         redirect_uri: "https://client.example/callback".to_owned(),
         redirect_uri_was_supplied: true,
         scopes: vec!["openid".to_owned(), "email".to_owned()],
+        resource_indicators: Vec::new(),
         authorization_details: json!([]),
         state: Some("opaque-state".to_owned()),
         response_mode: None,

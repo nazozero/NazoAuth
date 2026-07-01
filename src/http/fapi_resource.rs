@@ -133,9 +133,8 @@ async fn validate_access_token_binding(
 }
 
 fn fapi_resource_audience_allowed(settings: &Settings, audience: &Value) -> bool {
-    let resource_url = format!("{}/fapi/resource", settings.issuer.trim_end_matches('/'));
     token_audience_contains(audience, &settings.default_audience)
-        || token_audience_contains(audience, &resource_url)
+        || token_audience_contains(audience, &settings.protected_resource_identifier)
 }
 
 enum ResourceAccessToken {

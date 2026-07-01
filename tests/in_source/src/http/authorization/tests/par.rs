@@ -67,6 +67,7 @@ fn baseline_settings() -> Settings {
         frontend_base_url: "https://app.example".to_owned(),
         cors_allowed_origins: vec!["https://app.example".to_owned()],
         default_audience: "resource://default".to_owned(),
+        protected_resource_identifier: "https://issuer.example/fapi/resource".to_owned(),
         authorization_server_profile: AuthorizationServerProfile::Oauth2Baseline,
         dpop_nonce_policy: DpopNoncePolicy::Required,
         request_object_jti_policy: RequestObjectJtiPolicy::Optional,
@@ -135,6 +136,35 @@ fn oauth_error_code(response: &HttpResponse) -> Option<String> {
 
 fn par_test_secret() -> String {
     ["par", "client", "secret"].join("-")
+}
+
+#[test]
+fn pushed_authorization_request_resources_allow_registered_targets() {
+    let mut client = client(false);
+    client.allowed_audiences = json!(["https://api.example/one", "https://api.example/two"]);
+    let mut params = HashMap::new();
+    params.insert(
+        "resource".to_owned(),
+        json!(["https://api.example/one", "https://api.example/two"]).to_string(),
+    );
+
+    assert!(validate_pushed_authorization_request_resources(&client, &params).is_ok());
+}
+
+#[test]
+fn pushed_authorization_request_resources_reject_unregistered_target() {
+    let mut client = client(false);
+    client.allowed_audiences = json!(["https://api.example/one"]);
+    let mut params = HashMap::new();
+    params.insert("resource".to_owned(), "https://api.example/two".to_owned());
+
+    let response = validate_pushed_authorization_request_resources(&client, &params).unwrap_err();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_target")
+    );
 }
 
 fn signed_request_object(client_id: &str, private_pkcs8_der: &[u8], extra: Value) -> String {
