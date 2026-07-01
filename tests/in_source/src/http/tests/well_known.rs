@@ -427,11 +427,25 @@ fn discovery_advertises_signed_introspection_only_for_signed_introspection_profi
             .collect::<Vec<_>>(),
         vec!["PS256"]
     );
-    assert!(
+    assert_eq!(
         signed_introspection
             .get("introspection_encryption_alg_values_supported")
-            .is_none(),
-        "JWE introspection must stay unadvertised until implemented"
+            .and_then(Value::as_array)
+            .expect("signed introspection profile must advertise supported JWE key-management algs")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["RSA-OAEP-256"]
+    );
+    assert_eq!(
+        signed_introspection
+            .get("introspection_encryption_enc_values_supported")
+            .and_then(Value::as_array)
+            .expect("signed introspection profile must advertise supported JWE content enc algs")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["A256GCM"]
     );
 }
 

@@ -65,7 +65,7 @@ IETF 和 RFC：
 | [RFC 9396](https://www.rfc-editor.org/rfc/rfc9396), Rich Authorization Requests | 由 `ENABLE_AUTHORIZATION_DETAILS` 控制 |
 | [RFC 9449](https://www.rfc-editor.org/rfc/rfc9449), DPoP | proof 校验和 sender-constrained token |
 | [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700), OAuth 2.0 Security BCP | code-only authorization response、无 password/implicit grant、PKCE、redirect URI 绑定、bearer token 防护和 sender-constrained token 加固 |
-| [RFC 9701](https://www.rfc-editor.org/rfc/rfc9701), JWT Response for OAuth Token Introspection | profile-gated signed introspection response |
+| [RFC 9701](https://www.rfc-editor.org/rfc/rfc9701), JWT Response for OAuth Token Introspection | profile-gated signed 和 nested encrypted introspection response |
 | [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728), Protected Resource Metadata | `/.well-known/oauth-protected-resource` 和 `/.well-known/oauth-protected-resource/fapi/resource` |
 | OAuth 2.1 draft 方向 | OAuth 2.1 风格默认值，兼容例外需要显式开关 |
 
@@ -119,7 +119,7 @@ OpenID Foundation Conformance Suite 结果 URL：
 
 ## 功能
 
-- Authorization code + PKCE、refresh token、client credentials、受限 JWT bearer grant、revocation、introspection、signed introspection、discovery、protected resource metadata、JWKS、UserInfo、PAR、JAR、DPoP、mTLS。
+- Authorization code + PKCE、refresh token、client credentials、受限 JWT bearer grant、revocation、introspection、signed/encrypted introspection、discovery、protected resource metadata、JWKS、UserInfo、PAR、JAR、DPoP、mTLS。
 - Runtime profile：`oauth2-baseline`、`fapi2-security`、`fapi2-message-signing-authz-request`、`fapi2-message-signing-jarm`、`fapi2-message-signing-introspection`。
 - 本地用户、资料、OAuth client、grant、access request、TOTP MFA、backup code、remembered MFA、WebAuthn/passkeys、外部 OIDC/SAML federation、SCIM provisioning。
 - 本地签名密钥生命周期，包含 prepublish、active、grace、retired 状态。也可以用 external-command signer 接 KMS/HSM。
@@ -195,7 +195,7 @@ RUST_LOG: "info"
 - Device Authorization Grant。
 - Token Exchange / RFC 8693。
 - 请求级动态 tenant 或 issuer routing。
-- JWE introspection response。
+- signed-introspection profile 外，或未配置 per-client JWE response metadata 的 RFC 9701 encrypted introspection response。
 
 当前范围见 [docs/roadmap.md](docs/roadmap.md)。
 

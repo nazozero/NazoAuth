@@ -186,8 +186,12 @@ Last reviewed: 2026-07-01.
 
 - [x] **PS-001 FAPI 2.0 Message Signing**
   - 状态：完成 / profile-scoped
-  - 当前边界：signed request object、JARM 和 RFC 9701 signed introspection 都已实现；signed introspection 只在 `fapi2-message-signing-introspection` profile 且客户端请求 JWT media type 时返回
-  - 下一步：不广告 JWE introspection；错误响应保持 JSON OAuth error；OIDF 计划可覆盖时再把私有 profile 加入公开证据。
+  - 当前边界：signed request object、JARM 和 RFC 9701 signed/nested encrypted introspection 都已实现；JWT introspection 只在 `fapi2-message-signing-introspection` profile 且客户端请求 JWT media type 时返回
+  - 下一步：JWE 只在 resource-server client 配置受支持的 `introspection_encrypted_response_alg`/`enc` 和匹配加密 JWK 后返回；错误响应保持 JSON OAuth error。
+- [x] **NI-001 RFC 9701 JWE introspection response**
+  - 状态：完成 / profile-scoped
+  - 证据：`src/http/token/introspect.rs`, `src/support/oauth.rs`, `src/http/well_known.rs`, introspection/JWKS/metadata tests
+  - 保持要求：保持 signed-then-encrypted 顺序、`RSA-OAEP-256`/`A256GCM` allowlist、per-client encryption metadata 和匹配 `use=enc` JWK 校验。
 - [x] **PS-002 RFC 7523**
   - 状态：完成 / bounded grant
   - 当前边界：`private_key_jwt` 和 JWT bearer authorization grant 均已实现；JWT bearer grant 仅允许已认证 confidential client 为自身 `client_id` 签发 client-subject token，并要求 issuer/audience/time/jti/replay 校验
@@ -215,9 +219,6 @@ Last reviewed: 2026-07-01.
 
 ## 未实现且不得广告的能力
 
-- [ ] **NI-001 RFC 9701 JWE introspection response**
-  - 状态：未实现
-  - 最小安全实现条件：JWE alg/enc policy、resource-server key management、content negotiation、metadata gating、负向测试。
 - [ ] **NI-002 RFC 8628 Device Authorization Grant**
   - 状态：未实现
   - 最小安全实现条件：device authorization endpoint、user-code UX、polling interval、`slow_down`、expiration、denial、rate limit、metadata。
@@ -334,14 +335,15 @@ rtk cargo test --locked
 已完成：
 
 - RFC 9701 signed introspection response。
+- RFC 9701 JWE introspection response，按 resource-server client metadata 返回 signed-then-encrypted nested JWT。
 - `Accept: application/token-introspection+jwt` content negotiation。
 - `iss`、`aud`、resource-server identity、active signing key 和 token introspection body 绑定。
-- Metadata 只在 `fapi2-message-signing-introspection` profile 下广告。
+- Metadata 只在 `fapi2-message-signing-introspection` profile 下广告，JWE alg/enc 只声明已实现的 `RSA-OAEP-256` / `A256GCM`。
 - 测试覆盖 discovery gating、JWT media type、issuer/audience、top-level token-claim confusion 防护，以及 active access token introspection。
+- 测试覆盖 JWE response metadata 校验、加密 JWK 校验，以及 nested JWT 解密后的 introspection payload。
 
 保留边界：
 
-- 不广告 JWE introspection。
 - OAuth error response 仍为 JSON。
 - OIDF/FAPI 官方矩阵可覆盖 signed introspection profile 时，再把结果加入认证证据。
 
@@ -410,5 +412,12 @@ rtk cargo test --locked
 - `README.md`
 - `README.zh-CN.md`
 - 对应 conformance 记录或本地测试证据
+
+每新增一个 RFC、OIDC/FAPI profile 或标准协议能力支持时，必须额外执行 OIDF 一致性套件覆盖检查：
+
+- 检索 OpenID Foundation Conformance Suite 的官方 production/staging 计划、公开源代码和 release notes，确认是否已有对应官方测试。
+- 如果 OIDF 已有对应官方测试、计划或矩阵，必须在同一变更中更新本仓库的 OIDF 执行内容，例如 `.github/workflows/oidf-conformance-full.yml`、`scripts/run_oidf_conformance.py` 输入、`docs/conformance/oidf-full-matrix*.md`、`docs/conformance/oidf-plan-config-template.json` 或对应 plan 列表，使新增官方覆盖被实际执行并归档。
+- 如果 OIDF 暂无对应官方测试，必须在任务证据或 conformance 记录中写明检索结论和日期；仍必须保留本地正向、负向、安全边界和 metadata truth 测试。
+- OIDF 官方套件覆盖是额外证据，不替代本地测试。
 
 不得只改 README 或 discovery metadata 而不补实现与测试。

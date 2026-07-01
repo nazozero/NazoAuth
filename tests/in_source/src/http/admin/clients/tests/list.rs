@@ -44,6 +44,8 @@ fn client_row(client_id: &str, secret_hash: Option<&str>) -> ClientRow {
         allow_authorization_code_without_pkce: false,
         is_active: true,
         jwks: None,
+        introspection_encrypted_response_alg: None,
+        introspection_encrypted_response_enc: None,
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: None,
         backchannel_logout_session_required: true,
@@ -115,6 +117,8 @@ fn create_client_request(client_name: &str) -> CreateClientRequest {
         tls_client_auth_san_ip: Vec::new(),
         tls_client_auth_san_email: Vec::new(),
         jwks: None,
+        introspection_encrypted_response_alg: None,
+        introspection_encrypted_response_enc: None,
         subject_type: None,
         sector_identifier_uri: None,
     }

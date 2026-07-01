@@ -3,6 +3,9 @@ use crate::domain::Keyset;
 use crate::http::authorization::BASELINE_ACR_VALUE;
 use crate::http::token::JWT_BEARER_GRANT_TYPE;
 use crate::settings::{AuthorizationServerProfile, Settings, SubjectType};
+use crate::support::{
+    SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
+};
 
 const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
 const DPOP_SIGNING_ALGS: [&str; 2] = ["EdDSA", "ES256"];
@@ -137,6 +140,10 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
     {
         metadata["introspection_signing_alg_values_supported"] =
             json!(active_signing_alg_values_supported(keyset));
+        metadata["introspection_encryption_alg_values_supported"] =
+            json!(SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS);
+        metadata["introspection_encryption_enc_values_supported"] =
+            json!(SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS);
     }
     if settings.enable_request_object {
         metadata["request_parameter_supported"] = json!(true);

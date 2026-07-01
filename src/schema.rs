@@ -155,6 +155,8 @@ diesel::table! {
         updated_at -> Timestamptz,
         allowed_audiences -> Jsonb,
         jwks -> Nullable<Jsonb>,
+        introspection_encrypted_response_alg -> Nullable<Varchar>,
+        introspection_encrypted_response_enc -> Nullable<Varchar>,
         post_logout_redirect_uris -> Jsonb,
         backchannel_logout_uri -> Nullable<Varchar>,
         backchannel_logout_session_required -> Bool,

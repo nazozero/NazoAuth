@@ -7,11 +7,17 @@ use crate::domain::ConfirmationClaims;
 use crate::domain::{ActiveSigningKey, Claims, Keyset, KeysetStore, VerificationKey};
 use crate::support::{generate_key_material, public_jwk_from_private_der};
 use actix_web::test::TestRequest;
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Jsonb, Nullable, Text, Timestamptz, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
 use fred::interfaces::ClientLike;
 use fred::prelude::{Builder as ValkeyBuilder, Config as ValkeyConfig};
+use openssl::encrypt::Decrypter;
+use openssl::hash::MessageDigest;
+use openssl::pkey::{PKey, Private};
+use openssl::rsa::{Padding, Rsa};
+use openssl::symm::{Cipher, decrypt_aead};
 
 fn introspection_state() -> Data<AppState> {
     Data::new(AppState {
@@ -130,6 +136,129 @@ fn with_signed_introspection_profile(state: &Data<AppState>) -> Data<AppState> {
     })
 }
 
+fn introspection_response_client(
+    client_id: &str,
+    jwks: Option<Value>,
+    encrypted_response_alg: Option<&str>,
+    encrypted_response_enc: Option<&str>,
+) -> ClientRow {
+    ClientRow {
+        id: Uuid::now_v7(),
+        tenant_id: DEFAULT_TENANT_ID,
+        realm_id: DEFAULT_REALM_ID,
+        organization_id: DEFAULT_ORGANIZATION_ID,
+        client_id: client_id.to_owned(),
+        client_name: "Introspection Response Client".to_owned(),
+        client_type: "confidential".to_owned(),
+        client_secret_argon2_hash: None,
+        redirect_uris: json!(["https://client.example/callback"]),
+        scopes: json!(["openid"]),
+        allowed_audiences: json!(["resource://default"]),
+        grant_types: json!(["authorization_code"]),
+        token_endpoint_auth_method: "client_secret_post".to_owned(),
+        require_dpop_bound_tokens: false,
+        require_mtls_bound_tokens: false,
+        tls_client_auth_subject_dn: None,
+        tls_client_auth_cert_sha256: None,
+        tls_client_auth_san_dns: json!([]),
+        tls_client_auth_san_uri: json!([]),
+        tls_client_auth_san_ip: json!([]),
+        tls_client_auth_san_email: json!([]),
+        allow_client_assertion_audience_array: false,
+        allow_client_assertion_endpoint_audience: false,
+        require_par_request_object: false,
+        allow_authorization_code_without_pkce: false,
+        is_active: true,
+        jwks,
+        introspection_encrypted_response_alg: encrypted_response_alg.map(ToOwned::to_owned),
+        introspection_encrypted_response_enc: encrypted_response_enc.map(ToOwned::to_owned),
+        post_logout_redirect_uris: json!([]),
+        backchannel_logout_uri: None,
+        backchannel_logout_session_required: true,
+        subject_type: "public".to_owned(),
+        sector_identifier_uri: None,
+        sector_identifier_host: None,
+    }
+}
+
+fn rsa_jwe_keypair(kid: &str) -> (PKey<Private>, Value) {
+    let rsa = Rsa::generate(2048).expect("test RSA key should generate");
+    let jwk = json!({
+        "kty": "RSA",
+        "kid": kid,
+        "use": "enc",
+        "alg": "RSA-OAEP-256",
+        "n": URL_SAFE_NO_PAD.encode(rsa.n().to_vec()),
+        "e": URL_SAFE_NO_PAD.encode(rsa.e().to_vec())
+    });
+    (
+        PKey::from_rsa(rsa).expect("test RSA key should convert to PKey"),
+        jwk,
+    )
+}
+
+fn decrypt_compact_jwe(private_key: &PKey<Private>, compact_jwe: &str) -> (Value, String) {
+    let parts = compact_jwe.split('.').collect::<Vec<_>>();
+    assert_eq!(
+        parts.len(),
+        5,
+        "JWE compact serialization must have 5 parts"
+    );
+    let protected_header: Value = serde_json::from_slice(
+        &URL_SAFE_NO_PAD
+            .decode(parts[0])
+            .expect("protected header should be base64url"),
+    )
+    .expect("protected header should be JSON");
+    let encrypted_key = URL_SAFE_NO_PAD
+        .decode(parts[1])
+        .expect("encrypted key should be base64url");
+    let iv = URL_SAFE_NO_PAD
+        .decode(parts[2])
+        .expect("iv should be base64url");
+    let ciphertext = URL_SAFE_NO_PAD
+        .decode(parts[3])
+        .expect("ciphertext should be base64url");
+    let tag = URL_SAFE_NO_PAD
+        .decode(parts[4])
+        .expect("tag should be base64url");
+
+    let mut decrypter = Decrypter::new(private_key).expect("RSA-OAEP decrypter should initialize");
+    decrypter
+        .set_rsa_padding(Padding::PKCS1_OAEP)
+        .expect("RSA-OAEP padding should configure");
+    decrypter
+        .set_rsa_oaep_md(MessageDigest::sha256())
+        .expect("RSA-OAEP SHA-256 should configure");
+    decrypter
+        .set_rsa_mgf1_md(MessageDigest::sha256())
+        .expect("RSA-OAEP MGF1 SHA-256 should configure");
+    let mut cek = vec![
+        0;
+        decrypter
+            .decrypt_len(&encrypted_key)
+            .expect("encrypted key length should be known")
+    ];
+    let len = decrypter
+        .decrypt(&encrypted_key, &mut cek)
+        .expect("encrypted content-encryption key should decrypt");
+    cek.truncate(len);
+
+    let plaintext = decrypt_aead(
+        Cipher::aes_256_gcm(),
+        &cek,
+        Some(&iv),
+        parts[0].as_bytes(),
+        &ciphertext,
+        &tag,
+    )
+    .expect("A256GCM ciphertext should decrypt");
+    (
+        protected_header,
+        String::from_utf8(plaintext).expect("nested JWT should be UTF-8"),
+    )
+}
+
 fn database_url_with_search_path(schema: &str) -> Option<String> {
     let base = std::env::var("DATABASE_URL").ok()?;
     let separator = if base.contains('?') { "&" } else { "?" };
@@ -238,6 +367,8 @@ async fn insert_introspection_client(
         allow_authorization_code_without_pkce: false,
         is_active: true,
         jwks: None,
+        introspection_encrypted_response_alg: None,
+        introspection_encrypted_response_enc: None,
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: None,
         backchannel_logout_session_required: true,
@@ -635,9 +766,10 @@ async fn inactive_introspection_response_is_minimal_and_not_cacheable() {
 #[actix_web::test]
 async fn signed_introspection_response_wraps_body_without_top_level_token_claims() {
     let state = signed_introspection_offline_state();
+    let client = introspection_response_client("resource-server-client", None, None, None);
     let response = signed_introspection_response(
         &state,
-        "resource-server-client",
+        &client,
         json!({
             "active": true,
             "sub": "subject-1",
@@ -660,6 +792,75 @@ async fn signed_introspection_response_wraps_body_without_top_level_token_claims
     assert_eq!(
         claims.pointer("/token_introspection/exp"),
         Some(&json!(1_900_000_000))
+    );
+}
+
+#[actix_web::test]
+async fn encrypted_introspection_response_is_nested_jwt_for_configured_resource_server() {
+    let state = signed_introspection_offline_state();
+    let (private_key, encryption_jwk) = rsa_jwe_keypair("introspection-enc-key");
+    let client = introspection_response_client(
+        "encrypted-resource-server",
+        Some(json!({ "keys": [encryption_jwk] })),
+        Some("RSA-OAEP-256"),
+        Some("A256GCM"),
+    );
+
+    let response = signed_introspection_response(
+        &state,
+        &client,
+        json!({
+            "active": true,
+            "sub": "subject-1",
+            "exp": 1_900_000_000,
+            "client_id": "client-1"
+        }),
+    )
+    .await
+    .expect("encrypted introspection response should be buildable");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        HeaderValue::from_static("application/token-introspection+jwt")
+    );
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("JWE introspection response body should collect");
+    let compact_jwe = std::str::from_utf8(&body).expect("JWE response body should be UTF-8");
+    let (jwe_header, nested_jwt) = decrypt_compact_jwe(&private_key, compact_jwe);
+    assert_eq!(jwe_header.get("alg"), Some(&json!("RSA-OAEP-256")));
+    assert_eq!(jwe_header.get("enc"), Some(&json!("A256GCM")));
+    assert_eq!(jwe_header.get("cty"), Some(&json!("JWT")));
+    assert_eq!(jwe_header.get("kid"), Some(&json!("introspection-enc-key")));
+
+    let jwt_header = jsonwebtoken::decode_header(&nested_jwt).expect("nested JWT should decode");
+    assert_eq!(jwt_header.typ.as_deref(), Some("token-introspection+jwt"));
+    let keyset = state.keyset.snapshot();
+    let verification_key = keyset
+        .verification_key(
+            jwt_header
+                .kid
+                .as_deref()
+                .expect("nested signed response should include kid"),
+        )
+        .expect("nested signed response key should be published");
+    let decoding_key = jwt_decoding_key_from_jwk(&verification_key.public_jwk, jwt_header.alg)
+        .expect("nested signed response key should decode");
+    let mut validation = jsonwebtoken::Validation::new(jwt_header.alg);
+    validation.validate_aud = false;
+    validation.validate_exp = false;
+    validation.required_spec_claims.clear();
+    validation.set_issuer(&[state.settings.issuer.as_str()]);
+    let claims = jsonwebtoken::decode::<Value>(&nested_jwt, &decoding_key, &validation)
+        .expect("nested JWT introspection response should verify")
+        .claims;
+
+    assert_eq!(claims.get("aud"), Some(&json!("encrypted-resource-server")));
+    assert!(claims.get("sub").is_none());
+    assert_eq!(
+        claims.pointer("/token_introspection/sub"),
+        Some(&json!("subject-1"))
     );
 }
 
