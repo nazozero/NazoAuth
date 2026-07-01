@@ -146,6 +146,79 @@ export FEDERATION_SAML_GATEWAY_SECRET='codecov-saml-gateway-secret-000000'
 export RUST_LOG="${RUST_LOG:-warn}"
 
 mkdir -p runtime/codecov/avatars runtime/codecov/keys "$COVERAGE_DIR"
+"$PYTHON_BIN" - <<'PY'
+import json
+import os
+import subprocess
+import uuid
+from datetime import UTC, datetime
+from pathlib import Path
+
+key_dir = Path(os.environ["JWK_KEYS_DIR"])
+key_dir.mkdir(parents=True, exist_ok=True)
+keyset_path = key_dir / "keyset.json"
+if keyset_path.is_file():
+    keyset = json.loads(keyset_path.read_text(encoding="utf-8"))
+else:
+    keyset = {"active_kid": "", "keys": []}
+
+keys = keyset.setdefault("keys", [])
+if not isinstance(keys, list):
+    raise RuntimeError(f"keyset keys must be an array: {keyset_path}")
+
+
+def live_local_key(alg: str):
+    for entry in keys:
+        if (
+            isinstance(entry, dict)
+            and entry.get("alg") == alg
+            and entry.get("retire_at") is None
+            and entry.get("backend", "local-pem") == "local-pem"
+            and isinstance(entry.get("file"), str)
+            and (key_dir / entry["file"]).is_file()
+        ):
+            return entry
+    return None
+
+
+def create_local_rsa_key(alg: str):
+    kid = f"{alg.lower()}-codecov-{uuid.uuid4().hex}"
+    file_name = f"{kid}.pem"
+    target = key_dir / file_name
+    subprocess.run(
+        [
+            "openssl",
+            "genpkey",
+            "-algorithm",
+            "RSA",
+            "-pkeyopt",
+            "rsa_keygen_bits:2048",
+            "-out",
+            str(target),
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    target.chmod(0o600)
+    entry = {
+        "kid": kid,
+        "alg": alg,
+        "file": file_name,
+        "created_at": datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "retire_at": None,
+    }
+    keys.append(entry)
+    return entry
+
+
+rs256 = live_local_key("RS256") or create_local_rsa_key("RS256")
+live_local_key("PS256") or create_local_rsa_key("PS256")
+if not keyset.get("active_kid"):
+    keyset["active_kid"] = rs256["kid"]
+keyset_path.write_text(json.dumps(keyset, indent=2) + "\n", encoding="utf-8")
+os.chmod(keyset_path, 0o600)
+PY
 export LLVM_PROFILE_FILE="$(profile_path 'cargo-%p-%m.profraw')"
 cargo build --locked --workspace --all-features --bins
 
