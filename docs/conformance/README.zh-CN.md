@@ -24,7 +24,7 @@ Nazo Auth Server 已发布在 OpenID Foundation 官方认证列表中：
 
 最新记录的官方 full-matrix suite run 是 2026-06-27 PR 15 官方运行，针对 `https://auth.nazo.run` 和 runtime commit `be7ef9f6a9197520235a59d42866a0918a293014` 执行。该运行从 `https://www.certification.openid.net/` 导出全部 16 个 plan archives，最终结果为 `0 failures`、`0 warnings`。
 
-最新私有 full-matrix 回归记录是 2026-07-01 TP/PS 运行，测试对象为 `https://auth.nazo.run`，runtime commit 为 `32429d5`。该运行使用仓库原有 16-plan 完整矩阵，导出 16 个 plan archives，共执行 578 个测试模块，结果为 `0 failures`、`0 warnings`。
+最新私有 full-matrix 回归记录是 2026-07-01 TP/PS 运行，测试对象为 `https://auth.nazo.run`，runtime commit 为 `31e8f9f`。该运行使用仓库原有 16-plan 完整矩阵，导出 16 个 plan archives，共执行 578 个测试模块，结果为 `0 failures`、`0 warnings`。
 
 baseline OIDC metadata 会在 `request_object_signing_alg_values_supported` 中声明 `none`，用于 unsigned Request Object 的 OIDC 兼容路径。该能力不是高安全 profile 能力；FAPI2 Security Profile Final、FAPI2 Message Signing Final、要求 PAR request object 的客户端以及 holder-bound token 客户端仍然 fail closed，必须使用签名 Request Object 或被拒绝。
 

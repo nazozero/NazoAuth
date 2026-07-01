@@ -115,7 +115,7 @@ OpenID Foundation Conformance Suite 结果 URL：
 
 最新官方 full matrix 针对 `https://auth.nazo.run` 和 runtime commit `be7ef9f6a9197520235a59d42866a0918a293014` 执行，导出全部 16 个 plan archives，结果为 `0 failures`、`0 warnings`。
 
-最新私有 full-matrix 回归针对 runtime commit `32429d5` 执行，跑完全部 16 个 plan、578 个模块，结果为 `0 failures`、`0 warnings`。
+最新私有 full-matrix 回归针对 runtime commit `31e8f9f` 执行，跑完全部 16 个 plan、578 个模块，结果为 `0 failures`、`0 warnings`。
 
 ## 功能
 

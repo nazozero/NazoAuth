@@ -11,8 +11,8 @@ It completed all 16 plans with `0 failures` and `0 warnings`.
 | Field | Value |
 | --- | --- |
 | Result | Passed |
-| Runtime implementation commit | `32429d5` |
-| Commit title | `Tighten FAPI TP metadata coverage` |
+| Runtime implementation commit | `31e8f9f` |
+| Commit title | `Complete TP and PS OAuth profile work` |
 | Public issuer under test | `https://auth.nazo.run` |
 | Plan set | `runtime/oidf/oidf-plan-set.json` |
 | Conformance environment | Private runner |
@@ -42,6 +42,12 @@ truth checks and FAPI2 PAR/auth-request modules, including:
 - `fapi2-security-profile-final-par-authorization-request-containing-request_uri-form-param`
 - `fapi2-security-profile-final-par-authorization-request-containing-request_uri`
 - `fapi2-security-profile-final-par-without-duplicate-parameters`
+
+The current OIDF 16-plan matrix covers RFC 7523 client assertion behavior and
+metadata schema validation. It does not include a dedicated RFC 7523 JWT bearer
+authorization grant plan or an RFC 9701 signed introspection behavior plan, so
+those PS-001/PS-002 assertions remain covered by local implementation tests and
+metadata gating tests.
 
 ## Summary
 

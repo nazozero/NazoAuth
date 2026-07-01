@@ -23,7 +23,7 @@ The project separates three surfaces:
 | `fapi2-security` | Implemented and OIDF-tested | PAR, PKCE S256, confidential clients, DPoP/mTLS-bound tokens |
 | `fapi2-message-signing-authz-request` | Implemented and OIDF-tested | Signed request objects at PAR with `aud`, `nbf`, and bounded `exp` |
 | `fapi2-message-signing-jarm` | Implemented where advertised and OIDF-tested | Signed authorization responses without unsafe fallback |
-| `fapi2-message-signing-introspection` | Not advertised by default | Defined in the matrix; no discovery claim until implemented and tested |
+| `fapi2-message-signing-introspection` | Implemented/profile-scoped | RFC 9701 signed introspection is advertised only by the signed-introspection runtime profile |
 
 ## Protocol Boundaries
 

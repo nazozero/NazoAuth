@@ -126,7 +126,7 @@ The latest official full matrix tested `https://auth.nazo.run` at runtime
 commit `be7ef9f6a9197520235a59d42866a0918a293014`, exported all 16 plan
 archives, and reported `0 failures` and `0 warnings`.
 
-The latest private full-matrix regression tested runtime commit `32429d5`, ran
+The latest private full-matrix regression tested runtime commit `31e8f9f`, ran
 all 16 plans and 578 modules, and reported `0 failures` and `0 warnings`.
 
 ## Features
