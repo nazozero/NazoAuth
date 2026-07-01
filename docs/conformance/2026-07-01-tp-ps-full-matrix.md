@@ -2,8 +2,8 @@
 
 ## Outcome
 
-Hostinger-local OpenID Foundation Conformance Suite full-matrix regression for
-the TP/PS hardening work deployed to `https://auth.nazo.run`.
+Private OpenID Foundation Conformance Suite full-matrix regression for the
+TP/PS hardening work deployed to the public issuer.
 
 The run used the repository full matrix, not the temporary targeted plan-set.
 It completed all 16 plans with `0 failures` and `0 warnings`.
@@ -14,13 +14,8 @@ It completed all 16 plans with `0 failures` and `0 warnings`.
 | Runtime implementation commit | `32429d5` |
 | Commit title | `Tighten FAPI TP metadata coverage` |
 | Public issuer under test | `https://auth.nazo.run` |
-| Deployment host | `ssh hostinger` |
-| Deployment mode | Podman |
-| Service image | `localhost/nazo-oauth-server:main-32429d5` |
-| Conformance server | `https://localhost:8443` on `hostinger` |
 | Plan set | `runtime/oidf/oidf-plan-set.json` |
-| Result directory | `runtime/oidf/oidf-results-full-32429d5-20260701T050436Z` |
-| Runner log | `runtime/oidf/oidf-run-full-32429d5-20260701T050436Z.log` |
+| Conformance environment | Private runner |
 | Exported plan archives | `16` |
 | Final line | `All tests ran to completion. See above for any test condition failures.` |
 
@@ -82,34 +77,14 @@ Per-plan module counts:
 | 15 | 71 | 6018 | 0 | 0 |
 | 16 | 71 | 6464 | 0 | 0 |
 
-## Verification Commands
+## Verification
 
-Commands executed after the run:
-
-```bash
-python3 scripts/run_oidf_conformance.py \
-  --suite-dir oidf-conformance-suite \
-  --conformance-server https://localhost:8443 \
-  --config-json-file runtime/oidf/oidf-plan-configs.json \
-  --plan-set-json-file runtime/oidf/oidf-plan-set.json \
-  --target-issuer https://auth.nazo.run \
-  --no-api-token \
-  --disable-ssl-verify \
-  --verbose \
-  --timeout-seconds 5400 \
-  --monitor-interval-seconds 30 \
-  --export-dir runtime/oidf/oidf-results-full-32429d5-20260701T050436Z
-```
-
-```bash
-find runtime/oidf/oidf-results-full-32429d5-20260701T050436Z -maxdepth 1 -name "*.zip" | wc -l
-```
-
-The result directory contained `16` exported plan archives.
+The private runner exported `16` plan archives and printed `16` plan summaries.
+The result archive paths and runner host details are intentionally not recorded
+in the public repository.
 
 ## Notes
 
-- The earlier `oidf-plan-set-tp-ps-32429d5.json` file was a temporary targeted
-  development run and is not part of the durable matrix.
 - The full regression record intentionally excludes plan configuration bodies,
-  suite logs, private keys, certificates, and local credentials.
+  suite logs, runner host details, private keys, certificates, and local
+  credentials.
