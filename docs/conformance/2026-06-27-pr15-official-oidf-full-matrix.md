@@ -4,7 +4,7 @@
 
 OpenID Foundation Conformance Suite official full-matrix regression for PR 15
 after the security-findings hardening branch had been deployed to the public
-Hostinger service at `https://auth.nazo.run`.
+issuer at `https://auth.nazo.run`.
 
 The official suite completed all configured 16 plans with `0 failures` and
 `0 warnings`.
@@ -17,7 +17,7 @@ The official suite completed all configured 16 plans with `0 failures` and
 | Runtime implementation commit | `be7ef9f6a9197520235a59d42866a0918a293014` |
 | Branch | `codex/security-findings-20260625` |
 | Public issuer under test | `https://auth.nazo.run` |
-| Deployment host | `ssh hostinger` |
+| Deployment runner | Private deployment runner |
 | Deployment mode | Podman |
 | Service image | `localhost/nazo-oauth-server:main-be7ef9f` |
 | Conformance server | `https://www.certification.openid.net/` |
@@ -44,7 +44,7 @@ The run preserves the intended request-object boundary:
 
 ## Official OIDF Suite
 
-Run command, executed on `ssh hostinger`:
+Run command, executed on the private deployment runner:
 
 ```bash
 python3 scripts/run_oidf_conformance.py \

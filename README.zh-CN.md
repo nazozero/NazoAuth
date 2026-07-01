@@ -52,7 +52,7 @@ IETF 和 RFC：
 | 标准 | 实现 |
 | --- | --- |
 | [RFC 7009](https://www.rfc-editor.org/rfc/rfc7009), Token Revocation | `/revoke` |
-| [RFC 7523](https://www.rfc-editor.org/rfc/rfc7523), JWT Client Authentication | `private_key_jwt` |
+| [RFC 7523](https://www.rfc-editor.org/rfc/rfc7523), JWT Client Authentication 和 JWT Bearer Grant | `private_key_jwt`，以及绑定客户端自身身份的 JWT bearer grant |
 | [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636), PKCE | S256 PKCE |
 | [RFC 7662](https://www.rfc-editor.org/rfc/rfc7662), Token Introspection | `/introspect` |
 | [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252), OAuth 2.0 for Native Apps | public native app redirect URI 策略：claimed HTTPS、private-use scheme、允许端口变化的 loopback HTTP |
@@ -65,6 +65,7 @@ IETF 和 RFC：
 | [RFC 9396](https://www.rfc-editor.org/rfc/rfc9396), Rich Authorization Requests | 由 `ENABLE_AUTHORIZATION_DETAILS` 控制 |
 | [RFC 9449](https://www.rfc-editor.org/rfc/rfc9449), DPoP | proof 校验和 sender-constrained token |
 | [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700), OAuth 2.0 Security BCP | code-only authorization response、无 password/implicit grant、PKCE、redirect URI 绑定、bearer token 防护和 sender-constrained token 加固 |
+| [RFC 9701](https://www.rfc-editor.org/rfc/rfc9701), JWT Response for OAuth Token Introspection | profile-gated signed introspection response |
 | [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728), Protected Resource Metadata | `/.well-known/oauth-protected-resource` 和 `/.well-known/oauth-protected-resource/fapi/resource` |
 | OAuth 2.1 draft 方向 | OAuth 2.1 风格默认值，兼容例外需要显式开关 |
 
@@ -84,7 +85,7 @@ OpenID Foundation：
 | [OpenID Connect Back-Channel Logout 1.0](https://openid.net/specs/openid-connect-backchannel-1_0.html) | best-effort logout notification |
 | [JWT Secured Authorization Response Mode](https://openid.net/specs/oauth-v2-jarm.html) | active profile 声明时支持 JARM |
 | [FAPI 2.0 Security Profile Final](https://openid.net/specs/fapi-security-profile-2_0-final.html) | `fapi2-security` profile |
-| [FAPI 2.0 Message Signing Final](https://openid.net/specs/fapi-message-signing-2_0-final.html) | signed authorization request 和 JARM profile support |
+| [FAPI 2.0 Message Signing Final](https://openid.net/specs/fapi-message-signing-2_0-final.html) | signed authorization request、JARM 和 signed introspection profile support |
 
 其他协议能力：
 
@@ -114,12 +115,12 @@ OpenID Foundation Conformance Suite 结果 URL：
 
 最新官方 full matrix 针对 `https://auth.nazo.run` 和 runtime commit `be7ef9f6a9197520235a59d42866a0918a293014` 执行，导出全部 16 个 plan archives，结果为 `0 failures`、`0 warnings`。
 
-最新私有 full-matrix 回归针对 runtime commit `32429d5` 执行，跑完全部 16 个 plan、578 个模块，结果为 `0 failures`、`0 warnings`。
+最新私有 full-matrix 回归针对 runtime commit `31e8f9f` 执行，跑完全部 16 个 plan、578 个模块，结果为 `0 failures`、`0 warnings`。
 
 ## 功能
 
-- Authorization code + PKCE、refresh token、client credentials、revocation、introspection、discovery、protected resource metadata、JWKS、UserInfo、PAR、JAR、DPoP、mTLS。
-- Runtime profile：`oauth2-baseline`、`fapi2-security`、`fapi2-message-signing-authz-request`。
+- Authorization code + PKCE、refresh token、client credentials、受限 JWT bearer grant、revocation、introspection、signed introspection、discovery、protected resource metadata、JWKS、UserInfo、PAR、JAR、DPoP、mTLS。
+- Runtime profile：`oauth2-baseline`、`fapi2-security`、`fapi2-message-signing-authz-request`、`fapi2-message-signing-jarm`、`fapi2-message-signing-introspection`。
 - 本地用户、资料、OAuth client、grant、access request、TOTP MFA、backup code、remembered MFA、WebAuthn/passkeys、外部 OIDC/SAML federation、SCIM provisioning。
 - 本地签名密钥生命周期，包含 prepublish、active、grace、retired 状态。也可以用 external-command signer 接 KMS/HSM。
 - Rust resource-server verifier，提供 Actix Web、Axum/Tower、tonic adapter。
@@ -194,7 +195,7 @@ RUST_LOG: "info"
 - Device Authorization Grant。
 - Token Exchange / RFC 8693。
 - 请求级动态 tenant 或 issuer routing。
-- Signed introspection response。
+- JWE introspection response。
 
 当前范围见 [docs/roadmap.md](docs/roadmap.md)。
 

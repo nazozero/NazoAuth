@@ -120,6 +120,26 @@ fn token_form_extracts_authorization_code_exchange_fields_without_reordering() {
 }
 
 #[test]
+fn token_form_extracts_jwt_bearer_grant_assertion_separately_from_client_assertion() {
+    let req = form_request();
+
+    let form = parse_token_form(
+        &req,
+        &Bytes::from_static(
+            b"grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=grant-jwt&client_assertion=client-auth-jwt",
+        ),
+    )
+    .expect("JWT bearer grant assertion should parse");
+
+    assert_eq!(
+        form.grant_type,
+        "urn:ietf:params:oauth:grant-type:jwt-bearer"
+    );
+    assert_eq!(form.assertion.as_deref(), Some("grant-jwt"));
+    assert_eq!(form.client_assertion.as_deref(), Some("client-auth-jwt"));
+}
+
+#[test]
 fn token_form_rejects_duplicate_defined_parameters() {
     let req = TestRequest::default()
         .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))

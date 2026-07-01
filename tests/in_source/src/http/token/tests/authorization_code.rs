@@ -431,6 +431,7 @@ fn form_for_code(code: &str) -> TokenForm {
         client_secret: None,
         client_assertion_type: None,
         client_assertion: None,
+        assertion: None,
         audiences: Vec::new(),
         has_audience_param: false,
     }
@@ -909,6 +910,7 @@ async fn authorization_code_grant_requires_code_before_state_lookup() {
         client_secret: None,
         client_assertion_type: None,
         client_assertion: None,
+        assertion: None,
         audiences: Vec::new(),
         has_audience_param: false,
     };

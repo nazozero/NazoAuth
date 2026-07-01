@@ -36,6 +36,43 @@ fn introspection_state() -> Data<AppState> {
     })
 }
 
+fn signed_introspection_offline_state() -> Data<AppState> {
+    let key_material =
+        generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
+    let public_jwk = public_jwk_from_private_der(
+        "introspect-offline-kid",
+        jsonwebtoken::Algorithm::EdDSA,
+        &key_material.private_pkcs8_der,
+    )
+    .expect("test public JWK should derive");
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.issuer = "https://issuer.example".to_owned();
+    settings.authorization_server_profile =
+        crate::settings::AuthorizationServerProfile::Fapi2MessageSigningIntrospection;
+    Data::new(AppState {
+        diesel_db: create_pool(
+            "postgres://nazo_introspect_test_invalid:nazo_introspect_test_invalid@127.0.0.1:1/nazo"
+                .to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey: fred::prelude::Builder::default_centralized()
+            .build()
+            .expect("valkey client construction should not connect"),
+        settings: Arc::new(settings),
+        keyset: KeysetStore::new(Keyset {
+            active_kid: "introspect-offline-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),
+            verification_keys: vec![VerificationKey {
+                kid: "introspect-offline-kid".to_owned(),
+                public_jwk,
+            }],
+        }),
+    })
+}
+
 fn live_introspection_state() -> Option<Data<AppState>> {
     let database_url = std::env::var("DATABASE_URL").ok()?;
     live_introspection_state_from_database_url(database_url)
@@ -79,6 +116,18 @@ fn live_introspection_state_from_database_url(database_url: String) -> Option<Da
             }],
         }),
     }))
+}
+
+fn with_signed_introspection_profile(state: &Data<AppState>) -> Data<AppState> {
+    let mut settings = (*state.settings).clone();
+    settings.authorization_server_profile =
+        crate::settings::AuthorizationServerProfile::Fapi2MessageSigningIntrospection;
+    Data::new(AppState {
+        diesel_db: state.diesel_db.clone(),
+        valkey: state.valkey.clone(),
+        settings: Arc::new(settings),
+        keyset: state.keyset.clone(),
+    })
 }
 
 fn database_url_with_search_path(schema: &str) -> Option<String> {
@@ -395,6 +444,16 @@ fn form_request() -> HttpRequest {
         .to_http_request()
 }
 
+fn signed_introspection_form_request() -> HttpRequest {
+    TestRequest::default()
+        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+        .insert_header((
+            header::ACCEPT,
+            HeaderValue::from_static("application/token-introspection+jwt"),
+        ))
+        .to_http_request()
+}
+
 async fn introspect_form(body: &'static [u8]) -> HttpResponse {
     introspect_after_rate_limit(
         introspection_state(),
@@ -419,6 +478,47 @@ async fn json_body(response: HttpResponse) -> (StatusCode, Value) {
         .expect("response body should collect");
     let value = serde_json::from_slice(&body).expect("response body should be JSON");
     (status, value)
+}
+
+async fn signed_introspection_jwt_body(state: &Data<AppState>, response: HttpResponse) -> Value {
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        HeaderValue::from_static("application/token-introspection+jwt")
+    );
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        HeaderValue::from_static("no-store")
+    );
+    assert_eq!(
+        response.headers().get(header::PRAGMA).unwrap(),
+        HeaderValue::from_static("no-cache")
+    );
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("JWT introspection response body should collect");
+    let token = std::str::from_utf8(&body).expect("JWT response body should be UTF-8");
+    let header = jsonwebtoken::decode_header(token).expect("JWT header should decode");
+    assert_eq!(header.typ.as_deref(), Some("token-introspection+jwt"));
+    let keyset = state.keyset.snapshot();
+    let verification_key = keyset
+        .verification_key(
+            header
+                .kid
+                .as_deref()
+                .expect("signed response should include kid"),
+        )
+        .expect("signed response key should be published");
+    let decoding_key = jwt_decoding_key_from_jwk(&verification_key.public_jwk, header.alg)
+        .expect("signed response key should decode");
+    let mut validation = jsonwebtoken::Validation::new(header.alg);
+    validation.validate_aud = false;
+    validation.validate_exp = false;
+    validation.required_spec_claims.clear();
+    validation.set_issuer(&[state.settings.issuer.as_str()]);
+    jsonwebtoken::decode::<Value>(token, &decoding_key, &validation)
+        .expect("JWT introspection response should verify")
+        .claims
 }
 
 fn access_claims(cnf: Option<ConfirmationClaims>) -> Claims {
@@ -529,6 +629,37 @@ async fn inactive_introspection_response_is_minimal_and_not_cacheable() {
     assert!(
         value.get("client_id").is_none() && value.get("sub").is_none(),
         "inactive introspection must not leak token metadata"
+    );
+}
+
+#[actix_web::test]
+async fn signed_introspection_response_wraps_body_without_top_level_token_claims() {
+    let state = signed_introspection_offline_state();
+    let response = signed_introspection_response(
+        &state,
+        "resource-server-client",
+        json!({
+            "active": true,
+            "sub": "subject-1",
+            "exp": 1_900_000_000,
+            "client_id": "client-1"
+        }),
+    )
+    .await
+    .expect("signed introspection response should be signable");
+
+    let claims = signed_introspection_jwt_body(&state, response).await;
+
+    assert_eq!(claims.get("aud"), Some(&json!("resource-server-client")));
+    assert!(claims.get("sub").is_none());
+    assert!(claims.get("exp").is_none());
+    assert_eq!(
+        claims.pointer("/token_introspection/sub"),
+        Some(&json!("subject-1"))
+    );
+    assert_eq!(
+        claims.pointer("/token_introspection/exp"),
+        Some(&json!(1_900_000_000))
     );
 }
 
@@ -971,6 +1102,55 @@ async fn introspection_respects_access_token_revocation_state() {
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, json!({"active": false}));
+}
+
+#[actix_web::test]
+async fn signed_introspection_returns_rfc9701_jwt_for_active_access_token() {
+    let Some(state) = live_introspection_state() else {
+        return;
+    };
+    let state = with_signed_introspection_profile(&state);
+    let client = insert_introspection_client(
+        &state,
+        &format!("introspect-signed-{}", Uuid::now_v7()),
+        &fixture_secret("signed-active"),
+    )
+    .await;
+    let access_token = sign_access_token(
+        &state,
+        client.tenant_id,
+        &client.client_id,
+        json!("resource://default"),
+    )
+    .await;
+    let body = Bytes::from(format!(
+        "token={}&client_id={}&client_secret={}",
+        urlencoding::encode(&access_token.token),
+        urlencoding::encode(&client.client_id),
+        urlencoding::encode(&fixture_secret("signed-active"))
+    ));
+
+    let response =
+        introspect_after_rate_limit(state.clone(), signed_introspection_form_request(), body).await;
+    let claims = signed_introspection_jwt_body(&state, response).await;
+
+    assert_eq!(claims.get("iss"), Some(&json!("https://issuer.example")));
+    assert_eq!(claims.get("aud"), Some(&json!(client.client_id)));
+    assert!(claims.get("iat").and_then(Value::as_i64).is_some());
+    assert!(
+        claims.get("sub").is_none() && claims.get("exp").is_none(),
+        "RFC 9701 response JWT must not look like an access token"
+    );
+    let introspection = claims
+        .get("token_introspection")
+        .and_then(Value::as_object)
+        .expect("introspection response must be nested");
+    assert_eq!(introspection.get("active"), Some(&json!(true)));
+    assert_eq!(
+        introspection.get("client_id"),
+        Some(&json!(client.client_id.clone()))
+    );
+    assert_eq!(introspection.get("jti"), Some(&json!(access_token.jti)));
 }
 
 #[actix_web::test]

@@ -1,8 +1,8 @@
 //! /token grant_type 分发入口。
 // 只负责客户端认证与 grant_type 分派，不直接签发令牌。
 use super::{
-    TokenForm, TokenFormError, parse_token_form, token_authorization_code,
-    token_client_credentials, token_refresh,
+    JWT_BEARER_GRANT_TYPE, TokenForm, TokenFormError, parse_token_form, token_authorization_code,
+    token_client_credentials, token_jwt_bearer, token_refresh,
 };
 use crate::http::prelude::*;
 
@@ -394,6 +394,9 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
         }
         "client_credentials" => {
             token_client_credentials(&state, &req, &client, &form, client_assertion.as_ref()).await
+        }
+        JWT_BEARER_GRANT_TYPE => {
+            token_jwt_bearer(&state, &req, &client, &form, client_assertion.as_ref()).await
         }
         _ => oauth_token_error(
             StatusCode::BAD_REQUEST,

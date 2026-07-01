@@ -17,7 +17,7 @@ deployment can satisfy.
 | `fapi2-security` | FAPI2 Security profile without message-signing options. | Runtime profile switch implemented; OIDF-tested for recorded matrix variants |
 | `fapi2-message-signing-authz-request` | FAPI2 Security plus signed authorization requests at PAR. | Runtime profile switch implemented; OIDF-tested for recorded matrix variants |
 | `fapi2-message-signing-jarm` | FAPI2 Message Signing authorization response signing option. | OIDF-tested for recorded matrix variant |
-| `fapi2-message-signing-introspection` | FAPI2 Message Signing signed introspection response option. | Separately defined; not advertised until implemented and tested |
+| `fapi2-message-signing-introspection` | FAPI2 Message Signing signed introspection response option. | Runtime profile switch implemented; advertised only by this profile |
 
 ## `oauth2-baseline`
 
@@ -213,11 +213,15 @@ Required negative tests:
 | Field | Policy |
 | --- | --- |
 | Base | `fapi2-security` |
-| Status | Separately defined; not advertised until implemented and tested |
-| Required before advertising | Signed introspection response generation, metadata, and OIDF tests |
+| Response negotiation | Signed JWT introspection is returned only when the authenticated caller sends `Accept: application/token-introspection+jwt` |
+| JWT envelope | Header `typ=token-introspection+jwt`; top-level `iss`, `aud`, and `iat`; JSON introspection body nested under `token_introspection` |
+| Audience | Authenticated introspection client/resource-server `client_id` |
+| Metadata | `introspection_signing_alg_values_supported` is advertised only by this profile and only from the active signing key |
+| Non-goals | Does not advertise JWE introspection; normal OAuth error responses remain JSON |
 
 Required negative tests:
 
-- unsigned introspection response when advertised
+- no signed introspection metadata outside this profile
 - wrong response issuer/audience
 - stale or revoked token reported active
+- top-level token subject/expiry confusion in the signed response

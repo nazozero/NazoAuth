@@ -22,7 +22,7 @@ all 16 plan archives from `https://www.certification.openid.net/`; the final
 runner output reported `0 failures` and `0 warnings`.
 
 The latest private full-matrix regression record is the 2026-07-01 TP/PS run
-against `https://auth.nazo.run` at runtime commit `32429d5`. It used the
+against `https://auth.nazo.run` at runtime commit `31e8f9f`. It used the
 repository 16-plan matrix, exported 16 plan archives, and reported 578 test
 modules with `0 failures` and `0 warnings`.
 

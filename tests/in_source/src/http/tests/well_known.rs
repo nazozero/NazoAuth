@@ -384,13 +384,55 @@ fn discovery_does_not_advertise_unimplemented_protocol_extensions() {
     for grant_type in [
         "urn:ietf:params:oauth:grant-type:device_code",
         "urn:ietf:params:oauth:grant-type:token-exchange",
-        "urn:ietf:params:oauth:grant-type:jwt-bearer",
     ] {
         assert!(
             !grant_types.contains(&grant_type),
             "{grant_type} must not be advertised until it is implemented"
         );
     }
+    assert!(
+        grant_types.contains(&"urn:ietf:params:oauth:grant-type:jwt-bearer"),
+        "JWT bearer grant is implemented and must be advertised"
+    );
+}
+
+#[test]
+fn discovery_advertises_signed_introspection_only_for_signed_introspection_profile() {
+    let keyset = keyset(jsonwebtoken::Algorithm::PS256);
+    let baseline = authorization_server_metadata(
+        &settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new()),
+        &keyset,
+    );
+    assert!(
+        baseline
+            .get("introspection_signing_alg_values_supported")
+            .is_none()
+    );
+
+    let signed_introspection = authorization_server_metadata(
+        &settings(
+            AuthorizationServerProfile::Fapi2MessageSigningIntrospection,
+            Vec::new(),
+        ),
+        &keyset,
+    );
+
+    assert_eq!(
+        signed_introspection
+            .get("introspection_signing_alg_values_supported")
+            .and_then(Value::as_array)
+            .expect("signed introspection profile must advertise response signing algs")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["PS256"]
+    );
+    assert!(
+        signed_introspection
+            .get("introspection_encryption_alg_values_supported")
+            .is_none(),
+        "JWE introspection must stay unadvertised until implemented"
+    );
 }
 
 #[test]

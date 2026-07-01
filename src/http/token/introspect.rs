@@ -8,6 +8,8 @@ use super::{
 use crate::domain::Claims;
 use crate::http::prelude::*;
 
+const TOKEN_INTROSPECTION_JWT_MEDIA_TYPE: &str = "application/token-introspection+jwt";
+
 pub(crate) async fn introspect(
     state: Data<AppState>,
     req: HttpRequest,
@@ -92,6 +94,11 @@ pub(crate) async fn introspect_after_rate_limit(
     {
         return token_management_client_auth_error(error, has_basic);
     }
+    let use_signed_response = signed_introspection_requested(&req)
+        && state
+            .settings
+            .authorization_server_profile
+            .requires_signed_introspection();
     let mut conn = match get_conn(&state.diesel_db).await {
         Ok(conn) => conn,
         Err(error) => {
@@ -105,10 +112,22 @@ pub(crate) async fn introspect_after_rate_limit(
     };
     if let Some(claims) = decode_access_claims(&state, &form.token) {
         if claims.client_id != client.client_id && !token_audience_allowed(&client, &claims.aud) {
-            return json_response_no_store(json!({"active": false}));
+            return introspection_response(
+                &state,
+                &client.client_id,
+                json!({"active": false}),
+                use_signed_response,
+            )
+            .await;
         }
         if access_token_tenant_id(&claims) != Some(client.tenant_id) {
-            return json_response_no_store(json!({"active": false}));
+            return introspection_response(
+                &state,
+                &client.client_id,
+                json!({"active": false}),
+                use_signed_response,
+            )
+            .await;
         }
         let revoked = match access_token_revocations::table
             .filter(access_token_revocations::tenant_id.eq(client.tenant_id))
@@ -129,9 +148,18 @@ pub(crate) async fn introspect_after_rate_limit(
         };
         let active = !revoked && claims.exp > Utc::now().timestamp();
         if !active {
-            return json_response_no_store(json!({"active": false}));
+            return introspection_response(
+                &state,
+                &client.client_id,
+                json!({"active": false}),
+                use_signed_response,
+            )
+            .await;
         }
-        return json_response_no_store(json!({
+        return introspection_response(
+            &state,
+            &client.client_id,
+            json!({
             "active": active,
             "scope": claims.scope,
             "client_id": claims.client_id,
@@ -143,7 +171,10 @@ pub(crate) async fn introspect_after_rate_limit(
             "aud": claims.aud,
             "iss": claims.iss,
             "jti": claims.jti
-        }));
+            }),
+            use_signed_response,
+        )
+        .await;
     }
     let hash = blake3_hex(&form.token);
     let token = match oauth_tokens::table
@@ -166,18 +197,100 @@ pub(crate) async fn introspect_after_rate_limit(
     };
     if let Some(token) = token {
         if token.client_id != client.id {
-            return json_response_no_store(json!({"active": false}));
+            return introspection_response(
+                &state,
+                &client.client_id,
+                json!({"active": false}),
+                use_signed_response,
+            )
+            .await;
         }
         let active = token.revoked_at.is_none() && token.expires_at > Utc::now();
         if !active {
-            return json_response_no_store(json!({"active": false}));
+            return introspection_response(
+                &state,
+                &client.client_id,
+                json!({"active": false}),
+                use_signed_response,
+            )
+            .await;
         }
-        return json_response_no_store(active_refresh_token_introspection_body(
-            &token,
+        return introspection_response(
+            &state,
             &client.client_id,
-        ));
+            active_refresh_token_introspection_body(&token, &client.client_id),
+            use_signed_response,
+        )
+        .await;
     }
-    json_response_no_store(json!({"active": false}))
+    introspection_response(
+        &state,
+        &client.client_id,
+        json!({"active": false}),
+        use_signed_response,
+    )
+    .await
+}
+
+fn signed_introspection_requested(req: &HttpRequest) -> bool {
+    req.headers()
+        .get(header::ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            value.split(',').any(|part| {
+                part.split(';').next().is_some_and(|media_type| {
+                    media_type.trim() == TOKEN_INTROSPECTION_JWT_MEDIA_TYPE
+                })
+            })
+        })
+}
+
+async fn introspection_response(
+    state: &AppState,
+    resource_server_id: &str,
+    body: Value,
+    signed: bool,
+) -> HttpResponse {
+    if !signed {
+        return json_response_no_store(body);
+    }
+    match signed_introspection_response(state, resource_server_id, body).await {
+        Ok(response) => response,
+        Err(error) => {
+            tracing::warn!(%error, "failed to sign token introspection response");
+            token_management_oauth_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "server_error",
+                "token introspection response signing failed.",
+            )
+        }
+    }
+}
+
+async fn signed_introspection_response(
+    state: &AppState,
+    resource_server_id: &str,
+    body: Value,
+) -> jsonwebtoken::errors::Result<HttpResponse> {
+    let keyset = state.keyset.snapshot();
+    let mut header = jsonwebtoken::Header::new(keyset.active_alg);
+    header.typ = Some("token-introspection+jwt".to_owned());
+    header.kid = Some(keyset.active_kid.clone());
+    let claims = json!({
+        "iss": state.settings.issuer,
+        "aud": resource_server_id,
+        "iat": Utc::now().timestamp(),
+        "token_introspection": body
+    });
+    let token = keyset.sign_jwt(&header, &claims).await?;
+    Ok(HttpResponse::Ok()
+        .insert_header((
+            header::CONTENT_TYPE,
+            HeaderValue::from_static(TOKEN_INTROSPECTION_JWT_MEDIA_TYPE),
+        ))
+        .insert_header((header::CACHE_CONTROL, HeaderValue::from_static("no-store")))
+        .insert_header((header::PRAGMA, HeaderValue::from_static("no-cache")))
+        .body(token))
 }
 
 fn introspection_access_token_type(claims: &Claims) -> &'static str {
