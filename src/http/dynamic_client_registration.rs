@@ -47,6 +47,8 @@ pub(crate) struct DynamicClientRegistrationRequest {
     #[serde(default)]
     pub(crate) jwks: Option<Value>,
     #[serde(default)]
+    pub(crate) request_uris: Vec<String>,
+    #[serde(default)]
     pub(crate) software_statement: Option<String>,
 }
 
@@ -159,6 +161,11 @@ pub(crate) fn prepare_dynamic_client_registration(
     if request.jwks_uri.is_some() {
         return Err(DynamicRegistrationError::invalid_client_metadata(
             "jwks_uri is not supported; register jwks by value.",
+        ));
+    }
+    if !request.request_uris.is_empty() {
+        return Err(DynamicRegistrationError::invalid_client_metadata(
+            "request_uris is not supported; use pushed authorization requests.",
         ));
     }
     if let Some(application_type) = request.application_type.as_deref()

@@ -74,6 +74,26 @@ fn dynamic_registration_rejects_jwks_uri_and_jwks_in_same_request() {
     assert_eq!(err.error, "invalid_client_metadata");
 }
 
+#[test]
+fn dynamic_registration_rejects_request_uris_metadata() {
+    let request = DynamicClientRegistrationRequest {
+        redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
+        request_uris: vec!["https://client.example/request.jwt".to_owned()],
+        ..Default::default()
+    };
+
+    let err = prepare_dynamic_client_registration(
+        request,
+        DynamicRegistrationDefaults {
+            default_audience: "https://issuer.example/fapi/resource",
+        },
+    )
+    .expect_err("unsupported request_uri metadata must not be accepted");
+
+    assert_eq!(err.error, "invalid_client_metadata");
+    assert!(err.description.contains("request_uris is not supported"));
+}
+
 #[actix_web::test]
 async fn dynamic_registration_accepts_oidf_inline_jwks_without_kid_for_secret_clients() {
     let request = DynamicClientRegistrationRequest {
