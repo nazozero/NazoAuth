@@ -117,7 +117,7 @@ def write_text(path: Path, body: str, mode: int | None = None) -> None:
         path.chmod(mode)
 
 
-def ensure_server_ps256_keyset() -> None:
+def ensure_server_rs256_keyset() -> None:
     key_dir = RUNTIME / "keys"
     key_dir.mkdir(parents=True, exist_ok=True)
     keyset_path = key_dir / "keyset.json"
@@ -132,12 +132,12 @@ def ensure_server_ps256_keyset() -> None:
     if not isinstance(keys, list):
         raise RuntimeError(f"server keyset keys must be an array: {keyset_path}")
 
-    live_ps256 = next(
+    live_rs256 = next(
         (
             key
             for key in keys
             if isinstance(key, dict)
-            and key.get("alg") == "PS256"
+            and key.get("alg") == "RS256"
             and isinstance(key.get("kid"), str)
             and isinstance(key.get("file"), str)
             and key_dir.joinpath(str(key["file"])).is_file()
@@ -145,8 +145,8 @@ def ensure_server_ps256_keyset() -> None:
         ),
         None,
     )
-    if live_ps256 is None:
-        kid = "ps256-local-oidf-server"
+    if live_rs256 is None:
+        kid = "rs256-local-oidf-server"
         file_name = f"{kid}.pem"
         existing_kids = {
             key.get("kid")
@@ -174,17 +174,17 @@ def ensure_server_ps256_keyset() -> None:
             stderr=subprocess.DEVNULL,
         )
         pem.chmod(0o600)
-        live_ps256 = {
+        live_rs256 = {
             "kid": kid,
-            "alg": "PS256",
+            "alg": "RS256",
             "file": file_name,
             "created_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
             "retire_at": None,
         }
-        keys.append(live_ps256)
+        keys.append(live_rs256)
 
-    normalize_server_rsa_private_key(key_dir / str(live_ps256["file"]))
-    keyset["active_kid"] = live_ps256["kid"]
+    normalize_server_rsa_private_key(key_dir / str(live_rs256["file"]))
+    keyset["active_kid"] = live_rs256["kid"]
     write_text(keyset_path, json.dumps(keyset, indent=2) + "\n", 0o600)
 
 
@@ -1278,7 +1278,7 @@ def plan_manifest_for_expressions(
 def main() -> int:
     ensure_cert()
     ensure_mtls_certs()
-    ensure_server_ps256_keyset()
+    ensure_server_rs256_keyset()
     if WRITE_ENV_YAML:
         write_env_yaml()
     write_nginx()
