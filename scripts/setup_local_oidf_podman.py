@@ -130,7 +130,77 @@ def server_rsa_private_key_is_usable(path: Path) -> bool:
     )
 
 
-def ensure_server_rs256_keyset() -> None:
+def live_server_key(
+    keys: list[object],
+    key_dir: Path,
+    alg: str,
+    now: str,
+) -> dict[str, object] | None:
+    live_key = None
+    for key in keys:
+        if not (
+            isinstance(key, dict)
+            and key.get("alg") == alg
+            and isinstance(key.get("kid"), str)
+            and isinstance(key.get("file"), str)
+            and key_dir.joinpath(str(key["file"])).is_file()
+            and key.get("retire_at") is None
+        ):
+            continue
+        if server_rsa_private_key_is_usable(key_dir / str(key["file"])):
+            live_key = key
+            break
+        key["retire_at"] = now
+    return live_key
+
+
+def create_server_key(
+    keys: list[object],
+    key_dir: Path,
+    alg: str,
+    kid_prefix: str,
+    now: str,
+) -> dict[str, object]:
+    kid = kid_prefix
+    file_name = f"{kid}.pem"
+    existing_kids = {
+        key.get("kid")
+        for key in keys
+        if isinstance(key, dict) and isinstance(key.get("kid"), str)
+    }
+    suffix = 2
+    while kid in existing_kids:
+        kid = f"{kid_prefix}-{suffix}"
+        file_name = f"{kid}.pem"
+        suffix += 1
+    pem = key_dir / file_name
+    subprocess.run(
+        [
+            "openssl",
+            "genrsa",
+            "-traditional",
+            "-out",
+            str(pem),
+            "2048",
+        ],
+        check=True,
+        cwd=ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    pem.chmod(0o600)
+    key = {
+        "kid": kid,
+        "alg": alg,
+        "file": file_name,
+        "created_at": now,
+        "retire_at": None,
+    }
+    keys.append(key)
+    return key
+
+
+def ensure_server_oidf_keyset() -> None:
     key_dir = RUNTIME / "keys"
     key_dir.mkdir(parents=True, exist_ok=True)
     keyset_path = key_dir / "keyset.json"
@@ -146,71 +216,20 @@ def ensure_server_rs256_keyset() -> None:
         raise RuntimeError(f"server keyset keys must be an array: {keyset_path}")
 
     now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    live_rs256 = next(
-        (
-            key
-            for key in keys
-            if isinstance(key, dict)
-            and key.get("alg") == "RS256"
-            and isinstance(key.get("kid"), str)
-            and isinstance(key.get("file"), str)
-            and key_dir.joinpath(str(key["file"])).is_file()
-            and server_rsa_private_key_is_usable(key_dir / str(key["file"]))
-            and key.get("retire_at") is None
-        ),
-        None,
-    )
-    for key in keys:
-        if (
-            isinstance(key, dict)
-            and key.get("alg") == "RS256"
-            and isinstance(key.get("file"), str)
-            and key_dir.joinpath(str(key["file"])).is_file()
-            and not server_rsa_private_key_is_usable(key_dir / str(key["file"]))
-            and key.get("retire_at") is None
-        ):
-            key["retire_at"] = now
-
-    if live_rs256 is None:
-        kid = "rs256-local-oidf-server"
-        file_name = f"{kid}.pem"
-        existing_kids = {
-            key.get("kid")
-            for key in keys
-            if isinstance(key, dict) and isinstance(key.get("kid"), str)
-        }
-        suffix = 2
-        while kid in existing_kids:
-            kid = f"ps256-local-oidf-server-{suffix}"
-            file_name = f"{kid}.pem"
-            suffix += 1
-        pem = key_dir / file_name
-        subprocess.run(
-            [
-                "openssl",
-                "genrsa",
-                "-traditional",
-                "-out",
-                str(pem),
-                "2048",
-            ],
-            check=True,
-            cwd=ROOT,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+    live_ps256 = live_server_key(keys, key_dir, "PS256", now)
+    if live_ps256 is None:
+        live_ps256 = create_server_key(
+            keys, key_dir, "PS256", "ps256-local-oidf-server", now
         )
-        pem.chmod(0o600)
-        live_rs256 = {
-            "kid": kid,
-            "alg": "RS256",
-            "file": file_name,
-            "created_at": now,
-            "retire_at": None,
-        }
-        keys.append(live_rs256)
+    live_rs256 = live_server_key(keys, key_dir, "RS256", now)
+    if live_rs256 is None:
+        live_rs256 = create_server_key(
+            keys, key_dir, "RS256", "rs256-local-oidf-server", now
+        )
 
+    normalize_server_rsa_private_key(key_dir / str(live_ps256["file"]))
     normalize_server_rsa_private_key(key_dir / str(live_rs256["file"]))
-    keyset["active_kid"] = live_rs256["kid"]
+    keyset["active_kid"] = live_ps256["kid"]
     write_text(keyset_path, json.dumps(keyset, indent=2) + "\n", 0o600)
 
 
@@ -1304,7 +1323,7 @@ def plan_manifest_for_expressions(
 def main() -> int:
     ensure_cert()
     ensure_mtls_certs()
-    ensure_server_rs256_keyset()
+    ensure_server_oidf_keyset()
     if WRITE_ENV_YAML:
         write_env_yaml()
     write_nginx()

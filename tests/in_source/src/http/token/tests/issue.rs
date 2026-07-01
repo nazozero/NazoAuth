@@ -63,6 +63,36 @@ fn client_with_grants(grant_types: &[&str]) -> ClientRow {
     }
 }
 
+#[test]
+fn id_token_signing_alg_uses_rs256_default_and_ps256_for_fapi_clients() {
+    let baseline = client_with_grants(&["authorization_code"]);
+    assert_eq!(
+        id_token_signing_alg_for_client(&baseline),
+        jsonwebtoken::Algorithm::RS256
+    );
+
+    let mut private_key_jwt = baseline.clone();
+    private_key_jwt.token_endpoint_auth_method = "private_key_jwt".to_owned();
+    assert_eq!(
+        id_token_signing_alg_for_client(&private_key_jwt),
+        jsonwebtoken::Algorithm::PS256
+    );
+
+    let mut holder_bound = baseline.clone();
+    holder_bound.require_dpop_bound_tokens = true;
+    assert_eq!(
+        id_token_signing_alg_for_client(&holder_bound),
+        jsonwebtoken::Algorithm::PS256
+    );
+
+    let mut par_request_object = baseline;
+    par_request_object.require_par_request_object = true;
+    assert_eq!(
+        id_token_signing_alg_for_client(&par_request_object),
+        jsonwebtoken::Algorithm::PS256
+    );
+}
+
 fn issue_state_with_invalid_signing_key() -> AppState {
     AppState {
         diesel_db: create_pool(

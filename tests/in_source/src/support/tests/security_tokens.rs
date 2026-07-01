@@ -517,6 +517,7 @@ fn id_token_claims_includes_all_fields_when_provided() {
         acr: Some("urn:mace:incommon:iap:silver"),
         extra_claims: None,
         ttl: 600,
+        signing_alg: None,
     };
 
     let claims = id_token_claims("https://issuer.example", &input, 2_000_000_000);
@@ -552,6 +553,7 @@ fn id_token_claims_omits_optional_fields_when_not_provided() {
         acr: None,
         extra_claims: None,
         ttl: 600,
+        signing_alg: None,
     };
 
     let claims = id_token_claims("https://issuer.example", &input, 100);
@@ -597,6 +599,7 @@ fn id_token_claims_filters_all_reserved_keys_from_extra_claims() {
         acr: Some("real-acr"),
         extra_claims: Some(&extra),
         ttl: 600,
+        signing_alg: None,
     };
 
     let claims = id_token_claims("https://real-issuer.example", &input, 1_000);
@@ -640,6 +643,7 @@ fn id_token_claims_extra_claims_null_value_does_not_crash() {
         acr: None,
         extra_claims: Some(&extra),
         ttl: 300,
+        signing_alg: None,
     };
 
     let claims = id_token_claims("https://issuer.example", &input, 100);
@@ -661,6 +665,7 @@ fn id_token_claims_extra_claims_top_level_non_object_is_ignored() {
         acr: None,
         extra_claims: Some(&extra),
         ttl: 300,
+        signing_alg: None,
     };
 
     let claims = id_token_claims("https://issuer.example", &input, 100);
