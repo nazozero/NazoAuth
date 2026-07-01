@@ -5,6 +5,7 @@ use super::{
     mtls::{certificate_x5c_thumbprint, normalize_sha256_thumbprint},
     prelude::*,
     security::{
+        SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
         SUPPORTED_CLIENT_JWT_SIGNING_ALGS, blake3_hex, client_jwt_algorithm_from_name,
         jwt_decoding_key_from_jwk, supported_client_jwt_algorithm_name,
     },
@@ -188,6 +189,8 @@ pub(crate) struct ClientMetadata<'a> {
     pub(crate) token_endpoint_auth_method: &'a str,
     pub(crate) backchannel_logout_uri: Option<&'a str>,
     pub(crate) jwks: Option<&'a Value>,
+    pub(crate) introspection_encrypted_response_alg: Option<&'a str>,
+    pub(crate) introspection_encrypted_response_enc: Option<&'a str>,
     pub(crate) mtls_binding: Option<&'a ClientMtlsMetadata>,
 }
 
@@ -202,6 +205,8 @@ pub(crate) fn validate_client_metadata(metadata: ClientMetadata<'_>) -> anyhow::
         token_endpoint_auth_method,
         backchannel_logout_uri,
         jwks,
+        introspection_encrypted_response_alg,
+        introspection_encrypted_response_enc,
         mtls_binding,
     } = metadata;
     if !matches!(client_type, "public" | "confidential") {
@@ -229,8 +234,18 @@ pub(crate) fn validate_client_metadata(metadata: ClientMetadata<'_>) -> anyhow::
     {
         validate_client_jwks(jwks)?;
     }
-    if token_endpoint_auth_method == "private_key_jwt" && jwks.is_none() {
-        anyhow::bail!("private_key_jwt 客户端必须配置 jwks");
+    validate_introspection_jwe_metadata(
+        introspection_encrypted_response_alg,
+        introspection_encrypted_response_enc,
+        jwks,
+    )?;
+    if token_endpoint_auth_method == "private_key_jwt" {
+        let Some(jwks) = jwks else {
+            anyhow::bail!("private_key_jwt 客户端必须配置 jwks");
+        };
+        if !client_jwks_contains_signing_key(jwks) {
+            anyhow::bail!("private_key_jwt 客户端必须配置签名 jwks");
+        }
     }
     if token_endpoint_auth_method == "tls_client_auth"
         && !mtls_binding.is_some_and(ClientMtlsMetadata::has_binding_material)
@@ -289,6 +304,73 @@ pub(crate) fn validate_client_metadata(metadata: ClientMetadata<'_>) -> anyhow::
         validate_backchannel_logout_uri(uri)?;
     }
     Ok(())
+}
+
+fn validate_introspection_jwe_metadata(
+    alg: Option<&str>,
+    enc: Option<&str>,
+    jwks: Option<&Value>,
+) -> anyhow::Result<()> {
+    match (alg, enc) {
+        (None, None) => Ok(()),
+        (None, Some(_)) => {
+            anyhow::bail!(
+                "introspection_encrypted_response_enc 不能在未设置 introspection_encrypted_response_alg 时使用"
+            );
+        }
+        (Some(alg), Some(enc)) => {
+            if !SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS.contains(&alg) {
+                anyhow::bail!(
+                    "introspection_encrypted_response_alg 必须是 {}",
+                    SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS.join(", ")
+                );
+            }
+            if !SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS.contains(&enc) {
+                anyhow::bail!(
+                    "introspection_encrypted_response_enc 必须是 {}",
+                    SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS.join(", ")
+                );
+            }
+            if !jwks.is_some_and(|jwks| client_jwks_contains_encryption_key(jwks, alg)) {
+                anyhow::bail!("启用 encrypted introspection response 必须配置匹配的 jwks 加密公钥");
+            }
+            Ok(())
+        }
+        (Some(_), None) => anyhow::bail!(
+            "introspection_encrypted_response_alg 必须同时配置 introspection_encrypted_response_enc"
+        ),
+    }
+}
+
+pub(crate) fn client_jwks_contains_encryption_key(jwks: &Value, alg: &str) -> bool {
+    jwks.get("keys")
+        .and_then(Value::as_array)
+        .is_some_and(|keys| {
+            keys.iter().any(|key| {
+                key.get("use").and_then(Value::as_str) == Some("enc")
+                    && key.get("alg").and_then(Value::as_str) == Some(alg)
+                    && valid_rsa_jwe_encryption_key(key)
+            })
+        })
+}
+
+fn client_jwks_contains_signing_key(jwks: &Value) -> bool {
+    jwks.get("keys")
+        .and_then(Value::as_array)
+        .is_some_and(|keys| {
+            keys.iter().any(|key| {
+                let public_key_use = key.get("use").and_then(Value::as_str).unwrap_or("sig");
+                let Some(alg) = key.get("alg").and_then(Value::as_str) else {
+                    return false;
+                };
+                let Some(algorithm) = client_jwt_algorithm_from_name(alg) else {
+                    return false;
+                };
+                public_key_use == "sig"
+                    && supported_client_jwt_algorithm_name(algorithm) == Some(alg)
+                    && jwt_decoding_key_from_jwk(key, algorithm).is_some()
+            })
+        })
 }
 
 fn validate_backchannel_logout_uri(uri: &str) -> anyhow::Result<()> {
@@ -394,27 +476,55 @@ pub(crate) fn validate_client_jwks(jwks: &Value) -> anyhow::Result<()> {
         if key.get("d").is_some() {
             anyhow::bail!("jwks 不能包含私钥材料");
         }
-        if let Some(use_) = key.get("use").and_then(Value::as_str)
-            && use_ != "sig"
-        {
-            anyhow::bail!("jwks 公钥 use 必须为 sig");
-        }
+        let public_key_use = key.get("use").and_then(Value::as_str).unwrap_or("sig");
         let Some(alg) = key.get("alg").and_then(Value::as_str) else {
             anyhow::bail!("jwks 公钥必须声明 alg");
         };
-        let Some(algorithm) = client_jwt_algorithm_from_name(alg) else {
-            anyhow::bail!(
-                "jwks alg 必须是 {}",
-                SUPPORTED_CLIENT_JWT_SIGNING_ALGS.join(", ")
-            );
-        };
-        if supported_client_jwt_algorithm_name(algorithm) != Some(alg)
-            || jwt_decoding_key_from_jwk(key, algorithm).is_none()
-        {
-            anyhow::bail!("jwks 公钥材料与 alg 不匹配");
+        match public_key_use {
+            "sig" => {
+                let Some(algorithm) = client_jwt_algorithm_from_name(alg) else {
+                    anyhow::bail!(
+                        "jwks alg 必须是 {} 或 {}",
+                        SUPPORTED_CLIENT_JWT_SIGNING_ALGS.join(", "),
+                        SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS.join(", ")
+                    );
+                };
+                if supported_client_jwt_algorithm_name(algorithm) != Some(alg)
+                    || jwt_decoding_key_from_jwk(key, algorithm).is_none()
+                {
+                    anyhow::bail!("jwks 公钥材料与 alg 不匹配");
+                }
+            }
+            "enc" => {
+                if !SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS.contains(&alg)
+                    || !valid_rsa_jwe_encryption_key(key)
+                {
+                    anyhow::bail!("jwks 公钥材料与 alg 不匹配");
+                }
+            }
+            _ => anyhow::bail!("jwks 公钥 use 必须为 sig 或 enc"),
         }
     }
     Ok(())
+}
+
+fn valid_rsa_jwe_encryption_key(key: &Value) -> bool {
+    if key.get("kty").and_then(Value::as_str) != Some("RSA") {
+        return false;
+    }
+    let Some(n) = key.get("n").and_then(Value::as_str) else {
+        return false;
+    };
+    let Some(e) = key.get("e").and_then(Value::as_str) else {
+        return false;
+    };
+    let Ok(modulus) = URL_SAFE_NO_PAD.decode(n) else {
+        return false;
+    };
+    let Ok(exponent) = URL_SAFE_NO_PAD.decode(e) else {
+        return false;
+    };
+    modulus.len() >= 256 && !exponent.is_empty()
 }
 
 pub(crate) fn validate_self_signed_mtls_jwks(jwks: &Value) -> bool {

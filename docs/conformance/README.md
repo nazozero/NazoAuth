@@ -26,6 +26,20 @@ against `https://auth.nazo.run` at runtime commit `31e8f9f`. It used the
 repository 16-plan matrix, exported 16 plan archives, and reported 578 test
 modules with `0 failures` and `0 warnings`.
 
+## Coverage Update Rule
+
+Every newly supported RFC, OIDC/FAPI profile, or standards-track protocol
+capability must trigger an OIDF suite coverage check. Search the OpenID
+Foundation Conformance Suite official production/staging plans, public source,
+and release notes for matching official tests.
+
+If official coverage exists, update the repository OIDF matrix execution in the
+same change, including the workflow/config inputs, plan list, matrix
+documentation, and conformance record. If official coverage does not exist,
+record the negative search result and date in the relevant implementation or
+conformance record. Local positive, negative, metadata-truth, and
+security-boundary tests remain mandatory either way.
+
 ## Record Format
 
 - implementation commit SHA

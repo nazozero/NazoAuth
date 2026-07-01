@@ -21,6 +21,8 @@ fn metadata<'a>(
         token_endpoint_auth_method,
         backchannel_logout_uri: None,
         jwks,
+        introspection_encrypted_response_alg: None,
+        introspection_encrypted_response_enc: None,
         mtls_binding,
     }
 }
@@ -237,6 +239,35 @@ fn client_metadata_requires_public_jwks_for_private_key_jwt() {
         "unexpected error: {error}"
     );
 
+    let encryption_only_jwks = json!({
+        "keys": [{
+            "kty": "RSA",
+            "n": URL_SAFE_NO_PAD.encode([0x91u8; 256]),
+            "e": URL_SAFE_NO_PAD.encode([0x01u8, 0x00, 0x01]),
+            "alg": "RSA-OAEP-256",
+            "use": "enc",
+            "kid": "enc-key"
+        }]
+    });
+    let result = validate_client_metadata(metadata(
+        "confidential",
+        &["https://client.example/callback".to_owned()],
+        &["openid".to_owned()],
+        &["resource://default".to_owned()],
+        &["authorization_code".to_owned()],
+        "private_key_jwt",
+        Some(&encryption_only_jwks),
+        None,
+    ));
+    let error =
+        result.expect_err("private_key_jwt must still require a signing key in registered jwks");
+    assert!(
+        error
+            .to_string()
+            .contains("private_key_jwt 客户端必须配置签名 jwks"),
+        "unexpected error: {error}"
+    );
+
     validate_client_metadata(metadata(
         "confidential",
         &["https://client.example/callback".to_owned()],
@@ -416,4 +447,127 @@ fn client_metadata_validates_optional_jwks_for_all_auth_methods() {
         None,
     ))
     .expect("client_secret_basic may omit jwks");
+}
+
+#[test]
+fn client_metadata_validates_introspection_jwe_metadata() {
+    let redirect_uris = ["https://client.example/callback".to_owned()];
+    let scopes = ["openid".to_owned()];
+    let audiences = ["resource://default".to_owned()];
+    let grants = ["authorization_code".to_owned()];
+    let encryption_jwks = json!({
+        "keys": [{
+            "kty": "RSA",
+            "n": URL_SAFE_NO_PAD.encode([0x91u8; 256]),
+            "e": URL_SAFE_NO_PAD.encode([0x01u8, 0x00, 0x01]),
+            "alg": "RSA-OAEP-256",
+            "use": "enc",
+            "kid": "enc-key"
+        }]
+    });
+
+    let mut missing_enc = metadata(
+        "confidential",
+        &redirect_uris,
+        &scopes,
+        &audiences,
+        &grants,
+        "client_secret_basic",
+        Some(&encryption_jwks),
+        None,
+    );
+    missing_enc.introspection_encrypted_response_alg = Some("RSA-OAEP-256");
+    let error =
+        validate_client_metadata(missing_enc).expect_err("JWE alg without enc must fail closed");
+    assert!(
+        error
+            .to_string()
+            .contains("introspection_encrypted_response_alg 必须同时配置"),
+        "unexpected error: {error}"
+    );
+
+    let mut missing_alg = metadata(
+        "confidential",
+        &redirect_uris,
+        &scopes,
+        &audiences,
+        &grants,
+        "client_secret_basic",
+        Some(&encryption_jwks),
+        None,
+    );
+    missing_alg.introspection_encrypted_response_enc = Some("A256GCM");
+    let error =
+        validate_client_metadata(missing_alg).expect_err("JWE enc without alg must fail closed");
+    assert!(
+        error
+            .to_string()
+            .contains("introspection_encrypted_response_enc 不能在未设置"),
+        "unexpected error: {error}"
+    );
+
+    let mut unsupported_enc = metadata(
+        "confidential",
+        &redirect_uris,
+        &scopes,
+        &audiences,
+        &grants,
+        "client_secret_basic",
+        Some(&encryption_jwks),
+        None,
+    );
+    unsupported_enc.introspection_encrypted_response_alg = Some("RSA-OAEP-256");
+    unsupported_enc.introspection_encrypted_response_enc = Some("A128CBC-HS256");
+    let error = validate_client_metadata(unsupported_enc)
+        .expect_err("unsupported JWE enc must fail closed");
+    assert!(
+        error
+            .to_string()
+            .contains("introspection_encrypted_response_enc 必须是 A256GCM"),
+        "unexpected error: {error}"
+    );
+
+    let signing_jwks = json!({
+        "keys": [{
+            "kty": "OKP",
+            "crv": "Ed25519",
+            "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+            "alg": "EdDSA",
+            "use": "sig",
+            "kid": "sig-key"
+        }]
+    });
+    let mut missing_encryption_key = metadata(
+        "confidential",
+        &redirect_uris,
+        &scopes,
+        &audiences,
+        &grants,
+        "client_secret_basic",
+        Some(&signing_jwks),
+        None,
+    );
+    missing_encryption_key.introspection_encrypted_response_alg = Some("RSA-OAEP-256");
+    missing_encryption_key.introspection_encrypted_response_enc = Some("A256GCM");
+    let error = validate_client_metadata(missing_encryption_key)
+        .expect_err("JWE response requires a matching encryption JWK");
+    assert!(
+        error.to_string().contains("必须配置匹配的 jwks 加密公钥"),
+        "unexpected error: {error}"
+    );
+
+    let mut valid = metadata(
+        "confidential",
+        &redirect_uris,
+        &scopes,
+        &audiences,
+        &grants,
+        "client_secret_basic",
+        Some(&encryption_jwks),
+        None,
+    );
+    valid.introspection_encrypted_response_alg = Some("RSA-OAEP-256");
+    valid.introspection_encrypted_response_enc = Some("A256GCM");
+    validate_client_metadata(valid)
+        .expect("supported JWE metadata with a matching encryption JWK should be accepted");
 }

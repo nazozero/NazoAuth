@@ -112,7 +112,9 @@ pub(crate) fn client_json(client: ClientRow) -> Value {
         "backchannel_logout_uri": client.backchannel_logout_uri,
         "backchannel_logout_session_required": client.backchannel_logout_session_required,
         "is_active": client.is_active,
-        "jwks": client.jwks
+        "jwks": client.jwks,
+        "introspection_encrypted_response_alg": client.introspection_encrypted_response_alg,
+        "introspection_encrypted_response_enc": client.introspection_encrypted_response_enc
     })
 }
 

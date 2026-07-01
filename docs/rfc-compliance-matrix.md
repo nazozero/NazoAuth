@@ -65,7 +65,7 @@ conditions:
 | Baseline secure OAuth/OIDC | General self-hosted authorization server profile for normal web, native, and API clients. | OAuth 2.1-style authorization code + PKCE, no implicit/password grants, exact redirect binding, truthful metadata, refresh-token rotation, optional sender-constrained tokens. | Advertise only implemented grant types, auth methods, response modes, PAR/JAR/RAR, mTLS, DPoP, and logout capabilities. |
 | High-value API profile | Default security target for sensitive resource access. | PAR, S256 PKCE, confidential clients where possible, DPoP or mTLS sender-constrained access tokens, resource/audience binding, short authorization-code lifetime, strict JWT/JWKS policy, and no browser token leakage. | Use FAPI2-style metadata and enforcement only when the runtime profile actually enforces it. |
 | FAPI 2.0 Security Profile | OIDF FAPI 2.0 Security Profile Final. | Confidential clients only, authenticated PAR, S256 PKCE, `code` response type, `redirect_uri` in PAR, sender-constrained access tokens via DPoP or mTLS, authorization-code lifetime <= 60 seconds, PAR `request_uri` `expires_in` < 600 seconds, issuer identification, strict JWT/JWKS policy, and DPoP nonce support. Requiring DPoP nonce is project hardening, not a base FAPI claim. | Advertise FAPI behavior only under the FAPI runtime profile and after conformance tests plus local negative tests remain green. |
-| FAPI 2.0 Message Signing | FAPI message-signing options for signed authorization requests, signed authorization responses, and signed introspection responses. | Signed request object at PAR, JARM where selected, and RFC 9701 signed introspection where the introspection profile is selected; no fallback to unsigned response after signing failure. | Advertise each message-signing option independently. Signed introspection metadata appears only under the signed-introspection runtime profile. |
+| FAPI 2.0 Message Signing | FAPI message-signing options for signed authorization requests, signed authorization responses, and signed or nested encrypted introspection responses. | Signed request object at PAR, JARM where selected, and RFC 9701 signed/nested encrypted introspection where the introspection profile is selected; no fallback to unsigned response after signing failure. | Advertise each message-signing option independently. Introspection JWT response metadata appears only under the signed-introspection runtime profile. |
 | Compatibility profile | Narrow support for legacy clients that cannot satisfy all modern controls. | Explicit per-client exceptions only; never for sender-constrained or FAPI clients. | Compatibility capabilities must not leak into high-security metadata. |
 
 ## Control Status
@@ -111,7 +111,7 @@ conditions:
 | Refresh-token handling | Baseline bearer refresh-token grants rotate and detect reuse. For FAPI confidential clients with sender-constrained tokens, avoid blindly applying generic rotation semantics where the active profile expects stable sender-constrained refresh tokens; any lost-response retry must be a bounded state-machine rule, not a replay bypass. | RFC 9700, FAPI2 | Required/profile-scoped. | `src/http/token/refresh.rs`, `src/http/token/issue/refresh_persistence.rs`, refresh rotation/reuse/DPoP/mTLS tests, and refresh-token rotation docs | Clearly separate bearer-baseline rotation from FAPI sender-constrained refresh-token behavior in policy, metadata, and tests. |
 | Refresh-token audience narrowing | Refresh requests may narrow, not expand, the original audience/resource set. | RFC 8707, RFC 9700 | Required. | Refresh audience tests and migration `20260630000100_refresh_token_audience_binding` | Keep audience stored as refresh-token state, not reconstructed from client input. |
 | Revocation | Support authenticated token revocation and avoid leaking token validity. | RFC 7009, RFC 9700 | Required. | Revocation endpoint tests | Keep response shape privacy-preserving. |
-| Introspection | Support authenticated JSON introspection for resource servers/admin clients. Do not leak token validity to unauthenticated callers. RFC 9701 signed introspection is profile-gated and content-negotiated. | RFC 7662, RFC 9700, RFC 9701 | Required for current profile; signed response is optional/profile-scoped. | Introspection tests | Signed introspection must bind issuer, authenticated RS audience, key selection, content negotiation, and must avoid top-level access-token claim confusion. |
+| Introspection | Support authenticated JSON introspection for resource servers/admin clients. Do not leak token validity to unauthenticated callers. RFC 9701 signed and nested encrypted introspection is profile-gated and content-negotiated. | RFC 7662, RFC 9700, RFC 9701 | Required for current profile; JWT response is optional/profile-scoped. | Introspection tests | JWT introspection must bind issuer, authenticated RS audience, key selection, content negotiation, JWE metadata, and must avoid top-level access-token claim confusion. |
 | Protected resource metadata | Publish protected resource metadata and link AS metadata to protected resource identifier. | RFC 9728 | Required for current resource profile. | Well-known tests and FAPI resource tests | Actual external APIs must publish matching identifiers or use the verifier consistently. |
 | Discovery metadata truth | Metadata must be generated from runtime profile, settings, client policy, endpoint availability, and key state; never advertise disabled endpoints, grant types, response types, response modes, auth methods, signing/encryption algs, PAR/JAR/RAR/JARM, DPoP, mTLS, logout, introspection signing, or profiles that are not enforced. | RFC 8414, OIDC Discovery, RFC 9700, FAPI2 | Required. | `src/http/well_known.rs`, well-known tests, OIDF config plan | This is a permanent invariant for every feature addition. Metadata tests must include negative cases for disabled features and missing usable keys. |
 | Issuer identification | Include authorization response issuer support to prevent mix-up. | RFC 9207, RFC 9700 | Required. | Authorization response tests and OIDF evidence | Preserve correct JARM interaction. |
@@ -157,7 +157,7 @@ conditions:
 | RFC 9396 | Recommended for typed high-value permissions, unsafe as unbounded JSON pass-through. | Profile-scoped | Keep allowlisted types and feature-gated metadata. |
 | RFC 9449 | Required sender-constraint option for browser/native-friendly high-value clients. | Implemented | Keep nonce/replay validation strict. |
 | RFC 9700 | Governing security baseline. | Profile-scoped | Treat as permanent audit checklist for every protocol change. |
-| RFC 9701 | Required only if signed introspection is advertised or if the FAPI Message Signing signed-introspection option is claimed. | Implemented/profile-scoped | Advertise signed introspection only under `fapi2-message-signing-introspection`; bind `iss`, `aud`, active signing key, authenticated RS identity, and `Accept: application/token-introspection+jwt`. |
+| RFC 9701 | Required only if JWT introspection is advertised or if the FAPI Message Signing signed-introspection option is claimed. | Implemented/profile-scoped | Advertise signed/encrypted introspection only under `fapi2-message-signing-introspection`; bind `iss`, `aud`, active signing key, authenticated RS identity, `Accept: application/token-introspection+jwt`, and per-client JWE metadata. |
 | RFC 9728 | Recommended for resource-server discovery and FAPI resource metadata. | Implemented | Keep protected resource identifiers aligned with JWT audiences. |
 | OAuth 2.1 draft | Directional target, not final RFC; treat as work in progress until published as RFC. | Partial/aligned | Track latest draft and turn into final RFC audit when published. Do not cite draft conformance as final RFC conformance. |
 | OIDC Core | Required for certified OP profile. | Implemented/profile-scoped | Keep authorization-code OP profile; do not imply implicit/hybrid support. Maintain ID Token, nonce, `auth_time`/`max_age`, `acr`/`amr`, claims, UserInfo, and offline access controls as separate testable rows. |
@@ -171,7 +171,7 @@ conditions:
 | OIDC CIBA | Separate decoupled authentication product surface. | Deferred | Implement Core before FAPI CIBA. |
 | OIDC Federation | Trust-chain ecosystem feature, not external login. | Deferred | Do not conflate with external OIDC/SAML federation login. |
 | FAPI 2.0 Security Profile Final | Highest current practical server profile for high-value API access. | Implemented/profile-scoped | Keep conformance evidence and local negative tests aligned with runtime profile. Enforce authenticated PAR, `code`, S256 PKCE, `redirect_uri` in PAR, code lifetime <= 60 seconds, PAR `expires_in` < 600 seconds, FAPI client authentication, sender constraints, issuer metadata, JWT/JWKS rules, and authorization endpoint parameter restrictions. |
-| FAPI 2.0 Message Signing Final | Implement signed authorization requests, signed authorization responses, and signed introspection as independent options layered on FAPI 2.0 Security Profile. | Implemented/profile-scoped | Keep each option independently gated: signed PAR request objects, JARM, and signed introspection must only be advertised by the matching runtime profile. |
+| FAPI 2.0 Message Signing Final | Implement signed authorization requests, signed authorization responses, and signed or nested encrypted introspection as independent options layered on FAPI 2.0 Security Profile. | Implemented/profile-scoped | Keep each option independently gated: signed PAR request objects, JARM, and introspection JWT responses must only be advertised by the matching runtime profile. |
 | FAPI 2.0 HTTP Signatures draft | Draft-level advanced message integrity. | Deferred | Track maturity; do not implement until target ecosystem needs it. |
 | RFC 9865 / RFC 9967 SCIM extensions | Adjacent identity provisioning capabilities, not OAuth/OIDC/FAPI core. | Not advertised | Keep disabled capabilities explicit in SCIM docs and service provider config. |
 | RFC 8725 | Governing JWT implementation BCP across ID Tokens, access-token JWTs, client assertions, request objects, JARM, DPoP proofs, and signed introspection. | Implemented/profile-scoped | Enforce explicit alg allowlists, key/alg binding, no `none`, full crypto validation, and cross-JWT confusion defenses. |
@@ -236,14 +236,22 @@ discovery metadata claims are updated:
 6. Update this matrix, `docs/profile-matrix.md`, README, discovery metadata tests,
    and conformance records in the same change when a public capability claim
    changes.
-7. For JWT-bearing features, add RFC 8725 negative tests for alg confusion, wrong
+7. For every newly supported RFC, OIDC/FAPI profile, or standards-track
+   protocol capability, search the OpenID Foundation Conformance Suite official
+   production/staging plans, public source, and release notes for matching
+   official tests. If matching coverage exists, update the repository OIDF
+   matrix execution, workflow/config inputs, and conformance records in the same
+   change. If no official coverage exists, record the negative search result and
+   date. This OIDF evidence is additive and never replaces local positive,
+   negative, metadata-truth, and security-boundary tests.
+8. For JWT-bearing features, add RFC 8725 negative tests for alg confusion, wrong
    key type, wrong `kid`, `none`, cross-JWT substitution, expired/future claims,
    and wrong audience/issuer.
-8. For FAPI features, add tests for exact FAPI profile requirements rather than
+9. For FAPI features, add tests for exact FAPI profile requirements rather than
    only general OAuth behavior: authenticated PAR, S256, `redirect_uri` in PAR,
    code lifetime, `request_uri` lifetime, sender constraints, client auth method,
    authorization endpoint parameters, and browser redirect status handling.
-9. For browser-facing changes, verify CORS, cookies, CSRF, HSTS/TLS, redirect
+10. For browser-facing changes, verify CORS, cookies, CSRF, HSTS/TLS, redirect
    handling, and token storage assumptions before advertising support.
 
 ## Current Bottom Line

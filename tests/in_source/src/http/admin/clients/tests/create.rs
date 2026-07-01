@@ -1,4 +1,5 @@
 use super::*;
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 
 fn create_request() -> CreateClientRequest {
     CreateClientRequest {
@@ -24,6 +25,8 @@ fn create_request() -> CreateClientRequest {
         tls_client_auth_san_ip: Vec::new(),
         tls_client_auth_san_email: Vec::new(),
         jwks: Some(json!({"keys": []})),
+        introspection_encrypted_response_alg: None,
+        introspection_encrypted_response_enc: None,
         subject_type: None,
         sector_identifier_uri: None,
     }
@@ -140,6 +143,37 @@ async fn prepare_client_insert_normalizes_optional_string_metadata() {
     assert_eq!(prepared.tls_client_auth_san_uri, vec!["spiffe://client"]);
     assert_eq!(prepared.tls_client_auth_san_ip, vec!["192.0.2.10"]);
     assert_eq!(prepared.tls_client_auth_san_email, vec!["ops@example.com"]);
+}
+
+#[actix_web::test]
+async fn prepare_client_insert_accepts_introspection_jwe_metadata() {
+    let mut payload = create_request();
+    payload.token_endpoint_auth_method = "client_secret_basic".to_owned();
+    payload.jwks = Some(json!({
+        "keys": [{
+            "kty": "RSA",
+            "n": URL_SAFE_NO_PAD.encode([0x91u8; 256]),
+            "e": URL_SAFE_NO_PAD.encode([0x01u8, 0x00, 0x01]),
+            "alg": "RSA-OAEP-256",
+            "use": "enc",
+            "kid": "introspection-enc"
+        }]
+    }));
+    payload.introspection_encrypted_response_alg = Some("RSA-OAEP-256".to_owned());
+    payload.introspection_encrypted_response_enc = Some("A256GCM".to_owned());
+
+    let prepared = prepare_client_insert(payload, None, "http://localhost:8000")
+        .await
+        .expect("supported introspection JWE metadata should be accepted");
+
+    assert_eq!(
+        prepared.introspection_encrypted_response_alg.as_deref(),
+        Some("RSA-OAEP-256")
+    );
+    assert_eq!(
+        prepared.introspection_encrypted_response_enc.as_deref(),
+        Some("A256GCM")
+    );
 }
 
 #[actix_web::test]

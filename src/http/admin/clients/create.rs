@@ -45,6 +45,10 @@ pub(crate) struct CreateClientRequest {
     #[serde(default)]
     pub(crate) tls_client_auth_san_email: Vec<String>,
     pub(crate) jwks: Option<Value>,
+    #[serde(default)]
+    pub(crate) introspection_encrypted_response_alg: Option<String>,
+    #[serde(default)]
+    pub(crate) introspection_encrypted_response_enc: Option<String>,
 }
 
 #[derive(Debug)]
@@ -81,6 +85,8 @@ pub(crate) struct PreparedClientInsert {
     pub(crate) tls_client_auth_san_ip: Vec<String>,
     pub(crate) tls_client_auth_san_email: Vec<String>,
     pub(crate) jwks: Option<Value>,
+    pub(crate) introspection_encrypted_response_alg: Option<String>,
+    pub(crate) introspection_encrypted_response_enc: Option<String>,
     pub(crate) issued_secret: Option<String>,
     client_secret_argon2_hash: Option<String>,
 }
@@ -226,6 +232,12 @@ pub(crate) async fn prepare_client_insert(
         tls_client_auth_san_ip: trim_string_vec(payload.tls_client_auth_san_ip),
         tls_client_auth_san_email: trim_string_vec(payload.tls_client_auth_san_email),
         jwks: payload.jwks,
+        introspection_encrypted_response_alg: trim_optional_string(
+            payload.introspection_encrypted_response_alg,
+        ),
+        introspection_encrypted_response_enc: trim_optional_string(
+            payload.introspection_encrypted_response_enc,
+        ),
         issued_secret,
         client_secret_argon2_hash: secret_hash,
     })
@@ -271,6 +283,10 @@ pub(crate) async fn insert_prepared_client(
             oauth_clients::tls_client_auth_san_ip.eq(json!(&prepared.tls_client_auth_san_ip)),
             oauth_clients::tls_client_auth_san_email.eq(json!(&prepared.tls_client_auth_san_email)),
             oauth_clients::jwks.eq(&prepared.jwks),
+            oauth_clients::introspection_encrypted_response_alg
+                .eq(&prepared.introspection_encrypted_response_alg),
+            oauth_clients::introspection_encrypted_response_enc
+                .eq(&prepared.introspection_encrypted_response_enc),
             oauth_clients::is_active.eq(true),
         ))
         .returning(ClientRow::as_returning())
@@ -295,6 +311,12 @@ fn validate_client_payload(payload: &CreateClientRequest) -> anyhow::Result<()> 
         token_endpoint_auth_method: &payload.token_endpoint_auth_method,
         backchannel_logout_uri: payload.backchannel_logout_uri.as_deref(),
         jwks: payload.jwks.as_ref(),
+        introspection_encrypted_response_alg: payload
+            .introspection_encrypted_response_alg
+            .as_deref(),
+        introspection_encrypted_response_enc: payload
+            .introspection_encrypted_response_enc
+            .as_deref(),
         mtls_binding: Some(&ClientMtlsMetadata {
             tls_client_auth_subject_dn: payload.tls_client_auth_subject_dn.clone(),
             tls_client_auth_cert_sha256: payload.tls_client_auth_cert_sha256.clone(),

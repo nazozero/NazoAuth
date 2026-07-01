@@ -23,7 +23,7 @@ The project separates three surfaces:
 | `fapi2-security` | Implemented and OIDF-tested | PAR, PKCE S256, confidential clients, DPoP/mTLS-bound tokens |
 | `fapi2-message-signing-authz-request` | Implemented and OIDF-tested | Signed request objects at PAR with `aud`, `nbf`, and bounded `exp` |
 | `fapi2-message-signing-jarm` | Implemented where advertised and OIDF-tested | Signed authorization responses without unsafe fallback |
-| `fapi2-message-signing-introspection` | Implemented/profile-scoped | RFC 9701 signed introspection is advertised only by the signed-introspection runtime profile |
+| `fapi2-message-signing-introspection` | Implemented/profile-scoped | RFC 9701 signed and encrypted introspection metadata is advertised only by the signed-introspection runtime profile |
 
 ## Protocol Boundaries
 
@@ -102,7 +102,8 @@ core and are not advertised in discovery metadata:
 - Device Authorization Grant.
 - Token Exchange / RFC 8693.
 - Request-level dynamic tenant or issuer routing.
-- JWE introspection responses.
+- RFC 9701 encrypted introspection responses outside the signed-introspection
+  profile, or without per-client JWE response metadata.
 
 Each item has a threat-model and acceptance-test entry in
 [ecosystem-onboarding.md](ecosystem-onboarding.md) or [tenancy.md](tenancy.md).

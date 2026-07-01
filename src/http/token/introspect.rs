@@ -7,6 +7,15 @@ use super::{
 };
 use crate::domain::Claims;
 use crate::http::prelude::*;
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use openssl::{
+    bn::BigNum,
+    encrypt::Encrypter,
+    hash::MessageDigest,
+    pkey::PKey,
+    rsa::{Padding, Rsa},
+    symm::{Cipher, encrypt_aead},
+};
 
 const TOKEN_INTROSPECTION_JWT_MEDIA_TYPE: &str = "application/token-introspection+jwt";
 
@@ -114,7 +123,7 @@ pub(crate) async fn introspect_after_rate_limit(
         if claims.client_id != client.client_id && !token_audience_allowed(&client, &claims.aud) {
             return introspection_response(
                 &state,
-                &client.client_id,
+                &client,
                 json!({"active": false}),
                 use_signed_response,
             )
@@ -123,7 +132,7 @@ pub(crate) async fn introspect_after_rate_limit(
         if access_token_tenant_id(&claims) != Some(client.tenant_id) {
             return introspection_response(
                 &state,
-                &client.client_id,
+                &client,
                 json!({"active": false}),
                 use_signed_response,
             )
@@ -150,7 +159,7 @@ pub(crate) async fn introspect_after_rate_limit(
         if !active {
             return introspection_response(
                 &state,
-                &client.client_id,
+                &client,
                 json!({"active": false}),
                 use_signed_response,
             )
@@ -158,7 +167,7 @@ pub(crate) async fn introspect_after_rate_limit(
         }
         return introspection_response(
             &state,
-            &client.client_id,
+            &client,
             json!({
             "active": active,
             "scope": claims.scope,
@@ -199,7 +208,7 @@ pub(crate) async fn introspect_after_rate_limit(
         if token.client_id != client.id {
             return introspection_response(
                 &state,
-                &client.client_id,
+                &client,
                 json!({"active": false}),
                 use_signed_response,
             )
@@ -209,7 +218,7 @@ pub(crate) async fn introspect_after_rate_limit(
         if !active {
             return introspection_response(
                 &state,
-                &client.client_id,
+                &client,
                 json!({"active": false}),
                 use_signed_response,
             )
@@ -217,7 +226,7 @@ pub(crate) async fn introspect_after_rate_limit(
         }
         return introspection_response(
             &state,
-            &client.client_id,
+            &client,
             active_refresh_token_introspection_body(&token, &client.client_id),
             use_signed_response,
         )
@@ -225,7 +234,7 @@ pub(crate) async fn introspect_after_rate_limit(
     }
     introspection_response(
         &state,
-        &client.client_id,
+        &client,
         json!({"active": false}),
         use_signed_response,
     )
@@ -247,21 +256,21 @@ fn signed_introspection_requested(req: &HttpRequest) -> bool {
 
 async fn introspection_response(
     state: &AppState,
-    resource_server_id: &str,
+    resource_server: &ClientRow,
     body: Value,
     signed: bool,
 ) -> HttpResponse {
     if !signed {
         return json_response_no_store(body);
     }
-    match signed_introspection_response(state, resource_server_id, body).await {
+    match signed_introspection_response(state, resource_server, body).await {
         Ok(response) => response,
         Err(error) => {
-            tracing::warn!(%error, "failed to sign token introspection response");
+            tracing::warn!(%error, "failed to build token introspection JWT response");
             token_management_oauth_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "server_error",
-                "token introspection response signing failed.",
+                "token introspection JWT response build failed.",
             )
         }
     }
@@ -269,20 +278,24 @@ async fn introspection_response(
 
 async fn signed_introspection_response(
     state: &AppState,
-    resource_server_id: &str,
+    resource_server: &ClientRow,
     body: Value,
-) -> jsonwebtoken::errors::Result<HttpResponse> {
+) -> anyhow::Result<HttpResponse> {
     let keyset = state.keyset.snapshot();
     let mut header = jsonwebtoken::Header::new(keyset.active_alg);
     header.typ = Some("token-introspection+jwt".to_owned());
     header.kid = Some(keyset.active_kid.clone());
     let claims = json!({
         "iss": state.settings.issuer,
-        "aud": resource_server_id,
+        "aud": resource_server.client_id,
         "iat": Utc::now().timestamp(),
         "token_introspection": body
     });
     let token = keyset.sign_jwt(&header, &claims).await?;
+    let token = match introspection_encryption_key(resource_server)? {
+        Some(key) => encrypt_nested_introspection_jwt(&key, &token)?,
+        None => token,
+    };
     Ok(HttpResponse::Ok()
         .insert_header((
             header::CONTENT_TYPE,
@@ -291,6 +304,120 @@ async fn signed_introspection_response(
         .insert_header((header::CACHE_CONTROL, HeaderValue::from_static("no-store")))
         .insert_header((header::PRAGMA, HeaderValue::from_static("no-cache")))
         .body(token))
+}
+
+struct IntrospectionEncryptionKey<'a> {
+    kid: &'a str,
+    alg: &'a str,
+    enc: &'a str,
+    jwk: &'a Value,
+}
+
+fn introspection_encryption_key(
+    resource_server: &ClientRow,
+) -> anyhow::Result<Option<IntrospectionEncryptionKey<'_>>> {
+    let Some(alg) = resource_server
+        .introspection_encrypted_response_alg
+        .as_deref()
+    else {
+        if resource_server
+            .introspection_encrypted_response_enc
+            .as_deref()
+            .is_some()
+        {
+            anyhow::bail!("introspection JWE enc configured without alg");
+        }
+        return Ok(None);
+    };
+    let Some(enc) = resource_server
+        .introspection_encrypted_response_enc
+        .as_deref()
+    else {
+        anyhow::bail!("introspection JWE alg configured without enc");
+    };
+    if !crate::support::SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS.contains(&alg) {
+        anyhow::bail!("unsupported introspection JWE alg");
+    }
+    if !crate::support::SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS.contains(&enc) {
+        anyhow::bail!("unsupported introspection JWE enc");
+    }
+    let keys = resource_server
+        .jwks
+        .as_ref()
+        .and_then(|jwks| jwks.get("keys"))
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow::anyhow!("introspection JWE client has no jwks"))?;
+    let Some(jwk) = keys.iter().find(|key| {
+        key.get("use").and_then(Value::as_str) == Some("enc")
+            && key.get("alg").and_then(Value::as_str) == Some(alg)
+    }) else {
+        anyhow::bail!("introspection JWE client has no matching encryption key");
+    };
+    let kid = jwk
+        .get("kid")
+        .and_then(Value::as_str)
+        .filter(|kid| !kid.trim().is_empty())
+        .ok_or_else(|| anyhow::anyhow!("introspection JWE key has no kid"))?;
+    Ok(Some(IntrospectionEncryptionKey { kid, alg, enc, jwk }))
+}
+
+fn encrypt_nested_introspection_jwt(
+    key: &IntrospectionEncryptionKey<'_>,
+    signed_jwt: &str,
+) -> anyhow::Result<String> {
+    if key.alg != "RSA-OAEP-256" || key.enc != "A256GCM" {
+        anyhow::bail!("unsupported introspection JWE policy");
+    }
+    let protected_header = json!({
+        "alg": key.alg,
+        "enc": key.enc,
+        "kid": key.kid,
+        "cty": "JWT"
+    });
+    let protected = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&protected_header)?);
+    let cek = rand::random::<[u8; 32]>();
+    let iv = rand::random::<[u8; 12]>();
+    let encrypted_key = rsa_oaep_256_encrypt_jwk(key.jwk, &cek)?;
+    let mut tag = [0u8; 16];
+    let ciphertext = encrypt_aead(
+        Cipher::aes_256_gcm(),
+        &cek,
+        Some(&iv),
+        protected.as_bytes(),
+        signed_jwt.as_bytes(),
+        &mut tag,
+    )?;
+    Ok(format!(
+        "{}.{}.{}.{}.{}",
+        protected,
+        URL_SAFE_NO_PAD.encode(encrypted_key),
+        URL_SAFE_NO_PAD.encode(iv),
+        URL_SAFE_NO_PAD.encode(ciphertext),
+        URL_SAFE_NO_PAD.encode(tag)
+    ))
+}
+
+fn rsa_oaep_256_encrypt_jwk(jwk: &Value, plaintext: &[u8]) -> anyhow::Result<Vec<u8>> {
+    let n = jwk
+        .get("n")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow::anyhow!("RSA JWE key missing n"))?;
+    let e = jwk
+        .get("e")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow::anyhow!("RSA JWE key missing e"))?;
+    let n = BigNum::from_slice(&URL_SAFE_NO_PAD.decode(n)?)?;
+    let e = BigNum::from_slice(&URL_SAFE_NO_PAD.decode(e)?)?;
+    let rsa = Rsa::from_public_components(n, e)?;
+    let public_key = PKey::from_rsa(rsa)?;
+    let mut encrypter = Encrypter::new(&public_key)?;
+    encrypter.set_rsa_padding(Padding::PKCS1_OAEP)?;
+    encrypter.set_rsa_oaep_md(MessageDigest::sha256())?;
+    encrypter.set_rsa_mgf1_md(MessageDigest::sha256())?;
+    let mut encrypted = vec![0; encrypter.encrypt_len(plaintext)?];
+    let len = encrypter.encrypt(plaintext, &mut encrypted)?;
+    encrypted.truncate(len);
+    Ok(encrypted)
 }
 
 fn introspection_access_token_type(claims: &Claims) -> &'static str {
