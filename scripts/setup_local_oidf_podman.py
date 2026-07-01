@@ -1232,6 +1232,27 @@ def write_all_plan_configs() -> None:
     }
     write_text(RUNTIME / "callbacks.json", json.dumps(callbacks, indent=2) + "\n", 0o600)
     write_text(RUNTIME / "callback.txt", callback_for(BASIC_ALIAS) + "\n")
+    write_expected_skips()
+
+
+def write_expected_skips() -> None:
+    expected_skips = [
+        {
+            "test-name": "oidcc-idtoken-unsigned",
+            "variant": "*",
+            "configuration-filename": "oidf-oidcc-dynamic-plan-config.json",
+        },
+        {
+            "test-name": "oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported",
+            "variant": "*",
+            "configuration-filename": "oidf-oidcc-dynamic-plan-config.json",
+        },
+    ]
+    write_text(
+        RUNTIME / "oidf-expected-skips.json",
+        json.dumps(expected_skips, indent=2) + "\n",
+        0o600,
+    )
 
 
 def plan_expressions_for_configs(configs: dict[str, dict[str, object]]) -> list[str]:
