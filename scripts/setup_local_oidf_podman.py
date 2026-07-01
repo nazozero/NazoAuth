@@ -117,6 +117,19 @@ def write_text(path: Path, body: str, mode: int | None = None) -> None:
         path.chmod(mode)
 
 
+def server_rsa_private_key_is_usable(path: Path) -> bool:
+    return (
+        subprocess.run(
+            ["openssl", "rsa", "-in", str(path), "-check", "-noout"],
+            cwd=ROOT,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        ).returncode
+        == 0
+    )
+
+
 def ensure_server_rs256_keyset() -> None:
     key_dir = RUNTIME / "keys"
     key_dir.mkdir(parents=True, exist_ok=True)
@@ -132,6 +145,7 @@ def ensure_server_rs256_keyset() -> None:
     if not isinstance(keys, list):
         raise RuntimeError(f"server keyset keys must be an array: {keyset_path}")
 
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     live_rs256 = next(
         (
             key
@@ -141,10 +155,22 @@ def ensure_server_rs256_keyset() -> None:
             and isinstance(key.get("kid"), str)
             and isinstance(key.get("file"), str)
             and key_dir.joinpath(str(key["file"])).is_file()
+            and server_rsa_private_key_is_usable(key_dir / str(key["file"]))
             and key.get("retire_at") is None
         ),
         None,
     )
+    for key in keys:
+        if (
+            isinstance(key, dict)
+            and key.get("alg") == "RS256"
+            and isinstance(key.get("file"), str)
+            and key_dir.joinpath(str(key["file"])).is_file()
+            and not server_rsa_private_key_is_usable(key_dir / str(key["file"]))
+            and key.get("retire_at") is None
+        ):
+            key["retire_at"] = now
+
     if live_rs256 is None:
         kid = "rs256-local-oidf-server"
         file_name = f"{kid}.pem"
@@ -178,7 +204,7 @@ def ensure_server_rs256_keyset() -> None:
             "kid": kid,
             "alg": "RS256",
             "file": file_name,
-            "created_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            "created_at": now,
             "retire_at": None,
         }
         keys.append(live_rs256)
