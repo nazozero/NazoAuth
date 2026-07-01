@@ -20,6 +20,7 @@ pub(crate) struct AccessTokenJwtInput<'a> {
     pub(crate) ttl: i64,
     pub(crate) dpop_jkt: Option<&'a str>,
     pub(crate) mtls_x5t_s256: Option<&'a str>,
+    pub(crate) actor: Option<&'a Value>,
 }
 
 pub(crate) struct IssuedAccessToken {
@@ -74,6 +75,7 @@ pub(super) fn access_token_claims(
             }),
             _ => None,
         },
+        act: input.actor.cloned(),
         userinfo_claims: input.userinfo_claims.to_vec(),
         userinfo_claim_requests: input.userinfo_claim_requests.to_vec(),
     }

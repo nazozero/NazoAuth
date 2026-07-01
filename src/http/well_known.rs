@@ -1,7 +1,9 @@
 use super::prelude::*;
 use crate::domain::Keyset;
 use crate::http::authorization::BASELINE_ACR_VALUE;
-use crate::http::token::{DEVICE_CODE_GRANT_TYPE, JWT_BEARER_GRANT_TYPE};
+use crate::http::token::{
+    DEVICE_CODE_GRANT_TYPE, JWT_BEARER_GRANT_TYPE, TOKEN_EXCHANGE_GRANT_TYPE,
+};
 use crate::settings::{AuthorizationServerProfile, Settings, SubjectType};
 use crate::support::{
     SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
@@ -95,6 +97,7 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
         "refresh_token",
         "client_credentials",
         JWT_BEARER_GRANT_TYPE,
+        TOKEN_EXCHANGE_GRANT_TYPE,
     ];
     if settings.enable_device_authorization_grant {
         grant_types.push(DEVICE_CODE_GRANT_TYPE);

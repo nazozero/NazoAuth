@@ -67,6 +67,7 @@ IETF and RFCs:
 | [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252), OAuth 2.0 for Native Apps | public native-app redirect URI policy: claimed HTTPS, private-use schemes, and loopback HTTP with port variance |
 | [RFC 8414](https://www.rfc-editor.org/rfc/rfc8414), Authorization Server Metadata | `/.well-known/oauth-authorization-server` |
 | [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628), Device Authorization Grant | `/device_authorization`, `/device`, and `device_code` token grant behind `ENABLE_DEVICE_AUTHORIZATION_GRANT` |
+| [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693), Token Exchange | bounded local access-token exchange for clients registered with `urn:ietf:params:oauth:grant-type:token-exchange` |
 | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705), OAuth 2.0 mTLS | mTLS client auth and sender-constrained tokens |
 | [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707), Resource Indicators | authorization/PAR/token `resource` handling with JWT `aud` binding and refresh-token audience narrowing |
 | [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068), JWT Access Tokens | JWT access-token shape for resource servers |
@@ -133,9 +134,9 @@ all 16 plans and 578 modules, and reported `0 failures` and `0 warnings`.
 ## Features
 
 - Authorization code + PKCE, refresh tokens, client credentials, bounded JWT
-  bearer grant, revocation, introspection, signed/encrypted introspection,
-  discovery, protected resource metadata, JWKS, UserInfo, PAR, JAR, DPoP, and
-  mTLS.
+  bearer grant, bounded Token Exchange, revocation, introspection,
+  signed/encrypted introspection, discovery, protected resource metadata, JWKS,
+  UserInfo, PAR, JAR, DPoP, and mTLS.
 - Runtime profiles: `oauth2-baseline`, `fapi2-security`,
   `fapi2-message-signing-authz-request`, `fapi2-message-signing-jarm`, and
   `fapi2-message-signing-introspection`.
@@ -218,7 +219,7 @@ and are not advertised unless implemented, tested, and explicitly enabled:
 - Dynamic Client Registration / RFC 7591.
 - Client Configuration Management / RFC 7592.
 - Device Authorization Grant / RFC 8628 unless `ENABLE_DEVICE_AUTHORIZATION_GRANT=true`.
-- Token Exchange / RFC 8693.
+- External-token, refresh-token, or ID-token Token Exchange profiles.
 - Request-level dynamic tenant or issuer routing.
 - RFC 9701 encrypted introspection responses outside the signed-introspection
   profile, or without per-client JWE response metadata.

@@ -18,6 +18,7 @@ semantic versioning once public release tags are cut.
 - Added supply-chain and release security gates with `cargo audit`, `cargo deny`, CycloneDX SBOM generation, Trivy image scanning, keyless artifact signing, and GitHub provenance attestations.
 - Added README quality signals for CI quality gates, coverage, dependency review, CodeQL, conformance evidence, and release security controls.
 - Added PostgreSQL and Valkey HA, backup, restore, timeout, and partial-outage operations guidance.
+- Added bounded RFC 8693 Token Exchange support for locally issued access-token to access-token exchanges, including subject/actor token validation, target restrictions, scope downscoping, and `issued_token_type` responses.
 
 ### Changed
 
@@ -48,4 +49,4 @@ semantic versioning once public release tags are cut.
 
 - The current scope centers on the authorization-server surface: OAuth 2.1, OpenID Connect, PAR/JAR, FAPI2 Security, selected FAPI2 Message Signing behavior, DPoP, mTLS sender constraints, durable conformance evidence, and production deployment controls.
 - Implemented product surfaces include TOTP MFA, WebAuthn/passkeys, external OIDC/SAML federation, default-tenant SCIM provisioning, tenant-aware schema boundaries, and Rust resource-server middleware.
-- Dynamic Client Registration, Client Configuration Management, Device Authorization Grant, Token Exchange, request-level dynamic tenant routing, and signed introspection responses remain outside the default scope.
+- Dynamic Client Registration, Client Configuration Management, request-level dynamic tenant routing, and signed introspection responses remain outside the default scope.

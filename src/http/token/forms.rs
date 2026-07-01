@@ -16,6 +16,11 @@ pub(crate) struct TokenForm {
     pub(crate) client_assertion_type: Option<String>,
     pub(crate) client_assertion: Option<String>,
     pub(crate) assertion: Option<String>,
+    pub(crate) requested_token_type: Option<String>,
+    pub(crate) subject_token: Option<String>,
+    pub(crate) subject_token_type: Option<String>,
+    pub(crate) actor_token: Option<String>,
+    pub(crate) actor_token_type: Option<String>,
     pub(crate) audiences: Vec<String>,
     pub(crate) has_audience_param: bool,
 }
@@ -119,6 +124,11 @@ pub(crate) fn parse_token_form(
         client_assertion_type: None,
         client_assertion: None,
         assertion: None,
+        requested_token_type: None,
+        subject_token: None,
+        subject_token_type: None,
+        actor_token: None,
+        actor_token_type: None,
         audiences: Vec::new(),
         has_audience_param: false,
     };
@@ -189,6 +199,26 @@ pub(crate) fn parse_token_form(
             "assertion" => {
                 accept_token_parameter_once(&mut seen, key)?;
                 form.assertion = non_empty(value);
+            }
+            "requested_token_type" => {
+                accept_token_parameter_once(&mut seen, key)?;
+                form.requested_token_type = non_empty(value);
+            }
+            "subject_token" => {
+                accept_token_parameter_once(&mut seen, key)?;
+                form.subject_token = non_empty(value);
+            }
+            "subject_token_type" => {
+                accept_token_parameter_once(&mut seen, key)?;
+                form.subject_token_type = non_empty(value);
+            }
+            "actor_token" => {
+                accept_token_parameter_once(&mut seen, key)?;
+                form.actor_token = non_empty(value);
+            }
+            "actor_token_type" => {
+                accept_token_parameter_once(&mut seen, key)?;
+                form.actor_token_type = non_empty(value);
             }
             "audience" => {
                 accept_token_parameter_once(&mut seen, key)?;

@@ -195,6 +195,7 @@ async fn signed_fapi_access_token(
             ttl,
             dpop_jkt: None,
             mtls_x5t_s256: None,
+            actor: None,
         },
     )
     .await
@@ -311,6 +312,7 @@ fn access_claims(cnf: Option<ConfirmationClaims>) -> Claims {
         nbf: Utc::now().timestamp(),
         exp: Utc::now().timestamp() + 300,
         cnf,
+        act: None,
         userinfo_claims: Vec::new(),
         userinfo_claim_requests: Vec::new(),
     }

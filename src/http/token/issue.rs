@@ -129,6 +129,7 @@ pub(crate) async fn issue_token_response(
             ttl: state.settings.access_token_ttl_seconds,
             dpop_jkt: issue.dpop_jkt.as_deref(),
             mtls_x5t_s256: issue.mtls_x5t_s256.as_deref(),
+            actor: issue.actor.as_ref(),
         },
     )
     .await
@@ -183,6 +184,9 @@ pub(crate) async fn issue_token_response(
         "expires_in": state.settings.access_token_ttl_seconds,
         "scope": issue.scopes.join(" ")
     });
+    if let Some(issued_token_type) = issue.issued_token_type.as_deref() {
+        body["issued_token_type"] = json!(issued_token_type);
+    }
     let mut refresh_token_family_id = None;
     if issue_includes_openid {
         let user_id = issue

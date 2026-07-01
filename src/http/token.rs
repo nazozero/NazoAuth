@@ -11,6 +11,7 @@ mod issue;
 mod jwt_bearer;
 mod refresh;
 mod revoke;
+mod token_exchange;
 mod userinfo;
 
 pub(crate) use authorization_code::*;
@@ -24,4 +25,5 @@ pub(crate) use issue::*;
 pub(crate) use jwt_bearer::*;
 pub(crate) use refresh::*;
 pub(crate) use revoke::*;
+pub(crate) use token_exchange::*;
 pub(crate) use userinfo::*;

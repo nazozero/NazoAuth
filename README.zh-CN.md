@@ -58,6 +58,7 @@ IETF 和 RFC：
 | [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252), OAuth 2.0 for Native Apps | public native app redirect URI 策略：claimed HTTPS、private-use scheme、允许端口变化的 loopback HTTP |
 | [RFC 8414](https://www.rfc-editor.org/rfc/rfc8414), Authorization Server Metadata | `/.well-known/oauth-authorization-server` |
 | [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628), Device Authorization Grant | `/device_authorization`、`/device` 和 `device_code` token grant，由 `ENABLE_DEVICE_AUTHORIZATION_GRANT` 控制 |
+| [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693), Token Exchange | 面向已注册 `urn:ietf:params:oauth:grant-type:token-exchange` 客户端的受限本地 access-token exchange |
 | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705), OAuth 2.0 mTLS | mTLS client auth 和 sender-constrained token |
 | [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707), Resource Indicators | authorization/PAR/token `resource` 处理、JWT `aud` 绑定，以及 refresh token audience 收窄 |
 | [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068), JWT Access Tokens | 面向 resource server 的 JWT access token |
@@ -120,7 +121,7 @@ OpenID Foundation Conformance Suite 结果 URL：
 
 ## 功能
 
-- Authorization code + PKCE、refresh token、client credentials、受限 JWT bearer grant、revocation、introspection、signed/encrypted introspection、discovery、protected resource metadata、JWKS、UserInfo、PAR、JAR、DPoP、mTLS。
+- Authorization code + PKCE、refresh token、client credentials、受限 JWT bearer grant、受限 Token Exchange、revocation、introspection、signed/encrypted introspection、discovery、protected resource metadata、JWKS、UserInfo、PAR、JAR、DPoP、mTLS。
 - Runtime profile：`oauth2-baseline`、`fapi2-security`、`fapi2-message-signing-authz-request`、`fapi2-message-signing-jarm`、`fapi2-message-signing-introspection`。
 - 本地用户、资料、OAuth client、grant、access request、TOTP MFA、backup code、remembered MFA、WebAuthn/passkeys、外部 OIDC/SAML federation、SCIM provisioning。
 - 本地签名密钥生命周期，包含 prepublish、active、grace、retired 状态。也可以用 external-command signer 接 KMS/HSM。
@@ -194,7 +195,7 @@ RUST_LOG: "info"
 - Dynamic Client Registration / RFC 7591。
 - Client Configuration Management / RFC 7592。
 - Device Authorization Grant / RFC 8628，除非 `ENABLE_DEVICE_AUTHORIZATION_GRANT=true`。
-- Token Exchange / RFC 8693。
+- 外部 token、refresh token 或 ID token 的 Token Exchange profile。
 - 请求级动态 tenant 或 issuer routing。
 - signed-introspection profile 外，或未配置 per-client JWE response metadata 的 RFC 9701 encrypted introspection response。
 
