@@ -111,6 +111,38 @@ async fn dynamic_registration_accepts_oidf_inline_jwks_without_kid_for_secret_cl
 }
 
 #[test]
+fn dynamic_registration_defaults_refresh_clients_to_offline_access_scope() {
+    let request = DynamicClientRegistrationRequest {
+        redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
+        grant_types: Some(vec![
+            "authorization_code".to_owned(),
+            "refresh_token".to_owned(),
+        ]),
+        ..Default::default()
+    };
+
+    let prepared = prepare_dynamic_client_registration(
+        request,
+        DynamicRegistrationDefaults {
+            default_audience: "https://issuer.example/fapi/resource",
+        },
+    )
+    .expect("refresh-capable dynamic registration metadata should be accepted");
+
+    assert_eq!(
+        prepared.scopes,
+        vec![
+            "openid",
+            "profile",
+            "email",
+            "address",
+            "phone",
+            "offline_access"
+        ]
+    );
+}
+
+#[test]
 fn protected_dynamic_registration_requires_matching_initial_access_token() {
     assert!(initial_access_token_authorized(None, None));
     assert!(initial_access_token_authorized(
