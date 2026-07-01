@@ -118,10 +118,15 @@ OpenID Foundation Conformance Suite result URLs:
 | OIDC Basic OP | <https://www.certification.openid.net/plan-detail.html?plan=Srk6iaVDVcqO5> |
 | OIDC Config OP | <https://www.certification.openid.net/plan-detail.html?plan=fGiz8QZYR1LVy> |
 | Full 16-plan official matrix | [docs/conformance/2026-06-27-pr15-official-oidf-full-matrix.md](docs/conformance/2026-06-27-pr15-official-oidf-full-matrix.md#official-plan-detail-urls) |
+| OIDF matrix scope | [docs/conformance/oidf-full-matrix.md](docs/conformance/oidf-full-matrix.md) |
+| Latest Hostinger-local full matrix | [docs/conformance/2026-07-01-tp-ps-full-matrix.md](docs/conformance/2026-07-01-tp-ps-full-matrix.md) |
 
 The latest official full matrix tested `https://auth.nazo.run` at runtime
 commit `be7ef9f6a9197520235a59d42866a0918a293014`, exported all 16 plan
 archives, and reported `0 failures` and `0 warnings`.
+
+The latest Hostinger-local full matrix tested runtime commit `32429d5`, ran all
+16 plans and 578 modules, and reported `0 failures` and `0 warnings`.
 
 ## Features
 

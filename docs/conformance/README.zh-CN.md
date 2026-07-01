@@ -16,14 +16,15 @@ Nazo Auth Server 已发布在 OpenID Foundation 官方认证列表中：
 ## 当前证据
 
 - 认证基线：[2026-06-09 OIDF full matrix](2026-06-09-oidf-full-matrix.md)
-- 最新 Hostinger 本地 full matrix：[2026-06-26 security findings OIDF full matrix](2026-06-26-security-findings-full-matrix.md)
+- 矩阵范围说明：[OIDF 完整矩阵](oidf-full-matrix.zh-CN.md)
+- 最新 Hostinger 本地 full matrix：[2026-07-01 TP/PS OIDF full matrix](2026-07-01-tp-ps-full-matrix.md)
 - 最新官方 full matrix：[2026-06-27 PR 15 official OIDF full matrix](2026-06-27-pr15-official-oidf-full-matrix.md)
 
 `2026-06-09` full matrix 是当前官方认证证据，针对 `https://auth.nazo.run` 执行，覆盖 OIDC Basic、OIDC Config、FAPI2 Security Profile Final、FAPI2 Message Signing Final、mTLS、DPoP、`private_key_jwt`、client credentials 变体。结果为全计划完成，`0 failures`，`0 warnings`。
 
 最新记录的官方 full-matrix suite run 是 2026-06-27 PR 15 官方运行，针对 `https://auth.nazo.run` 和 runtime commit `be7ef9f6a9197520235a59d42866a0918a293014` 执行。该运行从 `https://www.certification.openid.net/` 导出全部 16 个 plan archives，最终结果为 `0 failures`、`0 warnings`。
 
-最新 Hostinger 本地 full-matrix 回归记录对应 `oidf-local-results/run-20260626T165725Z`，测试对象同样是公网 issuer 和同一 commit。该运行导出全部 16 个 plan archives，日志包含 16 个 plan 汇总，均为 `0 failures`、`0 warnings`。
+最新 Hostinger 本地 full-matrix 回归记录是 2026-07-01 TP/PS 运行，测试对象为 `https://auth.nazo.run`，runtime commit 为 `32429d5`。该运行使用仓库原有 16-plan 完整矩阵，导出 16 个 plan archives，共执行 578 个测试模块，结果为 `0 failures`、`0 warnings`。
 
 baseline OIDC metadata 会在 `request_object_signing_alg_values_supported` 中声明 `none`，用于 unsigned Request Object 的 OIDC 兼容路径。该能力不是高安全 profile 能力；FAPI2 Security Profile Final、FAPI2 Message Signing Final、要求 PAR request object 的客户端以及 holder-bound token 客户端仍然 fail closed，必须使用签名 Request Object 或被拒绝。
 

@@ -785,11 +785,11 @@ def nazo_login_metadata() -> dict[str, str]:
     }
 
 
-def write_basic_plan_config() -> None:
+def write_basic_plan_config() -> dict[str, object]:
     browser = browser_automation()
     config = {
         "alias": BASIC_ALIAS,
-        "description": "Local Podman Nazo OAuth OIDCC basic conformance configuration",
+        "description": "OIDC Basic OP: discovery and authorization-code interoperability.",
         "server": {"discoveryUrl": f"{ISSUER}/.well-known/openid-configuration"},
         "client": {
             "client_id": "local-oidf-basic-client",
@@ -839,10 +839,89 @@ def fapi_scope(openid: str, fapi_profile: str) -> str:
     return "accounts offline_access"
 
 
+def display_value(value: str) -> str:
+    return {
+        "dpop": "DPoP",
+        "fapi_client_credentials_grant": "client credentials",
+        "jarm": "JARM",
+        "message-final": "FAPI2 Message Signing Final",
+        "mtls": "mTLS",
+        "openid_connect": "OpenID Connect",
+        "plain_fapi": "authorization code",
+        "plain_oauth": "plain OAuth",
+        "plain_response": "plain response",
+        "private_key_jwt": "private_key_jwt",
+        "security-final": "FAPI2 Security Profile Final",
+        "signed_non_repudiation": "signed request object",
+    }.get(value, value.replace("_", " "))
+
+
+def fapi_plan_title(
+    plan_kind: str,
+    client_auth_type: str,
+    sender_constrain: str,
+    openid: str,
+    fapi_profile: str,
+    fapi_response_mode: str,
+) -> str:
+    parts = [
+        display_value(plan_kind),
+        display_value(client_auth_type),
+        display_value(sender_constrain),
+        display_value(openid),
+        display_value(fapi_profile),
+    ]
+    if plan_kind == "message-final":
+        parts.append(display_value(fapi_response_mode))
+    return " / ".join(parts)
+
+
+def fapi_plan_description(
+    plan_kind: str,
+    client_auth_type: str,
+    sender_constrain: str,
+    openid: str,
+    fapi_profile: str,
+    fapi_response_mode: str,
+) -> str:
+    flow = (
+        "client credentials flow"
+        if fapi_profile == "fapi_client_credentials_grant"
+        else "authorization code flow"
+    )
+    mode = "OpenID Connect responses" if openid == "openid_connect" else "OAuth resource access"
+    response_mode = "JARM" if fapi_response_mode == "jarm" else "plain"
+    response = f" with {response_mode} authorization responses" if plan_kind == "message-final" else ""
+    return (
+        f"Covers {display_value(plan_kind)} for the {flow} using "
+        f"{display_value(client_auth_type)} client authentication, "
+        f"{display_value(sender_constrain)} sender constraint, and {mode}{response}."
+    )
+
+
+def fapi_plan_focus(plan_kind: str, fapi_profile: str, fapi_response_mode: str) -> list[str]:
+    focus = [
+        "discovery metadata",
+        "PAR request_uri lifetime and replay handling",
+        "authorization request parameter binding",
+        "PKCE and redirect URI enforcement",
+        "client assertion validation",
+    ]
+    if fapi_profile == "fapi_client_credentials_grant":
+        focus.append("client credentials token issuance")
+    else:
+        focus.extend(["authorization code replay rejection", "refresh token behavior"])
+    if plan_kind == "message-final":
+        focus.extend(["signed request objects", "JAR"])
+        if fapi_response_mode == "jarm":
+            focus.append("JARM")
+    return focus
+
+
 def write_oidcc_config_plan_config() -> dict[str, object]:
     config = {
         "alias": "local-nazo-oauth-oidf-config",
-        "description": "Local Podman Nazo OAuth OIDCC config conformance configuration",
+        "description": "OIDC Config OP: provider metadata accuracy for the public issuer.",
         "server": {"discoveryUrl": f"{ISSUER}/.well-known/openid-configuration"},
     }
     write_plan_config("oidf-oidcc-config-plan-config.json", config)
@@ -927,9 +1006,25 @@ def fapi_matrix_plan_config(
         ]
     )
     name = f"oidf-fapi-matrix-{slug}-plan-config.json"
+    title = fapi_plan_title(
+        plan_kind,
+        client_auth_type,
+        sender_constrain,
+        openid,
+        fapi_profile,
+        fapi_response_mode,
+    )
+    description = fapi_plan_description(
+        plan_kind,
+        client_auth_type,
+        sender_constrain,
+        openid,
+        fapi_profile,
+        fapi_response_mode,
+    )
     config = fapi_plan_config(
         f"local-nazo-oauth-oidf-{slug}",
-        f"Local Podman Nazo OAuth FAPI2 matrix {slug}",
+        description,
         slug,
         False,
         client_auth_type=client_auth_type,
@@ -939,6 +1034,11 @@ def fapi_matrix_plan_config(
         fapi_response_mode=fapi_response_mode,
         fapi_request_method=fapi_request_method,
     )
+    nazo = config["nazo"]
+    assert isinstance(nazo, dict)
+    nazo["matrix_title"] = title
+    nazo["matrix_description"] = description
+    nazo["matrix_focus"] = fapi_plan_focus(plan_kind, fapi_profile, fapi_response_mode)
     return name, config
 
 
@@ -1022,14 +1122,17 @@ def write_all_plan_configs() -> None:
     configs.update(write_fapi_plan_configs())
     configs.update(write_fapi_matrix_plan_configs())
     plan_set = plan_expressions_for_configs(configs)
+    plan_manifest = plan_manifest_for_expressions(plan_set, configs)
     write_text(RUNTIME / "oidf-plan-configs.json", json.dumps({"configs": configs}, indent=2) + "\n", 0o600)
     write_text(RUNTIME / "oidf-plan-set.json", json.dumps(plan_set, indent=2) + "\n", 0o600)
+    write_text(RUNTIME / "oidf-plan-set-manifest.json", json.dumps(plan_manifest, indent=2) + "\n", 0o600)
     write_text(
         RUNTIME / "oidf-local.env",
         "\n".join(
             [
                 f"OIDF_PLAN_CONFIG_JSON={json.dumps({'configs': configs})}",
                 f"OIDF_PLAN_SET_JSON={json.dumps(plan_set)}",
+                f"OIDF_PLAN_MANIFEST_JSON={json.dumps(plan_manifest)}",
                 "",
             ]
         ),
@@ -1067,6 +1170,58 @@ def plan_expressions_for_configs(configs: dict[str, dict[str, object]]) -> list[
             variants.append(f"openid={nazo['openid']}")
             expressions.append(f"{plan_kind}[{']['.join(variants)}] {name}")
     return expressions
+
+
+def plan_manifest_for_expressions(
+    expressions: list[str], configs: dict[str, dict[str, object]]
+) -> dict[str, object]:
+    plans: list[dict[str, object]] = []
+    oidc_titles = {
+        "oidf-oidcc-basic-plan-config.json": "OIDC Basic OP",
+        "oidf-oidcc-config-plan-config.json": "OIDC Config OP",
+    }
+    oidc_focus = {
+        "oidf-oidcc-basic-plan-config.json": [
+            "discovery metadata",
+            "authorization code flow",
+            "static client registration",
+            "userinfo and ID token interoperability",
+        ],
+        "oidf-oidcc-config-plan-config.json": [
+            "provider metadata accuracy",
+            "endpoint advertisement",
+            "supported algorithms and response metadata",
+        ],
+    }
+    for index, expression in enumerate(expressions, 1):
+        config_name = expression.rsplit(" ", 1)[1]
+        config = configs[config_name]
+        nazo = config.get("nazo")
+        title = oidc_titles.get(config_name)
+        description = config.get("description")
+        focus = oidc_focus.get(config_name, [])
+        if isinstance(nazo, dict) and "matrix_title" in nazo:
+            title = str(nazo["matrix_title"])
+            description = str(nazo["matrix_description"])
+            focus = list(nazo["matrix_focus"])
+        plans.append(
+            {
+                "index": index,
+                "title": title,
+                "description": description,
+                "expression": expression,
+                "config": config_name,
+                "coverage_focus": focus,
+            }
+        )
+    return {
+        "name": "NazoAuth OIDF full conformance matrix",
+        "description": (
+            "Sixteen-plan OpenID Foundation regression matrix for the public issuer. "
+            "Targeted TP/PS checks are mapped onto these plans instead of being run as a separate matrix."
+        ),
+        "plans": plans,
+    }
 
 
 def main() -> int:

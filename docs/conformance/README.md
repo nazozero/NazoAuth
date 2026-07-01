@@ -10,7 +10,8 @@ in the repository.
 ## Current Evidence
 
 - Certification baseline: [2026-06-09 OIDF full matrix](2026-06-09-oidf-full-matrix.md)
-- Latest Hostinger-local full matrix: [2026-06-26 security findings OIDF full matrix](2026-06-26-security-findings-full-matrix.md)
+- Matrix scope: [OIDF full matrix](oidf-full-matrix.md)
+- Latest Hostinger-local full matrix: [2026-07-01 TP/PS OIDF full matrix](2026-07-01-tp-ps-full-matrix.md)
 - Latest official full matrix: [2026-06-27 PR 15 official OIDF full matrix](2026-06-27-pr15-official-oidf-full-matrix.md)
 
 The latest recorded official full-matrix suite run is the 2026-06-27 PR 15
@@ -20,10 +21,10 @@ verification time was `bac10af902e574d4bd98741eaa2ce0121278608c`. It exported
 all 16 plan archives from `https://www.certification.openid.net/`; the final
 runner output reported `0 failures` and `0 warnings`.
 
-The latest Hostinger-local full-matrix regression record is
-`oidf-local-results/run-20260626T165725Z` for the same public issuer and commit.
-It exported all 16 plan archives; the runner log contains 16 plan summaries,
-all with `0 failures` and `0 warnings`.
+The latest Hostinger-local full-matrix regression record is the 2026-07-01
+TP/PS run against `https://auth.nazo.run` at runtime commit `32429d5`. It used
+the repository 16-plan matrix, exported 16 plan archives, and reported 578 test
+modules with `0 failures` and `0 warnings`.
 
 ## Record Format
 

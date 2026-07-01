@@ -193,7 +193,7 @@
         },
         "scope": "openid profile email offline_access"
       },
-      "description": "Local Podman Nazo OAuth FAPI2 matrix message-final-private-key-jwt-dpop-openid-connect-plain-fapi-jarm",
+      "description": "Covers FAPI2 Message Signing Final for the authorization code flow using private_key_jwt client authentication, DPoP sender constraint, and OpenID Connect responses with JARM authorization responses.",
       "mtls": {
         "ca": "-----BEGIN CERTIFICATE-----\nMIIDMTCCAhmgAwIBAgIUP6tsYH37cIeOLwsSLYVcJdp4FkEwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDE0MzUzWhcNMzYwNjAyMDE0MzUzWjAoMSYwJAYDVQQDDB1OYXpvIE9B\ndXRoIExvY2FsIE9JREYgbVRMUyBDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAL9va4HYwMVk/gYVUpn6hVK92StgzW+owCeMRydaz5VZatbXfX6hETkV\ndfxq50Xx9LaYIjnvRZ7JPm5ChzaQBNu65XpnpvbjbY8ntnJj9QHg/uOc3vJai5N5\nvcGPgG2AJ/rMtTlChlmhNbUF7YUT0wYvH5WrF6KDB+wVewkBpwlBvP0cu7q+OMeu\nGnWgb4qPHDNPKyu315jeWfkL9ZoXtoHZA3lmCWGV7gilyGk8E3+Yphp3u1UVcL6A\nTSdY1uOVoGakYlDQQ+QPbRUpgv3UrV9wgc9BIeGmfmbWsSZQpBBwRRNCWEk75Jq+\n9h1JLk0e5LwZsat85XsCgWnUB2YFTfcCAwEAAaNTMFEwHQYDVR0OBBYEFFk+VzNQ\nd3b6cjtEIeZn5iJrZPBpMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAHpdWC6FLdskOugO\nw4LR5JhG+0XfatoeV7gVmlskLM94kzw435m9EruBehCaVW8fNHJ7M/eKmbMcPF4O\n+/BukwHn+Pvpd1Qj3QcA/aR6tKl1IFVJgyd36SpxsSEvh78TEWNv+1QFll8ejZcd\nst4Rmwl+3D87kVU/hnypbjvkEe31R+gxEP8DGVMokisiypVAxjB2OSDmsipOnE4P\ntO8Sm73JHS8OnqNGipLDVqgdGeLPImtwrmbs29S2S5c3BhHJMx6hUMaD9urFraDb\nDzv6sThvuywf1q+U/b/7fSH1cZqT0TX5dn7ubwSwgmEfmwInN9+iF68RCkOIqTo7\ngvaYpKw=\n-----END CERTIFICATE-----\n",
         "cert": "-----BEGIN CERTIFICATE-----\nMIIDIDCCAgigAwIBAgIUAobBQSgJmzi49lQ3dBRIn5NF2wgwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDg0NDE0WhcNMzYwNjAyMDg0NDE0WjAoMSYwJAYDVQQDDB1tdGxzLWZl\nZWZjY2RjOTA4NmU1N2ZiNWM1YjY1NzCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAIsI+myYF53z9Ahcv/ErsDLhOie4oJZcGznXItfBF8myLAjdKcLPywQf\no4jdjKhaH50cntxxVbKXymYwfuox7C9XhEvblGbKMK5aWW0Wh2rGQxnDvLBDBm5N\nC59sXrnw8oRklKlcS9LXpt0CYbNVMwT9324IR9EKGXeZP5NXJw/T8VmTDz6o9a8u\nG3NiOZ6vllbpGS74wSF9NieDpsJObG82v5zIl+GoVVmVYwyPS3dgaNDv0mfkafro\n/COqScO45JiObmS1d3TIAiXhRN5aleXuKdkpRpOQ4G640YBH+6x+2DlQk/1onCwx\nPeONAhyI7NzHnr04qCHT7KS1vD+TONcCAwEAAaNCMEAwHQYDVR0OBBYEFFCjRdRN\nXq4bDQZNDXyHzP/80pxUMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA0GCSqGSIb3DQEBCwUAA4IBAQBz99fqS6SxxrEwt6T8ioYjSShs3fdCy1ZRtQFT\n5ehW7Hz0J7knrUaf2w8OAlkI2U0S/ScPAWtqeK3jD1Hfs0VQLfbW98VOAlblVv7W\nSYFSONvrGTOd8D2sfTKAwHNM+2cEYRL9crkAr9BZOdkiDcpQCddGQn9vK3tOjjfr\n9CbwzY/b8bPbqcvgMOUSlLkYmsCb5/WyJLuwMmAiZUKji9sBLhNM+PPvdAzhMM0O\nh5vDMADbtNa0qzuMVttFGCANxK4LvK2yBkWcD59Hl0RofKy39XQNxWfGlxnvyjhM\nmPf8tK0nI8IL3O5VejZWHs2BAx3W0SwqAzb95ltW56Sgklg1\n-----END CERTIFICATE-----\n",
@@ -218,7 +218,21 @@
           "$secret": "/configs/oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-jarm-plan-config.json/nazo/oidf_user_password"
         },
         "openid": "openid_connect",
-        "sender_constrain": "dpop"
+        "sender_constrain": "dpop",
+        "matrix_title": "FAPI2 Message Signing Final / private_key_jwt / DPoP / OpenID Connect / authorization code / JARM",
+        "matrix_description": "Covers FAPI2 Message Signing Final for the authorization code flow using private_key_jwt client authentication, DPoP sender constraint, and OpenID Connect responses with JARM authorization responses.",
+        "matrix_focus": [
+          "discovery metadata",
+          "PAR request_uri lifetime and replay handling",
+          "authorization request parameter binding",
+          "PKCE and redirect URI enforcement",
+          "client assertion validation",
+          "authorization code replay rejection",
+          "refresh token behavior",
+          "signed request objects",
+          "JAR",
+          "JARM"
+        ]
       },
       "override": {
         "fapi2-security-profile-final-par-ensure-reused-request-uri-prior-to-auth-completion-succeeds": {
@@ -1178,7 +1192,7 @@
         },
         "scope": "openid profile email offline_access"
       },
-      "description": "Local Podman Nazo OAuth FAPI2 matrix message-final-private-key-jwt-dpop-openid-connect-plain-fapi-plain-response",
+      "description": "Covers FAPI2 Message Signing Final for the authorization code flow using private_key_jwt client authentication, DPoP sender constraint, and OpenID Connect responses with plain authorization responses.",
       "mtls": {
         "ca": "-----BEGIN CERTIFICATE-----\nMIIDMTCCAhmgAwIBAgIUP6tsYH37cIeOLwsSLYVcJdp4FkEwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDE0MzUzWhcNMzYwNjAyMDE0MzUzWjAoMSYwJAYDVQQDDB1OYXpvIE9B\ndXRoIExvY2FsIE9JREYgbVRMUyBDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAL9va4HYwMVk/gYVUpn6hVK92StgzW+owCeMRydaz5VZatbXfX6hETkV\ndfxq50Xx9LaYIjnvRZ7JPm5ChzaQBNu65XpnpvbjbY8ntnJj9QHg/uOc3vJai5N5\nvcGPgG2AJ/rMtTlChlmhNbUF7YUT0wYvH5WrF6KDB+wVewkBpwlBvP0cu7q+OMeu\nGnWgb4qPHDNPKyu315jeWfkL9ZoXtoHZA3lmCWGV7gilyGk8E3+Yphp3u1UVcL6A\nTSdY1uOVoGakYlDQQ+QPbRUpgv3UrV9wgc9BIeGmfmbWsSZQpBBwRRNCWEk75Jq+\n9h1JLk0e5LwZsat85XsCgWnUB2YFTfcCAwEAAaNTMFEwHQYDVR0OBBYEFFk+VzNQ\nd3b6cjtEIeZn5iJrZPBpMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAHpdWC6FLdskOugO\nw4LR5JhG+0XfatoeV7gVmlskLM94kzw435m9EruBehCaVW8fNHJ7M/eKmbMcPF4O\n+/BukwHn+Pvpd1Qj3QcA/aR6tKl1IFVJgyd36SpxsSEvh78TEWNv+1QFll8ejZcd\nst4Rmwl+3D87kVU/hnypbjvkEe31R+gxEP8DGVMokisiypVAxjB2OSDmsipOnE4P\ntO8Sm73JHS8OnqNGipLDVqgdGeLPImtwrmbs29S2S5c3BhHJMx6hUMaD9urFraDb\nDzv6sThvuywf1q+U/b/7fSH1cZqT0TX5dn7ubwSwgmEfmwInN9+iF68RCkOIqTo7\ngvaYpKw=\n-----END CERTIFICATE-----\n",
         "cert": "-----BEGIN CERTIFICATE-----\nMIIDIDCCAgigAwIBAgIUAobBQSgJmzi49lQ3dBRIn5NF2wYwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDg0NDEzWhcNMzYwNjAyMDg0NDEzWjAoMSYwJAYDVQQDDB1tdGxzLWEy\nNWQ0ZWZiMmU5NzYzZGIwYjFhODViZTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAN72ZYCW1M0D0aQhzdhRdFhfAz4jr1+cEeyyzHRzwtWD9mSiyPIde7H6\nZmf9HXSyWpfqgLs9eNmmspW+f4ZlY147wLUXlzroW7gm7iPlZdDRyvazDt0ScBJF\n+epwJ7t+PmBPC7xDsptZLjE+2p4CQFuvE/TQeDnotcrXo0hqyWn5ZcQ7zYfL4U+v\nVN90mJBl29If6Y3i83hjaV0a4d3B4FALQz0Oqr2n5vQgXJOlNHJLSrBruDWLQuZW\nkB7Y4zYkbLXxwAs5p9UohOsfNDX3PnZCWWep4jlodS39Ru5lPBGW15fyR29YhgkF\n4PBK3yJRA0ErPOn7hSrphHUGpPPjJUsCAwEAAaNCMEAwHQYDVR0OBBYEFCF61WfV\nPFX/t5yMXkJJRO3MfXIoMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA0GCSqGSIb3DQEBCwUAA4IBAQCXfIhbwiDvT3DqiMR2Z4s5cNr0wBmksQ63SBsk\nbn5Q3IRa6X3Tf9yjRZ8gkgSJQelec1vNIZk3KQzBB2lG9MVSRs1gvQt+6/Ke9in1\n9dpAox7KXMXyGDBjpkH1ivpQ3/zfNflUfgPIl0gLxnxiOkAT3rgAcgVq4iPkt9jS\nqJ5OY5mtDp2GJqlutWgfkgJkpTZWNnRv3JaZ59bQ9sEDUrqtZ9YqpVvCcKekIwK+\nAWa2MZZhG9AzLbxtF+2duL2pL1Ayh9MdaqPwZXsDU8OS62RqwOlNPIAOzssfP6ch\nZN6J/REO1JtWTPzpvQKZj8aDu0vSPJyspvkzPkHizuyya0yW\n-----END CERTIFICATE-----\n",
@@ -1203,7 +1217,20 @@
           "$secret": "/configs/oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-plain-response-plan-config.json/nazo/oidf_user_password"
         },
         "openid": "openid_connect",
-        "sender_constrain": "dpop"
+        "sender_constrain": "dpop",
+        "matrix_title": "FAPI2 Message Signing Final / private_key_jwt / DPoP / OpenID Connect / authorization code / plain response",
+        "matrix_description": "Covers FAPI2 Message Signing Final for the authorization code flow using private_key_jwt client authentication, DPoP sender constraint, and OpenID Connect responses with plain authorization responses.",
+        "matrix_focus": [
+          "discovery metadata",
+          "PAR request_uri lifetime and replay handling",
+          "authorization request parameter binding",
+          "PKCE and redirect URI enforcement",
+          "client assertion validation",
+          "authorization code replay rejection",
+          "refresh token behavior",
+          "signed request objects",
+          "JAR"
+        ]
       },
       "override": {
         "fapi2-security-profile-final-par-ensure-reused-request-uri-prior-to-auth-completion-succeeds": {
@@ -2163,7 +2190,7 @@
         },
         "scope": "openid profile email offline_access"
       },
-      "description": "Local Podman Nazo OAuth FAPI2 matrix security-final-mtls-dpop-openid-connect-plain-fapi-plain-response",
+      "description": "Covers FAPI2 Security Profile Final for the authorization code flow using mTLS client authentication, DPoP sender constraint, and OpenID Connect responses.",
       "mtls": {
         "ca": "-----BEGIN CERTIFICATE-----\nMIIDMTCCAhmgAwIBAgIUP6tsYH37cIeOLwsSLYVcJdp4FkEwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDE0MzUzWhcNMzYwNjAyMDE0MzUzWjAoMSYwJAYDVQQDDB1OYXpvIE9B\ndXRoIExvY2FsIE9JREYgbVRMUyBDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAL9va4HYwMVk/gYVUpn6hVK92StgzW+owCeMRydaz5VZatbXfX6hETkV\ndfxq50Xx9LaYIjnvRZ7JPm5ChzaQBNu65XpnpvbjbY8ntnJj9QHg/uOc3vJai5N5\nvcGPgG2AJ/rMtTlChlmhNbUF7YUT0wYvH5WrF6KDB+wVewkBpwlBvP0cu7q+OMeu\nGnWgb4qPHDNPKyu315jeWfkL9ZoXtoHZA3lmCWGV7gilyGk8E3+Yphp3u1UVcL6A\nTSdY1uOVoGakYlDQQ+QPbRUpgv3UrV9wgc9BIeGmfmbWsSZQpBBwRRNCWEk75Jq+\n9h1JLk0e5LwZsat85XsCgWnUB2YFTfcCAwEAAaNTMFEwHQYDVR0OBBYEFFk+VzNQ\nd3b6cjtEIeZn5iJrZPBpMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAHpdWC6FLdskOugO\nw4LR5JhG+0XfatoeV7gVmlskLM94kzw435m9EruBehCaVW8fNHJ7M/eKmbMcPF4O\n+/BukwHn+Pvpd1Qj3QcA/aR6tKl1IFVJgyd36SpxsSEvh78TEWNv+1QFll8ejZcd\nst4Rmwl+3D87kVU/hnypbjvkEe31R+gxEP8DGVMokisiypVAxjB2OSDmsipOnE4P\ntO8Sm73JHS8OnqNGipLDVqgdGeLPImtwrmbs29S2S5c3BhHJMx6hUMaD9urFraDb\nDzv6sThvuywf1q+U/b/7fSH1cZqT0TX5dn7ubwSwgmEfmwInN9+iF68RCkOIqTo7\ngvaYpKw=\n-----END CERTIFICATE-----\n",
         "cert": "-----BEGIN CERTIFICATE-----\nMIIDIDCCAgigAwIBAgIUAobBQSgJmzi49lQ3dBRIn5NF2wAwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDg0NDEzWhcNMzYwNjAyMDg0NDEzWjAoMSYwJAYDVQQDDB1tdGxzLWVm\nYWE4YzliMzQzMjdkNjYxNzIzN2Y0MDCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAJMQ8Q03adDZMmgBbuIIFENR4Lfqq9PstLrDWv9WY7bJi9KvD/pCET7B\nNhTmsYuEq1vuFJMlnWTy6sPgNPS6lXsrGt4O5o2dgingrhpTKArKX0h2ue6AbetK\nw6JA+YE2pbI6nv8r9gEkccd57mdJAvkgJsj/2DlDlmeELXalPj32XcPl9eRlAwLD\n9l+yEO+AqvXJoZrYQYa9sUQjiQqg0uHYNfjVXnSaP9WYVVvbz384kjcd3TZ3p85J\noRMEkEcn/oROFsY8jOC+CcNCCquujspO7W7SehndwYSGkdFsQCmPMVwYxd/dCMFf\nqJSjsAbcZOZFn7JvYJXgQu5j4s21LjkCAwEAAaNCMEAwHQYDVR0OBBYEFMyQgnuy\ng/6WJvu5PzGYoQiU0+1SMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA0GCSqGSIb3DQEBCwUAA4IBAQA0DcUIUV6FwEOHygOLsj2VmQoHjEVKParp0lot\ncIfYK3A1LUZlRRXruxfsh99Rhv4lzzN/eQ+MumRz0x6pYXZdhi6nXc3UVy6MT2z7\nZJt6uKeF1XT5HQzuy34XQx1NAX0ajPYx1IN/sGQZsuMGzmk42QaY9ngT4S3e+orN\nWgGUOwVGUETXkC8nZ6gj3Dr3FStfcPdH70vfbbMyJphT347ZNzAmQjprWagg7VGo\nEwO7JiNjZpBx6OBQ9Q+Knz7yVZ0JP7FmCFPt8K+eGxwT8xQEI3vXgeaPiGvVrtQ+\nQQBcVASCUkhBsnmb7LrVSnuE0d+XiNs8ey69iQeZQg18qd0q\n-----END CERTIFICATE-----\n",
@@ -2187,7 +2214,18 @@
           "$secret": "/configs/oidf-fapi-matrix-security-final-mtls-dpop-openid-connect-plain-fapi-plain-response-plan-config.json/nazo/oidf_user_password"
         },
         "openid": "openid_connect",
-        "sender_constrain": "dpop"
+        "sender_constrain": "dpop",
+        "matrix_title": "FAPI2 Security Profile Final / mTLS / DPoP / OpenID Connect / authorization code",
+        "matrix_description": "Covers FAPI2 Security Profile Final for the authorization code flow using mTLS client authentication, DPoP sender constraint, and OpenID Connect responses.",
+        "matrix_focus": [
+          "discovery metadata",
+          "PAR request_uri lifetime and replay handling",
+          "authorization request parameter binding",
+          "PKCE and redirect URI enforcement",
+          "client assertion validation",
+          "authorization code replay rejection",
+          "refresh token behavior"
+        ]
       },
       "override": {
         "fapi2-security-profile-final-par-ensure-reused-request-uri-prior-to-auth-completion-succeeds": {
@@ -3147,7 +3185,7 @@
         },
         "scope": "accounts"
       },
-      "description": "Local Podman Nazo OAuth FAPI2 matrix security-final-mtls-dpop-plain-oauth-fapi-client-credentials-grant-plain-response",
+      "description": "Covers FAPI2 Security Profile Final for the client credentials flow using mTLS client authentication, DPoP sender constraint, and OAuth resource access.",
       "mtls": {
         "ca": "-----BEGIN CERTIFICATE-----\nMIIDMTCCAhmgAwIBAgIUP6tsYH37cIeOLwsSLYVcJdp4FkEwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDE0MzUzWhcNMzYwNjAyMDE0MzUzWjAoMSYwJAYDVQQDDB1OYXpvIE9B\ndXRoIExvY2FsIE9JREYgbVRMUyBDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAL9va4HYwMVk/gYVUpn6hVK92StgzW+owCeMRydaz5VZatbXfX6hETkV\ndfxq50Xx9LaYIjnvRZ7JPm5ChzaQBNu65XpnpvbjbY8ntnJj9QHg/uOc3vJai5N5\nvcGPgG2AJ/rMtTlChlmhNbUF7YUT0wYvH5WrF6KDB+wVewkBpwlBvP0cu7q+OMeu\nGnWgb4qPHDNPKyu315jeWfkL9ZoXtoHZA3lmCWGV7gilyGk8E3+Yphp3u1UVcL6A\nTSdY1uOVoGakYlDQQ+QPbRUpgv3UrV9wgc9BIeGmfmbWsSZQpBBwRRNCWEk75Jq+\n9h1JLk0e5LwZsat85XsCgWnUB2YFTfcCAwEAAaNTMFEwHQYDVR0OBBYEFFk+VzNQ\nd3b6cjtEIeZn5iJrZPBpMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAHpdWC6FLdskOugO\nw4LR5JhG+0XfatoeV7gVmlskLM94kzw435m9EruBehCaVW8fNHJ7M/eKmbMcPF4O\n+/BukwHn+Pvpd1Qj3QcA/aR6tKl1IFVJgyd36SpxsSEvh78TEWNv+1QFll8ejZcd\nst4Rmwl+3D87kVU/hnypbjvkEe31R+gxEP8DGVMokisiypVAxjB2OSDmsipOnE4P\ntO8Sm73JHS8OnqNGipLDVqgdGeLPImtwrmbs29S2S5c3BhHJMx6hUMaD9urFraDb\nDzv6sThvuywf1q+U/b/7fSH1cZqT0TX5dn7ubwSwgmEfmwInN9+iF68RCkOIqTo7\ngvaYpKw=\n-----END CERTIFICATE-----\n",
         "cert": "-----BEGIN CERTIFICATE-----\nMIIDIDCCAgigAwIBAgIUAobBQSgJmzi49lQ3dBRIn5NF2w4wDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDg0NDE0WhcNMzYwNjAyMDg0NDE0WjAoMSYwJAYDVQQDDB1tdGxzLTkw\nZDgzOGY1MzA5OWUxZGJjNDEyMjIyZDCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAO32+cy5fwOBayzheMKNaJjlkAyN0CrgNQKcJErrHd/wtomBKGunGYEn\ngnbVgoOoMHTer7evQtj0Z0QtESuN99U6dJ+VBBoG4h/mmkfwY9odGu2p01HPDT8e\ntlHM6VG6BXUOWRMMaWn+rnyGWLxxJcLVuS7hM8p32ptqXlzk8D7gOSihUdT25JTU\nnHqeKU/tOqLaIy5tnCnnWq8S5RwxBltDm6BUhP9r0deoJhaQAKxUi6Zq3XqYf9bA\nkVC9sk/bSrBth7a7RmnKpG/tPs/00khElTsvI7omhCUD0ZMKCw6wUD/DaWaJMBwC\ndc0PJT8HcKxyBrUsL3zfA0YPLpusbikCAwEAAaNCMEAwHQYDVR0OBBYEFNeGA4J1\nmimufQN0EWJQOpFc6ljBMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA0GCSqGSIb3DQEBCwUAA4IBAQCPkAIGu1ZbTgRG+gz/Zsy1CJ/Y1vpB+Fb5VOgu\nTPSws6uP638oZdWQpHFwGDfNmWepdSGLETQGxVGtu6RnJBSIRV/z3IaBp3omZdel\n7cNuVZnCpmrLrWOk+e8cagzB8ZyscWNnSa0j1hJsmzMvY3iqb5YtULh8LmkJ1HiE\nroCFHYHfuUuwmCwQckxP2h3Km2qOxjtOM0w+njXvDmcUG8NfH+tVqNFM0dUyXkJK\nwlKu3oGz/jUP3Of8LywvntAXDOCHCHu8R2nAIAnoABkFcPKcA9F220+hyzGCN21v\nWDmBYcHHGSJGU8M0boRY00ssadrPSq9/gF/eECMXQYo/afxN\n-----END CERTIFICATE-----\n",
@@ -3171,7 +3209,17 @@
           "$secret": "/configs/oidf-fapi-matrix-security-final-mtls-dpop-plain-oauth-fapi-client-credentials-grant-plain-response-plan-config.json/nazo/oidf_user_password"
         },
         "openid": "plain_oauth",
-        "sender_constrain": "dpop"
+        "sender_constrain": "dpop",
+        "matrix_title": "FAPI2 Security Profile Final / mTLS / DPoP / plain OAuth / client credentials",
+        "matrix_description": "Covers FAPI2 Security Profile Final for the client credentials flow using mTLS client authentication, DPoP sender constraint, and OAuth resource access.",
+        "matrix_focus": [
+          "discovery metadata",
+          "PAR request_uri lifetime and replay handling",
+          "authorization request parameter binding",
+          "PKCE and redirect URI enforcement",
+          "client assertion validation",
+          "client credentials token issuance"
+        ]
       },
       "override": {
         "fapi2-security-profile-final-par-ensure-reused-request-uri-prior-to-auth-completion-succeeds": {
@@ -4131,7 +4179,7 @@
         },
         "scope": "accounts offline_access"
       },
-      "description": "Local Podman Nazo OAuth FAPI2 matrix security-final-mtls-dpop-plain-oauth-plain-fapi-plain-response",
+      "description": "Covers FAPI2 Security Profile Final for the authorization code flow using mTLS client authentication, DPoP sender constraint, and OAuth resource access.",
       "mtls": {
         "ca": "-----BEGIN CERTIFICATE-----\nMIIDMTCCAhmgAwIBAgIUP6tsYH37cIeOLwsSLYVcJdp4FkEwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDE0MzUzWhcNMzYwNjAyMDE0MzUzWjAoMSYwJAYDVQQDDB1OYXpvIE9B\ndXRoIExvY2FsIE9JREYgbVRMUyBDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAL9va4HYwMVk/gYVUpn6hVK92StgzW+owCeMRydaz5VZatbXfX6hETkV\ndfxq50Xx9LaYIjnvRZ7JPm5ChzaQBNu65XpnpvbjbY8ntnJj9QHg/uOc3vJai5N5\nvcGPgG2AJ/rMtTlChlmhNbUF7YUT0wYvH5WrF6KDB+wVewkBpwlBvP0cu7q+OMeu\nGnWgb4qPHDNPKyu315jeWfkL9ZoXtoHZA3lmCWGV7gilyGk8E3+Yphp3u1UVcL6A\nTSdY1uOVoGakYlDQQ+QPbRUpgv3UrV9wgc9BIeGmfmbWsSZQpBBwRRNCWEk75Jq+\n9h1JLk0e5LwZsat85XsCgWnUB2YFTfcCAwEAAaNTMFEwHQYDVR0OBBYEFFk+VzNQ\nd3b6cjtEIeZn5iJrZPBpMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAHpdWC6FLdskOugO\nw4LR5JhG+0XfatoeV7gVmlskLM94kzw435m9EruBehCaVW8fNHJ7M/eKmbMcPF4O\n+/BukwHn+Pvpd1Qj3QcA/aR6tKl1IFVJgyd36SpxsSEvh78TEWNv+1QFll8ejZcd\nst4Rmwl+3D87kVU/hnypbjvkEe31R+gxEP8DGVMokisiypVAxjB2OSDmsipOnE4P\ntO8Sm73JHS8OnqNGipLDVqgdGeLPImtwrmbs29S2S5c3BhHJMx6hUMaD9urFraDb\nDzv6sThvuywf1q+U/b/7fSH1cZqT0TX5dn7ubwSwgmEfmwInN9+iF68RCkOIqTo7\ngvaYpKw=\n-----END CERTIFICATE-----\n",
         "cert": "-----BEGIN CERTIFICATE-----\nMIIDIDCCAgigAwIBAgIUAobBQSgJmzi49lQ3dBRIn5NF2v4wDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDg0NDEzWhcNMzYwNjAyMDg0NDEzWjAoMSYwJAYDVQQDDB1tdGxzLTAy\nMzlhZjIyNzY5YTI5ZWViZDUxZTRhZDCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAIrIk8yb79rBnmT7+pk2hT5S/iOvsD9bgpCcFLCKrBBFkDirl6lZmp+B\n3XSI25E+XsGQ/pHwMUdaRkOvj3iTKDziQREtDD601xyvgGeRUZJ29cPhfBT3TdVx\n8MOVgT/8MLXDqtRNJ+v79WMJ/46rC8/XQk2kMF7Zj5BwTf0qsPjR4b/1tzg9Zmaw\nGupffEwq/PdV6o71kFHivqpxuSyzJ3dZ4LVWhrJajm1k1nLaJ2FlfobGU8fFR9Zz\n2mhBIjJGHyNOdp7793CgwYBK3dPLEw8vZLov+LDxEFZpnS7Q6jiKSNmnFrvDKuqE\n4Hp3TTz0DffkOpVGgz8Jv1u195ZevqMCAwEAAaNCMEAwHQYDVR0OBBYEFDSJJcPd\nUCFJ7vLGq3OcaaQlleEvMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA0GCSqGSIb3DQEBCwUAA4IBAQCC0bYLujugaznywuhCpqMJN556vxrBjsqlSJFE\nZnvVXAPGGIEhfXEwoa1BlU4sBRY58HfC3Ard2SyzexQlEOKxLIg7Fys8JOLJjgFU\nJXDgxMUhaCegn2gkLya4FUbLDv0qwmHGYFStARohGtLxPFvYLww57/9XgHY9LnS8\nEwYM4QmEBf2ZgSuaO8U5IwaovYARwe33ySM/JT5GcQuy25+tQKNSjabGlR66YWWV\nIHP/QUfWkTBdzr3xCccgpHwe8FD7ZfGVbQkA6uRlFR6Sqvoqrggp7JWyZ1kpcB5N\nhuFupBOvrb02fzkQfaRT2Yt7lufhBQ7fOhltwWlmXtOoSEeg\n-----END CERTIFICATE-----\n",
@@ -4155,7 +4203,18 @@
           "$secret": "/configs/oidf-fapi-matrix-security-final-mtls-dpop-plain-oauth-plain-fapi-plain-response-plan-config.json/nazo/oidf_user_password"
         },
         "openid": "plain_oauth",
-        "sender_constrain": "dpop"
+        "sender_constrain": "dpop",
+        "matrix_title": "FAPI2 Security Profile Final / mTLS / DPoP / plain OAuth / authorization code",
+        "matrix_description": "Covers FAPI2 Security Profile Final for the authorization code flow using mTLS client authentication, DPoP sender constraint, and OAuth resource access.",
+        "matrix_focus": [
+          "discovery metadata",
+          "PAR request_uri lifetime and replay handling",
+          "authorization request parameter binding",
+          "PKCE and redirect URI enforcement",
+          "client assertion validation",
+          "authorization code replay rejection",
+          "refresh token behavior"
+        ]
       },
       "override": {
         "fapi2-security-profile-final-par-ensure-reused-request-uri-prior-to-auth-completion-succeeds": {
@@ -5115,7 +5174,7 @@
         },
         "scope": "openid profile email offline_access"
       },
-      "description": "Local Podman Nazo OAuth FAPI2 matrix security-final-mtls-mtls-openid-connect-plain-fapi-plain-response",
+      "description": "Covers FAPI2 Security Profile Final for the authorization code flow using mTLS client authentication, mTLS sender constraint, and OpenID Connect responses.",
       "mtls": {
         "ca": "-----BEGIN CERTIFICATE-----\nMIIDMTCCAhmgAwIBAgIUP6tsYH37cIeOLwsSLYVcJdp4FkEwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDE0MzUzWhcNMzYwNjAyMDE0MzUzWjAoMSYwJAYDVQQDDB1OYXpvIE9B\ndXRoIExvY2FsIE9JREYgbVRMUyBDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAL9va4HYwMVk/gYVUpn6hVK92StgzW+owCeMRydaz5VZatbXfX6hETkV\ndfxq50Xx9LaYIjnvRZ7JPm5ChzaQBNu65XpnpvbjbY8ntnJj9QHg/uOc3vJai5N5\nvcGPgG2AJ/rMtTlChlmhNbUF7YUT0wYvH5WrF6KDB+wVewkBpwlBvP0cu7q+OMeu\nGnWgb4qPHDNPKyu315jeWfkL9ZoXtoHZA3lmCWGV7gilyGk8E3+Yphp3u1UVcL6A\nTSdY1uOVoGakYlDQQ+QPbRUpgv3UrV9wgc9BIeGmfmbWsSZQpBBwRRNCWEk75Jq+\n9h1JLk0e5LwZsat85XsCgWnUB2YFTfcCAwEAAaNTMFEwHQYDVR0OBBYEFFk+VzNQ\nd3b6cjtEIeZn5iJrZPBpMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAHpdWC6FLdskOugO\nw4LR5JhG+0XfatoeV7gVmlskLM94kzw435m9EruBehCaVW8fNHJ7M/eKmbMcPF4O\n+/BukwHn+Pvpd1Qj3QcA/aR6tKl1IFVJgyd36SpxsSEvh78TEWNv+1QFll8ejZcd\nst4Rmwl+3D87kVU/hnypbjvkEe31R+gxEP8DGVMokisiypVAxjB2OSDmsipOnE4P\ntO8Sm73JHS8OnqNGipLDVqgdGeLPImtwrmbs29S2S5c3BhHJMx6hUMaD9urFraDb\nDzv6sThvuywf1q+U/b/7fSH1cZqT0TX5dn7ubwSwgmEfmwInN9+iF68RCkOIqTo7\ngvaYpKw=\n-----END CERTIFICATE-----\n",
         "cert": "-----BEGIN CERTIFICATE-----\nMIIDIDCCAgigAwIBAgIUAobBQSgJmzi49lQ3dBRIn5NF2wQwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDg0NDEzWhcNMzYwNjAyMDg0NDEzWjAoMSYwJAYDVQQDDB1tdGxzLTg1\nOTU5MmJhZjZmZmZlODExMWNmODc3ZTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBALngG0aV85/LTfa41HJ1Q0QOfZrwKDCNTB+JXKSI7KOMxKX4S6j4zDC3\n8/VW/i1rDjFADsbl3tkStioKdBRElXyPHLhx4VOzQZ0iJufivXOIuP2mqq2akySP\n7lGloYdvnjL6zBRWjqcA0UeJifrg+9uLeMu9JoPzmHr+CxtQatNKMYweVG5DstSj\nb3a99vc8LAjQWBnK0T2H5ph5DDXtS4ptmqYcp66dmy5Uale7SzILZGBN1W14Pnwu\nWN4KCi+Dh2uE6vQJri39ti/f4F3HhyT7H4V0u8tghX58C9daTEE97ZAOe7JVvIO+\nXaiENWhZIwC+MPBFOOhSv4NDaIrhdUcCAwEAAaNCMEAwHQYDVR0OBBYEFL+jXcQx\nsNmy6PuPeLwu6tTBP7UpMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA0GCSqGSIb3DQEBCwUAA4IBAQABWiiKRVqCzr6TnInyvEeMmJxfoYjEt8s+QFcp\nZGPF1SlOuuBMrcQVqRDVI5mMojKXQhzst7QDz+Hq/2Dj8a1ICm/wzvzm8uAYdDBr\nfg5AYClAUmn/B1qOTQyppKo4rHVIXhFoe6j+crLjQUgPURel2FZ+Qxl6OkNiPC3d\nJk82p6z5miZDrGaOV48XadX7p7CfGQ5FY6ULoAXxuPf+LGwmQdSN28Kc5sgmL3Sn\nbeeHU5qz6scQEv7u4N0KetiyRO28uDrrWONzohzlbVRg6BWg9ZQxQ13wrFBZnAF+\nRLEvdTogmJVomIibouQW8OcgUG54mShVxYL7qzLyWZzm8vfO\n-----END CERTIFICATE-----\n",
@@ -5139,7 +5198,18 @@
           "$secret": "/configs/oidf-fapi-matrix-security-final-mtls-mtls-openid-connect-plain-fapi-plain-response-plan-config.json/nazo/oidf_user_password"
         },
         "openid": "openid_connect",
-        "sender_constrain": "mtls"
+        "sender_constrain": "mtls",
+        "matrix_title": "FAPI2 Security Profile Final / mTLS / mTLS / OpenID Connect / authorization code",
+        "matrix_description": "Covers FAPI2 Security Profile Final for the authorization code flow using mTLS client authentication, mTLS sender constraint, and OpenID Connect responses.",
+        "matrix_focus": [
+          "discovery metadata",
+          "PAR request_uri lifetime and replay handling",
+          "authorization request parameter binding",
+          "PKCE and redirect URI enforcement",
+          "client assertion validation",
+          "authorization code replay rejection",
+          "refresh token behavior"
+        ]
       },
       "override": {
         "fapi2-security-profile-final-par-ensure-reused-request-uri-prior-to-auth-completion-succeeds": {
@@ -6099,7 +6169,7 @@
         },
         "scope": "accounts"
       },
-      "description": "Local Podman Nazo OAuth FAPI2 matrix security-final-mtls-mtls-plain-oauth-fapi-client-credentials-grant-plain-response",
+      "description": "Covers FAPI2 Security Profile Final for the client credentials flow using mTLS client authentication, mTLS sender constraint, and OAuth resource access.",
       "mtls": {
         "ca": "-----BEGIN CERTIFICATE-----\nMIIDMTCCAhmgAwIBAgIUP6tsYH37cIeOLwsSLYVcJdp4FkEwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDE0MzUzWhcNMzYwNjAyMDE0MzUzWjAoMSYwJAYDVQQDDB1OYXpvIE9B\ndXRoIExvY2FsIE9JREYgbVRMUyBDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAL9va4HYwMVk/gYVUpn6hVK92StgzW+owCeMRydaz5VZatbXfX6hETkV\ndfxq50Xx9LaYIjnvRZ7JPm5ChzaQBNu65XpnpvbjbY8ntnJj9QHg/uOc3vJai5N5\nvcGPgG2AJ/rMtTlChlmhNbUF7YUT0wYvH5WrF6KDB+wVewkBpwlBvP0cu7q+OMeu\nGnWgb4qPHDNPKyu315jeWfkL9ZoXtoHZA3lmCWGV7gilyGk8E3+Yphp3u1UVcL6A\nTSdY1uOVoGakYlDQQ+QPbRUpgv3UrV9wgc9BIeGmfmbWsSZQpBBwRRNCWEk75Jq+\n9h1JLk0e5LwZsat85XsCgWnUB2YFTfcCAwEAAaNTMFEwHQYDVR0OBBYEFFk+VzNQ\nd3b6cjtEIeZn5iJrZPBpMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAHpdWC6FLdskOugO\nw4LR5JhG+0XfatoeV7gVmlskLM94kzw435m9EruBehCaVW8fNHJ7M/eKmbMcPF4O\n+/BukwHn+Pvpd1Qj3QcA/aR6tKl1IFVJgyd36SpxsSEvh78TEWNv+1QFll8ejZcd\nst4Rmwl+3D87kVU/hnypbjvkEe31R+gxEP8DGVMokisiypVAxjB2OSDmsipOnE4P\ntO8Sm73JHS8OnqNGipLDVqgdGeLPImtwrmbs29S2S5c3BhHJMx6hUMaD9urFraDb\nDzv6sThvuywf1q+U/b/7fSH1cZqT0TX5dn7ubwSwgmEfmwInN9+iF68RCkOIqTo7\ngvaYpKw=\n-----END CERTIFICATE-----\n",
         "cert": "-----BEGIN CERTIFICATE-----\nMIIDIDCCAgigAwIBAgIUAobBQSgJmzi49lQ3dBRIn5NF2xAwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDg0NDE0WhcNMzYwNjAyMDg0NDE0WjAoMSYwJAYDVQQDDB1tdGxzLTQw\nYTczNmY5ZDE3NmUxNDJiZmE5NWEyNzCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBALt3owp7k+KfuTzI2GLSzF26t/BnyA6GoTRaWKJWdawMbArGvBfh2RyO\nhM+h4j0NDQYmwqiNN+cmD+wvHVzaSP7lQE/Y7SqcjP6qDDJubc94jQejdZeYr21a\nXIDgnOs/+hfgPubfLFfANcPmTIzHZTbd/luugPJnu1mU0bblQZCHGnqzLMAG8vOZ\nJ8gze8obRWGeQOg9FJ/m1ok5qYSWFNwa18PGnoEM9k91ASOKEqfgSmtNxqgQyssR\nGJY6cVsLH67rRTM6lj8CbzcGWJvkl0dI9n01IMoKG8qL50PKunrBE9ReexxQgb29\nDfxWYMBkGoJkkeweoeeBcjPbzkBqOP8CAwEAAaNCMEAwHQYDVR0OBBYEFF75RTEG\nTSIC2IiMGtrn1vUUSj66MB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA0GCSqGSIb3DQEBCwUAA4IBAQB5pKid4uQO4ibJWx6ZvbQTWk+iUK/P08+zmMey\n98Pk4UQysyY34jgBPOpKYn7IZ+7k4TVvqtcZxsvJMYphBdvAKTnVi46+Z9dmqOfn\nKTDSKlRB+W9ROqhXjGkPqQszGYeYaxeJbRg0J9w3RNK6jAzOkyGqjZaKW/k6zCmg\nyaE6+F7g/PaGOyiotO8OSypuTrJftKK4FTqya/16iJHzp7nlht9/dWJ/ZmQzLLR0\nQRZp9+L/ENqa1qI1yit0Uj2s07nzTgyHLZl0I0rEEnd/nG869nLhlXCfkrKS/awX\n4EG6wkaN3IUU6tDOR3UhCbkQEkLpO+c6jttJloJ9jq/bePpt\n-----END CERTIFICATE-----\n",
@@ -6123,7 +6193,17 @@
           "$secret": "/configs/oidf-fapi-matrix-security-final-mtls-mtls-plain-oauth-fapi-client-credentials-grant-plain-response-plan-config.json/nazo/oidf_user_password"
         },
         "openid": "plain_oauth",
-        "sender_constrain": "mtls"
+        "sender_constrain": "mtls",
+        "matrix_title": "FAPI2 Security Profile Final / mTLS / mTLS / plain OAuth / client credentials",
+        "matrix_description": "Covers FAPI2 Security Profile Final for the client credentials flow using mTLS client authentication, mTLS sender constraint, and OAuth resource access.",
+        "matrix_focus": [
+          "discovery metadata",
+          "PAR request_uri lifetime and replay handling",
+          "authorization request parameter binding",
+          "PKCE and redirect URI enforcement",
+          "client assertion validation",
+          "client credentials token issuance"
+        ]
       },
       "override": {
         "fapi2-security-profile-final-par-ensure-reused-request-uri-prior-to-auth-completion-succeeds": {
@@ -7083,7 +7163,7 @@
         },
         "scope": "accounts offline_access"
       },
-      "description": "Local Podman Nazo OAuth FAPI2 matrix security-final-mtls-mtls-plain-oauth-plain-fapi-plain-response",
+      "description": "Covers FAPI2 Security Profile Final for the authorization code flow using mTLS client authentication, mTLS sender constraint, and OAuth resource access.",
       "mtls": {
         "ca": "-----BEGIN CERTIFICATE-----\nMIIDMTCCAhmgAwIBAgIUP6tsYH37cIeOLwsSLYVcJdp4FkEwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDE0MzUzWhcNMzYwNjAyMDE0MzUzWjAoMSYwJAYDVQQDDB1OYXpvIE9B\ndXRoIExvY2FsIE9JREYgbVRMUyBDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAL9va4HYwMVk/gYVUpn6hVK92StgzW+owCeMRydaz5VZatbXfX6hETkV\ndfxq50Xx9LaYIjnvRZ7JPm5ChzaQBNu65XpnpvbjbY8ntnJj9QHg/uOc3vJai5N5\nvcGPgG2AJ/rMtTlChlmhNbUF7YUT0wYvH5WrF6KDB+wVewkBpwlBvP0cu7q+OMeu\nGnWgb4qPHDNPKyu315jeWfkL9ZoXtoHZA3lmCWGV7gilyGk8E3+Yphp3u1UVcL6A\nTSdY1uOVoGakYlDQQ+QPbRUpgv3UrV9wgc9BIeGmfmbWsSZQpBBwRRNCWEk75Jq+\n9h1JLk0e5LwZsat85XsCgWnUB2YFTfcCAwEAAaNTMFEwHQYDVR0OBBYEFFk+VzNQ\nd3b6cjtEIeZn5iJrZPBpMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAHpdWC6FLdskOugO\nw4LR5JhG+0XfatoeV7gVmlskLM94kzw435m9EruBehCaVW8fNHJ7M/eKmbMcPF4O\n+/BukwHn+Pvpd1Qj3QcA/aR6tKl1IFVJgyd36SpxsSEvh78TEWNv+1QFll8ejZcd\nst4Rmwl+3D87kVU/hnypbjvkEe31R+gxEP8DGVMokisiypVAxjB2OSDmsipOnE4P\ntO8Sm73JHS8OnqNGipLDVqgdGeLPImtwrmbs29S2S5c3BhHJMx6hUMaD9urFraDb\nDzv6sThvuywf1q+U/b/7fSH1cZqT0TX5dn7ubwSwgmEfmwInN9+iF68RCkOIqTo7\ngvaYpKw=\n-----END CERTIFICATE-----\n",
         "cert": "-----BEGIN CERTIFICATE-----\nMIIDIDCCAgigAwIBAgIUAobBQSgJmzi49lQ3dBRIn5NF2wIwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDg0NDEzWhcNMzYwNjAyMDg0NDEzWjAoMSYwJAYDVQQDDB1tdGxzLTFi\nZGIzZjU0MzI3NjNmY2VhNzc2NjM5MjCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAM0Br+e+cA+BejzwD9Tp6n72KcwqDIY9KYnqQu4UA+5rtXgLOkfT5m1+\n7SoRZs+f4OL348GUNE7eUuWZxD02umEjO03OyopTGuguPFK4tw1m0/QqWMXE93Mf\nVXVSbovd1MynucWH43PlbcRHM+DJBv/X5Q7zKdFXf0Yk8XOsQWawHCal17lxFHm1\no/w0+8y/dt3bNjDyHfuTLYxBZwExku4wlyGgevEQQXpi7/74/Qwcp47suR40Zl7l\nJwTeflEdA/G0y/0VKPNgOcgc5pc4vrzxRhlNxaVa6Xp7DwaMuM6l/LoX63FIWwE5\n2MLV0Js8i/5duvsNvGMF/UXTt6fa47MCAwEAAaNCMEAwHQYDVR0OBBYEFGXC3RAL\nSXGcccoNZQgDDzHxipYAMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA0GCSqGSIb3DQEBCwUAA4IBAQAB7i/kGv6dg6GyUBjNa8ORByQ6x1z8kI2F9XGh\nAczogUUz0HtAXGSny0KdA9sWmBKSfJKiO6uRVv3SllW4jTNX3bKx5dxhumCsGrHv\n0TZ4XBCrYIToP7OVd/hLV8nRPNBEdJPZJwWDVvWuZWraL01AitDm+XvF+XvDNm6Y\njtAfj9gFHezc8I8Y/Xp3AfB8uld8eMIEasa148m4cldK1GUBDeEvik5EyHFmFGdv\nh9Dk4MTkP/9KYOrNikAWdAzUWCPafJQ3FuTlPWk5FCuwydnYRlAO6ITxguLmNNcA\nk/J1HDGzFcqGdVnUsAtup194XtAs3pKRDdCQaTF2E2vawFDm\n-----END CERTIFICATE-----\n",
@@ -7107,7 +7187,18 @@
           "$secret": "/configs/oidf-fapi-matrix-security-final-mtls-mtls-plain-oauth-plain-fapi-plain-response-plan-config.json/nazo/oidf_user_password"
         },
         "openid": "plain_oauth",
-        "sender_constrain": "mtls"
+        "sender_constrain": "mtls",
+        "matrix_title": "FAPI2 Security Profile Final / mTLS / mTLS / plain OAuth / authorization code",
+        "matrix_description": "Covers FAPI2 Security Profile Final for the authorization code flow using mTLS client authentication, mTLS sender constraint, and OAuth resource access.",
+        "matrix_focus": [
+          "discovery metadata",
+          "PAR request_uri lifetime and replay handling",
+          "authorization request parameter binding",
+          "PKCE and redirect URI enforcement",
+          "client assertion validation",
+          "authorization code replay rejection",
+          "refresh token behavior"
+        ]
       },
       "override": {
         "fapi2-security-profile-final-par-ensure-reused-request-uri-prior-to-auth-completion-succeeds": {
@@ -8067,7 +8158,7 @@
         },
         "scope": "openid profile email offline_access"
       },
-      "description": "Local Podman Nazo OAuth FAPI2 matrix security-final-private-key-jwt-dpop-openid-connect-plain-fapi-plain-response",
+      "description": "Covers FAPI2 Security Profile Final for the authorization code flow using private_key_jwt client authentication, DPoP sender constraint, and OpenID Connect responses.",
       "mtls": {
         "ca": "-----BEGIN CERTIFICATE-----\nMIIDMTCCAhmgAwIBAgIUP6tsYH37cIeOLwsSLYVcJdp4FkEwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDE0MzUzWhcNMzYwNjAyMDE0MzUzWjAoMSYwJAYDVQQDDB1OYXpvIE9B\ndXRoIExvY2FsIE9JREYgbVRMUyBDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAL9va4HYwMVk/gYVUpn6hVK92StgzW+owCeMRydaz5VZatbXfX6hETkV\ndfxq50Xx9LaYIjnvRZ7JPm5ChzaQBNu65XpnpvbjbY8ntnJj9QHg/uOc3vJai5N5\nvcGPgG2AJ/rMtTlChlmhNbUF7YUT0wYvH5WrF6KDB+wVewkBpwlBvP0cu7q+OMeu\nGnWgb4qPHDNPKyu315jeWfkL9ZoXtoHZA3lmCWGV7gilyGk8E3+Yphp3u1UVcL6A\nTSdY1uOVoGakYlDQQ+QPbRUpgv3UrV9wgc9BIeGmfmbWsSZQpBBwRRNCWEk75Jq+\n9h1JLk0e5LwZsat85XsCgWnUB2YFTfcCAwEAAaNTMFEwHQYDVR0OBBYEFFk+VzNQ\nd3b6cjtEIeZn5iJrZPBpMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAHpdWC6FLdskOugO\nw4LR5JhG+0XfatoeV7gVmlskLM94kzw435m9EruBehCaVW8fNHJ7M/eKmbMcPF4O\n+/BukwHn+Pvpd1Qj3QcA/aR6tKl1IFVJgyd36SpxsSEvh78TEWNv+1QFll8ejZcd\nst4Rmwl+3D87kVU/hnypbjvkEe31R+gxEP8DGVMokisiypVAxjB2OSDmsipOnE4P\ntO8Sm73JHS8OnqNGipLDVqgdGeLPImtwrmbs29S2S5c3BhHJMx6hUMaD9urFraDb\nDzv6sThvuywf1q+U/b/7fSH1cZqT0TX5dn7ubwSwgmEfmwInN9+iF68RCkOIqTo7\ngvaYpKw=\n-----END CERTIFICATE-----\n",
         "cert": "-----BEGIN CERTIFICATE-----\nMIIDIDCCAgigAwIBAgIUAobBQSgJmzi49lQ3dBRIn5NF2vgwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDg0NDEyWhcNMzYwNjAyMDg0NDEyWjAoMSYwJAYDVQQDDB1tdGxzLTM3\nMTIzYmM2Y2ZjYjhkNzIxYWQ5N2ZiNzCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAN9VBKNWrjKutlnbLbpxUUG6frX4f84fiellhVYPjeRDYpY1X2NOwMQ8\nyAgEgoUCWpDXSthM+3ny3hJqiQubrRdleOKnRgjJf+z3ubcqiG3aVr+1y1pMDxeL\navI9B7IAVJc+cYo0axsvSbe0dvuFWMf2f62vuqMKPK+w8d2d+RULRu9hDx3ER3o5\nzuxoTwJBrH+7uSM15ekYNgyQKfVrSYX3dtC7WZtavvtbhsakdzB9Wz89rokw8ayL\nHYyhyVOfl5LSneXLpy6k3K9YGphawbqJNIJv8C0pYqw3lzQsGNqGIfawh9MfJgXU\n1Vps0iZX/OrfbVNfJx9mD5bwHl3hHUECAwEAAaNCMEAwHQYDVR0OBBYEFGXSTEPl\n+m/7KDszGACqEgAbMeqqMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA0GCSqGSIb3DQEBCwUAA4IBAQAu8P3RTPvFOBUXCc7BhPGJdJGFdi6SFbfINdG2\nnl6EUpAODnwkmteK81ueVKXN9k05OzjNh/xbo+DLpJ5JKyHHi5e3VkyJhh6zfhcH\nG01gJ9FJFkuP/d0xbGOrfStsmKwtyI9EUq0ms59KA8glCwwC84+oGbEJWEdxquJt\nOPczWXZIk2Wf2wtgE5QP9VcRlEPcQTxnfCD4wByjtY73HRGU161sa/tBR3oM/E1T\nBdBUh7QuoadlhgHLEJ/lpCwWt7qaa88LMUMbjdvRyAj4lcXrG2Fgd2F7Zhz2each\nG5V/E2VLwKCUsvPs8K2kbJttfuTYGJWwJL3u1wEB6dB/1CgF\n-----END CERTIFICATE-----\n",
@@ -8091,7 +8182,18 @@
           "$secret": "/configs/oidf-fapi-matrix-security-final-private-key-jwt-dpop-openid-connect-plain-fapi-plain-response-plan-config.json/nazo/oidf_user_password"
         },
         "openid": "openid_connect",
-        "sender_constrain": "dpop"
+        "sender_constrain": "dpop",
+        "matrix_title": "FAPI2 Security Profile Final / private_key_jwt / DPoP / OpenID Connect / authorization code",
+        "matrix_description": "Covers FAPI2 Security Profile Final for the authorization code flow using private_key_jwt client authentication, DPoP sender constraint, and OpenID Connect responses.",
+        "matrix_focus": [
+          "discovery metadata",
+          "PAR request_uri lifetime and replay handling",
+          "authorization request parameter binding",
+          "PKCE and redirect URI enforcement",
+          "client assertion validation",
+          "authorization code replay rejection",
+          "refresh token behavior"
+        ]
       },
       "override": {
         "fapi2-security-profile-final-par-ensure-reused-request-uri-prior-to-auth-completion-succeeds": {
@@ -9051,7 +9153,7 @@
         },
         "scope": "accounts"
       },
-      "description": "Local Podman Nazo OAuth FAPI2 matrix security-final-private-key-jwt-dpop-plain-oauth-fapi-client-credentials-grant-plain-response",
+      "description": "Covers FAPI2 Security Profile Final for the client credentials flow using private_key_jwt client authentication, DPoP sender constraint, and OAuth resource access.",
       "mtls": {
         "ca": "-----BEGIN CERTIFICATE-----\nMIIDMTCCAhmgAwIBAgIUP6tsYH37cIeOLwsSLYVcJdp4FkEwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDE0MzUzWhcNMzYwNjAyMDE0MzUzWjAoMSYwJAYDVQQDDB1OYXpvIE9B\ndXRoIExvY2FsIE9JREYgbVRMUyBDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAL9va4HYwMVk/gYVUpn6hVK92StgzW+owCeMRydaz5VZatbXfX6hETkV\ndfxq50Xx9LaYIjnvRZ7JPm5ChzaQBNu65XpnpvbjbY8ntnJj9QHg/uOc3vJai5N5\nvcGPgG2AJ/rMtTlChlmhNbUF7YUT0wYvH5WrF6KDB+wVewkBpwlBvP0cu7q+OMeu\nGnWgb4qPHDNPKyu315jeWfkL9ZoXtoHZA3lmCWGV7gilyGk8E3+Yphp3u1UVcL6A\nTSdY1uOVoGakYlDQQ+QPbRUpgv3UrV9wgc9BIeGmfmbWsSZQpBBwRRNCWEk75Jq+\n9h1JLk0e5LwZsat85XsCgWnUB2YFTfcCAwEAAaNTMFEwHQYDVR0OBBYEFFk+VzNQ\nd3b6cjtEIeZn5iJrZPBpMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAHpdWC6FLdskOugO\nw4LR5JhG+0XfatoeV7gVmlskLM94kzw435m9EruBehCaVW8fNHJ7M/eKmbMcPF4O\n+/BukwHn+Pvpd1Qj3QcA/aR6tKl1IFVJgyd36SpxsSEvh78TEWNv+1QFll8ejZcd\nst4Rmwl+3D87kVU/hnypbjvkEe31R+gxEP8DGVMokisiypVAxjB2OSDmsipOnE4P\ntO8Sm73JHS8OnqNGipLDVqgdGeLPImtwrmbs29S2S5c3BhHJMx6hUMaD9urFraDb\nDzv6sThvuywf1q+U/b/7fSH1cZqT0TX5dn7ubwSwgmEfmwInN9+iF68RCkOIqTo7\ngvaYpKw=\n-----END CERTIFICATE-----\n",
         "cert": "-----BEGIN CERTIFICATE-----\nMIIDIDCCAgigAwIBAgIUAobBQSgJmzi49lQ3dBRIn5NF2wowDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDg0NDE0WhcNMzYwNjAyMDg0NDE0WjAoMSYwJAYDVQQDDB1tdGxzLTEz\nYjg1OTAyOTIwMmNiZmExYmRlZTI2MDCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAJSAZFDl6qTta/atJN0HLk+uZ++X2wEAOvQaM4TiRu6vM8rckHyvduFF\nkDji+3Wg5iKzZuSH84BmRaA0L3ippUzzlJMuyMGB+nCogIEtZuvBjBqPBT0FtLtb\nBZKelQWq9dPkuKgUtDXbBBIgt2JMvGNpOTVQBguvCgpLdIwOwJ9CazXyXhhjEb6j\nEtgOXcroXf8Lrybl9VJNi38jid64tW1/0Tui2alJCBWxqs/s68N1Umc4HCrJcwBf\n8Hkjv28gbvu+PDHkO4XSvLNaFDx8ahZlCLTgV19lRoR2WK0LUSN1iTgPBnHYf8wJ\nIW/6xRrr+2kKyZLQBFcRV6mCFjnKDz8CAwEAAaNCMEAwHQYDVR0OBBYEFGg+OLOI\nUkWn2DLQC7ErTrvEsUCoMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA0GCSqGSIb3DQEBCwUAA4IBAQBfl9qcJQjDvaCav6EZrRl/KKikUwzYgOOvy+FK\nfyJdlAieSEDGVDMQytmW+6TpajjPAoGGm2fHsaHgOio5qkSVeArFlLb7umruv/mr\nyjDwUqMnPMcWzf/Tmduvd/AD1szpWC9hYDG5QWvV5bs47Aqyf6AXfRTbtiw71acB\na8w2HBbOvDhVG8P8xwtI0lLz5XJnjvxaNsLgqLuhfpE+j1fIMmNwpodgK44sGxpp\nBcNNadtE7tAvFH0d0oLf1RpiMowX0PocmLn9fvcBp9LwSOw6uQT8NgSbkeVbyhDR\nayXMN8remI+aBUS6ci6HmQG2wTbDM9Ax9VKtwPW3fjPP0+ON\n-----END CERTIFICATE-----\n",
@@ -9075,7 +9177,17 @@
           "$secret": "/configs/oidf-fapi-matrix-security-final-private-key-jwt-dpop-plain-oauth-fapi-client-credentials-grant-plain-response-plan-config.json/nazo/oidf_user_password"
         },
         "openid": "plain_oauth",
-        "sender_constrain": "dpop"
+        "sender_constrain": "dpop",
+        "matrix_title": "FAPI2 Security Profile Final / private_key_jwt / DPoP / plain OAuth / client credentials",
+        "matrix_description": "Covers FAPI2 Security Profile Final for the client credentials flow using private_key_jwt client authentication, DPoP sender constraint, and OAuth resource access.",
+        "matrix_focus": [
+          "discovery metadata",
+          "PAR request_uri lifetime and replay handling",
+          "authorization request parameter binding",
+          "PKCE and redirect URI enforcement",
+          "client assertion validation",
+          "client credentials token issuance"
+        ]
       },
       "override": {
         "fapi2-security-profile-final-par-ensure-reused-request-uri-prior-to-auth-completion-succeeds": {
@@ -10035,7 +10147,7 @@
         },
         "scope": "accounts offline_access"
       },
-      "description": "Local Podman Nazo OAuth FAPI2 matrix security-final-private-key-jwt-dpop-plain-oauth-plain-fapi-plain-response",
+      "description": "Covers FAPI2 Security Profile Final for the authorization code flow using private_key_jwt client authentication, DPoP sender constraint, and OAuth resource access.",
       "mtls": {
         "ca": "-----BEGIN CERTIFICATE-----\nMIIDMTCCAhmgAwIBAgIUP6tsYH37cIeOLwsSLYVcJdp4FkEwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDE0MzUzWhcNMzYwNjAyMDE0MzUzWjAoMSYwJAYDVQQDDB1OYXpvIE9B\ndXRoIExvY2FsIE9JREYgbVRMUyBDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAL9va4HYwMVk/gYVUpn6hVK92StgzW+owCeMRydaz5VZatbXfX6hETkV\ndfxq50Xx9LaYIjnvRZ7JPm5ChzaQBNu65XpnpvbjbY8ntnJj9QHg/uOc3vJai5N5\nvcGPgG2AJ/rMtTlChlmhNbUF7YUT0wYvH5WrF6KDB+wVewkBpwlBvP0cu7q+OMeu\nGnWgb4qPHDNPKyu315jeWfkL9ZoXtoHZA3lmCWGV7gilyGk8E3+Yphp3u1UVcL6A\nTSdY1uOVoGakYlDQQ+QPbRUpgv3UrV9wgc9BIeGmfmbWsSZQpBBwRRNCWEk75Jq+\n9h1JLk0e5LwZsat85XsCgWnUB2YFTfcCAwEAAaNTMFEwHQYDVR0OBBYEFFk+VzNQ\nd3b6cjtEIeZn5iJrZPBpMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAHpdWC6FLdskOugO\nw4LR5JhG+0XfatoeV7gVmlskLM94kzw435m9EruBehCaVW8fNHJ7M/eKmbMcPF4O\n+/BukwHn+Pvpd1Qj3QcA/aR6tKl1IFVJgyd36SpxsSEvh78TEWNv+1QFll8ejZcd\nst4Rmwl+3D87kVU/hnypbjvkEe31R+gxEP8DGVMokisiypVAxjB2OSDmsipOnE4P\ntO8Sm73JHS8OnqNGipLDVqgdGeLPImtwrmbs29S2S5c3BhHJMx6hUMaD9urFraDb\nDzv6sThvuywf1q+U/b/7fSH1cZqT0TX5dn7ubwSwgmEfmwInN9+iF68RCkOIqTo7\ngvaYpKw=\n-----END CERTIFICATE-----\n",
         "cert": "-----BEGIN CERTIFICATE-----\nMIIDIDCCAgigAwIBAgIUAobBQSgJmzi49lQ3dBRIn5NF2vYwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDg0NDEyWhcNMzYwNjAyMDg0NDEyWjAoMSYwJAYDVQQDDB1tdGxzLTlm\nODIwZWU5ZDYwZDk3N2FhOTNjNjQ0ZTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAKzxRoGof8Fn6A66GnadFCIpz6KLUJwJzX4edLN8LwNKjGbJ/uZa3msw\nDYuG+r6H4g/MojQOYRCWlynSj5a/BWTNcjRPpDYIASv98iRYFMWZLH+MMqSUzTJB\nYR31jahJet1JfXHwmZi8W7rBVm8/NOhfwV/KSSEpWZz5jmemsKbJFrnh774Qrmr2\nMaXVPNFKtfBisbCO+fXEMcaYzQScO1lPIEf7QbmIj0pRwAj6ZyBGEHsRy3HoBdAi\nrtvnQY9wRb1w2hs1e4aKiIDOLnEESAnKVn7RhSpLfEJ22buwHogVsYsJFisWIkZ7\nvrZS98MRp/DE2cyhmMhoJMr0sG7CH4cCAwEAAaNCMEAwHQYDVR0OBBYEFBvAEtuX\njLsXolVsqq8pSd17G3V7MB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA0GCSqGSIb3DQEBCwUAA4IBAQCy/LZg9CUndBJMGVnvOst4SPP4XdlIwFug6T+J\nEttPWqhfo+4qOjrFqzd0/EhG1Z8vkHur+sFeElKjLnv+qzw/JHvLhyopvKwTdtGb\n9hc0BA7oN1PRsYimq+uPLjBeQmjBqttpIE8V5HXr02hTQB+fieUCyA5Sxkww8qe0\n/1rn19wNjsoDf0OBeWdPIQOChnsIbglBU8/4ViJorp4k+wRAoSdEkSB1JDYP4I3c\nnZOBJKCisvvAe8BYlICZZheOvRv7t3M3YtTSYOiazToepIj+cC5FzgXLGIi6BeEa\nSCi2ghfKsUEcXjZnTk6Cmuq9idX0c/biACDMVzH1jgGLuiHO\n-----END CERTIFICATE-----\n",
@@ -10059,7 +10171,18 @@
           "$secret": "/configs/oidf-fapi-matrix-security-final-private-key-jwt-dpop-plain-oauth-plain-fapi-plain-response-plan-config.json/nazo/oidf_user_password"
         },
         "openid": "plain_oauth",
-        "sender_constrain": "dpop"
+        "sender_constrain": "dpop",
+        "matrix_title": "FAPI2 Security Profile Final / private_key_jwt / DPoP / plain OAuth / authorization code",
+        "matrix_description": "Covers FAPI2 Security Profile Final for the authorization code flow using private_key_jwt client authentication, DPoP sender constraint, and OAuth resource access.",
+        "matrix_focus": [
+          "discovery metadata",
+          "PAR request_uri lifetime and replay handling",
+          "authorization request parameter binding",
+          "PKCE and redirect URI enforcement",
+          "client assertion validation",
+          "authorization code replay rejection",
+          "refresh token behavior"
+        ]
       },
       "override": {
         "fapi2-security-profile-final-par-ensure-reused-request-uri-prior-to-auth-completion-succeeds": {
@@ -11019,7 +11142,7 @@
         },
         "scope": "openid profile email offline_access"
       },
-      "description": "Local Podman Nazo OAuth FAPI2 matrix security-final-private-key-jwt-mtls-openid-connect-plain-fapi-plain-response",
+      "description": "Covers FAPI2 Security Profile Final for the authorization code flow using private_key_jwt client authentication, mTLS sender constraint, and OpenID Connect responses.",
       "mtls": {
         "ca": "-----BEGIN CERTIFICATE-----\nMIIDMTCCAhmgAwIBAgIUP6tsYH37cIeOLwsSLYVcJdp4FkEwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDE0MzUzWhcNMzYwNjAyMDE0MzUzWjAoMSYwJAYDVQQDDB1OYXpvIE9B\ndXRoIExvY2FsIE9JREYgbVRMUyBDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAL9va4HYwMVk/gYVUpn6hVK92StgzW+owCeMRydaz5VZatbXfX6hETkV\ndfxq50Xx9LaYIjnvRZ7JPm5ChzaQBNu65XpnpvbjbY8ntnJj9QHg/uOc3vJai5N5\nvcGPgG2AJ/rMtTlChlmhNbUF7YUT0wYvH5WrF6KDB+wVewkBpwlBvP0cu7q+OMeu\nGnWgb4qPHDNPKyu315jeWfkL9ZoXtoHZA3lmCWGV7gilyGk8E3+Yphp3u1UVcL6A\nTSdY1uOVoGakYlDQQ+QPbRUpgv3UrV9wgc9BIeGmfmbWsSZQpBBwRRNCWEk75Jq+\n9h1JLk0e5LwZsat85XsCgWnUB2YFTfcCAwEAAaNTMFEwHQYDVR0OBBYEFFk+VzNQ\nd3b6cjtEIeZn5iJrZPBpMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAHpdWC6FLdskOugO\nw4LR5JhG+0XfatoeV7gVmlskLM94kzw435m9EruBehCaVW8fNHJ7M/eKmbMcPF4O\n+/BukwHn+Pvpd1Qj3QcA/aR6tKl1IFVJgyd36SpxsSEvh78TEWNv+1QFll8ejZcd\nst4Rmwl+3D87kVU/hnypbjvkEe31R+gxEP8DGVMokisiypVAxjB2OSDmsipOnE4P\ntO8Sm73JHS8OnqNGipLDVqgdGeLPImtwrmbs29S2S5c3BhHJMx6hUMaD9urFraDb\nDzv6sThvuywf1q+U/b/7fSH1cZqT0TX5dn7ubwSwgmEfmwInN9+iF68RCkOIqTo7\ngvaYpKw=\n-----END CERTIFICATE-----\n",
         "cert": "-----BEGIN CERTIFICATE-----\nMIIDIDCCAgigAwIBAgIUAobBQSgJmzi49lQ3dBRIn5NF2vwwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDg0NDEzWhcNMzYwNjAyMDg0NDEzWjAoMSYwJAYDVQQDDB1tdGxzLWY2\nMTM2NzIyZjdkYzliYjJiM2U0M2FjNDCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBALP4sx4OVRVza1y1CFd+CIdS9agulED+E7Fey89MrKneD2FvBf2A/3zl\nu+y8nsJ+iRLPjlh3N4gA5BspNlUMLY4SPjostW9ITDtJJ8u6SOhaL+WO6pWJgS8R\nYqo8yAcJ6O2mYzFdRtkv6qHAzA6YoWdws2Sy64VHWATKNaObCO7QxYjUwd4Uhwyy\nzlxpYMu3JhTUjKyTQsTvVEg76JTluenCVWArMj4+DzraXG1rZfMJksieYfK0RO6R\nSgHHTDrL9lOwubGSC0gR3QdSaQU8kNIQbdfUQ5kQ5j6kteEYDbxVztIo4yrWNGp8\nVPL4RxNQcs5OaJV7t7nWPLDDCAZdyrECAwEAAaNCMEAwHQYDVR0OBBYEFOAvvmC2\n94l11etHkG/gcejXtElWMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA0GCSqGSIb3DQEBCwUAA4IBAQCQ9j4GABXCbrIqfgf9IT43EmJ+0JDfgh5D4WN3\nM+sLxKrsqK1rLtKKwejMvzaQWAFqbbewO0lT1TLlYuQoCJNuXGkXIiMDNq/Xc7x9\n6cEMxO4uGDQ9BOrD9SKYSRckhtSYTlH/NDNBzxuzIJEoFrqvJC9gme0I7DvZt3aU\nfvbnmujxiH2jsV8ELbrUpRomN7swpmsioFS/kntCawmZaNjhezQpwD4GrJ1i7DlR\nIAqiRYxV2JT9UKBBB/jKi7W4Wmp7myIMAzMmH9E3bTQwvg6YDZLxdFGujEi4T0u+\nKrlopuF/1MI3KwY5JBUwHKicCu5LFxKyjRYM2AwvjNjD+dvc\n-----END CERTIFICATE-----\n",
@@ -11043,7 +11166,18 @@
           "$secret": "/configs/oidf-fapi-matrix-security-final-private-key-jwt-mtls-openid-connect-plain-fapi-plain-response-plan-config.json/nazo/oidf_user_password"
         },
         "openid": "openid_connect",
-        "sender_constrain": "mtls"
+        "sender_constrain": "mtls",
+        "matrix_title": "FAPI2 Security Profile Final / private_key_jwt / mTLS / OpenID Connect / authorization code",
+        "matrix_description": "Covers FAPI2 Security Profile Final for the authorization code flow using private_key_jwt client authentication, mTLS sender constraint, and OpenID Connect responses.",
+        "matrix_focus": [
+          "discovery metadata",
+          "PAR request_uri lifetime and replay handling",
+          "authorization request parameter binding",
+          "PKCE and redirect URI enforcement",
+          "client assertion validation",
+          "authorization code replay rejection",
+          "refresh token behavior"
+        ]
       },
       "override": {
         "fapi2-security-profile-final-par-ensure-reused-request-uri-prior-to-auth-completion-succeeds": {
@@ -12003,7 +12137,7 @@
         },
         "scope": "accounts"
       },
-      "description": "Local Podman Nazo OAuth FAPI2 matrix security-final-private-key-jwt-mtls-plain-oauth-fapi-client-credentials-grant-plain-response",
+      "description": "Covers FAPI2 Security Profile Final for the client credentials flow using private_key_jwt client authentication, mTLS sender constraint, and OAuth resource access.",
       "mtls": {
         "ca": "-----BEGIN CERTIFICATE-----\nMIIDMTCCAhmgAwIBAgIUP6tsYH37cIeOLwsSLYVcJdp4FkEwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDE0MzUzWhcNMzYwNjAyMDE0MzUzWjAoMSYwJAYDVQQDDB1OYXpvIE9B\ndXRoIExvY2FsIE9JREYgbVRMUyBDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAL9va4HYwMVk/gYVUpn6hVK92StgzW+owCeMRydaz5VZatbXfX6hETkV\ndfxq50Xx9LaYIjnvRZ7JPm5ChzaQBNu65XpnpvbjbY8ntnJj9QHg/uOc3vJai5N5\nvcGPgG2AJ/rMtTlChlmhNbUF7YUT0wYvH5WrF6KDB+wVewkBpwlBvP0cu7q+OMeu\nGnWgb4qPHDNPKyu315jeWfkL9ZoXtoHZA3lmCWGV7gilyGk8E3+Yphp3u1UVcL6A\nTSdY1uOVoGakYlDQQ+QPbRUpgv3UrV9wgc9BIeGmfmbWsSZQpBBwRRNCWEk75Jq+\n9h1JLk0e5LwZsat85XsCgWnUB2YFTfcCAwEAAaNTMFEwHQYDVR0OBBYEFFk+VzNQ\nd3b6cjtEIeZn5iJrZPBpMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAHpdWC6FLdskOugO\nw4LR5JhG+0XfatoeV7gVmlskLM94kzw435m9EruBehCaVW8fNHJ7M/eKmbMcPF4O\n+/BukwHn+Pvpd1Qj3QcA/aR6tKl1IFVJgyd36SpxsSEvh78TEWNv+1QFll8ejZcd\nst4Rmwl+3D87kVU/hnypbjvkEe31R+gxEP8DGVMokisiypVAxjB2OSDmsipOnE4P\ntO8Sm73JHS8OnqNGipLDVqgdGeLPImtwrmbs29S2S5c3BhHJMx6hUMaD9urFraDb\nDzv6sThvuywf1q+U/b/7fSH1cZqT0TX5dn7ubwSwgmEfmwInN9+iF68RCkOIqTo7\ngvaYpKw=\n-----END CERTIFICATE-----\n",
         "cert": "-----BEGIN CERTIFICATE-----\nMIIDIDCCAgigAwIBAgIUAobBQSgJmzi49lQ3dBRIn5NF2wwwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDg0NDE0WhcNMzYwNjAyMDg0NDE0WjAoMSYwJAYDVQQDDB1tdGxzLTli\nYjU0NjgyOTIyODRhYjczMjM4YTBmMjCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAMERsSQciQ6aoOLS+ttf5TySI+6I9EIYvMmtukCe7/wPTot89ng4nHxY\njTQVORwWLzC2FzDD+b4gnu/mowidCd3kM2uyd6L4bqHBYFQIsqDV6TB9vgum2Q1q\n0T9veE2dMiMPWyDfTrJ4G7C7ycDkFb3nU/eGiROr42a/Jzk9T8dOdW3jUY+YZnj+\nDGURc1Th7imcYnVloKOQAuyUlxYjJ4SXCL+It8Hi5dIoQjRDBuYikJo7NoRhkkt/\njUZe5fTY72ICPscLI9Yrga/s/jnetPJHGQfEIn+59RpiEEfdBecxqKPHQRsQk9g8\nBnuZyJ/2U67icp8NGOhuad0Fr1t2RL8CAwEAAaNCMEAwHQYDVR0OBBYEFInkDTHU\nnELqxz5aq1Dj+huOVbxfMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA0GCSqGSIb3DQEBCwUAA4IBAQC0m1ZjGv3IBJJ8THCKRhBmgPnMsq6ZzXkWZ30k\nxXugpiNjzoWGS12RWmBH3tIZ0DOR8qp7dEKkH8vG5wTs60glb8VQx03Akow4O7AK\nAF+otUCbfI1dv6jyKidjeAknVLROOe6hJk1zeR4Hgs8hraUlDqpMsfMsnLCJOgZu\nuA1cBvbD1DhKdVeKnOWXC7bqqaw9Z7qPHa4fxvMqVfAIESdAbNUIpWFpEiswJRFf\n8qbkNTyUNy61RElZYnD5ikjwHY5KEFB1/gLS+gR40P1nACCTBRd/9AwyEVPxupJG\nn1pLEdANrXNJ7X0XcAzVci2XX/TWV9rlWQwMJGPCIvWVJQOM\n-----END CERTIFICATE-----\n",
@@ -12027,7 +12161,17 @@
           "$secret": "/configs/oidf-fapi-matrix-security-final-private-key-jwt-mtls-plain-oauth-fapi-client-credentials-grant-plain-response-plan-config.json/nazo/oidf_user_password"
         },
         "openid": "plain_oauth",
-        "sender_constrain": "mtls"
+        "sender_constrain": "mtls",
+        "matrix_title": "FAPI2 Security Profile Final / private_key_jwt / mTLS / plain OAuth / client credentials",
+        "matrix_description": "Covers FAPI2 Security Profile Final for the client credentials flow using private_key_jwt client authentication, mTLS sender constraint, and OAuth resource access.",
+        "matrix_focus": [
+          "discovery metadata",
+          "PAR request_uri lifetime and replay handling",
+          "authorization request parameter binding",
+          "PKCE and redirect URI enforcement",
+          "client assertion validation",
+          "client credentials token issuance"
+        ]
       },
       "override": {
         "fapi2-security-profile-final-par-ensure-reused-request-uri-prior-to-auth-completion-succeeds": {
@@ -12987,7 +13131,7 @@
         },
         "scope": "accounts offline_access"
       },
-      "description": "Local Podman Nazo OAuth FAPI2 matrix security-final-private-key-jwt-mtls-plain-oauth-plain-fapi-plain-response",
+      "description": "Covers FAPI2 Security Profile Final for the authorization code flow using private_key_jwt client authentication, mTLS sender constraint, and OAuth resource access.",
       "mtls": {
         "ca": "-----BEGIN CERTIFICATE-----\nMIIDMTCCAhmgAwIBAgIUP6tsYH37cIeOLwsSLYVcJdp4FkEwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDE0MzUzWhcNMzYwNjAyMDE0MzUzWjAoMSYwJAYDVQQDDB1OYXpvIE9B\ndXRoIExvY2FsIE9JREYgbVRMUyBDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAL9va4HYwMVk/gYVUpn6hVK92StgzW+owCeMRydaz5VZatbXfX6hETkV\ndfxq50Xx9LaYIjnvRZ7JPm5ChzaQBNu65XpnpvbjbY8ntnJj9QHg/uOc3vJai5N5\nvcGPgG2AJ/rMtTlChlmhNbUF7YUT0wYvH5WrF6KDB+wVewkBpwlBvP0cu7q+OMeu\nGnWgb4qPHDNPKyu315jeWfkL9ZoXtoHZA3lmCWGV7gilyGk8E3+Yphp3u1UVcL6A\nTSdY1uOVoGakYlDQQ+QPbRUpgv3UrV9wgc9BIeGmfmbWsSZQpBBwRRNCWEk75Jq+\n9h1JLk0e5LwZsat85XsCgWnUB2YFTfcCAwEAAaNTMFEwHQYDVR0OBBYEFFk+VzNQ\nd3b6cjtEIeZn5iJrZPBpMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAHpdWC6FLdskOugO\nw4LR5JhG+0XfatoeV7gVmlskLM94kzw435m9EruBehCaVW8fNHJ7M/eKmbMcPF4O\n+/BukwHn+Pvpd1Qj3QcA/aR6tKl1IFVJgyd36SpxsSEvh78TEWNv+1QFll8ejZcd\nst4Rmwl+3D87kVU/hnypbjvkEe31R+gxEP8DGVMokisiypVAxjB2OSDmsipOnE4P\ntO8Sm73JHS8OnqNGipLDVqgdGeLPImtwrmbs29S2S5c3BhHJMx6hUMaD9urFraDb\nDzv6sThvuywf1q+U/b/7fSH1cZqT0TX5dn7ubwSwgmEfmwInN9+iF68RCkOIqTo7\ngvaYpKw=\n-----END CERTIFICATE-----\n",
         "cert": "-----BEGIN CERTIFICATE-----\nMIIDIDCCAgigAwIBAgIUAobBQSgJmzi49lQ3dBRIn5NF2vowDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNjA1MDg0NDEyWhcNMzYwNjAyMDg0NDEyWjAoMSYwJAYDVQQDDB1tdGxzLTNh\nMjVhOGUxNDc1ODdjODYzMTk3MDg5OTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBAMUc8YPFeaXYwcKHzkzUW9Y6YLsE0zfaRStR/Upv6UK7KbKMWkBhkyNO\nPbZG4A4k9qyk9Q7a+2bk62Jjlf2Yl4XFFeoea8PDUlG2s09/vyuNcF56ZUxHVOvq\nTXMkBSjhogMNJMwWo0VsYI+1ulNIZzCGKP1kQ0GKELXZLAiB66edOWpbbyCvwUCN\nF68Sib4ScAmnx7Lhq9U9Zhk1OqKYp5N0C/2wS8DKu2L5j/8CJGrLLx1lNvBkVfS0\nFc37g5ouxgNC8uGWi9qX1xKkluDlOXVvYdEgSoIl68XAq6o70J5T7aeRN9FoISUk\nkFzCYFsg0fcHeUw2MEOe0bHT1dQjBZECAwEAAaNCMEAwHQYDVR0OBBYEFDergmUP\nAGIYeu3Oon/t/XfMmiUZMB8GA1UdIwQYMBaAFFk+VzNQd3b6cjtEIeZn5iJrZPBp\nMA0GCSqGSIb3DQEBCwUAA4IBAQAjAD7mjAkQXrAA9y9JUaaUisQRUPnVwB/Hg1m2\nC23VBV0ELi7ueihH6sldrXuRQGHBy94vs45V7ZFFeuCqIrraINGOuxS6dUT0qcNy\nsrYkEV1lksgfuFY7EquYLMn9CMqlOSTIWlCUSWwkmBtK0pQuMYYxTL6vQMugCGwN\nc9jFPvPcfLOyBhAmySqhuW6wce7b8JIN/4gv5cqVe2rPREBCfE8rgpw95jfC3DWY\n6KudVJysUTZlCSUrsyPUIuZaUqF/OMouMD9IjV0HUiS31HcpWbbG28aGElAFfyDN\nIUED+pNgPXcbOdrrIrD8/Lr4AuKW4fkLA4kQXCxxMoEIyIpA\n-----END CERTIFICATE-----\n",
@@ -13011,7 +13155,18 @@
           "$secret": "/configs/oidf-fapi-matrix-security-final-private-key-jwt-mtls-plain-oauth-plain-fapi-plain-response-plan-config.json/nazo/oidf_user_password"
         },
         "openid": "plain_oauth",
-        "sender_constrain": "mtls"
+        "sender_constrain": "mtls",
+        "matrix_title": "FAPI2 Security Profile Final / private_key_jwt / mTLS / plain OAuth / authorization code",
+        "matrix_description": "Covers FAPI2 Security Profile Final for the authorization code flow using private_key_jwt client authentication, mTLS sender constraint, and OAuth resource access.",
+        "matrix_focus": [
+          "discovery metadata",
+          "PAR request_uri lifetime and replay handling",
+          "authorization request parameter binding",
+          "PKCE and redirect URI enforcement",
+          "client assertion validation",
+          "authorization code replay rejection",
+          "refresh token behavior"
+        ]
       },
       "override": {
         "fapi2-security-profile-final-par-ensure-reused-request-uri-prior-to-auth-completion-succeeds": {
@@ -18360,7 +18515,7 @@
         },
         "scope": "openid profile email address phone offline_access"
       },
-      "description": "Local Podman Nazo OAuth OIDCC basic conformance configuration",
+      "description": "OIDC Basic OP: discovery and authorization-code interoperability.",
       "nazo": {
         "oidf_user_email": "oidf-local@example.test",
         "oidf_user_password": {
@@ -18901,7 +19056,7 @@
     },
     "oidf-oidcc-config-plan-config.json": {
       "alias": "local-nazo-oauth-oidf-config",
-      "description": "Local Podman Nazo OAuth OIDCC config conformance configuration",
+      "description": "OIDC Config OP: provider metadata accuracy for the public issuer.",
       "server": {
         "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
       }

@@ -109,8 +109,12 @@ OpenID Foundation Conformance Suite 结果 URL：
 | OIDC Basic OP | <https://www.certification.openid.net/plan-detail.html?plan=Srk6iaVDVcqO5> |
 | OIDC Config OP | <https://www.certification.openid.net/plan-detail.html?plan=fGiz8QZYR1LVy> |
 | 完整 16-plan 官方矩阵 | [docs/conformance/2026-06-27-pr15-official-oidf-full-matrix.md](docs/conformance/2026-06-27-pr15-official-oidf-full-matrix.md#official-plan-detail-urls) |
+| OIDF 矩阵范围 | [docs/conformance/oidf-full-matrix.zh-CN.md](docs/conformance/oidf-full-matrix.zh-CN.md) |
+| 最新 Hostinger 本地 full matrix | [docs/conformance/2026-07-01-tp-ps-full-matrix.md](docs/conformance/2026-07-01-tp-ps-full-matrix.md) |
 
 最新官方 full matrix 针对 `https://auth.nazo.run` 和 runtime commit `be7ef9f6a9197520235a59d42866a0918a293014` 执行，导出全部 16 个 plan archives，结果为 `0 failures`、`0 warnings`。
+
+最新 Hostinger 本地 full matrix 针对 runtime commit `32429d5` 执行，跑完全部 16 个 plan、578 个模块，结果为 `0 failures`、`0 warnings`。
 
 ## 功能
 
