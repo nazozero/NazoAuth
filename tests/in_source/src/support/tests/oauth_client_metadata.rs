@@ -21,6 +21,7 @@ fn metadata<'a>(
         token_endpoint_auth_method,
         backchannel_logout_uri: None,
         jwks,
+        allow_jwks_without_kid: false,
         introspection_encrypted_response_alg: None,
         introspection_encrypted_response_enc: None,
         mtls_binding,
