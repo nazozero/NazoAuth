@@ -613,7 +613,7 @@ async fn authorization_request_redirects_non_par_request_uri_as_unsupported() {
 
     assert_authorization_error_redirect(
         response,
-        "invalid_request_uri",
+        "request_uri_not_supported",
         Some("external-request-uri"),
     );
 }

@@ -1,6 +1,7 @@
 //! RFC 7591 dynamic client registration endpoint.
 
 use crate::http::{admin::CreateClientRequest, prelude::*};
+use url::Url;
 
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct DynamicClientRegistrationRequest {
@@ -163,11 +164,7 @@ pub(crate) fn prepare_dynamic_client_registration(
             "jwks_uri is not supported; register jwks by value.",
         ));
     }
-    if !request.request_uris.is_empty() {
-        return Err(DynamicRegistrationError::invalid_client_metadata(
-            "request_uris is not supported; use pushed authorization requests.",
-        ));
-    }
+    validate_request_uris(&request.request_uris)?;
     if let Some(application_type) = request.application_type.as_deref()
         && !matches!(application_type, "web" | "native")
     {
@@ -353,6 +350,22 @@ fn default_dynamic_client_scopes(grant_types: &[String]) -> Vec<String> {
         scopes.push("offline_access".to_owned());
     }
     scopes
+}
+
+fn validate_request_uris(request_uris: &[String]) -> Result<(), DynamicRegistrationError> {
+    for request_uri in request_uris {
+        let parsed = Url::parse(request_uri).map_err(|_| {
+            DynamicRegistrationError::invalid_client_metadata(
+                "request_uris values must be absolute HTTPS URLs.",
+            )
+        })?;
+        if parsed.scheme() != "https" || parsed.host_str().is_none() {
+            return Err(DynamicRegistrationError::invalid_client_metadata(
+                "request_uris values must be absolute HTTPS URLs.",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn map_insert_error(message: String) -> DynamicRegistrationError {

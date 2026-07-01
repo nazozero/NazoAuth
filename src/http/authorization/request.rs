@@ -69,7 +69,7 @@ async fn authorize_request(
     let mut pending_pushed_request_uri = None;
     if let Some(request_uri) = q.get("request_uri").cloned() {
         if !is_pushed_authorization_request_uri(&request_uri) {
-            consumed_request_uri_error = Some("invalid_request_uri");
+            consumed_request_uri_error = Some("request_uri_not_supported");
         } else {
             let raw = match valkey_get(
                 &state.valkey,

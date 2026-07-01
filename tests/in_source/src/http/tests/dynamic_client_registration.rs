@@ -75,10 +75,32 @@ fn dynamic_registration_rejects_jwks_uri_and_jwks_in_same_request() {
 }
 
 #[test]
-fn dynamic_registration_rejects_request_uris_metadata() {
+fn dynamic_registration_accepts_request_uris_metadata_when_request_uri_is_not_supported() {
     let request = DynamicClientRegistrationRequest {
         redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
         request_uris: vec!["https://client.example/request.jwt".to_owned()],
+        ..Default::default()
+    };
+
+    let prepared = prepare_dynamic_client_registration(
+        request,
+        DynamicRegistrationDefaults {
+            default_audience: "https://issuer.example/fapi/resource",
+        },
+    )
+    .expect("request_uris metadata should not block registration when request_uri is unsupported");
+
+    assert_eq!(
+        prepared.redirect_uris,
+        vec!["https://client.example/callback"]
+    );
+}
+
+#[test]
+fn dynamic_registration_rejects_malformed_request_uris_metadata() {
+    let request = DynamicClientRegistrationRequest {
+        redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
+        request_uris: vec!["urn:ietf:params:oauth:request_uri:external".to_owned()],
         ..Default::default()
     };
 
@@ -88,10 +110,9 @@ fn dynamic_registration_rejects_request_uris_metadata() {
             default_audience: "https://issuer.example/fapi/resource",
         },
     )
-    .expect_err("unsupported request_uri metadata must not be accepted");
+    .expect_err("request_uris metadata should remain syntactically constrained");
 
     assert_eq!(err.error, "invalid_client_metadata");
-    assert!(err.description.contains("request_uris is not supported"));
 }
 
 #[actix_web::test]
