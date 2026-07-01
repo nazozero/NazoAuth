@@ -4,11 +4,11 @@
 
 OpenID Foundation Conformance Suite full-matrix regression after the
 2026-06-25 security findings hardening branch was deployed to the public
-Hostinger service at `https://auth.nazo.run`.
+issuer at `https://auth.nazo.run`.
 
 The same deployed commit was verified in two stages:
 
-1. Hostinger-local Conformance Suite against the public issuer.
+1. Private local Conformance Suite against the public issuer.
 2. Official OpenID Foundation Conformance Suite against the public issuer.
 
 Both stages completed all configured 16 plans with `0 failures` and
@@ -21,7 +21,7 @@ Both stages completed all configured 16 plans with `0 failures` and
 | Branch | `codex/security-findings-20260625` |
 | Public issuer under test | `https://auth.nazo.run` |
 | Public health check | `{"status":"正常"}` |
-| Deployment host | `ssh hostinger` |
+| Deployment runner | Private deployment runner |
 | Deployment mode | Podman |
 | Service image | `localhost/nazo-oauth-server:main-be7ef9f` |
 | Service HEAD after deployment | `be7ef9f` |
@@ -40,7 +40,7 @@ holder-bound clients:
   material and are still filtered by the requested claim name and any
   `value` / `values` constraints.
 
-## Hostinger Local Suite
+## Private Local Suite
 
 | Field | Value |
 | --- | --- |
@@ -70,7 +70,7 @@ python3 scripts/run_oidf_conformance.py \
   --monitor-interval-seconds 10
 ```
 
-Every printed Hostinger-local plan summary reported `0 failures` and
+Every printed local-suite plan summary reported `0 failures` and
 `0 warnings`:
 
 ```text

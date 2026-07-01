@@ -1797,6 +1797,43 @@ async fn consume_pushed_authorization_request_enforces_single_use_and_malformed_
 }
 
 #[actix_web::test]
+async fn concurrent_pushed_authorization_request_consumption_allows_exactly_one_winner() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
+    fixture
+        .store_pushed_request(
+            &request_uri,
+            "client-a",
+            query(&[
+                ("client_id", "client-a"),
+                ("redirect_uri", "https://client.example/callback"),
+                ("response_type", "code"),
+            ]),
+        )
+        .await;
+
+    let (first, second) = tokio::join!(
+        consume_pushed_authorization_request(&fixture.state, &request_uri),
+        consume_pushed_authorization_request(&fixture.state, &request_uri)
+    );
+    let results = [first, second];
+
+    assert_eq!(
+        results.iter().filter(|result| **result == Ok(())).count(),
+        1
+    );
+    assert_eq!(
+        results
+            .iter()
+            .filter(|result| **result == Err(PushedAuthorizationRequestConsumeError::Missing))
+            .count(),
+        1
+    );
+}
+
+#[actix_web::test]
 async fn authorization_response_redirect_emits_signed_jarm_response() {
     let state = endpoint_state(false);
     state.keyset.replace(local_signing_keyset());

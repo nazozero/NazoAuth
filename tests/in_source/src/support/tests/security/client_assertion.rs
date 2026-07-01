@@ -273,6 +273,35 @@ fn private_key_jwt_claim_validation_rejects_bad_times_and_jti() {
 }
 
 #[test]
+fn private_key_jwt_clock_skew_accepts_small_future_times_and_rejects_over_sixty_seconds() {
+    let now = Utc::now().timestamp();
+    let ten_seconds_future = ClientAssertionClaims {
+        iss: "client-1".to_owned(),
+        sub: "client-1".to_owned(),
+        aud: json!("https://issuer.example"),
+        exp: now + 120,
+        nbf: Some(now + 10),
+        iat: Some(now + 10),
+        jti: "assertion-jti".to_owned(),
+    };
+    assert!(valid_client_assertion_times(&ten_seconds_future, now));
+
+    let sixty_one_seconds_future = ClientAssertionClaims {
+        iss: "client-1".to_owned(),
+        sub: "client-1".to_owned(),
+        aud: json!("https://issuer.example"),
+        exp: now + 120,
+        nbf: Some(now + 61),
+        iat: Some(now + 61),
+        jti: "assertion-jti".to_owned(),
+    };
+    assert!(!valid_client_assertion_times(
+        &sixty_one_seconds_future,
+        now
+    ));
+}
+
+#[test]
 fn client_jwt_algorithm_and_jwk_decoder_fail_closed_for_unsupported_shapes() {
     assert!(client_jwt_algorithm_from_name("HS256").is_none());
     assert!(supported_client_jwt_algorithm_name(jsonwebtoken::Algorithm::HS256).is_none());

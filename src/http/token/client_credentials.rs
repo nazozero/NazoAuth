@@ -4,9 +4,9 @@ use super::{TokenForm, consume_token_client_assertion, issue_token_response};
 use crate::http::prelude::*;
 
 #[derive(Debug)]
-struct ClientCredentialsIssue {
-    scopes: Vec<String>,
-    audiences: Vec<String>,
+pub(super) struct ClientCredentialsIssue {
+    pub(super) scopes: Vec<String>,
+    pub(super) audiences: Vec<String>,
 }
 
 fn reject_non_confidential_client_credentials_client(client: &ClientRow) -> Option<HttpResponse> {
@@ -21,7 +21,7 @@ fn reject_non_confidential_client_credentials_client(client: &ClientRow) -> Opti
     ))
 }
 
-fn client_credentials_issue_request(
+pub(super) fn client_credentials_issue_request(
     settings: &Settings,
     client: &ClientRow,
     form: &TokenForm,

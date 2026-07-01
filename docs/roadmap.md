@@ -102,7 +102,7 @@ core and are not advertised in discovery metadata:
 - Device Authorization Grant.
 - Token Exchange / RFC 8693.
 - Request-level dynamic tenant or issuer routing.
-- Signed introspection responses.
+- JWE introspection responses.
 
 Each item has a threat-model and acceptance-test entry in
 [ecosystem-onboarding.md](ecosystem-onboarding.md) or [tenancy.md](tenancy.md).

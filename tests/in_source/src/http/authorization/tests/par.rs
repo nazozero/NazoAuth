@@ -573,6 +573,38 @@ fn fapi2_profile_requires_sender_constrained_tokens() {
 }
 
 #[test]
+fn fapi2_profile_requires_explicit_par_redirect_uri_even_when_unambiguous() {
+    let settings = Settings {
+        authorization_server_profile: AuthorizationServerProfile::Fapi2Security,
+        ..baseline_settings()
+    };
+    let params = HashMap::from([("response_type".to_owned(), "code".to_owned())]);
+
+    let response = validate_pushed_authorization_request_profile_parameters(&settings, &params)
+        .expect_err("FAPI2 PAR must carry redirect_uri explicitly");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_request")
+    );
+
+    let baseline = baseline_settings();
+    assert!(validate_pushed_authorization_request_profile_parameters(&baseline, &params).is_ok());
+
+    let with_redirect = HashMap::from([
+        ("response_type".to_owned(), "code".to_owned()),
+        (
+            "redirect_uri".to_owned(),
+            "https://client.example/callback".to_owned(),
+        ),
+    ]);
+    assert!(
+        validate_pushed_authorization_request_profile_parameters(&settings, &with_redirect).is_ok()
+    );
+}
+
+#[test]
 fn par_rejects_request_uri_after_request_object_expansion() {
     assert!(!pushed_authorization_request_contains_request_uri(
         &HashMap::new()

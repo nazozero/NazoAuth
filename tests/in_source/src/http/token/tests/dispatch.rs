@@ -735,6 +735,7 @@ async fn missing_client_authorization_code_holder_check_fails_closed_when_valkey
         client_secret: None,
         client_assertion_type: None,
         client_assertion: None,
+        assertion: None,
         audiences: Vec::new(),
         has_audience_param: false,
     };
@@ -774,6 +775,7 @@ async fn missing_client_authorization_code_holder_check_fails_closed_when_client
         client_secret: None,
         client_assertion_type: None,
         client_assertion: None,
+        assertion: None,
         audiences: Vec::new(),
         has_audience_param: false,
     };
@@ -1284,6 +1286,7 @@ async fn missing_client_authorization_code_holder_error_returns_none_when_code_m
         client_secret: None,
         client_assertion_type: None,
         client_assertion: None,
+        assertion: None,
         audiences: Vec::new(),
         has_audience_param: false,
     };
@@ -1332,6 +1335,7 @@ async fn missing_client_authorization_code_holder_error_returns_none_when_client
         client_secret: None,
         client_assertion_type: None,
         client_assertion: None,
+        assertion: None,
         audiences: Vec::new(),
         has_audience_param: false,
     };
@@ -1665,6 +1669,7 @@ fn missing_client_client_credentials_without_dpop_uses_invalid_request() {
         client_secret: None,
         client_assertion_type: None,
         client_assertion: None,
+        assertion: None,
         audiences: Vec::new(),
         has_audience_param: false,
     };
@@ -1688,6 +1693,7 @@ fn missing_client_holder_check_ignores_non_client_credentials_grants() {
         client_secret: None,
         client_assertion_type: None,
         client_assertion: None,
+        assertion: None,
         audiences: Vec::new(),
         has_audience_param: false,
     };
@@ -1708,6 +1714,7 @@ fn missing_client_client_credentials_with_dpop_stays_client_auth_failure() {
         client_secret: None,
         client_assertion_type: None,
         client_assertion: None,
+        assertion: None,
         audiences: Vec::new(),
         has_audience_param: false,
     };
@@ -1728,6 +1735,7 @@ fn missing_client_mtls_client_credentials_uses_invalid_request() {
         client_secret: None,
         client_assertion_type: None,
         client_assertion: None,
+        assertion: None,
         audiences: Vec::new(),
         has_audience_param: false,
     };
@@ -1752,6 +1760,7 @@ fn token_request_auth_material_detects_assertion_even_without_client_id() {
         client_secret: None,
         client_assertion_type: None,
         client_assertion: Some("malformed-or-missing-sub".to_owned()),
+        assertion: None,
         audiences: Vec::new(),
         has_audience_param: false,
     };
@@ -1772,6 +1781,7 @@ fn token_request_auth_material_detects_each_registered_client_auth_channel() {
         client_secret: None,
         client_assertion_type: None,
         client_assertion: None,
+        assertion: None,
         audiences: Vec::new(),
         has_audience_param: false,
     };
@@ -1813,6 +1823,7 @@ fn token_request_auth_material_allows_absent_client_credentials() {
         client_secret: None,
         client_assertion_type: None,
         client_assertion: None,
+        assertion: None,
         audiences: Vec::new(),
         has_audience_param: false,
     };

@@ -1,6 +1,7 @@
 use super::prelude::*;
 use crate::domain::Keyset;
 use crate::http::authorization::BASELINE_ACR_VALUE;
+use crate::http::token::JWT_BEARER_GRANT_TYPE;
 use crate::settings::{AuthorizationServerProfile, Settings, SubjectType};
 
 const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
@@ -115,7 +116,7 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
         "claims_supported": CLAIMS_SUPPORTED,
         "acr_values_supported": [BASELINE_ACR_VALUE],
         "prompt_values_supported": PROMPT_VALUES_SUPPORTED,
-        "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
+        "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials", JWT_BEARER_GRANT_TYPE],
         "protected_resources": [settings.protected_resource_identifier.as_str()],
         "authorization_response_iss_parameter_supported": true,
         "claims_parameter_supported": true,
@@ -129,6 +130,13 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
     if settings.enable_authorization_details {
         metadata["authorization_details_types_supported"] =
             json!(["account_information", "payment_initiation"]);
+    }
+    if settings
+        .authorization_server_profile
+        .requires_signed_introspection()
+    {
+        metadata["introspection_signing_alg_values_supported"] =
+            json!(active_signing_alg_values_supported(keyset));
     }
     if settings.enable_request_object {
         metadata["request_parameter_supported"] = json!(true);
