@@ -194,6 +194,7 @@ pub(crate) struct ClientMetadata<'a> {
     pub(crate) token_endpoint_auth_method: &'a str,
     pub(crate) backchannel_logout_uri: Option<&'a str>,
     pub(crate) jwks: Option<&'a Value>,
+    pub(crate) allow_jwks_without_kid: bool,
     pub(crate) introspection_encrypted_response_alg: Option<&'a str>,
     pub(crate) introspection_encrypted_response_enc: Option<&'a str>,
     pub(crate) mtls_binding: Option<&'a ClientMtlsMetadata>,
@@ -210,6 +211,7 @@ pub(crate) fn validate_client_metadata(metadata: ClientMetadata<'_>) -> anyhow::
         token_endpoint_auth_method,
         backchannel_logout_uri,
         jwks,
+        allow_jwks_without_kid,
         introspection_encrypted_response_alg,
         introspection_encrypted_response_enc,
         mtls_binding,
@@ -237,7 +239,12 @@ pub(crate) fn validate_client_metadata(metadata: ClientMetadata<'_>) -> anyhow::
     if let Some(jwks) = jwks
         && token_endpoint_auth_method != "self_signed_tls_client_auth"
     {
-        validate_client_jwks(jwks)?;
+        validate_client_jwks_with_policy(
+            jwks,
+            ClientJwksValidationPolicy {
+                allow_missing_kid: allow_jwks_without_kid,
+            },
+        )?;
     }
     validate_introspection_jwe_metadata(
         introspection_encrypted_response_alg,
@@ -461,7 +468,24 @@ impl ClientMtlsMetadata {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn validate_client_jwks(jwks: &Value) -> anyhow::Result<()> {
+    validate_client_jwks_with_policy(
+        jwks,
+        ClientJwksValidationPolicy {
+            allow_missing_kid: false,
+        },
+    )
+}
+
+struct ClientJwksValidationPolicy {
+    allow_missing_kid: bool,
+}
+
+fn validate_client_jwks_with_policy(
+    jwks: &Value,
+    policy: ClientJwksValidationPolicy,
+) -> anyhow::Result<()> {
     let keys = jwks
         .get("keys")
         .and_then(Value::as_array)
@@ -472,10 +496,10 @@ pub(crate) fn validate_client_jwks(jwks: &Value) -> anyhow::Result<()> {
     let mut seen_kids = std::collections::HashSet::new();
     for key in keys {
         let kid = key.get("kid").and_then(Value::as_str).unwrap_or_default();
-        if kid.trim().is_empty() {
+        if kid.trim().is_empty() && !policy.allow_missing_kid {
             anyhow::bail!("jwks 公钥必须包含 kid");
         }
-        if !seen_kids.insert(kid) {
+        if !kid.trim().is_empty() && !seen_kids.insert(kid) {
             anyhow::bail!("jwks kid 不能重复: {kid}");
         }
         if key.get("d").is_some() {

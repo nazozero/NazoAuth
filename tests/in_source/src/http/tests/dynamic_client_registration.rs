@@ -74,6 +74,39 @@ fn dynamic_registration_rejects_jwks_uri_and_jwks_in_same_request() {
     assert_eq!(err.error, "invalid_client_metadata");
 }
 
+#[actix_web::test]
+async fn dynamic_registration_accepts_oidf_inline_jwks_without_kid_for_secret_clients() {
+    let request = DynamicClientRegistrationRequest {
+        redirect_uris: Some(vec!["https://nginx:8443/test/a/client/callback".to_owned()]),
+        jwks: Some(json!({
+            "keys": [{
+                "kty": "RSA",
+                "e": "AQAB",
+                "use": "sig",
+                "alg": "RS256",
+                "n": "tHZtslxU00LSm1czViLa4PGegfMzw2LJci1nDiwws-UgJdPRgwffLBUoFDW1FZVFt7dDUK8H1emYG4QimXPS6BuE6XZQ6MN2y9rbfs6pvQz6bsITuOjNAxydM4FNiU4M4SlA9bqOf7PAU8NMsNBLP8_3HpWogUPvafgr8pymHgWmV6NJgRp41LQtul-1qzsDbO-pvLRWeFX0d2mFdKVPJttxK2_eIJVCtMzIcGfFj0bPEvQWxMUMRAra3Qu-HqTzzV3DnsZWs1B3bSBRedZVSroLzKBIfKXo5JhqqZsDu_CRL3g2V0D8gs0zmM2A46XEX-PlUq-39mEswFgTGQ3y4Q"
+            }]
+        })),
+        ..Default::default()
+    };
+
+    let prepared = prepare_dynamic_client_registration(
+        request,
+        DynamicRegistrationDefaults {
+            default_audience: "https://issuer.example/fapi/resource",
+        },
+    )
+    .expect("OIDF Basic dynamic registration metadata should parse");
+
+    crate::http::admin::prepare_client_insert(
+        prepared.into_create_client_request(),
+        None,
+        "https://issuer.example",
+    )
+    .await
+    .expect("OIDF inline jwks without kid should be accepted for secret clients");
+}
+
 #[test]
 fn protected_dynamic_registration_requires_matching_initial_access_token() {
     assert!(initial_access_token_authorized(None, None));

@@ -281,6 +281,7 @@ impl PreparedDynamicClientRegistration {
             jwks: self.jwks.clone(),
             introspection_encrypted_response_alg: None,
             introspection_encrypted_response_enc: None,
+            allow_jwks_without_kid: true,
         }
     }
 

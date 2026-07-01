@@ -49,6 +49,8 @@ pub(crate) struct CreateClientRequest {
     pub(crate) introspection_encrypted_response_alg: Option<String>,
     #[serde(default)]
     pub(crate) introspection_encrypted_response_enc: Option<String>,
+    #[serde(default, skip_deserializing)]
+    pub(crate) allow_jwks_without_kid: bool,
 }
 
 #[derive(Debug)]
@@ -311,6 +313,7 @@ fn validate_client_payload(payload: &CreateClientRequest) -> anyhow::Result<()> 
         token_endpoint_auth_method: &payload.token_endpoint_auth_method,
         backchannel_logout_uri: payload.backchannel_logout_uri.as_deref(),
         jwks: payload.jwks.as_ref(),
+        allow_jwks_without_kid: payload.allow_jwks_without_kid,
         introspection_encrypted_response_alg: payload
             .introspection_encrypted_response_alg
             .as_deref(),

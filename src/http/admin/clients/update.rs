@@ -339,6 +339,7 @@ async fn prepare_client_patch(
             token_endpoint_auth_method: &current.token_endpoint_auth_method,
             backchannel_logout_uri: new_backchannel_logout_uri.as_deref(),
             jwks: new_jwks.as_ref(),
+            allow_jwks_without_kid: false,
             introspection_encrypted_response_alg: new_introspection_encrypted_response_alg
                 .as_deref(),
             introspection_encrypted_response_enc: new_introspection_encrypted_response_enc
