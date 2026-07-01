@@ -219,6 +219,8 @@ fn client_row() -> ClientRow {
         allow_authorization_code_without_pkce: false,
         is_active: true,
         jwks: Some(json!({"keys": []})),
+        introspection_encrypted_response_alg: None,
+        introspection_encrypted_response_enc: None,
         post_logout_redirect_uris: json!(["https://client.example/logout"]),
         backchannel_logout_uri: Some("https://client.example/backchannel".to_owned()),
         backchannel_logout_session_required: false,

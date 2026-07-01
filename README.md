@@ -74,7 +74,7 @@ IETF and RFCs:
 | [RFC 9396](https://www.rfc-editor.org/rfc/rfc9396), Rich Authorization Requests | behind `ENABLE_AUTHORIZATION_DETAILS` |
 | [RFC 9449](https://www.rfc-editor.org/rfc/rfc9449), DPoP | proof validation and sender-constrained tokens |
 | [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700), OAuth 2.0 Security BCP | code-only authorization responses, no password or implicit grants, PKCE, redirect URI binding, bearer-token protections, and sender-constrained-token hardening |
-| [RFC 9701](https://www.rfc-editor.org/rfc/rfc9701), JWT Response for OAuth Token Introspection | profile-gated signed introspection responses |
+| [RFC 9701](https://www.rfc-editor.org/rfc/rfc9701), JWT Response for OAuth Token Introspection | profile-gated signed and nested encrypted introspection responses |
 | [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728), Protected Resource Metadata | `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource/fapi/resource` |
 | OAuth 2.1 draft direction | OAuth 2.1-style defaults with explicit compatibility switches |
 
@@ -132,8 +132,9 @@ all 16 plans and 578 modules, and reported `0 failures` and `0 warnings`.
 ## Features
 
 - Authorization code + PKCE, refresh tokens, client credentials, bounded JWT
-  bearer grant, revocation, introspection, signed introspection, discovery,
-  protected resource metadata, JWKS, UserInfo, PAR, JAR, DPoP, and mTLS.
+  bearer grant, revocation, introspection, signed/encrypted introspection,
+  discovery, protected resource metadata, JWKS, UserInfo, PAR, JAR, DPoP, and
+  mTLS.
 - Runtime profiles: `oauth2-baseline`, `fapi2-security`,
   `fapi2-message-signing-authz-request`, `fapi2-message-signing-jarm`, and
   `fapi2-message-signing-introspection`.
@@ -218,7 +219,8 @@ and are not advertised unless implemented, tested, and explicitly enabled:
 - Device Authorization Grant.
 - Token Exchange / RFC 8693.
 - Request-level dynamic tenant or issuer routing.
-- JWE introspection responses.
+- RFC 9701 encrypted introspection responses outside the signed-introspection
+  profile, or without per-client JWE response metadata.
 
 See [docs/roadmap.md](docs/roadmap.md) for the current scope record.
 

@@ -30,6 +30,8 @@ pub(crate) struct PatchClientRequest {
     tls_client_auth_san_ip: Option<Vec<String>>,
     tls_client_auth_san_email: Option<Vec<String>>,
     jwks: Option<Value>,
+    introspection_encrypted_response_alg: Option<String>,
+    introspection_encrypted_response_enc: Option<String>,
     is_active: Option<bool>,
 }
 
@@ -57,6 +59,8 @@ struct PreparedClientPatch {
     tls_client_auth_san_ip: Value,
     tls_client_auth_san_email: Value,
     jwks: Option<Value>,
+    introspection_encrypted_response_alg: Option<String>,
+    introspection_encrypted_response_enc: Option<String>,
     is_active: bool,
 }
 
@@ -149,6 +153,10 @@ pub(crate) async fn admin_patch_client(
         oauth_clients::tls_client_auth_san_ip.eq(prepared.tls_client_auth_san_ip),
         oauth_clients::tls_client_auth_san_email.eq(prepared.tls_client_auth_san_email),
         oauth_clients::jwks.eq(prepared.jwks),
+        oauth_clients::introspection_encrypted_response_alg
+            .eq(prepared.introspection_encrypted_response_alg),
+        oauth_clients::introspection_encrypted_response_enc
+            .eq(prepared.introspection_encrypted_response_enc),
         oauth_clients::is_active.eq(prepared.is_active),
         oauth_clients::updated_at.eq(diesel_now),
     ))
@@ -251,6 +259,16 @@ async fn prepare_client_patch(
         .tls_client_auth_san_email
         .unwrap_or_else(|| json_array_to_strings(&current.tls_client_auth_san_email));
     let new_jwks = payload.jwks.or_else(|| current.jwks.clone());
+    let new_introspection_encrypted_response_alg = payload
+        .introspection_encrypted_response_alg
+        .map(Some)
+        .map(trim_optional_string)
+        .unwrap_or_else(|| current.introspection_encrypted_response_alg.clone());
+    let new_introspection_encrypted_response_enc = payload
+        .introspection_encrypted_response_enc
+        .map(Some)
+        .map(trim_optional_string)
+        .unwrap_or_else(|| current.introspection_encrypted_response_enc.clone());
     let new_is_active = payload.is_active.unwrap_or(current.is_active);
 
     let new_subject_type = payload
@@ -321,6 +339,10 @@ async fn prepare_client_patch(
             token_endpoint_auth_method: &current.token_endpoint_auth_method,
             backchannel_logout_uri: new_backchannel_logout_uri.as_deref(),
             jwks: new_jwks.as_ref(),
+            introspection_encrypted_response_alg: new_introspection_encrypted_response_alg
+                .as_deref(),
+            introspection_encrypted_response_enc: new_introspection_encrypted_response_enc
+                .as_deref(),
             mtls_binding: Some(&ClientMtlsMetadata {
                 tls_client_auth_subject_dn: new_tls_client_auth_subject_dn.clone(),
                 tls_client_auth_cert_sha256: new_tls_client_auth_cert_sha256.clone(),
@@ -355,6 +377,8 @@ async fn prepare_client_patch(
         tls_client_auth_san_ip: json!(new_tls_client_auth_san_ip_values),
         tls_client_auth_san_email: json!(new_tls_client_auth_san_email_values),
         jwks: new_jwks,
+        introspection_encrypted_response_alg: new_introspection_encrypted_response_alg,
+        introspection_encrypted_response_enc: new_introspection_encrypted_response_enc,
         is_active: new_is_active,
     })
 }

@@ -185,6 +185,8 @@ async fn insert_revocation_client(
         allow_authorization_code_without_pkce: false,
         is_active: true,
         jwks: None,
+        introspection_encrypted_response_alg: None,
+        introspection_encrypted_response_enc: None,
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: None,
         backchannel_logout_session_required: true,

@@ -53,23 +53,23 @@ fn client_jwks_requires_non_empty_unique_kids() {
 }
 
 #[test]
-fn client_jwks_requires_signing_use_and_declared_algorithm() {
+fn client_jwks_accepts_encryption_keys_for_introspection_jwe() {
     let encryption_use = json!({
         "keys": [{
-            "kty": "OKP",
-            "crv": "Ed25519",
-            "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
-            "alg": "EdDSA",
+            "kty": "RSA",
+            "n": URL_SAFE_NO_PAD.encode([0x91u8; 256]),
+            "e": URL_SAFE_NO_PAD.encode([0x01u8, 0x00, 0x01]),
+            "alg": "RSA-OAEP-256",
             "use": "enc",
             "kid": "enc-key"
         }]
     });
-    let error = validate_client_jwks(&encryption_use).expect_err("JWK use must be absent or sig");
-    assert!(
-        error.to_string().contains("jwks 公钥 use 必须为 sig"),
-        "unexpected error: {error}"
-    );
+    validate_client_jwks(&encryption_use)
+        .expect("registered client JWKS may include RSA encryption keys for RFC 9701 JWE");
+}
 
+#[test]
+fn client_jwks_requires_declared_algorithm() {
     let missing_alg = json!({
         "keys": [{
             "kty": "OKP",
@@ -99,6 +99,27 @@ fn client_jwks_requires_signing_use_and_declared_algorithm() {
         validate_client_jwks(&unsupported_alg).expect_err("unsupported JWS alg must fail closed");
     assert!(
         error.to_string().contains("jwks alg 必须是"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn client_jwks_rejects_encryption_algorithm_key_type_mismatch() {
+    let jwks = json!({
+        "keys": [{
+            "kty": "OKP",
+            "crv": "Ed25519",
+            "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+            "alg": "RSA-OAEP-256",
+            "use": "enc",
+            "kid": "wrong-enc-alg"
+        }]
+    });
+
+    let error = validate_client_jwks(&jwks)
+        .expect_err("declared JWE algorithm must match JWK key type and material");
+    assert!(
+        error.to_string().contains("jwks 公钥材料与 alg 不匹配"),
         "unexpected error: {error}"
     );
 }
@@ -159,6 +180,14 @@ fn client_jwks_accepts_supported_public_key_algorithms() {
                 "alg": "PS256",
                 "use": "sig",
                 "kid": "ps-key"
+            },
+            {
+                "kty": "RSA",
+                "n": URL_SAFE_NO_PAD.encode([0x93u8; 256]),
+                "e": URL_SAFE_NO_PAD.encode([0x01u8, 0x00, 0x01]),
+                "alg": "RSA-OAEP-256",
+                "use": "enc",
+                "kid": "enc-key"
             }
         ]
     });

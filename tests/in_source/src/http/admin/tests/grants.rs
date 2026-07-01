@@ -97,6 +97,8 @@ fn create_client_request(client_name: &str) -> CreateClientRequest {
         tls_client_auth_san_ip: Vec::new(),
         tls_client_auth_san_email: Vec::new(),
         jwks: None,
+        introspection_encrypted_response_alg: None,
+        introspection_encrypted_response_enc: None,
         subject_type: None,
         sector_identifier_uri: None,
     }

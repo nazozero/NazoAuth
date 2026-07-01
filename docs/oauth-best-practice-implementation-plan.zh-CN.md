@@ -186,8 +186,12 @@ Last reviewed: 2026-07-01.
 
 - [x] **PS-001 FAPI 2.0 Message Signing**
   - 状态：完成 / profile-scoped
-  - 当前边界：signed request object、JARM 和 RFC 9701 signed introspection 都已实现；signed introspection 只在 `fapi2-message-signing-introspection` profile 且客户端请求 JWT media type 时返回
-  - 下一步：不广告 JWE introspection；错误响应保持 JSON OAuth error；OIDF 计划可覆盖时再把私有 profile 加入公开证据。
+  - 当前边界：signed request object、JARM 和 RFC 9701 signed/nested encrypted introspection 都已实现；JWT introspection 只在 `fapi2-message-signing-introspection` profile 且客户端请求 JWT media type 时返回
+  - 下一步：JWE 只在 resource-server client 配置受支持的 `introspection_encrypted_response_alg`/`enc` 和匹配加密 JWK 后返回；错误响应保持 JSON OAuth error。
+- [x] **NI-001 RFC 9701 JWE introspection response**
+  - 状态：完成 / profile-scoped
+  - 证据：`src/http/token/introspect.rs`, `src/support/oauth.rs`, `src/http/well_known.rs`, introspection/JWKS/metadata tests
+  - 保持要求：保持 signed-then-encrypted 顺序、`RSA-OAEP-256`/`A256GCM` allowlist、per-client encryption metadata 和匹配 `use=enc` JWK 校验。
 - [x] **PS-002 RFC 7523**
   - 状态：完成 / bounded grant
   - 当前边界：`private_key_jwt` 和 JWT bearer authorization grant 均已实现；JWT bearer grant 仅允许已认证 confidential client 为自身 `client_id` 签发 client-subject token，并要求 issuer/audience/time/jti/replay 校验
@@ -215,9 +219,6 @@ Last reviewed: 2026-07-01.
 
 ## 未实现且不得广告的能力
 
-- [ ] **NI-001 RFC 9701 JWE introspection response**
-  - 状态：未实现
-  - 最小安全实现条件：JWE alg/enc policy、resource-server key management、content negotiation、metadata gating、负向测试。
 - [ ] **NI-002 RFC 8628 Device Authorization Grant**
   - 状态：未实现
   - 最小安全实现条件：device authorization endpoint、user-code UX、polling interval、`slow_down`、expiration、denial、rate limit、metadata。
@@ -334,14 +335,15 @@ rtk cargo test --locked
 已完成：
 
 - RFC 9701 signed introspection response。
+- RFC 9701 JWE introspection response，按 resource-server client metadata 返回 signed-then-encrypted nested JWT。
 - `Accept: application/token-introspection+jwt` content negotiation。
 - `iss`、`aud`、resource-server identity、active signing key 和 token introspection body 绑定。
-- Metadata 只在 `fapi2-message-signing-introspection` profile 下广告。
+- Metadata 只在 `fapi2-message-signing-introspection` profile 下广告，JWE alg/enc 只声明已实现的 `RSA-OAEP-256` / `A256GCM`。
 - 测试覆盖 discovery gating、JWT media type、issuer/audience、top-level token-claim confusion 防护，以及 active access token introspection。
+- 测试覆盖 JWE response metadata 校验、加密 JWK 校验，以及 nested JWT 解密后的 introspection payload。
 
 保留边界：
 
-- 不广告 JWE introspection。
 - OAuth error response 仍为 JSON。
 - OIDF/FAPI 官方矩阵可覆盖 signed introspection profile 时，再把结果加入认证证据。
 

@@ -190,6 +190,10 @@ pub(crate) struct ClientRow {
     pub(crate) is_active: bool,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Jsonb>)]
     pub(crate) jwks: Option<Value>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
+    pub(crate) introspection_encrypted_response_alg: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
+    pub(crate) introspection_encrypted_response_enc: Option<String>,
     #[diesel(sql_type = diesel::sql_types::Jsonb)]
     pub(crate) post_logout_redirect_uris: Value,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
