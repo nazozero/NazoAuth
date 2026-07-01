@@ -99,7 +99,10 @@ async fn dynamic_registration_accepts_oidf_inline_jwks_without_kid_for_secret_cl
     .expect("OIDF Basic dynamic registration metadata should parse");
 
     let create_request = prepared.to_create_client_request();
-    assert_eq!(create_request.scopes, vec!["openid"]);
+    assert_eq!(
+        create_request.scopes,
+        vec!["openid", "profile", "email", "address", "phone"]
+    );
     assert!(create_request.allow_authorization_code_without_pkce);
 
     crate::http::admin::prepare_client_insert(create_request, None, "https://issuer.example")
