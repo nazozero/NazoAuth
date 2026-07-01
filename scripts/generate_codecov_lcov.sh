@@ -166,6 +166,44 @@ keys = keyset.setdefault("keys", [])
 if not isinstance(keys, list):
     raise RuntimeError(f"keyset keys must be an array: {keyset_path}")
 
+now = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def local_key_path(entry):
+    if (
+        isinstance(entry, dict)
+        and entry.get("backend", "local-pem") == "local-pem"
+        and isinstance(entry.get("file"), str)
+    ):
+        return key_dir / entry["file"]
+    return None
+
+
+def is_server_rsa_pem(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    first_line = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    return bool(first_line and first_line[0].strip() == "-----BEGIN RSA PRIVATE KEY-----")
+
+
+def usable_key_entry(entry) -> bool:
+    if not isinstance(entry, dict):
+        return True
+    if entry.get("backend", "local-pem") != "local-pem":
+        return True
+    if entry.get("alg") not in {"RS256", "PS256"}:
+        return True
+    path = local_key_path(entry)
+    return path is not None and is_server_rsa_pem(path)
+
+
+keys[:] = [entry for entry in keys if usable_key_entry(entry)]
+if keyset.get("active_kid") and not any(
+    isinstance(entry, dict) and entry.get("kid") == keyset.get("active_kid")
+    for entry in keys
+):
+    keyset["active_kid"] = ""
+
 
 def live_local_key(alg: str):
     for entry in keys:
@@ -188,13 +226,11 @@ def create_local_rsa_key(alg: str):
     subprocess.run(
         [
             "openssl",
-            "genpkey",
-            "-algorithm",
-            "RSA",
-            "-pkeyopt",
-            "rsa_keygen_bits:2048",
+            "genrsa",
+            "-traditional",
             "-out",
             str(target),
+            "2048",
         ],
         check=True,
         stdout=subprocess.DEVNULL,
@@ -205,7 +241,7 @@ def create_local_rsa_key(alg: str):
         "kid": kid,
         "alg": alg,
         "file": file_name,
-        "created_at": datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "created_at": now,
         "retire_at": None,
     }
     keys.append(entry)
