@@ -47,6 +47,48 @@ pub(crate) fn parse_scope(raw: &str) -> Vec<String> {
         .collect()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ResourceIndicatorError {
+    Invalid,
+    Duplicate,
+}
+
+pub(crate) fn parse_resource_indicators(
+    values: &[String],
+) -> Result<Vec<String>, ResourceIndicatorError> {
+    let mut seen = std::collections::HashSet::new();
+    let mut resources = Vec::new();
+    for value in values {
+        let parsed = url::Url::parse(value).map_err(|_| ResourceIndicatorError::Invalid)?;
+        if parsed.fragment().is_some() {
+            return Err(ResourceIndicatorError::Invalid);
+        }
+        if !seen.insert(value.clone()) {
+            return Err(ResourceIndicatorError::Duplicate);
+        }
+        resources.push(value.clone());
+    }
+    Ok(resources)
+}
+
+pub(crate) fn resource_indicators_from_parameter_value(
+    value: Option<&str>,
+) -> Result<Vec<String>, ResourceIndicatorError> {
+    let Some(value) = value else {
+        return Ok(Vec::new());
+    };
+    if let Ok(values) = serde_json::from_str::<Vec<String>>(value) {
+        return parse_resource_indicators(&values);
+    }
+    parse_resource_indicators(&[value.to_owned()])
+}
+
+pub(crate) fn encoded_resource_indicators(values: &[String]) -> Option<String> {
+    (!values.is_empty()).then(|| {
+        serde_json::to_string(values).expect("resource indicator serialization must be infallible")
+    })
+}
+
 pub(crate) fn is_subset(requested: &[String], allowed: &[String]) -> bool {
     requested.iter().all(|s| allowed.contains(s))
 }

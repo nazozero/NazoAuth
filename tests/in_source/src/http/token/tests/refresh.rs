@@ -411,6 +411,7 @@ fn token_row() -> TokenRow {
         client_id: Uuid::now_v7(),
         user_id: Some(Uuid::now_v7()),
         scopes: json!(["openid", "offline_access"]),
+        audience: json!(["resource://default"]),
         authorization_details: json!([]),
         issued_at: Utc::now(),
         expires_at: Utc::now() + Duration::days(30),
@@ -716,6 +717,47 @@ fn refresh_token_scope_request_rejects_privilege_expansion() {
             "refresh_token grant must reject scope requests that cannot rotate refresh tokens safely: {requested}"
         );
     }
+}
+
+#[test]
+fn refresh_token_audience_request_defaults_to_refresh_token_audience() {
+    let settings = Settings::from_config(&ConfigSource::default()).unwrap();
+    let mut token = token_row();
+    token.audience = json!(["https://api.example/one", "https://api.example/two"]);
+    let form = refresh_form_without_token();
+
+    assert_eq!(
+        refresh_token_audiences(&settings, &token, &form).unwrap(),
+        vec![
+            "https://api.example/one".to_owned(),
+            "https://api.example/two".to_owned(),
+        ]
+    );
+}
+
+#[test]
+fn refresh_token_audience_request_may_only_narrow_original_audience() {
+    let settings = Settings::from_config(&ConfigSource::default()).unwrap();
+    let mut token = token_row();
+    token.audience = json!(["https://api.example/one", "https://api.example/two"]);
+    let mut form = refresh_form_without_token();
+    form.audiences = vec!["https://api.example/two".to_owned()];
+
+    assert_eq!(
+        refresh_token_audiences(&settings, &token, &form).unwrap(),
+        vec!["https://api.example/two".to_owned()]
+    );
+}
+
+#[test]
+fn refresh_token_audience_request_rejects_expansion() {
+    let settings = Settings::from_config(&ConfigSource::default()).unwrap();
+    let mut token = token_row();
+    token.audience = json!(["https://api.example/one"]);
+    let mut form = refresh_form_without_token();
+    form.audiences = vec!["https://api.example/two".to_owned()];
+
+    assert!(refresh_token_audiences(&settings, &token, &form).is_err());
 }
 
 #[test]

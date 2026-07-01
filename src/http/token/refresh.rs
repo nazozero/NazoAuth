@@ -63,6 +63,25 @@ fn refresh_token_scopes(
     }
 }
 
+fn refresh_token_audiences(
+    settings: &Settings,
+    token: &TokenRow,
+    form: &TokenForm,
+) -> Result<Vec<String>, ()> {
+    let original_audiences = json_array_to_strings(&token.audience);
+    let original_audiences = if original_audiences.is_empty() {
+        vec![settings.default_audience.clone()]
+    } else {
+        original_audiences
+    };
+    if form.audiences.is_empty() {
+        return Ok(original_audiences);
+    }
+    is_subset(&form.audiences, &original_audiences)
+        .then(|| form.audiences.clone())
+        .ok_or(())
+}
+
 async fn mark_token_family_reuse(
     state: &AppState,
     tenant_id: Uuid,
@@ -365,10 +384,16 @@ pub(crate) async fn token_refresh(
             );
         }
     };
-    let audiences = if form.audiences.is_empty() {
-        vec![state.settings.default_audience.clone()]
-    } else {
-        form.audiences.clone()
+    let audiences = match refresh_token_audiences(&state.settings, &token, form) {
+        Ok(audiences) => audiences,
+        Err(()) => {
+            return oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_target",
+                "请求的 resource 超出 refresh_token 原始授权范围.",
+                false,
+            );
+        }
     };
     if !audiences_allowed(client, &audiences) {
         return oauth_token_error(

@@ -30,9 +30,10 @@ in the backlog table below:
 | --- | --- |
 | Authorization Code flow, PKCE S256, refresh tokens, and client credentials | `src/bootstrap/routes.rs`, `src/http/token/dispatch.rs`, `src/http/token/authorization_code.rs`, `src/http/token/refresh.rs`, `src/http/token/client_credentials.rs` |
 | OAuth Authorization Server Metadata and OpenID Provider Configuration | `src/http/well_known.rs` publishes `/.well-known/oauth-authorization-server` and `/.well-known/openid-configuration` metadata |
+| OAuth Protected Resource Metadata | `src/http/well_known.rs` publishes `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource/fapi/resource`; authorization server metadata lists `protected_resources` |
 | Revocation and introspection | `src/bootstrap/routes.rs`, `src/http/token/revoke.rs`, `src/http/token/introspect.rs` |
 | PAR, JAR, JARM-style JWT authorization responses, and issuer identification | `src/http/authorization/par.rs`, `src/http/authorization/request.rs`, `src/http/well_known.rs` |
-| Resource Indicators and Rich Authorization Requests | `resource`/`authorization_details` handling in `src/http/authorization`, `src/http/token`, and `src/resource_server.rs` |
+| Resource Indicators and Rich Authorization Requests | `resource`/`authorization_details` handling in `src/http/authorization`, `src/http/token`, and `src/resource_server.rs`, including PAR/request-object inputs and refresh-token resource narrowing |
 | JWT access tokens and resource-server verification | `src/http/token/issue.rs`, `src/resource_server.rs` |
 | DPoP and mTLS sender-constrained tokens | `src/support/dpop.rs`, `src/support/mtls.rs`, `src/http/token/authorization_code.rs`, `src/http/token/client_credentials.rs`, `src/http/fapi_resource.rs` |
 | `private_key_jwt`, mTLS client authentication, and client secret auth methods | `src/http/token/client_auth.rs`, `src/support/oauth.rs`, `src/http/well_known.rs` |
@@ -46,7 +47,6 @@ Priority values describe expected project fit, not protocol importance.
 | Priority | Specification or draft | Current code status | Required implementation work |
 | --- | --- | --- | --- |
 | P1 | [OAuth 2.1 Authorization Framework, `draft-ietf-oauth-v2-1-15`](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | Partially aligned. Code already uses code-only authorization responses, PKCE S256, no implicit grant, no resource owner password grant, and OAuth 2.1-style defaults. There is no dedicated OAuth 2.1 conformance matrix tracking the draft as a single profile. | Track the latest OAuth 2.1 draft as a profile audit item until it becomes an RFC. Add a test matrix that maps the final draft/RFC requirements to code and discovery metadata. |
-| P1 | [RFC 9728, OAuth 2.0 Protected Resource Metadata](https://www.rfc-editor.org/rfc/rfc9728) | No `/.well-known/oauth-protected-resource` route or protected-resource metadata builder was found. `src/resource_server.rs` verifies JWT access tokens but does not publish RFC 9728 metadata. | Add protected resource metadata endpoint(s), issuer/resource binding, supported token presentation metadata, DPoP/mTLS capabilities, and tests for RFC 9728 discovery semantics. |
 | P2 | [RFC 8628, OAuth 2.0 Device Authorization Grant](https://www.rfc-editor.org/rfc/rfc8628) | No `device_authorization_endpoint` metadata, no `/device_authorization` route, and no `urn:ietf:params:oauth:grant-type:device_code` token dispatch. | Add device authorization endpoint, user code UX, polling token grant, rate limiting, expiration, denial handling, and discovery metadata. |
 | P2 | [RFC 8693, OAuth 2.0 Token Exchange](https://www.rfc-editor.org/rfc/rfc8693) | `/token` dispatch only handles `authorization_code`, `refresh_token`, and `client_credentials`. No `subject_token`, `actor_token`, `requested_token_type`, or token exchange grant handling was found. | Add token exchange policy model, token subject/actor validation, audience/resource restrictions, issued token type selection, and tests for delegation and impersonation boundaries. |
 | P2 | [RFC 7591, OAuth 2.0 Dynamic Client Registration](https://www.rfc-editor.org/rfc/rfc7591) and [OpenID Connect Dynamic Client Registration 1.0](https://openid.net/specs/openid-connect-registration-1_0.html) | Client metadata validation exists in `src/support/oauth.rs`, and admin-managed client CRUD exists under `/api/admin/clients`. No standards-compliant dynamic registration endpoint or `registration_endpoint` discovery metadata was found. | Add standards-compliant registration endpoint, initial access token policy if required, client metadata response shape, software statement handling if adopted, and discovery metadata. |
@@ -80,13 +80,14 @@ are informational/security guidance rather than standalone product features:
 | RFC 7662 Token Introspection | `/introspect` exists; JWT introspection response remains a separate backlog item. |
 | RFC 8414 Authorization Server Metadata | `/.well-known/oauth-authorization-server` exists. |
 | RFC 8705 mTLS | mTLS client authentication and certificate-bound access-token support exist. |
-| RFC 8707 Resource Indicators | `resource` and JWT audience binding exist. |
+| RFC 8707 Resource Indicators | `resource` handling exists for authorization requests, PAR, token exchange, and refresh-token audience narrowing; JWT access-token `aud` is bound to the resulting resource set. |
 | RFC 9068 JWT Access Tokens | Access tokens use JWT shape and resource-server verifier expects `typ=at+jwt`. |
 | RFC 9101 JAR | Request object support exists where enabled. |
 | RFC 9126 PAR | `/par` exists. |
 | RFC 9207 Authorization Server Issuer Identification | Discovery advertises `authorization_response_iss_parameter_supported`. |
 | RFC 9396 Rich Authorization Requests | `authorization_details` support exists behind configuration. |
 | RFC 9449 DPoP | DPoP proof validation and sender-constrained token handling exist. |
+| RFC 9728 OAuth 2.0 Protected Resource Metadata | `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource/fapi/resource` publish resource metadata; authorization server metadata lists the configured protected resource identifier. |
 | FAPI 2.0 Security Profile Final | Implemented as a runtime profile and covered by conformance-oriented tests. |
 | FAPI 2.0 Message Signing Final | Implemented through signed authorization request and JWT authorization response support in the FAPI message-signing profile. |
 | FAPI 2.0 Attacker Model | Used as security rationale for FAPI profiles; it is not an endpoint-level implementation item. |

@@ -167,6 +167,7 @@ pub(crate) async fn authorize_decision(
         redirect_uri: payload.redirect_uri.clone(),
         redirect_uri_was_supplied: payload.redirect_uri_was_supplied,
         scopes: payload.scopes.clone(),
+        resource_indicators: payload.resource_indicators.clone(),
         authorization_details: payload.authorization_details.clone(),
         nonce: payload.nonce,
         auth_time: payload.auth_time,

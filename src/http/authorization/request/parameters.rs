@@ -6,6 +6,7 @@ pub(crate) const AUTHORIZED_REQUEST_PARAMETERS: &[&str] = &[
     "client_id",
     "redirect_uri",
     "scope",
+    "resource",
     "authorization_details",
     "state",
     "code_challenge",
@@ -24,7 +25,11 @@ pub(super) const AUTHORIZATION_NONCE_MAX_BYTES: usize = 256;
 const REAUTH_NONCE_PARAMETER: &str = "_nazo_reauth_nonce";
 
 pub(super) fn authorization_duplicate_parameters() -> Vec<&'static str> {
-    let mut parameters = AUTHORIZED_REQUEST_PARAMETERS.to_vec();
+    let mut parameters = AUTHORIZED_REQUEST_PARAMETERS
+        .iter()
+        .copied()
+        .filter(|parameter| *parameter != "resource")
+        .collect::<Vec<_>>();
     parameters.push(REAUTH_NONCE_PARAMETER);
     parameters
 }

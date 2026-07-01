@@ -48,6 +48,7 @@ fn fapi_signing_state_with_invalid_db() -> Data<AppState> {
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.issuer = "https://issuer.example".to_owned();
     settings.default_audience = "resource://default".to_owned();
+    settings.protected_resource_identifier = "https://issuer.example/fapi/resource".to_owned();
 
     Data::new(AppState {
         diesel_db: create_pool(
@@ -88,6 +89,7 @@ fn live_fapi_signing_state_from_database_url(database_url: String) -> Option<Dat
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.issuer = "https://issuer.example".to_owned();
     settings.default_audience = "resource://default".to_owned();
+    settings.protected_resource_identifier = "https://issuer.example/fapi/resource".to_owned();
 
     Some(Data::new(AppState {
         diesel_db: create_pool(database_url, 1).expect("database pool should build"),
@@ -611,6 +613,7 @@ fn fapi_resource_accepts_only_bound_resource_audiences() {
         .expect("default settings should load");
     settings.issuer = "https://issuer.example".to_owned();
     settings.default_audience = "resource://default".to_owned();
+    settings.protected_resource_identifier = "https://issuer.example/fapi/resource".to_owned();
 
     assert!(fapi_resource_audience_allowed(
         &settings,
@@ -623,6 +626,15 @@ fn fapi_resource_accepts_only_bound_resource_audiences() {
     assert!(fapi_resource_audience_allowed(
         &settings,
         &json!(["resource://other", "https://issuer.example/fapi/resource"])
+    ));
+    settings.protected_resource_identifier = "https://api.example/fapi/resource".to_owned();
+    assert!(fapi_resource_audience_allowed(
+        &settings,
+        &json!("https://api.example/fapi/resource")
+    ));
+    assert!(!fapi_resource_audience_allowed(
+        &settings,
+        &json!("https://issuer.example/fapi/resource")
     ));
     assert!(!fapi_resource_audience_allowed(
         &settings,

@@ -147,7 +147,7 @@ pwsh scripts/deploy_live.ps1 `
 - 保护代理到应用之间的链路；转发证书元数据只在可信内部通道上有意义。
 - 保持 OAuth endpoint 路径精确不变。
 - 禁止协议端点被错误缓存，除非端点明确可缓存。
-- 确保 `/.well-known/openid-configuration`、`/.well-known/oauth-authorization-server`、`/jwks.json`、`/authorize`、`/par`、`/token`、`/userinfo`、`/introspect`、`/revoke` 可按预期访问。
+- 确保 `/.well-known/openid-configuration`、`/.well-known/oauth-authorization-server`、`/.well-known/oauth-protected-resource`、`/.well-known/oauth-protected-resource/fapi/resource`、`/jwks.json`、`/authorize`、`/par`、`/token`、`/userinfo`、`/introspect`、`/revoke` 可按预期访问。
 
 mTLS sender constraint 和 mTLS client authentication 依赖可信反向代理完成客户端证书校验，并转发证书证据。应用只接受来自 `TRUSTED_PROXY_CIDRS` 的证书元数据；其他来源视为没有已验证证书。
 
@@ -199,6 +199,8 @@ Valkey 不可用时，敏感协议路径应 fail closed，以 OAuth error 返回
 curl -fsS https://auth.nazo.run/health
 curl -fsS https://auth.nazo.run/.well-known/openid-configuration
 curl -fsS https://auth.nazo.run/.well-known/oauth-authorization-server
+curl -fsS https://auth.nazo.run/.well-known/oauth-protected-resource
+curl -fsS https://auth.nazo.run/.well-known/oauth-protected-resource/fapi/resource
 curl -fsS https://auth.nazo.run/jwks.json
 ```
 

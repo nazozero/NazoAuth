@@ -18,11 +18,12 @@ use prompt_none::*;
 const REAUTH_NONCE_TTL_SECONDS: u64 = 600;
 
 /// 校验 OAuth authorize 参数并创建待确认授权请求。
-pub(crate) async fn authorize_get(
-    state: Data<AppState>,
-    req: HttpRequest,
-    Query(mut q): Query<HashMap<String, String>>,
-) -> HttpResponse {
+pub(crate) async fn authorize_get(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
+    let query_parameters = authorization_duplicate_parameters();
+    let mut q = match parse_authorization_query(req.query_string(), &query_parameters) {
+        Ok(q) => q,
+        Err(response) => return response,
+    };
     authorize_request(state, req, &mut q).await
 }
 
@@ -44,15 +45,6 @@ async fn authorize_request(
     req: HttpRequest,
     q: &mut HashMap<String, String>,
 ) -> HttpResponse {
-    let query_parameters = authorization_duplicate_parameters();
-    if has_duplicate_oauth_parameter(req.query_string(), &query_parameters) {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "OAuth 参数不能重复.",
-        );
-    }
-
     if !state.settings.enable_request_object && q.contains_key("request") {
         return oauth_error(
             StatusCode::BAD_REQUEST,
@@ -400,6 +392,23 @@ async fn authorize_request(
     if !is_subset(&requested_scopes, &json_array_to_strings(&client.scopes)) {
         return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_scope", q).await;
     }
+    let resource_indicators =
+        match resource_indicators_from_parameter_value(q.get("resource").map(String::as_str)) {
+            Ok(resources) => resources,
+            Err(_) => {
+                return authorization_oauth_error_redirect(
+                    &state,
+                    &redirect_uri,
+                    "invalid_target",
+                    q,
+                )
+                .await;
+            }
+        };
+    if !resource_indicators.is_empty() && !audiences_allowed(&client, &resource_indicators) {
+        return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_target", q)
+            .await;
+    }
     let authorization_details =
         match parse_authorization_details(q.get("authorization_details").map(String::as_str)) {
             Ok(value) => value,
@@ -423,6 +432,7 @@ async fn authorize_request(
         redirect_uri: redirect_uri.clone(),
         redirect_uri_was_supplied: q.contains_key("redirect_uri"),
         scopes: requested_scopes,
+        resource_indicators,
         authorization_details,
         state: q.get("state").cloned(),
         response_mode,

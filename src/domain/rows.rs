@@ -221,6 +221,8 @@ pub(crate) struct TokenRow {
     #[diesel(sql_type = diesel::sql_types::Jsonb)]
     pub(crate) scopes: Value,
     #[diesel(sql_type = diesel::sql_types::Jsonb)]
+    pub(crate) audience: Value,
+    #[diesel(sql_type = diesel::sql_types::Jsonb)]
     pub(crate) authorization_details: Value,
     #[diesel(sql_type = diesel::sql_types::Timestamptz)]
     pub(crate) issued_at: DateTime<Utc>,

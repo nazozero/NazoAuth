@@ -120,6 +120,7 @@ pub(super) async fn issue_authorization_code_without_interaction(
         redirect_uri: payload.redirect_uri.clone(),
         redirect_uri_was_supplied: payload.redirect_uri_was_supplied,
         scopes: payload.scopes.clone(),
+        resource_indicators: payload.resource_indicators,
         authorization_details: payload.authorization_details,
         nonce: payload.nonce,
         auth_time: payload.auth_time,

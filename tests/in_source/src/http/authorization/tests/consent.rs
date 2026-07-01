@@ -32,6 +32,7 @@ fn consent_payload(user_id: Uuid) -> ConsentPayload {
         redirect_uri: "https://client.example/callback".to_owned(),
         redirect_uri_was_supplied: true,
         scopes: vec!["openid".to_owned(), "profile".to_owned()],
+        resource_indicators: Vec::new(),
         authorization_details: json!([]),
         state: Some("opaque-state".to_owned()),
         response_mode: Some("query".to_owned()),

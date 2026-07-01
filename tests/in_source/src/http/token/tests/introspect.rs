@@ -481,6 +481,7 @@ fn refresh_token_introspection_metadata_omits_access_token_type() {
         client_id: Uuid::now_v7(),
         user_id: None,
         scopes: json!(["openid", "offline_access"]),
+        audience: json!(["resource://default"]),
         authorization_details: json!([]),
         issued_at,
         expires_at: issued_at + Duration::days(30),
