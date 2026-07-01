@@ -127,6 +127,9 @@ pub(crate) async fn fetch_sector_identifier_uris(
     if is_blocked_host(host) {
         return Err(SectorIdentifierError::BlockedHost);
     }
+    if host.eq_ignore_ascii_case("invalid") || host.to_ascii_lowercase().ends_with(".invalid") {
+        return Err(SectorIdentifierError::DnsResolutionFailed);
+    }
     let dns_resolved = tokio::net::lookup_host((host, 443))
         .await
         .map_err(|_| SectorIdentifierError::DnsResolutionFailed)?;

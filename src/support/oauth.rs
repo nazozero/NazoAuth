@@ -459,6 +459,7 @@ pub(crate) async fn upsert_grant(
     user_id: Uuid,
     client_id: &str,
     scopes: &[String],
+    resource_indicators: &[String],
     authorization_details: &Value,
 ) -> anyhow::Result<()> {
     let Some(client) = find_client(&state.diesel_db, client_id).await? else {
@@ -478,6 +479,7 @@ pub(crate) async fn upsert_grant(
             user_client_grants::first_authorized_at.eq(now),
             user_client_grants::last_authorized_at.eq(now),
             user_client_grants::last_scopes.eq(json!(scopes)),
+            user_client_grants::last_resource_indicators.eq(json!(resource_indicators)),
             user_client_grants::last_authorization_details.eq(authorization_details.clone()),
             user_client_grants::authorization_count.eq(1),
         ))
@@ -490,6 +492,7 @@ pub(crate) async fn upsert_grant(
         .set((
             user_client_grants::last_authorized_at.eq(now),
             user_client_grants::last_scopes.eq(json!(scopes)),
+            user_client_grants::last_resource_indicators.eq(json!(resource_indicators)),
             user_client_grants::last_authorization_details.eq(authorization_details.clone()),
             user_client_grants::authorization_count.eq(user_client_grants::authorization_count + 1),
         ))

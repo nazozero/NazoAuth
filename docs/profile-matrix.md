@@ -68,7 +68,7 @@ tests.
 | JAR | Signed JAR recommended for high-risk clients |
 | Refresh policy | Rotation or sender constraint according to client risk |
 | Metadata | Must not overclaim disabled high-security behavior |
-| RAR | High-risk `authorization_details` require explicit transaction binding and exact stored-detail matching for non-high-risk silent consent reuse |
+| RAR and consent reuse | High-risk `authorization_details` require explicit transaction binding; silent consent reuse is bounded by stored scopes, resource indicators, and exact non-high-risk authorization-detail matching |
 
 Required negative tests:
 

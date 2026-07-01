@@ -210,7 +210,9 @@ fn stored_grant_covers_prompt_none_request_when_scope_is_subset() {
     assert!(stored_grant_covers_requested_authorization(
         &json!(["openid", "profile", "email"]),
         &json!([]),
+        &json!([]),
         &parse_scope("openid email"),
+        &[],
         &json!([]),
     ));
 }
@@ -220,13 +222,48 @@ fn stored_grant_does_not_cover_new_or_malformed_scope_sets() {
     assert!(!stored_grant_covers_requested_authorization(
         &json!(["openid", "profile"]),
         &json!([]),
+        &json!([]),
         &parse_scope("openid email"),
+        &[],
         &json!([]),
     ));
     assert!(!stored_grant_covers_requested_authorization(
         &json!({"scope": "openid"}),
         &json!([]),
+        &json!([]),
         &parse_scope("openid"),
+        &[],
+        &json!([]),
+    ));
+}
+
+#[test]
+fn stored_grant_does_not_cover_new_resource_indicators() {
+    assert!(stored_grant_covers_requested_authorization(
+        &json!(["openid", "email"]),
+        &json!([
+            "https://api.example/accounts",
+            "https://api.example/profile"
+        ]),
+        &json!([]),
+        &parse_scope("openid"),
+        &[String::from("https://api.example/accounts")],
+        &json!([]),
+    ));
+    assert!(!stored_grant_covers_requested_authorization(
+        &json!(["openid", "email"]),
+        &json!(["https://api.example/accounts"]),
+        &json!([]),
+        &parse_scope("openid"),
+        &[String::from("https://api.example/payments")],
+        &json!([]),
+    ));
+    assert!(!stored_grant_covers_requested_authorization(
+        &json!(["openid", "email"]),
+        &json!({"resource": "https://api.example/accounts"}),
+        &json!([]),
+        &parse_scope("openid"),
+        &[String::from("https://api.example/accounts")],
         &json!([]),
     ));
 }
@@ -241,8 +278,10 @@ fn stored_grant_treats_empty_requested_authorization_details_as_already_covered(
 
     assert!(stored_grant_covers_requested_authorization(
         &json!(["openid", "payments"]),
+        &json!([]),
         &stored_high_risk_details,
         &parse_scope("openid"),
+        &[],
         &json!([]),
     ));
 }
@@ -256,14 +295,18 @@ fn stored_grant_requires_exact_authorization_details_binding() {
 
     assert!(stored_grant_covers_requested_authorization(
         &scopes,
+        &json!([]),
         &read_details,
         &parse_scope("openid payments"),
+        &[],
         &read_details,
     ));
     assert!(!stored_grant_covers_requested_authorization(
         &scopes,
+        &json!([]),
         &read_details,
         &parse_scope("openid payments"),
+        &[],
         &different_read_details,
     ));
 }
@@ -278,8 +321,10 @@ fn stored_grant_never_silently_reuses_high_risk_authorization_details() {
 
     assert!(!stored_grant_covers_requested_authorization(
         &json!(["openid", "payments"]),
+        &json!([]),
         &payment_details,
         &parse_scope("openid payments"),
+        &[],
         &payment_details,
     ));
 }
@@ -296,6 +341,7 @@ async fn prompt_none_grant_lookup_fails_closed_when_database_connection_fails() 
         Uuid::now_v7(),
         Uuid::now_v7(),
         &parse_scope("openid"),
+        &[],
         &json!([]),
     )
     .await;
@@ -336,6 +382,7 @@ async fn prompt_none_grant_lookup_fails_closed_when_query_fails() {
         Uuid::now_v7(),
         Uuid::now_v7(),
         &parse_scope("openid"),
+        &[],
         &json!([]),
     )
     .await;

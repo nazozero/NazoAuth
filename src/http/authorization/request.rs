@@ -459,6 +459,7 @@ async fn authorize_request(
             payload.user_id,
             client.id,
             &payload.scopes,
+            &payload.resource_indicators,
             &payload.authorization_details,
         )
         .await

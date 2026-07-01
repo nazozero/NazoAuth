@@ -195,6 +195,7 @@ diesel::table! {
         first_authorized_at -> Timestamptz,
         last_authorized_at -> Timestamptz,
         last_scopes -> Jsonb,
+        last_resource_indicators -> Jsonb,
         last_authorization_details -> Jsonb,
         authorization_count -> Int4,
     }

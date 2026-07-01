@@ -2,6 +2,7 @@ use super::*;
 use actix_web::{App, HttpResponse, http::StatusCode, test, web};
 use std::path::PathBuf;
 
+use crate::bootstrap::routes;
 use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, FederationSettings,
     PasskeySettings, RateLimitSettings, RequestObjectJtiPolicy, SubjectType,
@@ -65,6 +66,41 @@ async fn cors_preflight_allows_only_configured_origin_methods_and_security_heade
             .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
             .is_none(),
         "unregistered browser origins must not receive CORS authorization"
+    );
+}
+
+#[actix_web::test]
+async fn authorization_endpoint_is_not_cors_enabled() {
+    let settings = test_settings(vec!["https://app.example".to_owned()]);
+    let app =
+        test::init_service(App::new().configure(|cfg| routes::configure(cfg, &settings))).await;
+
+    let request = test::TestRequest::default()
+        .method(actix_web::http::Method::OPTIONS)
+        .uri("/authorize")
+        .insert_header((header::ORIGIN, "https://app.example"))
+        .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, "GET"))
+        .to_request();
+    let response = test::call_service(&app, request).await;
+
+    assert_ne!(
+        response.status(),
+        StatusCode::OK,
+        "authorization endpoint must not answer browser CORS preflight"
+    );
+    assert!(
+        response
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .is_none(),
+        "authorization endpoint must not expose itself to browser XHR through CORS"
+    );
+    assert!(
+        response
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+            .is_none(),
+        "authorization endpoint must not allow credentialed CORS"
     );
 }
 

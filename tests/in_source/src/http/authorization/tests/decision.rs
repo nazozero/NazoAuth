@@ -2,7 +2,7 @@ use super::*;
 use actix_web::cookie::Cookie;
 use actix_web::test::TestRequest;
 use diesel::sql_query;
-use diesel::sql_types::{Bool, Int4, Text, Uuid as SqlUuid};
+use diesel::sql_types::{Bool, Int4, Jsonb, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
 use fred::interfaces::ClientLike;
 use fred::prelude::{
@@ -869,7 +869,8 @@ async fn authorization_decision_issues_code_for_matching_user_and_client() {
     fixture
         .store_session(&user, "sid-decision-approve", Utc::now().timestamp())
         .await;
-    let payload = consent_payload_for_user(client_id, user.id);
+    let mut payload = consent_payload_for_user(client_id, user.id);
+    payload.resource_indicators = vec!["resource://default".to_owned()];
     fixture.store_consent_payload(&payload).await;
 
     let req = fixture.auth_request("sid-decision-approve", Some("csrf-session-token"));
@@ -888,6 +889,33 @@ async fn authorization_decision_issues_code_for_matching_user_and_client() {
     assert!(pairs.contains_key("code"));
     assert!(pairs.contains_key("iss"));
     assert!(!pairs.contains_key("error"));
+
+    let mut conn = get_conn(&fixture.state.diesel_db)
+        .await
+        .expect("database connection should open");
+    let stored_resources = sql_query(
+        r#"
+        SELECT grants.last_resource_indicators
+        FROM user_client_grants grants
+        JOIN oauth_clients clients ON clients.id = grants.client_id
+        WHERE grants.user_id = $1 AND clients.client_id = $2
+        "#,
+    )
+    .bind::<SqlUuid, _>(user.id)
+    .bind::<Text, _>(client_id)
+    .get_result::<GrantResourceIndicators>(&mut conn)
+    .await
+    .expect("grant resource indicators should be persisted");
+    assert_eq!(
+        stored_resources.last_resource_indicators,
+        json!(["resource://default"])
+    );
+}
+
+#[derive(QueryableByName)]
+struct GrantResourceIndicators {
+    #[diesel(sql_type = Jsonb)]
+    last_resource_indicators: Value,
 }
 
 #[actix_web::test]

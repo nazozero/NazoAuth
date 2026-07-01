@@ -210,6 +210,7 @@ pub(crate) async fn authorize_decision(
         payload.user_id,
         &payload.client_id,
         &payload.scopes,
+        &payload.resource_indicators,
         &payload.authorization_details,
     )
     .await

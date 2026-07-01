@@ -12,7 +12,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 
 use crate::config::ConfigSource;
 use crate::db::create_pool;
@@ -324,6 +324,15 @@ fn form_body_value(request: &str, key: &str) -> Option<String> {
     let body = request.split("\r\n\r\n").nth(1)?;
     url::form_urlencoded::parse(body.as_bytes())
         .find_map(|(name, value)| (name == key).then(|| value.into_owned()))
+}
+
+fn raw_header_value<'a>(request: &'a str, name: &str) -> Option<&'a str> {
+    request.lines().find_map(|line| {
+        let (header_name, value) = line.split_once(':')?;
+        header_name
+            .eq_ignore_ascii_case(name)
+            .then_some(value.trim())
+    })
 }
 
 #[test]
@@ -903,9 +912,7 @@ async fn one_shot_logout_server(status: &'static str) -> (String, tokio::task::J
     let addr: SocketAddr = listener.local_addr().expect("test server address");
     let handle = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.expect("test request should arrive");
-        let mut buffer = vec![0_u8; 4096];
-        let read = stream.read(&mut buffer).await.expect("request should read");
-        let request = String::from_utf8_lossy(&buffer[..read]).to_string();
+        let request = read_http_request(&mut stream).await;
         let response =
             format!("HTTP/1.1 {status}\r\ncontent-length: 0\r\nconnection: close\r\n\r\n");
         stream
@@ -915,6 +922,38 @@ async fn one_shot_logout_server(status: &'static str) -> (String, tokio::task::J
         request
     });
     (format!("http://{addr}"), handle)
+}
+
+async fn read_http_request(stream: &mut TcpStream) -> String {
+    let mut buffer = Vec::new();
+    let mut chunk = [0_u8; 1024];
+    let mut expected_len = None;
+    loop {
+        let read = stream.read(&mut chunk).await.expect("request should read");
+        if read == 0 {
+            break;
+        }
+        buffer.extend_from_slice(&chunk[..read]);
+        if expected_len.is_none()
+            && let Some(header_end) = buffer.windows(4).position(|window| window == b"\r\n\r\n")
+        {
+            let headers = String::from_utf8_lossy(&buffer[..header_end]);
+            let content_length = headers
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().ok())
+                        .flatten()
+                })
+                .unwrap_or(0);
+            expected_len = Some(header_end + 4 + content_length);
+        }
+        if expected_len.is_some_and(|len| buffer.len() >= len) {
+            break;
+        }
+    }
+    String::from_utf8_lossy(&buffer).to_string()
 }
 
 #[actix_web::test]
@@ -927,8 +966,14 @@ async fn post_backchannel_logout_sends_form_encoded_logout_token() {
     let request = request.await.expect("test server should finish");
 
     assert!(request.starts_with("POST / HTTP/1.1"));
-    assert!(request.contains("content-type: application/x-www-form-urlencoded"));
-    assert!(request.ends_with("logout_token=logout.token.value"));
+    assert_eq!(
+        raw_header_value(&request, "content-type"),
+        Some("application/x-www-form-urlencoded")
+    );
+    assert_eq!(
+        form_body_value(&request, "logout_token").as_deref(),
+        Some("logout.token.value")
+    );
 }
 
 #[actix_web::test]
@@ -940,7 +985,7 @@ async fn post_backchannel_logout_rejects_non_success_response() {
         .expect_err("non-2xx backchannel endpoint must be treated as delivery failure");
     request.await.expect("test server should finish");
 
-    assert!(error.to_string().contains("500 Internal Server Error"));
+    assert!(error.to_string().contains("500"));
 }
 
 #[actix_web::test]

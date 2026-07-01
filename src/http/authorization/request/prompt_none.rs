@@ -9,6 +9,7 @@ pub(super) async fn user_grant_covers_requested_scopes(
     user_id: Uuid,
     client_id: Uuid,
     requested_scopes: &[String],
+    requested_resource_indicators: &[String],
     requested_authorization_details: &Value,
 ) -> Result<bool, HttpResponse> {
     let mut conn = match get_conn(&state.diesel_db).await {
@@ -28,9 +29,10 @@ pub(super) async fn user_grant_covers_requested_scopes(
         .filter(user_client_grants::client_id.eq(client_id))
         .select((
             user_client_grants::last_scopes,
+            user_client_grants::last_resource_indicators,
             user_client_grants::last_authorization_details,
         ))
-        .first::<(Value, Value)>(&mut conn)
+        .first::<(Value, Value, Value)>(&mut conn)
         .await
         .optional()
     {
@@ -44,25 +46,35 @@ pub(super) async fn user_grant_covers_requested_scopes(
             ));
         }
     };
-    Ok(stored
-        .as_ref()
-        .is_some_and(|(stored_scopes, stored_authorization_details)| {
+    Ok(stored.as_ref().is_some_and(
+        |(stored_scopes, stored_resource_indicators, stored_authorization_details)| {
             stored_grant_covers_requested_authorization(
                 stored_scopes,
+                stored_resource_indicators,
                 stored_authorization_details,
                 requested_scopes,
+                requested_resource_indicators,
                 requested_authorization_details,
             )
-        }))
+        },
+    ))
 }
 
 pub(super) fn stored_grant_covers_requested_authorization(
     stored_scopes: &Value,
+    stored_resource_indicators: &Value,
     stored_authorization_details: &Value,
     requested_scopes: &[String],
+    requested_resource_indicators: &[String],
     requested_authorization_details: &Value,
 ) -> bool {
     if !is_subset(requested_scopes, &json_array_to_strings(stored_scopes)) {
+        return false;
+    }
+    if !is_subset(
+        requested_resource_indicators,
+        &json_array_to_strings(stored_resource_indicators),
+    ) {
         return false;
     }
     if authorization_details_empty(requested_authorization_details) {
