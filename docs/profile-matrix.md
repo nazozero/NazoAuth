@@ -93,7 +93,7 @@ Required negative tests:
 | ID Token | RS256 support must be real; active signing alg is advertised |
 | UserInfo | Requires valid access token with `openid` scope |
 | Logout | RP-Initiated Logout at `/logout`; exact `post_logout_redirect_uri` matching; best-effort Back-Channel Logout for registered clients |
-| Metadata | OIDC discovery must match runtime issuer and endpoints, including `end_session_endpoint` and back-channel logout support |
+| Metadata | OIDC discovery must match runtime issuer and endpoints, including `end_session_endpoint` and back-channel logout support, and must not advertise unimplemented extensions |
 
 Required negative tests:
 
@@ -105,6 +105,7 @@ Required negative tests:
 - unregistered `post_logout_redirect_uri`
 - multi-audience `id_token_hint` without matching `client_id`
 - logout token containing forbidden `nonce`
+- discovery overclaim for unimplemented OAuth/OIDC/FAPI extensions
 
 ## `oidc-config`
 

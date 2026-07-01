@@ -17,6 +17,7 @@ use crate::domain::{
     ActiveSigningKey, ConsentPayload, Keyset, KeysetStore, PushedAuthorizationRequest,
     VerificationKey,
 };
+use crate::settings::AuthorizationServerProfile;
 use crate::support::{
     generate_key_material, jwt_decoding_key_from_jwk, public_jwk_from_private_der,
 };
@@ -155,6 +156,21 @@ impl LiveAuthorizationFixture {
     fn state_with_request_uri_parameter(&self, enabled: bool) -> Data<AppState> {
         let mut settings = self.state.settings.as_ref().clone();
         settings.enable_request_uri_parameter = enabled;
+        Data::new(AppState {
+            diesel_db: self.state.diesel_db.clone(),
+            valkey: self.state.valkey.clone(),
+            settings: Arc::new(settings),
+            keyset: self.state.keyset.clone(),
+        })
+    }
+
+    fn state_with_authorization_server_profile(
+        &self,
+        profile: AuthorizationServerProfile,
+    ) -> Data<AppState> {
+        let mut settings = self.state.settings.as_ref().clone();
+        settings.authorization_server_profile = profile;
+        settings.require_pushed_authorization_requests = profile.requires_fapi2_security();
         Data::new(AppState {
             diesel_db: self.state.diesel_db.clone(),
             valkey: self.state.valkey.clone(),
@@ -806,6 +822,60 @@ async fn authorization_request_redirects_when_outer_request_uri_parameters_do_no
     let response = authorize_request(fixture.state.clone(), req, &mut q).await;
 
     assert_authorization_error_redirect(response, "invalid_request", Some("pushed-state"));
+}
+
+#[actix_web::test]
+async fn fapi_authorization_request_rejects_outer_parameters_beyond_client_id_and_request_uri() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let client_id = format!("authorize-fapi-par-outer-{}", Uuid::now_v7());
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            true,
+            true,
+        )
+        .await;
+    let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
+    fixture
+        .store_pushed_request(
+            &request_uri,
+            &client_id,
+            query(&[
+                ("client_id", client_id.as_str()),
+                ("redirect_uri", "https://client.example/callback"),
+                ("response_type", "code"),
+                ("scope", "openid"),
+                ("state", "fapi-par-state"),
+            ]),
+        )
+        .await;
+    let uri = format!(
+        "/authorize?client_id={}&request_uri={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code",
+        urlencoding::encode(&client_id),
+        urlencoding::encode(&request_uri)
+    );
+    let req = actix_web::test::TestRequest::get()
+        .uri(&uri)
+        .to_http_request();
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("request_uri", request_uri.as_str()),
+        ("redirect_uri", "https://client.example/callback"),
+        ("response_type", "code"),
+    ]);
+
+    let response = authorize_request(
+        fixture.state_with_authorization_server_profile(AuthorizationServerProfile::Fapi2Security),
+        req,
+        &mut q,
+    )
+    .await;
+
+    assert_authorization_error_redirect(response, "invalid_request", Some("fapi-par-state"));
 }
 
 #[actix_web::test]

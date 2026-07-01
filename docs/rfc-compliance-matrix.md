@@ -206,7 +206,7 @@ These capabilities must not become default behavior:
 | --- | --- | --- | --- |
 | P1 | RFC 9701 signed introspection responses | Needed before claiming FAPI message-signing signed introspection option. | JWT response mode, issuer/audience binding, key selection, content negotiation or explicit request mode, negative tests, metadata gating. |
 | P1 | Dedicated OAuth 2.1 final audit | OAuth 2.1 is still a draft; final RFC may change requirements. | Requirement-by-requirement matrix after publication, discovery checks, grant/auth/PKCE/refresh tests. |
-| P1 | FAPI precision test pack | FAPI profile is not only PAR+PKCE+sender constraints; it has precise timing, redirect, JWT/JWKS, and authorization-endpoint restrictions. | Tests for code lifetime <= 60s, PAR `expires_in` < 600s, missing PAR `redirect_uri`, non-PAR auth request rejection, FAPI auth endpoint only `client_id`+`request_uri`, 307 rejection, 303 redirect path, JWT clock skew, and JWKS duplicate-`kid`. |
+| P1 | FAPI precision test pack | FAPI profile is not only PAR+PKCE+sender constraints; it has precise timing, redirect, JWT/JWKS, and authorization-endpoint restrictions. | Current coverage includes code lifetime <= 60s startup gating, PAR `expires_in` < 600s startup gating, FAPI auth endpoint outer parameter restriction to `client_id`+`request_uri`, and 303 form credential redirect. Remaining work: missing PAR `redirect_uri` profile-level assertion, 307 rejection audit, JWT clock skew, and JWKS duplicate-`kid`. |
 | P2 | JWT bearer authorization grant from RFC 7523 | Completes the other half of RFC 7523 if product scope requires assertion grants. | Issuer trust policy, subject mapping, audience, expiry, `jti` replay, grant metadata, negative tests. |
 | P2 | Device Authorization Grant | Useful for constrained devices but abuse-prone. | User-code UX, phishing-resistant display, polling interval, `slow_down`, expiration, denial, rate limiting, metadata. |
 | P2 | Token Exchange | Useful for delegation and service chaining but high-risk. | Subject/actor token validation, impersonation/delegation policy, audience/resource restrictions, issued token type policy. |
@@ -229,7 +229,10 @@ discovery metadata claims are updated:
    redirect URI, PKCE, PAR/JAR/JARM, DPoP, mTLS, audience, issuer, nonce,
    refresh tokens, or client assertions.
 4. Ensure discovery metadata is generated from runtime state and does not
-   advertise disabled or untested behavior.
+   advertise disabled or untested behavior. Discovery now has an explicit
+   overclaim guard for signed introspection, DCR, Device Grant, Token Exchange,
+   JWT bearer grant, Front-Channel Logout, Session Management, and
+   UserInfo/JWE signing or encryption claims.
 5. Verify that compatibility modes cannot affect FAPI/high-value profiles.
 6. Update this matrix, `docs/profile-matrix.md`, README, discovery metadata tests,
    and conformance records in the same change when a public capability claim

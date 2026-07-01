@@ -345,6 +345,55 @@ fn discovery_advertises_oidc_logout_endpoints_and_backchannel_support() {
 }
 
 #[test]
+fn discovery_does_not_advertise_unimplemented_protocol_extensions() {
+    let metadata = authorization_server_metadata(
+        &settings(
+            AuthorizationServerProfile::Fapi2MessageSigningAuthzRequest,
+            Vec::new(),
+        ),
+        &keyset(jsonwebtoken::Algorithm::PS256),
+    );
+
+    for field in [
+        "device_authorization_endpoint",
+        "registration_endpoint",
+        "introspection_signing_alg_values_supported",
+        "introspection_encryption_alg_values_supported",
+        "introspection_encryption_enc_values_supported",
+        "frontchannel_logout_supported",
+        "check_session_iframe",
+        "userinfo_signing_alg_values_supported",
+        "userinfo_encryption_alg_values_supported",
+        "userinfo_encryption_enc_values_supported",
+        "authorization_encryption_alg_values_supported",
+        "authorization_encryption_enc_values_supported",
+    ] {
+        assert!(
+            metadata.get(field).is_none(),
+            "{field} must not be advertised until the feature is implemented"
+        );
+    }
+
+    let grant_types = metadata
+        .get("grant_types_supported")
+        .and_then(Value::as_array)
+        .expect("grant type metadata should be present")
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>();
+    for grant_type in [
+        "urn:ietf:params:oauth:grant-type:device_code",
+        "urn:ietf:params:oauth:grant-type:token-exchange",
+        "urn:ietf:params:oauth:grant-type:jwt-bearer",
+    ] {
+        assert!(
+            !grant_types.contains(&grant_type),
+            "{grant_type} must not be advertised until it is implemented"
+        );
+    }
+}
+
+#[test]
 fn discovery_id_token_algs_include_oidc_rs256_baseline() {
     let keyset = keyset(jsonwebtoken::Algorithm::RS256);
 

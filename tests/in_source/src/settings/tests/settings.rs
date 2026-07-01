@@ -27,6 +27,35 @@ fn fapi_profiles_force_required_dpop_nonce_policy() {
 }
 
 #[test]
+fn fapi_profiles_reject_protocol_ttls_above_profile_limits() {
+    let auth_code_ttl = ConfigSource::from_pairs_for_test([
+        ("AUTHORIZATION_SERVER_PROFILE", "fapi2-security"),
+        ("AUTH_CODE_TTL_SECONDS", "61"),
+    ]);
+    let error = settings_error(
+        &auth_code_ttl,
+        "FAPI authorization code lifetime must be capped at 60 seconds",
+    );
+    assert_eq!(
+        error.to_string(),
+        "AUTH_CODE_TTL_SECONDS must be 60 or less for FAPI2 profiles"
+    );
+
+    let par_ttl = ConfigSource::from_pairs_for_test([
+        ("AUTHORIZATION_SERVER_PROFILE", "fapi2-security"),
+        ("PAR_TTL_SECONDS", "600"),
+    ]);
+    let error = settings_error(
+        &par_ttl,
+        "FAPI PAR request_uri lifetime must be shorter than 600 seconds",
+    );
+    assert_eq!(
+        error.to_string(),
+        "PAR_TTL_SECONDS must be less than 600 for FAPI2 profiles"
+    );
+}
+
+#[test]
 fn invalid_dpop_nonce_policy_is_rejected() {
     let config = ConfigSource::from_pairs_for_test([("DPOP_NONCE_POLICY", "sometimes")]);
 

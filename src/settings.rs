@@ -136,6 +136,10 @@ impl Settings {
         if authorization_server_profile.requires_fapi2_security() && auth_code_ttl_seconds > 60 {
             bail!("AUTH_CODE_TTL_SECONDS must be 60 or less for FAPI2 profiles");
         }
+        let par_ttl_seconds = config.parse("PAR_TTL_SECONDS", 90)?;
+        if authorization_server_profile.requires_fapi2_security() && par_ttl_seconds >= 600 {
+            bail!("PAR_TTL_SECONDS must be less than 600 for FAPI2 profiles");
+        }
         let require_pushed_authorization_requests = config
             .bool("REQUIRE_PUSHED_AUTHORIZATION_REQUESTS", false)?
             || authorization_server_profile.requires_fapi2_security();
@@ -205,7 +209,7 @@ impl Settings {
             )?,
             subject_type,
             pairwise_subject_secret,
-            par_ttl_seconds: config.parse("PAR_TTL_SECONDS", 90)?,
+            par_ttl_seconds,
             require_pushed_authorization_requests,
             scim_bearer_token: config.optional_string("SCIM_BEARER_TOKEN"),
             passkey,

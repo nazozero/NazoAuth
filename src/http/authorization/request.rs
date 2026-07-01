@@ -114,6 +114,14 @@ async fn authorize_request(
                 .is_some_and(|client_id| client_id != &pushed.client_id)
             {
                 consumed_request_uri_error = Some("invalid_request_uri");
+            } else if state
+                .settings
+                .authorization_server_profile
+                .requires_fapi2_security()
+                && !outer_request_uri_parameters_are_fapi_compliant(q)
+            {
+                consumed_request_uri_error = Some("invalid_request");
+                *q = pushed.params;
             } else if !outer_request_uri_parameters_match_pushed(q, &pushed.params) {
                 consumed_request_uri_error = Some("invalid_request");
                 *q = pushed.params;

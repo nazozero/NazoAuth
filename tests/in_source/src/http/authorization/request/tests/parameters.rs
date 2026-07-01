@@ -740,6 +740,23 @@ fn outer_request_uri_parameters_match_pushed_handles_empty_outer() {
 }
 
 #[test]
+fn fapi_outer_request_uri_parameters_allow_only_client_id_and_request_uri() {
+    let mut outer = HashMap::new();
+    outer.insert("client_id".to_owned(), "client-a".to_owned());
+    outer.insert(
+        "request_uri".to_owned(),
+        "urn:ietf:params:oauth:request_uri:abc".to_owned(),
+    );
+    assert!(outer_request_uri_parameters_are_fapi_compliant(&outer));
+
+    outer.insert(
+        "redirect_uri".to_owned(),
+        "https://client.example/callback".to_owned(),
+    );
+    assert!(!outer_request_uri_parameters_are_fapi_compliant(&outer));
+}
+
+#[test]
 fn append_authorization_response_query_appends_code_and_iss() {
     let url = append_authorization_response_query(
         "https://client.example/cb",
