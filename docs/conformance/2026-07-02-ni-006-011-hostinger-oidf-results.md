@@ -1,0 +1,100 @@
+# 2026-07-02 NI-006~NI-011 Hostinger OIDF Results
+
+## Environment
+
+| Field | Value |
+| --- | --- |
+| Target issuer | `https://auth.nazo.run` |
+| Host | `ssh hostinger` |
+| Repository path | `/root/oauth2_server/NazoAuth` |
+| Suite path | `/root/oauth2_server/oidf-conformance-suite` |
+| Suite commit | `edbf2514e1e5c850ccf28544953608bda50daf4d` |
+| Branch | `codex/ni-006-011-oidc-profiles` |
+| Runtime/config commit | `fee362d` |
+| Backend image code commit | `6b6da42` |
+| Runner | `scripts/run_oidf_conformance.py --no-api-token --disable-ssl-verify` |
+
+`fee362d` changes only OIDF runner automation and unit tests after the backend
+image commit `6b6da42`. The service health check on Hostinger returned
+`{"status":"正常"}` before the final result review.
+
+## Matrix Coverage
+
+| Task | Official suite mapping | Matrix action |
+| --- | --- | --- |
+| NI-006 RFC 7523 | No dedicated official plan was found for third-party JWT bearer grant assertion trust. Existing OIDC/FAPI plans cover `private_key_jwt` client assertions, not the bounded self-asserted JWT bearer grant implemented here. | No OIDF plan added. Keep local RFC 7523 grant tests and metadata truth tests. |
+| NI-007 OpenID Connect CIBA / FAPI CIBA | `fapi-ciba-id1-test-plan` exists for FAPI-CIBA AS. | Added as plan 20 in the repository OIDF matrix and executed on Hostinger. Current run fails and must not be treated as conformance evidence. |
+| NI-008 OpenID Connect Front-Channel Logout | `oidcc-frontchannel-rp-initiated-logout-certification-test-plan` exists. | Added as plan 18 and executed on Hostinger. Isolated run passed. |
+| NI-009 OpenID Connect Session Management | `oidcc-session-management-certification-test-plan` exists. | Added as plan 19 and executed on Hostinger. Run passed. |
+| NI-010 OpenID Connect Federation 1.0 | Federation alpha plans exist, including deployed entity and joined-to-test-federation OP/RP plans. | Not added to the must-pass matrix. The current implementation only publishes a self-issued entity statement and does not implement trust chain resolution, fetch/list/resolve, metadata policy, or joined-federation behavior. |
+| NI-011 OpenID Connect Native SSO | No official Native SSO / `device_secret` OP plan was found. | No OIDF plan added. Keep local device-secret lifecycle, `ds_hash`, token exchange, and refresh-family tests. |
+
+## Hostinger Runs
+
+| Task | Plan | Plan ID | Export directory | Module result | Log result summary |
+| --- | --- | --- | --- | --- | --- |
+| NI-008 | `oidcc-frontchannel-rp-initiated-logout-certification-test-plan[response_type=code][client_registration=static_client]` | `HRYo5vZ393grD` | `/root/oauth2_server/NazoAuth/oidf-results-ni-008-fee362d-20260702T072615Z` | 2 passed, 0 failed, 0 module skipped | 84 success, 0 failure, 0 warning, 5 informational optional-condition skips |
+| NI-009 | `oidcc-session-management-certification-test-plan[response_type=code][client_registration=static_client]` | `PKnVhX4DiBC6T` | `/root/oauth2_server/NazoAuth/oidf-results-ni-008-009-fee362d-20260702T072550Z` | 2 passed, 0 failed, 0 module skipped | 58 success, 0 failure, 0 warning, 5 informational optional-condition skips |
+| NI-007 | `fapi-ciba-id1-test-plan[client_auth_type=private_key_jwt][fapi_ciba_profile=plain_fapi][ciba_mode=poll][client_registration=static_client]` | `yFaB72MgsQ8Br` | `/root/oauth2_server/NazoAuth/oidf-results-ni-007-fee362d-20260702T072634Z` | 3 passed, 32 failed, 0 module skipped | 1591 success, 34 failure, 0 warning, 1 informational optional-condition skip |
+
+The NI-008 and NI-009 evidence above uses the passing isolated/targeted results.
+An earlier combined NI-008+NI-009 run caused browser/session interference for
+the front-channel logout plan because both plans reused the same test user and
+browser session. Future browser-sensitive logout/session plans should be run in
+isolation or with distinct users and aliases.
+
+## SKIPPED Interpretation
+
+The official module final states in the latest NI-008, NI-009, and NI-007
+exports contain no `SKIPPED` module results.
+
+The exported JSON logs do contain informational messages whose text starts with
+`Skipped evaluation due to ...`. These are optional-condition checks inside a
+module, not module-level `SKIPPED` results:
+
+- NI-008 and NI-009: static logout/session plans did not configure client JWKs
+  or encrypted ID Tokens, so optional client-JWK and ID Token encryption checks
+  logged five informational skipped evaluations.
+- NI-007: discovery did not advertise `userinfo_signing_alg_values_supported`,
+  so one optional UserInfo signing condition logged an informational skipped
+  evaluation.
+
+Therefore NI-008 and NI-009 satisfy `0 failures`, `0 warnings`, and `0 skipped
+modules`, but they are not evidence for a strict "no log line contains the word
+Skipped" gate. Enabling optional client JWK / ID Token encryption or UserInfo
+signing only to remove informational optional-condition messages would broaden
+the advertised profile surface and is not required for these logout/session
+profiles.
+
+## NI-007 Failure Summary
+
+FAPI-CIBA currently fails the official suite. The repeated failure families are:
+
+- positive backchannel authentication calls expected HTTP 200 but did not get it
+  (`CheckBackchannelAuthenticationEndpointHttpStatus200`, 13 failures);
+- signed backchannel request-object negative cases expected
+  `invalid_request` but received a different error shape or value
+  (`CheckErrorFromBackchannelAuthenticationEndpointErrorInvalidRequest`, 18
+  failures);
+- one binding-message negative case expected `invalid_binding_message`;
+- one generic backchannel error response validation failed;
+- one HTTP 400 validation failed.
+
+This means NI-007 is implemented locally, but the current implementation is not
+yet FAPI-CIBA ID1 conformant. It should remain a failing matrix item until the
+backchannel authentication endpoint accepts the positive FAPI-CIBA request
+shape, implements the suite's signed request-object requirements, and normalizes
+negative error mappings.
+
+## Local Verification
+
+- `cargo test bootstrap::tests --lib`
+- `cargo test oidc_logout --lib`
+- `cargo test id_token_sid --lib`
+- `cargo test session_management --lib`
+- `cargo fmt --check`
+- `python -m compileall -q scripts tests/unit`
+- `python -m unittest tests.unit.test_setup_local_oidf_podman`
+
+Rust tests still report the existing `field iss is never read` warning in
+`src/http/token/native_sso.rs`; it is unrelated to these OIDF runs.

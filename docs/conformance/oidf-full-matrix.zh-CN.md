@@ -36,7 +36,7 @@
 - `OIDC Basic OP Dynamic Registration` 覆盖 RFC 7591 动态客户端注册和 `registration_endpoint` metadata。
 - `OIDC Config OP` 覆盖 metadata truth，防止 discovery 暴露未实现能力。
 - FAPI2 Security 和 Message Signing plans 覆盖 PAR 强制、`request_uri` 过期、`request_uri` 重用、跨客户端 `request_uri` 使用、外层授权请求参数、PKCE、redirect URI、audience 和 client assertion。
-- `private_key_jwt / DPoP / OpenID Connect / authorization code` 是 TP/PS 改动面的主要单 plan；完整回归以 17-plan 矩阵为准。
+- `private_key_jwt / DPoP / OpenID Connect / authorization code` 是 TP/PS 改动面的主要单 plan；完整回归以 20-plan 矩阵为准。
 - `OIDC Front-Channel Logout OP` 覆盖 NI-008。
 - `OIDC Session Management OP` 覆盖 NI-009。
 - `FAPI-CIBA ID1 / private_key_jwt / poll / plain FAPI` 覆盖 NI-007 的 FAPI-CIBA AS 面。

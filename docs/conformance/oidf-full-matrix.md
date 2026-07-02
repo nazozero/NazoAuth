@@ -1,6 +1,6 @@
 # OIDF Full Matrix
 
-This document describes the repository-owned OpenID Foundation Conformance Suite matrix. The matrix is a 17-plan suite. New TP/PS checks are mapped onto these plans instead of being added as a separate temporary matrix.
+This document describes the repository-owned OpenID Foundation Conformance Suite matrix. The matrix is a 20-plan suite. New TP/PS and NI checks are mapped onto these plans instead of being added as a separate temporary matrix.
 
 The execution entry point is still `runtime/oidf/oidf-plan-set.json`. `scripts/setup_local_oidf_podman.py` also writes `runtime/oidf/oidf-plan-set-manifest.json` with a title, description, and coverage focus for every plan.
 
@@ -25,6 +25,9 @@ The execution entry point is still `runtime/oidf/oidf-plan-set.json`. `scripts/s
 | 15 | FAPI2 Security / private_key_jwt / mTLS sender / OpenID Connect / authorization code | Uses `private_key_jwt` client authentication and mTLS sender-constrained tokens for OIDC authorization code and certificate-bound resource access. |
 | 16 | FAPI2 Security / private_key_jwt / mTLS sender / plain OAuth / client credentials | Uses `private_key_jwt` client authentication and mTLS sender constraint for client credentials token issuance and certificate-bound resource access. |
 | 17 | FAPI2 Security / private_key_jwt / mTLS sender / plain OAuth / authorization code | Uses `private_key_jwt` client authentication and mTLS sender constraint for non-OIDC authorization-code, PAR, PKCE, code replay, and resource-access checks. |
+| 18 | OIDC Front-Channel Logout OP | Validates front-channel logout metadata, RP-initiated logout, iframe logout notification, `iss`/`sid` parameters, and `post_logout_redirect_uri`. |
+| 19 | OIDC Session Management OP | Validates `check_session_iframe` metadata, authorization response `session_state`, and the session-state transition after RP-initiated logout. |
+| 20 | FAPI-CIBA ID1 / private_key_jwt / poll / plain FAPI | Validates FAPI-CIBA AS discovery, the backchannel authentication endpoint, `private_key_jwt` client authentication, poll-mode token exchange, error handling, refresh tokens, and resource access. |
 
 ## TP/PS Coverage Boundary
 
@@ -33,9 +36,15 @@ The matrix covers the current TP/PS work through these paths:
 - `OIDC Basic OP Dynamic Registration` covers RFC 7591 dynamic client registration and `registration_endpoint` metadata.
 - `OIDC Config OP` covers metadata truth and prevents discovery from advertising unsupported capabilities.
 - FAPI2 Security and Message Signing plans cover PAR enforcement, `request_uri` expiry, `request_uri` replay, cross-client `request_uri` use, outer authorization request parameters, PKCE, redirect URI, audience, and client assertions.
-- `private_key_jwt / DPoP / OpenID Connect / authorization code` is the closest single-plan regression for TP/PS change sets; full evidence comes from the 17-plan matrix.
+- `private_key_jwt / DPoP / OpenID Connect / authorization code` is the closest single-plan regression for TP/PS change sets; full evidence comes from the 20-plan matrix.
+- `OIDC Front-Channel Logout OP` covers NI-008.
+- `OIDC Session Management OP` covers NI-009.
+- `FAPI-CIBA ID1 / private_key_jwt / poll / plain FAPI` covers the FAPI-CIBA AS side of NI-007.
+- No dedicated official plan was found for NI-006 RFC 7523 third-party JWT bearer grant assertion trust. Existing OIDC/FAPI plans cover client assertion scenarios, and local tests cover the bounded JWT bearer grant.
+- NI-010 currently implements only a self-issued entity statement. It does not satisfy federation alpha plans that require trust chain resolution, fetch/list/resolve, metadata policy, or joined-federation behavior, so those plans are not must-pass matrix entries yet.
+- No official OP plan was found for NI-011 Native SSO / `device_secret`; local tests cover device-secret lifecycle, `ds_hash` binding, token exchange, and refresh-family activity.
 
-Targeted plan-sets are useful for development triage. Durable regression evidence should cite the full 17-plan matrix.
+Targeted plan-sets are useful for development triage. Durable regression evidence should cite the full 20-plan matrix.
 
 ## Expected Skip Policy
 

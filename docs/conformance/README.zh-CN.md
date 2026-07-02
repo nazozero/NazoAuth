@@ -20,12 +20,20 @@ Nazo Auth Server 已发布在 OpenID Foundation 官方认证列表中：
 - 最新私有 full-matrix 回归：[2026-07-01 TP/PS OIDF full matrix](2026-07-01-tp-ps-full-matrix.md)
 - 最新官方 full matrix：[2026-07-02 NI-004 official OIDF full matrix](2026-07-02-ni-004-official-oidf-full-matrix.md)
 - 最新 RFC 覆盖检查：[2026-07-02 NI-005 RFC 7592 OIDF coverage](2026-07-02-ni-005-oidf-coverage.md)
+- 最新 NI-006~NI-011 Hostinger targeted OIDF 结果：[2026-07-02 NI-006~NI-011 Hostinger OIDF results](2026-07-02-ni-006-011-hostinger-oidf-results.md)
 
 `2026-06-09` full matrix 是当前官方认证证据，针对 `https://auth.nazo.run` 执行，覆盖 OIDC Basic、OIDC Config、FAPI2 Security Profile Final、FAPI2 Message Signing Final、mTLS、DPoP、`private_key_jwt`、client credentials 变体。结果为全计划完成，`0 failures`，`0 warnings`。
 
 最新记录的官方 full-matrix suite run 是 2026-07-02 NI-004 官方运行，针对 `https://auth.nazo.run` 执行，开始时间为 `2026-07-02 01:32:57 +08:00`，workflow head SHA 为 `0b00ea7d50443cb54fc17631a9238126fa837e42`。该运行完成 17-plan 矩阵，最终结果为 `0 failures`、`0 warnings`，但 dynamic-registration OIDC Basic plan 中存在 2 个 expected `SKIPPED` module；本次 workflow 日志未独立记录 runtime implementation commit，因此不能作为 zero-SKIPPED 证据。
 
 最新私有 full-matrix 回归记录是 2026-07-01 TP/PS 运行，测试对象为 `https://auth.nazo.run`，runtime commit 为 `31e8f9f`。该运行使用仓库原有 16-plan 完整矩阵，导出 16 个 plan archives，共执行 578 个测试模块，结果为 `0 failures`、`0 warnings`。
+
+最新 NI-006~NI-011 targeted Hostinger 运行使用本地 official suite 快照
+`edbf2514e1e5c850ccf28544953608bda50daf4d`。NI-008 Front-Channel Logout 和
+NI-009 Session Management 均为 `0 failures`、`0 warnings`、`0 skipped modules`；
+NI-007 FAPI-CIBA 已加入矩阵但当前失败，结果为 3 个模块通过、32 个模块失败。
+这些 runs 的 JSON 日志包含信息级 optional-condition `Skipped evaluation ...`
+消息；它们不是 module-level `SKIPPED` 结果。
 
 baseline OIDC metadata 会在 `request_object_signing_alg_values_supported` 中声明 `none`，用于 unsigned Request Object 的 OIDC 兼容路径。该能力不是高安全 profile 能力；FAPI2 Security Profile Final、FAPI2 Message Signing Final、要求 PAR request object 的客户端以及 holder-bound token 客户端仍然 fail closed，必须使用签名 Request Object 或被拒绝。
 
