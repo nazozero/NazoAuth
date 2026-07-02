@@ -1095,6 +1095,26 @@ def oidf_log_failure(module_id: str, logs: object) -> str | None:
     return None
 
 
+def oidf_log_has_successful_completion(logs: object) -> bool:
+    if not isinstance(logs, list):
+        return False
+
+    has_success = False
+    for entry in logs:
+        if not isinstance(entry, dict):
+            continue
+
+        result = value_as_upper(entry.get("result"))
+        if result == "SUCCESS":
+            has_success = True
+
+        msg = entry.get("msg")
+        if result == "FINISHED" and isinstance(msg, str) and "completion" in msg:
+            return has_success
+
+    return False
+
+
 def oidf_log_context(logs: object, *, max_entries: int = 6) -> str:
     if not isinstance(logs, list):
         return ""
@@ -1227,6 +1247,10 @@ def inspect_oidf_state(
                     token,
                     expected_statuses={200, 404},
                 )
+                if oidf_log_failure(module_id, logs):
+                    return oidf_failure_with_log_context(module_id, failure, logs)
+                if oidf_log_has_successful_completion(logs):
+                    continue
                 return oidf_failure_with_log_context(module_id, failure, logs)
             status = value_as_upper(info.get("status")) if isinstance(info, dict) else ""
             if final and status and status != "FINISHED":
