@@ -803,7 +803,7 @@ def browser_automation() -> list[dict[str, object]]:
                 {
                     "task": "Reach post-logout redirect page",
                     "match": "*/test/*/post_logout_redirect*",
-                    "commands": [["wait", "contains", "/post_logout_redirect", 10]],
+                    "commands": [["wait", "contains", "/post_logout_redirect?state=", 10]],
                 },
             ],
         },
