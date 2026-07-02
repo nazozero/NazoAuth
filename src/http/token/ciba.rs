@@ -21,6 +21,10 @@ struct CibaRequestState {
     user_id: Uuid,
     scopes: Vec<String>,
     audiences: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    binding_message: Option<String>,
+    #[serde(default)]
+    issued_at: i64,
     status: CibaStatus,
     interval_seconds: u64,
     expires_at: i64,
@@ -70,6 +74,25 @@ struct CibaAuthenticationRequestClaims {
 pub(crate) struct CibaDecisionRequest {
     decision: String,
     csrf_token: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct CibaVerificationView {
+    auth_req_id: String,
+    csrf_token: Option<String>,
+    request: Option<CibaAuthorizationRequestView>,
+}
+
+#[derive(serde::Serialize)]
+struct CibaAuthorizationRequestView {
+    client_id: String,
+    client_name: String,
+    scopes: Vec<String>,
+    audiences: Vec<String>,
+    binding_message: Option<String>,
+    interval_seconds: u64,
+    issued_at: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
 }
 
 pub(crate) async fn backchannel_authentication(
@@ -214,6 +237,8 @@ pub(crate) async fn backchannel_authentication(
         user_id: user.id,
         scopes,
         audiences: vec![state.settings.default_audience.clone()],
+        binding_message: form.binding_message,
+        issued_at: Utc::now().timestamp(),
         status: CibaStatus::Pending,
         interval_seconds: state.settings.ciba_poll_interval_seconds,
         expires_at: Utc::now().timestamp() + expires_in as i64,
@@ -581,6 +606,73 @@ fn non_empty(value: String) -> Option<String> {
     (!value.trim().is_empty()).then(|| value.trim().to_owned())
 }
 
+pub(crate) async fn ciba_verification_page(
+    state: Data<AppState>,
+    path: actix_web::web::Path<String>,
+) -> HttpResponse {
+    if !state.settings.enable_ciba {
+        return empty_response(StatusCode::NOT_FOUND);
+    }
+    let location = format!(
+        "{}/ciba/{}",
+        state.settings.frontend_base_url.trim_end_matches('/'),
+        urlencoding::encode(&path.into_inner())
+    );
+    HttpResponse::Found()
+        .insert_header((header::LOCATION, location))
+        .insert_header((header::CACHE_CONTROL, HeaderValue::from_static("no-store")))
+        .insert_header((header::PRAGMA, HeaderValue::from_static("no-cache")))
+        .finish()
+}
+
+pub(crate) async fn ciba_verification(
+    state: Data<AppState>,
+    req: HttpRequest,
+    path: actix_web::web::Path<String>,
+) -> HttpResponse {
+    if !state.settings.enable_ciba {
+        return empty_response(StatusCode::NOT_FOUND);
+    }
+    let user = match current_user_or_login_required(&state, &req).await {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    let auth_req_id = path.into_inner();
+    let state_payload = match load_ciba_request_state(&state, &auth_req_id).await {
+        Ok(Some(value)) => value,
+        Ok(None) => {
+            return oauth_error(
+                StatusCode::NOT_FOUND,
+                "invalid_request",
+                "CIBA request expired.",
+            );
+        }
+        Err(response) => return response,
+    };
+    if state_payload.user_id != user.id {
+        return oauth_error(
+            StatusCode::FORBIDDEN,
+            "access_denied",
+            "CIBA request user mismatch.",
+        );
+    }
+    let request = if state_payload.status == CibaStatus::Pending
+        && state_payload.expires_at > Utc::now().timestamp()
+    {
+        match ciba_authorization_request_view(&state, &state_payload).await {
+            Ok(value) => value,
+            Err(response) => return response,
+        }
+    } else {
+        None
+    };
+    json_response_no_store(CibaVerificationView {
+        auth_req_id,
+        csrf_token: cookie_value(&req, &state.settings.csrf_cookie_name),
+        request,
+    })
+}
+
 pub(crate) async fn ciba_decision(
     state: Data<AppState>,
     req: HttpRequest,
@@ -616,6 +708,21 @@ pub(crate) async fn ciba_decision(
             "CIBA request user mismatch.",
         );
     }
+    if state_payload.status != CibaStatus::Pending {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "CIBA request was already handled.",
+        );
+    }
+    if state_payload.expires_at <= Utc::now().timestamp() {
+        let _ = valkey_del(&state.valkey, ciba_request_key(&auth_req_id)).await;
+        return oauth_error(
+            StatusCode::NOT_FOUND,
+            "invalid_request",
+            "CIBA request expired.",
+        );
+    }
     state_payload.status = match payload.decision.as_str() {
         "approve" => CibaStatus::Approved,
         "deny" => CibaStatus::Denied,
@@ -631,6 +738,34 @@ pub(crate) async fn ciba_decision(
         return response;
     }
     json_response_no_store(json!({"success": true}))
+}
+
+async fn ciba_authorization_request_view(
+    state: &AppState,
+    payload: &CibaRequestState,
+) -> Result<Option<CibaAuthorizationRequestView>, HttpResponse> {
+    let client = match find_client(&state.diesel_db, &payload.client_id).await {
+        Ok(Some(client)) if client.is_active => client,
+        Ok(_) => return Ok(None),
+        Err(error) => {
+            tracing::warn!(%error, "failed to load CIBA client for verification page");
+            return Err(oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "CIBA client unavailable.",
+            ));
+        }
+    };
+    Ok(Some(CibaAuthorizationRequestView {
+        client_id: payload.client_id.clone(),
+        client_name: client.client_name,
+        scopes: payload.scopes.clone(),
+        audiences: payload.audiences.clone(),
+        binding_message: payload.binding_message.clone(),
+        interval_seconds: payload.interval_seconds,
+        issued_at: DateTime::<Utc>::from_timestamp(payload.issued_at, 0).unwrap_or_else(Utc::now),
+        expires_at: DateTime::<Utc>::from_timestamp(payload.expires_at, 0).unwrap_or_else(Utc::now),
+    }))
 }
 
 pub(crate) async fn token_ciba(
