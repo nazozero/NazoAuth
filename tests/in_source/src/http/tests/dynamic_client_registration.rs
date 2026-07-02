@@ -35,6 +35,57 @@ fn oidc_dynamic_registration_defaults_to_confidential_authorization_code_client(
 }
 
 #[test]
+fn oidc_dynamic_secret_clients_keep_non_pkce_code_flow_compatibility() {
+    let prepared = prepare_dynamic_client_registration(
+        DynamicClientRegistrationRequest {
+            redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
+            scope: Some("openid".to_owned()),
+            token_endpoint_auth_method: Some("client_secret_basic".to_owned()),
+            ..Default::default()
+        },
+        DynamicRegistrationDefaults {
+            default_audience: "https://issuer.example/fapi/resource",
+        },
+    )
+    .expect("OIDC dynamic client metadata should be accepted");
+
+    let create_request = prepared.to_create_client_request();
+    assert!(create_request.allow_authorization_code_without_pkce);
+}
+
+#[test]
+fn dynamic_registration_requires_pkce_for_public_or_sender_constrained_clients() {
+    let public = prepare_dynamic_client_registration(
+        DynamicClientRegistrationRequest {
+            redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
+            token_endpoint_auth_method: Some("none".to_owned()),
+            ..Default::default()
+        },
+        DynamicRegistrationDefaults {
+            default_audience: "https://issuer.example/fapi/resource",
+        },
+    )
+    .expect("public dynamic client metadata should be accepted")
+    .to_create_client_request();
+    assert!(!public.allow_authorization_code_without_pkce);
+
+    let dpop = prepare_dynamic_client_registration(
+        DynamicClientRegistrationRequest {
+            redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
+            token_endpoint_auth_method: Some("client_secret_basic".to_owned()),
+            dpop_bound_access_tokens: true,
+            ..Default::default()
+        },
+        DynamicRegistrationDefaults {
+            default_audience: "https://issuer.example/fapi/resource",
+        },
+    )
+    .expect("DPoP-bound dynamic client metadata should be accepted")
+    .to_create_client_request();
+    assert!(!dpop.allow_authorization_code_without_pkce);
+}
+
+#[test]
 fn dynamic_registration_rejects_inconsistent_grant_and_response_types() {
     let request = DynamicClientRegistrationRequest {
         redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
@@ -141,7 +192,7 @@ async fn dynamic_registration_accepts_oidf_inline_jwks_without_kid_for_secret_cl
 
     let create_request = prepared.to_create_client_request();
     assert_eq!(create_request.scopes, vec!["openid"]);
-    assert!(!create_request.allow_authorization_code_without_pkce);
+    assert!(create_request.allow_authorization_code_without_pkce);
 
     crate::http::admin::prepare_client_insert(create_request, None, "https://issuer.example")
         .await
