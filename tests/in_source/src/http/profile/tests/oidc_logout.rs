@@ -240,21 +240,31 @@ impl LiveLogoutFixture {
     }
 
     async fn issue_id_token_hint(&self, user_id: Uuid, client_id: &str, oidc_sid: &str) -> String {
+        self.issue_id_token_hint_with_sid(user_id, client_id, Some(oidc_sid))
+            .await
+    }
+
+    async fn issue_id_token_hint_with_sid(
+        &self,
+        user_id: Uuid,
+        client_id: &str,
+        oidc_sid: Option<&str>,
+    ) -> String {
         let keyset = self.state.keyset.snapshot();
         let mut header = Header::new(Algorithm::EdDSA);
         header.typ = Some("JWT".to_owned());
         header.kid = Some(keyset.active_kid.clone());
+        let mut claims = json!({
+            "iss": self.state.settings.issuer,
+            "sub": user_id.to_string(),
+            "aud": client_id,
+            "exp": Utc::now().timestamp() + 300
+        });
+        if let Some(oidc_sid) = oidc_sid {
+            claims["sid"] = json!(oidc_sid);
+        }
         keyset
-            .sign_jwt(
-                &header,
-                &json!({
-                    "iss": self.state.settings.issuer,
-                    "sub": user_id.to_string(),
-                    "aud": client_id,
-                    "sid": oidc_sid,
-                    "exp": Utc::now().timestamp() + 300
-                }),
-            )
+            .sign_jwt(&header, &claims)
             .await
             .expect("id_token_hint should sign")
     }
@@ -1192,6 +1202,56 @@ async fn oidc_logout_clears_session_and_sends_backchannel_logout_token_with_regi
         json!({"http://schemas.openid.net/event/backchannel-logout": {}})
     );
     assert!(claims["jti"].as_str().is_some());
+}
+
+#[actix_web::test]
+async fn oidc_logout_accepts_current_session_id_token_hint_without_sid() {
+    let Some(fixture) = LiveLogoutFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let sid = format!("logout-{suffix}");
+    let oidc_sid = format!("op-session-{suffix}");
+    let redirect_uri = "https://client.example/callback";
+    let post_logout_redirect_uri = "https://client.example/logout/callback";
+    let user = fixture.create_user(&suffix).await;
+    fixture.store_session(&user, &sid, &oidc_sid).await;
+    let client_public_id = format!("logout-client-{suffix}");
+    fixture
+        .insert_client(
+            &client_public_id,
+            redirect_uri,
+            post_logout_redirect_uri,
+            None,
+        )
+        .await;
+    let id_token_hint = fixture
+        .issue_id_token_hint_with_sid(user.id, &client_public_id, None)
+        .await;
+    let uri = format!(
+        "/oidc/logout?id_token_hint={}&post_logout_redirect_uri={}&state=logout-state",
+        urlencoding::encode(&id_token_hint),
+        urlencoding::encode(post_logout_redirect_uri),
+    );
+    let (req, payload) = fixture.logout_request(&uri, Some(&sid)).await;
+
+    let response = oidc_logout(fixture.state.clone(), req, payload).await;
+    let status = response.status();
+    let location = response
+        .headers()
+        .get(header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+
+    assert_eq!(status, StatusCode::FOUND);
+    assert_eq!(
+        location.as_deref(),
+        Some("https://client.example/logout/callback?state=logout-state")
+    );
+    assert!(
+        !fixture.session_exists(&sid).await,
+        "matching id_token_hint must authorize clearing the current OP session even without sid"
+    );
 }
 
 #[actix_web::test]

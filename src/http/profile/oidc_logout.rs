@@ -76,7 +76,14 @@ pub(crate) async fn oidc_logout(
         Err(response) => return response,
     };
     if current_session.as_ref().is_some_and(|session| {
-        !logout_request_authorizes_session_clear(&state, &req, session, hint.as_ref())
+        !logout_request_authorizes_session_clear(
+            &state.settings,
+            &state,
+            &req,
+            session,
+            hint.as_ref(),
+            client.as_ref(),
+        )
     }) {
         return oauth_error(
             StatusCode::BAD_REQUEST,
@@ -314,15 +321,23 @@ fn set_once(field: &mut Option<String>, value: &str) -> Result<(), HttpResponse>
 }
 
 fn logout_request_authorizes_session_clear(
+    settings: &Settings,
     state: &AppState,
     req: &HttpRequest,
     session: &CurrentSession,
     hint: Option<&IdTokenHintClaims>,
+    client: Option<&BackchannelLogoutClient>,
 ) -> bool {
     has_valid_csrf_token(state, req, None)
-        || hint
-            .and_then(|hint| hint.sid.as_deref())
-            .is_some_and(|sid| constant_time_eq(sid.as_bytes(), session.oidc_sid.as_bytes()))
+        || hint.is_some_and(|hint| {
+            id_token_hint_matches_current_session(
+                settings,
+                client,
+                session.user.id,
+                &session.oidc_sid,
+                hint,
+            )
+        })
 }
 
 #[derive(Deserialize)]
