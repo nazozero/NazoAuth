@@ -19716,6 +19716,9 @@
         "resourceMediaType": "application/json",
         "resourceRequestBody": ""
       },
+      "automated_ciba_approval_url": {
+        "$secret": "/configs/oidf-fapi-ciba-plain-private-key-jwt-poll-plan-config.json/automated_ciba_approval_url"
+      },
       "client": {
         "client_id": "local-oidf-fapi-fapi-ciba-plain-private-key-jwt-poll-client-1",
         "jwks": {
