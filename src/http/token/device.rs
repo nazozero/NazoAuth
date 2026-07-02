@@ -496,6 +496,7 @@ pub(crate) async fn token_device_code(
                     authorization_code_hash: None,
                     actor: None,
                     issued_token_type: None,
+                    native_sso: None,
                 },
             )
             .await

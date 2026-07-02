@@ -238,24 +238,30 @@ Last reviewed: 2026-07-01.
   - 当前边界：`registration_access_token` 仅以 BLAKE3 哈希存储；GET/PUT 成功后轮换 registration access token，secret-auth 客户端同步轮换 `client_secret`；PUT 采用全量替换并拒绝客户端提交服务器管理字段；DELETE 停用客户端、清除 registration token、撤销 refresh token 行并移除 user grants。
   - 证据：`src/http/dynamic_client_registration.rs`、`src/http/admin/clients/create.rs`、`src/bootstrap/routes.rs`、`migrations/20260702000100_rfc7592_registration_management`、`tests/in_source/src/http/tests/dynamic_client_registration.rs`。
   - OIDF 覆盖：当前官方 17-plan 矩阵仍以 OIDC dynamic-client plan 为准，见 `docs/conformance/2026-07-02-ni-004-official-oidf-full-matrix.md`；该矩阵存在 2 个预期 `SKIPPED`，不能作为 zero-SKIPPED 证据。NI-005 记录见 `docs/conformance/2026-07-02-ni-005-oidf-coverage.md`。
-- [ ] **NI-006 RFC 7523 third-party JWT bearer assertion trust**
-  - 状态：未实现
-  - 最小安全实现条件：外部 assertion issuer allowlist、subject mapping、audience、expiry、jti replay、grant-type policy 和审计。
-- [ ] **NI-007 OpenID Connect CIBA / FAPI CIBA**
-  - 状态：未实现
-  - 最小安全实现条件：CIBA Core endpoint、`auth_req_id`、用户绑定、consent UX、polling/backchannel state；之后再加 FAPI constraints。
-- [ ] **NI-008 OpenID Connect Front-Channel Logout**
-  - 状态：未实现
-  - 最小安全实现条件：client metadata、iframe/session 通知、浏览器测试。
-- [ ] **NI-009 OpenID Connect Session Management**
-  - 状态：未实现
-  - 最小安全实现条件：`check_session_iframe`、session state 计算、浏览器轮询测试。
+- [x] **NI-006 RFC 7523 bounded JWT bearer grant**
+  - 状态：已实现 bounded profile；`private_key_jwt` 和 `urn:ietf:params:oauth:grant-type:jwt-bearer` 均可用，JWT bearer grant 仅接受已认证 confidential client 对自身 `client_id` 的断言。
+  - 当前边界：未开放 third-party assertion issuer trust；外部 issuer allowlist、subject mapping 和跨 issuer trust policy 仍是单独产品决策，不能用当前 self-asserted grant 替代。
+  - 证据：`src/http/token/jwt_bearer.rs`、`src/support/oauth.rs`、`tests/in_source/src/http/token/tests/jwt_bearer.rs`、`tests/in_source/src/support/tests/oauth_client_metadata.rs`。
+- [x] **NI-007 OpenID Connect CIBA / FAPI CIBA**
+  - 状态：已实现默认关闭的 CIBA poll mode；`ENABLE_CIBA=true` 时 discovery 广告 `backchannel_authentication_endpoint` 和 CIBA grant，客户端仍需注册 `urn:openid:params:grant-type:ciba`。
+  - 当前边界：支持 `login_hint` 用户绑定、`auth_req_id` Valkey 状态、CSRF 保护的用户 approve/deny、polling interval/`slow_down`/`authorization_pending`、confidential client auth、FAPI profile 的 token endpoint 约束，以及按客户端要求签发 DPoP/mTLS sender-constrained token；不支持 ping/push mode、`user_code` 和独立 CIBA UI 前端。
+  - 证据：`src/http/token/ciba.rs`、`src/bootstrap/routes.rs`、`src/http/well_known.rs`、`tests/in_source/src/http/token/tests/ciba.rs`。
+- [x] **NI-008 OpenID Connect Front-Channel Logout**
+  - 状态：已实现默认关闭；`ENABLE_FRONTCHANNEL_LOGOUT=true` 时 discovery 广告 front-channel logout 支持。
+  - 当前边界：DCR/admin client metadata 支持 `frontchannel_logout_uri` / `frontchannel_logout_session_required`；RP-Initiated Logout 成功时为已授权客户端生成 iframe 通知并按要求附加 `iss`/`sid`；仍保留 Back-Channel Logout 作为更强路径。
+  - 证据：`migrations/20260702000200_oidc_frontchannel_logout`、`src/http/profile/oidc_logout.rs`、`src/http/dynamic_client_registration.rs`、`tests/in_source/src/http/profile/tests/oidc_logout.rs`。
+- [x] **NI-009 OpenID Connect Session Management**
+  - 状态：已实现默认关闭；`ENABLE_SESSION_MANAGEMENT=true` 时 discovery 广告 `check_session_iframe`。
+  - 当前边界：授权码响应包含 `session_state`；`/check_session` iframe 使用 postMessage + same-origin status endpoint 返回 `unchanged`/`changed`/`error`；响应 no-store，未把该浏览器轮询机制作为主 logout 安全边界。
+  - 证据：`src/http/profile/session_management.rs`、`src/http/profile/session_management_iframe.*.html`、`src/http/authorization/request.rs`、`tests/in_source/src/http/profile/tests/session_management.rs`。
 - [ ] **NI-010 OpenID Connect Federation 1.0**
-  - 状态：未实现
-  - 最小安全实现条件：entity statement、trust anchor、trust chain resolution、metadata policy、trust marks。
-- [ ] **NI-011 OpenID Connect Native SSO**
-  - 状态：未实现
-  - 最小安全实现条件：`device_secret` issuance/rotation、grant support、mobile client metadata、revocation。
+  - 状态：已实现默认关闭的 self-issued entity statement endpoint；`ENABLE_OIDC_FEDERATION=true` 时 `/.well-known/openid-federation` 返回 `application/entity-statement+jwt`。
+  - 当前边界：仅覆盖 deployed entity/OP 元数据发布的最小 entity statement；trust anchor 配置、trust chain resolution、metadata policy、trust marks、federation fetch/list/resolve 尚未实现，不能声明完整 Federation 1.0 OP/RP 加入测试联盟能力。
+  - 证据：`src/http/federation_entity.rs`、`src/bootstrap/routes.rs`、`tests/in_source/src/http/tests/federation_entity.rs`。
+- [x] **NI-011 OpenID Connect Native SSO**
+  - 状态：已实现默认关闭；`ENABLE_NATIVE_SSO=true` 时 discovery 广告 `native_sso_supported` 并将 `device_sso` 加入 `scopes_supported`。
+  - 当前边界：authorization code 中的 `device_sso` 触发 `device_secret` 签发和 ID Token `ds_hash`/`sid` 绑定；Native SSO token exchange 使用 ID Token + `urn:openid:params:token-type:device-secret`，校验签名、`ds_hash`、session state、refresh family 活性、同租户和客户端 `device_sso` scope；不支持平台证书/应用签名证明，需由移动端安全存储边界保证。
+  - 证据：`src/http/token/native_sso.rs`、`src/http/token/issue.rs`、`src/http/token/token_exchange.rs`、`tests/in_source/src/http/token/tests/native_sso.rs`。
 - [ ] **NI-012 UserInfo signing/encryption**
   - 状态：未实现
   - 最小安全实现条件：metadata gating、JWS/JWE alg policy、per-client negotiation、claim minimization、负向测试。
@@ -283,11 +289,11 @@ NI 任务的默认 OIDF 矩阵动作；实现任务时仍需重新确认官方 s
 | NI-004 RFC 7591 / OIDC Dynamic Client Registration | `oidcc-dynamic-certification-test-plan` 覆盖 OIDC dynamic client registration。 | 已加入 17-plan full matrix；保留 dynamic-client 官方结果和 expected SKIPPED 说明。 |
 | NI-005 RFC 7592 Dynamic Client Registration Management | 发现 Brazil DCR plans：`fapi1-advanced-final-brazil-dcr-test-plan`、`fapi2-security-profile-final-brazil-dcr-test-plan`、`fapi2-security-profile-id2-brazil-dcr-test-plan`；这些计划绑定 Brazil software statement、mTLS 和 Brazil profile。 | 当前不新增标准矩阵；除非产品明确实现 Brazil DCR profile，否则只记录 `docs/conformance/2026-07-02-ni-005-oidf-coverage.md` 并保留本地 RFC 7592 tests。 |
 | NI-006 RFC 7523 third-party JWT bearer assertion trust | RFC 7523 client authentication 负向场景已由 OIDC/FAPI plans 覆盖；未发现第三方 assertion issuer trust 专项 plan。 | 不新增矩阵；若实现外部 issuer trust，新增本地 issuer allowlist/subject mapping/replay tests，并记录未发现官方 plan。 |
-| NI-007 OpenID Connect CIBA / FAPI CIBA | `fapi-ciba-id1-test-plan` 覆盖 FAPI-CIBA AS；另有 RP/client alpha plan。 | 实现 CIBA Core/FAPI CIBA 时必须新增 FAPI-CIBA AS matrix；若只实现 CIBA Core 非 FAPI profile，需先确认是否有 Core-only plan。 |
-| NI-008 OpenID Connect Front-Channel Logout | `oidcc-frontchannel-rp-initiated-logout-certification-test-plan` 覆盖 OP front-channel logout + RP-initiated logout 组合。 | 实现并广告 front-channel logout 时新增该 OP plan；同时保留浏览器/iframe 本地测试。 |
-| NI-009 OpenID Connect Session Management | `oidcc-session-management-certification-test-plan` 覆盖 OP session management。 | 实现并广告 `check_session_iframe` 时新增该 OP plan；同时保留浏览器轮询和 session state 本地测试。 |
-| NI-010 OpenID Connect Federation 1.0 | 发现 federation entity / OP / RP alpha plans：`openid-federation-deployed-entity-test-plan`、`openid-federation-entity-joined-to-test-federation-op-test-plan`、`openid-federation-entity-joined-to-test-federation-rp-test-plan`。 | 实现 Federation OP/Entity 时新增对应 federation matrix；不得用普通 OIDC dynamic registration matrix 代替。 |
-| NI-011 OpenID Connect Native SSO | 未发现 Native SSO / `device_secret` 官方 plan。 | 不新增 OIDF 矩阵；实现前记录检索结论并补 device_secret lifecycle、rotation、revocation 本地测试。 |
+| NI-007 OpenID Connect CIBA / FAPI CIBA | `fapi-ciba-id1-test-plan` 覆盖 FAPI-CIBA AS；另有 RP/client alpha plan。 | 已实现 CIBA poll mode 后，下一批官方矩阵应新增 FAPI-CIBA AS plan；若目标是 Core-only interop，需重新确认是否新增 Core-only plan。 |
+| NI-008 OpenID Connect Front-Channel Logout | `oidcc-frontchannel-rp-initiated-logout-certification-test-plan` 覆盖 OP front-channel logout + RP-initiated logout 组合。 | 已实现并 feature-gated；下一批官方矩阵应新增该 OP plan，同时保留本地 iframe/redirect escaping tests。 |
+| NI-009 OpenID Connect Session Management | `oidcc-session-management-certification-test-plan` 覆盖 OP session management。 | 已实现并 feature-gated；下一批官方矩阵应新增该 OP plan，同时保留本地 `session_state` 和 iframe status tests。 |
+| NI-010 OpenID Connect Federation 1.0 | 发现 federation entity / OP / RP alpha plans：`openid-federation-deployed-entity-test-plan`、`openid-federation-entity-joined-to-test-federation-op-test-plan`、`openid-federation-entity-joined-to-test-federation-rp-test-plan`。 | 当前只实现 entity statement；只能新增 deployed entity/entity statement 相关 alpha matrix，完整 joined-to-test-federation OP/RP matrix 需等 trust chain/metadata policy 实现后再加入。 |
+| NI-011 OpenID Connect Native SSO | 未发现 Native SSO / `device_secret` 官方 plan。 | 不新增 OIDF 矩阵；保留本地 device_secret lifecycle、`ds_hash` binding、token exchange、refresh-family activity tests。 |
 | NI-012 UserInfo signing/encryption | OIDC dynamic/basic modules 覆盖 signed UserInfo；suite 有 UserInfo encryption 条件和 client tests，但未发现独立 OP encryption certification plan。 | 若只支持 signed UserInfo，补 OIDC dynamic/static 组合即可；若支持 encrypted UserInfo，先确认官方 OP plan 是否新增，否则记录缺口并补本地 JWE tests。 |
 | NI-013 JARM/JWE encrypted authorization responses | FAPI2 Message Signing plans 覆盖 JARM；suite 有 authorization response encryption 条件。 | 实现 encrypted authorization response 时新增或扩展 FAPI2 Message Signing JARM/JWE 组合，确保 metadata 与实际 JWE 支持一致。 |
 | NI-014 FAPI 2.0 HTTP Signatures draft | 未发现 FAPI HTTP Signatures 官方 AS/RS plan。 | 不新增矩阵；实现前等待官方 plan 或目标生态要求，并补 canonicalization/signature 本地与资源服务器 E2E。 |

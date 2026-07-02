@@ -160,6 +160,21 @@ fn token_form_extracts_device_code_grant_field_separately_from_authorization_cod
 }
 
 #[test]
+fn token_form_extracts_native_sso_device_secret() {
+    let req = form_request();
+
+    let form = parse_token_form(
+        &req,
+        &Bytes::from_static(
+            b"grant_type=authorization_code&code=code-1&device_secret=device-secret-1",
+        ),
+    )
+    .expect("Native SSO device_secret should parse");
+
+    assert_eq!(form.device_secret.as_deref(), Some("device-secret-1"));
+}
+
+#[test]
 fn token_form_rejects_duplicate_defined_parameters() {
     let req = TestRequest::default()
         .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
@@ -168,6 +183,18 @@ fn token_form_rejects_duplicate_defined_parameters() {
     let result = parse_token_form(
         &req,
         &Bytes::from_static(b"grant_type=authorization_code&grant_type=refresh_token"),
+    );
+
+    assert!(matches!(result, Err(TokenFormError::DuplicateParameter)));
+}
+
+#[test]
+fn token_form_rejects_duplicate_device_secret() {
+    let req = form_request();
+
+    let result = parse_token_form(
+        &req,
+        &Bytes::from_static(b"grant_type=authorization_code&device_secret=a&device_secret=b"),
     );
 
     assert!(matches!(result, Err(TokenFormError::DuplicateParameter)));

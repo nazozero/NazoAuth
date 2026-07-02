@@ -905,6 +905,53 @@ fn backchannel_logout_subject_uses_public_subject_when_configured() {
     );
 }
 
+#[test]
+fn frontchannel_logout_url_appends_issuer_and_sid_when_required() {
+    let client = FrontchannelLogoutClient {
+        client_id: "client-1".to_owned(),
+        frontchannel_logout_uri: "https://client.example/logout?existing=1".to_owned(),
+        frontchannel_logout_session_required: true,
+    };
+
+    let url = frontchannel_logout_url(&client, "https://issuer.example", "sid-1")
+        .expect("valid front-channel logout URI should compose");
+
+    assert_eq!(
+        url,
+        "https://client.example/logout?existing=1&iss=https%3A%2F%2Fissuer.example&sid=sid-1"
+    );
+}
+
+#[test]
+fn frontchannel_logout_url_omits_session_params_when_not_required() {
+    let client = FrontchannelLogoutClient {
+        client_id: "client-1".to_owned(),
+        frontchannel_logout_uri: "https://client.example/logout".to_owned(),
+        frontchannel_logout_session_required: false,
+    };
+
+    let url = frontchannel_logout_url(&client, "https://issuer.example", "sid-1")
+        .expect("valid front-channel logout URI should compose");
+
+    assert_eq!(url, "https://client.example/logout");
+}
+
+#[test]
+fn frontchannel_logout_document_escapes_iframe_sources_and_redirect() {
+    let html = frontchannel_logout_document(
+        &[
+            "https://client.example/logout?a=1&b=2".to_owned(),
+            "https://other.example/logout?x=%22".to_owned(),
+        ],
+        Some("https://client.example/done?state=a&b=2"),
+    );
+
+    assert!(html.contains("src=\"https://client.example/logout?a=1&amp;b=2\""));
+    assert!(html.contains("src=\"https://other.example/logout?x=%22\""));
+    assert!(html.contains("https://client.example/done?state=a\\u0026b=2"));
+    assert!(!html.contains("state=a&b=2';"));
+}
+
 async fn one_shot_logout_server(status: &'static str) -> (String, tokio::task::JoinHandle<String>) {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await

@@ -23,6 +23,8 @@ pub(crate) struct PatchClientRequest {
     sector_identifier_uri: Option<String>,
     backchannel_logout_uri: Option<String>,
     backchannel_logout_session_required: Option<bool>,
+    frontchannel_logout_uri: Option<String>,
+    frontchannel_logout_session_required: Option<bool>,
     tls_client_auth_subject_dn: Option<String>,
     tls_client_auth_cert_sha256: Option<String>,
     tls_client_auth_san_dns: Option<Vec<String>>,
@@ -52,6 +54,8 @@ struct PreparedClientPatch {
     sector_identifier_host: Option<String>,
     backchannel_logout_uri: Option<String>,
     backchannel_logout_session_required: bool,
+    frontchannel_logout_uri: Option<String>,
+    frontchannel_logout_session_required: bool,
     tls_client_auth_subject_dn: Option<String>,
     tls_client_auth_cert_sha256: Option<String>,
     tls_client_auth_san_dns: Value,
@@ -146,6 +150,9 @@ pub(crate) async fn admin_patch_client(
         oauth_clients::backchannel_logout_uri.eq(prepared.backchannel_logout_uri),
         oauth_clients::backchannel_logout_session_required
             .eq(prepared.backchannel_logout_session_required),
+        oauth_clients::frontchannel_logout_uri.eq(prepared.frontchannel_logout_uri),
+        oauth_clients::frontchannel_logout_session_required
+            .eq(prepared.frontchannel_logout_session_required),
         oauth_clients::tls_client_auth_subject_dn.eq(prepared.tls_client_auth_subject_dn),
         oauth_clients::tls_client_auth_cert_sha256.eq(prepared.tls_client_auth_cert_sha256),
         oauth_clients::tls_client_auth_san_dns.eq(prepared.tls_client_auth_san_dns),
@@ -236,6 +243,14 @@ async fn prepare_client_patch(
     let new_backchannel_logout_session_required = payload
         .backchannel_logout_session_required
         .unwrap_or(current.backchannel_logout_session_required);
+    let new_frontchannel_logout_uri = payload
+        .frontchannel_logout_uri
+        .map(Some)
+        .map(trim_optional_string)
+        .unwrap_or_else(|| current.frontchannel_logout_uri.clone());
+    let new_frontchannel_logout_session_required = payload
+        .frontchannel_logout_session_required
+        .unwrap_or(current.frontchannel_logout_session_required);
     let new_tls_client_auth_subject_dn = payload
         .tls_client_auth_subject_dn
         .map(Some)
@@ -338,6 +353,7 @@ async fn prepare_client_patch(
             grant_types: &new_grant_type_values,
             token_endpoint_auth_method: &current.token_endpoint_auth_method,
             backchannel_logout_uri: new_backchannel_logout_uri.as_deref(),
+            frontchannel_logout_uri: new_frontchannel_logout_uri.as_deref(),
             jwks: new_jwks.as_ref(),
             allow_jwks_without_kid: false,
             introspection_encrypted_response_alg: new_introspection_encrypted_response_alg
@@ -371,6 +387,8 @@ async fn prepare_client_patch(
         sector_identifier_host: new_sector_identifier_host,
         backchannel_logout_uri: new_backchannel_logout_uri,
         backchannel_logout_session_required: new_backchannel_logout_session_required,
+        frontchannel_logout_uri: new_frontchannel_logout_uri,
+        frontchannel_logout_session_required: new_frontchannel_logout_session_required,
         tls_client_auth_subject_dn: new_tls_client_auth_subject_dn,
         tls_client_auth_cert_sha256: new_tls_client_auth_cert_sha256,
         tls_client_auth_san_dns: json!(new_tls_client_auth_san_dns_values),

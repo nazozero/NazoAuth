@@ -77,6 +77,8 @@ fn pkce_policy_client() -> ClientRow {
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: None,
         backchannel_logout_session_required: true,
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: true,
         subject_type: "public".to_owned(),
         sector_identifier_uri: None,
         sector_identifier_host: None,
@@ -479,6 +481,7 @@ fn authorization_response_query_preserves_explicit_empty_state() {
         Some("code-1"),
         None,
         Some(""),
+        None,
     );
 
     let url = url::Url::parse(&location).unwrap();
@@ -500,6 +503,7 @@ fn authorization_response_query_omits_absent_state_and_inapplicable_result() {
         "https://issuer.example",
         None,
         Some("invalid_request"),
+        None,
         None,
     );
 

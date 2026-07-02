@@ -26,6 +26,7 @@ fn metadata<'a>(
         grant_types,
         token_endpoint_auth_method,
         backchannel_logout_uri: None,
+        frontchannel_logout_uri: None,
         jwks,
         allow_jwks_without_kid: false,
         introspection_encrypted_response_alg: None,

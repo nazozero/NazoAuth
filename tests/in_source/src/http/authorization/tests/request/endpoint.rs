@@ -1886,6 +1886,7 @@ async fn authorization_response_redirect_emits_signed_jarm_response() {
         Some("code-123"),
         None,
         Some("state-123"),
+        None,
     )
     .await;
 

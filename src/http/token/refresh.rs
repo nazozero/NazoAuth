@@ -431,6 +431,7 @@ pub(crate) async fn token_refresh(
             authorization_code_hash: None,
             actor: None,
             issued_token_type: None,
+            native_sso: None,
         },
     )
     .await

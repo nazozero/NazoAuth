@@ -1,8 +1,8 @@
 //! authorization_code grant 处理。
 // 只消费授权码并转入统一令牌签发逻辑。
 use super::{
-    TokenForm, consume_token_client_assertion, issue_token_response,
-    revoke_issued_authorization_code_tokens,
+    TokenForm, consume_token_client_assertion, issue_token_response, native_sso_requested,
+    new_native_sso_token_binding, revoke_issued_authorization_code_tokens,
 };
 use crate::http::prelude::*;
 
@@ -174,6 +174,9 @@ struct AuthorizationCodeIssueInput {
 }
 
 fn token_issue_from_authorization_code(input: AuthorizationCodeIssueInput) -> TokenIssue {
+    let native_sso = native_sso_requested(&input.payload.scopes)
+        .then(|| new_native_sso_token_binding(input.payload.oidc_sid.as_deref()))
+        .flatten();
     TokenIssue {
         user_id: Some(input.payload.user_id),
         subject: input.subject,
@@ -198,6 +201,7 @@ fn token_issue_from_authorization_code(input: AuthorizationCodeIssueInput) -> To
         authorization_code_hash: Some(input.code_hash),
         actor: None,
         issued_token_type: None,
+        native_sso,
     }
 }
 
@@ -474,6 +478,26 @@ pub(crate) async fn token_authorization_code(
             "请求的 audience 不在客户端允许范围内.",
             false,
         );
+    }
+    if native_sso_requested(&payload.scopes) {
+        if !state.settings.enable_native_sso {
+            mark_failed_authorization_code(state, &code_hash, "native_sso_disabled").await;
+            return oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_scope",
+                "Native SSO is not enabled.",
+                false,
+            );
+        }
+        if !payload.scopes.iter().any(|scope| scope == "openid") {
+            mark_failed_authorization_code(state, &code_hash, "native_sso_without_openid").await;
+            return oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_scope",
+                "Native SSO requires openid.",
+                false,
+            );
+        }
     }
     let refresh_token_dpop_jkt = refresh_token_dpop_binding(client, &payload, dpop_jkt.clone());
     let refresh_token_mtls_x5t_s256 = mtls_x5t_s256.clone();

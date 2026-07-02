@@ -87,6 +87,8 @@ fn pkce_policy_client() -> ClientRow {
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: None,
         backchannel_logout_session_required: true,
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: true,
         subject_type: "public".to_owned(),
         sector_identifier_uri: None,
         sector_identifier_host: None,
@@ -426,9 +428,11 @@ fn form_for_code(code: &str) -> TokenForm {
         grant_type: "authorization_code".to_owned(),
         code: Some(code.to_owned()),
         device_code: None,
+        auth_req_id: None,
         redirect_uri: Some("https://client.example/callback".to_owned()),
         code_verifier: Some(VALID_CODE_VERIFIER.to_owned()),
         refresh_token: None,
+        device_secret: None,
         scope: None,
         client_id: Some("client-1".to_owned()),
         client_secret: None,
@@ -647,6 +651,37 @@ fn authorization_code_token_issue_preserves_independent_oidc_sid() {
     assert_eq!(
         issue.refresh_token_mtls_x5t_s256.as_deref(),
         Some("refresh-mtls-thumbprint")
+    );
+}
+
+#[test]
+fn authorization_code_token_issue_creates_native_sso_binding_for_device_sso_scope() {
+    let mut payload = code_payload(true);
+    payload.scopes = vec![
+        "openid".to_owned(),
+        "offline_access".to_owned(),
+        "device_sso".to_owned(),
+    ];
+
+    let issue = token_issue_from_authorization_code(AuthorizationCodeIssueInput {
+        payload,
+        subject: "subject-1".to_owned(),
+        audiences: vec!["resource://default".to_owned()],
+        dpop_jkt: None,
+        mtls_x5t_s256: None,
+        code_hash: "code-hash".to_owned(),
+        refresh_token_dpop_jkt: None,
+        refresh_token_mtls_x5t_s256: None,
+    });
+
+    let binding = issue
+        .native_sso
+        .as_ref()
+        .expect("device_sso scope should create a Native SSO binding");
+    assert_eq!(binding.sid, "sid-1");
+    assert_eq!(
+        binding.ds_hash,
+        crate::http::token::native_sso_device_secret_hash(&binding.device_secret)
     );
 }
 
@@ -911,9 +946,11 @@ async fn authorization_code_grant_requires_code_before_state_lookup() {
         grant_type: "authorization_code".to_owned(),
         code: None,
         device_code: None,
+        auth_req_id: None,
         redirect_uri: Some("https://client.example/callback".to_owned()),
         code_verifier: Some("verifier".to_owned()),
         refresh_token: None,
+        device_secret: None,
         scope: None,
         client_id: Some("client-1".to_owned()),
         client_secret: None,

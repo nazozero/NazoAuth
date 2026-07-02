@@ -34,6 +34,10 @@ pub(crate) struct DynamicClientRegistrationRequest {
     #[serde(default)]
     pub(crate) backchannel_logout_session_required: Option<bool>,
     #[serde(default)]
+    pub(crate) frontchannel_logout_uri: Option<String>,
+    #[serde(default)]
+    pub(crate) frontchannel_logout_session_required: Option<bool>,
+    #[serde(default)]
     pub(crate) dpop_bound_access_tokens: bool,
     #[serde(default)]
     pub(crate) tls_client_auth_subject_dn: Option<String>,
@@ -78,6 +82,8 @@ pub(crate) struct PreparedDynamicClientRegistration {
     pub(crate) require_dpop_bound_tokens: bool,
     pub(crate) backchannel_logout_uri: Option<String>,
     pub(crate) backchannel_logout_session_required: bool,
+    pub(crate) frontchannel_logout_uri: Option<String>,
+    pub(crate) frontchannel_logout_session_required: bool,
     pub(crate) tls_client_auth_subject_dn: Option<String>,
     pub(crate) tls_client_auth_cert_sha256: Option<String>,
     pub(crate) tls_client_auth_san_dns: Vec<String>,
@@ -462,6 +468,9 @@ async fn replace_client_configuration(
         oauth_clients::backchannel_logout_uri.eq(&prepared.backchannel_logout_uri),
         oauth_clients::backchannel_logout_session_required
             .eq(prepared.backchannel_logout_session_required),
+        oauth_clients::frontchannel_logout_uri.eq(&prepared.frontchannel_logout_uri),
+        oauth_clients::frontchannel_logout_session_required
+            .eq(prepared.frontchannel_logout_session_required),
         oauth_clients::tls_client_auth_subject_dn.eq(&prepared.tls_client_auth_subject_dn),
         oauth_clients::tls_client_auth_cert_sha256.eq(&prepared.tls_client_auth_cert_sha256),
         oauth_clients::tls_client_auth_san_dns.eq(json!(&prepared.tls_client_auth_san_dns)),
@@ -656,6 +665,10 @@ pub(crate) fn prepare_dynamic_client_registration(
         backchannel_logout_session_required: request
             .backchannel_logout_session_required
             .unwrap_or(true),
+        frontchannel_logout_uri: request.frontchannel_logout_uri,
+        frontchannel_logout_session_required: request
+            .frontchannel_logout_session_required
+            .unwrap_or(true),
         tls_client_auth_subject_dn: request.tls_client_auth_subject_dn,
         tls_client_auth_cert_sha256: request.tls_client_auth_cert_sha256,
         tls_client_auth_san_dns: request.tls_client_auth_san_dns,
@@ -788,6 +801,8 @@ impl PreparedDynamicClientRegistration {
             allow_authorization_code_without_pkce: false,
             backchannel_logout_uri: self.backchannel_logout_uri.clone(),
             backchannel_logout_session_required: self.backchannel_logout_session_required,
+            frontchannel_logout_uri: self.frontchannel_logout_uri.clone(),
+            frontchannel_logout_session_required: self.frontchannel_logout_session_required,
             tls_client_auth_subject_dn: self.tls_client_auth_subject_dn.clone(),
             tls_client_auth_cert_sha256: self.tls_client_auth_cert_sha256.clone(),
             tls_client_auth_san_dns: self.tls_client_auth_san_dns.clone(),
@@ -918,7 +933,16 @@ fn dynamic_registration_response(
         "scope": json_array_to_strings(&client.scopes).join(" "),
         "token_endpoint_auth_method": client.token_endpoint_auth_method,
         "subject_type": client.subject_type,
+        "post_logout_redirect_uris": json_array_to_strings(&client.post_logout_redirect_uris),
+        "backchannel_logout_session_required": client.backchannel_logout_session_required,
+        "frontchannel_logout_session_required": client.frontchannel_logout_session_required,
     });
+    if let Some(uri) = &client.backchannel_logout_uri {
+        body["backchannel_logout_uri"] = json!(uri);
+    }
+    if let Some(uri) = &client.frontchannel_logout_uri {
+        body["frontchannel_logout_uri"] = json!(uri);
+    }
     if let Some(jwks) = &client.jwks {
         body["jwks"] = jwks.clone();
     }

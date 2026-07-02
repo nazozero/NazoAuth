@@ -764,6 +764,7 @@ fn append_authorization_response_query_appends_code_and_iss() {
         Some("auth-code"),
         None,
         None,
+        None,
     );
     assert!(url.contains("code=auth-code"));
     assert!(url.contains("iss=https%3A%2F%2Fissuer.example"));
@@ -776,6 +777,7 @@ fn append_authorization_response_query_appends_error_and_iss() {
         "https://issuer.example",
         None,
         Some("invalid_request"),
+        None,
         None,
     );
     assert!(url.contains("error=invalid_request"));
@@ -790,8 +792,25 @@ fn append_authorization_response_query_appends_state_and_iss() {
         None,
         None,
         Some("state123"),
+        None,
     );
     assert!(url.contains("state=state123"));
+    assert!(url.contains("iss=https%3A%2F%2Fissuer.example"));
+}
+
+#[test]
+fn append_authorization_response_query_appends_session_state_when_present() {
+    let url = append_authorization_response_query(
+        "https://client.example/cb",
+        "https://issuer.example",
+        Some("code"),
+        None,
+        Some("state"),
+        Some("session.hash.salt"),
+    );
+    assert!(url.contains("code=code"));
+    assert!(url.contains("state=state"));
+    assert!(url.contains("session_state=session.hash.salt"));
     assert!(url.contains("iss=https%3A%2F%2Fissuer.example"));
 }
 
@@ -803,6 +822,7 @@ fn append_authorization_response_query_appends_all_parameters() {
         Some("code"),
         Some("error"),
         Some("state"),
+        None,
     );
     assert!(url.contains("code=code"));
     assert!(url.contains("error=error"));
@@ -818,6 +838,7 @@ fn append_authorization_response_query_returns_original_on_parse_failure() {
         Some("code"),
         None,
         None,
+        None,
     );
     assert_eq!(url, "not a url");
 }
@@ -830,6 +851,7 @@ fn append_authorization_response_query_preserves_existing_query() {
         Some("code"),
         None,
         Some("state"),
+        None,
     );
     assert!(url.contains("existing=param"));
     assert!(url.contains("code=code"));
@@ -965,6 +987,8 @@ fn default_client_row() -> ClientRow {
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: None,
         backchannel_logout_session_required: false,
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: false,
         subject_type: "public".to_owned(),
         sector_identifier_uri: None,
         sector_identifier_host: None,

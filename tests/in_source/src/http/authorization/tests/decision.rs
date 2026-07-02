@@ -489,6 +489,7 @@ async fn approved_authorization_redirect_omits_error_and_carries_only_the_new_co
         Some("code-1"),
         None,
         Some("opaque-state"),
+        None,
     )
     .await;
 

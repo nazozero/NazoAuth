@@ -111,6 +111,8 @@ pub(crate) fn client_json(client: ClientRow) -> Value {
         "allow_authorization_code_without_pkce": client.allow_authorization_code_without_pkce,
         "backchannel_logout_uri": client.backchannel_logout_uri,
         "backchannel_logout_session_required": client.backchannel_logout_session_required,
+        "frontchannel_logout_uri": client.frontchannel_logout_uri,
+        "frontchannel_logout_session_required": client.frontchannel_logout_session_required,
         "is_active": client.is_active,
         "jwks": client.jwks,
         "introspection_encrypted_response_alg": client.introspection_encrypted_response_alg,

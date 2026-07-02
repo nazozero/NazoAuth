@@ -224,6 +224,8 @@ fn client_row() -> ClientRow {
         post_logout_redirect_uris: json!(["https://client.example/logout"]),
         backchannel_logout_uri: Some("https://client.example/backchannel".to_owned()),
         backchannel_logout_session_required: false,
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: false,
         subject_type: "public".to_owned(),
         sector_identifier_uri: None,
         sector_identifier_host: None,

@@ -3,6 +3,7 @@ mod auth;
 mod authorization;
 mod dynamic_client_registration;
 mod fapi_resource;
+mod federation_entity;
 mod profile;
 mod scim;
 mod token;
@@ -13,6 +14,7 @@ pub(crate) use auth::*;
 pub(crate) use authorization::*;
 pub(crate) use dynamic_client_registration::*;
 pub(crate) use fapi_resource::*;
+pub(crate) use federation_entity::*;
 pub(crate) use profile::*;
 pub(crate) use scim::*;
 pub(crate) use token::*;
@@ -47,11 +49,11 @@ pub(crate) mod prelude {
     pub(crate) use crate::domain::{
         AccessRequestStatus, AppState, AuthorizationCodeState, ClientRow, CodePayload,
         ConsentPayload, ConsumedAuthorizationCode, ExternalIdentityLinkRow, GrantRow,
-        MyApplicationRow, OidcClaimRequest, PasskeyCredentialRow, PendingAccessRequestRow,
-        PushedAuthorizationRequest, RefreshTokenPolicy, TokenIssue, TokenRow, UserAccessRequestRow,
-        UserRow, authorization_details_empty, canonical_authorization_details,
-        high_risk_authorization_details, normalize_authorization_details,
-        parse_authorization_details,
+        MyApplicationRow, NativeSsoTokenBinding, OidcClaimRequest, PasskeyCredentialRow,
+        PendingAccessRequestRow, PushedAuthorizationRequest, RefreshTokenPolicy, TokenIssue,
+        TokenRow, UserAccessRequestRow, UserRow, authorization_details_empty,
+        canonical_authorization_details, high_risk_authorization_details,
+        normalize_authorization_details, parse_authorization_details,
     };
     pub(crate) use crate::schema::{
         access_token_revocations, client_access_requests, external_identity_links, oauth_clients,

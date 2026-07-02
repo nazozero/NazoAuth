@@ -18,6 +18,8 @@ fn create_request() -> CreateClientRequest {
         allow_authorization_code_without_pkce: false,
         backchannel_logout_uri: Some("https://client.example/backchannel".to_owned()),
         backchannel_logout_session_required: true,
+        frontchannel_logout_uri: Some("https://client.example/frontchannel".to_owned()),
+        frontchannel_logout_session_required: true,
         tls_client_auth_subject_dn: None,
         tls_client_auth_cert_sha256: None,
         tls_client_auth_san_dns: Vec::new(),
@@ -114,6 +116,7 @@ async fn prepare_client_insert_normalizes_optional_string_metadata() {
     payload.token_endpoint_auth_method = "tls_client_auth".to_owned();
     payload.jwks = None;
     payload.backchannel_logout_uri = Some("  https://client.example/backchannel  ".to_owned());
+    payload.frontchannel_logout_uri = Some("  https://client.example/frontchannel  ".to_owned());
     payload.post_logout_redirect_uris = vec!["https://client.example/logout".to_owned()];
     payload.tls_client_auth_subject_dn = Some("  CN=client.example  ".to_owned());
     payload.tls_client_auth_cert_sha256 = None;
@@ -131,6 +134,11 @@ async fn prepare_client_insert_normalizes_optional_string_metadata() {
         prepared.backchannel_logout_uri.as_deref(),
         Some("https://client.example/backchannel")
     );
+    assert_eq!(
+        prepared.frontchannel_logout_uri.as_deref(),
+        Some("https://client.example/frontchannel")
+    );
+    assert!(prepared.frontchannel_logout_session_required);
     assert_eq!(
         prepared.post_logout_redirect_uris,
         vec!["https://client.example/logout".to_owned()]

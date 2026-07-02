@@ -5,6 +5,7 @@ use super::{
     unverified_signed_request_object_client_id,
 };
 use crate::http::prelude::*;
+use crate::http::profile::issue_oidc_session_state;
 
 mod form;
 mod parameters;
@@ -338,6 +339,7 @@ async fn authorize_request(
                 None,
                 Some("login_required"),
                 q.get("state").map(String::as_str),
+                None,
             )
             .await;
         }
@@ -372,6 +374,7 @@ async fn authorize_request(
                 None,
                 Some("login_required"),
                 q.get("state").map(String::as_str),
+                None,
             )
             .await;
         }
@@ -550,6 +553,7 @@ pub(crate) async fn authorization_oauth_error_redirect(
         None,
         Some(error),
         q.get("state").map(String::as_str),
+        None,
     )
     .await
 }
@@ -562,6 +566,7 @@ pub(crate) async fn authorization_response_redirect(
     code: Option<&str>,
     error: Option<&str>,
     state_value: Option<&str>,
+    oidc_sid: Option<&str>,
 ) -> HttpResponse {
     if response_mode == Some("jwt") && !client_id.trim().is_empty() {
         return authorization_response_jwt_result(
@@ -579,12 +584,19 @@ pub(crate) async fn authorization_response_redirect(
             .await,
         );
     }
+    let session_state =
+        if state.settings.enable_session_management && code.is_some() && error.is_none() {
+            oidc_sid.and_then(|sid| issue_oidc_session_state(client_id, redirect_uri, sid))
+        } else {
+            None
+        };
     redirect_found(append_authorization_response_query(
         redirect_uri,
         state.settings.issuer.as_str(),
         code,
         error,
         state_value,
+        session_state.as_deref(),
     ))
 }
 

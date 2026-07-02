@@ -20,6 +20,7 @@ fn metadata<'a>(
         grant_types,
         token_endpoint_auth_method,
         backchannel_logout_uri: None,
+        frontchannel_logout_uri: None,
         jwks,
         allow_jwks_without_kid: false,
         introspection_encrypted_response_alg: None,
@@ -63,6 +64,21 @@ fn client_metadata_rejects_removed_or_unsafe_grants() {
         error.to_string().contains("不支持的 grant_type: password"),
         "unexpected error: {error}"
     );
+}
+
+#[test]
+fn client_metadata_accepts_implemented_jwt_bearer_grant() {
+    validate_client_metadata(metadata(
+        "confidential",
+        &[],
+        &["payments".to_owned()],
+        &["resource://default".to_owned()],
+        &["urn:ietf:params:oauth:grant-type:jwt-bearer".to_owned()],
+        "client_secret_basic",
+        None,
+        None,
+    ))
+    .expect("implemented RFC 7523 JWT bearer grant must be registrable");
 }
 
 #[test]
@@ -406,6 +422,76 @@ fn client_metadata_rejects_backchannel_logout_uri_with_fragment_or_insecure_host
         loopback_metadata.backchannel_logout_uri = Some(uri);
         validate_client_metadata(loopback_metadata)
             .expect("OIDC backchannel logout may use loopback HTTP endpoints for local clients");
+    }
+}
+
+#[test]
+fn client_metadata_rejects_frontchannel_logout_uri_with_fragment_or_insecure_host() {
+    let redirect_uris = ["https://client.example/callback".to_owned()];
+    let scopes = ["openid".to_owned()];
+    let audiences = ["resource://default".to_owned()];
+    let grants = ["authorization_code".to_owned()];
+    let mut fragment_metadata = metadata(
+        "confidential",
+        &redirect_uris,
+        &scopes,
+        &audiences,
+        &grants,
+        "client_secret_basic",
+        None,
+        None,
+    );
+    fragment_metadata.frontchannel_logout_uri = Some("https://client.example/logout#fragment");
+
+    let error = validate_client_metadata(fragment_metadata)
+        .expect_err("front-channel logout URI must reject fragments");
+    assert!(
+        error
+            .to_string()
+            .contains("frontchannel_logout_uri 不能包含 fragment"),
+        "unexpected error: {error}"
+    );
+
+    let mut insecure_metadata = metadata(
+        "confidential",
+        &redirect_uris,
+        &scopes,
+        &audiences,
+        &grants,
+        "client_secret_basic",
+        None,
+        None,
+    );
+    insecure_metadata.frontchannel_logout_uri = Some("http://client.example/logout");
+
+    let error = validate_client_metadata(insecure_metadata)
+        .expect_err("front-channel logout URI must reject non-loopback http");
+    assert!(
+        error
+            .to_string()
+            .contains("frontchannel_logout_uri 必须使用 https 或 loopback http"),
+        "unexpected error: {error}"
+    );
+
+    for uri in [
+        "https://client.example/logout",
+        "http://localhost/logout",
+        "http://127.0.0.1:8080/logout",
+        "http://app.localhost/logout",
+    ] {
+        let mut loopback_metadata = metadata(
+            "confidential",
+            &redirect_uris,
+            &scopes,
+            &audiences,
+            &grants,
+            "client_secret_basic",
+            None,
+            None,
+        );
+        loopback_metadata.frontchannel_logout_uri = Some(uri);
+        validate_client_metadata(loopback_metadata)
+            .expect("OIDC front-channel logout may use HTTPS or loopback HTTP endpoints");
     }
 }
 
