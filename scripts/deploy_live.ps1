@@ -10,6 +10,7 @@ param(
     [string]$RemoteAvatarsPath = "/opt/nazo-oauth/runtime/avatars",
     [string]$RemoteUiPath = "/opt/nazo-oauth/ui",
     [string]$LocalUiDist = "../NazoAuthWeb/dist",
+    [string]$PublishPort = "127.0.0.1:8000:8000",
     [string]$HealthUrl = "https://auth.nazo.run/health",
     [string]$DiscoveryUrl = "https://auth.nazo.run/.well-known/openid-configuration",
     [string]$ExpectedIssuer = "https://auth.nazo.run",
@@ -105,6 +106,7 @@ CONFIG_PATH=$(ConvertTo-ShellLiteral $RemoteConfigPath)
 KEYS_PATH=$(ConvertTo-ShellLiteral $RemoteKeysPath)
 AVATARS_PATH=$(ConvertTo-ShellLiteral $RemoteAvatarsPath)
 UI_PATH=$(ConvertTo-ShellLiteral $RemoteUiPath)
+PUBLISH_PORT=$(ConvertTo-ShellLiteral $PublishPort)
 SKIP_MIGRATE=$(ConvertTo-ShellLiteral $skipMigrateValue)
 
 cleanup() {
@@ -137,8 +139,14 @@ if podman container exists "`$CONTAINER_NAME"; then
   podman rm -f "`$CONTAINER_NAME"
 fi
 
+publish_args=()
+if [ -n "`$PUBLISH_PORT" ]; then
+  publish_args=(-p "`$PUBLISH_PORT")
+fi
+
 podman run -d --name "`$CONTAINER_NAME" \
   --network "`$NETWORK_NAME" --ip "`$CONTAINER_IP" \
+  "`${publish_args[@]}" \
   -v "`$CONFIG_PATH:/app/.env.yaml:ro" \
   -v "`$KEYS_PATH:/var/lib/nazo_oauth/keys:rw" \
   -v "`$AVATARS_PATH:/var/lib/nazo_oauth/avatars:rw" \
