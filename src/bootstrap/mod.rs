@@ -3,7 +3,7 @@
 
 mod cors;
 mod observability;
-mod routes;
+pub(crate) mod routes;
 
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 

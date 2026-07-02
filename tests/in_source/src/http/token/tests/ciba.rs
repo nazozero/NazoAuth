@@ -5,10 +5,11 @@ use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
 use crate::support::{generate_key_material, public_jwk_from_private_der};
 use std::sync::Arc;
 
-fn ciba_test_state() -> AppState {
+fn ciba_test_state_with(configure: impl FnOnce(&mut Settings)) -> AppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.issuer = "https://issuer.example".to_owned();
+    configure(&mut settings);
     AppState {
         diesel_db: create_pool(
             "postgres://nazo_ciba_test_invalid:nazo_ciba_test_invalid@127.0.0.1:1/nazo".to_owned(),
@@ -26,6 +27,10 @@ fn ciba_test_state() -> AppState {
             verification_keys: Vec::new(),
         }),
     }
+}
+
+fn ciba_test_state() -> AppState {
+    ciba_test_state_with(|_| {})
 }
 
 fn ciba_private_key_jwt_client(kid: &str, private_pkcs8_der: &[u8]) -> ClientRow {
@@ -123,6 +128,31 @@ fn ciba_status_serializes_as_protocol_state() {
         serde_json::to_value(CibaStatus::Pending).unwrap(),
         json!("pending")
     );
+}
+
+#[actix_web::test]
+async fn ciba_automated_decision_route_accepts_empty_post_without_json_content_type() {
+    let state = ciba_test_state_with(|settings| {
+        settings.enable_ciba = true;
+        settings.ciba_automated_decision_token =
+            Some("test-ciba-automated-decision-token-32".to_owned());
+    });
+    let settings = Arc::clone(&state.settings);
+    let app = actix_web::test::init_service(
+        actix_web::App::new()
+            .app_data(actix_web::web::Data::new(state))
+            .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings)),
+    )
+    .await;
+
+    let request = actix_web::test::TestRequest::post()
+        .uri("/auth/ciba-automated-decision?token=fake&type=allow&decision_token=wrong-token")
+        .to_request();
+    let response = actix_web::test::call_service(&app, request).await;
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let body = actix_web::test::read_body(response).await;
+    assert!(body.is_empty());
 }
 
 #[test]

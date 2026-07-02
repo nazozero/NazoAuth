@@ -1276,7 +1276,7 @@ def write_fapi_ciba_plan_config() -> dict[str, dict[str, object]]:
             "resourceRequestBody": "",
         },
         "automated_ciba_approval_url": (
-            f"{ISSUER}/auth/ciba/automated"
+            f"{ISSUER}/auth/ciba-automated-decision"
             f"?token={{auth_req_id}}&type={{action}}"
             f"&decision_token={OIDF_CIBA_AUTOMATED_DECISION_TOKEN}"
         ),
