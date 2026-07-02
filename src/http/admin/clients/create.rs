@@ -33,6 +33,10 @@ pub(crate) struct CreateClientRequest {
     #[serde(default = "default_backchannel_logout_session_required")]
     pub(crate) backchannel_logout_session_required: bool,
     #[serde(default)]
+    pub(crate) frontchannel_logout_uri: Option<String>,
+    #[serde(default = "default_frontchannel_logout_session_required")]
+    pub(crate) frontchannel_logout_session_required: bool,
+    #[serde(default)]
     pub(crate) tls_client_auth_subject_dn: Option<String>,
     #[serde(default)]
     pub(crate) tls_client_auth_cert_sha256: Option<String>,
@@ -80,6 +84,8 @@ pub(crate) struct PreparedClientInsert {
     pub(crate) allow_authorization_code_without_pkce: bool,
     pub(crate) backchannel_logout_uri: Option<String>,
     pub(crate) backchannel_logout_session_required: bool,
+    pub(crate) frontchannel_logout_uri: Option<String>,
+    pub(crate) frontchannel_logout_session_required: bool,
     pub(crate) tls_client_auth_subject_dn: Option<String>,
     pub(crate) tls_client_auth_cert_sha256: Option<String>,
     pub(crate) tls_client_auth_san_dns: Vec<String>,
@@ -224,6 +230,8 @@ pub(crate) async fn prepare_client_insert(
         allow_authorization_code_without_pkce: payload.allow_authorization_code_without_pkce,
         backchannel_logout_uri: trim_optional_string(payload.backchannel_logout_uri),
         backchannel_logout_session_required: payload.backchannel_logout_session_required,
+        frontchannel_logout_uri: trim_optional_string(payload.frontchannel_logout_uri),
+        frontchannel_logout_session_required: payload.frontchannel_logout_session_required,
         tls_client_auth_subject_dn: trim_optional_string(payload.tls_client_auth_subject_dn),
         tls_client_auth_cert_sha256: trim_optional_string(payload.tls_client_auth_cert_sha256),
         tls_client_auth_san_dns: trim_string_vec(payload.tls_client_auth_san_dns),
@@ -297,6 +305,9 @@ pub(crate) async fn insert_prepared_client(
             oauth_clients::backchannel_logout_uri.eq(&prepared.backchannel_logout_uri),
             oauth_clients::backchannel_logout_session_required
                 .eq(prepared.backchannel_logout_session_required),
+            oauth_clients::frontchannel_logout_uri.eq(&prepared.frontchannel_logout_uri),
+            oauth_clients::frontchannel_logout_session_required
+                .eq(prepared.frontchannel_logout_session_required),
             oauth_clients::tls_client_auth_subject_dn.eq(&prepared.tls_client_auth_subject_dn),
             oauth_clients::tls_client_auth_cert_sha256.eq(&prepared.tls_client_auth_cert_sha256),
             oauth_clients::tls_client_auth_san_dns.eq(json!(&prepared.tls_client_auth_san_dns)),
@@ -331,6 +342,7 @@ fn validate_client_payload(payload: &CreateClientRequest) -> anyhow::Result<()> 
         grant_types: &payload.grant_types,
         token_endpoint_auth_method: &payload.token_endpoint_auth_method,
         backchannel_logout_uri: payload.backchannel_logout_uri.as_deref(),
+        frontchannel_logout_uri: payload.frontchannel_logout_uri.as_deref(),
         jwks: payload.jwks.as_ref(),
         allow_jwks_without_kid: payload.allow_jwks_without_kid,
         introspection_encrypted_response_alg: payload
@@ -368,6 +380,10 @@ pub(crate) fn validate_pkce_compatibility_policy(
 }
 
 fn default_backchannel_logout_session_required() -> bool {
+    true
+}
+
+fn default_frontchannel_logout_session_required() -> bool {
     true
 }
 

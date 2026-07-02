@@ -88,6 +88,8 @@ fn create_client_request() -> CreateClientRequest {
         allow_authorization_code_without_pkce: false,
         backchannel_logout_uri: None,
         backchannel_logout_session_required: true,
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: true,
         tls_client_auth_subject_dn: None,
         tls_client_auth_cert_sha256: None,
         tls_client_auth_san_dns: Vec::new(),

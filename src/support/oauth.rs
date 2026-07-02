@@ -16,6 +16,8 @@ const SUPPORTED_GRANT_TYPES: &[&str] = &[
     "authorization_code",
     "refresh_token",
     "client_credentials",
+    "urn:ietf:params:oauth:grant-type:jwt-bearer",
+    "urn:openid:params:grant-type:ciba",
     "urn:ietf:params:oauth:grant-type:device_code",
     "urn:ietf:params:oauth:grant-type:token-exchange",
 ];
@@ -193,6 +195,7 @@ pub(crate) struct ClientMetadata<'a> {
     pub(crate) grant_types: &'a [String],
     pub(crate) token_endpoint_auth_method: &'a str,
     pub(crate) backchannel_logout_uri: Option<&'a str>,
+    pub(crate) frontchannel_logout_uri: Option<&'a str>,
     pub(crate) jwks: Option<&'a Value>,
     pub(crate) allow_jwks_without_kid: bool,
     pub(crate) introspection_encrypted_response_alg: Option<&'a str>,
@@ -210,6 +213,7 @@ pub(crate) fn validate_client_metadata(metadata: ClientMetadata<'_>) -> anyhow::
         grant_types,
         token_endpoint_auth_method,
         backchannel_logout_uri,
+        frontchannel_logout_uri,
         jwks,
         allow_jwks_without_kid,
         introspection_encrypted_response_alg,
@@ -313,7 +317,10 @@ pub(crate) fn validate_client_metadata(metadata: ClientMetadata<'_>) -> anyhow::
         validate_oauth_redirect_uri(client_type, redirect_uri)?;
     }
     if let Some(uri) = backchannel_logout_uri {
-        validate_backchannel_logout_uri(uri)?;
+        validate_logout_notification_uri("backchannel_logout_uri", uri)?;
+    }
+    if let Some(uri) = frontchannel_logout_uri {
+        validate_logout_notification_uri("frontchannel_logout_uri", uri)?;
     }
     Ok(())
 }
@@ -385,10 +392,10 @@ fn client_jwks_contains_signing_key(jwks: &Value) -> bool {
         })
 }
 
-fn validate_backchannel_logout_uri(uri: &str) -> anyhow::Result<()> {
+fn validate_logout_notification_uri(field: &str, uri: &str) -> anyhow::Result<()> {
     let parsed = url::Url::parse(uri)?;
     if parsed.fragment().is_some() {
-        anyhow::bail!("backchannel_logout_uri 不能包含 fragment");
+        anyhow::bail!("{field} 不能包含 fragment");
     }
     match parsed.scheme() {
         "https" => Ok(()),
@@ -399,7 +406,7 @@ fn validate_backchannel_logout_uri(uri: &str) -> anyhow::Result<()> {
         {
             Ok(())
         }
-        _ => anyhow::bail!("backchannel_logout_uri 必须使用 https 或 loopback http"),
+        _ => anyhow::bail!("{field} 必须使用 https 或 loopback http"),
     }
 }
 

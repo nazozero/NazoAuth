@@ -9,6 +9,7 @@ mod mfa;
 mod oidc_logout;
 mod passkeys;
 mod session;
+mod session_management;
 
 pub(crate) use access_requests::*;
 pub(crate) use account::*;
@@ -19,3 +20,4 @@ pub(crate) use mfa::*;
 pub(crate) use oidc_logout::*;
 pub(crate) use passkeys::*;
 pub(crate) use session::*;
+pub(crate) use session_management::*;

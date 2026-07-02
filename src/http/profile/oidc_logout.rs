@@ -23,6 +23,13 @@ struct BackchannelLogoutClient {
     sector_identifier_host: Option<String>,
 }
 
+#[derive(Clone, Debug, Queryable)]
+struct FrontchannelLogoutClient {
+    client_id: String,
+    frontchannel_logout_uri: String,
+    frontchannel_logout_session_required: bool,
+}
+
 pub(crate) async fn oidc_logout(
     state: Data<AppState>,
     req: HttpRequest,
@@ -78,6 +85,48 @@ pub(crate) async fn oidc_logout(
         );
     }
 
+    let frontchannel_urls =
+        if state.settings.enable_frontchannel_logout && current_session.is_some() {
+            match frontchannel_logout_clients_for_user(
+                &state,
+                current_session
+                    .as_ref()
+                    .expect("checked current_session is present")
+                    .user
+                    .id,
+            )
+            .await
+            {
+                Ok(clients) => clients
+                    .iter()
+                    .filter_map(|client| {
+                        frontchannel_logout_url(
+                            client,
+                            &state.settings.issuer,
+                            &current_session
+                                .as_ref()
+                                .expect("checked current_session is present")
+                                .oidc_sid,
+                        )
+                        .map_err(|error| {
+                            tracing::warn!(
+                                %error,
+                                client_id = %client.client_id,
+                                "failed to compose front-channel logout URI"
+                            );
+                        })
+                        .ok()
+                    })
+                    .collect::<Vec<_>>(),
+                Err(error) => {
+                    tracing::warn!(%error, "failed to query front-channel logout clients");
+                    Vec::new()
+                }
+            }
+        } else {
+            Vec::new()
+        };
+
     if let Some(session_id) = session_cookie {
         let _ = valkey_del(&state.valkey, format!("oauth:session:{session_id}")).await;
     }
@@ -104,9 +153,20 @@ pub(crate) async fn oidc_logout(
         ]),
     );
 
-    let response = match redirect {
-        Some(location) => redirect_found(location),
-        None => json_response_no_store(json!({"success": true})),
+    let response = if frontchannel_urls.is_empty() {
+        match redirect {
+            Some(location) => redirect_found(location),
+            None => json_response_no_store(json!({"success": true})),
+        }
+    } else {
+        HttpResponse::Ok()
+            .insert_header((header::CACHE_CONTROL, "no-store"))
+            .insert_header((header::PRAGMA, "no-cache"))
+            .content_type("text/html; charset=utf-8")
+            .body(frontchannel_logout_document(
+                &frontchannel_urls,
+                redirect.as_deref(),
+            ))
     };
     with_cookie_headers(
         response,
@@ -121,6 +181,65 @@ pub(crate) async fn oidc_logout(
             ),
         ],
     )
+}
+
+fn frontchannel_logout_url(
+    client: &FrontchannelLogoutClient,
+    issuer: &str,
+    oidc_sid: &str,
+) -> anyhow::Result<String> {
+    let mut url = url::Url::parse(&client.frontchannel_logout_uri)?;
+    if client.frontchannel_logout_session_required {
+        url.query_pairs_mut()
+            .append_pair("iss", issuer)
+            .append_pair("sid", oidc_sid);
+    }
+    Ok(url.to_string())
+}
+
+fn frontchannel_logout_document(frontchannel_urls: &[String], redirect: Option<&str>) -> String {
+    let iframes = frontchannel_urls
+        .iter()
+        .map(|url| {
+            format!(
+                "<iframe title=\"OIDC Front-Channel Logout\" src=\"{}\"></iframe>",
+                escape_html_attribute(url)
+            )
+        })
+        .collect::<String>();
+    let redirect_script = redirect.map_or_else(String::new, |location| {
+        format!(
+            "<script>setTimeout(function(){{window.location.replace('{}');}},300);</script>",
+            escape_js_string(location)
+        )
+    });
+    format!(
+        concat!(
+            "<!doctype html><html><head><meta charset=\"utf-8\">",
+            "<meta http-equiv=\"cache-control\" content=\"no-store\">",
+            "<style>iframe{{display:none;width:0;height:0;border:0}}</style>",
+            "</head><body>{iframes}{redirect_script}</body></html>"
+        ),
+        iframes = iframes,
+        redirect_script = redirect_script
+    )
+}
+
+fn escape_html_attribute(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+fn escape_js_string(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('\'', "\\'")
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e")
+        .replace('&', "\\u0026")
 }
 
 async fn parse_logout_request(
@@ -464,6 +583,25 @@ async fn backchannel_logout_clients_for_user(
             oauth_clients::sector_identifier_host,
         ))
         .load::<BackchannelLogoutClient>(&mut conn)
+        .await?)
+}
+
+async fn frontchannel_logout_clients_for_user(
+    state: &AppState,
+    user_id: Uuid,
+) -> anyhow::Result<Vec<FrontchannelLogoutClient>> {
+    let mut conn = get_conn(&state.diesel_db).await?;
+    Ok(user_client_grants::table
+        .inner_join(oauth_clients::table.on(oauth_clients::id.eq(user_client_grants::client_id)))
+        .filter(user_client_grants::user_id.eq(user_id))
+        .filter(oauth_clients::is_active.eq(true))
+        .filter(oauth_clients::frontchannel_logout_uri.is_not_null())
+        .select((
+            oauth_clients::client_id,
+            oauth_clients::frontchannel_logout_uri.assume_not_null(),
+            oauth_clients::frontchannel_logout_session_required,
+        ))
+        .load::<FrontchannelLogoutClient>(&mut conn)
         .await?)
 }
 

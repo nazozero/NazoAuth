@@ -57,6 +57,8 @@ fn client_with_grants(grant_types: &[&str]) -> ClientRow {
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: None,
         backchannel_logout_session_required: true,
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: true,
         subject_type: "public".to_owned(),
         sector_identifier_uri: None,
         sector_identifier_host: None,
@@ -296,6 +298,7 @@ fn token_issue_with_sid(id_token_claims: Vec<String>) -> TokenIssue {
         authorization_code_hash: None,
         actor: None,
         issued_token_type: None,
+        native_sso: None,
     }
 }
 
@@ -324,6 +327,7 @@ fn token_issue_without_openid() -> TokenIssue {
         authorization_code_hash: None,
         actor: None,
         issued_token_type: None,
+        native_sso: None,
     }
 }
 

@@ -74,9 +74,16 @@ pub(crate) struct Settings {
     pub(crate) enable_legacy_audience_param: bool,
     pub(crate) enable_device_authorization_grant: bool,
     pub(crate) enable_dynamic_client_registration: bool,
+    pub(crate) enable_frontchannel_logout: bool,
+    pub(crate) enable_session_management: bool,
+    pub(crate) enable_ciba: bool,
+    pub(crate) enable_oidc_federation: bool,
+    pub(crate) enable_native_sso: bool,
     pub(crate) dynamic_client_registration_initial_access_token: Option<String>,
     pub(crate) device_authorization_ttl_seconds: u64,
     pub(crate) device_authorization_poll_interval_seconds: u64,
+    pub(crate) ciba_auth_req_id_ttl_seconds: u64,
+    pub(crate) ciba_poll_interval_seconds: u64,
 }
 
 impl Settings {
@@ -162,6 +169,17 @@ impl Settings {
             bail!(
                 "DEVICE_AUTHORIZATION_POLL_INTERVAL_SECONDS must be less than DEVICE_AUTHORIZATION_TTL_SECONDS"
             );
+        }
+        let ciba_auth_req_id_ttl_seconds = config.parse("CIBA_AUTH_REQ_ID_TTL_SECONDS", 600)?;
+        if ciba_auth_req_id_ttl_seconds == 0 {
+            bail!("CIBA_AUTH_REQ_ID_TTL_SECONDS must be positive");
+        }
+        let ciba_poll_interval_seconds = config.parse("CIBA_POLL_INTERVAL_SECONDS", 5)?;
+        if ciba_poll_interval_seconds == 0 {
+            bail!("CIBA_POLL_INTERVAL_SECONDS must be positive");
+        }
+        if ciba_poll_interval_seconds >= ciba_auth_req_id_ttl_seconds {
+            bail!("CIBA_POLL_INTERVAL_SECONDS must be less than CIBA_AUTH_REQ_ID_TTL_SECONDS");
         }
         let enable_dynamic_client_registration =
             config.bool("ENABLE_DYNAMIC_CLIENT_REGISTRATION", false)?;
@@ -252,10 +270,17 @@ impl Settings {
             enable_legacy_audience_param: config.bool("ENABLE_LEGACY_AUDIENCE_PARAM", false)?,
             enable_device_authorization_grant: config
                 .bool("ENABLE_DEVICE_AUTHORIZATION_GRANT", false)?,
+            enable_frontchannel_logout: config.bool("ENABLE_FRONTCHANNEL_LOGOUT", false)?,
+            enable_session_management: config.bool("ENABLE_SESSION_MANAGEMENT", false)?,
+            enable_ciba: config.bool("ENABLE_CIBA", false)?,
+            enable_oidc_federation: config.bool("ENABLE_OIDC_FEDERATION", false)?,
+            enable_native_sso: config.bool("ENABLE_NATIVE_SSO", false)?,
             enable_dynamic_client_registration,
             dynamic_client_registration_initial_access_token,
             device_authorization_ttl_seconds,
             device_authorization_poll_interval_seconds,
+            ciba_auth_req_id_ttl_seconds,
+            ciba_poll_interval_seconds,
         })
     }
 }

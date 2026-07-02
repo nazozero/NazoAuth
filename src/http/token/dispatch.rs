@@ -1,9 +1,9 @@
 //! /token grant_type 分发入口。
 // 只负责客户端认证与 grant_type 分派，不直接签发令牌。
 use super::{
-    DEVICE_CODE_GRANT_TYPE, JWT_BEARER_GRANT_TYPE, TOKEN_EXCHANGE_GRANT_TYPE, TokenForm,
-    TokenFormError, parse_token_form, token_authorization_code, token_client_credentials,
-    token_device_code, token_exchange, token_jwt_bearer, token_refresh,
+    CIBA_GRANT_TYPE, DEVICE_CODE_GRANT_TYPE, JWT_BEARER_GRANT_TYPE, TOKEN_EXCHANGE_GRANT_TYPE,
+    TokenForm, TokenFormError, parse_token_form, token_authorization_code, token_ciba,
+    token_client_credentials, token_device_code, token_exchange, token_jwt_bearer, token_refresh,
 };
 use crate::http::prelude::*;
 
@@ -405,6 +405,9 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
         DEVICE_CODE_GRANT_TYPE => {
             token_device_code(&state, &req, &client, &form, client_assertion.as_ref()).await
         }
+        CIBA_GRANT_TYPE => {
+            token_ciba(&state, &req, &client, &form, client_assertion.as_ref()).await
+        }
         TOKEN_EXCHANGE_GRANT_TYPE => {
             token_exchange(&state, &req, &client, &form, client_assertion.as_ref()).await
         }
@@ -433,7 +436,7 @@ fn validate_token_client_enabled(client: &ClientRow, grant_type: &str) -> Result
     Ok(())
 }
 
-fn validate_token_request_profile(
+pub(crate) fn validate_token_request_profile(
     settings: &Settings,
     client: &ClientRow,
     auth_method: &str,

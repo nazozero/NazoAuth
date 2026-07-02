@@ -200,6 +200,10 @@ pub(crate) struct ClientRow {
     pub(crate) backchannel_logout_uri: Option<String>,
     #[diesel(sql_type = diesel::sql_types::Bool)]
     pub(crate) backchannel_logout_session_required: bool,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
+    pub(crate) frontchannel_logout_uri: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Bool)]
+    pub(crate) frontchannel_logout_session_required: bool,
     #[diesel(sql_type = diesel::sql_types::Text)]
     pub(crate) subject_type: String,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]

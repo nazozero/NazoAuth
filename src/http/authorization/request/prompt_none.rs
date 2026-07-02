@@ -104,6 +104,7 @@ pub(super) async fn issue_authorization_code_without_interaction(
                     None,
                     Some("invalid_request_uri"),
                     payload.state.as_deref(),
+                    None,
                 )
                 .await;
             }
@@ -117,6 +118,7 @@ pub(super) async fn issue_authorization_code_without_interaction(
                     None,
                     Some("server_error"),
                     payload.state.as_deref(),
+                    None,
                 )
                 .await;
             }
@@ -125,6 +127,7 @@ pub(super) async fn issue_authorization_code_without_interaction(
 
     let now = Utc::now();
     let code = random_urlsafe_token();
+    let oidc_sid = payload.oidc_sid.clone();
     let code_payload = CodePayload {
         code_id: Uuid::now_v7().to_string(),
         user_id: payload.user_id,
@@ -189,6 +192,7 @@ pub(super) async fn issue_authorization_code_without_interaction(
         Some(&code),
         None,
         payload.state.as_deref(),
+        oidc_sid.as_deref(),
     )
     .await
 }
