@@ -300,7 +300,8 @@ fn fapi_client_policy(file_name: &str, plan: &Value) -> FapiClientPolicy {
         allow_client_assertion_audience_array: file_name.contains("-id"),
         allow_client_assertion_endpoint_audience: file_name.contains("-id")
             || file_name.starts_with("oidf-fapi-ciba-"),
-        require_par_request_object: file_name.contains("-message-")
+        require_par_request_object: file_name.starts_with("oidf-fapi-ciba-")
+            || file_name.contains("-message-")
             || nazo
                 .and_then(|value| value.get("fapi_request_method"))
                 .and_then(Value::as_str)

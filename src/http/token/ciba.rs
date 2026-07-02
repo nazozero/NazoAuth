@@ -190,6 +190,9 @@ pub(crate) async fn backchannel_authentication(
     {
         return response;
     }
+    if client.require_par_request_object && form.request.is_none() {
+        return ciba_invalid_request("CIBA request object is required.");
+    }
     if let Err(response) = validate_and_apply_ciba_request_object_claims(&state, &client, &mut form)
     {
         return response;
