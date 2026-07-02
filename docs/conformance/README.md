@@ -13,7 +13,7 @@ in the repository.
 - Matrix scope: [OIDF full matrix](oidf-full-matrix.md)
 - Latest private full-matrix regression: [2026-07-01 TP/PS OIDF full matrix](2026-07-01-tp-ps-full-matrix.md)
 - Latest official full matrix: [2026-07-02 NI-004 official OIDF full matrix](2026-07-02-ni-004-official-oidf-full-matrix.md)
-- Latest RFC coverage check: [2026-07-01 NI-002 RFC 8628 OIDF coverage](2026-07-01-ni-002-oidf-coverage.md)
+- Latest RFC coverage check: [2026-07-02 NI-005 RFC 7592 OIDF coverage](2026-07-02-ni-005-oidf-coverage.md)
 
 The latest recorded official full-matrix suite run is the 2026-07-02 NI-004
 run against `https://auth.nazo.run`, started at `2026-07-02 01:32:57 +08:00`.

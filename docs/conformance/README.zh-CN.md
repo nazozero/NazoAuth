@@ -19,7 +19,7 @@ Nazo Auth Server 已发布在 OpenID Foundation 官方认证列表中：
 - 矩阵范围说明：[OIDF 完整矩阵](oidf-full-matrix.zh-CN.md)
 - 最新私有 full-matrix 回归：[2026-07-01 TP/PS OIDF full matrix](2026-07-01-tp-ps-full-matrix.md)
 - 最新官方 full matrix：[2026-07-02 NI-004 official OIDF full matrix](2026-07-02-ni-004-official-oidf-full-matrix.md)
-- 最新 RFC 覆盖检查：[2026-07-01 NI-002 RFC 8628 OIDF coverage](2026-07-01-ni-002-oidf-coverage.md)
+- 最新 RFC 覆盖检查：[2026-07-02 NI-005 RFC 7592 OIDF coverage](2026-07-02-ni-005-oidf-coverage.md)
 
 `2026-06-09` full matrix 是当前官方认证证据，针对 `https://auth.nazo.run` 执行，覆盖 OIDC Basic、OIDC Config、FAPI2 Security Profile Final、FAPI2 Message Signing Final、mTLS、DPoP、`private_key_jwt`、client credentials 变体。结果为全计划完成，`0 failures`，`0 warnings`。
 

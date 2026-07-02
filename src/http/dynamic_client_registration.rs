@@ -1,6 +1,10 @@
 //! RFC 7591 dynamic client registration endpoint.
 
-use crate::http::{admin::CreateClientRequest, prelude::*};
+use crate::http::{
+    admin::{CreateClientRequest, InsertClientError, PreparedClientInsert},
+    prelude::*,
+};
+use diesel_async::AsyncConnection;
 use url::Url;
 
 #[derive(Debug, Default, Deserialize)]
@@ -127,14 +131,39 @@ pub(crate) async fn dynamic_client_registration(
         Err(error) => return dynamic_registration_error_response(error),
     };
     let response_types = prepared.response_types.clone();
-    let request = prepared.into_create_client_request();
-    match crate::http::admin::insert_client_row(&state, request).await {
-        Ok((client, issued_secret)) => dynamic_registration_created_response(
-            &client,
-            &response_types,
-            issued_secret,
-            Utc::now(),
-        ),
+    let registration_access_token = random_urlsafe_token();
+    match prepare_dynamic_client_insert(
+        prepared,
+        state.settings.pairwise_subject_secret.as_deref(),
+        &state.settings.issuer,
+        &registration_access_token,
+    )
+    .await
+    {
+        Ok(prepared_insert) => {
+            let issued_secret = prepared_insert.issued_secret.clone();
+            match crate::http::admin::insert_prepared_client_row(&state, &prepared_insert).await {
+                Ok(client) => dynamic_registration_created_response(
+                    &client,
+                    &response_types,
+                    issued_secret,
+                    &state.settings.issuer,
+                    &registration_access_token,
+                    Utc::now(),
+                ),
+                Err(crate::http::admin::InsertClientError::InvalidRequest(message)) => {
+                    dynamic_registration_error_response(map_insert_error(message))
+                }
+                Err(crate::http::admin::InsertClientError::Server(message)) => {
+                    tracing::warn!(%message, "failed to dynamically register oauth client");
+                    oauth_error(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "server_error",
+                        "Dynamic client registration failed.",
+                    )
+                }
+            }
+        }
         Err(crate::http::admin::InsertClientError::InvalidRequest(message)) => {
             dynamic_registration_error_response(map_insert_error(message))
         }
@@ -146,6 +175,399 @@ pub(crate) async fn dynamic_client_registration(
                 "Dynamic client registration failed.",
             )
         }
+    }
+}
+
+pub(crate) async fn client_configuration_get(
+    state: Data<AppState>,
+    req: HttpRequest,
+    path: actix_web::web::Path<String>,
+) -> HttpResponse {
+    if !state.settings.enable_dynamic_client_registration {
+        return empty_response(StatusCode::NOT_FOUND);
+    }
+    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await
+    {
+        return response;
+    }
+
+    let current = match authenticate_registration_client(&state, &req, &path.into_inner()).await {
+        Ok(client) => client,
+        Err(response) => return response,
+    };
+    let response_types = response_types_from_client(&current);
+    let registration_access_token = random_urlsafe_token();
+    let (issued_secret, secret_hash) = match crate::http::admin::issue_client_secret(
+        &current.client_type,
+        &current.token_endpoint_auth_method,
+    ) {
+        Ok(values) => values,
+        Err(error) => return insert_error_to_management_response(error),
+    };
+    let client = match rotate_client_management_credentials(
+        &state,
+        &current,
+        blake3_hex(&registration_access_token),
+        secret_hash,
+    )
+    .await
+    {
+        Ok(client) => client,
+        Err(response) => return response,
+    };
+
+    json_response_no_store(dynamic_registration_response(
+        &client,
+        &response_types,
+        issued_secret,
+        &state.settings.issuer,
+        &registration_access_token,
+    ))
+}
+
+pub(crate) async fn client_configuration_put(
+    state: Data<AppState>,
+    req: HttpRequest,
+    path: actix_web::web::Path<String>,
+    Json(payload): Json<Value>,
+) -> HttpResponse {
+    if !state.settings.enable_dynamic_client_registration {
+        return empty_response(StatusCode::NOT_FOUND);
+    }
+    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await
+    {
+        return response;
+    }
+
+    let current = match authenticate_registration_client(&state, &req, &path.into_inner()).await {
+        Ok(client) => client,
+        Err(response) => return response,
+    };
+    let payload = match parse_client_configuration_update(payload, &current) {
+        Ok(payload) => payload,
+        Err(error) => return dynamic_registration_error_response(error),
+    };
+    let registration = match prepare_dynamic_client_registration(
+        payload,
+        DynamicRegistrationDefaults {
+            default_audience: &state.settings.default_audience,
+        },
+    ) {
+        Ok(registration) => registration,
+        Err(error) => return dynamic_registration_error_response(error),
+    };
+    let response_types = registration.response_types.clone();
+    let registration_access_token = random_urlsafe_token();
+    let prepared = match prepare_dynamic_client_insert(
+        registration,
+        state.settings.pairwise_subject_secret.as_deref(),
+        &state.settings.issuer,
+        &registration_access_token,
+    )
+    .await
+    {
+        Ok(prepared) => prepared,
+        Err(error) => return insert_error_to_management_response(error),
+    };
+    let issued_secret = prepared.issued_secret.clone();
+    let client = match replace_client_configuration(&state, &current, &prepared).await {
+        Ok(client) => client,
+        Err(response) => return response,
+    };
+
+    json_response_no_store(dynamic_registration_response(
+        &client,
+        &response_types,
+        issued_secret,
+        &state.settings.issuer,
+        &registration_access_token,
+    ))
+}
+
+pub(crate) async fn client_configuration_delete(
+    state: Data<AppState>,
+    req: HttpRequest,
+    path: actix_web::web::Path<String>,
+) -> HttpResponse {
+    if !state.settings.enable_dynamic_client_registration {
+        return empty_response(StatusCode::NOT_FOUND);
+    }
+    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await
+    {
+        return response;
+    }
+
+    let current = match authenticate_registration_client(&state, &req, &path.into_inner()).await {
+        Ok(client) => client,
+        Err(response) => return response,
+    };
+    if let Err(response) = deactivate_dynamic_client(&state, &current).await {
+        return response;
+    }
+
+    empty_response_no_store(StatusCode::NO_CONTENT)
+}
+
+pub(crate) async fn prepare_dynamic_client_insert(
+    registration: PreparedDynamicClientRegistration,
+    pairwise_subject_secret: Option<&str>,
+    issuer: &str,
+    registration_access_token: &str,
+) -> Result<PreparedClientInsert, InsertClientError> {
+    let mut prepared = crate::http::admin::prepare_client_insert(
+        registration.into_create_client_request(),
+        pairwise_subject_secret,
+        issuer,
+    )
+    .await?;
+    prepared.registration_access_token_blake3 = Some(blake3_hex(registration_access_token));
+    Ok(prepared)
+}
+
+async fn authenticate_registration_client(
+    state: &AppState,
+    req: &HttpRequest,
+    client_id: &str,
+) -> Result<ClientRow, HttpResponse> {
+    let mut conn = get_conn(&state.diesel_db).await.map_err(|error| {
+        tracing::warn!(%error, "failed to get database connection for client configuration auth");
+        oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "Client configuration lookup failed.",
+        )
+    })?;
+    let found = oauth_clients::table
+        .filter(oauth_clients::tenant_id.eq(DEFAULT_TENANT_ID))
+        .filter(oauth_clients::client_id.eq(client_id))
+        .select((
+            ClientRow::as_select(),
+            oauth_clients::registration_access_token_blake3,
+        ))
+        .first::<(ClientRow, Option<String>)>(&mut conn)
+        .await
+        .optional()
+        .map_err(|error| {
+            tracing::warn!(%error, "failed to query dynamic client configuration credentials");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "Client configuration lookup failed.",
+            )
+        })?;
+    let Some((client, registration_token_hash)) = found else {
+        return Err(registration_access_denied());
+    };
+    if !client.is_active
+        || !registration_access_token_authorized(
+            req.headers()
+                .get(header::AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            registration_token_hash.as_deref(),
+        )
+    {
+        return Err(registration_access_denied());
+    }
+    Ok(client)
+}
+
+fn registration_access_denied() -> HttpResponse {
+    oauth_bearer_error(
+        StatusCode::UNAUTHORIZED,
+        "invalid_token",
+        "Registration access token is missing or invalid.",
+    )
+}
+
+async fn rotate_client_management_credentials(
+    state: &AppState,
+    current: &ClientRow,
+    registration_access_token_hash: String,
+    client_secret_hash: Option<String>,
+) -> Result<ClientRow, HttpResponse> {
+    let mut conn = get_conn(&state.diesel_db).await.map_err(|error| {
+        tracing::warn!(%error, "failed to get database connection for credential rotation");
+        oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "Client configuration update failed.",
+        )
+    })?;
+    diesel::update(
+        oauth_clients::table
+            .filter(oauth_clients::tenant_id.eq(current.tenant_id))
+            .filter(oauth_clients::id.eq(current.id))
+            .filter(oauth_clients::is_active.eq(true)),
+    )
+    .set((
+        oauth_clients::registration_access_token_blake3.eq(Some(registration_access_token_hash)),
+        oauth_clients::client_secret_argon2_hash.eq(client_secret_hash),
+        oauth_clients::updated_at.eq(diesel_now),
+    ))
+    .returning(ClientRow::as_returning())
+    .get_result::<ClientRow>(&mut conn)
+    .await
+    .map_err(|error| {
+        tracing::warn!(%error, client_id = %current.client_id, "failed to rotate dynamic client management credentials");
+        oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "Client configuration update failed.",
+        )
+    })
+}
+
+async fn replace_client_configuration(
+    state: &AppState,
+    current: &ClientRow,
+    prepared: &PreparedClientInsert,
+) -> Result<ClientRow, HttpResponse> {
+    let mut conn = get_conn(&state.diesel_db).await.map_err(|error| {
+        tracing::warn!(%error, "failed to get database connection for client configuration update");
+        oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "Client configuration update failed.",
+        )
+    })?;
+    diesel::update(
+        oauth_clients::table
+            .filter(oauth_clients::tenant_id.eq(current.tenant_id))
+            .filter(oauth_clients::id.eq(current.id))
+            .filter(oauth_clients::is_active.eq(true)),
+    )
+    .set((
+        oauth_clients::client_name.eq(&prepared.client_name),
+        oauth_clients::client_type.eq(&prepared.client_type),
+        oauth_clients::client_secret_argon2_hash.eq(&prepared.client_secret_argon2_hash),
+        oauth_clients::registration_access_token_blake3
+            .eq(&prepared.registration_access_token_blake3),
+        oauth_clients::redirect_uris.eq(json!(&prepared.redirect_uris)),
+        oauth_clients::post_logout_redirect_uris.eq(json!(&prepared.post_logout_redirect_uris)),
+        oauth_clients::scopes.eq(json!(&prepared.scopes)),
+        oauth_clients::allowed_audiences.eq(json!(&prepared.allowed_audiences)),
+        oauth_clients::grant_types.eq(json!(&prepared.grant_types)),
+        oauth_clients::token_endpoint_auth_method.eq(&prepared.token_endpoint_auth_method),
+        oauth_clients::subject_type.eq(&prepared.subject_type),
+        oauth_clients::sector_identifier_uri.eq(&prepared.sector_identifier_uri),
+        oauth_clients::sector_identifier_host.eq(&prepared.sector_identifier_host),
+        oauth_clients::require_dpop_bound_tokens.eq(prepared.require_dpop_bound_tokens),
+        oauth_clients::allow_client_assertion_audience_array
+            .eq(prepared.allow_client_assertion_audience_array),
+        oauth_clients::allow_client_assertion_endpoint_audience
+            .eq(prepared.allow_client_assertion_endpoint_audience),
+        oauth_clients::require_par_request_object.eq(prepared.require_par_request_object),
+        oauth_clients::allow_authorization_code_without_pkce
+            .eq(prepared.allow_authorization_code_without_pkce),
+        oauth_clients::backchannel_logout_uri.eq(&prepared.backchannel_logout_uri),
+        oauth_clients::backchannel_logout_session_required
+            .eq(prepared.backchannel_logout_session_required),
+        oauth_clients::tls_client_auth_subject_dn.eq(&prepared.tls_client_auth_subject_dn),
+        oauth_clients::tls_client_auth_cert_sha256.eq(&prepared.tls_client_auth_cert_sha256),
+        oauth_clients::tls_client_auth_san_dns.eq(json!(&prepared.tls_client_auth_san_dns)),
+        oauth_clients::tls_client_auth_san_uri.eq(json!(&prepared.tls_client_auth_san_uri)),
+        oauth_clients::tls_client_auth_san_ip.eq(json!(&prepared.tls_client_auth_san_ip)),
+        oauth_clients::tls_client_auth_san_email.eq(json!(&prepared.tls_client_auth_san_email)),
+        oauth_clients::jwks.eq(&prepared.jwks),
+        oauth_clients::introspection_encrypted_response_alg
+            .eq(&prepared.introspection_encrypted_response_alg),
+        oauth_clients::introspection_encrypted_response_enc
+            .eq(&prepared.introspection_encrypted_response_enc),
+        oauth_clients::updated_at.eq(diesel_now),
+    ))
+    .returning(ClientRow::as_returning())
+    .get_result::<ClientRow>(&mut conn)
+    .await
+    .map_err(|error| {
+        tracing::warn!(%error, client_id = %current.client_id, "failed to replace dynamic client configuration");
+        oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "Client configuration update failed.",
+        )
+    })
+}
+
+async fn deactivate_dynamic_client(
+    state: &AppState,
+    current: &ClientRow,
+) -> Result<(), HttpResponse> {
+    let mut conn = get_conn(&state.diesel_db).await.map_err(|error| {
+        tracing::warn!(%error, "failed to get database connection for client deletion");
+        oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "Client deletion failed.",
+        )
+    })?;
+    conn.transaction::<(), diesel::result::Error, _>(async |conn| {
+        diesel::update(
+            oauth_clients::table
+                .filter(oauth_clients::tenant_id.eq(current.tenant_id))
+                .filter(oauth_clients::id.eq(current.id)),
+        )
+        .set((
+            oauth_clients::is_active.eq(false),
+            oauth_clients::registration_access_token_blake3.eq::<Option<String>>(None),
+            oauth_clients::updated_at.eq(diesel_now),
+        ))
+        .execute(conn)
+        .await?;
+        diesel::update(
+            oauth_tokens::table
+                .filter(oauth_tokens::tenant_id.eq(current.tenant_id))
+                .filter(oauth_tokens::client_id.eq(current.id))
+                .filter(oauth_tokens::revoked_at.is_null()),
+        )
+        .set(oauth_tokens::revoked_at.eq(diesel_now))
+        .execute(conn)
+        .await?;
+        diesel::delete(
+            user_client_grants::table
+                .filter(user_client_grants::tenant_id.eq(current.tenant_id))
+                .filter(user_client_grants::client_id.eq(current.id)),
+        )
+        .execute(conn)
+        .await?;
+        Ok(())
+    })
+    .await
+    .map_err(|error| {
+        tracing::warn!(%error, client_id = %current.client_id, "failed to delete dynamic client");
+        oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "Client deletion failed.",
+        )
+    })?;
+    Ok(())
+}
+
+fn insert_error_to_management_response(error: InsertClientError) -> HttpResponse {
+    match error {
+        InsertClientError::InvalidRequest(message) => {
+            dynamic_registration_error_response(map_insert_error(message))
+        }
+        InsertClientError::Server(message) => {
+            tracing::warn!(%message, "failed to prepare dynamic client management response");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "Client configuration update failed.",
+            )
+        }
+    }
+}
+
+fn response_types_from_client(client: &ClientRow) -> Vec<String> {
+    let grant_types = json_array_to_strings(&client.grant_types);
+    if grant_types
+        .iter()
+        .any(|grant| grant == "authorization_code")
+    {
+        vec!["code".to_owned()]
+    } else {
+        Vec::new()
     }
 }
 
@@ -259,6 +681,87 @@ pub(crate) fn initial_access_token_authorized(
         return false;
     };
     constant_time_eq(actual.as_bytes(), expected_token.as_bytes())
+}
+
+pub(crate) fn registration_access_token_authorized(
+    authorization_header: Option<&str>,
+    stored_token_hash: Option<&str>,
+) -> bool {
+    let Some(stored_token_hash) = stored_token_hash else {
+        return false;
+    };
+    let Some(actual) = authorization_header
+        .and_then(|value| value.trim().strip_prefix("Bearer "))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return false;
+    };
+    let actual_hash = blake3_hex(actual);
+    constant_time_eq(actual_hash.as_bytes(), stored_token_hash.as_bytes())
+}
+
+pub(crate) fn parse_client_configuration_update(
+    mut payload: Value,
+    current: &ClientRow,
+) -> Result<DynamicClientRegistrationRequest, DynamicRegistrationError> {
+    let Some(object) = payload.as_object_mut() else {
+        return Err(DynamicRegistrationError::new(
+            "invalid_request",
+            "Client configuration update body must be a JSON object.",
+        ));
+    };
+
+    for field in [
+        "registration_access_token",
+        "registration_client_uri",
+        "client_secret_expires_at",
+        "client_id_issued_at",
+    ] {
+        if object.contains_key(field) {
+            return Err(DynamicRegistrationError::new(
+                "invalid_request",
+                format!("{field} is managed by the authorization server."),
+            ));
+        }
+    }
+
+    let client_id = object
+        .remove("client_id")
+        .and_then(|value| value.as_str().map(ToOwned::to_owned))
+        .ok_or_else(|| {
+            DynamicRegistrationError::invalid_client_metadata(
+                "client_id must be present in a client configuration update.",
+            )
+        })?;
+    if client_id != current.client_id {
+        return Err(DynamicRegistrationError::invalid_client_metadata(
+            "client_id must match the client configuration endpoint.",
+        ));
+    }
+
+    let client_secret = object.remove("client_secret");
+    match (&current.client_secret_argon2_hash, client_secret) {
+        (Some(stored_hash), Some(Value::String(secret)))
+            if verify_password(&secret, stored_hash) => {}
+        (Some(_), _) => {
+            return Err(DynamicRegistrationError::invalid_client_metadata(
+                "client_secret must match the current client secret.",
+            ));
+        }
+        (None, Some(_)) => {
+            return Err(DynamicRegistrationError::invalid_client_metadata(
+                "public or assertion-based clients must not submit client_secret.",
+            ));
+        }
+        (None, None) => {}
+    }
+
+    serde_json::from_value(payload).map_err(|error| {
+        DynamicRegistrationError::invalid_client_metadata(format!(
+            "Invalid client metadata: {error}"
+        ))
+    })
 }
 
 impl PreparedDynamicClientRegistration {
@@ -382,9 +885,17 @@ fn dynamic_registration_created_response(
     client: &ClientRow,
     response_types: &[String],
     issued_secret: Option<String>,
+    issuer: &str,
+    registration_access_token: &str,
     issued_at: DateTime<Utc>,
 ) -> HttpResponse {
-    let mut body = dynamic_registration_response(client, response_types, issued_secret);
+    let mut body = dynamic_registration_response(
+        client,
+        response_types,
+        issued_secret,
+        issuer,
+        registration_access_token,
+    );
     body["client_id_issued_at"] = json!(issued_at.timestamp());
     json_response_status_no_store(StatusCode::CREATED, body)
 }
@@ -393,10 +904,14 @@ fn dynamic_registration_response(
     client: &ClientRow,
     response_types: &[String],
     issued_secret: Option<String>,
+    issuer: &str,
+    registration_access_token: &str,
 ) -> Value {
     let mut body = json!({
         "client_id": client.client_id,
         "client_name": client.client_name,
+        "registration_access_token": registration_access_token,
+        "registration_client_uri": registration_client_uri(issuer, &client.client_id),
         "redirect_uris": json_array_to_strings(&client.redirect_uris),
         "grant_types": json_array_to_strings(&client.grant_types),
         "response_types": response_types,
@@ -412,6 +927,10 @@ fn dynamic_registration_response(
         body["client_secret_expires_at"] = json!(0);
     }
     body
+}
+
+fn registration_client_uri(issuer: &str, client_id: &str) -> String {
+    format!("{issuer}/register/{}", urlencoding::encode(client_id))
 }
 
 #[cfg(test)]

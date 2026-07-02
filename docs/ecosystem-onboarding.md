@@ -22,8 +22,10 @@ protocol surface.
 - Public deployments should set
   `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN`; otherwise registration is
   intentionally open for controlled test deployments only.
-- `software_statement`, remote `jwks_uri` fetching, and RFC 7592 management
-  semantics are not supported by the baseline RFC 7591 endpoint.
+- `software_statement` and remote `jwks_uri` fetching are not supported by
+  the baseline RFC 7591 endpoint.
+- RFC 7592 Client Configuration Management is available only for clients
+  created through DCR and only while `ENABLE_DYNAMIC_CLIENT_REGISTRATION=true`.
 
 ### Activation Criteria
 
@@ -33,7 +35,9 @@ protocol surface.
 - Optional `jwks_uri` fetching, cache lifetime, stale-key behavior, SSRF prevention, host allowlists, size limits, MIME validation, timeout policy, and key rotation.
 - Inline `jwks` validation, including rejection of private key material and unsupported `use`, `kty`, `alg`, or duplicate `kid` values.
 - Software statement trust anchors, issuer/audience validation, expiry windows, replay prevention, metadata merge rules, and audit evidence.
-- RFC 7592 registration access token storage, rotation, update/delete authorization, disabled-client behavior, and audit events.
+- Registration access token storage and rotation use server-side BLAKE3 hashes;
+  plaintext registration access tokens are returned only in DCR management
+  responses.
 - Metadata truth tests proving discovery only advertises DCR when the registration endpoint is enabled and protected.
 
 ### Required Tests
@@ -50,21 +54,32 @@ protocol surface.
 
 ### Boundary
 
-RFC 7592 Client Configuration Management stays disabled until DCR has a
-complete implementation and threat model.
+RFC 7592 Client Configuration Management is implemented as part of the
+default-closed DCR surface.
 
 - DCRM inherits every DCR risk and adds update/delete authority over existing clients.
-- Client update can silently weaken redirect URI, JWKS, logout, token auth, grant, or profile policy if metadata merge rules are not strict.
-- Delete/deactivate semantics affect active sessions, refresh token families, outstanding authorization codes, PAR handles, and audit retention.
+- Client update is full-replacement PUT semantics, not partial PATCH. The
+  client must present the current `client_id`; clients with a stored
+  `client_secret` must also present the matching current secret.
+- Server-managed fields are immutable from the client request:
+  `registration_access_token`, `registration_client_uri`,
+  `client_secret_expires_at`, and `client_id_issued_at`.
+- Successful read and update responses rotate the registration access token.
+  Secret-authenticated dynamic clients also receive a rotated `client_secret`
+  because the server stores only Argon2 hashes, never recoverable plaintext
+  secrets.
+- DELETE deactivates the client, clears the registration access token hash,
+  revokes active refresh-token rows for the client, and removes stored user
+  grants. Existing self-contained access tokens remain bounded by their normal
+  expiry and resource-side revocation checks.
 
 ### Activation Criteria
 
-- Registration access token binding to a single client.
-- Full replacement versus partial update semantics.
-- Immutable fields, including internal database id, tenant or realm binding, initial trust source, and profile assignment.
-- Rotation semantics for `client_secret`, `jwks`, `jwks_uri`, mTLS certificate material, and back-channel logout URLs.
-- Deactivation and deletion effects on active tokens, refresh families, grants, sessions, and back-channel logout.
-- Negative tests for update attempts that add overclaimed metadata or weaken authentication.
+- Audit events for RFC 7592 read/update/delete lifecycle operations.
+- Optional `jwks_uri` fetching, if ever supported, with SSRF and cache controls.
+- Software statement trust anchors and metadata merge policy.
+- Browser or black-box conformance fixtures that exercise the full
+  registration management lifecycle against a deployed issuer.
 
 ## Device Authorization Grant
 
