@@ -1286,11 +1286,14 @@ def write_fapi_ciba_plan_config() -> dict[str, dict[str, object]]:
             "hint_value": USER_EMAIL,
             "acr_value": "1",
         },
-        "client2": fapi_client_config(
-            client2_id,
-            client2_jwks,
-            "openid profile email offline_access",
-        ),
+        "client2": {
+            **fapi_client_config(
+                client2_id,
+                client2_jwks,
+                "openid profile email offline_access",
+            ),
+            "acr_value": "1",
+        },
         "mtls": mtls_named_config(mtls_client_cert_name(client1_id)),
         "mtls2": mtls_named_config(mtls_client_cert_name(client2_id)),
         "nazo": {
