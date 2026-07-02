@@ -1284,6 +1284,7 @@ def write_fapi_ciba_plan_config() -> dict[str, dict[str, object]]:
             **fapi_client_config(client1_id, client1_jwks, "openid profile email offline_access"),
             "hint_type": "login_hint",
             "hint_value": USER_EMAIL,
+            "acr_value": "1",
         },
         "client2": fapi_client_config(
             client2_id,

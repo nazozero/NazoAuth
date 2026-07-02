@@ -77,12 +77,23 @@ pub(crate) async fn fapi_resource(
     if revoked || claims.exp <= Utc::now().timestamp() {
         return oauth_bearer_error(StatusCode::UNAUTHORIZED, "invalid_token", "访问令牌已失效.");
     }
-    json_response_no_store(json!({
+    let mut response = json_response_no_store(json!({
         "sub": claims.sub,
         "client_id": claims.client_id,
         "scope": claims.scope,
         "aud": claims.aud
-    }))
+    }));
+    if let Some(interaction_id) = req
+        .headers()
+        .get("x-fapi-interaction-id")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| actix_web::http::header::HeaderValue::from_str(value).ok())
+    {
+        response
+            .headers_mut()
+            .insert("x-fapi-interaction-id".parse().unwrap(), interaction_id);
+    }
+    response
 }
 
 async fn validate_access_token_binding(
