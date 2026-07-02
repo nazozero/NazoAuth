@@ -298,7 +298,8 @@ fn fapi_client_policy(file_name: &str, plan: &Value) -> FapiClientPolicy {
         require_dpop_bound_tokens: sender_constrain == "dpop",
         require_mtls_bound_tokens: sender_constrain == "mtls",
         allow_client_assertion_audience_array: file_name.contains("-id"),
-        allow_client_assertion_endpoint_audience: file_name.contains("-id"),
+        allow_client_assertion_endpoint_audience: file_name.contains("-id")
+            || file_name.starts_with("oidf-fapi-ciba-"),
         require_par_request_object: file_name.contains("-message-")
             || nazo
                 .and_then(|value| value.get("fapi_request_method"))
