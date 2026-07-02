@@ -232,6 +232,86 @@ fn ciba_state_storage_ttl_retains_expired_state_briefly() {
 }
 
 #[test]
+fn ciba_token_issue_allows_refresh_and_binds_refresh_sender_constraint() {
+    let ciba = CibaRequestState {
+        client_id: "client-1".to_owned(),
+        user_id: Uuid::now_v7(),
+        scopes: vec!["openid".to_owned(), "offline_access".to_owned()],
+        audiences: vec!["resource://default".to_owned()],
+        acr: Some("1".to_owned()),
+        binding_message: None,
+        issued_at: Utc::now().timestamp(),
+        status: CibaStatus::Approved,
+        interval_seconds: 5,
+        expires_at: Utc::now().timestamp() + 600,
+        last_poll_at: None,
+    };
+
+    let issue = ciba_token_issue(
+        ciba.user_id,
+        "subject-1".to_owned(),
+        ciba,
+        Some("dpop-jkt".to_owned()),
+        None,
+    );
+
+    assert!(issue.include_refresh);
+    assert_eq!(issue.refresh_token_policy, RefreshTokenPolicy::IssueNew);
+    assert_eq!(issue.dpop_jkt.as_deref(), Some("dpop-jkt"));
+    assert_eq!(issue.refresh_token_dpop_jkt.as_deref(), Some("dpop-jkt"));
+    assert_eq!(issue.scopes, vec!["openid", "offline_access"]);
+}
+
+#[actix_web::test]
+async fn ciba_token_request_validates_mtls_before_auth_req_id_state() {
+    let state = ciba_test_state_with(|settings| {
+        settings.enable_ciba = true;
+    });
+    let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
+        .expect("client key should generate")
+        .private_pkcs8_der;
+    let mut client = ciba_private_key_jwt_client("ciba-kid", &key);
+    client.require_mtls_bound_tokens = true;
+    let req = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .to_http_request();
+    let form = TokenForm {
+        grant_type: CIBA_GRANT_TYPE.to_owned(),
+        code: None,
+        device_code: None,
+        auth_req_id: Some("missing-auth-req-id".to_owned()),
+        redirect_uri: None,
+        code_verifier: None,
+        refresh_token: None,
+        device_secret: None,
+        scope: None,
+        client_id: None,
+        client_secret: None,
+        client_assertion_type: None,
+        client_assertion: None,
+        assertion: None,
+        requested_token_type: None,
+        subject_token: None,
+        subject_token_type: None,
+        actor_token: None,
+        actor_token_type: None,
+        audiences: Vec::new(),
+        has_audience_param: false,
+    };
+
+    let response = token_ciba(&state, &req, &client, &form, None).await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("invalid_grant")
+    );
+}
+
+#[test]
 fn ciba_signed_request_object_missing_audience_maps_to_invalid_request() {
     let state = ciba_test_state();
     let key = generate_key_material(jsonwebtoken::Algorithm::PS256)

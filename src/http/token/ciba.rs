@@ -905,6 +905,10 @@ pub(crate) async fn token_ciba(
     if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
         return response;
     }
+    let (dpop_jkt, mtls_x5t_s256) = match ciba_issue_binding(state, req, client).await {
+        Ok(binding) => binding,
+        Err(response) => return response,
+    };
     let mut ciba = match load_ciba_request_state(state, auth_req_id).await {
         Ok(Some(value)) => value,
         Ok(None) => {
@@ -1000,42 +1004,44 @@ pub(crate) async fn token_ciba(
             );
         }
     };
-    let (dpop_jkt, mtls_x5t_s256) = match ciba_issue_binding(state, req, client).await {
-        Ok(binding) => binding,
-        Err(response) => return response,
-    };
+    let issue = ciba_token_issue(user.id, subject, ciba, dpop_jkt, mtls_x5t_s256);
     let _ = valkey_del(&state.valkey, ciba_request_key(auth_req_id)).await;
-    issue_token_response(
-        state,
-        client,
-        TokenIssue {
-            user_id: Some(user.id),
-            subject,
-            scopes: ciba.scopes,
-            authorization_details: json!([]),
-            audiences: ciba.audiences,
-            nonce: None,
-            auth_time: Some(Utc::now().timestamp()),
-            amr: vec!["ciba".to_owned()],
-            oidc_sid: None,
-            acr: ciba.acr,
-            userinfo_claims: Vec::new(),
-            userinfo_claim_requests: Vec::new(),
-            id_token_claims: Vec::new(),
-            id_token_claim_requests: Vec::new(),
-            include_refresh: false,
-            refresh_token_policy: RefreshTokenPolicy::PreserveExisting,
-            dpop_jkt: dpop_jkt.clone(),
-            refresh_token_dpop_jkt: None,
-            mtls_x5t_s256: mtls_x5t_s256.clone(),
-            refresh_token_mtls_x5t_s256: None,
-            authorization_code_hash: None,
-            actor: None,
-            issued_token_type: None,
-            native_sso: None,
-        },
-    )
-    .await
+    issue_token_response(state, client, issue).await
+}
+
+fn ciba_token_issue(
+    user_id: Uuid,
+    subject: String,
+    ciba: CibaRequestState,
+    dpop_jkt: Option<String>,
+    mtls_x5t_s256: Option<String>,
+) -> TokenIssue {
+    TokenIssue {
+        user_id: Some(user_id),
+        subject,
+        scopes: ciba.scopes,
+        authorization_details: json!([]),
+        audiences: ciba.audiences,
+        nonce: None,
+        auth_time: Some(Utc::now().timestamp()),
+        amr: vec!["ciba".to_owned()],
+        oidc_sid: None,
+        acr: ciba.acr,
+        userinfo_claims: Vec::new(),
+        userinfo_claim_requests: Vec::new(),
+        id_token_claims: Vec::new(),
+        id_token_claim_requests: Vec::new(),
+        include_refresh: true,
+        refresh_token_policy: RefreshTokenPolicy::IssueNew,
+        dpop_jkt: dpop_jkt.clone(),
+        refresh_token_dpop_jkt: dpop_jkt,
+        mtls_x5t_s256: mtls_x5t_s256.clone(),
+        refresh_token_mtls_x5t_s256: mtls_x5t_s256,
+        authorization_code_hash: None,
+        actor: None,
+        issued_token_type: None,
+        native_sso: None,
+    }
 }
 
 async fn ciba_issue_binding(
