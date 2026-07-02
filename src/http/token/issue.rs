@@ -16,11 +16,22 @@ use authorization_code_state::{
 pub(crate) use refresh_persistence::should_issue_refresh_token;
 use refresh_persistence::{PendingRefreshToken, RefreshPersistResult, persist_refresh_token};
 
-fn id_token_session_sid<'a>(settings: &Settings, issue: &'a TokenIssue) -> Option<&'a str> {
+fn client_session_sid_enabled(settings: &Settings, client: &ClientRow) -> bool {
+    (settings.enable_frontchannel_logout
+        && client.frontchannel_logout_uri.is_some()
+        && client.frontchannel_logout_session_required)
+        || (client.backchannel_logout_uri.is_some() && client.backchannel_logout_session_required)
+}
+
+fn id_token_session_sid<'a>(
+    settings: &Settings,
+    client: &ClientRow,
+    issue: &'a TokenIssue,
+) -> Option<&'a str> {
     if let Some(native_sso) = issue.native_sso.as_ref() {
         return Some(native_sso.sid.as_str());
     }
-    if settings.enable_frontchannel_logout || settings.enable_session_management {
+    if client_session_sid_enabled(settings, client) {
         return issue.oidc_sid.as_deref();
     }
     let requested = issue.id_token_claims.iter().any(|claim| claim == "sid")
@@ -297,7 +308,7 @@ pub(crate) async fn issue_token_response(
                 nonce: issue.nonce.clone(),
                 auth_time: issue.auth_time,
                 amr: &issue.amr,
-                sid: id_token_session_sid(&state.settings, &issue),
+                sid: id_token_session_sid(&state.settings, client, &issue),
                 acr: issue.acr.as_deref(),
                 extra_claims: user_claims.as_ref(),
                 ttl: state.settings.id_token_ttl_seconds,
