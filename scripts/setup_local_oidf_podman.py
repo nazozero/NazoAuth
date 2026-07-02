@@ -751,11 +751,6 @@ def user_reject_browser_automation() -> list[dict[str, object]]:
                     "match": "*/test/*/callback*",
                     "commands": [["wait", "id", "submission_complete", 10]],
                 },
-                {
-                    "task": "Verify post-logout redirect completion",
-                    "match": "*/test/*/post_logout_redirect*",
-                    "commands": [["wait", "id", "submission_complete", 10]],
-                },
             ],
         }
     ]
@@ -797,6 +792,11 @@ def browser_automation() -> list[dict[str, object]]:
                 {
                     "task": "Verify callback completion",
                     "match": "*/test/*/callback*",
+                    "commands": [["wait", "id", "submission_complete", 10]],
+                },
+                {
+                    "task": "Verify post-logout redirect completion",
+                    "match": "*/test/*/post_logout_redirect*",
                     "commands": [["wait", "id", "submission_complete", 10]],
                 },
             ],
