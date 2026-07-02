@@ -796,6 +796,28 @@ def browser_automation() -> list[dict[str, object]]:
                 },
             ],
         },
+        {
+            "comment": "Local Podman Nazo OAuth post-logout redirect browser automation.",
+            "match": f"{ISSUER}/logout*",
+            "tasks": [
+                {
+                    "task": "Reach post-logout redirect page",
+                    "match": "*/test/*/post_logout_redirect*",
+                    "commands": [["wait", "contains", "/post_logout_redirect", 10]],
+                },
+            ],
+        },
+        {
+            "comment": "Local Podman OIDC Session Management verification automation.",
+            "match": "*/test/*/session_verify*",
+            "tasks": [
+                {
+                    "task": "Reach session management verification page",
+                    "match": "*/test/*/session_verify*",
+                    "commands": [["wait", "contains", "/session_verify", 10]],
+                },
+            ],
+        },
     ]
 
 
