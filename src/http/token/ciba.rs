@@ -190,8 +190,8 @@ pub(crate) async fn backchannel_authentication(
     {
         return response;
     }
-    if client.require_par_request_object && form.request.is_none() {
-        return ciba_invalid_request("CIBA request object is required.");
+    if let Err(response) = validate_ciba_request_object_presence(&client, &form) {
+        return response;
     }
     if let Err(response) = validate_and_apply_ciba_request_object_claims(&state, &client, &mut form)
     {
@@ -642,6 +642,16 @@ fn parse_requested_expiry_string(value: &str) -> Option<u64> {
 
 fn ciba_invalid_request(description: &str) -> HttpResponse {
     oauth_error(StatusCode::BAD_REQUEST, "invalid_request", description)
+}
+
+fn validate_ciba_request_object_presence(
+    client: &ClientRow,
+    form: &BackchannelAuthenticationForm,
+) -> Result<(), HttpResponse> {
+    if client.require_par_request_object && form.request.is_none() {
+        return Err(ciba_invalid_request("CIBA request object is required."));
+    }
+    Ok(())
 }
 
 fn non_empty(value: String) -> Option<String> {

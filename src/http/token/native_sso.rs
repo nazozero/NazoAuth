@@ -86,9 +86,13 @@ fn decode_native_sso_id_token(state: &AppState, token: &str) -> Option<NativeSso
     validation.validate_aud = false;
     validation.validate_exp = false;
     validation.set_issuer(&[state.settings.issuer.as_str()]);
-    jsonwebtoken::decode::<NativeSsoIdTokenClaims>(token, &decoding_key, &validation)
-        .ok()
-        .map(|token| token.claims)
+    let claims = jsonwebtoken::decode::<NativeSsoIdTokenClaims>(token, &decoding_key, &validation)
+        .ok()?
+        .claims;
+    if claims.iss != state.settings.issuer {
+        return None;
+    }
+    Some(claims)
 }
 
 async fn load_native_sso_device_secret_state(

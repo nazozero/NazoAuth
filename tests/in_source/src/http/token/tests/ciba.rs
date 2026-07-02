@@ -183,6 +183,35 @@ fn ciba_signed_request_object_claims_apply_to_backchannel_form() {
 }
 
 #[test]
+fn ciba_request_object_presence_enforces_client_policy() {
+    let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
+        .expect("client key should generate")
+        .private_pkcs8_der;
+    let mut client = ciba_private_key_jwt_client("ciba-kid", &key);
+    client.require_par_request_object = true;
+
+    let missing_request_response =
+        validate_ciba_request_object_presence(&client, &BackchannelAuthenticationForm::default())
+            .expect_err("CIBA request object policy must reject unsigned form parameters");
+
+    assert_eq!(missing_request_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        missing_request_response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("invalid_request")
+    );
+
+    let form_with_request = BackchannelAuthenticationForm {
+        request: Some("request-object.jwt".to_owned()),
+        ..BackchannelAuthenticationForm::default()
+    };
+    validate_ciba_request_object_presence(&client, &form_with_request)
+        .expect("present request object should satisfy the presence policy");
+}
+
+#[test]
 fn ciba_selected_acr_uses_supported_requested_value() {
     assert_eq!(ciba_selected_acr(Some("1")).as_deref(), Some("1"));
     assert_eq!(ciba_selected_acr(Some("0 1")).as_deref(), Some("1"));
