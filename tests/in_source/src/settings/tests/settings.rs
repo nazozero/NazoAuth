@@ -166,6 +166,36 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
 }
 
 #[test]
+fn dynamic_client_registration_requires_initial_access_token() {
+    let missing_token =
+        ConfigSource::from_pairs_for_test([("ENABLE_DYNAMIC_CLIENT_REGISTRATION", "true")]);
+    let error = settings_error(
+        &missing_token,
+        "dynamic registration must not become open registration by accident",
+    );
+    assert_eq!(
+        error.to_string(),
+        "DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN is required when ENABLE_DYNAMIC_CLIENT_REGISTRATION=true"
+    );
+
+    let protected = ConfigSource::from_pairs_for_test([
+        ("ENABLE_DYNAMIC_CLIENT_REGISTRATION", "true"),
+        (
+            "DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN",
+            "register-token",
+        ),
+    ]);
+    let settings = Settings::from_config(&protected).unwrap();
+    assert!(settings.enable_dynamic_client_registration);
+    assert_eq!(
+        settings
+            .dynamic_client_registration_initial_access_token
+            .as_deref(),
+        Some("register-token")
+    );
+}
+
+#[test]
 fn public_base_url_drives_same_origin_defaults() {
     let config =
         ConfigSource::from_pairs_for_test([("PUBLIC_BASE_URL", "https://auth.example.test")]);

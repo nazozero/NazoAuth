@@ -97,6 +97,10 @@ pub(crate) async fn dynamic_client_registration(
     if !state.settings.enable_dynamic_client_registration {
         return empty_response(StatusCode::NOT_FOUND);
     }
+    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await
+    {
+        return response;
+    }
     if !initial_access_token_authorized(
         req.headers()
             .get(header::AUTHORIZATION)
@@ -125,11 +129,12 @@ pub(crate) async fn dynamic_client_registration(
     let response_types = prepared.response_types.clone();
     let request = prepared.into_create_client_request();
     match crate::http::admin::insert_client_row(&state, request).await {
-        Ok((client, issued_secret)) => {
-            let mut body = dynamic_registration_response(&client, &response_types, issued_secret);
-            body["client_id_issued_at"] = json!(Utc::now().timestamp());
-            json_response_status(StatusCode::CREATED, body)
-        }
+        Ok((client, issued_secret)) => dynamic_registration_created_response(
+            &client,
+            &response_types,
+            issued_secret,
+            Utc::now(),
+        ),
         Err(crate::http::admin::InsertClientError::InvalidRequest(message)) => {
             dynamic_registration_error_response(map_insert_error(message))
         }
@@ -244,7 +249,7 @@ pub(crate) fn initial_access_token_authorized(
     expected_token: Option<&str>,
 ) -> bool {
     let Some(expected_token) = expected_token else {
-        return true;
+        return false;
     };
     let Some(actual) = authorization_header
         .and_then(|value| value.trim().strip_prefix("Bearer "))
@@ -258,6 +263,10 @@ pub(crate) fn initial_access_token_authorized(
 
 impl PreparedDynamicClientRegistration {
     fn to_create_client_request(&self) -> CreateClientRequest {
+        let secret_auth_method = matches!(
+            self.token_endpoint_auth_method.as_str(),
+            "client_secret_basic" | "client_secret_post"
+        );
         CreateClientRequest {
             client_name: self.client_name.clone(),
             client_type: self.client_type.clone(),
@@ -273,12 +282,7 @@ impl PreparedDynamicClientRegistration {
             allow_client_assertion_audience_array: false,
             allow_client_assertion_endpoint_audience: false,
             require_par_request_object: false,
-            allow_authorization_code_without_pkce: self.client_type == "confidential"
-                && !self.require_dpop_bound_tokens
-                && matches!(
-                    self.token_endpoint_auth_method.as_str(),
-                    "client_secret_basic" | "client_secret_post"
-                ),
+            allow_authorization_code_without_pkce: false,
             backchannel_logout_uri: self.backchannel_logout_uri.clone(),
             backchannel_logout_session_required: self.backchannel_logout_session_required,
             tls_client_auth_subject_dn: self.tls_client_auth_subject_dn.clone(),
@@ -290,7 +294,7 @@ impl PreparedDynamicClientRegistration {
             jwks: self.jwks.clone(),
             introspection_encrypted_response_alg: None,
             introspection_encrypted_response_enc: None,
-            allow_jwks_without_kid: true,
+            allow_jwks_without_kid: secret_auth_method,
         }
     }
 
@@ -342,14 +346,7 @@ fn default_dynamic_client_scopes(grant_types: &[String]) -> Vec<String> {
     {
         return Vec::new();
     }
-    let mut scopes = ["openid", "profile", "email", "address", "phone"]
-        .into_iter()
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
-    if grant_types.iter().any(|grant| grant == "refresh_token") {
-        scopes.push("offline_access".to_owned());
-    }
-    scopes
+    vec!["openid".to_owned()]
 }
 
 fn validate_request_uris(request_uris: &[String]) -> Result<(), DynamicRegistrationError> {
@@ -379,6 +376,17 @@ fn map_insert_error(message: String) -> DynamicRegistrationError {
 
 fn dynamic_registration_error_response(error: DynamicRegistrationError) -> HttpResponse {
     oauth_error(StatusCode::BAD_REQUEST, error.error, &error.description)
+}
+
+fn dynamic_registration_created_response(
+    client: &ClientRow,
+    response_types: &[String],
+    issued_secret: Option<String>,
+    issued_at: DateTime<Utc>,
+) -> HttpResponse {
+    let mut body = dynamic_registration_response(client, response_types, issued_secret);
+    body["client_id_issued_at"] = json!(issued_at.timestamp());
+    json_response_status_no_store(StatusCode::CREATED, body)
 }
 
 fn dynamic_registration_response(

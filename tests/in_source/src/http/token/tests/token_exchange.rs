@@ -166,7 +166,7 @@ fn token_exchange_requires_explicit_allowed_target() {
 }
 
 #[test]
-fn token_exchange_client_must_be_issuer_or_authorized_resource_server() {
+fn token_exchange_client_must_match_subject_token_client_by_default() {
     let client = client();
 
     assert!(token_exchange_client_authorized(
@@ -177,11 +177,19 @@ fn token_exchange_client_must_be_issuer_or_authorized_resource_server() {
             "accounts"
         )
     ));
-    assert!(token_exchange_client_authorized(
+    assert!(!token_exchange_client_authorized(
         &client,
         &claims(
             "frontend-client",
             json!("https://backend.example/api"),
+            "accounts"
+        )
+    ));
+    assert!(!token_exchange_client_authorized(
+        &client,
+        &claims(
+            "frontend-client",
+            json!(["https://backend.example/api", "urn:example:target"]),
             "accounts"
         )
     ));

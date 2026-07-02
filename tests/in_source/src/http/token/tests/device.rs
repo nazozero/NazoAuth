@@ -253,6 +253,33 @@ fn device_code_polling_enforces_pending_slow_down_denied_and_expired_results() {
     ));
 }
 
+#[test]
+fn device_verification_page_html_includes_csrf_context_and_decision_controls() {
+    let now = Utc::now();
+    let payload = DeviceAuthorizationPayload {
+        client_id: "device-client".to_owned(),
+        client_name: "Device <Client>".to_owned(),
+        scopes: vec!["openid".to_owned(), "profile".to_owned()],
+        resource_indicators: vec!["https://api.example.com".to_owned()],
+        authorization_details: json!([]),
+        interval_seconds: 5,
+        issued_at: now,
+        expires_at: now + Duration::seconds(600),
+    };
+
+    let html = device_verification_page_html("ABCD-1234", Some("csrf<&token"), Some(&payload));
+
+    assert!(html.contains(r#"name="csrf_token" value="csrf&lt;&amp;token""#));
+    assert!(html.contains(r#"name="user_code" value="ABCD-1234""#));
+    assert!(html.contains("Device &lt;Client&gt;"));
+    assert!(html.contains("device-client"));
+    assert!(html.contains("openid profile"));
+    assert!(html.contains("https://api.example.com"));
+    assert!(html.contains(&payload.expires_at.to_rfc3339()));
+    assert!(html.contains(r#"name="decision" value="approve""#));
+    assert!(html.contains(r#"name="decision" value="deny""#));
+}
+
 #[actix_web::test]
 async fn device_authorization_endpoint_disabled_fails_before_client_lookup() {
     let state = Data::new(disabled_state());

@@ -12,15 +12,16 @@ in the repository.
 - Certification baseline: [2026-06-09 OIDF full matrix](2026-06-09-oidf-full-matrix.md)
 - Matrix scope: [OIDF full matrix](oidf-full-matrix.md)
 - Latest private full-matrix regression: [2026-07-01 TP/PS OIDF full matrix](2026-07-01-tp-ps-full-matrix.md)
-- Latest official full matrix: [2026-06-27 PR 15 official OIDF full matrix](2026-06-27-pr15-official-oidf-full-matrix.md)
+- Latest official full matrix: [2026-07-02 NI-004 official OIDF full matrix](2026-07-02-ni-004-official-oidf-full-matrix.md)
 - Latest RFC coverage check: [2026-07-01 NI-002 RFC 8628 OIDF coverage](2026-07-01-ni-002-oidf-coverage.md)
 
-The latest recorded official full-matrix suite run is the 2026-06-27 PR 15
-run against `https://auth.nazo.run`. The deployed runtime implementation was
-`be7ef9f6a9197520235a59d42866a0918a293014`, and the current PR head at
-verification time was `bac10af902e574d4bd98741eaa2ce0121278608c`. It exported
-all 16 plan archives from `https://www.certification.openid.net/`; the final
-runner output reported `0 failures` and `0 warnings`.
+The latest recorded official full-matrix suite run is the 2026-07-02 NI-004
+run against `https://auth.nazo.run`, started at `2026-07-02 01:32:57 +08:00`.
+It ran from workflow head SHA `0b00ea7d50443cb54fc17631a9238126fa837e42`,
+completed the 17-plan matrix with `0 failures` and `0 warnings`, and reported
+two expected `SKIPPED` module instances in the dynamic-registration OIDC Basic
+plan. The runtime implementation commit was not independently recorded in the
+workflow log. It is not zero-SKIPPED evidence.
 
 The latest private full-matrix regression record is the 2026-07-01 TP/PS run
 against `https://auth.nazo.run` at runtime commit `31e8f9f`. It used the
@@ -52,6 +53,7 @@ security-boundary tests remain mandatory either way.
 - exported artifact name, digest, expiry, and zip filenames when applicable
 - plan IDs and plan detail URLs
 - pass/failure/warning counts
+- skipped-module counts and whether a zero-SKIPPED acceptance gate was met
 - any allowed review states
 - notes about the public issuer, UI boundary, and test environment
 
@@ -70,3 +72,9 @@ not a high-security profile feature.
 Unsigned Request Objects remain disallowed for FAPI2 profiles, clients that
 require PAR request objects, and holder-bound clients. Those paths require
 signed Request Objects or reject the request object fail closed.
+
+OIDC dynamic-registration compatibility currently has two expected official
+suite skips: unsigned ID Tokens are not supported or advertised, and the
+`request_uri` parameter is not enabled (`request_uri_parameter_supported=false`).
+These skips are documented as reasonable for the current security posture, but
+they must not be treated as zero-SKIPPED evidence.

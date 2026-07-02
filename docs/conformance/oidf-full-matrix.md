@@ -36,3 +36,16 @@ The matrix covers the current TP/PS work through these paths:
 - `private_key_jwt / DPoP / OpenID Connect / authorization code` is the closest single-plan regression for TP/PS change sets; full evidence comes from the 17-plan matrix.
 
 Targeted plan-sets are useful for development triage. Durable regression evidence should cite the full 17-plan matrix.
+
+## Expected Skip Policy
+
+The current official workflow allows two expected skips in the OIDC Basic OP
+dynamic-registration plan:
+
+- `oidcc-idtoken-unsigned`
+- `oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported`
+
+The skips reflect intentionally unsupported optional compatibility features:
+unsigned ID Tokens are not advertised, and the OIDC `request_uri` parameter is
+not enabled. A workflow run with those expected skips can be evidence for `0
+failures` and `0 warnings`, but it is not zero-SKIPPED evidence.

@@ -36,3 +36,15 @@
 - `private_key_jwt / DPoP / OpenID Connect / authorization code` 是 TP/PS 改动面的主要单 plan；完整回归以 17-plan 矩阵为准。
 
 因此，临时 targeted plan-set 只适合开发期间快速定位问题；正式回归和证据记录应引用 17-plan 完整矩阵。
+
+## Expected Skip 策略
+
+当前官方 workflow 在 OIDC Basic OP dynamic-registration plan 中允许 2 个
+expected skips：
+
+- `oidcc-idtoken-unsigned`
+- `oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported`
+
+这些跳过项对应当前有意不支持的可选兼容能力：服务不声明 unsigned ID Token，
+也未启用 OIDC `request_uri` 参数。包含这些 expected skips 的 workflow run
+可以作为 `0 failures`、`0 warnings` 的证据，但不能作为 zero-SKIPPED 证据。

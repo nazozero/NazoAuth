@@ -163,6 +163,17 @@ impl Settings {
                 "DEVICE_AUTHORIZATION_POLL_INTERVAL_SECONDS must be less than DEVICE_AUTHORIZATION_TTL_SECONDS"
             );
         }
+        let enable_dynamic_client_registration =
+            config.bool("ENABLE_DYNAMIC_CLIENT_REGISTRATION", false)?;
+        let dynamic_client_registration_initial_access_token =
+            config.optional_string("DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN");
+        if enable_dynamic_client_registration
+            && dynamic_client_registration_initial_access_token.is_none()
+        {
+            bail!(
+                "DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN is required when ENABLE_DYNAMIC_CLIENT_REGISTRATION=true"
+            );
+        }
         let passkey = PasskeySettings::from_config(config, &issuer)?;
         let federation = FederationSettings::from_config(config)?;
         let signing_key_rotation_interval_seconds =
@@ -241,10 +252,8 @@ impl Settings {
             enable_legacy_audience_param: config.bool("ENABLE_LEGACY_AUDIENCE_PARAM", false)?,
             enable_device_authorization_grant: config
                 .bool("ENABLE_DEVICE_AUTHORIZATION_GRANT", false)?,
-            enable_dynamic_client_registration: config
-                .bool("ENABLE_DYNAMIC_CLIENT_REGISTRATION", false)?,
-            dynamic_client_registration_initial_access_token: config
-                .optional_string("DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN"),
+            enable_dynamic_client_registration,
+            dynamic_client_registration_initial_access_token,
             device_authorization_ttl_seconds,
             device_authorization_poll_interval_seconds,
         })

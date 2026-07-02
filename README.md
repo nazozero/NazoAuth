@@ -46,7 +46,7 @@ composite score:
 | Static security analysis | CodeQL Rust analysis with `security-extended` and `security-and-quality` queries. |
 | Dependency policy | GitHub dependency review, `cargo audit`, and `cargo deny` over advisories, bans, licenses, and sources. |
 | Runtime security behavior | Real HTTP E2E, load/race gate, and Valkey outage injection in `conformance-security`. |
-| Protocol conformance | OIDF/FAPI conformance workflows and archived official 16-plan matrix evidence. |
+| Protocol conformance | OIDF/FAPI conformance workflows and archived official 17-plan matrix evidence. |
 | Coverage trend | Codecov LCOV upload from the dedicated coverage workflow. |
 | Release provenance | CycloneDX SBOM, Trivy image scan, Sigstore signing, and GitHub artifact attestations. |
 
@@ -120,13 +120,15 @@ OpenID Foundation Conformance Suite result URLs:
 | --- | --- |
 | OIDC Basic OP | <https://www.certification.openid.net/plan-detail.html?plan=Srk6iaVDVcqO5> |
 | OIDC Config OP | <https://www.certification.openid.net/plan-detail.html?plan=fGiz8QZYR1LVy> |
-| Full 16-plan official matrix | [docs/conformance/2026-06-27-pr15-official-oidf-full-matrix.md](docs/conformance/2026-06-27-pr15-official-oidf-full-matrix.md#official-plan-detail-urls) |
+| Latest 17-plan official matrix | [docs/conformance/2026-07-02-ni-004-official-oidf-full-matrix.md](docs/conformance/2026-07-02-ni-004-official-oidf-full-matrix.md#plan-results) |
 | OIDF matrix scope | [docs/conformance/oidf-full-matrix.md](docs/conformance/oidf-full-matrix.md) |
 | Latest private full-matrix regression | [docs/conformance/2026-07-01-tp-ps-full-matrix.md](docs/conformance/2026-07-01-tp-ps-full-matrix.md) |
 
-The latest official full matrix tested `https://auth.nazo.run` at runtime
-commit `be7ef9f6a9197520235a59d42866a0918a293014`, exported all 16 plan
-archives, and reported `0 failures` and `0 warnings`.
+The latest official full matrix tested `https://auth.nazo.run` from workflow
+head SHA `0b00ea7d50443cb54fc17631a9238126fa837e42`, ran all 17 plans and 617
+modules, and reported `0 failures` and `0 warnings`. It contains 2 expected
+`SKIPPED` modules in the dynamic-registration OIDC plan, so it is not
+zero-SKIPPED evidence.
 
 The latest private full-matrix regression tested runtime commit `31e8f9f`, ran
 all 16 plans and 578 modules, and reported `0 failures` and `0 warnings`.
