@@ -87,6 +87,8 @@ fn settings(profile: AuthorizationServerProfile, trusted_proxy_cidrs: Vec<IpCidr
         enable_authorization_details: false,
         enable_legacy_audience_param: false,
         enable_device_authorization_grant: false,
+        enable_dynamic_client_registration: false,
+        dynamic_client_registration_initial_access_token: None,
         device_authorization_ttl_seconds: 600,
         device_authorization_poll_interval_seconds: 5,
     }
@@ -359,7 +361,6 @@ fn discovery_does_not_advertise_unimplemented_protocol_extensions() {
 
     for field in [
         "device_authorization_endpoint",
-        "registration_endpoint",
         "introspection_signing_alg_values_supported",
         "introspection_encryption_alg_values_supported",
         "introspection_encryption_enc_values_supported",
@@ -395,6 +396,27 @@ fn discovery_does_not_advertise_unimplemented_protocol_extensions() {
     assert!(
         grant_types.contains(&"urn:ietf:params:oauth:grant-type:token-exchange"),
         "Token Exchange grant is implemented and must be advertised"
+    );
+}
+
+#[test]
+fn discovery_advertises_dynamic_registration_only_when_enabled() {
+    let keyset = keyset(jsonwebtoken::Algorithm::RS256);
+    let disabled = authorization_server_metadata(
+        &settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new()),
+        &keyset,
+    );
+    assert!(disabled.get("registration_endpoint").is_none());
+
+    let mut enabled = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
+    enabled.enable_dynamic_client_registration = true;
+    let metadata = authorization_server_metadata(&enabled, &keyset);
+
+    assert_eq!(
+        metadata
+            .get("registration_endpoint")
+            .and_then(Value::as_str),
+        Some("https://issuer.example/register")
     );
 }
 

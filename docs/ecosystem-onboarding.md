@@ -11,29 +11,37 @@ policy explicitly enable them.
 
 ### Boundary
 
-RFC 7591 Dynamic Client Registration is outside the default scope.
+RFC 7591 Dynamic Client Registration is implemented as a default-closed
+protocol surface.
 
 - DCR changes client creation from an administrator-controlled action into a protocol surface exposed to external callers.
-- Redirect URI validation, JWKS URI fetching, software statements, initial access tokens, and client metadata updates all become security-critical input paths.
-- The admin client API supports explicit client onboarding without advertising DCR metadata.
+- Redirect URI validation, inline JWKS, software statements, initial access tokens, and client metadata updates all become security-critical input paths.
+- The admin client API remains the default explicit onboarding path.
+- `/register` is mounted and `registration_endpoint` is advertised only when
+  `ENABLE_DYNAMIC_CLIENT_REGISTRATION=true`.
+- Public deployments should set
+  `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN`; otherwise registration is
+  intentionally open for controlled test deployments only.
+- `software_statement`, remote `jwks_uri` fetching, and RFC 7592 management
+  semantics are not supported by the baseline RFC 7591 endpoint.
 
 ### Activation Criteria
 
-- Initial access token issuance, scope, expiry, replay prevention, and revocation.
+- Initial access token issuance, scope, expiry, replay prevention, and revocation for public ecosystem onboarding.
 - Redirect URI validation, including loopback/native exceptions and exact-match web redirects.
 - Client metadata overclaiming, including grant types, response types, token endpoint auth methods, JAR/JARM policy, PAR policy, and logout URLs.
-- `jwks_uri` fetching, cache lifetime, stale-key behavior, SSRF prevention, host allowlists, size limits, MIME validation, timeout policy, and key rotation.
+- Optional `jwks_uri` fetching, cache lifetime, stale-key behavior, SSRF prevention, host allowlists, size limits, MIME validation, timeout policy, and key rotation.
 - Inline `jwks` validation, including rejection of private key material and unsupported `use`, `kty`, `alg`, or duplicate `kid` values.
 - Software statement trust anchors, issuer/audience validation, expiry windows, replay prevention, metadata merge rules, and audit evidence.
-- Registration access token storage, rotation, update/delete authorization, disabled-client behavior, and audit events.
+- RFC 7592 registration access token storage, rotation, update/delete authorization, disabled-client behavior, and audit events.
 - Metadata truth tests proving discovery only advertises DCR when the registration endpoint is enabled and protected.
 
 ### Required Tests
 
-- DCR is absent from discovery by default.
+- DCR is absent from discovery by default and `/register` is not routed when disabled.
 - Invalid redirect URIs are rejected.
 - Weak or unsupported client authentication metadata is rejected.
-- `jwks_uri` cannot fetch loopback, link-local, private, metadata-service, or non-HTTPS URLs unless an explicit deployment allowlist permits them.
+- `jwks_uri` is rejected until remote fetch policy exists; if adopted later, it cannot fetch loopback, link-local, private, metadata-service, or non-HTTPS URLs unless an explicit deployment allowlist permits them.
 - Duplicate `kid`, private JWK material, and stale JWKS cache behavior are covered.
 - Initial access token replay and expired-token paths fail closed.
 - Registered clients cannot escalate from public to confidential or from baseline to FAPI profile capabilities without policy approval.

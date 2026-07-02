@@ -97,7 +97,8 @@ The project separates three surfaces:
 The following capabilities are not part of the default authorization-server
 core and are not advertised in discovery metadata:
 
-- Dynamic Client Registration / RFC 7591.
+- Dynamic Client Registration / RFC 7591 unless `ENABLE_DYNAMIC_CLIENT_REGISTRATION=true`
+  and the registration endpoint is protected by an initial access token.
 - Client Configuration Management / RFC 7592.
 - Device Authorization Grant.
 - External-token, refresh-token, or ID-token Token Exchange profiles.

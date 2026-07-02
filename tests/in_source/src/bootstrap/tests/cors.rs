@@ -105,6 +105,26 @@ async fn authorization_endpoint_is_not_cors_enabled() {
 }
 
 #[actix_web::test]
+async fn dynamic_client_registration_route_is_absent_when_disabled() {
+    let settings = test_settings(vec!["https://app.example".to_owned()]);
+    let app =
+        test::init_service(App::new().configure(|cfg| routes::configure(cfg, &settings))).await;
+
+    let request = test::TestRequest::post()
+        .uri("/register")
+        .insert_header((header::CONTENT_TYPE, "text/plain"))
+        .set_payload("not json")
+        .to_request();
+    let response = test::call_service(&app, request).await;
+
+    assert_eq!(
+        response.status(),
+        StatusCode::NOT_FOUND,
+        "disabled dynamic registration must not expose a JSON parsing route"
+    );
+}
+
+#[actix_web::test]
 async fn cors_actual_response_exposes_oauth_challenge_nonce_and_retry_headers() {
     let settings = test_settings(vec!["https://app.example".to_owned()]);
     let app = test::init_service(App::new().wrap(cors_browser_oauth(&settings)).route(
@@ -268,6 +288,8 @@ fn test_settings(cors_allowed_origins: Vec<String>) -> Settings {
         enable_authorization_details: false,
         enable_legacy_audience_param: false,
         enable_device_authorization_grant: false,
+        enable_dynamic_client_registration: false,
+        dynamic_client_registration_initial_access_token: None,
         device_authorization_ttl_seconds: 600,
         device_authorization_poll_interval_seconds: 5,
     }

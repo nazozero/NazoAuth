@@ -867,6 +867,72 @@ async fn encrypted_introspection_response_is_nested_jwt_for_configured_resource_
 }
 
 #[test]
+fn introspection_encryption_key_rejects_incomplete_metadata_and_unusable_keys() {
+    let (_, encryption_jwk) = rsa_jwe_keypair("introspection-enc-key");
+
+    let signed_only = introspection_response_client("signed-only", None, None, None);
+    assert!(matches!(
+        introspection_encryption_key(&signed_only),
+        Ok(None)
+    ));
+
+    let missing_alg = introspection_response_client(
+        "missing-alg",
+        Some(json!({ "keys": [encryption_jwk.clone()] })),
+        None,
+        Some("A256GCM"),
+    );
+    assert!(introspection_encryption_key(&missing_alg).is_err());
+
+    let missing_enc = introspection_response_client(
+        "missing-enc",
+        Some(json!({ "keys": [encryption_jwk.clone()] })),
+        Some("RSA-OAEP-256"),
+        None,
+    );
+    assert!(introspection_encryption_key(&missing_enc).is_err());
+
+    let mut signing_use_key = encryption_jwk.clone();
+    signing_use_key
+        .as_object_mut()
+        .expect("test jwk should be an object")
+        .insert("use".to_owned(), json!("sig"));
+    let wrong_use = introspection_response_client(
+        "wrong-use",
+        Some(json!({ "keys": [signing_use_key] })),
+        Some("RSA-OAEP-256"),
+        Some("A256GCM"),
+    );
+    assert!(introspection_encryption_key(&wrong_use).is_err());
+
+    let mut wrong_alg_key = encryption_jwk.clone();
+    wrong_alg_key
+        .as_object_mut()
+        .expect("test jwk should be an object")
+        .insert("alg".to_owned(), json!("RSA-OAEP"));
+    let wrong_alg = introspection_response_client(
+        "wrong-alg",
+        Some(json!({ "keys": [wrong_alg_key] })),
+        Some("RSA-OAEP-256"),
+        Some("A256GCM"),
+    );
+    assert!(introspection_encryption_key(&wrong_alg).is_err());
+
+    let mut missing_kid_key = encryption_jwk;
+    missing_kid_key
+        .as_object_mut()
+        .expect("test jwk should be an object")
+        .remove("kid");
+    let missing_kid = introspection_response_client(
+        "missing-kid",
+        Some(json!({ "keys": [missing_kid_key] })),
+        Some("RSA-OAEP-256"),
+        Some("A256GCM"),
+    );
+    assert!(introspection_encryption_key(&missing_kid).is_err());
+}
+
+#[test]
 fn token_management_server_errors_are_oauth_json_without_auth_challenge() {
     let response = token_management_oauth_error(
         StatusCode::SERVICE_UNAVAILABLE,

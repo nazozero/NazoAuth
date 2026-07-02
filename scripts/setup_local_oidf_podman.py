@@ -25,6 +25,10 @@ BASIC_ALIAS = os.environ.get("OIDF_LOCAL_BASIC_ALIAS", "local-nazo-oauth-oidf")
 USER_EMAIL = os.environ.get("OIDF_LOCAL_USER_EMAIL", "oidf-local@example.test")
 USER_PASSWORD = os.environ.get("OIDF_LOCAL_USER_PASSWORD", "oidf-local-password")
 CLIENT_SECRET = os.environ.get("OIDF_LOCAL_CLIENT_SECRET", "oidf-local-client-secret")
+DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN = os.environ.get(
+    "OIDF_LOCAL_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN",
+    "oidf-local-dynamic-registration-token",
+)
 FAPI_CLIENT_PREFIX = os.environ.get("OIDF_LOCAL_FAPI_CLIENT_PREFIX", "local-oidf-fapi")
 TRUSTED_PROXY_CIDRS = os.environ.get("OIDF_LOCAL_TRUSTED_PROXY_CIDRS", "10.89.0.0/16")
 WRITE_ENV_YAML = os.environ.get("OIDF_LOCAL_WRITE_ENV_YAML", "1") != "0"
@@ -47,6 +51,7 @@ FAPI_SECURITY_ID2_USER_REJECTS_AUTHENTICATION = (
 )
 PLAN_CONFIG_FILES = (
     "oidf-oidcc-basic-plan-config.json",
+    "oidf-oidcc-dynamic-plan-config.json",
     "oidf-oidcc-config-plan-config.json",
     "oidf-fapi-security-final-plan-config.json",
     "oidf-fapi-message-final-plan-config.json",
@@ -112,7 +117,90 @@ def write_text(path: Path, body: str, mode: int | None = None) -> None:
         path.chmod(mode)
 
 
-def ensure_server_ps256_keyset() -> None:
+def server_rsa_private_key_is_usable(path: Path) -> bool:
+    return (
+        subprocess.run(
+            ["openssl", "rsa", "-in", str(path), "-check", "-noout"],
+            cwd=ROOT,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        ).returncode
+        == 0
+    )
+
+
+def live_server_key(
+    keys: list[object],
+    key_dir: Path,
+    alg: str,
+    now: str,
+) -> dict[str, object] | None:
+    live_key = None
+    for key in keys:
+        if not (
+            isinstance(key, dict)
+            and key.get("alg") == alg
+            and isinstance(key.get("kid"), str)
+            and isinstance(key.get("file"), str)
+            and key_dir.joinpath(str(key["file"])).is_file()
+            and key.get("retire_at") is None
+        ):
+            continue
+        if server_rsa_private_key_is_usable(key_dir / str(key["file"])):
+            live_key = key
+            break
+        key["retire_at"] = now
+    return live_key
+
+
+def create_server_key(
+    keys: list[object],
+    key_dir: Path,
+    alg: str,
+    kid_prefix: str,
+    now: str,
+) -> dict[str, object]:
+    kid = kid_prefix
+    file_name = f"{kid}.pem"
+    existing_kids = {
+        key.get("kid")
+        for key in keys
+        if isinstance(key, dict) and isinstance(key.get("kid"), str)
+    }
+    suffix = 2
+    while kid in existing_kids:
+        kid = f"{kid_prefix}-{suffix}"
+        file_name = f"{kid}.pem"
+        suffix += 1
+    pem = key_dir / file_name
+    subprocess.run(
+        [
+            "openssl",
+            "genrsa",
+            "-traditional",
+            "-out",
+            str(pem),
+            "2048",
+        ],
+        check=True,
+        cwd=ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    pem.chmod(0o600)
+    key = {
+        "kid": kid,
+        "alg": alg,
+        "file": file_name,
+        "created_at": now,
+        "retire_at": None,
+    }
+    keys.append(key)
+    return key
+
+
+def ensure_server_oidf_keyset() -> None:
     key_dir = RUNTIME / "keys"
     key_dir.mkdir(parents=True, exist_ok=True)
     keyset_path = key_dir / "keyset.json"
@@ -127,58 +215,20 @@ def ensure_server_ps256_keyset() -> None:
     if not isinstance(keys, list):
         raise RuntimeError(f"server keyset keys must be an array: {keyset_path}")
 
-    live_ps256 = next(
-        (
-            key
-            for key in keys
-            if isinstance(key, dict)
-            and key.get("alg") == "PS256"
-            and isinstance(key.get("kid"), str)
-            and isinstance(key.get("file"), str)
-            and key_dir.joinpath(str(key["file"])).is_file()
-            and key.get("retire_at") is None
-        ),
-        None,
-    )
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    live_ps256 = live_server_key(keys, key_dir, "PS256", now)
     if live_ps256 is None:
-        kid = "ps256-local-oidf-server"
-        file_name = f"{kid}.pem"
-        existing_kids = {
-            key.get("kid")
-            for key in keys
-            if isinstance(key, dict) and isinstance(key.get("kid"), str)
-        }
-        suffix = 2
-        while kid in existing_kids:
-            kid = f"ps256-local-oidf-server-{suffix}"
-            file_name = f"{kid}.pem"
-            suffix += 1
-        pem = key_dir / file_name
-        subprocess.run(
-            [
-                "openssl",
-                "genrsa",
-                "-traditional",
-                "-out",
-                str(pem),
-                "2048",
-            ],
-            check=True,
-            cwd=ROOT,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+        live_ps256 = create_server_key(
+            keys, key_dir, "PS256", "ps256-local-oidf-server", now
         )
-        pem.chmod(0o600)
-        live_ps256 = {
-            "kid": kid,
-            "alg": "PS256",
-            "file": file_name,
-            "created_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-            "retire_at": None,
-        }
-        keys.append(live_ps256)
+    live_rs256 = live_server_key(keys, key_dir, "RS256", now)
+    if live_rs256 is None:
+        live_rs256 = create_server_key(
+            keys, key_dir, "RS256", "rs256-local-oidf-server", now
+        )
 
     normalize_server_rsa_private_key(key_dir / str(live_ps256["file"]))
+    normalize_server_rsa_private_key(key_dir / str(live_rs256["file"]))
     keyset["active_kid"] = live_ps256["kid"]
     write_text(keyset_path, json.dumps(keyset, indent=2) + "\n", 0o600)
 
@@ -353,6 +403,8 @@ VALKEY_URL: "redis://valkey:6379/0"
 ISSUER: "{ISSUER}"
 ENABLE_REQUEST_OBJECT: true
 ENABLE_PAR_REQUEST_OBJECT: true
+ENABLE_DYNAMIC_CLIENT_REGISTRATION: true
+DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN: "{DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN}"
 MTLS_ENDPOINT_BASE_URL: "{MTLS_ISSUER}"
 FRONTEND_BASE_URL: "{ISSUER}/ui"
 CORS_ALLOWED_ORIGINS:
@@ -822,6 +874,40 @@ def write_basic_plan_config() -> dict[str, object]:
     return config
 
 
+def write_dynamic_plan_config() -> dict[str, object]:
+    browser = browser_automation()
+    config = {
+        "alias": f"{BASIC_ALIAS}-dynamic",
+        "description": "OIDC Basic OP: RFC 7591 dynamic client registration.",
+        "server": {"discoveryUrl": f"{ISSUER}/.well-known/openid-configuration"},
+        "client": {
+            "initial_access_token": DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN,
+            "scope": "openid profile email address phone offline_access",
+        },
+        "client2": {
+            "initial_access_token": DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN,
+            "scope": "openid profile email address phone offline_access",
+        },
+        "client_secret_post": {
+            "initial_access_token": DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN,
+            "scope": "openid profile email address phone offline_access",
+        },
+        "nazo": nazo_login_metadata(),
+        "browser": browser,
+        "override": {
+            module_name: {
+                "browser": copy.deepcopy(browser_automation_with_second_login_placeholder(browser))
+            }
+            for module_name in OIDCC_SECOND_LOGIN_SCREENSHOT_MODULES
+        },
+    }
+    config["override"][OIDCC_REGISTERED_REDIRECT_URI_MODULE] = {
+        "browser": redirect_error_browser_automation()
+    }
+    write_plan_config("oidf-oidcc-dynamic-plan-config.json", config)
+    return config
+
+
 def fapi_client_config(client_id: str, private_jwks: dict[str, object], scope: str) -> dict[str, object]:
     return {
         "client_id": client_id,
@@ -1117,6 +1203,7 @@ def write_fapi_matrix_plan_configs() -> dict[str, dict[str, object]]:
 def write_all_plan_configs() -> None:
     configs: dict[str, dict[str, object]] = {
         "oidf-oidcc-basic-plan-config.json": write_basic_plan_config(),
+        "oidf-oidcc-dynamic-plan-config.json": write_dynamic_plan_config(),
         "oidf-oidcc-config-plan-config.json": write_oidcc_config_plan_config(),
     }
     configs.update(write_fapi_plan_configs())
@@ -1145,12 +1232,35 @@ def write_all_plan_configs() -> None:
     }
     write_text(RUNTIME / "callbacks.json", json.dumps(callbacks, indent=2) + "\n", 0o600)
     write_text(RUNTIME / "callback.txt", callback_for(BASIC_ALIAS) + "\n")
+    write_expected_skips()
+
+
+def write_expected_skips() -> None:
+    expected_skips = [
+        {
+            "test-name": "oidcc-idtoken-unsigned",
+            "variant": "*",
+            "configuration-filename": "oidf-oidcc-dynamic-plan-config.json",
+        },
+        {
+            "test-name": "oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported",
+            "variant": "*",
+            "configuration-filename": "oidf-oidcc-dynamic-plan-config.json",
+        },
+    ]
+    write_text(
+        RUNTIME / "oidf-expected-skips.json",
+        json.dumps(expected_skips, indent=2) + "\n",
+        0o600,
+    )
 
 
 def plan_expressions_for_configs(configs: dict[str, dict[str, object]]) -> list[str]:
     expressions = [
         "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] "
         "oidf-oidcc-basic-plan-config.json",
+        "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=dynamic_client] "
+        "oidf-oidcc-dynamic-plan-config.json",
         "oidcc-config-certification-test-plan oidf-oidcc-config-plan-config.json",
     ]
     for name, config in sorted(configs.items()):
@@ -1178,6 +1288,7 @@ def plan_manifest_for_expressions(
     plans: list[dict[str, object]] = []
     oidc_titles = {
         "oidf-oidcc-basic-plan-config.json": "OIDC Basic OP",
+        "oidf-oidcc-dynamic-plan-config.json": "OIDC Basic OP Dynamic Registration",
         "oidf-oidcc-config-plan-config.json": "OIDC Config OP",
     }
     oidc_focus = {
@@ -1185,6 +1296,12 @@ def plan_manifest_for_expressions(
             "discovery metadata",
             "authorization code flow",
             "static client registration",
+            "userinfo and ID token interoperability",
+        ],
+        "oidf-oidcc-dynamic-plan-config.json": [
+            "RFC 7591 dynamic client registration",
+            "registration endpoint metadata",
+            "authorization code flow",
             "userinfo and ID token interoperability",
         ],
         "oidf-oidcc-config-plan-config.json": [
@@ -1217,7 +1334,7 @@ def plan_manifest_for_expressions(
     return {
         "name": "NazoAuth OIDF full conformance matrix",
         "description": (
-            "Sixteen-plan OpenID Foundation regression matrix for the public issuer. "
+            "Seventeen-plan OpenID Foundation regression matrix for the public issuer. "
             "Targeted TP/PS checks are mapped onto these plans instead of being run as a separate matrix."
         ),
         "plans": plans,
@@ -1227,7 +1344,7 @@ def plan_manifest_for_expressions(
 def main() -> int:
     ensure_cert()
     ensure_mtls_certs()
-    ensure_server_ps256_keyset()
+    ensure_server_oidf_keyset()
     if WRITE_ENV_YAML:
         write_env_yaml()
     write_nginx()

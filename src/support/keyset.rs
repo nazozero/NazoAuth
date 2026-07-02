@@ -669,7 +669,7 @@ impl Keyset {
     }
 }
 
-fn sign_local_jwt_input(
+pub(crate) fn sign_local_jwt_input(
     alg: jsonwebtoken::Algorithm,
     private_pkcs8_der: &[u8],
     signing_input: &[u8],

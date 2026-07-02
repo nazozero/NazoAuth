@@ -97,6 +97,7 @@ fn create_client_request() -> CreateClientRequest {
         jwks: None,
         introspection_encrypted_response_alg: None,
         introspection_encrypted_response_enc: None,
+        allow_jwks_without_kid: false,
         subject_type: None,
         sector_identifier_uri: None,
     }

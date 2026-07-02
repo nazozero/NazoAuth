@@ -52,16 +52,6 @@ async fn authorize_request(
             "request 参数未启用.",
         );
     }
-    if !state.settings.enable_request_uri_parameter
-        && q.get("request_uri")
-            .is_some_and(|request_uri| !is_pushed_authorization_request_uri(request_uri))
-    {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "request_uri 参数未启用.",
-        );
-    }
     if !state.settings.enable_authorization_details && q.contains_key("authorization_details") {
         return oauth_error(
             StatusCode::BAD_REQUEST,
@@ -78,59 +68,63 @@ async fn authorize_request(
     let mut used_pushed_authorization_request = false;
     let mut pending_pushed_request_uri = None;
     if let Some(request_uri) = q.get("request_uri").cloned() {
-        let raw = match valkey_get(
-            &state.valkey,
-            pushed_authorization_request_key(&request_uri),
-        )
-        .await
-        {
-            Ok(Some(raw)) => raw,
-            Ok(None) => {
-                consumed_request_uri_error = Some("invalid_request_uri");
-                String::new()
-            }
-            Err(error) => {
-                tracing::warn!(%error, "failed to read PAR request_uri");
-                return oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "request_uri 读取失败.",
-                );
-            }
-        };
-        if consumed_request_uri_error.is_none() {
-            let pushed = match serde_json::from_str::<PushedAuthorizationRequest>(&raw) {
-                Ok(pushed) => pushed,
+        if !is_pushed_authorization_request_uri(&request_uri) {
+            consumed_request_uri_error = Some("request_uri_not_supported");
+        } else {
+            let raw = match valkey_get(
+                &state.valkey,
+                pushed_authorization_request_key(&request_uri),
+            )
+            .await
+            {
+                Ok(Some(raw)) => raw,
+                Ok(None) => {
+                    consumed_request_uri_error = Some("invalid_request_uri");
+                    String::new()
+                }
                 Err(error) => {
-                    tracing::warn!(%error, "PAR payload is malformed");
+                    tracing::warn!(%error, "failed to read PAR request_uri");
                     return oauth_error(
                         StatusCode::SERVICE_UNAVAILABLE,
                         "server_error",
-                        "request_uri 状态无效.",
+                        "request_uri 读取失败.",
                     );
                 }
             };
-            if q.get("client_id")
-                .is_some_and(|client_id| client_id != &pushed.client_id)
-            {
-                consumed_request_uri_error = Some("invalid_request_uri");
-            } else {
-                let outer_parameters_are_fapi_invalid = state
-                    .settings
-                    .authorization_server_profile
-                    .requires_fapi2_security()
-                    && !outer_request_uri_parameters_are_fapi_compliant(q);
-                let outer_parameters_mismatch =
-                    !outer_request_uri_parameters_match_pushed(q, &pushed.params);
-                if outer_parameters_are_fapi_invalid || outer_parameters_mismatch {
-                    consumed_request_uri_error = Some("invalid_request");
-                    *q = pushed.params;
+            if consumed_request_uri_error.is_none() {
+                let pushed = match serde_json::from_str::<PushedAuthorizationRequest>(&raw) {
+                    Ok(pushed) => pushed,
+                    Err(error) => {
+                        tracing::warn!(%error, "PAR payload is malformed");
+                        return oauth_error(
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            "server_error",
+                            "request_uri 状态无效.",
+                        );
+                    }
+                };
+                if q.get("client_id")
+                    .is_some_and(|client_id| client_id != &pushed.client_id)
+                {
+                    consumed_request_uri_error = Some("invalid_request_uri");
                 } else {
-                    pushed_dpop_jkt = pushed.dpop_jkt;
-                    pushed_mtls_x5t_s256 = pushed.mtls_x5t_s256;
-                    used_pushed_authorization_request = true;
-                    pending_pushed_request_uri = Some(request_uri);
-                    *q = pushed.params;
+                    let outer_parameters_are_fapi_invalid = state
+                        .settings
+                        .authorization_server_profile
+                        .requires_fapi2_security()
+                        && !outer_request_uri_parameters_are_fapi_compliant(q);
+                    let outer_parameters_mismatch =
+                        !outer_request_uri_parameters_match_pushed(q, &pushed.params);
+                    if outer_parameters_are_fapi_invalid || outer_parameters_mismatch {
+                        consumed_request_uri_error = Some("invalid_request");
+                        *q = pushed.params;
+                    } else {
+                        pushed_dpop_jkt = pushed.dpop_jkt;
+                        pushed_mtls_x5t_s256 = pushed.mtls_x5t_s256;
+                        used_pushed_authorization_request = true;
+                        pending_pushed_request_uri = Some(request_uri);
+                        *q = pushed.params;
+                    }
                 }
             }
         }

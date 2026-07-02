@@ -580,6 +580,45 @@ async fn authorization_request_allows_par_request_uri_when_request_uri_parameter
 }
 
 #[actix_web::test]
+async fn authorization_request_redirects_non_par_request_uri_as_unsupported() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let client_id = format!("authorize-external-request-uri-{}", Uuid::now_v7());
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            true,
+            true,
+        )
+        .await;
+    let req = actix_web::test::TestRequest::get()
+        .uri(&format!(
+            "/authorize?client_id={}&request_uri=https%3A%2F%2Fclient.example%2Frequest.jwt&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code&scope=openid&state=external-request-uri",
+            urlencoding::encode(&client_id)
+        ))
+        .to_http_request();
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("request_uri", "https://client.example/request.jwt"),
+        ("redirect_uri", "https://client.example/callback"),
+        ("response_type", "code"),
+        ("scope", "openid"),
+        ("state", "external-request-uri"),
+    ]);
+
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+
+    assert_authorization_error_redirect(
+        response,
+        "request_uri_not_supported",
+        Some("external-request-uri"),
+    );
+}
+
+#[actix_web::test]
 async fn authorization_request_rejects_disabled_authorization_details_before_client_lookup() {
     let mut state = endpoint_state(false);
     Arc::get_mut(&mut state.settings)

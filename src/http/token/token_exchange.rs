@@ -144,7 +144,7 @@ fn token_exchange_requested_audiences(
 }
 
 fn token_exchange_client_authorized(client: &ClientRow, subject: &Claims) -> bool {
-    subject.client_id == client.client_id || token_audience_allowed(client, &subject.aud)
+    subject.client_id == client.client_id
 }
 
 fn token_exchange_subject_user_id(subject: &Claims) -> Result<Option<Uuid>, HttpResponse> {

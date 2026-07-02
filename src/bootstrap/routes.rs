@@ -21,12 +21,13 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
         .route("/authorize/decision", web::post().to(authorize_decision))
         // NO CORS: /par
         .route("/par", web::post().to(par))
-        // NO CORS: /device_authorization and /device verification UI
+        // NO CORS: /device_authorization and device verification backchannel
         .route(
             "/device_authorization",
             web::post().to(device_authorization),
         )
         .route("/device", web::get().to(device_verification_page))
+        .route("/device/verification", web::get().to(device_verification))
         .route("/device/decision", web::post().to(device_decision))
         // CORS: cors_browser_oauth — /token
         .service(
@@ -183,4 +184,7 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
                     web::post().to(admin_reject_access_request),
                 ),
         );
+    if settings.enable_dynamic_client_registration {
+        cfg.route("/register", web::post().to(dynamic_client_registration));
+    }
 }

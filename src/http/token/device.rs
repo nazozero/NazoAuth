@@ -33,6 +33,13 @@ pub(crate) struct DeviceDecisionForm {
     csrf_token: Option<String>,
 }
 
+#[derive(Serialize)]
+pub(crate) struct DeviceVerificationView {
+    user_code: String,
+    csrf_token: Option<String>,
+    request: Option<DeviceAuthorizationPayload>,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum DeviceAuthorizationRequestError {
     Disabled,
@@ -258,7 +265,7 @@ pub(crate) async fn device_authorization(
             ),
         ]),
     );
-    let verification_uri = format!("{}/device", state.settings.issuer);
+    let verification_uri = device_verification_uri(&state.settings);
     json_response_no_store(json!({
         "device_code": device_code,
         "user_code": user_code,
@@ -564,12 +571,85 @@ pub(crate) async fn device_verification_page(
         );
     }
     let user_code = query.get("user_code").cloned().unwrap_or_default();
-    let escaped_code = html_escape(&user_code);
-    HttpResponse::Ok()
-        .insert_header((header::CONTENT_TYPE, "text/html; charset=utf-8"))
-        .body(format!(
-            r#"<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>设备授权</title></head><body><main><h1>设备授权</h1><form method="post" action="/device/decision"><label>用户码 <input name="user_code" value="{escaped_code}" autocomplete="one-time-code"></label><input type="hidden" name="decision" value="approve"><button type="submit">继续</button></form></main></body></html>"#
-        ))
+    redirect_to_device_verification_ui(&state.settings, &user_code)
+}
+
+pub(crate) async fn device_verification(
+    state: Data<AppState>,
+    req: HttpRequest,
+    Query(query): Query<HashMap<String, String>>,
+) -> HttpResponse {
+    if !state.settings.enable_device_authorization_grant {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "Device Authorization Grant is not enabled.",
+        );
+    }
+    let user_code = query.get("user_code").cloned().unwrap_or_default();
+    let payload = read_device_authorization_payload_for_user_code(&state, &user_code).await;
+    let csrf_token = cookie_value(&req, &state.settings.csrf_cookie_name);
+    json_response_no_store(DeviceVerificationView {
+        user_code,
+        csrf_token,
+        request: payload,
+    })
+}
+
+fn redirect_to_device_verification_ui(settings: &Settings, user_code: &str) -> HttpResponse {
+    let mut location = device_verification_uri(settings);
+    if !user_code.trim().is_empty() {
+        location.push_str("?user_code=");
+        location.push_str(&urlencoding::encode(user_code));
+    }
+    HttpResponse::Found()
+        .insert_header((header::LOCATION, location))
+        .insert_header((header::CACHE_CONTROL, HeaderValue::from_static("no-store")))
+        .insert_header((header::PRAGMA, HeaderValue::from_static("no-cache")))
+        .finish()
+}
+
+fn device_verification_uri(settings: &Settings) -> String {
+    format!(
+        "{}/device",
+        settings.frontend_base_url.trim_end_matches('/')
+    )
+}
+
+async fn read_device_authorization_payload_for_user_code(
+    state: &AppState,
+    user_code: &str,
+) -> Option<DeviceAuthorizationPayload> {
+    let normalized_user_code = normalize_user_code(user_code);
+    if normalized_user_code.is_empty() {
+        return None;
+    }
+    let user_key = user_code_key(&normalized_user_code);
+    let device_code_hash = read_user_code_mapping(state, &user_key).await?;
+    let device_key = device_code_hash_key(&device_code_hash);
+    let raw = match valkey_get(&state.valkey, &device_key).await {
+        Ok(Some(raw)) => raw,
+        Ok(None) => return None,
+        Err(error) => {
+            tracing::warn!(%error, "failed to read device authorization state for verification page");
+            return None;
+        }
+    };
+    let state_value = match serde_json::from_str::<DeviceAuthorizationState>(&raw) {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(%error, "device authorization state is malformed for verification page");
+            return None;
+        }
+    };
+    let DeviceAuthorizationState::Pending { payload, .. } = state_value else {
+        return None;
+    };
+    if Utc::now() >= payload.expires_at {
+        let _ = valkey_del(&state.valkey, &user_key).await;
+        return None;
+    }
+    Some(payload)
 }
 
 pub(crate) async fn device_decision(
@@ -931,14 +1011,6 @@ fn random_device_user_code() -> String {
         out.push(ALPHABET[(byte as usize) % ALPHABET.len()] as char);
     }
     out
-}
-
-fn html_escape(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
 }
 
 fn accept_device_authorization_parameter_once(

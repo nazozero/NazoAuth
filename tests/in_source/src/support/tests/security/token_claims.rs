@@ -70,6 +70,7 @@ fn id_token_claims_include_independent_sid_and_protect_reserved_claims() {
         acr: Some("urn:acr:1"),
         extra_claims: Some(&extra_claims),
         ttl: 600,
+        signing_alg: None,
     };
 
     let claims = id_token_claims("https://issuer.example", &input, 2_000);
@@ -102,6 +103,7 @@ fn id_token_extra_claims_cannot_override_registered_claims() {
         acr: None,
         extra_claims: Some(&extra_claims),
         ttl: 600,
+        signing_alg: None,
     };
 
     let claims = id_token_claims("https://issuer.example", &input, 2_000);

@@ -205,6 +205,13 @@ where
     no_store(json_response(body))
 }
 
+pub(crate) fn json_response_status_no_store<T>(status: StatusCode, body: T) -> HttpResponse
+where
+    T: Serialize,
+{
+    no_store(json_response_status(status, body))
+}
+
 pub(crate) fn empty_response_no_store(status: StatusCode) -> HttpResponse {
     no_store(empty_response(status))
 }

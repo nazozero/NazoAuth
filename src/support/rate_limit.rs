@@ -2,7 +2,21 @@
 //! 限流主体默认取连接来源地址，不信任可伪造的转发头。
 
 use super::prelude::*;
-use super::{authorization_error_response, blake3_hex, client_ip, oauth_error, valkey_set_ex_nx};
+use super::{authorization_error_response, blake3_hex, client_ip, oauth_error, valkey_eval_string};
+
+const INCREMENT_RATE_LIMIT_SCRIPT: &str = r#"
+local current = redis.call('GET', KEYS[1])
+if not current then
+  redis.call('SET', KEYS[1], '1', 'EX', ARGV[1])
+  return '1'
+end
+
+local count = redis.call('INCR', KEYS[1])
+if redis.call('TTL', KEYS[1]) == -1 then
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return tostring(count)
+"#;
 
 #[derive(Clone, Copy)]
 pub(crate) enum RateLimitPolicy {
@@ -39,29 +53,38 @@ pub(crate) async fn enforce_rate_limit(
     let max_requests = policy.max_requests(&state.settings);
     let key = rate_limit_key(policy, &rate_limit_subject(req, &state.settings));
 
-    valkey_set_ex_nx(&state.valkey, key.clone(), "0", window_seconds)
+    let count = increment_rate_limit_counter(state, key, window_seconds)
         .await
         .map_err(|error| {
-            tracing::warn!(%error, "rate limit window creation failed");
+            tracing::warn!(%error, "rate limit increment failed");
             oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
                 "请求频率校验失败.",
             )
         })?;
-    let count = state.valkey.incr::<i64, _>(key).await.map_err(|error| {
-        tracing::warn!(%error, "rate limit increment failed");
-        oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "请求频率校验失败.",
-        )
-    })?;
 
-    if count as u64 > max_requests {
+    if count > max_requests {
         return Err(rate_limited_response(window_seconds));
     }
     Ok(())
+}
+
+async fn increment_rate_limit_counter(
+    state: &AppState,
+    key: String,
+    window_seconds: u64,
+) -> anyhow::Result<u64> {
+    let count = valkey_eval_string(
+        &state.valkey,
+        INCREMENT_RATE_LIMIT_SCRIPT,
+        vec![key],
+        vec![window_seconds.to_string()],
+    )
+    .await?;
+    count
+        .parse::<u64>()
+        .map_err(|error| anyhow::anyhow!("invalid rate limit counter: {error}"))
 }
 
 fn rate_limit_subject(req: &HttpRequest, settings: &Settings) -> String {

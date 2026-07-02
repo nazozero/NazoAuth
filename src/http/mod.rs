@@ -1,6 +1,7 @@
 mod admin;
 mod auth;
 mod authorization;
+mod dynamic_client_registration;
 mod fapi_resource;
 mod profile;
 mod scim;
@@ -10,6 +11,7 @@ mod well_known;
 pub(crate) use admin::*;
 pub(crate) use auth::*;
 pub(crate) use authorization::*;
+pub(crate) use dynamic_client_registration::*;
 pub(crate) use fapi_resource::*;
 pub(crate) use profile::*;
 pub(crate) use scim::*;

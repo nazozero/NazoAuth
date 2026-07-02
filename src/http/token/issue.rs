@@ -23,6 +23,21 @@ fn id_token_session_sid(issue: &TokenIssue) -> Option<&str> {
     requested.then_some(issue.oidc_sid.as_deref()).flatten()
 }
 
+fn id_token_signing_alg_for_client(client: &ClientRow) -> jsonwebtoken::Algorithm {
+    if client.require_dpop_bound_tokens
+        || client.require_mtls_bound_tokens
+        || client.require_par_request_object
+        || matches!(
+            client.token_endpoint_auth_method.as_str(),
+            "private_key_jwt" | "tls_client_auth" | "self_signed_tls_client_auth"
+        )
+    {
+        jsonwebtoken::Algorithm::PS256
+    } else {
+        jsonwebtoken::Algorithm::RS256
+    }
+}
+
 async fn persist_access_token_subject_mapping(
     state: &AppState,
     jti: &str,
@@ -244,6 +259,7 @@ pub(crate) async fn issue_token_response(
                 acr: issue.acr.as_deref(),
                 extra_claims: user_claims.as_ref(),
                 ttl: state.settings.id_token_ttl_seconds,
+                signing_alg: Some(id_token_signing_alg_for_client(client)),
             },
         )
         .await

@@ -122,6 +122,12 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     assert!(!defaults.enable_authorization_details);
     assert!(!defaults.enable_legacy_audience_param);
     assert!(!defaults.enable_device_authorization_grant);
+    assert!(!defaults.enable_dynamic_client_registration);
+    assert!(
+        defaults
+            .dynamic_client_registration_initial_access_token
+            .is_none()
+    );
     assert_eq!(defaults.device_authorization_ttl_seconds, 600);
     assert_eq!(defaults.device_authorization_poll_interval_seconds, 5);
 
@@ -132,6 +138,11 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
         ("ENABLE_AUTHORIZATION_DETAILS", "true"),
         ("ENABLE_LEGACY_AUDIENCE_PARAM", "true"),
         ("ENABLE_DEVICE_AUTHORIZATION_GRANT", "true"),
+        ("ENABLE_DYNAMIC_CLIENT_REGISTRATION", "true"),
+        (
+            "DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN",
+            "register-token",
+        ),
         ("DEVICE_AUTHORIZATION_TTL_SECONDS", "300"),
         ("DEVICE_AUTHORIZATION_POLL_INTERVAL_SECONDS", "7"),
     ]);
@@ -143,8 +154,45 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     assert!(settings.enable_authorization_details);
     assert!(settings.enable_legacy_audience_param);
     assert!(settings.enable_device_authorization_grant);
+    assert!(settings.enable_dynamic_client_registration);
+    assert_eq!(
+        settings
+            .dynamic_client_registration_initial_access_token
+            .as_deref(),
+        Some("register-token")
+    );
     assert_eq!(settings.device_authorization_ttl_seconds, 300);
     assert_eq!(settings.device_authorization_poll_interval_seconds, 7);
+}
+
+#[test]
+fn dynamic_client_registration_requires_initial_access_token() {
+    let missing_token =
+        ConfigSource::from_pairs_for_test([("ENABLE_DYNAMIC_CLIENT_REGISTRATION", "true")]);
+    let error = settings_error(
+        &missing_token,
+        "dynamic registration must not become open registration by accident",
+    );
+    assert_eq!(
+        error.to_string(),
+        "DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN is required when ENABLE_DYNAMIC_CLIENT_REGISTRATION=true"
+    );
+
+    let protected = ConfigSource::from_pairs_for_test([
+        ("ENABLE_DYNAMIC_CLIENT_REGISTRATION", "true"),
+        (
+            "DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN",
+            "register-token",
+        ),
+    ]);
+    let settings = Settings::from_config(&protected).unwrap();
+    assert!(settings.enable_dynamic_client_registration);
+    assert_eq!(
+        settings
+            .dynamic_client_registration_initial_access_token
+            .as_deref(),
+        Some("register-token")
+    );
 }
 
 #[test]

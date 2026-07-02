@@ -48,6 +48,7 @@ jobs:
           cat > oidf-full-plan-set.json <<'JSON'
           [
             "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] oidf-oidcc-basic-plan-config.json",
+            "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=dynamic_client] oidf-oidcc-dynamic-plan-config.json",
             "oidcc-config-certification-test-plan oidf-oidcc-config-plan-config.json",
             "fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=jarm][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-jarm-plan-config.json",
             "fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-plain-response-plan-config.json",
@@ -65,6 +66,20 @@ jobs:
             "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=mtls][openid=plain_oauth] oidf-fapi-matrix-security-final-private-key-jwt-mtls-plain-oauth-plain-fapi-plain-response-plan-config.json"
           ]
           JSON
+          cat > oidf-expected-skips.json <<'JSON'
+          [
+            {
+              "test-name": "oidcc-idtoken-unsigned",
+              "variant": "*",
+              "configuration-filename": "oidf-oidcc-dynamic-plan-config.json"
+            },
+            {
+              "test-name": "oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported",
+              "variant": "*",
+              "configuration-filename": "oidf-oidcc-dynamic-plan-config.json"
+            }
+          ]
+          JSON
 
       - name: Write full OIDF matrix config
         run: |
@@ -78,9 +93,11 @@ jobs:
           python scripts/materialize_oidf_plan_config.py \
             --template docs/conformance/oidf-plan-config-template.json \
             --secret-patch-file oidf-plan-config-secret-patch.json \
+            --derive-dynamic-oidcc-config \
             --output oidf-plan-configs.json
         env:
           OIDF_PLAN_CONFIG_AGE_IDENTITY: ${{ secrets.OIDF_PLAN_CONFIG_AGE_IDENTITY }}
+          OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN: ${{ secrets.OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN }}
 
       - name: Run full OIDF matrix
         run: |
@@ -90,6 +107,7 @@ jobs:
             --conformance-server "$CONFORMANCE_SERVER"
             --config-json-file oidf-plan-configs.json
             --plan-set-json-file oidf-full-plan-set.json
+            --expected-skips-file oidf-expected-skips.json
             --target-issuer "$OIDF_TARGET_ISSUER"
             --timeout-seconds "$RUN_TIMEOUT_SECONDS"
             --monitor-interval-seconds "$MONITOR_INTERVAL_SECONDS"

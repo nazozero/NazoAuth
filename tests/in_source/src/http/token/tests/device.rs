@@ -6,6 +6,7 @@ use crate::{
     domain::{ActiveSigningKey, Keyset, KeysetStore},
 };
 use actix_web::test::TestRequest;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 fn form_request() -> HttpRequest {
@@ -251,6 +252,41 @@ fn device_code_polling_enforces_pending_slow_down_denied_and_expired_results() {
         evaluate_device_code_poll(&expired, now),
         DeviceCodePollResult::Expired
     ));
+}
+
+#[test]
+fn device_authorization_verification_uri_targets_frontend_device_page() {
+    let mut settings = enabled_settings();
+    settings.frontend_base_url = "https://auth.example.test/ui/".to_owned();
+
+    assert_eq!(
+        device_verification_uri(&settings),
+        "https://auth.example.test/ui/device"
+    );
+}
+
+#[actix_web::test]
+async fn legacy_device_verification_path_redirects_to_frontend_without_html() {
+    let state = Data::new(enabled_state());
+
+    let response = device_verification_page(
+        state,
+        Query(HashMap::from([(
+            "user_code".to_owned(),
+            "ABCD 1234".to_owned(),
+        )])),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::FOUND);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "http://127.0.0.1:8000/ui/device?user_code=ABCD%201234"
+    );
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store"
+    );
 }
 
 #[actix_web::test]
