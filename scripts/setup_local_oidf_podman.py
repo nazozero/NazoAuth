@@ -1086,11 +1086,6 @@ def write_frontchannel_logout_plan_config() -> dict[str, object]:
         },
         "nazo": nazo_login_metadata(),
         "browser": browser,
-        "override": {
-            "oidcc-frontchannel-rp-initiated-logout": {
-                "browser": browser_automation_with_second_login_placeholder(browser)
-            }
-        },
     }
     write_plan_config("oidf-oidcc-frontchannel-logout-plan-config.json", config)
     return config

@@ -30,6 +30,19 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
             commands,
         )
 
+    def test_frontchannel_logout_uses_single_authorize_automation(self):
+        module = load_setup_module()
+
+        config = module.write_frontchannel_logout_plan_config()
+
+        authorize_entries = [
+            entry
+            for entry in config.get("browser", [])
+            if entry.get("match") == f"{module.ISSUER}/authorize*"
+        ]
+        self.assertEqual(len(authorize_entries), 1)
+        self.assertNotIn("override", config)
+
 
 if __name__ == "__main__":
     unittest.main()
