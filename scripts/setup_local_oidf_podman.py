@@ -1295,7 +1295,7 @@ def write_fapi_ciba_plan_config() -> dict[str, dict[str, object]]:
         "nazo": {
             **nazo_login_metadata(),
             "client_auth_type": "private_key_jwt",
-            "sender_constrain": "dpop",
+            "sender_constrain": "mtls",
             "openid": "openid_connect",
             "fapi_profile": "plain_fapi",
             "fapi_ciba_profile": "plain_fapi",
