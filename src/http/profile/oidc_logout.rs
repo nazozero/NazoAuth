@@ -92,37 +92,21 @@ pub(crate) async fn oidc_logout(
         );
     }
 
-    let frontchannel_urls =
-        if state.settings.enable_frontchannel_logout && current_session.is_some() {
-            match frontchannel_logout_clients_for_user(
-                &state,
-                current_session
-                    .as_ref()
-                    .expect("checked current_session is present")
-                    .user
-                    .id,
-            )
-            .await
-            {
+    let frontchannel_urls = if state.settings.enable_frontchannel_logout {
+        if let Some(session) = current_session.as_ref() {
+            match frontchannel_logout_clients_for_user(&state, session.user.id).await {
                 Ok(clients) => clients
                     .iter()
                     .filter_map(|client| {
-                        frontchannel_logout_url(
-                            client,
-                            &state.settings.issuer,
-                            &current_session
-                                .as_ref()
-                                .expect("checked current_session is present")
-                                .oidc_sid,
-                        )
-                        .map_err(|error| {
-                            tracing::warn!(
-                                %error,
-                                client_id = %client.client_id,
-                                "failed to compose front-channel logout URI"
-                            );
-                        })
-                        .ok()
+                        frontchannel_logout_url(client, &state.settings.issuer, &session.oidc_sid)
+                            .map_err(|error| {
+                                tracing::warn!(
+                                    %error,
+                                    client_id = %client.client_id,
+                                    "failed to compose front-channel logout URI"
+                                );
+                            })
+                            .ok()
                     })
                     .collect::<Vec<_>>(),
                 Err(error) => {
@@ -132,7 +116,10 @@ pub(crate) async fn oidc_logout(
             }
         } else {
             Vec::new()
-        };
+        }
+    } else {
+        Vec::new()
+    };
 
     if let Some(session_id) = session_cookie {
         let _ = valkey_del(&state.valkey, format!("oauth:session:{session_id}")).await;

@@ -2,20 +2,21 @@ use super::*;
 
 #[test]
 fn oidc_session_state_is_origin_client_and_salt_bound() {
-    let state = oidc_session_state("client-1", "https://client.example", "opbs-1", "salt-1");
+    let salt = random_urlsafe_token();
+    let state = oidc_session_state("client-1", "https://client.example", "opbs-1", &salt);
 
-    assert!(state.ends_with(".salt-1"));
+    assert!(state.ends_with(&format!(".{salt}")));
     assert_eq!(
         state,
-        oidc_session_state("client-1", "https://client.example", "opbs-1", "salt-1")
+        oidc_session_state("client-1", "https://client.example", "opbs-1", &salt)
     );
     assert_ne!(
         state,
-        oidc_session_state("client-2", "https://client.example", "opbs-1", "salt-1")
+        oidc_session_state("client-2", "https://client.example", "opbs-1", &salt)
     );
     assert_ne!(
         state,
-        oidc_session_state("client-1", "https://other.example", "opbs-1", "salt-1")
+        oidc_session_state("client-1", "https://other.example", "opbs-1", &salt)
     );
 }
 
