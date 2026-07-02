@@ -343,41 +343,59 @@ fn oauth_error_code(response: &HttpResponse) -> String {
 fn id_token_sid_is_omitted_unless_explicitly_requested() {
     let settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let client = client_with_grants(&["authorization_code"]);
     let issue = token_issue_with_sid(Vec::new());
-    assert_eq!(id_token_session_sid(&settings, &issue), None);
+    assert_eq!(id_token_session_sid(&settings, &client, &issue), None);
 
     let issue = token_issue_with_sid(vec!["sid".to_owned()]);
     assert_eq!(
-        id_token_session_sid(&settings, &issue),
+        id_token_session_sid(&settings, &client, &issue),
         Some("op-session-sid")
     );
 }
 
 #[test]
-fn id_token_sid_is_included_when_logout_or_session_features_are_enabled() {
+fn id_token_sid_is_included_for_session_bound_logout_clients() {
     let issue = token_issue_with_sid(Vec::new());
 
     let mut frontchannel_settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     frontchannel_settings.enable_frontchannel_logout = true;
+    let mut frontchannel_client = client_with_grants(&["authorization_code"]);
+    frontchannel_client.frontchannel_logout_uri = Some("https://client.example/logout".to_owned());
     assert_eq!(
-        id_token_session_sid(&frontchannel_settings, &issue),
+        id_token_session_sid(&frontchannel_settings, &frontchannel_client, &issue),
         Some("op-session-sid")
     );
 
-    let mut session_settings =
+    let backchannel_settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    session_settings.enable_session_management = true;
+    let mut backchannel_client = client_with_grants(&["authorization_code"]);
+    backchannel_client.backchannel_logout_uri =
+        Some("https://client.example/backchannel".to_owned());
     assert_eq!(
-        id_token_session_sid(&session_settings, &issue),
+        id_token_session_sid(&backchannel_settings, &backchannel_client, &issue),
         Some("op-session-sid")
     );
+}
+
+#[test]
+fn id_token_sid_is_not_enabled_for_all_clients_by_logout_feature_flags() {
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.enable_frontchannel_logout = true;
+    settings.enable_session_management = true;
+    let client = client_with_grants(&["authorization_code"]);
+    let issue = token_issue_with_sid(Vec::new());
+
+    assert_eq!(id_token_session_sid(&settings, &client, &issue), None);
 }
 
 #[test]
 fn id_token_sid_request_object_also_allows_session_sid() {
     let settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let client = client_with_grants(&["authorization_code"]);
     let mut issue = token_issue_with_sid(Vec::new());
     issue.id_token_claim_requests.push(OidcClaimRequest {
         name: "sid".to_owned(),
@@ -387,7 +405,7 @@ fn id_token_sid_request_object_also_allows_session_sid() {
     });
 
     assert_eq!(
-        id_token_session_sid(&settings, &issue),
+        id_token_session_sid(&settings, &client, &issue),
         Some("op-session-sid")
     );
 }
