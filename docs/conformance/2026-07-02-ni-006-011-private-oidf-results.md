@@ -33,7 +33,7 @@ The service health check in the private conformance environment returned
 | --- | --- | --- | --- | --- | --- |
 | NI-008 | `oidcc-frontchannel-rp-initiated-logout-certification-test-plan[response_type=code][client_registration=static_client]` | `HRYo5vZ393grD` | `/root/oauth2_server/NazoAuth/oidf-results-ni-008-fee362d-20260702T072615Z` | 2 passed, 0 failed, 0 module skipped | 84 success, 0 failure, 0 warning, 5 informational optional-condition skips |
 | NI-009 | `oidcc-session-management-certification-test-plan[response_type=code][client_registration=static_client]` | `PKnVhX4DiBC6T` | `/root/oauth2_server/NazoAuth/oidf-results-ni-008-009-fee362d-20260702T072550Z` | 2 passed, 0 failed, 0 module skipped | 58 success, 0 failure, 0 warning, 5 informational optional-condition skips |
-| NI-007 | `fapi-ciba-id1-test-plan[client_auth_type=private_key_jwt][fapi_ciba_profile=plain_fapi][ciba_mode=poll][client_registration=static_client]` | `Uc3kj8RHeZydk` | `/root/oauth2_server/NazoAuth/oidf-results-ni-007-6b9badf-public-ciba-token-fapi` | 36 run, 0 failed, 0 module skipped | 2660 success, 0 failure, 0 warning |
+| NI-007 | `fapi-ciba-id1-test-plan[client_auth_type=private_key_jwt][fapi_ciba_profile=plain_fapi][ciba_mode=poll][client_registration=static_client]` | `Uc3kj8RHeZydk` | `/root/oauth2_server/NazoAuth/oidf-results-ni-007-6b9badf-public-ciba-token-fapi` | 35 passed, 0 failed, 0 module skipped | 2660 success, 0 failure, 0 warning |
 
 The NI-008 and NI-009 evidence above uses the passing isolated/targeted results.
 An earlier combined NI-008+NI-009 run caused browser/session interference for
