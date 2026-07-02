@@ -30,12 +30,11 @@ repository 16-plan matrix, exported 16 plan archives, and reported 578 test
 modules with `0 failures` and `0 warnings`.
 
 The latest NI-006~NI-011 targeted private conformance run used local official suite
-snapshot `edbf2514e1e5c850ccf28544953608bda50daf4d`. NI-008 Front-Channel
-Logout and NI-009 Session Management passed with `0 failures`, `0 warnings`,
-and `0 skipped modules`. NI-007 FAPI-CIBA is now in the matrix but currently
-fails, with 3 passed modules and 32 failed modules. The exported JSON logs also
-contain informational optional-condition `Skipped evaluation ...` entries; those
-are not module-level `SKIPPED` results.
+snapshot `edbf2514e1e5c850ccf28544953608bda50daf4d`. NI-007 FAPI-CIBA,
+NI-008 Front-Channel Logout, and NI-009 Session Management passed with
+`0 failures`, `0 warnings`, and `0 skipped modules`. The NI-008/NI-009
+exported JSON logs contain informational optional-condition
+`Skipped evaluation ...` entries; those are not module-level `SKIPPED` results.
 
 ## Coverage Update Rule
 

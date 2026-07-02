@@ -29,11 +29,11 @@ Nazo Auth Server 已发布在 OpenID Foundation 官方认证列表中：
 最新私有 full-matrix 回归记录是 2026-07-01 TP/PS 运行，测试对象为 `https://auth.nazo.run`，runtime commit 为 `31e8f9f`。该运行使用仓库原有 16-plan 完整矩阵，导出 16 个 plan archives，共执行 578 个测试模块，结果为 `0 failures`、`0 warnings`。
 
 最新 NI-006~NI-011 私有一致性测试环境 targeted 运行使用本地 official suite 快照
-`edbf2514e1e5c850ccf28544953608bda50daf4d`。NI-008 Front-Channel Logout 和
-NI-009 Session Management 均为 `0 failures`、`0 warnings`、`0 skipped modules`；
-NI-007 FAPI-CIBA 已加入矩阵但当前失败，结果为 3 个模块通过、32 个模块失败。
-这些 runs 的 JSON 日志包含信息级 optional-condition `Skipped evaluation ...`
-消息；它们不是 module-level `SKIPPED` 结果。
+`edbf2514e1e5c850ccf28544953608bda50daf4d`。NI-007 FAPI-CIBA、NI-008
+Front-Channel Logout 和 NI-009 Session Management 均通过，结果为
+`0 failures`、`0 warnings`、`0 skipped modules`。NI-008/NI-009 runs 的 JSON
+日志包含信息级 optional-condition `Skipped evaluation ...` 消息；它们不是
+module-level `SKIPPED` 结果。
 
 baseline OIDC metadata 会在 `request_object_signing_alg_values_supported` 中声明 `none`，用于 unsigned Request Object 的 OIDC 兼容路径。该能力不是高安全 profile 能力；FAPI2 Security Profile Final、FAPI2 Message Signing Final、要求 PAR request object 的客户端以及 holder-bound token 客户端仍然 fail closed，必须使用签名 Request Object 或被拒绝。
 

@@ -9,21 +9,19 @@
 | Suite path | `/root/oauth2_server/oidf-conformance-suite` |
 | Suite commit | `edbf2514e1e5c850ccf28544953608bda50daf4d` |
 | Branch | `codex/ni-006-011-oidc-profiles` |
-| Runtime/config commit | `fee362d` |
-| Backend image code commit | `6b6da42` |
+| Latest runtime/config commit | `6b9badf` |
+| Latest backend image code commit | `6b9badf` |
 | Runner | `scripts/run_oidf_conformance.py --no-api-token --disable-ssl-verify` |
 
-`fee362d` changes only OIDF runner automation and unit tests after the backend
-image commit `6b6da42`. The service health check in the private conformance
-environment returned
-`{"status":"正常"}` before the final result review.
+The service health check in the private conformance environment returned
+`{"status":"正常"}` before the final NI-007 rerun.
 
 ## Matrix Coverage
 
 | Task | Official suite mapping | Matrix action |
 | --- | --- | --- |
 | NI-006 RFC 7523 | No dedicated official plan was found for third-party JWT bearer grant assertion trust. Existing OIDC/FAPI plans cover `private_key_jwt` client assertions, not the bounded self-asserted JWT bearer grant implemented here. | No OIDF plan added. Keep local RFC 7523 grant tests and metadata truth tests. |
-| NI-007 OpenID Connect CIBA / FAPI CIBA | `fapi-ciba-id1-test-plan` exists for FAPI-CIBA AS. | Added as plan 20 in the repository OIDF matrix and executed in the private conformance environment. Current run fails and must not be treated as conformance evidence. |
+| NI-007 OpenID Connect CIBA / FAPI CIBA | `fapi-ciba-id1-test-plan` exists for FAPI-CIBA AS. | Added as plan 20 in the repository OIDF matrix and executed in the private conformance environment. Latest targeted run passed with no failures, warnings, or module-level skips. |
 | NI-008 OpenID Connect Front-Channel Logout | `oidcc-frontchannel-rp-initiated-logout-certification-test-plan` exists. | Added as plan 18 and executed in the private conformance environment. Isolated run passed. |
 | NI-009 OpenID Connect Session Management | `oidcc-session-management-certification-test-plan` exists. | Added as plan 19 and executed in the private conformance environment. Run passed. |
 | NI-010 OpenID Connect Federation 1.0 | Federation alpha plans exist, including deployed entity and joined-to-test-federation OP/RP plans. | Not added to the must-pass matrix. The current implementation only publishes a self-issued entity statement and does not implement trust chain resolution, fetch/list/resolve, metadata policy, or joined-federation behavior. |
@@ -35,7 +33,7 @@ environment returned
 | --- | --- | --- | --- | --- | --- |
 | NI-008 | `oidcc-frontchannel-rp-initiated-logout-certification-test-plan[response_type=code][client_registration=static_client]` | `HRYo5vZ393grD` | `/root/oauth2_server/NazoAuth/oidf-results-ni-008-fee362d-20260702T072615Z` | 2 passed, 0 failed, 0 module skipped | 84 success, 0 failure, 0 warning, 5 informational optional-condition skips |
 | NI-009 | `oidcc-session-management-certification-test-plan[response_type=code][client_registration=static_client]` | `PKnVhX4DiBC6T` | `/root/oauth2_server/NazoAuth/oidf-results-ni-008-009-fee362d-20260702T072550Z` | 2 passed, 0 failed, 0 module skipped | 58 success, 0 failure, 0 warning, 5 informational optional-condition skips |
-| NI-007 | `fapi-ciba-id1-test-plan[client_auth_type=private_key_jwt][fapi_ciba_profile=plain_fapi][ciba_mode=poll][client_registration=static_client]` | `yFaB72MgsQ8Br` | `/root/oauth2_server/NazoAuth/oidf-results-ni-007-fee362d-20260702T072634Z` | 3 passed, 32 failed, 0 module skipped | 1591 success, 34 failure, 0 warning, 1 informational optional-condition skip |
+| NI-007 | `fapi-ciba-id1-test-plan[client_auth_type=private_key_jwt][fapi_ciba_profile=plain_fapi][ciba_mode=poll][client_registration=static_client]` | `Uc3kj8RHeZydk` | `/root/oauth2_server/NazoAuth/oidf-results-ni-007-6b9badf-public-ciba-token-fapi` | 36 run, 0 failed, 0 module skipped | 2660 success, 0 failure, 0 warning |
 
 The NI-008 and NI-009 evidence above uses the passing isolated/targeted results.
 An earlier combined NI-008+NI-009 run caused browser/session interference for
@@ -55,36 +53,23 @@ module, not module-level `SKIPPED` results:
 - NI-008 and NI-009: static logout/session plans did not configure client JWKs
   or encrypted ID Tokens, so optional client-JWK and ID Token encryption checks
   logged five informational skipped evaluations.
-- NI-007: discovery did not advertise `userinfo_signing_alg_values_supported`,
-  so one optional UserInfo signing condition logged an informational skipped
-  evaluation.
+- NI-007: the latest targeted rerun did not report module-level skips,
+  failures, or warnings.
 
-Therefore NI-008 and NI-009 satisfy `0 failures`, `0 warnings`, and `0 skipped
-modules`, but they are not evidence for a strict "no log line contains the word
-Skipped" gate. Enabling optional client JWK / ID Token encryption or UserInfo
-signing only to remove informational optional-condition messages would broaden
-the advertised profile surface and is not required for these logout/session
-profiles.
+Therefore NI-007, NI-008, and NI-009 satisfy `0 failures`, `0 warnings`, and
+`0 skipped modules`. The informational optional-condition messages in the
+logout/session JSON logs are not module-level suite skips. Enabling optional
+client JWK / ID Token encryption only to remove those informational messages
+would broaden the advertised profile surface and is not required for these
+logout/session profiles.
 
-## NI-007 Failure Summary
+## NI-007 Result Summary
 
-FAPI-CIBA currently fails the official suite. The repeated failure families are:
-
-- positive backchannel authentication calls expected HTTP 200 but did not get it
-  (`CheckBackchannelAuthenticationEndpointHttpStatus200`, 13 failures);
-- signed backchannel request-object negative cases expected
-  `invalid_request` but received a different error shape or value
-  (`CheckErrorFromBackchannelAuthenticationEndpointErrorInvalidRequest`, 18
-  failures);
-- one binding-message negative case expected `invalid_binding_message`;
-- one generic backchannel error response validation failed;
-- one HTTP 400 validation failed.
-
-This means NI-007 is implemented locally, but the current implementation is not
-yet FAPI-CIBA ID1 conformant. It should remain a failing matrix item until the
-backchannel authentication endpoint accepts the positive FAPI-CIBA request
-shape, implements the suite's signed request-object requirements, and normalizes
-negative error mappings.
+FAPI-CIBA now passes the targeted official suite in the private conformance
+environment at runtime commit `6b9badf`. The rerun specifically covers the
+previously failing positive backchannel authentication request, signed
+backchannel request-object negative cases, refresh-token polling path, and
+mTLS holder-of-key token-polling error precedence.
 
 ## Local Verification
 
@@ -92,9 +77,10 @@ negative error mappings.
 - `cargo test oidc_logout --lib`
 - `cargo test id_token_sid --lib`
 - `cargo test session_management --lib`
+- `rtk proxy cargo test native_sso --lib`
+- `rtk proxy cargo test ciba --lib`
+- `rtk proxy cargo check --lib`
 - `cargo fmt --check`
+- `rtk proxy cargo fmt --check`
 - `python -m compileall -q scripts tests/unit`
 - `python -m unittest tests.unit.test_setup_local_oidf_podman`
-
-Rust tests still report the existing `field iss is never read` warning in
-`src/http/token/native_sso.rs`; it is unrelated to these OIDF runs.
