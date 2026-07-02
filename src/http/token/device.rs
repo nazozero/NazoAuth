@@ -33,6 +33,13 @@ pub(crate) struct DeviceDecisionForm {
     csrf_token: Option<String>,
 }
 
+#[derive(Serialize)]
+pub(crate) struct DeviceVerificationView {
+    user_code: String,
+    csrf_token: Option<String>,
+    request: Option<DeviceAuthorizationPayload>,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum DeviceAuthorizationRequestError {
     Disabled,
@@ -258,7 +265,7 @@ pub(crate) async fn device_authorization(
             ),
         ]),
     );
-    let verification_uri = format!("{}/device", state.settings.issuer);
+    let verification_uri = device_verification_uri(&state.settings);
     json_response_no_store(json!({
         "device_code": device_code,
         "user_code": user_code,
@@ -554,6 +561,21 @@ fn device_authorization_payload(
 
 pub(crate) async fn device_verification_page(
     state: Data<AppState>,
+    Query(query): Query<HashMap<String, String>>,
+) -> HttpResponse {
+    if !state.settings.enable_device_authorization_grant {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "Device Authorization Grant is not enabled.",
+        );
+    }
+    let user_code = query.get("user_code").cloned().unwrap_or_default();
+    redirect_to_device_verification_ui(&state.settings, &user_code)
+}
+
+pub(crate) async fn device_verification(
+    state: Data<AppState>,
     req: HttpRequest,
     Query(query): Query<HashMap<String, String>>,
 ) -> HttpResponse {
@@ -567,20 +589,31 @@ pub(crate) async fn device_verification_page(
     let user_code = query.get("user_code").cloned().unwrap_or_default();
     let payload = read_device_authorization_payload_for_user_code(&state, &user_code).await;
     let csrf_token = cookie_value(&req, &state.settings.csrf_cookie_name);
-    let mut response = HttpResponse::Ok()
-        .insert_header((header::CONTENT_TYPE, "text/html; charset=utf-8"))
-        .body(device_verification_page_html(
-            &user_code,
-            csrf_token.as_deref(),
-            payload.as_ref(),
-        ));
-    response
-        .headers_mut()
-        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    response
-        .headers_mut()
-        .insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
-    response
+    json_response_no_store(DeviceVerificationView {
+        user_code,
+        csrf_token,
+        request: payload,
+    })
+}
+
+fn redirect_to_device_verification_ui(settings: &Settings, user_code: &str) -> HttpResponse {
+    let mut location = device_verification_uri(settings);
+    if !user_code.trim().is_empty() {
+        location.push_str("?user_code=");
+        location.push_str(&urlencoding::encode(user_code));
+    }
+    HttpResponse::Found()
+        .insert_header((header::LOCATION, location))
+        .insert_header((header::CACHE_CONTROL, HeaderValue::from_static("no-store")))
+        .insert_header((header::PRAGMA, HeaderValue::from_static("no-cache")))
+        .finish()
+}
+
+fn device_verification_uri(settings: &Settings) -> String {
+    format!(
+        "{}/device",
+        settings.frontend_base_url.trim_end_matches('/')
+    )
 }
 
 async fn read_device_authorization_payload_for_user_code(
@@ -617,49 +650,6 @@ async fn read_device_authorization_payload_for_user_code(
         return None;
     }
     Some(payload)
-}
-
-fn device_verification_page_html(
-    user_code: &str,
-    csrf_token: Option<&str>,
-    payload: Option<&DeviceAuthorizationPayload>,
-) -> String {
-    let escaped_code = html_escape(user_code);
-    let csrf_input = csrf_token
-        .map(|token| {
-            format!(
-                r#"<input type="hidden" name="csrf_token" value="{}">"#,
-                html_escape(token)
-            )
-        })
-        .unwrap_or_default();
-    let context = payload
-        .map(device_verification_context_html)
-        .unwrap_or_default();
-    format!(
-        r#"<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>设备授权</title></head><body><main><h1>设备授权</h1>{context}<form method="post" action="/device/decision"><label>用户码 <input name="user_code" value="{escaped_code}" autocomplete="one-time-code"></label>{csrf_input}<div><button type="submit" name="decision" value="approve">允许</button><button type="submit" name="decision" value="deny">拒绝</button></div></form></main></body></html>"#
-    )
-}
-
-fn device_verification_context_html(payload: &DeviceAuthorizationPayload) -> String {
-    let scopes = if payload.scopes.is_empty() {
-        "无".to_owned()
-    } else {
-        payload.scopes.join(" ")
-    };
-    let audiences = if payload.resource_indicators.is_empty() {
-        "无".to_owned()
-    } else {
-        payload.resource_indicators.join(" ")
-    };
-    format!(
-        r#"<section><h2>授权请求</h2><dl><dt>应用</dt><dd>{}</dd><dt>客户端 ID</dt><dd>{}</dd><dt>作用域</dt><dd>{}</dd><dt>资源</dt><dd>{}</dd><dt>过期时间</dt><dd>{}</dd></dl></section>"#,
-        html_escape(&payload.client_name),
-        html_escape(&payload.client_id),
-        html_escape(&scopes),
-        html_escape(&audiences),
-        html_escape(&payload.expires_at.to_rfc3339())
-    )
 }
 
 pub(crate) async fn device_decision(
@@ -1021,14 +1011,6 @@ fn random_device_user_code() -> String {
         out.push(ALPHABET[(byte as usize) % ALPHABET.len()] as char);
     }
     out
-}
-
-fn html_escape(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
 }
 
 fn accept_device_authorization_parameter_once(

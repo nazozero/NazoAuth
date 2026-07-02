@@ -6,6 +6,7 @@ use crate::{
     domain::{ActiveSigningKey, Keyset, KeysetStore},
 };
 use actix_web::test::TestRequest;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 fn form_request() -> HttpRequest {
@@ -254,30 +255,38 @@ fn device_code_polling_enforces_pending_slow_down_denied_and_expired_results() {
 }
 
 #[test]
-fn device_verification_page_html_includes_csrf_context_and_decision_controls() {
-    let now = Utc::now();
-    let payload = DeviceAuthorizationPayload {
-        client_id: "device-client".to_owned(),
-        client_name: "Device <Client>".to_owned(),
-        scopes: vec!["openid".to_owned(), "profile".to_owned()],
-        resource_indicators: vec!["https://api.example.com".to_owned()],
-        authorization_details: json!([]),
-        interval_seconds: 5,
-        issued_at: now,
-        expires_at: now + Duration::seconds(600),
-    };
+fn device_authorization_verification_uri_targets_frontend_device_page() {
+    let mut settings = enabled_settings();
+    settings.frontend_base_url = "https://auth.example.test/ui/".to_owned();
 
-    let html = device_verification_page_html("ABCD-1234", Some("csrf<&token"), Some(&payload));
+    assert_eq!(
+        device_verification_uri(&settings),
+        "https://auth.example.test/ui/device"
+    );
+}
 
-    assert!(html.contains(r#"name="csrf_token" value="csrf&lt;&amp;token""#));
-    assert!(html.contains(r#"name="user_code" value="ABCD-1234""#));
-    assert!(html.contains("Device &lt;Client&gt;"));
-    assert!(html.contains("device-client"));
-    assert!(html.contains("openid profile"));
-    assert!(html.contains("https://api.example.com"));
-    assert!(html.contains(&payload.expires_at.to_rfc3339()));
-    assert!(html.contains(r#"name="decision" value="approve""#));
-    assert!(html.contains(r#"name="decision" value="deny""#));
+#[actix_web::test]
+async fn legacy_device_verification_path_redirects_to_frontend_without_html() {
+    let state = Data::new(enabled_state());
+
+    let response = device_verification_page(
+        state,
+        Query(HashMap::from([(
+            "user_code".to_owned(),
+            "ABCD 1234".to_owned(),
+        )])),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::FOUND);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "http://127.0.0.1:8000/ui/device?user_code=ABCD%201234"
+    );
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store"
+    );
 }
 
 #[actix_web::test]
