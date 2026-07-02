@@ -29,6 +29,10 @@ DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN = os.environ.get(
     "OIDF_LOCAL_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN",
     "oidf-local-dynamic-registration-token",
 )
+OIDF_CIBA_AUTOMATED_DECISION_TOKEN = os.environ.get(
+    "OIDF_LOCAL_CIBA_AUTOMATED_DECISION_TOKEN",
+    "oidf-local-ciba-automated-decision-token",
+)
 FAPI_CLIENT_PREFIX = os.environ.get("OIDF_LOCAL_FAPI_CLIENT_PREFIX", "local-oidf-fapi")
 TRUSTED_PROXY_CIDRS = os.environ.get("OIDF_LOCAL_TRUSTED_PROXY_CIDRS", "10.89.0.0/16")
 WRITE_ENV_YAML = os.environ.get("OIDF_LOCAL_WRITE_ENV_YAML", "1") != "0"
@@ -413,6 +417,7 @@ ENABLE_FRONTCHANNEL_LOGOUT: true
 ENABLE_SESSION_MANAGEMENT: true
 ENABLE_OIDC_FEDERATION: true
 ENABLE_NATIVE_SSO: true
+CIBA_AUTOMATED_DECISION_TOKEN: "{OIDF_CIBA_AUTOMATED_DECISION_TOKEN}"
 DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN: "{DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN}"
 MTLS_ENDPOINT_BASE_URL: "{MTLS_ISSUER}"
 FRONTEND_BASE_URL: "{ISSUER}/ui"
@@ -1270,6 +1275,11 @@ def write_fapi_ciba_plan_config() -> dict[str, dict[str, object]]:
             "resourceMediaType": "application/json",
             "resourceRequestBody": "",
         },
+        "automated_ciba_approval_url": (
+            f"{ISSUER}/auth/ciba/automated"
+            f"?token={{auth_req_id}}&type={{action}}"
+            f"&decision_token={OIDF_CIBA_AUTOMATED_DECISION_TOKEN}"
+        ),
         "client": {
             **fapi_client_config(client1_id, client1_jwks, "openid profile email offline_access"),
             "hint_type": "login_hint",

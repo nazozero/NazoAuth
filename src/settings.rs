@@ -84,6 +84,7 @@ pub(crate) struct Settings {
     pub(crate) device_authorization_poll_interval_seconds: u64,
     pub(crate) ciba_auth_req_id_ttl_seconds: u64,
     pub(crate) ciba_poll_interval_seconds: u64,
+    pub(crate) ciba_automated_decision_token: Option<String>,
 }
 
 impl Settings {
@@ -180,6 +181,12 @@ impl Settings {
         }
         if ciba_poll_interval_seconds >= ciba_auth_req_id_ttl_seconds {
             bail!("CIBA_POLL_INTERVAL_SECONDS must be less than CIBA_AUTH_REQ_ID_TTL_SECONDS");
+        }
+        let ciba_automated_decision_token = config.optional_string("CIBA_AUTOMATED_DECISION_TOKEN");
+        if let Some(token) = &ciba_automated_decision_token
+            && token.len() < 32
+        {
+            bail!("CIBA_AUTOMATED_DECISION_TOKEN must be at least 32 bytes when set");
         }
         let enable_dynamic_client_registration =
             config.bool("ENABLE_DYNAMIC_CLIENT_REGISTRATION", false)?;
@@ -281,6 +288,7 @@ impl Settings {
             device_authorization_poll_interval_seconds,
             ciba_auth_req_id_ttl_seconds,
             ciba_poll_interval_seconds,
+            ciba_automated_decision_token,
         })
     }
 }

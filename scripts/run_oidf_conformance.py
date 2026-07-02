@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import copy
-import http.cookiejar
 import json
 import os
 import re
@@ -56,10 +55,6 @@ OIDCC_SECOND_LOGIN_SCREENSHOT_MODULES = (
     "oidcc-prompt-login",
     "oidcc-max-age-1",
 )
-FAPI_CIBA_USER_REJECTS_AUTHENTICATION = "fapi-ciba-id1-user-rejects-authentication"
-FAPI_CIBA_SKIP_DECISION_MODULES = {
-    "fapi-ciba-id1-auth-req-id-expired",
-}
 NAZO_AUTHORIZATION_ERROR_RESPONSE_TASK = "Capture authorization error response"
 NAZO_AUTHORIZATION_ERROR_PAGE_TASK = "Capture authorization error page"
 NAZO_AUTHORIZATION_ERROR_RESPONSE_PATTERN = (
@@ -87,9 +82,6 @@ OIDF_ALLOWED_REVIEW_MODULES = {
     "oidcc-ensure-registered-redirect-uri",
 }
 OIDF_CALLBACK_PATH_PATTERN = re.compile(r"/test/a/[^/]+/callback")
-OIDF_CIBA_AUTH_REQ_ID_PATTERN = re.compile(
-    r'"auth_req_id"\s*:\s*"([^"]+)"|auth_req_id=([A-Za-z0-9_-]+)'
-)
 OIDF_API_SSL_CONTEXT: ssl.SSLContext | None = None
 NAZO_PUBLIC_ISSUER_ORIGIN = "https://auth.nazo.run"
 NAZO_RUN_URL_PATTERN = re.compile(r"https?://[A-Za-z0-9.-]*nazo\.run(?::\d+)?(?:/[^\s\"'<>)]*)?")
@@ -1255,184 +1247,30 @@ def inspect_oidf_state(
     return None
 
 
-def extract_ciba_auth_req_ids(value: object) -> set[str]:
-    ids: set[str] = set()
-    if isinstance(value, dict):
-        for key, item in value.items():
-            if key == "auth_req_id" and isinstance(item, str) and item.strip():
-                ids.add(item.strip())
-                continue
-            ids.update(extract_ciba_auth_req_ids(item))
-    elif isinstance(value, list):
-        for item in value:
-            ids.update(extract_ciba_auth_req_ids(item))
-    elif isinstance(value, str):
-        for match in OIDF_CIBA_AUTH_REQ_ID_PATTERN.finditer(value):
-            candidate = match.group(1) or match.group(2)
-            if candidate:
-                ids.add(candidate)
-    return ids
-
-
-def ciba_decision_for_module(test_name: str) -> str | None:
-    name = module_name_without_variant(test_name)
-    if not name.startswith("fapi-ciba-id1"):
-        return None
-    if name in FAPI_CIBA_SKIP_DECISION_MODULES:
-        return None
-    if name == FAPI_CIBA_USER_REJECTS_AUTHENTICATION:
-        return "deny"
-    return "approve"
-
-
-def first_ciba_credentials_from_config(config_json_file: str, env_name: str) -> tuple[str, str] | None:
+def ciba_config_has_automated_approval_url(config_json_file: str, env_name: str) -> bool:
     raw_config = (
         non_empty_file(config_json_file, "--config-json-file")
         if config_json_file
         else os.environ.get(env_name, "")
     )
     if not raw_config.strip():
-        return None
+        return False
     try:
         parsed = json.loads(raw_config)
     except json.JSONDecodeError:
-        return None
+        return False
     configs = parsed.get("configs") if isinstance(parsed, dict) else None
-    candidates: list[dict[str, object]] = []
-    if isinstance(configs, dict):
-        for name, value in configs.items():
-            if not isinstance(value, dict):
-                continue
-            alias = config_alias(value) or ""
-            if "ciba" in name or "ciba" in alias:
-                candidates.append(value)
-    elif isinstance(parsed, dict):
-        alias = config_alias(parsed) or ""
-        if "ciba" in alias:
-            candidates.append(parsed)
-    if not candidates:
-        return None
-    return nazo_automation_credentials(candidates[0])
-
-
-class NazoCibaDecisionDriver:
-    def __init__(self, issuer: str, email: str, password: str) -> None:
-        self.issuer = issuer.rstrip("/")
-        self.email = email
-        self.password = password
-        self.csrf_token: str | None = None
-        self.handled: set[str] = set()
-        cookie_jar = http.cookiejar.CookieJar()
-        handlers: list[urllib.request.BaseHandler] = [
-            urllib.request.HTTPCookieProcessor(cookie_jar)
-        ]
-        if OIDF_API_SSL_CONTEXT is not None:
-            handlers.append(urllib.request.HTTPSHandler(context=OIDF_API_SSL_CONTEXT))
-        self.opener = urllib.request.build_opener(*handlers)
-
-    def drive_once(self, base_url: str, token: str | None, aliases: set[str]) -> None:
-        for plan in fetch_alias_plans(base_url, token, aliases):
-            for module_id, test_name in ciba_waiting_modules(base_url, token, plan):
-                decision = ciba_decision_for_module(test_name)
-                if decision is None:
-                    continue
-                _, logs = oidf_api_request(
-                    "GET",
-                    base_url,
-                    f"api/log/{module_id}",
-                    token,
-                    expected_statuses={200, 404},
-                )
-                for auth_req_id in sorted(extract_ciba_auth_req_ids(logs)):
-                    key = f"{module_id}:{auth_req_id}:{decision}"
-                    if key in self.handled:
-                        continue
-                    self.submit_decision(auth_req_id, decision)
-                    self.handled.add(key)
-                    print(
-                        f"OIDF CIBA driver submitted {decision} for module {test_name}",
-                        flush=True,
-                    )
-
-    def submit_decision(self, auth_req_id: str, decision: str) -> None:
-        if self.csrf_token is None:
-            self.login()
-        body = json.dumps(
-            {
-                "decision": decision,
-                "csrf_token": self.csrf_token,
-            }
-        ).encode("utf-8")
-        request = urllib.request.Request(
-            f"{self.issuer}/auth/ciba/{urllib.parse.quote(auth_req_id, safe='')}",
-            data=body,
-            method="POST",
-            headers={
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-                "X-CSRF-Token": self.csrf_token or "",
-            },
-        )
-        try:
-            with self.opener.open(request, timeout=30) as response:
-                response.read()
-                if response.status != 200:
-                    fail(f"Nazo CIBA decision returned HTTP {response.status}")
-        except urllib.error.HTTPError as exc:
-            text = exc.read().decode("utf-8", "replace")[:300]
-            if exc.code in {400, 404} and "already handled" in text:
-                return
-            fail(f"Nazo CIBA decision failed with HTTP {exc.code}: {text}")
-
-    def login(self) -> None:
-        body = json.dumps(
-            {
-                "email": self.email,
-                "password": self.password,
-            }
-        ).encode("utf-8")
-        request = urllib.request.Request(
-            f"{self.issuer}/auth/login",
-            data=body,
-            method="POST",
-            headers={
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-            },
-        )
-        with self.opener.open(request, timeout=30) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-        csrf_token = payload.get("csrf_token") if isinstance(payload, dict) else None
-        if not isinstance(csrf_token, str) or not csrf_token.strip():
-            fail("Nazo CIBA driver login did not receive a CSRF token")
-        if payload.get("mfa_required") is True:
-            fail("Nazo CIBA driver user requires MFA; use a conformance user without interactive MFA")
-        self.csrf_token = csrf_token
-
-
-def ciba_waiting_modules(
-    base_url: str,
-    token: str | None,
-    plan: dict[str, object],
-) -> list[tuple[str, str]]:
-    module_ids = module_ids_from_plan(plan)
-    waiting: list[tuple[str, str]] = []
-    for module_id in sorted(module_ids):
-        status_code, info = oidf_api_request(
-            "GET",
-            base_url,
-            f"api/info/{module_id}",
-            token,
-            expected_statuses={200, 404},
-        )
-        if status_code != 200 or not isinstance(info, dict):
+    candidates = configs.values() if isinstance(configs, dict) else [parsed]
+    for value in candidates:
+        if not isinstance(value, dict):
             continue
-        status = value_as_upper(info.get("status"))
-        test_name_value = info.get("testName") or info.get("name") or ""
-        test_name = test_name_value if isinstance(test_name_value, str) else ""
-        if status == "WAITING" and ciba_decision_for_module(test_name) is not None:
-            waiting.append((module_id, test_name))
-    return waiting
+        alias = config_alias(value) or ""
+        if "ciba" not in alias:
+            continue
+        automated_url = value.get("automated_ciba_approval_url")
+        if isinstance(automated_url, str) and automated_url.strip():
+            return True
+    return False
 
 
 def cancel_alias_plan_instances(
@@ -1456,14 +1294,12 @@ class OidfEarlyStopMonitor:
         aliases: set[str],
         interval_seconds: int,
         ignored_plan_ids: set[str],
-        ciba_driver: NazoCibaDecisionDriver | None,
     ) -> None:
         self.base_url = base_url
         self.token = token
         self.aliases = aliases
         self.interval_seconds = interval_seconds
         self.ignored_plan_ids = ignored_plan_ids
-        self.ciba_driver = ciba_driver
         self.stop_requested = threading.Event()
         self.failure_message: str | None = None
         self.consecutive_errors = 0
@@ -1474,12 +1310,6 @@ class OidfEarlyStopMonitor:
                 return
 
             try:
-                if self.ciba_driver is not None:
-                    self.ciba_driver.drive_once(
-                        self.base_url,
-                        self.token,
-                        self.aliases,
-                    )
                 failure = inspect_oidf_state(
                     self.base_url,
                     self.token,
@@ -1802,7 +1632,6 @@ def run_official_runner(
     aliases: set[str],
     token: str | None,
     monitor_interval_seconds: int,
-    ciba_driver: NazoCibaDecisionDriver | None,
 ) -> int:
     if timeout_seconds <= 0:
         fail("--timeout-seconds must be greater than zero")
@@ -1833,7 +1662,6 @@ def run_official_runner(
             aliases,
             monitor_interval_seconds,
             ignored_plan_ids,
-            ciba_driver,
         )
         monitor_thread = threading.Thread(
             target=monitor.run,
@@ -1966,15 +1794,12 @@ def main() -> int:
         command.extend(shlex.split(expression))
 
     monitor_aliases = set() if args.list else aliases
-    ciba_driver: NazoCibaDecisionDriver | None = None
     if monitor_aliases and any("ciba" in alias for alias in monitor_aliases):
-        credentials = first_ciba_credentials_from_config(args.config_json_file, args.config_env)
-        if credentials is None:
+        if not ciba_config_has_automated_approval_url(args.config_json_file, args.config_env):
             fail(
-                "FAPI-CIBA conformance automation requires OIDF_USER_EMAIL and "
-                "OIDF_USER_PASSWORD, or matching nazo.oidf_user_* fields in the plan config"
+                "FAPI-CIBA conformance automation requires automated_ciba_approval_url "
+                "so the official suite controls approve/deny timing"
             )
-        ciba_driver = NazoCibaDecisionDriver(target_issuer or NAZO_PUBLIC_ISSUER_ORIGIN, *credentials)
 
     return run_official_runner(
         command,
@@ -1986,7 +1811,6 @@ def main() -> int:
         monitor_aliases,
         token,
         args.monitor_interval_seconds,
-        ciba_driver,
     )
 
 

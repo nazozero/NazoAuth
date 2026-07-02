@@ -83,6 +83,7 @@ fn settings() -> Settings {
         device_authorization_poll_interval_seconds: 5,
         ciba_auth_req_id_ttl_seconds: 600,
         ciba_poll_interval_seconds: 5,
+        ciba_automated_decision_token: None,
     }
 }
 

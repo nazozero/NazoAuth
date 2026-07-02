@@ -76,6 +76,15 @@ pub(crate) struct CibaDecisionRequest {
     csrf_token: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub(crate) struct CibaAutomatedDecisionQuery {
+    token: Option<String>,
+    auth_req_id: Option<String>,
+    r#type: Option<String>,
+    action: Option<String>,
+    decision_token: Option<String>,
+}
+
 #[derive(serde::Serialize)]
 struct CibaVerificationView {
     auth_req_id: String,
@@ -673,6 +682,54 @@ pub(crate) async fn ciba_verification(
     })
 }
 
+pub(crate) async fn ciba_automated_decision(
+    state: Data<AppState>,
+    Query(query): Query<CibaAutomatedDecisionQuery>,
+) -> HttpResponse {
+    if !state.settings.enable_ciba {
+        return empty_response(StatusCode::NOT_FOUND);
+    }
+    let Some(expected_token) = state.settings.ciba_automated_decision_token.as_deref() else {
+        return empty_response(StatusCode::NOT_FOUND);
+    };
+    let Some(actual_token) = query.decision_token.as_deref() else {
+        return empty_response(StatusCode::NOT_FOUND);
+    };
+    if !constant_time_eq(expected_token.as_bytes(), actual_token.as_bytes()) {
+        return empty_response(StatusCode::NOT_FOUND);
+    }
+    let Some(auth_req_id) = query
+        .auth_req_id
+        .as_deref()
+        .or(query.token.as_deref())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "CIBA auth_req_id is required.",
+        );
+    };
+    let decision = match query
+        .action
+        .as_deref()
+        .or(query.r#type.as_deref())
+        .map(str::trim)
+    {
+        Some("allow" | "approve") => CibaStatus::Approved,
+        Some("deny") => CibaStatus::Denied,
+        _ => {
+            return oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "CIBA automated decision is invalid.",
+            );
+        }
+    };
+    set_ciba_request_decision(&state, auth_req_id, decision, None).await
+}
+
 pub(crate) async fn ciba_decision(
     state: Data<AppState>,
     req: HttpRequest,
@@ -690,7 +747,28 @@ pub(crate) async fn ciba_decision(
         Err(response) => return response,
     };
     let auth_req_id = path.into_inner();
-    let mut state_payload = match load_ciba_request_state(&state, &auth_req_id).await {
+    if !matches!(payload.decision.as_str(), "approve" | "deny") {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "CIBA decision is invalid.",
+        );
+    }
+    let decision = if payload.decision == "approve" {
+        CibaStatus::Approved
+    } else {
+        CibaStatus::Denied
+    };
+    set_ciba_request_decision(&state, &auth_req_id, decision, Some(user.id)).await
+}
+
+async fn set_ciba_request_decision(
+    state: &AppState,
+    auth_req_id: &str,
+    decision: CibaStatus,
+    expected_user_id: Option<Uuid>,
+) -> HttpResponse {
+    let mut state_payload = match load_ciba_request_state(state, auth_req_id).await {
         Ok(Some(value)) => value,
         Ok(None) => {
             return oauth_error(
@@ -701,7 +779,7 @@ pub(crate) async fn ciba_decision(
         }
         Err(response) => return response,
     };
-    if state_payload.user_id != user.id {
+    if expected_user_id.is_some_and(|user_id| state_payload.user_id != user_id) {
         return oauth_error(
             StatusCode::FORBIDDEN,
             "access_denied",
@@ -716,25 +794,15 @@ pub(crate) async fn ciba_decision(
         );
     }
     if state_payload.expires_at <= Utc::now().timestamp() {
-        let _ = valkey_del(&state.valkey, ciba_request_key(&auth_req_id)).await;
+        let _ = valkey_del(&state.valkey, ciba_request_key(auth_req_id)).await;
         return oauth_error(
             StatusCode::NOT_FOUND,
             "invalid_request",
             "CIBA request expired.",
         );
     }
-    state_payload.status = match payload.decision.as_str() {
-        "approve" => CibaStatus::Approved,
-        "deny" => CibaStatus::Denied,
-        _ => {
-            return oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "CIBA decision is invalid.",
-            );
-        }
-    };
-    if let Err(response) = store_ciba_request_state(&state, &auth_req_id, &state_payload).await {
+    state_payload.status = decision;
+    if let Err(response) = store_ciba_request_state(state, auth_req_id, &state_payload).await {
         return response;
     }
     json_response_no_store(json!({"success": true}))
