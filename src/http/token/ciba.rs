@@ -14,6 +14,7 @@ pub(crate) const CIBA_GRANT_TYPE: &str = "urn:openid:params:grant-type:ciba";
 const CIBA_REQUEST_OBJECT_MAX_TTL_SECONDS: i64 = 300;
 const CIBA_REQUEST_OBJECT_CLOCK_SKEW_SECONDS: i64 = 30;
 const CIBA_BINDING_MESSAGE_MAX_CHARS: usize = 64;
+const CIBA_EXPIRED_STATE_RETENTION_SECONDS: u64 = 120;
 
 #[derive(Deserialize, serde::Serialize)]
 struct CibaRequestState {
@@ -275,7 +276,7 @@ pub(crate) async fn backchannel_authentication(
         &state.valkey,
         ciba_request_key(&auth_req_id),
         body,
-        expires_in,
+        expires_in.saturating_add(CIBA_EXPIRED_STATE_RETENTION_SECONDS),
     )
     .await
     {
@@ -916,7 +917,7 @@ pub(crate) async fn token_ciba(
         let _ = valkey_del(&state.valkey, ciba_request_key(auth_req_id)).await;
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
-            "invalid_grant",
+            "expired_token",
             "CIBA auth_req_id is expired.",
             false,
         );
@@ -1104,10 +1105,7 @@ async fn store_ciba_request_state(
     auth_req_id: &str,
     payload: &CibaRequestState,
 ) -> Result<(), HttpResponse> {
-    let ttl = payload
-        .expires_at
-        .saturating_sub(Utc::now().timestamp())
-        .max(1) as u64;
+    let ttl = ciba_state_storage_ttl(payload.expires_at, Utc::now().timestamp());
     let body = serde_json::to_string(payload).expect("CIBA state serialization must be infallible");
     valkey_set_ex(&state.valkey, ciba_request_key(auth_req_id), body, ttl)
         .await
@@ -1119,6 +1117,12 @@ async fn store_ciba_request_state(
                 "CIBA state unavailable.",
             )
         })
+}
+
+fn ciba_state_storage_ttl(expires_at: i64, now: i64) -> u64 {
+    (expires_at.saturating_sub(now).max(0) as u64)
+        .saturating_add(CIBA_EXPIRED_STATE_RETENTION_SECONDS)
+        .max(1)
 }
 
 fn ciba_request_key(auth_req_id: &str) -> String {

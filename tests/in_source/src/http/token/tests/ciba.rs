@@ -191,6 +191,18 @@ fn ciba_selected_acr_uses_supported_requested_value() {
 }
 
 #[test]
+fn ciba_state_storage_ttl_retains_expired_state_briefly() {
+    assert_eq!(
+        ciba_state_storage_ttl(1_030, 1_000),
+        30 + CIBA_EXPIRED_STATE_RETENTION_SECONDS
+    );
+    assert_eq!(
+        ciba_state_storage_ttl(900, 1_000),
+        CIBA_EXPIRED_STATE_RETENTION_SECONDS
+    );
+}
+
+#[test]
 fn ciba_signed_request_object_missing_audience_maps_to_invalid_request() {
     let state = ciba_test_state();
     let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
