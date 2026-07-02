@@ -41,9 +41,10 @@ fn redirect_uri_origin(redirect_uri: &str) -> Option<String> {
 }
 
 fn session_management_iframe_document(status_endpoint: &str) -> String {
+    let head = include_str!("session_management_iframe.head.html").trim_end_matches(['\r', '\n']);
     format!(
         "{}{}{}{}",
-        include_str!("session_management_iframe.head.html"),
+        head,
         escape_js_string(status_endpoint),
         include_str!("session_management_iframe.tail.html"),
         ""
