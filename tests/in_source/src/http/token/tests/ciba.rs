@@ -162,8 +162,11 @@ fn ciba_signed_request_object_claims_apply_to_backchannel_form() {
         .expect("client key should generate")
         .private_pkcs8_der;
     let client = ciba_private_key_jwt_client("ciba-kid", &key);
-    let request_object =
-        signed_ciba_request_object("ciba-kid", &key, json!({"requested_expiry": "30"}));
+    let request_object = signed_ciba_request_object(
+        "ciba-kid",
+        &key,
+        json!({"requested_expiry": "30", "acr_values": "1"}),
+    );
     let mut form = BackchannelAuthenticationForm {
         request: Some(request_object),
         ..BackchannelAuthenticationForm::default()
@@ -175,7 +178,16 @@ fn ciba_signed_request_object_claims_apply_to_backchannel_form() {
     assert_eq!(form.scope.as_deref(), Some("openid profile email"));
     assert_eq!(form.login_hint.as_deref(), Some("oidf-local@example.test"));
     assert_eq!(form.binding_message.as_deref(), Some("1234"));
+    assert_eq!(form.acr_values.as_deref(), Some("1"));
     assert_eq!(form.requested_expiry_seconds, Some(30));
+}
+
+#[test]
+fn ciba_selected_acr_uses_supported_requested_value() {
+    assert_eq!(ciba_selected_acr(Some("1")).as_deref(), Some("1"));
+    assert_eq!(ciba_selected_acr(Some("0 1")).as_deref(), Some("1"));
+    assert_eq!(ciba_selected_acr(Some("0")).as_deref(), None);
+    assert_eq!(ciba_selected_acr(None), None);
 }
 
 #[test]

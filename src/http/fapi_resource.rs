@@ -83,17 +83,22 @@ pub(crate) async fn fapi_resource(
         "scope": claims.scope,
         "aud": claims.aud
     }));
-    if let Some(interaction_id) = req
-        .headers()
+    response.headers_mut().insert(
+        "x-fapi-interaction-id".parse().unwrap(),
+        fapi_interaction_id(&req),
+    );
+    response
+}
+
+fn fapi_interaction_id(req: &HttpRequest) -> actix_web::http::header::HeaderValue {
+    req.headers()
         .get("x-fapi-interaction-id")
         .and_then(|value| value.to_str().ok())
         .and_then(|value| actix_web::http::header::HeaderValue::from_str(value).ok())
-    {
-        response
-            .headers_mut()
-            .insert("x-fapi-interaction-id".parse().unwrap(), interaction_id);
-    }
-    response
+        .unwrap_or_else(|| {
+            actix_web::http::header::HeaderValue::from_str(&Uuid::now_v7().to_string())
+                .expect("UUID is a valid HTTP header value")
+        })
 }
 
 async fn validate_access_token_binding(

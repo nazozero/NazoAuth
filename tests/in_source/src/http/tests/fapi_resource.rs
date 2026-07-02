@@ -648,6 +648,27 @@ fn fapi_resource_accepts_only_bound_resource_audiences() {
     ));
 }
 
+#[test]
+fn fapi_interaction_id_echoes_request_or_generates_response_value() {
+    let echoed = actix_web::test::TestRequest::get()
+        .insert_header((
+            "x-fapi-interaction-id",
+            "fAf943Fd-23A7-441b-B8cE-d012413FcA0c",
+        ))
+        .to_http_request();
+    assert_eq!(
+        fapi_interaction_id(&echoed).to_str().ok(),
+        Some("fAf943Fd-23A7-441b-B8cE-d012413FcA0c")
+    );
+
+    let generated = actix_web::test::TestRequest::get().to_http_request();
+    assert!(
+        fapi_interaction_id(&generated)
+            .to_str()
+            .is_ok_and(|value| { Uuid::parse_str(value).is_ok() })
+    );
+}
+
 #[actix_web::test]
 async fn sender_constrained_resource_rejects_wrong_transport_without_backend_lookup() {
     let state = fapi_test_state();

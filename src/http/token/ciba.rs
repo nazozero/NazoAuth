@@ -22,6 +22,8 @@ struct CibaRequestState {
     scopes: Vec<String>,
     audiences: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    acr: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     binding_message: Option<String>,
     #[serde(default)]
     issued_at: i64,
@@ -47,6 +49,7 @@ struct BackchannelAuthenticationForm {
     id_token_hint: Option<String>,
     login_hint_token: Option<String>,
     binding_message: Option<String>,
+    acr_values: Option<String>,
     requested_expiry_seconds: Option<u64>,
     client_id: Option<String>,
     client_secret: Option<String>,
@@ -67,6 +70,7 @@ struct CibaAuthenticationRequestClaims {
     id_token_hint: Option<String>,
     login_hint_token: Option<String>,
     binding_message: Option<String>,
+    acr_values: Option<String>,
     requested_expiry: Option<Value>,
 }
 
@@ -240,12 +244,24 @@ pub(crate) async fn backchannel_authentication(
         .requested_expiry_seconds
         .unwrap_or(state.settings.ciba_auth_req_id_ttl_seconds)
         .min(state.settings.ciba_auth_req_id_ttl_seconds);
+    let acr = match ciba_selected_acr(form.acr_values.as_deref()) {
+        Some(acr) => Some(acr),
+        None if form.acr_values.is_some() => {
+            return oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "CIBA acr_values is unsupported.",
+            );
+        }
+        None => None,
+    };
     let auth_req_id = random_urlsafe_token();
     let state_payload = CibaRequestState {
         client_id: client.client_id,
         user_id: user.id,
         scopes,
         audiences: vec![state.settings.default_audience.clone()],
+        acr,
         binding_message: form.binding_message,
         issued_at: Utc::now().timestamp(),
         status: CibaStatus::Pending,
@@ -328,6 +344,7 @@ async fn parse_backchannel_authentication_form(
             "id_token_hint" => form.id_token_hint = non_empty(value),
             "login_hint_token" => form.login_hint_token = non_empty(value),
             "binding_message" => form.binding_message = non_empty(value),
+            "acr_values" => form.acr_values = non_empty(value),
             "requested_expiry" => {
                 form.requested_expiry_seconds = parse_requested_expiry_string(&value)
             }
@@ -395,6 +412,11 @@ fn validate_and_apply_ciba_request_object_claims(
         &mut form.binding_message,
         claims.binding_message,
         "CIBA request object binding_message conflicts with outer parameter.",
+    )?;
+    merge_request_object_string(
+        &mut form.acr_values,
+        claims.acr_values,
+        "CIBA request object acr_values conflicts with outer parameter.",
     )?;
     if let Some(requested_expiry) = claims.requested_expiry {
         let Some(seconds) = ciba_requested_expiry_seconds(&requested_expiry) else {
@@ -557,6 +579,13 @@ fn ciba_hint_count(form: &BackchannelAuthenticationForm) -> usize {
     .into_iter()
     .filter(|value| value.is_some_and(|value| !value.trim().is_empty()))
     .count()
+}
+
+fn ciba_selected_acr(acr_values: Option<&str>) -> Option<String> {
+    acr_values?
+        .split_ascii_whitespace()
+        .find(|value| *value == "1")
+        .map(ToOwned::to_owned)
 }
 
 fn ciba_binding_message_is_supported(value: &str) -> bool {
@@ -867,7 +896,7 @@ pub(crate) async fn token_ciba(
         Ok(None) => {
             return oauth_token_error(
                 StatusCode::BAD_REQUEST,
-                "expired_token",
+                "invalid_grant",
                 "CIBA auth_req_id is expired.",
                 false,
             );
@@ -887,7 +916,7 @@ pub(crate) async fn token_ciba(
         let _ = valkey_del(&state.valkey, ciba_request_key(auth_req_id)).await;
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
-            "expired_token",
+            "invalid_grant",
             "CIBA auth_req_id is expired.",
             false,
         );
@@ -975,7 +1004,7 @@ pub(crate) async fn token_ciba(
             auth_time: Some(Utc::now().timestamp()),
             amr: vec!["ciba".to_owned()],
             oidc_sid: None,
-            acr: None,
+            acr: ciba.acr,
             userinfo_claims: Vec::new(),
             userinfo_claim_requests: Vec::new(),
             id_token_claims: Vec::new(),
