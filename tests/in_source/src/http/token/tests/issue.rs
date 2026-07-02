@@ -341,15 +341,43 @@ fn oauth_error_code(response: &HttpResponse) -> String {
 
 #[test]
 fn id_token_sid_is_omitted_unless_explicitly_requested() {
+    let settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     let issue = token_issue_with_sid(Vec::new());
-    assert_eq!(id_token_session_sid(&issue), None);
+    assert_eq!(id_token_session_sid(&settings, &issue), None);
 
     let issue = token_issue_with_sid(vec!["sid".to_owned()]);
-    assert_eq!(id_token_session_sid(&issue), Some("op-session-sid"));
+    assert_eq!(
+        id_token_session_sid(&settings, &issue),
+        Some("op-session-sid")
+    );
+}
+
+#[test]
+fn id_token_sid_is_included_when_logout_or_session_features_are_enabled() {
+    let issue = token_issue_with_sid(Vec::new());
+
+    let mut frontchannel_settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    frontchannel_settings.enable_frontchannel_logout = true;
+    assert_eq!(
+        id_token_session_sid(&frontchannel_settings, &issue),
+        Some("op-session-sid")
+    );
+
+    let mut session_settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    session_settings.enable_session_management = true;
+    assert_eq!(
+        id_token_session_sid(&session_settings, &issue),
+        Some("op-session-sid")
+    );
 }
 
 #[test]
 fn id_token_sid_request_object_also_allows_session_sid() {
+    let settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     let mut issue = token_issue_with_sid(Vec::new());
     issue.id_token_claim_requests.push(OidcClaimRequest {
         name: "sid".to_owned(),
@@ -358,7 +386,10 @@ fn id_token_sid_request_object_also_allows_session_sid() {
         values: Vec::new(),
     });
 
-    assert_eq!(id_token_session_sid(&issue), Some("op-session-sid"));
+    assert_eq!(
+        id_token_session_sid(&settings, &issue),
+        Some("op-session-sid")
+    );
 }
 
 #[actix_web::test]
