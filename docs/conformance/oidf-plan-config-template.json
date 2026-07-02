@@ -996,7 +996,10 @@
         "resourceUrl": "https://auth.nazo.run/fapi/resource"
       },
       "server": {
-        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
+        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration",
+        "allow_unexpected_metadata_fields": [
+          "native_sso_supported"
+        ]
       }
     },
     "oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-plain-response-plan-config.json": {
@@ -1994,7 +1997,10 @@
         "resourceUrl": "https://auth.nazo.run/fapi/resource"
       },
       "server": {
-        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
+        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration",
+        "allow_unexpected_metadata_fields": [
+          "native_sso_supported"
+        ]
       }
     },
     "oidf-fapi-matrix-security-final-mtls-dpop-openid-connect-plain-fapi-plain-response-plan-config.json": {
@@ -2989,7 +2995,10 @@
         "resourceUrl": "https://auth.nazo.run/fapi/resource"
       },
       "server": {
-        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
+        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration",
+        "allow_unexpected_metadata_fields": [
+          "native_sso_supported"
+        ]
       }
     },
     "oidf-fapi-matrix-security-final-mtls-dpop-plain-oauth-fapi-client-credentials-grant-plain-response-plan-config.json": {
@@ -3983,7 +3992,10 @@
         "resourceUrl": "https://auth.nazo.run/fapi/resource"
       },
       "server": {
-        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
+        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration",
+        "allow_unexpected_metadata_fields": [
+          "native_sso_supported"
+        ]
       }
     },
     "oidf-fapi-matrix-security-final-mtls-dpop-plain-oauth-plain-fapi-plain-response-plan-config.json": {
@@ -4978,7 +4990,10 @@
         "resourceUrl": "https://auth.nazo.run/fapi/resource"
       },
       "server": {
-        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
+        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration",
+        "allow_unexpected_metadata_fields": [
+          "native_sso_supported"
+        ]
       }
     },
     "oidf-fapi-matrix-security-final-mtls-mtls-openid-connect-plain-fapi-plain-response-plan-config.json": {
@@ -5973,7 +5988,10 @@
         "resourceUrl": "https://auth.nazo.run/fapi/resource"
       },
       "server": {
-        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
+        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration",
+        "allow_unexpected_metadata_fields": [
+          "native_sso_supported"
+        ]
       }
     },
     "oidf-fapi-matrix-security-final-mtls-mtls-plain-oauth-fapi-client-credentials-grant-plain-response-plan-config.json": {
@@ -6967,7 +6985,10 @@
         "resourceUrl": "https://auth.nazo.run/fapi/resource"
       },
       "server": {
-        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
+        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration",
+        "allow_unexpected_metadata_fields": [
+          "native_sso_supported"
+        ]
       }
     },
     "oidf-fapi-matrix-security-final-mtls-mtls-plain-oauth-plain-fapi-plain-response-plan-config.json": {
@@ -7962,7 +7983,10 @@
         "resourceUrl": "https://auth.nazo.run/fapi/resource"
       },
       "server": {
-        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
+        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration",
+        "allow_unexpected_metadata_fields": [
+          "native_sso_supported"
+        ]
       }
     },
     "oidf-fapi-matrix-security-final-private-key-jwt-dpop-openid-connect-plain-fapi-plain-response-plan-config.json": {
@@ -8957,7 +8981,10 @@
         "resourceUrl": "https://auth.nazo.run/fapi/resource"
       },
       "server": {
-        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
+        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration",
+        "allow_unexpected_metadata_fields": [
+          "native_sso_supported"
+        ]
       }
     },
     "oidf-fapi-matrix-security-final-private-key-jwt-dpop-plain-oauth-fapi-client-credentials-grant-plain-response-plan-config.json": {
@@ -9951,7 +9978,10 @@
         "resourceUrl": "https://auth.nazo.run/fapi/resource"
       },
       "server": {
-        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
+        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration",
+        "allow_unexpected_metadata_fields": [
+          "native_sso_supported"
+        ]
       }
     },
     "oidf-fapi-matrix-security-final-private-key-jwt-dpop-plain-oauth-plain-fapi-plain-response-plan-config.json": {
@@ -10946,7 +10976,10 @@
         "resourceUrl": "https://auth.nazo.run/fapi/resource"
       },
       "server": {
-        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
+        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration",
+        "allow_unexpected_metadata_fields": [
+          "native_sso_supported"
+        ]
       }
     },
     "oidf-fapi-matrix-security-final-private-key-jwt-mtls-openid-connect-plain-fapi-plain-response-plan-config.json": {
@@ -11941,7 +11974,10 @@
         "resourceUrl": "https://auth.nazo.run/fapi/resource"
       },
       "server": {
-        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
+        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration",
+        "allow_unexpected_metadata_fields": [
+          "native_sso_supported"
+        ]
       }
     },
     "oidf-fapi-matrix-security-final-private-key-jwt-mtls-plain-oauth-fapi-client-credentials-grant-plain-response-plan-config.json": {
@@ -12935,7 +12971,10 @@
         "resourceUrl": "https://auth.nazo.run/fapi/resource"
       },
       "server": {
-        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
+        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration",
+        "allow_unexpected_metadata_fields": [
+          "native_sso_supported"
+        ]
       }
     },
     "oidf-fapi-matrix-security-final-private-key-jwt-mtls-plain-oauth-plain-fapi-plain-response-plan-config.json": {
@@ -13930,7 +13969,10 @@
         "resourceUrl": "https://auth.nazo.run/fapi/resource"
       },
       "server": {
-        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
+        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration",
+        "allow_unexpected_metadata_fields": [
+          "native_sso_supported"
+        ]
       }
     },
     "oidf-fapi-message-final-plan-config.json": {
@@ -14914,7 +14956,10 @@
         "resourceUrl": "https://auth.nazo.run/fapi/resource"
       },
       "server": {
-        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
+        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration",
+        "allow_unexpected_metadata_fields": [
+          "native_sso_supported"
+        ]
       }
     },
     "oidf-fapi-message-id1-plan-config.json": {
@@ -16149,7 +16194,10 @@
         "resourceUrl": "https://auth.nazo.run/fapi/resource"
       },
       "server": {
-        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
+        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration",
+        "allow_unexpected_metadata_fields": [
+          "native_sso_supported"
+        ]
       }
     },
     "oidf-fapi-security-final-plan-config.json": {
@@ -17133,7 +17181,10 @@
         "resourceUrl": "https://auth.nazo.run/fapi/resource"
       },
       "server": {
-        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
+        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration",
+        "allow_unexpected_metadata_fields": [
+          "native_sso_supported"
+        ]
       }
     },
     "oidf-fapi-security-id2-plan-config.json": {
@@ -18368,7 +18419,10 @@
         "resourceUrl": "https://auth.nazo.run/fapi/resource"
       },
       "server": {
-        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
+        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration",
+        "allow_unexpected_metadata_fields": [
+          "native_sso_supported"
+        ]
       }
     },
     "oidf-oidcc-basic-plan-config.json": {
@@ -19051,21 +19105,30 @@
         }
       },
       "server": {
-        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
+        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration",
+        "allow_unexpected_metadata_fields": [
+          "native_sso_supported"
+        ]
       }
     },
     "oidf-oidcc-config-plan-config.json": {
       "alias": "local-nazo-oauth-oidf-config",
       "description": "OIDC Config OP: provider metadata accuracy for the public issuer.",
       "server": {
-        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
+        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration",
+        "allow_unexpected_metadata_fields": [
+          "native_sso_supported"
+        ]
       }
     },
     "oidf-oidcc-frontchannel-logout-plan-config.json": {
       "alias": "local-nazo-oauth-oidf-frontchannel-logout",
       "description": "OIDC Front-Channel Logout OP: RP-initiated logout, frontchannel iframe notification, and post-logout redirect validation.",
       "server": {
-        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
+        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration",
+        "allow_unexpected_metadata_fields": [
+          "native_sso_supported"
+        ]
       },
       "client": {
         "client_id": "local-oidf-frontchannel-client",
@@ -19531,7 +19594,10 @@
       "alias": "local-nazo-oauth-oidf-session-management",
       "description": "OIDC Session Management OP: check_session_iframe, session_state, and RP-initiated logout state transition validation.",
       "server": {
-        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
+        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration",
+        "allow_unexpected_metadata_fields": [
+          "native_sso_supported"
+        ]
       },
       "client": {
         "client_id": "local-oidf-session-client",
@@ -19708,7 +19774,10 @@
       "alias": "local-nazo-oauth-oidf-fapi-ciba-plain-private-key-jwt-poll",
       "description": "FAPI-CIBA ID1 AS: plain FAPI profile with private_key_jwt client authentication and poll delivery mode.",
       "server": {
-        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration"
+        "discoveryUrl": "https://auth.nazo.run/.well-known/openid-configuration",
+        "allow_unexpected_metadata_fields": [
+          "native_sso_supported"
+        ]
       },
       "resource": {
         "resourceUrl": "https://auth.nazo.run/fapi/resource",
