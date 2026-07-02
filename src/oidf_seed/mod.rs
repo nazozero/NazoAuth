@@ -8,10 +8,15 @@ use std::{collections::BTreeSet, env};
 pub mod config;
 
 pub fn callback_uri(suite_base_url: &str, alias: &str) -> String {
+    test_endpoint_uri(suite_base_url, alias, "callback")
+}
+
+pub fn test_endpoint_uri(suite_base_url: &str, alias: &str, endpoint: &str) -> String {
     format!(
-        "{}/test/a/{}/callback",
+        "{}/test/a/{}/{}",
         suite_base_url.trim_end_matches('/'),
-        alias
+        alias,
+        endpoint.trim_start_matches('/')
     )
 }
 
@@ -43,9 +48,13 @@ fn suite_base_urls_from_extra(
 }
 
 pub fn callback_uris(suite_base_urls: &[String], alias: &str) -> Vec<String> {
+    test_endpoint_uris(suite_base_urls, alias, "callback")
+}
+
+pub fn test_endpoint_uris(suite_base_urls: &[String], alias: &str, endpoint: &str) -> Vec<String> {
     suite_base_urls
         .iter()
-        .map(|suite_base_url| callback_uri(suite_base_url, alias))
+        .map(|suite_base_url| test_endpoint_uri(suite_base_url, alias, endpoint))
         .collect()
 }
 

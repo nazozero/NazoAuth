@@ -9,6 +9,7 @@ use nazo_oauth_server::config::{ConfigSource, database_url};
 use nazo_oauth_server::oidf_seed::{
     callback_uris, config::client_scopes, config::mtls_thumbprint, config::plan_config_files,
     config::public_jwks, config::read_plan_config, config::string_value, suite_base_urls,
+    test_endpoint_uri, test_endpoint_uris,
 };
 use serde_json::{Value, json};
 use std::{collections::BTreeSet, env, path::Path};
@@ -26,6 +27,7 @@ struct FapiClientPolicy {
     allow_client_assertion_endpoint_audience: bool,
     require_par_request_object: bool,
     client_credentials_only: bool,
+    ciba: bool,
 }
 
 struct FapiClientSeed {
@@ -42,6 +44,7 @@ struct ClientUpsert<'a> {
     client_secret_hash: Option<&'a str>,
     auth_method: &'a str,
     redirect_uris: &'a Value,
+    post_logout_redirect_uris: &'a Value,
     scopes: &'a Value,
     allowed_audiences: &'a Value,
     grant_types: &'a Value,
@@ -53,6 +56,8 @@ struct ClientUpsert<'a> {
     require_mtls_bound_tokens: bool,
     tls_client_auth_subject_dn: Option<&'a str>,
     tls_client_auth_cert_sha256: Option<&'a str>,
+    frontchannel_logout_uri: Option<&'a str>,
+    frontchannel_logout_session_required: bool,
     jwks: Option<&'a Value>,
 }
 
@@ -190,6 +195,7 @@ fn upsert_client(connection: &mut PgConnection, client: ClientUpsert<'_>) -> any
             client_type,
             client_secret_argon2_hash,
             redirect_uris,
+            post_logout_redirect_uris,
             scopes,
             allowed_audiences,
             grant_types,
@@ -202,19 +208,22 @@ fn upsert_client(connection: &mut PgConnection, client: ClientUpsert<'_>) -> any
             allow_client_assertion_endpoint_audience,
             require_par_request_object,
             allow_authorization_code_without_pkce,
+            frontchannel_logout_uri,
+            frontchannel_logout_session_required,
             jwks,
             is_active
         )
         VALUES (
-            $17::uuid, $18::uuid, $19::uuid,
-            $1, $2, 'confidential', $3, $4, $5, $6, $7, $8,
-            $9, $10, $11, $12, $13, $14, $15, $20, $16, TRUE
+            $18::uuid, $19::uuid, $20::uuid,
+            $1, $2, 'confidential', $3, $4, $5, $6, $7, $8, $9,
+            $10, $11, $12, $13, $14, $15, $16, $21, $22, $23, $17, TRUE
         )
         ON CONFLICT (tenant_id, client_id) DO UPDATE
         SET client_name = EXCLUDED.client_name,
             client_type = EXCLUDED.client_type,
             client_secret_argon2_hash = EXCLUDED.client_secret_argon2_hash,
             redirect_uris = EXCLUDED.redirect_uris,
+            post_logout_redirect_uris = EXCLUDED.post_logout_redirect_uris,
             scopes = EXCLUDED.scopes,
             allowed_audiences = EXCLUDED.allowed_audiences,
             grant_types = EXCLUDED.grant_types,
@@ -227,6 +236,8 @@ fn upsert_client(connection: &mut PgConnection, client: ClientUpsert<'_>) -> any
             allow_client_assertion_endpoint_audience = EXCLUDED.allow_client_assertion_endpoint_audience,
             require_par_request_object = EXCLUDED.require_par_request_object,
             allow_authorization_code_without_pkce = EXCLUDED.allow_authorization_code_without_pkce,
+            frontchannel_logout_uri = EXCLUDED.frontchannel_logout_uri,
+            frontchannel_logout_session_required = EXCLUDED.frontchannel_logout_session_required,
             jwks = EXCLUDED.jwks,
             is_active = TRUE,
             updated_at = CURRENT_TIMESTAMP
@@ -236,6 +247,7 @@ fn upsert_client(connection: &mut PgConnection, client: ClientUpsert<'_>) -> any
     .bind::<diesel::sql_types::VarChar, _>(client.client_name)
     .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(client.client_secret_hash)
     .bind::<diesel::sql_types::Jsonb, _>(client.redirect_uris)
+    .bind::<diesel::sql_types::Jsonb, _>(client.post_logout_redirect_uris)
     .bind::<diesel::sql_types::Jsonb, _>(client.scopes)
     .bind::<diesel::sql_types::Jsonb, _>(client.allowed_audiences)
     .bind::<diesel::sql_types::Jsonb, _>(client.grant_types)
@@ -256,6 +268,10 @@ fn upsert_client(connection: &mut PgConnection, client: ClientUpsert<'_>) -> any
     .bind::<diesel::sql_types::VarChar, _>(DEFAULT_REALM_ID)
     .bind::<diesel::sql_types::VarChar, _>(DEFAULT_ORGANIZATION_ID)
     .bind::<diesel::sql_types::Bool, _>(client.allow_authorization_code_without_pkce)
+    .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(
+        client.frontchannel_logout_uri,
+    )
+    .bind::<diesel::sql_types::Bool, _>(client.frontchannel_logout_session_required)
     .execute(connection)?;
     Ok(())
 }
@@ -289,6 +305,7 @@ fn fapi_client_policy(file_name: &str, plan: &Value) -> FapiClientPolicy {
                 .and_then(Value::as_str)
                 .is_some(),
         client_credentials_only: fapi_profile == "fapi_client_credentials_grant",
+        ciba: file_name.starts_with("oidf-fapi-ciba-"),
     }
 }
 
@@ -301,10 +318,27 @@ fn main() -> anyhow::Result<()> {
     let runtime_dir = env_or("OIDF_LOCAL_RUNTIME_DIR", "runtime/oidf");
     let runtime_dir = Path::new(&runtime_dir);
     let alias = env_or("OIDF_LOCAL_BASIC_ALIAS", "local-nazo-oauth-oidf");
+    let frontchannel_alias = format!("{alias}-frontchannel-logout");
+    let session_alias = format!("{alias}-session-management");
     let user_email = env_or("OIDF_LOCAL_USER_EMAIL", "oidf-local@example.test");
     let user_password = env_or("OIDF_LOCAL_USER_PASSWORD", "oidf-local-password");
     let client_secret = env_or("OIDF_LOCAL_CLIENT_SECRET", "oidf-local-client-secret");
     let basic_redirect_uris = json!(callback_uris(&suite_base_urls, &alias));
+    let empty_post_logout_redirect_uris = json!([]);
+    let frontchannel_redirect_uris = json!(callback_uris(&suite_base_urls, &frontchannel_alias));
+    let frontchannel_post_logout_redirect_uris = json!(test_endpoint_uris(
+        &suite_base_urls,
+        &frontchannel_alias,
+        "post_logout_redirect"
+    ));
+    let frontchannel_logout_uri =
+        test_endpoint_uri(&suite_base_url, &frontchannel_alias, "frontchannel_logout");
+    let session_redirect_uris = json!(callback_uris(&suite_base_urls, &session_alias));
+    let session_post_logout_redirect_uris = json!(test_endpoint_uris(
+        &suite_base_urls,
+        &session_alias,
+        "post_logout_redirect"
+    ));
 
     let user_password_hash = hash_password(&user_password)?;
     let client_secret_hash = hash_password(&client_secret)?;
@@ -329,6 +363,7 @@ fn main() -> anyhow::Result<()> {
             client_secret_hash: Some(&client_secret_hash),
             auth_method: "client_secret_basic",
             redirect_uris: &basic_redirect_uris,
+            post_logout_redirect_uris: &empty_post_logout_redirect_uris,
             scopes: &default_scopes,
             allowed_audiences: &allowed_audiences,
             grant_types: &grant_types,
@@ -340,6 +375,8 @@ fn main() -> anyhow::Result<()> {
             require_mtls_bound_tokens: false,
             tls_client_auth_subject_dn: None,
             tls_client_auth_cert_sha256: None,
+            frontchannel_logout_uri: None,
+            frontchannel_logout_session_required: true,
             jwks: None,
         },
     )?;
@@ -351,6 +388,7 @@ fn main() -> anyhow::Result<()> {
             client_secret_hash: Some(&client_secret_hash),
             auth_method: "client_secret_basic",
             redirect_uris: &basic_redirect_uris,
+            post_logout_redirect_uris: &empty_post_logout_redirect_uris,
             scopes: &default_scopes,
             allowed_audiences: &allowed_audiences,
             grant_types: &grant_types,
@@ -362,6 +400,8 @@ fn main() -> anyhow::Result<()> {
             require_mtls_bound_tokens: false,
             tls_client_auth_subject_dn: None,
             tls_client_auth_cert_sha256: None,
+            frontchannel_logout_uri: None,
+            frontchannel_logout_session_required: true,
             jwks: None,
         },
     )?;
@@ -373,6 +413,7 @@ fn main() -> anyhow::Result<()> {
             client_secret_hash: Some(&client_secret_hash),
             auth_method: "client_secret_post",
             redirect_uris: &basic_redirect_uris,
+            post_logout_redirect_uris: &empty_post_logout_redirect_uris,
             scopes: &default_scopes,
             allowed_audiences: &allowed_audiences,
             grant_types: &grant_types,
@@ -384,6 +425,58 @@ fn main() -> anyhow::Result<()> {
             require_mtls_bound_tokens: false,
             tls_client_auth_subject_dn: None,
             tls_client_auth_cert_sha256: None,
+            frontchannel_logout_uri: None,
+            frontchannel_logout_session_required: true,
+            jwks: None,
+        },
+    )?;
+    upsert_client(
+        &mut connection,
+        ClientUpsert {
+            client_id: "local-oidf-frontchannel-client",
+            client_name: "Local OIDF Front-Channel Logout Client",
+            client_secret_hash: Some(&client_secret_hash),
+            auth_method: "client_secret_basic",
+            redirect_uris: &frontchannel_redirect_uris,
+            post_logout_redirect_uris: &frontchannel_post_logout_redirect_uris,
+            scopes: &default_scopes,
+            allowed_audiences: &allowed_audiences,
+            grant_types: &grant_types,
+            require_dpop_bound_tokens: false,
+            allow_client_assertion_audience_array: false,
+            allow_client_assertion_endpoint_audience: false,
+            require_par_request_object: false,
+            allow_authorization_code_without_pkce: true,
+            require_mtls_bound_tokens: false,
+            tls_client_auth_subject_dn: None,
+            tls_client_auth_cert_sha256: None,
+            frontchannel_logout_uri: Some(&frontchannel_logout_uri),
+            frontchannel_logout_session_required: true,
+            jwks: None,
+        },
+    )?;
+    upsert_client(
+        &mut connection,
+        ClientUpsert {
+            client_id: "local-oidf-session-client",
+            client_name: "Local OIDF Session Management Client",
+            client_secret_hash: Some(&client_secret_hash),
+            auth_method: "client_secret_basic",
+            redirect_uris: &session_redirect_uris,
+            post_logout_redirect_uris: &session_post_logout_redirect_uris,
+            scopes: &default_scopes,
+            allowed_audiences: &allowed_audiences,
+            grant_types: &grant_types,
+            require_dpop_bound_tokens: false,
+            allow_client_assertion_audience_array: false,
+            allow_client_assertion_endpoint_audience: false,
+            require_par_request_object: false,
+            allow_authorization_code_without_pkce: true,
+            require_mtls_bound_tokens: false,
+            tls_client_auth_subject_dn: None,
+            tls_client_auth_cert_sha256: None,
+            frontchannel_logout_uri: None,
+            frontchannel_logout_session_required: true,
             jwks: None,
         },
     )?;
@@ -428,6 +521,8 @@ fn main() -> anyhow::Result<()> {
     for seed in &fapi_clients {
         let grant_types = if seed.policy.client_credentials_only {
             json!(["client_credentials"])
+        } else if seed.policy.ciba {
+            json!(["urn:openid:params:grant-type:ciba", "refresh_token"])
         } else {
             grant_types.clone()
         };
@@ -440,6 +535,7 @@ fn main() -> anyhow::Result<()> {
                 client_secret_hash: None,
                 auth_method: seed.policy.auth_method,
                 redirect_uris: &fapi_redirect_uris,
+                post_logout_redirect_uris: &empty_post_logout_redirect_uris,
                 scopes: &seed.scopes,
                 allowed_audiences: &allowed_audiences,
                 grant_types: &grant_types,
@@ -455,6 +551,8 @@ fn main() -> anyhow::Result<()> {
                 require_mtls_bound_tokens: seed.policy.require_mtls_bound_tokens,
                 tls_client_auth_subject_dn: None,
                 tls_client_auth_cert_sha256: seed.tls_client_auth_cert_sha256.as_deref(),
+                frontchannel_logout_uri: None,
+                frontchannel_logout_session_required: true,
                 jwks: Some(&seed.jwks),
             },
         )?;

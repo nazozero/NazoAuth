@@ -26,3 +26,15 @@ fn callback_uri_never_preserves_trailing_slash_before_oidf_path() {
         "https://suite.example/test/a/alias-1/callback"
     );
 }
+
+#[test]
+fn test_endpoint_uri_uses_same_alias_scope_as_callback() {
+    assert_eq!(
+        test_endpoint_uri("https://suite.example/", "alias-1", "frontchannel_logout"),
+        "https://suite.example/test/a/alias-1/frontchannel_logout"
+    );
+    assert_eq!(
+        test_endpoint_uri("https://suite.example", "alias-1", "post_logout_redirect"),
+        "https://suite.example/test/a/alias-1/post_logout_redirect"
+    );
+}

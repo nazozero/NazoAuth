@@ -32,6 +32,7 @@ DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN = os.environ.get(
 FAPI_CLIENT_PREFIX = os.environ.get("OIDF_LOCAL_FAPI_CLIENT_PREFIX", "local-oidf-fapi")
 TRUSTED_PROXY_CIDRS = os.environ.get("OIDF_LOCAL_TRUSTED_PROXY_CIDRS", "10.89.0.0/16")
 WRITE_ENV_YAML = os.environ.get("OIDF_LOCAL_WRITE_ENV_YAML", "1") != "0"
+SKIP_UI_BUILD = os.environ.get("OIDF_LOCAL_SKIP_UI_BUILD", "0") == "1"
 OIDCC_SECOND_LOGIN_SCREENSHOT_MODULES = (
     "oidcc-prompt-login",
     "oidcc-max-age-1",
@@ -53,6 +54,9 @@ PLAN_CONFIG_FILES = (
     "oidf-oidcc-basic-plan-config.json",
     "oidf-oidcc-dynamic-plan-config.json",
     "oidf-oidcc-config-plan-config.json",
+    "oidf-oidcc-frontchannel-logout-plan-config.json",
+    "oidf-oidcc-session-management-plan-config.json",
+    "oidf-fapi-ciba-plain-private-key-jwt-poll-plan-config.json",
     "oidf-fapi-security-final-plan-config.json",
     "oidf-fapi-message-final-plan-config.json",
     "oidf-fapi-security-id2-plan-config.json",
@@ -404,6 +408,11 @@ ISSUER: "{ISSUER}"
 ENABLE_REQUEST_OBJECT: true
 ENABLE_PAR_REQUEST_OBJECT: true
 ENABLE_DYNAMIC_CLIENT_REGISTRATION: true
+ENABLE_CIBA: true
+ENABLE_FRONTCHANNEL_LOGOUT: true
+ENABLE_SESSION_MANAGEMENT: true
+ENABLE_OIDC_FEDERATION: true
+ENABLE_NATIVE_SSO: true
 DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN: "{DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN}"
 MTLS_ENDPOINT_BASE_URL: "{MTLS_ISSUER}"
 FRONTEND_BASE_URL: "{ISSUER}/ui"
@@ -488,6 +497,14 @@ http {
 
 
 def write_ui() -> None:
+    if SKIP_UI_BUILD:
+        target = RUNTIME / "ui"
+        target.mkdir(parents=True, exist_ok=True)
+        index = target / "index.html"
+        if not index.exists():
+            write_text(index, "<!doctype html><html><body>OIDF UI build skipped.</body></html>\n")
+        return
+
     package_json = FRONTEND_ROOT / "package.json"
     if not package_json.is_file():
         raise RuntimeError(f"frontend project not found: {FRONTEND_ROOT}")
@@ -607,7 +624,11 @@ def public_jwks(private_jwks: dict[str, object]) -> dict[str, object]:
 
 
 def callback_for(alias: str) -> str:
-    return f"{SUITE_BASE_URL}/test/a/{alias}/callback"
+    return test_endpoint_for(alias, "callback")
+
+
+def test_endpoint_for(alias: str, endpoint: str) -> str:
+    return f"{SUITE_BASE_URL}/test/a/{alias}/{endpoint.lstrip('/')}"
 
 
 def mark_login_page_wait_as_placeholder_update(task: object) -> None:
@@ -1014,6 +1035,47 @@ def write_oidcc_config_plan_config() -> dict[str, object]:
     return config
 
 
+def write_frontchannel_logout_plan_config() -> dict[str, object]:
+    browser = browser_automation()
+    config = {
+        "alias": f"{BASIC_ALIAS}-frontchannel-logout",
+        "description": "OIDC Front-Channel Logout OP: RP-initiated logout, frontchannel iframe notification, and post-logout redirect validation.",
+        "server": {"discoveryUrl": f"{ISSUER}/.well-known/openid-configuration"},
+        "client": {
+            "client_id": "local-oidf-frontchannel-client",
+            "client_secret": CLIENT_SECRET,
+            "scope": "openid profile email",
+        },
+        "nazo": nazo_login_metadata(),
+        "browser": browser,
+        "override": {
+            "oidcc-frontchannel-rp-initiated-logout": {
+                "browser": browser_automation_with_second_login_placeholder(browser)
+            }
+        },
+    }
+    write_plan_config("oidf-oidcc-frontchannel-logout-plan-config.json", config)
+    return config
+
+
+def write_session_management_plan_config() -> dict[str, object]:
+    browser = browser_automation()
+    config = {
+        "alias": f"{BASIC_ALIAS}-session-management",
+        "description": "OIDC Session Management OP: check_session_iframe, session_state, and RP-initiated logout state transition validation.",
+        "server": {"discoveryUrl": f"{ISSUER}/.well-known/openid-configuration"},
+        "client": {
+            "client_id": "local-oidf-session-client",
+            "client_secret": CLIENT_SECRET,
+            "scope": "openid profile email",
+        },
+        "nazo": nazo_login_metadata(),
+        "browser": browser,
+    }
+    write_plan_config("oidf-oidcc-session-management-plan-config.json", config)
+    return config
+
+
 def fapi_client_ids(plan_slug: str) -> tuple[str, str]:
     return (
         f"{FAPI_CLIENT_PREFIX}-{plan_slug}-client-1",
@@ -1160,6 +1222,58 @@ def write_fapi_plan_configs() -> dict[str, dict[str, object]]:
     return configs
 
 
+def write_fapi_ciba_plan_config() -> dict[str, dict[str, object]]:
+    slug = "fapi-ciba-plain-private-key-jwt-poll"
+    client1_id, client2_id = fapi_client_ids(slug)
+    client1_jwks = client_private_jwks(client1_id)
+    client2_jwks = client_private_jwks(client2_id)
+    config = {
+        "alias": f"local-nazo-oauth-oidf-{slug}",
+        "description": "FAPI-CIBA ID1 AS: plain FAPI profile with private_key_jwt client authentication and poll delivery mode.",
+        "server": {"discoveryUrl": f"{ISSUER}/.well-known/openid-configuration"},
+        "resource": {
+            "resourceUrl": f"{ISSUER}/fapi/resource",
+            "resourceMethod": "GET",
+            "resourceMediaType": "application/json",
+            "resourceRequestBody": "",
+        },
+        "client": {
+            **fapi_client_config(client1_id, client1_jwks, "openid profile email offline_access"),
+            "hint_type": "login_hint",
+            "hint_value": USER_EMAIL,
+        },
+        "client2": fapi_client_config(
+            client2_id,
+            client2_jwks,
+            "openid profile email offline_access",
+        ),
+        "mtls": mtls_named_config(mtls_client_cert_name(client1_id)),
+        "mtls2": mtls_named_config(mtls_client_cert_name(client2_id)),
+        "nazo": {
+            **nazo_login_metadata(),
+            "client_auth_type": "private_key_jwt",
+            "sender_constrain": "dpop",
+            "openid": "openid_connect",
+            "fapi_profile": "plain_fapi",
+            "fapi_ciba_profile": "plain_fapi",
+            "ciba_mode": "poll",
+            "matrix_title": "FAPI-CIBA ID1 / private_key_jwt / poll / plain FAPI",
+            "matrix_description": "Covers FAPI-CIBA OP discovery, backchannel authentication, polling token exchange, negative CIBA request handling, refresh token behavior, and resource access.",
+            "matrix_focus": [
+                "CIBA discovery metadata",
+                "backchannel authentication endpoint",
+                "private_key_jwt client authentication",
+                "poll mode token issuance",
+                "FAPI-CIBA request-object and error handling",
+            ],
+        },
+        "browser": browser_automation(),
+    }
+    name = "oidf-fapi-ciba-plain-private-key-jwt-poll-plan-config.json"
+    write_plan_config(name, config)
+    return {name: config}
+
+
 def write_fapi_matrix_plan_configs() -> dict[str, dict[str, object]]:
     configs: dict[str, dict[str, object]] = {}
     for client_auth_type in FAPI_MATRIX_CLIENT_AUTHS:
@@ -1205,8 +1319,11 @@ def write_all_plan_configs() -> None:
         "oidf-oidcc-basic-plan-config.json": write_basic_plan_config(),
         "oidf-oidcc-dynamic-plan-config.json": write_dynamic_plan_config(),
         "oidf-oidcc-config-plan-config.json": write_oidcc_config_plan_config(),
+        "oidf-oidcc-frontchannel-logout-plan-config.json": write_frontchannel_logout_plan_config(),
+        "oidf-oidcc-session-management-plan-config.json": write_session_management_plan_config(),
     }
     configs.update(write_fapi_plan_configs())
+    configs.update(write_fapi_ciba_plan_config())
     configs.update(write_fapi_matrix_plan_configs())
     plan_set = plan_expressions_for_configs(configs)
     plan_manifest = plan_manifest_for_expressions(plan_set, configs)
@@ -1262,8 +1379,22 @@ def plan_expressions_for_configs(configs: dict[str, dict[str, object]]) -> list[
         "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=dynamic_client] "
         "oidf-oidcc-dynamic-plan-config.json",
         "oidcc-config-certification-test-plan oidf-oidcc-config-plan-config.json",
+        "oidcc-frontchannel-rp-initiated-logout-certification-test-plan "
+        "oidf-oidcc-frontchannel-logout-plan-config.json",
+        "oidcc-session-management-certification-test-plan "
+        "oidf-oidcc-session-management-plan-config.json",
     ]
     for name, config in sorted(configs.items()):
+        if name.startswith("oidf-fapi-ciba-"):
+            expressions.append(
+                "fapi-ciba-id1-test-plan"
+                "[client_auth_type=private_key_jwt]"
+                "[fapi_ciba_profile=plain_fapi]"
+                "[ciba_mode=poll]"
+                "[client_registration=static_client] "
+                f"{name}"
+            )
+            continue
         if name.startswith("oidf-fapi-matrix-"):
             nazo = config.get("nazo")
             if not isinstance(nazo, dict):
@@ -1290,6 +1421,8 @@ def plan_manifest_for_expressions(
         "oidf-oidcc-basic-plan-config.json": "OIDC Basic OP",
         "oidf-oidcc-dynamic-plan-config.json": "OIDC Basic OP Dynamic Registration",
         "oidf-oidcc-config-plan-config.json": "OIDC Config OP",
+        "oidf-oidcc-frontchannel-logout-plan-config.json": "OIDC Front-Channel Logout OP",
+        "oidf-oidcc-session-management-plan-config.json": "OIDC Session Management OP",
     }
     oidc_focus = {
         "oidf-oidcc-basic-plan-config.json": [
@@ -1308,6 +1441,18 @@ def plan_manifest_for_expressions(
             "provider metadata accuracy",
             "endpoint advertisement",
             "supported algorithms and response metadata",
+        ],
+        "oidf-oidcc-frontchannel-logout-plan-config.json": [
+            "frontchannel_logout_supported metadata",
+            "RP-initiated logout",
+            "frontchannel logout iframe notification",
+            "post_logout_redirect_uri validation",
+        ],
+        "oidf-oidcc-session-management-plan-config.json": [
+            "check_session_iframe metadata",
+            "session_state authorization response",
+            "RP-initiated logout",
+            "session state transition after logout",
         ],
     }
     for index, expression in enumerate(expressions, 1):
@@ -1334,7 +1479,7 @@ def plan_manifest_for_expressions(
     return {
         "name": "NazoAuth OIDF full conformance matrix",
         "description": (
-            "Seventeen-plan OpenID Foundation regression matrix for the public issuer. "
+            "Twenty-plan OpenID Foundation regression matrix for the public issuer. "
             "Targeted TP/PS checks are mapped onto these plans instead of being run as a separate matrix."
         ),
         "plans": plans,
