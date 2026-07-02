@@ -794,13 +794,19 @@ def browser_automation() -> list[dict[str, object]]:
                     "match": "*/test/*/callback*",
                     "commands": [["wait", "id", "submission_complete", 10]],
                 },
+            ],
+        },
+        {
+            "comment": "Local Podman Nazo OAuth post-logout redirect browser automation.",
+            "match": f"{ISSUER}/logout*",
+            "tasks": [
                 {
                     "task": "Verify post-logout redirect completion",
                     "match": "*/test/*/post_logout_redirect*",
                     "commands": [["wait", "id", "submission_complete", 10]],
                 },
             ],
-        }
+        },
     ]
 
 
