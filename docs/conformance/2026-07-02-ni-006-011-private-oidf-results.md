@@ -1,4 +1,4 @@
-# 2026-07-02 NI-006~NI-011 Remote OIDF Results
+# 2026-07-02 NI-006~NI-011 Private OIDF Results
 
 ## Environment
 
@@ -14,7 +14,8 @@
 | Runner | `scripts/run_oidf_conformance.py --no-api-token --disable-ssl-verify` |
 
 `fee362d` changes only OIDF runner automation and unit tests after the backend
-image commit `6b6da42`. The service health check on the remote test host returned
+image commit `6b6da42`. The service health check in the private conformance
+environment returned
 `{"status":"正常"}` before the final result review.
 
 ## Matrix Coverage
@@ -22,13 +23,13 @@ image commit `6b6da42`. The service health check on the remote test host returne
 | Task | Official suite mapping | Matrix action |
 | --- | --- | --- |
 | NI-006 RFC 7523 | No dedicated official plan was found for third-party JWT bearer grant assertion trust. Existing OIDC/FAPI plans cover `private_key_jwt` client assertions, not the bounded self-asserted JWT bearer grant implemented here. | No OIDF plan added. Keep local RFC 7523 grant tests and metadata truth tests. |
-| NI-007 OpenID Connect CIBA / FAPI CIBA | `fapi-ciba-id1-test-plan` exists for FAPI-CIBA AS. | Added as plan 20 in the repository OIDF matrix and executed on the remote test host. Current run fails and must not be treated as conformance evidence. |
-| NI-008 OpenID Connect Front-Channel Logout | `oidcc-frontchannel-rp-initiated-logout-certification-test-plan` exists. | Added as plan 18 and executed on the remote test host. Isolated run passed. |
-| NI-009 OpenID Connect Session Management | `oidcc-session-management-certification-test-plan` exists. | Added as plan 19 and executed on the remote test host. Run passed. |
+| NI-007 OpenID Connect CIBA / FAPI CIBA | `fapi-ciba-id1-test-plan` exists for FAPI-CIBA AS. | Added as plan 20 in the repository OIDF matrix and executed in the private conformance environment. Current run fails and must not be treated as conformance evidence. |
+| NI-008 OpenID Connect Front-Channel Logout | `oidcc-frontchannel-rp-initiated-logout-certification-test-plan` exists. | Added as plan 18 and executed in the private conformance environment. Isolated run passed. |
+| NI-009 OpenID Connect Session Management | `oidcc-session-management-certification-test-plan` exists. | Added as plan 19 and executed in the private conformance environment. Run passed. |
 | NI-010 OpenID Connect Federation 1.0 | Federation alpha plans exist, including deployed entity and joined-to-test-federation OP/RP plans. | Not added to the must-pass matrix. The current implementation only publishes a self-issued entity statement and does not implement trust chain resolution, fetch/list/resolve, metadata policy, or joined-federation behavior. |
 | NI-011 OpenID Connect Native SSO | No official Native SSO / `device_secret` OP plan was found. | No OIDF plan added. Keep local device-secret lifecycle, `ds_hash`, token exchange, and refresh-family tests. |
 
-## Remote Runs
+## Private Runs
 
 | Task | Plan | Plan ID | Export directory | Module result | Log result summary |
 | --- | --- | --- | --- | --- | --- |

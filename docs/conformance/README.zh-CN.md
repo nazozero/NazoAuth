@@ -20,7 +20,7 @@ Nazo Auth Server 已发布在 OpenID Foundation 官方认证列表中：
 - 最新私有 full-matrix 回归：[2026-07-01 TP/PS OIDF full matrix](2026-07-01-tp-ps-full-matrix.md)
 - 最新官方 full matrix：[2026-07-02 NI-004 official OIDF full matrix](2026-07-02-ni-004-official-oidf-full-matrix.md)
 - 最新 RFC 覆盖检查：[2026-07-02 NI-005 RFC 7592 OIDF coverage](2026-07-02-ni-005-oidf-coverage.md)
-- 最新 NI-006~NI-011 remote targeted OIDF 结果：[2026-07-02 NI-006~NI-011 remote OIDF results](2026-07-02-ni-006-011-remote-oidf-results.md)
+- 最新 NI-006~NI-011 私有 OIDF targeted 结果：[2026-07-02 NI-006~NI-011 private OIDF results](2026-07-02-ni-006-011-private-oidf-results.md)
 
 `2026-06-09` full matrix 是当前官方认证证据，针对 `https://auth.nazo.run` 执行，覆盖 OIDC Basic、OIDC Config、FAPI2 Security Profile Final、FAPI2 Message Signing Final、mTLS、DPoP、`private_key_jwt`、client credentials 变体。结果为全计划完成，`0 failures`，`0 warnings`。
 
@@ -28,7 +28,7 @@ Nazo Auth Server 已发布在 OpenID Foundation 官方认证列表中：
 
 最新私有 full-matrix 回归记录是 2026-07-01 TP/PS 运行，测试对象为 `https://auth.nazo.run`，runtime commit 为 `31e8f9f`。该运行使用仓库原有 16-plan 完整矩阵，导出 16 个 plan archives，共执行 578 个测试模块，结果为 `0 failures`、`0 warnings`。
 
-最新 NI-006~NI-011 targeted remote 运行使用本地 official suite 快照
+最新 NI-006~NI-011 私有一致性测试环境 targeted 运行使用本地 official suite 快照
 `edbf2514e1e5c850ccf28544953608bda50daf4d`。NI-008 Front-Channel Logout 和
 NI-009 Session Management 均为 `0 failures`、`0 warnings`、`0 skipped modules`；
 NI-007 FAPI-CIBA 已加入矩阵但当前失败，结果为 3 个模块通过、32 个模块失败。
