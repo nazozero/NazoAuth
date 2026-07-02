@@ -192,19 +192,44 @@ fn frontchannel_logout_url(
 }
 
 fn frontchannel_logout_document(frontchannel_urls: &[String], redirect: Option<&str>) -> String {
+    let iframe_count = frontchannel_urls.len();
+    let iframe_onload = if redirect.is_some() {
+        " onload=\"nazoFrontchannelLogoutFrameDone()\""
+    } else {
+        ""
+    };
     let iframes = frontchannel_urls
         .iter()
         .map(|url| {
             format!(
-                "<iframe title=\"OIDC Front-Channel Logout\" src=\"{}\"></iframe>",
-                escape_html_attribute(url)
+                "<iframe title=\"OIDC Front-Channel Logout\" src=\"{}\"{}></iframe>",
+                escape_html_attribute(url),
+                iframe_onload
             )
         })
         .collect::<String>();
     let redirect_script = redirect.map_or_else(String::new, |location| {
         format!(
-            "<script>setTimeout(function(){{window.location.replace('{}');}},300);</script>",
-            escape_js_string(location)
+            concat!(
+                "<script>",
+                "(function(){{",
+                "var remaining={iframe_count};",
+                "var redirected=false;",
+                "function finish(){{",
+                "if(redirected){{return;}}",
+                "redirected=true;",
+                "window.location.replace('{location}');",
+                "}}",
+                "window.nazoFrontchannelLogoutFrameDone=function(){{",
+                "remaining-=1;",
+                "if(remaining<=0){{setTimeout(finish,50);}}",
+                "}};",
+                "setTimeout(finish,2500);",
+                "}})();",
+                "</script>"
+            ),
+            iframe_count = iframe_count,
+            location = escape_js_string(location)
         )
     });
     format!(
@@ -212,7 +237,7 @@ fn frontchannel_logout_document(frontchannel_urls: &[String], redirect: Option<&
             "<!doctype html><html><head><meta charset=\"utf-8\">",
             "<meta http-equiv=\"cache-control\" content=\"no-store\">",
             "<style>iframe{{display:none;width:0;height:0;border:0}}</style>",
-            "</head><body>{iframes}{redirect_script}</body></html>"
+            "</head><body>{redirect_script}{iframes}</body></html>"
         ),
         iframes = iframes,
         redirect_script = redirect_script

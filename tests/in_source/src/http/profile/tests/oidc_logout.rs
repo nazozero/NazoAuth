@@ -958,8 +958,19 @@ fn frontchannel_logout_document_escapes_iframe_sources_and_redirect() {
 
     assert!(html.contains("src=\"https://client.example/logout?a=1&amp;b=2\""));
     assert!(html.contains("src=\"https://other.example/logout?x=%22\""));
+    assert!(html.contains("onload=\"nazoFrontchannelLogoutFrameDone()\""));
+    assert!(html.contains("var remaining=2;"));
+    assert!(html.contains("setTimeout(finish,2500);"));
     assert!(html.contains("https://client.example/done?state=a\\u0026b=2"));
     assert!(!html.contains("state=a&b=2';"));
+}
+
+#[test]
+fn frontchannel_logout_document_without_redirect_does_not_require_script_callbacks() {
+    let html = frontchannel_logout_document(&["https://client.example/logout".to_owned()], None);
+
+    assert!(html.contains("src=\"https://client.example/logout\""));
+    assert!(!html.contains("nazoFrontchannelLogoutFrameDone"));
 }
 
 async fn one_shot_logout_server(status: &'static str) -> (String, tokio::task::JoinHandle<String>) {
