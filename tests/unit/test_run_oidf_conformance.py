@@ -63,6 +63,30 @@ class RunOidfConformanceTests(unittest.TestCase):
             )
         )
 
+    def test_ciba_backchannel_log_context_includes_sanitized_response_body(self):
+        module = load_runner_module()
+
+        context = module.oidf_log_context(
+            [
+                {
+                    "src": "CallBackchannelAuthenticationEndpoint",
+                    "result": "FAILURE",
+                    "msg": "MalformedJsonException",
+                    "args": {
+                        "endpoint": "https://auth.nazo.run/bc-authorize?code=secret",
+                        "body": "<html>token=secret</html>",
+                        "response_status_code": 404,
+                    },
+                }
+            ]
+        )
+
+        self.assertIn("CallBackchannelAuthenticationEndpoint", context)
+        self.assertIn("https://auth.nazo.run/bc-authorize?redacted=1", context)
+        self.assertIn("response_status_code=404", context)
+        self.assertIn("token=<redacted>", context)
+        self.assertNotIn("secret", context)
+
 
 if __name__ == "__main__":
     unittest.main()

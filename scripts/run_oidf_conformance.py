@@ -64,7 +64,35 @@ NAZO_AUTHORIZATION_ERROR_RESPONSE_PATTERN = (
 OIDF_BAD_FINAL_RESULTS = {"FAILED", "INTERRUPTED", "WARNING"}
 OIDF_BAD_STATUS_VALUES = {"FAILED", "INTERRUPTED"}
 OIDF_BAD_LOG_RESULTS = {"FAILURE", "WARNING"}
-OIDF_LOG_CONTEXT_SOURCES = {"BROWSER", "WebRunner"}
+OIDF_LOG_CONTEXT_SOURCES = {
+    "BROWSER",
+    "CallBackchannelAuthenticationEndpoint",
+    "WebRunner",
+}
+OIDF_LOG_CONTEXT_FIELDS = (
+    "src",
+    "result",
+    "msg",
+    "browser",
+    "task",
+    "url",
+    "endpoint",
+    "uri",
+    "request_uri",
+    "match",
+    "element_type",
+    "target",
+    "code",
+    "status",
+    "body",
+    "response_body",
+    "response_status_code",
+    "response_status_text",
+    "content_type",
+    "backchannel_authentication_endpoint_response",
+    "backchannel_authentication_endpoint_response_http_status",
+    "backchannel_authentication_endpoint_response_headers",
+)
 OIDF_SENSITIVE_LOG_FIELDS = {
     "authorization",
     "access_token",
@@ -1152,36 +1180,46 @@ def oidf_log_context(logs: object, *, max_entries: int = 6) -> str:
             continue
 
         parts: list[str] = []
-        for key in (
-            "src",
-            "result",
-            "msg",
-            "browser",
-            "task",
-            "url",
-            "request_uri",
-            "match",
-            "element_type",
-            "target",
-            "response_status_code",
-            "response_status_text",
-            "content_type",
-        ):
-            value = entry.get(key)
-            if isinstance(value, (str, int, float, bool)):
-                text = str(value).replace("\n", " ").strip()
-                if text:
-                    if key.lower() in OIDF_SENSITIVE_LOG_FIELDS:
-                        text = "<redacted>"
-                    else:
-                        text = redact_log_text(text)
-                    parts.append(f"{key}={text[:180]}")
+        for key, value in oidf_log_context_values(entry):
+            text = oidf_log_context_text(key, value)
+            if text:
+                parts.append(f"{key}={text[:180]}")
         if parts:
             interesting.append("; ".join(parts))
 
     if not interesting:
         return ""
     return " | ".join(interesting[-max_entries:])
+
+
+def oidf_log_context_values(entry: dict[str, object]) -> list[tuple[str, object]]:
+    values: list[tuple[str, object]] = []
+    for key in OIDF_LOG_CONTEXT_FIELDS:
+        if key in entry:
+            values.append((key, entry[key]))
+
+    args = entry.get("args")
+    if isinstance(args, dict):
+        for key in OIDF_LOG_CONTEXT_FIELDS:
+            if key in args:
+                values.append((key, args[key]))
+    return values
+
+
+def oidf_log_context_text(key: str, value: object) -> str:
+    if isinstance(value, (dict, list)):
+        text = json.dumps(value, sort_keys=True, separators=(",", ":"))
+    elif isinstance(value, (str, int, float, bool)):
+        text = str(value)
+    else:
+        return ""
+
+    text = text.replace("\n", " ").strip()
+    if not text:
+        return ""
+    if key.lower() in OIDF_SENSITIVE_LOG_FIELDS:
+        return "<redacted>"
+    return redact_log_text(text)
 
 
 def oidf_failure_with_log_context(module_id: str, failure: str, logs: object) -> str:
