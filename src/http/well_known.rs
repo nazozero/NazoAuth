@@ -11,6 +11,7 @@ use crate::support::{
 
 const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
 const DPOP_SIGNING_ALGS: [&str; 2] = ["EdDSA", "ES256"];
+const FAPI_CIBA_REQUEST_OBJECT_SIGNING_ALGS: [&str; 3] = ["EdDSA", "ES256", "PS256"];
 const REQUEST_OBJECT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
 const BASELINE_REQUEST_OBJECT_SIGNING_ALGS: [&str; 5] =
     ["none", "EdDSA", "RS256", "ES256", "PS256"];
@@ -171,7 +172,7 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
         metadata["backchannel_token_delivery_modes_supported"] = json!(["poll"]);
         metadata["backchannel_user_code_parameter_supported"] = json!(false);
         metadata["backchannel_authentication_request_signing_alg_values_supported"] =
-            json!(CLIENT_JWT_SIGNING_ALGS);
+            json!(FAPI_CIBA_REQUEST_OBJECT_SIGNING_ALGS);
     }
     if settings.enable_native_sso {
         metadata["native_sso_supported"] = json!(true);

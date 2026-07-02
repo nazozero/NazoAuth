@@ -33,10 +33,13 @@ fn ciba_test_state() -> AppState {
     ciba_test_state_with(|_| {})
 }
 
-fn ciba_private_key_jwt_client(kid: &str, private_pkcs8_der: &[u8]) -> ClientRow {
+fn ciba_private_key_jwt_client_with_alg(
+    kid: &str,
+    alg: jsonwebtoken::Algorithm,
+    private_pkcs8_der: &[u8],
+) -> ClientRow {
     let public_jwk =
-        public_jwk_from_private_der(kid, jsonwebtoken::Algorithm::PS256, private_pkcs8_der)
-            .expect("public jwk should derive");
+        public_jwk_from_private_der(kid, alg, private_pkcs8_der).expect("public jwk should derive");
     ClientRow {
         id: Uuid::now_v7(),
         tenant_id: DEFAULT_TENANT_ID,
@@ -78,7 +81,16 @@ fn ciba_private_key_jwt_client(kid: &str, private_pkcs8_der: &[u8]) -> ClientRow
     }
 }
 
-fn signed_ciba_request_object(kid: &str, private_pkcs8_der: &[u8], extra_claims: Value) -> String {
+fn ciba_private_key_jwt_client(kid: &str, private_pkcs8_der: &[u8]) -> ClientRow {
+    ciba_private_key_jwt_client_with_alg(kid, jsonwebtoken::Algorithm::PS256, private_pkcs8_der)
+}
+
+fn signed_ciba_request_object_with_alg(
+    kid: &str,
+    alg: jsonwebtoken::Algorithm,
+    private_pkcs8_der: &[u8],
+    extra_claims: Value,
+) -> String {
     let now = Utc::now().timestamp();
     let mut claims = json!({
         "iss": "client-1",
@@ -102,7 +114,7 @@ fn signed_ciba_request_object(kid: &str, private_pkcs8_der: &[u8], extra_claims:
             target.insert(key.clone(), value.clone());
         }
     }
-    let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::PS256);
+    let mut header = jsonwebtoken::Header::new(alg);
     header.kid = Some(kid.to_owned());
     jsonwebtoken::encode(
         &header,
@@ -110,6 +122,15 @@ fn signed_ciba_request_object(kid: &str, private_pkcs8_der: &[u8], extra_claims:
         &jsonwebtoken::EncodingKey::from_rsa_der(private_pkcs8_der),
     )
     .expect("CIBA request object should sign")
+}
+
+fn signed_ciba_request_object(kid: &str, private_pkcs8_der: &[u8], extra_claims: Value) -> String {
+    signed_ciba_request_object_with_alg(
+        kid,
+        jsonwebtoken::Algorithm::PS256,
+        private_pkcs8_der,
+        extra_claims,
+    )
 }
 
 #[test]
@@ -336,4 +357,46 @@ fn ciba_signed_request_object_missing_audience_maps_to_invalid_request() {
         Some("invalid_request")
     );
     assert!(form.scope.is_none());
+}
+
+#[test]
+fn ciba_rejects_rs256_request_object_signing_algorithm() {
+    let state = ciba_test_state();
+    let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
+        .expect("client key should generate")
+        .private_pkcs8_der;
+    let client =
+        ciba_private_key_jwt_client_with_alg("ciba-kid", jsonwebtoken::Algorithm::RS256, &key);
+    let request_object = signed_ciba_request_object_with_alg(
+        "ciba-kid",
+        jsonwebtoken::Algorithm::RS256,
+        &key,
+        json!({}),
+    );
+    let mut form = BackchannelAuthenticationForm {
+        request: Some(request_object),
+        ..BackchannelAuthenticationForm::default()
+    };
+
+    let response = validate_and_apply_ciba_request_object_claims(&state, &client, &mut form)
+        .expect_err("FAPI-CIBA request objects must reject RS256");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("invalid_request")
+    );
+}
+
+#[test]
+fn ciba_rejects_rs256_client_assertion_algorithm() {
+    assert!(!ciba_jwt_signing_algorithm_supported(
+        jsonwebtoken::Algorithm::RS256
+    ));
+    assert!(ciba_jwt_signing_algorithm_supported(
+        jsonwebtoken::Algorithm::PS256
+    ));
 }
