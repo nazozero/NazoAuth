@@ -19,6 +19,8 @@ struct BackchannelLogoutClient {
     redirect_uris: Value,
     post_logout_redirect_uris: Value,
     backchannel_logout_uri: Option<String>,
+    frontchannel_logout_uri: Option<String>,
+    frontchannel_logout_session_required: bool,
     subject_type: String,
     sector_identifier_host: Option<String>,
 }
@@ -94,26 +96,33 @@ pub(crate) async fn oidc_logout(
 
     let frontchannel_urls = if state.settings.enable_frontchannel_logout {
         if let Some(session) = current_session.as_ref() {
-            match frontchannel_logout_clients_for_user(&state, session.user.id).await {
-                Ok(clients) => clients
-                    .iter()
-                    .filter_map(|client| {
-                        frontchannel_logout_url(client, &state.settings.issuer, &session.oidc_sid)
-                            .map_err(|error| {
-                                tracing::warn!(
-                                    %error,
-                                    client_id = %client.client_id,
-                                    "failed to compose front-channel logout URI"
-                                );
-                            })
-                            .ok()
-                    })
-                    .collect::<Vec<_>>(),
-                Err(error) => {
-                    tracing::warn!(%error, "failed to query front-channel logout clients");
-                    Vec::new()
+            let clients = if let Some(client) = client.as_ref() {
+                frontchannel_logout_client_for_logout_client(client)
+                    .into_iter()
+                    .collect::<Vec<_>>()
+            } else {
+                match frontchannel_logout_clients_for_user(&state, session.user.id).await {
+                    Ok(clients) => clients,
+                    Err(error) => {
+                        tracing::warn!(%error, "failed to query front-channel logout clients");
+                        Vec::new()
+                    }
                 }
-            }
+            };
+            clients
+                .into_iter()
+                .filter_map(|client| {
+                    frontchannel_logout_url(&client, &state.settings.issuer, &session.oidc_sid)
+                        .map_err(|error| {
+                            tracing::warn!(
+                                %error,
+                                client_id = %client.client_id,
+                                "failed to compose front-channel logout URI"
+                            );
+                        })
+                        .ok()
+                })
+                .collect::<Vec<_>>()
         } else {
             Vec::new()
         }
@@ -457,6 +466,8 @@ async fn lookup_logout_client(
             oauth_clients::redirect_uris,
             oauth_clients::post_logout_redirect_uris,
             oauth_clients::backchannel_logout_uri,
+            oauth_clients::frontchannel_logout_uri,
+            oauth_clients::frontchannel_logout_session_required,
             oauth_clients::subject_type,
             oauth_clients::sector_identifier_host,
         ))
@@ -606,6 +617,8 @@ async fn backchannel_logout_clients_for_user(
             oauth_clients::redirect_uris,
             oauth_clients::post_logout_redirect_uris,
             oauth_clients::backchannel_logout_uri,
+            oauth_clients::frontchannel_logout_uri,
+            oauth_clients::frontchannel_logout_session_required,
             oauth_clients::subject_type,
             oauth_clients::sector_identifier_host,
         ))
@@ -630,6 +643,19 @@ async fn frontchannel_logout_clients_for_user(
         ))
         .load::<FrontchannelLogoutClient>(&mut conn)
         .await?)
+}
+
+fn frontchannel_logout_client_for_logout_client(
+    client: &BackchannelLogoutClient,
+) -> Option<FrontchannelLogoutClient> {
+    client
+        .frontchannel_logout_uri
+        .as_ref()
+        .map(|frontchannel_logout_uri| FrontchannelLogoutClient {
+            client_id: client.client_id.clone(),
+            frontchannel_logout_uri: frontchannel_logout_uri.clone(),
+            frontchannel_logout_session_required: client.frontchannel_logout_session_required,
+        })
 }
 
 fn id_token_hint_matches_current_session(

@@ -191,6 +191,7 @@ impl LiveLogoutFixture {
                 allow_client_assertion_endpoint_audience, require_par_request_object,
                 allow_authorization_code_without_pkce, is_active, post_logout_redirect_uris,
                 backchannel_logout_uri, backchannel_logout_session_required,
+                frontchannel_logout_uri, frontchannel_logout_session_required,
                 subject_type, sector_identifier_host
             )
             VALUES (
@@ -198,7 +199,7 @@ impl LiveLogoutFixture {
                 NULL, $5, '["openid"]'::jsonb, '["resource://default"]'::jsonb,
                 '["authorization_code"]'::jsonb, 'client_secret_post', false,
                 false, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb,
-                false, false, false, false, true, $6, $7, true, $8, $9
+                false, false, false, false, true, $6, $7, true, NULL, true, $8, $9
             )
             RETURNING id
             "#,
@@ -237,6 +238,25 @@ impl LiveLogoutFixture {
         .execute(&mut conn)
         .await
         .expect("user grant should insert");
+    }
+
+    async fn set_frontchannel_logout_uri(&self, client_id: Uuid, uri: &str) {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        sql_query(
+            r#"
+            UPDATE oauth_clients
+            SET frontchannel_logout_uri = $2,
+                frontchannel_logout_session_required = true
+            WHERE id = $1
+            "#,
+        )
+        .bind::<SqlUuid, _>(client_id)
+        .bind::<Text, _>(uri)
+        .execute(&mut conn)
+        .await
+        .expect("front-channel logout uri should update");
     }
 
     async fn issue_id_token_hint(&self, user_id: Uuid, client_id: &str, oidc_sid: &str) -> String {
@@ -478,6 +498,8 @@ fn post_logout_redirect_requires_exact_registered_uri_and_preserves_state() {
         redirect_uris: json!(["https://client.example/callback"]),
         post_logout_redirect_uris: json!(["https://client.example/logout/callback"]),
         backchannel_logout_uri: None,
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: true,
         subject_type: "public".to_owned(),
         sector_identifier_host: None,
     };
@@ -506,6 +528,8 @@ fn post_logout_redirect_appends_state_without_discarding_registered_query() {
         redirect_uris: json!(["https://client.example/callback"]),
         post_logout_redirect_uris: json!(["https://client.example/logout/callback?flow=rp"]),
         backchannel_logout_uri: None,
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: true,
         subject_type: "public".to_owned(),
         sector_identifier_host: None,
     };
@@ -540,6 +564,8 @@ fn post_logout_redirect_rejects_missing_client_and_invalid_registered_uri() {
         redirect_uris: json!(["https://client.example/callback"]),
         post_logout_redirect_uris: json!(["not a uri"]),
         backchannel_logout_uri: None,
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: true,
         subject_type: "public".to_owned(),
         sector_identifier_host: None,
     };
@@ -782,6 +808,8 @@ fn id_token_hint_subject_matches_pairwise_subject_for_registered_client_sector()
         redirect_uris: json!(["https://client.example/callback"]),
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: Some("https://client.example/backchannel-logout".to_owned()),
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: true,
         subject_type: "pairwise".to_owned(),
         sector_identifier_host: None,
     };
@@ -843,6 +871,8 @@ fn id_token_hint_subject_policy_error_never_matches_session() {
         redirect_uris: json!(["https://client.example/callback"]),
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: Some("https://client.example/backchannel-logout".to_owned()),
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: true,
         subject_type: "pairwise".to_owned(),
         sector_identifier_host: Some("client.example".to_owned()),
     };
@@ -880,6 +910,8 @@ fn backchannel_logout_subject_is_omitted_when_pairwise_sector_is_ambiguous() {
         ]),
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: Some("https://client.example/backchannel-logout".to_owned()),
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: true,
         subject_type: "pairwise".to_owned(),
         sector_identifier_host: None,
     };
@@ -903,6 +935,8 @@ fn backchannel_logout_subject_uses_public_subject_when_configured() {
         redirect_uris: json!([]),
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: Some("https://client.example/backchannel-logout".to_owned()),
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: true,
         subject_type: "public".to_owned(),
         sector_identifier_host: None,
     };
@@ -971,6 +1005,67 @@ fn frontchannel_logout_document_without_redirect_does_not_require_script_callbac
 
     assert!(html.contains("src=\"https://client.example/logout\""));
     assert!(!html.contains("nazoFrontchannelLogoutFrameDone"));
+}
+
+#[actix_web::test]
+async fn rp_initiated_logout_frontchannel_notifies_only_hinted_client() {
+    let Some(fixture) = LiveLogoutFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let user = fixture
+        .create_user(&format!("frontchannel-scope-{suffix}"))
+        .await;
+    let sid = format!("frontchannel-scope-{suffix}");
+    let oidc_sid = format!("oidc-frontchannel-scope-{suffix}");
+    fixture.store_session(&user, &sid, &oidc_sid).await;
+
+    let client_a_public_id = format!("frontchannel-a-{suffix}");
+    let client_b_public_id = format!("frontchannel-b-{suffix}");
+    let client_a = fixture
+        .insert_client(
+            &client_a_public_id,
+            "https://client-a.example/callback",
+            "https://client-a.example/logout/callback",
+            None,
+        )
+        .await;
+    let client_b = fixture
+        .insert_client(
+            &client_b_public_id,
+            "https://client-b.example/callback",
+            "https://client-b.example/logout/callback",
+            None,
+        )
+        .await;
+    fixture.grant_client(&user, client_a).await;
+    fixture.grant_client(&user, client_b).await;
+    fixture
+        .set_frontchannel_logout_uri(client_a, "https://client-a.example/frontchannel")
+        .await;
+    fixture
+        .set_frontchannel_logout_uri(client_b, "https://client-b.example/frontchannel")
+        .await;
+
+    let id_token_hint = fixture
+        .issue_id_token_hint(user.id, &client_a_public_id, &oidc_sid)
+        .await;
+    let uri = format!(
+        "/oidc/logout?id_token_hint={}&post_logout_redirect_uri={}",
+        urlencoding::encode(&id_token_hint),
+        urlencoding::encode("https://client-a.example/logout/callback"),
+    );
+    let (req, payload) = fixture.logout_request(&uri, Some(&sid)).await;
+
+    let response = oidc_logout(fixture.state.clone(), req, payload).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("logout body should collect");
+    let html = std::str::from_utf8(&body).expect("logout document should be utf-8");
+
+    assert!(html.contains("https://client-a.example/frontchannel"));
+    assert!(!html.contains("https://client-b.example/frontchannel"));
 }
 
 async fn one_shot_logout_server(status: &'static str) -> (String, tokio::task::JoinHandle<String>) {
