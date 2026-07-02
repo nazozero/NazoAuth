@@ -1,0 +1,23 @@
+name: oidf-age-recipient
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  derive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install age decryptor
+        run: cargo install rage --version 0.11.2 --locked
+
+      - name: Derive public recipient
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s\n' "$OIDF_PLAN_CONFIG_AGE_IDENTITY" > oidf-plan-config.agekey
+          rage-keygen -y oidf-plan-config.agekey
+        env:
+          OIDF_PLAN_CONFIG_AGE_IDENTITY: ${{ secrets.OIDF_PLAN_CONFIG_AGE_IDENTITY }}
