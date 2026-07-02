@@ -56,6 +56,7 @@ impl LiveLogoutFixture {
             ("COOKIE_SECURE", "true"),
             ("SESSION_COOKIE_NAME", "nazo_session_logout_test"),
             ("CSRF_COOKIE_NAME", "nazo_csrf_logout_test"),
+            ("ENABLE_FRONTCHANNEL_LOGOUT", "true"),
         ]);
         let settings = Settings::from_config(&config).expect("test settings should load");
         let key_material =
