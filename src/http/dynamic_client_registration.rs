@@ -876,7 +876,10 @@ fn default_dynamic_client_scopes(grant_types: &[String]) -> Vec<String> {
     {
         return Vec::new();
     }
-    vec!["openid".to_owned()]
+    ["openid", "profile", "email", "address", "phone"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
 }
 
 fn validate_request_uris(request_uris: &[String]) -> Result<(), DynamicRegistrationError> {

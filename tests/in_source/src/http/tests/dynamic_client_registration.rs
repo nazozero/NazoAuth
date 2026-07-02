@@ -86,6 +86,25 @@ fn dynamic_registration_requires_pkce_for_public_or_sender_constrained_clients()
 }
 
 #[test]
+fn oidc_dynamic_code_clients_default_to_standard_claim_scopes() {
+    let prepared = prepare_dynamic_client_registration(
+        DynamicClientRegistrationRequest {
+            redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
+            ..Default::default()
+        },
+        DynamicRegistrationDefaults {
+            default_audience: "https://issuer.example/fapi/resource",
+        },
+    )
+    .expect("OIDC dynamic client metadata should be accepted");
+
+    assert_eq!(
+        prepared.scopes,
+        vec!["openid", "profile", "email", "address", "phone"]
+    );
+}
+
+#[test]
 fn dynamic_registration_rejects_inconsistent_grant_and_response_types() {
     let request = DynamicClientRegistrationRequest {
         redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
@@ -191,7 +210,10 @@ async fn dynamic_registration_accepts_oidf_inline_jwks_without_kid_for_secret_cl
     .expect("OIDF Basic dynamic registration metadata should parse");
 
     let create_request = prepared.to_create_client_request();
-    assert_eq!(create_request.scopes, vec!["openid"]);
+    assert_eq!(
+        create_request.scopes,
+        vec!["openid", "profile", "email", "address", "phone"]
+    );
     assert!(create_request.allow_authorization_code_without_pkce);
 
     crate::http::admin::prepare_client_insert(create_request, None, "https://issuer.example")
@@ -218,7 +240,16 @@ fn dynamic_registration_refresh_clients_do_not_receive_offline_access_by_default
     )
     .expect("refresh-capable dynamic registration metadata should be accepted");
 
-    assert_eq!(prepared.scopes, vec!["openid"]);
+    assert_eq!(
+        prepared.scopes,
+        vec!["openid", "profile", "email", "address", "phone"]
+    );
+    assert!(
+        !prepared
+            .scopes
+            .iter()
+            .any(|scope| scope == "offline_access")
+    );
 }
 
 #[test]
