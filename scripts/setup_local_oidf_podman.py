@@ -1379,9 +1379,9 @@ def plan_expressions_for_configs(configs: dict[str, dict[str, object]]) -> list[
         "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=dynamic_client] "
         "oidf-oidcc-dynamic-plan-config.json",
         "oidcc-config-certification-test-plan oidf-oidcc-config-plan-config.json",
-        "oidcc-frontchannel-rp-initiated-logout-certification-test-plan "
+        "oidcc-frontchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client] "
         "oidf-oidcc-frontchannel-logout-plan-config.json",
-        "oidcc-session-management-certification-test-plan "
+        "oidcc-session-management-certification-test-plan[client_registration=static_client] "
         "oidf-oidcc-session-management-plan-config.json",
     ]
     for name, config in sorted(configs.items()):
