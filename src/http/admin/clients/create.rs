@@ -90,7 +90,8 @@ pub(crate) struct PreparedClientInsert {
     pub(crate) introspection_encrypted_response_alg: Option<String>,
     pub(crate) introspection_encrypted_response_enc: Option<String>,
     pub(crate) issued_secret: Option<String>,
-    client_secret_argon2_hash: Option<String>,
+    pub(crate) client_secret_argon2_hash: Option<String>,
+    pub(crate) registration_access_token_blake3: Option<String>,
 }
 
 /// 创建 OAuth 客户端。
@@ -159,10 +160,18 @@ pub(crate) async fn insert_client_row(
     )
     .await?;
     let issued_secret = prepared.issued_secret.clone();
+    let client = insert_prepared_client_row(state, &prepared).await?;
+    Ok((client, issued_secret))
+}
+
+pub(crate) async fn insert_prepared_client_row(
+    state: &AppState,
+    prepared: &PreparedClientInsert,
+) -> Result<ClientRow, InsertClientError> {
     let mut conn = get_conn(&state.diesel_db)
         .await
         .map_err(|error| InsertClientError::Server(format!("数据库连接失败: {error}")))?;
-    let client = insert_prepared_client(&mut conn, &prepared)
+    let client = insert_prepared_client(&mut conn, prepared)
         .await
         .map_err(|error| InsertClientError::Server(format!("客户端写入失败: {error}")))?;
     if !prepared.tenant.includes_client(&client) {
@@ -170,7 +179,7 @@ pub(crate) async fn insert_client_row(
             "客户端写入后租户边界不匹配".to_owned(),
         ));
     }
-    Ok((client, issued_secret))
+    Ok(client)
 }
 
 pub(crate) async fn prepare_client_insert(
@@ -180,20 +189,8 @@ pub(crate) async fn prepare_client_insert(
 ) -> Result<PreparedClientInsert, InsertClientError> {
     validate_client_payload(&payload)
         .map_err(|error| InsertClientError::InvalidRequest(error.to_string()))?;
-    let mut issued_secret = None;
-    let mut secret_hash = None;
-    if payload.client_type == "confidential"
-        && matches!(
-            payload.token_endpoint_auth_method.as_str(),
-            "client_secret_basic" | "client_secret_post"
-        )
-    {
-        let secret = random_urlsafe_token();
-        secret_hash = Some(hash_password(&secret).map_err(|error| {
-            InsertClientError::Server(format!("client secret 哈希失败: {error}"))
-        })?);
-        issued_secret = Some(secret);
-    }
+    let (issued_secret, secret_hash) =
+        issue_client_secret(&payload.client_type, &payload.token_endpoint_auth_method)?;
 
     let subject_type = payload.subject_type.unwrap_or_else(|| "public".to_owned());
     let redirect_uris = payload.redirect_uris;
@@ -242,7 +239,27 @@ pub(crate) async fn prepare_client_insert(
         ),
         issued_secret,
         client_secret_argon2_hash: secret_hash,
+        registration_access_token_blake3: None,
     })
+}
+
+pub(crate) fn issue_client_secret(
+    client_type: &str,
+    token_endpoint_auth_method: &str,
+) -> Result<(Option<String>, Option<String>), InsertClientError> {
+    if client_type != "confidential"
+        || !matches!(
+            token_endpoint_auth_method,
+            "client_secret_basic" | "client_secret_post"
+        )
+    {
+        return Ok((None, None));
+    }
+
+    let secret = random_urlsafe_token();
+    let secret_hash = hash_password(&secret)
+        .map_err(|error| InsertClientError::Server(format!("client secret 哈希失败: {error}")))?;
+    Ok((Some(secret), Some(secret_hash)))
 }
 
 pub(crate) async fn insert_prepared_client(
@@ -258,6 +275,8 @@ pub(crate) async fn insert_prepared_client(
             oauth_clients::client_name.eq(&prepared.client_name),
             oauth_clients::client_type.eq(&prepared.client_type),
             oauth_clients::client_secret_argon2_hash.eq(&prepared.client_secret_argon2_hash),
+            oauth_clients::registration_access_token_blake3
+                .eq(&prepared.registration_access_token_blake3),
             oauth_clients::redirect_uris.eq(json!(&prepared.redirect_uris)),
             oauth_clients::post_logout_redirect_uris.eq(json!(&prepared.post_logout_redirect_uris)),
             oauth_clients::scopes.eq(json!(&prepared.scopes)),

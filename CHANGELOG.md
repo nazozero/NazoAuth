@@ -20,6 +20,7 @@ semantic versioning once public release tags are cut.
 - Added PostgreSQL and Valkey HA, backup, restore, timeout, and partial-outage operations guidance.
 - Added bounded RFC 8693 Token Exchange support for locally issued access-token to access-token exchanges, including subject/actor token validation, target restrictions, scope downscoping, and `issued_token_type` responses.
 - Added default-closed RFC 7591 Dynamic Client Registration behind `ENABLE_DYNAMIC_CLIENT_REGISTRATION`, with optional initial access token enforcement and OIDF dynamic-client plan coverage.
+- Added default-closed RFC 7592 Dynamic Client Registration Management for DCR-created clients, with hashed registration access tokens, GET/PUT credential rotation, full-replacement updates, and DELETE deactivation.
 
 ### Changed
 
@@ -50,4 +51,4 @@ semantic versioning once public release tags are cut.
 
 - The current scope centers on the authorization-server surface: OAuth 2.1, OpenID Connect, PAR/JAR, FAPI2 Security, selected FAPI2 Message Signing behavior, DPoP, mTLS sender constraints, durable conformance evidence, and production deployment controls.
 - Implemented product surfaces include TOTP MFA, WebAuthn/passkeys, external OIDC/SAML federation, default-tenant SCIM provisioning, tenant-aware schema boundaries, and Rust resource-server middleware.
-- Dynamic Client Registration is implemented behind an explicit feature gate; Client Configuration Management, request-level dynamic tenant routing, and signed introspection responses remain outside the default scope.
+- Dynamic Client Registration and Client Configuration Management are implemented behind an explicit feature gate; request-level dynamic tenant routing remains outside the default scope.

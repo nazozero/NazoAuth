@@ -185,6 +185,12 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
                 ),
         );
     if settings.enable_dynamic_client_registration {
-        cfg.route("/register", web::post().to(dynamic_client_registration));
+        cfg.route("/register", web::post().to(dynamic_client_registration))
+            .service(
+                web::resource("/register/{client_id}")
+                    .route(web::get().to(client_configuration_get))
+                    .route(web::put().to(client_configuration_put))
+                    .route(web::delete().to(client_configuration_delete)),
+            );
     }
 }

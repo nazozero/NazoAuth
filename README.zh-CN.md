@@ -195,8 +195,8 @@ RUST_LOG: "info"
 
 以下能力不属于默认授权服务器表面；只有在实现、测试并显式启用后才会对外声明：
 
-- Dynamic Client Registration / RFC 7591。
-- Client Configuration Management / RFC 7592。
+- Dynamic Client Registration / RFC 7591 和 Client Configuration Management
+  / RFC 7592，除非 `ENABLE_DYNAMIC_CLIENT_REGISTRATION=true`；公开注册部署应使用 initial access token 保护 `/register`。
 - Device Authorization Grant / RFC 8628，除非 `ENABLE_DEVICE_AUTHORIZATION_GRANT=true`。
 - 外部 token、refresh token 或 ID token 的 Token Exchange profile。
 - 请求级动态 tenant 或 issuer routing。

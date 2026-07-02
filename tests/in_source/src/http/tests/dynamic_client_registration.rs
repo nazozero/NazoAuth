@@ -191,6 +191,148 @@ fn protected_dynamic_registration_requires_matching_initial_access_token() {
     ));
 }
 
+#[test]
+fn registration_access_token_authorization_requires_stored_matching_hash() {
+    let stored_hash = blake3_hex("registration-token");
+
+    assert!(registration_access_token_authorized(
+        Some("Bearer registration-token"),
+        Some(&stored_hash)
+    ));
+    assert!(!registration_access_token_authorized(
+        Some("Bearer wrong-token"),
+        Some(&stored_hash)
+    ));
+    assert!(!registration_access_token_authorized(
+        Some("Bearer registration-token"),
+        None
+    ));
+    assert!(!registration_access_token_authorized(
+        Some("Basic registration-token"),
+        Some(&stored_hash)
+    ));
+    assert!(!registration_access_token_authorized(
+        None,
+        Some(&stored_hash)
+    ));
+}
+
+#[actix_web::test]
+async fn dynamic_registration_prepared_insert_hashes_registration_access_token() {
+    let registration = prepare_dynamic_client_registration(
+        DynamicClientRegistrationRequest {
+            redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
+            ..Default::default()
+        },
+        DynamicRegistrationDefaults {
+            default_audience: "https://issuer.example/fapi/resource",
+        },
+    )
+    .expect("dynamic registration metadata should be valid");
+
+    let prepared = prepare_dynamic_client_insert(
+        registration,
+        None,
+        "https://issuer.example",
+        "registration-token",
+    )
+    .await
+    .expect("dynamic registration insert should be prepared");
+
+    assert_eq!(
+        prepared.registration_access_token_blake3.as_deref(),
+        Some(blake3_hex("registration-token").as_str())
+    );
+    assert_ne!(
+        prepared.registration_access_token_blake3.as_deref(),
+        Some("registration-token")
+    );
+}
+
+#[test]
+fn client_configuration_update_rejects_forbidden_management_fields() {
+    let client = dynamic_registration_client_row();
+
+    for field in [
+        "registration_access_token",
+        "registration_client_uri",
+        "client_secret_expires_at",
+        "client_id_issued_at",
+    ] {
+        let submitted_secret = random_urlsafe_token();
+        let mut payload = json!({
+            "client_id": "dynamic-client",
+            "client_secret": submitted_secret,
+        });
+        payload
+            .as_object_mut()
+            .expect("test payload should be an object")
+            .insert(field.to_owned(), json!("client-controlled"));
+
+        let err = parse_client_configuration_update(payload, &client)
+            .expect_err("RFC 7592 forbids client-controlled management fields in PUT");
+
+        assert_eq!(err.error, "invalid_request");
+    }
+}
+
+#[test]
+fn client_configuration_update_requires_matching_client_id_and_secret() {
+    let mut client = dynamic_registration_client_row();
+    let issued_secret = random_urlsafe_token();
+    let wrong_submitted_secret = random_urlsafe_token();
+    client.client_secret_argon2_hash =
+        Some(hash_password(&issued_secret).expect("test secret should hash"));
+
+    let missing_client_id = parse_client_configuration_update(
+        json!({
+            "client_secret": issued_secret,
+            "redirect_uris": ["https://client.example/callback"]
+        }),
+        &client,
+    )
+    .expect_err("PUT must include the current client_id");
+    assert_eq!(missing_client_id.error, "invalid_client_metadata");
+
+    let wrong_client_id = parse_client_configuration_update(
+        json!({
+            "client_id": "other-client",
+            "client_secret": issued_secret,
+            "redirect_uris": ["https://client.example/callback"]
+        }),
+        &client,
+    )
+    .expect_err("PUT client_id must match the current client");
+    assert_eq!(wrong_client_id.error, "invalid_client_metadata");
+
+    let wrong_secret = parse_client_configuration_update(
+        json!({
+            "client_id": "dynamic-client",
+            "client_secret": wrong_submitted_secret,
+            "redirect_uris": ["https://client.example/callback"]
+        }),
+        &client,
+    )
+    .expect_err("PUT client_secret must match the current secret");
+    assert_eq!(wrong_secret.error, "invalid_client_metadata");
+
+    let parsed = parse_client_configuration_update(
+        json!({
+            "client_id": "dynamic-client",
+            "client_secret": issued_secret,
+            "redirect_uris": ["https://client.example/callback"],
+            "scope": "openid profile"
+        }),
+        &client,
+    )
+    .expect("matching client_id and secret should parse");
+    assert_eq!(
+        parsed.redirect_uris,
+        Some(vec!["https://client.example/callback".to_owned()])
+    );
+    assert_eq!(parsed.scope, Some("openid profile".to_owned()));
+}
+
 #[actix_web::test]
 async fn dynamic_registration_rejects_private_key_jwt_jwks_without_kid() {
     let request = DynamicClientRegistrationRequest {
@@ -228,10 +370,8 @@ async fn dynamic_registration_rejects_private_key_jwt_jwks_without_kid() {
     );
 }
 
-#[test]
-fn dynamic_registration_secret_response_is_not_cacheable() {
-    let now = chrono::Utc::now();
-    let client = ClientRow {
+fn dynamic_registration_client_row() -> ClientRow {
+    ClientRow {
         id: uuid::Uuid::now_v7(),
         tenant_id: uuid::Uuid::now_v7(),
         realm_id: uuid::Uuid::now_v7(),
@@ -267,12 +407,19 @@ fn dynamic_registration_secret_response_is_not_cacheable() {
         subject_type: "public".to_owned(),
         sector_identifier_uri: None,
         sector_identifier_host: None,
-    };
+    }
+}
 
+#[test]
+fn dynamic_registration_secret_response_is_not_cacheable() {
+    let now = chrono::Utc::now();
+    let client = dynamic_registration_client_row();
     let response = dynamic_registration_created_response(
         &client,
         &["code".to_owned()],
         Some("issued-secret".to_owned()),
+        "https://issuer.example",
+        "registration-token",
         now,
     );
 
@@ -285,4 +432,31 @@ fn dynamic_registration_secret_response_is_not_cacheable() {
         response.headers().get(header::PRAGMA).unwrap(),
         HeaderValue::from_static("no-cache")
     );
+}
+
+#[actix_web::test]
+async fn dynamic_registration_created_response_includes_registration_management_credentials() {
+    let now = chrono::Utc::now();
+    let client = dynamic_registration_client_row();
+    let response = dynamic_registration_created_response(
+        &client,
+        &["code".to_owned()],
+        Some("issued-secret".to_owned()),
+        "https://issuer.example",
+        "registration-token",
+        now,
+    );
+
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should be readable");
+    let body: serde_json::Value =
+        serde_json::from_slice(&body).expect("registration response should be JSON");
+
+    assert_eq!(body["registration_access_token"], "registration-token");
+    assert_eq!(
+        body["registration_client_uri"],
+        "https://issuer.example/register/dynamic-client"
+    );
+    assert_eq!(body["client_id_issued_at"], now.timestamp());
 }
