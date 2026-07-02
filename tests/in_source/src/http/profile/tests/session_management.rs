@@ -43,4 +43,6 @@ fn session_management_iframe_document_escapes_status_endpoint() {
     assert!(html.contains("https://issuer.example/check?x=1\\u0026y=\\'z\\'"));
     assert!(!html.contains("x=1&y='z'"));
     assert!(!html.contains("var statusEndpoint = '\n"));
+    assert!(html.contains("new XMLHttpRequest()"));
+    assert!(!html.contains("fetch("));
 }

@@ -8,15 +8,22 @@
     var url = statusEndpoint + '?client_id=' + encodeURIComponent(parts[0]) +
       '&session_state=' + encodeURIComponent(parts[1]) +
       '&origin=' + encodeURIComponent(event.origin);
-    fetch(url, { credentials: 'include', cache: 'no-store' })
-      .then(function (response) { return response.ok ? response.json() : { status: 'error' }; })
-      .then(function (body) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', url, true);
+    xhr.withCredentials = true;
+    xhr.onload = function () {
+      try {
+        var body = xhr.status >= 200 && xhr.status < 300 ? JSON.parse(xhr.responseText || '{}') : { status: 'error' };
         var status = body && /^(unchanged|changed|error)$/.test(body.status) ? body.status : 'error';
         event.source && event.source.postMessage(status, event.origin);
-      })
-      .catch(function () {
+      } catch (error) {
         event.source && event.source.postMessage('error', event.origin);
-      });
+      }
+    };
+    xhr.onerror = function () {
+      event.source && event.source.postMessage('error', event.origin);
+    };
+    xhr.send();
   }, false);
 }());
 </script></body></html>
