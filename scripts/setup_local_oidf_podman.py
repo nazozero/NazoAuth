@@ -808,13 +808,24 @@ def browser_automation() -> list[dict[str, object]]:
             ],
         },
         {
-            "comment": "Local Podman OIDC Session Management verification automation.",
+            "comment": "Local Podman OIDC Session Management first verification automation.",
             "match": "*/test/*/session_verify*",
             "tasks": [
                 {
-                    "task": "Reach session management verification page",
+                    "task": "Wait for unchanged session management result",
                     "match": "*/test/*/session_verify*",
-                    "commands": [["wait", "contains", "/session_verify", 10]],
+                    "commands": [["wait", "contains", "/session_result?state=unchanged", 30]],
+                },
+            ],
+        },
+        {
+            "comment": "Local Podman OIDC Session Management second verification automation.",
+            "match": "*/test/*/second_session_verify*",
+            "tasks": [
+                {
+                    "task": "Wait for changed session management result",
+                    "match": "*/test/*/second_session_verify*",
+                    "commands": [["wait", "contains", "/second_session_result?state=changed", 30]],
                 },
             ],
         },
