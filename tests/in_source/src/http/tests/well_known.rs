@@ -784,3 +784,22 @@ fn discovery_baseline_advertises_unsigned_request_object_compatibility_only() {
             .any(|value| value.as_str() == Some("none"))
     );
 }
+
+#[test]
+fn discovery_ciba_request_object_algs_are_fapi_ciba_scoped() {
+    let mut settings = settings(AuthorizationServerProfile::Fapi2Security, Vec::new());
+    settings.enable_ciba = true;
+    let metadata =
+        authorization_server_metadata(&settings, &keyset(jsonwebtoken::Algorithm::PS256));
+
+    assert_eq!(
+        metadata
+            .get("backchannel_authentication_request_signing_alg_values_supported")
+            .and_then(Value::as_array)
+            .expect("CIBA request object algs should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["EdDSA", "ES256", "PS256"]
+    );
+}

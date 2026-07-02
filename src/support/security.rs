@@ -210,6 +210,7 @@ pub(crate) struct ValidatedClientAssertion {
     jti: String,
     exp: i64,
     kid: String,
+    alg: jsonwebtoken::Algorithm,
 }
 
 pub(crate) fn verify_private_key_jwt_claims(
@@ -258,6 +259,7 @@ fn verify_private_key_jwt_claims_with_settings(
         jti: claims.jti,
         exp: claims.exp,
         kid,
+        alg: header.alg,
     })
 }
 
@@ -290,6 +292,10 @@ pub(crate) async fn consume_private_key_jwt(
 }
 
 impl ValidatedClientAssertion {
+    pub(crate) fn alg(&self) -> jsonwebtoken::Algorithm {
+        self.alg
+    }
+
     fn replay_ttl_seconds(&self, now: i64) -> u64 {
         self.exp
             .saturating_sub(now)

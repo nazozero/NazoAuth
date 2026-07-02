@@ -1,9 +1,9 @@
 //! OpenID Connect CIBA poll-mode grant.
 
 use super::{
-    TokenForm, consume_token_client_assertion, consume_token_management_client_assertion,
-    issue_token_response, token_management_auth_error, validate_token_request_profile,
-    verify_confidential_client,
+    TokenForm, TokenManagementClientAuthError, consume_token_client_assertion,
+    consume_token_management_client_assertion, issue_token_response, token_management_auth_error,
+    validate_token_request_profile, verify_confidential_client,
 };
 use crate::http::prelude::*;
 use actix_web::web::Payload;
@@ -180,6 +180,9 @@ pub(crate) async fn backchannel_authentication(
         Ok(assertion) => assertion,
         Err(error) => return token_management_auth_error(error),
     };
+    if !ciba_client_assertion_algorithm_supported(assertion.as_ref()) {
+        return token_management_auth_error(TokenManagementClientAuthError::InvalidClient);
+    }
     if let Err(error) =
         consume_token_management_client_assertion(&state, &client, assertion.as_ref()).await
     {
@@ -459,11 +462,11 @@ fn signed_ciba_request_object_claims(
     }
     let header = jsonwebtoken::decode_header(request_object)
         .map_err(|_| ciba_invalid_request("CIBA request object header is invalid."))?;
-    let Some(_algorithm_name) = supported_client_jwt_algorithm_name(header.alg) else {
+    if !ciba_jwt_signing_algorithm_supported(header.alg) {
         return Err(ciba_invalid_request(
             "CIBA request object signing algorithm is unsupported.",
         ));
-    };
+    }
     let Some(kid) = header.kid.as_deref() else {
         return Err(ciba_invalid_request("CIBA request object is missing kid."));
     };
@@ -642,6 +645,19 @@ fn parse_requested_expiry_string(value: &str) -> Option<u64> {
 
 fn ciba_invalid_request(description: &str) -> HttpResponse {
     oauth_error(StatusCode::BAD_REQUEST, "invalid_request", description)
+}
+
+fn ciba_client_assertion_algorithm_supported(assertion: Option<&ValidatedClientAssertion>) -> bool {
+    assertion.is_none_or(|assertion| ciba_jwt_signing_algorithm_supported(assertion.alg()))
+}
+
+fn ciba_jwt_signing_algorithm_supported(alg: jsonwebtoken::Algorithm) -> bool {
+    matches!(
+        alg,
+        jsonwebtoken::Algorithm::EdDSA
+            | jsonwebtoken::Algorithm::ES256
+            | jsonwebtoken::Algorithm::PS256
+    )
 }
 
 fn validate_ciba_request_object_presence(
@@ -902,6 +918,14 @@ pub(crate) async fn token_ciba(
             false,
         );
     };
+    if !ciba_client_assertion_algorithm_supported(client_assertion) {
+        return oauth_token_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_client",
+            "CIBA private_key_jwt signing algorithm is unsupported.",
+            false,
+        );
+    }
     if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
         return response;
     }

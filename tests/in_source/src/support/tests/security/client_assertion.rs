@@ -275,6 +275,7 @@ fn private_key_jwt_replay_ttl_is_bounded_to_assertion_window() {
         jti: "jti-1".to_owned(),
         exp: 1_000,
         kid: "kid-1".to_owned(),
+        alg: jsonwebtoken::Algorithm::PS256,
     };
 
     assert_eq!(assertion.replay_ttl_seconds(900), 100);
