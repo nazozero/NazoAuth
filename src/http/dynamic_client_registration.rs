@@ -611,7 +611,7 @@ pub(crate) fn prepare_dynamic_client_registration(
 
     let grant_types = request
         .grant_types
-        .unwrap_or_else(|| vec!["authorization_code".to_owned()]);
+        .unwrap_or_else(default_dynamic_client_grant_types);
     let response_types = match request.response_types {
         Some(values) if values.is_empty() => {
             return Err(DynamicRegistrationError::invalid_client_metadata(
@@ -876,7 +876,18 @@ fn default_dynamic_client_scopes(grant_types: &[String]) -> Vec<String> {
     {
         return Vec::new();
     }
-    ["openid", "profile", "email", "address", "phone"]
+    let mut scopes = ["openid", "profile", "email", "address", "phone"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if grant_types.iter().any(|grant| grant == "refresh_token") {
+        scopes.push("offline_access".to_owned());
+    }
+    scopes
+}
+
+fn default_dynamic_client_grant_types() -> Vec<String> {
+    ["authorization_code", "refresh_token"]
         .into_iter()
         .map(str::to_owned)
         .collect()

@@ -30,7 +30,10 @@ fn oidc_dynamic_registration_defaults_to_confidential_authorization_code_client(
         prepared.allowed_audiences,
         vec!["https://issuer.example/fapi/resource"]
     );
-    assert_eq!(prepared.grant_types, vec!["authorization_code"]);
+    assert_eq!(
+        prepared.grant_types,
+        vec!["authorization_code", "refresh_token"]
+    );
     assert_eq!(prepared.response_types, vec!["code"]);
 }
 
@@ -100,7 +103,14 @@ fn oidc_dynamic_code_clients_default_to_standard_claim_scopes() {
 
     assert_eq!(
         prepared.scopes,
-        vec!["openid", "profile", "email", "address", "phone"]
+        vec![
+            "openid",
+            "profile",
+            "email",
+            "address",
+            "phone",
+            "offline_access"
+        ]
     );
 }
 
@@ -212,7 +222,14 @@ async fn dynamic_registration_accepts_oidf_inline_jwks_without_kid_for_secret_cl
     let create_request = prepared.to_create_client_request();
     assert_eq!(
         create_request.scopes,
-        vec!["openid", "profile", "email", "address", "phone"]
+        vec![
+            "openid",
+            "profile",
+            "email",
+            "address",
+            "phone",
+            "offline_access"
+        ]
     );
     assert!(create_request.allow_authorization_code_without_pkce);
 
@@ -222,7 +239,7 @@ async fn dynamic_registration_accepts_oidf_inline_jwks_without_kid_for_secret_cl
 }
 
 #[test]
-fn dynamic_registration_refresh_clients_do_not_receive_offline_access_by_default() {
+fn dynamic_registration_refresh_clients_receive_offline_access_by_default() {
     let request = DynamicClientRegistrationRequest {
         redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
         grant_types: Some(vec![
@@ -242,13 +259,14 @@ fn dynamic_registration_refresh_clients_do_not_receive_offline_access_by_default
 
     assert_eq!(
         prepared.scopes,
-        vec!["openid", "profile", "email", "address", "phone"]
-    );
-    assert!(
-        !prepared
-            .scopes
-            .iter()
-            .any(|scope| scope == "offline_access")
+        vec![
+            "openid",
+            "profile",
+            "email",
+            "address",
+            "phone",
+            "offline_access"
+        ]
     );
 }
 
