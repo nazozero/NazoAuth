@@ -14,7 +14,7 @@ in the repository.
 - Latest private full-matrix regression: [2026-07-01 TP/PS OIDF full matrix](2026-07-01-tp-ps-full-matrix.md)
 - Latest official full matrix: [2026-07-02 NI-004 official OIDF full matrix](2026-07-02-ni-004-official-oidf-full-matrix.md)
 - Latest RFC coverage check: [2026-07-02 NI-005 RFC 7592 OIDF coverage](2026-07-02-ni-005-oidf-coverage.md)
-- Latest NI-006~NI-011 Hostinger targeted OIDF results: [2026-07-02 NI-006~NI-011 Hostinger OIDF results](2026-07-02-ni-006-011-hostinger-oidf-results.md)
+- Latest NI-006~NI-011 remote targeted OIDF results: [2026-07-02 NI-006~NI-011 remote OIDF results](2026-07-02-ni-006-011-remote-oidf-results.md)
 
 The latest recorded official full-matrix suite run is the 2026-07-02 NI-004
 run against `https://auth.nazo.run`, started at `2026-07-02 01:32:57 +08:00`.
@@ -29,7 +29,7 @@ against `https://auth.nazo.run` at runtime commit `31e8f9f`. It used the
 repository 16-plan matrix, exported 16 plan archives, and reported 578 test
 modules with `0 failures` and `0 warnings`.
 
-The latest NI-006~NI-011 targeted Hostinger run used local official suite
+The latest NI-006~NI-011 targeted remote run used local official suite
 snapshot `edbf2514e1e5c850ccf28544953608bda50daf4d`. NI-008 Front-Channel
 Logout and NI-009 Session Management passed with `0 failures`, `0 warnings`,
 and `0 skipped modules`. NI-007 FAPI-CIBA is now in the matrix but currently
