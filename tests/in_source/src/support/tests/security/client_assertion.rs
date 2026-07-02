@@ -116,6 +116,53 @@ fn token_client_assertion_accepts_issuer_and_token_endpoint_audience() {
 }
 
 #[test]
+fn ciba_backchannel_client_assertion_accepts_token_endpoint_audience_when_allowed() {
+    let private_key = generate_key_material(jsonwebtoken::Algorithm::RS256)
+        .expect("client key should generate")
+        .private_pkcs8_der;
+    let public_jwk =
+        public_jwk_from_private_der("client-kid", jsonwebtoken::Algorithm::RS256, &private_key)
+            .expect("client jwk should derive");
+    let mut client = private_key_jwt_client(json!({"keys": [public_jwk]}));
+    client.allow_client_assertion_endpoint_audience = true;
+    let settings = test_settings();
+    let req = TestRequest::post().uri("/bc-authorize").to_http_request();
+    let assertion = signed_client_assertion(
+        &client.client_id,
+        &format!("{}/token", settings.issuer),
+        "client-kid",
+        &private_key,
+        "ciba-token-audience-jti",
+    );
+
+    let result = verify_private_key_jwt_claims_with_settings(&settings, &req, &client, &assertion);
+
+    assert!(result.is_ok());
+}
+
+#[test]
+fn ciba_backchannel_client_assertion_rejects_token_endpoint_audience_when_not_allowed() {
+    let expected =
+        client_assertion_audience_candidates("https://issuer.example", "/bc-authorize", false);
+
+    assert!(audience_matches(
+        &json!("https://issuer.example"),
+        &expected,
+        false
+    ));
+    assert!(audience_matches(
+        &json!("https://issuer.example/bc-authorize"),
+        &expected,
+        false
+    ));
+    assert!(!audience_matches(
+        &json!("https://issuer.example/token"),
+        &expected,
+        false
+    ));
+}
+
+#[test]
 fn private_key_jwt_accepts_current_and_previous_jwks_during_rotation() {
     let first = generate_key_material(jsonwebtoken::Algorithm::RS256)
         .expect("first key should generate")

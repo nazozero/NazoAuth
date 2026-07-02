@@ -438,6 +438,13 @@ fn client_assertion_audience_candidates(
     path: &str,
     allow_endpoint_audience: bool,
 ) -> Vec<String> {
+    if path == "/bc-authorize" && allow_endpoint_audience {
+        return vec![
+            issuer.to_owned(),
+            format!("{issuer}/bc-authorize"),
+            format!("{issuer}/token"),
+        ];
+    }
     if path != "/par" {
         return vec![issuer.to_owned(), format!("{issuer}{path}")];
     }
