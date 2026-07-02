@@ -18,6 +18,8 @@ mod external;
 
 use external::{jwt_provider_error, sign_external_jwt_input};
 
+const OIDC_DEFAULT_ID_TOKEN_SIGNING_ALG: jsonwebtoken::Algorithm = jsonwebtoken::Algorithm::RS256;
+
 pub(crate) async fn load_or_create_keyset(settings: &Settings) -> anyhow::Result<Keyset> {
     tokio::fs::create_dir_all(&settings.jwk_keys_dir).await?;
     let keyset_path = settings.jwk_keys_dir.join("keyset.json");
@@ -58,7 +60,7 @@ async fn maintain_keyset_lifecycle(settings: &Settings, keyset_path: &Path) -> a
     };
     let mut changed = false;
     let mut new_active_kid = None;
-    {
+    let active_alg = {
         let Some(keys) = payload.get_mut("keys").and_then(Value::as_array_mut) else {
             return Ok(());
         };
@@ -69,7 +71,7 @@ async fn maintain_keyset_lifecycle(settings: &Settings, keyset_path: &Path) -> a
         }
         let active_created_at = key_entry_created_at(&keys[active_index])?
             .ok_or_else(|| anyhow!("active key created_at could not be determined"))?;
-        let active_alg = key_entry_algorithm(&keys[active_index])?;
+        let current_active_alg = key_entry_algorithm(&keys[active_index])?;
         let active_backend = key_entry_backend(&keys[active_index]).to_owned();
         let rotation_interval =
             chrono::Duration::seconds(settings.signing_key_rotation_interval_seconds);
@@ -77,7 +79,7 @@ async fn maintain_keyset_lifecycle(settings: &Settings, keyset_path: &Path) -> a
         let rotation_due_at = active_created_at + rotation_interval;
         let prepublish_due_at = rotation_due_at - prepublish_window;
         let candidate_index =
-            find_prepublished_candidate(settings, keys, &active_kid, active_alg, now)?;
+            find_prepublished_candidate(settings, keys, &active_kid, current_active_alg, now)?;
         if now >= rotation_due_at {
             if let Some(candidate_index) = candidate_index {
                 let candidate_created_at = key_entry_created_at(&keys[candidate_index])?
@@ -93,7 +95,8 @@ async fn maintain_keyset_lifecycle(settings: &Settings, keyset_path: &Path) -> a
                     changed = true;
                 }
             } else if active_backend == "local-pem" {
-                let entry = create_prepublished_local_key_entry(settings, active_alg, now).await?;
+                let entry =
+                    create_prepublished_local_key_entry(settings, current_active_alg, now).await?;
                 keys.push(entry);
                 changed = true;
             }
@@ -101,7 +104,24 @@ async fn maintain_keyset_lifecycle(settings: &Settings, keyset_path: &Path) -> a
             && candidate_index.is_none()
             && active_backend == "local-pem"
         {
-            let entry = create_prepublished_local_key_entry(settings, active_alg, now).await?;
+            let entry =
+                create_prepublished_local_key_entry(settings, current_active_alg, now).await?;
+            keys.push(entry);
+            changed = true;
+        }
+        current_active_alg
+    };
+    if active_alg != OIDC_DEFAULT_ID_TOKEN_SIGNING_ALG {
+        let Some(keys) = payload.get_mut("keys").and_then(Value::as_array_mut) else {
+            return Ok(());
+        };
+        if !has_live_local_key_for_alg(keys, OIDC_DEFAULT_ID_TOKEN_SIGNING_ALG, now)? {
+            let entry = create_prepublished_local_key_entry(
+                settings,
+                OIDC_DEFAULT_ID_TOKEN_SIGNING_ALG,
+                now,
+            )
+            .await?;
             keys.push(entry);
             changed = true;
         }
@@ -145,6 +165,31 @@ fn find_prepublished_candidate(
         }
     }
     Ok(candidate.map(|(index, _)| index))
+}
+
+fn has_live_local_key_for_alg(
+    keys: &[Value],
+    alg: jsonwebtoken::Algorithm,
+    now: DateTime<Utc>,
+) -> anyhow::Result<bool> {
+    for entry in keys {
+        if key_entry_backend(entry) != "local-pem"
+            || key_entry_algorithm(entry)? != alg
+            || !entry
+                .get("file")
+                .and_then(Value::as_str)
+                .is_some_and(|file| {
+                    let trimmed = file.trim();
+                    !trimmed.is_empty() && trimmed == file
+                })
+        {
+            continue;
+        }
+        if key_entry_retire_at(entry)?.is_none_or(|retire_at| retire_at > now) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 async fn create_prepublished_local_key_entry(
