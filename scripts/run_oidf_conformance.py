@@ -1077,6 +1077,29 @@ def oidf_module_failure(info: object) -> str | None:
     return None
 
 
+def oidf_info_failure_can_wait_for_final_result(info: object) -> bool:
+    if not isinstance(info, dict):
+        return False
+
+    error = info.get("error")
+    if isinstance(error, str) and error.strip():
+        return False
+    if isinstance(error, dict) and error:
+        return False
+
+    status = value_as_upper(info.get("status"))
+    if status in OIDF_BAD_STATUS_VALUES:
+        return False
+
+    result = value_as_upper(info.get("result"))
+    if result in OIDF_BAD_FINAL_RESULTS:
+        return True
+
+    test_name_value = info.get("testName") or info.get("name") or ""
+    test_name = test_name_value if isinstance(test_name_value, str) else ""
+    return result == "REVIEW" and not is_allowed_review_module(test_name)
+
+
 def oidf_log_failure(module_id: str, logs: object) -> str | None:
     if not isinstance(logs, list):
         return None
@@ -1250,6 +1273,8 @@ def inspect_oidf_state(
                 if oidf_log_failure(module_id, logs):
                     return oidf_failure_with_log_context(module_id, failure, logs)
                 if oidf_log_has_successful_completion(logs):
+                    continue
+                if not final and oidf_info_failure_can_wait_for_final_result(info):
                     continue
                 return oidf_failure_with_log_context(module_id, failure, logs)
             status = value_as_upper(info.get("status")) if isinstance(info, dict) else ""

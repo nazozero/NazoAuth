@@ -37,6 +37,32 @@ class RunOidfConformanceTests(unittest.TestCase):
         self.assertIn("FAILURE", module.oidf_log_failure("module-id", logs))
         self.assertTrue(module.oidf_log_has_successful_completion(logs))
 
+    def test_early_monitor_can_defer_result_failure_without_log_failure(self):
+        module = load_runner_module()
+
+        info = {
+            "_id": "module-id",
+            "testName": "oidcc-frontchannel-rp-initiated-logout",
+            "status": "FINISHED",
+            "result": "FAILED",
+        }
+
+        self.assertTrue(module.oidf_info_failure_can_wait_for_final_result(info))
+
+    def test_early_monitor_does_not_defer_status_or_structured_errors(self):
+        module = load_runner_module()
+
+        self.assertFalse(
+            module.oidf_info_failure_can_wait_for_final_result(
+                {"status": "FAILED", "result": "FAILED"}
+            )
+        )
+        self.assertFalse(
+            module.oidf_info_failure_can_wait_for_final_result(
+                {"status": "FINISHED", "result": "FAILED", "error": "runner crashed"}
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
