@@ -1,4 +1,111 @@
 use super::*;
+use crate::config::ConfigSource;
+use crate::db::create_pool;
+use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
+use crate::support::{generate_key_material, public_jwk_from_private_der};
+use std::sync::Arc;
+
+fn ciba_test_state() -> AppState {
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.issuer = "https://issuer.example".to_owned();
+    AppState {
+        diesel_db: create_pool(
+            "postgres://nazo_ciba_test_invalid:nazo_ciba_test_invalid@127.0.0.1:1/nazo".to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey: fred::prelude::Builder::default_centralized()
+            .build()
+            .expect("valkey client construction should not connect"),
+        settings: Arc::new(settings),
+        keyset: KeysetStore::new(Keyset {
+            active_kid: "test-kid".to_owned(),
+            active_alg: jsonwebtoken::Algorithm::EdDSA,
+            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+            verification_keys: Vec::new(),
+        }),
+    }
+}
+
+fn ciba_private_key_jwt_client(kid: &str, private_pkcs8_der: &[u8]) -> ClientRow {
+    let public_jwk =
+        public_jwk_from_private_der(kid, jsonwebtoken::Algorithm::PS256, private_pkcs8_der)
+            .expect("public jwk should derive");
+    ClientRow {
+        id: Uuid::now_v7(),
+        tenant_id: DEFAULT_TENANT_ID,
+        realm_id: DEFAULT_REALM_ID,
+        organization_id: DEFAULT_ORGANIZATION_ID,
+        client_id: "client-1".to_owned(),
+        client_name: "CIBA Client".to_owned(),
+        client_type: "confidential".to_owned(),
+        client_secret_argon2_hash: None,
+        redirect_uris: json!(["https://client.example/callback"]),
+        scopes: json!(["openid", "profile", "email", "offline_access"]),
+        allowed_audiences: json!(["resource://default"]),
+        grant_types: json!([CIBA_GRANT_TYPE, "refresh_token"]),
+        token_endpoint_auth_method: "private_key_jwt".to_owned(),
+        require_dpop_bound_tokens: false,
+        require_mtls_bound_tokens: false,
+        tls_client_auth_subject_dn: None,
+        tls_client_auth_cert_sha256: None,
+        tls_client_auth_san_dns: json!([]),
+        tls_client_auth_san_uri: json!([]),
+        tls_client_auth_san_ip: json!([]),
+        tls_client_auth_san_email: json!([]),
+        allow_client_assertion_audience_array: false,
+        allow_client_assertion_endpoint_audience: false,
+        require_par_request_object: false,
+        allow_authorization_code_without_pkce: false,
+        is_active: true,
+        jwks: Some(json!({"keys": [public_jwk]})),
+        introspection_encrypted_response_alg: None,
+        introspection_encrypted_response_enc: None,
+        post_logout_redirect_uris: json!([]),
+        backchannel_logout_uri: None,
+        backchannel_logout_session_required: true,
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: true,
+        subject_type: "public".to_owned(),
+        sector_identifier_uri: None,
+        sector_identifier_host: None,
+    }
+}
+
+fn signed_ciba_request_object(kid: &str, private_pkcs8_der: &[u8], extra_claims: Value) -> String {
+    let now = Utc::now().timestamp();
+    let mut claims = json!({
+        "iss": "client-1",
+        "aud": "https://issuer.example",
+        "iat": now,
+        "nbf": now,
+        "exp": now + 120,
+        "jti": format!("ciba-request-{}", Uuid::now_v7()),
+        "scope": "openid profile email",
+        "login_hint": "oidf-local@example.test",
+        "binding_message": "1234"
+    });
+    let target = claims.as_object_mut().expect("claims should be object");
+    for (key, value) in extra_claims
+        .as_object()
+        .expect("extra claims should be object")
+    {
+        if value.is_null() {
+            target.remove(key);
+        } else {
+            target.insert(key.clone(), value.clone());
+        }
+    }
+    let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::PS256);
+    header.kid = Some(kid.to_owned());
+    jsonwebtoken::encode(
+        &header,
+        &claims,
+        &jsonwebtoken::EncodingKey::from_rsa_der(private_pkcs8_der),
+    )
+    .expect("CIBA request object should sign")
+}
 
 #[test]
 fn ciba_request_key_hashes_auth_req_id() {
@@ -16,4 +123,54 @@ fn ciba_status_serializes_as_protocol_state() {
         serde_json::to_value(CibaStatus::Pending).unwrap(),
         json!("pending")
     );
+}
+
+#[test]
+fn ciba_signed_request_object_claims_apply_to_backchannel_form() {
+    let state = ciba_test_state();
+    let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
+        .expect("client key should generate")
+        .private_pkcs8_der;
+    let client = ciba_private_key_jwt_client("ciba-kid", &key);
+    let request_object =
+        signed_ciba_request_object("ciba-kid", &key, json!({"requested_expiry": "30"}));
+    let mut form = BackchannelAuthenticationForm {
+        request: Some(request_object),
+        ..BackchannelAuthenticationForm::default()
+    };
+
+    validate_and_apply_ciba_request_object_claims(&state, &client, &mut form)
+        .expect("valid signed CIBA request object should apply");
+
+    assert_eq!(form.scope.as_deref(), Some("openid profile email"));
+    assert_eq!(form.login_hint.as_deref(), Some("oidf-local@example.test"));
+    assert_eq!(form.binding_message.as_deref(), Some("1234"));
+    assert_eq!(form.requested_expiry_seconds, Some(30));
+}
+
+#[test]
+fn ciba_signed_request_object_missing_audience_maps_to_invalid_request() {
+    let state = ciba_test_state();
+    let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
+        .expect("client key should generate")
+        .private_pkcs8_der;
+    let client = ciba_private_key_jwt_client("ciba-kid", &key);
+    let request_object = signed_ciba_request_object("ciba-kid", &key, json!({"aud": null}));
+    let mut form = BackchannelAuthenticationForm {
+        request: Some(request_object),
+        ..BackchannelAuthenticationForm::default()
+    };
+
+    let response = validate_and_apply_ciba_request_object_claims(&state, &client, &mut form)
+        .expect_err("missing CIBA request object audience must be invalid_request");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("invalid_request")
+    );
+    assert!(form.scope.is_none());
 }
