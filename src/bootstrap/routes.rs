@@ -170,6 +170,7 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
                         .route("/access-delivery", web::get().to(access_delivery)),
                 )
                 .route("/ciba/automated", web::get().to(ciba_automated_decision))
+                .route("/ciba/automated", web::post().to(ciba_automated_decision))
                 .route("/ciba/{auth_req_id}", web::get().to(ciba_verification))
                 .route("/ciba/{auth_req_id}", web::post().to(ciba_decision))
                 .route("/logout", web::post().to(logout)),
