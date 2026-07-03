@@ -315,7 +315,7 @@ Before launching a full OpenID Foundation conformance run:
 5. Put that artifact in the live OIDF runtime directory and use the same commit's `oidf-seed` image / `nazo_oauth_seed_oidf` binary to seed the database used by the public `auth.nazo.run` entrypoint. Do not seed only the `compose.oidf.local.yml` 9443 stack and then run official public tests.
 6. Verify health, discovery, JWKS, mTLS aliases, and certificate forwarding over the public issuer. Discovery `issuer` must be `https://auth.nazo.run`.
 7. Run the targeted `.github/workflows/oidf-conformance.yml` plan first. The targeted workflow disables the early-stop monitor by default so failed runs still upload diagnostic artifacts.
-8. Run `.github/workflows/oidf-conformance-full.yml` only after the targeted plan passes. Keep `OIDF_NO_PARALLEL=true` for the default full matrix unless deliberately testing runner concurrency. For concurrency validation, dispatch the same workflow with `runner_mode=parallel-isolated`; this runs the concurrency-safe plan set without `--no-parallel` while keeping the logout and session-management plans in isolated serial sub-runs because they share an official browser/user session.
+8. Run `.github/workflows/oidf-conformance-full.yml` only after the targeted plan passes. Keep `OIDF_NO_PARALLEL=true` for the default full matrix unless deliberately testing runner concurrency. For concurrency validation, dispatch the same workflow with `runner_mode=parallel-isolated`; this runs the concurrency-safe plan set without `--no-parallel` while running logout and session-management in separate isolated matrix jobs with their own runner/browser environment.
 9. Preserve the final result index under `docs/conformance` before artifacts expire.
 
 ## Operations Checklist

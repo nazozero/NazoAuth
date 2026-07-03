@@ -61,13 +61,29 @@ class OidfWorkflowTests(unittest.TestCase):
             sorted(concurrent_plan_set + frontchannel_plan_set + session_management_plan_set),
         )
 
-        self.assertIn("run_oidf_plan_set oidf-frontchannel-plan-set.json frontchannel", workflow)
-        self.assertIn(
-            "run_oidf_plan_set oidf-session-management-plan-set.json session-management",
-            workflow,
-        )
         self.assertIn('"$GITHUB_WORKSPACE/oidf-results/$export_subdir"', workflow)
-        self.assertIn("isolated_args+=(--no-parallel)", workflow)
+
+    def test_parallel_isolated_mode_uses_separate_browser_sensitive_jobs(self):
+        workflow = (
+            Path(__file__).resolve().parents[2]
+            / ".github"
+            / "workflows"
+            / "oidf-conformance-full.yml"
+        ).read_text(encoding="utf-8")
+
+        parallel_case = workflow.split("parallel-isolated)", 1)[1].split(";;", 1)[0]
+        self.assertIn("run_oidf_plan_set oidf-concurrent-plan-set.json concurrent", parallel_case)
+        self.assertNotIn("oidf-frontchannel-plan-set.json", parallel_case)
+        self.assertNotIn("oidf-session-management-plan-set.json", parallel_case)
+
+        self.assertIn("oidf-conformance-browser-isolated:", workflow)
+        self.assertIn("fail-fast: false", workflow)
+        self.assertIn("plan_set_file: oidf-frontchannel-plan-set.json", workflow)
+        self.assertIn("plan_set_file: oidf-session-management-plan-set.json", workflow)
+        self.assertIn('--plan-set-json-file "${{ matrix.plan_set_file }}"', workflow)
+        self.assertIn("--no-parallel", workflow)
+        self.assertIn("oidf-conformance-results-frontchannel", workflow)
+        self.assertIn("oidf-conformance-results-session-management", workflow)
 
 
 if __name__ == "__main__":

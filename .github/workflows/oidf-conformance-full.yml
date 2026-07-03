@@ -221,10 +221,6 @@ jobs:
               ;;
             parallel-isolated)
               run_oidf_plan_set oidf-concurrent-plan-set.json concurrent
-              isolated_args=()
-              isolated_args+=(--no-parallel)
-              run_oidf_plan_set oidf-frontchannel-plan-set.json frontchannel "${isolated_args[@]}"
-              run_oidf_plan_set oidf-session-management-plan-set.json session-management "${isolated_args[@]}"
               ;;
             *)
               echo "Unsupported RUNNER_MODE: $RUNNER_MODE" >&2
@@ -240,6 +236,140 @@ jobs:
         if: always() && vars.OIDF_EXPORT_RESULTS != 'false'
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: oidf-conformance-results-full
+          name: ${{ env.RUNNER_MODE == 'parallel-isolated' && 'oidf-conformance-results-concurrent' || 'oidf-conformance-results-full' }}
           path: oidf-results
+          if-no-files-found: ignore
+
+  oidf-conformance-browser-isolated:
+    if: ${{ inputs.runner_mode == 'parallel-isolated' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: frontchannel
+            plan_set_file: oidf-frontchannel-plan-set.json
+            result_subdir: frontchannel
+            artifact_name: oidf-conformance-results-frontchannel
+            plan_expression: "oidcc-frontchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-frontchannel-logout-plan-config.json"
+          - name: session-management
+            plan_set_file: oidf-session-management-plan-set.json
+            result_subdir: session-management
+            artifact_name: oidf-conformance-results-session-management
+            plan_expression: "oidcc-session-management-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-session-management-plan-config.json"
+    env:
+      CONFORMANCE_SERVER: ${{ vars.OIDF_CONFORMANCE_SERVER || 'https://www.certification.openid.net/' }}
+      OIDF_REF: ${{ vars.OIDF_CONFORMANCE_SUITE_REF || '33a724c7d809a6f9db05cbb513ff2a77cbac905e' }}
+      EXPORT_RESULTS: ${{ vars.OIDF_EXPORT_RESULTS || 'false' }}
+      VERBOSE: ${{ vars.OIDF_VERBOSE || 'true' }}
+      DISABLE_SSL_VERIFY: ${{ vars.OIDF_DISABLE_SSL_VERIFY || 'false' }}
+      OIDF_TARGET_ISSUER: ${{ vars.OIDF_TARGET_ISSUER || 'https://auth.nazo.run' }}
+      RUN_TIMEOUT_SECONDS: ${{ vars.OIDF_RUN_TIMEOUT_SECONDS || '14400' }}
+      MONITOR_INTERVAL_SECONDS: ${{ vars.OIDF_MONITOR_INTERVAL_SECONDS || '60' }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v7.0.0
+
+      - uses: actions/setup-python@v6.3.0
+        with:
+          python-version: "3.13"
+
+      - name: Clone official conformance suite
+        run: |
+          set -euo pipefail
+          git init oidf-conformance-suite
+          git -C oidf-conformance-suite remote add origin https://gitlab.com/openid/conformance-suite.git
+          git -C oidf-conformance-suite fetch --depth 1 origin "$OIDF_REF"
+          git -C oidf-conformance-suite checkout --detach FETCH_HEAD
+          diff -u requirements/oidf-conformance.in oidf-conformance-suite/scripts/requirements.txt
+
+      - name: Install official runner dependencies
+        run: python -m pip install --require-hashes -r requirements/oidf-conformance.txt
+
+      - name: Install age decryptor
+        run: cargo install rage --version 0.11.2 --locked
+
+      - name: Write isolated OIDF plan set
+        run: |
+          set -euo pipefail
+          cat > "${{ matrix.plan_set_file }}" <<'JSON'
+          [
+            "${{ matrix.plan_expression }}"
+          ]
+          JSON
+
+      - name: Write isolated OIDF matrix config
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s\n' "$OIDF_PLAN_CONFIG_AGE_IDENTITY" > oidf-plan-config.agekey
+          rage --decrypt \
+            --identity oidf-plan-config.agekey \
+            --output oidf-plan-config-secret-patch.json \
+            docs/conformance/oidf-plan-config-secret-patch.json.age
+          rage --decrypt \
+            --identity oidf-plan-config.agekey \
+            --output oidf-plan-config-ciba-secret-patch.json \
+            docs/conformance/oidf-plan-config-ciba-secret-patch.json.age
+          python - <<'PY'
+          import json
+
+          with open("oidf-plan-config-secret-patch.json", encoding="utf-8") as handle:
+              base = json.load(handle)
+          with open("oidf-plan-config-ciba-secret-patch.json", encoding="utf-8") as handle:
+              ciba = json.load(handle)
+
+          conflicts = sorted(key for key, value in ciba.items() if key in base and base[key] != value)
+          if conflicts:
+              raise SystemExit("conflicting OIDF secret patch keys: " + ", ".join(conflicts))
+
+          base.update(ciba)
+          with open("oidf-plan-config-secret-patch.merged.json", "w", encoding="utf-8") as handle:
+              json.dump(base, handle, sort_keys=True)
+              handle.write("\n")
+          PY
+          python scripts/materialize_oidf_plan_config.py \
+            --template docs/conformance/oidf-plan-config-template.json \
+            --secret-patch-file oidf-plan-config-secret-patch.merged.json \
+            --derive-dynamic-oidcc-config \
+            --output oidf-plan-configs.json
+        env:
+          OIDF_PLAN_CONFIG_AGE_IDENTITY: ${{ secrets.OIDF_PLAN_CONFIG_AGE_IDENTITY }}
+          OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN: ${{ secrets.OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN }}
+
+      - name: Run isolated OIDF browser-sensitive plan
+        run: |
+          set -euo pipefail
+          args=(
+            --suite-dir oidf-conformance-suite
+            --conformance-server "$CONFORMANCE_SERVER"
+            --config-json-file oidf-plan-configs.json
+            --plan-set-json-file "${{ matrix.plan_set_file }}"
+            --target-issuer "$OIDF_TARGET_ISSUER"
+            --timeout-seconds "$RUN_TIMEOUT_SECONDS"
+            --monitor-interval-seconds "$MONITOR_INTERVAL_SECONDS"
+            --no-parallel
+          )
+          if [ "$EXPORT_RESULTS" = "true" ]; then
+            args+=(--export-dir "$GITHUB_WORKSPACE/oidf-results/${{ matrix.result_subdir }}")
+          fi
+          if [ "$VERBOSE" = "true" ]; then
+            args+=(--verbose)
+          fi
+          if [ "$DISABLE_SSL_VERIFY" = "true" ]; then
+            args+=(--disable-ssl-verify)
+          fi
+          python -u scripts/run_oidf_conformance.py "${args[@]}"
+        env:
+          OIDF_CONFORMANCE_TOKEN: ${{ secrets.OIDF_CONFORMANCE_TOKEN }}
+          OIDF_USER_EMAIL: ${{ secrets.OIDF_USER_EMAIL }}
+          OIDF_USER_PASSWORD: ${{ secrets.OIDF_USER_PASSWORD }}
+
+      - name: Upload isolated OIDF result archive
+        if: always() && vars.OIDF_EXPORT_RESULTS != 'false'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: oidf-results/${{ matrix.result_subdir }}
           if-no-files-found: ignore

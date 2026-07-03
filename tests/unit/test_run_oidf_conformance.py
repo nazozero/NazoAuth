@@ -112,6 +112,29 @@ class RunOidfConformanceTests(unittest.TestCase):
         self.assertIn("token=<redacted>", context)
         self.assertNotIn("secret", context)
 
+    def test_plan_expression_config_names_are_selected_exactly(self):
+        module = load_runner_module()
+
+        selected = module.config_names_from_plan_expressions(
+            [
+                "oidcc-basic-certification-test-plan[client_registration=static_client] oidf-oidcc-basic-plan-config.json",
+                "oidcc-session-management-certification-test-plan[client_registration=static_client] oidf-oidcc-session-management-plan-config.json",
+            ],
+            {
+                "oidf-oidcc-basic-plan-config.json",
+                "oidf-oidcc-session-management-plan-config.json",
+                "oidf-oidcc-frontchannel-logout-plan-config.json",
+            },
+        )
+
+        self.assertEqual(
+            selected,
+            {
+                "oidf-oidcc-basic-plan-config.json",
+                "oidf-oidcc-session-management-plan-config.json",
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

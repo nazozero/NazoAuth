@@ -879,7 +879,7 @@ def write_plan_configs(
     env_name: str,
     config_json_file: str,
     target_issuer: str,
-) -> tuple[set[str], set[str]]:
+) -> tuple[set[str], dict[str, str]]:
     validate_config_file_name(file_name)
     raw_config = (
         non_empty_file(config_json_file, "--config-json-file")
@@ -905,14 +905,14 @@ def write_plan_configs(
         validate_browser_automation(file_name, parsed)
         target = suite_scripts / file_name
         target.write_text(json.dumps(parsed, indent=2, sort_keys=True), encoding="utf-8")
-        aliases = {alias} if (alias := config_alias(parsed)) else set()
-        return {file_name}, aliases
+        aliases_by_config = {file_name: alias} if (alias := config_alias(parsed)) else {}
+        return {file_name}, aliases_by_config
 
     if not isinstance(configs, dict) or not configs:
         fail(f"{env_name}.configs must contain a non-empty JSON object")
 
     written: set[str] = set()
-    aliases: set[str] = set()
+    aliases_by_config: dict[str, str] = {}
     for config_name, config_value in configs.items():
         if not isinstance(config_name, str) or not config_name.strip():
             fail(f"{env_name}.configs contains an invalid file name")
@@ -927,11 +927,11 @@ def write_plan_configs(
         validate_browser_automation(config_name, config_value)
         alias = config_alias(config_value)
         if alias:
-            aliases.add(alias)
+            aliases_by_config[config_name] = alias
         target = suite_scripts / config_name
         target.write_text(json.dumps(config_value, indent=2, sort_keys=True), encoding="utf-8")
         written.add(config_name)
-    return written, aliases
+    return written, aliases_by_config
 
 
 def api_url(base_url: str, path: str, query: dict[str, str | int] | None = None) -> str:
@@ -1619,6 +1619,17 @@ def plan_expressions(
     return expressions
 
 
+def config_names_from_plan_expressions(
+    expressions: list[str],
+    config_names: set[str],
+) -> set[str]:
+    selected: set[str] = set()
+    for expression in expressions:
+        parts = shlex.split(expression)
+        selected.update(config_name for config_name in config_names if config_name in parts)
+    return selected
+
+
 def validate_rerun_argument(value: str) -> None:
     for item in value.split(","):
         item = item.strip()
@@ -1832,7 +1843,7 @@ def main() -> int:
     if not runner.is_file():
         fail(f"official runner not found: {runner}")
 
-    config_names, aliases = write_plan_configs(
+    config_names, aliases_by_config = write_plan_configs(
         suite_scripts,
         args.config_file_name,
         args.config_env,
@@ -1846,6 +1857,12 @@ def main() -> int:
         config_names,
         args.config_file_name,
     )
+    selected_config_names = config_names_from_plan_expressions(expressions, config_names)
+    aliases = {
+        alias
+        for config_name, alias in aliases_by_config.items()
+        if config_name in selected_config_names
+    }
 
     env = os.environ.copy()
     env["CONFORMANCE_SERVER"] = args.conformance_server
