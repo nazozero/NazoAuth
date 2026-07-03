@@ -19823,7 +19823,8 @@
         "scope": "openid profile email offline_access",
         "dpop_signing_alg": "ES256",
         "hint_type": "login_hint",
-        "hint_value": "oidf-local@example.test"
+        "hint_value": "oidf-local@example.test",
+        "acr_value": "1"
       },
       "client2": {
         "client_id": "local-oidf-fapi-fapi-ciba-plain-private-key-jwt-poll-client-2",
@@ -19858,7 +19859,8 @@
           ]
         },
         "scope": "openid profile email offline_access",
-        "dpop_signing_alg": "ES256"
+        "dpop_signing_alg": "ES256",
+        "acr_value": "1"
       },
       "mtls": {
         "cert": "-----BEGIN CERTIFICATE-----\nMIIDIDCCAgigAwIBAgIUH0gvHdDd1arViJLRLhfhCHUUGIkwDQYJKoZIhvcNAQEL\nBQAwKDEmMCQGA1UEAwwdTmF6byBPQXV0aCBMb2NhbCBPSURGIG1UTFMgQ0EwHhcN\nMjYwNzAyMDUzMDE3WhcNMzYwNjI5MDUzMDE3WjAoMSYwJAYDVQQDDB1tdGxzLTZm\nOTNjZDZjOTBjMjE4YjU1NDUxMDU1ODCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\nAQoCggEBALJAvIT6su4S3Z8MOBOFIFzqr9tkKBFgDJ6w16MyoYAWycOm9m4do1YV\ng/lck13p2vijgIPWt9g54orfMb5QH9X0QUByH7WXkWHaC7zcMATTOHJCYTbg/p9B\njraVr7xgow5rCXYtAQ7xlHdDkKOuiCHpcfvLNlM8cxpxOP8jMxCPRuxZpclQOPf7\nljLnRmTvwAZ6A1U3B9mdX41dUmR4ZzXuBj3hpwypA1rBN1/99vcHTCRoci+rQSbv\n4vM8GkcUEs9Sh66/tuaoN7y2uDcDFKDZQ7pVUATkxrM52U49u23aPJ4HlLRFeBL7\nzJMvL3LHjlWRU00F0GUxdvdpeCXFYL0CAwEAAaNCMEAwHQYDVR0OBBYEFAwlDI/O\nI5jfN8vbe2t01BSXlLTjMB8GA1UdIwQYMBaAFJG/hRGwH5hJV0zpCqIUiAbpTih6\nMA0GCSqGSIb3DQEBCwUAA4IBAQCECpqRecPeDBZsVn2cO2Fjo2qE8fI+dq0Eo8sP\nSMW2YrYpq7Cc+72lWUm8lUgs4yMZazT86xZ4hE0wswSkJySybf/tBJUZ8PC+USas\nmLiODO60y8Gh3tSXM9yNNcSeOdsY+dTcpxI+WsseinS7mXc00c9FQVd4GM3kw0o8\nRA8c8Wdm5ntg3sLvyME5lAIr2DTqKAvxHFCpoxI/lKuTR2BvThDFE9KuiO5YkJ12\nRZHUNviV9cw3YEp0JjUFhYZR4+pxUh3niuS24e3/30wTvRM1TtgMHYZF082goj0o\ntms31xzWfwy193/2ZIATyT/aQvVLBBA82KmXvYFzc4ruB/gV\n-----END CERTIFICATE-----\n",
