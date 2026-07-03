@@ -21,6 +21,7 @@ Nazo Auth Server 已发布在 OpenID Foundation 官方认证列表中：
 - 最新官方 full matrix：[2026-07-02 NI-004 official OIDF full matrix](2026-07-02-ni-004-official-oidf-full-matrix.md)
 - 最新 RFC 覆盖检查：[2026-07-02 NI-005 RFC 7592 OIDF coverage](2026-07-02-ni-005-oidf-coverage.md)
 - 最新 NI-006~NI-011 私有 OIDF targeted 结果：[2026-07-02 NI-006~NI-011 private OIDF results](2026-07-02-ni-006-011-private-oidf-results.md)
+- 最新 public NI-007 FAPI-CIBA targeted 结果：[2026-07-03 NI-007 public FAPI-CIBA OIDF results](2026-07-03-ni-007-public-ciba-oidf-results.md)
 
 `2026-06-09` full matrix 是当前官方认证证据，针对 `https://auth.nazo.run` 执行，覆盖 OIDC Basic、OIDC Config、FAPI2 Security Profile Final、FAPI2 Message Signing Final、mTLS、DPoP、`private_key_jwt`、client credentials 变体。结果为全计划完成，`0 failures`，`0 warnings`。
 
@@ -34,6 +35,12 @@ Front-Channel Logout 和 NI-009 Session Management 均通过，结果为
 `0 failures`、`0 warnings`、`0 skipped modules`。NI-008/NI-009 runs 的 JSON
 日志包含信息级 optional-condition `Skipped evaluation ...` 消息；它们不是
 module-level `SKIPPED` 结果。
+
+最新 public NI-007 FAPI-CIBA targeted workflow 于 2026-07-03 针对
+`https://auth.nazo.run` 执行，workflow head SHA 为
+`0374141ae7aec76c573b06dc8406b10819915309`。GitHub Actions run
+`28636561869` 成功完成；导出的 suite artifact 包含 35 个 module JSON log，
+全部为 `PASSED`，condition 统计为 2768 个 `SUCCESS`、`0 failures`、`0 warnings`。
 
 baseline OIDC metadata 会在 `request_object_signing_alg_values_supported` 中声明 `none`，用于 unsigned Request Object 的 OIDC 兼容路径。该能力不是高安全 profile 能力；FAPI2 Security Profile Final、FAPI2 Message Signing Final、要求 PAR request object 的客户端以及 holder-bound token 客户端仍然 fail closed，必须使用签名 Request Object 或被拒绝。
 
