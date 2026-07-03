@@ -45,7 +45,8 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
                     },
                     "nazo": {
                         "fapi_profile": "plain_fapi",
-                        "fapi_sender_constrain": "mtls",
+                        "client_auth_type": "mtls",
+                        "sender_constrain": "mtls",
                         "oidf_user_password": "secret",
                     },
                     "automated_ciba_approval_url": "https://example.test/ciba?token=secret",
@@ -77,7 +78,8 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
             "-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----",
         )
         self.assertEqual(exported["nazo"]["fapi_profile"], "plain_fapi")
-        self.assertEqual(exported["nazo"]["fapi_sender_constrain"], "mtls")
+        self.assertEqual(exported["nazo"]["client_auth_type"], "mtls")
+        self.assertEqual(exported["nazo"]["sender_constrain"], "mtls")
 
         jwk = exported["client"]["jwks"]["keys"][0]
         self.assertEqual(jwk["kid"], "client-key")
@@ -93,6 +95,29 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
         self.assertNotIn("oidf_user_password", exported["nazo"])
         self.assertNotIn("automated_ciba_approval_url", exported)
         self.assertNotIn("browser", exported)
+
+    def test_real_fapi_matrix_template_preserves_seed_policy_fields(self):
+        template = Path(__file__).resolve().parents[2] / "docs" / "conformance" / "oidf-plan-config-template.json"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            output_dir = tmp_path / "public"
+
+            self.assertEqual(
+                module.main_with_args_for_test(
+                    ["--config-json-file", str(template), "--output-dir", str(output_dir)]
+                ),
+                0,
+            )
+
+            exported = json.loads(
+                (
+                    output_dir
+                    / "oidf-fapi-matrix-security-final-mtls-mtls-openid-connect-plain-fapi-plain-response-plan-config.json"
+                ).read_text()
+            )
+
+        self.assertEqual(exported["nazo"]["client_auth_type"], "mtls")
+        self.assertEqual(exported["nazo"]["sender_constrain"], "mtls")
 
 
 if __name__ == "__main__":

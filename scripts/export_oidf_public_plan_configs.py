@@ -13,10 +13,10 @@ from typing import Any
 
 PRIVATE_JWK_FIELDS = {"d", "p", "q", "dp", "dq", "qi", "oth", "k"}
 SEED_NAZO_FIELDS = {
-    "fapi_auth_method",
     "fapi_profile",
     "fapi_request_method",
-    "fapi_sender_constrain",
+    "client_auth_type",
+    "sender_constrain",
 }
 
 
