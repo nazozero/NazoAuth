@@ -151,6 +151,28 @@ fn oauth_error_code(response: &HttpResponse) -> Option<String> {
         .map(|fields| fields.error.clone())
 }
 
+#[test]
+fn par_error_log_fields_skip_success_and_include_only_safe_error_metadata() {
+    let created = json_response_status(
+        StatusCode::CREATED,
+        json!({
+            "request_uri": "urn:ietf:params:oauth:request_uri:secret",
+            "expires_in": 90
+        }),
+    );
+    assert_eq!(par_error_log_fields(&created), None);
+
+    let rejected = oauth_error(
+        StatusCode::BAD_REQUEST,
+        "invalid_request_object",
+        "request=secret must not be logged",
+    );
+    assert_eq!(
+        par_error_log_fields(&rejected),
+        Some((400, Some("invalid_request_object".to_owned())))
+    );
+}
+
 fn par_test_secret() -> String {
     ["par", "client", "secret"].join("-")
 }

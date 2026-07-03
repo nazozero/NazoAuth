@@ -46,6 +46,16 @@ pub(crate) async fn par_after_rate_limit(
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
+    let response = par_after_rate_limit_inner(state, req, body).await;
+    log_par_error_response(&response);
+    response
+}
+
+async fn par_after_rate_limit_inner(
+    state: Data<AppState>,
+    req: HttpRequest,
+    body: Bytes,
+) -> HttpResponse {
     let content_type = req
         .headers()
         .get(header::CONTENT_TYPE)
@@ -299,6 +309,31 @@ pub(crate) async fn par_after_rate_limit(
             "expires_in": state.settings.par_ttl_seconds
         }),
     )
+}
+
+fn log_par_error_response(response: &HttpResponse) {
+    let Some((status, oauth_error)) = par_error_log_fields(response) else {
+        return;
+    };
+    if let Some(oauth_error) = oauth_error {
+        tracing::warn!("PAR request rejected http_status={status} oauth_error={oauth_error}");
+    } else {
+        tracing::warn!("PAR request rejected http_status={status}");
+    }
+}
+
+fn par_error_log_fields(response: &HttpResponse) -> Option<(u16, Option<String>)> {
+    if response.status() == StatusCode::CREATED || response.status().is_success() {
+        return None;
+    }
+
+    Some((
+        response.status().as_u16(),
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.clone()),
+    ))
 }
 
 pub(crate) fn pushed_authorization_request_key(request_uri: &str) -> String {

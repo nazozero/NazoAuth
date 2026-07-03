@@ -119,9 +119,19 @@ jobs:
             --secret-patch-file oidf-plan-config-secret-patch.merged.json \
             --derive-dynamic-oidcc-config \
             --output oidf-plan-configs.json
+          python scripts/export_oidf_public_plan_configs.py \
+            --config-json-file oidf-plan-configs.json \
+            --output-dir oidf-public-plan-configs
         env:
           OIDF_PLAN_CONFIG_AGE_IDENTITY: ${{ secrets.OIDF_PLAN_CONFIG_AGE_IDENTITY }}
           OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN: ${{ secrets.OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN }}
+
+      - name: Upload public OIDF seed configs
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: oidf-public-plan-configs
+          path: oidf-public-plan-configs
+          if-no-files-found: error
 
       - name: Run full OIDF matrix
         run: |

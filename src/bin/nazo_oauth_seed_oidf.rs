@@ -290,16 +290,16 @@ fn fapi_client_policy(file_name: &str, plan: &Value) -> FapiClientPolicy {
         .and_then(|value| value.get("fapi_profile"))
         .and_then(Value::as_str)
         .unwrap_or("plain_fapi");
+    let auth_method = match client_auth_type {
+        "mtls" => "tls_client_auth",
+        _ => "private_key_jwt",
+    };
     FapiClientPolicy {
-        auth_method: match client_auth_type {
-            "mtls" => "tls_client_auth",
-            _ => "private_key_jwt",
-        },
+        auth_method,
         require_dpop_bound_tokens: sender_constrain == "dpop",
         require_mtls_bound_tokens: sender_constrain == "mtls",
         allow_client_assertion_audience_array: file_name.contains("-id"),
-        allow_client_assertion_endpoint_audience: file_name.contains("-id")
-            || file_name.starts_with("oidf-fapi-ciba-"),
+        allow_client_assertion_endpoint_audience: auth_method == "private_key_jwt",
         require_par_request_object: file_name.starts_with("oidf-fapi-ciba-")
             || file_name.contains("-message-")
             || nazo

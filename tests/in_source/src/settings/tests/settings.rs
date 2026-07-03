@@ -16,14 +16,23 @@ fn baseline_profile_can_use_optional_dpop_nonce_policy() {
 }
 
 #[test]
-fn fapi_profiles_force_required_dpop_nonce_policy() {
+fn fapi_profiles_default_to_required_dpop_nonce_policy() {
+    let config =
+        ConfigSource::from_pairs_for_test([("AUTHORIZATION_SERVER_PROFILE", "fapi2-security")]);
+    let settings = Settings::from_config(&config).unwrap();
+
+    assert_eq!(settings.dpop_nonce_policy, DpopNoncePolicy::Required);
+}
+
+#[test]
+fn fapi_profiles_can_use_optional_dpop_nonce_policy() {
     let config = ConfigSource::from_pairs_for_test([
         ("AUTHORIZATION_SERVER_PROFILE", "fapi2-security"),
         ("DPOP_NONCE_POLICY", "optional"),
     ]);
     let settings = Settings::from_config(&config).unwrap();
 
-    assert_eq!(settings.dpop_nonce_policy, DpopNoncePolicy::Required);
+    assert_eq!(settings.dpop_nonce_policy, DpopNoncePolicy::Optional);
 }
 
 #[test]

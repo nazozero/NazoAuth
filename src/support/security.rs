@@ -228,30 +228,48 @@ fn verify_private_key_jwt_claims_with_settings(
     client: &ClientRow,
     assertion: &str,
 ) -> Result<ValidatedClientAssertion, ClientAssertionError> {
-    let header =
-        jsonwebtoken::decode_header(assertion).map_err(|_| ClientAssertionError::Invalid)?;
-    let kid = header.kid.ok_or(ClientAssertionError::Invalid)?;
-    let decoding_key =
-        client_jwt_decoding_key(client, &kid, header.alg).ok_or(ClientAssertionError::Invalid)?;
+    let header = jsonwebtoken::decode_header(assertion).map_err(|_| {
+        log_client_assertion_rejection(req, client, "decode_header");
+        ClientAssertionError::Invalid
+    })?;
+    let kid = header.kid.ok_or_else(|| {
+        log_client_assertion_rejection(req, client, "missing_kid");
+        ClientAssertionError::Invalid
+    })?;
+    let decoding_key = client_jwt_decoding_key(client, &kid, header.alg).ok_or_else(|| {
+        log_client_assertion_rejection(req, client, "key_not_found");
+        ClientAssertionError::Invalid
+    })?;
 
     let mut validation = jsonwebtoken::Validation::new(header.alg);
     validation.validate_aud = false;
     validation.set_issuer(&[client.client_id.as_str()]);
     let token_data =
         jsonwebtoken::decode::<ClientAssertionClaims>(assertion, &decoding_key, &validation)
-            .map_err(|_| ClientAssertionError::Invalid)?;
+            .map_err(|error| {
+                log_client_assertion_rejection(req, client, client_assertion_decode_reason(&error));
+                ClientAssertionError::Invalid
+            })?;
     let claims = token_data.claims;
     let now = Utc::now().timestamp();
-    if claims.iss != client.client_id
-        || claims.sub != client.client_id
-        || !audience_matches(
-            &claims.aud,
-            &client_assertion_audiences(settings, req, client),
-            client.allow_client_assertion_audience_array,
-        )
-        || !valid_client_assertion_times(&claims, now)
-        || !valid_client_assertion_jti(&claims.jti)
-    {
+    if claims.iss != client.client_id || claims.sub != client.client_id {
+        log_client_assertion_rejection(req, client, "issuer_subject");
+        return Err(ClientAssertionError::Invalid);
+    }
+    if !audience_matches(
+        &claims.aud,
+        &client_assertion_audiences(settings, req, client),
+        client.allow_client_assertion_audience_array,
+    ) {
+        log_client_assertion_rejection(req, client, "audience");
+        return Err(ClientAssertionError::Invalid);
+    }
+    if !valid_client_assertion_times(&claims, now) {
+        log_client_assertion_rejection(req, client, "time");
+        return Err(ClientAssertionError::Invalid);
+    }
+    if !valid_client_assertion_jti(&claims.jti) {
+        log_client_assertion_rejection(req, client, "jti");
         return Err(ClientAssertionError::Invalid);
     }
 
@@ -261,6 +279,29 @@ fn verify_private_key_jwt_claims_with_settings(
         kid,
         alg: header.alg,
     })
+}
+
+fn log_client_assertion_rejection(req: &HttpRequest, client: &ClientRow, reason: &'static str) {
+    tracing::warn!(
+        target: "client_assertion",
+        "client_assertion_rejected reason={} path={} client_id_hash={}",
+        reason,
+        req.uri().path(),
+        blake3_hex(&client.client_id)
+    );
+}
+
+fn client_assertion_decode_reason(error: &jsonwebtoken::errors::Error) -> &'static str {
+    use jsonwebtoken::errors::ErrorKind;
+
+    match error.kind() {
+        ErrorKind::ExpiredSignature => "decode_expired",
+        ErrorKind::ImmatureSignature => "decode_immature",
+        ErrorKind::InvalidIssuer => "decode_issuer",
+        ErrorKind::InvalidSignature => "decode_signature",
+        ErrorKind::InvalidAlgorithm => "decode_algorithm",
+        _ => "decode",
+    }
 }
 
 pub(crate) async fn consume_private_key_jwt(
@@ -455,7 +496,11 @@ fn client_assertion_audience_candidates(
         return vec![issuer.to_owned(), format!("{issuer}{path}")];
     }
     if allow_endpoint_audience {
-        return vec![issuer.to_owned(), format!("{issuer}/par")];
+        return vec![
+            issuer.to_owned(),
+            format!("{issuer}/par"),
+            format!("{issuer}/token"),
+        ];
     }
     vec![issuer.to_owned()]
 }

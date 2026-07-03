@@ -138,12 +138,7 @@ impl Settings {
             .optional_string("PROTECTED_RESOURCE_IDENTIFIER")
             .unwrap_or_else(|| default_protected_resource_identifier(&issuer));
         validate_protected_resource_identifier(&protected_resource_identifier)?;
-        let configured_dpop_nonce_policy = DpopNoncePolicy::from_config(config)?;
-        let dpop_nonce_policy = if authorization_server_profile.requires_fapi2_security() {
-            DpopNoncePolicy::Required
-        } else {
-            configured_dpop_nonce_policy
-        };
+        let dpop_nonce_policy = DpopNoncePolicy::from_config(config)?;
         let request_object_jti_policy = RequestObjectJtiPolicy::from_config(config)?;
         let auth_code_ttl_seconds = config.parse("AUTH_CODE_TTL_SECONDS", 60)?;
         if authorization_server_profile.requires_fapi2_security() && auth_code_ttl_seconds > 60 {
