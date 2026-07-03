@@ -49,6 +49,7 @@ AVATAR_STORAGE_DIR = DATA_DIR + "/avatars"
 | `VALKEY_URL` | `redis://127.0.0.1:6379/0` | Valkey connection string |
 | `DATA_DIR` | `runtime` | Base directory for persistent local files |
 | `AUTHORIZATION_SERVER_PROFILE` | `oauth2-baseline` | `oauth2-baseline`, `fapi2-security`, or `fapi2-message-signing-authz-request` |
+| `CIBA_SECURITY_PROFILE` | `fapi-ciba-id1-plain-private-key-jwt-poll` | CIBA-specific policy: `fapi-ciba-id1-plain-private-key-jwt-poll` for OIDF FAPI-CIBA compatibility, or internal `fapi2-ciba` hardening |
 | `RUST_LOG` | `info` | Tracing filter |
 
 ## Derived settings
@@ -78,7 +79,8 @@ deployment path. They are candidates for the administrator UI:
   `ENABLE_AUTHORIZATION_DETAILS`, `ENABLE_LEGACY_AUDIENCE_PARAM`,
   `ENABLE_DEVICE_AUTHORIZATION_GRANT`, `ENABLE_DYNAMIC_CLIENT_REGISTRATION`
 - protocol tuning: `DPOP_NONCE_POLICY`, `REQUEST_OBJECT_JTI_POLICY`,
-  `REQUIRE_PUSHED_AUTHORIZATION_REQUESTS`, `PAR_TTL_SECONDS`,
+  `CIBA_SECURITY_PROFILE`, `REQUIRE_PUSHED_AUTHORIZATION_REQUESTS`,
+  `PAR_TTL_SECONDS`,
   `PROTECTED_RESOURCE_IDENTIFIER`, `DEVICE_AUTHORIZATION_TTL_SECONDS`,
   `DEVICE_AUTHORIZATION_POLL_INTERVAL_SECONDS`,
   `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN`

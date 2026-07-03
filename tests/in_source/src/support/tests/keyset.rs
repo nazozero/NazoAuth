@@ -1426,6 +1426,8 @@ fn test_settings(jwk_keys_dir: PathBuf) -> Settings {
         default_audience: "resource://default".to_owned(),
         protected_resource_identifier: "https://issuer.example/fapi/resource".to_owned(),
         authorization_server_profile: crate::settings::AuthorizationServerProfile::Oauth2Baseline,
+        ciba_security_profile:
+            crate::settings::CibaSecurityProfile::FapiCibaId1PlainPrivateKeyJwtPoll,
         dpop_nonce_policy: crate::settings::DpopNoncePolicy::Required,
         request_object_jti_policy: crate::settings::RequestObjectJtiPolicy::Optional,
         session_cookie_name: "session".to_owned(),
@@ -1486,7 +1488,6 @@ fn test_settings(jwk_keys_dir: PathBuf) -> Settings {
         enable_frontchannel_logout: false,
         enable_session_management: false,
         enable_ciba: false,
-        enable_oidc_federation: false,
         enable_native_sso: false,
         dynamic_client_registration_initial_access_token: None,
         device_authorization_ttl_seconds: 600,

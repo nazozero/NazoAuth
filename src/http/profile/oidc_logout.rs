@@ -1,9 +1,16 @@
 //! OIDC RP-Initiated Logout and Back-Channel Logout support.
-//! The endpoint clears the OP browser session locally and best-effort notifies
-//! registered relying parties that have a backchannel logout URI.
+//! The endpoint clears the OP browser session locally and persists
+//! Back-Channel Logout notifications in an outbox before returning.
 
 use crate::http::prelude::*;
 use actix_web::web::Payload;
+use diesel::QueryableByName;
+use std::time::Duration as StdDuration;
+
+const BACKCHANNEL_LOGOUT_TOKEN_TTL_SECONDS: i64 = 120;
+const BACKCHANNEL_LOGOUT_DELIVERY_BATCH_SIZE: i64 = 20;
+const BACKCHANNEL_LOGOUT_LOCK_TIMEOUT_SECONDS: i64 = 300;
+const BACKCHANNEL_LOGOUT_ERROR_MAX_CHARS: usize = 512;
 
 #[derive(Default)]
 struct LogoutRequest {
@@ -15,6 +22,8 @@ struct LogoutRequest {
 
 #[derive(Clone, Debug, Queryable)]
 struct BackchannelLogoutClient {
+    id: Uuid,
+    tenant_id: Uuid,
     client_id: String,
     redirect_uris: Value,
     post_logout_redirect_uris: Value,
@@ -30,6 +39,20 @@ struct FrontchannelLogoutClient {
     client_id: String,
     frontchannel_logout_uri: String,
     frontchannel_logout_session_required: bool,
+}
+
+#[derive(Clone, Debug, QueryableByName)]
+struct BackchannelLogoutDelivery {
+    #[diesel(sql_type = diesel::sql_types::Uuid)]
+    id: Uuid,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    logout_uri: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    logout_token: String,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    attempts: i32,
+    #[diesel(sql_type = diesel::sql_types::Timestamptz)]
+    expires_at: DateTime<Utc>,
 }
 
 pub(crate) async fn oidc_logout(
@@ -130,12 +153,21 @@ pub(crate) async fn oidc_logout(
         Vec::new()
     };
 
-    if let Some(session_id) = session_cookie {
-        let _ = valkey_del(&state.valkey, format!("oauth:session:{session_id}")).await;
+    if let Some(session) = current_session.as_ref() {
+        if let Err(error) =
+            enqueue_backchannel_logout(&state, session, hint.as_ref(), client.as_ref()).await
+        {
+            tracing::warn!(%error, "failed to persist back-channel logout deliveries");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "back-channel logout persistence failed.",
+            );
+        }
     }
 
-    if let Some(session) = current_session.as_ref() {
-        dispatch_backchannel_logout(&state, session, hint.as_ref(), client.as_ref()).await;
+    if let Some(session_id) = session_cookie {
+        let _ = valkey_del(&state.valkey, format!("oauth:session:{session_id}")).await;
     }
 
     audit_event(
@@ -462,6 +494,8 @@ async fn lookup_logout_client(
         .filter(oauth_clients::client_id.eq(client_id))
         .filter(oauth_clients::is_active.eq(true))
         .select((
+            oauth_clients::id,
+            oauth_clients::tenant_id,
             oauth_clients::client_id,
             oauth_clients::redirect_uris,
             oauth_clients::post_logout_redirect_uris,
@@ -533,12 +567,12 @@ fn validate_post_logout_redirect(
     Ok(Some(url.into()))
 }
 
-async fn dispatch_backchannel_logout(
+async fn enqueue_backchannel_logout(
     state: &AppState,
     session: &CurrentSession,
     hint: Option<&IdTokenHintClaims>,
     hinted_client: Option<&BackchannelLogoutClient>,
-) {
+) -> anyhow::Result<()> {
     if let Some(hint) = hint
         && !id_token_hint_matches_current_session(
             &state.settings,
@@ -549,7 +583,7 @@ async fn dispatch_backchannel_logout(
         )
     {
         tracing::warn!("id_token_hint subject or sid did not match the current OP session");
-        return;
+        return Ok(());
     }
     let clients = match backchannel_logout_clients_for_user(state, session.user.id).await {
         Ok(mut clients) => {
@@ -562,10 +596,7 @@ async fn dispatch_backchannel_logout(
             }
             clients
         }
-        Err(error) => {
-            tracing::warn!(%error, "failed to query backchannel logout clients");
-            return;
-        }
+        Err(error) => return Err(error),
     };
     for client in clients {
         let Some(uri) = client.backchannel_logout_uri.clone() else {
@@ -582,24 +613,24 @@ async fn dispatch_backchannel_logout(
                 client_id: &client.client_id,
                 subject: subject.as_deref(),
                 sid: Some(session.oidc_sid.as_str()),
-                ttl: 120,
+                ttl: BACKCHANNEL_LOGOUT_TOKEN_TTL_SECONDS,
             },
         )
         .await
         {
             Ok(token) => token,
-            Err(error) => {
-                tracing::warn!(%error, client_id = %client.client_id, "failed to sign logout token");
-                continue;
-            }
+            Err(error) => return Err(error.into()),
         };
-        tokio::spawn(async move {
-            if let Err(error) = post_backchannel_logout(&uri, &token).await {
-                let error_message = error.to_string();
-                tracing::warn!(error = %error_message, backchannel_logout_uri = %uri, "backchannel logout delivery failed");
-            }
-        });
+        persist_backchannel_logout_delivery(
+            state,
+            &client,
+            &uri,
+            &token,
+            Utc::now() + Duration::seconds(BACKCHANNEL_LOGOUT_TOKEN_TTL_SECONDS),
+        )
+        .await?;
     }
+    Ok(())
 }
 
 async fn backchannel_logout_clients_for_user(
@@ -613,6 +644,8 @@ async fn backchannel_logout_clients_for_user(
         .filter(oauth_clients::is_active.eq(true))
         .filter(oauth_clients::backchannel_logout_uri.is_not_null())
         .select((
+            oauth_clients::id,
+            oauth_clients::tenant_id,
             oauth_clients::client_id,
             oauth_clients::redirect_uris,
             oauth_clients::post_logout_redirect_uris,
@@ -733,6 +766,171 @@ async fn post_backchannel_logout(uri: &str, token: &str) -> anyhow::Result<()> {
         anyhow::bail!("backchannel logout endpoint returned {}", response.status());
     }
     Ok(())
+}
+
+async fn persist_backchannel_logout_delivery(
+    state: &AppState,
+    client: &BackchannelLogoutClient,
+    uri: &str,
+    token: &str,
+    expires_at: DateTime<Utc>,
+) -> anyhow::Result<()> {
+    let mut conn = get_conn(&state.diesel_db).await?;
+    diesel::insert_into(backchannel_logout_deliveries::table)
+        .values((
+            backchannel_logout_deliveries::tenant_id.eq(client.tenant_id),
+            backchannel_logout_deliveries::client_id.eq(client.id),
+            backchannel_logout_deliveries::client_public_id.eq(client.client_id.clone()),
+            backchannel_logout_deliveries::logout_uri.eq(uri.to_owned()),
+            backchannel_logout_deliveries::logout_token.eq(token.to_owned()),
+            backchannel_logout_deliveries::expires_at.eq(expires_at),
+        ))
+        .execute(&mut conn)
+        .await?;
+    Ok(())
+}
+
+fn backchannel_logout_next_retry_at(
+    attempt_index: i32,
+    now: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
+) -> Option<DateTime<Utc>> {
+    let delay_seconds = match attempt_index {
+        0 => 5,
+        1 => 15,
+        2 => 45,
+        _ => return None,
+    };
+    let next_attempt_at = now + Duration::seconds(delay_seconds);
+    (next_attempt_at < expires_at).then_some(next_attempt_at)
+}
+
+async fn claim_due_backchannel_logout_deliveries(
+    state: &AppState,
+    limit: i64,
+) -> anyhow::Result<Vec<BackchannelLogoutDelivery>> {
+    let mut conn = get_conn(&state.diesel_db).await?;
+    let deliveries = diesel::sql_query(
+        r#"
+        UPDATE backchannel_logout_deliveries
+        SET attempts = attempts + 1,
+            locked_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id IN (
+            SELECT id
+            FROM backchannel_logout_deliveries
+            WHERE delivered_at IS NULL
+              AND failed_at IS NULL
+              AND expires_at > CURRENT_TIMESTAMP
+              AND next_attempt_at <= CURRENT_TIMESTAMP
+              AND (
+                  locked_at IS NULL
+                  OR locked_at < CURRENT_TIMESTAMP - ($2::int * INTERVAL '1 second')
+              )
+            ORDER BY next_attempt_at ASC, created_at ASC
+            FOR UPDATE SKIP LOCKED
+            LIMIT $1
+        )
+        RETURNING id, logout_uri, logout_token, attempts, expires_at
+        "#,
+    )
+    .bind::<diesel::sql_types::BigInt, _>(limit)
+    .bind::<diesel::sql_types::Integer, _>(BACKCHANNEL_LOGOUT_LOCK_TIMEOUT_SECONDS as i32)
+    .load::<BackchannelLogoutDelivery>(&mut conn)
+    .await?;
+    Ok(deliveries)
+}
+
+async fn mark_backchannel_logout_delivery_success(
+    state: &AppState,
+    delivery_id: Uuid,
+) -> anyhow::Result<()> {
+    let mut conn = get_conn(&state.diesel_db).await?;
+    diesel::update(backchannel_logout_deliveries::table.find(delivery_id))
+        .set((
+            backchannel_logout_deliveries::delivered_at.eq(diesel_now),
+            backchannel_logout_deliveries::locked_at.eq::<Option<DateTime<Utc>>>(None),
+            backchannel_logout_deliveries::updated_at.eq(diesel_now),
+        ))
+        .execute(&mut conn)
+        .await?;
+    Ok(())
+}
+
+async fn mark_backchannel_logout_delivery_failure(
+    state: &AppState,
+    delivery: &BackchannelLogoutDelivery,
+    error: &str,
+) -> anyhow::Result<()> {
+    let now = Utc::now();
+    let last_error = truncate_backchannel_logout_error(error);
+    let mut conn = get_conn(&state.diesel_db).await?;
+    if let Some(next_attempt_at) =
+        backchannel_logout_next_retry_at(delivery.attempts - 1, now, delivery.expires_at)
+    {
+        diesel::update(backchannel_logout_deliveries::table.find(delivery.id))
+            .set((
+                backchannel_logout_deliveries::next_attempt_at.eq(next_attempt_at),
+                backchannel_logout_deliveries::locked_at.eq::<Option<DateTime<Utc>>>(None),
+                backchannel_logout_deliveries::last_error.eq(Some(last_error)),
+                backchannel_logout_deliveries::updated_at.eq(diesel_now),
+            ))
+            .execute(&mut conn)
+            .await?;
+    } else {
+        diesel::update(backchannel_logout_deliveries::table.find(delivery.id))
+            .set((
+                backchannel_logout_deliveries::failed_at.eq(diesel_now),
+                backchannel_logout_deliveries::locked_at.eq::<Option<DateTime<Utc>>>(None),
+                backchannel_logout_deliveries::last_error.eq(Some(last_error)),
+                backchannel_logout_deliveries::updated_at.eq(diesel_now),
+            ))
+            .execute(&mut conn)
+            .await?;
+    }
+    Ok(())
+}
+
+fn truncate_backchannel_logout_error(error: &str) -> String {
+    error
+        .chars()
+        .take(BACKCHANNEL_LOGOUT_ERROR_MAX_CHARS)
+        .collect()
+}
+
+pub(crate) async fn process_backchannel_logout_delivery_batch(
+    state: &AppState,
+) -> anyhow::Result<usize> {
+    let deliveries =
+        claim_due_backchannel_logout_deliveries(state, BACKCHANNEL_LOGOUT_DELIVERY_BATCH_SIZE)
+            .await?;
+    let processed = deliveries.len();
+    for delivery in deliveries {
+        match post_backchannel_logout(&delivery.logout_uri, &delivery.logout_token).await {
+            Ok(()) => mark_backchannel_logout_delivery_success(state, delivery.id).await?,
+            Err(error) => {
+                let error_message = error.to_string();
+                tracing::warn!(
+                    error = %error_message,
+                    backchannel_logout_uri = %delivery.logout_uri,
+                    "backchannel logout delivery failed"
+                );
+                mark_backchannel_logout_delivery_failure(state, &delivery, &error_message).await?;
+            }
+        }
+    }
+    Ok(processed)
+}
+
+pub(crate) fn spawn_backchannel_logout_delivery_worker(state: Data<AppState>) {
+    tokio::spawn(async move {
+        loop {
+            if let Err(error) = process_backchannel_logout_delivery_batch(&state).await {
+                tracing::warn!(%error, "back-channel logout delivery worker failed");
+            }
+            tokio::time::sleep(StdDuration::from_secs(5)).await;
+        }
+    });
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@ use crate::http::authorization::BASELINE_ACR_VALUE;
 use crate::http::token::{
     CIBA_GRANT_TYPE, DEVICE_CODE_GRANT_TYPE, JWT_BEARER_GRANT_TYPE, TOKEN_EXCHANGE_GRANT_TYPE,
 };
-use crate::settings::{AuthorizationServerProfile, Settings, SubjectType};
+use crate::settings::{AuthorizationServerProfile, CibaSecurityProfile, Settings, SubjectType};
 use crate::support::{
     SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
 };
@@ -87,8 +87,12 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
     let id_token_signing_algs = id_token_signing_alg_values_supported(keyset);
     let authorization_signing_algs = active_signing_alg_values_supported(keyset);
     let mtls_enabled = !settings.trusted_proxy_cidrs.is_empty();
-    let token_auth_methods =
-        token_endpoint_auth_methods_supported(settings.authorization_server_profile, mtls_enabled);
+    let token_auth_methods = token_endpoint_auth_methods_supported(
+        settings.authorization_server_profile,
+        settings.ciba_security_profile,
+        mtls_enabled,
+    );
+    let token_auth_signing_algs = token_endpoint_auth_signing_alg_values_supported(settings);
     let request_object_signing_algs = request_object_signing_alg_values_supported(
         settings.authorization_server_profile,
         authorization_signing_algs.as_slice(),
@@ -130,7 +134,7 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
         "id_token_signing_alg_values_supported": id_token_signing_algs,
         "authorization_signing_alg_values_supported": authorization_signing_algs,
         "token_endpoint_auth_methods_supported": token_auth_methods,
-        "token_endpoint_auth_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS,
+        "token_endpoint_auth_signing_alg_values_supported": token_auth_signing_algs,
         "revocation_endpoint_auth_methods_supported": token_auth_methods,
         "revocation_endpoint_auth_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS,
         "introspection_endpoint_auth_methods_supported": token_auth_methods,
@@ -232,9 +236,10 @@ fn protected_resource_metadata(settings: &Settings, _keyset: &Keyset) -> Value {
 
 fn token_endpoint_auth_methods_supported(
     profile: AuthorizationServerProfile,
+    ciba_profile: CibaSecurityProfile,
     mtls_enabled: bool,
 ) -> Vec<&'static str> {
-    let methods = if profile.requires_fapi2_security() {
+    let methods = if profile.requires_fapi2_security() || ciba_profile.requires_fapi2_hardening() {
         FAPI2_CLIENT_AUTH_METHODS.as_slice()
     } else {
         CLIENT_AUTH_METHODS.as_slice()
@@ -246,6 +251,13 @@ fn token_endpoint_auth_methods_supported(
             mtls_enabled || !matches!(*method, "tls_client_auth" | "self_signed_tls_client_auth")
         })
         .collect()
+}
+
+fn token_endpoint_auth_signing_alg_values_supported(settings: &Settings) -> Vec<&'static str> {
+    if settings.ciba_security_profile.requires_fapi2_hardening() {
+        return FAPI_CIBA_REQUEST_OBJECT_SIGNING_ALGS.to_vec();
+    }
+    CLIENT_JWT_SIGNING_ALGS.to_vec()
 }
 
 fn request_object_signing_alg_values_supported(
