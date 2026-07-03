@@ -300,7 +300,7 @@ fn fapi_client_policy(file_name: &str, plan: &Value) -> FapiClientPolicy {
         require_dpop_bound_tokens: sender_constrain == "dpop",
         require_mtls_bound_tokens: sender_constrain == "mtls",
         allow_client_assertion_audience_array: file_name.contains("-id"),
-        allow_client_assertion_endpoint_audience: auth_method == "private_key_jwt",
+        allow_client_assertion_endpoint_audience: ciba && auth_method == "private_key_jwt",
         require_par_request_object: ciba
             || file_name.contains("-message-")
             || nazo
@@ -585,6 +585,7 @@ mod tests {
 
         assert!(!policy.require_dpop_bound_tokens);
         assert!(policy.require_mtls_bound_tokens);
+        assert!(policy.allow_client_assertion_endpoint_audience);
         assert!(policy.ciba);
     }
 
@@ -597,6 +598,20 @@ mod tests {
 
         assert!(policy.require_dpop_bound_tokens);
         assert!(!policy.require_mtls_bound_tokens);
+        assert!(!policy.allow_client_assertion_endpoint_audience);
+        assert!(!policy.ciba);
+    }
+
+    #[test]
+    fn fapi_matrix_private_key_jwt_mtls_rejects_endpoint_audience() {
+        let policy = fapi_client_policy(
+            "oidf-fapi-matrix-security-final-private-key-jwt-mtls-openid-connect-plain-fapi-plain-response-plan-config.json",
+            &json!({"nazo": {"client_auth_type": "private_key_jwt", "sender_constrain": "mtls"}}),
+        );
+
+        assert!(!policy.require_dpop_bound_tokens);
+        assert!(policy.require_mtls_bound_tokens);
+        assert!(!policy.allow_client_assertion_endpoint_audience);
         assert!(!policy.ciba);
     }
 }
