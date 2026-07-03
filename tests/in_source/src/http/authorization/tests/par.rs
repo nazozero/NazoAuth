@@ -56,6 +56,8 @@ fn client(require_dpop_bound_tokens: bool) -> ClientRow {
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: None,
         backchannel_logout_session_required: true,
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: true,
         subject_type: "public".to_owned(),
         sector_identifier_uri: None,
         sector_identifier_host: None,
@@ -128,9 +130,17 @@ fn baseline_settings() -> Settings {
         enable_legacy_audience_param: false,
         enable_device_authorization_grant: false,
         enable_dynamic_client_registration: false,
+        enable_frontchannel_logout: false,
+        enable_session_management: false,
+        enable_ciba: false,
+        enable_oidc_federation: false,
+        enable_native_sso: false,
         dynamic_client_registration_initial_access_token: None,
         device_authorization_ttl_seconds: 600,
         device_authorization_poll_interval_seconds: 5,
+        ciba_auth_req_id_ttl_seconds: 600,
+        ciba_poll_interval_seconds: 5,
+        ciba_automated_decision_token: None,
     }
 }
 
@@ -139,6 +149,28 @@ fn oauth_error_code(response: &HttpResponse) -> Option<String> {
         .extensions()
         .get::<OAuthJsonErrorFields>()
         .map(|fields| fields.error.clone())
+}
+
+#[test]
+fn par_error_log_fields_skip_success_and_include_only_safe_error_metadata() {
+    let created = json_response_status(
+        StatusCode::CREATED,
+        json!({
+            "request_uri": "urn:ietf:params:oauth:request_uri:secret",
+            "expires_in": 90
+        }),
+    );
+    assert_eq!(par_error_log_fields(&created), None);
+
+    let rejected = oauth_error(
+        StatusCode::BAD_REQUEST,
+        "invalid_request_object",
+        "request=secret must not be logged",
+    );
+    assert_eq!(
+        par_error_log_fields(&rejected),
+        Some((400, Some("invalid_request_object".to_owned())))
+    );
 }
 
 fn par_test_secret() -> String {

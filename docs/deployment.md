@@ -125,10 +125,13 @@ Default live assumptions:
 
 | Setting | Default |
 | --- | --- |
-| Remote host | `nazo.run` |
+| Remote host | Required `-RemoteHost` argument |
 | Container name | `nazo-oauth-server` |
 | Network | `nazo_oauth_net` |
+| Network subnet | `10.101.0.0/24` |
+| Network gateway | `10.101.0.1` |
 | Container IP | `10.101.0.20` |
+| Host port publish | Disabled by default; Angie proxies to the container IP |
 | Remote config | `/opt/nazo-oauth/.env.yaml` |
 | Keys path | `/opt/nazo-oauth/runtime/keys` |
 | Avatars path | `/opt/nazo-oauth/runtime/avatars` |
@@ -140,14 +143,36 @@ Example:
 
 ```powershell
 pwsh scripts/deploy_live.ps1 `
-  -RemoteHost nazo.run `
+  -RemoteHost <ssh-host> `
   -ImageRepository localhost/nazo-oauth-server `
   -ImageTag main-$(git rev-parse --short=7 HEAD)
 ```
 
-The script targets the `nazo.run` environment. Recheck the live listener,
-reverse-proxy config, container network, TLS settings, and expected issuer
-before using it for another host.
+The script uses the configured SSH target to deploy the `auth.nazo.run`
+environment. Recheck the live listener, reverse-proxy config, container
+network, TLS settings, and expected issuer before using it for a different
+host.
+
+### Fixed Internal IP and Angie
+
+The `auth.nazo.run` live path uses Podman's `nazo_oauth_net` bridge network with
+subnet `10.101.0.0/24`, gateway `10.101.0.1`, and application container IP
+`10.101.0.20`. The deployment script creates or validates that network, verifies
+the started container IP, and probes `http://10.101.0.20:8000/health` and
+discovery from the host.
+
+Angie should proxy directly to the fixed container IP rather than a published
+`127.0.0.1:8000` port:
+
+```nginx
+proxy_pass http://10.101.0.20:8000;
+```
+
+When Angie runs on the same host, the application usually sees the bridge
+gateway `10.101.0.1` as the trusted proxy peer. Configure
+`TRUSTED_PROXY_CIDRS` with only that address or the actual controlled proxy
+address, for example `10.101.0.1/32`; do not trust an uncontrolled container
+subnet wholesale.
 
 ## Reverse Proxy Boundary
 
@@ -284,13 +309,15 @@ The `nazo.run` deployment helper [scripts/verify_live_full_interfaces.py](../scr
 
 Before launching a full OpenID Foundation conformance run:
 
-1. Deploy the exact commit to be tested.
-2. Verify discovery and JWKS over the public issuer.
-3. Confirm redirect URIs in the suite plan config.
-4. Confirm browser automation rules match the real login, consent, and callback pages.
-5. Confirm mTLS endpoint aliases and proxy certificate forwarding.
-6. Run `.github/workflows/oidf-conformance-full.yml`.
-7. Preserve the final result index under `docs/conformance`.
+1. Select the exact commit to test and make sure unrelated deployment patches are not mixed in.
+2. Confirm Angie proxies to fixed container IP `10.101.0.20:8000`, and `.env.yaml` trusts only the actual controlled proxy address.
+3. Deploy the same commit to the public entrypoint with `scripts/deploy_live.ps1`; this runs migrations and verifies the Podman container IP is `10.101.0.20`.
+4. Run the `oidf-public-seed-configs` workflow and download the `oidf-public-plan-configs` artifact. This is the only official-source seed input for the server.
+5. Put that artifact in the live OIDF runtime directory and use the same commit's `oidf-seed` image / `nazo_oauth_seed_oidf` binary to seed the database used by the public `auth.nazo.run` entrypoint. Do not seed only the `compose.oidf.local.yml` 9443 stack and then run official public tests.
+6. Verify health, discovery, JWKS, mTLS aliases, and certificate forwarding over the public issuer. Discovery `issuer` must be `https://auth.nazo.run`.
+7. Run the targeted `.github/workflows/oidf-conformance.yml` plan first. The targeted workflow disables the early-stop monitor by default so failed runs still upload diagnostic artifacts.
+8. Run `.github/workflows/oidf-conformance-full.yml` only after the targeted plan passes. Keep `OIDF_NO_PARALLEL=true` for the default full matrix unless deliberately testing runner concurrency. For concurrency validation, dispatch the same workflow with `runner_mode=parallel-isolated`; this runs the concurrency-safe plan set without `--no-parallel` while running logout and session-management in separate isolated matrix jobs with their own runner/browser environment.
+9. Preserve the final result index under `docs/conformance` before artifacts expire.
 
 ## Operations Checklist
 

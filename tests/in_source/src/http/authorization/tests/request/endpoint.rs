@@ -1880,12 +1880,15 @@ async fn authorization_response_redirect_emits_signed_jarm_response() {
 
     let response = authorization_response_redirect(
         &state,
-        "https://client.example/callback?existing=1",
-        "client-jarm",
-        Some("jwt"),
-        Some("code-123"),
-        None,
-        Some("state-123"),
+        AuthorizationResponseRedirect {
+            redirect_uri: "https://client.example/callback?existing=1",
+            client_id: "client-jarm",
+            response_mode: Some("jwt"),
+            code: Some("code-123"),
+            error: None,
+            state: Some("state-123"),
+            oidc_sid: None,
+        },
     )
     .await;
 

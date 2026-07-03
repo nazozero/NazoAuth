@@ -5,6 +5,7 @@ use super::{
     unverified_signed_request_object_client_id,
 };
 use crate::http::prelude::*;
+use crate::http::profile::issue_oidc_session_state;
 
 mod form;
 mod parameters;
@@ -332,12 +333,15 @@ async fn authorize_request(
         if prompt.none {
             return authorization_response_redirect(
                 &state,
-                &redirect_uri,
-                q.get("client_id").map(String::as_str).unwrap_or(""),
-                q.get("response_mode").map(String::as_str),
-                None,
-                Some("login_required"),
-                q.get("state").map(String::as_str),
+                AuthorizationResponseRedirect {
+                    redirect_uri: &redirect_uri,
+                    client_id: q.get("client_id").map(String::as_str).unwrap_or(""),
+                    response_mode: q.get("response_mode").map(String::as_str),
+                    code: None,
+                    error: Some("login_required"),
+                    state: q.get("state").map(String::as_str),
+                    oidc_sid: None,
+                },
             )
             .await;
         }
@@ -366,12 +370,15 @@ async fn authorize_request(
         if prompt.none {
             return authorization_response_redirect(
                 &state,
-                &redirect_uri,
-                q.get("client_id").map(String::as_str).unwrap_or(""),
-                q.get("response_mode").map(String::as_str),
-                None,
-                Some("login_required"),
-                q.get("state").map(String::as_str),
+                AuthorizationResponseRedirect {
+                    redirect_uri: &redirect_uri,
+                    client_id: q.get("client_id").map(String::as_str).unwrap_or(""),
+                    response_mode: q.get("response_mode").map(String::as_str),
+                    code: None,
+                    error: Some("login_required"),
+                    state: q.get("state").map(String::as_str),
+                    oidc_sid: None,
+                },
             )
             .await;
         }
@@ -544,47 +551,66 @@ pub(crate) async fn authorization_oauth_error_redirect(
 ) -> HttpResponse {
     authorization_response_redirect(
         state,
-        redirect_uri,
-        q.get("client_id").map(String::as_str).unwrap_or(""),
-        q.get("response_mode").map(String::as_str),
-        None,
-        Some(error),
-        q.get("state").map(String::as_str),
+        AuthorizationResponseRedirect {
+            redirect_uri,
+            client_id: q.get("client_id").map(String::as_str).unwrap_or(""),
+            response_mode: q.get("response_mode").map(String::as_str),
+            code: None,
+            error: Some(error),
+            state: q.get("state").map(String::as_str),
+            oidc_sid: None,
+        },
     )
     .await
 }
 
+pub(crate) struct AuthorizationResponseRedirect<'a> {
+    pub(crate) redirect_uri: &'a str,
+    pub(crate) client_id: &'a str,
+    pub(crate) response_mode: Option<&'a str>,
+    pub(crate) code: Option<&'a str>,
+    pub(crate) error: Option<&'a str>,
+    pub(crate) state: Option<&'a str>,
+    pub(crate) oidc_sid: Option<&'a str>,
+}
+
 pub(crate) async fn authorization_response_redirect(
     state: &AppState,
-    redirect_uri: &str,
-    client_id: &str,
-    response_mode: Option<&str>,
-    code: Option<&str>,
-    error: Option<&str>,
-    state_value: Option<&str>,
+    input: AuthorizationResponseRedirect<'_>,
 ) -> HttpResponse {
-    if response_mode == Some("jwt") && !client_id.trim().is_empty() {
+    if input.response_mode == Some("jwt") && !input.client_id.trim().is_empty() {
         return authorization_response_jwt_result(
-            redirect_uri,
+            input.redirect_uri,
             make_authorization_response_jwt(
                 state,
                 AuthorizationResponseJwtInput {
-                    client_id,
-                    code,
-                    error,
-                    state: state_value,
+                    client_id: input.client_id,
+                    code: input.code,
+                    error: input.error,
+                    state: input.state,
                     ttl: state.settings.auth_code_ttl_seconds as i64,
                 },
             )
             .await,
         );
     }
+    let session_state = if state.settings.enable_session_management
+        && input.code.is_some()
+        && input.error.is_none()
+    {
+        input
+            .oidc_sid
+            .and_then(|sid| issue_oidc_session_state(input.client_id, input.redirect_uri, sid))
+    } else {
+        None
+    };
     redirect_found(append_authorization_response_query(
-        redirect_uri,
+        input.redirect_uri,
         state.settings.issuer.as_str(),
-        code,
-        error,
-        state_value,
+        input.code,
+        input.error,
+        input.state,
+        session_state.as_deref(),
     ))
 }
 

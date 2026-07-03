@@ -64,7 +64,36 @@ NAZO_AUTHORIZATION_ERROR_RESPONSE_PATTERN = (
 OIDF_BAD_FINAL_RESULTS = {"FAILED", "INTERRUPTED", "WARNING"}
 OIDF_BAD_STATUS_VALUES = {"FAILED", "INTERRUPTED"}
 OIDF_BAD_LOG_RESULTS = {"FAILURE", "WARNING"}
-OIDF_LOG_CONTEXT_SOURCES = {"BROWSER", "WebRunner"}
+OIDF_LOG_CONTEXT_SOURCES = {
+    "BROWSER",
+    "CallBackchannelAuthenticationEndpoint",
+    "CallTokenEndpointAndReturnFullResponse",
+    "WebRunner",
+}
+OIDF_LOG_CONTEXT_FIELDS = (
+    "src",
+    "result",
+    "msg",
+    "browser",
+    "task",
+    "url",
+    "endpoint",
+    "uri",
+    "request_uri",
+    "match",
+    "element_type",
+    "target",
+    "code",
+    "status",
+    "body",
+    "response_body",
+    "response_status_code",
+    "response_status_text",
+    "content_type",
+    "backchannel_authentication_endpoint_response",
+    "backchannel_authentication_endpoint_response_http_status",
+    "backchannel_authentication_endpoint_response_headers",
+)
 OIDF_SENSITIVE_LOG_FIELDS = {
     "authorization",
     "access_token",
@@ -850,7 +879,7 @@ def write_plan_configs(
     env_name: str,
     config_json_file: str,
     target_issuer: str,
-) -> tuple[set[str], set[str]]:
+) -> tuple[set[str], dict[str, str]]:
     validate_config_file_name(file_name)
     raw_config = (
         non_empty_file(config_json_file, "--config-json-file")
@@ -876,14 +905,14 @@ def write_plan_configs(
         validate_browser_automation(file_name, parsed)
         target = suite_scripts / file_name
         target.write_text(json.dumps(parsed, indent=2, sort_keys=True), encoding="utf-8")
-        aliases = {alias} if (alias := config_alias(parsed)) else set()
-        return {file_name}, aliases
+        aliases_by_config = {file_name: alias} if (alias := config_alias(parsed)) else {}
+        return {file_name}, aliases_by_config
 
     if not isinstance(configs, dict) or not configs:
         fail(f"{env_name}.configs must contain a non-empty JSON object")
 
     written: set[str] = set()
-    aliases: set[str] = set()
+    aliases_by_config: dict[str, str] = {}
     for config_name, config_value in configs.items():
         if not isinstance(config_name, str) or not config_name.strip():
             fail(f"{env_name}.configs contains an invalid file name")
@@ -898,11 +927,11 @@ def write_plan_configs(
         validate_browser_automation(config_name, config_value)
         alias = config_alias(config_value)
         if alias:
-            aliases.add(alias)
+            aliases_by_config[config_name] = alias
         target = suite_scripts / config_name
         target.write_text(json.dumps(config_value, indent=2, sort_keys=True), encoding="utf-8")
         written.add(config_name)
-    return written, aliases
+    return written, aliases_by_config
 
 
 def api_url(base_url: str, path: str, query: dict[str, str | int] | None = None) -> str:
@@ -1077,6 +1106,29 @@ def oidf_module_failure(info: object) -> str | None:
     return None
 
 
+def oidf_info_failure_can_wait_for_final_result(info: object) -> bool:
+    if not isinstance(info, dict):
+        return False
+
+    error = info.get("error")
+    if isinstance(error, str) and error.strip():
+        return False
+    if isinstance(error, dict) and error:
+        return False
+
+    status = value_as_upper(info.get("status"))
+    if status in OIDF_BAD_STATUS_VALUES:
+        return False
+
+    result = value_as_upper(info.get("result"))
+    if result in OIDF_BAD_FINAL_RESULTS:
+        return True
+
+    test_name_value = info.get("testName") or info.get("name") or ""
+    test_name = test_name_value if isinstance(test_name_value, str) else ""
+    return result == "REVIEW" and not is_allowed_review_module(test_name)
+
+
 def oidf_log_failure(module_id: str, logs: object) -> str | None:
     if not isinstance(logs, list):
         return None
@@ -1095,6 +1147,26 @@ def oidf_log_failure(module_id: str, logs: object) -> str | None:
     return None
 
 
+def oidf_log_has_successful_completion(logs: object) -> bool:
+    if not isinstance(logs, list):
+        return False
+
+    has_success = False
+    for entry in logs:
+        if not isinstance(entry, dict):
+            continue
+
+        result = value_as_upper(entry.get("result"))
+        if result == "SUCCESS":
+            has_success = True
+
+        msg = entry.get("msg")
+        if result == "FINISHED" and isinstance(msg, str) and "completion" in msg:
+            return has_success
+
+    return False
+
+
 def oidf_log_context(logs: object, *, max_entries: int = 6) -> str:
     if not isinstance(logs, list):
         return ""
@@ -1109,36 +1181,46 @@ def oidf_log_context(logs: object, *, max_entries: int = 6) -> str:
             continue
 
         parts: list[str] = []
-        for key in (
-            "src",
-            "result",
-            "msg",
-            "browser",
-            "task",
-            "url",
-            "request_uri",
-            "match",
-            "element_type",
-            "target",
-            "response_status_code",
-            "response_status_text",
-            "content_type",
-        ):
-            value = entry.get(key)
-            if isinstance(value, (str, int, float, bool)):
-                text = str(value).replace("\n", " ").strip()
-                if text:
-                    if key.lower() in OIDF_SENSITIVE_LOG_FIELDS:
-                        text = "<redacted>"
-                    else:
-                        text = redact_log_text(text)
-                    parts.append(f"{key}={text[:180]}")
+        for key, value in oidf_log_context_values(entry):
+            text = oidf_log_context_text(key, value)
+            if text:
+                parts.append(f"{key}={text[:180]}")
         if parts:
             interesting.append("; ".join(parts))
 
     if not interesting:
         return ""
     return " | ".join(interesting[-max_entries:])
+
+
+def oidf_log_context_values(entry: dict[str, object]) -> list[tuple[str, object]]:
+    values: list[tuple[str, object]] = []
+    for key in OIDF_LOG_CONTEXT_FIELDS:
+        if key in entry:
+            values.append((key, entry[key]))
+
+    args = entry.get("args")
+    if isinstance(args, dict):
+        for key in OIDF_LOG_CONTEXT_FIELDS:
+            if key in args:
+                values.append((key, args[key]))
+    return values
+
+
+def oidf_log_context_text(key: str, value: object) -> str:
+    if isinstance(value, (dict, list)):
+        text = json.dumps(value, sort_keys=True, separators=(",", ":"))
+    elif isinstance(value, (str, int, float, bool)):
+        text = str(value)
+    else:
+        return ""
+
+    text = text.replace("\n", " ").strip()
+    if not text:
+        return ""
+    if key.lower() in OIDF_SENSITIVE_LOG_FIELDS:
+        return "<redacted>"
+    return redact_log_text(text)
 
 
 def oidf_failure_with_log_context(module_id: str, failure: str, logs: object) -> str:
@@ -1227,6 +1309,12 @@ def inspect_oidf_state(
                     token,
                     expected_statuses={200, 404},
                 )
+                if oidf_log_failure(module_id, logs):
+                    return oidf_failure_with_log_context(module_id, failure, logs)
+                if oidf_log_has_successful_completion(logs):
+                    continue
+                if not final and oidf_info_failure_can_wait_for_final_result(info):
+                    continue
                 return oidf_failure_with_log_context(module_id, failure, logs)
             status = value_as_upper(info.get("status")) if isinstance(info, dict) else ""
             if final and status and status != "FINISHED":
@@ -1247,6 +1335,32 @@ def inspect_oidf_state(
     return None
 
 
+def ciba_config_has_automated_approval_url(config_json_file: str, env_name: str) -> bool:
+    raw_config = (
+        non_empty_file(config_json_file, "--config-json-file")
+        if config_json_file
+        else os.environ.get(env_name, "")
+    )
+    if not raw_config.strip():
+        return False
+    try:
+        parsed = json.loads(raw_config)
+    except json.JSONDecodeError:
+        return False
+    configs = parsed.get("configs") if isinstance(parsed, dict) else None
+    candidates = configs.values() if isinstance(configs, dict) else [parsed]
+    for value in candidates:
+        if not isinstance(value, dict):
+            continue
+        alias = config_alias(value) or ""
+        if "ciba" not in alias:
+            continue
+        automated_url = value.get("automated_ciba_approval_url")
+        if isinstance(automated_url, str) and automated_url.strip():
+            return True
+    return False
+
+
 def cancel_alias_plan_instances(
     base_url: str,
     token: str,
@@ -1264,7 +1378,7 @@ class OidfEarlyStopMonitor:
     def __init__(
         self,
         base_url: str,
-        token: str,
+        token: str | None,
         aliases: set[str],
         interval_seconds: int,
         ignored_plan_ids: set[str],
@@ -1505,6 +1619,17 @@ def plan_expressions(
     return expressions
 
 
+def config_names_from_plan_expressions(
+    expressions: list[str],
+    config_names: set[str],
+) -> set[str]:
+    selected: set[str] = set()
+    for expression in expressions:
+        parts = shlex.split(expression)
+        selected.update(config_name for config_name in config_names if config_name in parts)
+    return selected
+
+
 def validate_rerun_argument(value: str) -> None:
     for item in value.split(","):
         item = item.strip()
@@ -1590,7 +1715,7 @@ def parse_args() -> argparse.Namespace:
         "--monitor-interval-seconds",
         type=int,
         default=60,
-        help="poll OIDF APIs at this interval and stop early on failed module state",
+        help="poll OIDF APIs at this interval and stop early on failed module state; set 0 to disable",
     )
     parser.add_argument("--list", action="store_true", help="list selected plans without running them")
     return parser.parse_args()
@@ -1609,8 +1734,8 @@ def run_official_runner(
 ) -> int:
     if timeout_seconds <= 0:
         fail("--timeout-seconds must be greater than zero")
-    if monitor_interval_seconds <= 0:
-        fail("--monitor-interval-seconds must be greater than zero")
+    if monitor_interval_seconds < 0:
+        fail("--monitor-interval-seconds must be zero or greater")
 
     print("OIDF selected plan expressions:", flush=True)
     for index, expression in enumerate(expressions, start=1):
@@ -1629,7 +1754,7 @@ def run_official_runner(
     )
     monitor: OidfEarlyStopMonitor | None = None
     monitor_thread: threading.Thread | None = None
-    if aliases:
+    if aliases and monitor_interval_seconds > 0:
         monitor = OidfEarlyStopMonitor(
             conformance_server,
             token,
@@ -1648,6 +1773,8 @@ def run_official_runner(
             flush=True,
         )
         monitor_thread.start()
+    elif aliases:
+        print("OIDF early-stop monitor disabled", flush=True)
 
     try:
         exit_code = process.wait(timeout=timeout_seconds)
@@ -1716,7 +1843,7 @@ def main() -> int:
     if not runner.is_file():
         fail(f"official runner not found: {runner}")
 
-    config_names, aliases = write_plan_configs(
+    config_names, aliases_by_config = write_plan_configs(
         suite_scripts,
         args.config_file_name,
         args.config_env,
@@ -1730,6 +1857,12 @@ def main() -> int:
         config_names,
         args.config_file_name,
     )
+    selected_config_names = config_names_from_plan_expressions(expressions, config_names)
+    aliases = {
+        alias
+        for config_name, alias in aliases_by_config.items()
+        if config_name in selected_config_names
+    }
 
     env = os.environ.copy()
     env["CONFORMANCE_SERVER"] = args.conformance_server
@@ -1767,6 +1900,14 @@ def main() -> int:
     for expression in expressions:
         command.extend(shlex.split(expression))
 
+    monitor_aliases = set() if args.list else aliases
+    if monitor_aliases and any("ciba" in alias for alias in monitor_aliases):
+        if not ciba_config_has_automated_approval_url(args.config_json_file, args.config_env):
+            fail(
+                "FAPI-CIBA conformance automation requires automated_ciba_approval_url "
+                "so the official suite controls approve/deny timing"
+            )
+
     return run_official_runner(
         command,
         expressions,
@@ -1774,7 +1915,7 @@ def main() -> int:
         env,
         args.timeout_seconds,
         args.conformance_server,
-        set() if args.list or args.rerun else aliases,
+        monitor_aliases,
         token,
         args.monitor_interval_seconds,
     )

@@ -3,11 +3,18 @@
 
 mod cors;
 mod observability;
-mod routes;
+pub(crate) mod routes;
 
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use actix_web::{App, HttpServer, dev::Service, http::header, middleware::DefaultHeaders, web};
+use actix_web::{
+    App, Error, HttpServer,
+    body::MessageBody,
+    dev::{Service, ServiceRequest, ServiceResponse},
+    http::header::{self, HeaderMap, HeaderName, HeaderValue},
+    middleware::{Next, from_fn},
+    web,
+};
 use fred::{
     interfaces::ClientLike,
     prelude::{
@@ -98,7 +105,7 @@ pub async fn run() -> anyhow::Result<()> {
                 }
                 .instrument(span)
             })
-            .wrap(security_headers())
+            .wrap(from_fn(security_headers))
             .app_data(state.clone())
             .configure(|cfg| routes::configure(cfg, &state.settings))
     })
@@ -137,16 +144,51 @@ fn signing_key_refresh_interval(settings: &Settings) -> Duration {
     Duration::from_secs(seconds as u64)
 }
 
-fn security_headers() -> DefaultHeaders {
-    DefaultHeaders::new()
-        .add((header::X_FRAME_OPTIONS, "DENY"))
-        .add((
-            "Content-Security-Policy",
+async fn security_headers<B>(
+    req: ServiceRequest,
+    next: Next<B>,
+) -> Result<ServiceResponse<B>, Error>
+where
+    B: MessageBody,
+{
+    let is_check_session_iframe = req.path() == "/check_session";
+    let mut response = next.call(req).await?;
+    apply_security_headers(response.headers_mut(), is_check_session_iframe);
+    Ok(response)
+}
+
+fn apply_security_headers(headers: &mut HeaderMap, is_check_session_iframe: bool) {
+    if !is_check_session_iframe {
+        insert_static_header(headers, header::X_FRAME_OPTIONS, "DENY");
+        insert_static_header(
+            headers,
+            HeaderName::from_static("content-security-policy"),
             "frame-ancestors 'none'; base-uri 'none'; object-src 'none'",
-        ))
-        .add(("Referrer-Policy", "no-referrer"))
-        .add(("Permissions-Policy", "interest-cohort=()"))
-        .add(("X-Content-Type-Options", "nosniff"))
+        );
+    } else {
+        insert_static_header(
+            headers,
+            HeaderName::from_static("content-security-policy"),
+            "base-uri 'none'; object-src 'none'",
+        );
+    }
+    insert_static_header(
+        headers,
+        HeaderName::from_static("referrer-policy"),
+        "no-referrer",
+    );
+    insert_static_header(
+        headers,
+        HeaderName::from_static("permissions-policy"),
+        "interest-cohort=()",
+    );
+    insert_static_header(headers, header::X_CONTENT_TYPE_OPTIONS, "nosniff");
+}
+
+fn insert_static_header(headers: &mut HeaderMap, name: HeaderName, value: &'static str) {
+    if !headers.contains_key(&name) {
+        headers.insert(name, HeaderValue::from_static(value));
+    }
 }
 
 #[cfg(test)]

@@ -21,6 +21,8 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
         .route("/authorize/decision", web::post().to(authorize_decision))
         // NO CORS: /par
         .route("/par", web::post().to(par))
+        .route("/bc-authorize", web::post().to(backchannel_authentication))
+        .route("/ciba/{auth_req_id}", web::get().to(ciba_verification_page))
         // NO CORS: /device_authorization and device verification backchannel
         .route(
             "/device_authorization",
@@ -41,6 +43,8 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
                 .route(web::get().to(oidc_logout))
                 .route(web::post().to(oidc_logout)),
         )
+        .route("/check_session", web::get().to(check_session_iframe))
+        .route("/check_session/status", web::get().to(check_session_status))
         // CORS: cors_browser_oauth — /revoke
         .service(
             web::resource("/revoke")
@@ -72,6 +76,11 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
                     "/oauth-protected-resource/{tail:.*}",
                     web::get().to(oauth_protected_resource_metadata),
                 ),
+        )
+        .service(
+            web::resource("/.well-known/openid-federation")
+                .wrap(cors::cors_well_known(settings))
+                .route(web::get().to(openid_federation_entity_statement)),
         )
         // CORS: cors_well_known — /jwks.json
         .service(
@@ -160,6 +169,18 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
                         .route("/access-requests", web::post().to(create_access_request))
                         .route("/access-delivery", web::get().to(access_delivery)),
                 )
+                .route(
+                    "/ciba-automated-decision",
+                    web::get().to(ciba_automated_decision),
+                )
+                .route(
+                    "/ciba-automated-decision",
+                    web::post().to(ciba_automated_decision),
+                )
+                .route("/ciba/automated", web::get().to(ciba_automated_decision))
+                .route("/ciba/automated", web::post().to(ciba_automated_decision))
+                .route("/ciba/{auth_req_id}", web::get().to(ciba_verification))
+                .route("/ciba/{auth_req_id}", web::post().to(ciba_decision))
                 .route("/logout", web::post().to(logout)),
         )
         // CORS: cors_admin — /admin/*

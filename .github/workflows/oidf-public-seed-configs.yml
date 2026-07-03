@@ -1,0 +1,70 @@
+name: oidf-public-seed-configs
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  oidf-public-seed-configs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.0
+
+      - uses: actions/setup-python@v6.3.0
+        with:
+          python-version: "3.13"
+
+      - name: Install age decryptor
+        run: cargo install rage --version 0.11.2 --locked
+
+      - name: Export public OIDF seed configs
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s\n' "$OIDF_PLAN_CONFIG_AGE_IDENTITY" > oidf-plan-config.agekey
+          rage --decrypt \
+            --identity oidf-plan-config.agekey \
+            --output oidf-plan-config-secret-patch.json \
+            docs/conformance/oidf-plan-config-secret-patch.json.age
+          rage --decrypt \
+            --identity oidf-plan-config.agekey \
+            --output oidf-plan-config-ciba-secret-patch.json \
+            docs/conformance/oidf-plan-config-ciba-secret-patch.json.age
+          python - <<'PY'
+          import json
+
+          with open("oidf-plan-config-secret-patch.json", encoding="utf-8") as handle:
+              base = json.load(handle)
+          with open("oidf-plan-config-ciba-secret-patch.json", encoding="utf-8") as handle:
+              ciba = json.load(handle)
+
+          conflicts = sorted(key for key, value in ciba.items() if key in base and base[key] != value)
+          if conflicts:
+              raise SystemExit("conflicting OIDF secret patch keys: " + ", ".join(conflicts))
+
+          base.update(ciba)
+          with open("oidf-plan-config-secret-patch.merged.json", "w", encoding="utf-8") as handle:
+              json.dump(base, handle, sort_keys=True)
+              handle.write("\n")
+          PY
+          python scripts/materialize_oidf_plan_config.py \
+            --template docs/conformance/oidf-plan-config-template.json \
+            --secret-patch-file oidf-plan-config-secret-patch.merged.json \
+            --derive-dynamic-oidcc-config \
+            --output oidf-plan-configs.json
+          python scripts/export_oidf_public_plan_configs.py \
+            --config-json-file oidf-plan-configs.json \
+            --output-dir oidf-public-plan-configs
+        env:
+          OIDF_PLAN_CONFIG_AGE_IDENTITY: ${{ secrets.OIDF_PLAN_CONFIG_AGE_IDENTITY }}
+          OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN: ${{ secrets.OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN }}
+
+      - name: Upload public OIDF seed configs
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: oidf-public-plan-configs
+          path: oidf-public-plan-configs
+          if-no-files-found: error

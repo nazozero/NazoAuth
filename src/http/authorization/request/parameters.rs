@@ -299,6 +299,7 @@ pub(super) fn append_authorization_response_query(
     code: Option<&str>,
     error: Option<&str>,
     state_value: Option<&str>,
+    session_state: Option<&str>,
 ) -> String {
     let Ok(mut url) = url::Url::parse(redirect_uri) else {
         return redirect_uri.to_owned();
@@ -313,6 +314,9 @@ pub(super) fn append_authorization_response_query(
         }
         if let Some(state_value) = state_value {
             query.append_pair("state", state_value);
+        }
+        if let Some(session_state) = session_state {
+            query.append_pair("session_state", session_state);
         }
         query.append_pair("iss", issuer);
     }

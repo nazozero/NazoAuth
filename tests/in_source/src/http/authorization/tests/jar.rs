@@ -62,6 +62,8 @@ fn jar_client(client_id: &str) -> ClientRow {
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: None,
         backchannel_logout_session_required: true,
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: true,
         subject_type: "public".to_owned(),
         sector_identifier_uri: None,
         sector_identifier_host: None,
@@ -160,7 +162,7 @@ fn signed_request_object_token(kid: &str, private_pkcs8_der: &[u8], claims: Valu
     .expect("request object should sign")
 }
 
-fn signed_request_object_claims(extra: Value) -> Value {
+fn signed_request_object_claims_json(extra: Value) -> Value {
     let now = Utc::now().timestamp();
     let mut claims = json!({
         "client_id": "client-a",
@@ -698,8 +700,11 @@ async fn signed_request_object_requires_redirect_uri_before_applying_claims() {
         .expect("request object key should generate")
         .private_pkcs8_der;
     let client = signed_jar_client("client-a", "jar-kid", &key);
-    let request_object =
-        signed_request_object_token("jar-kid", &key, signed_request_object_claims(json!({})));
+    let request_object = signed_request_object_token(
+        "jar-kid",
+        &key,
+        signed_request_object_claims_json(json!({})),
+    );
     let mut outer = HashMap::from([
         ("client_id".to_owned(), "client-a".to_owned()),
         ("request".to_owned(), request_object),
@@ -729,7 +734,7 @@ async fn holder_bound_signed_request_object_rejects_outer_authorization_paramete
     let request_object = signed_request_object_token(
         "jar-kid",
         &key,
-        signed_request_object_claims(json!({
+        signed_request_object_claims_json(json!({
             "redirect_uri": "https://client.example/callback"
         })),
     );
@@ -764,7 +769,7 @@ async fn holder_bound_signed_request_object_applies_only_jwt_authorization_param
     let request_object = signed_request_object_token(
         "jar-kid",
         &key,
-        signed_request_object_claims(json!({
+        signed_request_object_claims_json(json!({
             "redirect_uri": "https://client.example/callback",
             "nonce": "jwt-nonce"
         })),
@@ -799,7 +804,7 @@ async fn par_policy_signed_request_object_rejects_outer_authorization_parameter_
     let request_object = signed_request_object_token(
         "jar-kid",
         &key,
-        signed_request_object_claims(json!({
+        signed_request_object_claims_json(json!({
             "redirect_uri": "https://client.example/callback",
             "scope": "openid"
         })),
@@ -835,7 +840,7 @@ async fn par_policy_signed_request_object_applies_only_jwt_authorization_paramet
     let request_object = signed_request_object_token(
         "jar-kid",
         &key,
-        signed_request_object_claims(json!({
+        signed_request_object_claims_json(json!({
             "redirect_uri": "https://client.example/callback",
             "nonce": "jwt-nonce"
         })),
@@ -866,7 +871,7 @@ fn signed_request_object_rejects_unsupported_algorithm_before_claims_are_trusted
         &generate_key_material(jsonwebtoken::Algorithm::RS256)
             .expect("request object key should generate")
             .private_pkcs8_der,
-        signed_request_object_claims(json!({
+        signed_request_object_claims_json(json!({
             "redirect_uri": "https://client.example/callback"
         })),
     );
@@ -894,7 +899,7 @@ fn signed_request_object_rejects_missing_or_unknown_key_id() {
     let token = signed_request_object_token(
         "jar-kid",
         &key,
-        signed_request_object_claims(json!({
+        signed_request_object_claims_json(json!({
             "redirect_uri": "https://client.example/callback"
         })),
     );
@@ -937,7 +942,7 @@ fn signed_request_object_rejects_invalid_signature_with_registered_kid() {
     let token = signed_request_object_token(
         "jar-kid",
         &attacker_key,
-        signed_request_object_claims(json!({
+        signed_request_object_claims_json(json!({
             "redirect_uri": "https://client.example/callback"
         })),
     );
@@ -966,7 +971,7 @@ async fn request_object_jti_store_failure_fails_closed_without_applying_claims()
     let request_object = signed_request_object_token(
         "jar-kid",
         &key,
-        signed_request_object_claims(json!({
+        signed_request_object_claims_json(json!({
             "redirect_uri": "https://client.example/callback",
             "jti": format!("jar-jti-{}", Uuid::now_v7())
         })),
@@ -1030,7 +1035,7 @@ async fn request_object_jti_replay_is_client_scoped_and_rejected() {
     let request_object = signed_request_object_token(
         "jar-kid",
         &key,
-        signed_request_object_claims(json!({
+        signed_request_object_claims_json(json!({
             "redirect_uri": "https://client.example/callback",
             "jti": format!("jar-jti-{}", Uuid::now_v7())
         })),
@@ -1118,6 +1123,44 @@ fn signed_request_object_rejects_invalid_nbf_window() {
         now,
         RequestObjectMode::SignedJar
     ));
+}
+
+#[test]
+fn signed_request_object_accepts_small_future_nbf_during_decode() {
+    let key =
+        generate_key_material(jsonwebtoken::Algorithm::RS256).expect("client key should generate");
+    let public_jwk = public_jwk_from_private_der(
+        "jar-kid",
+        jsonwebtoken::Algorithm::RS256,
+        &key.private_pkcs8_der,
+    )
+    .expect("public jwk should derive");
+    let mut client = jar_client("client-a");
+    client.jwks = Some(json!({"keys": [public_jwk]}));
+    let now = Utc::now().timestamp();
+    let request_object = signed_request_object_token(
+        "jar-kid",
+        &key.private_pkcs8_der,
+        signed_request_object_claims_json(json!({
+            "iat": now,
+            "nbf": now + 8,
+            "exp": now + 120,
+            "redirect_uri": "https://client.example/callback"
+        })),
+    );
+    let header = jsonwebtoken::decode_header(&request_object).expect("header should decode");
+    let claims = signed_request_object_claims(&request_object, &client, header)
+        .expect("small request object clock skew should be accepted");
+
+    assert!(request_object_times_valid(
+        &claims,
+        now,
+        RequestObjectMode::SignedJar
+    ));
+    assert_eq!(
+        claims.params.get("response_type").and_then(Value::as_str),
+        Some("code")
+    );
 }
 
 #[test]

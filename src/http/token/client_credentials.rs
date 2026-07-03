@@ -131,6 +131,7 @@ pub(crate) async fn token_client_credentials(
             authorization_code_hash: None,
             actor: None,
             issued_token_type: None,
+            native_sso: None,
         },
     )
     .await

@@ -2,6 +2,15 @@ name: oidf-conformance-full
 
 on:
   workflow_dispatch:
+    inputs:
+      runner_mode:
+        description: "serial keeps the default deterministic runner mode; parallel-isolated runs concurrency-safe plans in parallel and browser-sensitive plans separately."
+        required: false
+        default: serial
+        type: choice
+        options:
+          - serial
+          - parallel-isolated
 
 permissions:
   contents: read
@@ -16,6 +25,8 @@ jobs:
       EXPORT_RESULTS: ${{ vars.OIDF_EXPORT_RESULTS || 'false' }}
       VERBOSE: ${{ vars.OIDF_VERBOSE || 'true' }}
       DISABLE_SSL_VERIFY: ${{ vars.OIDF_DISABLE_SSL_VERIFY || 'false' }}
+      NO_PARALLEL: ${{ vars.OIDF_NO_PARALLEL || 'true' }}
+      RUNNER_MODE: ${{ inputs.runner_mode || vars.OIDF_RUNNER_MODE || 'serial' }}
       OIDF_TARGET_ISSUER: ${{ vars.OIDF_TARGET_ISSUER || 'https://auth.nazo.run' }}
       RUN_TIMEOUT_SECONDS: ${{ vars.OIDF_RUN_TIMEOUT_SECONDS || '14400' }}
       MONITOR_INTERVAL_SECONDS: ${{ vars.OIDF_MONITOR_INTERVAL_SECONDS || '60' }}
@@ -50,6 +61,9 @@ jobs:
             "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] oidf-oidcc-basic-plan-config.json",
             "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=dynamic_client] oidf-oidcc-dynamic-plan-config.json",
             "oidcc-config-certification-test-plan oidf-oidcc-config-plan-config.json",
+            "oidcc-frontchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-frontchannel-logout-plan-config.json",
+            "oidcc-session-management-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-session-management-plan-config.json",
+            "fapi-ciba-id1-test-plan[client_auth_type=private_key_jwt][fapi_ciba_profile=plain_fapi][ciba_mode=poll][client_registration=static_client] oidf-fapi-ciba-plain-private-key-jwt-poll-plan-config.json",
             "fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=jarm][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-jarm-plan-config.json",
             "fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-plain-response-plan-config.json",
             "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=plain_fapi][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-security-final-mtls-dpop-openid-connect-plain-fapi-plain-response-plan-config.json",
@@ -64,6 +78,38 @@ jobs:
             "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=mtls][openid=openid_connect] oidf-fapi-matrix-security-final-private-key-jwt-mtls-openid-connect-plain-fapi-plain-response-plan-config.json",
             "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=fapi_client_credentials_grant][sender_constrain=mtls][openid=plain_oauth] oidf-fapi-matrix-security-final-private-key-jwt-mtls-plain-oauth-fapi-client-credentials-grant-plain-response-plan-config.json",
             "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=mtls][openid=plain_oauth] oidf-fapi-matrix-security-final-private-key-jwt-mtls-plain-oauth-plain-fapi-plain-response-plan-config.json"
+          ]
+          JSON
+          cat > oidf-concurrent-plan-set.json <<'JSON'
+          [
+            "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] oidf-oidcc-basic-plan-config.json",
+            "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=dynamic_client] oidf-oidcc-dynamic-plan-config.json",
+            "oidcc-config-certification-test-plan oidf-oidcc-config-plan-config.json",
+            "fapi-ciba-id1-test-plan[client_auth_type=private_key_jwt][fapi_ciba_profile=plain_fapi][ciba_mode=poll][client_registration=static_client] oidf-fapi-ciba-plain-private-key-jwt-poll-plan-config.json",
+            "fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=jarm][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-jarm-plan-config.json",
+            "fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=plain_fapi][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-security-final-mtls-dpop-openid-connect-plain-fapi-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=fapi_client_credentials_grant][sender_constrain=dpop][openid=plain_oauth] oidf-fapi-matrix-security-final-mtls-dpop-plain-oauth-fapi-client-credentials-grant-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=plain_fapi][sender_constrain=dpop][openid=plain_oauth] oidf-fapi-matrix-security-final-mtls-dpop-plain-oauth-plain-fapi-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=plain_fapi][sender_constrain=mtls][openid=openid_connect] oidf-fapi-matrix-security-final-mtls-mtls-openid-connect-plain-fapi-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=fapi_client_credentials_grant][sender_constrain=mtls][openid=plain_oauth] oidf-fapi-matrix-security-final-mtls-mtls-plain-oauth-fapi-client-credentials-grant-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=plain_fapi][sender_constrain=mtls][openid=plain_oauth] oidf-fapi-matrix-security-final-mtls-mtls-plain-oauth-plain-fapi-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-security-final-private-key-jwt-dpop-openid-connect-plain-fapi-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=fapi_client_credentials_grant][sender_constrain=dpop][openid=plain_oauth] oidf-fapi-matrix-security-final-private-key-jwt-dpop-plain-oauth-fapi-client-credentials-grant-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=dpop][openid=plain_oauth] oidf-fapi-matrix-security-final-private-key-jwt-dpop-plain-oauth-plain-fapi-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=mtls][openid=openid_connect] oidf-fapi-matrix-security-final-private-key-jwt-mtls-openid-connect-plain-fapi-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=fapi_client_credentials_grant][sender_constrain=mtls][openid=plain_oauth] oidf-fapi-matrix-security-final-private-key-jwt-mtls-plain-oauth-fapi-client-credentials-grant-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=mtls][openid=plain_oauth] oidf-fapi-matrix-security-final-private-key-jwt-mtls-plain-oauth-plain-fapi-plain-response-plan-config.json"
+          ]
+          JSON
+          cat > oidf-frontchannel-plan-set.json <<'JSON'
+          [
+            "oidcc-frontchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-frontchannel-logout-plan-config.json"
+          ]
+          JSON
+          cat > oidf-session-management-plan-set.json <<'JSON'
+          [
+            "oidcc-session-management-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-session-management-plan-config.json"
           ]
           JSON
           cat > oidf-expected-skips.json <<'JSON'
@@ -90,30 +136,223 @@ jobs:
             --identity oidf-plan-config.agekey \
             --output oidf-plan-config-secret-patch.json \
             docs/conformance/oidf-plan-config-secret-patch.json.age
+          rage --decrypt \
+            --identity oidf-plan-config.agekey \
+            --output oidf-plan-config-ciba-secret-patch.json \
+            docs/conformance/oidf-plan-config-ciba-secret-patch.json.age
+          python - <<'PY'
+          import json
+
+          with open("oidf-plan-config-secret-patch.json", encoding="utf-8") as handle:
+              base = json.load(handle)
+          with open("oidf-plan-config-ciba-secret-patch.json", encoding="utf-8") as handle:
+              ciba = json.load(handle)
+
+          conflicts = sorted(key for key, value in ciba.items() if key in base and base[key] != value)
+          if conflicts:
+              raise SystemExit("conflicting OIDF secret patch keys: " + ", ".join(conflicts))
+
+          base.update(ciba)
+          with open("oidf-plan-config-secret-patch.merged.json", "w", encoding="utf-8") as handle:
+              json.dump(base, handle, sort_keys=True)
+              handle.write("\n")
+          PY
           python scripts/materialize_oidf_plan_config.py \
             --template docs/conformance/oidf-plan-config-template.json \
-            --secret-patch-file oidf-plan-config-secret-patch.json \
+            --secret-patch-file oidf-plan-config-secret-patch.merged.json \
+            --derive-dynamic-oidcc-config \
+            --output oidf-plan-configs.json
+          python scripts/export_oidf_public_plan_configs.py \
+            --config-json-file oidf-plan-configs.json \
+            --output-dir oidf-public-plan-configs
+        env:
+          OIDF_PLAN_CONFIG_AGE_IDENTITY: ${{ secrets.OIDF_PLAN_CONFIG_AGE_IDENTITY }}
+          OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN: ${{ secrets.OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN }}
+
+      - name: Upload public OIDF seed configs
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: oidf-public-plan-configs
+          path: oidf-public-plan-configs
+          if-no-files-found: error
+
+      - name: Run full OIDF matrix
+        run: |
+          set -euo pipefail
+          run_oidf_plan_set() {
+            local plan_set_file="$1"
+            local export_subdir="$2"
+            shift 2
+
+            local args=(
+              --suite-dir oidf-conformance-suite
+              --conformance-server "$CONFORMANCE_SERVER"
+              --config-json-file oidf-plan-configs.json
+              --plan-set-json-file "$plan_set_file"
+              --expected-skips-file oidf-expected-skips.json
+              --target-issuer "$OIDF_TARGET_ISSUER"
+              --timeout-seconds "$RUN_TIMEOUT_SECONDS"
+              --monitor-interval-seconds "$MONITOR_INTERVAL_SECONDS"
+            )
+            if [ "$EXPORT_RESULTS" = "true" ]; then
+              if [ -n "$export_subdir" ]; then
+                args+=(--export-dir "$GITHUB_WORKSPACE/oidf-results/$export_subdir")
+              else
+                args+=(--export-dir "$GITHUB_WORKSPACE/oidf-results")
+              fi
+            fi
+            if [ "$VERBOSE" = "true" ]; then
+              args+=(--verbose)
+            fi
+            if [ "$DISABLE_SSL_VERIFY" = "true" ]; then
+              args+=(--disable-ssl-verify)
+            fi
+            args+=("$@")
+            python -u scripts/run_oidf_conformance.py "${args[@]}"
+          }
+
+          case "$RUNNER_MODE" in
+            serial)
+              serial_args=()
+              if [ "$NO_PARALLEL" = "true" ]; then
+                serial_args+=(--no-parallel)
+              fi
+              run_oidf_plan_set oidf-full-plan-set.json "" "${serial_args[@]}"
+              ;;
+            parallel-isolated)
+              run_oidf_plan_set oidf-concurrent-plan-set.json concurrent
+              ;;
+            *)
+              echo "Unsupported RUNNER_MODE: $RUNNER_MODE" >&2
+              exit 2
+              ;;
+          esac
+        env:
+          OIDF_CONFORMANCE_TOKEN: ${{ secrets.OIDF_CONFORMANCE_TOKEN }}
+          OIDF_USER_EMAIL: ${{ secrets.OIDF_USER_EMAIL }}
+          OIDF_USER_PASSWORD: ${{ secrets.OIDF_USER_PASSWORD }}
+
+      - name: Upload OIDF result archive
+        if: always() && vars.OIDF_EXPORT_RESULTS != 'false'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: ${{ env.RUNNER_MODE == 'parallel-isolated' && 'oidf-conformance-results-concurrent' || 'oidf-conformance-results-full' }}
+          path: oidf-results
+          if-no-files-found: ignore
+
+  oidf-conformance-browser-isolated:
+    if: ${{ inputs.runner_mode == 'parallel-isolated' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: frontchannel
+            plan_set_file: oidf-frontchannel-plan-set.json
+            result_subdir: frontchannel
+            artifact_name: oidf-conformance-results-frontchannel
+            plan_expression: "oidcc-frontchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-frontchannel-logout-plan-config.json"
+          - name: session-management
+            plan_set_file: oidf-session-management-plan-set.json
+            result_subdir: session-management
+            artifact_name: oidf-conformance-results-session-management
+            plan_expression: "oidcc-session-management-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-session-management-plan-config.json"
+    env:
+      CONFORMANCE_SERVER: ${{ vars.OIDF_CONFORMANCE_SERVER || 'https://www.certification.openid.net/' }}
+      OIDF_REF: ${{ vars.OIDF_CONFORMANCE_SUITE_REF || '33a724c7d809a6f9db05cbb513ff2a77cbac905e' }}
+      EXPORT_RESULTS: ${{ vars.OIDF_EXPORT_RESULTS || 'false' }}
+      VERBOSE: ${{ vars.OIDF_VERBOSE || 'true' }}
+      DISABLE_SSL_VERIFY: ${{ vars.OIDF_DISABLE_SSL_VERIFY || 'false' }}
+      OIDF_TARGET_ISSUER: ${{ vars.OIDF_TARGET_ISSUER || 'https://auth.nazo.run' }}
+      RUN_TIMEOUT_SECONDS: ${{ vars.OIDF_RUN_TIMEOUT_SECONDS || '14400' }}
+      MONITOR_INTERVAL_SECONDS: ${{ vars.OIDF_MONITOR_INTERVAL_SECONDS || '60' }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v7.0.0
+
+      - uses: actions/setup-python@v6.3.0
+        with:
+          python-version: "3.13"
+
+      - name: Clone official conformance suite
+        run: |
+          set -euo pipefail
+          git init oidf-conformance-suite
+          git -C oidf-conformance-suite remote add origin https://gitlab.com/openid/conformance-suite.git
+          git -C oidf-conformance-suite fetch --depth 1 origin "$OIDF_REF"
+          git -C oidf-conformance-suite checkout --detach FETCH_HEAD
+          diff -u requirements/oidf-conformance.in oidf-conformance-suite/scripts/requirements.txt
+
+      - name: Install official runner dependencies
+        run: python -m pip install --require-hashes -r requirements/oidf-conformance.txt
+
+      - name: Install age decryptor
+        run: cargo install rage --version 0.11.2 --locked
+
+      - name: Write isolated OIDF plan set
+        run: |
+          set -euo pipefail
+          cat > "${{ matrix.plan_set_file }}" <<'JSON'
+          [
+            "${{ matrix.plan_expression }}"
+          ]
+          JSON
+
+      - name: Write isolated OIDF matrix config
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s\n' "$OIDF_PLAN_CONFIG_AGE_IDENTITY" > oidf-plan-config.agekey
+          rage --decrypt \
+            --identity oidf-plan-config.agekey \
+            --output oidf-plan-config-secret-patch.json \
+            docs/conformance/oidf-plan-config-secret-patch.json.age
+          rage --decrypt \
+            --identity oidf-plan-config.agekey \
+            --output oidf-plan-config-ciba-secret-patch.json \
+            docs/conformance/oidf-plan-config-ciba-secret-patch.json.age
+          python - <<'PY'
+          import json
+
+          with open("oidf-plan-config-secret-patch.json", encoding="utf-8") as handle:
+              base = json.load(handle)
+          with open("oidf-plan-config-ciba-secret-patch.json", encoding="utf-8") as handle:
+              ciba = json.load(handle)
+
+          conflicts = sorted(key for key, value in ciba.items() if key in base and base[key] != value)
+          if conflicts:
+              raise SystemExit("conflicting OIDF secret patch keys: " + ", ".join(conflicts))
+
+          base.update(ciba)
+          with open("oidf-plan-config-secret-patch.merged.json", "w", encoding="utf-8") as handle:
+              json.dump(base, handle, sort_keys=True)
+              handle.write("\n")
+          PY
+          python scripts/materialize_oidf_plan_config.py \
+            --template docs/conformance/oidf-plan-config-template.json \
+            --secret-patch-file oidf-plan-config-secret-patch.merged.json \
             --derive-dynamic-oidcc-config \
             --output oidf-plan-configs.json
         env:
           OIDF_PLAN_CONFIG_AGE_IDENTITY: ${{ secrets.OIDF_PLAN_CONFIG_AGE_IDENTITY }}
           OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN: ${{ secrets.OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN }}
 
-      - name: Run full OIDF matrix
+      - name: Run isolated OIDF browser-sensitive plan
         run: |
           set -euo pipefail
           args=(
             --suite-dir oidf-conformance-suite
             --conformance-server "$CONFORMANCE_SERVER"
             --config-json-file oidf-plan-configs.json
-            --plan-set-json-file oidf-full-plan-set.json
-            --expected-skips-file oidf-expected-skips.json
+            --plan-set-json-file "${{ matrix.plan_set_file }}"
             --target-issuer "$OIDF_TARGET_ISSUER"
             --timeout-seconds "$RUN_TIMEOUT_SECONDS"
             --monitor-interval-seconds "$MONITOR_INTERVAL_SECONDS"
+            --no-parallel
           )
           if [ "$EXPORT_RESULTS" = "true" ]; then
-            args+=(--export-dir "$GITHUB_WORKSPACE/oidf-results")
+            args+=(--export-dir "$GITHUB_WORKSPACE/oidf-results/${{ matrix.result_subdir }}")
           fi
           if [ "$VERBOSE" = "true" ]; then
             args+=(--verbose)
@@ -127,10 +366,10 @@ jobs:
           OIDF_USER_EMAIL: ${{ secrets.OIDF_USER_EMAIL }}
           OIDF_USER_PASSWORD: ${{ secrets.OIDF_USER_PASSWORD }}
 
-      - name: Upload OIDF result archive
+      - name: Upload isolated OIDF result archive
         if: always() && vars.OIDF_EXPORT_RESULTS != 'false'
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: oidf-conformance-results-full
-          path: oidf-results
+          name: ${{ matrix.artifact_name }}
+          path: oidf-results/${{ matrix.result_subdir }}
           if-no-files-found: ignore

@@ -2,7 +2,7 @@ use super::prelude::*;
 use crate::domain::Keyset;
 use crate::http::authorization::BASELINE_ACR_VALUE;
 use crate::http::token::{
-    DEVICE_CODE_GRANT_TYPE, JWT_BEARER_GRANT_TYPE, TOKEN_EXCHANGE_GRANT_TYPE,
+    CIBA_GRANT_TYPE, DEVICE_CODE_GRANT_TYPE, JWT_BEARER_GRANT_TYPE, TOKEN_EXCHANGE_GRANT_TYPE,
 };
 use crate::settings::{AuthorizationServerProfile, Settings, SubjectType};
 use crate::support::{
@@ -11,6 +11,7 @@ use crate::support::{
 
 const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
 const DPOP_SIGNING_ALGS: [&str; 2] = ["EdDSA", "ES256"];
+const FAPI_CIBA_REQUEST_OBJECT_SIGNING_ALGS: [&str; 3] = ["EdDSA", "ES256", "PS256"];
 const REQUEST_OBJECT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
 const BASELINE_REQUEST_OBJECT_SIGNING_ALGS: [&str; 5] =
     ["none", "EdDSA", "RS256", "ES256", "PS256"];
@@ -102,6 +103,13 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
     if settings.enable_device_authorization_grant {
         grant_types.push(DEVICE_CODE_GRANT_TYPE);
     }
+    if settings.enable_ciba {
+        grant_types.push(CIBA_GRANT_TYPE);
+    }
+    let mut scopes_supported = SCOPES_SUPPORTED.to_vec();
+    if settings.enable_native_sso {
+        scopes_supported.push("device_sso");
+    }
     let mut metadata = json!({
         "issuer": issuer,
         "authorization_endpoint": format!("{issuer}/authorize"),
@@ -127,7 +135,7 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
         "revocation_endpoint_auth_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS,
         "introspection_endpoint_auth_methods_supported": token_auth_methods,
         "introspection_endpoint_auth_signing_alg_values_supported": CLIENT_JWT_SIGNING_ALGS,
-        "scopes_supported": SCOPES_SUPPORTED,
+        "scopes_supported": scopes_supported,
         "claims_supported": CLAIMS_SUPPORTED,
         "acr_values_supported": [BASELINE_ACR_VALUE],
         "prompt_values_supported": PROMPT_VALUES_SUPPORTED,
@@ -151,6 +159,23 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
     }
     if settings.enable_dynamic_client_registration {
         metadata["registration_endpoint"] = json!(format!("{issuer}/register"));
+    }
+    if settings.enable_frontchannel_logout {
+        metadata["frontchannel_logout_supported"] = json!(true);
+        metadata["frontchannel_logout_session_supported"] = json!(true);
+    }
+    if settings.enable_session_management {
+        metadata["check_session_iframe"] = json!(format!("{issuer}/check_session"));
+    }
+    if settings.enable_ciba {
+        metadata["backchannel_authentication_endpoint"] = json!(format!("{issuer}/bc-authorize"));
+        metadata["backchannel_token_delivery_modes_supported"] = json!(["poll"]);
+        metadata["backchannel_user_code_parameter_supported"] = json!(false);
+        metadata["backchannel_authentication_request_signing_alg_values_supported"] =
+            json!(FAPI_CIBA_REQUEST_OBJECT_SIGNING_ALGS);
+    }
+    if settings.enable_native_sso {
+        metadata["native_sso_supported"] = json!(true);
     }
     if settings
         .authorization_server_profile

@@ -50,6 +50,8 @@ fn client() -> ClientRow {
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: None,
         backchannel_logout_session_required: true,
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: true,
         subject_type: "public".to_owned(),
         sector_identifier_uri: None,
         sector_identifier_host: None,
@@ -247,9 +249,17 @@ fn trusted_proxy_settings() -> Settings {
         enable_legacy_audience_param: false,
         enable_device_authorization_grant: false,
         enable_dynamic_client_registration: false,
+        enable_frontchannel_logout: false,
+        enable_session_management: false,
+        enable_ciba: false,
+        enable_oidc_federation: false,
+        enable_native_sso: false,
         dynamic_client_registration_initial_access_token: None,
         device_authorization_ttl_seconds: 600,
         device_authorization_poll_interval_seconds: 5,
+        ciba_auth_req_id_ttl_seconds: 600,
+        ciba_poll_interval_seconds: 5,
+        ciba_automated_decision_token: None,
     }
 }
 

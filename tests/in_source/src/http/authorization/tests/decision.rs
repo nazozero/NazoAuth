@@ -483,12 +483,15 @@ async fn approved_authorization_redirect_omits_error_and_carries_only_the_new_co
     let state = decision_state();
     let response = authorization_response_redirect(
         &state,
-        "https://client.example/callback",
-        "client-1",
-        None,
-        Some("code-1"),
-        None,
-        Some("opaque-state"),
+        AuthorizationResponseRedirect {
+            redirect_uri: "https://client.example/callback",
+            client_id: "client-1",
+            response_mode: None,
+            code: Some("code-1"),
+            error: None,
+            state: Some("opaque-state"),
+            oidc_sid: None,
+        },
     )
     .await;
 

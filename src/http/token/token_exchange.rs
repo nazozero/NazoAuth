@@ -5,6 +5,7 @@
 //! token exchange, and ID-token issuance require separate policy models.
 
 use super::{TokenForm, consume_token_client_assertion, issue_token_response};
+use super::{native_sso_profile_requested, token_native_sso_exchange};
 use crate::domain::Claims;
 use crate::http::prelude::*;
 
@@ -355,6 +356,9 @@ pub(crate) async fn token_exchange(
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
+    if native_sso_profile_requested(form) {
+        return token_native_sso_exchange(state, req, client, form, client_assertion).await;
+    }
     if client.client_type != "confidential" {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
@@ -438,6 +442,7 @@ pub(crate) async fn token_exchange(
             authorization_code_hash: None,
             actor,
             issued_token_type: Some(ACCESS_TOKEN_TYPE.to_owned()),
+            native_sso: None,
         },
     )
     .await

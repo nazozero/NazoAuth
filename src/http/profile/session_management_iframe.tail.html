@@ -1,0 +1,29 @@
+';
+  window.addEventListener('message', function (event) {
+    var parts = String(event.data || '').split(' ');
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+      event.source && event.source.postMessage('error', event.origin);
+      return;
+    }
+    var url = statusEndpoint + '?client_id=' + encodeURIComponent(parts[0]) +
+      '&session_state=' + encodeURIComponent(parts[1]) +
+      '&origin=' + encodeURIComponent(event.origin);
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', url, true);
+    xhr.withCredentials = true;
+    xhr.onload = function () {
+      try {
+        var body = xhr.status >= 200 && xhr.status < 300 ? JSON.parse(xhr.responseText || '{}') : { status: 'error' };
+        var status = body && /^(unchanged|changed|error)$/.test(body.status) ? body.status : 'error';
+        event.source && event.source.postMessage(status, event.origin);
+      } catch (error) {
+        event.source && event.source.postMessage('error', event.origin);
+      }
+    };
+    xhr.onerror = function () {
+      event.source && event.source.postMessage('error', event.origin);
+    };
+    xhr.send();
+  }, false);
+}());
+</script></body></html>

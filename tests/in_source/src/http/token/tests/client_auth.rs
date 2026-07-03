@@ -105,6 +105,8 @@ fn confidential_client_with_secret(secret: &str) -> ClientRow {
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: None,
         backchannel_logout_session_required: true,
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: true,
         subject_type: "public".to_owned(),
         sector_identifier_uri: None,
         sector_identifier_host: None,
@@ -127,6 +129,24 @@ fn signed_client_assertion(
     private_pkcs8_der: &[u8],
     jti: &str,
 ) -> String {
+    signed_client_assertion_with_alg(
+        client_id,
+        audience,
+        kid,
+        private_pkcs8_der,
+        jti,
+        jsonwebtoken::Algorithm::RS256,
+    )
+}
+
+fn signed_client_assertion_with_alg(
+    client_id: &str,
+    audience: &str,
+    kid: &str,
+    private_pkcs8_der: &[u8],
+    jti: &str,
+    alg: jsonwebtoken::Algorithm,
+) -> String {
     let now = Utc::now().timestamp();
     let claims = json!({
         "iss": client_id,
@@ -137,7 +157,7 @@ fn signed_client_assertion(
         "exp": now + 120,
         "jti": jti
     });
-    let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+    let mut header = jsonwebtoken::Header::new(alg);
     header.kid = Some(kid.to_owned());
     jsonwebtoken::encode(
         &header,
@@ -433,4 +453,49 @@ fn mtls_client_auth_accepts_matching_certificate_from_trusted_proxy() {
         verify_confidential_client(&state, &req, &client, &credentials).is_ok(),
         "matching mTLS certificate from trusted proxy should authenticate the client"
     );
+}
+
+#[test]
+fn ciba_private_key_jwt_accepts_ps256_endpoint_and_issuer_audiences() {
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.issuer = "https://auth.nazo.run".to_owned();
+    let state = token_management_state_with_settings(settings);
+    let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
+        .expect("test client key should generate")
+        .private_pkcs8_der;
+    let public_jwk =
+        public_jwk_from_private_der("client-kid", jsonwebtoken::Algorithm::PS256, &key)
+            .expect("test client jwk should derive");
+    let mut client = confidential_client_with_secret(&fixture_secret("unused"));
+    client.token_endpoint_auth_method = "private_key_jwt".to_owned();
+    client.client_secret_argon2_hash = None;
+    client.require_mtls_bound_tokens = true;
+    client.allow_client_assertion_endpoint_audience = true;
+    client.jwks = Some(json!({"keys": [public_jwk]}));
+    let req = TestRequest::post().uri("/bc-authorize").to_http_request();
+
+    for (index, audience) in [
+        "https://auth.nazo.run",
+        "https://auth.nazo.run/bc-authorize",
+        "https://auth.nazo.run/token",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut credentials = client_credentials("private_key_jwt");
+        credentials.client_assertion = Some(signed_client_assertion_with_alg(
+            &client.client_id,
+            audience,
+            "client-kid",
+            &key,
+            &format!("ciba-client-assertion-aud-{index}"),
+            jsonwebtoken::Algorithm::PS256,
+        ));
+
+        assert!(
+            verify_confidential_client(&state, &req, &client, &credentials).is_ok(),
+            "CIBA private_key_jwt should accept {audience} as client assertion audience"
+        );
+    }
 }

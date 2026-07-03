@@ -5,6 +5,8 @@ use crate::http::prelude::*;
 mod authorization_code_state;
 mod refresh_persistence;
 
+use super::persist_native_sso_device_secret;
+
 pub(super) use authorization_code_state::{
     mark_failed_authorization_code, revoke_issued_authorization_code_tokens,
 };
@@ -14,7 +16,24 @@ use authorization_code_state::{
 pub(crate) use refresh_persistence::should_issue_refresh_token;
 use refresh_persistence::{PendingRefreshToken, RefreshPersistResult, persist_refresh_token};
 
-fn id_token_session_sid(issue: &TokenIssue) -> Option<&str> {
+fn client_session_sid_enabled(settings: &Settings, client: &ClientRow) -> bool {
+    (settings.enable_frontchannel_logout
+        && client.frontchannel_logout_uri.is_some()
+        && client.frontchannel_logout_session_required)
+        || (client.backchannel_logout_uri.is_some() && client.backchannel_logout_session_required)
+}
+
+fn id_token_session_sid<'a>(
+    settings: &Settings,
+    client: &ClientRow,
+    issue: &'a TokenIssue,
+) -> Option<&'a str> {
+    if let Some(native_sso) = issue.native_sso.as_ref() {
+        return Some(native_sso.sid.as_str());
+    }
+    if client_session_sid_enabled(settings, client) {
+        return issue.oidc_sid.as_deref();
+    }
     let requested = issue.id_token_claims.iter().any(|claim| claim == "sid")
         || issue
             .id_token_claim_requests
@@ -104,6 +123,34 @@ pub(crate) async fn issue_token_response(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
             "openid 授权缺少用户主体.",
+            false,
+        );
+    }
+    if issue.native_sso.is_some() && !state.settings.enable_native_sso {
+        mark_failed_authorization_code_if_needed(
+            state,
+            issue.authorization_code_hash.as_deref(),
+            "native_sso_disabled",
+        )
+        .await;
+        return oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_scope",
+            "Native SSO is not enabled.",
+            false,
+        );
+    }
+    if issue.native_sso.is_some() && !issue_includes_openid {
+        mark_failed_authorization_code_if_needed(
+            state,
+            issue.authorization_code_hash.as_deref(),
+            "native_sso_without_openid",
+        )
+        .await;
+        return oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_scope",
+            "Native SSO requires openid.",
             false,
         );
     }
@@ -208,7 +255,7 @@ pub(crate) async fn issue_token_response(
             .user_id
             .expect("openid token issues are rejected before signing without a user subject");
         let sector_identifier_host = client.sector_identifier_host.as_deref();
-        let user_claims = match find_user_by_id(&state.diesel_db, user_id).await {
+        let mut user_claims = match find_user_by_id(&state.diesel_db, user_id).await {
             Ok(Some(user)) if user.is_active => Some(oidc_id_token_user_claims(
                 &user,
                 &issue.scopes,
@@ -247,6 +294,12 @@ pub(crate) async fn issue_token_response(
                 );
             }
         };
+        if let Some(native_sso) = issue.native_sso.as_ref() {
+            let claims = user_claims.get_or_insert_with(|| json!({}));
+            if let Some(claims) = claims.as_object_mut() {
+                claims.insert("ds_hash".to_owned(), json!(native_sso.ds_hash));
+            }
+        }
         let id_token = match make_id_token(
             state,
             IdTokenInput {
@@ -255,7 +308,7 @@ pub(crate) async fn issue_token_response(
                 nonce: issue.nonce.clone(),
                 auth_time: issue.auth_time,
                 amr: &issue.amr,
-                sid: id_token_session_sid(&issue),
+                sid: id_token_session_sid(&state.settings, client, &issue),
                 acr: issue.acr.as_deref(),
                 extra_claims: user_claims.as_ref(),
                 ttl: state.settings.id_token_ttl_seconds,
@@ -344,6 +397,46 @@ pub(crate) async fn issue_token_response(
                 }
             }
         }
+    }
+    if let Some(native_sso) = issue.native_sso.as_ref() {
+        let Some(refresh_token_family_id) = refresh_token_family_id else {
+            mark_failed_authorization_code_if_needed(
+                state,
+                issue.authorization_code_hash.as_deref(),
+                "native_sso_refresh_token_missing",
+            )
+            .await;
+            return oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_grant",
+                "Native SSO requires a refresh token session.",
+                false,
+            );
+        };
+        if let Err(error) = persist_native_sso_device_secret(
+            state,
+            client,
+            &issue,
+            native_sso,
+            refresh_token_family_id,
+        )
+        .await
+        {
+            tracing::warn!(%error, "failed to persist Native SSO device secret");
+            mark_failed_authorization_code_if_needed(
+                state,
+                issue.authorization_code_hash.as_deref(),
+                "native_sso_device_secret_persist_failed",
+            )
+            .await;
+            return oauth_token_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "Native SSO device secret persistence failed.",
+                false,
+            );
+        }
+        body["device_secret"] = json!(native_sso.device_secret);
     }
     if let Some(code_hash) = issue.authorization_code_hash.as_deref()
         && let Err(error) = persist_consumed_authorization_code(

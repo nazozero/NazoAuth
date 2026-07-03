@@ -227,6 +227,14 @@ pub(crate) struct TokenIssue {
     pub(crate) authorization_code_hash: Option<String>,
     pub(crate) actor: Option<Value>,
     pub(crate) issued_token_type: Option<String>,
+    pub(crate) native_sso: Option<NativeSsoTokenBinding>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct NativeSsoTokenBinding {
+    pub(crate) device_secret: String,
+    pub(crate) ds_hash: String,
+    pub(crate) sid: String,
 }
 
 #[cfg(test)]

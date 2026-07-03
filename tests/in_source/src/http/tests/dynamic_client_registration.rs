@@ -30,8 +30,88 @@ fn oidc_dynamic_registration_defaults_to_confidential_authorization_code_client(
         prepared.allowed_audiences,
         vec!["https://issuer.example/fapi/resource"]
     );
-    assert_eq!(prepared.grant_types, vec!["authorization_code"]);
+    assert_eq!(
+        prepared.grant_types,
+        vec!["authorization_code", "refresh_token"]
+    );
     assert_eq!(prepared.response_types, vec!["code"]);
+}
+
+#[test]
+fn oidc_dynamic_secret_clients_keep_non_pkce_code_flow_compatibility() {
+    let prepared = prepare_dynamic_client_registration(
+        DynamicClientRegistrationRequest {
+            redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
+            scope: Some("openid".to_owned()),
+            token_endpoint_auth_method: Some("client_secret_basic".to_owned()),
+            ..Default::default()
+        },
+        DynamicRegistrationDefaults {
+            default_audience: "https://issuer.example/fapi/resource",
+        },
+    )
+    .expect("OIDC dynamic client metadata should be accepted");
+
+    let create_request = prepared.to_create_client_request();
+    assert!(create_request.allow_authorization_code_without_pkce);
+}
+
+#[test]
+fn dynamic_registration_requires_pkce_for_public_or_sender_constrained_clients() {
+    let public = prepare_dynamic_client_registration(
+        DynamicClientRegistrationRequest {
+            redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
+            token_endpoint_auth_method: Some("none".to_owned()),
+            ..Default::default()
+        },
+        DynamicRegistrationDefaults {
+            default_audience: "https://issuer.example/fapi/resource",
+        },
+    )
+    .expect("public dynamic client metadata should be accepted")
+    .to_create_client_request();
+    assert!(!public.allow_authorization_code_without_pkce);
+
+    let dpop = prepare_dynamic_client_registration(
+        DynamicClientRegistrationRequest {
+            redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
+            token_endpoint_auth_method: Some("client_secret_basic".to_owned()),
+            dpop_bound_access_tokens: true,
+            ..Default::default()
+        },
+        DynamicRegistrationDefaults {
+            default_audience: "https://issuer.example/fapi/resource",
+        },
+    )
+    .expect("DPoP-bound dynamic client metadata should be accepted")
+    .to_create_client_request();
+    assert!(!dpop.allow_authorization_code_without_pkce);
+}
+
+#[test]
+fn oidc_dynamic_code_clients_default_to_standard_claim_scopes() {
+    let prepared = prepare_dynamic_client_registration(
+        DynamicClientRegistrationRequest {
+            redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
+            ..Default::default()
+        },
+        DynamicRegistrationDefaults {
+            default_audience: "https://issuer.example/fapi/resource",
+        },
+    )
+    .expect("OIDC dynamic client metadata should be accepted");
+
+    assert_eq!(
+        prepared.scopes,
+        vec![
+            "openid",
+            "profile",
+            "email",
+            "address",
+            "phone",
+            "offline_access"
+        ]
+    );
 }
 
 #[test]
@@ -140,8 +220,18 @@ async fn dynamic_registration_accepts_oidf_inline_jwks_without_kid_for_secret_cl
     .expect("OIDF Basic dynamic registration metadata should parse");
 
     let create_request = prepared.to_create_client_request();
-    assert_eq!(create_request.scopes, vec!["openid"]);
-    assert!(!create_request.allow_authorization_code_without_pkce);
+    assert_eq!(
+        create_request.scopes,
+        vec![
+            "openid",
+            "profile",
+            "email",
+            "address",
+            "phone",
+            "offline_access"
+        ]
+    );
+    assert!(create_request.allow_authorization_code_without_pkce);
 
     crate::http::admin::prepare_client_insert(create_request, None, "https://issuer.example")
         .await
@@ -149,7 +239,7 @@ async fn dynamic_registration_accepts_oidf_inline_jwks_without_kid_for_secret_cl
 }
 
 #[test]
-fn dynamic_registration_refresh_clients_do_not_receive_offline_access_by_default() {
+fn dynamic_registration_refresh_clients_receive_offline_access_by_default() {
     let request = DynamicClientRegistrationRequest {
         redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
         grant_types: Some(vec![
@@ -167,7 +257,17 @@ fn dynamic_registration_refresh_clients_do_not_receive_offline_access_by_default
     )
     .expect("refresh-capable dynamic registration metadata should be accepted");
 
-    assert_eq!(prepared.scopes, vec!["openid"]);
+    assert_eq!(
+        prepared.scopes,
+        vec![
+            "openid",
+            "profile",
+            "email",
+            "address",
+            "phone",
+            "offline_access"
+        ]
+    );
 }
 
 #[test]
@@ -404,6 +504,8 @@ fn dynamic_registration_client_row() -> ClientRow {
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: None,
         backchannel_logout_session_required: true,
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: true,
         subject_type: "public".to_owned(),
         sector_identifier_uri: None,
         sector_identifier_host: None,

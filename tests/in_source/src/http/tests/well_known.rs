@@ -88,9 +88,17 @@ fn settings(profile: AuthorizationServerProfile, trusted_proxy_cidrs: Vec<IpCidr
         enable_legacy_audience_param: false,
         enable_device_authorization_grant: false,
         enable_dynamic_client_registration: false,
+        enable_frontchannel_logout: false,
+        enable_session_management: false,
+        enable_ciba: false,
+        enable_oidc_federation: false,
+        enable_native_sso: false,
         dynamic_client_registration_initial_access_token: None,
         device_authorization_ttl_seconds: 600,
         device_authorization_poll_interval_seconds: 5,
+        ciba_auth_req_id_ttl_seconds: 600,
+        ciba_poll_interval_seconds: 5,
+        ciba_automated_decision_token: None,
     }
 }
 
@@ -400,6 +408,94 @@ fn discovery_does_not_advertise_unimplemented_protocol_extensions() {
 }
 
 #[test]
+fn discovery_advertises_frontchannel_logout_only_when_enabled() {
+    let keyset = keyset(jsonwebtoken::Algorithm::RS256);
+    let disabled = authorization_server_metadata(
+        &settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new()),
+        &keyset,
+    );
+    assert!(disabled.get("frontchannel_logout_supported").is_none());
+    assert!(
+        disabled
+            .get("frontchannel_logout_session_supported")
+            .is_none()
+    );
+
+    let mut enabled = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
+    enabled.enable_frontchannel_logout = true;
+    let metadata = authorization_server_metadata(&enabled, &keyset);
+
+    assert_eq!(
+        metadata
+            .get("frontchannel_logout_supported")
+            .and_then(Value::as_bool),
+        Some(true)
+    );
+    assert_eq!(
+        metadata
+            .get("frontchannel_logout_session_supported")
+            .and_then(Value::as_bool),
+        Some(true)
+    );
+}
+
+#[test]
+fn discovery_advertises_session_management_only_when_enabled() {
+    let keyset = keyset(jsonwebtoken::Algorithm::RS256);
+    let disabled = authorization_server_metadata(
+        &settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new()),
+        &keyset,
+    );
+    assert!(disabled.get("check_session_iframe").is_none());
+
+    let mut enabled = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
+    enabled.enable_session_management = true;
+    let metadata = authorization_server_metadata(&enabled, &keyset);
+
+    assert_eq!(
+        metadata.get("check_session_iframe").and_then(Value::as_str),
+        Some("https://issuer.example/check_session")
+    );
+}
+
+#[test]
+fn discovery_advertises_native_sso_only_when_enabled() {
+    let keyset = keyset(jsonwebtoken::Algorithm::RS256);
+    let disabled = authorization_server_metadata(
+        &settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new()),
+        &keyset,
+    );
+    assert!(disabled.get("native_sso_supported").is_none());
+    assert!(
+        !disabled
+            .get("scopes_supported")
+            .and_then(Value::as_array)
+            .expect("scopes should be present")
+            .iter()
+            .any(|scope| scope.as_str() == Some("device_sso"))
+    );
+
+    let mut enabled = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
+    enabled.enable_native_sso = true;
+    let metadata = authorization_server_metadata(&enabled, &keyset);
+
+    assert_eq!(
+        metadata
+            .get("native_sso_supported")
+            .and_then(Value::as_bool),
+        Some(true)
+    );
+    assert!(
+        metadata
+            .get("scopes_supported")
+            .and_then(Value::as_array)
+            .expect("scopes should be present")
+            .iter()
+            .any(|scope| scope.as_str() == Some("device_sso"))
+    );
+}
+
+#[test]
 fn discovery_advertises_dynamic_registration_only_when_enabled() {
     let keyset = keyset(jsonwebtoken::Algorithm::RS256);
     let disabled = authorization_server_metadata(
@@ -686,5 +782,24 @@ fn discovery_baseline_advertises_unsigned_request_object_compatibility_only() {
             .expect("request object algs should be present")
             .iter()
             .any(|value| value.as_str() == Some("none"))
+    );
+}
+
+#[test]
+fn discovery_ciba_request_object_algs_are_fapi_ciba_scoped() {
+    let mut settings = settings(AuthorizationServerProfile::Fapi2Security, Vec::new());
+    settings.enable_ciba = true;
+    let metadata =
+        authorization_server_metadata(&settings, &keyset(jsonwebtoken::Algorithm::PS256));
+
+    assert_eq!(
+        metadata
+            .get("backchannel_authentication_request_signing_alg_values_supported")
+            .and_then(Value::as_array)
+            .expect("CIBA request object algs should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["EdDSA", "ES256", "PS256"]
     );
 }

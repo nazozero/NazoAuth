@@ -161,6 +161,8 @@ diesel::table! {
         post_logout_redirect_uris -> Jsonb,
         backchannel_logout_uri -> Nullable<Varchar>,
         backchannel_logout_session_required -> Bool,
+        frontchannel_logout_uri -> Nullable<Varchar>,
+        frontchannel_logout_session_required -> Bool,
         subject_type -> Text,
         sector_identifier_uri -> Nullable<Text>,
         sector_identifier_host -> Nullable<Text>,

@@ -19,7 +19,7 @@ jobs:
       DISABLE_SSL_VERIFY: ${{ vars.OIDF_DISABLE_SSL_VERIFY || 'false' }}
       NO_PARALLEL: ${{ vars.OIDF_NO_PARALLEL || 'true' }}
       RUN_TIMEOUT_SECONDS: ${{ vars.OIDF_RUN_TIMEOUT_SECONDS || '10800' }}
-      MONITOR_INTERVAL_SECONDS: ${{ vars.OIDF_MONITOR_INTERVAL_SECONDS || '60' }}
+      MONITOR_INTERVAL_SECONDS: ${{ vars.OIDF_MONITOR_INTERVAL_SECONDS || '0' }}
       RERUN: ${{ vars.OIDF_RERUN || '' }}
       PYTHONUNBUFFERED: "1"
     steps:
@@ -53,9 +53,30 @@ jobs:
             --identity oidf-plan-config.agekey \
             --output oidf-plan-config-secret-patch.json \
             docs/conformance/oidf-plan-config-secret-patch.json.age
+          rage --decrypt \
+            --identity oidf-plan-config.agekey \
+            --output oidf-plan-config-ciba-secret-patch.json \
+            docs/conformance/oidf-plan-config-ciba-secret-patch.json.age
+          python - <<'PY'
+          import json
+
+          with open("oidf-plan-config-secret-patch.json", encoding="utf-8") as handle:
+              base = json.load(handle)
+          with open("oidf-plan-config-ciba-secret-patch.json", encoding="utf-8") as handle:
+              ciba = json.load(handle)
+
+          conflicts = sorted(key for key, value in ciba.items() if key in base and base[key] != value)
+          if conflicts:
+              raise SystemExit("conflicting OIDF secret patch keys: " + ", ".join(conflicts))
+
+          base.update(ciba)
+          with open("oidf-plan-config-secret-patch.merged.json", "w", encoding="utf-8") as handle:
+              json.dump(base, handle, sort_keys=True)
+              handle.write("\n")
+          PY
           python scripts/materialize_oidf_plan_config.py \
             --template docs/conformance/oidf-plan-config-template.json \
-            --secret-patch-file oidf-plan-config-secret-patch.json \
+            --secret-patch-file oidf-plan-config-secret-patch.merged.json \
             --output oidf-plan-configs.json
         env:
           OIDF_PLAN_CONFIG_AGE_IDENTITY: ${{ secrets.OIDF_PLAN_CONFIG_AGE_IDENTITY }}

@@ -1,6 +1,6 @@
 use crate::http::authorization::request::{
-    PushedAuthorizationRequestConsumeError, authorization_response_redirect,
-    consume_pushed_authorization_request,
+    AuthorizationResponseRedirect, PushedAuthorizationRequestConsumeError,
+    authorization_response_redirect, consume_pushed_authorization_request,
 };
 use crate::http::prelude::*;
 
@@ -98,12 +98,15 @@ pub(super) async fn issue_authorization_code_without_interaction(
             Err(PushedAuthorizationRequestConsumeError::Missing) => {
                 return authorization_response_redirect(
                     state,
-                    &payload.redirect_uri,
-                    &payload.client_id,
-                    payload.response_mode.as_deref(),
-                    None,
-                    Some("invalid_request_uri"),
-                    payload.state.as_deref(),
+                    AuthorizationResponseRedirect {
+                        redirect_uri: &payload.redirect_uri,
+                        client_id: &payload.client_id,
+                        response_mode: payload.response_mode.as_deref(),
+                        code: None,
+                        error: Some("invalid_request_uri"),
+                        state: payload.state.as_deref(),
+                        oidc_sid: None,
+                    },
                 )
                 .await;
             }
@@ -111,12 +114,15 @@ pub(super) async fn issue_authorization_code_without_interaction(
             | Err(PushedAuthorizationRequestConsumeError::Malformed) => {
                 return authorization_response_redirect(
                     state,
-                    &payload.redirect_uri,
-                    &payload.client_id,
-                    payload.response_mode.as_deref(),
-                    None,
-                    Some("server_error"),
-                    payload.state.as_deref(),
+                    AuthorizationResponseRedirect {
+                        redirect_uri: &payload.redirect_uri,
+                        client_id: &payload.client_id,
+                        response_mode: payload.response_mode.as_deref(),
+                        code: None,
+                        error: Some("server_error"),
+                        state: payload.state.as_deref(),
+                        oidc_sid: None,
+                    },
                 )
                 .await;
             }
@@ -125,6 +131,7 @@ pub(super) async fn issue_authorization_code_without_interaction(
 
     let now = Utc::now();
     let code = random_urlsafe_token();
+    let oidc_sid = payload.oidc_sid.clone();
     let code_payload = CodePayload {
         code_id: Uuid::now_v7().to_string(),
         user_id: payload.user_id,
@@ -183,12 +190,15 @@ pub(super) async fn issue_authorization_code_without_interaction(
     );
     authorization_response_redirect(
         state,
-        &payload.redirect_uri,
-        &payload.client_id,
-        payload.response_mode.as_deref(),
-        Some(&code),
-        None,
-        payload.state.as_deref(),
+        AuthorizationResponseRedirect {
+            redirect_uri: &payload.redirect_uri,
+            client_id: &payload.client_id,
+            response_mode: payload.response_mode.as_deref(),
+            code: Some(&code),
+            error: None,
+            state: payload.state.as_deref(),
+            oidc_sid: oidc_sid.as_deref(),
+        },
     )
     .await
 }

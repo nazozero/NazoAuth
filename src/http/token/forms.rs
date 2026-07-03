@@ -7,9 +7,11 @@ pub(crate) struct TokenForm {
     pub(crate) grant_type: String,
     pub(crate) code: Option<String>,
     pub(crate) device_code: Option<String>,
+    pub(crate) auth_req_id: Option<String>,
     pub(crate) redirect_uri: Option<String>,
     pub(crate) code_verifier: Option<String>,
     pub(crate) refresh_token: Option<String>,
+    pub(crate) device_secret: Option<String>,
     pub(crate) scope: Option<String>,
     pub(crate) client_id: Option<String>,
     pub(crate) client_secret: Option<String>,
@@ -115,9 +117,11 @@ pub(crate) fn parse_token_form(
         grant_type: String::new(),
         code: None,
         device_code: None,
+        auth_req_id: None,
         redirect_uri: None,
         code_verifier: None,
         refresh_token: None,
+        device_secret: None,
         scope: None,
         client_id: None,
         client_secret: None,
@@ -164,6 +168,10 @@ pub(crate) fn parse_token_form(
                 accept_token_parameter_once(&mut seen, key)?;
                 form.device_code = non_empty(value);
             }
+            "auth_req_id" => {
+                accept_token_parameter_once(&mut seen, key)?;
+                form.auth_req_id = non_empty(value);
+            }
             "redirect_uri" => {
                 accept_token_parameter_once(&mut seen, key)?;
                 form.redirect_uri = non_empty(value);
@@ -175,6 +183,10 @@ pub(crate) fn parse_token_form(
             "refresh_token" => {
                 accept_token_parameter_once(&mut seen, key)?;
                 form.refresh_token = non_empty(value);
+            }
+            "device_secret" => {
+                accept_token_parameter_once(&mut seen, key)?;
+                form.device_secret = non_empty(value);
             }
             "scope" => {
                 accept_token_parameter_once(&mut seen, key)?;

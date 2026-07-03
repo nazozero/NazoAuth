@@ -1,8 +1,8 @@
 //! 授权确认提交端点。
 // 同意时签发一次性授权码；拒绝时按 OAuth 规范把错误回传 redirect_uri。
 use super::{
-    PushedAuthorizationRequestConsumeError, authorization_response_redirect,
-    consume_pushed_authorization_request,
+    AuthorizationResponseRedirect, PushedAuthorizationRequestConsumeError,
+    authorization_response_redirect, consume_pushed_authorization_request,
 };
 use crate::http::prelude::*;
 
@@ -57,12 +57,15 @@ async fn authorization_error_redirect(
 ) -> HttpResponse {
     authorization_response_redirect(
         state,
-        &payload.redirect_uri,
-        &payload.client_id,
-        payload.response_mode.as_deref(),
-        None,
-        Some(error),
-        payload.state.as_deref(),
+        AuthorizationResponseRedirect {
+            redirect_uri: &payload.redirect_uri,
+            client_id: &payload.client_id,
+            response_mode: payload.response_mode.as_deref(),
+            code: None,
+            error: Some(error),
+            state: payload.state.as_deref(),
+            oidc_sid: None,
+        },
     )
     .await
 }
@@ -160,6 +163,7 @@ pub(crate) async fn authorize_decision(
 
     let now = Utc::now();
     let code = random_urlsafe_token();
+    let oidc_sid = payload.oidc_sid.clone();
     let code_payload = CodePayload {
         code_id: Uuid::now_v7().to_string(),
         user_id: payload.user_id,
@@ -241,12 +245,15 @@ pub(crate) async fn authorize_decision(
 
     authorization_response_redirect(
         &state,
-        &payload.redirect_uri,
-        &payload.client_id,
-        payload.response_mode.as_deref(),
-        Some(&code),
-        None,
-        payload.state.as_deref(),
+        AuthorizationResponseRedirect {
+            redirect_uri: &payload.redirect_uri,
+            client_id: &payload.client_id,
+            response_mode: payload.response_mode.as_deref(),
+            code: Some(&code),
+            error: None,
+            state: payload.state.as_deref(),
+            oidc_sid: oidc_sid.as_deref(),
+        },
     )
     .await
 }

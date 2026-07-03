@@ -16,14 +16,23 @@ fn baseline_profile_can_use_optional_dpop_nonce_policy() {
 }
 
 #[test]
-fn fapi_profiles_force_required_dpop_nonce_policy() {
+fn fapi_profiles_default_to_required_dpop_nonce_policy() {
+    let config =
+        ConfigSource::from_pairs_for_test([("AUTHORIZATION_SERVER_PROFILE", "fapi2-security")]);
+    let settings = Settings::from_config(&config).unwrap();
+
+    assert_eq!(settings.dpop_nonce_policy, DpopNoncePolicy::Required);
+}
+
+#[test]
+fn fapi_profiles_can_use_optional_dpop_nonce_policy() {
     let config = ConfigSource::from_pairs_for_test([
         ("AUTHORIZATION_SERVER_PROFILE", "fapi2-security"),
         ("DPOP_NONCE_POLICY", "optional"),
     ]);
     let settings = Settings::from_config(&config).unwrap();
 
-    assert_eq!(settings.dpop_nonce_policy, DpopNoncePolicy::Required);
+    assert_eq!(settings.dpop_nonce_policy, DpopNoncePolicy::Optional);
 }
 
 #[test]
@@ -123,6 +132,11 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     assert!(!defaults.enable_legacy_audience_param);
     assert!(!defaults.enable_device_authorization_grant);
     assert!(!defaults.enable_dynamic_client_registration);
+    assert!(!defaults.enable_frontchannel_logout);
+    assert!(!defaults.enable_session_management);
+    assert!(!defaults.enable_ciba);
+    assert!(!defaults.enable_oidc_federation);
+    assert!(!defaults.enable_native_sso);
     assert!(
         defaults
             .dynamic_client_registration_initial_access_token
@@ -130,6 +144,8 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     );
     assert_eq!(defaults.device_authorization_ttl_seconds, 600);
     assert_eq!(defaults.device_authorization_poll_interval_seconds, 5);
+    assert_eq!(defaults.ciba_auth_req_id_ttl_seconds, 600);
+    assert_eq!(defaults.ciba_poll_interval_seconds, 5);
 
     let config = ConfigSource::from_pairs_for_test([
         ("ENABLE_REQUEST_OBJECT", "true"),
@@ -139,12 +155,19 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
         ("ENABLE_LEGACY_AUDIENCE_PARAM", "true"),
         ("ENABLE_DEVICE_AUTHORIZATION_GRANT", "true"),
         ("ENABLE_DYNAMIC_CLIENT_REGISTRATION", "true"),
+        ("ENABLE_FRONTCHANNEL_LOGOUT", "true"),
+        ("ENABLE_SESSION_MANAGEMENT", "true"),
+        ("ENABLE_CIBA", "true"),
+        ("ENABLE_OIDC_FEDERATION", "true"),
+        ("ENABLE_NATIVE_SSO", "true"),
         (
             "DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN",
             "register-token",
         ),
         ("DEVICE_AUTHORIZATION_TTL_SECONDS", "300"),
         ("DEVICE_AUTHORIZATION_POLL_INTERVAL_SECONDS", "7"),
+        ("CIBA_AUTH_REQ_ID_TTL_SECONDS", "240"),
+        ("CIBA_POLL_INTERVAL_SECONDS", "6"),
     ]);
     let settings = Settings::from_config(&config).unwrap();
 
@@ -155,6 +178,11 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     assert!(settings.enable_legacy_audience_param);
     assert!(settings.enable_device_authorization_grant);
     assert!(settings.enable_dynamic_client_registration);
+    assert!(settings.enable_frontchannel_logout);
+    assert!(settings.enable_session_management);
+    assert!(settings.enable_ciba);
+    assert!(settings.enable_oidc_federation);
+    assert!(settings.enable_native_sso);
     assert_eq!(
         settings
             .dynamic_client_registration_initial_access_token
@@ -163,6 +191,8 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     );
     assert_eq!(settings.device_authorization_ttl_seconds, 300);
     assert_eq!(settings.device_authorization_poll_interval_seconds, 7);
+    assert_eq!(settings.ciba_auth_req_id_ttl_seconds, 240);
+    assert_eq!(settings.ciba_poll_interval_seconds, 6);
 }
 
 #[test]

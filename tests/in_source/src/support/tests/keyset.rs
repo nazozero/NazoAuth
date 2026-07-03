@@ -631,6 +631,67 @@ async fn created_keyset_uses_oidc_mandatory_default_signing_alg() {
 }
 
 #[tokio::test]
+async fn load_or_create_keyset_backfills_oidc_default_rs256_signing_key() {
+    let keys_dir = temp_keys_dir("backfill_rs256_default");
+    tokio::fs::create_dir_all(&keys_dir).await.unwrap();
+    write_local_key_entry(
+        &keys_dir,
+        "active-ps256",
+        "PS256",
+        "active-ps256.pem",
+        Utc::now(),
+    )
+    .await;
+    tokio::fs::write(
+        keys_dir.join("keyset.json"),
+        serde_json::to_string_pretty(&json!({
+            "active_kid": "active-ps256",
+            "keys": [{
+                "kid": "active-ps256",
+                "alg": "PS256",
+                "file": "active-ps256.pem",
+                "created_at": timestamp(Utc::now()),
+                "retire_at": null
+            }]
+        }))
+        .unwrap(),
+    )
+    .await
+    .unwrap();
+    let settings = test_settings(keys_dir.clone());
+
+    let keyset = load_or_create_keyset(&settings).await.unwrap();
+    let keyset_json = tokio::fs::read_to_string(keys_dir.join("keyset.json"))
+        .await
+        .unwrap();
+    let payload: Value = serde_json::from_str(&keyset_json).unwrap();
+    let _ = tokio::fs::remove_dir_all(&keys_dir).await;
+
+    assert_eq!(keyset.active_kid, "active-ps256");
+    assert_eq!(keyset.active_alg, jsonwebtoken::Algorithm::PS256);
+    let keys = payload["keys"].as_array().unwrap();
+    assert!(
+        keys.iter()
+            .any(|key| key["kid"] == "active-ps256" && key["alg"] == "PS256")
+    );
+    assert!(
+        keys.iter().any(|key| key["alg"] == "RS256"
+            && key["file"]
+                .as_str()
+                .is_some_and(|file| file.starts_with("rs256-"))
+            && key["retire_at"].is_null()),
+        "RS256 must be available for clients relying on the OpenID Connect default id_token alg"
+    );
+    assert!(
+        keyset.jwks()["keys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|key| key["alg"] == "RS256")
+    );
+}
+
+#[tokio::test]
 async fn duplicate_keyset_kids_are_rejected() {
     let keys_dir = temp_keys_dir("duplicate_kid");
     tokio::fs::create_dir_all(&keys_dir).await.unwrap();
@@ -1422,8 +1483,16 @@ fn test_settings(jwk_keys_dir: PathBuf) -> Settings {
         enable_legacy_audience_param: false,
         enable_device_authorization_grant: false,
         enable_dynamic_client_registration: false,
+        enable_frontchannel_logout: false,
+        enable_session_management: false,
+        enable_ciba: false,
+        enable_oidc_federation: false,
+        enable_native_sso: false,
         dynamic_client_registration_initial_access_token: None,
         device_authorization_ttl_seconds: 600,
         device_authorization_poll_interval_seconds: 5,
+        ciba_auth_req_id_ttl_seconds: 600,
+        ciba_poll_interval_seconds: 5,
+        ciba_automated_decision_token: None,
     }
 }
