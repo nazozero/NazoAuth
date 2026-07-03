@@ -1,5 +1,6 @@
 param(
-    [string]$RemoteHost = "hostinger",
+    [Parameter(Mandatory = $true)]
+    [string]$RemoteHost,
     [string]$ImageRepository = "localhost/nazo-oauth-server",
     [string]$ImageTag = "",
     [string]$ContainerName = "nazo-oauth-server",

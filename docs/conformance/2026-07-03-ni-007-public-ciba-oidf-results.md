@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Target issuer | `https://auth.nazo.run` |
-| Deployment host | `ssh hostinger` |
+| Deployment host | Private SSH deployment target |
 | Branch | `codex/ni-006-011-oidc-profiles` |
 | Workflow | `oidf-conformance.yml` |
 | Run URL | `https://github.com/nazozero/NazoAuth/actions/runs/28636561869` |
@@ -66,8 +66,6 @@ The failing condition was a test input completeness failure.
 
 ## Correct Deployment Path
 
-Use `ssh hostinger` for live operations.
-
 The live Podman network is fixed to `nazo_oauth_net` with subnet
 `10.101.0.0/24` and gateway `10.101.0.1`. The long-lived container addresses are:
 
@@ -84,12 +82,12 @@ Do not publish `8000`, `5432`, or `6379` on the host for the live stack.
 
 ## Correct Public OIDF Test Path
 
-1. Deploy through the Hostinger path and verify public health:
+1. Deploy through the private live deployment path and verify public health:
    `https://auth.nazo.run/health`.
 2. Export public-only OIDF seed configs. Do not copy raw rendered plan configs
    containing passwords, browser automation secrets, private keys, or mTLS keys.
-3. Upload the sanitized seed bundle to `ssh hostinger` and seed the live app
-   database through the app container network.
+3. Upload the sanitized seed bundle to the private live deployment host and
+   seed the live app database through the app container network.
 4. Set the targeted GitHub variables:
    `OIDF_PLAN_EXPRESSION` to the CIBA plan above,
    `OIDF_MONITOR_INTERVAL_SECONDS=0`, and `OIDF_EXPORT_RESULTS=true`.

@@ -125,7 +125,7 @@ Default live assumptions:
 
 | Setting | Default |
 | --- | --- |
-| Remote host | `hostinger` |
+| Remote host | Required `-RemoteHost` argument |
 | Container name | `nazo-oauth-server` |
 | Network | `nazo_oauth_net` |
 | Network subnet | `10.101.0.0/24` |
@@ -143,14 +143,15 @@ Example:
 
 ```powershell
 pwsh scripts/deploy_live.ps1 `
-  -RemoteHost hostinger `
+  -RemoteHost <ssh-host> `
   -ImageRepository localhost/nazo-oauth-server `
   -ImageTag main-$(git rev-parse --short=7 HEAD)
 ```
 
-The script uses the SSH target `hostinger` to deploy the `auth.nazo.run`
+The script uses the configured SSH target to deploy the `auth.nazo.run`
 environment. Recheck the live listener, reverse-proxy config, container
-network, TLS settings, and expected issuer before using it for another host.
+network, TLS settings, and expected issuer before using it for a different
+host.
 
 ### Fixed Internal IP and Angie
 

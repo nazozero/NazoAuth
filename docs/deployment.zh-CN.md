@@ -113,7 +113,7 @@ docker run -d --name nazo-oauth-server \
 
 | 设置 | 默认值 |
 | --- | --- |
-| 远端主机 | `hostinger` |
+| 远端主机 | 必填 `-RemoteHost` 参数 |
 | 容器名 | `nazo-oauth-server` |
 | 网络 | `nazo_oauth_net` |
 | 网络 subnet | `10.101.0.0/24` |
@@ -131,12 +131,12 @@ docker run -d --name nazo-oauth-server \
 
 ```powershell
 pwsh scripts/deploy_live.ps1 `
-  -RemoteHost hostinger `
+  -RemoteHost <ssh-host> `
   -ImageRepository localhost/nazo-oauth-server `
   -ImageTag main-$(git rev-parse --short=7 HEAD)
 ```
 
-该脚本通过 SSH 目标 `hostinger` 部署 `auth.nazo.run` 环境。迁移到其他主机前，必须重新检查监听器、反向代理、容器网络、TLS 设置和 expected issuer。
+该脚本通过指定的 SSH 目标部署 `auth.nazo.run` 环境。迁移到其他主机前，必须重新检查监听器、反向代理、容器网络、TLS 设置和 expected issuer。
 
 ### 固定内网 IP 与 Angie 反代
 

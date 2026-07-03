@@ -16,6 +16,7 @@ in the repository.
 - Latest RFC coverage check: [2026-07-02 NI-005 RFC 7592 OIDF coverage](2026-07-02-ni-005-oidf-coverage.md)
 - Latest NI-006~NI-011 private targeted OIDF results: [2026-07-02 NI-006~NI-011 private OIDF results](2026-07-02-ni-006-011-private-oidf-results.md)
 - Latest public NI-007 FAPI-CIBA targeted OIDF result: [2026-07-03 NI-007 public FAPI-CIBA OIDF results](2026-07-03-ni-007-public-ciba-oidf-results.md)
+- Latest NI-006~NI-011 official parallel-isolated full matrix: [2026-07-03 NI-006~NI-011 official parallel-isolated OIDF results](2026-07-03-ni-006-011-official-parallel-isolated-oidf-results.md)
 
 The latest recorded official full-matrix suite run is the 2026-07-02 NI-004
 run against `https://auth.nazo.run`, started at `2026-07-02 01:32:57 +08:00`.
@@ -43,6 +44,13 @@ The latest public NI-007 FAPI-CIBA targeted workflow ran against
 `28636561869` completed successfully. The exported suite artifact contains 35
 module JSON logs, all `PASSED`, with 2768 condition successes, `0 failures`,
 and `0 warnings`.
+
+The latest NI-006~NI-011 official full-matrix regression ran against
+`https://auth.nazo.run` on 2026-07-03 at workflow head SHA
+`056cf7f90061a9054394593ee1fa7b43f5e26b54`. GitHub Actions run
+`28648656293` completed successfully. The workflow executed 18 concurrency-safe
+plans in one job and isolated front-channel logout and session-management into
+separate browser-sensitive matrix jobs.
 
 ## Coverage Update Rule
 
