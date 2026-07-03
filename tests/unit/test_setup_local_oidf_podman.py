@@ -43,6 +43,16 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
         self.assertEqual(len(authorize_entries), 1)
         self.assertNotIn("override", config)
 
+    def test_fapi_ciba_plan_uses_mtls_sender_constraint(self):
+        module = load_setup_module()
+
+        configs = module.write_fapi_ciba_plan_config()
+        config = configs["oidf-fapi-ciba-plain-private-key-jwt-poll-plan-config.json"]
+
+        self.assertEqual(config["nazo"]["sender_constrain"], "mtls")
+        self.assertIn("mtls", config)
+        self.assertIn("mtls2", config)
+
 
 if __name__ == "__main__":
     unittest.main()

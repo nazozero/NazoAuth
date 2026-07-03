@@ -278,6 +278,7 @@ fn upsert_client(connection: &mut PgConnection, client: ClientUpsert<'_>) -> any
 
 fn fapi_client_policy(file_name: &str, plan: &Value) -> FapiClientPolicy {
     let nazo = plan.get("nazo").and_then(Value::as_object);
+    let ciba = file_name.starts_with("oidf-fapi-ciba-");
     let client_auth_type = nazo
         .and_then(|value| value.get("client_auth_type"))
         .and_then(Value::as_str)
@@ -285,7 +286,7 @@ fn fapi_client_policy(file_name: &str, plan: &Value) -> FapiClientPolicy {
     let sender_constrain = nazo
         .and_then(|value| value.get("sender_constrain"))
         .and_then(Value::as_str)
-        .unwrap_or("dpop");
+        .unwrap_or(if ciba { "mtls" } else { "dpop" });
     let fapi_profile = nazo
         .and_then(|value| value.get("fapi_profile"))
         .and_then(Value::as_str)
@@ -300,14 +301,14 @@ fn fapi_client_policy(file_name: &str, plan: &Value) -> FapiClientPolicy {
         require_mtls_bound_tokens: sender_constrain == "mtls",
         allow_client_assertion_audience_array: file_name.contains("-id"),
         allow_client_assertion_endpoint_audience: auth_method == "private_key_jwt",
-        require_par_request_object: file_name.starts_with("oidf-fapi-ciba-")
+        require_par_request_object: ciba
             || file_name.contains("-message-")
             || nazo
                 .and_then(|value| value.get("fapi_request_method"))
                 .and_then(Value::as_str)
                 .is_some(),
         client_credentials_only: fapi_profile == "fapi_client_credentials_grant",
-        ciba: file_name.starts_with("oidf-fapi-ciba-"),
+        ciba,
     }
 }
 
@@ -569,4 +570,33 @@ fn main() -> anyhow::Result<()> {
     );
     println!("OIDF_LOCAL_FAPI_CLIENT_COUNT={}", fapi_clients.len());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ciba_client_policy_without_sender_constrain_defaults_to_mtls_holder_of_key() {
+        let policy = fapi_client_policy(
+            "oidf-fapi-ciba-plain-private-key-jwt-poll-plan-config.json",
+            &json!({"nazo": {"client_auth_type": "private_key_jwt"}}),
+        );
+
+        assert!(!policy.require_dpop_bound_tokens);
+        assert!(policy.require_mtls_bound_tokens);
+        assert!(policy.ciba);
+    }
+
+    #[test]
+    fn fapi_matrix_client_policy_defaults_to_dpop_sender_constraint() {
+        let policy = fapi_client_policy(
+            "oidf-fapi-matrix-security-final-private-key-jwt-dpop-openid-connect-plain-fapi-plain-response-plan-config.json",
+            &json!({"nazo": {"client_auth_type": "private_key_jwt"}}),
+        );
+
+        assert!(policy.require_dpop_bound_tokens);
+        assert!(!policy.require_mtls_bound_tokens);
+        assert!(!policy.ciba);
+    }
 }
