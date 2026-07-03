@@ -16,8 +16,11 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
         rendered = {
             "configs": {
                 "oidf-test-plan-config.json": {
+                    "alias": "seed-alias",
                     "client": {
                         "client_id": "client-1",
+                        "client_secret": "secret",
+                        "scope": "openid accounts",
                         "jwks": {
                             "keys": [
                                 {
@@ -35,7 +38,18 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
                                 }
                             ]
                         },
-                    }
+                    },
+                    "mtls": {
+                        "cert": "-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----",
+                        "key": "private",
+                    },
+                    "nazo": {
+                        "fapi_profile": "plain_fapi",
+                        "fapi_sender_constrain": "mtls",
+                        "oidf_user_password": "secret",
+                    },
+                    "automated_ciba_approval_url": "https://example.test/ciba?token=secret",
+                    "browser": [{"type": "text", "value": "secret"}],
                 }
             }
         }
@@ -55,6 +69,16 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
 
             exported = json.loads((output_dir / "oidf-test-plan-config.json").read_text())
 
+        self.assertEqual(exported["alias"], "seed-alias")
+        self.assertEqual(exported["client"]["client_id"], "client-1")
+        self.assertEqual(exported["client"]["scope"], "openid accounts")
+        self.assertEqual(
+            exported["mtls"]["cert"],
+            "-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----",
+        )
+        self.assertEqual(exported["nazo"]["fapi_profile"], "plain_fapi")
+        self.assertEqual(exported["nazo"]["fapi_sender_constrain"], "mtls")
+
         jwk = exported["client"]["jwks"]["keys"][0]
         self.assertEqual(jwk["kid"], "client-key")
         self.assertEqual(jwk["n"], "modulus")
@@ -64,6 +88,11 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
         self.assertNotIn("dp", jwk)
         self.assertNotIn("dq", jwk)
         self.assertNotIn("qi", jwk)
+        self.assertNotIn("client_secret", exported["client"])
+        self.assertNotIn("key", exported["mtls"])
+        self.assertNotIn("oidf_user_password", exported["nazo"])
+        self.assertNotIn("automated_ciba_approval_url", exported)
+        self.assertNotIn("browser", exported)
 
 
 if __name__ == "__main__":

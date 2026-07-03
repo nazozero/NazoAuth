@@ -113,10 +113,13 @@ docker run -d --name nazo-oauth-server \
 
 | 设置 | 默认值 |
 | --- | --- |
-| 远端主机 | `nazo.run` |
+| 远端主机 | `hostinger` |
 | 容器名 | `nazo-oauth-server` |
 | 网络 | `nazo_oauth_net` |
+| 网络 subnet | `10.101.0.0/24` |
+| 网络 gateway | `10.101.0.1` |
 | 容器 IP | `10.101.0.20` |
+| 宿主机端口发布 | 默认不发布；Angie 直接反代容器 IP |
 | 远端配置 | `/opt/nazo-oauth/.env.yaml` |
 | Keys 路径 | `/opt/nazo-oauth/runtime/keys` |
 | Avatars 路径 | `/opt/nazo-oauth/runtime/avatars` |
@@ -128,12 +131,29 @@ docker run -d --name nazo-oauth-server \
 
 ```powershell
 pwsh scripts/deploy_live.ps1 `
-  -RemoteHost nazo.run `
+  -RemoteHost hostinger `
   -ImageRepository localhost/nazo-oauth-server `
   -ImageTag main-$(git rev-parse --short=7 HEAD)
 ```
 
-该脚本面向 `nazo.run` 环境。迁移到其他主机前，必须重新检查监听器、反向代理、容器网络、TLS 设置和 expected issuer。
+该脚本通过 SSH 目标 `hostinger` 部署 `auth.nazo.run` 环境。迁移到其他主机前，必须重新检查监听器、反向代理、容器网络、TLS 设置和 expected issuer。
+
+### 固定内网 IP 与 Angie 反代
+
+`auth.nazo.run` live 路径固定使用 Podman bridge 网络 `nazo_oauth_net`、subnet
+`10.101.0.0/24`、gateway `10.101.0.1`，应用容器固定为
+`10.101.0.20`。部署脚本会创建或校验该网络，启动容器后校验实际 IP，并从宿主机直连
+`http://10.101.0.20:8000/health` 和 discovery。
+
+Angie 配置应直接反代到固定容器 IP，不再依赖 `127.0.0.1:8000` 端口发布：
+
+```nginx
+proxy_pass http://10.101.0.20:8000;
+```
+
+如果 Angie 与应用同在宿主机，应用看到的可信代理来源通常是 bridge gateway
+`10.101.0.1`；`TRUSTED_PROXY_CIDRS` 应只包含该地址或实际受控代理地址，例如
+`10.101.0.1/32`。不要把不受控的容器网段整体加入可信代理范围。
 
 ## 反向代理边界
 
@@ -209,15 +229,26 @@ curl -fsS https://auth.nazo.run/jwks.json
 
 ## OIDF 准备
 
-启动完整 OpenID Foundation conformance run 前：
+启动 OpenID Foundation conformance run 前，固定按以下顺序执行，不从失败的 run
+里倒推 seed 输入：
 
-1. 部署要测试的精确 commit。
-2. 通过公开 issuer 校验 discovery 和 JWKS。
-3. 确认 suite plan config 中 redirect URI 正确。
-4. 确认浏览器自动化规则匹配真实 login、consent、callback 页面。
-5. 确认 mTLS endpoint alias 和代理证书转发。
-6. 运行 `.github/workflows/oidf-conformance-full.yml`。
-7. 在 artifact 过期前保存最终结果到 `docs/conformance`。
+1. 确定要测的精确 commit，并确认工作区没有混入无关部署补丁。
+2. 确认 Angie 已反代到固定容器 IP `10.101.0.20:8000`，且 `.env.yaml`
+   的可信代理范围只包含实际受控代理地址。
+3. 使用 `scripts/deploy_live.ps1` 部署同一 commit 到公网入口；该步骤会执行
+   migration，并确认 Podman 容器 IP 为 `10.101.0.20`。
+4. 运行 `oidf-public-seed-configs` workflow，下载 `oidf-public-plan-configs`
+   artifact；这是服务端 seed 的唯一官方同源输入。
+5. 将该 artifact 放到 live 环境的 OIDF runtime 目录，并使用同一 commit 的
+   `oidf-seed` image / `nazo_oauth_seed_oidf` binary，对公网入口
+   `auth.nazo.run` 实际使用的数据库执行 seed。不要 seed
+   `compose.oidf.local.yml` 的 9443 专用栈后去跑官方公网测试。
+6. 从公网校验 health、discovery、JWKS、mTLS alias 和证书转发；discovery
+   `issuer` 必须是 `https://auth.nazo.run`。
+7. 先运行 `.github/workflows/oidf-conformance.yml` 的单 plan。单 plan workflow
+   默认关闭 early-stop monitor，以便失败时上传完整 artifact。
+8. 单 plan 通过后，才运行 `.github/workflows/oidf-conformance-full.yml` 全矩阵。
+9. 在 artifact 过期前保存最终结果到 `docs/conformance`。
 
 ## 运维检查清单
 

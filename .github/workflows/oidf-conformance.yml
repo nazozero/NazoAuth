@@ -19,7 +19,7 @@ jobs:
       DISABLE_SSL_VERIFY: ${{ vars.OIDF_DISABLE_SSL_VERIFY || 'false' }}
       NO_PARALLEL: ${{ vars.OIDF_NO_PARALLEL || 'true' }}
       RUN_TIMEOUT_SECONDS: ${{ vars.OIDF_RUN_TIMEOUT_SECONDS || '10800' }}
-      MONITOR_INTERVAL_SECONDS: ${{ vars.OIDF_MONITOR_INTERVAL_SECONDS || '60' }}
+      MONITOR_INTERVAL_SECONDS: ${{ vars.OIDF_MONITOR_INTERVAL_SECONDS || '0' }}
       RERUN: ${{ vars.OIDF_RERUN || '' }}
       PYTHONUNBUFFERED: "1"
     steps:

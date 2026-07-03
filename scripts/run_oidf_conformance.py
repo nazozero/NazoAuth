@@ -1704,7 +1704,7 @@ def parse_args() -> argparse.Namespace:
         "--monitor-interval-seconds",
         type=int,
         default=60,
-        help="poll OIDF APIs at this interval and stop early on failed module state",
+        help="poll OIDF APIs at this interval and stop early on failed module state; set 0 to disable",
     )
     parser.add_argument("--list", action="store_true", help="list selected plans without running them")
     return parser.parse_args()
@@ -1723,8 +1723,8 @@ def run_official_runner(
 ) -> int:
     if timeout_seconds <= 0:
         fail("--timeout-seconds must be greater than zero")
-    if monitor_interval_seconds <= 0:
-        fail("--monitor-interval-seconds must be greater than zero")
+    if monitor_interval_seconds < 0:
+        fail("--monitor-interval-seconds must be zero or greater")
 
     print("OIDF selected plan expressions:", flush=True)
     for index, expression in enumerate(expressions, start=1):
@@ -1743,7 +1743,7 @@ def run_official_runner(
     )
     monitor: OidfEarlyStopMonitor | None = None
     monitor_thread: threading.Thread | None = None
-    if aliases:
+    if aliases and monitor_interval_seconds > 0:
         monitor = OidfEarlyStopMonitor(
             conformance_server,
             token,
@@ -1762,6 +1762,8 @@ def run_official_runner(
             flush=True,
         )
         monitor_thread.start()
+    elif aliases:
+        print("OIDF early-stop monitor disabled", flush=True)
 
     try:
         exit_code = process.wait(timeout=timeout_seconds)

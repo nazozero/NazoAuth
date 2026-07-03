@@ -1,16 +1,18 @@
 param(
-    [string]$RemoteHost = "nazo.run",
+    [string]$RemoteHost = "hostinger",
     [string]$ImageRepository = "localhost/nazo-oauth-server",
     [string]$ImageTag = "",
     [string]$ContainerName = "nazo-oauth-server",
     [string]$Network = "nazo_oauth_net",
+    [string]$NetworkSubnet = "10.101.0.0/24",
+    [string]$NetworkGateway = "10.101.0.1",
     [string]$IPAddress = "10.101.0.20",
     [string]$RemoteConfigPath = "/opt/nazo-oauth/.env.yaml",
     [string]$RemoteKeysPath = "/opt/nazo-oauth/runtime/keys",
     [string]$RemoteAvatarsPath = "/opt/nazo-oauth/runtime/avatars",
     [string]$RemoteUiPath = "/opt/nazo-oauth/ui",
     [string]$LocalUiDist = "../NazoAuthWeb/dist",
-    [string]$PublishPort = "127.0.0.1:8000:8000",
+    [string]$PublishPort = "",
     [string]$HealthUrl = "https://auth.nazo.run/health",
     [string]$DiscoveryUrl = "https://auth.nazo.run/.well-known/openid-configuration",
     [string]$ExpectedIssuer = "https://auth.nazo.run",
@@ -101,6 +103,8 @@ REMOTE_UI_ARCHIVE=$(ConvertTo-ShellLiteral $remoteUiArchive)
 REMOTE_SCRIPT=$(ConvertTo-ShellLiteral $remoteScript)
 CONTAINER_NAME=$(ConvertTo-ShellLiteral $ContainerName)
 NETWORK_NAME=$(ConvertTo-ShellLiteral $Network)
+NETWORK_SUBNET=$(ConvertTo-ShellLiteral $NetworkSubnet)
+NETWORK_GATEWAY=$(ConvertTo-ShellLiteral $NetworkGateway)
 CONTAINER_IP=$(ConvertTo-ShellLiteral $IPAddress)
 CONFIG_PATH=$(ConvertTo-ShellLiteral $RemoteConfigPath)
 KEYS_PATH=$(ConvertTo-ShellLiteral $RemoteKeysPath)
@@ -124,6 +128,23 @@ tar -xzf "`$REMOTE_UI_ARCHIVE" -C "`$UI_PATH"
 
 podman load -i "`$REMOTE_ARCHIVE"
 podman image exists "`$IMAGE"
+
+if podman network exists "`$NETWORK_NAME"; then
+  network_inspect="`$(podman network inspect "`$NETWORK_NAME")"
+  if [ -n "`$NETWORK_SUBNET" ] && ! printf '%s\n' "`$network_inspect" | grep -F "`$NETWORK_SUBNET" >/dev/null; then
+    echo "Existing Podman network `$NETWORK_NAME does not contain required subnet `$NETWORK_SUBNET" >&2
+    exit 1
+  fi
+else
+  create_network_args=()
+  if [ -n "`$NETWORK_SUBNET" ]; then
+    create_network_args+=(--subnet "`$NETWORK_SUBNET")
+  fi
+  if [ -n "`$NETWORK_GATEWAY" ]; then
+    create_network_args+=(--gateway "`$NETWORK_GATEWAY")
+  fi
+  podman network create "`${create_network_args[@]}" "`$NETWORK_NAME"
+fi
 
 if [ "`$SKIP_MIGRATE" != "1" ]; then
   migrate_name="`$CONTAINER_NAME-migrate-`$(date +%s)"
@@ -154,6 +175,15 @@ podman run -d --name "`$CONTAINER_NAME" \
 
 podman inspect "`$CONTAINER_NAME" --format 'container={{.Name}} image={{.ImageName}} status={{.State.Status}}'
 podman inspect "`$CONTAINER_NAME" --format '{{range `$name, `$conf := .NetworkSettings.Networks}}network={{`$name}} ip={{`$conf.IPAddress}}{{println}}{{end}}'
+actual_ip="`$(podman inspect "`$CONTAINER_NAME" --format '{{range `$name, `$conf := .NetworkSettings.Networks}}{{println `$conf.IPAddress}}{{end}}' | awk 'NF { print; exit }')"
+if [ "`$actual_ip" != "`$CONTAINER_IP" ]; then
+  echo "Container `$CONTAINER_NAME started with IP `$actual_ip, expected `$CONTAINER_IP" >&2
+  exit 1
+fi
+
+curl -fsS --max-time 10 "http://`$CONTAINER_IP:8000/health" >/dev/null
+discovery="`$(curl -fsS --max-time 10 "http://`$CONTAINER_IP:8000/.well-known/openid-configuration")"
+printf '%s\n' "`$discovery" | grep -F '"issuer"' >/dev/null
 "@
 
 Set-Content -LiteralPath $localRemoteScript -Value $remoteBody -Encoding UTF8
