@@ -15,6 +15,7 @@ in the repository.
 - Latest official full matrix: [2026-07-02 NI-004 official OIDF full matrix](2026-07-02-ni-004-official-oidf-full-matrix.md)
 - Latest RFC coverage check: [2026-07-02 NI-005 RFC 7592 OIDF coverage](2026-07-02-ni-005-oidf-coverage.md)
 - Latest NI-006~NI-011 private targeted OIDF results: [2026-07-02 NI-006~NI-011 private OIDF results](2026-07-02-ni-006-011-private-oidf-results.md)
+- Latest public NI-007 FAPI-CIBA targeted OIDF result: [2026-07-03 NI-007 public FAPI-CIBA OIDF results](2026-07-03-ni-007-public-ciba-oidf-results.md)
 
 The latest recorded official full-matrix suite run is the 2026-07-02 NI-004
 run against `https://auth.nazo.run`, started at `2026-07-02 01:32:57 +08:00`.
@@ -35,6 +36,13 @@ NI-008 Front-Channel Logout, and NI-009 Session Management passed with
 `0 failures`, `0 warnings`, and `0 skipped modules`. The NI-008/NI-009
 exported JSON logs contain informational optional-condition
 `Skipped evaluation ...` entries; those are not module-level `SKIPPED` results.
+
+The latest public NI-007 FAPI-CIBA targeted workflow ran against
+`https://auth.nazo.run` on 2026-07-03 at workflow head SHA
+`0374141ae7aec76c573b06dc8406b10819915309`. GitHub Actions run
+`28636561869` completed successfully. The exported suite artifact contains 35
+module JSON logs, all `PASSED`, with 2768 condition successes, `0 failures`,
+and `0 warnings`.
 
 ## Coverage Update Rule
 
