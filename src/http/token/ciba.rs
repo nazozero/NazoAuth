@@ -926,9 +926,6 @@ pub(crate) async fn token_ciba(
             false,
         );
     }
-    if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
-        return response;
-    }
     let (dpop_jkt, mtls_x5t_s256) = match ciba_issue_binding(state, req, client).await {
         Ok(binding) => binding,
         Err(response) => return response,
@@ -945,13 +942,11 @@ pub(crate) async fn token_ciba(
         }
         Err(response) => return response,
     };
-    if ciba.client_id != client.client_id {
-        return oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_grant",
-            "CIBA auth_req_id was not issued to this client.",
-            false,
-        );
+    if let Some(response) = ciba_auth_req_id_client_error(&ciba, client) {
+        return response;
+    }
+    if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
+        return response;
     }
     let now = Utc::now().timestamp();
     if ciba.expires_at <= now {
@@ -1031,6 +1026,20 @@ pub(crate) async fn token_ciba(
     let issue = ciba_token_issue(user.id, subject, ciba, dpop_jkt, mtls_x5t_s256);
     let _ = valkey_del(&state.valkey, ciba_request_key(auth_req_id)).await;
     issue_token_response(state, client, issue).await
+}
+
+fn ciba_auth_req_id_client_error(
+    ciba: &CibaRequestState,
+    client: &ClientRow,
+) -> Option<HttpResponse> {
+    (ciba.client_id != client.client_id).then(|| {
+        oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "CIBA auth_req_id was not issued to this client.",
+            false,
+        )
+    })
 }
 
 fn ciba_token_issue(

@@ -283,6 +283,43 @@ fn ciba_token_issue_allows_refresh_and_binds_refresh_sender_constraint() {
     assert_eq!(issue.scopes, vec!["openid", "offline_access"]);
 }
 
+#[test]
+fn ciba_token_grant_state_rejects_other_client_auth_req_id_as_invalid_grant() {
+    let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
+        .expect("client key should generate")
+        .private_pkcs8_der;
+    let mut ciba = CibaRequestState {
+        client_id: "client-1".to_owned(),
+        user_id: Uuid::now_v7(),
+        scopes: vec!["openid".to_owned()],
+        audiences: vec!["resource://default".to_owned()],
+        acr: None,
+        binding_message: None,
+        issued_at: Utc::now().timestamp(),
+        status: CibaStatus::Pending,
+        interval_seconds: 5,
+        expires_at: Utc::now().timestamp() + 600,
+        last_poll_at: None,
+    };
+    let mut client = ciba_private_key_jwt_client("ciba-kid", &key);
+    client.client_id = "client-2".to_owned();
+
+    let response = ciba_auth_req_id_client_error(&ciba, &client)
+        .expect("auth_req_id issued to another client must be rejected");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("invalid_grant")
+    );
+
+    ciba.client_id = client.client_id.clone();
+    assert!(ciba_auth_req_id_client_error(&ciba, &client).is_none());
+}
+
 #[actix_web::test]
 async fn ciba_token_request_validates_mtls_before_auth_req_id_state() {
     let state = ciba_test_state_with(|settings| {
