@@ -67,6 +67,7 @@ OIDF_BAD_LOG_RESULTS = {"FAILURE", "WARNING"}
 OIDF_LOG_CONTEXT_SOURCES = {
     "BROWSER",
     "CallBackchannelAuthenticationEndpoint",
+    "CallTokenEndpointAndReturnFullResponse",
     "WebRunner",
 }
 OIDF_LOG_CONTEXT_FIELDS = (

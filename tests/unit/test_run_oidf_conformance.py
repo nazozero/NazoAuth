@@ -87,6 +87,31 @@ class RunOidfConformanceTests(unittest.TestCase):
         self.assertIn("token=<redacted>", context)
         self.assertNotIn("secret", context)
 
+    def test_token_endpoint_log_context_includes_sanitized_response_body(self):
+        module = load_runner_module()
+
+        context = module.oidf_log_context(
+            [
+                {
+                    "src": "CallTokenEndpointAndReturnFullResponse",
+                    "msg": "HTTP response",
+                    "args": {
+                        "response_body": {
+                            "error": "invalid_client",
+                            "error_description": "token=secret",
+                        },
+                        "response_status_code": 401,
+                    },
+                }
+            ]
+        )
+
+        self.assertIn("CallTokenEndpointAndReturnFullResponse", context)
+        self.assertIn("invalid_client", context)
+        self.assertIn("response_status_code=401", context)
+        self.assertIn("token=<redacted>", context)
+        self.assertNotIn("secret", context)
+
 
 if __name__ == "__main__":
     unittest.main()
