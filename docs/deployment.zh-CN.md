@@ -247,9 +247,10 @@ curl -fsS https://auth.nazo.run/jwks.json
    `issuer` 必须是 `https://auth.nazo.run`。
 7. 先运行 `.github/workflows/oidf-conformance.yml` 的单 plan。单 plan workflow
    默认关闭 early-stop monitor，以便失败时上传完整 artifact。
-8. 单 plan 通过后，才运行 `.github/workflows/oidf-conformance-full.yml` 全矩阵。除非专门测试
-   runner 并发，否则保持 `OIDF_NO_PARALLEL=true`；logout 和 session-management
-   计划共享官方浏览器/用户会话，需要确定性的串行执行。
+8. 单 plan 通过后，才运行 `.github/workflows/oidf-conformance-full.yml` 全矩阵。默认全矩阵保持
+   `OIDF_NO_PARALLEL=true`。如需验证 runner 并发，使用 `runner_mode=parallel-isolated`
+   触发同一 workflow；该模式会让并发安全的 plan set 不带 `--no-parallel` 执行，同时将
+   logout 和 session-management 计划拆成独立串行子运行，因为它们共享官方浏览器/用户会话。
 9. 在 artifact 过期前保存最终结果到 `docs/conformance`。
 
 ## 运维检查清单
