@@ -137,7 +137,7 @@ fn dpop_verifier() -> DpopProofVerifier {
 
 The `htu` value passed to `authorize_dpop_http_request` must be the deployment-canonical target URI without query or fragment parts. Behind reverse proxies, derive it from the trusted external scheme, host, and path after forwarded-header validation. Do not pass an origin-form URI such as `/orders`, and do not include query parameters in the comparison value.
 
-The built-in replay cache is process-local and bounded by the configured proof validity window. Clustered deployments that require cross-instance replay detection must either route a DPoP key consistently to one resource-server instance or replace this boundary with a shared replay store that preserves the same `jkt:jti` duplicate rejection semantics.
+The built-in replay cache is process-local and bounded by the configured proof validity window and `max_replay_cache_entries`. Expired entries are pruned before new entries are inserted. When the cache is still full after pruning, the verifier fails closed instead of evicting unexpired replay markers. Clustered deployments that require cross-instance replay detection must either route a DPoP key consistently to one resource-server instance or replace this boundary with a shared replay store that preserves the same `jkt:jti` duplicate rejection semantics and bounded-memory behavior.
 
 ## mTLS Boundary
 

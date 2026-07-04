@@ -274,6 +274,12 @@ Production requirements:
 - migration rollback planning
 - monitoring for replication lag or storage saturation
 
+`nazo_oauth_migrate` runs `nazo_oauth_cleanup_expired_security_state()` after
+pending migrations. The cleanup removes expired access-token revocation markers,
+expired refresh-token rows from leaf tokens upward, and SCIM audit events older
+than 180 days. Operators should still monitor table growth; this cleanup is a
+startup/deploy maintenance hook, not a substitute for database capacity alerts.
+
 Valkey stores short-lived sessions, authorization codes, PAR handles,
 DPoP/client assertion replay state, and rate-limit counters. Production
 requirements:

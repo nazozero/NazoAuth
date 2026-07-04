@@ -65,6 +65,84 @@ fn fapi_profiles_reject_protocol_ttls_above_profile_limits() {
 }
 
 #[test]
+fn security_state_lifetimes_and_cooldowns_must_be_positive() {
+    for (key, value, expected) in [
+        (
+            "SESSION_TTL_SECONDS",
+            "0",
+            "SESSION_TTL_SECONDS must be positive",
+        ),
+        (
+            "AUTH_CODE_TTL_SECONDS",
+            "0",
+            "AUTH_CODE_TTL_SECONDS must be positive",
+        ),
+        (
+            "ACCESS_TOKEN_TTL_SECONDS",
+            "0",
+            "ACCESS_TOKEN_TTL_SECONDS must be positive",
+        ),
+        (
+            "ID_TOKEN_TTL_SECONDS",
+            "0",
+            "ID_TOKEN_TTL_SECONDS must be positive",
+        ),
+        (
+            "REFRESH_TOKEN_TTL_SECONDS",
+            "0",
+            "REFRESH_TOKEN_TTL_SECONDS must be positive",
+        ),
+        (
+            "CLIENT_DELIVERY_TTL_SECONDS",
+            "0",
+            "CLIENT_DELIVERY_TTL_SECONDS must be positive",
+        ),
+        ("PAR_TTL_SECONDS", "0", "PAR_TTL_SECONDS must be positive"),
+        (
+            "EMAIL_CODE_TTL_SECONDS",
+            "0",
+            "EMAIL_CODE_TTL_SECONDS must be positive",
+        ),
+        (
+            "EMAIL_CODE_SEND_COOLDOWN_SECONDS",
+            "0",
+            "EMAIL_CODE_SEND_COOLDOWN_SECONDS must be positive",
+        ),
+        (
+            "EMAIL_CODE_PEER_COOLDOWN_SECONDS",
+            "0",
+            "EMAIL_CODE_PEER_COOLDOWN_SECONDS must be positive",
+        ),
+    ] {
+        let config = ConfigSource::from_pairs_for_test([(key, value)]);
+        let error = settings_error(&config, "non-positive security lifetime must fail startup");
+        assert_eq!(error.to_string(), expected);
+    }
+
+    for (key, value, expected) in [
+        (
+            "ACCESS_TOKEN_TTL_SECONDS",
+            "-1",
+            "ACCESS_TOKEN_TTL_SECONDS must be positive",
+        ),
+        (
+            "ID_TOKEN_TTL_SECONDS",
+            "-1",
+            "ID_TOKEN_TTL_SECONDS must be positive",
+        ),
+        (
+            "REFRESH_TOKEN_TTL_SECONDS",
+            "-1",
+            "REFRESH_TOKEN_TTL_SECONDS must be positive",
+        ),
+    ] {
+        let config = ConfigSource::from_pairs_for_test([(key, value)]);
+        let error = settings_error(&config, "negative token lifetime must fail startup");
+        assert_eq!(error.to_string(), expected);
+    }
+}
+
+#[test]
 fn invalid_dpop_nonce_policy_is_rejected() {
     let config = ConfigSource::from_pairs_for_test([("DPOP_NONCE_POLICY", "sometimes")]);
 
