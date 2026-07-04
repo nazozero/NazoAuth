@@ -925,7 +925,11 @@ pub(crate) fn spawn_backchannel_logout_delivery_worker(state: Data<AppState>) {
     tokio::spawn(async move {
         loop {
             if let Err(error) = process_backchannel_logout_delivery_batch(&state).await {
-                tracing::warn!(%error, "back-channel logout delivery worker failed");
+                let error_message = error.to_string();
+                tracing::warn!(
+                    error = %error_message,
+                    "back-channel logout delivery worker failed"
+                );
             }
             tokio::time::sleep(StdDuration::from_secs(5)).await;
         }
