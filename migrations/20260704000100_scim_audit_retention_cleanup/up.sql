@@ -4,7 +4,8 @@ CREATE OR REPLACE FUNCTION nazo_oauth_cleanup_expired_security_state()
 RETURNS TABLE (
     deleted_access_token_revocations INTEGER,
     deleted_refresh_tokens INTEGER,
-    deleted_scim_audit_events INTEGER
+    deleted_scim_audit_events INTEGER,
+    deleted_backchannel_logout_deliveries INTEGER
 )
 LANGUAGE plpgsql
 AS $$
@@ -13,6 +14,7 @@ DECLARE
     deleted_tokens_total INTEGER := 0;
     deleted_tokens_batch INTEGER := 0;
     deleted_scim_audit INTEGER := 0;
+    deleted_backchannel_logout INTEGER := 0;
 BEGIN
     DELETE FROM access_token_revocations
     WHERE expires_at < CURRENT_TIMESTAMP;
@@ -35,9 +37,14 @@ BEGIN
     WHERE created_at < CURRENT_TIMESTAMP - INTERVAL '180 days';
     GET DIAGNOSTICS deleted_scim_audit = ROW_COUNT;
 
+    DELETE FROM backchannel_logout_deliveries
+    WHERE expires_at < CURRENT_TIMESTAMP;
+    GET DIAGNOSTICS deleted_backchannel_logout = ROW_COUNT;
+
     deleted_access_token_revocations := deleted_revocations;
     deleted_refresh_tokens := deleted_tokens_total;
     deleted_scim_audit_events := deleted_scim_audit;
+    deleted_backchannel_logout_deliveries := deleted_backchannel_logout;
     RETURN NEXT;
 END;
 $$;

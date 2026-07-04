@@ -219,10 +219,8 @@ fn dpop_proof_verifier_fails_closed_when_replay_cache_is_full() {
         None,
         None,
     );
-    let verifier = DpopProofVerifier::new(DpopProofVerifierConfig {
-        max_replay_cache_entries: 1,
-        ..DpopProofVerifierConfig::default()
-    });
+    let verifier =
+        DpopProofVerifier::new_with_replay_cache_limit(DpopProofVerifierConfig::default(), 1);
 
     verifier
         .verify(&first, "GET", "https://api.example/orders", access_token)
