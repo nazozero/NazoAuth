@@ -10,7 +10,7 @@ use anyhow::{Context, anyhow};
 use chrono::DateTime;
 use jsonwebtoken::jwk::{Jwk, PublicKeyUse};
 use openssl::rsa::Rsa;
-use p256::elliptic_curve::{pkcs8::EncodePrivateKey as EncodeEcPrivateKey, rand_core::OsRng};
+use p256::elliptic_curve::{Generate, pkcs8::EncodePrivateKey as EncodeEcPrivateKey};
 
 use super::prelude::*;
 
@@ -448,7 +448,7 @@ pub(crate) fn generate_key_material(
             Rsa::generate(2048)?.private_key_to_der()?
         }
         jsonwebtoken::Algorithm::ES256 => {
-            let secret_key = p256::SecretKey::random(&mut OsRng);
+            let secret_key = p256::SecretKey::try_generate()?;
             secret_key.to_pkcs8_der()?.as_bytes().to_vec()
         }
         _ => anyhow::bail!("unsupported server signing alg"),
