@@ -41,7 +41,7 @@ The matrix covers the current TP/PS work through these paths:
 - `OIDC Session Management OP` covers NI-009.
 - `FAPI-CIBA ID1 / private_key_jwt / poll / plain FAPI` covers the FAPI-CIBA AS side of NI-007.
 - No dedicated official plan was found for NI-006 RFC 7523 third-party JWT bearer grant assertion trust. Existing OIDC/FAPI plans cover client assertion scenarios, and local tests cover the bounded JWT bearer grant.
-- NI-010 currently implements only a self-issued entity statement. It does not satisfy federation alpha plans that require trust chain resolution, fetch/list/resolve, metadata policy, or joined-federation behavior, so those plans are not must-pass matrix entries yet.
+- NI-010 tracks OpenID Federation 1.1 / OpenID Federation for OpenID Connect 1.1. The project does not implement this trust-chain ecosystem surface and no longer exposes `/.well-known/openid-federation`, so Federation plans are not must-pass matrix entries.
 - No official OP plan was found for NI-011 Native SSO / `device_secret`; local tests cover device-secret lifecycle, `ds_hash` binding, token exchange, and refresh-family activity.
 
 Targeted plan-sets are useful for development triage. Durable regression evidence should cite the full 20-plan matrix.

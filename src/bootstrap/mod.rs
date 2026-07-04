@@ -25,6 +25,7 @@ use fred::{
 use crate::config::{ConfigSource, database_url};
 use crate::db::create_pool;
 use crate::domain::{AppState, KeysetStore};
+use crate::http::spawn_backchannel_logout_delivery_worker;
 use crate::settings::Settings;
 use crate::support::load_or_create_keyset;
 use tracing::Instrument;
@@ -69,6 +70,7 @@ pub async fn run() -> anyhow::Result<()> {
         settings,
         keyset,
     });
+    spawn_backchannel_logout_delivery_worker(state.clone());
 
     let bind = config.string("BIND", "0.0.0.0:8000");
     let addr: SocketAddr = bind.parse()?;

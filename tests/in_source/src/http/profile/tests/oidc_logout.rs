@@ -495,6 +495,8 @@ async fn logout_post_accepts_form_body_with_content_type_parameters() {
 #[test]
 fn post_logout_redirect_requires_exact_registered_uri_and_preserves_state() {
     let client = BackchannelLogoutClient {
+        id: Uuid::now_v7(),
+        tenant_id: DEFAULT_TENANT_ID,
         client_id: "client-1".to_owned(),
         redirect_uris: json!(["https://client.example/callback"]),
         post_logout_redirect_uris: json!(["https://client.example/logout/callback"]),
@@ -525,6 +527,8 @@ fn post_logout_redirect_requires_exact_registered_uri_and_preserves_state() {
 #[test]
 fn post_logout_redirect_appends_state_without_discarding_registered_query() {
     let client = BackchannelLogoutClient {
+        id: Uuid::now_v7(),
+        tenant_id: DEFAULT_TENANT_ID,
         client_id: "client-1".to_owned(),
         redirect_uris: json!(["https://client.example/callback"]),
         post_logout_redirect_uris: json!(["https://client.example/logout/callback?flow=rp"]),
@@ -561,6 +565,8 @@ fn post_logout_redirect_rejects_missing_client_and_invalid_registered_uri() {
     );
 
     let client = BackchannelLogoutClient {
+        id: Uuid::now_v7(),
+        tenant_id: DEFAULT_TENANT_ID,
         client_id: "client-1".to_owned(),
         redirect_uris: json!(["https://client.example/callback"]),
         post_logout_redirect_uris: json!(["not a uri"]),
@@ -805,6 +811,8 @@ fn id_token_hint_subject_matches_pairwise_subject_for_registered_client_sector()
     settings.pairwise_subject_secret = Some("0123456789012345678901234567890123456789".to_owned());
     let user_id = Uuid::now_v7();
     let client = BackchannelLogoutClient {
+        id: Uuid::now_v7(),
+        tenant_id: DEFAULT_TENANT_ID,
         client_id: "client-1".to_owned(),
         redirect_uris: json!(["https://client.example/callback"]),
         post_logout_redirect_uris: json!([]),
@@ -868,6 +876,8 @@ fn id_token_hint_subject_policy_error_never_matches_session() {
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     let user_id = Uuid::now_v7();
     let client = BackchannelLogoutClient {
+        id: Uuid::now_v7(),
+        tenant_id: DEFAULT_TENANT_ID,
         client_id: "client-1".to_owned(),
         redirect_uris: json!(["https://client.example/callback"]),
         post_logout_redirect_uris: json!([]),
@@ -904,6 +914,8 @@ fn backchannel_logout_subject_is_omitted_when_pairwise_sector_is_ambiguous() {
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.pairwise_subject_secret = Some("0123456789012345678901234567890123456789".to_owned());
     let client = BackchannelLogoutClient {
+        id: Uuid::now_v7(),
+        tenant_id: DEFAULT_TENANT_ID,
         client_id: "client-1".to_owned(),
         redirect_uris: json!([
             "https://one.example/callback",
@@ -932,6 +944,8 @@ fn backchannel_logout_subject_uses_public_subject_when_configured() {
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     let user_id = Uuid::now_v7();
     let client = BackchannelLogoutClient {
+        id: Uuid::now_v7(),
+        tenant_id: DEFAULT_TENANT_ID,
         client_id: "client-1".to_owned(),
         redirect_uris: json!([]),
         post_logout_redirect_uris: json!([]),
@@ -1152,6 +1166,30 @@ async fn post_backchannel_logout_rejects_non_success_response() {
     assert!(error.to_string().contains("500"));
 }
 
+#[test]
+fn backchannel_logout_retry_schedule_stays_inside_logout_token_ttl() {
+    let now = Utc::now();
+    let expires_at = now + Duration::seconds(120);
+
+    assert_eq!(
+        backchannel_logout_next_retry_at(0, now, expires_at),
+        Some(now + Duration::seconds(5))
+    );
+    assert_eq!(
+        backchannel_logout_next_retry_at(1, now, expires_at),
+        Some(now + Duration::seconds(15))
+    );
+    assert_eq!(
+        backchannel_logout_next_retry_at(2, now, expires_at),
+        Some(now + Duration::seconds(45))
+    );
+    assert_eq!(
+        backchannel_logout_next_retry_at(3, now, expires_at),
+        None,
+        "the fourth attempt would exceed the short-lived logout token TTL"
+    );
+}
+
 #[actix_web::test]
 async fn oidc_logout_rejects_invalid_id_token_hint_before_client_lookup() {
     let state = Data::new(test_state_with_keyset(Keyset {
@@ -1278,6 +1316,12 @@ async fn oidc_logout_clears_session_and_sends_backchannel_logout_token_with_regi
         "logout must delete the local OP session before returning"
     );
 
+    assert_eq!(
+        process_backchannel_logout_delivery_batch(&fixture.state)
+            .await
+            .expect("queued backchannel logout delivery should process"),
+        1
+    );
     let request = request_handle
         .await
         .expect("backchannel request should arrive");

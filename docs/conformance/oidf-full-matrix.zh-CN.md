@@ -41,7 +41,7 @@
 - `OIDC Session Management OP` 覆盖 NI-009。
 - `FAPI-CIBA ID1 / private_key_jwt / poll / plain FAPI` 覆盖 NI-007 的 FAPI-CIBA AS 面。
 - NI-006 未发现 RFC 7523 third-party JWT bearer grant 专项官方 plan；现有覆盖来自 OIDC/FAPI 中的 client assertion 场景和本地 RFC 7523 tests。
-- NI-010 当前只实现 self-issued entity statement，不满足官方 federation deployed-entity alpha plan 对 trust chain、fetch/list/resolve 的要求；不纳入必跑矩阵，避免把必然失败的未实现能力伪装成回归项。
+- NI-010 跟踪 OpenID Federation 1.1 / OpenID Federation for OpenID Connect 1.1。本项目当前不实现该 trust-chain 生态能力，且已不暴露 `/.well-known/openid-federation`，因此 Federation plans 不纳入必跑矩阵。
 - NI-011 未发现 Native SSO / `device_secret` 官方 OP plan；保留本地 device-secret lifecycle、`ds_hash` 绑定、token exchange 与 refresh-family tests。
 
 因此，临时 targeted plan-set 只适合开发期间快速定位问题；正式回归和证据记录应引用 20-plan 完整矩阵。
