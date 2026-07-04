@@ -153,17 +153,16 @@ pub(crate) async fn oidc_logout(
         Vec::new()
     };
 
-    if let Some(session) = current_session.as_ref() {
-        if let Err(error) =
+    if let Some(session) = current_session.as_ref()
+        && let Err(error) =
             enqueue_backchannel_logout(&state, session, hint.as_ref(), client.as_ref()).await
-        {
-            tracing::warn!(%error, "failed to persist back-channel logout deliveries");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "back-channel logout persistence failed.",
-            );
-        }
+    {
+        tracing::warn!(%error, "failed to persist back-channel logout deliveries");
+        return oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "back-channel logout persistence failed.",
+        );
     }
 
     if let Some(session_id) = session_cookie {
