@@ -142,3 +142,9 @@ deployment path. They are candidates for the administrator UI:
 Security-sensitive values such as `DATABASE_URL`, `VALKEY_URL`, SMTP
 credentials, federation client secrets, and SAML shared secrets must not be
 committed to Git.
+
+Security-state lifetimes and cooldowns must be positive. Startup rejects zero
+or negative values for session, authorization-code, access-token, ID-token,
+refresh-token, PAR, client-delivery, and email-code lifetimes because those
+settings back Valkey `EX` keys, database expiry timestamps, or abuse-control
+windows.

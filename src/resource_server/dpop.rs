@@ -12,6 +12,7 @@ use std::{
 
 const DEFAULT_DPOP_MAX_AGE_SECONDS: i64 = super::DEFAULT_DPOP_MAX_AGE_SECONDS;
 const DEFAULT_CLOCK_SKEW_SECONDS: i64 = super::DEFAULT_CLOCK_SKEW_SECONDS;
+const DEFAULT_REPLAY_CACHE_MAX_ENTRIES: usize = 100_000;
 
 #[derive(Clone, Debug)]
 pub struct DpopProofVerifier {
@@ -24,6 +25,7 @@ pub struct DpopProofVerifierConfig {
     pub allowed_algs: Vec<Algorithm>,
     pub clock_skew_seconds: i64,
     pub max_age_seconds: i64,
+    pub max_replay_cache_entries: usize,
     pub required_nonce: Option<String>,
 }
 
@@ -44,6 +46,7 @@ pub enum DpopProofVerifierError {
     NotYetValid,
     NonceMismatch,
     ReplayStoreUnavailable,
+    ReplayCacheFull,
 }
 
 enum SupportedDpopAlgorithm {
@@ -158,6 +161,9 @@ impl DpopProofVerifier {
         if cache.contains_key(&replay_key) {
             return Err(DpopProofVerifierError::ReplayDetected);
         }
+        if cache.len() >= self.config.max_replay_cache_entries.max(1) {
+            return Err(DpopProofVerifierError::ReplayCacheFull);
+        }
         cache.insert(replay_key, now.saturating_add(ttl));
         Ok(())
     }
@@ -174,6 +180,7 @@ impl Default for DpopProofVerifierConfig {
             ],
             clock_skew_seconds: DEFAULT_CLOCK_SKEW_SECONDS,
             max_age_seconds: DEFAULT_DPOP_MAX_AGE_SECONDS,
+            max_replay_cache_entries: DEFAULT_REPLAY_CACHE_MAX_ENTRIES,
             required_nonce: None,
         }
     }
