@@ -2,7 +2,7 @@ use super::*;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use jsonwebtoken::{Algorithm, EncodingKey, jwk::Jwk};
 use openssl::rsa::Rsa;
-use p256::elliptic_curve::{pkcs8::EncodePrivateKey, rand_core::OsRng};
+use p256::elliptic_curve::{Generate, pkcs8::EncodePrivateKey};
 use serde_json::{Value, json};
 
 #[test]
@@ -97,7 +97,7 @@ fn rsa_jwk(alg: &str) -> Value {
 }
 
 fn es256_jwk() -> Value {
-    let secret_key = p256::SecretKey::random(&mut OsRng);
+    let secret_key = p256::SecretKey::generate();
     let der = secret_key.to_pkcs8_der().unwrap();
     let key = EncodingKey::from_ec_der(der.as_bytes());
     let mut value =
