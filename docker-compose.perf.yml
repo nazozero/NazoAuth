@@ -121,11 +121,11 @@ services:
       PERF_USER_COUNT: "${PERF_USER_COUNT:-64}"
       PERF_APP_REPLICAS: "${PERF_APP_REPLICAS:-1}"
       PERF_RESULTS_DIR: "/results"
-      PERF_REPORT_PATH: "/docs/performance-benchmarks.md"
+      PERF_REPORT_PATH: "${PERF_REPORT_PATH:-/docs/performance-benchmarks.md}"
       CLIENT_SECRET_PEPPER: "perf-client-secret-pepper-000000000000000001"
     volumes:
       - ./perf:/perf:ro
-      - ./perf/results:/results
+      - ${PERF_RESULTS_HOST_DIR:-./perf/results}:/results
       - ./docs:/docs
       - perf_state:/perf-state
       - /var/run/docker.sock:/var/run/docker.sock
