@@ -23,7 +23,8 @@ pub(crate) use email::{EmailDelivery, EmailSettings, SmtpEmailSettings, SmtpTlsM
 pub(crate) use federation::{FederationSettings, OidcFederationSettings, SamlGatewaySettings};
 pub(crate) use passkey::PasskeySettings;
 pub(crate) use profile::{
-    AuthorizationServerProfile, DpopNoncePolicy, RequestObjectJtiPolicy, SubjectType,
+    AuthorizationServerProfile, CibaSecurityProfile, DpopNoncePolicy, RequestObjectJtiPolicy,
+    SubjectType,
 };
 pub(crate) use rate_limit::RateLimitSettings;
 
@@ -37,6 +38,7 @@ pub(crate) struct Settings {
     pub(crate) default_audience: String,
     pub(crate) protected_resource_identifier: String,
     pub(crate) authorization_server_profile: AuthorizationServerProfile,
+    pub(crate) ciba_security_profile: CibaSecurityProfile,
     pub(crate) dpop_nonce_policy: DpopNoncePolicy,
     pub(crate) request_object_jti_policy: RequestObjectJtiPolicy,
     pub(crate) session_cookie_name: String,
@@ -77,7 +79,6 @@ pub(crate) struct Settings {
     pub(crate) enable_frontchannel_logout: bool,
     pub(crate) enable_session_management: bool,
     pub(crate) enable_ciba: bool,
-    pub(crate) enable_oidc_federation: bool,
     pub(crate) enable_native_sso: bool,
     pub(crate) dynamic_client_registration_initial_access_token: Option<String>,
     pub(crate) device_authorization_ttl_seconds: u64,
@@ -134,6 +135,7 @@ impl Settings {
             bail!("pairwise_subject_secret must be at least 32 bytes");
         }
         let authorization_server_profile = AuthorizationServerProfile::from_config(config)?;
+        let ciba_security_profile = CibaSecurityProfile::from_config(config)?;
         let protected_resource_identifier = config
             .optional_string("PROTECTED_RESOURCE_IDENTIFIER")
             .unwrap_or_else(|| default_protected_resource_identifier(&issuer));
@@ -230,6 +232,7 @@ impl Settings {
             default_audience: config.string("DEFAULT_AUDIENCE", "resource://default"),
             protected_resource_identifier,
             authorization_server_profile,
+            ciba_security_profile,
             dpop_nonce_policy,
             request_object_jti_policy,
             session_cookie_name: config.string("SESSION_COOKIE_NAME", "nazo_oauth_session"),
@@ -275,7 +278,6 @@ impl Settings {
             enable_frontchannel_logout: config.bool("ENABLE_FRONTCHANNEL_LOGOUT", false)?,
             enable_session_management: config.bool("ENABLE_SESSION_MANAGEMENT", false)?,
             enable_ciba: config.bool("ENABLE_CIBA", false)?,
-            enable_oidc_federation: config.bool("ENABLE_OIDC_FEDERATION", false)?,
             enable_native_sso: config.bool("ENABLE_NATIVE_SSO", false)?,
             enable_dynamic_client_registration,
             dynamic_client_registration_initial_access_token,

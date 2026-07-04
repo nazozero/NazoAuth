@@ -123,6 +123,43 @@ fn invalid_request_object_jti_policy_is_rejected() {
 }
 
 #[test]
+fn default_ciba_security_profile_is_oidf_fapi_ciba_compatible() {
+    let settings = Settings::from_config(&ConfigSource::default()).unwrap();
+
+    assert_eq!(
+        settings.ciba_security_profile,
+        CibaSecurityProfile::FapiCibaId1PlainPrivateKeyJwtPoll
+    );
+}
+
+#[test]
+fn ciba_security_profile_accepts_internal_fapi2_ciba_aliases() {
+    for value in ["fapi2-ciba", "experimental-fapi2-ciba"] {
+        let config = ConfigSource::from_pairs_for_test([("CIBA_SECURITY_PROFILE", value)]);
+        let settings = Settings::from_config(&config).unwrap();
+
+        assert_eq!(
+            settings.ciba_security_profile,
+            CibaSecurityProfile::Fapi2Ciba
+        );
+    }
+}
+
+#[test]
+fn invalid_ciba_security_profile_is_rejected() {
+    let config = ConfigSource::from_pairs_for_test([("CIBA_SECURITY_PROFILE", "fapi-ciba-id2")]);
+
+    let Err(err) = Settings::from_config(&config) else {
+        panic!("unknown CIBA security profile must be rejected");
+    };
+
+    assert_eq!(
+        err.to_string(),
+        "CIBA_SECURITY_PROFILE is not supported: fapi-ciba-id2"
+    );
+}
+
+#[test]
 fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     let defaults = Settings::from_config(&ConfigSource::default()).unwrap();
     assert!(!defaults.enable_request_object);
@@ -135,7 +172,6 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     assert!(!defaults.enable_frontchannel_logout);
     assert!(!defaults.enable_session_management);
     assert!(!defaults.enable_ciba);
-    assert!(!defaults.enable_oidc_federation);
     assert!(!defaults.enable_native_sso);
     assert!(
         defaults
@@ -158,7 +194,6 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
         ("ENABLE_FRONTCHANNEL_LOGOUT", "true"),
         ("ENABLE_SESSION_MANAGEMENT", "true"),
         ("ENABLE_CIBA", "true"),
-        ("ENABLE_OIDC_FEDERATION", "true"),
         ("ENABLE_NATIVE_SSO", "true"),
         (
             "DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN",
@@ -181,7 +216,6 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     assert!(settings.enable_frontchannel_logout);
     assert!(settings.enable_session_management);
     assert!(settings.enable_ciba);
-    assert!(settings.enable_oidc_federation);
     assert!(settings.enable_native_sso);
     assert_eq!(
         settings

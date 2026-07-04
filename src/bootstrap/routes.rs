@@ -77,11 +77,6 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
                     web::get().to(oauth_protected_resource_metadata),
                 ),
         )
-        .service(
-            web::resource("/.well-known/openid-federation")
-                .wrap(cors::cors_well_known(settings))
-                .route(web::get().to(openid_federation_entity_statement)),
-        )
         // CORS: cors_well_known — /jwks.json
         .service(
             web::resource("/jwks.json")

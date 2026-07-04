@@ -13,9 +13,9 @@
 
 [English](README.md) · [文档](#文档) · [快速启动](#快速启动) · [安全策略](SECURITY.md)
 
-Nazo Auth Server 是一个用 Rust 写的自托管 OAuth 2.1 / OpenID Connect 授权服务器。它面向同域部署：issuer、浏览器 UI、passkey、CORS、cookie 和协议端点共享同一个公开 origin。
+Nazo Auth Server 是一个用 Rust 写的自托管 OAuth 2.x / OAuth 2.1-aligned / OpenID Connect 授权服务器。它面向同域部署：issuer、浏览器 UI、passkey、CORS、cookie 和协议端点共享同一个公开 origin。
 
-项目包含授权服务器、小型 identity/admin 管理面、本地签名密钥管理、WebAuthn/passkeys、MFA、外部身份联邦、SCIM，以及 Rust resource-server verifier。PostgreSQL 保存持久状态，Valkey 保存短生命周期协议状态。
+项目包含授权服务器、小型 identity/admin 管理面、本地签名密钥管理、WebAuthn/passkeys、MFA、SCIM，以及 Rust resource-server verifier。模块化第三方 provider 登录属于未来路线图能力，不作为当前默认能力广告。PostgreSQL 保存持久状态，Valkey 保存短生命周期协议状态。
 
 ## 状态
 
@@ -84,7 +84,7 @@ OpenID Foundation：
 | [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html) | ID Token、UserInfo、claims、authorization code flow |
 | [OpenID Connect Discovery 1.0](https://openid.net/specs/openid-connect-discovery-1_0.html) | `/.well-known/openid-configuration` |
 | [OpenID Connect RP-Initiated Logout 1.0](https://openid.net/specs/openid-connect-rpinitiated-1_0.html) | `/logout` |
-| [OpenID Connect Back-Channel Logout 1.0](https://openid.net/specs/openid-connect-backchannel-1_0.html) | best-effort logout notification |
+| [OpenID Connect Back-Channel Logout 1.0](https://openid.net/specs/openid-connect-backchannel-1_0.html) | signed logout token + durable outbox delivery |
 | [JWT Secured Authorization Response Mode](https://openid.net/specs/oauth-v2-jarm.html) | active profile 声明时支持 JARM |
 | [FAPI 2.0 Security Profile Final](https://openid.net/specs/fapi-security-profile-2_0-final.html) | `fapi2-security` profile |
 | [FAPI 2.0 Message Signing Final](https://openid.net/specs/fapi-message-signing-2_0-final.html) | signed authorization request、JARM 和 signed introspection profile support |
@@ -126,7 +126,7 @@ expected `SKIPPED` module，因此不能作为 zero-SKIPPED 证据。
 
 - Authorization code + PKCE、refresh token、client credentials、受限 JWT bearer grant、受限 Token Exchange、revocation、introspection、signed/encrypted introspection、discovery、protected resource metadata、JWKS、UserInfo、PAR、JAR、DPoP、mTLS。
 - Runtime profile：`oauth2-baseline`、`fapi2-security`、`fapi2-message-signing-authz-request`、`fapi2-message-signing-jarm`、`fapi2-message-signing-introspection`。
-- 本地用户、资料、OAuth client、grant、access request、TOTP MFA、backup code、remembered MFA、WebAuthn/passkeys、外部 OIDC/SAML federation、SCIM provisioning。
+- 本地用户、资料、OAuth client、grant、access request、TOTP MFA、backup code、remembered MFA、WebAuthn/passkeys、SCIM provisioning。
 - 本地签名密钥生命周期，包含 prepublish、active、grace、retired 状态。也可以用 external-command signer 接 KMS/HSM。
 - Rust resource-server verifier，提供 Actix Web、Axum/Tower、tonic adapter。
 - 发布安全 workflow：CodeQL、dependency review、cargo audit、cargo deny、SBOM、Trivy image scanning、keyless signing、provenance attestation。
@@ -199,6 +199,7 @@ RUST_LOG: "info"
   / RFC 7592，除非 `ENABLE_DYNAMIC_CLIENT_REGISTRATION=true`；公开注册部署应使用 initial access token 保护 `/register`。
 - Device Authorization Grant / RFC 8628，除非 `ENABLE_DEVICE_AUTHORIZATION_GRANT=true`。
 - 外部 token、refresh token 或 ID token 的 Token Exchange profile。
+- QQ、微信、Google、Microsoft、企业 SAML 等模块化第三方登录 provider；在 provider-specific adapter、配置 gate、账号绑定、E2E 和负向测试完成前仅属于路线图能力。
 - 请求级动态 tenant 或 issuer routing。
 - signed-introspection profile 外，或未配置 per-client JWE response metadata 的 RFC 9701 encrypted introspection response。
 
@@ -213,7 +214,7 @@ RUST_LOG: "info"
 | 英文部署文档 | [docs/deployment.md](docs/deployment.md) |
 | Conformance 记录 | [docs/conformance](docs/conformance) |
 | OAuth/OIDC/FAPI best-practice matrix | [docs/rfc-compliance-matrix.md](docs/rfc-compliance-matrix.md) |
-| 最佳实践实施任务书 | [docs/oauth-best-practice-implementation-plan.zh-CN.md](docs/oauth-best-practice-implementation-plan.zh-CN.md) |
+| OAuth/OIDC/FAPI 未来路线图 | [docs/oauth-best-practice-implementation-plan.zh-CN.md](docs/oauth-best-practice-implementation-plan.zh-CN.md) |
 | Profile matrix | [docs/profile-matrix.md](docs/profile-matrix.md) |
 | Threat model | [docs/threat-model.md](docs/threat-model.md) |
 | 发布安全 | [docs/release-security.md](docs/release-security.md) |

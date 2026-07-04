@@ -12,7 +12,7 @@ Supported federation modes:
 - default-tenant external identity links
 - normal HTTPOnly server-side sessions after successful federation login
 
-## OIDC Federation
+## External OIDC Login
 
 Configure the OIDC provider with:
 
@@ -36,6 +36,11 @@ token endpoint exchange, JWKS lookup, and ID Token verification. The server
 checks issuer, audience, expiry, nonce, `kid`, and signature. The ID Token must
 contain an email claim and `email_verified=true`; absent or false verification
 claims are rejected before account lookup, linking, or provisioning.
+
+This is not an OpenID Federation trust-chain implementation. The service does
+not expose `/.well-known/openid-federation` or implement Federation entity
+statements, trust anchors, metadata policy, trust marks, or federation
+fetch/list/resolve endpoints.
 
 ## SAML Gateway Federation
 

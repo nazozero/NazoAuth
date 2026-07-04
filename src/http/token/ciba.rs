@@ -193,7 +193,12 @@ pub(crate) async fn backchannel_authentication(
     {
         return response;
     }
-    if let Err(response) = validate_ciba_request_object_presence(&client, &form) {
+    if let Err(response) =
+        validate_ciba_security_profile_client(&state.settings, &client, credentials.method.as_str())
+    {
+        return response;
+    }
+    if let Err(response) = validate_ciba_request_object_presence(&state.settings, &client, &form) {
         return response;
     }
     if let Err(response) = validate_and_apply_ciba_request_object_claims(&state, &client, &mut form)
@@ -660,11 +665,64 @@ fn ciba_jwt_signing_algorithm_supported(alg: jsonwebtoken::Algorithm) -> bool {
     )
 }
 
+fn validate_ciba_security_profile_client(
+    settings: &Settings,
+    client: &ClientRow,
+    auth_method: &str,
+) -> Result<(), HttpResponse> {
+    if !settings.ciba_security_profile.requires_fapi2_hardening() {
+        return Ok(());
+    }
+    if client.client_type != "confidential" {
+        return Err(oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "unauthorized_client",
+            "Fapi2Ciba requires confidential clients.",
+            false,
+        ));
+    }
+    if !matches!(
+        auth_method,
+        "private_key_jwt" | "tls_client_auth" | "self_signed_tls_client_auth"
+    ) {
+        return Err(oauth_token_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_client",
+            "Fapi2Ciba requires private_key_jwt or mTLS client authentication.",
+            false,
+        ));
+    }
+    if !(client.require_dpop_bound_tokens || client.require_mtls_bound_tokens) {
+        return Err(oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "Fapi2Ciba requires sender-constrained access tokens.",
+            false,
+        ));
+    }
+    if auth_method == "private_key_jwt"
+        && (client.allow_client_assertion_audience_array
+            || client.allow_client_assertion_endpoint_audience)
+    {
+        return Err(oauth_token_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_client",
+            "Fapi2Ciba requires private_key_jwt audience to match the authorization server issuer exactly.",
+            false,
+        ));
+    }
+    Ok(())
+}
+
 fn validate_ciba_request_object_presence(
+    settings: &Settings,
     client: &ClientRow,
     form: &BackchannelAuthenticationForm,
 ) -> Result<(), HttpResponse> {
-    if client.require_par_request_object && form.request.is_none() {
+    if (client.require_par_request_object
+        || settings.ciba_security_profile.requires_fapi2_hardening())
+        && form.request.is_none()
+    {
         return Err(ciba_invalid_request("CIBA request object is required."));
     }
     Ok(())
@@ -901,6 +959,7 @@ pub(crate) async fn token_ciba(
     client: &ClientRow,
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
+    auth_method: &str,
 ) -> HttpResponse {
     if !state.settings.enable_ciba {
         return oauth_token_error(
@@ -925,6 +984,11 @@ pub(crate) async fn token_ciba(
             "CIBA private_key_jwt signing algorithm is unsupported.",
             false,
         );
+    }
+    if let Err(response) =
+        validate_ciba_security_profile_client(&state.settings, client, auth_method)
+    {
+        return response;
     }
     let (dpop_jkt, mtls_x5t_s256) = match ciba_issue_binding(state, req, client).await {
         Ok(binding) => binding,

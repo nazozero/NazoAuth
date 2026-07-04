@@ -13,15 +13,17 @@
 
 [中文文档](README.zh-CN.md) · [Documentation](#documentation) · [Quick start](#quick-start) · [Security](SECURITY.md)
 
-Nazo Auth Server is a self-hosted OAuth 2.1 and OpenID Connect authorization
-server written in Rust. It is built for same-origin deployments where the
-issuer, browser UI, passkeys, CORS, cookies, and protocol endpoints share one
-public origin.
+Nazo Auth Server is a self-hosted OAuth 2.x / OAuth 2.1-aligned and OpenID
+Connect authorization server written in Rust. It is built for same-origin
+deployments where the issuer, browser UI, passkeys, CORS, cookies, and protocol
+endpoints share one public origin.
 
 The project includes the authorization server, a compact identity/admin surface,
-local signing key management, WebAuthn/passkeys, MFA, external federation, SCIM,
-and Rust resource-server verification libraries. It uses PostgreSQL for durable
-state and Valkey for short-lived protocol state.
+local signing key management, WebAuthn/passkeys, MFA, SCIM, and Rust
+resource-server verification libraries. Modular external-provider login is
+tracked in the future roadmap rather than advertised as a current default
+capability. It uses PostgreSQL for durable state and Valkey for short-lived
+protocol state.
 
 ## Status
 
@@ -93,7 +95,7 @@ OpenID Foundation:
 | [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html) | ID Token, UserInfo, claims, authorization code flow |
 | [OpenID Connect Discovery 1.0](https://openid.net/specs/openid-connect-discovery-1_0.html) | `/.well-known/openid-configuration` |
 | [OpenID Connect RP-Initiated Logout 1.0](https://openid.net/specs/openid-connect-rpinitiated-1_0.html) | `/logout` |
-| [OpenID Connect Back-Channel Logout 1.0](https://openid.net/specs/openid-connect-backchannel-1_0.html) | best-effort logout notifications |
+| [OpenID Connect Back-Channel Logout 1.0](https://openid.net/specs/openid-connect-backchannel-1_0.html) | signed logout tokens with durable outbox delivery |
 | [JWT Secured Authorization Response Mode](https://openid.net/specs/oauth-v2-jarm.html) | JARM where advertised by the active profile |
 | [FAPI 2.0 Security Profile Final](https://openid.net/specs/fapi-security-profile-2_0-final.html) | `fapi2-security` profile |
 | [FAPI 2.0 Message Signing Final](https://openid.net/specs/fapi-message-signing-2_0-final.html) | signed authorization request, JARM, and signed introspection profile support |
@@ -143,8 +145,7 @@ all 16 plans and 578 modules, and reported `0 failures` and `0 warnings`.
   `fapi2-message-signing-authz-request`, `fapi2-message-signing-jarm`, and
   `fapi2-message-signing-introspection`.
 - Local users, profiles, OAuth clients, grants, access requests, TOTP MFA,
-  backup codes, remembered MFA, WebAuthn/passkeys, external OIDC/SAML
-  federation, and SCIM provisioning.
+  backup codes, remembered MFA, WebAuthn/passkeys, and SCIM provisioning.
 - Local signing key lifecycle with prepublish, active, grace, and retired
   states. External-command signing is available for KMS/HSM integrations.
 - Rust resource-server verifier with Actix Web, Axum/Tower, and tonic adapters.
@@ -224,6 +225,9 @@ and are not advertised unless implemented, tested, and explicitly enabled:
   token.
 - Device Authorization Grant / RFC 8628 unless `ENABLE_DEVICE_AUTHORIZATION_GRANT=true`.
 - External-token, refresh-token, or ID-token Token Exchange profiles.
+- Modular third-party login providers such as QQ, WeChat, Google, Microsoft, or
+  enterprise SAML; these are roadmap items until provider-specific adapters,
+  configuration gates, account linking, and E2E/negative tests exist.
 - Request-level dynamic tenant or issuer routing.
 - RFC 9701 encrypted introspection responses outside the signed-introspection
   profile, or without per-client JWE response metadata.
@@ -239,7 +243,7 @@ See [docs/roadmap.md](docs/roadmap.md) for the current scope record.
 | Chinese deployment guide | [docs/deployment.zh-CN.md](docs/deployment.zh-CN.md) |
 | Conformance records | [docs/conformance](docs/conformance) |
 | OAuth/OIDC/FAPI best-practice matrix | [docs/rfc-compliance-matrix.md](docs/rfc-compliance-matrix.md) |
-| Best-practice implementation plan | [docs/oauth-best-practice-implementation-plan.zh-CN.md](docs/oauth-best-practice-implementation-plan.zh-CN.md) |
+| OAuth/OIDC/FAPI future roadmap | [docs/oauth-best-practice-implementation-plan.zh-CN.md](docs/oauth-best-practice-implementation-plan.zh-CN.md) |
 | Profile matrix | [docs/profile-matrix.md](docs/profile-matrix.md) |
 | Threat model | [docs/threat-model.md](docs/threat-model.md) |
 | Release security | [docs/release-security.md](docs/release-security.md) |

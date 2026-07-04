@@ -3,7 +3,6 @@ mod auth;
 mod authorization;
 mod dynamic_client_registration;
 mod fapi_resource;
-mod federation_entity;
 mod profile;
 mod scim;
 mod token;
@@ -14,7 +13,6 @@ pub(crate) use auth::*;
 pub(crate) use authorization::*;
 pub(crate) use dynamic_client_registration::*;
 pub(crate) use fapi_resource::*;
-pub(crate) use federation_entity::*;
 pub(crate) use profile::*;
 pub(crate) use scim::*;
 pub(crate) use token::*;
@@ -56,9 +54,9 @@ pub(crate) mod prelude {
         normalize_authorization_details, parse_authorization_details,
     };
     pub(crate) use crate::schema::{
-        access_token_revocations, client_access_requests, external_identity_links, oauth_clients,
-        oauth_tokens, scim_audit_events, scim_tokens, user_client_grants, user_passkey_credentials,
-        user_totp_credentials, users,
+        access_token_revocations, backchannel_logout_deliveries, client_access_requests,
+        external_identity_links, oauth_clients, oauth_tokens, scim_audit_events, scim_tokens,
+        user_client_grants, user_passkey_credentials, user_totp_credentials, users,
     };
     pub(crate) use crate::settings::Settings;
     pub(crate) use crate::support::*;

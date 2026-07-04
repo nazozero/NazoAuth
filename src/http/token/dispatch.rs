@@ -406,7 +406,15 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
             token_device_code(&state, &req, &client, &form, client_assertion.as_ref()).await
         }
         CIBA_GRANT_TYPE => {
-            token_ciba(&state, &req, &client, &form, client_assertion.as_ref()).await
+            token_ciba(
+                &state,
+                &req,
+                &client,
+                &form,
+                client_assertion.as_ref(),
+                credentials.method.as_str(),
+            )
+            .await
         }
         TOKEN_EXCHANGE_GRANT_TYPE => {
             token_exchange(&state, &req, &client, &form, client_assertion.as_ref()).await

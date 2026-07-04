@@ -11,6 +11,12 @@ pub(crate) enum AuthorizationServerProfile {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CibaSecurityProfile {
+    FapiCibaId1PlainPrivateKeyJwtPoll,
+    Fapi2Ciba,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum DpopNoncePolicy {
     Required,
     Optional,
@@ -63,6 +69,30 @@ impl AuthorizationServerProfile {
 
     pub(crate) fn requires_signed_introspection(self) -> bool {
         self == Self::Fapi2MessageSigningIntrospection
+    }
+}
+
+impl CibaSecurityProfile {
+    pub(super) fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
+        match config
+            .string(
+                "CIBA_SECURITY_PROFILE",
+                "fapi-ciba-id1-plain-private-key-jwt-poll",
+            )
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "fapi-ciba-id1-plain-private-key-jwt-poll" | "fapi-ciba" | "oidf-fapi-ciba" => {
+                Ok(Self::FapiCibaId1PlainPrivateKeyJwtPoll)
+            }
+            "fapi2-ciba" | "experimental-fapi2-ciba" => Ok(Self::Fapi2Ciba),
+            value => bail!("CIBA_SECURITY_PROFILE is not supported: {value}"),
+        }
+    }
+
+    pub(crate) fn requires_fapi2_hardening(self) -> bool {
+        self == Self::Fapi2Ciba
     }
 }
 

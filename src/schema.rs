@@ -1,4 +1,24 @@
 diesel::table! {
+    backchannel_logout_deliveries (id) {
+        id -> Uuid,
+        tenant_id -> Uuid,
+        client_id -> Uuid,
+        client_public_id -> Varchar,
+        logout_uri -> Text,
+        logout_token -> Text,
+        attempts -> Int4,
+        next_attempt_at -> Timestamptz,
+        locked_at -> Nullable<Timestamptz>,
+        delivered_at -> Nullable<Timestamptz>,
+        failed_at -> Nullable<Timestamptz>,
+        last_error -> Nullable<Text>,
+        expires_at -> Timestamptz,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
     scim_tokens (id) {
         id -> Uuid,
         tenant_id -> Uuid,
@@ -281,6 +301,7 @@ diesel::table! {
 }
 
 diesel::joinable!(access_token_revocations -> oauth_clients (client_id));
+diesel::joinable!(backchannel_logout_deliveries -> oauth_clients (client_id));
 diesel::joinable!(client_access_requests -> oauth_clients (approved_client_id));
 diesel::joinable!(client_access_requests -> tenants (tenant_id));
 diesel::joinable!(external_identity_links -> tenants (tenant_id));
@@ -313,6 +334,7 @@ diesel::joinable!(users -> tenants (tenant_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     access_token_revocations,
+    backchannel_logout_deliveries,
     client_access_requests,
     external_identity_links,
     oauth_clients,

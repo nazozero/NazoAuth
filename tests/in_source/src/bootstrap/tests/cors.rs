@@ -125,6 +125,24 @@ async fn dynamic_client_registration_route_is_absent_when_disabled() {
 }
 
 #[actix_web::test]
+async fn openid_federation_route_is_not_registered() {
+    let settings = test_settings(vec!["https://app.example".to_owned()]);
+    let app =
+        test::init_service(App::new().configure(|cfg| routes::configure(cfg, &settings))).await;
+
+    let request = test::TestRequest::get()
+        .uri("/.well-known/openid-federation")
+        .to_request();
+    let response = test::call_service(&app, request).await;
+
+    assert_eq!(
+        response.status(),
+        StatusCode::NOT_FOUND,
+        "OpenID Federation is not part of the product surface"
+    );
+}
+
+#[actix_web::test]
 async fn cors_actual_response_exposes_oauth_challenge_nonce_and_retry_headers() {
     let settings = test_settings(vec!["https://app.example".to_owned()]);
     let app = test::init_service(App::new().wrap(cors_browser_oauth(&settings)).route(
@@ -232,6 +250,8 @@ fn test_settings(cors_allowed_origins: Vec<String>) -> Settings {
         default_audience: "resource://default".to_owned(),
         protected_resource_identifier: "https://issuer.example/fapi/resource".to_owned(),
         authorization_server_profile: AuthorizationServerProfile::Oauth2Baseline,
+        ciba_security_profile:
+            crate::settings::CibaSecurityProfile::FapiCibaId1PlainPrivateKeyJwtPoll,
         dpop_nonce_policy: DpopNoncePolicy::Required,
         request_object_jti_policy: RequestObjectJtiPolicy::Optional,
         session_cookie_name: "session".to_owned(),
@@ -292,7 +312,6 @@ fn test_settings(cors_allowed_origins: Vec<String>) -> Settings {
         enable_frontchannel_logout: false,
         enable_session_management: false,
         enable_ciba: false,
-        enable_oidc_federation: false,
         enable_native_sso: false,
         dynamic_client_registration_initial_access_token: None,
         device_authorization_ttl_seconds: 600,

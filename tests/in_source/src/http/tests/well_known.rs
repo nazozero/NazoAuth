@@ -31,6 +31,8 @@ fn settings(profile: AuthorizationServerProfile, trusted_proxy_cidrs: Vec<IpCidr
         default_audience: "resource://default".to_owned(),
         protected_resource_identifier: "https://issuer.example/fapi/resource".to_owned(),
         authorization_server_profile: profile,
+        ciba_security_profile:
+            crate::settings::CibaSecurityProfile::FapiCibaId1PlainPrivateKeyJwtPoll,
         dpop_nonce_policy: DpopNoncePolicy::Required,
         request_object_jti_policy: RequestObjectJtiPolicy::Optional,
         session_cookie_name: "sid".to_owned(),
@@ -91,7 +93,6 @@ fn settings(profile: AuthorizationServerProfile, trusted_proxy_cidrs: Vec<IpCidr
         enable_frontchannel_logout: false,
         enable_session_management: false,
         enable_ciba: false,
-        enable_oidc_federation: false,
         enable_native_sso: false,
         dynamic_client_registration_initial_access_token: None,
         device_authorization_ttl_seconds: 600,
@@ -801,5 +802,54 @@ fn discovery_ciba_request_object_algs_are_fapi_ciba_scoped() {
             .filter_map(Value::as_str)
             .collect::<Vec<_>>(),
         vec!["EdDSA", "ES256", "PS256"]
+    );
+}
+
+#[test]
+fn discovery_fapi2_ciba_internal_profile_advertises_only_standard_capabilities() {
+    let mut settings = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
+    settings.enable_ciba = true;
+    settings.ciba_security_profile = crate::settings::CibaSecurityProfile::Fapi2Ciba;
+    let metadata =
+        authorization_server_metadata(&settings, &keyset(jsonwebtoken::Algorithm::PS256));
+
+    assert!(metadata.get("authorization_server_profile").is_none());
+    let serialized = serde_json::to_string(&metadata).expect("metadata should serialize");
+    assert!(!serialized.contains("Fapi2Ciba"));
+    assert!(!serialized.contains("fapi2-ciba"));
+    assert_eq!(
+        metadata
+            .get("token_endpoint_auth_methods_supported")
+            .and_then(Value::as_array)
+            .expect("methods should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["private_key_jwt"]
+    );
+    assert_eq!(
+        metadata
+            .get("token_endpoint_auth_signing_alg_values_supported")
+            .and_then(Value::as_array)
+            .expect("client assertion algs should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["EdDSA", "ES256", "PS256"]
+    );
+    assert_eq!(
+        metadata
+            .get("backchannel_token_delivery_modes_supported")
+            .and_then(Value::as_array)
+            .expect("CIBA delivery modes should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["poll"]
+    );
+    assert!(
+        metadata
+            .get("pushed_backchannel_authentication_request_endpoint")
+            .is_none()
     );
 }

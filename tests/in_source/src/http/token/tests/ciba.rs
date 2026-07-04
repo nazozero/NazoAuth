@@ -211,9 +211,14 @@ fn ciba_request_object_presence_enforces_client_policy() {
     let mut client = ciba_private_key_jwt_client("ciba-kid", &key);
     client.require_par_request_object = true;
 
-    let missing_request_response =
-        validate_ciba_request_object_presence(&client, &BackchannelAuthenticationForm::default())
-            .expect_err("CIBA request object policy must reject unsigned form parameters");
+    let settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let missing_request_response = validate_ciba_request_object_presence(
+        &settings,
+        &client,
+        &BackchannelAuthenticationForm::default(),
+    )
+    .expect_err("CIBA request object policy must reject unsigned form parameters");
 
     assert_eq!(missing_request_response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(
@@ -228,8 +233,133 @@ fn ciba_request_object_presence_enforces_client_policy() {
         request: Some("request-object.jwt".to_owned()),
         ..BackchannelAuthenticationForm::default()
     };
-    validate_ciba_request_object_presence(&client, &form_with_request)
+    validate_ciba_request_object_presence(&settings, &client, &form_with_request)
         .expect("present request object should satisfy the presence policy");
+}
+
+#[test]
+fn fapi_ciba_compatibility_profile_preserves_client_request_object_policy() {
+    let settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
+        .expect("client key should generate")
+        .private_pkcs8_der;
+    let client = ciba_private_key_jwt_client("ciba-kid", &key);
+
+    validate_ciba_request_object_presence(
+        &settings,
+        &client,
+        &BackchannelAuthenticationForm::default(),
+    )
+    .expect("OIDF FAPI-CIBA compatibility profile must preserve per-client request-object policy");
+}
+
+#[test]
+fn fapi2_ciba_profile_requires_signed_backchannel_authentication_request() {
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.ciba_security_profile = crate::settings::CibaSecurityProfile::Fapi2Ciba;
+    let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
+        .expect("client key should generate")
+        .private_pkcs8_der;
+    let client = ciba_private_key_jwt_client("ciba-kid", &key);
+
+    let response = validate_ciba_request_object_presence(
+        &settings,
+        &client,
+        &BackchannelAuthenticationForm::default(),
+    )
+    .expect_err("Fapi2Ciba must require a signed backchannel authentication request");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("invalid_request")
+    );
+}
+
+#[test]
+fn fapi2_ciba_client_policy_rejects_public_weak_auth_and_bearer_tokens() {
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.ciba_security_profile = crate::settings::CibaSecurityProfile::Fapi2Ciba;
+    let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
+        .expect("client key should generate")
+        .private_pkcs8_der;
+    let mut client = ciba_private_key_jwt_client("ciba-kid", &key);
+
+    let response = validate_ciba_security_profile_client(&settings, &client, "private_key_jwt")
+        .expect_err("Fapi2Ciba must reject bearer access tokens");
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("invalid_request")
+    );
+
+    client.require_mtls_bound_tokens = true;
+    validate_ciba_security_profile_client(&settings, &client, "private_key_jwt")
+        .expect("Fapi2Ciba must allow private_key_jwt with sender-constrained tokens");
+
+    client.require_mtls_bound_tokens = false;
+    client.require_dpop_bound_tokens = true;
+    validate_ciba_security_profile_client(&settings, &client, "private_key_jwt")
+        .expect("Fapi2Ciba must allow DPoP sender-constrained tokens");
+
+    client.require_dpop_bound_tokens = false;
+    client.require_mtls_bound_tokens = true;
+    let response = validate_ciba_security_profile_client(&settings, &client, "client_secret_basic")
+        .expect_err("Fapi2Ciba must reject shared-secret client authentication");
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("invalid_client")
+    );
+
+    client.client_type = "public".to_owned();
+    let response = validate_ciba_security_profile_client(&settings, &client, "none")
+        .expect_err("Fapi2Ciba must reject public CIBA clients");
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("unauthorized_client")
+    );
+}
+
+#[test]
+fn fapi2_ciba_private_key_jwt_requires_issuer_audience_only() {
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.ciba_security_profile = crate::settings::CibaSecurityProfile::Fapi2Ciba;
+    let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
+        .expect("client key should generate")
+        .private_pkcs8_der;
+    let mut client = ciba_private_key_jwt_client("ciba-kid", &key);
+    client.require_mtls_bound_tokens = true;
+    client.allow_client_assertion_endpoint_audience = true;
+
+    let response = validate_ciba_security_profile_client(&settings, &client, "private_key_jwt")
+        .expect_err("Fapi2Ciba must reject endpoint-audience client assertions");
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("invalid_client")
+    );
+
+    settings.ciba_security_profile =
+        crate::settings::CibaSecurityProfile::FapiCibaId1PlainPrivateKeyJwtPoll;
+    validate_ciba_security_profile_client(&settings, &client, "private_key_jwt")
+        .expect("OIDF FAPI-CIBA compatibility profile must preserve endpoint audience allowance");
 }
 
 #[test]
@@ -357,7 +487,7 @@ async fn ciba_token_request_validates_mtls_before_auth_req_id_state() {
         has_audience_param: false,
     };
 
-    let response = token_ciba(&state, &req, &client, &form, None).await;
+    let response = token_ciba(&state, &req, &client, &form, None, "private_key_jwt").await;
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(
@@ -394,6 +524,46 @@ fn ciba_signed_request_object_missing_audience_maps_to_invalid_request() {
         Some("invalid_request")
     );
     assert!(form.scope.is_none());
+}
+
+#[test]
+fn ciba_signed_request_object_missing_required_claim_maps_to_invalid_request() {
+    for claim in ["iss", "aud", "iat", "nbf", "exp", "jti"] {
+        let state = ciba_test_state();
+        let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
+            .expect("client key should generate")
+            .private_pkcs8_der;
+        let client = ciba_private_key_jwt_client("ciba-kid", &key);
+        let request_object = signed_ciba_request_object(
+            "ciba-kid",
+            &key,
+            Value::Object(serde_json::Map::from_iter([(
+                claim.to_owned(),
+                Value::Null,
+            )])),
+        );
+        let mut form = BackchannelAuthenticationForm {
+            request: Some(request_object),
+            ..BackchannelAuthenticationForm::default()
+        };
+
+        let response = validate_and_apply_ciba_request_object_claims(&state, &client, &mut form)
+            .expect_err("missing CIBA request object claim must be invalid");
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response
+                .extensions()
+                .get::<OAuthJsonErrorFields>()
+                .map(|fields| fields.error.as_str()),
+            Some("invalid_request"),
+            "unexpected OAuth error for missing {claim}"
+        );
+        assert!(
+            form.scope.is_none(),
+            "missing {claim} must not merge claims"
+        );
+    }
 }
 
 #[test]
