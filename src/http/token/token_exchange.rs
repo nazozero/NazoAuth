@@ -433,6 +433,7 @@ pub(crate) async fn token_exchange(
             userinfo_claim_requests: Vec::new(),
             id_token_claims: Vec::new(),
             id_token_claim_requests: Vec::new(),
+            id_token_user: None,
             include_refresh: false,
             refresh_token_policy: RefreshTokenPolicy::PreserveExisting,
             dpop_jkt,

@@ -9,6 +9,7 @@ use yaml_serde::Value as YamlValue;
 const CONFIG_FILE: &str = ".env.yaml";
 const UNSUPPORTED_DOTENV_FILE: &str = ".env";
 pub const DEFAULT_DATABASE_URL: &str = "postgresql://postgres:postgres@127.0.0.1:5432/oauth";
+pub const DEFAULT_DATABASE_MAX_CONNECTIONS: usize = 32;
 const ENV_CONFIG_KEYS: &[&str] = &[
     "ACCESS_TOKEN_TTL_SECONDS",
     "AUTH_CODE_TTL_SECONDS",
@@ -19,12 +20,14 @@ const ENV_CONFIG_KEYS: &[&str] = &[
     "BIND",
     "CLIENT_DELIVERY_TTL_SECONDS",
     "CLIENT_IP_HEADER_MODE",
+    "CLIENT_SECRET_PEPPER",
     "CIBA_AUTOMATED_DECISION_TOKEN",
     "CIBA_SECURITY_PROFILE",
     "COOKIE_SECURE",
     "CORS_ALLOWED_ORIGINS",
     "CSRF_COOKIE_NAME",
     "DATABASE_URL",
+    "DATABASE_MAX_CONNECTIONS",
     "DATA_DIR",
     "DEFAULT_AUDIENCE",
     "DPOP_NONCE_POLICY",
@@ -256,6 +259,14 @@ fn parse_bool(value: &str) -> Option<bool> {
 
 pub fn database_url(source: &ConfigSource) -> String {
     source.string("DATABASE_URL", DEFAULT_DATABASE_URL)
+}
+
+pub fn database_max_connections(source: &ConfigSource) -> anyhow::Result<usize> {
+    let value = source.parse("DATABASE_MAX_CONNECTIONS", DEFAULT_DATABASE_MAX_CONNECTIONS)?;
+    if value == 0 {
+        bail!("DATABASE_MAX_CONNECTIONS must be greater than zero");
+    }
+    Ok(value)
 }
 
 #[cfg(test)]

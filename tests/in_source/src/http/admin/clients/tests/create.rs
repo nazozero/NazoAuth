@@ -1,5 +1,20 @@
 use super::*;
+use crate::support::{LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER, verify_client_secret};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+
+async fn prepare_client_insert_for_test(
+    payload: CreateClientRequest,
+    pairwise_subject_secret: Option<&str>,
+    issuer: &str,
+) -> Result<PreparedClientInsert, InsertClientError> {
+    prepare_client_insert_with_secret_pepper(
+        payload,
+        pairwise_subject_secret,
+        LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
+        issuer,
+    )
+    .await
+}
 
 fn create_request() -> CreateClientRequest {
     CreateClientRequest {
@@ -57,26 +72,31 @@ async fn prepare_client_insert_issues_secret_only_for_secret_based_confidential_
         payload.token_endpoint_auth_method = method.to_owned();
         payload.jwks = None;
 
-        let prepared = match prepare_client_insert(payload, None, "http://localhost:8000").await {
-            Ok(prepared) => prepared,
-            Err(_) => {
-                panic!("secret-based confidential client registration should be accepted")
-            }
-        };
+        let prepared =
+            match prepare_client_insert_for_test(payload, None, "http://localhost:8000").await {
+                Ok(prepared) => prepared,
+                Err(_) => {
+                    panic!("secret-based confidential client registration should be accepted")
+                }
+            };
         let issued_secret = prepared
             .issued_secret
             .as_deref()
             .expect("created secret client must receive its one-time plaintext secret");
         let stored_hash = prepared
-            .client_secret_argon2_hash
+            .client_secret_hash
             .as_deref()
-            .expect("plaintext secret must be represented only by an Argon2 hash at rest");
+            .expect("plaintext secret must be represented only by a keyed digest at rest");
 
         assert_eq!(prepared.client_type, "confidential");
         assert_eq!(prepared.token_endpoint_auth_method, method);
         assert!(
-            verify_password(issued_secret, stored_hash),
-            "stored secret hash must verify the one-time plaintext secret"
+            verify_client_secret(
+                issued_secret,
+                stored_hash,
+                LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER
+            ),
+            "stored secret digest must verify the one-time plaintext secret"
         );
         assert_ne!(
             issued_secret, stored_hash,
@@ -91,23 +111,23 @@ async fn prepare_client_insert_does_not_issue_secret_for_public_or_mtls_clients(
     public.client_type = "public".to_owned();
     public.token_endpoint_auth_method = "none".to_owned();
     public.jwks = None;
-    let public = match prepare_client_insert(public, None, "http://localhost:8000").await {
+    let public = match prepare_client_insert_for_test(public, None, "http://localhost:8000").await {
         Ok(prepared) => prepared,
         Err(_) => panic!("public client registration without secret is valid"),
     };
     assert!(public.issued_secret.is_none());
-    assert!(public.client_secret_argon2_hash.is_none());
+    assert!(public.client_secret_hash.is_none());
 
     let mut mtls = create_request();
     mtls.token_endpoint_auth_method = "tls_client_auth".to_owned();
     mtls.jwks = None;
     mtls.tls_client_auth_subject_dn = Some("CN=client.example".to_owned());
-    let mtls = match prepare_client_insert(mtls, None, "http://localhost:8000").await {
+    let mtls = match prepare_client_insert_for_test(mtls, None, "http://localhost:8000").await {
         Ok(prepared) => prepared,
         Err(_) => panic!("mTLS client registration should be accepted without client secret"),
     };
     assert!(mtls.issued_secret.is_none());
-    assert!(mtls.client_secret_argon2_hash.is_none());
+    assert!(mtls.client_secret_hash.is_none());
 }
 
 #[actix_web::test]
@@ -125,10 +145,11 @@ async fn prepare_client_insert_normalizes_optional_string_metadata() {
     payload.tls_client_auth_san_ip = vec!["192.0.2.10".to_owned()];
     payload.tls_client_auth_san_email = vec!["ops@example.com".to_owned()];
 
-    let prepared = match prepare_client_insert(payload, None, "http://localhost:8000").await {
-        Ok(prepared) => prepared,
-        Err(_) => panic!("mTLS metadata with surrounding whitespace should be normalizable"),
-    };
+    let prepared =
+        match prepare_client_insert_for_test(payload, None, "http://localhost:8000").await {
+            Ok(prepared) => prepared,
+            Err(_) => panic!("mTLS metadata with surrounding whitespace should be normalizable"),
+        };
 
     assert_eq!(
         prepared.backchannel_logout_uri.as_deref(),
@@ -171,7 +192,7 @@ async fn prepare_client_insert_accepts_introspection_jwe_metadata() {
     payload.introspection_encrypted_response_alg = Some("RSA-OAEP-256".to_owned());
     payload.introspection_encrypted_response_enc = Some("A256GCM".to_owned());
 
-    let prepared = prepare_client_insert(payload, None, "http://localhost:8000")
+    let prepared = prepare_client_insert_for_test(payload, None, "http://localhost:8000")
         .await
         .expect("supported introspection JWE metadata should be accepted");
 
@@ -192,7 +213,7 @@ async fn prepare_client_insert_rejects_empty_array_metadata_before_storage() {
     payload.jwks = None;
     payload.post_logout_redirect_uris = vec![" ".to_owned()];
 
-    let err = prepare_client_insert(payload, None, "http://localhost:8000")
+    let err = prepare_client_insert_for_test(payload, None, "http://localhost:8000")
         .await
         .err()
         .expect("empty array metadata must fail closed");
@@ -214,7 +235,7 @@ async fn prepare_client_insert_rejects_secret_auth_for_public_clients() {
     payload.token_endpoint_auth_method = "client_secret_post".to_owned();
     payload.jwks = None;
 
-    let err = prepare_client_insert(payload, None, "http://localhost:8000")
+    let err = prepare_client_insert_for_test(payload, None, "http://localhost:8000")
         .await
         .err()
         .expect("public clients must not be registered with client secrets");
@@ -236,7 +257,7 @@ async fn prepare_client_insert_rejects_pairwise_when_secret_is_not_configured() 
     payload.jwks = None;
     payload.subject_type = Some("pairwise".to_owned());
 
-    let err = prepare_client_insert(payload, None, "http://localhost:8000")
+    let err = prepare_client_insert_for_test(payload, None, "http://localhost:8000")
         .await
         .err()
         .expect("pairwise subject registration requires a configured server secret");
@@ -263,7 +284,7 @@ async fn prepare_client_insert_derives_pairwise_sector_from_single_redirect_host
         "https://client.example/alternate".to_owned(),
     ];
 
-    let prepared = prepare_client_insert(
+    let prepared = prepare_client_insert_for_test(
         payload,
         Some("01234567890123456789012345678901"),
         "http://localhost:8000",
@@ -290,7 +311,7 @@ async fn prepare_client_insert_rejects_pairwise_redirects_with_multiple_hosts_wi
         "https://other.example/callback".to_owned(),
     ];
 
-    let err = prepare_client_insert(
+    let err = prepare_client_insert_for_test(
         payload,
         Some("01234567890123456789012345678901"),
         "http://localhost:8000",
@@ -322,7 +343,7 @@ async fn prepare_client_insert_reports_sector_identifier_fetch_failure() {
     ];
     payload.sector_identifier_uri = Some("https://sector.invalid/client.json".to_owned());
 
-    let err = prepare_client_insert(
+    let err = prepare_client_insert_for_test(
         payload,
         Some("01234567890123456789012345678901"),
         "http://localhost:8000",
@@ -351,7 +372,7 @@ async fn prepare_client_insert_discards_sector_identifier_for_public_subjects() 
     payload.subject_type = Some("public".to_owned());
     payload.sector_identifier_uri = Some("https://sector.example/client.json".to_owned());
 
-    let prepared = prepare_client_insert(payload, None, "http://localhost:8000")
+    let prepared = prepare_client_insert_for_test(payload, None, "http://localhost:8000")
         .await
         .expect("public subjects do not use sector identifiers");
 

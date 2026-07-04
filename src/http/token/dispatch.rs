@@ -340,9 +340,10 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
                     .client_secret
                     .as_deref()
                     .expect("secret-based client credentials must include client_secret");
-                if !verify_password(
+                if !verify_client_secret(
                     secret,
-                    client.client_secret_argon2_hash.as_deref().unwrap_or(""),
+                    client.client_secret_hash.as_deref().unwrap_or(""),
+                    &state.settings.client_secret_pepper,
                 ) {
                     return oauth_token_error(
                         StatusCode::UNAUTHORIZED,

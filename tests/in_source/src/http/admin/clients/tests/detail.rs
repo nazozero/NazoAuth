@@ -13,7 +13,24 @@ use std::time::Duration as StdDuration;
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
 use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
-use crate::http::admin::{CreateClientRequest, insert_prepared_client, prepare_client_insert};
+use crate::http::admin::{
+    CreateClientRequest, InsertClientError, PreparedClientInsert, insert_prepared_client,
+    prepare_client_insert_with_secret_pepper,
+};
+
+async fn prepare_client_insert_for_test(
+    payload: CreateClientRequest,
+    pairwise_subject_secret: Option<&str>,
+    issuer: &str,
+) -> Result<PreparedClientInsert, InsertClientError> {
+    prepare_client_insert_with_secret_pepper(
+        payload,
+        pairwise_subject_secret,
+        crate::support::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
+        issuer,
+    )
+    .await
+}
 
 fn client_row() -> ClientRow {
     ClientRow {
@@ -24,7 +41,7 @@ fn client_row() -> ClientRow {
         client_id: "client-1".to_owned(),
         client_name: "Client".to_owned(),
         client_type: "confidential".to_owned(),
-        client_secret_argon2_hash: Some("argon2-secret".to_owned()),
+        client_secret_hash: Some("client-secret-v1:salt:digest".to_owned()),
         redirect_uris: json!(["https://client.example/callback"]),
         scopes: json!(["openid"]),
         allowed_audiences: json!(["https://api.example"]),
@@ -146,6 +163,10 @@ impl LiveAdminClientDetailFixture {
         let valkey_url = std::env::var("VALKEY_URL").ok()?;
         let config = ConfigSource::from_pairs_for_test([
             ("ISSUER", "https://issuer.example"),
+            (
+                "CLIENT_SECRET_PEPPER",
+                "client-secret-pepper-for-tests-000000000001",
+            ),
             ("COOKIE_SECURE", "true"),
             ("SESSION_COOKIE_NAME", "nazo_admin_client_detail_session"),
             ("CSRF_COOKIE_NAME", "nazo_admin_client_detail_csrf"),
@@ -240,7 +261,7 @@ impl LiveAdminClientDetailFixture {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
-        let prepared = match prepare_client_insert(
+        let prepared = match prepare_client_insert_for_test(
             create_client_request(client_name),
             None,
             "http://localhost:8000",
@@ -271,7 +292,7 @@ async fn client_detail_response_does_not_expose_secret_hash_or_tenant_context() 
         body["token_endpoint_auth_method"],
         json!("client_secret_basic")
     );
-    assert!(body.get("client_secret_argon2_hash").is_none());
+    assert!(body.get("client_secret_hash").is_none());
     assert!(body.get("tenant_id").is_none());
     assert!(body.get("realm_id").is_none());
     assert!(body.get("organization_id").is_none());
@@ -369,7 +390,7 @@ async fn admin_get_client_returns_sanitized_client_for_admin() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["client_id"], client.client_id);
     assert_eq!(body["client_name"], client.client_name);
-    assert!(body.get("client_secret_argon2_hash").is_none());
+    assert!(body.get("client_secret_hash").is_none());
     assert!(body.get("tenant_id").is_none());
     assert!(body.get("realm_id").is_none());
     assert!(body.get("organization_id").is_none());

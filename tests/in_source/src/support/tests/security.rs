@@ -28,7 +28,7 @@ fn private_key_jwt_client(jwks: Value) -> ClientRow {
         client_id: "client-1".to_owned(),
         client_name: "Client".to_owned(),
         client_type: "confidential".to_owned(),
-        client_secret_argon2_hash: None,
+        client_secret_hash: None,
         redirect_uris: json!(["https://client.example/callback"]),
         scopes: json!(["openid"]),
         allowed_audiences: json!(["resource://default"]),
@@ -86,4 +86,14 @@ fn signed_client_assertion(
         &jsonwebtoken::EncodingKey::from_rsa_der(private_pkcs8_der),
     )
     .expect("client assertion should sign")
+}
+
+#[tokio::test]
+async fn verify_password_blocking_matches_argon2_verifier() {
+    let hash = hash_password("correct horse battery staple").expect("password should hash");
+
+    assert!(
+        verify_password_blocking("correct horse battery staple".to_owned(), hash.clone()).await
+    );
+    assert!(!verify_password_blocking("wrong password".to_owned(), hash).await);
 }

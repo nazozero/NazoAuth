@@ -1,0 +1,12 @@
+FROM docker.io/grafana/k6:0.52.0 AS k6
+
+FROM docker.io/library/python:3.13-alpine
+
+RUN apk add --no-cache ca-certificates docker-cli \
+    && pip install --no-cache-dir "psycopg[binary]==3.3.2" "redis==7.1.0" "argon2-cffi==25.1.0" "cryptography==46.0.3"
+
+COPY --from=k6 /usr/bin/k6 /usr/bin/k6
+
+WORKDIR /perf
+
+CMD ["python", "/perf/runner.py"]

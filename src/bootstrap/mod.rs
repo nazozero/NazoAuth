@@ -22,7 +22,7 @@ use fred::{
     },
 };
 
-use crate::config::{ConfigSource, database_url};
+use crate::config::{ConfigSource, database_max_connections, database_url};
 use crate::db::create_pool;
 use crate::domain::{AppState, KeysetStore};
 use crate::http::spawn_backchannel_logout_delivery_worker;
@@ -44,7 +44,7 @@ pub async fn run() -> anyhow::Result<()> {
     let valkey_command_timeout = Duration::from_millis(valkey_command_timeout_ms);
 
     // 数据库和 Valkey 客户端在 server factory 外创建，避免每个 worker 重复初始化。
-    let diesel_db = create_pool(database_url.clone(), 32)?;
+    let diesel_db = create_pool(database_url.clone(), database_max_connections(&config)?)?;
     let mut valkey_builder = ValkeyBuilder::from_config(ValkeyConfig::from_url(&valkey_url)?);
     valkey_builder.with_performance_config(|performance: &mut PerformanceConfig| {
         performance.default_command_timeout = valkey_command_timeout;

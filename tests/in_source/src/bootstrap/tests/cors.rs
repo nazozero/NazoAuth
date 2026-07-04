@@ -340,6 +340,7 @@ fn test_settings(cors_allowed_origins: Vec<String>) -> Settings {
         refresh_token_ttl_seconds: 2_592_000,
         avatar_max_bytes: 2_097_152,
         client_delivery_ttl_seconds: 86_400,
+        client_secret_pepper: "client-secret-pepper-for-tests-000000000001".to_owned(),
         rate_limit: RateLimitSettings {
             window_seconds: 60,
             auth_max_requests: 30,

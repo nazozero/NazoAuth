@@ -4,7 +4,9 @@ use argon2::{
     Argon2, PasswordHasher,
     password_hash::{SaltString, rand_core::OsRng},
 };
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use diesel::{Connection, PgConnection, RunQueryDsl, sql_query};
+use hmac::{Hmac, KeyInit, Mac};
 use nazo_oauth_server::config::{ConfigSource, database_url};
 use nazo_oauth_server::oidf_seed::{
     callback_uris, config::client_scopes, config::mtls_thumbprint, config::plan_config_files,
@@ -12,11 +14,16 @@ use nazo_oauth_server::oidf_seed::{
     test_endpoint_uri, test_endpoint_uris,
 };
 use serde_json::{Value, json};
+use sha2::Sha256;
 use std::{collections::BTreeSet, env, path::Path};
 
 const DEFAULT_TENANT_ID: &str = "00000000-0000-0000-0000-000000000001";
 const DEFAULT_REALM_ID: &str = "00000000-0000-0000-0000-000000000002";
 const DEFAULT_ORGANIZATION_ID: &str = "00000000-0000-0000-0000-000000000003";
+const LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER: &str =
+    "local-development-client-secret-pepper-00000001";
+
+type HmacSha256 = Hmac<Sha256>;
 
 #[derive(Clone, Copy)]
 struct FapiClientPolicy {
@@ -74,6 +81,21 @@ fn hash_password(password: &str) -> anyhow::Result<String> {
         .hash_password(password.as_bytes(), &salt)
         .map_err(|error| anyhow::anyhow!("password hash failed: {error}"))?
         .to_string())
+}
+
+fn hash_client_secret(secret: &str, pepper: &str) -> String {
+    let salt = env_or(
+        "OIDF_LOCAL_CLIENT_SECRET_SALT",
+        "oidf-local-client-secret-salt",
+    );
+    let mut mac = HmacSha256::new_from_slice(pepper.as_bytes()).expect("HMAC accepts any key");
+    mac.update(salt.as_bytes());
+    mac.update(b":");
+    mac.update(secret.as_bytes());
+    format!(
+        "client-secret-v1:{salt}:{}",
+        URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
+    )
 }
 
 fn upsert_user(
@@ -193,7 +215,7 @@ fn upsert_client(connection: &mut PgConnection, client: ClientUpsert<'_>) -> any
             client_id,
             client_name,
             client_type,
-            client_secret_argon2_hash,
+            client_secret_hash,
             redirect_uris,
             post_logout_redirect_uris,
             scopes,
@@ -221,7 +243,7 @@ fn upsert_client(connection: &mut PgConnection, client: ClientUpsert<'_>) -> any
         ON CONFLICT (tenant_id, client_id) DO UPDATE
         SET client_name = EXCLUDED.client_name,
             client_type = EXCLUDED.client_type,
-            client_secret_argon2_hash = EXCLUDED.client_secret_argon2_hash,
+            client_secret_hash = EXCLUDED.client_secret_hash,
             redirect_uris = EXCLUDED.redirect_uris,
             post_logout_redirect_uris = EXCLUDED.post_logout_redirect_uris,
             scopes = EXCLUDED.scopes,
@@ -326,6 +348,10 @@ fn main() -> anyhow::Result<()> {
     let user_email = env_or("OIDF_LOCAL_USER_EMAIL", "oidf-local@example.test");
     let user_password = env_or("OIDF_LOCAL_USER_PASSWORD", "oidf-local-password");
     let client_secret = env_or("OIDF_LOCAL_CLIENT_SECRET", "oidf-local-client-secret");
+    let client_secret_pepper = env_or(
+        "CLIENT_SECRET_PEPPER",
+        LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
+    );
     let basic_redirect_uris = json!(callback_uris(&suite_base_urls, &alias));
     let empty_post_logout_redirect_uris = json!([]);
     let frontchannel_redirect_uris = json!(callback_uris(&suite_base_urls, &frontchannel_alias));
@@ -344,7 +370,7 @@ fn main() -> anyhow::Result<()> {
     ));
 
     let user_password_hash = hash_password(&user_password)?;
-    let client_secret_hash = hash_password(&client_secret)?;
+    let client_secret_hash = hash_client_secret(&client_secret, &client_secret_pepper);
     let mut connection = PgConnection::establish(&database_url)?;
     let default_scopes = json!([
         "openid",

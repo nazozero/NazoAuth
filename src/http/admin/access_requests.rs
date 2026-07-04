@@ -2,7 +2,7 @@
 // 申请审批会创建客户端，因此显式依赖 clients 模块的创建逻辑。
 use super::clients::{
     CreateClientRequest, insert_client_error_response, insert_prepared_client,
-    prepare_client_insert,
+    prepare_client_insert_with_secret_pepper,
 };
 use crate::http::prelude::*;
 use diesel_async::AsyncConnection;
@@ -132,9 +132,10 @@ pub(crate) async fn admin_approve_access_request(
     };
     let request_user_id = pending_request.user_id;
     let site_name = pending_request.site_name;
-    let prepared = match prepare_client_insert(
+    let prepared = match prepare_client_insert_with_secret_pepper(
         payload,
         state.settings.pairwise_subject_secret.as_deref(),
+        &state.settings.client_secret_pepper,
         &state.settings.issuer,
     )
     .await
