@@ -17,6 +17,7 @@ const DEFAULT_REPLAY_CACHE_MAX_ENTRIES: usize = 100_000;
 #[derive(Clone, Debug)]
 pub struct DpopProofVerifier {
     config: DpopProofVerifierConfig,
+    max_replay_cache_entries: usize,
     replay_cache: Arc<Mutex<HashMap<String, i64>>>,
 }
 
@@ -25,7 +26,6 @@ pub struct DpopProofVerifierConfig {
     pub allowed_algs: Vec<Algorithm>,
     pub clock_skew_seconds: i64,
     pub max_age_seconds: i64,
-    pub max_replay_cache_entries: usize,
     pub required_nonce: Option<String>,
 }
 
@@ -69,8 +69,16 @@ pub(super) struct DpopProofClaims {
 
 impl DpopProofVerifier {
     pub fn new(config: DpopProofVerifierConfig) -> Self {
+        Self::new_with_replay_cache_limit(config, DEFAULT_REPLAY_CACHE_MAX_ENTRIES)
+    }
+
+    pub fn new_with_replay_cache_limit(
+        config: DpopProofVerifierConfig,
+        max_replay_cache_entries: usize,
+    ) -> Self {
         Self {
             config,
+            max_replay_cache_entries: max_replay_cache_entries.max(1),
             replay_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -161,7 +169,7 @@ impl DpopProofVerifier {
         if cache.contains_key(&replay_key) {
             return Err(DpopProofVerifierError::ReplayDetected);
         }
-        if cache.len() >= self.config.max_replay_cache_entries.max(1) {
+        if cache.len() >= self.max_replay_cache_entries {
             return Err(DpopProofVerifierError::ReplayCacheFull);
         }
         cache.insert(replay_key, now.saturating_add(ttl));
@@ -180,7 +188,6 @@ impl Default for DpopProofVerifierConfig {
             ],
             clock_skew_seconds: DEFAULT_CLOCK_SKEW_SECONDS,
             max_age_seconds: DEFAULT_DPOP_MAX_AGE_SECONDS,
-            max_replay_cache_entries: DEFAULT_REPLAY_CACHE_MAX_ENTRIES,
             required_nonce: None,
         }
     }
