@@ -4,7 +4,9 @@ use std::sync::Arc;
 use crate::config::ConfigSource;
 use crate::db::create_pool;
 use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
-use crate::support::{IpCidr, generate_key_material, public_jwk_from_private_der};
+use crate::support::{
+    IpCidr, generate_key_material, hash_client_secret, public_jwk_from_private_der,
+};
 use actix_web::test::TestRequest;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
@@ -67,6 +69,12 @@ fn fixture_secret(label: &str) -> String {
     format!("client-auth-fixture-secret-{label}")
 }
 
+fn fixture_secret_hash(secret: &str) -> String {
+    let settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    hash_client_secret(secret, &settings.client_secret_pepper)
+}
+
 fn fixture_mtls_thumbprint(label: &str) -> String {
     blake3_hex(&format!("client-auth-fixture-thumbprint-{label}"))
 }
@@ -80,7 +88,7 @@ fn confidential_client_with_secret(secret: &str) -> ClientRow {
         client_id: "client-1".to_owned(),
         client_name: "Client 1".to_owned(),
         client_type: "confidential".to_owned(),
-        client_secret_argon2_hash: Some(hash_password(secret).expect("secret should hash")),
+        client_secret_hash: Some(fixture_secret_hash(secret)),
         redirect_uris: json!(["https://client.example/callback"]),
         scopes: json!(["openid"]),
         allowed_audiences: json!(["resource://default"]),
@@ -308,7 +316,7 @@ async fn token_client_assertion_store_failure_fails_token_grant_as_server_error(
             .expect("test client jwk should derive");
     let mut client = confidential_client_with_secret(&fixture_secret("unused"));
     client.token_endpoint_auth_method = "private_key_jwt".to_owned();
-    client.client_secret_argon2_hash = None;
+    client.client_secret_hash = None;
     client.jwks = Some(json!({"keys": [public_jwk]}));
     let req = TestRequest::post().uri("/token").to_http_request();
     let assertion = signed_client_assertion(
@@ -400,7 +408,7 @@ fn private_key_jwt_requires_present_and_well_formed_assertion() {
     let req = TestRequest::default().to_http_request();
     let mut client = confidential_client_with_secret(&fixture_secret("unused"));
     client.token_endpoint_auth_method = "private_key_jwt".to_owned();
-    client.client_secret_argon2_hash = None;
+    client.client_secret_hash = None;
 
     let mut missing_assertion = client_credentials("private_key_jwt");
     assert!(matches!(
@@ -425,7 +433,7 @@ fn mtls_client_auth_requires_certificate_from_trusted_request_context() {
         .to_http_request();
     let mut client = confidential_client_with_secret(&fixture_secret("unused"));
     client.token_endpoint_auth_method = "tls_client_auth".to_owned();
-    client.client_secret_argon2_hash = None;
+    client.client_secret_hash = None;
     let credentials = client_credentials("tls_client_auth");
 
     assert!(matches!(
@@ -445,7 +453,7 @@ fn mtls_client_auth_accepts_matching_certificate_from_trusted_proxy() {
         .to_http_request();
     let mut client = confidential_client_with_secret(&fixture_secret("unused"));
     client.token_endpoint_auth_method = "tls_client_auth".to_owned();
-    client.client_secret_argon2_hash = None;
+    client.client_secret_hash = None;
     client.tls_client_auth_cert_sha256 = Some(thumbprint);
     let credentials = client_credentials("tls_client_auth");
 
@@ -469,7 +477,7 @@ fn ciba_private_key_jwt_accepts_ps256_endpoint_and_issuer_audiences() {
             .expect("test client jwk should derive");
     let mut client = confidential_client_with_secret(&fixture_secret("unused"));
     client.token_endpoint_auth_method = "private_key_jwt".to_owned();
-    client.client_secret_argon2_hash = None;
+    client.client_secret_hash = None;
     client.require_mtls_bound_tokens = true;
     client.allow_client_assertion_endpoint_audience = true;
     client.jwks = Some(json!({"keys": [public_jwk]}));

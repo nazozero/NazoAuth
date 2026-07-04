@@ -8,9 +8,9 @@ use url::Url;
 
 use crate::config::ConfigSource;
 use crate::support::{
-    ClientIpHeaderMode, IpCidr, is_loopback_http_url, parse_trusted_proxy_cidrs,
-    validate_cors_origin, validate_frontend_base_url, validate_issuer_url,
-    validate_protected_resource_identifier,
+    ClientIpHeaderMode, IpCidr, LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER, is_loopback_http_url,
+    parse_trusted_proxy_cidrs, validate_cors_origin, validate_frontend_base_url,
+    validate_issuer_url, validate_protected_resource_identifier,
 };
 
 mod email;
@@ -51,6 +51,7 @@ pub(crate) struct Settings {
     pub(crate) refresh_token_ttl_seconds: i64,
     pub(crate) avatar_max_bytes: usize,
     pub(crate) client_delivery_ttl_seconds: u64,
+    pub(crate) client_secret_pepper: String,
     pub(crate) rate_limit: RateLimitSettings,
     pub(crate) email: EmailSettings,
     pub(crate) email_code_dev_response_enabled: bool,
@@ -134,6 +135,14 @@ impl Settings {
         {
             bail!("pairwise_subject_secret must be at least 32 bytes");
         }
+        let client_secret_pepper = match config.optional_string("CLIENT_SECRET_PEPPER") {
+            Some(secret) if secret.len() >= 32 => secret,
+            Some(_) => bail!("CLIENT_SECRET_PEPPER must be at least 32 bytes"),
+            None if is_loopback_http_url(&issuer) => {
+                LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER.to_owned()
+            }
+            None => bail!("CLIENT_SECRET_PEPPER is required for non-loopback issuers"),
+        };
         let authorization_server_profile = AuthorizationServerProfile::from_config(config)?;
         let ciba_security_profile = CibaSecurityProfile::from_config(config)?;
         let protected_resource_identifier = config
@@ -271,6 +280,7 @@ impl Settings {
                 86_400,
                 "CLIENT_DELIVERY_TTL_SECONDS",
             )?,
+            client_secret_pepper,
             rate_limit: RateLimitSettings::from_config(config)?,
             email: EmailSettings::from_config(config)?,
             email_code_dev_response_enabled: config

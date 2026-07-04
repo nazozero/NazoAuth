@@ -139,6 +139,7 @@ fn environment_overrides_yaml_by_allowlist() {
                 "/usr/local/bin/kms-signer,--profile,prod".to_owned(),
             ),
             ("VALKEY_COMMAND_TIMEOUT_MS".to_owned(), "1000".to_owned()),
+            ("DATABASE_MAX_CONNECTIONS".to_owned(), "24".to_owned()),
             ("UNKNOWN_ENV".to_owned(), "ignored".to_owned()),
         ])
         .unwrap();
@@ -156,6 +157,7 @@ fn environment_overrides_yaml_by_allowlist() {
         "/usr/local/bin/kms-signer,--profile,prod"
     );
     assert_eq!(source.string("VALKEY_COMMAND_TIMEOUT_MS", ""), "1000");
+    assert_eq!(source.string("DATABASE_MAX_CONNECTIONS", ""), "24");
     assert!(source.get("UNKNOWN_ENV").is_none());
 }
 
@@ -181,21 +183,41 @@ fn database_url_uses_documented_default_when_unset() {
     let source = ConfigSource::default();
 
     assert_eq!(database_url(&source), DEFAULT_DATABASE_URL);
+    assert_eq!(
+        database_max_connections(&source).unwrap(),
+        DEFAULT_DATABASE_MAX_CONNECTIONS
+    );
 }
 
 #[test]
 fn database_url_uses_whitelisted_environment_value() {
     let mut source = ConfigSource::default();
     source
-        .merge_env([(
-            "DATABASE_URL".to_owned(),
-            "postgresql://nazo:secret@db.internal:5432/oauth".to_owned(),
-        )])
+        .merge_env([
+            (
+                "DATABASE_URL".to_owned(),
+                "postgresql://nazo:secret@db.internal:5432/oauth".to_owned(),
+            ),
+            ("DATABASE_MAX_CONNECTIONS".to_owned(), "48".to_owned()),
+        ])
         .unwrap();
 
     assert_eq!(
         database_url(&source),
         "postgresql://nazo:secret@db.internal:5432/oauth"
+    );
+    assert_eq!(database_max_connections(&source).unwrap(), 48);
+}
+
+#[test]
+fn database_max_connections_rejects_zero() {
+    let source = ConfigSource::from_pairs_for_test([("DATABASE_MAX_CONNECTIONS", "0")]);
+
+    let err = database_max_connections(&source).unwrap_err();
+
+    assert_eq!(
+        err.to_string(),
+        "DATABASE_MAX_CONNECTIONS must be greater than zero"
     );
 }
 

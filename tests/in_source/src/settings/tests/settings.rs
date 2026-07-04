@@ -338,9 +338,28 @@ fn dynamic_client_registration_requires_initial_access_token() {
 }
 
 #[test]
-fn public_base_url_drives_same_origin_defaults() {
+fn non_loopback_issuer_requires_client_secret_pepper() {
     let config =
         ConfigSource::from_pairs_for_test([("PUBLIC_BASE_URL", "https://auth.example.test")]);
+    let error = settings_error(
+        &config,
+        "production issuer must configure client secret pepper",
+    );
+    assert_eq!(
+        error.to_string(),
+        "CLIENT_SECRET_PEPPER is required for non-loopback issuers"
+    );
+}
+
+#[test]
+fn public_base_url_drives_same_origin_defaults() {
+    let config = ConfigSource::from_pairs_for_test([
+        ("PUBLIC_BASE_URL", "https://auth.example.test"),
+        (
+            "CLIENT_SECRET_PEPPER",
+            "client-secret-pepper-for-tests-000000000001",
+        ),
+    ]);
     let settings = Settings::from_config(&config).unwrap();
 
     assert_eq!(settings.issuer, "https://auth.example.test");
@@ -364,6 +383,10 @@ fn explicit_legacy_url_settings_override_public_base_url_derivations() {
     let config = ConfigSource::from_pairs_for_test([
         ("PUBLIC_BASE_URL", "https://auth.example.test"),
         ("ISSUER", "https://issuer.example.test"),
+        (
+            "CLIENT_SECRET_PEPPER",
+            "client-secret-pepper-for-tests-000000000001",
+        ),
         ("FRONTEND_BASE_URL", "https://app.example.test/ui/"),
         ("CORS_ALLOWED_ORIGINS", "https://app.example.test"),
         ("PASSKEY_ORIGIN", "https://passkeys.example.test"),
@@ -389,6 +412,10 @@ fn explicit_legacy_url_settings_override_public_base_url_derivations() {
 fn explicit_protected_resource_identifier_overrides_issuer_default() {
     let config = ConfigSource::from_pairs_for_test([
         ("PUBLIC_BASE_URL", "https://auth.example.test"),
+        (
+            "CLIENT_SECRET_PEPPER",
+            "client-secret-pepper-for-tests-000000000001",
+        ),
         (
             "PROTECTED_RESOURCE_IDENTIFIER",
             "https://api.example.test/payments",

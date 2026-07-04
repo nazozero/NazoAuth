@@ -13,7 +13,24 @@ use std::time::Duration as StdDuration;
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
 use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
-use crate::http::admin::{CreateClientRequest, insert_prepared_client, prepare_client_insert};
+use crate::http::admin::{
+    CreateClientRequest, InsertClientError, PreparedClientInsert, insert_prepared_client,
+    prepare_client_insert_with_secret_pepper,
+};
+
+async fn prepare_client_insert_for_test(
+    payload: CreateClientRequest,
+    pairwise_subject_secret: Option<&str>,
+    issuer: &str,
+) -> Result<PreparedClientInsert, InsertClientError> {
+    prepare_client_insert_with_secret_pepper(
+        payload,
+        pairwise_subject_secret,
+        crate::support::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
+        issuer,
+    )
+    .await
+}
 
 fn client_row(client_id: &str, secret_hash: Option<&str>) -> ClientRow {
     ClientRow {
@@ -24,7 +41,7 @@ fn client_row(client_id: &str, secret_hash: Option<&str>) -> ClientRow {
         client_id: client_id.to_owned(),
         client_name: format!("{client_id} name"),
         client_type: "confidential".to_owned(),
-        client_secret_argon2_hash: secret_hash.map(ToOwned::to_owned),
+        client_secret_hash: secret_hash.map(ToOwned::to_owned),
         redirect_uris: json!(["https://client.example/callback"]),
         scopes: json!(["openid"]),
         allowed_audiences: json!(["https://api.example"]),
@@ -146,6 +163,10 @@ impl LiveAdminClientListFixture {
         let valkey_url = std::env::var("VALKEY_URL").ok()?;
         let config = ConfigSource::from_pairs_for_test([
             ("ISSUER", "https://issuer.example"),
+            (
+                "CLIENT_SECRET_PEPPER",
+                "client-secret-pepper-for-tests-000000000001",
+            ),
             ("COOKIE_SECURE", "true"),
             ("SESSION_COOKIE_NAME", "nazo_admin_clients_list_session"),
             ("CSRF_COOKIE_NAME", "nazo_admin_clients_list_csrf"),
@@ -240,7 +261,7 @@ impl LiveAdminClientListFixture {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
-        let prepared = match prepare_client_insert(
+        let prepared = match prepare_client_insert_for_test(
             create_client_request(client_name),
             None,
             "http://localhost:8000",
@@ -263,7 +284,7 @@ async fn clients_list_response_preserves_pagination_and_omits_secret_hashes() {
         3,
         20,
         vec![
-            client_row("client-1", Some("argon2-secret")),
+            client_row("client-1", Some("client-secret-v1:salt:digest")),
             client_row("client-2", None),
         ],
     );
@@ -282,7 +303,7 @@ async fn clients_list_response_preserves_pagination_and_omits_secret_hashes() {
     assert_eq!(items[0]["client_id"], json!("client-1"));
     assert_eq!(items[1]["client_id"], json!("client-2"));
     for item in items {
-        assert!(item.get("client_secret_argon2_hash").is_none());
+        assert!(item.get("client_secret_hash").is_none());
         assert!(item.get("tenant_id").is_none());
         assert!(item.get("realm_id").is_none());
         assert!(item.get("organization_id").is_none());
@@ -349,7 +370,7 @@ async fn admin_clients_lists_persisted_clients_for_admin_without_secret_hashes()
             .as_str()
             .is_some_and(|client_id| client_id == first.client_id || client_id == second.client_id)
     }) {
-        assert!(item.get("client_secret_argon2_hash").is_none());
+        assert!(item.get("client_secret_hash").is_none());
         assert!(item.get("tenant_id").is_none());
         assert!(item.get("realm_id").is_none());
         assert!(item.get("organization_id").is_none());

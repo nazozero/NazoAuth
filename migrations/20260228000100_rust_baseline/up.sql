@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS oauth_clients (
     client_id VARCHAR(128) NOT NULL,
     client_name VARCHAR(200) NOT NULL,
     client_type VARCHAR(32) NOT NULL,
-    client_secret_argon2_hash VARCHAR(512),
+    client_secret_hash VARCHAR(512),
     redirect_uris JSONB NOT NULL,
     scopes JSONB NOT NULL,
     grant_types JSONB NOT NULL,

@@ -962,7 +962,7 @@ fn default_client_row() -> ClientRow {
         client_id: "test-client".to_owned(),
         client_name: "Test Client".to_owned(),
         client_type: "confidential".to_owned(),
-        client_secret_argon2_hash: None,
+        client_secret_hash: None,
         redirect_uris: json!(["https://client.example/cb"]),
         scopes: json!(["openid"]),
         allowed_audiences: json!(["https://api.example"]),

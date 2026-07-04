@@ -25,6 +25,10 @@ BASIC_ALIAS = os.environ.get("OIDF_LOCAL_BASIC_ALIAS", "local-nazo-oauth-oidf")
 USER_EMAIL = os.environ.get("OIDF_LOCAL_USER_EMAIL", "oidf-local@example.test")
 USER_PASSWORD = os.environ.get("OIDF_LOCAL_USER_PASSWORD", "oidf-local-password")
 CLIENT_SECRET = os.environ.get("OIDF_LOCAL_CLIENT_SECRET", "oidf-local-client-secret")
+CLIENT_SECRET_PEPPER = os.environ.get(
+    "OIDF_LOCAL_CLIENT_SECRET_PEPPER",
+    "oidf-local-client-secret-pepper-000000000001",
+)
 DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN = os.environ.get(
     "OIDF_LOCAL_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN",
     "oidf-local-dynamic-registration-token",
@@ -409,6 +413,7 @@ def write_env_yaml() -> None:
 DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/oauth"
 VALKEY_URL: "redis://valkey:6379/0"
 ISSUER: "{ISSUER}"
+CLIENT_SECRET_PEPPER: "{CLIENT_SECRET_PEPPER}"
 ENABLE_REQUEST_OBJECT: true
 ENABLE_PAR_REQUEST_OBJECT: true
 ENABLE_DYNAMIC_CLIENT_REGISTRATION: true

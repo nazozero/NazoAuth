@@ -209,4 +209,13 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
                     .route(web::delete().to(client_configuration_delete)),
             );
     }
+    if perf_metrics_enabled() {
+        cfg.route("/__perf/metrics", web::get().to(perf_metrics));
+    }
+}
+
+fn perf_metrics_enabled() -> bool {
+    std::env::var("PERF_METRICS_ENABLED")
+        .ok()
+        .is_some_and(|value| matches!(value.trim(), "1" | "true" | "TRUE" | "yes" | "YES"))
 }

@@ -9,7 +9,7 @@ fn client_with_redirects(redirect_uris: &[&str]) -> ClientRow {
         client_id: "client-1".to_owned(),
         client_name: "Client".to_owned(),
         client_type: "public".to_owned(),
-        client_secret_argon2_hash: None,
+        client_secret_hash: None,
         redirect_uris: json!(redirect_uris),
         scopes: json!(["openid"]),
         allowed_audiences: json!(["resource://default"]),

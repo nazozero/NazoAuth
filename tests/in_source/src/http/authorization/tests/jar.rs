@@ -37,7 +37,7 @@ fn jar_client(client_id: &str) -> ClientRow {
         client_id: client_id.to_owned(),
         client_name: "Client A".to_owned(),
         client_type: "confidential".to_owned(),
-        client_secret_argon2_hash: None,
+        client_secret_hash: None,
         redirect_uris: json!([]),
         scopes: json!([]),
         allowed_audiences: json!([]),

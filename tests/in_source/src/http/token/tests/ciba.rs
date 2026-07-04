@@ -48,7 +48,7 @@ fn ciba_private_key_jwt_client_with_alg(
         client_id: "client-1".to_owned(),
         client_name: "CIBA Client".to_owned(),
         client_type: "confidential".to_owned(),
-        client_secret_argon2_hash: None,
+        client_secret_hash: None,
         redirect_uris: json!(["https://client.example/callback"]),
         scopes: json!(["openid", "profile", "email", "offline_access"]),
         allowed_audiences: json!(["resource://default"]),

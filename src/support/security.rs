@@ -2,13 +2,19 @@
 
 use super::prelude::*;
 use super::{audit_event, audit_fields, request_mtls_client_certificate, valkey_set_ex_nx};
+use hmac::{Hmac, KeyInit, Mac};
 
 mod tokens;
 pub(crate) use tokens::*;
 
+type HmacSha256 = Hmac<Sha256>;
+
 const ARGON2_MEMORY_COST_KIB: u32 = 19_456;
 const ARGON2_TIME_COST: u32 = 2;
 const ARGON2_PARALLELISM: u32 = 1;
+const CLIENT_SECRET_HASH_VERSION: &str = "client-secret-v1";
+pub(crate) const LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER: &str =
+    "local-development-client-secret-pepper-00000001";
 
 pub(crate) fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
     if left.len() != right.len() {
@@ -34,6 +40,44 @@ pub(crate) fn verify_password(password: &str, password_hash: &str) -> bool {
     password_hasher()
         .verify_password(password.as_bytes(), &parsed)
         .is_ok()
+}
+
+pub(crate) async fn verify_password_blocking(password: String, password_hash: String) -> bool {
+    tokio::task::spawn_blocking(move || verify_password(&password, &password_hash))
+        .await
+        .unwrap_or(false)
+}
+
+pub(crate) fn hash_client_secret(secret: &str, pepper: &str) -> String {
+    let salt = random_urlsafe_token();
+    let mac = client_secret_mac(secret, pepper, &salt);
+    format!("{CLIENT_SECRET_HASH_VERSION}:{salt}:{mac}")
+}
+
+pub(crate) fn verify_client_secret(secret: &str, stored_hash: &str, pepper: &str) -> bool {
+    let mut parts = stored_hash.split(':');
+    let Some(version) = parts.next() else {
+        return false;
+    };
+    let Some(salt) = parts.next() else {
+        return false;
+    };
+    let Some(stored_mac) = parts.next() else {
+        return false;
+    };
+    if parts.next().is_some() || version != CLIENT_SECRET_HASH_VERSION {
+        return false;
+    }
+    let actual_mac = client_secret_mac(secret, pepper, salt);
+    constant_time_eq(actual_mac.as_bytes(), stored_mac.as_bytes())
+}
+
+fn client_secret_mac(secret: &str, pepper: &str, salt: &str) -> String {
+    let mut mac = HmacSha256::new_from_slice(pepper.as_bytes()).expect("HMAC accepts any key");
+    mac.update(salt.as_bytes());
+    mac.update(b":");
+    mac.update(secret.as_bytes());
+    URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
 }
 
 fn password_hasher() -> Argon2<'static> {

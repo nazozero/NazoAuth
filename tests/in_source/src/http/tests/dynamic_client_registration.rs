@@ -1,5 +1,47 @@
 use super::*;
+use crate::support::{LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER, hash_client_secret};
 use serde_json::json;
+
+async fn prepare_admin_client_insert_for_test(
+    payload: crate::http::admin::CreateClientRequest,
+    pairwise_subject_secret: Option<&str>,
+    issuer: &str,
+) -> Result<crate::http::admin::PreparedClientInsert, crate::http::admin::InsertClientError> {
+    crate::http::admin::prepare_client_insert_with_secret_pepper(
+        payload,
+        pairwise_subject_secret,
+        LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
+        issuer,
+    )
+    .await
+}
+
+async fn prepare_dynamic_client_insert_for_test(
+    registration: PreparedDynamicClientRegistration,
+    pairwise_subject_secret: Option<&str>,
+    issuer: &str,
+    registration_access_token: &str,
+) -> Result<crate::http::admin::PreparedClientInsert, crate::http::admin::InsertClientError> {
+    prepare_dynamic_client_insert_with_secret_pepper(
+        registration,
+        pairwise_subject_secret,
+        LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
+        issuer,
+        registration_access_token,
+    )
+    .await
+}
+
+fn parse_client_configuration_update_for_test(
+    payload: Value,
+    current: &ClientRow,
+) -> Result<DynamicClientRegistrationRequest, DynamicRegistrationError> {
+    parse_client_configuration_update_with_secret_pepper(
+        payload,
+        current,
+        LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
+    )
+}
 
 #[test]
 fn oidc_dynamic_registration_defaults_to_confidential_authorization_code_client() {
@@ -233,7 +275,7 @@ async fn dynamic_registration_accepts_oidf_inline_jwks_without_kid_for_secret_cl
     );
     assert!(create_request.allow_authorization_code_without_pkce);
 
-    crate::http::admin::prepare_client_insert(create_request, None, "https://issuer.example")
+    prepare_admin_client_insert_for_test(create_request, None, "https://issuer.example")
         .await
         .expect("OIDF inline jwks without kid should be accepted for secret clients");
 }
@@ -330,7 +372,7 @@ async fn dynamic_registration_prepared_insert_hashes_registration_access_token()
     )
     .expect("dynamic registration metadata should be valid");
 
-    let prepared = prepare_dynamic_client_insert(
+    let prepared = prepare_dynamic_client_insert_for_test(
         registration,
         None,
         "https://issuer.example",
@@ -369,7 +411,7 @@ fn client_configuration_update_rejects_forbidden_management_fields() {
             .expect("test payload should be an object")
             .insert(field.to_owned(), json!("client-controlled"));
 
-        let err = parse_client_configuration_update(payload, &client)
+        let err = parse_client_configuration_update_for_test(payload, &client)
             .expect_err("RFC 7592 forbids client-controlled management fields in PUT");
 
         assert_eq!(err.error, "invalid_request");
@@ -381,10 +423,12 @@ fn client_configuration_update_requires_matching_client_id_and_secret() {
     let mut client = dynamic_registration_client_row();
     let issued_secret = random_urlsafe_token();
     let wrong_submitted_secret = random_urlsafe_token();
-    client.client_secret_argon2_hash =
-        Some(hash_password(&issued_secret).expect("test secret should hash"));
+    client.client_secret_hash = Some(hash_client_secret(
+        &issued_secret,
+        LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
+    ));
 
-    let missing_client_id = parse_client_configuration_update(
+    let missing_client_id = parse_client_configuration_update_for_test(
         json!({
             "client_secret": issued_secret,
             "redirect_uris": ["https://client.example/callback"]
@@ -394,7 +438,7 @@ fn client_configuration_update_requires_matching_client_id_and_secret() {
     .expect_err("PUT must include the current client_id");
     assert_eq!(missing_client_id.error, "invalid_client_metadata");
 
-    let wrong_client_id = parse_client_configuration_update(
+    let wrong_client_id = parse_client_configuration_update_for_test(
         json!({
             "client_id": "other-client",
             "client_secret": issued_secret,
@@ -405,7 +449,7 @@ fn client_configuration_update_requires_matching_client_id_and_secret() {
     .expect_err("PUT client_id must match the current client");
     assert_eq!(wrong_client_id.error, "invalid_client_metadata");
 
-    let wrong_secret = parse_client_configuration_update(
+    let wrong_secret = parse_client_configuration_update_for_test(
         json!({
             "client_id": "dynamic-client",
             "client_secret": wrong_submitted_secret,
@@ -416,7 +460,7 @@ fn client_configuration_update_requires_matching_client_id_and_secret() {
     .expect_err("PUT client_secret must match the current secret");
     assert_eq!(wrong_secret.error, "invalid_client_metadata");
 
-    let parsed = parse_client_configuration_update(
+    let parsed = parse_client_configuration_update_for_test(
         json!({
             "client_id": "dynamic-client",
             "client_secret": issued_secret,
@@ -458,7 +502,7 @@ async fn dynamic_registration_rejects_private_key_jwt_jwks_without_kid() {
     )
     .expect("private_key_jwt registration metadata should parse before key policy validation");
 
-    let result = crate::http::admin::prepare_client_insert(
+    let result = prepare_admin_client_insert_for_test(
         prepared.to_create_client_request(),
         None,
         "https://issuer.example",
@@ -479,7 +523,7 @@ fn dynamic_registration_client_row() -> ClientRow {
         client_id: "dynamic-client".to_owned(),
         client_name: "Dynamic Client".to_owned(),
         client_type: "confidential".to_owned(),
-        client_secret_argon2_hash: Some("argon2-secret".to_owned()),
+        client_secret_hash: Some("client-secret-v1:salt:digest".to_owned()),
         redirect_uris: json!(["https://client.example/callback"]),
         scopes: json!(["openid"]),
         allowed_audiences: json!(["https://issuer.example/fapi/resource"]),

@@ -148,6 +148,10 @@ impl LiveAdminAccessRequestFixture {
         let valkey_url = std::env::var("VALKEY_URL").ok()?;
         let config = ConfigSource::from_pairs_for_test([
             ("ISSUER", "https://issuer.example"),
+            (
+                "CLIENT_SECRET_PEPPER",
+                "client-secret-pepper-for-tests-000000000001",
+            ),
             ("COOKIE_SECURE", "true"),
             ("SESSION_COOKIE_NAME", "nazo_admin_session_test"),
             ("CSRF_COOKIE_NAME", "nazo_admin_csrf_test"),
@@ -690,7 +694,7 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
     let client = fixture.client_row(approved_client_id).await;
     assert_eq!(client.token_endpoint_auth_method, "client_secret_post");
     assert_eq!(client.client_type, "confidential");
-    assert!(client.client_secret_argon2_hash.is_some());
+    assert!(client.client_secret_hash.is_some());
 
     let duplicate_req =
         fixture.admin_post_request(&sid, &csrf, "/admin/access-requests/request/approve");

@@ -51,7 +51,9 @@ pub(crate) async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) 
             );
         }
     };
-    if !user.is_active || !verify_password(&payload.password, &user.password_hash) {
+    let password_valid = user.is_active
+        && verify_password_blocking(payload.password.clone(), user.password_hash.clone()).await;
+    if !password_valid {
         audit_event(
             "login_failure",
             audit_fields(&[

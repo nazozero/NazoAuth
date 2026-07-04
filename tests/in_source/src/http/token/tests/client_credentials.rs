@@ -34,6 +34,7 @@ fn settings(profile: AuthorizationServerProfile) -> Settings {
         refresh_token_ttl_seconds: 2_592_000,
         avatar_max_bytes: 2_097_152,
         client_delivery_ttl_seconds: 86_400,
+        client_secret_pepper: "client-secret-pepper-for-tests-000000000001".to_owned(),
         rate_limit: RateLimitSettings {
             window_seconds: 60,
             auth_max_requests: 30,
@@ -101,7 +102,7 @@ fn client() -> ClientRow {
         client_id: "client-1".to_owned(),
         client_name: "Client".to_owned(),
         client_type: "confidential".to_owned(),
-        client_secret_argon2_hash: None,
+        client_secret_hash: None,
         redirect_uris: json!(["https://client.example/callback"]),
         scopes: json!(["accounts", "payments"]),
         allowed_audiences: json!(["resource://default", "https://api.example.com"]),

@@ -255,16 +255,10 @@ pub(crate) async fn issue_token_response(
             .user_id
             .expect("openid token issues are rejected before signing without a user subject");
         let sector_identifier_host = client.sector_identifier_host.as_deref();
-        let mut user_claims = match find_user_by_id(&state.diesel_db, user_id).await {
-            Ok(Some(user)) if user.is_active => Some(oidc_id_token_user_claims(
-                &user,
-                &issue.scopes,
-                &issue.subject,
-                &issue.id_token_claims,
-                &issue.id_token_claim_requests,
-                sector_identifier_host,
-            )),
-            Ok(_) => {
+        let loaded_user = if let Some(user) = issue.id_token_user.take() {
+            if user.id == user_id && user.tenant_id == client.tenant_id && user.is_active {
+                Some(*user)
+            } else {
                 mark_failed_authorization_code_if_needed(
                     state,
                     issue.authorization_code_hash.as_deref(),
@@ -278,22 +272,50 @@ pub(crate) async fn issue_token_response(
                     false,
                 );
             }
-            Err(error) => {
-                tracing::warn!(%error, "failed to load id_token subject");
-                mark_failed_authorization_code_if_needed(
-                    state,
-                    issue.authorization_code_hash.as_deref(),
-                    "id_token_subject_load_failed",
-                )
-                .await;
-                return oauth_token_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "id_token 用户声明加载失败.",
-                    false,
-                );
+        } else {
+            match find_user_by_id(&state.diesel_db, user_id).await {
+                Ok(Some(user)) if user.is_active => Some(user),
+                Ok(_) => {
+                    mark_failed_authorization_code_if_needed(
+                        state,
+                        issue.authorization_code_hash.as_deref(),
+                        "id_token_subject_invalid",
+                    )
+                    .await;
+                    return oauth_token_error(
+                        StatusCode::BAD_REQUEST,
+                        "invalid_grant",
+                        "授权用户不存在或已停用.",
+                        false,
+                    );
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "failed to load id_token subject");
+                    mark_failed_authorization_code_if_needed(
+                        state,
+                        issue.authorization_code_hash.as_deref(),
+                        "id_token_subject_load_failed",
+                    )
+                    .await;
+                    return oauth_token_error(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "server_error",
+                        "id_token 用户声明加载失败.",
+                        false,
+                    );
+                }
             }
         };
+        let mut user_claims = loaded_user.map(|user| {
+            oidc_id_token_user_claims(
+                &user,
+                &issue.scopes,
+                &issue.subject,
+                &issue.id_token_claims,
+                &issue.id_token_claim_requests,
+                sector_identifier_host,
+            )
+        });
         if let Some(native_sso) = issue.native_sso.as_ref() {
             let claims = user_claims.get_or_insert_with(|| json!({}));
             if let Some(claims) = claims.as_object_mut() {
