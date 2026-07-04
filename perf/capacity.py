@@ -13,8 +13,8 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 RESULTS_DIR = ROOT / "perf" / "results"
-CAPACITY_RESULTS = RESULTS_DIR / "capacity-latest.json"
-CAPACITY_REPORT = ROOT / "docs" / "performance-capacity-curve.md"
+DEFAULT_CAPACITY_RESULTS = RESULTS_DIR / "capacity-latest.json"
+DEFAULT_CAPACITY_REPORT = ROOT / "docs" / "performance-capacity-curve.md"
 
 DEFAULT_RATES: dict[str, list[int]] = {
     "token_only_client_credentials": [1000, 2500, 5000, 7500, 10000],
@@ -48,15 +48,29 @@ def compose_project_name(env: dict[str, str]) -> str:
 
 
 def compose_command(env: dict[str, str], *args: str) -> list[str]:
+    compose_files = ["-f", "docker-compose.perf.yml"]
+    if env.get("PERF_COMPOSE_OVERRIDE"):
+        compose_files.extend(["-f", env["PERF_COMPOSE_OVERRIDE"]])
     return [
         "docker",
         "compose",
         "-p",
         compose_project_name(env),
-        "-f",
-        "docker-compose.perf.yml",
+        *compose_files,
         *args,
     ]
+
+
+def root_path(value: str) -> Path:
+    path = Path(value)
+    return path if path.is_absolute() else ROOT / path
+
+
+def display_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(ROOT)).replace("\\", "/")
+    except ValueError:
+        return str(path)
 
 
 def service_metric(result: dict[str, Any], service: str, metric: str) -> float:
@@ -87,8 +101,8 @@ def markdown_table(headers: list[str], rows: list[list[Any]]) -> list[str]:
     return lines
 
 
-def write_report(results: list[dict[str, Any]], *, duration: str) -> None:
-    CAPACITY_REPORT.parent.mkdir(parents=True, exist_ok=True)
+def write_report(results: list[dict[str, Any]], *, duration: str, report_path: Path, results_path: Path) -> None:
+    report_path.parent.mkdir(parents=True, exist_ok=True)
     generated_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
     rows: list[list[Any]] = []
     step_rows: list[list[Any]] = []
@@ -151,7 +165,7 @@ def write_report(results: list[dict[str, Any]], *, duration: str) -> None:
             [
                 ["Duration per point", duration],
                 ["Executor", "constant-arrival-rate"],
-                ["Results JSON", "perf/results/capacity-latest.json"],
+                ["Results JSON", display_path(results_path)],
             ],
         ),
         "",
@@ -192,7 +206,7 @@ def write_report(results: list[dict[str, Any]], *, duration: str) -> None:
         "- Per-core normalization uses observed Docker CPU percent for the NazoAuth service: 100% equals one effective CPU core.",
         "",
     ]
-    CAPACITY_REPORT.write_text("\n".join(lines), encoding="utf-8")
+    report_path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def run_point(*, scenario: str, rate: int, duration: str, instances: int, max_vus: int) -> dict[str, Any]:
@@ -219,6 +233,10 @@ def run_point(*, scenario: str, rate: int, duration: str, instances: int, max_vu
             "PERF_APP_REPLICAS": str(instances),
         }
     )
+    point_results_dir = RESULTS_DIR / compose_project_name(env)
+    point_results_dir.mkdir(parents=True, exist_ok=True)
+    env["PERF_RESULTS_HOST_DIR"] = "./" + str(point_results_dir.relative_to(ROOT)).replace("\\", "/")
+    env["PERF_REPORT_PATH"] = "/results/performance-benchmarks.md"
     down = compose_command(env, "down", "-v", "--remove-orphans")
     run_command(down, env)
     try:
@@ -233,7 +251,7 @@ def run_point(*, scenario: str, rate: int, duration: str, instances: int, max_vu
             "perf",
         )
         run_command(command, env)
-        latest = json.loads((RESULTS_DIR / "latest.json").read_text(encoding="utf-8"))
+        latest = json.loads((point_results_dir / "latest.json").read_text(encoding="utf-8"))
         if len(latest) != 1:
             raise RuntimeError(f"capacity point expected one result, got {len(latest)}")
         result = {
@@ -256,6 +274,8 @@ def main() -> None:
     parser.add_argument("--instances", default="1,2,4", help="Comma-separated NazoAuth replica counts.")
     parser.add_argument("--scenarios", default=",".join(DEFAULT_RATES), help="Comma-separated capacity scenarios.")
     parser.add_argument("--rates", default="", help="Comma-separated rates applied to every selected scenario.")
+    parser.add_argument("--report-path", default=str(DEFAULT_CAPACITY_REPORT))
+    parser.add_argument("--results-path", default=str(DEFAULT_CAPACITY_RESULTS))
     parser.add_argument("--max-vus", type=int, default=512)
     parser.add_argument("--smoke", action="store_true", help="Use a short, low-rate matrix for toolchain validation.")
     args = parser.parse_args()
@@ -278,6 +298,8 @@ def main() -> None:
         }
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    report_path = root_path(args.report_path)
+    results_path = root_path(args.results_path)
     results: list[dict[str, Any]] = []
     for instance_count in instances:
         for scenario, rates in scenario_rates.items():
@@ -295,8 +317,9 @@ def main() -> None:
                         max_vus=args.max_vus,
                     )
                 )
-                CAPACITY_RESULTS.write_text(json.dumps(results, indent=2), encoding="utf-8")
-                write_report(results, duration=args.duration)
+                results_path.parent.mkdir(parents=True, exist_ok=True)
+                results_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
+                write_report(results, duration=args.duration, report_path=report_path, results_path=results_path)
 
 
 if __name__ == "__main__":

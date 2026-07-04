@@ -1,6 +1,6 @@
-main:
+$:
   api_trigger_capacity_curve:
-    token_only:
+    capacity_curve:
       runner:
         tags: cnb:arch:amd64
         cpus: 64
@@ -8,69 +8,6 @@ main:
         - docker
       docker:
         image: docker:27-cli
-      env:
-        CAPACITY_SCENARIOS: token_only_client_credentials
-        CAPACITY_REPORT_SUFFIX: token-only
       stages:
-        - name: run token-only capacity curve
-          script: ./perf/cnb_capacity.sh
-
-    oidc_cold_login:
-      runner:
-        tags: cnb:arch:amd64
-        cpus: 64
-      services:
-        - docker
-      docker:
-        image: docker:27-cli
-      env:
-        CAPACITY_SCENARIOS: oidc_cold_login_refresh
-        CAPACITY_REPORT_SUFFIX: oidc-cold-login
-      stages:
-        - name: run OIDC cold-login capacity curve
-          script: ./perf/cnb_capacity.sh
-
-    oidc_logged_in:
-      runner:
-        tags: cnb:arch:amd64
-        cpus: 64
-      services:
-        - docker
-      docker:
-        image: docker:27-cli
-      env:
-        CAPACITY_SCENARIOS: oidc_logged_in_authorization_code
-        CAPACITY_REPORT_SUFFIX: oidc-logged-in
-      stages:
-        - name: run OIDC logged-in capacity curve
-          script: ./perf/cnb_capacity.sh
-
-    oidc_refresh_only:
-      runner:
-        tags: cnb:arch:amd64
-        cpus: 64
-      services:
-        - docker
-      docker:
-        image: docker:27-cli
-      env:
-        CAPACITY_SCENARIOS: oidc_refresh_only
-        CAPACITY_REPORT_SUFFIX: oidc-refresh-only
-      stages:
-        - name: run OIDC refresh-only capacity curve
-          script: ./perf/cnb_capacity.sh
-
-    fapi2_full_security:
-      runner:
-        tags: cnb:arch:amd64
-        cpus: 64
-      services:
-        - docker
-      docker:
-        image: docker:27-cli
-      env:
-        CAPACITY_SCENARIOS: fapi2_full_security
-        CAPACITY_REPORT_SUFFIX: fapi2-full-security
-      stages:
-        - name: run FAPI2 capacity curve
-          script: ./perf/cnb_capacity.sh
+        - name: run capacity curve matrix
+          script: ./perf/cnb_capacity_matrix.sh
