@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -36,6 +37,26 @@ def run_command(command: list[str], env: dict[str, str]) -> None:
     completed = subprocess.run(command, cwd=ROOT, env=env, text=True)
     if completed.returncode != 0:
         raise RuntimeError(f"command failed with exit code {completed.returncode}: {' '.join(command)}")
+
+
+def compose_project_name(env: dict[str, str]) -> str:
+    value = env.get("COMPOSE_PROJECT_NAME", "nazoauth-perf").lower()
+    value = re.sub(r"[^a-z0-9_-]+", "-", value).strip("-_")
+    if not value or not value[0].isalnum():
+        return "nazoauth-perf"
+    return value[:63]
+
+
+def compose_command(env: dict[str, str], *args: str) -> list[str]:
+    return [
+        "docker",
+        "compose",
+        "-p",
+        compose_project_name(env),
+        "-f",
+        "docker-compose.perf.yml",
+        *args,
+    ]
 
 
 def service_metric(result: dict[str, Any], service: str, metric: str) -> float:
@@ -176,6 +197,11 @@ def write_report(results: list[dict[str, Any]], *, duration: str) -> None:
 
 def run_point(*, scenario: str, rate: int, duration: str, instances: int, max_vus: int) -> dict[str, Any]:
     env = os.environ.copy()
+    cnb_build = env.get("CNB_BUILD_ID", "")
+    cnb_pipeline = env.get("CNB_PIPELINE_KEY", "")
+    report_suffix = env.get("CAPACITY_REPORT_SUFFIX", scenario)
+    if cnb_build and "COMPOSE_PROJECT_NAME" not in env:
+        env["COMPOSE_PROJECT_NAME"] = f"nazoauth-{cnb_build}-{cnb_pipeline or report_suffix}"
     env.update(
         {
             "PERF_PROFILE": "capacity",
@@ -193,35 +219,35 @@ def run_point(*, scenario: str, rate: int, duration: str, instances: int, max_vu
             "PERF_APP_REPLICAS": str(instances),
         }
     )
-    run_command(["docker", "compose", "-f", "docker-compose.perf.yml", "down", "-v", "--remove-orphans"], env)
-    command = [
-        "docker",
-        "compose",
-        "-f",
-        "docker-compose.perf.yml",
-        "up",
-        "--build",
-        "--scale",
-        f"nazoauth={instances}",
-        "--abort-on-container-exit",
-        "--exit-code-from",
-        "perf",
-    ]
-    run_command(command, env)
-    latest = json.loads((RESULTS_DIR / "latest.json").read_text(encoding="utf-8"))
-    if len(latest) != 1:
-        raise RuntimeError(f"capacity point expected one result, got {len(latest)}")
-    result = {
-        "instances": instances,
-        "scenario": scenario,
-        "target_rate": rate,
-        "duration": duration,
-        "result": latest[0],
-    }
-    safe_name = f"capacity-{instances}x-{scenario}-{rate}rps"
-    (RESULTS_DIR / f"{safe_name}.summary.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
-    run_command(["docker", "compose", "-f", "docker-compose.perf.yml", "down", "-v", "--remove-orphans"], env)
-    return result
+    down = compose_command(env, "down", "-v", "--remove-orphans")
+    run_command(down, env)
+    try:
+        command = compose_command(
+            env,
+            "up",
+            "--build",
+            "--scale",
+            f"nazoauth={instances}",
+            "--abort-on-container-exit",
+            "--exit-code-from",
+            "perf",
+        )
+        run_command(command, env)
+        latest = json.loads((RESULTS_DIR / "latest.json").read_text(encoding="utf-8"))
+        if len(latest) != 1:
+            raise RuntimeError(f"capacity point expected one result, got {len(latest)}")
+        result = {
+            "instances": instances,
+            "scenario": scenario,
+            "target_rate": rate,
+            "duration": duration,
+            "result": latest[0],
+        }
+        safe_name = f"capacity-{instances}x-{scenario}-{rate}rps"
+        (RESULTS_DIR / f"{safe_name}.summary.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+        return result
+    finally:
+        run_command(down, env)
 
 
 def main() -> None:
@@ -253,30 +279,24 @@ def main() -> None:
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     results: list[dict[str, Any]] = []
-    try:
-        for instance_count in instances:
-            for scenario, rates in scenario_rates.items():
-                for rate in rates:
-                    print(
-                        f"capacity point: instances={instance_count} "
-                        f"scenario={scenario} rate={rate}/s duration={args.duration}"
+    for instance_count in instances:
+        for scenario, rates in scenario_rates.items():
+            for rate in rates:
+                print(
+                    f"capacity point: instances={instance_count} "
+                    f"scenario={scenario} rate={rate}/s duration={args.duration}"
+                )
+                results.append(
+                    run_point(
+                        scenario=scenario,
+                        rate=rate,
+                        duration=args.duration,
+                        instances=instance_count,
+                        max_vus=args.max_vus,
                     )
-                    results.append(
-                        run_point(
-                            scenario=scenario,
-                            rate=rate,
-                            duration=args.duration,
-                            instances=instance_count,
-                            max_vus=args.max_vus,
-                        )
-                    )
-                    CAPACITY_RESULTS.write_text(json.dumps(results, indent=2), encoding="utf-8")
-                    write_report(results, duration=args.duration)
-    finally:
-        run_command(
-            ["docker", "compose", "-f", "docker-compose.perf.yml", "down", "-v", "--remove-orphans"],
-            os.environ.copy(),
-        )
+                )
+                CAPACITY_RESULTS.write_text(json.dumps(results, indent=2), encoding="utf-8")
+                write_report(results, duration=args.duration)
 
 
 if __name__ == "__main__":
