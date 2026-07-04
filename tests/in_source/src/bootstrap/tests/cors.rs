@@ -241,6 +241,82 @@ async fn cors_admin_allows_csrf_header_for_credentialed_write_requests() {
     );
 }
 
+#[actix_web::test]
+async fn cors_auth_api_credentials_are_limited_to_configured_origins_and_csrf_headers() {
+    let settings = test_settings(vec!["https://app.example".to_owned()]);
+    let app = test::init_service(App::new().wrap(cors_auth_api(&settings)).route(
+        "/auth/me",
+        web::patch().to(|| async { HttpResponse::Ok().finish() }),
+    ))
+    .await;
+
+    let allowed = test::TestRequest::default()
+        .method(actix_web::http::Method::OPTIONS)
+        .uri("/auth/me")
+        .insert_header((header::ORIGIN, "https://app.example"))
+        .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, "PATCH"))
+        .insert_header((
+            header::ACCESS_CONTROL_REQUEST_HEADERS,
+            "x-csrf-token, content-type",
+        ))
+        .to_request();
+    let response = test::call_service(&app, allowed).await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .unwrap(),
+        "https://app.example"
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+            .unwrap(),
+        "true"
+    );
+    assert!(
+        response
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_HEADERS)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("x-csrf-token"),
+        "credentialed auth API writes must allow only explicit CSRF-bearing CORS requests"
+    );
+
+    let denied = test::TestRequest::default()
+        .method(actix_web::http::Method::OPTIONS)
+        .uri("/auth/me")
+        .insert_header((header::ORIGIN, "https://attacker.example"))
+        .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, "PATCH"))
+        .insert_header((
+            header::ACCESS_CONTROL_REQUEST_HEADERS,
+            "x-csrf-token, content-type",
+        ))
+        .to_request();
+    let response = test::call_service(&app, denied).await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(
+        response
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .is_none(),
+        "credentialed auth API CORS must not authorize unregistered browser origins"
+    );
+    assert!(
+        response
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+            .is_none(),
+        "credentialed auth API CORS must not expose cookies to unregistered origins"
+    );
+}
+
 fn test_settings(cors_allowed_origins: Vec<String>) -> Settings {
     Settings {
         issuer: "https://issuer.example".to_owned(),

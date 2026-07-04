@@ -69,6 +69,39 @@ AVATAR_STORAGE_DIR = DATA_DIR + "/avatars"
 Explicit overrides are retained for advanced deployments and backward
 compatibility. New deployments should prefer same-origin defaults.
 
+## Public OP/AS security boundary
+
+Production deployments must expose the issuer through HTTPS. Nazo Auth Server
+normally listens on HTTP behind a TLS-terminating reverse proxy; the proxy is
+responsible for public TLS policy and browser HSTS. Public listeners should use
+TLS 1.3 where available, allow only modern TLS 1.2 suites when TLS 1.2 is
+required, reject TLS 1.0/1.1, and set `Strict-Transport-Security` for
+browser-facing issuer hosts. `ISSUER`, `PUBLIC_BASE_URL`, and
+`FRONTEND_BASE_URL` must use the externally visible HTTPS origin in production.
+
+Reverse proxies must strip inbound client-supplied `Forwarded`,
+`X-Forwarded-*`, mTLS, and certificate-related headers before adding trusted
+values. Configure `TRUSTED_PROXY_CIDRS` only for proxy addresses that are
+allowed to supply client IP or verified certificate metadata. Keep
+`CLIENT_IP_HEADER_MODE=none` unless every hop between the public listener and
+the application is under the same administrative trust boundary.
+
+Trusted mTLS header mode is a deployment boundary, not a browser feature. The
+proxy or sidecar must verify the client certificate, forward only normalized
+certificate evidence over the trusted internal hop, and reject or overwrite any
+same-named header received from the public internet. Raw certificate material,
+client assertions, DPoP proofs, access tokens, refresh tokens, authorization
+codes, provider tokens, and secret references must not be logged or returned in
+error responses.
+
+CORS is endpoint-scoped. Authorization and browser-redirect endpoints are not
+CORS APIs. Browser OAuth APIs expose only the protocol headers needed for DPoP
+nonce, challenge, and retry handling and do not allow credentialed CORS. Auth
+and admin session APIs may use credentialed CORS only for exact configured
+origins and only with CSRF-bearing write requests. Session cookies are
+`HttpOnly`, `SameSite=Lax`, and `Secure` by default; disabling `COOKIE_SECURE`
+is only appropriate for local loopback development.
+
 ## Advanced settings
 
 The following settings are still supported but should not be part of a quick
