@@ -1,9 +1,8 @@
-name: nazoauth-perf
+name: ${COMPOSE_PROJECT_NAME:-nazoauth-perf}
 
 services:
   postgres:
     image: docker.io/library/postgres:18-alpine
-    container_name: nazoauth-perf-postgres
     command:
       - postgres
       - -c
@@ -29,7 +28,6 @@ services:
 
   valkey:
     image: docker.io/valkey/valkey:8-alpine
-    container_name: nazoauth-perf-valkey
     command: ["valkey-server", "--save", "", "--appendonly", "no", "--loglevel", "warning"]
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
@@ -42,7 +40,6 @@ services:
 
   keyset:
     image: docker.io/library/python:3.13-alpine
-    container_name: nazoauth-perf-keyset
     volumes:
       - ./scripts:/scripts:ro
       - perf_runtime:/var/lib/nazo_oauth
@@ -80,7 +77,6 @@ services:
       context: .
       dockerfile: Containerfile
       target: runtime
-    container_name: nazoauth-perf-migrate
     volumes:
       - ./perf/env.yaml:/app/.env.yaml:ro
       - perf_runtime:/var/lib/nazo_oauth
@@ -104,12 +100,12 @@ services:
     build:
       context: .
       dockerfile: perf/runner/Containerfile
-    container_name: nazoauth-perf-runner
     environment:
+      COMPOSE_PROJECT_NAME: "${COMPOSE_PROJECT_NAME:-nazoauth-perf}"
       BASE_URL: "http://nazoauth:8000"
       ISSUER_URL: "http://127.0.0.1:8000"
-      DATABASE_URL: "postgresql://postgres:postgres@nazoauth-perf-postgres:5432/oauth"
-      VALKEY_URL: "redis://nazoauth-perf-valkey:6379/0"
+      DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/oauth"
+      VALKEY_URL: "redis://valkey:6379/0"
       PERF_PROFILE: "${PERF_PROFILE:-all}"
       PERF_SCENARIO: "${PERF_SCENARIO:-}"
       PERF_EXECUTOR: "${PERF_EXECUTOR:-}"
