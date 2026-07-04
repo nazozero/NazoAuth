@@ -1,7 +1,9 @@
 #!/usr/bin/env sh
 set -eu
 
-apk add --no-cache bash coreutils docker-cli-compose git jq python3 >/dev/null
+apk add --no-cache coreutils git jq python3 >/dev/null
+
+docker compose version >/dev/null
 
 SCENARIOS="${CAPACITY_SCENARIOS:-token_only_client_credentials,oidc_cold_login_refresh,oidc_logged_in_authorization_code,oidc_refresh_only,fapi2_full_security}"
 REPORT_SUFFIX="${CAPACITY_REPORT_SUFFIX:-full}"
