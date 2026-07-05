@@ -20,6 +20,7 @@ const scenarioSteps = {
   token_client_credentials: ['token_client_credentials'],
   mtls_client_credentials: ['mtls_client_credentials'],
   par_signed_request_object: ['par_oidc'],
+  metadata_jwks: ['metadata', 'jwks'],
   token_only_client_credentials: ['token_client_credentials'],
   oidc_cold_login_refresh: [
     'par_oidc',
@@ -59,6 +60,14 @@ const scenarioSteps = {
     'authorize_decision',
     'token_authorization_code',
     'introspect',
+  ],
+  revoke_refresh_token: [
+    'par_oidc',
+    'login',
+    'authorize',
+    'authorize_decision',
+    'token_authorization_code',
+    'revoke',
   ],
   authorize_par_session: ['par_oidc', 'login', 'authorize'],
   same_user_refresh_token_rotation: [
@@ -101,6 +110,7 @@ const vectorOffsets = {
   oidc_logged_in_authorization_code: vectorStride * 9,
   oidc_refresh_only: vectorStride * 10,
   fapi2_full_security: vectorStride * 11,
+  revoke_refresh_token: vectorStride * 12,
 };
 
 export const options = {
@@ -469,6 +479,42 @@ export function introspect_opaque_refresh_token() {
   introspectOpaqueRefreshToken(false);
 }
 
+export function metadata_jwks() {
+  const metadata = http.get(
+    `${BASE_URL}/.well-known/openid-configuration`,
+    {
+      redirects: 0,
+      tags: requestTags('metadata', {
+        endpoint: '/.well-known/openid-configuration',
+      }),
+    },
+  );
+  check(metadata, {
+    'metadata status is 200': (r) => r.status === 200,
+    'metadata issuer returned': (r) => Boolean(r.json('issuer')),
+  });
+  if (metadata.status !== 200) {
+    fail(`metadata failed: ${metadata.status} ${metadata.body}`);
+  }
+
+  const jwks = http.get(
+    `${BASE_URL}/jwks.json`,
+    {
+      redirects: 0,
+      tags: requestTags('jwks', {
+        endpoint: '/jwks.json',
+      }),
+    },
+  );
+  check(jwks, {
+    'jwks status is 200': (r) => r.status === 200,
+    'jwks keys returned': (r) => Array.isArray(r.json('keys')),
+  });
+  if (jwks.status !== 200) {
+    fail(`jwks failed: ${jwks.status} ${jwks.body}`);
+  }
+}
+
 function introspectOpaqueRefreshToken(sharedUser) {
   const user = selectedUser(sharedUser);
   const v = vector();
@@ -528,6 +574,34 @@ function refreshTokenRotation(sharedUser) {
 
 export function oidc_cold_login_refresh() {
   refreshTokenRotation(false);
+}
+
+export function revoke_refresh_token() {
+  const user = selectedUser(false);
+  const v = vector();
+  const requestUri = oidcPar(v);
+  const requestId = authorizePar(secrets.clients.oidc, requestUri, user);
+  const code = approveAuthorization(requestId, v.oidc_state);
+  const tokens = tokenAuthorizationCode(v, code);
+  const response = http.post(
+    `${BASE_URL}/revoke`,
+    form({
+      token: tokens.refresh_token,
+      client_id: secrets.clients.oidc,
+      client_secret: secrets.client_secret,
+    }),
+    formHeaders({}, requestTags('revoke', {
+      endpoint: '/revoke',
+      token_type: 'refresh_token',
+      client_profile: 'oidc',
+    })),
+  );
+  check(response, {
+    'refresh token revoke status is 200': (r) => r.status === 200,
+  });
+  if (response.status !== 200) {
+    fail(`refresh token revoke failed: ${response.status} ${response.body}`);
+  }
 }
 
 export function oidc_logged_in_authorization_code() {

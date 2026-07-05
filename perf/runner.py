@@ -48,6 +48,17 @@ PROFILES: dict[str, list[str]] = {
     "fapi2-high-security": [
         "fapi2_par_jar_private_key_jwt_dpop",
     ],
+    "extended-capacity": [
+        "mtls_client_credentials",
+        "par_signed_request_object",
+        "introspect_opaque_refresh_token",
+        "authorize_par_session",
+        "revoke_refresh_token",
+        "metadata_jwks",
+        "same_user_refresh_token_rotation",
+        "same_user_introspect_opaque_refresh_token",
+        "same_user_authorize_par_session",
+    ],
     "capacity": [
         "token_only_client_credentials",
         "oidc_cold_login_refresh",
@@ -72,6 +83,7 @@ VECTOR_OFFSET_MULTIPLIERS = {
     "oidc_logged_in_authorization_code": 9,
     "oidc_refresh_only": 10,
     "fapi2_full_security": 11,
+    "revoke_refresh_token": 12,
 }
 VECTORIZED_SCENARIOS = set(VECTOR_OFFSET_MULTIPLIERS)
 
@@ -679,9 +691,11 @@ def ensure_vector_capacity() -> None:
             minimum = VECTOR_STRIDE_FLOOR
         elif scenario == "oidc_refresh_only":
             max_vus = int(os.environ.get("PERF_MAX_VUS") or os.environ.get("PERF_PRE_ALLOCATED_VUS") or 64)
-            minimum = offset + max(max_vus, VECTOR_STRIDE_FLOOR)
+            minimum = offset + max(max_vus + 1, VECTOR_STRIDE_FLOOR)
         else:
-            minimum = offset + max(rate * duration, VECTOR_STRIDE_FLOOR)
+            scheduled_iterations = rate * duration
+            boundary_cushion = max(rate, 1)
+            minimum = offset + max(scheduled_iterations + boundary_cushion, VECTOR_STRIDE_FLOOR)
     else:
         minimum = max(iterations, VECTOR_STRIDE_FLOOR) * VECTOR_STRIDE_MULTIPLIER
     if requested < minimum:

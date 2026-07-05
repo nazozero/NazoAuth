@@ -41,6 +41,12 @@ Run the long fixed-arrival-rate capacity curve:
 make perf-capacity
 ```
 
+Run the extended fixed-arrival-rate matrix on a dedicated CNB runner:
+
+```sh
+./perf/cnb_extended_capacity_matrix.sh
+```
+
 The long capacity curve runs 30 minutes per point across 1, 2, and 4 NazoAuth
 replicas. It is intended for dedicated benchmark machines, not routine local
 verification.
@@ -78,6 +84,7 @@ FAPI paths can issue the required RS256 and PS256 server-side tokens.
 | `oidc-same-user-contention` | `same_user_refresh_token_rotation`, `same_user_introspect_opaque_refresh_token`, `same_user_authorize_par_session` | Exercises concurrent operations from one account to reveal account/session contention risks. |
 | `fapi2-high-security` | `fapi2_par_jar_private_key_jwt_dpop` | Exercises PAR + signed JAR + `private_key_jwt` + DPoP-bound authorization-code and refresh paths. |
 | `capacity` | `token_only_client_credentials`, `oidc_cold_login_refresh`, `oidc_logged_in_authorization_code`, `oidc_refresh_only`, `fapi2_full_security` | Fixed-arrival-rate scenarios used by `perf/capacity.py` to build 1/2/4 replica capacity curves. |
+| `extended-capacity` | `mtls_client_credentials`, `par_signed_request_object`, `introspect_opaque_refresh_token`, `authorize_par_session`, `revoke_refresh_token`, `metadata_jwks`, `same_user_refresh_token_rotation`, `same_user_introspect_opaque_refresh_token`, `same_user_authorize_par_session` | Covers protocol and security surfaces that should not be mixed into the primary capacity curve. |
 
 ## Capacity Curve Model
 
@@ -93,6 +100,13 @@ The default long matrix covers:
 - `oidc_refresh_only`: one bootstrap flow per VU, then refresh-token rotation.
 - `fapi2_full_security`: PAR + signed JAR + `private_key_jwt` + DPoP-bound
   authorization-code and refresh paths.
+
+`perf/cnb_extended_capacity_matrix.sh` runs a separate 30 minute per point
+matrix for mTLS, opaque-token introspection, PAR/JAR endpoint cost,
+authorization-session cost, token revocation, discovery/JWKS reads, and
+same-user contention. CIBA and Dynamic Client Registration require dedicated
+perf environment switches and seed data, so they are intentionally kept out of
+the first extended matrix until those setup paths are benchmark-ready.
 
 The report normalizes observed throughput by NazoAuth service CPU usage:
 `100%` Docker CPU is treated as one effective CPU core. This avoids claiming

@@ -22,6 +22,15 @@ DEFAULT_RATES: dict[str, list[int]] = {
     "oidc_logged_in_authorization_code": [16, 32, 64, 128, 256],
     "oidc_refresh_only": [250, 500, 1000, 1500, 2000],
     "fapi2_full_security": [16, 32, 64, 128, 256],
+    "mtls_client_credentials": [250, 500, 1000, 1500, 2000],
+    "par_signed_request_object": [250, 500, 1000, 1500, 2000],
+    "introspect_opaque_refresh_token": [16, 32, 64, 128, 256],
+    "authorize_par_session": [16, 32, 64, 128, 256],
+    "revoke_refresh_token": [16, 32, 64, 128, 256],
+    "metadata_jwks": [250, 500, 1000, 1500, 2000],
+    "same_user_refresh_token_rotation": [8, 16, 32, 64, 128],
+    "same_user_introspect_opaque_refresh_token": [8, 16, 32, 64, 128],
+    "same_user_authorize_par_session": [8, 16, 32, 64, 128],
 }
 
 
@@ -75,6 +84,22 @@ def display_path(path: Path) -> str:
 
 def service_metric(result: dict[str, Any], service: str, metric: str) -> float:
     return float(result.get("containers", {}).get("by_service", {}).get(service, {}).get(metric, 0))
+
+
+def postgres_metric(result: dict[str, Any], metric: str) -> float:
+    return float(result.get("postgres", {}).get(metric, 0))
+
+
+def db_pool_metric(result: dict[str, Any], metric: str) -> float:
+    return float(result.get("db_pool", {}).get(metric, 0))
+
+
+def valkey_hit_rate(result: dict[str, Any]) -> float:
+    valkey = result.get("valkey", {})
+    hits = float(valkey.get("keyspace_hits", 0))
+    misses = float(valkey.get("keyspace_misses", 0))
+    total = hits + misses
+    return hits / total if total > 0 else 0
 
 
 def step_rps(result: dict[str, Any], *steps: str) -> float:
@@ -134,6 +159,13 @@ def write_report(results: list[dict[str, Any]], *, duration: str, report_path: P
                 f"{per_core(token_rps, result):.3f}",
                 f"{service_metric(result, 'postgres', 'cpu_percent_avg'):.3f}",
                 f"{service_metric(result, 'valkey', 'cpu_percent_avg'):.3f}",
+                f"{postgres_metric(result, 'mean_statement_ms'):.3f}",
+                f"{postgres_metric(result, 'statements_per_http_request'):.3f}",
+                f"{db_pool_metric(result, 'wait_ms_avg'):.3f}",
+                f"{db_pool_metric(result, 'wait_ms_max_observed_process_lifetime'):.3f}",
+                f"{valkey_hit_rate(result):.6f}",
+                result.get("valkey", {}).get("keyspace_hits", 0),
+                result.get("valkey", {}).get("keyspace_misses", 0),
             ]
         )
         for step in result.get("steps", []):
@@ -187,6 +219,13 @@ def write_report(results: list[dict[str, Any]], *, duration: str, report_path: P
                 "Token RPS/App CPU Core",
                 "Postgres CPU Avg %",
                 "Valkey CPU Avg %",
+                "Postgres Mean Statement ms",
+                "DB Statements/HTTP Req",
+                "DB Pool Wait Avg ms",
+                "DB Pool Wait Max ms",
+                "Valkey Hit Rate",
+                "Valkey Hits",
+                "Valkey Misses",
             ],
             rows,
         ),
@@ -268,6 +307,33 @@ def run_point(*, scenario: str, rate: int, duration: str, instances: int, max_vu
         run_command(down, env)
 
 
+def point_key(point: dict[str, Any]) -> tuple[int, str, int] | None:
+    try:
+        return (
+            int(point["instances"]),
+            str(point["scenario"]),
+            int(point["target_rate"]),
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def load_existing_results(results_path: Path) -> list[dict[str, Any]]:
+    if not results_path.exists():
+        return []
+    data = json.loads(results_path.read_text(encoding="utf-8"))
+    if not isinstance(data, list):
+        raise RuntimeError(f"capacity results must be a JSON array: {results_path}")
+    results: list[dict[str, Any]] = []
+    for item in data:
+        if not isinstance(item, dict):
+            raise RuntimeError(f"capacity result item must be an object: {results_path}")
+        if point_key(item) is None:
+            raise RuntimeError(f"capacity result item is missing point identity: {results_path}")
+        results.append(item)
+    return results
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run NazoAuth fixed arrival-rate capacity curves.")
     parser.add_argument("--duration", default="30m")
@@ -300,23 +366,34 @@ def main() -> None:
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     report_path = root_path(args.report_path)
     results_path = root_path(args.results_path)
-    results: list[dict[str, Any]] = []
+    results = load_existing_results(results_path)
+    completed = {key for item in results if (key := point_key(item)) is not None}
+    if results:
+        print(f"resuming capacity matrix with {len(results)} completed point(s) from {results_path}")
+        write_report(results, duration=args.duration, report_path=report_path, results_path=results_path)
     for instance_count in instances:
         for scenario, rates in scenario_rates.items():
             for rate in rates:
+                key = (instance_count, scenario, rate)
+                if key in completed:
+                    print(
+                        f"skip completed capacity point: instances={instance_count} "
+                        f"scenario={scenario} rate={rate}/s"
+                    )
+                    continue
                 print(
                     f"capacity point: instances={instance_count} "
                     f"scenario={scenario} rate={rate}/s duration={args.duration}"
                 )
-                results.append(
-                    run_point(
-                        scenario=scenario,
-                        rate=rate,
-                        duration=args.duration,
-                        instances=instance_count,
-                        max_vus=args.max_vus,
-                    )
+                point = run_point(
+                    scenario=scenario,
+                    rate=rate,
+                    duration=args.duration,
+                    instances=instance_count,
+                    max_vus=args.max_vus,
                 )
+                results.append(point)
+                completed.add(key)
                 results_path.parent.mkdir(parents=True, exist_ok=True)
                 results_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
                 write_report(results, duration=args.duration, report_path=report_path, results_path=results_path)

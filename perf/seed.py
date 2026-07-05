@@ -33,6 +33,8 @@ MTLS_THUMBPRINT = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abc
 REDIRECT_URI = "https://client.example/callback"
 CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 VECTOR_STRIDE_FLOOR = 100
+SIGNED_JWT_BACKDATE_SECONDS = 60
+SIGNED_JWT_FORWARD_SECONDS = 240
 VECTOR_OFFSET_MULTIPLIERS = {
     "par_signed_request_object": 0,
     "refresh_token_rotation": 1,
@@ -46,6 +48,7 @@ VECTOR_OFFSET_MULTIPLIERS = {
     "oidc_logged_in_authorization_code": 9,
     "oidc_refresh_only": 10,
     "fapi2_full_security": 11,
+    "revoke_refresh_token": 12,
 }
 
 
@@ -171,6 +174,7 @@ def client_assertion(
     jti_suffix: str,
     now: int,
 ) -> str:
+    iat = now - SIGNED_JWT_BACKDATE_SECONDS
     return sign_rs256(
         private_key,
         {"alg": "RS256", "kid": kid, "typ": "JWT"},
@@ -178,8 +182,8 @@ def client_assertion(
             "iss": client_id,
             "sub": client_id,
             "aud": issuer,
-            "iat": now,
-            "exp": now + 240,
+            "iat": iat,
+            "exp": now + SIGNED_JWT_FORWARD_SECONDS,
             "jti": f"{jti_suffix}-{uuid.uuid4()}",
         },
     )
@@ -197,14 +201,15 @@ def request_object(
     dpop_jkt: str | None,
     now: int,
 ) -> str:
+    nbf = now - SIGNED_JWT_BACKDATE_SECONDS
     claims: dict[str, Any] = {
         "client_id": client_id,
         "iss": client_id,
         "sub": client_id,
         "aud": issuer,
-        "iat": now,
-        "nbf": now - 5,
-        "exp": now + 240,
+        "iat": nbf,
+        "nbf": nbf,
+        "exp": now + SIGNED_JWT_FORWARD_SECONDS,
         "jti": f"jar-{uuid.uuid4()}",
         "response_type": "code",
         "redirect_uri": REDIRECT_URI,
@@ -227,13 +232,14 @@ def dpop_proof(
     jti_suffix: str,
     now: int,
 ) -> str:
+    iat = now - SIGNED_JWT_BACKDATE_SECONDS
     return sign_es256(
         private_key,
         {"alg": "ES256", "typ": "dpop+jwt", "jwk": public_jwk},
         {
             "htm": method,
             "htu": htu,
-            "iat": now,
+            "iat": iat,
             "jti": f"{jti_suffix}-{uuid.uuid4()}",
         },
     )
@@ -557,7 +563,11 @@ def seed() -> None:
         rate=int(os.environ.get("PERF_RATE", "0") or "0"),
     )
     (state_dir / "vectors.json").write_text(json.dumps(vectors), encoding="utf-8")
-    print(f"seeded {user_count} perf users, clients, and {vector_count} scheduled signed vectors")
+    print(
+        f"seeded {user_count} perf users, clients, and {vector_count} scheduled signed vectors "
+        f"(scenario={os.environ.get('PERF_SCENARIO', '').strip() or 'all'}, "
+        f"rate={os.environ.get('PERF_RATE', '0') or '0'}/s)"
+    )
 
 
 if __name__ == "__main__":
