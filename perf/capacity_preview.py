@@ -820,7 +820,6 @@ summary { cursor:pointer; color:#7dd3fc; font-size:13px; line-height:1.45; min-h
     page_js = """
 const LOG_LINE_LIMIT = 500;
 const logStreams = new Map();
-let refreshingDashboard = false;
 
 function eventDataLine(event) {
   try { return JSON.parse(event.data); }
@@ -935,15 +934,12 @@ async function refreshDashboard() {
   const dashboard = document.getElementById('dashboard');
   if (!dashboard) return;
   try {
-    refreshingDashboard = true;
     const response = await fetch('/fragment', { cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     dashboard.innerHTML = await response.text();
     bindOpenLogViews();
   } catch (error) {
     console.warn('capacity preview refresh failed', error);
-  } finally {
-    setTimeout(() => { refreshingDashboard = false; }, 0);
   }
 }
 
@@ -951,7 +947,6 @@ document.addEventListener('toggle', (event) => {
   const details = event.target;
   if (!details.classList || !details.classList.contains('lazy-log')) return;
   if (!details.isConnected) return;
-  if (refreshingDashboard) return;
   const key = details.dataset.logKey;
   if (details.open) {
     startLogStream(key);
