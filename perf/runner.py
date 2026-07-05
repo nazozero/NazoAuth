@@ -347,6 +347,19 @@ def k6_http_reqs(summary: dict[str, Any]) -> int:
     return int(values.get("count", 0))
 
 
+def k6_metric_values(summary: dict[str, Any], metric_name: str) -> dict[str, Any]:
+    metric = summary.get("metrics", {}).get(metric_name, {})
+    return metric.get("values", metric)
+
+
+def k6_check_rate(summary: dict[str, Any]) -> float:
+    return float(k6_metric_values(summary, "checks").get("rate", 0))
+
+
+def k6_error_rate(summary: dict[str, Any]) -> float:
+    return float(k6_metric_values(summary, "http_req_failed").get("rate", 0))
+
+
 def k6_brief(summary: dict[str, Any]) -> dict[str, Any]:
     metrics = summary.get("metrics", {})
     duration_metric = metrics.get("http_req_duration", {})
@@ -443,8 +456,8 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
     with StatsSampler() as sampler:
         completed = subprocess.run(command, env=env, text=True)
     elapsed = time.perf_counter() - started
-    if completed.returncode != 0:
-        raise RuntimeError(f"k6 scenario failed: {profile}/{scenario}")
+    if not k6_summary_path.exists():
+        raise RuntimeError(f"k6 scenario failed before writing summary: {profile}/{scenario}")
     k6_summary = json.loads(k6_summary_path.read_text(encoding="utf-8"))
     app_after = get_app_metrics()
     pg = pg_stats()
@@ -460,6 +473,8 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
         "profile": profile,
         "scenario": scenario,
         "elapsed_seconds": round(elapsed, 3),
+        "status": "passed" if completed.returncode == 0 else "threshold_failed",
+        "k6_exit_code": completed.returncode,
         "k6": k6_brief(k6_summary),
         "steps": k6_step_brief(k6_summary),
         "postgres": {
@@ -483,8 +498,11 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
         },
     }
     combined_path.write_text(json.dumps(combined, indent=2), encoding="utf-8")
+    if completed.returncode != 0 and (k6_error_rate(k6_summary) > 0 or k6_check_rate(k6_summary) < 0.99):
+        raise RuntimeError(f"k6 scenario failed protocol checks: {profile}/{scenario}")
     print(
         f"{profile}/{scenario}: "
+        f"status={combined['status']} "
         f"rps={combined['k6']['rps']} "
         f"p95={combined['k6']['latency_ms']['p95']}ms "
         f"errors={combined['k6']['error_rate']} "
