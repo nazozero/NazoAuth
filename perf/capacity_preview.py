@@ -815,86 +815,131 @@ summary { cursor:pointer; color:#7dd3fc; font-size:13px; line-height:1.45; min-h
 """
     page_js = """
 const LOG_LINE_LIMIT = 500;
+const logStreams = new Map();
+let refreshingDashboard = false;
 
 function eventDataLine(event) {
   try { return JSON.parse(event.data); }
   catch { return event.data; }
 }
 
-function appendLogLine(pre, line) {
-  if (!pre || line === '') return;
-  const lines = pre.__logLines || [];
+function getLogState(key) {
+  let state = logStreams.get(key);
+  if (!state) {
+    state = { source: null, lines: [], sticky: true, errorLineVisible: false };
+    logStreams.set(key, state);
+  }
+  return state;
+}
+
+function currentLogView(key) {
+  const details = document.querySelector(`details.lazy-log[data-log-key="${CSS.escape(key)}"]`);
+  if (!details || !details.open) return null;
+  return details.querySelector('pre');
+}
+
+function bindLogScroll(key, pre) {
+  const state = logStreams.get(key);
+  if (!state || !pre || pre.__boundLogKey === key) return;
+  pre.__boundLogKey = key;
+  pre.addEventListener('scroll', () => {
+    state.sticky = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 24;
+  }, { passive: true });
+}
+
+function renderLogState(key) {
+  const state = logStreams.get(key);
+  const pre = currentLogView(key);
+  if (!state || !pre) return;
+  bindLogScroll(key, pre);
+  const pinnedToBottom = state.sticky;
+  pre.textContent = state.lines.join('\\n');
+  if (pinnedToBottom) pre.scrollTop = pre.scrollHeight;
+}
+
+function appendLogLine(key, line) {
+  if (!key || line === '') return;
+  const state = getLogState(key);
+  if (line === '日志流连接中断，浏览器将自动重连。') {
+    if (state.errorLineVisible) return;
+    state.errorLineVisible = true;
+  } else {
+    state.errorLineVisible = false;
+  }
+  const pre = currentLogView(key);
+  if (pre) {
+    state.sticky = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 24 || state.sticky;
+  }
+  const lines = state.lines;
   lines.push(line);
   if (lines.length > LOG_LINE_LIMIT) {
     lines.splice(0, lines.length - LOG_LINE_LIMIT);
   }
-  const pinnedToBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 24 || pre.dataset.forceBottom === '1';
-  pre.__logLines = lines;
-  pre.textContent = lines.join('\\n');
-  if (pinnedToBottom) pre.scrollTop = pre.scrollHeight;
-  pre.dataset.forceBottom = '0';
+  renderLogState(key);
 }
 
-function startLogStream(details) {
-  if (!details || details.__eventSource) return;
-  const pre = details.querySelector('pre');
-  const key = details.dataset.logKey;
-  if (!pre || !key) return;
-  pre.__logLines = [];
-  pre.dataset.forceBottom = '1';
-  pre.textContent = '正在连接日志流...';
+function startLogStream(key) {
+  if (!key) return;
+  const state = getLogState(key);
+  if (state.source) {
+    renderLogState(key);
+    return;
+  }
+  state.lines = [];
+  state.sticky = true;
+  state.errorLineVisible = false;
+  renderLogState(key);
+  appendLogLine(key, '正在连接日志流...');
   const source = new EventSource(`/log-stream/${encodeURIComponent(key)}`);
-  details.__eventSource = source;
-  source.onmessage = (event) => appendLogLine(pre, eventDataLine(event));
+  state.source = source;
+  source.onmessage = (event) => appendLogLine(key, eventDataLine(event));
   source.onerror = () => {
-    appendLogLine(pre, '日志流连接中断，浏览器将自动重连。');
+    appendLogLine(key, '日志流连接中断，浏览器将自动重连。');
   };
 }
 
-function stopLogStream(details) {
-  if (!details || !details.__eventSource) return;
-  details.__eventSource.close();
-  delete details.__eventSource;
+function stopLogStream(key) {
+  const state = logStreams.get(key);
+  if (!state) return;
+  if (state.source) state.source.close();
+  logStreams.delete(key);
 }
 
-function preserveOpenLogNodes() {
-  const nodes = new Map();
-  document.querySelectorAll('details.lazy-log[open]').forEach((details) => {
-    const key = details.dataset.logKey;
-    if (key) nodes.set(key, details);
-  });
-  return nodes;
-}
-
-function restorePreservedLogNodes(nodes) {
-  document.querySelectorAll('details.lazy-log').forEach((fresh) => {
-    const key = fresh.dataset.logKey;
-    const preserved = nodes.get(key);
-    if (preserved) fresh.replaceWith(preserved);
-  });
+function bindOpenLogViews() {
+  for (const [key] of logStreams) {
+    const details = document.querySelector(`details.lazy-log[data-log-key="${CSS.escape(key)}"]`);
+    if (!details) continue;
+    details.open = true;
+    renderLogState(key);
+  }
 }
 
 async function refreshDashboard() {
   const dashboard = document.getElementById('dashboard');
   if (!dashboard) return;
-  const preservedLogs = preserveOpenLogNodes();
   try {
+    refreshingDashboard = true;
     const response = await fetch('/fragment', { cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     dashboard.innerHTML = await response.text();
-    restorePreservedLogNodes(preservedLogs);
+    bindOpenLogViews();
   } catch (error) {
     console.warn('capacity preview refresh failed', error);
+  } finally {
+    setTimeout(() => { refreshingDashboard = false; }, 0);
   }
 }
 
 document.addEventListener('toggle', (event) => {
   const details = event.target;
   if (!details.classList || !details.classList.contains('lazy-log')) return;
+  if (!details.isConnected) return;
+  if (refreshingDashboard) return;
+  const key = details.dataset.logKey;
   if (details.open) {
-    startLogStream(details);
+    startLogStream(key);
   } else {
-    stopLogStream(details);
+    stopLogStream(key);
   }
 }, true);
 
@@ -903,7 +948,7 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 window.addEventListener('beforeunload', () => {
-  document.querySelectorAll('details.lazy-log').forEach(stopLogStream);
+  for (const key of Array.from(logStreams.keys())) stopLogStream(key);
 });
 """
     body = f"""<!doctype html>
