@@ -84,8 +84,16 @@ pub(crate) fn configure_password_hash_limits(
     if PASSWORD_HASH_CONCURRENCY_LIMIT.get().is_some() {
         bail!("password hash limits must be configured before password verification");
     }
-    PASSWORD_HASH_MAX_CONCURRENCY.store(max_concurrency, Ordering::Relaxed);
-    PASSWORD_HASH_QUEUE_TIMEOUT_MS.store(queue_timeout_ms, Ordering::Relaxed);
+    AtomicUsize::store(
+        &PASSWORD_HASH_MAX_CONCURRENCY,
+        max_concurrency,
+        Ordering::Relaxed,
+    );
+    AtomicU64::store(
+        &PASSWORD_HASH_QUEUE_TIMEOUT_MS,
+        queue_timeout_ms,
+        Ordering::Relaxed,
+    );
     Ok(())
 }
 
@@ -154,14 +162,18 @@ fn password_hasher() -> Argon2<'static> {
 
 fn password_hash_concurrency_limit() -> &'static Arc<Semaphore> {
     PASSWORD_HASH_CONCURRENCY_LIMIT.get_or_init(|| {
-        Arc::new(Semaphore::new(
-            PASSWORD_HASH_MAX_CONCURRENCY.load(Ordering::Relaxed),
-        ))
+        Arc::new(Semaphore::new(AtomicUsize::load(
+            &PASSWORD_HASH_MAX_CONCURRENCY,
+            Ordering::Relaxed,
+        )))
     })
 }
 
 fn password_hash_queue_timeout() -> Duration {
-    Duration::from_millis(PASSWORD_HASH_QUEUE_TIMEOUT_MS.load(Ordering::Relaxed))
+    Duration::from_millis(AtomicU64::load(
+        &PASSWORD_HASH_QUEUE_TIMEOUT_MS,
+        Ordering::Relaxed,
+    ))
 }
 
 pub(crate) fn blake3_hex(value: &str) -> String {
