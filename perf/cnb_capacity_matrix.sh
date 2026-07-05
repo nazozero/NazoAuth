@@ -114,6 +114,14 @@ commit_capacity_report() {
   push_capacity_commit
 }
 
+remove_capacity_report_outputs() {
+  suffix="$1"
+  rm -f \
+    "docs/performance-capacity-curve-${suffix}.md" \
+    "perf/results/capacity-${suffix}.json" \
+    "perf/results/cnb-environment-${suffix}.md"
+}
+
 run_capacity_child() {
   scenario="$1"
   suffix="$2"
@@ -163,11 +171,12 @@ run_capacity_stage() {
   set -e
   if [ "${stage_status}" -eq 0 ]; then
     echo "serial capacity stage ${suffix} completed"
+    commit_capacity_report "${suffix}"
   else
     echo "serial capacity stage ${suffix} failed with exit code ${stage_status}"
     tail -n 120 "${log_path}" || true
+    remove_capacity_report_outputs "${suffix}"
   fi
-  commit_capacity_report "${suffix}"
   return "${stage_status}"
 }
 
@@ -229,14 +238,14 @@ while read -r pid suffix log_path; do
     echo "capacity scenario ${suffix} failed with exit code ${child_status}"
     echo "last log lines for ${suffix}:"
     tail -n 120 "${log_path}" || true
-    commit_capacity_report "${suffix}"
+    remove_capacity_report_outputs "${suffix}"
   fi
 done <"${children_file}"
 
 kill "${reporter_pid}" 2>/dev/null || true
 wait "${reporter_pid}" 2>/dev/null || true
 
-if find docs -maxdepth 1 -name 'performance-capacity-curve-*.md' -print -quit | grep -q .; then
+if [ "${status}" -eq 0 ] && find docs -maxdepth 1 -name 'performance-capacity-curve-*.md' -print -quit | grep -q .; then
   git add docs/performance-capacity-curve-*.md
   if git diff --cached --quiet; then
     echo "No capacity report changes to commit."
@@ -246,8 +255,12 @@ if find docs -maxdepth 1 -name 'performance-capacity-curve-*.md' -print -quit | 
     push_capacity_commit
   fi
 else
-  echo "No capacity reports were generated."
-  status=1
+  if [ "${status}" -eq 0 ]; then
+    echo "No capacity reports were generated."
+    status=1
+  else
+    echo "Capacity matrix had failures; not committing aggregate reports."
+  fi
 fi
 
 exit "${status}"
