@@ -47,6 +47,13 @@ const scenarioSteps = {
     'fapi_token_authorization_code',
     'fapi_token_refresh',
   ],
+  fapi2_logged_in_high_security: [
+    'par_fapi',
+    'authorize',
+    'authorize_decision',
+    'fapi_token_authorization_code',
+    'fapi_token_refresh',
+  ],
   refresh_token_rotation: [
     'par_oidc',
     'login',
@@ -117,7 +124,8 @@ const vectorOffsets = {
   oidc_logged_in_authorization_code: vectorStride * 9,
   oidc_refresh_only: vectorStride * 10,
   fapi2_full_security: vectorStride * 11,
-  revoke_refresh_token: vectorStride * 12,
+  fapi2_logged_in_high_security: vectorStride * 12,
+  revoke_refresh_token: vectorStride * 13,
 };
 
 export const options = {
@@ -1013,6 +1021,43 @@ export async function fapi2_par_jar_private_key_jwt_dpop() {
 
 export async function fapi2_full_security() {
   await fapi2_par_jar_private_key_jwt_dpop();
+}
+
+export async function fapi2_logged_in_high_security() {
+  const user = selectedUser(false);
+  const v = vector();
+  const requestUri = await fapiPar(v);
+  const requestId = authorizePar(secrets.clients.fapi, requestUri, user, true);
+  if (!requestId) {
+    return;
+  }
+  const code = approveAuthorization(requestId, v.fapi_state);
+  const tokens = await fapiTokenAuthorizationCode(v, code);
+  const assertion = await clientAssertion(secrets.clients.fapi, secrets.issuer, 'fapi-refresh');
+  const dpop = await dpopProof('POST', `${secrets.issuer}/token`, 'dpop-refresh');
+  const response = http.post(
+    `${BASE_URL}/token`,
+    form({
+      grant_type: 'refresh_token',
+      refresh_token: tokens.refresh_token,
+      client_assertion_type: secrets.client_assertion_type,
+      client_assertion: assertion,
+    }),
+    formHeaders({ DPoP: dpop }, requestTags('fapi_token_refresh', {
+      endpoint: '/token',
+      grant_type: 'refresh_token',
+      client_profile: 'fapi2',
+      client_auth: 'private_key_jwt',
+      sender_constraint: 'dpop',
+    })),
+  );
+  check(response, {
+    'fapi logged-in DPoP refresh status is 200': (r) => r.status === 200,
+    'fapi logged-in DPoP refresh returns DPoP token': (r) => r.json('token_type') === 'DPoP',
+  });
+  if (response.status !== 200) {
+    fail(`fapi logged-in refresh failed: ${response.status} ${response.body}`);
+  }
 }
 
 export async function ciba_private_key_jwt_dpop_poll() {

@@ -47,6 +47,7 @@ PROFILES: dict[str, list[str]] = {
     ],
     "fapi2-high-security": [
         "fapi2_par_jar_private_key_jwt_dpop",
+        "fapi2_logged_in_high_security",
     ],
     "extended-capacity": [
         "mtls_client_credentials",
@@ -66,6 +67,7 @@ PROFILES: dict[str, list[str]] = {
         "oidc_logged_in_authorization_code",
         "oidc_refresh_only",
         "fapi2_full_security",
+        "fapi2_logged_in_high_security",
     ],
 }
 
@@ -84,7 +86,8 @@ VECTOR_OFFSET_MULTIPLIERS = {
     "oidc_logged_in_authorization_code": 9,
     "oidc_refresh_only": 10,
     "fapi2_full_security": 11,
-    "revoke_refresh_token": 12,
+    "fapi2_logged_in_high_security": 12,
+    "revoke_refresh_token": 13,
 }
 VECTORIZED_SCENARIOS = set(VECTOR_OFFSET_MULTIPLIERS)
 

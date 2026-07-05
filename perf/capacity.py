@@ -22,6 +22,7 @@ DEFAULT_RATES: dict[str, list[int]] = {
     "oidc_logged_in_authorization_code": [16, 32, 64, 128, 256],
     "oidc_refresh_only": [250, 500, 1000, 1500, 2000],
     "fapi2_full_security": [16, 32, 64, 128, 256],
+    "fapi2_logged_in_high_security": [16, 32, 64, 128, 256],
     "mtls_client_credentials": [250, 500, 1000, 1500, 2000],
     "par_signed_request_object": [250, 500, 1000, 1500, 2000],
     "introspect_opaque_refresh_token": [16, 32, 64, 128, 256],
@@ -245,6 +246,7 @@ def write_report(results: list[dict[str, Any]], *, duration: str, report_path: P
         "- `oidc_cold_login_refresh` includes a fresh Argon2 password login in every flow.",
         "- `oidc_logged_in_authorization_code` keeps a session per VU after warm-up and measures authorization-code work without per-flow password verification.",
         "- `oidc_refresh_only` performs one per-VU bootstrap flow, then measures refresh rotation only; the bootstrap cost is negligible in sustained 30 minute runs but visible in short smoke tests.",
+        "- `fapi2_logged_in_high_security` keeps a session per VU after warm-up and measures PAR + signed request object + private_key_jwt + DPoP authorization-code and refresh work without per-flow password verification.",
         "- Per-core normalization uses observed Docker CPU percent for the NazoAuth service: 100% equals one effective CPU core.",
         "",
     ]
