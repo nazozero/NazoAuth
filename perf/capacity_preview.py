@@ -306,6 +306,33 @@ def write_sse_line(handler: BaseHTTPRequestHandler, line: str) -> bool:
         return False
 
 
+def deleted_log_writer_message(path: Path) -> str:
+    proc = Path('/proc')
+    if not proc.exists():
+        return ''
+    target = f'{path} (deleted)'
+    rows = []
+    for item in proc.iterdir():
+        if not item.name.isdigit():
+            continue
+        for fd in ('1', '2'):
+            fd_path = item / 'fd' / fd
+            try:
+                if os.readlink(fd_path) != target:
+                    continue
+                cmdline = (item / 'cmdline').read_text(encoding='utf-8', errors='replace').replace('\0', ' ').strip()
+                rows.append(f"pid={item.name} fd={fd} {cmdline[:180]}")
+            except Exception:
+                continue
+    if not rows:
+        return ''
+    return (
+        '日志路径当前不存在，但仍有运行进程写入已删除的旧日志 inode。\n'
+        '这通常发生在运行中对工作区执行 git 更新或清理后；当前压测不受影响，但该主日志路径要等下一阶段重新创建后才能继续流式读取。\n'
+        + '\n'.join(rows[:10])
+    )
+
+
 def stream_file_log(handler: BaseHTTPRequestHandler, path: Path, lines: int = 80) -> None:
     if path.exists():
         for line in sanitize_log(read_tail(path, lines)).splitlines():
@@ -320,7 +347,8 @@ def stream_file_log(handler: BaseHTTPRequestHandler, path: Path, lines: int = 80
             rel_path = path.relative_to(ROOT)
         except ValueError:
             rel_path = path
-        if not write_sse_line(handler, f'等待日志文件生成：{rel_path}'):
+        message = deleted_log_writer_message(path) or f'等待日志文件生成：{rel_path}'
+        if not write_sse_line(handler, message):
             return
         position = 0
     while True:
