@@ -76,6 +76,9 @@ fn settings() -> Settings {
             auth_max_requests: 30,
             token_max_requests: 60,
             token_management_max_requests: 120,
+            login_failure_window_seconds: 900,
+            login_failure_email_max_attempts: 50,
+            login_failure_ip_email_max_attempts: 5,
         },
         email: EmailSettings {
             delivery: EmailDelivery::Disabled,

@@ -79,6 +79,40 @@ fapi2_cpuset="$(sed -n '5p' "${cpusets_file}")"
 echo "using capacity CPU sets derived from /proc/self/status:"
 cat "${cpusets_file}"
 
+git config user.name "${CNB_GIT_USER_NAME:-NazoAuth Capacity Bot}"
+git config user.email "${CNB_GIT_USER_EMAIL:-nazoauth-capacity-bot@noreply.cnb.cool}"
+
+push_capacity_commit() {
+  branch="${CNB_BRANCH:-$(git branch --show-current 2>/dev/null || echo main)}"
+  for attempt in 1 2 3; do
+    if git push origin "HEAD:${branch}"; then
+      return 0
+    fi
+    sleep $((attempt * 10))
+  done
+  git push origin "HEAD:${branch}"
+}
+
+commit_capacity_report() {
+  suffix="$1"
+  report="docs/performance-capacity-curve-${suffix}.md"
+  results="perf/results/capacity-${suffix}.json"
+  env_report="perf/results/cnb-environment-${suffix}.md"
+  if [ ! -f "${report}" ]; then
+    echo "capacity report not found for ${suffix}: ${report}"
+    return 0
+  fi
+  git add "${report}"
+  [ -f "${results}" ] && git add -f "${results}" || true
+  [ -f "${env_report}" ] && git add -f "${env_report}" || true
+  if git diff --cached --quiet; then
+    echo "No capacity report changes to commit for ${suffix}."
+    return 0
+  fi
+  git commit -m "Record CNB capacity curve ${suffix}"
+  push_capacity_commit
+}
+
 run_capacity_child() {
   scenario="$1"
   suffix="$2"
@@ -142,12 +176,14 @@ while read -r pid suffix log_path; do
   fi
   if wait "${pid}"; then
     echo "capacity scenario ${suffix} completed"
+    commit_capacity_report "${suffix}"
   else
     child_status=$?
     status=1
     echo "capacity scenario ${suffix} failed with exit code ${child_status}"
     echo "last log lines for ${suffix}:"
     tail -n 120 "${log_path}" || true
+    commit_capacity_report "${suffix}"
   fi
 done <"${children_file}"
 
@@ -155,23 +191,13 @@ kill "${reporter_pid}" 2>/dev/null || true
 wait "${reporter_pid}" 2>/dev/null || true
 
 if find docs -maxdepth 1 -name 'performance-capacity-curve-*.md' -print -quit | grep -q .; then
-  git config user.name "${CNB_GIT_USER_NAME:-NazoAuth Capacity Bot}"
-  git config user.email "${CNB_GIT_USER_EMAIL:-nazoauth-capacity-bot@noreply.cnb.cool}"
   git add docs/performance-capacity-curve-*.md
   if git diff --cached --quiet; then
     echo "No capacity report changes to commit."
   else
     git commit -m "Record CNB capacity curve matrix"
 
-    BRANCH="${CNB_BRANCH:-main}"
-    for attempt in 1 2 3; do
-      if git pull --rebase origin "${BRANCH}" && git push origin "HEAD:${BRANCH}"; then
-        exit "${status}"
-      fi
-      sleep $((attempt * 10))
-    done
-
-    git push origin "HEAD:${BRANCH}"
+    push_capacity_commit
   fi
 else
   echo "No capacity reports were generated."

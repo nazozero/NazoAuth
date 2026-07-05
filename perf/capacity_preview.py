@@ -44,6 +44,7 @@ EXTENDED_SCENARIOS = {
     'authorize-par-session': 'Authorize：已登录会话 + PAR',
     'revoke-refresh-token': 'Revocation：刷新令牌撤销',
     'metadata-jwks': 'Discovery / JWKS',
+    'ciba-private-key-jwt-dpop-poll': 'CIBA：private_key_jwt + DPoP poll',
     'same-user-refresh-token-rotation': '同用户：刷新令牌轮换',
     'same-user-introspect-opaque-refresh-token': '同用户：Introspection',
     'same-user-authorize-par-session': '同用户：Authorize + PAR',
@@ -55,6 +56,7 @@ EXTENDED_SCENARIO_IDS = {
     'authorize-par-session': 'authorize_par_session',
     'revoke-refresh-token': 'revoke_refresh_token',
     'metadata-jwks': 'metadata_jwks',
+    'ciba-private-key-jwt-dpop-poll': 'ciba_private_key_jwt_dpop_poll',
     'same-user-refresh-token-rotation': 'same_user_refresh_token_rotation',
     'same-user-introspect-opaque-refresh-token': 'same_user_introspect_opaque_refresh_token',
     'same-user-authorize-par-session': 'same_user_authorize_par_session',
@@ -66,6 +68,7 @@ EXTENDED_DEFAULT_RATES = {
     'authorize-par-session': [16, 32, 64, 128, 256],
     'revoke-refresh-token': [16, 32, 64, 128, 256],
     'metadata-jwks': [250, 500, 1000, 1500, 2000],
+    'ciba-private-key-jwt-dpop-poll': [16, 32, 64, 128, 256],
     'same-user-refresh-token-rotation': [8, 16, 32, 64, 128],
     'same-user-introspect-opaque-refresh-token': [8, 16, 32, 64, 128],
     'same-user-authorize-par-session': [8, 16, 32, 64, 128],
@@ -265,7 +268,10 @@ def docker_perf_logs(key: str, lines: int = 50) -> str:
 
 
 def interesting_lines(path: Path, lines: int = 18) -> list[str]:
-    text = sanitize_log(read_tail(path, 2000))
+    return interesting_lines_from_text(sanitize_log(read_tail(path, 2000)), lines)
+
+
+def interesting_lines_from_text(text: str, lines: int = 18) -> list[str]:
     patterns = re.compile(r'capacity point:|running \(|THRESHOLDS|TOTAL RESULTS|rps=|RuntimeError|command failed|exited with code [1-9]|OOM|Killed|panic|ERROR', re.I)
     return [line for line in text.splitlines() if patterns.search(line)][-lines:]
 
@@ -462,14 +468,17 @@ def collect() -> dict:
         total_completed += completed_points
         if report.exists():
             report_count += 1
-        log_tail_for_status = sanitize_log(read_tail(log, 120))
+        live_log = docker_perf_logs(key, 120) if docker_container_exists(
+            f"nazoauth-{'extended-capacity-extended' if MODE == 'extended' else 'dev-capacity-dev'}-{key}-perf-1"
+        ) else ''
+        log_tail_for_status = sanitize_log(live_log or read_tail(log, 120))
         state = scenario_state(key, completed_points, log_tail_for_status, matrix)
         scenarios.append({
             'key': key,
             'label': label,
             'log': str(log.relative_to(ROOT)),
             'lines': file_lines(log),
-            'interesting': interesting_lines(log),
+            'interesting': interesting_lines_from_text(log_tail_for_status) if live_log else interesting_lines(log),
             'result_exists': result.exists(),
             'result_size': result.stat().st_size if result.exists() else 0,
             'report_exists': report.exists(),
@@ -713,7 +722,14 @@ class Handler(BaseHTTPRequestHandler):
             elif key == 'writeback':
                 log_path = WRITEBACK_LOG
             elif key in SCENARIOS:
-                log_path = RESULTS / f'{LOG_PREFIX}-{key}.log'
+                payload = docker_perf_logs(key, 300).encode('utf-8', errors='replace')
+                self.send_response(HTTPStatus.OK)
+                self.send_header('Content-Type', 'text/plain; charset=utf-8')
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('Content-Length', str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
                 return

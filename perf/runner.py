@@ -55,6 +55,7 @@ PROFILES: dict[str, list[str]] = {
         "authorize_par_session",
         "revoke_refresh_token",
         "metadata_jwks",
+        "ciba_private_key_jwt_dpop_poll",
         "same_user_refresh_token_rotation",
         "same_user_introspect_opaque_refresh_token",
         "same_user_authorize_par_session",
@@ -352,12 +353,29 @@ def k6_metric_values(summary: dict[str, Any], metric_name: str) -> dict[str, Any
     return metric.get("values", metric)
 
 
+def k6_metric_ratio(summary: dict[str, Any], metric_name: str, default: float) -> float:
+    values = k6_metric_values(summary, metric_name)
+    return metric_ratio(values, default)
+
+
+def metric_ratio(values: dict[str, Any], default: float) -> float:
+    if "rate" in values:
+        return float(values["rate"])
+    if "value" in values:
+        return float(values["value"])
+    return default
+
+
 def k6_check_rate(summary: dict[str, Any]) -> float:
-    return float(k6_metric_values(summary, "checks").get("rate", 0))
+    return k6_metric_ratio(summary, "checks", 0)
 
 
 def k6_error_rate(summary: dict[str, Any]) -> float:
-    return float(k6_metric_values(summary, "http_req_failed").get("rate", 0))
+    return k6_metric_ratio(summary, "http_req_failed", 0)
+
+
+def k6_protocol_failed(summary: dict[str, Any]) -> bool:
+    return k6_error_rate(summary) >= 0.01 or k6_check_rate(summary) < 0.99
 
 
 def k6_brief(summary: dict[str, Any]) -> dict[str, Any]:
@@ -371,7 +389,7 @@ def k6_brief(summary: dict[str, Any]) -> dict[str, Any]:
     return {
         "http_reqs": int(reqs.get("count", 0)),
         "rps": round(float(reqs.get("rate", 0)), 3),
-        "error_rate": round(float(failed.get("rate", 0)), 6),
+        "error_rate": round(k6_error_rate(summary), 6),
         "latency_ms": {
             "p50": round(float(duration.get("med", 0)), 3),
             "p95": round(float(duration.get("p(95)", 0)), 3),
@@ -424,7 +442,7 @@ def k6_step_brief(summary: dict[str, Any]) -> list[dict[str, Any]]:
                 "step": step,
                 "http_reqs": request_count,
                 "rps": round(float(request.get("rate", 0)), 3),
-                "error_rate": round(float(failed.get("rate", 0)), 6),
+                "error_rate": round(metric_ratio(failed, 0), 6),
                 "latency_ms": {
                     "p50": round(float(duration.get("med", 0)), 3),
                     "p95": round(float(duration.get("p(95)", 0)), 3),
@@ -448,6 +466,11 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
     command = [
         "k6",
         "run",
+        *(
+            ["--log-output", "file=/dev/null"]
+            if os.environ.get("PERF_EXECUTOR") == "constant-arrival-rate"
+            else []
+        ),
         "--summary-export",
         str(k6_summary_path),
         "/perf/k6/oauth.js",
@@ -498,7 +521,8 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
         },
     }
     combined_path.write_text(json.dumps(combined, indent=2), encoding="utf-8")
-    if completed.returncode != 0 and (k6_error_rate(k6_summary) > 0 or k6_check_rate(k6_summary) < 0.99):
+    is_capacity_run = os.environ.get("PERF_EXECUTOR") == "constant-arrival-rate"
+    if completed.returncode != 0 and k6_protocol_failed(k6_summary) and not is_capacity_run:
         raise RuntimeError(f"k6 scenario failed protocol checks: {profile}/{scenario}")
     print(
         f"{profile}/{scenario}: "

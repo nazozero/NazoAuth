@@ -29,6 +29,8 @@ CLIENT_SECRET_PEPPER = os.environ.get(
 MTLS_THUMBPRINT = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 REDIRECT_URI = "https://client.example/callback"
 CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+CIBA_GRANT_TYPE = "urn:openid:params:grant-type:ciba"
+CIBA_AUTOMATED_DECISION_TOKEN = "perf-ciba-automated-decision-token-2026"
 
 
 def b64url(data: bytes) -> str:
@@ -50,13 +52,13 @@ def pkce_pair() -> tuple[str, str]:
     return verifier, challenge
 
 
-def rsa_public_jwk(private_key: rsa.RSAPrivateKey, kid: str) -> dict[str, str]:
+def rsa_public_jwk(private_key: rsa.RSAPrivateKey, kid: str, alg: str = "RS256") -> dict[str, str]:
     numbers = private_key.public_key().public_numbers()
     return {
         "kty": "RSA",
         "kid": kid,
         "use": "sig",
-        "alg": "RS256",
+        "alg": alg,
         "n": b64url_uint(numbers.n),
         "e": b64url_uint(numbers.e),
     }
@@ -75,14 +77,14 @@ def ec_public_jwk(private_key: ec.EllipticCurvePrivateKey, kid: str) -> dict[str
     }
 
 
-def rsa_private_jwk(private_key: rsa.RSAPrivateKey, kid: str) -> dict[str, str]:
+def rsa_private_jwk(private_key: rsa.RSAPrivateKey, kid: str, alg: str = "RS256") -> dict[str, str]:
     public = private_key.public_key().public_numbers()
     private = private_key.private_numbers()
     return {
         "kty": "RSA",
         "kid": kid,
         "use": "sig",
-        "alg": "RS256",
+        "alg": alg,
         "n": b64url_uint(public.n),
         "e": b64url_uint(public.e),
         "d": b64url_uint(private.d),
@@ -302,11 +304,13 @@ def seed() -> None:
 
     rsa_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     rsa_kid = "perf-rs256"
+    ps256_kid = "perf-ps256"
     rsa_jwk = rsa_public_jwk(rsa_key, rsa_kid)
+    ps256_jwk = rsa_public_jwk(rsa_key, ps256_kid, "PS256")
     ec_key = ec.generate_private_key(ec.SECP256R1())
     dpop_jwk = ec_public_jwk(ec_key, "perf-dpop-es256")
     dpop_jkt = jwk_thumbprint(dpop_jwk)
-    jwks = {"keys": [rsa_jwk]}
+    jwks = {"keys": [rsa_jwk, ps256_jwk]}
     secret_hash = hash_client_secret(CLIENT_SECRET)
 
     with psycopg.connect(database_url) as conn:
@@ -356,6 +360,18 @@ def seed() -> None:
             require_mtls=True,
             tls_thumbprint=MTLS_THUMBPRINT,
         )
+        upsert_client(
+            conn,
+            client_id="perf-ciba-private-jwt-dpop-client",
+            name="Perf CIBA Private JWT DPoP Client",
+            auth_method="private_key_jwt",
+            grants=[CIBA_GRANT_TYPE],
+            scopes=["openid", "profile"],
+            secret_hash=None,
+            jwks=jwks,
+            require_dpop=True,
+            require_par_request_object=True,
+        )
         conn.commit()
 
     secrets_doc = {
@@ -371,9 +387,12 @@ def seed() -> None:
             "oidc": "perf-oidc-client",
             "fapi": "perf-fapi-private-jwt-dpop-client",
             "mtls": "perf-mtls-client",
+            "ciba": "perf-ciba-private-jwt-dpop-client",
         },
+        "ciba_automated_decision_token": CIBA_AUTOMATED_DECISION_TOKEN,
         "dpop_jkt": dpop_jkt,
         "private_jwk": rsa_private_jwk(rsa_key, rsa_kid),
+        "ps256_private_jwk": rsa_private_jwk(rsa_key, ps256_kid, "PS256"),
         "dpop_private_jwk": ec_private_jwk(ec_key, "perf-dpop-es256"),
         "dpop_public_jwk": dpop_jwk,
     }

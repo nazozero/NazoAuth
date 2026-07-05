@@ -28,6 +28,7 @@ DEFAULT_RATES: dict[str, list[int]] = {
     "authorize_par_session": [16, 32, 64, 128, 256],
     "revoke_refresh_token": [16, 32, 64, 128, 256],
     "metadata_jwks": [250, 500, 1000, 1500, 2000],
+    "ciba_private_key_jwt_dpop_poll": [16, 32, 64, 128, 256],
     "same_user_refresh_token_rotation": [8, 16, 32, 64, 128],
     "same_user_introspect_opaque_refresh_token": [8, 16, 32, 64, 128],
     "same_user_authorize_par_session": [8, 16, 32, 64, 128],
@@ -336,6 +337,87 @@ def load_existing_results(results_path: Path) -> list[dict[str, Any]]:
     return results
 
 
+def point_status(point: dict[str, Any]) -> str:
+    result = point.get("result", {})
+    if not isinstance(result, dict):
+        return ""
+    return str(result.get("status", "passed"))
+
+
+def has_lower_rate_threshold_failure(
+    results: list[dict[str, Any]],
+    *,
+    instances: int,
+    scenario: str,
+    rate: int,
+) -> bool:
+    for item in results:
+        key = point_key(item)
+        if key is None:
+            continue
+        item_instances, item_scenario, item_rate = key
+        if (
+            item_instances == instances
+            and item_scenario == scenario
+            and item_rate < rate
+            and point_status(item) == "threshold_failed"
+        ):
+            return True
+    return False
+
+
+def skipped_after_threshold_failure_point(*, scenario: str, rate: int, duration: str, instances: int) -> dict[str, Any]:
+    return {
+        "instances": instances,
+        "scenario": scenario,
+        "target_rate": rate,
+        "duration": duration,
+        "result": {
+            "profile": "capacity",
+            "scenario": scenario,
+            "elapsed_seconds": 0,
+            "status": "skipped_after_threshold_failure",
+            "k6_exit_code": None,
+            "k6": {
+                "http_reqs": 0,
+                "rps": 0,
+                "error_rate": 0,
+                "latency_ms": {
+                    "p50": 0,
+                    "p95": 0,
+                    "p99": 0,
+                },
+            },
+            "steps": [],
+            "postgres": {
+                "statement_calls": 0,
+                "mean_statement_ms": 0,
+                "statements_per_http_request": 0,
+            },
+            "db_pool": {
+                "acquire_count": 0,
+                "wait_ms_total": 0,
+                "wait_ms_avg": 0,
+                "wait_ms_max_observed_process_lifetime": 0,
+            },
+            "valkey": {
+                "keyspace_hits": 0,
+                "keyspace_misses": 0,
+            },
+            "containers": {
+                "by_service": {},
+            },
+            "load_model": {
+                "executor": "constant-arrival-rate",
+                "target_rate": rate,
+                "duration": duration,
+                "app_replicas": instances,
+                "observed_app_instances": instances,
+            },
+        },
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run NazoAuth fixed arrival-rate capacity curves.")
     parser.add_argument("--duration", default="30m")
@@ -382,6 +464,28 @@ def main() -> None:
                         f"skip completed capacity point: instances={instance_count} "
                         f"scenario={scenario} rate={rate}/s"
                     )
+                    continue
+                if has_lower_rate_threshold_failure(
+                    results,
+                    instances=instance_count,
+                    scenario=scenario,
+                    rate=rate,
+                ):
+                    print(
+                        f"skip capacity point after lower-rate threshold failure: "
+                        f"instances={instance_count} scenario={scenario} rate={rate}/s"
+                    )
+                    point = skipped_after_threshold_failure_point(
+                        scenario=scenario,
+                        rate=rate,
+                        duration=args.duration,
+                        instances=instance_count,
+                    )
+                    results.append(point)
+                    completed.add(key)
+                    results_path.parent.mkdir(parents=True, exist_ok=True)
+                    results_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
+                    write_report(results, duration=args.duration, report_path=report_path, results_path=results_path)
                     continue
                 print(
                     f"capacity point: instances={instance_count} "

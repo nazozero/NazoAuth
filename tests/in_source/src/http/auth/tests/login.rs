@@ -401,6 +401,72 @@ async fn login_rejects_wrong_password_as_access_denied() {
 }
 
 #[actix_web::test]
+async fn login_throttles_repeated_failures_for_same_email_and_source() {
+    let Some(fixture) = LiveLoginFixture::new_with_login_failure_limits(10, 2).await else {
+        return;
+    };
+    let password = test_login_password();
+    let user = fixture
+        .create_user(
+            "failure-throttle",
+            "failure-throttle@example.com",
+            &password,
+            true,
+            false,
+        )
+        .await;
+
+    for _ in 0..2 {
+        let response = fixture.login_json(&user.email, "wrong").await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    let response = fixture.login_json(&user.email, "wrong").await;
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+        response
+            .headers()
+            .get(header::RETRY_AFTER)
+            .and_then(|value| value.to_str().ok()),
+        Some("60")
+    );
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("throttled login body should be readable");
+    let body: Value = serde_json::from_slice(&body).expect("throttled body should parse");
+    assert_eq!(body["error"], "temporarily_unavailable");
+}
+
+#[actix_web::test]
+async fn successful_login_clears_previous_failure_throttle_state() {
+    let Some(fixture) = LiveLoginFixture::new_with_login_failure_limits(10, 2).await else {
+        return;
+    };
+    let password = test_login_password();
+    let user = fixture
+        .create_user(
+            "failure-clear",
+            "failure-clear@example.com",
+            &password,
+            true,
+            false,
+        )
+        .await;
+
+    let response = fixture.login_json(&user.email, "wrong").await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let response = fixture.login_json(&user.email, &password).await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    for _ in 0..2 {
+        let response = fixture.login_json(&user.email, "wrong").await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+    let response = fixture.login_json(&user.email, "wrong").await;
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[actix_web::test]
 async fn login_rejects_inactive_user_as_access_denied() {
     let Some(fixture) = LiveLoginFixture::new().await else {
         return;
@@ -481,6 +547,13 @@ struct LiveLoginFixture {
 
 impl LiveLoginFixture {
     async fn new() -> Option<Self> {
+        Self::new_with_login_failure_limits(50, 5).await
+    }
+
+    async fn new_with_login_failure_limits(
+        email_max_attempts: u64,
+        ip_email_max_attempts: u64,
+    ) -> Option<Self> {
         let database_url = std::env::var("DATABASE_URL").ok()?;
         let valkey_url = std::env::var("VALKEY_URL").ok()?;
         let config = ConfigSource::from_pairs_for_test([
@@ -495,6 +568,9 @@ impl LiveLoginFixture {
         ]);
         let mut settings = Settings::from_config(&config).expect("test settings should load");
         settings.rate_limit.auth_max_requests = 100_000;
+        settings.rate_limit.login_failure_window_seconds = 60;
+        settings.rate_limit.login_failure_email_max_attempts = email_max_attempts;
+        settings.rate_limit.login_failure_ip_email_max_attempts = ip_email_max_attempts;
 
         let valkey_config = ValkeyConfig::from_url(&valkey_url).ok()?;
         let mut valkey_builder = ValkeyBuilder::from_config(valkey_config);
@@ -522,6 +598,17 @@ impl LiveLoginFixture {
                 }),
             }),
         })
+    }
+
+    async fn login_json(&self, email: &str, password: &str) -> HttpResponse {
+        let req = actix_web::test::TestRequest::default()
+            .insert_header((header::CONTENT_TYPE, "application/json"))
+            .to_http_request();
+        let body = Bytes::from(format!(
+            r#"{{"email":"{}","password":"{}"}}"#,
+            email, password
+        ));
+        login(self.state.clone(), req, body).await
     }
 
     async fn create_user(

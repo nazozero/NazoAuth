@@ -97,6 +97,11 @@ const scenarioSteps = {
     'fapi_token_authorization_code',
     'fapi_token_refresh',
   ],
+  ciba_private_key_jwt_dpop_poll: [
+    'ciba_backchannel_authentication',
+    'ciba_automated_decision',
+    'ciba_token',
+  ],
 };
 const vectorStride = Math.max(iterations, 100);
 const vectorOffsets = {
@@ -149,6 +154,7 @@ function scenarioOptions(name) {
       duration,
       preAllocatedVUs: preAllocatedVus,
       maxVUs: maxVus,
+      gracefulStop: '2m',
       exec: name,
     };
   }
@@ -252,7 +258,7 @@ function selectedUser(sharedUser) {
 
 function ensureUserSession(user, cacheSession = false) {
   if (cacheSession && __VU_STATE.csrf) {
-    return;
+    return true;
   }
   const response = http.post(
     `${BASE_URL}/auth/login`,
@@ -270,10 +276,11 @@ function ensureUserSession(user, cacheSession = false) {
     'login csrf cookie returned': (r) => Boolean(r.cookies.nazo_oauth_csrf && r.cookies.nazo_oauth_csrf.length),
   });
   if (response.status !== 200) {
-    fail(`login failed: ${response.status} ${response.body}`);
+    return false;
   }
   __VU_STATE.csrf = response.cookies.nazo_oauth_csrf[0].value;
   __VU_STATE.cookieHeader = cookieHeaderFromResponse(response);
+  return true;
 }
 
 const __VU_STATE = {};
@@ -311,6 +318,19 @@ async function rsaSigningKey() {
   return __VU_STATE.rsaSigningKey;
 }
 
+async function rsaPssSigningKey() {
+  if (!__VU_STATE.rsaPssSigningKey) {
+    __VU_STATE.rsaPssSigningKey = await crypto.subtle.importKey(
+      'jwk',
+      secrets.ps256_private_jwk,
+      { name: 'RSA-PSS', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    );
+  }
+  return __VU_STATE.rsaPssSigningKey;
+}
+
 async function dpopSigningKey() {
   if (!__VU_STATE.dpopSigningKey) {
     __VU_STATE.dpopSigningKey = await crypto.subtle.importKey(
@@ -339,6 +359,15 @@ async function signRs256(header, claims) {
   );
 }
 
+async function signPs256(header, claims) {
+  return signJwt(
+    Object.assign({ alg: 'PS256', kid: secrets.ps256_private_jwk.kid, typ: 'JWT' }, header),
+    claims,
+    await rsaPssSigningKey(),
+    { name: 'RSA-PSS', saltLength: 32 },
+  );
+}
+
 async function signEs256(header, claims) {
   return signJwt(
     Object.assign({ alg: 'ES256' }, header),
@@ -348,19 +377,20 @@ async function signEs256(header, claims) {
   );
 }
 
-async function clientAssertion(clientId, audience, prefix) {
+async function clientAssertion(clientId, audience, prefix, alg = 'RS256') {
   const now = nowSeconds();
-  return signRs256(
-    {},
-    {
-      iss: clientId,
-      sub: clientId,
-      aud: audience,
-      iat: now,
-      exp: now + 240,
-      jti: uniqueJti(prefix),
-    },
-  );
+  const claims = {
+    iss: clientId,
+    sub: clientId,
+    aud: audience,
+    iat: now,
+    exp: now + 240,
+    jti: uniqueJti(prefix),
+  };
+  if (alg === 'PS256') {
+    return signPs256({}, claims);
+  }
+  return signRs256({}, claims);
 }
 
 async function requestObject(clientId, state, nonce, codeChallenge, dpopJkt) {
@@ -399,6 +429,112 @@ async function dpopProof(method, htu, prefix) {
       jti: uniqueJti(prefix),
     },
   );
+}
+
+async function cibaRequestObject(user) {
+  const now = nowSeconds();
+  return signPs256(
+    {},
+    {
+      iss: secrets.clients.ciba,
+      aud: secrets.issuer,
+      iat: now,
+      nbf: now,
+      exp: now + 240,
+      jti: uniqueJti('ciba-request'),
+      scope: 'openid profile',
+      login_hint: user.email,
+      binding_message: `NazoAuth CIBA ${__VU}-${exec.scenario.iterationInTest}`,
+      acr_values: '1',
+      requested_expiry: 300,
+    },
+  );
+}
+
+async function cibaBackchannelAuthentication(user) {
+  const assertion = await clientAssertion(secrets.clients.ciba, secrets.issuer, 'ciba-backchannel', 'PS256');
+  const request = await cibaRequestObject(user);
+  const response = http.post(
+    `${BASE_URL}/bc-authorize`,
+    form({
+      client_id: secrets.clients.ciba,
+      client_assertion_type: secrets.client_assertion_type,
+      client_assertion: assertion,
+      request,
+    }),
+    formHeaders({}, requestTags('ciba_backchannel_authentication', {
+      endpoint: '/bc-authorize',
+      grant_type: 'urn:openid:params:grant-type:ciba',
+      client_profile: 'ciba-fapi-compatible',
+      client_auth: 'private_key_jwt',
+      request_object: 'signed',
+      delivery_mode: 'poll',
+    })),
+  );
+  check(response, {
+    'ciba backchannel status is 200': (r) => r.status === 200,
+    'ciba auth_req_id returned': (r) => Boolean(r.json('auth_req_id')),
+    'ciba interval returned': (r) => Number(r.json('interval')) > 0,
+  });
+  if (response.status !== 200) {
+    fail(`ciba backchannel failed: ${response.status} ${response.body}`);
+  }
+  return response.json('auth_req_id');
+}
+
+function approveCiba(authReqId) {
+  const response = http.get(
+    `${BASE_URL}/auth/ciba-automated-decision?${form({
+      auth_req_id: authReqId,
+      action: 'approve',
+      decision_token: secrets.ciba_automated_decision_token,
+    })}`,
+    {
+      redirects: 0,
+      tags: requestTags('ciba_automated_decision', {
+        endpoint: '/auth/ciba-automated-decision',
+        grant_type: 'urn:openid:params:grant-type:ciba',
+        decision: 'approve',
+      }),
+    },
+  );
+  check(response, {
+    'ciba automated decision status is 200': (r) => r.status === 200,
+    'ciba automated decision succeeded': (r) => r.json('success') === true,
+  });
+  if (response.status !== 200) {
+    fail(`ciba automated decision failed: ${response.status} ${response.body}`);
+  }
+}
+
+async function cibaToken(authReqId) {
+  const assertion = await clientAssertion(secrets.clients.ciba, secrets.issuer, 'ciba-token', 'PS256');
+  const dpop = await dpopProof('POST', `${secrets.issuer}/token`, 'dpop-ciba-token');
+  const response = http.post(
+    `${BASE_URL}/token`,
+    form({
+      grant_type: 'urn:openid:params:grant-type:ciba',
+      auth_req_id: authReqId,
+      client_assertion_type: secrets.client_assertion_type,
+      client_assertion: assertion,
+    }),
+    formHeaders({ DPoP: dpop }, requestTags('ciba_token', {
+      endpoint: '/token',
+      grant_type: 'urn:openid:params:grant-type:ciba',
+      client_profile: 'ciba-fapi-compatible',
+      client_auth: 'private_key_jwt',
+      sender_constraint: 'dpop',
+      delivery_mode: 'poll',
+    })),
+  );
+  check(response, {
+    'ciba token status is 200': (r) => r.status === 200,
+    'ciba token is DPoP-bound': (r) => r.json('token_type') === 'DPoP',
+    'ciba access token returned': (r) => Boolean(r.json('access_token')),
+  });
+  if (response.status !== 200) {
+    fail(`ciba token failed: ${response.status} ${response.body}`);
+  }
 }
 
 async function oidcPar(v) {
@@ -470,7 +606,9 @@ async function fapiPar(v) {
 }
 
 function authorizePar(clientId, requestUri, user, cacheSession = false) {
-  ensureUserSession(user, cacheSession);
+  if (!ensureUserSession(user, cacheSession)) {
+    return '';
+  }
   const response = http.get(
     `${BASE_URL}/authorize?${form({ client_id: clientId, request_uri: requestUri })}`,
     {
@@ -668,6 +806,9 @@ async function introspectOpaqueRefreshToken(sharedUser) {
   const v = vector();
   const requestUri = await oidcPar(v);
   const requestId = authorizePar(secrets.clients.oidc, requestUri, user);
+  if (!requestId) {
+    return;
+  }
   const code = approveAuthorization(requestId, v.oidc_state);
   const tokens = tokenAuthorizationCode(v, code);
   const response = http.post(
@@ -698,6 +839,9 @@ async function refreshTokenRotation(sharedUser) {
   const v = vector();
   const requestUri = await oidcPar(v);
   const requestId = authorizePar(secrets.clients.oidc, requestUri, user);
+  if (!requestId) {
+    return;
+  }
   const code = approveAuthorization(requestId, v.oidc_state);
   const tokens = tokenAuthorizationCode(v, code);
   const response = http.post(
@@ -729,6 +873,9 @@ export async function revoke_refresh_token() {
   const v = vector();
   const requestUri = await oidcPar(v);
   const requestId = authorizePar(secrets.clients.oidc, requestUri, user);
+  if (!requestId) {
+    return;
+  }
   const code = approveAuthorization(requestId, v.oidc_state);
   const tokens = tokenAuthorizationCode(v, code);
   const response = http.post(
@@ -757,6 +904,9 @@ export async function oidc_logged_in_authorization_code() {
   const v = vector();
   const requestUri = await oidcPar(v);
   const requestId = authorizePar(secrets.clients.oidc, requestUri, user, true);
+  if (!requestId) {
+    return;
+  }
   const code = approveAuthorization(requestId, v.oidc_state);
   tokenAuthorizationCode(v, code);
 }
@@ -766,6 +916,9 @@ async function bootstrapRefreshToken() {
   const v = vector();
   const requestUri = await oidcPar(v);
   const requestId = authorizePar(secrets.clients.oidc, requestUri, user, true);
+  if (!requestId) {
+    return;
+  }
   const code = approveAuthorization(requestId, v.oidc_state);
   const tokens = tokenAuthorizationCode(v, code);
   __VU_STATE.refreshToken = tokens.refresh_token;
@@ -774,6 +927,9 @@ async function bootstrapRefreshToken() {
 export async function oidc_refresh_only() {
   if (!__VU_STATE.refreshToken) {
     await bootstrapRefreshToken();
+    if (!__VU_STATE.refreshToken) {
+      return;
+    }
   }
   const response = http.post(
     `${BASE_URL}/token`,
@@ -823,6 +979,9 @@ export async function fapi2_par_jar_private_key_jwt_dpop() {
   const v = vector();
   const requestUri = await fapiPar(v);
   const requestId = authorizePar(secrets.clients.fapi, requestUri, user);
+  if (!requestId) {
+    return;
+  }
   const code = approveAuthorization(requestId, v.fapi_state);
   const tokens = await fapiTokenAuthorizationCode(v, code);
   const assertion = await clientAssertion(secrets.clients.fapi, secrets.issuer, 'fapi-refresh');
@@ -854,6 +1013,13 @@ export async function fapi2_par_jar_private_key_jwt_dpop() {
 
 export async function fapi2_full_security() {
   await fapi2_par_jar_private_key_jwt_dpop();
+}
+
+export async function ciba_private_key_jwt_dpop_poll() {
+  const user = selectedUser(false);
+  const authReqId = await cibaBackchannelAuthentication(user);
+  approveCiba(authReqId);
+  await cibaToken(authReqId);
 }
 
 export async function same_user_refresh_token_rotation() {
