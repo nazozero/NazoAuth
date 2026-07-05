@@ -93,7 +93,13 @@ async fn verify_password_blocking_matches_argon2_verifier() {
     let hash = hash_password("correct horse battery staple").expect("password should hash");
 
     assert!(
-        verify_password_blocking("correct horse battery staple".to_owned(), hash.clone()).await
+        verify_password_blocking_limited("correct horse battery staple".to_owned(), hash.clone())
+            .await
+            .expect("password verification should run")
     );
-    assert!(!verify_password_blocking("wrong password".to_owned(), hash).await);
+    assert!(
+        !verify_password_blocking_limited("wrong password".to_owned(), hash)
+            .await
+            .expect("password verification should run")
+    );
 }

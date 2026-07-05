@@ -97,12 +97,6 @@ pub(crate) fn configure_password_hash_limits(
     Ok(())
 }
 
-pub(crate) async fn verify_password_blocking(password: String, password_hash: String) -> bool {
-    verify_password_blocking_limited(password, password_hash)
-        .await
-        .unwrap_or(false)
-}
-
 pub(crate) async fn verify_password_blocking_limited(
     password: String,
     password_hash: String,
