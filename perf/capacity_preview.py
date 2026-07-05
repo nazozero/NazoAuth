@@ -382,8 +382,12 @@ def stream_file_log(handler: BaseHTTPRequestHandler, path: Path, lines: int = 80
 def stream_docker_or_file_log(handler: BaseHTTPRequestHandler, key: str) -> None:
     name = perf_container_name(key)
     if docker_container_exists(name):
+        snapshot = docker_perf_logs(key, 80)
+        for line in sanitize_log(snapshot).splitlines():
+            if not write_sse_line(handler, line):
+                return
         process = subprocess.Popen(
-            ['docker', 'logs', '--tail', '80', '-f', name],
+            ['docker', 'logs', '--tail', '0', '-f', name],
             cwd=ROOT,
             text=True,
             stdout=subprocess.PIPE,
@@ -565,7 +569,7 @@ def scenario_process_running(key: str, matrix: dict) -> bool:
 def scenario_state(key: str, completed_points: int, k6_tail: str, matrix: dict, scenario_running: bool) -> dict:
     expected = EXPECTED_POINTS.get(key, 15)
     plan = planned_points(key)
-    complete = completed_points >= expected and (matrix['complete'] or not matrix.get('processes', '').strip())
+    complete = completed_points >= expected
     if complete:
         scenario_status = '完整完成'
         result_label = f'完整完成 {completed_points}/{expected}'
