@@ -702,7 +702,7 @@ def ensure_vector_capacity() -> None:
         os.environ["PERF_VECTOR_COUNT"] = str(minimum)
         print(
             f"PERF_VECTOR_COUNT={requested} is below the replay-safe minimum; "
-            f"using {minimum} signed vectors"
+            f"using {minimum} flow vectors"
         )
 
 

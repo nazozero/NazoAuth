@@ -7,15 +7,12 @@ import hmac
 import json
 import os
 import secrets
-import time
 import uuid
 from pathlib import Path
 from typing import Any
 
 import psycopg
 from argon2 import PasswordHasher
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import padding, utils
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from psycopg.types.json import Jsonb
 
@@ -32,24 +29,6 @@ CLIENT_SECRET_PEPPER = os.environ.get(
 MTLS_THUMBPRINT = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 REDIRECT_URI = "https://client.example/callback"
 CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
-VECTOR_STRIDE_FLOOR = 100
-SIGNED_JWT_BACKDATE_SECONDS = 60
-SIGNED_JWT_FORWARD_SECONDS = 240
-VECTOR_OFFSET_MULTIPLIERS = {
-    "par_signed_request_object": 0,
-    "refresh_token_rotation": 1,
-    "introspect_opaque_refresh_token": 2,
-    "authorize_par_session": 3,
-    "fapi2_par_jar_private_key_jwt_dpop": 4,
-    "same_user_refresh_token_rotation": 5,
-    "same_user_introspect_opaque_refresh_token": 6,
-    "same_user_authorize_par_session": 7,
-    "oidc_cold_login_refresh": 8,
-    "oidc_logged_in_authorization_code": 9,
-    "oidc_refresh_only": 10,
-    "fapi2_full_security": 11,
-    "revoke_refresh_token": 12,
-}
 
 
 def b64url(data: bytes) -> str:
@@ -59,10 +38,6 @@ def b64url(data: bytes) -> str:
 def b64url_uint(value: int) -> str:
     size = max(1, (value.bit_length() + 7) // 8)
     return b64url(value.to_bytes(size, "big"))
-
-
-def json_b64(value: dict[str, Any]) -> str:
-    return b64url(json.dumps(value, separators=(",", ":"), sort_keys=True).encode("utf-8"))
 
 
 def random_token(byte_count: int = 32) -> str:
@@ -141,108 +116,6 @@ def jwk_thumbprint(jwk: dict[str, str]) -> str:
         sort_keys=True,
     )
     return b64url(hashlib.sha256(canonical.encode("utf-8")).digest())
-
-
-def sign_rs256(private_key: rsa.RSAPrivateKey, header: dict[str, Any], claims: dict[str, Any]) -> str:
-    signing_input = f"{json_b64(header)}.{json_b64(claims)}"
-    signature = private_key.sign(signing_input.encode("ascii"), padding.PKCS1v15(), hashes.SHA256())
-    return f"{signing_input}.{b64url(signature)}"
-
-
-def sign_es256(private_key: ec.EllipticCurvePrivateKey, header: dict[str, Any], claims: dict[str, Any]) -> str:
-    signing_input = f"{json_b64(header)}.{json_b64(claims)}"
-    der_signature = private_key.sign(signing_input.encode("ascii"), ec.ECDSA(hashes.SHA256()))
-    r, s = utils.decode_dss_signature(der_signature)
-    signature = r.to_bytes(32, "big") + s.to_bytes(32, "big")
-    return f"{signing_input}.{b64url(signature)}"
-
-
-def scheduled_now(base_now: int, index: int, scenario: str, rate: int) -> int:
-    if rate <= 0 or not scenario:
-        return base_now
-    vector_stride = max(int(os.environ.get("PERF_ITERATIONS", "50")), VECTOR_STRIDE_FLOOR)
-    offset = VECTOR_OFFSET_MULTIPLIERS.get(scenario, 0) * vector_stride
-    relative_iteration = max(0, index - offset)
-    return base_now + relative_iteration // rate
-
-
-def client_assertion(
-    private_key: rsa.RSAPrivateKey,
-    kid: str,
-    client_id: str,
-    issuer: str,
-    jti_suffix: str,
-    now: int,
-) -> str:
-    iat = now - SIGNED_JWT_BACKDATE_SECONDS
-    return sign_rs256(
-        private_key,
-        {"alg": "RS256", "kid": kid, "typ": "JWT"},
-        {
-            "iss": client_id,
-            "sub": client_id,
-            "aud": issuer,
-            "iat": iat,
-            "exp": now + SIGNED_JWT_FORWARD_SECONDS,
-            "jti": f"{jti_suffix}-{uuid.uuid4()}",
-        },
-    )
-
-
-def request_object(
-    private_key: rsa.RSAPrivateKey,
-    kid: str,
-    client_id: str,
-    issuer: str,
-    *,
-    state: str,
-    nonce: str,
-    code_challenge: str,
-    dpop_jkt: str | None,
-    now: int,
-) -> str:
-    nbf = now - SIGNED_JWT_BACKDATE_SECONDS
-    claims: dict[str, Any] = {
-        "client_id": client_id,
-        "iss": client_id,
-        "sub": client_id,
-        "aud": issuer,
-        "iat": nbf,
-        "nbf": nbf,
-        "exp": now + SIGNED_JWT_FORWARD_SECONDS,
-        "jti": f"jar-{uuid.uuid4()}",
-        "response_type": "code",
-        "redirect_uri": REDIRECT_URI,
-        "scope": "openid profile offline_access",
-        "state": state,
-        "nonce": nonce,
-        "code_challenge": code_challenge,
-        "code_challenge_method": "S256",
-    }
-    if dpop_jkt:
-        claims["dpop_jkt"] = dpop_jkt
-    return sign_rs256(private_key, {"alg": "RS256", "kid": kid, "typ": "JWT"}, claims)
-
-
-def dpop_proof(
-    private_key: ec.EllipticCurvePrivateKey,
-    public_jwk: dict[str, str],
-    method: str,
-    htu: str,
-    jti_suffix: str,
-    now: int,
-) -> str:
-    iat = now - SIGNED_JWT_BACKDATE_SECONDS
-    return sign_es256(
-        private_key,
-        {"alg": "ES256", "typ": "dpop+jwt", "jwk": public_jwk},
-        {
-            "htm": method,
-            "htu": htu,
-            "iat": iat,
-            "jti": f"{jti_suffix}-{uuid.uuid4()}",
-        },
-    )
 
 
 def hash_secret(value: str) -> str:
@@ -396,11 +269,7 @@ def prepare_vectors(
     rate: int,
 ) -> list[dict[str, Any]]:
     vectors: list[dict[str, Any]] = []
-    oidc_client = "perf-oidc-client"
-    fapi_client = "perf-fapi-private-jwt-dpop-client"
-    base_now = int(time.time())
     for index in range(count):
-        vector_now = scheduled_now(base_now, index, scenario, rate)
         verifier, challenge = pkce_pair()
         fapi_verifier, fapi_challenge = pkce_pair()
         state = f"perf-state-{index}-{uuid.uuid4()}"
@@ -410,55 +279,13 @@ def prepare_vectors(
         vectors.append(
             {
                 "pkce_verifier": verifier,
-                "oidc_request": request_object(
-                    rsa_key,
-                    rsa_kid,
-                    oidc_client,
-                    issuer,
-                    state=state,
-                    nonce=nonce,
-                    code_challenge=challenge,
-                    dpop_jkt=None,
-                    now=vector_now,
-                ),
+                "oidc_code_challenge": challenge,
                 "oidc_state": state,
+                "oidc_nonce": nonce,
                 "fapi_pkce_verifier": fapi_verifier,
-                "fapi_request": request_object(
-                    rsa_key,
-                    rsa_kid,
-                    fapi_client,
-                    issuer,
-                    state=fapi_state,
-                    nonce=fapi_nonce,
-                    code_challenge=fapi_challenge,
-                    dpop_jkt=dpop_jkt,
-                    now=vector_now,
-                ),
+                "fapi_code_challenge": fapi_challenge,
                 "fapi_state": fapi_state,
-                "fapi_par_assertion": client_assertion(
-                    rsa_key, rsa_kid, fapi_client, issuer, "fapi-par", vector_now
-                ),
-                "fapi_token_assertion": client_assertion(
-                    rsa_key, rsa_kid, fapi_client, issuer, "fapi-token", vector_now
-                ),
-                "fapi_refresh_assertion": client_assertion(
-                    rsa_key, rsa_kid, fapi_client, issuer, "fapi-refresh", vector_now
-                ),
-                "fapi_client_credentials_assertion": client_assertion(
-                    rsa_key, rsa_kid, fapi_client, issuer, "fapi-client-credentials", vector_now
-                ),
-                "fapi_introspection_assertion": client_assertion(
-                    rsa_key, rsa_kid, fapi_client, issuer, "fapi-introspection", vector_now
-                ),
-                "dpop_par": dpop_proof(
-                    dpop_key, dpop_jwk, "POST", f"{issuer}/par", "dpop-par", vector_now
-                ),
-                "dpop_token": dpop_proof(
-                    dpop_key, dpop_jwk, "POST", f"{issuer}/token", "dpop-token", vector_now
-                ),
-                "dpop_refresh": dpop_proof(
-                    dpop_key, dpop_jwk, "POST", f"{issuer}/token", "dpop-refresh", vector_now
-                ),
+                "fapi_nonce": fapi_nonce,
             }
         )
     return vectors
@@ -564,7 +391,7 @@ def seed() -> None:
     )
     (state_dir / "vectors.json").write_text(json.dumps(vectors), encoding="utf-8")
     print(
-        f"seeded {user_count} perf users, clients, and {vector_count} scheduled signed vectors "
+        f"seeded {user_count} perf users, clients, and {vector_count} flow vectors "
         f"(scenario={os.environ.get('PERF_SCENARIO', '').strip() or 'all'}, "
         f"rate={os.environ.get('PERF_RATE', '0') or '0'}/s)"
     )

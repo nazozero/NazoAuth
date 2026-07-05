@@ -2,10 +2,11 @@ import http from 'k6/http';
 import { check, fail } from 'k6';
 import exec from 'k6/execution';
 import { SharedArray } from 'k6/data';
+import encoding from 'k6/encoding';
 
 const BASE_URL = (__ENV.BASE_URL || 'http://nazoauth:8000').replace(/\/$/, '');
 const secrets = JSON.parse(open('/perf-state/secrets.json'));
-const vectors = new SharedArray('signed-vectors', () => JSON.parse(open('/perf-state/vectors.json')));
+const vectors = new SharedArray('flow-vectors', () => JSON.parse(open('/perf-state/vectors.json')));
 const scenario = __ENV.PERF_SCENARIO || 'token_client_credentials';
 const duration = __ENV.PERF_DURATION || '20s';
 const executor = __ENV.PERF_EXECUTOR || '';
@@ -220,7 +221,7 @@ function vector() {
   }
   const index = offset + relativeIndex;
   if (index >= vectors.length) {
-    fail(`signed vector pool exhausted at index ${index}; raise PERF_VECTOR_COUNT`);
+    fail(`flow vector pool exhausted at index ${index}; raise PERF_VECTOR_COUNT`);
   }
   return vectors[index];
 }
@@ -277,11 +278,141 @@ function ensureUserSession(user, cacheSession = false) {
 
 const __VU_STATE = {};
 
-function oidcPar(v) {
+function asciiBytes(value) {
+  const out = new Uint8Array(value.length);
+  for (let index = 0; index < value.length; index += 1) {
+    out[index] = value.charCodeAt(index);
+  }
+  return out;
+}
+
+function jwtPart(value) {
+  return encoding.b64encode(JSON.stringify(value), 'rawurl');
+}
+
+function nowSeconds() {
+  return Math.floor(Date.now() / 1000);
+}
+
+function uniqueJti(prefix) {
+  return `${prefix}-${__VU}-${exec.scenario.iterationInTest}-${crypto.randomUUID()}`;
+}
+
+async function rsaSigningKey() {
+  if (!__VU_STATE.rsaSigningKey) {
+    __VU_STATE.rsaSigningKey = await crypto.subtle.importKey(
+      'jwk',
+      secrets.private_jwk,
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    );
+  }
+  return __VU_STATE.rsaSigningKey;
+}
+
+async function dpopSigningKey() {
+  if (!__VU_STATE.dpopSigningKey) {
+    __VU_STATE.dpopSigningKey = await crypto.subtle.importKey(
+      'jwk',
+      secrets.dpop_private_jwk,
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      false,
+      ['sign'],
+    );
+  }
+  return __VU_STATE.dpopSigningKey;
+}
+
+async function signJwt(header, claims, key, algorithm) {
+  const signingInput = `${jwtPart(header)}.${jwtPart(claims)}`;
+  const signature = await crypto.subtle.sign(algorithm, key, asciiBytes(signingInput));
+  return `${signingInput}.${encoding.b64encode(new Uint8Array(signature), 'rawurl')}`;
+}
+
+async function signRs256(header, claims) {
+  return signJwt(
+    Object.assign({ alg: 'RS256', kid: secrets.private_jwk.kid, typ: 'JWT' }, header),
+    claims,
+    await rsaSigningKey(),
+    { name: 'RSASSA-PKCS1-v1_5' },
+  );
+}
+
+async function signEs256(header, claims) {
+  return signJwt(
+    Object.assign({ alg: 'ES256' }, header),
+    claims,
+    await dpopSigningKey(),
+    { name: 'ECDSA', hash: 'SHA-256' },
+  );
+}
+
+async function clientAssertion(clientId, audience, prefix) {
+  const now = nowSeconds();
+  return signRs256(
+    {},
+    {
+      iss: clientId,
+      sub: clientId,
+      aud: audience,
+      iat: now,
+      exp: now + 240,
+      jti: uniqueJti(prefix),
+    },
+  );
+}
+
+async function requestObject(clientId, state, nonce, codeChallenge, dpopJkt) {
+  const now = nowSeconds();
+  const claims = {
+    client_id: clientId,
+    iss: clientId,
+    sub: clientId,
+    aud: secrets.issuer,
+    iat: now,
+    nbf: now,
+    exp: now + 240,
+    jti: uniqueJti('jar'),
+    response_type: 'code',
+    redirect_uri: secrets.redirect_uri,
+    scope: 'openid profile offline_access',
+    state,
+    nonce,
+    code_challenge: codeChallenge,
+    code_challenge_method: 'S256',
+  };
+  if (dpopJkt) {
+    claims.dpop_jkt = dpopJkt;
+  }
+  return signRs256({}, claims);
+}
+
+async function dpopProof(method, htu, prefix) {
+  const now = nowSeconds();
+  return signEs256(
+    { typ: 'dpop+jwt', jwk: secrets.dpop_public_jwk },
+    {
+      htm: method,
+      htu,
+      iat: now,
+      jti: uniqueJti(prefix),
+    },
+  );
+}
+
+async function oidcPar(v) {
+  const request = await requestObject(
+    secrets.clients.oidc,
+    v.oidc_state,
+    v.oidc_nonce,
+    v.oidc_code_challenge,
+    null,
+  );
   const body = form({
     client_id: secrets.clients.oidc,
     client_secret: secrets.client_secret,
-    request: v.oidc_request,
+    request,
   });
   const response = http.post(
     `${BASE_URL}/par`,
@@ -302,17 +433,26 @@ function oidcPar(v) {
   return response.json('request_uri');
 }
 
-function fapiPar(v) {
+async function fapiPar(v) {
+  const request = await requestObject(
+    secrets.clients.fapi,
+    v.fapi_state,
+    v.fapi_nonce,
+    v.fapi_code_challenge,
+    secrets.dpop_jkt,
+  );
+  const assertion = await clientAssertion(secrets.clients.fapi, secrets.issuer, 'fapi-par');
+  const dpop = await dpopProof('POST', `${secrets.issuer}/par`, 'dpop-par');
   const body = form({
     client_id: secrets.clients.fapi,
     client_assertion_type: secrets.client_assertion_type,
-    client_assertion: v.fapi_par_assertion,
-    request: v.fapi_request,
+    client_assertion: assertion,
+    request,
   });
   const response = http.post(
     `${BASE_URL}/par`,
     body,
-    formHeaders({ DPoP: v.dpop_par }, requestTags('par_fapi', {
+    formHeaders({ DPoP: dpop }, requestTags('par_fapi', {
       endpoint: '/par',
       client_profile: 'fapi2',
       request_object: 'jar',
@@ -401,7 +541,9 @@ function tokenAuthorizationCode(v, code) {
   return response.json();
 }
 
-function fapiTokenAuthorizationCode(v, code) {
+async function fapiTokenAuthorizationCode(v, code) {
+  const assertion = await clientAssertion(secrets.clients.fapi, secrets.issuer, 'fapi-token');
+  const dpop = await dpopProof('POST', `${secrets.issuer}/token`, 'dpop-token');
   const response = http.post(
     `${BASE_URL}/token`,
     form({
@@ -410,9 +552,9 @@ function fapiTokenAuthorizationCode(v, code) {
       redirect_uri: secrets.redirect_uri,
       code_verifier: v.fapi_pkce_verifier,
       client_assertion_type: secrets.client_assertion_type,
-      client_assertion: v.fapi_token_assertion,
+      client_assertion: assertion,
     }),
-    formHeaders({ DPoP: v.dpop_token }, requestTags('fapi_token_authorization_code', {
+    formHeaders({ DPoP: dpop }, requestTags('fapi_token_authorization_code', {
       endpoint: '/token',
       grant_type: 'authorization_code',
       client_profile: 'fapi2',
@@ -481,8 +623,8 @@ export function mtls_client_credentials() {
   });
 }
 
-export function introspect_opaque_refresh_token() {
-  introspectOpaqueRefreshToken(false);
+export async function introspect_opaque_refresh_token() {
+  await introspectOpaqueRefreshToken(false);
 }
 
 export function metadata_jwks() {
@@ -521,10 +663,10 @@ export function metadata_jwks() {
   }
 }
 
-function introspectOpaqueRefreshToken(sharedUser) {
+async function introspectOpaqueRefreshToken(sharedUser) {
   const user = selectedUser(sharedUser);
   const v = vector();
-  const requestUri = oidcPar(v);
+  const requestUri = await oidcPar(v);
   const requestId = authorizePar(secrets.clients.oidc, requestUri, user);
   const code = approveAuthorization(requestId, v.oidc_state);
   const tokens = tokenAuthorizationCode(v, code);
@@ -547,14 +689,14 @@ function introspectOpaqueRefreshToken(sharedUser) {
   });
 }
 
-export function refresh_token_rotation() {
-  refreshTokenRotation(false);
+export async function refresh_token_rotation() {
+  await refreshTokenRotation(false);
 }
 
-function refreshTokenRotation(sharedUser) {
+async function refreshTokenRotation(sharedUser) {
   const user = selectedUser(sharedUser);
   const v = vector();
-  const requestUri = oidcPar(v);
+  const requestUri = await oidcPar(v);
   const requestId = authorizePar(secrets.clients.oidc, requestUri, user);
   const code = approveAuthorization(requestId, v.oidc_state);
   const tokens = tokenAuthorizationCode(v, code);
@@ -578,14 +720,14 @@ function refreshTokenRotation(sharedUser) {
   });
 }
 
-export function oidc_cold_login_refresh() {
-  refreshTokenRotation(false);
+export async function oidc_cold_login_refresh() {
+  await refreshTokenRotation(false);
 }
 
-export function revoke_refresh_token() {
+export async function revoke_refresh_token() {
   const user = selectedUser(false);
   const v = vector();
-  const requestUri = oidcPar(v);
+  const requestUri = await oidcPar(v);
   const requestId = authorizePar(secrets.clients.oidc, requestUri, user);
   const code = approveAuthorization(requestId, v.oidc_state);
   const tokens = tokenAuthorizationCode(v, code);
@@ -610,28 +752,28 @@ export function revoke_refresh_token() {
   }
 }
 
-export function oidc_logged_in_authorization_code() {
+export async function oidc_logged_in_authorization_code() {
   const user = selectedUser(false);
   const v = vector();
-  const requestUri = oidcPar(v);
+  const requestUri = await oidcPar(v);
   const requestId = authorizePar(secrets.clients.oidc, requestUri, user, true);
   const code = approveAuthorization(requestId, v.oidc_state);
   tokenAuthorizationCode(v, code);
 }
 
-function bootstrapRefreshToken() {
+async function bootstrapRefreshToken() {
   const user = selectedUser(false);
   const v = vector();
-  const requestUri = oidcPar(v);
+  const requestUri = await oidcPar(v);
   const requestId = authorizePar(secrets.clients.oidc, requestUri, user, true);
   const code = approveAuthorization(requestId, v.oidc_state);
   const tokens = tokenAuthorizationCode(v, code);
   __VU_STATE.refreshToken = tokens.refresh_token;
 }
 
-export function oidc_refresh_only() {
+export async function oidc_refresh_only() {
   if (!__VU_STATE.refreshToken) {
-    bootstrapRefreshToken();
+    await bootstrapRefreshToken();
   }
   const response = http.post(
     `${BASE_URL}/token`,
@@ -658,40 +800,42 @@ export function oidc_refresh_only() {
   __VU_STATE.refreshToken = response.json('refresh_token');
 }
 
-export function par_signed_request_object() {
-  oidcPar(vector());
+export async function par_signed_request_object() {
+  await oidcPar(vector());
 }
 
-export function authorize_par_session() {
-  authorizeParSession(false);
+export async function authorize_par_session() {
+  await authorizeParSession(false);
 }
 
-function authorizeParSession(sharedUser) {
+async function authorizeParSession(sharedUser) {
   const user = selectedUser(sharedUser);
   const v = vector();
-  const requestUri = oidcPar(v);
+  const requestUri = await oidcPar(v);
   const requestId = authorizePar(secrets.clients.oidc, requestUri, user);
   check({ requestId }, {
     'authorize PAR session request id returned': (value) => Boolean(value.requestId),
   });
 }
 
-export function fapi2_par_jar_private_key_jwt_dpop() {
+export async function fapi2_par_jar_private_key_jwt_dpop() {
   const user = selectedUser(false);
   const v = vector();
-  const requestUri = fapiPar(v);
+  const requestUri = await fapiPar(v);
   const requestId = authorizePar(secrets.clients.fapi, requestUri, user);
   const code = approveAuthorization(requestId, v.fapi_state);
-  const tokens = fapiTokenAuthorizationCode(v, code);
+  const tokens = await fapiTokenAuthorizationCode(v, code);
+  const assertion = await clientAssertion(secrets.clients.fapi, secrets.issuer, 'fapi-refresh');
+  const dpop = await dpopProof('POST', `${secrets.issuer}/token`, 'dpop-refresh');
   const response = http.post(
     `${BASE_URL}/token`,
     form({
       grant_type: 'refresh_token',
       refresh_token: tokens.refresh_token,
       client_assertion_type: secrets.client_assertion_type,
-      client_assertion: v.fapi_refresh_assertion,
+      client_assertion: assertion,
     }),
-    formHeaders({ DPoP: v.dpop_refresh }, requestTags('fapi_token_refresh', {
+    formHeaders({ DPoP: dpop }, requestTags('fapi_token_refresh', {
       endpoint: '/token',
       grant_type: 'refresh_token',
       client_profile: 'fapi2',
@@ -708,20 +852,20 @@ export function fapi2_par_jar_private_key_jwt_dpop() {
   }
 }
 
-export function fapi2_full_security() {
-  fapi2_par_jar_private_key_jwt_dpop();
+export async function fapi2_full_security() {
+  await fapi2_par_jar_private_key_jwt_dpop();
 }
 
-export function same_user_refresh_token_rotation() {
-  refreshTokenRotation(true);
+export async function same_user_refresh_token_rotation() {
+  await refreshTokenRotation(true);
 }
 
-export function same_user_introspect_opaque_refresh_token() {
-  introspectOpaqueRefreshToken(true);
+export async function same_user_introspect_opaque_refresh_token() {
+  await introspectOpaqueRefreshToken(true);
 }
 
-export function same_user_authorize_par_session() {
-  authorizeParSession(true);
+export async function same_user_authorize_par_session() {
+  await authorizeParSession(true);
 }
 
 export default function () {
