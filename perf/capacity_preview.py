@@ -430,35 +430,45 @@ def parse_k6_status(text: str) -> dict:
     return status
 
 
-def scenario_state(key: str, completed_points: int, k6_tail: str, matrix: dict) -> dict:
+def scenario_process_running(key: str, matrix: dict) -> bool:
+    processes = matrix.get('processes', '')
+    return f'capacity-{key}.json' in processes or f'cnb-capacity-{key}.log' in processes
+
+
+def scenario_state(key: str, completed_points: int, k6_tail: str, matrix: dict, scenario_running: bool) -> dict:
     expected = EXPECTED_POINTS.get(key, 15)
     plan = planned_points(key)
     complete = completed_points >= expected and (matrix['complete'] or not matrix.get('processes', '').strip())
-    running = matrix['label'] == '矩阵运行中'
     if complete:
+        scenario_status = '完整完成'
         result_label = f'完整完成 {completed_points}/{expected}'
         report_label = '完整报告，等待回写' if matrix['writeback'] != '已回写' else '完整报告，已回写'
         point_label = '全部压测点已完成'
         current_plan = None
     elif completed_points > 0:
+        scenario_status = '场景运行中' if scenario_running else '等待后续阶段'
         result_label = f'阶段性结果 {completed_points}/{expected}'
         report_label = f'阶段性报告 {completed_points}/{expected}'
         next_point = min(completed_points + 1, expected)
         current_plan = plan[next_point - 1] if next_point - 1 < len(plan) else None
-        if current_plan:
+        if current_plan and scenario_running:
             point_label = f"当前第 {next_point}/{expected} 阶段：{current_plan['instances']} 实例 / {current_plan['rate']} flow/s"
+        elif current_plan:
+            point_label = f"等待第 {next_point}/{expected} 阶段：{current_plan['instances']} 实例 / {current_plan['rate']} flow/s"
         else:
             point_label = f'当前第 {next_point}/{expected} 阶段'
     else:
+        scenario_status = '场景运行中' if scenario_running else '等待所属阶段'
         result_label = '等待首个结果'
         report_label = '等待首个报告'
         current_plan = plan[0] if plan else None
-        if running and current_plan:
+        if scenario_running and current_plan:
             point_label = f"当前第 1/{expected} 阶段：{current_plan['instances']} 实例 / {current_plan['rate']} flow/s"
         else:
-            point_label = '等待启动'
+            point_label = '等待所属阶段启动'
     k6_status = parse_k6_status(k6_tail)
     return {
+        'scenario_status': scenario_status,
         'result_label': result_label,
         'report_label': report_label,
         'point_label': point_label,
@@ -483,9 +493,16 @@ def collect() -> dict:
         total_completed += completed_points
         if report.exists():
             report_count += 1
-        live_log = docker_perf_logs(key, 120) if docker_container_exists(perf_container_name(key)) else ''
+        container_running = docker_container_exists(perf_container_name(key))
+        live_log = docker_perf_logs(key, 120) if container_running else ''
         log_tail_for_status = sanitize_log(live_log or read_tail(log, 120))
-        state = scenario_state(key, completed_points, log_tail_for_status, matrix)
+        state = scenario_state(
+            key,
+            completed_points,
+            log_tail_for_status,
+            matrix,
+            container_running or scenario_process_running(key, matrix),
+        )
         scenarios.append({
             'key': key,
             'label': label,
@@ -552,9 +569,8 @@ def render_stage_table(rows: list[dict]) -> str:
     return ''.join(rendered)
 
 
-def render_page(data: dict) -> bytes:
+def render_cards(data: dict) -> str:
     cards = []
-    total_pct = (data['total_completed'] / data['total_expected'] * 100.0) if data['total_expected'] else 0.0
     for item in data['scenarios']:
         k6 = item.get('k6_status') or {}
         rate = f"{k6.get('rate')} flow/s" if k6.get('rate') else '等待实时输出'
@@ -566,7 +582,7 @@ def render_page(data: dict) -> bytes:
 <section class='card'>
   <div class='card-head'><h2>{esc(item['label'])}</h2><span>{esc(item['completed_points'])}/{esc(item['expected_points'])} 阶段 | {esc(item['lines'])} 行主日志</span></div>
   <div class='status-grid' aria-label='场景状态'>
-    <div><span>矩阵</span><b>{esc(data['matrix_status'])}</b></div>
+    <div><span>场景</span><b>{esc(item['scenario_status'])}</b></div>
     <div><span>结果</span><b>{esc(item['result_label'])}</b></div>
     <div><span>报告</span><b>{esc(item['report_label'])}</b></div>
     <div><span>回写</span><b>{esc(data['writeback_status'])}</b></div>
@@ -585,91 +601,178 @@ def render_page(data: dict) -> bytes:
   <details class='lazy-log' data-log-key='{esc(item['key'])}'><summary>按需加载 k6 实时日志尾部</summary><pre>展开后加载日志...</pre></details>
 </section>
 """)
+    return ''.join(cards)
+
+
+def render_dashboard(data: dict) -> str:
+    total_pct = (data['total_completed'] / data['total_expected'] * 100.0) if data['total_expected'] else 0.0
+    return f"""
+<div class='summary' id='summary'>
+  <div class='cell'><span class='subtle'>矩阵状态</span><b>{esc(data['matrix_status'])}</b></div>
+  <div class='cell'><span class='subtle'>全局阶段</span><b>{esc(data['total_completed'])}/{esc(data['total_expected'])}（{esc(fmt_num(total_pct, 1))}%）</b></div>
+  <div class='cell'><span class='subtle'>阶段定义</span><b>{esc(len(SCENARIOS))} 场景 × 15 阶段</b></div>
+  <div class='cell'><span class='subtle'>回写状态</span><b>{esc(data['writeback_status'])}</b></div>
+</div>
+<div class='grid' id='scenario-grid'>{render_cards(data)}</div>
+<section class='card wide'><h2>Docker 资源占用</h2><pre>{esc(data['docker_stats'])}</pre></section>
+<section class='card wide'><h2>Docker 容器状态</h2><pre>{esc(data['docker_ps'])}</pre></section>
+<section class='card wide'><h2>矩阵进程</h2><pre>{esc(data['processes'])}</pre></section>
+<section class='card wide'><h2>主机负载 / 磁盘</h2><pre>{esc(data['load'])}
+{esc(data['disk'])}</pre></section>
+<section class='card wide'><h2>矩阵主日志尾部</h2><details class='lazy-log' data-log-key='matrix' data-log-path='/log/matrix'><summary>按需加载矩阵主日志尾部</summary><pre>展开后加载日志...</pre></details></section>
+<section class='card wide'><h2>回写状态日志</h2><details class='lazy-log' data-log-key='writeback' data-log-path='/log/writeback'><summary>按需加载回写状态日志</summary><pre>展开后加载日志...</pre></details></section>
+"""
+
+
+def render_page(data: dict) -> bytes:
+    page_css = """
+:root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background:#0b0f14; color:#dbe3ee; }
+* { box-sizing:border-box; }
+html { min-width:0; }
+body { margin:0; padding:clamp(12px,2.5vw,24px); overflow-x:hidden; }
+a { color:#7dd3fc; text-decoration:none; }
+.header { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom:18px; min-width:0; }
+h1 { margin:0 0 8px; font-size:clamp(20px,4.8vw,24px); font-weight:700; letter-spacing:0; line-height:1.2; }
+h2 { margin:0; font-size:clamp(15px,3.8vw,16px); line-height:1.25; overflow-wrap:anywhere; }
+.badge { border:1px solid #334155; background:#111827; color:#cbd5e1; padding:6px 10px; border-radius:6px; white-space:nowrap; flex:0 0 auto; }
+.summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr)); gap:10px; margin:0 0 14px; }
+.summary .cell { border:1px solid #233044; background:#0f1720; border-radius:8px; padding:10px; min-width:0; }
+.summary b { display:block; font-size:clamp(16px,4vw,18px); line-height:1.25; margin-top:4px; overflow-wrap:anywhere; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,620px),1fr)); gap:14px; min-width:0; }
+.card { border:1px solid #233044; background:#111821; border-radius:8px; padding:14px; min-width:0; overflow:hidden; }
+.card-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:8px; min-width:0; }
+.card-head span,.meta,.subtle { color:#9ca3af; font-size:13px; line-height:1.45; overflow-wrap:anywhere; }
+.card-head span { text-align:right; flex:0 0 auto; max-width:45%; }
+.status-grid,.current-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(128px,1fr)); gap:8px; margin:10px 0; }
+.status-grid div,.current-grid div { border:1px solid #253246; background:#0b121c; border-radius:6px; padding:8px 9px; min-width:0; }
+.status-grid span,.current-grid span { display:block; color:#8ea0b5; font-size:11px; line-height:1.25; margin-bottom:4px; }
+.status-grid b,.current-grid b { display:block; color:#dbe3ee; font-size:13px; line-height:1.3; font-weight:650; overflow-wrap:anywhere; }
+.current-grid .wide-cell { grid-column:1 / -1; }
+.log-link { margin:2px 0 10px; font-size:13px; }
+.stage-title { color:#cbd5e1; font-size:13px; font-weight:600; margin:12px 0 6px; }
+.table-scroll { width:100%; overflow-x:auto; overflow-y:hidden; border:1px solid #253246; border-radius:6px; background:#0b121c; -webkit-overflow-scrolling:touch; }
+.table-scroll:focus { outline:2px solid #38bdf8; outline-offset:2px; }
+.metrics { width:100%; min-width:820px; border-collapse:collapse; font-size:12px; }
+.metrics th,.metrics td { border-bottom:1px solid #253246; padding:7px 8px; text-align:right; white-space:nowrap; }
+.metrics th:first-child,.metrics td:first-child { text-align:left; position:sticky; left:0; background:#0b121c; z-index:1; }
+.metrics th { color:#93a4b8; font-weight:600; background:#0b121c; }
+pre { margin:10px 0 0; padding:12px; background:#05080d; border:1px solid #1f2937; border-radius:6px; overflow:auto; max-height:min(320px,55vh); font:12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space:pre-wrap; word-break:break-word; }
+details { margin-top:10px; }
+summary { cursor:pointer; color:#7dd3fc; font-size:13px; line-height:1.45; min-height:36px; display:flex; align-items:center; }
+.wide { margin-top:14px; }
+@media (max-width: 720px) {
+  body { padding:10px; }
+  .header { flex-direction:column; gap:10px; margin-bottom:12px; }
+  .badge { white-space:normal; width:100%; text-align:center; }
+  .summary { grid-template-columns:1fr 1fr; gap:8px; }
+  .summary .cell { padding:9px; }
+  .grid { grid-template-columns:1fr; gap:10px; }
+  .card { padding:12px; border-radius:8px; }
+  .card-head { flex-direction:column; gap:4px; }
+  .card-head span { max-width:none; text-align:left; }
+  .meta,.subtle { font-size:12px; }
+  .status-grid,.current-grid { grid-template-columns:1fr 1fr; gap:7px; }
+  .status-grid div,.current-grid div { padding:8px; }
+  .status-grid b,.current-grid b { font-size:12px; }
+  .metrics { min-width:760px; font-size:11px; }
+  .metrics th,.metrics td { padding:6px; }
+  pre { max-height:48vh; font-size:11px; }
+}
+@media (max-width: 420px) {
+  .summary { grid-template-columns:1fr; }
+  .card { padding:10px; }
+  .status-grid,.current-grid { grid-template-columns:1fr; }
+  .table-scroll { margin-left:-2px; margin-right:-2px; width:calc(100% + 4px); }
+}
+"""
+    page_js = """
+const OPEN_LOGS_KEY = 'nazoauth-capacity-open-logs';
+
+function openLogSet() {
+  try { return new Set(JSON.parse(localStorage.getItem(OPEN_LOGS_KEY) || '[]')); }
+  catch { return new Set(); }
+}
+
+function saveOpenLogSet(values) {
+  localStorage.setItem(OPEN_LOGS_KEY, JSON.stringify([...values]));
+}
+
+function currentOpenLogs() {
+  const values = openLogSet();
+  document.querySelectorAll('details.lazy-log[open]').forEach((details) => {
+    if (details.dataset.logKey) values.add(details.dataset.logKey);
+  });
+  return values;
+}
+
+function logPath(details) {
+  return details.dataset.logPath || `/log/${encodeURIComponent(details.dataset.logKey)}`;
+}
+
+async function loadLog(details) {
+  const pre = details.querySelector('pre');
+  if (!pre) return;
+  try {
+    const response = await fetch(logPath(details), { cache: 'no-store' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const text = await response.text();
+    const pinnedToBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 8;
+    pre.textContent = text;
+    if (pinnedToBottom) pre.scrollTop = pre.scrollHeight;
+  } catch (error) {
+    pre.textContent = `日志加载失败：${error}`;
+  }
+}
+
+function restoreOpenLogs(values) {
+  document.querySelectorAll('details.lazy-log').forEach((details) => {
+    const key = details.dataset.logKey;
+    if (!key || !values.has(key)) return;
+    details.open = true;
+    loadLog(details);
+  });
+}
+
+async function refreshDashboard() {
+  const dashboard = document.getElementById('dashboard');
+  if (!dashboard) return;
+  const openLogs = currentOpenLogs();
+  try {
+    const response = await fetch('/fragment', { cache: 'no-store' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    dashboard.innerHTML = await response.text();
+    restoreOpenLogs(openLogs);
+  } catch (error) {
+    console.warn('capacity preview refresh failed', error);
+  }
+}
+
+document.addEventListener('toggle', (event) => {
+  const details = event.target;
+  if (!details.classList || !details.classList.contains('lazy-log')) return;
+  const values = currentOpenLogs();
+  if (details.open) {
+    values.add(details.dataset.logKey);
+    loadLog(details);
+  } else {
+    values.delete(details.dataset.logKey);
+  }
+  saveOpenLogSet(values);
+}, true);
+
+window.addEventListener('DOMContentLoaded', () => {
+  restoreOpenLogs(openLogSet());
+  setInterval(refreshDashboard, 5000);
+});
+"""
     body = f"""<!doctype html>
 <html lang='zh-CN'>
 <head>
 <meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
-<meta http-equiv='refresh' content='5'>
 <title>NazoAuth 容量曲线进度</title>
-<style>
-:root {{ color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background:#0b0f14; color:#dbe3ee; }}
-* {{ box-sizing:border-box; }}
-html {{ min-width:0; }}
-body {{ margin:0; padding:clamp(12px,2.5vw,24px); overflow-x:hidden; }}
-a {{ color:#7dd3fc; text-decoration:none; }}
-.header {{ display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom:18px; min-width:0; }}
-h1 {{ margin:0 0 8px; font-size:clamp(20px,4.8vw,24px); font-weight:700; letter-spacing:0; line-height:1.2; }}
-h2 {{ margin:0; font-size:clamp(15px,3.8vw,16px); line-height:1.25; overflow-wrap:anywhere; }}
-.badge {{ border:1px solid #334155; background:#111827; color:#cbd5e1; padding:6px 10px; border-radius:6px; white-space:nowrap; flex:0 0 auto; }}
-.summary {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr)); gap:10px; margin:0 0 14px; }}
-.summary .cell {{ border:1px solid #233044; background:#0f1720; border-radius:8px; padding:10px; min-width:0; }}
-.summary b {{ display:block; font-size:clamp(16px,4vw,18px); line-height:1.25; margin-top:4px; overflow-wrap:anywhere; }}
-.grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,620px),1fr)); gap:14px; min-width:0; }}
-.card {{ border:1px solid #233044; background:#111821; border-radius:8px; padding:14px; min-width:0; overflow:hidden; }}
-.card-head {{ display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:8px; min-width:0; }}
-.card-head span,.meta,.subtle {{ color:#9ca3af; font-size:13px; line-height:1.45; overflow-wrap:anywhere; }}
-.card-head span {{ text-align:right; flex:0 0 auto; max-width:45%; }}
-.status-grid,.current-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(128px,1fr)); gap:8px; margin:10px 0; }}
-.status-grid div,.current-grid div {{ border:1px solid #253246; background:#0b121c; border-radius:6px; padding:8px 9px; min-width:0; }}
-.status-grid span,.current-grid span {{ display:block; color:#8ea0b5; font-size:11px; line-height:1.25; margin-bottom:4px; }}
-.status-grid b,.current-grid b {{ display:block; color:#dbe3ee; font-size:13px; line-height:1.3; font-weight:650; overflow-wrap:anywhere; }}
-.current-grid .wide-cell {{ grid-column:1 / -1; }}
-.log-link {{ margin:2px 0 10px; font-size:13px; }}
-.stage-title {{ color:#cbd5e1; font-size:13px; font-weight:600; margin:12px 0 6px; }}
-.table-scroll {{ width:100%; overflow-x:auto; overflow-y:hidden; border:1px solid #253246; border-radius:6px; background:#0b121c; -webkit-overflow-scrolling:touch; }}
-.table-scroll:focus {{ outline:2px solid #38bdf8; outline-offset:2px; }}
-.metrics {{ width:100%; min-width:820px; border-collapse:collapse; font-size:12px; }}
-.metrics th,.metrics td {{ border-bottom:1px solid #253246; padding:7px 8px; text-align:right; white-space:nowrap; }}
-.metrics th:first-child,.metrics td:first-child {{ text-align:left; position:sticky; left:0; background:#0b121c; z-index:1; }}
-.metrics th {{ color:#93a4b8; font-weight:600; background:#0b121c; }}
-pre {{ margin:10px 0 0; padding:12px; background:#05080d; border:1px solid #1f2937; border-radius:6px; overflow:auto; max-height:min(320px,55vh); font:12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space:pre-wrap; word-break:break-word; }}
-details {{ margin-top:10px; }}
-summary {{ cursor:pointer; color:#7dd3fc; font-size:13px; line-height:1.45; min-height:36px; display:flex; align-items:center; }}
-.wide {{ margin-top:14px; }}
-@media (max-width: 720px) {{
-  body {{ padding:10px; }}
-  .header {{ flex-direction:column; gap:10px; margin-bottom:12px; }}
-  .badge {{ white-space:normal; width:100%; text-align:center; }}
-  .summary {{ grid-template-columns:1fr 1fr; gap:8px; }}
-  .summary .cell {{ padding:9px; }}
-  .grid {{ grid-template-columns:1fr; gap:10px; }}
-  .card {{ padding:12px; border-radius:8px; }}
-  .card-head {{ flex-direction:column; gap:4px; }}
-  .card-head span {{ max-width:none; text-align:left; }}
-  .meta,.subtle {{ font-size:12px; }}
-  .status-grid,.current-grid {{ grid-template-columns:1fr 1fr; gap:7px; }}
-  .status-grid div,.current-grid div {{ padding:8px; }}
-  .status-grid b,.current-grid b {{ font-size:12px; }}
-  .metrics {{ min-width:760px; font-size:11px; }}
-  .metrics th,.metrics td {{ padding:6px; }}
-  pre {{ max-height:48vh; font-size:11px; }}
-}}
-@media (max-width: 420px) {{
-  .summary {{ grid-template-columns:1fr; }}
-  .card {{ padding:10px; }}
-  .status-grid,.current-grid {{ grid-template-columns:1fr; }}
-  .table-scroll {{ margin-left:-2px; margin-right:-2px; width:calc(100% + 4px); }}
-}}
-</style>
-<script>
-document.addEventListener('toggle', async (event) => {{
-  const details = event.target;
-  if (!details.classList || !details.classList.contains('lazy-log') || !details.open || details.dataset.loaded === '1') return;
-  const pre = details.querySelector('pre');
-  const key = details.dataset.logKey;
-  const path = details.dataset.logPath || `/log/${{encodeURIComponent(key)}}`;
-  pre.textContent = '正在加载日志...';
-  try {{
-    const response = await fetch(path, {{ cache: 'no-store' }});
-    if (!response.ok) throw new Error(`HTTP ${{response.status}}`);
-    pre.textContent = await response.text();
-    details.dataset.loaded = '1';
-  }} catch (error) {{
-    pre.textContent = `日志加载失败：${{error}}`;
-  }}
-}}, true);
-</script>
+<style>{page_css}</style>
+<script>{page_js}</script>
 </head>
 <body>
 <div class='header'>
@@ -679,20 +782,7 @@ document.addEventListener('toggle', async (event) => {{
   </div>
   <div class='badge'>每 5 秒自动刷新 | 只读</div>
 </div>
-<div class='summary'>
-  <div class='cell'><span class='subtle'>矩阵状态</span><b>{esc(data['matrix_status'])}</b></div>
-  <div class='cell'><span class='subtle'>全局阶段</span><b>{esc(data['total_completed'])}/{esc(data['total_expected'])}（{esc(fmt_num(total_pct, 1))}%）</b></div>
-  <div class='cell'><span class='subtle'>阶段定义</span><b>{esc(len(SCENARIOS))} 场景 × 15 阶段</b></div>
-  <div class='cell'><span class='subtle'>回写状态</span><b>{esc(data['writeback_status'])}</b></div>
-</div>
-<div class='grid'>{''.join(cards)}</div>
-<section class='card wide'><h2>Docker 资源占用</h2><pre>{esc(data['docker_stats'])}</pre></section>
-<section class='card wide'><h2>Docker 容器状态</h2><pre>{esc(data['docker_ps'])}</pre></section>
-<section class='card wide'><h2>矩阵进程</h2><pre>{esc(data['processes'])}</pre></section>
-<section class='card wide'><h2>主机负载 / 磁盘</h2><pre>{esc(data['load'])}
-{esc(data['disk'])}</pre></section>
-<section class='card wide'><h2>矩阵主日志尾部</h2><details class='lazy-log' data-log-key='matrix' data-log-path='/log/matrix'><summary>按需加载矩阵主日志尾部</summary><pre>展开后加载日志...</pre></details></section>
-<section class='card wide'><h2>回写状态日志</h2><details class='lazy-log' data-log-key='writeback' data-log-path='/log/writeback'><summary>按需加载回写状态日志</summary><pre>展开后加载日志...</pre></details></section>
+<main id='dashboard'>{render_dashboard(data)}</main>
 </body></html>"""
     return body.encode('utf-8')
 
@@ -723,6 +813,15 @@ class Handler(BaseHTTPRequestHandler):
             payload = json.dumps(collect(), ensure_ascii=False, indent=2).encode('utf-8')
             self.send_response(HTTPStatus.OK)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('Content-Length', str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
+        if parsed.path == '/fragment':
+            payload = render_dashboard(collect()).encode('utf-8')
+            self.send_response(HTTPStatus.OK)
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
             self.send_header('Cache-Control', 'no-store')
             self.send_header('Content-Length', str(len(payload)))
             self.end_headers()
