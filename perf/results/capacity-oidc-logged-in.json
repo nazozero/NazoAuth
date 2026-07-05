@@ -1,0 +1,150 @@
+[
+  {
+    "instances": 1,
+    "scenario": "oidc_logged_in_authorization_code",
+    "target_rate": 16,
+    "duration": "30m",
+    "result": {
+      "profile": "capacity",
+      "scenario": "oidc_logged_in_authorization_code",
+      "elapsed_seconds": 1804.05,
+      "status": "passed",
+      "k6_exit_code": 0,
+      "k6": {
+        "http_reqs": 115236,
+        "rps": 64.02,
+        "error_rate": 0.0,
+        "latency_ms": {
+          "p50": 1.488,
+          "p95": 4.008,
+          "p99": 5.492
+        }
+      },
+      "steps": [
+        {
+          "step": "authorize",
+          "http_reqs": 28801,
+          "rps": 16.0,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 0.813,
+            "p95": 1.088,
+            "p99": 1.303
+          }
+        },
+        {
+          "step": "authorize_decision",
+          "http_reqs": 28801,
+          "rps": 16.0,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 2.005,
+            "p95": 3.35,
+            "p99": 5.891
+          }
+        },
+        {
+          "step": "par_oidc",
+          "http_reqs": 28801,
+          "rps": 16.0,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 0.989,
+            "p95": 1.361,
+            "p99": 1.564
+          }
+        },
+        {
+          "step": "token_authorization_code",
+          "http_reqs": 28801,
+          "rps": 16.0,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 3.47,
+            "p95": 4.848,
+            "p99": 6.735
+          }
+        }
+      ],
+      "postgres": {
+        "statement_calls": 720976,
+        "total_statement_ms": 18898.912,
+        "mean_statement_ms": 0.026,
+        "rows": 663005,
+        "database_bytes": 32356031,
+        "statements_per_http_request": 6.257
+      },
+      "db_pool": {
+        "acquire_count": 57963,
+        "wait_ms_total": 3448.015,
+        "wait_ms_avg": 0.059,
+        "wait_ms_max_observed_process_lifetime": 4.365
+      },
+      "valkey": {
+        "keyspace_hits": 374355,
+        "keyspace_misses": 125,
+        "commands_processed": 720613,
+        "expired_keys": 24021,
+        "db0_keys": 33674
+      },
+      "containers": {
+        "by_container": {
+          "nazoauth-local-oidc-logged-in-nazoauth-1": {
+            "service": "nazoauth",
+            "samples": 594,
+            "cpu_percent_avg": 6.788,
+            "cpu_percent_max": 200.51,
+            "memory_bytes_avg": 63659666,
+            "memory_bytes_max": 193147699
+          },
+          "nazoauth-local-oidc-logged-in-postgres-1": {
+            "service": "postgres",
+            "samples": 594,
+            "cpu_percent_avg": 3.563,
+            "cpu_percent_max": 14.33,
+            "memory_bytes_avg": 75771196,
+            "memory_bytes_max": 90355793
+          },
+          "nazoauth-local-oidc-logged-in-valkey-1": {
+            "service": "valkey",
+            "samples": 594,
+            "cpu_percent_avg": 1.25,
+            "cpu_percent_max": 3.09,
+            "memory_bytes_avg": 14602022,
+            "memory_bytes_max": 21883781
+          }
+        },
+        "by_service": {
+          "postgres": {
+            "containers": 1,
+            "cpu_percent_avg": 3.563,
+            "cpu_percent_max": 14.33,
+            "memory_bytes_avg": 75771196,
+            "memory_bytes_max": 90355793
+          },
+          "valkey": {
+            "containers": 1,
+            "cpu_percent_avg": 1.25,
+            "cpu_percent_max": 3.09,
+            "memory_bytes_avg": 14602022,
+            "memory_bytes_max": 21883781
+          },
+          "nazoauth": {
+            "containers": 1,
+            "cpu_percent_avg": 6.788,
+            "cpu_percent_max": 200.51,
+            "memory_bytes_avg": 63659666,
+            "memory_bytes_max": 193147699
+          }
+        }
+      },
+      "load_model": {
+        "executor": "constant-arrival-rate",
+        "target_rate": 16,
+        "duration": "30m",
+        "app_replicas": 1,
+        "observed_app_instances": 1
+      }
+    }
+  }
+]
