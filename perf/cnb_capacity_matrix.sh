@@ -25,7 +25,8 @@ for line in Path("/proc/self/status").read_text(encoding="utf-8").splitlines():
         allowed = line.split(":", 1)[1].strip()
         break
 if not allowed:
-    allowed = f"0-{max(0, (Path('/proc/cpuinfo').read_text(encoding='utf-8').count('processor\t:') or 1) - 1)}"
+    processor_count = Path("/proc/cpuinfo").read_text(encoding="utf-8").count("processor\t:") or 1
+    allowed = f"0-{max(0, processor_count - 1)}"
 
 cpus: list[int] = []
 for part in allowed.split(","):
