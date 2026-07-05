@@ -12,30 +12,30 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-ROOT = Path('/workspace')
+ROOT = Path(os.environ.get('CAPACITY_PREVIEW_ROOT', os.getcwd())).resolve()
 RESULTS = ROOT / 'perf' / 'results'
 PORT = int(os.environ.get('CAPACITY_PREVIEW_PORT', '18080'))
 START_TS = os.environ.get('CAPACITY_PREVIEW_STARTED_AT', datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))
 MAIN_SCENARIOS = {
     'token-only': 'Token-only：client_credentials',
-    'oidc-cold-login': 'OIDC：冷登录 + 刷新',
+    'oidc-cold-login-short': 'OIDC：冷登录短测 + 刷新',
     'oidc-logged-in': 'OIDC：已登录授权码',
     'oidc-refresh-only': 'OIDC：仅刷新令牌轮换',
-    'fapi2-full-security': 'FAPI2：高安全完整流',
+    'fapi2-logged-in-high-security': 'FAPI2：已登录高安全完整流',
 }
 MAIN_SCENARIO_IDS = {
     'token-only': 'token_only_client_credentials',
-    'oidc-cold-login': 'oidc_cold_login_refresh',
+    'oidc-cold-login-short': 'oidc_cold_login_refresh',
     'oidc-logged-in': 'oidc_logged_in_authorization_code',
     'oidc-refresh-only': 'oidc_refresh_only',
-    'fapi2-full-security': 'fapi2_full_security',
+    'fapi2-logged-in-high-security': 'fapi2_logged_in_high_security',
 }
 MAIN_DEFAULT_RATES = {
     'token-only': [1000, 2500, 5000, 7500, 10000],
-    'oidc-cold-login': [16, 32, 64, 128, 256],
+    'oidc-cold-login-short': [16, 32, 64],
     'oidc-logged-in': [16, 32, 64, 128, 256],
     'oidc-refresh-only': [250, 500, 1000, 1500, 2000],
-    'fapi2-full-security': [16, 32, 64, 128, 256],
+    'fapi2-logged-in-high-security': [16, 32, 64, 128, 256],
 }
 EXTENDED_SCENARIOS = {
     'mtls-client-credentials': 'mTLS：client_credentials',
@@ -79,12 +79,12 @@ INSTANCES = [1, 2, 4]
 def preview_mode() -> str:
     explicit = os.environ.get('CAPACITY_PREVIEW_MODE', '').strip().lower()
     if explicit in ('dev', 'main', 'extended'):
-        return 'extended' if explicit == 'extended' else 'dev'
+        return 'extended' if explicit == 'extended' else 'main'
     if (RESULTS / 'cnb-extended-capacity-children.txt').exists():
         return 'extended'
     if any(RESULTS.glob('capacity-extended-*.json')) or any(RESULTS.glob('cnb-extended-capacity-*.log')):
         return 'extended'
-    return 'dev'
+    return 'main'
 
 
 MODE = preview_mode()
@@ -92,12 +92,12 @@ SCENARIOS = EXTENDED_SCENARIOS if MODE == 'extended' else MAIN_SCENARIOS
 SCENARIO_IDS = EXTENDED_SCENARIO_IDS if MODE == 'extended' else MAIN_SCENARIO_IDS
 DEFAULT_RATES = EXTENDED_DEFAULT_RATES if MODE == 'extended' else MAIN_DEFAULT_RATES
 EXPECTED_POINTS = {key: len(INSTANCES) * len(DEFAULT_RATES[key]) for key in SCENARIOS}
-LOG_PREFIX = 'cnb-extended-capacity' if MODE == 'extended' else 'dev-capacity'
-RESULT_PREFIX = 'capacity-extended' if MODE == 'extended' else 'capacity-dev'
-REPORT_PREFIX = 'performance-capacity-curve-extended' if MODE == 'extended' else 'performance-capacity-curve-dev'
-MATRIX_LOG = RESULTS / ('extended-capacity-matrix.log' if MODE == 'extended' else 'dev-capacity-matrix.log')
-WRITEBACK_LOG = RESULTS / ('extended-capacity-writeback.log' if MODE == 'extended' else 'dev-capacity-writeback.log')
-CHILDREN_FILE = RESULTS / ('cnb-extended-capacity-children.txt' if MODE == 'extended' else 'dev-capacity-children.txt')
+LOG_PREFIX = 'cnb-extended-capacity' if MODE == 'extended' else 'cnb-capacity'
+RESULT_PREFIX = 'capacity-extended' if MODE == 'extended' else 'capacity'
+REPORT_PREFIX = 'performance-capacity-curve-extended' if MODE == 'extended' else 'performance-capacity-curve'
+MATRIX_LOG = RESULTS / ('extended-capacity-matrix.log' if MODE == 'extended' else 'cnb-capacity-main-rerun.log')
+WRITEBACK_LOG = RESULTS / ('extended-capacity-writeback.log' if MODE == 'extended' else 'cnb-capacity-main-rerun.log')
+CHILDREN_FILE = RESULTS / ('cnb-extended-capacity-children.txt' if MODE == 'extended' else 'cnb-capacity-children.txt')
 
 
 def run(args: list[str], timeout: float = 4.0) -> str:
@@ -180,6 +180,12 @@ def docker_container_exists(name: str) -> bool:
     return name in set(output.splitlines())
 
 
+def perf_container_name(key: str) -> str:
+    if MODE == 'extended':
+        return f'nazoauth-extended-capacity-{key}-perf-1'
+    return f'nazoauth-local-{key}-perf-1'
+
+
 def scenario_result_items() -> list[dict]:
     items: list[dict] = []
     for path in sorted(RESULTS.glob('capacity*.json')) + sorted(RESULTS.glob('capacity-*.summary.json')):
@@ -241,10 +247,7 @@ def scenario_log_fallback(key: str, lines: int = 50) -> str:
 
 
 def docker_perf_logs(key: str, lines: int = 50) -> str:
-    if MODE == 'extended':
-        name = f'nazoauth-extended-capacity-extended-{key}-perf-1'
-    else:
-        name = f'nazoauth-dev-capacity-dev-{key}-perf-1'
+    name = perf_container_name(key)
     if not docker_container_exists(name):
         return scenario_log_fallback(key, lines)
     try:
@@ -468,9 +471,7 @@ def collect() -> dict:
         total_completed += completed_points
         if report.exists():
             report_count += 1
-        live_log = docker_perf_logs(key, 120) if docker_container_exists(
-            f"nazoauth-{'extended-capacity-extended' if MODE == 'extended' else 'dev-capacity-dev'}-{key}-perf-1"
-        ) else ''
+        live_log = docker_perf_logs(key, 120) if docker_container_exists(perf_container_name(key)) else ''
         log_tail_for_status = sanitize_log(live_log or read_tail(log, 120))
         state = scenario_state(key, completed_points, log_tail_for_status, matrix)
         scenarios.append({
@@ -507,7 +508,7 @@ def collect() -> dict:
         'matrix_tail': matrix['matrix_tail'],
         'scenarios': scenarios,
         'docker_stats': run(['docker', 'stats', '--no-stream', '--format', 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}'], 8),
-        'docker_ps': run(['sh', '-lc', "docker ps --format 'table {{.Names}}\t{{.Status}}' | grep -E '^nazoauth-(dev-capacity|extended-capacity)-' | head -120 || true"], 5),
+        'docker_ps': run(['sh', '-lc', "docker ps --format 'table {{.Names}}\t{{.Status}}' | grep -E '^nazoauth-(local|extended-capacity)-' | head -120 || true"], 5),
         'disk': run(['df', '-h', '/workspace', '/'], 3),
         'load': run(['sh', '-lc', "uptime; free -h | sed -n '1,2p'"], 3),
     }
