@@ -14,6 +14,8 @@ INSTANCES="${CAPACITY_INSTANCES:-1,2,4}"
 RATES="${CAPACITY_RATES:-}"
 REPORT="docs/performance-capacity-curve-${REPORT_SUFFIX}.md"
 ENV_REPORT="perf/results/cnb-environment-${REPORT_SUFFIX}.md"
+export CAPACITY_ENV_REPORT_PATH="${ENV_REPORT}"
+export CAPACITY_CHECKPOINT_COMMIT="${CAPACITY_CHECKPOINT_COMMIT:-1}"
 COMPOSE_PROJECT_NAME="$(printf 'nazoauth-%s-%s' "${CNB_BUILD_ID:-local}" "${REPORT_SUFFIX}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-' | cut -c1-63)"
 export COMPOSE_PROJECT_NAME
 

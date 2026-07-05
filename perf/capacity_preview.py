@@ -724,11 +724,35 @@ async function loadLog(details) {
   }
 }
 
-function restoreOpenLogs(values) {
+function restoreOpenLogs(values, skipKeys = new Set()) {
   document.querySelectorAll('details.lazy-log').forEach((details) => {
     const key = details.dataset.logKey;
     if (!key || !values.has(key)) return;
     details.open = true;
+    if (skipKeys.has(key)) return;
+    loadLog(details);
+  });
+}
+
+function preserveOpenLogNodes() {
+  const nodes = new Map();
+  document.querySelectorAll('details.lazy-log[open]').forEach((details) => {
+    const key = details.dataset.logKey;
+    if (key) nodes.set(key, details);
+  });
+  return nodes;
+}
+
+function restorePreservedLogNodes(nodes) {
+  document.querySelectorAll('details.lazy-log').forEach((fresh) => {
+    const key = fresh.dataset.logKey;
+    const preserved = nodes.get(key);
+    if (preserved) fresh.replaceWith(preserved);
+  });
+}
+
+function refreshVisibleLogs() {
+  document.querySelectorAll('details.lazy-log[open]').forEach((details) => {
     loadLog(details);
   });
 }
@@ -737,11 +761,14 @@ async function refreshDashboard() {
   const dashboard = document.getElementById('dashboard');
   if (!dashboard) return;
   const openLogs = currentOpenLogs();
+  const preservedLogs = preserveOpenLogNodes();
   try {
     const response = await fetch('/fragment', { cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     dashboard.innerHTML = await response.text();
-    restoreOpenLogs(openLogs);
+    restorePreservedLogNodes(preservedLogs);
+    restoreOpenLogs(openLogs, new Set(preservedLogs.keys()));
+    refreshVisibleLogs();
   } catch (error) {
     console.warn('capacity preview refresh failed', error);
   }
