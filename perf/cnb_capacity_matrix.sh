@@ -73,9 +73,10 @@ for index in range(groups):
 PY
 
 token_cpuset="$(sed -n '1p' "${cpusets_file}")"
-oidc_logged_cpuset="$(sed -n '2p' "${cpusets_file}")"
-oidc_refresh_cpuset="$(sed -n '3p' "${cpusets_file}")"
-fapi2_logged_cpuset="$(sed -n '4p' "${cpusets_file}")"
+oidc_cold_cpuset="$(sed -n '2p' "${cpusets_file}")"
+oidc_logged_cpuset="$(sed -n '3p' "${cpusets_file}")"
+oidc_refresh_cpuset="$(sed -n '4p' "${cpusets_file}")"
+fapi2_logged_cpuset="$(sed -n '5p' "${cpusets_file}")"
 
 echo "using capacity CPU sets derived from /proc/self/status:"
 cat "${cpusets_file}"
@@ -146,53 +147,6 @@ run_capacity_child() {
   echo "$! ${suffix} ${log_path}" >>"${children_file}"
 }
 
-run_capacity_stage() {
-  scenario="$1"
-  suffix="$2"
-  duration="$3"
-  rates="$4"
-  instances="$5"
-  log_path="perf/results/cnb-capacity-${suffix}.log"
-
-  echo "starting serial capacity stage ${scenario} duration=${duration} rates=${rates} instances=${instances} -> ${log_path}"
-  set +e
-  (
-    export CAPACITY_SCENARIOS="${scenario}"
-    export CAPACITY_REPORT_SUFFIX="${suffix}"
-    export CAPACITY_DURATION="${duration}"
-    export CAPACITY_RATES="${rates}"
-    export CAPACITY_INSTANCES="${instances}"
-    export CNB_CAPACITY_SKIP_BOOTSTRAP=1
-    export CNB_CAPACITY_COMMIT=0
-    unset PERF_CPUSET
-    ./perf/cnb_capacity.sh
-  ) >"${log_path}" 2>&1
-  stage_status=$?
-  set -e
-  if [ "${stage_status}" -eq 0 ]; then
-    echo "serial capacity stage ${suffix} completed"
-    commit_capacity_report "${suffix}"
-  else
-    echo "serial capacity stage ${suffix} failed with exit code ${stage_status}"
-    tail -n 120 "${log_path}" || true
-    remove_capacity_report_outputs "${suffix}"
-  fi
-  return "${stage_status}"
-}
-
-status=0
-run_capacity_stage \
-  oidc_cold_login_refresh \
-  oidc-cold-login-short \
-  "${CAPACITY_COLD_LOGIN_DURATION:-5m}" \
-  "${CAPACITY_COLD_LOGIN_RATES:-16,32,64}" \
-  "${CAPACITY_COLD_LOGIN_INSTANCES:-1,2,4}" || status=1
-
-run_capacity_child token_only_client_credentials token-only "${token_cpuset}" "${CAPACITY_DURATION:-30m}" "1000,2500,5000,7500,10000" "${CAPACITY_INSTANCES:-1,2,4}"
-run_capacity_child oidc_logged_in_authorization_code oidc-logged-in "${oidc_logged_cpuset}" "${CAPACITY_DURATION:-30m}" "16,32,64,128,256" "${CAPACITY_INSTANCES:-1,2,4}"
-run_capacity_child oidc_refresh_only oidc-refresh-only "${oidc_refresh_cpuset}" "${CAPACITY_DURATION:-30m}" "250,500,1000,1500,2000" "${CAPACITY_INSTANCES:-1,2,4}"
-run_capacity_child fapi2_logged_in_high_security fapi2-logged-in-high-security "${fapi2_logged_cpuset}" "${CAPACITY_DURATION:-30m}" "16,32,64,128,256" "${CAPACITY_INSTANCES:-1,2,4}"
-
 report_child_logs() {
   interval_seconds="${CAPACITY_LOG_INTERVAL_SECONDS:-60}"
   tail_lines="${CAPACITY_LOG_TAIL_LINES:-20}"
@@ -222,28 +176,67 @@ report_child_logs() {
   done
 }
 
-report_child_logs &
-reporter_pid="$!"
+wait_capacity_group() {
+  group_name="$1"
+  group_status=0
 
-while read -r pid suffix log_path; do
-  if [ -z "${pid}" ]; then
-    continue
-  fi
-  if wait "${pid}"; then
-    echo "capacity scenario ${suffix} completed"
-    commit_capacity_report "${suffix}"
-  else
-    child_status=$?
-    status=1
-    echo "capacity scenario ${suffix} failed with exit code ${child_status}"
-    echo "last log lines for ${suffix}:"
-    tail -n 120 "${log_path}" || true
-    remove_capacity_report_outputs "${suffix}"
-  fi
-done <"${children_file}"
+  report_child_logs &
+  reporter_pid="$!"
 
-kill "${reporter_pid}" 2>/dev/null || true
-wait "${reporter_pid}" 2>/dev/null || true
+  while read -r pid suffix log_path; do
+    if [ -z "${pid}" ]; then
+      continue
+    fi
+    if wait "${pid}"; then
+      echo "capacity ${group_name} scenario ${suffix} completed"
+      commit_capacity_report "${suffix}"
+    else
+      child_status=$?
+      group_status=1
+      echo "capacity ${group_name} scenario ${suffix} failed with exit code ${child_status}"
+      echo "last log lines for ${suffix}:"
+      tail -n 120 "${log_path}" || true
+      remove_capacity_report_outputs "${suffix}"
+    fi
+  done <"${children_file}"
+
+  kill "${reporter_pid}" 2>/dev/null || true
+  wait "${reporter_pid}" 2>/dev/null || true
+  return "${group_status}"
+}
+
+status=0
+
+echo "starting short capacity group in parallel"
+: >"${children_file}"
+short_duration="${CAPACITY_SHORT_DURATION:-5m}"
+short_instances="${CAPACITY_SHORT_INSTANCES:-1,2,4}"
+run_capacity_child token_only_client_credentials token-only-short "${token_cpuset}" "${short_duration}" "${CAPACITY_SHORT_TOKEN_RATES:-1000,2500,5000}" "${short_instances}"
+run_capacity_child oidc_cold_login_refresh oidc-cold-login-short "${oidc_cold_cpuset}" "${CAPACITY_SHORT_OIDC_COLD_RATES:-16,32,64}" "${short_instances}"
+run_capacity_child oidc_logged_in_authorization_code oidc-logged-in-short "${oidc_logged_cpuset}" "${short_duration}" "${CAPACITY_SHORT_OIDC_LOGGED_RATES:-16,32,64}" "${short_instances}"
+run_capacity_child oidc_refresh_only oidc-refresh-only-short "${oidc_refresh_cpuset}" "${short_duration}" "${CAPACITY_SHORT_REFRESH_RATES:-250,500,1000}" "${short_instances}"
+run_capacity_child fapi2_logged_in_high_security fapi2-logged-in-high-security-short "${fapi2_logged_cpuset}" "${short_duration}" "${CAPACITY_SHORT_FAPI2_RATES:-16,32,64}" "${short_instances}"
+if wait_capacity_group short; then
+  echo "short capacity group completed"
+else
+  status=1
+  echo "short capacity group had failures"
+fi
+
+echo "starting long capacity group in parallel"
+: >"${children_file}"
+long_duration="${CAPACITY_DURATION:-30m}"
+long_instances="${CAPACITY_INSTANCES:-1,2,4}"
+run_capacity_child token_only_client_credentials token-only "${token_cpuset}" "${long_duration}" "1000,2500,5000,7500,10000" "${long_instances}"
+run_capacity_child oidc_logged_in_authorization_code oidc-logged-in "${oidc_logged_cpuset}" "${long_duration}" "16,32,64,128,256" "${long_instances}"
+run_capacity_child oidc_refresh_only oidc-refresh-only "${oidc_refresh_cpuset}" "${long_duration}" "250,500,1000,1500,2000" "${long_instances}"
+run_capacity_child fapi2_logged_in_high_security fapi2-logged-in-high-security "${fapi2_logged_cpuset}" "${long_duration}" "16,32,64,128,256" "${long_instances}"
+if wait_capacity_group long; then
+  echo "long capacity group completed"
+else
+  status=1
+  echo "long capacity group had failures"
+fi
 
 if [ "${status}" -eq 0 ] && find docs -maxdepth 1 -name 'performance-capacity-curve-*.md' -print -quit | grep -q .; then
   git add docs/performance-capacity-curve-*.md

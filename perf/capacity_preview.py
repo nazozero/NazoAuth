@@ -17,24 +17,36 @@ RESULTS = ROOT / 'perf' / 'results'
 PORT = int(os.environ.get('CAPACITY_PREVIEW_PORT', '18080'))
 START_TS = os.environ.get('CAPACITY_PREVIEW_STARTED_AT', datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))
 MAIN_SCENARIOS = {
+    'token-only-short': '短测：Token-only client_credentials',
     'token-only': 'Token-only：client_credentials',
     'oidc-cold-login-short': 'OIDC：冷登录短测 + 刷新',
+    'oidc-logged-in-short': '短测：OIDC 已登录授权码',
     'oidc-logged-in': 'OIDC：已登录授权码',
+    'oidc-refresh-only-short': '短测：OIDC 仅刷新令牌轮换',
     'oidc-refresh-only': 'OIDC：仅刷新令牌轮换',
+    'fapi2-logged-in-high-security-short': '短测：FAPI2 已登录高安全完整流',
     'fapi2-logged-in-high-security': 'FAPI2：已登录高安全完整流',
 }
 MAIN_SCENARIO_IDS = {
+    'token-only-short': 'token_only_client_credentials',
     'token-only': 'token_only_client_credentials',
     'oidc-cold-login-short': 'oidc_cold_login_refresh',
+    'oidc-logged-in-short': 'oidc_logged_in_authorization_code',
     'oidc-logged-in': 'oidc_logged_in_authorization_code',
+    'oidc-refresh-only-short': 'oidc_refresh_only',
     'oidc-refresh-only': 'oidc_refresh_only',
+    'fapi2-logged-in-high-security-short': 'fapi2_logged_in_high_security',
     'fapi2-logged-in-high-security': 'fapi2_logged_in_high_security',
 }
 MAIN_DEFAULT_RATES = {
+    'token-only-short': [1000, 2500, 5000],
     'token-only': [1000, 2500, 5000, 7500, 10000],
     'oidc-cold-login-short': [16, 32, 64],
+    'oidc-logged-in-short': [16, 32, 64],
     'oidc-logged-in': [16, 32, 64, 128, 256],
+    'oidc-refresh-only-short': [250, 500, 1000],
     'oidc-refresh-only': [250, 500, 1000, 1500, 2000],
+    'fapi2-logged-in-high-security-short': [16, 32, 64],
     'fapi2-logged-in-high-security': [16, 32, 64, 128, 256],
 }
 EXTENDED_SCENARIOS = {
