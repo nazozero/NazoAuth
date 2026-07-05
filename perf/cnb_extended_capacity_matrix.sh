@@ -2,9 +2,8 @@
 set -eu
 
 echo "extended capacity matrix bootstrap started $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-if command -v apk >/dev/null 2>&1; then
-  apk add --no-cache coreutils git jq python3 >/dev/null
-fi
+. ./perf/cnb_bootstrap.sh
+install_capacity_dependencies
 docker compose version >/dev/null
 
 mkdir -p docs perf/results

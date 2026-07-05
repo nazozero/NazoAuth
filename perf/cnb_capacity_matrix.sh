@@ -2,8 +2,9 @@
 set -eu
 
 echo "capacity matrix bootstrap started $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-echo "installing capacity matrix dependencies: coreutils git jq python3"
-apk add --no-cache coreutils git jq python3 >/dev/null
+echo "checking capacity matrix dependencies: coreutils git jq python3"
+. ./perf/cnb_bootstrap.sh
+install_capacity_dependencies
 echo "dependency installation completed"
 echo "docker compose version: $(docker compose version --short 2>/dev/null || docker compose version)"
 docker compose version >/dev/null

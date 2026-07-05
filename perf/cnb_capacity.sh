@@ -2,7 +2,8 @@
 set -eu
 
 if [ "${CNB_CAPACITY_SKIP_BOOTSTRAP:-0}" != "1" ]; then
-  apk add --no-cache coreutils git jq python3 >/dev/null
+  . ./perf/cnb_bootstrap.sh
+  install_capacity_dependencies
   docker compose version >/dev/null
 fi
 
