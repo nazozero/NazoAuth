@@ -2,22 +2,22 @@
 
 | Field | Value |
 | --- | --- |
-| Source commit | 6b9789336a83920c678a2ea582df7db32a6f4b4e |
+| Source commit | 642f1549b06e997f17be36d13aed568517d653a2 |
 | Runner tag | cnb:arch:amd64 |
 | Requested runner CPUs | 64 |
 | Observed logical CPUs | 384 |
-| Process allowed CPUs | 48-99,372-383 |
+| Process allowed CPUs | 48-88,361-383 |
 | Observed CPU model | AMD EPYC 9K65 192-Core Processor |
 | Cgroup CPU max | unknown |
 | Memory total | unknown |
 | Cgroup memory max | unknown |
 | Workspace disk available | unknown |
-| Kernel | Linux eed750281cd9 5.4.241-1-tlinux4-0023.7 #1 SMP Fri May 8 22:13:53 CST 2026 x86_64 GNU/Linux |
+| Kernel | Linux e3c5ca7ceeb2 5.4.241-1-tlinux4-0023.7 #1 SMP Fri May 8 22:13:53 CST 2026 x86_64 GNU/Linux |
 | Docker server | 27.5.1 |
 | Docker compose | 2.33.0 |
 | Compose project | nazoauth-local-fapi2-logged-in-high-security-short |
 | Compose files | docker-compose.perf.yml + perf/results/docker-compose.cpuset-fapi2-logged-in-high-security-short.yml |
-| CPU set | 96-99,372-379 |
+| CPU set | 368-379 |
 | CPU set size | 12 |
 | Services pinned to CPU set | postgres, valkey, keyset, migrate, nazoauth, perf |
 | Per-container CPU model | Docker cpuset isolation; no CPU quota. Each service container may run on the listed CPU set. NazoAuth is additionally scaled by the stage instance count. |
