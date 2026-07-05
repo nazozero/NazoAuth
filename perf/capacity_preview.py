@@ -830,7 +830,7 @@ function eventDataLine(event) {
 function getLogState(key) {
   let state = logStreams.get(key);
   if (!state) {
-    state = { source: null, lines: [], sticky: true, errorLineVisible: false };
+    state = { source: null, lines: [], sticky: true, errorLineVisible: false, closed: false };
     logStreams.set(key, state);
   }
   return state;
@@ -863,7 +863,8 @@ function renderLogState(key) {
 
 function appendLogLine(key, line) {
   if (!key || line === '') return;
-  const state = getLogState(key);
+  const state = logStreams.get(key);
+  if (!state || state.closed) return;
   if (line === '日志流连接中断，浏览器将自动重连。') {
     if (state.errorLineVisible) return;
     state.errorLineVisible = true;
@@ -885,7 +886,8 @@ function appendLogLine(key, line) {
 function startLogStream(key) {
   if (!key) return;
   const state = getLogState(key);
-  if (state.source) {
+  state.closed = false;
+  if (state.source && state.source.readyState !== EventSource.CLOSED) {
     renderLogState(key);
     return;
   }
@@ -896,8 +898,14 @@ function startLogStream(key) {
   appendLogLine(key, '正在连接日志流...');
   const source = new EventSource(`/log-stream/${encodeURIComponent(key)}`);
   state.source = source;
-  source.onmessage = (event) => appendLogLine(key, eventDataLine(event));
+  source.onmessage = (event) => {
+    const current = logStreams.get(key);
+    if (!current || current.closed || current.source !== source) return;
+    appendLogLine(key, eventDataLine(event));
+  };
   source.onerror = () => {
+    const current = logStreams.get(key);
+    if (!current || current.closed || current.source !== source) return;
     appendLogLine(key, '日志流连接中断，浏览器将自动重连。');
   };
 }
@@ -905,7 +913,12 @@ function startLogStream(key) {
 function stopLogStream(key) {
   const state = logStreams.get(key);
   if (!state) return;
-  if (state.source) state.source.close();
+  state.closed = true;
+  if (state.source) {
+    state.source.onmessage = null;
+    state.source.onerror = null;
+    state.source.close();
+  }
   logStreams.delete(key);
 }
 
