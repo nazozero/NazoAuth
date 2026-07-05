@@ -6,11 +6,12 @@ import json
 import os
 import re
 import subprocess
+import time
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 ROOT = Path(os.environ.get('CAPACITY_PREVIEW_ROOT', os.getcwd())).resolve()
 RESULTS = ROOT / 'perf' / 'results'
@@ -280,6 +281,104 @@ def docker_perf_logs(key: str, lines: int = 50) -> str:
     if 'k6 run' not in top:
         return 'k6 尚未启动；当前 perf 容器仍在 Python runner 准备阶段（通常是 seed / 预生成测试向量）。\n\n容器内进程：\n' + top + '\n\n压测参数：\n' + env
     return 'k6 进程已启动，但 Docker 日志暂为空。\n\n容器内进程：\n' + top + '\n\n压测参数：\n' + env
+
+
+def sse_payload(line: str) -> bytes:
+    return f"data: {json.dumps(line, ensure_ascii=False)}\n\n".encode('utf-8')
+
+
+def log_path_for_stream(key: str) -> Path | None:
+    if key == 'matrix':
+        return MATRIX_LOG
+    if key == 'writeback':
+        return WRITEBACK_LOG
+    if key in SCENARIOS:
+        return RESULTS / f'{LOG_PREFIX}-{key}.log'
+    return None
+
+
+def write_sse_line(handler: BaseHTTPRequestHandler, line: str) -> bool:
+    try:
+        handler.wfile.write(sse_payload(line))
+        handler.wfile.flush()
+        return True
+    except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+        return False
+
+
+def stream_file_log(handler: BaseHTTPRequestHandler, path: Path, lines: int = 80) -> None:
+    if path.exists():
+        for line in sanitize_log(read_tail(path, lines)).splitlines():
+            if not write_sse_line(handler, line):
+                return
+        try:
+            position = path.stat().st_size
+        except OSError:
+            position = 0
+    else:
+        try:
+            rel_path = path.relative_to(ROOT)
+        except ValueError:
+            rel_path = path
+        if not write_sse_line(handler, f'等待日志文件生成：{rel_path}'):
+            return
+        position = 0
+    while True:
+        try:
+            if not path.exists():
+                time.sleep(1)
+                continue
+            size = path.stat().st_size
+            if size < position:
+                position = 0
+            with path.open('r', encoding='utf-8', errors='replace') as handle:
+                handle.seek(position)
+                chunk = handle.read()
+                position = handle.tell()
+            if chunk:
+                for line in sanitize_log(chunk).splitlines():
+                    if not write_sse_line(handler, line):
+                        return
+            else:
+                if not write_sse_line(handler, ''):
+                    return
+                time.sleep(2)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            return
+        except Exception as exc:
+            if not write_sse_line(handler, f'日志流读取失败：{type(exc).__name__}: {exc}'):
+                return
+            time.sleep(2)
+
+
+def stream_docker_or_file_log(handler: BaseHTTPRequestHandler, key: str) -> None:
+    name = perf_container_name(key)
+    if docker_container_exists(name):
+        process = subprocess.Popen(
+            ['docker', 'logs', '--tail', '80', '-f', name],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        try:
+            assert process.stdout is not None
+            for raw_line in process.stdout:
+                line = raw_line.rstrip('\r\n')
+                if not write_sse_line(handler, line):
+                    return
+            write_sse_line(handler, '容器日志流已结束；切换到持久化日志文件。')
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.kill()
+    path = log_path_for_stream(key)
+    if path is None:
+        write_sse_line(handler, '未知日志流。')
+        return
+    stream_file_log(handler, path)
 
 
 def interesting_lines(path: Path, lines: int = 18) -> list[str]:
@@ -598,7 +697,7 @@ def render_cards(data: dict) -> str:
   <div class='log-link'><a href='/log/{esc(item['key'])}'>查看完整日志尾部</a></div>
   <div class='stage-title'>已完成阶段指标</div>
   {render_stage_table(item['completed_rows'])}
-  <details class='lazy-log' data-log-key='{esc(item['key'])}'><summary>按需加载 k6 实时日志尾部</summary><pre>展开后加载日志...</pre></details>
+  <details class='lazy-log' data-log-key='{esc(item['key'])}'><summary>按需加载 k6 实时日志尾部</summary><pre>展开后建立 SSE 日志流...</pre></details>
 </section>
 """)
     return ''.join(cards)
@@ -619,8 +718,8 @@ def render_dashboard(data: dict) -> str:
 <section class='card wide'><h2>矩阵进程</h2><pre>{esc(data['processes'])}</pre></section>
 <section class='card wide'><h2>主机负载 / 磁盘</h2><pre>{esc(data['load'])}
 {esc(data['disk'])}</pre></section>
-<section class='card wide'><h2>矩阵主日志尾部</h2><details class='lazy-log' data-log-key='matrix' data-log-path='/log/matrix'><summary>按需加载矩阵主日志尾部</summary><pre>展开后加载日志...</pre></details></section>
-<section class='card wide'><h2>回写状态日志</h2><details class='lazy-log' data-log-key='writeback' data-log-path='/log/writeback'><summary>按需加载回写状态日志</summary><pre>展开后加载日志...</pre></details></section>
+<section class='card wide'><h2>矩阵主日志尾部</h2><details class='lazy-log' data-log-key='matrix'><summary>按需加载矩阵主日志尾部</summary><pre>展开后建立 SSE 日志流...</pre></details></section>
+<section class='card wide'><h2>回写状态日志</h2><details class='lazy-log' data-log-key='writeback'><summary>按需加载回写状态日志</summary><pre>展开后建立 SSE 日志流...</pre></details></section>
 """
 
 
@@ -657,6 +756,7 @@ h2 { margin:0; font-size:clamp(15px,3.8vw,16px); line-height:1.25; overflow-wrap
 .metrics th:first-child,.metrics td:first-child { text-align:left; position:sticky; left:0; background:#0b121c; z-index:1; }
 .metrics th { color:#93a4b8; font-weight:600; background:#0b121c; }
 pre { margin:10px 0 0; padding:12px; background:#05080d; border:1px solid #1f2937; border-radius:6px; overflow:auto; max-height:min(320px,55vh); font:12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space:pre-wrap; word-break:break-word; }
+details.lazy-log pre { max-height:min(500px,62vh); }
 details { margin-top:10px; }
 summary { cursor:pointer; color:#7dd3fc; font-size:13px; line-height:1.45; min-height:36px; display:flex; align-items:center; }
 .wide { margin-top:14px; }
@@ -686,52 +786,47 @@ summary { cursor:pointer; color:#7dd3fc; font-size:13px; line-height:1.45; min-h
 }
 """
     page_js = """
-const OPEN_LOGS_KEY = 'nazoauth-capacity-open-logs';
+const LOG_LINE_LIMIT = 500;
 
-function openLogSet() {
-  try { return new Set(JSON.parse(localStorage.getItem(OPEN_LOGS_KEY) || '[]')); }
-  catch { return new Set(); }
+function eventDataLine(event) {
+  try { return JSON.parse(event.data); }
+  catch { return event.data; }
 }
 
-function saveOpenLogSet(values) {
-  localStorage.setItem(OPEN_LOGS_KEY, JSON.stringify([...values]));
-}
-
-function currentOpenLogs() {
-  const values = openLogSet();
-  document.querySelectorAll('details.lazy-log[open]').forEach((details) => {
-    if (details.dataset.logKey) values.add(details.dataset.logKey);
-  });
-  return values;
-}
-
-function logPath(details) {
-  return details.dataset.logPath || `/log/${encodeURIComponent(details.dataset.logKey)}`;
-}
-
-async function loadLog(details) {
-  const pre = details.querySelector('pre');
-  if (!pre) return;
-  try {
-    const response = await fetch(logPath(details), { cache: 'no-store' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const text = await response.text();
-    const pinnedToBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 8;
-    pre.textContent = text;
-    if (pinnedToBottom) pre.scrollTop = pre.scrollHeight;
-  } catch (error) {
-    pre.textContent = `日志加载失败：${error}`;
+function appendLogLine(pre, line) {
+  if (!pre || line === '') return;
+  const lines = pre.__logLines || [];
+  lines.push(line);
+  if (lines.length > LOG_LINE_LIMIT) {
+    lines.splice(0, lines.length - LOG_LINE_LIMIT);
   }
+  const pinnedToBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 24 || pre.dataset.forceBottom === '1';
+  pre.__logLines = lines;
+  pre.textContent = lines.join('\\n');
+  if (pinnedToBottom) pre.scrollTop = pre.scrollHeight;
+  pre.dataset.forceBottom = '0';
 }
 
-function restoreOpenLogs(values, skipKeys = new Set()) {
-  document.querySelectorAll('details.lazy-log').forEach((details) => {
-    const key = details.dataset.logKey;
-    if (!key || !values.has(key)) return;
-    details.open = true;
-    if (skipKeys.has(key)) return;
-    loadLog(details);
-  });
+function startLogStream(details) {
+  if (!details || details.__eventSource) return;
+  const pre = details.querySelector('pre');
+  const key = details.dataset.logKey;
+  if (!pre || !key) return;
+  pre.__logLines = [];
+  pre.dataset.forceBottom = '1';
+  pre.textContent = '正在连接日志流...';
+  const source = new EventSource(`/log-stream/${encodeURIComponent(key)}`);
+  details.__eventSource = source;
+  source.onmessage = (event) => appendLogLine(pre, eventDataLine(event));
+  source.onerror = () => {
+    appendLogLine(pre, '日志流连接中断，浏览器将自动重连。');
+  };
+}
+
+function stopLogStream(details) {
+  if (!details || !details.__eventSource) return;
+  details.__eventSource.close();
+  delete details.__eventSource;
 }
 
 function preserveOpenLogNodes() {
@@ -751,24 +846,15 @@ function restorePreservedLogNodes(nodes) {
   });
 }
 
-function refreshVisibleLogs() {
-  document.querySelectorAll('details.lazy-log[open]').forEach((details) => {
-    loadLog(details);
-  });
-}
-
 async function refreshDashboard() {
   const dashboard = document.getElementById('dashboard');
   if (!dashboard) return;
-  const openLogs = currentOpenLogs();
   const preservedLogs = preserveOpenLogNodes();
   try {
     const response = await fetch('/fragment', { cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     dashboard.innerHTML = await response.text();
     restorePreservedLogNodes(preservedLogs);
-    restoreOpenLogs(openLogs, new Set(preservedLogs.keys()));
-    refreshVisibleLogs();
   } catch (error) {
     console.warn('capacity preview refresh failed', error);
   }
@@ -777,19 +863,19 @@ async function refreshDashboard() {
 document.addEventListener('toggle', (event) => {
   const details = event.target;
   if (!details.classList || !details.classList.contains('lazy-log')) return;
-  const values = currentOpenLogs();
   if (details.open) {
-    values.add(details.dataset.logKey);
-    loadLog(details);
+    startLogStream(details);
   } else {
-    values.delete(details.dataset.logKey);
+    stopLogStream(details);
   }
-  saveOpenLogSet(values);
 }, true);
 
 window.addEventListener('DOMContentLoaded', () => {
-  restoreOpenLogs(openLogSet());
   setInterval(refreshDashboard, 5000);
+});
+
+window.addEventListener('beforeunload', () => {
+  document.querySelectorAll('details.lazy-log').forEach(stopLogStream);
 });
 """
     body = f"""<!doctype html>
@@ -854,8 +940,21 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(payload)
             return
+        if parsed.path.startswith('/log-stream/'):
+            key = unquote(parsed.path.rsplit('/', 1)[-1])
+            if key not in SCENARIOS and key not in ('matrix', 'writeback'):
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            self.send_response(HTTPStatus.OK)
+            self.send_header('Content-Type', 'text/event-stream; charset=utf-8')
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('Connection', 'keep-alive')
+            self.send_header('X-Accel-Buffering', 'no')
+            self.end_headers()
+            stream_docker_or_file_log(self, key)
+            return
         if parsed.path.startswith('/log/'):
-            key = parsed.path.rsplit('/', 1)[-1]
+            key = unquote(parsed.path.rsplit('/', 1)[-1])
             if key == 'matrix':
                 log_path = MATRIX_LOG
             elif key == 'writeback':
