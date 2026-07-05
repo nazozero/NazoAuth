@@ -250,7 +250,7 @@ def write_report(results: list[dict[str, Any]], *, duration: str, report_path: P
         "",
         "- `oidc_cold_login_refresh` includes a fresh Argon2 password login in every flow.",
         "- `oidc_logged_in_authorization_code` keeps a session per VU after warm-up and measures authorization-code work without per-flow password verification.",
-        "- `oidc_refresh_only` performs one per-VU bootstrap flow, then measures refresh rotation only; the bootstrap cost is negligible in sustained 30 minute runs but visible in short smoke tests.",
+        "- `oidc_refresh_only` uses pre-seeded refresh tokens and measures refresh rotation only; password login is intentionally excluded from this scenario.",
         "- `fapi2_logged_in_high_security` keeps a session per VU after warm-up and measures PAR + signed request object + private_key_jwt + DPoP authorization-code and refresh work without per-flow password verification.",
         "- Per-core normalization uses observed Docker CPU percent for the NazoAuth service: 100% equals one effective CPU core.",
         "",

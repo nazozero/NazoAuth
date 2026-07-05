@@ -919,25 +919,18 @@ export async function oidc_logged_in_authorization_code() {
   tokenAuthorizationCode(v, code);
 }
 
-async function bootstrapRefreshToken() {
-  const user = selectedUser(false);
-  const v = vector();
-  const requestUri = await oidcPar(v);
-  const requestId = authorizePar(secrets.clients.oidc, requestUri, user, true);
-  if (!requestId) {
-    return;
+function seededOidcRefreshToken() {
+  const tokens = secrets.oidc_refresh_tokens || [];
+  if (tokens.length === 0) {
+    fail('oidc_refresh_only requires pre-seeded OIDC refresh tokens');
   }
-  const code = approveAuthorization(requestId, v.oidc_state);
-  const tokens = tokenAuthorizationCode(v, code);
-  __VU_STATE.refreshToken = tokens.refresh_token;
+  const vuIndex = Math.max((exec.vu && exec.vu.idInTest ? exec.vu.idInTest : 1) - 1, 0);
+  return tokens[vuIndex % tokens.length];
 }
 
 export async function oidc_refresh_only() {
   if (!__VU_STATE.refreshToken) {
-    await bootstrapRefreshToken();
-    if (!__VU_STATE.refreshToken) {
-      return;
-    }
+    __VU_STATE.refreshToken = seededOidcRefreshToken();
   }
   const response = http.post(
     `${BASE_URL}/token`,

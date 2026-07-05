@@ -8,10 +8,12 @@ import json
 import os
 import secrets
 import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import psycopg
+from blake3 import blake3
 from argon2 import PasswordHasher
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from psycopg.types.json import Jsonb
@@ -26,6 +28,7 @@ CLIENT_SECRET = "PerfClientSecret-2026!"
 CLIENT_SECRET_PEPPER = os.environ.get(
     "CLIENT_SECRET_PEPPER", "perf-client-secret-pepper-000000000000000001"
 )
+REFRESH_TOKEN_TTL_SECONDS = int(os.environ.get("REFRESH_TOKEN_TTL_SECONDS", "2592000"))
 MTLS_THUMBPRINT = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 REDIRECT_URI = "https://client.example/callback"
 CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
@@ -132,6 +135,10 @@ def hash_client_secret(value: str) -> str:
         hashlib.sha256,
     ).digest()
     return f"client-secret-v1:{salt}:{b64url(digest)}"
+
+
+def blake3_hex(value: str) -> str:
+    return blake3(value.encode("utf-8")).hexdigest()
 
 
 def user_credentials(count: int) -> list[dict[str, str]]:
@@ -258,6 +265,78 @@ def upsert_client(
     )
 
 
+def seed_oidc_refresh_tokens(
+    conn: psycopg.Connection[Any],
+    users: list[dict[str, str]],
+) -> list[str]:
+    client_row = conn.execute(
+        """
+        SELECT id
+        FROM oauth_clients
+        WHERE tenant_id = %s::uuid
+          AND client_id = 'perf-oidc-client'
+        """,
+        (TENANT_ID,),
+    ).fetchone()
+    if client_row is None:
+        raise RuntimeError("perf OIDC client was not seeded")
+    client_db_id = client_row[0]
+    conn.execute(
+        """
+        DELETE FROM oauth_tokens
+        WHERE tenant_id = %s::uuid
+          AND client_id = %s
+        """,
+        (TENANT_ID, client_db_id),
+    )
+    now = datetime.now(UTC)
+    expires_at = now + timedelta(seconds=REFRESH_TOKEN_TTL_SECONDS)
+    refresh_tokens: list[str] = []
+    for user in users:
+        user_row = conn.execute(
+            """
+            SELECT id
+            FROM users
+            WHERE tenant_id = %s::uuid
+              AND lower(email) = %s
+            """,
+            (TENANT_ID, user["email"].lower()),
+        ).fetchone()
+        if user_row is None:
+            raise RuntimeError(f"perf user was not seeded: {user['email']}")
+        user_db_id = user_row[0]
+        raw_refresh_token = random_token(48)
+        conn.execute(
+            """
+            INSERT INTO oauth_tokens (
+                tenant_id, refresh_token_blake3, token_family_id, rotated_from_id,
+                client_id, user_id, scopes, audience, authorization_details,
+                issued_at, expires_at, subject, dpop_jkt, mtls_x5t_s256
+            )
+            VALUES (
+                %s::uuid, %s, %s, NULL,
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, NULL, NULL
+            )
+            """,
+            (
+                TENANT_ID,
+                blake3_hex(raw_refresh_token),
+                uuid.uuid4(),
+                client_db_id,
+                user_db_id,
+                Jsonb(["openid", "profile", "offline_access"]),
+                Jsonb(["resource://default"]),
+                Jsonb([]),
+                now,
+                expires_at,
+                str(user_db_id),
+            ),
+        )
+        refresh_tokens.append(raw_refresh_token)
+    return refresh_tokens
+
+
 def prepare_vectors(
     *,
     count: int,
@@ -372,6 +451,7 @@ def seed() -> None:
             require_dpop=True,
             require_par_request_object=True,
         )
+        oidc_refresh_tokens = seed_oidc_refresh_tokens(conn, users)
         conn.commit()
 
     secrets_doc = {
@@ -381,6 +461,7 @@ def seed() -> None:
         "users": users,
         "client_assertion_type": CLIENT_ASSERTION_TYPE,
         "client_secret": CLIENT_SECRET,
+        "oidc_refresh_tokens": oidc_refresh_tokens,
         "mtls_thumbprint": MTLS_THUMBPRINT,
         "clients": {
             "client_credentials": "perf-client-credentials",
