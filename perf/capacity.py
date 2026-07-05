@@ -72,6 +72,11 @@ def compose_command(env: dict[str, str], *args: str) -> list[str]:
     ]
 
 
+def copy_perf_results(env: dict[str, str], destination: Path) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    run_command(compose_command(env, "cp", "perf:/results/.", str(destination)), env)
+
+
 def root_path(value: str) -> Path:
     path = Path(value)
     return path if path.is_absolute() else ROOT / path
@@ -279,7 +284,6 @@ def run_point(*, scenario: str, rate: int, duration: str, instances: int, max_vu
     )
     point_results_dir = RESULTS_DIR / compose_project_name(env)
     point_results_dir.mkdir(parents=True, exist_ok=True)
-    env["PERF_RESULTS_HOST_DIR"] = "./" + str(point_results_dir.relative_to(ROOT)).replace("\\", "/")
     env["PERF_REPORT_PATH"] = "/results/performance-benchmarks.md"
     down = compose_command(env, "down", "-v", "--remove-orphans")
     run_command(down, env)
@@ -295,6 +299,7 @@ def run_point(*, scenario: str, rate: int, duration: str, instances: int, max_vu
             "perf",
         )
         run_command(command, env)
+        copy_perf_results(env, point_results_dir)
         latest = json.loads((point_results_dir / "latest.json").read_text(encoding="utf-8"))
         if len(latest) != 1:
             raise RuntimeError(f"capacity point expected one result, got {len(latest)}")
