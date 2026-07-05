@@ -15,30 +15,86 @@ from urllib.parse import urlparse
 ROOT = Path('/workspace')
 RESULTS = ROOT / 'perf' / 'results'
 PORT = int(os.environ.get('CAPACITY_PREVIEW_PORT', '18080'))
-START_TS = '2026-07-05T04:56:04Z'
-SCENARIOS = {
+START_TS = os.environ.get('CAPACITY_PREVIEW_STARTED_AT', datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))
+MAIN_SCENARIOS = {
     'token-only': 'Token-only：client_credentials',
     'oidc-cold-login': 'OIDC：冷登录 + 刷新',
     'oidc-logged-in': 'OIDC：已登录授权码',
     'oidc-refresh-only': 'OIDC：仅刷新令牌轮换',
     'fapi2-full-security': 'FAPI2：高安全完整流',
 }
-SCENARIO_IDS = {
+MAIN_SCENARIO_IDS = {
     'token-only': 'token_only_client_credentials',
     'oidc-cold-login': 'oidc_cold_login_refresh',
     'oidc-logged-in': 'oidc_logged_in_authorization_code',
     'oidc-refresh-only': 'oidc_refresh_only',
     'fapi2-full-security': 'fapi2_full_security',
 }
-DEFAULT_RATES = {
+MAIN_DEFAULT_RATES = {
     'token-only': [1000, 2500, 5000, 7500, 10000],
     'oidc-cold-login': [16, 32, 64, 128, 256],
     'oidc-logged-in': [16, 32, 64, 128, 256],
     'oidc-refresh-only': [250, 500, 1000, 1500, 2000],
     'fapi2-full-security': [16, 32, 64, 128, 256],
 }
+EXTENDED_SCENARIOS = {
+    'mtls-client-credentials': 'mTLS：client_credentials',
+    'par-signed-request-object': 'PAR：签名请求对象',
+    'introspect-opaque-refresh-token': 'Introspection：不透明刷新令牌',
+    'authorize-par-session': 'Authorize：已登录会话 + PAR',
+    'revoke-refresh-token': 'Revocation：刷新令牌撤销',
+    'metadata-jwks': 'Discovery / JWKS',
+    'same-user-refresh-token-rotation': '同用户：刷新令牌轮换',
+    'same-user-introspect-opaque-refresh-token': '同用户：Introspection',
+    'same-user-authorize-par-session': '同用户：Authorize + PAR',
+}
+EXTENDED_SCENARIO_IDS = {
+    'mtls-client-credentials': 'mtls_client_credentials',
+    'par-signed-request-object': 'par_signed_request_object',
+    'introspect-opaque-refresh-token': 'introspect_opaque_refresh_token',
+    'authorize-par-session': 'authorize_par_session',
+    'revoke-refresh-token': 'revoke_refresh_token',
+    'metadata-jwks': 'metadata_jwks',
+    'same-user-refresh-token-rotation': 'same_user_refresh_token_rotation',
+    'same-user-introspect-opaque-refresh-token': 'same_user_introspect_opaque_refresh_token',
+    'same-user-authorize-par-session': 'same_user_authorize_par_session',
+}
+EXTENDED_DEFAULT_RATES = {
+    'mtls-client-credentials': [250, 500, 1000, 1500, 2000],
+    'par-signed-request-object': [250, 500, 1000, 1500, 2000],
+    'introspect-opaque-refresh-token': [16, 32, 64, 128, 256],
+    'authorize-par-session': [16, 32, 64, 128, 256],
+    'revoke-refresh-token': [16, 32, 64, 128, 256],
+    'metadata-jwks': [250, 500, 1000, 1500, 2000],
+    'same-user-refresh-token-rotation': [8, 16, 32, 64, 128],
+    'same-user-introspect-opaque-refresh-token': [8, 16, 32, 64, 128],
+    'same-user-authorize-par-session': [8, 16, 32, 64, 128],
+}
 INSTANCES = [1, 2, 4]
+
+
+def preview_mode() -> str:
+    explicit = os.environ.get('CAPACITY_PREVIEW_MODE', '').strip().lower()
+    if explicit in ('dev', 'main', 'extended'):
+        return 'extended' if explicit == 'extended' else 'dev'
+    if (RESULTS / 'cnb-extended-capacity-children.txt').exists():
+        return 'extended'
+    if any(RESULTS.glob('capacity-extended-*.json')) or any(RESULTS.glob('cnb-extended-capacity-*.log')):
+        return 'extended'
+    return 'dev'
+
+
+MODE = preview_mode()
+SCENARIOS = EXTENDED_SCENARIOS if MODE == 'extended' else MAIN_SCENARIOS
+SCENARIO_IDS = EXTENDED_SCENARIO_IDS if MODE == 'extended' else MAIN_SCENARIO_IDS
+DEFAULT_RATES = EXTENDED_DEFAULT_RATES if MODE == 'extended' else MAIN_DEFAULT_RATES
 EXPECTED_POINTS = {key: len(INSTANCES) * len(DEFAULT_RATES[key]) for key in SCENARIOS}
+LOG_PREFIX = 'cnb-extended-capacity' if MODE == 'extended' else 'dev-capacity'
+RESULT_PREFIX = 'capacity-extended' if MODE == 'extended' else 'capacity-dev'
+REPORT_PREFIX = 'performance-capacity-curve-extended' if MODE == 'extended' else 'performance-capacity-curve-dev'
+MATRIX_LOG = RESULTS / ('extended-capacity-matrix.log' if MODE == 'extended' else 'dev-capacity-matrix.log')
+WRITEBACK_LOG = RESULTS / ('extended-capacity-writeback.log' if MODE == 'extended' else 'dev-capacity-writeback.log')
+CHILDREN_FILE = RESULTS / ('cnb-extended-capacity-children.txt' if MODE == 'extended' else 'dev-capacity-children.txt')
 
 
 def run(args: list[str], timeout: float = 4.0) -> str:
@@ -173,7 +229,7 @@ def scenario_log_fallback(key: str, lines: int = 50) -> str:
             '下方显示最近一次可解析结果，避免把旧失败日志误认为实时状态。\n\n'
             + summary
         )
-    log = RESULTS / f'dev-capacity-{key}.log'
+    log = RESULTS / f'{LOG_PREFIX}-{key}.log'
     tail = sanitize_log(read_tail(log, lines * 3))
     tail = '\n'.join(tail.splitlines()[-lines:])
     if tail:
@@ -182,7 +238,10 @@ def scenario_log_fallback(key: str, lines: int = 50) -> str:
 
 
 def docker_perf_logs(key: str, lines: int = 50) -> str:
-    name = f'nazoauth-dev-capacity-dev-{key}-perf-1'
+    if MODE == 'extended':
+        name = f'nazoauth-extended-capacity-extended-{key}-perf-1'
+    else:
+        name = f'nazoauth-dev-capacity-dev-{key}-perf-1'
     if not docker_container_exists(name):
         return scenario_log_fallback(key, lines)
     try:
@@ -284,8 +343,8 @@ def completed_stage_rows(key: str, records: list[dict]) -> list[dict]:
 
 
 def matrix_runtime_status() -> dict:
-    processes = run(['sh', '-lc', "ps -eo pid,ppid,stat,pcpu,pmem,etime,cmd --sort=pid | grep -E 'dev_capacity_matrix|cnb_capacity|capacity.py' | grep -v grep || true"], 3)
-    tail = read_tail(RESULTS / 'dev-capacity-matrix.log', 120)
+    processes = run(['sh', '-lc', "ps -eo pid,ppid,stat,pcpu,pmem,etime,cmd --sort=pid | grep -E 'dev_capacity_matrix|extended_capacity_matrix|cnb_capacity|capacity.py' | grep -v grep || true"], 3)
+    tail = read_tail(MATRIX_LOG, 120)
     final_line = ''
     for line in tail.splitlines():
         if 'dev capacity matrix finished' in line:
@@ -302,7 +361,7 @@ def matrix_runtime_status() -> dict:
     else:
         label = '等待启动'
         complete = False
-    writeback_log = read_tail(RESULTS / 'dev-capacity-writeback.log', 80)
+    writeback_log = read_tail(WRITEBACK_LOG, 80)
     if 'writeback pushed' in writeback_log:
         writeback = '已回写'
     elif 'matrix did not finish successfully' in writeback_log:
@@ -353,7 +412,7 @@ def parse_k6_status(text: str) -> dict:
 def scenario_state(key: str, completed_points: int, k6_tail: str, matrix: dict) -> dict:
     expected = EXPECTED_POINTS.get(key, 15)
     plan = planned_points(key)
-    complete = completed_points >= expected and matrix['complete']
+    complete = completed_points >= expected and (matrix['complete'] or not matrix.get('processes', '').strip())
     running = matrix['label'] == '矩阵运行中'
     if complete:
         result_label = f'完整完成 {completed_points}/{expected}'
@@ -393,13 +452,16 @@ def collect() -> dict:
     scenarios = []
     total_completed = 0
     total_expected = sum(EXPECTED_POINTS.values())
+    report_count = 0
     for key, label in SCENARIOS.items():
-        log = RESULTS / f'dev-capacity-{key}.log'
-        result = RESULTS / f'capacity-dev-{key}.json'
-        report = ROOT / 'docs' / f'performance-capacity-curve-dev-{key}.md'
+        log = RESULTS / f'{LOG_PREFIX}-{key}.log'
+        result = RESULTS / f'{RESULT_PREFIX}-{key}.json'
+        report = ROOT / 'docs' / f'{REPORT_PREFIX}-{key}.md'
         records = result_records(result)
         completed_points = len(records)
         total_completed += completed_points
+        if report.exists():
+            report_count += 1
         log_tail_for_status = sanitize_log(read_tail(log, 120))
         state = scenario_state(key, completed_points, log_tail_for_status, matrix)
         scenarios.append({
@@ -416,13 +478,19 @@ def collect() -> dict:
             'completed_rows': completed_stage_rows(key, records),
             **state,
         })
+    matrix_status = matrix['label']
+    writeback_status = matrix['writeback']
+    if not matrix['processes'].strip() and total_completed >= total_expected:
+        matrix_status = '完整完成'
+        if MODE == 'extended':
+            writeback_status = '已生成报告，等待或已完成脚本内回写' if report_count else '等待回写确认'
     return {
         'now': now,
         'start': START_TS,
         'commit': run(['git', 'rev-parse', '--short', 'HEAD'], 2),
         'branch': run(['git', 'branch', '--show-current'], 2),
-        'matrix_status': matrix['label'],
-        'writeback_status': matrix['writeback'],
+        'matrix_status': matrix_status,
+        'writeback_status': writeback_status,
         'writeback_tail': matrix['writeback_tail'],
         'total_completed': total_completed,
         'total_expected': total_expected,
@@ -430,7 +498,7 @@ def collect() -> dict:
         'matrix_tail': matrix['matrix_tail'],
         'scenarios': scenarios,
         'docker_stats': run(['docker', 'stats', '--no-stream', '--format', 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}'], 8),
-        'docker_ps': run(['sh', '-lc', "docker ps --format 'table {{.Names}}\t{{.Status}}' | grep '^nazoauth-dev-capacity-' | head -80 || true"], 5),
+        'docker_ps': run(['sh', '-lc', "docker ps --format 'table {{.Names}}\t{{.Status}}' | grep -E '^nazoauth-(dev-capacity|extended-capacity)-' | head -120 || true"], 5),
         'disk': run(['df', '-h', '/workspace', '/'], 3),
         'load': run(['sh', '-lc', "uptime; free -h | sed -n '1,2p'"], 3),
     }
@@ -592,7 +660,7 @@ document.addEventListener('toggle', async (event) => {{
 <div class='summary'>
   <div class='cell'><span class='subtle'>矩阵状态</span><b>{esc(data['matrix_status'])}</b></div>
   <div class='cell'><span class='subtle'>全局阶段</span><b>{esc(data['total_completed'])}/{esc(data['total_expected'])}（{esc(fmt_num(total_pct, 1))}%）</b></div>
-  <div class='cell'><span class='subtle'>阶段定义</span><b>5 场景 × 15 阶段</b></div>
+  <div class='cell'><span class='subtle'>阶段定义</span><b>{esc(len(SCENARIOS))} 场景 × 15 阶段</b></div>
   <div class='cell'><span class='subtle'>回写状态</span><b>{esc(data['writeback_status'])}</b></div>
 </div>
 <div class='grid'>{''.join(cards)}</div>
@@ -641,11 +709,11 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path.startswith('/log/'):
             key = parsed.path.rsplit('/', 1)[-1]
             if key == 'matrix':
-                log_path = RESULTS / 'dev-capacity-matrix.log'
+                log_path = MATRIX_LOG
             elif key == 'writeback':
-                log_path = RESULTS / 'dev-capacity-writeback.log'
+                log_path = WRITEBACK_LOG
             elif key in SCENARIOS:
-                log_path = RESULTS / f'dev-capacity-{key}.log'
+                log_path = RESULTS / f'{LOG_PREFIX}-{key}.log'
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
                 return

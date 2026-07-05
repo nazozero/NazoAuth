@@ -16,6 +16,7 @@ const flowVus = Number(__ENV.PERF_FLOW_VUS || __ENV.PERF_VUS || '8');
 const preAllocatedVus = Number(__ENV.PERF_PRE_ALLOCATED_VUS || __ENV.PERF_FLOW_VUS || __ENV.PERF_VUS || '8');
 const maxVus = Number(__ENV.PERF_MAX_VUS || Math.max(preAllocatedVus * 2, preAllocatedVus));
 const iterations = Number(__ENV.PERF_ITERATIONS || '50');
+const testStartedAtMs = Date.now();
 const scenarioSteps = {
   token_client_credentials: ['token_client_credentials'],
   mtls_client_credentials: ['mtls_client_credentials'],
@@ -212,7 +213,12 @@ function sessionHeaders() {
 
 function vector() {
   const offset = vectorOffsets[scenario] || 0;
-  const index = offset + exec.scenario.iterationInTest;
+  let relativeIndex = exec.scenario.iterationInTest;
+  if (executor === 'constant-arrival-rate' && rate > 0 && scenario !== 'oidc_refresh_only') {
+    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - testStartedAtMs) / 1000));
+    relativeIndex = elapsedSeconds * rate + (exec.scenario.iterationInTest % rate);
+  }
+  const index = offset + relativeIndex;
   if (index >= vectors.length) {
     fail(`signed vector pool exhausted at index ${index}; raise PERF_VECTOR_COUNT`);
   }
