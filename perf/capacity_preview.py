@@ -563,7 +563,7 @@ def parse_k6_status(text: str) -> dict:
 
 def scenario_process_running(key: str, matrix: dict) -> bool:
     processes = matrix.get('processes', '')
-    return f'capacity-{key}.json' in processes or f'cnb-capacity-{key}.log' in processes
+    return f'{RESULT_PREFIX}-{key}.json' in processes or f'{LOG_PREFIX}-{key}.log' in processes
 
 
 def scenario_state(key: str, completed_points: int, k6_tail: str, matrix: dict, scenario_running: bool) -> dict:
