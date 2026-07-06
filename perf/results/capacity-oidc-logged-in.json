@@ -442,5 +442,153 @@
         "observed_app_instances": 1
       }
     }
+  },
+  {
+    "instances": 1,
+    "scenario": "oidc_logged_in_authorization_code",
+    "target_rate": 128,
+    "duration": "30m",
+    "result": {
+      "profile": "capacity",
+      "scenario": "oidc_logged_in_authorization_code",
+      "elapsed_seconds": 1806.42,
+      "status": "passed",
+      "k6_exit_code": 0,
+      "k6": {
+        "http_reqs": 920964,
+        "rps": 511.645,
+        "error_rate": 0.000486,
+        "latency_ms": {
+          "p50": 1.578,
+          "p95": 4.633,
+          "p99": 7.341
+        }
+      },
+      "steps": [
+        {
+          "step": "authorize",
+          "http_reqs": 229953,
+          "rps": 127.751,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 0.788,
+            "p95": 1.113,
+            "p99": 1.819
+          }
+        },
+        {
+          "step": "authorize_decision",
+          "http_reqs": 229953,
+          "rps": 127.751,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 2.133,
+            "p95": 4.341,
+            "p99": 8.72
+          }
+        },
+        {
+          "step": "par_oidc",
+          "http_reqs": 230401,
+          "rps": 128.0,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 0.73,
+            "p95": 0.999,
+            "p99": 1.803
+          }
+        },
+        {
+          "step": "token_authorization_code",
+          "http_reqs": 229953,
+          "rps": 127.751,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 3.841,
+            "p95": 5.753,
+            "p99": 9.152
+          }
+        }
+      ],
+      "postgres": {
+        "statement_calls": 5753156,
+        "total_statement_ms": 169095.792,
+        "mean_statement_ms": 0.029,
+        "rows": 5292841,
+        "database_bytes": 182130367,
+        "statements_per_http_request": 6.247
+      },
+      "db_pool": {
+        "acquire_count": 460267,
+        "wait_ms_total": 47456.233,
+        "wait_ms_avg": 0.103,
+        "wait_ms_max_observed_process_lifetime": 44.116
+      },
+      "valkey": {
+        "keyspace_hits": 2991571,
+        "keyspace_misses": 1469,
+        "commands_processed": 5756805,
+        "expired_keys": 174564,
+        "db0_keys": 286555
+      },
+      "containers": {
+        "by_container": {
+          "nazoauth-local-oidc-logged-in-nazoauth-1": {
+            "service": "nazoauth",
+            "samples": 593,
+            "cpu_percent_avg": 52.249,
+            "cpu_percent_max": 696.85,
+            "memory_bytes_avg": 71518718,
+            "memory_bytes_max": 606286643
+          },
+          "nazoauth-local-oidc-logged-in-postgres-1": {
+            "service": "postgres",
+            "samples": 593,
+            "cpu_percent_avg": 27.751,
+            "cpu_percent_max": 50.83,
+            "memory_bytes_avg": 210315275,
+            "memory_bytes_max": 270008320
+          },
+          "nazoauth-local-oidc-logged-in-valkey-1": {
+            "service": "valkey",
+            "samples": 593,
+            "cpu_percent_avg": 6.072,
+            "cpu_percent_max": 10.49,
+            "memory_bytes_avg": 70687201,
+            "memory_bytes_max": 128974848
+          }
+        },
+        "by_service": {
+          "valkey": {
+            "containers": 1,
+            "cpu_percent_avg": 6.072,
+            "cpu_percent_max": 10.49,
+            "memory_bytes_avg": 70687201,
+            "memory_bytes_max": 128974848
+          },
+          "nazoauth": {
+            "containers": 1,
+            "cpu_percent_avg": 52.249,
+            "cpu_percent_max": 696.85,
+            "memory_bytes_avg": 71518718,
+            "memory_bytes_max": 606286643
+          },
+          "postgres": {
+            "containers": 1,
+            "cpu_percent_avg": 27.751,
+            "cpu_percent_max": 50.83,
+            "memory_bytes_avg": 210315275,
+            "memory_bytes_max": 270008320
+          }
+        }
+      },
+      "load_model": {
+        "executor": "constant-arrival-rate",
+        "target_rate": 128,
+        "duration": "30m",
+        "app_replicas": 1,
+        "observed_app_instances": 1
+      }
+    }
   }
 ]
