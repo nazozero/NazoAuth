@@ -32,6 +32,10 @@ if [ -n "${APP_CPU_CAPACITY_APP_CPUSET:-}" ]; then
   export PERF_APP_CPUSET="${APP_CPU_CAPACITY_APP_CPUSET}"
 fi
 
+if [ -n "${APP_CPU_CAPACITY_APP_TASKSET:-}" ]; then
+  export PERF_APP_TASKSET="${APP_CPU_CAPACITY_APP_TASKSET}"
+fi
+
 echo "app CPU capacity smoke"
 echo "scenario=${scenario}"
 echo "rates=${rates}"
@@ -41,5 +45,6 @@ echo "app_cpus=${app_cpus}"
 echo "max_vus=${max_vus}"
 echo "app_cpuset=${PERF_APP_CPUSET:-unrestricted}"
 echo "infra_cpuset=${PERF_INFRA_CPUSET:-unrestricted}"
+echo "app_taskset=${PERF_APP_TASKSET:-disabled}"
 
 ./perf/cnb_capacity.sh

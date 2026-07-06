@@ -171,6 +171,7 @@ def environment(args: argparse.Namespace) -> dict[str, str]:
         "Docker compose": command_output(["sh", "-c", "docker compose version --short 2>/dev/null || echo unknown"]),
         "Compose file": "docker-compose.keycloak.perf.yml",
         "App CPU quota": str(args.app_cpus),
+        "App process taskset": os.environ.get("KEYCLOAK_APP_TASKSET", "disabled"),
         "Infra CPU model": "PostgreSQL and k6 are not CPU-quota limited by this benchmark override.",
         "Duration per point": args.duration,
         "Rates": ",".join(str(rate) for rate in args.rates),

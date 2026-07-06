@@ -10,12 +10,15 @@ fi
 rates="${KEYCLOAK_APP_CPU_RATES:-100,250,500}"
 duration="${KEYCLOAK_APP_CPU_DURATION:-2m}"
 app_cpus="${KEYCLOAK_APP_CPUS:-1}"
+app_taskset="${KEYCLOAK_APP_TASKSET:-}"
 suffix="${KEYCLOAK_APP_CPU_SUFFIX:-keycloak-app-cpu-${app_cpus}vcpu-smoke}"
 keycloak_image_tag="${KEYCLOAK_IMAGE_TAG:-26.6.4}"
 host_port="${KEYCLOAK_HOST_PORT:-18081}"
 report="docs/performance-keycloak-comparison-${suffix}.md"
 results="perf/results/${suffix}.json"
 nazoauth_results="${NAZOAUTH_APP_CPU_RESULTS:-perf/results/capacity-app-cpu-1vcpu-smoke.json}"
+
+export KEYCLOAK_APP_TASKSET="${app_taskset}"
 
 mkdir -p docs perf/results
 
@@ -27,6 +30,18 @@ services:
   keycloak:
     cpus: "${app_cpus}"
 EOF
+
+if [ -n "${app_taskset}" ]; then
+  cat >>"${override}" <<EOF
+    build:
+      context: .
+      dockerfile: perf/keycloak/Containerfile.taskset
+      args:
+        KEYCLOAK_IMAGE_TAG: "${keycloak_image_tag}"
+    image: nazoauth-keycloak-taskset:${keycloak_image_tag}
+    entrypoint: ["/usr/local/bin/taskset", "-c", "${app_taskset}", "/opt/keycloak/bin/kc.sh"]
+EOF
+fi
 
 compose() {
   COMPOSE_PROJECT_NAME="${project}" KEYCLOAK_IMAGE_TAG="${keycloak_image_tag}" KEYCLOAK_HOST_PORT="${host_port}" \
@@ -75,7 +90,7 @@ run_point() {
   stats="perf/results/${suffix}-${rate}.docker-stats.ndjson"
   : >"${stats}"
 
-  echo "keycloak app-cpu smoke: rate=${rate}/s duration=${duration} app_cpus=${app_cpus}"
+  echo "keycloak app-cpu smoke: rate=${rate}/s duration=${duration} app_cpus=${app_cpus} app_taskset=${app_taskset:-disabled}"
   compose down -v --remove-orphans >/dev/null 2>&1 || true
   compose up -d
   wait_for_keycloak
