@@ -19,7 +19,7 @@ export const options = {
       timeUnit: '1s',
       duration,
       preAllocatedVUs: preAllocatedVus,
-      maxVUs,
+      maxVUs: maxVus,
       gracefulStop: '2m',
       exec: 'clientCredentials',
     },
