@@ -58,12 +58,15 @@ def k6_result(summary_path: Path) -> dict[str, Any]:
     failed = metric_values(summary, "http_req_failed")
     requests = metric_values(summary, "http_reqs")
     checks = metric_values(summary, "checks")
+    dropped = metric_values(summary, "dropped_iterations")
     step_duration = metric_values(summary, "http_req_duration{step:token_client_credentials}")
     step_failed = metric_values(summary, "http_req_failed{step:token_client_credentials}")
     step_requests = metric_values(summary, "http_reqs{step:token_client_credentials}") or requests
     return {
         "rps": round(float(requests.get("rate", 0)), 3),
         "requests": int(requests.get("count", 0)),
+        "dropped_iterations": int(dropped.get("count", 0)),
+        "dropped_iterations_rate": round(float(dropped.get("rate", 0)), 3),
         "latency_ms": {
             "p50": round(float(duration.get("p(50)", 0)), 3),
             "p95": round(float(duration.get("p(95)", 0)), 3),
@@ -133,6 +136,20 @@ def load_nazoauth(path: Path) -> dict[int, dict[str, Any]]:
     return {int(row["target_rate"]): row for row in rows}
 
 
+def target_ratio(k6: dict[str, Any], target_rate: int) -> float:
+    if target_rate <= 0:
+        return 0
+    return float(k6.get("rps", 0)) / target_rate
+
+
+def result_status(k6: dict[str, Any], target_rate: int) -> str:
+    if k6["error_rate"] >= 0.01 or k6["check_rate"] < 0.99 or k6["latency_ms"]["p99"] >= 5000:
+        return "failed"
+    if target_rate > 0 and (float(k6["rps"]) < target_rate * 0.99 or int(k6.get("dropped_iterations", 0)) > 0):
+        return "target_miss"
+    return "passed"
+
+
 def environment(args: argparse.Namespace) -> dict[str, str]:
     return {
         "Source commit": command_output(["git", "rev-parse", "HEAD"]),
@@ -186,6 +203,8 @@ def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: d
                 row["target_rate"],
                 row["status"],
                 f"{keycloak['rps']:.3f}",
+                f"{target_ratio(keycloak, int(row['target_rate'])):.3f}",
+                keycloak.get("dropped_iterations", 0),
                 f"{keycloak['latency_ms']['p50']:.3f}",
                 f"{keycloak['latency_ms']['p95']:.3f}",
                 f"{keycloak['latency_ms']['p99']:.3f}",
@@ -207,11 +226,15 @@ def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: d
                 [
                     row["target_rate"],
                     f"{nazo_k6['rps']:.3f}",
+                    f"{target_ratio(nazo_k6, int(row['target_rate'])):.3f}",
+                    nazo_k6.get("dropped_iterations", 0),
                     f"{nazo_k6['latency_ms']['p95']:.3f}",
                     f"{nazo_k6['latency_ms']['p99']:.3f}",
                     f"{nazo_cpu:.3f}",
                     f"{nazo_per_core:.3f}",
                     f"{keycloak['rps']:.3f}",
+                    f"{target_ratio(keycloak, int(row['target_rate'])):.3f}",
+                    keycloak.get("dropped_iterations", 0),
                     f"{keycloak['latency_ms']['p95']:.3f}",
                     f"{keycloak['latency_ms']['p99']:.3f}",
                     f"{keycloak_cpu:.3f}",
@@ -239,6 +262,7 @@ def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: d
         f"- Both sides use fixed-arrival-rate k6 traffic and the same target rates: {rates_text} requests per second.",
         "- Keycloak runs with PostgreSQL and a Docker CPU quota of 1 CPU on the Keycloak container only. PostgreSQL and k6 are intentionally left unrestricted, matching the NazoAuth app-CPU smoke-test shape.",
         "- The comparison uses HTTP RPS, p50/p95/p99 latency, error rate, and observed application CPU from Docker stats.",
+        "- A point is classified as `target_miss` when observed RPS is below 99% of the requested rate or k6 records dropped iterations, even if every completed HTTP request returns successfully.",
         "",
         "## Behavior and Fairness Audit",
         "",
@@ -255,6 +279,8 @@ def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: d
                 "Target Rate",
                 "Status",
                 "HTTP RPS",
+                "Observed/Target",
+                "Dropped Iterations",
                 "p50 ms",
                 "p95 ms",
                 "p99 ms",
@@ -272,11 +298,15 @@ def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: d
             [
                 "Target Rate",
                 "NazoAuth RPS",
+                "NazoAuth Observed/Target",
+                "NazoAuth Dropped Iterations",
                 "NazoAuth p95 ms",
                 "NazoAuth p99 ms",
                 "NazoAuth CPU Cores Avg",
                 "NazoAuth RPS/App Core",
                 "Keycloak RPS",
+                "Keycloak Observed/Target",
+                "Keycloak Dropped Iterations",
                 "Keycloak p95 ms",
                 "Keycloak p99 ms",
                 "Keycloak CPU Cores Avg",
@@ -318,11 +348,7 @@ def main() -> None:
         summary_path = args.summary_dir / f"{args.suffix}-{rate}.summary.json"
         stats_path = args.summary_dir / f"{args.suffix}-{rate}.docker-stats.ndjson"
         k6 = k6_result(summary_path)
-        status = (
-            "passed"
-            if k6["error_rate"] < 0.01 and k6["check_rate"] >= 0.99 and k6["latency_ms"]["p99"] < 5000
-            else "failed"
-        )
+        status = result_status(k6, rate)
         results.append(
             {
                 "target_rate": rate,

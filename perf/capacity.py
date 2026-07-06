@@ -220,6 +220,37 @@ def per_core(value: float, result: dict[str, Any]) -> float:
     return value / cores if cores > 0 else 0
 
 
+def target_ratio(result: dict[str, Any], target_rate: int) -> float:
+    if target_rate <= 0:
+        return 0
+    return float(result.get("k6", {}).get("rps", 0)) / target_rate
+
+
+def normalized_status(item: dict[str, Any]) -> str:
+    result = item.get("result", {})
+    if not isinstance(result, dict):
+        return ""
+    current = str(result.get("status", "passed"))
+    if current in {"threshold_failed", "skipped_after_threshold_failure"}:
+        return current
+    target_rate = int(item.get("target_rate", 0) or 0)
+    k6 = result.get("k6", {})
+    dropped = int(k6.get("dropped_iterations", 0) or 0)
+    if target_rate > 0 and (float(k6.get("rps", 0)) < target_rate * 0.99 or dropped > 0):
+        return "target_miss"
+    return current
+
+
+def normalize_result_statuses(results: list[dict[str, Any]]) -> None:
+    for item in results:
+        result = item.get("result", {})
+        if isinstance(result, dict):
+            result["status"] = normalized_status(item)
+            result.setdefault("k6", {}).setdefault("dropped_iterations", 0)
+            result["k6"].setdefault("dropped_iterations_rate", 0)
+            result["k6"]["target_rps_ratio"] = round(target_ratio(result, int(item.get("target_rate", 0) or 0)), 6)
+
+
 def markdown_table(headers: list[str], rows: list[list[Any]]) -> list[str]:
     lines = [
         "| " + " | ".join(headers) + " |",
@@ -232,6 +263,7 @@ def markdown_table(headers: list[str], rows: list[list[Any]]) -> list[str]:
 
 def write_report(results: list[dict[str, Any]], *, duration: str, report_path: Path, results_path: Path) -> None:
     report_path.parent.mkdir(parents=True, exist_ok=True)
+    normalize_result_statuses(results)
     generated_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
     rows: list[list[Any]] = []
     step_rows: list[list[Any]] = []
@@ -254,6 +286,8 @@ def write_report(results: list[dict[str, Any]], *, duration: str, report_path: P
                 item["target_rate"],
                 result.get("status", "passed"),
                 f"{result['k6']['rps']:.3f}",
+                f"{result['k6'].get('target_rps_ratio', target_ratio(result, int(item['target_rate']))):.3f}",
+                result["k6"].get("dropped_iterations", 0),
                 f"{result['k6']['latency_ms']['p50']:.3f}",
                 f"{result['k6']['latency_ms']['p95']:.3f}",
                 f"{result['k6']['latency_ms']['p99']:.3f}",
@@ -315,6 +349,8 @@ def write_report(results: list[dict[str, Any]], *, duration: str, report_path: P
                 "Target Rate",
                 "Status",
                 "Observed HTTP RPS",
+                "Observed/Target",
+                "Dropped Iterations",
                 "p50 ms",
                 "p95 ms",
                 "p99 ms",
@@ -353,6 +389,19 @@ def write_report(results: list[dict[str, Any]], *, duration: str, report_path: P
         "",
     ]
     report_path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_results_and_report(
+    results: list[dict[str, Any]],
+    *,
+    duration: str,
+    report_path: Path,
+    results_path: Path,
+) -> None:
+    normalize_result_statuses(results)
+    results_path.parent.mkdir(parents=True, exist_ok=True)
+    results_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
+    write_report(results, duration=duration, report_path=report_path, results_path=results_path)
 
 
 def run_point(*, scenario: str, rate: int, duration: str, instances: int, max_vus: int) -> dict[str, Any]:
@@ -442,10 +491,7 @@ def load_existing_results(results_path: Path) -> list[dict[str, Any]]:
 
 
 def point_status(point: dict[str, Any]) -> str:
-    result = point.get("result", {})
-    if not isinstance(result, dict):
-        return ""
-    return str(result.get("status", "passed"))
+    return normalized_status(point)
 
 
 def has_lower_rate_threshold_failure(
@@ -558,7 +604,7 @@ def main() -> None:
     completed = {key for item in results if (key := point_key(item)) is not None}
     if results:
         print(f"resuming capacity matrix with {len(results)} completed point(s) from {results_path}")
-        write_report(results, duration=args.duration, report_path=report_path, results_path=results_path)
+        write_results_and_report(results, duration=args.duration, report_path=report_path, results_path=results_path)
     for instance_count in instances:
         for scenario, rates in scenario_rates.items():
             for rate in rates:
@@ -588,9 +634,12 @@ def main() -> None:
                     results.append(point)
                     completed.add(key)
                     with checkpoint_lock():
-                        results_path.parent.mkdir(parents=True, exist_ok=True)
-                        results_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
-                        write_report(results, duration=args.duration, report_path=report_path, results_path=results_path)
+                        write_results_and_report(
+                            results,
+                            duration=args.duration,
+                            report_path=report_path,
+                            results_path=results_path,
+                        )
                         checkpoint_commit(
                             env=os.environ.copy(),
                             report_path=report_path,
@@ -615,9 +664,12 @@ def main() -> None:
                 results.append(point)
                 completed.add(key)
                 with checkpoint_lock():
-                    results_path.parent.mkdir(parents=True, exist_ok=True)
-                    results_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
-                    write_report(results, duration=args.duration, report_path=report_path, results_path=results_path)
+                    write_results_and_report(
+                        results,
+                        duration=args.duration,
+                        report_path=report_path,
+                        results_path=results_path,
+                    )
                     checkpoint_commit(
                         env=os.environ.copy(),
                         report_path=report_path,

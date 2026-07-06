@@ -386,13 +386,17 @@ def k6_brief(summary: dict[str, Any]) -> dict[str, Any]:
     duration_metric = metrics.get("http_req_duration", {})
     failed_metric = metrics.get("http_req_failed", {})
     reqs_metric = metrics.get("http_reqs", {})
+    dropped_metric = metrics.get("dropped_iterations", {})
     duration = duration_metric.get("values", duration_metric)
     failed = failed_metric.get("values", failed_metric)
     reqs = reqs_metric.get("values", reqs_metric)
+    dropped = dropped_metric.get("values", dropped_metric)
     return {
         "http_reqs": int(reqs.get("count", 0)),
         "rps": round(float(reqs.get("rate", 0)), 3),
         "error_rate": round(k6_error_rate(summary), 6),
+        "dropped_iterations": int(dropped.get("count", 0)),
+        "dropped_iterations_rate": round(float(dropped.get("rate", 0)), 3),
         "latency_ms": {
             "p50": round(float(duration.get("med", 0)), 3),
             "p95": round(float(duration.get("p(95)", 0)), 3),
@@ -495,13 +499,25 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
     db_pool_after = app_after["db_pool"]
     acquire_delta = db_pool_after["acquire_count"] - db_pool_before["acquire_count"]
     wait_delta = db_pool_after["wait_nanos_total"] - db_pool_before["wait_nanos_total"]
+    k6 = k6_brief(k6_summary)
+    target_rate = int(os.environ.get("PERF_RATE", "0") or 0)
+    target_miss = (
+        os.environ.get("PERF_EXECUTOR") == "constant-arrival-rate"
+        and target_rate > 0
+        and (k6["rps"] < target_rate * 0.99 or k6["dropped_iterations"] > 0)
+    )
+    status = "passed"
+    if completed.returncode != 0:
+        status = "threshold_failed"
+    elif target_miss:
+        status = "target_miss"
     combined = {
         "profile": profile,
         "scenario": scenario,
         "elapsed_seconds": round(elapsed, 3),
-        "status": "passed" if completed.returncode == 0 else "threshold_failed",
+        "status": status,
         "k6_exit_code": completed.returncode,
-        "k6": k6_brief(k6_summary),
+        "k6": k6,
         "steps": k6_step_brief(k6_summary),
         "postgres": {
             **pg,
@@ -517,7 +533,7 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
         "containers": sampler.summary(),
         "load_model": {
             "executor": os.environ.get("PERF_EXECUTOR", "") or "default",
-            "target_rate": int(os.environ.get("PERF_RATE", "0") or 0),
+            "target_rate": target_rate,
             "duration": os.environ.get("PERF_DURATION", "20s"),
             "app_replicas": int(os.environ.get("PERF_APP_REPLICAS", str(app_after.get("instances", 1))) or 1),
             "observed_app_instances": app_after.get("instances", 1),
