@@ -475,5 +475,164 @@
         "observed_app_instances": 1
       }
     }
+  },
+  {
+    "instances": 1,
+    "scenario": "fapi2_logged_in_high_security",
+    "target_rate": 128,
+    "duration": "30m",
+    "result": {
+      "profile": "capacity",
+      "scenario": "fapi2_logged_in_high_security",
+      "elapsed_seconds": 1806.5,
+      "status": "passed",
+      "k6_exit_code": 0,
+      "k6": {
+        "http_reqs": 1151056,
+        "rps": 639.472,
+        "error_rate": 0.000348,
+        "latency_ms": {
+          "p50": 2.169,
+          "p95": 5.945,
+          "p99": 9.804
+        }
+      },
+      "steps": [
+        {
+          "step": "authorize",
+          "http_reqs": 230000,
+          "rps": 127.777,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 0.762,
+            "p95": 1.157,
+            "p99": 2.237
+          }
+        },
+        {
+          "step": "authorize_decision",
+          "http_reqs": 230000,
+          "rps": 127.777,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 2.132,
+            "p95": 4.82,
+            "p99": 9.514
+          }
+        },
+        {
+          "step": "fapi_token_authorization_code",
+          "http_reqs": 230000,
+          "rps": 127.777,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 4.271,
+            "p95": 6.904,
+            "p99": 11.592
+          }
+        },
+        {
+          "step": "fapi_token_refresh",
+          "http_reqs": 230000,
+          "rps": 127.777,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 4.534,
+            "p95": 7.378,
+            "p99": 11.744
+          }
+        },
+        {
+          "step": "par_fapi",
+          "http_reqs": 230400,
+          "rps": 127.999,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 0.931,
+            "p95": 1.345,
+            "p99": 2.587
+          }
+        }
+      ],
+      "postgres": {
+        "statement_calls": 9664139,
+        "total_statement_ms": 284349.72,
+        "mean_statement_ms": 0.029,
+        "rows": 8743730,
+        "database_bytes": 372168383,
+        "statements_per_http_request": 8.396
+      },
+      "db_pool": {
+        "acquire_count": 1150361,
+        "wait_ms_total": 115068.009,
+        "wait_ms_avg": 0.1,
+        "wait_ms_max_observed_process_lifetime": 50.69
+      },
+      "valkey": {
+        "keyspace_hits": 3451990,
+        "keyspace_misses": 1373,
+        "commands_processed": 8518204,
+        "expired_keys": 1665818,
+        "db0_keys": 636099
+      },
+      "containers": {
+        "by_container": {
+          "nazoauth-local-fapi2-logged-in-high-security-nazoauth-1": {
+            "service": "nazoauth",
+            "samples": 593,
+            "cpu_percent_avg": 91.297,
+            "cpu_percent_max": 718.57,
+            "memory_bytes_avg": 80812390,
+            "memory_bytes_max": 606181785
+          },
+          "nazoauth-local-fapi2-logged-in-high-security-postgres-1": {
+            "service": "postgres",
+            "samples": 593,
+            "cpu_percent_avg": 42.802,
+            "cpu_percent_max": 103.67,
+            "memory_bytes_avg": 292324545,
+            "memory_bytes_max": 482974105
+          },
+          "nazoauth-local-fapi2-logged-in-high-security-valkey-1": {
+            "service": "valkey",
+            "samples": 593,
+            "cpu_percent_avg": 8.352,
+            "cpu_percent_max": 13.2,
+            "memory_bytes_avg": 136183519,
+            "memory_bytes_max": 196817715
+          }
+        },
+        "by_service": {
+          "postgres": {
+            "containers": 1,
+            "cpu_percent_avg": 42.802,
+            "cpu_percent_max": 103.67,
+            "memory_bytes_avg": 292324545,
+            "memory_bytes_max": 482974105
+          },
+          "valkey": {
+            "containers": 1,
+            "cpu_percent_avg": 8.352,
+            "cpu_percent_max": 13.2,
+            "memory_bytes_avg": 136183519,
+            "memory_bytes_max": 196817715
+          },
+          "nazoauth": {
+            "containers": 1,
+            "cpu_percent_avg": 91.297,
+            "cpu_percent_max": 718.57,
+            "memory_bytes_avg": 80812390,
+            "memory_bytes_max": 606181785
+          }
+        }
+      },
+      "load_model": {
+        "executor": "constant-arrival-rate",
+        "target_rate": 128,
+        "duration": "30m",
+        "app_replicas": 1,
+        "observed_app_instances": 1
+      }
+    }
   }
 ]
