@@ -48,6 +48,10 @@ def metric_values(summary: dict[str, Any], name: str) -> dict[str, Any]:
     return metric
 
 
+def metric_rate(values: dict[str, Any]) -> float:
+    return float(values.get("rate", values.get("value", 0)))
+
+
 def k6_result(summary_path: Path) -> dict[str, Any]:
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     duration = metric_values(summary, "http_req_duration")
@@ -66,8 +70,8 @@ def k6_result(summary_path: Path) -> dict[str, Any]:
             "p99": round(float(duration.get("p(99)", 0)), 3),
             "max": round(float(duration.get("max", 0)), 3),
         },
-        "error_rate": round(float(failed.get("rate", 0)), 6),
-        "check_rate": round(float(checks.get("rate", 0)), 6),
+        "error_rate": round(metric_rate(failed), 6),
+        "check_rate": round(metric_rate(checks), 6),
         "steps": {
             "token_client_credentials": {
                 "requests": int(step_requests.get("count", 0)),
@@ -77,7 +81,7 @@ def k6_result(summary_path: Path) -> dict[str, Any]:
                     "p95": round(float(step_duration.get("p(95)", 0)), 3),
                     "p99": round(float(step_duration.get("p(99)", 0)), 3),
                 },
-                "error_rate": round(float(step_failed.get("rate", 0)), 6),
+                "error_rate": round(metric_rate(step_failed), 6),
             }
         },
     }
