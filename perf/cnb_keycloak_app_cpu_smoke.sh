@@ -104,10 +104,12 @@ run_point() {
   wait "${sampler_pid}" 2>/dev/null || true
   compose down -v --remove-orphans
   if [ "${status}" -ne 0 ]; then
-    echo "Keycloak k6 point failed: rate=${rate}/s status=${status}" >&2
+    echo "Keycloak k6 point reported a non-zero result: rate=${rate}/s status=${status}; keeping summary and continuing" >&2
+  fi
+  if [ ! -f "${summary}" ]; then
+    echo "Keycloak k6 summary missing after rate=${rate}/s; cannot continue" >&2
     exit "${status}"
   fi
-  test -f "${summary}"
 }
 
 old_ifs="${IFS}"

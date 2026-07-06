@@ -40,6 +40,7 @@ export function clientCredentials() {
       grant_type: 'client_credentials',
       client_id: clientId,
       client_secret: clientSecret,
+      scope: 'profile',
     },
     {
       headers: { 'content-type': 'application/x-www-form-urlencoded' },

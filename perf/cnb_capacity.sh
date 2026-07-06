@@ -12,6 +12,7 @@ REPORT_SUFFIX="${CAPACITY_REPORT_SUFFIX:-full}"
 DURATION="${CAPACITY_DURATION:-30m}"
 INSTANCES="${CAPACITY_INSTANCES:-1,2,4}"
 RATES="${CAPACITY_RATES:-}"
+MAX_VUS="${CAPACITY_MAX_VUS:-512}"
 REPORT="docs/performance-capacity-curve-${REPORT_SUFFIX}.md"
 ENV_REPORT="perf/results/cnb-environment-${REPORT_SUFFIX}.md"
 export CAPACITY_ENV_REPORT_PATH="${ENV_REPORT}"
@@ -145,6 +146,7 @@ fi
   echo "| Duration per point | ${DURATION} |"
   echo "| App instance stages | ${INSTANCES} NazoAuth replica(s) |"
   echo "| Explicit rates | ${RATES:-scenario defaults} |"
+  echo "| k6 max VUs | ${MAX_VUS} |"
   echo "| Load executor | k6 constant-arrival-rate, time unit 1s |"
   echo "| Token-only target rates | 1000, 2500, 5000, 7500, 10000 flow/s |"
   echo "| OIDC cold/login and logged-in target rates | 16, 32, 64, 128, 256 flow/s |"
@@ -168,6 +170,7 @@ if [ -n "${RATES}" ]; then
     --instances "${INSTANCES}" \
     --scenarios "${SCENARIOS}" \
     --rates "${RATES}" \
+    --max-vus "${MAX_VUS}" \
     --report-path "${REPORT}" \
     --results-path "perf/results/capacity-${REPORT_SUFFIX}.json"
 else
@@ -175,6 +178,7 @@ else
     --duration "${DURATION}" \
     --instances "${INSTANCES}" \
     --scenarios "${SCENARIOS}" \
+    --max-vus "${MAX_VUS}" \
     --report-path "${REPORT}" \
     --results-path "perf/results/capacity-${REPORT_SUFFIX}.json"
 fi

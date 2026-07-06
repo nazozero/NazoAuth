@@ -175,6 +175,7 @@ def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: d
     env_rows = [[key, value] for key, value in env.items()]
     keycloak_rows: list[list[Any]] = []
     compare_rows: list[list[Any]] = []
+    rates_text = ", ".join(str(rate) for rate in args.rates)
     for row in results:
         keycloak = row["keycloak"]
         keycloak_cpu = row["containers"]["by_service"].get("keycloak", {}).get("cpu_percent_avg", 0) / 100
@@ -221,7 +222,7 @@ def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: d
             )
 
     source = [
-        "# NazoAuth vs Keycloak App-CPU 1 vCPU Smoke Benchmark",
+        "# NazoAuth vs Keycloak App-CPU 1 vCPU Benchmark",
         "",
         f"Generated at: `{datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}`",
         "",
@@ -233,11 +234,19 @@ def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: d
         "",
         "## Method",
         "",
-        "- NazoAuth result source: `perf/results/capacity-app-cpu-1vcpu-smoke.json`.",
-        "- Keycloak result source: `perf/results/keycloak-app-cpu-1vcpu-smoke.json`.",
-        "- Both sides use fixed-arrival-rate k6 traffic and the same target rates: 100, 250, and 500 requests per second.",
+        f"- NazoAuth result source: `{args.nazoauth_results}`.",
+        f"- Keycloak result source: `{args.results_path}`.",
+        f"- Both sides use fixed-arrival-rate k6 traffic and the same target rates: {rates_text} requests per second.",
         "- Keycloak runs with PostgreSQL and a Docker CPU quota of 1 CPU on the Keycloak container only. PostgreSQL and k6 are intentionally left unrestricted, matching the NazoAuth app-CPU smoke-test shape.",
         "- The comparison uses HTTP RPS, p50/p95/p99 latency, error rate, and observed application CPU from Docker stats.",
+        "",
+        "## Behavior and Fairness Audit",
+        "",
+        "- Both benchmark clients use `grant_type=client_credentials`, confidential client authentication by `client_secret_post`, and request `scope=profile`.",
+        "- Both benchmark assertions require HTTP 200 and an access token in the token response; refresh tokens are not expected for this grant.",
+        "- Both services issue JWT access tokens in this path, but token claim sets, subject modeling, signing implementation, and default OIDC mappers are implementation-specific and are not forced to be byte-equivalent.",
+        "- NazoAuth verifies the benchmark client secret through its `client-secret-v1:<salt>:<HMAC-SHA256>` digest format. Keycloak uses its own confidential-client secret handling. This benchmark compares endpoint behavior and observed resource usage, not identical credential storage internals.",
+        "- The load generator, network shape, application CPU quota, and database-unrestricted topology are aligned. Product scope is not aligned: Keycloak remains a broad IAM server, while this benchmark exercises only the narrow token endpoint path.",
         "",
         "## Keycloak Result",
         "",
@@ -280,7 +289,7 @@ def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: d
         "",
         "## Interpretation",
         "",
-        "- This is a short smoke benchmark. It is suitable for checking the single-core token endpoint order of magnitude, but it does not replace the 30-minute sustained capacity matrix.",
+        "- This benchmark is suitable for checking the single-core token endpoint order of magnitude, but it does not replace the 30-minute sustained capacity matrix.",
         "- The tested rates are fixed arrival-rate targets. When both systems meet the target, observed RPS is target-limited and should not be interpreted as maximum throughput.",
         "- Under target-limited points, latency and HTTP RPS per observed application CPU core are the more meaningful comparison fields.",
         "- Keycloak is a broad IAM product with administrative, realm, federation, theme, and policy surfaces that are outside this narrow endpoint test.",
@@ -309,7 +318,11 @@ def main() -> None:
         summary_path = args.summary_dir / f"{args.suffix}-{rate}.summary.json"
         stats_path = args.summary_dir / f"{args.suffix}-{rate}.docker-stats.ndjson"
         k6 = k6_result(summary_path)
-        status = "passed" if k6["error_rate"] < 0.01 and k6["check_rate"] >= 0.99 else "failed"
+        status = (
+            "passed"
+            if k6["error_rate"] < 0.01 and k6["check_rate"] >= 0.99 and k6["latency_ms"]["p99"] < 5000
+            else "failed"
+        )
         results.append(
             {
                 "target_rate": rate,

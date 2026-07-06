@@ -13,6 +13,7 @@ duration="${APP_CPU_CAPACITY_DURATION:-2m}"
 instances="${APP_CPU_CAPACITY_INSTANCES:-1}"
 app_cpus="${APP_CPU_CAPACITY_APP_CPUS:-1}"
 suffix="${APP_CPU_CAPACITY_SUFFIX:-app-cpu-${app_cpus}vcpu-smoke}"
+max_vus="${APP_CPU_CAPACITY_MAX_VUS:-512}"
 
 export CAPACITY_SCENARIOS="${scenario}"
 export CAPACITY_RATES="${rates}"
@@ -21,6 +22,7 @@ export CAPACITY_INSTANCES="${instances}"
 export CAPACITY_REPORT_SUFFIX="${suffix}"
 export PERF_APP_CPUS="${app_cpus}"
 export CNB_CAPACITY_COMMIT="${CNB_CAPACITY_COMMIT:-0}"
+export CAPACITY_MAX_VUS="${max_vus}"
 
 if [ -n "${APP_CPU_CAPACITY_INFRA_CPUSET:-}" ]; then
   export PERF_INFRA_CPUSET="${APP_CPU_CAPACITY_INFRA_CPUSET}"
@@ -36,6 +38,7 @@ echo "rates=${rates}"
 echo "duration=${duration}"
 echo "instances=${instances}"
 echo "app_cpus=${app_cpus}"
+echo "max_vus=${max_vus}"
 echo "app_cpuset=${PERF_APP_CPUSET:-unrestricted}"
 echo "infra_cpuset=${PERF_INFRA_CPUSET:-unrestricted}"
 
