@@ -41,6 +41,19 @@ Run the long fixed-arrival-rate capacity curve:
 make perf-capacity
 ```
 
+Run a short App-vCPU smoke test:
+
+```sh
+./perf/cnb_app_cpu_capacity_smoke.sh
+```
+
+This test uses Docker Compose CPU quota for the NazoAuth service only
+(`PERF_APP_CPUS`, default `1`). PostgreSQL, Valkey, migration, key setup, and
+the k6 perf runner remain unrestricted unless `APP_CPU_CAPACITY_INFRA_CPUSET`
+is set explicitly. This is the preferred shape for per-vCPU App efficiency
+checks because it avoids turning database or load-generator saturation into an
+application throughput number.
+
 Run the extended fixed-arrival-rate matrix on a dedicated CNB runner:
 
 ```sh
@@ -112,6 +125,15 @@ dedicated provisioning setup and is kept out of this matrix.
 The report normalizes observed throughput by NazoAuth service CPU usage:
 `100%` Docker CPU is treated as one effective CPU core. This avoids claiming
 capacity only from raw RPS when the service is consuming many cores.
+
+For strict App CPU quota tests, `perf/cnb_capacity.sh` also supports:
+
+| Variable | Meaning |
+| --- | --- |
+| `PERF_APP_CPUS` | Docker CPU quota for the NazoAuth service, for example `1`, `2`, or `4`. |
+| `PERF_APP_CPUSET` | Optional CPU set for NazoAuth. |
+| `PERF_INFRA_CPUSET` | Optional CPU set for PostgreSQL, Valkey, keyset, migrate, and perf runner. |
+| `PERF_CPUSET` | Legacy setting that pins all services to the same CPU set. |
 
 ## Metrics
 

@@ -21,32 +21,44 @@ export COMPOSE_PROJECT_NAME
 
 mkdir -p docs perf/results
 
-if [ -n "${PERF_CPUSET:-}" ]; then
+LEGACY_CPUSET="${PERF_CPUSET:-}"
+APP_CPUSET="${PERF_APP_CPUSET:-${LEGACY_CPUSET}}"
+INFRA_CPUSET="${PERF_INFRA_CPUSET:-${LEGACY_CPUSET}}"
+APP_CPUS="${PERF_APP_CPUS:-}"
+
+write_service_override() {
+  service="$1"
+  cpuset="$2"
+  cpus="$3"
+  echo "  ${service}:"
+  if [ -n "${cpuset}" ]; then
+    echo "    cpuset: \"${cpuset}\""
+  fi
+  if [ -n "${cpus}" ]; then
+    echo "    cpus: \"${cpus}\""
+  fi
+}
+
+if [ -n "${LEGACY_CPUSET}" ] || [ -n "${APP_CPUSET}" ] || [ -n "${INFRA_CPUSET}" ] || [ -n "${APP_CPUS}" ]; then
   PERF_COMPOSE_OVERRIDE="perf/results/docker-compose.cpuset-${REPORT_SUFFIX}.yml"
   export PERF_COMPOSE_OVERRIDE
-  cat >"${PERF_COMPOSE_OVERRIDE}" <<EOF
-services:
-  postgres:
-    cpuset: "${PERF_CPUSET}"
-  valkey:
-    cpuset: "${PERF_CPUSET}"
-  nazoauth:
-    cpuset: "${PERF_CPUSET}"
-  keyset:
-    cpuset: "${PERF_CPUSET}"
-  migrate:
-    cpuset: "${PERF_CPUSET}"
-  perf:
-    cpuset: "${PERF_CPUSET}"
-EOF
+  {
+    echo "services:"
+    write_service_override postgres "${INFRA_CPUSET}" ""
+    write_service_override valkey "${INFRA_CPUSET}" ""
+    write_service_override nazoauth "${APP_CPUSET}" "${APP_CPUS}"
+    write_service_override keyset "${INFRA_CPUSET}" ""
+    write_service_override migrate "${INFRA_CPUSET}" ""
+    write_service_override perf "${INFRA_CPUSET}" ""
+  } >"${PERF_COMPOSE_OVERRIDE}"
 fi
 
-CPUSET_VALUE="${PERF_CPUSET:-unrestricted}"
-CPUSET_CORES="$(python3 - "${CPUSET_VALUE}" <<'PY'
+cpuset_count() {
+  python3 - "$1" <<'PY'
 import sys
 
 value = sys.argv[1]
-if value == "unrestricted":
+if not value:
     print("unrestricted")
     raise SystemExit
 
@@ -62,7 +74,43 @@ for part in value.split(","):
         count += 1
 print(count)
 PY
-)"
+}
+
+if [ -n "${LEGACY_CPUSET}" ]; then
+  CPUSET_VALUE="${LEGACY_CPUSET}"
+  CPUSET_CORES="$(cpuset_count "${LEGACY_CPUSET}")"
+else
+  CPUSET_VALUE="${APP_CPUSET:+app=${APP_CPUSET}; }${INFRA_CPUSET:+infra=${INFRA_CPUSET}}"
+  CPUSET_VALUE="${CPUSET_VALUE:-unrestricted}"
+  CPUSET_CORES="app=$(cpuset_count "${APP_CPUSET}"), infra=$(cpuset_count "${INFRA_CPUSET}")"
+fi
+
+APP_CPUSET_VALUE="${APP_CPUSET:-unrestricted}"
+APP_CPUSET_CORES="$(cpuset_count "${APP_CPUSET}")"
+INFRA_CPUSET_VALUE="${INFRA_CPUSET:-unrestricted}"
+INFRA_CPUSET_CORES="$(cpuset_count "${INFRA_CPUSET}")"
+APP_CPUS_VALUE="${APP_CPUS:-unlimited}"
+
+if [ -n "${PERF_COMPOSE_OVERRIDE:-}" ]; then
+  COMPOSE_FILES_VALUE="docker-compose.perf.yml + ${PERF_COMPOSE_OVERRIDE}"
+else
+  COMPOSE_FILES_VALUE="docker-compose.perf.yml"
+fi
+
+LEGACY_PIN_TEXT="postgres, valkey, keyset, migrate, nazoauth, perf"
+if [ -n "${LEGACY_CPUSET}" ]; then
+  PIN_TEXT="${LEGACY_PIN_TEXT}"
+else
+  PIN_TEXT="nazoauth:${APP_CPUSET_VALUE} quota=${APP_CPUS_VALUE}; postgres,valkey,keyset,migrate,perf:${INFRA_CPUSET_VALUE}"
+fi
+
+if [ -n "${APP_CPUS}" ]; then
+  CPU_MODEL_TEXT="NazoAuth has a Docker CPU quota of ${APP_CPUS} CPU(s). PostgreSQL, Valkey, keyset, migrate, and perf use the infra CPU set and are not CPU-quota limited by this override."
+elif [ -n "${LEGACY_CPUSET}" ]; then
+  CPU_MODEL_TEXT="Docker cpuset isolation; no CPU quota. Each service container may run on the listed CPU set. NazoAuth is additionally scaled by the stage instance count."
+else
+  CPU_MODEL_TEXT="Docker cpuset isolation where configured; no CPU quota unless App CPU quota is set. NazoAuth is additionally scaled by the stage instance count."
+fi
 
 {
   echo "## Test Environment and Topology"
@@ -78,16 +126,21 @@ PY
   echo "| Cgroup CPU max | $(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo unknown) |"
   echo "| Memory total | $(awk '/MemTotal/ { printf \"%.2f GiB\", $2 / 1024 / 1024 }' /proc/meminfo 2>/dev/null || echo unknown) |"
   echo "| Cgroup memory max | $(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo unknown) |"
-  echo "| Workspace disk available | $(df -h . 2>/dev/null | awk 'NR==2 { print $4 \" on \" $6 }' || echo unknown) |"
+  echo "| Workspace disk available | $(df -h . 2>/dev/null | awk 'NR==2 { print $4 " on " $6 }' || echo unknown) |"
   echo "| Kernel | $(uname -a | sed 's/|/-/g') |"
   echo "| Docker server | $(docker version --format '{{.Server.Version}}' 2>/dev/null || echo unknown) |"
   echo "| Docker compose | $(docker compose version --short 2>/dev/null || echo unknown) |"
   echo "| Compose project | ${COMPOSE_PROJECT_NAME} |"
-  echo "| Compose files | docker-compose.perf.yml${PERF_COMPOSE_OVERRIDE:+ + ${PERF_COMPOSE_OVERRIDE}} |"
+  echo "| Compose files | ${COMPOSE_FILES_VALUE} |"
   echo "| CPU set | ${CPUSET_VALUE} |"
   echo "| CPU set size | ${CPUSET_CORES} |"
-  echo "| Services pinned to CPU set | postgres, valkey, keyset, migrate, nazoauth, perf |"
-  echo "| Per-container CPU model | Docker cpuset isolation; no CPU quota. Each service container may run on the listed CPU set. NazoAuth is additionally scaled by the stage instance count. |"
+  echo "| App CPU set | ${APP_CPUSET_VALUE} |"
+  echo "| App CPU set size | ${APP_CPUSET_CORES} |"
+  echo "| App CPU quota | ${APP_CPUS_VALUE} |"
+  echo "| Infra CPU set | ${INFRA_CPUSET_VALUE} |"
+  echo "| Infra CPU set size | ${INFRA_CPUSET_CORES} |"
+  echo "| Services pinned to CPU set | ${PIN_TEXT} |"
+  echo "| Per-container CPU model | ${CPU_MODEL_TEXT} |"
   echo "| Capacity scenarios | ${SCENARIOS} |"
   echo "| Duration per point | ${DURATION} |"
   echo "| App instance stages | ${INSTANCES} NazoAuth replica(s) |"
