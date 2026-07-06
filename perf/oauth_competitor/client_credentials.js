@@ -51,6 +51,15 @@ export function clientCredentials() {
 
   check(response, {
     'client_credentials status is 200': (r) => r.status === 200,
-    'client_credentials access token returned': (r) => Boolean(r.json('access_token')),
+    'client_credentials access token returned': (r) => {
+      if (r.status !== 200 || !r.body) {
+        return false;
+      }
+      try {
+        return Boolean(r.json('access_token'));
+      } catch (_) {
+        return false;
+      }
+    },
   });
 }
