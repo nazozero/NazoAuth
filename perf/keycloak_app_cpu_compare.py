@@ -42,7 +42,10 @@ def command_output(command: list[str]) -> str:
 
 
 def metric_values(summary: dict[str, Any], name: str) -> dict[str, Any]:
-    return summary.get("metrics", {}).get(name, {}).get("values", {})
+    metric = summary.get("metrics", {}).get(name, {})
+    if isinstance(metric.get("values"), dict):
+        return metric["values"]
+    return metric
 
 
 def k6_result(summary_path: Path) -> dict[str, Any]:
@@ -53,7 +56,7 @@ def k6_result(summary_path: Path) -> dict[str, Any]:
     checks = metric_values(summary, "checks")
     step_duration = metric_values(summary, "http_req_duration{step:token_client_credentials}")
     step_failed = metric_values(summary, "http_req_failed{step:token_client_credentials}")
-    step_requests = metric_values(summary, "http_reqs{step:token_client_credentials}")
+    step_requests = metric_values(summary, "http_reqs{step:token_client_credentials}") or requests
     return {
         "rps": round(float(requests.get("rate", 0)), 3),
         "requests": int(requests.get("count", 0)),
