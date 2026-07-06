@@ -146,5 +146,153 @@
         "observed_app_instances": 1
       }
     }
+  },
+  {
+    "instances": 1,
+    "scenario": "oidc_logged_in_authorization_code",
+    "target_rate": 32,
+    "duration": "30m",
+    "result": {
+      "profile": "capacity",
+      "scenario": "oidc_logged_in_authorization_code",
+      "elapsed_seconds": 1801.834,
+      "status": "passed",
+      "k6_exit_code": 0,
+      "k6": {
+        "http_reqs": 230464,
+        "rps": 128.036,
+        "error_rate": 0.0,
+        "latency_ms": {
+          "p50": 1.302,
+          "p95": 4.046,
+          "p99": 6.116
+        }
+      },
+      "steps": [
+        {
+          "step": "authorize",
+          "http_reqs": 57600,
+          "rps": 32.0,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 0.704,
+            "p95": 1.04,
+            "p99": 1.403
+          }
+        },
+        {
+          "step": "authorize_decision",
+          "http_reqs": 57600,
+          "rps": 32.0,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 1.8,
+            "p95": 3.528,
+            "p99": 6.545
+          }
+        },
+        {
+          "step": "par_oidc",
+          "http_reqs": 57600,
+          "rps": 32.0,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 0.788,
+            "p95": 1.142,
+            "p99": 1.561
+          }
+        },
+        {
+          "step": "token_authorization_code",
+          "http_reqs": 57600,
+          "rps": 32.0,
+          "error_rate": 0.0,
+          "latency_ms": {
+            "p50": 3.314,
+            "p95": 5.148,
+            "p99": 8.102
+          }
+        }
+      ],
+      "postgres": {
+        "statement_calls": 1441172,
+        "total_statement_ms": 33357.973,
+        "mean_statement_ms": 0.023,
+        "rows": 1325606,
+        "database_bytes": 53687999,
+        "statements_per_http_request": 6.253
+      },
+      "db_pool": {
+        "acquire_count": 115560,
+        "wait_ms_total": 6395.118,
+        "wait_ms_avg": 0.055,
+        "wait_ms_max_observed_process_lifetime": 10.414
+      },
+      "valkey": {
+        "keyspace_hits": 748806,
+        "keyspace_misses": 189,
+        "commands_processed": 1440871,
+        "expired_keys": 46720,
+        "db0_keys": 68605
+      },
+      "containers": {
+        "by_container": {
+          "nazoauth-local-oidc-logged-in-nazoauth-1": {
+            "service": "nazoauth",
+            "samples": 568,
+            "cpu_percent_avg": 11.594,
+            "cpu_percent_max": 103.07,
+            "memory_bytes_avg": 66263634,
+            "memory_bytes_max": 285527244
+          },
+          "nazoauth-local-oidc-logged-in-postgres-1": {
+            "service": "postgres",
+            "samples": 568,
+            "cpu_percent_avg": 5.656,
+            "cpu_percent_max": 17.81,
+            "memory_bytes_avg": 83920361,
+            "memory_bytes_max": 103106478
+          },
+          "nazoauth-local-oidc-logged-in-valkey-1": {
+            "service": "valkey",
+            "samples": 568,
+            "cpu_percent_avg": 1.772,
+            "cpu_percent_max": 4.69,
+            "memory_bytes_avg": 24422911,
+            "memory_bytes_max": 40768634
+          }
+        },
+        "by_service": {
+          "postgres": {
+            "containers": 1,
+            "cpu_percent_avg": 5.656,
+            "cpu_percent_max": 17.81,
+            "memory_bytes_avg": 83920361,
+            "memory_bytes_max": 103106478
+          },
+          "nazoauth": {
+            "containers": 1,
+            "cpu_percent_avg": 11.594,
+            "cpu_percent_max": 103.07,
+            "memory_bytes_avg": 66263634,
+            "memory_bytes_max": 285527244
+          },
+          "valkey": {
+            "containers": 1,
+            "cpu_percent_avg": 1.772,
+            "cpu_percent_max": 4.69,
+            "memory_bytes_avg": 24422911,
+            "memory_bytes_max": 40768634
+          }
+        }
+      },
+      "load_model": {
+        "executor": "constant-arrival-rate",
+        "target_rate": 32,
+        "duration": "30m",
+        "app_replicas": 1,
+        "observed_app_instances": 1
+      }
+    }
   }
 ]
