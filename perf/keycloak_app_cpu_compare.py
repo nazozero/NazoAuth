@@ -201,6 +201,7 @@ def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: d
             nazo_cpu = nazo_result["containers"]["by_service"].get("nazoauth", {}).get("cpu_percent_avg", 0) / 100
             nazo_per_core = round(nazo_k6["rps"] / nazo_cpu, 3) if nazo_cpu else 0
             ratio = round(nazo_k6["rps"] / keycloak["rps"], 3) if keycloak["rps"] else 0
+            efficiency_ratio = round(nazo_per_core / per_core, 3) if per_core else 0
             compare_rows.append(
                 [
                     row["target_rate"],
@@ -215,6 +216,7 @@ def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: d
                     f"{keycloak_cpu:.3f}",
                     f"{per_core:.3f}",
                     f"{ratio:.3f}x",
+                    f"{efficiency_ratio:.3f}x",
                 ]
             )
 
@@ -270,7 +272,8 @@ def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: d
                 "Keycloak p99 ms",
                 "Keycloak CPU Cores Avg",
                 "Keycloak RPS/App Core",
-                "RPS Ratio",
+                "Observed RPS Ratio",
+                "App-Core Efficiency Ratio",
             ],
             compare_rows,
         ),
@@ -278,6 +281,8 @@ def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: d
         "## Interpretation",
         "",
         "- This is a short smoke benchmark. It is suitable for checking the single-core token endpoint order of magnitude, but it does not replace the 30-minute sustained capacity matrix.",
+        "- The tested rates are fixed arrival-rate targets. When both systems meet the target, observed RPS is target-limited and should not be interpreted as maximum throughput.",
+        "- Under target-limited points, latency and HTTP RPS per observed application CPU core are the more meaningful comparison fields.",
         "- Keycloak is a broad IAM product with administrative, realm, federation, theme, and policy surfaces that are outside this narrow endpoint test.",
         "- The test intentionally avoids TLS, clustering, external caches, custom providers, and production Keycloak tuning so that the result remains simple and reproducible.",
         "",
