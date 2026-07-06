@@ -246,7 +246,7 @@ def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: d
             )
 
     source = [
-        "# NazoAuth vs Keycloak App-CPU 1 vCPU Benchmark",
+        "# NazoAuth vs Keycloak App-CPU 1-Core Affinity Benchmark",
         "",
         f"Generated at: `{datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}`",
         "",
@@ -261,7 +261,7 @@ def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: d
         f"- NazoAuth result source: `{args.nazoauth_results}`.",
         f"- Keycloak result source: `{args.results_path}`.",
         f"- Both sides use fixed-arrival-rate k6 traffic and the same target rates: {rates_text} requests per second.",
-        f"- Keycloak runs with PostgreSQL and an application CPU limiter of quota={args.app_cpus}, taskset={os.environ.get('KEYCLOAK_APP_TASKSET', 'disabled')}. PostgreSQL and k6 are intentionally left unrestricted, matching the NazoAuth app-CPU smoke-test shape.",
+        f"- Keycloak runs with PostgreSQL and an application CPU limiter of quota={args.app_cpus}, taskset={os.environ.get('KEYCLOAK_APP_TASKSET', 'disabled')}. In this CNB nested-Docker environment, process-level CPU affinity is the effective application limiter. PostgreSQL and k6 are intentionally left unrestricted, matching the NazoAuth app-CPU smoke-test shape.",
         "- The comparison uses HTTP RPS, p50/p95/p99 latency, error rate, and observed application CPU from Docker stats.",
         "- A point is classified as `target_miss` when observed RPS is below 99% of the requested rate or k6 records dropped iterations, even if every completed HTTP request returns successfully.",
         "",
@@ -271,7 +271,7 @@ def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: d
         "- Both benchmark assertions require HTTP 200 and an access token in the token response; refresh tokens are not expected for this grant.",
         "- Both services issue JWT access tokens in this path, but token claim sets, subject modeling, signing implementation, and default OIDC mappers are implementation-specific and are not forced to be byte-equivalent.",
         "- NazoAuth verifies the benchmark client secret through its `client-secret-v1:<salt>:<HMAC-SHA256>` digest format. Keycloak uses its own confidential-client secret handling. This benchmark compares endpoint behavior and observed resource usage, not identical credential storage internals.",
-        "- The load generator, network shape, application CPU quota, and database-unrestricted topology are aligned. Product scope is not aligned: Keycloak remains a broad IAM server, while this benchmark exercises only the narrow token endpoint path.",
+        "- The load generator, network shape, application CPU affinity, and database-unrestricted topology are aligned. Product scope is not aligned: Keycloak remains a broad IAM server, while this benchmark exercises only the narrow token endpoint path.",
         "",
         "## Keycloak Result",
         "",
