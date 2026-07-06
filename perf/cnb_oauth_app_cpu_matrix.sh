@@ -11,6 +11,7 @@ mkdir -p docs perf/results
 duration="${OAUTH_APP_CPU_MATRIX_DURATION:-2m}"
 max_vus="${OAUTH_APP_CPU_MATRIX_MAX_VUS:-16384}"
 commit_enabled="${OAUTH_APP_CPU_MATRIX_COMMIT:-0}"
+stages="${OAUTH_APP_CPU_MATRIX_STAGES:-1,2,4}"
 
 git config user.name "${CNB_GIT_USER_NAME:-NazoAuth Capacity Bot}"
 git config user.email "${CNB_GIT_USER_EMAIL:-nazoauth-capacity-bot@noreply.cnb.cool}"
@@ -187,8 +188,29 @@ run_stage() {
   run_hydra_stage "${cores}" "${rates}" "${taskset_cpus}"
 }
 
-run_stage 1 "${OAUTH_APP_CPU_MATRIX_1_CORE_RATES:-1000,2000}"
-run_stage 2 "${OAUTH_APP_CPU_MATRIX_2_CORE_RATES:-1000,2000,4000}"
-run_stage 4 "${OAUTH_APP_CPU_MATRIX_4_CORE_RATES:-1000,2000,4000,10000}"
+should_run_stage() {
+  requested="$1"
+  old_ifs="${IFS}"
+  IFS=","
+  for stage in ${stages}; do
+    IFS="${old_ifs}"
+    if [ "${stage}" = "${requested}" ]; then
+      return 0
+    fi
+    IFS=","
+  done
+  IFS="${old_ifs}"
+  return 1
+}
+
+if should_run_stage 1; then
+  run_stage 1 "${OAUTH_APP_CPU_MATRIX_1_CORE_RATES:-1000,2000}"
+fi
+if should_run_stage 2; then
+  run_stage 2 "${OAUTH_APP_CPU_MATRIX_2_CORE_RATES:-1000,2000,4000}"
+fi
+if should_run_stage 4; then
+  run_stage 4 "${OAUTH_APP_CPU_MATRIX_4_CORE_RATES:-1000,2000,4000,10000}"
+fi
 
 echo "oauth app-cpu comparison matrix finished $(date -u '+%Y-%m-%dT%H:%M:%SZ')"

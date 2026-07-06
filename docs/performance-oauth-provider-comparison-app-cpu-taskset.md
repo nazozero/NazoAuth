@@ -2,12 +2,20 @@
 
 This report aggregates the comparable client_credentials App CPU affinity points across NazoAuth, Keycloak, and Ory Hydra.
 
+## Current Status
+
+| Stage | Status | Notes |
+| --- | --- | --- |
+| 1 application core, 1000/2000 flow/s | Completed | NazoAuth and Keycloak results were already available; Ory Hydra was added later using the same request shape and taskset affinity model. |
+| 2 application cores, 1000/2000/4000 flow/s | TODO | Run the remaining matrix with `OAUTH_APP_CPU_MATRIX_STAGES=2,4 OAUTH_APP_CPU_MATRIX_COMMIT=1 ./perf/cnb_oauth_app_cpu_matrix.sh`. |
+| 4 application cores, 1000/2000/4000/10000 flow/s | TODO | Same continuation command as above; results should be appended to this aggregate report after completion. |
+
 ## Method
 
 - Request shape: client_credentials token request with client_id, client_secret, and scope=profile encoded as application/x-www-form-urlencoded.
 - Client authentication: client_secret_post.
 - Infrastructure: PostgreSQL and k6 are not CPU-quota limited; only the authorization-server process is constrained by taskset affinity.
-- Current completed stage: 1 application core, target rates 1000 and 2000 flow/s.
+- Completed stage so far: 1 application core, target rates 1000 and 2000 flow/s.
 
 ## 1 Application Core
 

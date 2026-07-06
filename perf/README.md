@@ -92,6 +92,13 @@ The matrix runs NazoAuth, Keycloak, and Ory Hydra serially for each CPU stage:
 | 2 application cores | `1000,2000,4000` flow/s |
 | 4 application cores | `1000,2000,4000,10000` flow/s |
 
+If the 1-core stage has already been recorded, continue only the remaining
+stages with:
+
+```sh
+OAUTH_APP_CPU_MATRIX_STAGES=2,4 OAUTH_APP_CPU_MATRIX_COMMIT=1 ./perf/cnb_oauth_app_cpu_matrix.sh
+```
+
 Each stage uses the same `client_credentials` request body:
 `grant_type=client_credentials`, `client_id`, `client_secret`, and
 `scope=profile` encoded as `application/x-www-form-urlencoded`. PostgreSQL and
@@ -198,6 +205,7 @@ For the OAuth provider comparison scripts:
 | `HYDRA_PUBLIC_HOST_PORT` | Host port used while waiting for Hydra public readiness, default `18082`. |
 | `HYDRA_ADMIN_HOST_PORT` | Host port for Hydra admin API, default `18083`. |
 | `OAUTH_APP_CPU_MATRIX_DURATION` | Duration per point for `cnb_oauth_app_cpu_matrix.sh`, default `2m`. |
+| `OAUTH_APP_CPU_MATRIX_STAGES` | Comma-separated CPU stages to run, default `1,2,4`; use `2,4` to continue after the 1-core stage has already been recorded. |
 | `OAUTH_APP_CPU_MATRIX_COMMIT` | If `1`, commit and push each completed provider stage. |
 
 ## Metrics
