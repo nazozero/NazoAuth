@@ -54,6 +54,18 @@ is set explicitly. This is the preferred shape for per-vCPU App efficiency
 checks because it avoids turning database or load-generator saturation into an
 application throughput number.
 
+Run the Keycloak App-vCPU comparison smoke test:
+
+```sh
+./perf/cnb_keycloak_app_cpu_smoke.sh
+```
+
+This starts Keycloak 26.6.4 with PostgreSQL, applies a Docker CPU quota to the
+Keycloak service only (`KEYCLOAK_APP_CPUS`, default `1`), and runs the same
+fixed-arrival-rate `client_credentials` rates used by the NazoAuth App-vCPU
+smoke test. PostgreSQL and the k6 runner are left unrestricted to keep the
+comparison focused on the authorization server process.
+
 Run the extended fixed-arrival-rate matrix on a dedicated CNB runner:
 
 ```sh
@@ -134,6 +146,16 @@ For strict App CPU quota tests, `perf/cnb_capacity.sh` also supports:
 | `PERF_APP_CPUSET` | Optional CPU set for NazoAuth. |
 | `PERF_INFRA_CPUSET` | Optional CPU set for PostgreSQL, Valkey, keyset, migrate, and perf runner. |
 | `PERF_CPUSET` | Legacy setting that pins all services to the same CPU set. |
+
+For the Keycloak comparison script:
+
+| Variable | Meaning |
+| --- | --- |
+| `KEYCLOAK_IMAGE_TAG` | Keycloak container tag, default `26.6.4`. |
+| `KEYCLOAK_APP_CPUS` | Docker CPU quota for the Keycloak service, default `1`. |
+| `KEYCLOAK_APP_CPU_RATES` | Comma-separated fixed arrival rates, default `100,250,500`. |
+| `KEYCLOAK_APP_CPU_DURATION` | Duration per rate point, default `2m`. |
+| `KEYCLOAK_HOST_PORT` | Host port used while waiting for Keycloak readiness, default `18081`. |
 
 ## Metrics
 
