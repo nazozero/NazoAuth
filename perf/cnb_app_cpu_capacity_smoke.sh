@@ -8,7 +8,7 @@ if [ "${CNB_CAPACITY_SKIP_BOOTSTRAP:-0}" != "1" ]; then
 fi
 
 scenario="${APP_CPU_CAPACITY_SCENARIO:-token_only_client_credentials}"
-rates="${APP_CPU_CAPACITY_RATES:-100,250,500}"
+rates="${APP_CPU_CAPACITY_RATES:-1000,2000}"
 duration="${APP_CPU_CAPACITY_DURATION:-2m}"
 instances="${APP_CPU_CAPACITY_INSTANCES:-1}"
 app_cpus="${APP_CPU_CAPACITY_APP_CPUS:-1}"

@@ -41,30 +41,62 @@ Run the long fixed-arrival-rate capacity curve:
 make perf-capacity
 ```
 
-Run a short App-vCPU smoke test:
+Run a short App CPU smoke test:
 
 ```sh
 ./perf/cnb_app_cpu_capacity_smoke.sh
 ```
 
-This test uses Docker Compose CPU quota for the NazoAuth service only
-(`PERF_APP_CPUS`, default `1`). PostgreSQL, Valkey, migration, key setup, and
-the k6 perf runner remain unrestricted unless `APP_CPU_CAPACITY_INFRA_CPUSET`
-is set explicitly. This is the preferred shape for per-vCPU App efficiency
-checks because it avoids turning database or load-generator saturation into an
-application throughput number.
+This test uses the NazoAuth service CPU override only (`PERF_APP_CPUS`, default
+`1`; optionally `PERF_APP_TASKSET` for process-level CPU affinity). PostgreSQL,
+Valkey, migration, key setup, and the k6 perf runner remain unrestricted unless
+`APP_CPU_CAPACITY_INFRA_CPUSET` is set explicitly. In nested Docker
+environments where Docker CPU quota is not enforced reliably, process-level
+`taskset` is the effective limiter.
 
-Run the Keycloak App-vCPU comparison smoke test:
+Run the Keycloak App CPU comparison smoke test:
 
 ```sh
 ./perf/cnb_keycloak_app_cpu_smoke.sh
 ```
 
 This starts Keycloak 26.6.4 with PostgreSQL, applies a Docker CPU quota to the
-Keycloak service only (`KEYCLOAK_APP_CPUS`, default `1`), and runs the same
-fixed-arrival-rate `client_credentials` rates used by the NazoAuth App-vCPU
-smoke test. PostgreSQL and the k6 runner are left unrestricted to keep the
-comparison focused on the authorization server process.
+Keycloak service only (`KEYCLOAK_APP_CPUS`, default `1`; optionally
+`KEYCLOAK_APP_TASKSET`), and runs the same fixed-arrival-rate
+`client_credentials` rates used by the NazoAuth App CPU smoke test. PostgreSQL
+and the k6 runner are left unrestricted to keep the comparison focused on the
+authorization server process.
+
+Run the Ory Hydra App CPU comparison smoke test:
+
+```sh
+./perf/cnb_hydra_app_cpu_smoke.sh
+```
+
+This starts Ory Hydra with PostgreSQL, applies the same application CPU limiter
+shape (`HYDRA_APP_CPUS`, optionally `HYDRA_APP_TASKSET`), creates a
+`client_secret_post` + `client_credentials` benchmark client through the Hydra
+Admin API, and runs the same generic k6 token request script.
+
+Run the full OAuth provider App CPU comparison matrix:
+
+```sh
+./perf/cnb_oauth_app_cpu_matrix.sh
+```
+
+The matrix runs NazoAuth, Keycloak, and Ory Hydra serially for each CPU stage:
+
+| Stage | Target rates |
+| --- | --- |
+| 1 application core | `1000,2000` flow/s |
+| 2 application cores | `1000,2000,4000` flow/s |
+| 4 application cores | `1000,2000,4000,10000` flow/s |
+
+Each stage uses the same `client_credentials` request body:
+`grant_type=client_credentials`, `client_id`, `client_secret`, and
+`scope=profile` encoded as `application/x-www-form-urlencoded`. PostgreSQL and
+k6 remain unrestricted so the result isolates authorization-server process
+capacity rather than infrastructure saturation.
 
 Run the extended fixed-arrival-rate matrix on a dedicated CNB runner:
 
@@ -138,24 +170,35 @@ The report normalizes observed throughput by NazoAuth service CPU usage:
 `100%` Docker CPU is treated as one effective CPU core. This avoids claiming
 capacity only from raw RPS when the service is consuming many cores.
 
-For strict App CPU quota tests, `perf/cnb_capacity.sh` also supports:
+For strict App CPU tests, `perf/cnb_capacity.sh` also supports:
 
 | Variable | Meaning |
 | --- | --- |
 | `PERF_APP_CPUS` | Docker CPU quota for the NazoAuth service, for example `1`, `2`, or `4`. |
+| `PERF_APP_TASKSET` | Process-level CPU affinity for NazoAuth. This is the effective limiter in CNB nested Docker environments where CPU quota is not enforced reliably. |
 | `PERF_APP_CPUSET` | Optional CPU set for NazoAuth. |
 | `PERF_INFRA_CPUSET` | Optional CPU set for PostgreSQL, Valkey, keyset, migrate, and perf runner. |
 | `PERF_CPUSET` | Legacy setting that pins all services to the same CPU set. |
 
-For the Keycloak comparison script:
+For the OAuth provider comparison scripts:
 
 | Variable | Meaning |
 | --- | --- |
 | `KEYCLOAK_IMAGE_TAG` | Keycloak container tag, default `26.6.4`. |
 | `KEYCLOAK_APP_CPUS` | Docker CPU quota for the Keycloak service, default `1`. |
-| `KEYCLOAK_APP_CPU_RATES` | Comma-separated fixed arrival rates, default `100,250,500`. |
+| `KEYCLOAK_APP_TASKSET` | Process-level CPU affinity for Keycloak. |
+| `KEYCLOAK_APP_CPU_RATES` | Comma-separated fixed arrival rates, default `1000,2000`. |
 | `KEYCLOAK_APP_CPU_DURATION` | Duration per rate point, default `2m`. |
 | `KEYCLOAK_HOST_PORT` | Host port used while waiting for Keycloak readiness, default `18081`. |
+| `HYDRA_IMAGE_TAG` | Ory Hydra container tag, default `v26.2.0`. |
+| `HYDRA_APP_CPUS` | Docker CPU quota for the Hydra service, default `1`. |
+| `HYDRA_APP_TASKSET` | Process-level CPU affinity for Hydra. |
+| `HYDRA_APP_CPU_RATES` | Comma-separated fixed arrival rates, default `1000,2000`. |
+| `HYDRA_APP_CPU_DURATION` | Duration per rate point, default `2m`. |
+| `HYDRA_PUBLIC_HOST_PORT` | Host port used while waiting for Hydra public readiness, default `18082`. |
+| `HYDRA_ADMIN_HOST_PORT` | Host port for Hydra admin API, default `18083`. |
+| `OAUTH_APP_CPU_MATRIX_DURATION` | Duration per point for `cnb_oauth_app_cpu_matrix.sh`, default `2m`. |
+| `OAUTH_APP_CPU_MATRIX_COMMIT` | If `1`, commit and push each completed provider stage. |
 
 ## Metrics
 

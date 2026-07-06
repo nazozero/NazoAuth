@@ -90,15 +90,7 @@ def k6_result(summary_path: Path) -> dict[str, Any]:
     }
 
 
-def classify_service(name: str) -> str | None:
-    if "-keycloak-postgres-" in name or name.endswith("-keycloak-postgres-1"):
-        return "keycloak-postgres"
-    if "-keycloak-" in name or name.endswith("-keycloak-1"):
-        return "keycloak"
-    return None
-
-
-def docker_stats(stats_path: Path) -> dict[str, Any]:
+def docker_stats(stats_path: Path, service_names: set[str]) -> dict[str, Any]:
     samples: dict[str, list[dict[str, float]]] = {}
     if not stats_path.exists():
         return {"by_service": {}}
@@ -107,8 +99,8 @@ def docker_stats(stats_path: Path) -> dict[str, Any]:
         if not line:
             continue
         raw = json.loads(line)
-        name = raw.get("Name") or raw.get("Name".lower()) or raw.get("Container") or ""
-        service = classify_service(name)
+        name = raw.get("Name") or raw.get("Container") or ""
+        service = classify_service(name, service_names)
         if not service:
             continue
         samples.setdefault(service, []).append(
@@ -129,6 +121,13 @@ def docker_stats(stats_path: Path) -> dict[str, Any]:
             "memory_bytes_max": max(memory_values) if memory_values else 0,
         }
     return {"by_service": by_service}
+
+
+def classify_service(container_name: str, service_names: set[str]) -> str | None:
+    for service in sorted(service_names, key=len, reverse=True):
+        if f"-{service}-" in container_name or container_name.endswith(f"-{service}-1"):
+            return service
+    return None
 
 
 def load_nazoauth(path: Path) -> dict[int, dict[str, Any]]:
@@ -153,7 +152,8 @@ def result_status(k6: dict[str, Any], target_rate: int) -> str:
 def environment(args: argparse.Namespace) -> dict[str, str]:
     return {
         "Source commit": command_output(["git", "rev-parse", "HEAD"]),
-        "Keycloak image": f"quay.io/keycloak/keycloak:{args.keycloak_image_tag}",
+        "Provider": args.provider_name,
+        "Provider image": args.provider_image,
         "Runner tag": "cnb:arch:amd64",
         "Observed logical CPUs": command_output(["sh", "-c", "nproc --all 2>/dev/null || echo unknown"]),
         "Process allowed CPUs": command_output(
@@ -169,9 +169,13 @@ def environment(args: argparse.Namespace) -> dict[str, str]:
         "Workspace disk available": command_output(["sh", "-c", "df -h . 2>/dev/null | awk 'NR==2 { print $4 \" on \" $6 }' || echo unknown"]),
         "Docker server": command_output(["sh", "-c", "docker version --format '{{.Server.Version}}' 2>/dev/null || echo unknown"]),
         "Docker compose": command_output(["sh", "-c", "docker compose version --short 2>/dev/null || echo unknown"]),
-        "Compose file": "docker-compose.keycloak.perf.yml",
+        "Compose file": args.compose_file,
+        "Token endpoint": args.token_path,
+        "Client authentication": "client_secret_post",
+        "Grant type": "client_credentials",
+        "Scope": args.scope,
         "App CPU quota": str(args.app_cpus),
-        "App process taskset": os.environ.get("KEYCLOAK_APP_TASKSET", "disabled"),
+        "App process taskset": args.app_taskset,
         "Infra CPU model": "PostgreSQL and k6 are not CPU-quota limited by this benchmark override.",
         "Duration per point": args.duration,
         "Rates": ",".join(str(rate) for rate in args.rates),
@@ -191,26 +195,26 @@ def markdown_table(headers: list[str], rows: list[list[Any]]) -> str:
 def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: dict[str, str]) -> None:
     nazo = load_nazoauth(args.nazoauth_results)
     env_rows = [[key, value] for key, value in env.items()]
-    keycloak_rows: list[list[Any]] = []
+    provider_rows: list[list[Any]] = []
     compare_rows: list[list[Any]] = []
     rates_text = ", ".join(str(rate) for rate in args.rates)
     for row in results:
-        keycloak = row["keycloak"]
-        keycloak_cpu = row["containers"]["by_service"].get("keycloak", {}).get("cpu_percent_avg", 0) / 100
-        postgres_cpu = row["containers"]["by_service"].get("keycloak-postgres", {}).get("cpu_percent_avg", 0)
-        per_core = round(keycloak["rps"] / keycloak_cpu, 3) if keycloak_cpu else 0
-        keycloak_rows.append(
+        provider = row["provider"]
+        provider_cpu = row["containers"]["by_service"].get(args.provider_service, {}).get("cpu_percent_avg", 0) / 100
+        postgres_cpu = row["containers"]["by_service"].get(args.postgres_service, {}).get("cpu_percent_avg", 0)
+        per_core = round(provider["rps"] / provider_cpu, 3) if provider_cpu else 0
+        provider_rows.append(
             [
                 row["target_rate"],
                 row["status"],
-                f"{keycloak['rps']:.3f}",
-                f"{target_ratio(keycloak, int(row['target_rate'])):.3f}",
-                keycloak.get("dropped_iterations", 0),
-                f"{keycloak['latency_ms']['p50']:.3f}",
-                f"{keycloak['latency_ms']['p95']:.3f}",
-                f"{keycloak['latency_ms']['p99']:.3f}",
-                f"{keycloak['error_rate']:.6f}",
-                f"{keycloak_cpu:.3f}",
+                f"{provider['rps']:.3f}",
+                f"{target_ratio(provider, int(row['target_rate'])):.3f}",
+                provider.get("dropped_iterations", 0),
+                f"{provider['latency_ms']['p50']:.3f}",
+                f"{provider['latency_ms']['p95']:.3f}",
+                f"{provider['latency_ms']['p99']:.3f}",
+                f"{provider['error_rate']:.6f}",
+                f"{provider_cpu:.3f}",
                 f"{per_core:.3f}",
                 f"{postgres_cpu:.3f}",
             ]
@@ -221,7 +225,7 @@ def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: d
             nazo_k6 = nazo_result["k6"]
             nazo_cpu = nazo_result["containers"]["by_service"].get("nazoauth", {}).get("cpu_percent_avg", 0) / 100
             nazo_per_core = round(nazo_k6["rps"] / nazo_cpu, 3) if nazo_cpu else 0
-            ratio = round(nazo_k6["rps"] / keycloak["rps"], 3) if keycloak["rps"] else 0
+            ratio = round(nazo_k6["rps"] / provider["rps"], 3) if provider["rps"] else 0
             efficiency_ratio = round(nazo_per_core / per_core, 3) if per_core else 0
             compare_rows.append(
                 [
@@ -233,12 +237,12 @@ def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: d
                     f"{nazo_k6['latency_ms']['p99']:.3f}",
                     f"{nazo_cpu:.3f}",
                     f"{nazo_per_core:.3f}",
-                    f"{keycloak['rps']:.3f}",
-                    f"{target_ratio(keycloak, int(row['target_rate'])):.3f}",
-                    keycloak.get("dropped_iterations", 0),
-                    f"{keycloak['latency_ms']['p95']:.3f}",
-                    f"{keycloak['latency_ms']['p99']:.3f}",
-                    f"{keycloak_cpu:.3f}",
+                    f"{provider['rps']:.3f}",
+                    f"{target_ratio(provider, int(row['target_rate'])):.3f}",
+                    provider.get("dropped_iterations", 0),
+                    f"{provider['latency_ms']['p95']:.3f}",
+                    f"{provider['latency_ms']['p99']:.3f}",
+                    f"{provider_cpu:.3f}",
                     f"{per_core:.3f}",
                     f"{ratio:.3f}x",
                     f"{efficiency_ratio:.3f}x",
@@ -246,11 +250,11 @@ def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: d
             )
 
     source = [
-        "# NazoAuth vs Keycloak App-CPU 1-Core Affinity Benchmark",
+        f"# NazoAuth vs {args.provider_name} App-CPU Affinity Benchmark",
         "",
         f"Generated at: `{datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}`",
         "",
-        "This report compares only the `client_credentials` token endpoint path under a single application CPU affinity or quota. It is not a full OAuth/OIDC feature comparison.",
+        "This report compares only the `client_credentials` token endpoint path under application CPU affinity. It is not a full OAuth/OIDC feature comparison.",
         "",
         "## Test Environment and Topology",
         "",
@@ -259,21 +263,21 @@ def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: d
         "## Method",
         "",
         f"- NazoAuth result source: `{args.nazoauth_results}`.",
-        f"- Keycloak result source: `{args.results_path}`.",
+        f"- {args.provider_name} result source: `{args.results_path}`.",
         f"- Both sides use fixed-arrival-rate k6 traffic and the same target rates: {rates_text} requests per second.",
-        f"- Keycloak runs with PostgreSQL and an application CPU limiter of quota={args.app_cpus}, taskset={os.environ.get('KEYCLOAK_APP_TASKSET', 'disabled')}. In this CNB nested-Docker environment, process-level CPU affinity is the effective application limiter. PostgreSQL and k6 are intentionally left unrestricted, matching the NazoAuth app-CPU smoke-test shape.",
+        f"- Both clients send `grant_type=client_credentials`, `client_id`, `client_secret`, and `scope={args.scope}` as `application/x-www-form-urlencoded` request bodies.",
+        f"- {args.provider_name} runs with PostgreSQL and an application CPU limiter of quota={args.app_cpus}, taskset={args.app_taskset}. In this CNB nested-Docker environment, process-level CPU affinity is the effective application limiter. PostgreSQL and k6 are intentionally left unrestricted.",
         "- The comparison uses HTTP RPS, p50/p95/p99 latency, error rate, and observed application CPU from Docker stats.",
         "- A point is classified as `target_miss` when observed RPS is below 99% of the requested rate or k6 records dropped iterations, even if every completed HTTP request returns successfully.",
         "",
         "## Behavior and Fairness Audit",
         "",
-        "- Both benchmark clients use `grant_type=client_credentials`, confidential client authentication by `client_secret_post`, and request `scope=profile`.",
         "- Both benchmark assertions require HTTP 200 and an access token in the token response; refresh tokens are not expected for this grant.",
-        "- Both services issue JWT access tokens in this path, but token claim sets, subject modeling, signing implementation, and default OIDC mappers are implementation-specific and are not forced to be byte-equivalent.",
-        "- NazoAuth verifies the benchmark client secret through its `client-secret-v1:<salt>:<HMAC-SHA256>` digest format. Keycloak uses its own confidential-client secret handling. This benchmark compares endpoint behavior and observed resource usage, not identical credential storage internals.",
-        "- The load generator, network shape, application CPU affinity, and database-unrestricted topology are aligned. Product scope is not aligned: Keycloak remains a broad IAM server, while this benchmark exercises only the narrow token endpoint path.",
+        "- Product scope is intentionally not equalized. This benchmark isolates one OAuth2 token endpoint path and does not compare admin APIs, login/consent UI, federation, policy engines, or full OIDC feature coverage.",
+        "- Token claim sets, signing implementation, client-secret storage internals, database schema, and background maintenance behavior remain product-specific.",
+        "- The load generator, network shape, application CPU affinity, request body, client authentication method, grant type, and database-unrestricted topology are aligned.",
         "",
-        "## Keycloak Result",
+        f"## {args.provider_name} Result",
         "",
         markdown_table(
             [
@@ -286,11 +290,11 @@ def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: d
                 "p95 ms",
                 "p99 ms",
                 "Error Rate",
-                "Keycloak CPU Cores Avg",
+                f"{args.provider_name} CPU Cores Avg",
                 "HTTP RPS/App CPU Core",
                 "Postgres CPU Avg %",
             ],
-            keycloak_rows,
+            provider_rows,
         ),
         "",
         "## Comparison",
@@ -305,13 +309,13 @@ def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: d
                 "NazoAuth p99 ms",
                 "NazoAuth CPU Cores Avg",
                 "NazoAuth RPS/App Core",
-                "Keycloak RPS",
-                "Keycloak Observed/Target",
-                "Keycloak Dropped Iterations",
-                "Keycloak p95 ms",
-                "Keycloak p99 ms",
-                "Keycloak CPU Cores Avg",
-                "Keycloak RPS/App Core",
+                f"{args.provider_name} RPS",
+                f"{args.provider_name} Observed/Target",
+                f"{args.provider_name} Dropped Iterations",
+                f"{args.provider_name} p95 ms",
+                f"{args.provider_name} p99 ms",
+                f"{args.provider_name} CPU Cores Avg",
+                f"{args.provider_name} RPS/App Core",
                 "Observed RPS Ratio",
                 "App-Core Efficiency Ratio",
             ],
@@ -320,11 +324,10 @@ def write_report(args: argparse.Namespace, results: list[dict[str, Any]], env: d
         "",
         "## Interpretation",
         "",
-        "- This benchmark is suitable for checking the single-core token endpoint order of magnitude, but it does not replace the 30-minute sustained capacity matrix.",
+        "- This benchmark is suitable for checking token endpoint order of magnitude at a fixed application CPU affinity.",
         "- The tested rates are fixed arrival-rate targets. When both systems meet the target, observed RPS is target-limited and should not be interpreted as maximum throughput.",
         "- Under target-limited points, latency and HTTP RPS per observed application CPU core are the more meaningful comparison fields.",
-        "- Keycloak is a broad IAM product with administrative, realm, federation, theme, and policy surfaces that are outside this narrow endpoint test.",
-        "- The test intentionally avoids TLS, clustering, external caches, custom providers, and production Keycloak tuning so that the result remains simple and reproducible.",
+        "- The test intentionally avoids TLS, clustering, external caches, custom providers, and production-specific tuning so that the result remains simple and reproducible.",
         "",
     ]
     args.report_path.write_text("\n".join(source), encoding="utf-8", newline="\n")
@@ -336,14 +339,23 @@ def main() -> None:
     parser.add_argument("--results-path", type=Path, required=True)
     parser.add_argument("--report-path", type=Path, required=True)
     parser.add_argument("--nazoauth-results", type=Path, required=True)
-    parser.add_argument("--suffix", default="keycloak-app-cpu-1vcpu-smoke")
+    parser.add_argument("--suffix", required=True)
     parser.add_argument("--duration", default="2m")
     parser.add_argument("--rates", required=True)
     parser.add_argument("--app-cpus", default="1")
-    parser.add_argument("--keycloak-image-tag", default="26.6.4")
+    parser.add_argument("--app-taskset", default="disabled")
+    parser.add_argument("--provider-name", required=True)
+    parser.add_argument("--provider-key", required=True)
+    parser.add_argument("--provider-image", required=True)
+    parser.add_argument("--provider-service", required=True)
+    parser.add_argument("--postgres-service", required=True)
+    parser.add_argument("--compose-file", required=True)
+    parser.add_argument("--token-path", required=True)
+    parser.add_argument("--scope", default="profile")
     args = parser.parse_args()
     args.rates = [int(value) for value in args.rates.split(",") if value.strip()]
 
+    service_names = {args.provider_service, args.postgres_service}
     results: list[dict[str, Any]] = []
     for rate in args.rates:
         summary_path = args.summary_dir / f"{args.suffix}-{rate}.summary.json"
@@ -355,8 +367,9 @@ def main() -> None:
                 "target_rate": rate,
                 "duration": args.duration,
                 "status": status,
-                "keycloak": k6,
-                "containers": docker_stats(stats_path),
+                "provider_key": args.provider_key,
+                "provider": k6,
+                "containers": docker_stats(stats_path, service_names),
             }
         )
 
