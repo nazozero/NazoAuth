@@ -13,14 +13,21 @@ DURATION="${CAPACITY_DURATION:-30m}"
 INSTANCES="${CAPACITY_INSTANCES:-1,2,4}"
 RATES="${CAPACITY_RATES:-}"
 MAX_VUS="${CAPACITY_MAX_VUS:-512}"
-REPORT="docs/performance-capacity-curve-${REPORT_SUFFIX}.md"
+case "${REPORT_SUFFIX}" in
+  dev-*) REPORT="docs/performance/archive/dev/performance-capacity-curve-${REPORT_SUFFIX}.md" ;;
+  *) REPORT="docs/performance/performance-capacity-curve-${REPORT_SUFFIX}.md" ;;
+esac
 ENV_REPORT="perf/results/cnb-environment-${REPORT_SUFFIX}.md"
 export CAPACITY_ENV_REPORT_PATH="${ENV_REPORT}"
-export CAPACITY_CHECKPOINT_COMMIT="${CAPACITY_CHECKPOINT_COMMIT:-1}"
+if [ "${CNB_CAPACITY_COMMIT:-1}" = "0" ]; then
+  export CAPACITY_CHECKPOINT_COMMIT="${CAPACITY_CHECKPOINT_COMMIT:-0}"
+else
+  export CAPACITY_CHECKPOINT_COMMIT="${CAPACITY_CHECKPOINT_COMMIT:-1}"
+fi
 COMPOSE_PROJECT_NAME="$(printf 'nazoauth-%s-%s' "${CNB_BUILD_ID:-local}" "${REPORT_SUFFIX}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-' | cut -c1-63)"
 export COMPOSE_PROJECT_NAME
 
-mkdir -p docs perf/results
+mkdir -p "$(dirname "${REPORT}")" perf/results
 
 LEGACY_CPUSET="${PERF_CPUSET:-}"
 APP_CPUSET="${PERF_APP_CPUSET:-${LEGACY_CPUSET}}"
@@ -167,7 +174,7 @@ fi
   echo "| NazoAuth container | Built from local Containerfile target runtime; PERF_METRICS_ENABLED=true; runtime key volume shared with keyset/migrate. |"
   echo "| Key material setup | keyset service generates runtime RS256 and PS256 keys before migration and benchmark traffic. |"
   echo "| Migration setup | migrate service runs nazo-oauth-migrate before the NazoAuth service is considered ready for benchmark traffic. |"
-  echo "| Perf runner | Built from perf/runner/Containerfile; mounts Docker socket for container stats; writes Markdown reports to docs/ and runtime JSON/logs to ignored perf/results/. |"
+  echo "| Perf runner | Built from perf/runner/Containerfile; mounts Docker socket for container stats; writes Markdown reports to docs/performance/ and runtime JSON/logs to ignored perf/results/. |"
   echo "| Metrics sources | k6 HTTP metrics; Docker stats CPU/memory samples; PostgreSQL pg_stat_statements; NazoAuth DB pool metrics; Valkey INFO counters. |"
   echo
 } >"${ENV_REPORT}"

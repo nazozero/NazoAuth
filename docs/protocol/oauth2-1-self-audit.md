@@ -72,7 +72,7 @@ Product features outside the OAuth 2.1 core profile:
 - Dynamic request-level tenant or issuer routing.
 - OAuth client-credentials or introspection-backed SCIM authorization.
 
-They remain ecosystem or identity-platform features with separate threat models in `docs/ecosystem-onboarding.md`, `docs/tenancy.md`, and `docs/scim.md`.
+They remain ecosystem or identity-platform features with separate threat models in `docs/features/ecosystem-onboarding.md`, `docs/features/tenancy.md`, and `docs/features/scim.md`.
 
 ## Evidence
 

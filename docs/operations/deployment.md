@@ -118,11 +118,11 @@ For versioned releases, create a `v*` tag and require the `release-security`
 workflow to complete successfully. It builds release binaries, generates the
 Rust SBOM, signs the binaries, SBOM, and image archive through keyless Sigstore
 signing, uploads artifacts, and emits GitHub provenance attestations. Preserve
-the release evidence listed in [docs/release-security.md](release-security.md).
+the release evidence listed in [docs/operations/release-security.md](release-security.md).
 
 ## Live Deployment Script
 
-The repository includes [scripts/deploy_live.ps1](../scripts/deploy_live.ps1), which builds an image, transfers it to a remote host, runs migrations, replaces the running Podman container, and verifies health and discovery.
+The repository includes [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1), which builds an image, transfers it to a remote host, runs migrations, replaces the running Podman container, and verifies health and discovery.
 
 Default live assumptions:
 
@@ -296,7 +296,7 @@ requirements:
 
 If Valkey is unavailable, sensitive protocol paths fail closed with OAuth errors instead of silently weakening replay or rate-limit controls.
 
-The full HA, backup, restore, timeout, and partial-outage requirements are maintained in [docs/ha-operations.md](ha-operations.md).
+The full HA, backup, restore, timeout, and partial-outage requirements are maintained in [docs/operations/ha-operations.md](ha-operations.md).
 
 ## Verification
 
@@ -314,7 +314,7 @@ curl -fsS https://oauth.example.com/jwks.json
 Check that discovery `issuer` exactly equals `PUBLIC_BASE_URL`, unless `ISSUER`
 was explicitly overridden.
 
-The `nazo.run` deployment helper [scripts/verify_live_full_interfaces.py](../scripts/verify_live_full_interfaces.py) exercises a broader HTTPS path against `https://auth.nazo.run`. It reads host-local secrets and runs only in the intended deployment environment.
+The `nazo.run` deployment helper [scripts/verify_live_full_interfaces.py](../../scripts/verify_live_full_interfaces.py) exercises a broader HTTPS path against `https://auth.nazo.run`. It reads host-local secrets and runs only in the intended deployment environment.
 
 ## OIDF Readiness
 

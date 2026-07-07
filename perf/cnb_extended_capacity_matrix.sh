@@ -6,7 +6,7 @@ echo "extended capacity matrix bootstrap started $(date -u '+%Y-%m-%dT%H:%M:%SZ'
 install_capacity_dependencies
 docker compose version >/dev/null
 
-mkdir -p docs perf/results
+mkdir -p docs/performance perf/results
 children_file="perf/results/cnb-extended-capacity-children.txt"
 cpusets_file="perf/results/cnb-extended-capacity-cpusets.txt"
 : >"${children_file}"
@@ -81,7 +81,7 @@ push_capacity_commit() {
 
 commit_extended_report() {
   suffix="$1"
-  report="docs/performance-capacity-curve-extended-${suffix}.md"
+  report="docs/performance/performance-capacity-curve-extended-${suffix}.md"
   results="perf/results/capacity-extended-${suffix}.json"
   env_report="perf/results/cnb-environment-extended-${suffix}.md"
   if [ ! -f "${report}" ]; then
@@ -179,8 +179,8 @@ done <"${children_file}"
 kill "${reporter_pid}" 2>/dev/null || true
 wait "${reporter_pid}" 2>/dev/null || true
 
-if find docs -maxdepth 1 -name 'performance-capacity-curve-extended-*.md' -print -quit | grep -q .; then
-  git add perf/capacity.py perf/cnb_capacity.sh perf/cnb_extended_capacity_matrix.sh perf/k6/oauth.js perf/runner.py perf/seed.py docs/performance-capacity-curve-extended-*.md
+if find docs/performance -maxdepth 1 -name 'performance-capacity-curve-extended-*.md' -print -quit | grep -q .; then
+  git add perf/capacity.py perf/cnb_capacity.sh perf/cnb_extended_capacity_matrix.sh perf/k6/oauth.js perf/runner.py perf/seed.py docs/performance/performance-capacity-curve-extended-*.md
   if git diff --cached --quiet; then
     echo "No extended capacity changes to commit."
   else

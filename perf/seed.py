@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import psycopg
+import redis
 from blake3 import blake3
 from argon2 import PasswordHasher
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
@@ -34,6 +35,7 @@ REDIRECT_URI = "https://client.example/callback"
 CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 CIBA_GRANT_TYPE = "urn:openid:params:grant-type:ciba"
 CIBA_AUTOMATED_DECISION_TOKEN = "perf-ciba-automated-decision-token-2026"
+SESSION_TTL_SECONDS = int(os.environ.get("SESSION_TTL_SECONDS", "28800"))
 
 
 def b64url(data: bytes) -> str:
@@ -337,6 +339,51 @@ def seed_oidc_refresh_tokens(
     return refresh_tokens
 
 
+def seed_logged_in_sessions(
+    conn: psycopg.Connection[Any],
+    users: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    valkey_url = os.environ["VALKEY_URL"]
+    client = redis.Redis.from_url(valkey_url, decode_responses=True)
+    now = int(datetime.now(UTC).timestamp())
+    sessions: list[dict[str, str]] = []
+    for user in users:
+        user_row = conn.execute(
+            """
+            SELECT id
+            FROM users
+            WHERE tenant_id = %s::uuid
+              AND lower(email) = %s
+            """,
+            (TENANT_ID, user["email"].lower()),
+        ).fetchone()
+        if user_row is None:
+            raise RuntimeError(f"perf user was not seeded: {user['email']}")
+        session_id = random_token()
+        csrf_token = random_token()
+        payload = {
+            "user_id": str(user_row[0]),
+            "auth_time": now,
+            "amr": ["password"],
+            "pending_mfa": False,
+            "oidc_sid": random_token(),
+        }
+        client.setex(
+            f"oauth:session:{session_id}",
+            SESSION_TTL_SECONDS,
+            json.dumps(payload, separators=(",", ":")),
+        )
+        sessions.append(
+            {
+                "email": user["email"],
+                "session_id": session_id,
+                "csrf_token": csrf_token,
+                "cookie_header": f"nazo_oauth_session={session_id}; nazo_oauth_csrf={csrf_token}",
+            }
+        )
+    return sessions
+
+
 def prepare_vectors(
     *,
     count: int,
@@ -452,6 +499,7 @@ def seed() -> None:
             require_par_request_object=True,
         )
         oidc_refresh_tokens = seed_oidc_refresh_tokens(conn, users)
+        logged_in_sessions = seed_logged_in_sessions(conn, users)
         conn.commit()
 
     secrets_doc = {
@@ -459,6 +507,7 @@ def seed() -> None:
         "redirect_uri": REDIRECT_URI,
         "user": users[0],
         "users": users,
+        "logged_in_sessions": logged_in_sessions,
         "client_assertion_type": CLIENT_ASSERTION_TYPE,
         "client_secret": CLIENT_SECRET,
         "oidc_refresh_tokens": oidc_refresh_tokens,

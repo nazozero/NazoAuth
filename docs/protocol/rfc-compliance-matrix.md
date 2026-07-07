@@ -234,7 +234,7 @@ discovery metadata claims are updated:
    Token Exchange, Front-Channel Logout, Session Management, and
    UserInfo/JWE signing or encryption claims.
 5. Verify that compatibility modes cannot affect FAPI/high-value profiles.
-6. Update this matrix, `docs/profile-matrix.md`, README, discovery metadata tests,
+6. Update this matrix, `docs/protocol/profile-matrix.md`, README, discovery metadata tests,
    and conformance records in the same change when a public capability claim
    changes.
 7. For every newly supported RFC, OIDC/FAPI profile, or standards-track

@@ -264,8 +264,30 @@ function selectedUser(sharedUser) {
   return users[vuIndex % users.length];
 }
 
+function selectedLoggedInSession() {
+  const sessions = secrets.logged_in_sessions || [];
+  if (sessions.length === 0) {
+    return null;
+  }
+  const vuIndex = Math.max((exec.vu && exec.vu.idInTest ? exec.vu.idInTest : 1) - 1, 0);
+  return sessions[vuIndex % sessions.length];
+}
+
+function usePreseededSession() {
+  const session = selectedLoggedInSession();
+  if (!session) {
+    return false;
+  }
+  __VU_STATE.csrf = session.csrf_token;
+  __VU_STATE.cookieHeader = session.cookie_header;
+  return Boolean(__VU_STATE.csrf && __VU_STATE.cookieHeader);
+}
+
 function ensureUserSession(user, cacheSession = false) {
   if (cacheSession && __VU_STATE.csrf) {
+    return true;
+  }
+  if (cacheSession && usePreseededSession()) {
     return true;
   }
   const response = http.post(

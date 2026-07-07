@@ -141,7 +141,7 @@ The built-in replay cache is process-local and bounded by the proof validity win
 
 ## mTLS Boundary
 
-`ConfirmationPolicy::RequireMtlsThumbprint(expected_x5t_s256)` verifies the token binding material in the JWT access token. A full mTLS-protected resource request must also compare it with a verified client certificate thumbprint from the local TLS listener or from the trusted proxy boundary described in `docs/deployment.md`.
+`ConfirmationPolicy::RequireMtlsThumbprint(expected_x5t_s256)` verifies the token binding material in the JWT access token. A full mTLS-protected resource request must also compare it with a verified client certificate thumbprint from the local TLS listener or from the trusted proxy boundary described in `docs/operations/deployment.md`.
 
 Forwarded certificate metadata must only be accepted from trusted proxy CIDRs and after duplicate or conflicting forwarded certificate headers have been rejected.
 

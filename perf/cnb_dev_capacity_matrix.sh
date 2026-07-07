@@ -2,7 +2,7 @@
 set -eu
 
 cd /workspace
-mkdir -p docs perf/results
+mkdir -p docs/performance/archive/dev perf/results
 children_file="perf/results/dev-capacity-children.txt"
 cpusets_file="perf/results/dev-capacity-cpusets.txt"
 : >"${children_file}"

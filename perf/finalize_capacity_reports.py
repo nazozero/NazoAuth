@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "perf" / "results"
-DOCS = ROOT / "docs"
+DOCS = ROOT / "docs" / "performance" / "archive" / "dev"
 DURATION = "30m"
 INSTANCES = "1,2,4"
 SCENARIO_RATES = {
@@ -139,7 +139,7 @@ def environment_block(*, suffix: str, scenario: str) -> str:
         (
             "Perf runner",
             "Built from perf/runner/Containerfile; mounts Docker socket for container stats; "
-            "writes Markdown reports to docs/ and runtime JSON/logs to ignored perf/results/.",
+            "writes Markdown reports to docs/performance/ and runtime JSON/logs to ignored perf/results/.",
         ),
         (
             "Metrics sources",

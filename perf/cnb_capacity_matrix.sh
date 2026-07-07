@@ -9,7 +9,7 @@ echo "dependency installation completed"
 echo "docker compose version: $(docker compose version --short 2>/dev/null || docker compose version)"
 docker compose version >/dev/null
 
-mkdir -p docs perf/results
+mkdir -p docs/performance perf/results
 children_file="perf/results/cnb-capacity-children.txt"
 cpusets_file="perf/results/cnb-capacity-cpusets.txt"
 : >"${children_file}"
@@ -97,7 +97,7 @@ push_capacity_commit() {
 
 commit_capacity_report() {
   suffix="$1"
-  report="docs/performance-capacity-curve-${suffix}.md"
+  report="docs/performance/performance-capacity-curve-${suffix}.md"
   results="perf/results/capacity-${suffix}.json"
   env_report="perf/results/cnb-environment-${suffix}.md"
   if [ ! -f "${report}" ]; then
@@ -118,7 +118,7 @@ commit_capacity_report() {
 remove_capacity_report_outputs() {
   suffix="$1"
   rm -f \
-    "docs/performance-capacity-curve-${suffix}.md" \
+    "docs/performance/performance-capacity-curve-${suffix}.md" \
     "perf/results/capacity-${suffix}.json" \
     "perf/results/cnb-environment-${suffix}.md"
 }
@@ -238,8 +238,8 @@ else
   echo "long capacity group had failures"
 fi
 
-if [ "${status}" -eq 0 ] && find docs -maxdepth 1 -name 'performance-capacity-curve-*.md' -print -quit | grep -q .; then
-  git add docs/performance-capacity-curve-*.md
+if [ "${status}" -eq 0 ] && find docs/performance -maxdepth 1 -name 'performance-capacity-curve-*.md' -print -quit | grep -q .; then
+  git add docs/performance/performance-capacity-curve-*.md
   if git diff --cached --quiet; then
     echo "No capacity report changes to commit."
   else

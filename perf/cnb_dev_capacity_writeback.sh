@@ -37,7 +37,7 @@ REPAIR_PID_FILE=perf/results/dev-capacity-repair.pid
   python3 perf/finalize_capacity_reports.py
   git config user.name "${CNB_GIT_USER_NAME:-NazoAuth Capacity Bot}"
   git config user.email "${CNB_GIT_USER_EMAIL:-nazoauth-capacity-bot@noreply.cnb.cool}"
-  git add perf/README.md perf/capacity.py perf/cnb_capacity.sh perf/cnb_extended_capacity_matrix.sh perf/finalize_capacity_reports.py perf/k6/oauth.js perf/runner.py perf/seed.py docs/performance-capacity-curve-dev-*.md
+  git add perf/README.md perf/capacity.py perf/cnb_capacity.sh perf/cnb_extended_capacity_matrix.sh perf/finalize_capacity_reports.py perf/k6/oauth.js perf/runner.py perf/seed.py docs/performance/archive/dev/performance-capacity-curve-dev-*.md
   if git diff --cached --quiet; then
     echo "No capacity report changes to commit."
     echo "writeback pushed $(date -u '+%Y-%m-%dT%H:%M:%SZ')"

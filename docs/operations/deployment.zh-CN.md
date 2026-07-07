@@ -110,7 +110,7 @@ docker run -d --name nazo-oauth-server \
 
 ## 在线部署脚本
 
-仓库提供 [scripts/deploy_live.ps1](../scripts/deploy_live.ps1)，用于构建镜像、传输到远端、执行迁移、替换 Podman 容器，并校验 health 与 discovery。
+仓库提供 [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1)，用于构建镜像、传输到远端、执行迁移、替换 Podman 容器，并校验 health 与 discovery。
 
 默认 live 假设：
 
