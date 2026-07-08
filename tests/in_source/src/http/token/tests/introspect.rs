@@ -5,7 +5,7 @@ use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
 use crate::domain::ConfirmationClaims;
 use crate::domain::{ActiveSigningKey, Claims, Keyset, KeysetStore, VerificationKey};
-use crate::support::{generate_key_material, public_jwk_from_private_der};
+use crate::support::{generate_key_material, hash_client_secret, public_jwk_from_private_der};
 use actix_web::test::TestRequest;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use diesel::sql_query;
@@ -150,7 +150,7 @@ fn introspection_response_client(
         client_id: client_id.to_owned(),
         client_name: "Introspection Response Client".to_owned(),
         client_type: "confidential".to_owned(),
-        client_secret_argon2_hash: None,
+        client_secret_hash: None,
         redirect_uris: json!(["https://client.example/callback"]),
         scopes: json!(["openid"]),
         allowed_audiences: json!(["resource://default"]),
@@ -349,7 +349,10 @@ async fn insert_introspection_client(
         client_id: client_id.to_owned(),
         client_name: "Introspection Test Client".to_owned(),
         client_type: "confidential".to_owned(),
-        client_secret_argon2_hash: Some(hash_password(secret).expect("secret should hash")),
+        client_secret_hash: Some(hash_client_secret(
+            secret,
+            &state.settings.client_secret_pepper,
+        )),
         redirect_uris: json!(["https://client.example/callback"]),
         scopes: json!(["openid", "offline_access"]),
         allowed_audiences: json!(["resource://default"]),
@@ -421,7 +424,7 @@ async fn insert_introspection_client(
         r#"
         INSERT INTO oauth_clients (
             id, tenant_id, realm_id, organization_id, client_id, client_name, client_type,
-            client_secret_argon2_hash, redirect_uris, scopes, allowed_audiences,
+            client_secret_hash, redirect_uris, scopes, allowed_audiences,
             grant_types, token_endpoint_auth_method, require_dpop_bound_tokens,
             require_mtls_bound_tokens, tls_client_auth_san_dns, tls_client_auth_san_uri,
             tls_client_auth_san_ip, tls_client_auth_san_email,
@@ -449,7 +452,7 @@ async fn insert_introspection_client(
     .bind::<Text, _>(row.client_id.as_str())
     .bind::<Text, _>(row.client_name.as_str())
     .bind::<Text, _>(row.client_type.as_str())
-    .bind::<Nullable<Text>, _>(row.client_secret_argon2_hash.as_deref())
+    .bind::<Nullable<Text>, _>(row.client_secret_hash.as_deref())
     .bind::<Jsonb, _>(row.redirect_uris.clone())
     .bind::<Jsonb, _>(row.scopes.clone())
     .bind::<Jsonb, _>(row.allowed_audiences.clone())

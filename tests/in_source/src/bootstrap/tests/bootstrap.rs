@@ -62,6 +62,10 @@ async fn check_session_iframe_is_frameable_by_relying_parties() {
 async fn signing_key_refresh_interval_is_bounded_by_prepublish_window() {
     let mut settings = Settings::from_config(&ConfigSource::from_pairs_for_test([
         ("ISSUER", "https://issuer.example"),
+        (
+            "CLIENT_SECRET_PEPPER",
+            "client-secret-pepper-for-tests-000000000001",
+        ),
         ("FRONTEND_BASE_URL", "https://frontend.example"),
         ("COOKIE_SECURE", "true"),
         ("DATABASE_URL", "postgres://unused"),

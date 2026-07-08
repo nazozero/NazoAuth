@@ -45,11 +45,15 @@ fn settings(profile: AuthorizationServerProfile, trusted_proxy_cidrs: Vec<IpCidr
         refresh_token_ttl_seconds: 2_592_000,
         avatar_max_bytes: 2_097_152,
         client_delivery_ttl_seconds: 86_400,
+        client_secret_pepper: "client-secret-pepper-for-tests-000000000001".to_owned(),
         rate_limit: RateLimitSettings {
             window_seconds: 60,
             auth_max_requests: 30,
             token_max_requests: 60,
             token_management_max_requests: 120,
+            login_failure_window_seconds: 900,
+            login_failure_email_max_attempts: 50,
+            login_failure_ip_email_max_attempts: 5,
         },
         email: EmailSettings {
             delivery: EmailDelivery::Disabled,

@@ -14,7 +14,24 @@ use std::time::Duration as StdDuration;
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
 use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
-use crate::http::admin::{CreateClientRequest, insert_prepared_client, prepare_client_insert};
+use crate::http::admin::{
+    CreateClientRequest, InsertClientError, PreparedClientInsert, insert_prepared_client,
+    prepare_client_insert_with_secret_pepper,
+};
+
+async fn prepare_client_insert_for_test(
+    payload: CreateClientRequest,
+    pairwise_subject_secret: Option<&str>,
+    issuer: &str,
+) -> Result<PreparedClientInsert, InsertClientError> {
+    prepare_client_insert_with_secret_pepper(
+        payload,
+        pairwise_subject_secret,
+        crate::support::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
+        issuer,
+    )
+    .await
+}
 
 fn grant_row() -> GrantRow {
     GrantRow {
@@ -151,6 +168,10 @@ impl LiveAdminGrantFixture {
         let valkey_url = std::env::var("VALKEY_URL").ok()?;
         let config = ConfigSource::from_pairs_for_test([
             ("ISSUER", "https://issuer.example"),
+            (
+                "CLIENT_SECRET_PEPPER",
+                "client-secret-pepper-for-tests-000000000001",
+            ),
             ("COOKIE_SECURE", "true"),
             ("SESSION_COOKIE_NAME", "nazo_admin_grants_session"),
             ("CSRF_COOKIE_NAME", "nazo_admin_grants_csrf"),
@@ -306,7 +327,7 @@ impl LiveAdminGrantFixture {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
-        let prepared = match prepare_client_insert(
+        let prepared = match prepare_client_insert_for_test(
             create_client_request(client_name),
             None,
             "http://localhost:8000",

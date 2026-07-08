@@ -11,7 +11,8 @@ use crate::settings::{
     RequestObjectJtiPolicy, SubjectType,
 };
 use crate::support::{
-    ClientIpHeaderMode, IpCidr, generate_key_material, public_jwk_from_private_der,
+    ClientIpHeaderMode, IpCidr, generate_key_material, hash_client_secret,
+    public_jwk_from_private_der,
 };
 use actix_web::test::TestRequest;
 use diesel::sql_query;
@@ -31,7 +32,7 @@ fn client(require_dpop_bound_tokens: bool) -> ClientRow {
         client_id: "client-a".to_owned(),
         client_name: "Client A".to_owned(),
         client_type: "confidential".to_owned(),
-        client_secret_argon2_hash: None,
+        client_secret_hash: None,
         redirect_uris: json!(["https://client.example/callback"]),
         scopes: json!(["openid"]),
         allowed_audiences: json!([]),
@@ -87,11 +88,15 @@ fn baseline_settings() -> Settings {
         refresh_token_ttl_seconds: 2_592_000,
         avatar_max_bytes: 2_097_152,
         client_delivery_ttl_seconds: 86_400,
+        client_secret_pepper: "client-secret-pepper-for-tests-000000000001".to_owned(),
         rate_limit: RateLimitSettings {
             window_seconds: 60,
             auth_max_requests: 30,
             token_max_requests: 60,
             token_management_max_requests: 120,
+            login_failure_window_seconds: 900,
+            login_failure_email_max_attempts: 50,
+            login_failure_ip_email_max_attempts: 5,
         },
         email: EmailSettings {
             delivery: EmailDelivery::Disabled,
@@ -376,12 +381,12 @@ impl LiveParFixture {
             .execute(&mut conn)
             .await
             .expect("PAR test client cleanup should succeed");
-        let secret_hash = hash_password(secret).expect("PAR test secret should hash");
+        let secret_hash = hash_client_secret(secret, &self.state.settings.client_secret_pepper);
         sql_query(
             r#"
             INSERT INTO oauth_clients (
                 tenant_id, realm_id, organization_id, client_id, client_name, client_type,
-                client_secret_argon2_hash, redirect_uris, scopes, allowed_audiences,
+                client_secret_hash, redirect_uris, scopes, allowed_audiences,
                 grant_types, token_endpoint_auth_method, require_dpop_bound_tokens,
                 require_mtls_bound_tokens, tls_client_auth_san_dns, tls_client_auth_san_uri,
                 tls_client_auth_san_ip, tls_client_auth_san_email,

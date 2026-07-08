@@ -138,9 +138,10 @@ pub(crate) async fn dynamic_client_registration(
     };
     let response_types = prepared.response_types.clone();
     let registration_access_token = random_urlsafe_token();
-    match prepare_dynamic_client_insert(
+    match prepare_dynamic_client_insert_with_secret_pepper(
         prepared,
         state.settings.pairwise_subject_secret.as_deref(),
+        &state.settings.client_secret_pepper,
         &state.settings.issuer,
         &registration_access_token,
     )
@@ -203,13 +204,11 @@ pub(crate) async fn client_configuration_get(
     };
     let response_types = response_types_from_client(&current);
     let registration_access_token = random_urlsafe_token();
-    let (issued_secret, secret_hash) = match crate::http::admin::issue_client_secret(
+    let (issued_secret, secret_hash) = crate::http::admin::issue_client_secret(
         &current.client_type,
         &current.token_endpoint_auth_method,
-    ) {
-        Ok(values) => values,
-        Err(error) => return insert_error_to_management_response(error),
-    };
+        &state.settings.client_secret_pepper,
+    );
     let client = match rotate_client_management_credentials(
         &state,
         &current,
@@ -249,7 +248,11 @@ pub(crate) async fn client_configuration_put(
         Ok(client) => client,
         Err(response) => return response,
     };
-    let payload = match parse_client_configuration_update(payload, &current) {
+    let payload = match parse_client_configuration_update_with_secret_pepper(
+        payload,
+        &current,
+        &state.settings.client_secret_pepper,
+    ) {
         Ok(payload) => payload,
         Err(error) => return dynamic_registration_error_response(error),
     };
@@ -264,9 +267,10 @@ pub(crate) async fn client_configuration_put(
     };
     let response_types = registration.response_types.clone();
     let registration_access_token = random_urlsafe_token();
-    let prepared = match prepare_dynamic_client_insert(
+    let prepared = match prepare_dynamic_client_insert_with_secret_pepper(
         registration,
         state.settings.pairwise_subject_secret.as_deref(),
+        &state.settings.client_secret_pepper,
         &state.settings.issuer,
         &registration_access_token,
     )
@@ -314,15 +318,17 @@ pub(crate) async fn client_configuration_delete(
     empty_response_no_store(StatusCode::NO_CONTENT)
 }
 
-pub(crate) async fn prepare_dynamic_client_insert(
+pub(crate) async fn prepare_dynamic_client_insert_with_secret_pepper(
     registration: PreparedDynamicClientRegistration,
     pairwise_subject_secret: Option<&str>,
+    client_secret_pepper: &str,
     issuer: &str,
     registration_access_token: &str,
 ) -> Result<PreparedClientInsert, InsertClientError> {
-    let mut prepared = crate::http::admin::prepare_client_insert(
+    let mut prepared = crate::http::admin::prepare_client_insert_with_secret_pepper(
         registration.into_create_client_request(),
         pairwise_subject_secret,
+        client_secret_pepper,
         issuer,
     )
     .await?;
@@ -407,7 +413,7 @@ async fn rotate_client_management_credentials(
     )
     .set((
         oauth_clients::registration_access_token_blake3.eq(Some(registration_access_token_hash)),
-        oauth_clients::client_secret_argon2_hash.eq(client_secret_hash),
+        oauth_clients::client_secret_hash.eq(client_secret_hash),
         oauth_clients::updated_at.eq(diesel_now),
     ))
     .returning(ClientRow::as_returning())
@@ -445,7 +451,7 @@ async fn replace_client_configuration(
     .set((
         oauth_clients::client_name.eq(&prepared.client_name),
         oauth_clients::client_type.eq(&prepared.client_type),
-        oauth_clients::client_secret_argon2_hash.eq(&prepared.client_secret_argon2_hash),
+        oauth_clients::client_secret_hash.eq(&prepared.client_secret_hash),
         oauth_clients::registration_access_token_blake3
             .eq(&prepared.registration_access_token_blake3),
         oauth_clients::redirect_uris.eq(json!(&prepared.redirect_uris)),
@@ -714,9 +720,10 @@ pub(crate) fn registration_access_token_authorized(
     constant_time_eq(actual_hash.as_bytes(), stored_token_hash.as_bytes())
 }
 
-pub(crate) fn parse_client_configuration_update(
+pub(crate) fn parse_client_configuration_update_with_secret_pepper(
     mut payload: Value,
     current: &ClientRow,
+    client_secret_pepper: &str,
 ) -> Result<DynamicClientRegistrationRequest, DynamicRegistrationError> {
     let Some(object) = payload.as_object_mut() else {
         return Err(DynamicRegistrationError::new(
@@ -754,9 +761,9 @@ pub(crate) fn parse_client_configuration_update(
     }
 
     let client_secret = object.remove("client_secret");
-    match (&current.client_secret_argon2_hash, client_secret) {
+    match (&current.client_secret_hash, client_secret) {
         (Some(stored_hash), Some(Value::String(secret)))
-            if verify_password(&secret, stored_hash) => {}
+            if verify_client_secret(&secret, stored_hash, client_secret_pepper) => {}
         (Some(_), _) => {
             return Err(DynamicRegistrationError::invalid_client_metadata(
                 "client_secret must match the current client secret.",

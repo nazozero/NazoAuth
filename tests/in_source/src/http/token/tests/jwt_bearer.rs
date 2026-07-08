@@ -24,7 +24,7 @@ fn jwt_bearer_client(client_id: &str, kid: &str, private_pkcs8_der: &[u8]) -> Cl
         client_id: client_id.to_owned(),
         client_name: "JWT Bearer Client".to_owned(),
         client_type: "confidential".to_owned(),
-        client_secret_argon2_hash: None,
+        client_secret_hash: None,
         redirect_uris: json!([]),
         scopes: json!(["accounts", "payments"]),
         allowed_audiences: json!(["resource://default"]),
@@ -90,6 +90,10 @@ fn signed_jwt_bearer_assertion(
 fn jwt_bearer_settings() -> Settings {
     Settings::from_config(&ConfigSource::from_pairs_for_test([
         ("ISSUER", "https://issuer.example"),
+        (
+            "CLIENT_SECRET_PEPPER",
+            "client-secret-pepper-for-tests-000000000001",
+        ),
         ("PUBLIC_BASE_URL", "https://issuer.example"),
         ("FRONTEND_BASE_URL", "https://app.example"),
         ("COOKIE_SECURE", "true"),

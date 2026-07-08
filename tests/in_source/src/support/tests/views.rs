@@ -127,7 +127,7 @@ fn client_json_exposes_protocol_metadata_without_client_secret_hash() {
     );
     assert_eq!(value["backchannel_logout_session_required"], false);
     assert_eq!(value["jwks"], json!({"keys": []}));
-    assert!(value.get("client_secret_argon2_hash").is_none());
+    assert!(value.get("client_secret_hash").is_none());
     assert!(value.get("id").is_none());
     assert!(value.get("tenant_id").is_none());
 }
@@ -199,7 +199,7 @@ fn client_row() -> ClientRow {
         client_id: "client-1".to_owned(),
         client_name: "Client One".to_owned(),
         client_type: "confidential".to_owned(),
-        client_secret_argon2_hash: Some("argon2-secret-hash".to_owned()),
+        client_secret_hash: Some("client-secret-v1:salt:digest".to_owned()),
         redirect_uris: json!(["https://client.example/callback"]),
         scopes: json!(["openid", "profile"]),
         allowed_audiences: json!(["resource://default"]),

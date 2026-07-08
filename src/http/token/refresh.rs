@@ -258,17 +258,19 @@ pub(crate) async fn token_refresh(
             }
         }
     }
-    if let Some(user_id) = token.user_id {
-        match get_conn(&state.diesel_db).await {
+    let original_scopes = json_array_to_strings(&token.scopes);
+    let includes_openid = original_scopes.iter().any(|scope| scope == "openid");
+    let id_token_user = match token.user_id {
+        Some(user_id) if includes_openid => match get_conn(&state.diesel_db).await {
             Ok(mut conn) => match users::table
                 .find(user_id)
                 .filter(users::tenant_id.eq(token.tenant_id))
-                .select(users::is_active)
-                .first::<bool>(&mut conn)
+                .select(UserRow::as_select())
+                .first::<UserRow>(&mut conn)
                 .await
                 .optional()
             {
-                Ok(Some(true)) => {}
+                Ok(Some(user)) if user.is_active => Some(Box::new(user)),
                 Ok(_) => {
                     return oauth_token_error(
                         StatusCode::BAD_REQUEST,
@@ -296,8 +298,47 @@ pub(crate) async fn token_refresh(
                     false,
                 );
             }
-        }
-    }
+        },
+        Some(user_id) => match get_conn(&state.diesel_db).await {
+            Ok(mut conn) => match users::table
+                .find(user_id)
+                .filter(users::tenant_id.eq(token.tenant_id))
+                .select(users::is_active)
+                .first::<bool>(&mut conn)
+                .await
+                .optional()
+            {
+                Ok(Some(true)) => None,
+                Ok(_) => {
+                    return oauth_token_error(
+                        StatusCode::BAD_REQUEST,
+                        "invalid_grant",
+                        "授权用户不存在或已停用.",
+                        false,
+                    );
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "failed to load refresh token user");
+                    return oauth_token_error(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "server_error",
+                        "refresh_token 用户校验失败.",
+                        false,
+                    );
+                }
+            },
+            Err(error) => {
+                tracing::warn!(%error, "failed to get database connection for refresh token user lookup");
+                return oauth_token_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "refresh_token 用户校验失败.",
+                    false,
+                );
+            }
+        },
+        None => None,
+    };
     let dpop_jkt = if dpop_proof_present(req) {
         match validate_dpop_proof(state, req, None, token.dpop_jkt.as_deref()).await {
             Ok(value) => value.or(token.dpop_jkt.clone()),
@@ -364,7 +405,6 @@ pub(crate) async fn token_refresh(
     if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
         return response;
     }
-    let original_scopes = json_array_to_strings(&token.scopes);
     if !should_issue_refresh_token(client, &original_scopes) {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
@@ -422,6 +462,7 @@ pub(crate) async fn token_refresh(
             userinfo_claim_requests: Vec::new(),
             id_token_claims: Vec::new(),
             id_token_claim_requests: Vec::new(),
+            id_token_user,
             include_refresh: true,
             refresh_token_policy,
             dpop_jkt: dpop_jkt.clone(),

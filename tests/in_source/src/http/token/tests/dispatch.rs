@@ -22,7 +22,7 @@ use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, RateLimitSettings,
     RequestObjectJtiPolicy, SubjectType,
 };
-use crate::support::{ClientIpHeaderMode, IpCidr};
+use crate::support::{ClientIpHeaderMode, IpCidr, hash_client_secret};
 
 fn code_payload(dpop_jkt: Option<&str>) -> CodePayload {
     CodePayload {
@@ -82,11 +82,15 @@ fn settings(profile: AuthorizationServerProfile) -> Settings {
         refresh_token_ttl_seconds: 2_592_000,
         avatar_max_bytes: 2_097_152,
         client_delivery_ttl_seconds: 86_400,
+        client_secret_pepper: "client-secret-pepper-for-tests-000000000001".to_owned(),
         rate_limit: RateLimitSettings {
             window_seconds: 60,
             auth_max_requests: 30,
             token_max_requests: 60,
             token_management_max_requests: 120,
+            login_failure_window_seconds: 900,
+            login_failure_email_max_attempts: 50,
+            login_failure_ip_email_max_attempts: 5,
         },
         email: EmailSettings {
             delivery: EmailDelivery::Disabled,
@@ -161,6 +165,10 @@ fn fixture_secret(label: &str) -> String {
     format!("token-dispatch-fixture-secret-{label}")
 }
 
+fn fixture_secret_hash(state: &Data<AppState>, secret: &str) -> String {
+    hash_client_secret(secret, &state.settings.client_secret_pepper)
+}
+
 fn fixture_mtls_thumbprint(label: &str) -> String {
     blake3_hex(&format!("token-dispatch-fixture-thumbprint-{label}"))
 }
@@ -210,6 +218,10 @@ async fn live_token_state(profile: AuthorizationServerProfile) -> Option<Data<Ap
     });
     let config = ConfigSource::from_pairs_for_test([
         ("ISSUER", "https://issuer.example"),
+        (
+            "CLIENT_SECRET_PEPPER",
+            "client-secret-pepper-for-tests-000000000001",
+        ),
         ("MTLS_ENDPOINT_BASE_URL", "https://issuer.example"),
         ("FRONTEND_BASE_URL", "https://app.example"),
         ("COOKIE_SECURE", "true"),
@@ -250,6 +262,10 @@ async fn live_valkey_invalid_db_token_state(
     let valkey_url = std::env::var("VALKEY_URL").ok()?;
     let config = ConfigSource::from_pairs_for_test([
         ("ISSUER", "https://issuer.example"),
+        (
+            "CLIENT_SECRET_PEPPER",
+            "client-secret-pepper-for-tests-000000000001",
+        ),
         ("MTLS_ENDPOINT_BASE_URL", "https://issuer.example"),
         ("FRONTEND_BASE_URL", "https://app.example"),
         ("COOKIE_SECURE", "true"),
@@ -334,7 +350,7 @@ async fn insert_token_client(
     client_id: &str,
     client_type: &str,
     token_endpoint_auth_method: &str,
-    client_secret_argon2_hash: Option<String>,
+    client_secret_hash: Option<String>,
     grant_types: Vec<&str>,
     require_dpop_bound_tokens: bool,
     require_mtls_bound_tokens: bool,
@@ -382,7 +398,7 @@ async fn insert_token_client(
         r#"
         INSERT INTO oauth_clients (
             tenant_id, realm_id, organization_id, client_id, client_name, client_type,
-            client_secret_argon2_hash, redirect_uris, scopes, allowed_audiences,
+            client_secret_hash, redirect_uris, scopes, allowed_audiences,
             grant_types, token_endpoint_auth_method, require_dpop_bound_tokens,
             require_mtls_bound_tokens, tls_client_auth_san_dns, tls_client_auth_san_uri,
             tls_client_auth_san_ip, tls_client_auth_san_email,
@@ -409,7 +425,7 @@ async fn insert_token_client(
     .bind::<diesel::sql_types::Uuid, _>(DEFAULT_ORGANIZATION_ID)
     .bind::<Text, _>(client_id)
     .bind::<Text, _>(client_type)
-    .bind::<Nullable<Text>, _>(client_secret_argon2_hash)
+    .bind::<Nullable<Text>, _>(client_secret_hash)
     .bind::<Jsonb, _>(json!(grant_types))
     .bind::<Text, _>(token_endpoint_auth_method)
     .bind::<Bool, _>(require_dpop_bound_tokens)
@@ -497,7 +513,7 @@ fn client() -> ClientRow {
         client_id: "client-a".to_owned(),
         client_name: "Client A".to_owned(),
         client_type: "confidential".to_owned(),
-        client_secret_argon2_hash: None,
+        client_secret_hash: None,
         redirect_uris: json!(["https://client.example/callback"]),
         scopes: json!(["openid"]),
         allowed_audiences: json!(["resource://default"]),
@@ -832,7 +848,10 @@ async fn token_endpoint_reports_client_holder_policy_for_unbound_code_without_cl
         "client-1",
         "confidential",
         "client_secret_post",
-        Some(hash_password(&fixture_secret("holder-client")).expect("secret should hash")),
+        Some(fixture_secret_hash(
+            &state,
+            &fixture_secret("holder-client"),
+        )),
         vec!["authorization_code"],
         true,
         false,
@@ -1026,7 +1045,7 @@ async fn token_endpoint_rejects_inactive_client_before_secret_verification() {
         "inactive-token-client",
         "confidential",
         "client_secret_post",
-        Some(hash_password(&correct_secret).expect("secret should hash")),
+        Some(fixture_secret_hash(&state, &correct_secret)),
         vec!["client_credentials"],
         false,
         false,
@@ -1061,7 +1080,7 @@ async fn token_endpoint_applies_fapi_profile_checks_after_successful_client_secr
         "fapi-secret-client",
         "confidential",
         "client_secret_post",
-        Some(hash_password(&correct_secret).expect("secret should hash")),
+        Some(fixture_secret_hash(&state, &correct_secret)),
         vec!["client_credentials"],
         false,
         false,
@@ -1126,7 +1145,7 @@ async fn token_endpoint_rejects_wrong_client_secret_before_grant_dispatch() {
         "secret-post-client",
         "confidential",
         "client_secret_post",
-        Some(hash_password(&correct_secret).expect("secret should hash")),
+        Some(fixture_secret_hash(&state, &correct_secret)),
         vec!["client_credentials"],
         false,
         false,
@@ -1192,7 +1211,7 @@ async fn token_endpoint_returns_unsupported_grant_only_after_client_authenticati
         "unsupported-grant-client",
         "confidential",
         "client_secret_post",
-        Some(hash_password(&correct_secret).expect("secret should hash")),
+        Some(fixture_secret_hash(&state, &correct_secret)),
         vec!["urn:example:unsupported"],
         false,
         false,
@@ -1352,7 +1371,10 @@ async fn missing_client_authorization_code_holder_error_returns_none_when_client
         &client_id,
         "confidential",
         "client_secret_post",
-        Some(hash_password(&fixture_secret("holder-unbound")).expect("secret should hash")),
+        Some(fixture_secret_hash(
+            &state,
+            &fixture_secret("holder-unbound"),
+        )),
         vec!["authorization_code"],
         false,
         false,
@@ -1487,7 +1509,7 @@ async fn token_endpoint_rejects_client_auth_if_token_rate_limit_is_exceeded() {
         "rate-limited-client",
         "confidential",
         "client_secret_post",
-        Some(hash_password(&correct_secret).expect("secret should hash")),
+        Some(fixture_secret_hash(&state, &correct_secret)),
         vec!["client_credentials"],
         false,
         false,
@@ -1575,7 +1597,7 @@ async fn token_endpoint_rejects_confidential_client_without_required_client_secr
         &client_id,
         "confidential",
         "client_secret_post",
-        Some(hash_password(&correct_secret).expect("secret should hash")),
+        Some(fixture_secret_hash(&state, &correct_secret)),
         vec!["client_credentials"],
         false,
         false,

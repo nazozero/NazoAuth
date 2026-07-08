@@ -22,17 +22,32 @@ use fred::{
     },
 };
 
-use crate::config::{ConfigSource, database_url};
+use crate::config::{ConfigSource, database_max_connections, database_url};
 use crate::db::create_pool;
 use crate::domain::{AppState, KeysetStore};
 use crate::http::spawn_backchannel_logout_delivery_worker;
 use crate::settings::Settings;
-use crate::support::load_or_create_keyset;
+use crate::support::{
+    configure_password_hash_limits, default_password_hash_max_concurrency,
+    default_password_hash_queue_timeout_ms, load_or_create_keyset,
+};
 use tracing::Instrument;
 
 pub async fn run() -> anyhow::Result<()> {
     let config = ConfigSource::load()?;
     let _observability = observability::init(&config)?;
+    let password_hash_max_concurrency = config.parse::<usize>(
+        "PASSWORD_HASH_MAX_CONCURRENCY",
+        default_password_hash_max_concurrency(),
+    )?;
+    let password_hash_queue_timeout_ms = config.parse::<u64>(
+        "PASSWORD_HASH_QUEUE_TIMEOUT_MS",
+        default_password_hash_queue_timeout_ms(),
+    )?;
+    configure_password_hash_limits(
+        password_hash_max_concurrency,
+        password_hash_queue_timeout_ms,
+    )?;
 
     // 配置只在启动阶段读取，运行期通过 AppState 共享不可变配置。
     let database_url = database_url(&config);
@@ -44,7 +59,7 @@ pub async fn run() -> anyhow::Result<()> {
     let valkey_command_timeout = Duration::from_millis(valkey_command_timeout_ms);
 
     // 数据库和 Valkey 客户端在 server factory 外创建，避免每个 worker 重复初始化。
-    let diesel_db = create_pool(database_url.clone(), 32)?;
+    let diesel_db = create_pool(database_url.clone(), database_max_connections(&config)?)?;
     let mut valkey_builder = ValkeyBuilder::from_config(ValkeyConfig::from_url(&valkey_url)?);
     valkey_builder.with_performance_config(|performance: &mut PerformanceConfig| {
         performance.default_command_timeout = valkey_command_timeout;

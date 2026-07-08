@@ -62,7 +62,7 @@ fn pkce_policy_client() -> ClientRow {
         client_id: "client-1".to_owned(),
         client_name: "Client".to_owned(),
         client_type: "confidential".to_owned(),
-        client_secret_argon2_hash: None,
+        client_secret_hash: None,
         redirect_uris: json!(["https://client.example/callback"]),
         scopes: json!(["openid"]),
         allowed_audiences: json!(["resource://default"]),
@@ -149,6 +149,10 @@ impl LiveAuthorizationCodeFixture {
     fn settings() -> Settings {
         let config = ConfigSource::from_pairs_for_test([
             ("ISSUER", "https://issuer.example"),
+            (
+                "CLIENT_SECRET_PEPPER",
+                "client-secret-pepper-for-tests-000000000001",
+            ),
             ("MTLS_ENDPOINT_BASE_URL", "https://issuer.example"),
             ("FRONTEND_BASE_URL", "https://app.example"),
             ("COOKIE_SECURE", "true"),
@@ -203,7 +207,7 @@ impl LiveAuthorizationCodeFixture {
             r#"
             INSERT INTO oauth_clients (
                 id, tenant_id, realm_id, organization_id, client_id, client_name, client_type,
-                client_secret_argon2_hash, redirect_uris, scopes, allowed_audiences,
+                client_secret_hash, redirect_uris, scopes, allowed_audiences,
                 grant_types, token_endpoint_auth_method, require_dpop_bound_tokens,
                 require_mtls_bound_tokens, tls_client_auth_subject_dn, tls_client_auth_cert_sha256,
                 tls_client_auth_san_dns, tls_client_auth_san_uri, tls_client_auth_san_ip,
@@ -235,7 +239,7 @@ impl LiveAuthorizationCodeFixture {
         .bind::<Text, _>(client.client_id.as_str())
         .bind::<Text, _>(client.client_name.as_str())
         .bind::<Text, _>(client.client_type.as_str())
-        .bind::<Nullable<Text>, _>(client.client_secret_argon2_hash.as_deref())
+        .bind::<Nullable<Text>, _>(client.client_secret_hash.as_deref())
         .bind::<Jsonb, _>(client.redirect_uris.clone())
         .bind::<Jsonb, _>(client.scopes.clone())
         .bind::<Jsonb, _>(client.allowed_audiences.clone())

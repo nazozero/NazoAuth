@@ -12,10 +12,12 @@ use std::{
 
 const DEFAULT_DPOP_MAX_AGE_SECONDS: i64 = super::DEFAULT_DPOP_MAX_AGE_SECONDS;
 const DEFAULT_CLOCK_SKEW_SECONDS: i64 = super::DEFAULT_CLOCK_SKEW_SECONDS;
+const DEFAULT_REPLAY_CACHE_MAX_ENTRIES: usize = 100_000;
 
 #[derive(Clone, Debug)]
 pub struct DpopProofVerifier {
     config: DpopProofVerifierConfig,
+    max_replay_cache_entries: usize,
     replay_cache: Arc<Mutex<HashMap<String, i64>>>,
 }
 
@@ -44,6 +46,7 @@ pub enum DpopProofVerifierError {
     NotYetValid,
     NonceMismatch,
     ReplayStoreUnavailable,
+    ReplayCacheFull,
 }
 
 enum SupportedDpopAlgorithm {
@@ -66,8 +69,16 @@ pub(super) struct DpopProofClaims {
 
 impl DpopProofVerifier {
     pub fn new(config: DpopProofVerifierConfig) -> Self {
+        Self::new_with_replay_cache_limit(config, DEFAULT_REPLAY_CACHE_MAX_ENTRIES)
+    }
+
+    pub fn new_with_replay_cache_limit(
+        config: DpopProofVerifierConfig,
+        max_replay_cache_entries: usize,
+    ) -> Self {
         Self {
             config,
+            max_replay_cache_entries: max_replay_cache_entries.max(1),
             replay_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -157,6 +168,9 @@ impl DpopProofVerifier {
         let replay_key = format!("{jkt}:{jti}");
         if cache.contains_key(&replay_key) {
             return Err(DpopProofVerifierError::ReplayDetected);
+        }
+        if cache.len() >= self.max_replay_cache_entries {
+            return Err(DpopProofVerifierError::ReplayCacheFull);
         }
         cache.insert(replay_key, now.saturating_add(ttl));
         Ok(())

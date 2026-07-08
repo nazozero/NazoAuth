@@ -110,6 +110,10 @@ impl LiveAdminUsersFixture {
         let valkey_url = std::env::var("VALKEY_URL").ok()?;
         let config = ConfigSource::from_pairs_for_test([
             ("ISSUER", "https://issuer.example"),
+            (
+                "CLIENT_SECRET_PEPPER",
+                "client-secret-pepper-for-tests-000000000001",
+            ),
             ("COOKIE_SECURE", "true"),
             ("SESSION_COOKIE_NAME", "nazo_admin_users_session"),
             ("CSRF_COOKIE_NAME", "nazo_admin_users_csrf"),
