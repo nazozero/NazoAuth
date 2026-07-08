@@ -700,6 +700,109 @@ fn discovery_fapi2_security_metadata_is_profile_scoped() {
             .collect::<Vec<_>>(),
         vec!["private_key_jwt"]
     );
+    assert_eq!(
+        metadata
+            .get("response_types_supported")
+            .and_then(Value::as_array)
+            .expect("response types should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["code"]
+    );
+    assert_eq!(
+        metadata
+            .get("response_modes_supported")
+            .and_then(Value::as_array)
+            .expect("response modes should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["query", "jwt"]
+    );
+    assert!(
+        metadata
+            .get("introspection_signing_alg_values_supported")
+            .is_none(),
+        "base FAPI2 Security must not advertise signed introspection metadata"
+    );
+    assert!(
+        metadata
+            .get("introspection_encryption_alg_values_supported")
+            .is_none(),
+        "base FAPI2 Security must not advertise nested encrypted introspection metadata"
+    );
+}
+
+#[test]
+fn discovery_jarm_profile_requires_signed_authorization_response_metadata() {
+    let metadata = authorization_server_metadata(
+        &settings(
+            AuthorizationServerProfile::Fapi2MessageSigningJarm,
+            Vec::new(),
+        ),
+        &keyset(jsonwebtoken::Algorithm::PS256),
+    );
+
+    assert!(metadata.get("authorization_server_profile").is_none());
+    assert_eq!(
+        metadata
+            .get("require_pushed_authorization_requests")
+            .and_then(Value::as_bool),
+        Some(true)
+    );
+    assert_eq!(
+        metadata
+            .get("response_types_supported")
+            .and_then(Value::as_array)
+            .expect("response types should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["code"]
+    );
+    assert_eq!(
+        metadata
+            .get("response_modes_supported")
+            .and_then(Value::as_array)
+            .expect("response modes should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["jwt"]
+    );
+    assert_eq!(
+        metadata
+            .get("authorization_signing_alg_values_supported")
+            .and_then(Value::as_array)
+            .expect("authorization response algs should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["PS256"]
+    );
+    assert_eq!(
+        metadata
+            .get("token_endpoint_auth_methods_supported")
+            .and_then(Value::as_array)
+            .expect("methods should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["private_key_jwt"]
+    );
+    assert!(
+        metadata
+            .get("introspection_signing_alg_values_supported")
+            .is_none(),
+        "JARM profile must not advertise signed introspection metadata"
+    );
+    assert!(
+        metadata
+            .get("introspection_encryption_alg_values_supported")
+            .is_none(),
+        "JARM profile must not advertise nested encrypted introspection metadata"
+    );
 }
 
 #[test]
