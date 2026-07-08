@@ -700,6 +700,38 @@ fn discovery_fapi2_security_metadata_is_profile_scoped() {
             .collect::<Vec<_>>(),
         vec!["private_key_jwt"]
     );
+    assert_eq!(
+        metadata
+            .get("response_types_supported")
+            .and_then(Value::as_array)
+            .expect("response types should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["code"]
+    );
+    assert_eq!(
+        metadata
+            .get("response_modes_supported")
+            .and_then(Value::as_array)
+            .expect("response modes should be present")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>(),
+        vec!["query", "jwt"]
+    );
+    assert!(
+        metadata
+            .get("introspection_signing_alg_values_supported")
+            .is_none(),
+        "base FAPI2 Security must not advertise signed introspection metadata"
+    );
+    assert!(
+        metadata
+            .get("introspection_encryption_alg_values_supported")
+            .is_none(),
+        "base FAPI2 Security must not advertise nested encrypted introspection metadata"
+    );
 }
 
 #[test]

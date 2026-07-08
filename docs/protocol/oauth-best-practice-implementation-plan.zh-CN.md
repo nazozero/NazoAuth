@@ -180,6 +180,17 @@ cargo test --locked authorization --lib
 - [ ] **M2-03：保持 FAPI2 precision regression**
   - 继续覆盖 PAR、S256、confidential client、sender constraint、issuer、audience、JWT/JWKS、code TTL、PAR TTL、authorization endpoint 参数限制和 303 redirect。
 
+当前复核状态：
+
+| 子项 | 当前事实源 | M2 状态 |
+| --- | --- | --- |
+| FAPI2 Security Final | `fapi2-security` runtime profile 已强制 PAR、S256、confidential client、FAPI client auth、sender-constrained token、code TTL 与 PAR TTL；`tests/in_source/src/http/authorization/tests/par.rs`、`tests/in_source/src/http/token/tests/dispatch.rs` 和 `tests/in_source/src/http/tests/well_known.rs` 保持对应负向测试。 | 保持实现状态；后续只在官方矩阵和本地 regression 继续通过时更新证据。 |
+| Signed request object | `fapi2-message-signing-authz-request` 独立 profile 要求 PAR 中 signed request object；`src/http/authorization/jar.rs` 与 PAR/JAR 测试覆盖 `aud`、`nbf`、`exp`、client 绑定和 replay 边界。 | profile-scoped；不并入 base `fapi2-security`。 |
+| JARM | 当前按 `response_mode=jwt` 协商签名授权响应；base `fapi2-security` 仍支持 plain query response，不强制全局 JARM。 | 已实现协商式 JARM；尚无单独 runtime profile。 |
+| Signed / nested encrypted introspection | `fapi2-message-signing-introspection` 独立 profile 才发布 RFC 9701 signed introspection 与 JWE metadata；base `fapi2-security` 不发布这些字段。 | profile-scoped；不得在 base profile 中广告。 |
+| ID Token signing | OIDC ID Token 始终签名，metadata 来自活跃签名能力并保留 RS256 基线兼容。 | 属于 OIDC 基线能力，不作为额外 FAPI2 Message Signing profile 勾选。 |
+| FAPI1 / FAPI2 隔离 | DCR 与 authorization endpoint 只接受 `response_type=code`；FAPI2 profile 不接受 hybrid `code id_token`、外部 `request_uri` 或 bearer-only FAPI client policy。 | 已有负向测试，M2 期间继续作为 regression 保持。 |
+
 预计涉及：
 
 - `src/http/authorization/*`
