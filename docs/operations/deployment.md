@@ -41,13 +41,16 @@ PUBLIC_BASE_URL: "https://oauth.example.com"
 DATABASE_URL: "postgresql://nazo_oauth:<password>@postgres.example.internal:5432/oauth"
 VALKEY_URL: "redis://valkey.example.internal:6379/0"
 DATA_DIR: "/var/lib/nazo_oauth"
+CLIENT_SECRET_PEPPER: "<random 32+ byte secret>"
 AUTHORIZATION_SERVER_PROFILE: "oauth2-baseline"
 TRUSTED_PROXY_CIDRS: "10.0.0.0/24"
 CLIENT_IP_HEADER_MODE: "forwarded"
 RUST_LOG: "info"
 ```
 
-Do not store production secrets in Git.
+Do not store production secrets in Git. `CLIENT_SECRET_PEPPER` is required for
+non-loopback issuers and must remain stable across restarts because it protects
+stored confidential-client secrets.
 
 `ISSUER`, `FRONTEND_BASE_URL`, `CORS_ALLOWED_ORIGINS`, `COOKIE_SECURE`,
 `PASSKEY_ORIGIN`, `PASSKEY_RP_ID`, `JWK_KEYS_DIR`, and `AVATAR_STORAGE_DIR`
@@ -115,11 +118,11 @@ For versioned releases, create a `v*` tag and require the `release-security`
 workflow to complete successfully. It builds release binaries, generates the
 Rust SBOM, signs the binaries, SBOM, and image archive through keyless Sigstore
 signing, uploads artifacts, and emits GitHub provenance attestations. Preserve
-the release evidence listed in [docs/release-security.md](release-security.md).
+the release evidence listed in [docs/operations/release-security.md](release-security.md).
 
 ## Live Deployment Script
 
-The repository includes [scripts/deploy_live.ps1](../scripts/deploy_live.ps1), which builds an image, transfers it to a remote host, runs migrations, replaces the running Podman container, and verifies health and discovery.
+The repository includes [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1), which builds an image, transfers it to a remote host, runs migrations, replaces the running Podman container, and verifies health and discovery.
 
 Default live assumptions:
 
@@ -274,6 +277,14 @@ Production requirements:
 - migration rollback planning
 - monitoring for replication lag or storage saturation
 
+`nazo_oauth_migrate` runs `nazo_oauth_cleanup_expired_security_state()` after
+pending migrations. The cleanup removes expired access-token revocation markers,
+expired refresh-token rows from leaf tokens upward, and SCIM audit events older
+than 180 days. It also removes expired back-channel logout delivery rows so the
+logout outbox cannot grow indefinitely after delivery TTLs have passed.
+Operators should still monitor table growth; this cleanup is a startup/deploy
+maintenance hook, not a substitute for database capacity alerts.
+
 Valkey stores short-lived sessions, authorization codes, PAR handles,
 DPoP/client assertion replay state, and rate-limit counters. Production
 requirements:
@@ -285,7 +296,7 @@ requirements:
 
 If Valkey is unavailable, sensitive protocol paths fail closed with OAuth errors instead of silently weakening replay or rate-limit controls.
 
-The full HA, backup, restore, timeout, and partial-outage requirements are maintained in [docs/ha-operations.md](ha-operations.md).
+The full HA, backup, restore, timeout, and partial-outage requirements are maintained in [docs/operations/ha-operations.md](ha-operations.md).
 
 ## Verification
 
@@ -303,7 +314,7 @@ curl -fsS https://oauth.example.com/jwks.json
 Check that discovery `issuer` exactly equals `PUBLIC_BASE_URL`, unless `ISSUER`
 was explicitly overridden.
 
-The `nazo.run` deployment helper [scripts/verify_live_full_interfaces.py](../scripts/verify_live_full_interfaces.py) exercises a broader HTTPS path against `https://auth.nazo.run`. It reads host-local secrets and runs only in the intended deployment environment.
+The `nazo.run` deployment helper [scripts/verify_live_full_interfaces.py](../../scripts/verify_live_full_interfaces.py) exercises a broader HTTPS path against `https://auth.nazo.run`. It reads host-local secrets and runs only in the intended deployment environment.
 
 ## OIDF Readiness
 

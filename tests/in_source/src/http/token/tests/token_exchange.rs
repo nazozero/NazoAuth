@@ -9,7 +9,7 @@ fn client() -> ClientRow {
         client_id: "resource-server".to_owned(),
         client_name: "Resource Server".to_owned(),
         client_type: "confidential".to_owned(),
-        client_secret_argon2_hash: None,
+        client_secret_hash: None,
         redirect_uris: json!([]),
         scopes: json!(["accounts", "payments", "read"]),
         allowed_audiences: json!(["https://backend.example/api", "urn:example:target"]),

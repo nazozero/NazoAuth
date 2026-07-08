@@ -27,9 +27,16 @@ pub(crate) async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) 
     }
 
     let email = payload.email.trim().to_lowercase();
+    if let Err(response) = enforce_login_failure_throttle(&state, &req, &email).await {
+        return response;
+    }
+
     let user = match find_user_by_email(&state.diesel_db, &email).await {
         Ok(Some(user)) => user,
         Ok(None) => {
+            if let Err(response) = record_login_failure(&state, &req, &email).await {
+                return response;
+            }
             audit_event(
                 "login_failure",
                 audit_fields(&[
@@ -51,7 +58,39 @@ pub(crate) async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) 
             );
         }
     };
-    if !user.is_active || !verify_password(&payload.password, &user.password_hash) {
+    let password_valid = if user.is_active {
+        match verify_password_blocking_limited(payload.password.clone(), user.password_hash.clone())
+            .await
+        {
+            Ok(valid) => valid,
+            Err(PasswordVerificationError::Saturated) => {
+                tracing::warn!("password verification concurrency limit reached");
+                let mut response = oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "temporarily_unavailable",
+                    "登录服务繁忙，请稍后重试.",
+                );
+                response
+                    .headers_mut()
+                    .insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
+                return response;
+            }
+            Err(PasswordVerificationError::WorkerFailed) => {
+                tracing::warn!("password verification worker failed");
+                return oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "密码校验失败.",
+                );
+            }
+        }
+    } else {
+        false
+    };
+    if !password_valid {
+        if let Err(response) = record_login_failure(&state, &req, &email).await {
+            return response;
+        }
         audit_event(
             "login_failure",
             audit_fields(&[
@@ -65,6 +104,7 @@ pub(crate) async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) 
         );
         return oauth_error(StatusCode::UNAUTHORIZED, "access_denied", "邮箱或密码错误.");
     }
+    clear_login_failures(&state, &req, &email).await;
 
     let session_id = random_urlsafe_token();
     let csrf_token = random_urlsafe_token();

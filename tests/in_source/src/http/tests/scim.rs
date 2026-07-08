@@ -273,7 +273,7 @@ async fn insert_scim_user_oauth_credentials(state: &AppState, user_id: Uuid, suf
         r#"
         INSERT INTO oauth_clients (
             id, tenant_id, realm_id, organization_id, client_id, client_name, client_type,
-            client_secret_argon2_hash, redirect_uris, scopes, allowed_audiences,
+            client_secret_hash, redirect_uris, scopes, allowed_audiences,
             grant_types, token_endpoint_auth_method, require_dpop_bound_tokens,
             require_mtls_bound_tokens, tls_client_auth_san_dns, tls_client_auth_san_uri,
             tls_client_auth_san_ip, tls_client_auth_san_email,

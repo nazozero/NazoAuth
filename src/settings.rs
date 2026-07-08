@@ -8,9 +8,9 @@ use url::Url;
 
 use crate::config::ConfigSource;
 use crate::support::{
-    ClientIpHeaderMode, IpCidr, is_loopback_http_url, parse_trusted_proxy_cidrs,
-    validate_cors_origin, validate_frontend_base_url, validate_issuer_url,
-    validate_protected_resource_identifier,
+    ClientIpHeaderMode, IpCidr, LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER, is_loopback_http_url,
+    parse_trusted_proxy_cidrs, validate_cors_origin, validate_frontend_base_url,
+    validate_issuer_url, validate_protected_resource_identifier,
 };
 
 mod email;
@@ -51,6 +51,7 @@ pub(crate) struct Settings {
     pub(crate) refresh_token_ttl_seconds: i64,
     pub(crate) avatar_max_bytes: usize,
     pub(crate) client_delivery_ttl_seconds: u64,
+    pub(crate) client_secret_pepper: String,
     pub(crate) rate_limit: RateLimitSettings,
     pub(crate) email: EmailSettings,
     pub(crate) email_code_dev_response_enabled: bool,
@@ -134,6 +135,14 @@ impl Settings {
         {
             bail!("pairwise_subject_secret must be at least 32 bytes");
         }
+        let client_secret_pepper = match config.optional_string("CLIENT_SECRET_PEPPER") {
+            Some(secret) if secret.len() >= 32 => secret,
+            Some(_) => bail!("CLIENT_SECRET_PEPPER must be at least 32 bytes"),
+            None if is_loopback_http_url(&issuer) => {
+                LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER.to_owned()
+            }
+            None => bail!("CLIENT_SECRET_PEPPER is required for non-loopback issuers"),
+        };
         let authorization_server_profile = AuthorizationServerProfile::from_config(config)?;
         let ciba_security_profile = CibaSecurityProfile::from_config(config)?;
         let protected_resource_identifier = config
@@ -142,11 +151,12 @@ impl Settings {
         validate_protected_resource_identifier(&protected_resource_identifier)?;
         let dpop_nonce_policy = DpopNoncePolicy::from_config(config)?;
         let request_object_jti_policy = RequestObjectJtiPolicy::from_config(config)?;
-        let auth_code_ttl_seconds = config.parse("AUTH_CODE_TTL_SECONDS", 60)?;
+        let auth_code_ttl_seconds =
+            positive_u64(config, "AUTH_CODE_TTL_SECONDS", 60, "AUTH_CODE_TTL_SECONDS")?;
         if authorization_server_profile.requires_fapi2_security() && auth_code_ttl_seconds > 60 {
             bail!("AUTH_CODE_TTL_SECONDS must be 60 or less for FAPI2 profiles");
         }
-        let par_ttl_seconds = config.parse("PAR_TTL_SECONDS", 90)?;
+        let par_ttl_seconds = positive_u64(config, "PAR_TTL_SECONDS", 90, "PAR_TTL_SECONDS")?;
         if authorization_server_profile.requires_fapi2_security() && par_ttl_seconds >= 600 {
             bail!("PAR_TTL_SECONDS must be less than 600 for FAPI2 profiles");
         }
@@ -238,13 +248,39 @@ impl Settings {
             session_cookie_name: config.string("SESSION_COOKIE_NAME", "nazo_oauth_session"),
             csrf_cookie_name: config.string("CSRF_COOKIE_NAME", "nazo_oauth_csrf"),
             cookie_secure,
-            session_ttl_seconds: config.parse("SESSION_TTL_SECONDS", 28_800)?,
+            session_ttl_seconds: positive_u64(
+                config,
+                "SESSION_TTL_SECONDS",
+                28_800,
+                "SESSION_TTL_SECONDS",
+            )?,
             auth_code_ttl_seconds,
-            access_token_ttl_seconds: config.parse("ACCESS_TOKEN_TTL_SECONDS", 300)?,
-            id_token_ttl_seconds: config.parse("ID_TOKEN_TTL_SECONDS", 600)?,
-            refresh_token_ttl_seconds: config.parse("REFRESH_TOKEN_TTL_SECONDS", 2_592_000)?,
+            access_token_ttl_seconds: positive_i64(
+                config,
+                "ACCESS_TOKEN_TTL_SECONDS",
+                300,
+                "ACCESS_TOKEN_TTL_SECONDS",
+            )?,
+            id_token_ttl_seconds: positive_i64(
+                config,
+                "ID_TOKEN_TTL_SECONDS",
+                600,
+                "ID_TOKEN_TTL_SECONDS",
+            )?,
+            refresh_token_ttl_seconds: positive_i64(
+                config,
+                "REFRESH_TOKEN_TTL_SECONDS",
+                2_592_000,
+                "REFRESH_TOKEN_TTL_SECONDS",
+            )?,
             avatar_max_bytes: config.parse("AVATAR_MAX_BYTES", 2_097_152)?,
-            client_delivery_ttl_seconds: config.parse("CLIENT_DELIVERY_TTL_SECONDS", 86_400)?,
+            client_delivery_ttl_seconds: positive_u64(
+                config,
+                "CLIENT_DELIVERY_TTL_SECONDS",
+                86_400,
+                "CLIENT_DELIVERY_TTL_SECONDS",
+            )?,
+            client_secret_pepper,
             rate_limit: RateLimitSettings::from_config(config)?,
             email: EmailSettings::from_config(config)?,
             email_code_dev_response_enabled: config
@@ -288,6 +324,32 @@ impl Settings {
             ciba_automated_decision_token,
         })
     }
+}
+
+pub(super) fn positive_u64(
+    config: &ConfigSource,
+    key: &str,
+    default: u64,
+    label: &str,
+) -> anyhow::Result<u64> {
+    let value = config.parse(key, default)?;
+    if value == 0 {
+        bail!("{label} must be positive");
+    }
+    Ok(value)
+}
+
+pub(super) fn positive_i64(
+    config: &ConfigSource,
+    key: &str,
+    default: i64,
+    label: &str,
+) -> anyhow::Result<i64> {
+    let value = config.parse(key, default)?;
+    if value <= 0 {
+        bail!("{label} must be positive");
+    }
+    Ok(value)
 }
 
 fn url_origin(value: &str) -> anyhow::Result<String> {

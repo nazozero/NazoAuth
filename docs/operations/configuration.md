@@ -18,6 +18,7 @@ FRONTEND_BASE_URL=https://auth.example.com/ui/
 PASSKEY_ORIGIN=https://auth.example.com
 PASSKEY_RP_ID=auth.example.com
 PROTECTED_RESOURCE_IDENTIFIER=https://auth.example.com/fapi/resource
+CLIENT_SECRET_PEPPER=<random 32+ byte secret>
 ```
 
 ## Minimal deployment
@@ -28,6 +29,7 @@ PUBLIC_BASE_URL: "https://auth.example.com"
 DATABASE_URL: "postgresql://nazo_oauth:<password>@postgres:5432/oauth"
 VALKEY_URL: "redis://valkey:6379/0"
 DATA_DIR: "/var/lib/nazo_oauth"
+CLIENT_SECRET_PEPPER: "<random 32+ byte secret>"
 AUTHORIZATION_SERVER_PROFILE: "oauth2-baseline"
 RUST_LOG: "info"
 ```
@@ -46,8 +48,15 @@ AVATAR_STORAGE_DIR = DATA_DIR + "/avatars"
 | `BIND` | `0.0.0.0:8000` | HTTP listener |
 | `PUBLIC_BASE_URL` | `http://127.0.0.1:8000` | Public same-origin base URL |
 | `DATABASE_URL` | `postgresql://postgres:postgres@127.0.0.1:5432/oauth` | PostgreSQL connection string |
+| `DATABASE_MAX_CONNECTIONS` | `32` | Maximum PostgreSQL pool size per NazoAuth process |
 | `VALKEY_URL` | `redis://127.0.0.1:6379/0` | Valkey connection string |
 | `DATA_DIR` | `runtime` | Base directory for persistent local files |
+| `CLIENT_SECRET_PEPPER` | development-only default for loopback issuers | Required for non-loopback issuers; use a random 32+ byte secret and keep it stable across restarts |
+| `PASSWORD_HASH_MAX_CONCURRENCY` | `8` | Maximum concurrent Argon2 password verifications per process; tune from CPU and memory capacity, not by lowering Argon2 cost |
+| `PASSWORD_HASH_QUEUE_TIMEOUT_MS` | `100` | Maximum bounded wait for a password-verification slot before returning `temporarily_unavailable` |
+| `LOGIN_FAILURE_WINDOW_SECONDS` | `900` | Window for failed-login throttling |
+| `LOGIN_FAILURE_EMAIL_MAX_ATTEMPTS` | `50` | Maximum failed login attempts per normalized email in the failed-login window |
+| `LOGIN_FAILURE_IP_EMAIL_MAX_ATTEMPTS` | `5` | Maximum failed login attempts per source IP and normalized email in the failed-login window |
 | `AUTHORIZATION_SERVER_PROFILE` | `oauth2-baseline` | `oauth2-baseline`, `fapi2-security`, or `fapi2-message-signing-authz-request` |
 | `CIBA_SECURITY_PROFILE` | `fapi-ciba-id1-plain-private-key-jwt-poll` | CIBA-specific policy: `fapi-ciba-id1-plain-private-key-jwt-poll` for OIDF FAPI-CIBA compatibility, or internal `fapi2-ciba` hardening |
 | `RUST_LOG` | `info` | Tracing filter |
@@ -122,7 +131,11 @@ deployment path. They are candidates for the administrator UI:
   `REFRESH_TOKEN_TTL_SECONDS`
 - rate limits: `RATE_LIMIT_WINDOW_SECONDS`, `AUTH_RATE_LIMIT_MAX_REQUESTS`,
   `TOKEN_RATE_LIMIT_MAX_REQUESTS`,
-  `TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS`
+  `TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS`,
+  `LOGIN_FAILURE_WINDOW_SECONDS`, `LOGIN_FAILURE_EMAIL_MAX_ATTEMPTS`,
+  `LOGIN_FAILURE_IP_EMAIL_MAX_ATTEMPTS`
+- password verification capacity: `PASSWORD_HASH_MAX_CONCURRENCY`,
+  `PASSWORD_HASH_QUEUE_TIMEOUT_MS`
 - email delivery: `EMAIL_DELIVERY`, `EMAIL_SMTP_HOST`, `EMAIL_SMTP_PORT`,
   `EMAIL_SMTP_TLS`, `EMAIL_SMTP_USERNAME`, `EMAIL_SMTP_PASSWORD`,
   `EMAIL_FROM`
@@ -142,3 +155,9 @@ deployment path. They are candidates for the administrator UI:
 Security-sensitive values such as `DATABASE_URL`, `VALKEY_URL`, SMTP
 credentials, federation client secrets, and SAML shared secrets must not be
 committed to Git.
+
+Security-state lifetimes and cooldowns must be positive. Startup rejects zero
+or negative values for session, authorization-code, access-token, ID-token,
+refresh-token, PAR, client-delivery, and email-code lifetimes because those
+settings back Valkey `EX` keys, database expiry timestamps, or abuse-control
+windows.

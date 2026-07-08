@@ -66,8 +66,8 @@ default-closed DCR surface.
   `client_secret_expires_at`, and `client_id_issued_at`.
 - Successful read and update responses rotate the registration access token.
   Secret-authenticated dynamic clients also receive a rotated `client_secret`
-  because the server stores only Argon2 hashes, never recoverable plaintext
-  secrets.
+  because the server stores only keyed secret digests, never recoverable
+  plaintext secrets.
 - DELETE deactivates the client, clears the registration access token hash,
   revokes active refresh-token rows for the client, and removes stored user
   grants. Existing self-contained access tokens remain bounded by their normal

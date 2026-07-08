@@ -18,7 +18,7 @@ The project separates three surfaces:
 | --- | --- | --- |
 | `oauth2-baseline` | Implemented | Authorization code, PKCE, token, refresh, revocation, introspection, discovery, JWKS |
 | `oauth2-security-bcp` | Implemented | Sender constraints, redirect policy, query-token rejection, replay controls |
-| `oidc-basic-op` | Implemented and OIDF-tested | [profile matrix](profile-matrix.md), [2026-06-27 OIDF record](conformance/2026-06-27-pr15-official-oidf-full-matrix.md) |
+| `oidc-basic-op` | Implemented and OIDF-tested | [profile matrix](../protocol/profile-matrix.md), [2026-06-27 OIDF record](../conformance/2026-06-27-pr15-official-oidf-full-matrix.md) |
 | `oidc-config` | Implemented and OIDF-tested | Runtime discovery metadata and metadata truth tests |
 | `fapi2-security` | Implemented and OIDF-tested | PAR, PKCE S256, confidential clients, DPoP/mTLS-bound tokens |
 | `fapi2-message-signing-authz-request` | Implemented and OIDF-tested | Signed request objects at PAR with `aud`, `nbf`, and bounded `exp` |
@@ -70,7 +70,7 @@ The project separates three surfaces:
   policy checks, container scanning, release signing, and provenance workflows
   are part of the release posture.
 - PostgreSQL and Valkey HA, restore, timeout, and partial-outage behavior are
-  documented in [ha-operations.md](ha-operations.md).
+  documented in [ha-operations.md](../operations/ha-operations.md).
 
 ## Identity Platform Surface
 
@@ -108,17 +108,17 @@ core and are not advertised in discovery metadata:
   profile, or without per-client JWE response metadata.
 
 Each item has a threat-model and acceptance-test entry in
-[ecosystem-onboarding.md](ecosystem-onboarding.md) or [tenancy.md](tenancy.md).
+[ecosystem-onboarding.md](../features/ecosystem-onboarding.md) or [tenancy.md](../features/tenancy.md).
 
 ## Evidence
 
 - Official conformance record:
-  [2026-06-27 PR 15 official OIDF full matrix](conformance/2026-06-27-pr15-official-oidf-full-matrix.md).
+  [2026-06-27 PR 15 official OIDF full matrix](../conformance/2026-06-27-pr15-official-oidf-full-matrix.md).
 - OAuth 2.1 and best-practice audit:
-  [oauth2-1-self-audit.md](oauth2-1-self-audit.md).
+  [oauth2-1-self-audit.md](../protocol/oauth2-1-self-audit.md).
 - Negative conformance fixtures:
-  [conformance/negative-fixtures.md](conformance/negative-fixtures.md).
+  [conformance/negative-fixtures.md](../conformance/negative-fixtures.md).
 - Deployment guide:
-  [deployment.md](deployment.md).
+  [deployment.md](../operations/deployment.md).
 - Release controls:
-  [release-security.md](release-security.md).
+  [release-security.md](../operations/release-security.md).

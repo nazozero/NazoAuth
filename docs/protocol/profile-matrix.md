@@ -38,7 +38,7 @@ deployment can satisfy.
 | Token TTLs | Authorization code <= configured `AUTH_CODE_TTL_SECONDS`; access token <= configured `ACCESS_TOKEN_TTL_SECONDS` |
 | Metadata | Generated from `AUTHORIZATION_SERVER_PROFILE`; mTLS capabilities advertised only when trusted proxy CIDRs are configured; `authorization_details_types_supported` is advertised only when `ENABLE_AUTHORIZATION_DETAILS=true`; `device_authorization_endpoint` and device_code grant metadata are advertised only when `ENABLE_DEVICE_AUTHORIZATION_GRANT=true` |
 
-Refresh-token rotation follows the state machine in `docs/refresh-token-rotation.md`. The lost-response retry window is a compatibility recovery path, not a replay bypass.
+Refresh-token rotation follows the state machine in `docs/protocol/refresh-token-rotation.md`. The lost-response retry window is a compatibility recovery path, not a replay bypass.
 
 Required negative tests:
 
@@ -148,7 +148,7 @@ Required negative tests:
 
 Deployments that enable refresh-token rotation for migration or compatibility
 must document that exception and keep the replay-detection state machine from
-`docs/refresh-token-rotation.md`.
+`docs/protocol/refresh-token-rotation.md`.
 
 Runtime enforcement is selected with `AUTHORIZATION_SERVER_PROFILE=fapi2-security`.
 The setting forces PAR globally, caps authorization code lifetime at 60 seconds,

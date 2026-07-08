@@ -35,3 +35,4 @@ tmp_cov*.log
 _tmp_coverage_run.log
 tmp_coverage_linux.sh
 flamegraph.svg
+perf/results/

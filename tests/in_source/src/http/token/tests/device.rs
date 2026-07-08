@@ -24,7 +24,7 @@ fn device_client() -> ClientRow {
         client_id: "device-client".to_owned(),
         client_name: "Device Client".to_owned(),
         client_type: "public".to_owned(),
-        client_secret_argon2_hash: None,
+        client_secret_hash: None,
         redirect_uris: json!(["https://client.example/callback"]),
         scopes: json!(["openid", "profile", "offline_access"]),
         allowed_audiences: json!(["resource://default", "https://api.example.com"]),

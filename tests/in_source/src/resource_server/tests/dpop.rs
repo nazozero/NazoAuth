@@ -198,6 +198,45 @@ fn dpop_proof_verifier_rejects_replayed_jti() {
 }
 
 #[test]
+fn dpop_proof_verifier_fails_closed_when_replay_cache_is_full() {
+    let dpop = dpop_fixture();
+    let access_token = "access-token";
+    let first = dpop_proof(
+        &dpop,
+        access_token,
+        "GET",
+        "https://api.example/orders",
+        "proof-jti-cache-1",
+        None,
+        None,
+    );
+    let second = dpop_proof(
+        &dpop,
+        access_token,
+        "GET",
+        "https://api.example/orders",
+        "proof-jti-cache-2",
+        None,
+        None,
+    );
+    let verifier =
+        DpopProofVerifier::new_with_replay_cache_limit(DpopProofVerifierConfig::default(), 1);
+
+    verifier
+        .verify(&first, "GET", "https://api.example/orders", access_token)
+        .unwrap();
+    let replay = verifier
+        .verify(&first, "GET", "https://api.example/orders", access_token)
+        .unwrap_err();
+    let full = verifier
+        .verify(&second, "GET", "https://api.example/orders", access_token)
+        .unwrap_err();
+
+    assert_eq!(replay, DpopProofVerifierError::ReplayDetected);
+    assert_eq!(full, DpopProofVerifierError::ReplayCacheFull);
+}
+
+#[test]
 fn dpop_proof_verifier_rejects_wrong_ath() {
     let dpop = dpop_fixture();
     let proof_jwt = dpop_proof(

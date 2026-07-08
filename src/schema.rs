@@ -153,7 +153,7 @@ diesel::table! {
         client_id -> Varchar,
         client_name -> Varchar,
         client_type -> Text,
-        client_secret_argon2_hash -> Nullable<Varchar>,
+        client_secret_hash -> Nullable<Varchar>,
         registration_access_token_blake3 -> Nullable<Varchar>,
         redirect_uris -> Jsonb,
         scopes -> Jsonb,

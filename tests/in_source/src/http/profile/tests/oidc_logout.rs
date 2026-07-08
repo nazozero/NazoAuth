@@ -53,6 +53,10 @@ impl LiveLogoutFixture {
         let valkey_url = std::env::var("VALKEY_URL").ok()?;
         let config = ConfigSource::from_pairs_for_test([
             ("ISSUER", "https://example.com"),
+            (
+                "CLIENT_SECRET_PEPPER",
+                "client-secret-pepper-for-tests-000000000001",
+            ),
             ("COOKIE_SECURE", "true"),
             ("SESSION_COOKIE_NAME", "nazo_session_logout_test"),
             ("CSRF_COOKIE_NAME", "nazo_csrf_logout_test"),
@@ -184,7 +188,7 @@ impl LiveLogoutFixture {
             r#"
             INSERT INTO oauth_clients (
                 tenant_id, realm_id, organization_id, client_id, client_name, client_type,
-                client_secret_argon2_hash, redirect_uris, scopes, allowed_audiences,
+                client_secret_hash, redirect_uris, scopes, allowed_audiences,
                 grant_types, token_endpoint_auth_method, require_dpop_bound_tokens,
                 require_mtls_bound_tokens, tls_client_auth_san_dns, tls_client_auth_san_uri,
                 tls_client_auth_san_ip, tls_client_auth_san_email,

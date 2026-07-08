@@ -9,7 +9,7 @@ fn client_with_grants(grant_types: &[&str]) -> ClientRow {
         client_id: "client-1".to_owned(),
         client_name: "Client".to_owned(),
         client_type: "public".to_owned(),
-        client_secret_argon2_hash: None,
+        client_secret_hash: None,
         redirect_uris: json!(["https://client.example/callback"]),
         scopes: json!(["openid", "offline_access"]),
         allowed_audiences: json!(["resource://default"]),

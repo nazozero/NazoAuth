@@ -52,9 +52,10 @@ pub(crate) fn verify_confidential_client(
         }
         "client_secret_basic" | "client_secret_post" => {
             let valid_secret = credentials.client_secret.as_deref().is_some_and(|secret| {
-                verify_password(
+                verify_client_secret(
                     secret,
-                    client.client_secret_argon2_hash.as_deref().unwrap_or(""),
+                    client.client_secret_hash.as_deref().unwrap_or(""),
+                    &state.settings.client_secret_pepper,
                 )
             });
             if valid_secret {

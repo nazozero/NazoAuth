@@ -46,13 +46,16 @@ PUBLIC_BASE_URL: "https://auth.nazo.run"
 DATABASE_URL: "postgresql://nazo_oauth:<password>@postgres.example.internal:5432/oauth"
 VALKEY_URL: "redis://valkey.example.internal:6379/0"
 DATA_DIR: "/var/lib/nazo_oauth"
+CLIENT_SECRET_PEPPER: "<random 32+ byte secret>"
 AUTHORIZATION_SERVER_PROFILE: "oauth2-baseline"
 TRUSTED_PROXY_CIDRS: "10.0.0.0/24"
 CLIENT_IP_HEADER_MODE: "forwarded"
 RUST_LOG: "info"
 ```
 
-不要把生产 secret 提交到 Git。
+不要把生产 secret 提交到 Git。非 loopback issuer 必须显式配置
+`CLIENT_SECRET_PEPPER`；它用于保护已存储的 confidential-client secret，
+并且重启后必须保持稳定。
 
 `ISSUER`、`FRONTEND_BASE_URL`、`CORS_ALLOWED_ORIGINS`、`COOKIE_SECURE`、
 `PASSKEY_ORIGIN`、`PASSKEY_RP_ID`、`JWK_KEYS_DIR`、`AVATAR_STORAGE_DIR`
@@ -107,7 +110,7 @@ docker run -d --name nazo-oauth-server \
 
 ## 在线部署脚本
 
-仓库提供 [scripts/deploy_live.ps1](../scripts/deploy_live.ps1)，用于构建镜像、传输到远端、执行迁移、替换 Podman 容器，并校验 health 与 discovery。
+仓库提供 [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1)，用于构建镜像、传输到远端、执行迁移、替换 Podman 容器，并校验 health 与 discovery。
 
 默认 live 假设：
 

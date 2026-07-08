@@ -65,6 +65,84 @@ fn fapi_profiles_reject_protocol_ttls_above_profile_limits() {
 }
 
 #[test]
+fn security_state_lifetimes_and_cooldowns_must_be_positive() {
+    for (key, value, expected) in [
+        (
+            "SESSION_TTL_SECONDS",
+            "0",
+            "SESSION_TTL_SECONDS must be positive",
+        ),
+        (
+            "AUTH_CODE_TTL_SECONDS",
+            "0",
+            "AUTH_CODE_TTL_SECONDS must be positive",
+        ),
+        (
+            "ACCESS_TOKEN_TTL_SECONDS",
+            "0",
+            "ACCESS_TOKEN_TTL_SECONDS must be positive",
+        ),
+        (
+            "ID_TOKEN_TTL_SECONDS",
+            "0",
+            "ID_TOKEN_TTL_SECONDS must be positive",
+        ),
+        (
+            "REFRESH_TOKEN_TTL_SECONDS",
+            "0",
+            "REFRESH_TOKEN_TTL_SECONDS must be positive",
+        ),
+        (
+            "CLIENT_DELIVERY_TTL_SECONDS",
+            "0",
+            "CLIENT_DELIVERY_TTL_SECONDS must be positive",
+        ),
+        ("PAR_TTL_SECONDS", "0", "PAR_TTL_SECONDS must be positive"),
+        (
+            "EMAIL_CODE_TTL_SECONDS",
+            "0",
+            "EMAIL_CODE_TTL_SECONDS must be positive",
+        ),
+        (
+            "EMAIL_CODE_SEND_COOLDOWN_SECONDS",
+            "0",
+            "EMAIL_CODE_SEND_COOLDOWN_SECONDS must be positive",
+        ),
+        (
+            "EMAIL_CODE_PEER_COOLDOWN_SECONDS",
+            "0",
+            "EMAIL_CODE_PEER_COOLDOWN_SECONDS must be positive",
+        ),
+    ] {
+        let config = ConfigSource::from_pairs_for_test([(key, value)]);
+        let error = settings_error(&config, "non-positive security lifetime must fail startup");
+        assert_eq!(error.to_string(), expected);
+    }
+
+    for (key, value, expected) in [
+        (
+            "ACCESS_TOKEN_TTL_SECONDS",
+            "-1",
+            "ACCESS_TOKEN_TTL_SECONDS must be positive",
+        ),
+        (
+            "ID_TOKEN_TTL_SECONDS",
+            "-1",
+            "ID_TOKEN_TTL_SECONDS must be positive",
+        ),
+        (
+            "REFRESH_TOKEN_TTL_SECONDS",
+            "-1",
+            "REFRESH_TOKEN_TTL_SECONDS must be positive",
+        ),
+    ] {
+        let config = ConfigSource::from_pairs_for_test([(key, value)]);
+        let error = settings_error(&config, "negative token lifetime must fail startup");
+        assert_eq!(error.to_string(), expected);
+    }
+}
+
+#[test]
 fn invalid_dpop_nonce_policy_is_rejected() {
     let config = ConfigSource::from_pairs_for_test([("DPOP_NONCE_POLICY", "sometimes")]);
 
@@ -260,9 +338,28 @@ fn dynamic_client_registration_requires_initial_access_token() {
 }
 
 #[test]
-fn public_base_url_drives_same_origin_defaults() {
+fn non_loopback_issuer_requires_client_secret_pepper() {
     let config =
         ConfigSource::from_pairs_for_test([("PUBLIC_BASE_URL", "https://auth.example.test")]);
+    let error = settings_error(
+        &config,
+        "production issuer must configure client secret pepper",
+    );
+    assert_eq!(
+        error.to_string(),
+        "CLIENT_SECRET_PEPPER is required for non-loopback issuers"
+    );
+}
+
+#[test]
+fn public_base_url_drives_same_origin_defaults() {
+    let config = ConfigSource::from_pairs_for_test([
+        ("PUBLIC_BASE_URL", "https://auth.example.test"),
+        (
+            "CLIENT_SECRET_PEPPER",
+            "client-secret-pepper-for-tests-000000000001",
+        ),
+    ]);
     let settings = Settings::from_config(&config).unwrap();
 
     assert_eq!(settings.issuer, "https://auth.example.test");
@@ -286,6 +383,10 @@ fn explicit_legacy_url_settings_override_public_base_url_derivations() {
     let config = ConfigSource::from_pairs_for_test([
         ("PUBLIC_BASE_URL", "https://auth.example.test"),
         ("ISSUER", "https://issuer.example.test"),
+        (
+            "CLIENT_SECRET_PEPPER",
+            "client-secret-pepper-for-tests-000000000001",
+        ),
         ("FRONTEND_BASE_URL", "https://app.example.test/ui/"),
         ("CORS_ALLOWED_ORIGINS", "https://app.example.test"),
         ("PASSKEY_ORIGIN", "https://passkeys.example.test"),
@@ -311,6 +412,10 @@ fn explicit_legacy_url_settings_override_public_base_url_derivations() {
 fn explicit_protected_resource_identifier_overrides_issuer_default() {
     let config = ConfigSource::from_pairs_for_test([
         ("PUBLIC_BASE_URL", "https://auth.example.test"),
+        (
+            "CLIENT_SECRET_PEPPER",
+            "client-secret-pepper-for-tests-000000000001",
+        ),
         (
             "PROTECTED_RESOURCE_IDENTIFIER",
             "https://api.example.test/payments",

@@ -151,7 +151,7 @@ pub(crate) struct ClientRow {
     #[diesel(sql_type = diesel::sql_types::Text)]
     pub(crate) client_type: String,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
-    pub(crate) client_secret_argon2_hash: Option<String>,
+    pub(crate) client_secret_hash: Option<String>,
     #[diesel(sql_type = diesel::sql_types::Jsonb)]
     pub(crate) redirect_uris: Value,
     #[diesel(sql_type = diesel::sql_types::Jsonb)]

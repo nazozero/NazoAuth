@@ -1,6 +1,7 @@
 use anyhow::{Context, bail};
 use lettre::message::Mailbox;
 
+use super::positive_u64;
 use crate::config::ConfigSource;
 
 #[derive(Clone)]
@@ -49,9 +50,24 @@ impl EmailSettings {
 
         Ok(Self {
             delivery,
-            code_ttl_seconds: config.parse("EMAIL_CODE_TTL_SECONDS", 900)?,
-            send_cooldown_seconds: config.parse("EMAIL_CODE_SEND_COOLDOWN_SECONDS", 60)?,
-            send_peer_cooldown_seconds: config.parse("EMAIL_CODE_PEER_COOLDOWN_SECONDS", 5)?,
+            code_ttl_seconds: positive_u64(
+                config,
+                "EMAIL_CODE_TTL_SECONDS",
+                900,
+                "EMAIL_CODE_TTL_SECONDS",
+            )?,
+            send_cooldown_seconds: positive_u64(
+                config,
+                "EMAIL_CODE_SEND_COOLDOWN_SECONDS",
+                60,
+                "EMAIL_CODE_SEND_COOLDOWN_SECONDS",
+            )?,
+            send_peer_cooldown_seconds: positive_u64(
+                config,
+                "EMAIL_CODE_PEER_COOLDOWN_SECONDS",
+                5,
+                "EMAIL_CODE_PEER_COOLDOWN_SECONDS",
+            )?,
         })
     }
 }

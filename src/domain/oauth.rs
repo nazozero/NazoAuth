@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
+use super::UserRow;
+
 /// RFC 9449/RFC 7800 confirmation claim for proof-of-possession access tokens.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct ConfirmationClaims {
@@ -218,6 +220,7 @@ pub(crate) struct TokenIssue {
     pub(crate) userinfo_claim_requests: Vec<OidcClaimRequest>,
     pub(crate) id_token_claims: Vec<String>,
     pub(crate) id_token_claim_requests: Vec<OidcClaimRequest>,
+    pub(crate) id_token_user: Option<Box<UserRow>>,
     pub(crate) include_refresh: bool,
     pub(crate) refresh_token_policy: RefreshTokenPolicy,
     pub(crate) dpop_jkt: Option<String>,
