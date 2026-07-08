@@ -17,11 +17,27 @@ fn baseline_profile_can_use_optional_dpop_nonce_policy() {
 
 #[test]
 fn fapi_profiles_default_to_required_dpop_nonce_policy() {
-    let config =
-        ConfigSource::from_pairs_for_test([("AUTHORIZATION_SERVER_PROFILE", "fapi2-security")]);
-    let settings = Settings::from_config(&config).unwrap();
+    for profile in [
+        "fapi2-security",
+        "fapi2-message-signing-authz-request",
+        "fapi2-message-signing-jarm",
+        "fapi2-message-signing-introspection",
+    ] {
+        let config = ConfigSource::from_pairs_for_test([("AUTHORIZATION_SERVER_PROFILE", profile)]);
+        let settings = Settings::from_config(&config).unwrap();
 
-    assert_eq!(settings.dpop_nonce_policy, DpopNoncePolicy::Required);
+        assert_eq!(settings.dpop_nonce_policy, DpopNoncePolicy::Required);
+        assert!(
+            settings.require_pushed_authorization_requests,
+            "{profile} must inherit FAPI2 PAR enforcement"
+        );
+        assert!(
+            settings
+                .authorization_server_profile
+                .requires_fapi2_security(),
+            "{profile} must inherit FAPI2 Security controls"
+        );
+    }
 }
 
 #[test]
@@ -37,31 +53,38 @@ fn fapi_profiles_can_use_optional_dpop_nonce_policy() {
 
 #[test]
 fn fapi_profiles_reject_protocol_ttls_above_profile_limits() {
-    let auth_code_ttl = ConfigSource::from_pairs_for_test([
-        ("AUTHORIZATION_SERVER_PROFILE", "fapi2-security"),
-        ("AUTH_CODE_TTL_SECONDS", "61"),
-    ]);
-    let error = settings_error(
-        &auth_code_ttl,
-        "FAPI authorization code lifetime must be capped at 60 seconds",
-    );
-    assert_eq!(
-        error.to_string(),
-        "AUTH_CODE_TTL_SECONDS must be 60 or less for FAPI2 profiles"
-    );
+    for profile in [
+        "fapi2-security",
+        "fapi2-message-signing-authz-request",
+        "fapi2-message-signing-jarm",
+        "fapi2-message-signing-introspection",
+    ] {
+        let auth_code_ttl = ConfigSource::from_pairs_for_test([
+            ("AUTHORIZATION_SERVER_PROFILE", profile),
+            ("AUTH_CODE_TTL_SECONDS", "61"),
+        ]);
+        let error = settings_error(
+            &auth_code_ttl,
+            "FAPI authorization code lifetime must be capped at 60 seconds",
+        );
+        assert_eq!(
+            error.to_string(),
+            "AUTH_CODE_TTL_SECONDS must be 60 or less for FAPI2 profiles"
+        );
 
-    let par_ttl = ConfigSource::from_pairs_for_test([
-        ("AUTHORIZATION_SERVER_PROFILE", "fapi2-security"),
-        ("PAR_TTL_SECONDS", "600"),
-    ]);
-    let error = settings_error(
-        &par_ttl,
-        "FAPI PAR request_uri lifetime must be shorter than 600 seconds",
-    );
-    assert_eq!(
-        error.to_string(),
-        "PAR_TTL_SECONDS must be less than 600 for FAPI2 profiles"
-    );
+        let par_ttl = ConfigSource::from_pairs_for_test([
+            ("AUTHORIZATION_SERVER_PROFILE", profile),
+            ("PAR_TTL_SECONDS", "600"),
+        ]);
+        let error = settings_error(
+            &par_ttl,
+            "FAPI PAR request_uri lifetime must be shorter than 600 seconds",
+        );
+        assert_eq!(
+            error.to_string(),
+            "PAR_TTL_SECONDS must be less than 600 for FAPI2 profiles"
+        );
+    }
 }
 
 #[test]

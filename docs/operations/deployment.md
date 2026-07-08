@@ -60,10 +60,13 @@ Advanced settings are documented in [configuration.md](configuration.md).
 Use `AUTHORIZATION_SERVER_PROFILE=fapi2-security` only for client populations
 that support confidential-client-only operation, PAR-only authorization
 requests, PKCE S256, `private_key_jwt` or mTLS client authentication, and DPoP
-or mTLS sender-constrained tokens. Use
+or mTLS sender-constrained tokens. Select
 `fapi2-message-signing-authz-request` when signed request objects are mandatory
-at PAR. Discovery metadata reflects the active profile and omits mTLS
-capabilities unless `TRUSTED_PROXY_CIDRS` is non-empty.
+at PAR, `fapi2-message-signing-jarm` when every authorization response must be
+signed, or `fapi2-message-signing-introspection` when RFC 9701 signed and
+nested encrypted introspection responses are required. Discovery metadata
+reflects the active profile and omits mTLS capabilities unless
+`TRUSTED_PROXY_CIDRS` is non-empty.
 
 OpenTelemetry is opt-in. Set `OTEL_ENABLED: true` and
 `OTEL_EXPORTER_OTLP_ENDPOINT` to an OTLP/HTTP collector base URL such as

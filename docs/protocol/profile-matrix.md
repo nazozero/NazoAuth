@@ -16,7 +16,7 @@ deployment can satisfy.
 | `oidc-config` | OIDC discovery/server metadata verification. | OIDF-tested |
 | `fapi2-security` | FAPI2 Security profile without message-signing options. | Runtime profile switch implemented; OIDF-tested for recorded matrix variants |
 | `fapi2-message-signing-authz-request` | FAPI2 Security plus signed authorization requests at PAR. | Runtime profile switch implemented; OIDF-tested for recorded matrix variants |
-| `fapi2-message-signing-jarm` | FAPI2 Message Signing authorization response signing option. | OIDF-tested for recorded matrix variant |
+| `fapi2-message-signing-jarm` | FAPI2 Message Signing authorization response signing option. | Runtime profile switch implemented; OIDF-tested for recorded matrix variant |
 | `fapi2-message-signing-introspection` | FAPI2 Message Signing signed and encrypted introspection response option. | Runtime profile switch implemented; advertised only by this profile |
 | `fapi-ciba-id1-plain-private-key-jwt-poll` | OIDF FAPI-CIBA AS compatibility profile for private_key_jwt and poll delivery. | Default CIBA security profile when `ENABLE_CIBA=true`; OIDF-tested for recorded matrix variant |
 | `fapi2-ciba` | Internal CIBA hardening profile: CIBA Core + FAPI-CIBA compatibility + applicable FAPI2 Security controls. | Runtime CIBA security switch implemented; not an official OIDF certification profile name |
@@ -222,6 +222,14 @@ Required negative tests:
 | Authorization response | Signed authorization response JWT |
 | Metadata | `authorization_signing_alg_values_supported` must match active signing capability |
 | Failure behavior | Signing failure must not fall back to query response |
+
+Runtime enforcement is selected with
+`AUTHORIZATION_SERVER_PROFILE=fapi2-message-signing-jarm`. The profile includes
+the `fapi2-security` controls and requires signed authorization responses even
+when the request omits `response_mode=jwt` or explicitly uses the default query
+mode. Discovery metadata advertises `response_modes_supported=["jwt"]` for this
+profile. The base `fapi2-security` profile continues to advertise `query` and
+`jwt` and signs authorization responses only when JARM is negotiated.
 
 Required negative tests:
 
