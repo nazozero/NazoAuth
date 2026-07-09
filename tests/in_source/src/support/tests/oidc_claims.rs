@@ -109,7 +109,7 @@ fn settings() -> Settings {
             strict_base64: true,
         },
         federation: crate::settings::FederationSettings {
-            oidc: None,
+            providers: crate::settings::FederationProviderRegistry::default(),
             saml_gateway: None,
         },
         enable_request_object: false,

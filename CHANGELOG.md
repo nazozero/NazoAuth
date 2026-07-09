@@ -22,6 +22,7 @@ semantic versioning once public release tags are cut.
 - Added default-closed RFC 7591 Dynamic Client Registration behind `ENABLE_DYNAMIC_CLIENT_REGISTRATION`, with optional initial access token enforcement and OIDF dynamic-client plan coverage.
 - Added default-closed RFC 7592 Dynamic Client Registration Management for DCR-created clients, with hashed registration access tokens, GET/PUT credential rotation, full-replacement updates, and DELETE deactivation.
 - Added dynamic-client lifecycle audit events and ecosystem onboarding documentation covering baseline, FAPI2, Message Signing, CIBA, Device Grant, DCR/DCRM, Token Exchange, and deferred third-party JWT bearer trust boundaries.
+- Added modular third-party login provider registry with dynamic OIDC/OAuth2 social provider routes, QQ/WeChat social adapter presets, non-secret provider discovery, and admin onboarding metadata.
 
 ### Changed
 

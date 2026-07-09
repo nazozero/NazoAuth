@@ -61,6 +61,9 @@ Raw credentials and bearer material must never appear in audit fields. The audit
 | `dynamic_client_configuration_updated` | `client_lifecycle` | RFC 7592 full-replacement client configuration update succeeded and rotated management credentials. |
 | `dynamic_client_deleted` | `client_lifecycle` | RFC 7592 client deletion deactivated the dynamic client. |
 | `admin_user_updated` | `administration` | Administrator changed user status, role, or admin level. |
+| `external_identity_linked` | `identity_lifecycle` | A third-party identity subject was linked to a local user without logging provider tokens or secrets. |
+| `external_identity_relink_denied` | `identity_lifecycle` | A third-party login attempted to attach to an existing local email without an explicit identity link. |
+| `external_identity_unlinked` | `identity_lifecycle` | A user removed one of their own third-party identity links without logging provider tokens or secrets. |
 | `scim_token_used` | `provisioning` | SCIM bearer credential was accepted without logging raw token material. |
 | `scim_token_denied` | `provisioning` | SCIM bearer credential was missing, invalid, or lacked the required scope. |
 
