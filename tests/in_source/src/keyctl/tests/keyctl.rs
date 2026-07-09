@@ -763,7 +763,7 @@ fn test_settings(jwk_keys_dir: PathBuf) -> Settings {
             strict_base64: true,
         },
         federation: FederationSettings {
-            oidc: None,
+            providers: crate::settings::FederationProviderRegistry::default(),
             saml_gateway: None,
         },
         enable_request_object: false,

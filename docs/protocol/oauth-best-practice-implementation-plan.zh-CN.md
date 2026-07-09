@@ -284,23 +284,23 @@ Provider 分类：
 
 优先任务：
 
-- [ ] **M5-01：Provider registry 和配置模型**
+- [x] **M5-01：Provider registry 和配置模型**
   - 每个 provider 必须有 `provider_id`、`enabled`、display name、adapter type、client id、secret reference、redirect URI、scope、endpoint/issuer、claim mapping、icon/display ordering。
   - provider 默认关闭；配置不完整时 fail closed；未启用 provider 不显示登录入口。
-- [ ] **M5-02：OIDC provider adapter**
+- [x] **M5-02：OIDC provider adapter**
   - 支持 Google、Microsoft 等标准 OIDC provider 作为配置实例。
   - 校验 state、nonce、PKCE、ID Token `iss`/`aud`/`azp`/`exp`/`iat`/`nonce`、JWKS key rotation、`sub` + issuer identity key。
-- [ ] **M5-03：OAuth2 social provider adapters**
+- [x] **M5-03：OAuth2 social provider adapters**
   - QQ、微信等 provider-specific 登录通过独立 adapter 实现。
   - 每个 adapter 显式声明 authorization endpoint、token endpoint、openid/unionid/userinfo 获取方式、scope、错误码映射和 token 过期处理。
   - 第三方 access token 只用于获取外部身份，不得成为本平台 access token 或长期权限凭据。
-- [ ] **M5-04：Account linking 和 claim normalization**
+- [x] **M5-04：Account linking 和 claim normalization**
   - 外部身份与本地用户显式绑定；email 只作为可验证 claim，不作为唯一身份根。
   - 支持 unlink/relink 审计；处理 email 变更、未验证 email、同一 email 多 provider 和账号接管风险。
-- [ ] **M5-05：External provider session/logout**
+- [x] **M5-05：External provider session/logout**
   - 本地 session 是 NazoAuth 的事实源；外部 provider logout 失败不得伪造远端已登出状态。
   - 支持登录 CSRF 防护、session fixation 防护、provider callback 重放防护。
-- [ ] **M5-06：Admin-managed provider onboarding**
+- [x] **M5-06：Admin-managed provider onboarding**
   - 管理端只允许高权限操作者启停 provider、填写配置、查看回调地址、执行测试登录、审计变更和回滚。
   - secret/key material 不进入日志、前端配置、错误响应或测试快照。
 
@@ -414,7 +414,7 @@ cargo test --locked well_known --lib
 | DCR / DCRM | M3 已完成；NI-004 / NI-005 以 default-closed DCR/DCRM、管理凭据轮换、非秘密审计事件和 onboarding 文档维护。 |
 | Token trust | M4 已完成；NI-003 是 bounded local Token Exchange，NI-006 是第三方 JWT bearer trust 设计完成且实现 deferred，外部 issuer trust 不属于当前默认能力。 |
 | CIBA | NI-007 部分完成 / profile-scoped；官方 FAPI-CIBA 兼容 profile 与内部 `fapi2-ciba` 必须隔离。 |
-| 外部第三方登录 | RP-001 到 RP-006 是新增未来路线任务，当前未实现。 |
+| 外部第三方登录 | M5 已完成为配置驱动的热插拔 provider registry；外部 OIDC、OAuth2 social、SAML gateway、非敏感 admin onboarding 和本地 session 边界已实现。 |
 | 非目标 | NI-010 OpenID Federation 当前不实现；第三方登录不依赖 OpenID Federation。 |
 | 可选未来项 | NI-012、NI-013、NI-014、NI-015 和 M8 watchlist 项按需求进入后续路线。 |
 

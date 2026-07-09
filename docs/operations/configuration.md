@@ -141,7 +141,7 @@ deployment path. They are candidates for the administrator UI:
   `EMAIL_FROM`
 - passkeys: `PASSKEY_RP_NAME`, `PASSKEY_REQUIRE_USER_VERIFICATION`,
   `PASSKEY_REQUIRE_USER_HANDLE`, `PASSKEY_STRICT_BASE64`
-- federation: `FEDERATION_OIDC_*`, `FEDERATION_SAML_GATEWAY_*`
+- federation: `FEDERATION_PROVIDER_CONFIGS`, `FEDERATION_SAML_GATEWAY_*`
 - SCIM: `SCIM_BEARER_TOKEN`
 - external signing: `SIGNING_EXTERNAL_COMMAND`,
   `SIGNING_EXTERNAL_TIMEOUT_MS`,
@@ -155,6 +155,13 @@ deployment path. They are candidates for the administrator UI:
 Security-sensitive values such as `DATABASE_URL`, `VALKEY_URL`, SMTP
 credentials, federation client secrets, and SAML shared secrets must not be
 committed to Git.
+
+`FEDERATION_PROVIDER_CONFIGS` is a JSON array for modular third-party login
+providers. Each enabled entry must include `provider_id`, `enabled`,
+`display_name`, `adapter_type`, client credentials, redirect URI, scope,
+endpoint or issuer configuration, and claim mapping. Providers default to
+disabled unless `enabled` is true. Incomplete enabled provider configuration
+fails startup; disabled providers do not appear in `/auth/federation/providers`.
 
 Security-state lifetimes and cooldowns must be positive. Startup rejects zero
 or negative values for session, authorization-code, access-token, ID-token,
