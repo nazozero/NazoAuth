@@ -79,9 +79,14 @@ push_capacity_commit() {
   git push origin "HEAD:${branch}"
 }
 
+extended_report_path() {
+  suffix="$1"
+  echo "docs/performance/reports/extended/performance-capacity-curve-extended-${suffix}.md"
+}
+
 commit_extended_report() {
   suffix="$1"
-  report="docs/performance/performance-capacity-curve-extended-${suffix}.md"
+  report="$(extended_report_path "${suffix}")"
   results="perf/results/capacity-extended-${suffix}.json"
   env_report="perf/results/cnb-environment-extended-${suffix}.md"
   if [ ! -f "${report}" ]; then
@@ -179,8 +184,8 @@ done <"${children_file}"
 kill "${reporter_pid}" 2>/dev/null || true
 wait "${reporter_pid}" 2>/dev/null || true
 
-if find docs/performance -maxdepth 1 -name 'performance-capacity-curve-extended-*.md' -print -quit | grep -q .; then
-  git add perf/capacity.py perf/cnb_capacity.sh perf/cnb_extended_capacity_matrix.sh perf/k6/oauth.js perf/runner.py perf/seed.py docs/performance/performance-capacity-curve-extended-*.md
+if find docs/performance/reports/extended -maxdepth 1 -name 'performance-capacity-curve-extended-*.md' -print -quit | grep -q .; then
+  git add perf/capacity.py perf/cnb_capacity.sh perf/cnb_extended_capacity_matrix.sh perf/k6/oauth.js perf/runner.py perf/seed.py docs/performance/reports/extended/performance-capacity-curve-extended-*.md
   if git diff --cached --quiet; then
     echo "No extended capacity changes to commit."
   else

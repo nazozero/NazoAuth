@@ -15,7 +15,9 @@ RATES="${CAPACITY_RATES:-}"
 MAX_VUS="${CAPACITY_MAX_VUS:-512}"
 case "${REPORT_SUFFIX}" in
   dev-*) REPORT="docs/performance/archive/dev/performance-capacity-curve-${REPORT_SUFFIX}.md" ;;
-  *) REPORT="docs/performance/performance-capacity-curve-${REPORT_SUFFIX}.md" ;;
+  extended-*) REPORT="docs/performance/reports/extended/performance-capacity-curve-${REPORT_SUFFIX}.md" ;;
+  app-cpu-*|single-instance-*) REPORT="docs/performance/reports/special/performance-capacity-curve-${REPORT_SUFFIX}.md" ;;
+  *) REPORT="docs/performance/reports/main/performance-capacity-curve-${REPORT_SUFFIX}.md" ;;
 esac
 ENV_REPORT="perf/results/cnb-environment-${REPORT_SUFFIX}.md"
 export CAPACITY_ENV_REPORT_PATH="${ENV_REPORT}"
@@ -174,7 +176,7 @@ fi
   echo "| NazoAuth container | Built from local Containerfile target runtime; PERF_METRICS_ENABLED=true; runtime key volume shared with keyset/migrate. |"
   echo "| Key material setup | keyset service generates runtime RS256 and PS256 keys before migration and benchmark traffic. |"
   echo "| Migration setup | migrate service runs nazo-oauth-migrate before the NazoAuth service is considered ready for benchmark traffic. |"
-  echo "| Perf runner | Built from perf/runner/Containerfile; mounts Docker socket for container stats; writes Markdown reports to docs/performance/ and runtime JSON/logs to ignored perf/results/. |"
+  echo "| Perf runner | Built from perf/runner/Containerfile; mounts Docker socket for container stats; writes Markdown reports under docs/performance/reports/ and runtime JSON/logs to ignored perf/results/. |"
   echo "| Metrics sources | k6 HTTP metrics; Docker stats CPU/memory samples; PostgreSQL pg_stat_statements; NazoAuth DB pool metrics; Valkey INFO counters. |"
   echo
 } >"${ENV_REPORT}"
@@ -203,13 +205,47 @@ set -e
 
 python3 - "${ENV_REPORT}" "${REPORT}" "${status}" <<'PY'
 import sys
+import re
+import os
 from pathlib import Path
 
 env_path = Path(sys.argv[1])
 target_path = Path(sys.argv[2])
 status = int(sys.argv[3])
 
-env = env_path.read_text(encoding="utf-8").rstrip() + "\n\n"
+env_source = env_path.read_text(encoding="utf-8")
+fields = {}
+for line in env_source.splitlines():
+    if not line.startswith("| ") or line.startswith("| ---"):
+        continue
+    cells = [cell.strip() for cell in line.strip("|").split("|")]
+    if len(cells) == 2:
+        fields[cells[0]] = cells[1]
+
+suffix = env_path.stem.removeprefix("cnb-environment-")
+results_path = Path("perf") / "results" / f"capacity-{suffix}.json"
+report_dir = target_path.parent
+env_link = Path(os.path.relpath(env_path, report_dir)).as_posix()
+results_link = Path(os.path.relpath(results_path, report_dir)).as_posix()
+evidence_rows = [
+    ("Source commit", fields.get("Source commit", "unknown")),
+    ("Scenario(s)", fields.get("Capacity scenarios", "unknown")),
+    ("Duration", fields.get("Duration per point", "unknown")),
+    ("App instance stages", fields.get("App instance stages", "unknown")),
+    ("Target rates", fields.get("Explicit rates", "scenario defaults")),
+    ("CPU set", fields.get("CPU set", "unknown")),
+    ("Environment capture", f"[{env_link}]({env_link})"),
+    ("Results JSON", f"[{results_link}]({results_link})"),
+]
+evidence = "\n".join([
+    "## Evidence",
+    "",
+    "| Field | Value |",
+    "| --- | --- |",
+    *[f"| {field} | {value} |" for field, value in evidence_rows],
+    "",
+])
+
 if target_path.exists():
     source = target_path.read_text(encoding="utf-8")
 else:
@@ -219,11 +255,20 @@ else:
         "No successful capacity point completed before the run failed.",
         "",
     ])
+source = re.sub(
+    r"\n## Test Environment(?: and Topology)?\n\n\| Field \| Value \|\n\| --- \| --- \|\n(?:\| .* \| .* \|\n)+\n",
+    "\n",
+    source,
+)
+source = re.sub(r"\n## Notes\n\n(?:- .*\n)+", "\n", source)
 marker = "\n## Run Configuration\n"
 if marker in source:
-    source = source.replace(marker, "\n" + env + "## Run Configuration\n", 1)
+    if "\n## Evidence\n" in source:
+        source = re.sub(r"\n## Evidence\n\n\| Field \| Value \|\n\| --- \| --- \|\n(?:\| .* \| .* \|\n)+\n", "\n" + evidence, source, count=1)
+    else:
+        source = source.replace(marker, "\n" + evidence + "## Run Configuration\n", 1)
 else:
-    source = source + "\n\n" + env
+    source = source.rstrip() + "\n\n" + evidence
 if status != 0:
     source = source.rstrip() + "\n\n## Run Status\n\n"
     source += f"- CNB capacity run failed with exit code `{status}` before completing the full matrix.\n"

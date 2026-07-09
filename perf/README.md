@@ -79,8 +79,10 @@ replicas. It is intended for dedicated benchmark machines, not routine local
 verification.
 
 Results are written to `perf/results/*.summary.json` and
-`perf/results/*.k6.json`. Markdown reports are written to
-`docs/performance/performance-benchmarks.md` and `docs/performance/performance-capacity-curve.md`.
+`perf/results/*.k6.json`. Markdown entry-point reports are written to
+`docs/performance/performance-benchmarks.md` and
+`docs/performance/performance-capacity-curve.md`; scenario-specific capacity
+reports are grouped under `docs/performance/reports/`.
 
 ## Load Model
 

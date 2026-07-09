@@ -89,7 +89,7 @@ echo "instances=1"
 echo "max_vus=${max_vus}"
 echo "app_cpuset=${PERF_APP_CPUSET}"
 echo "infra_cpuset=${PERF_INFRA_CPUSET}"
-echo "report=docs/performance/performance-capacity-curve-${suffix}.md"
+echo "report=docs/performance/reports/special/performance-capacity-curve-${suffix}.md"
 echo "results=perf/results/capacity-${suffix}.json"
 
 ./perf/cnb_capacity.sh
