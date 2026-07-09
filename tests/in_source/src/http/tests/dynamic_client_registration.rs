@@ -177,6 +177,26 @@ fn dynamic_registration_rejects_inconsistent_grant_and_response_types() {
 }
 
 #[test]
+fn dynamic_registration_rejects_hybrid_response_types() {
+    let request = DynamicClientRegistrationRequest {
+        redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
+        grant_types: Some(vec!["authorization_code".to_owned()]),
+        response_types: Some(vec!["code id_token".to_owned()]),
+        ..Default::default()
+    };
+
+    let err = prepare_dynamic_client_registration(
+        request,
+        DynamicRegistrationDefaults {
+            default_audience: "https://issuer.example/fapi/resource",
+        },
+    )
+    .expect_err("hybrid FAPI 1.0 response types must not be registered");
+
+    assert_eq!(err.error, "invalid_client_metadata");
+}
+
+#[test]
 fn dynamic_registration_rejects_jwks_uri_and_jwks_in_same_request() {
     let request = DynamicClientRegistrationRequest {
         redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),

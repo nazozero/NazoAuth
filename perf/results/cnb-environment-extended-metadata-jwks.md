@@ -38,4 +38,3 @@
 | Migration setup | migrate service runs nazo-oauth-migrate before the NazoAuth service is considered ready for benchmark traffic. |
 | Perf runner | Built from perf/runner/Containerfile; mounts Docker socket for container stats; writes Markdown reports to docs/ and runtime JSON/logs to ignored perf/results/. |
 | Metrics sources | k6 HTTP metrics; Docker stats CPU/memory samples; PostgreSQL pg_stat_statements; NazoAuth DB pool metrics; Valkey INFO counters. |
-

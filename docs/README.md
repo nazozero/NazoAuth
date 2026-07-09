@@ -108,6 +108,7 @@ set can be scanned from one place.
 | [conformance/2026-07-02-ni-006-011-private-oidf-results.md](conformance/2026-07-02-ni-006-011-private-oidf-results.md) | NI-006 through NI-011 private targeted results. |
 | [conformance/2026-07-03-ni-006-011-official-parallel-isolated-oidf-results.md](conformance/2026-07-03-ni-006-011-official-parallel-isolated-oidf-results.md) | NI-006 through NI-011 official parallel-isolated results. |
 | [conformance/2026-07-03-ni-007-public-ciba-oidf-results.md](conformance/2026-07-03-ni-007-public-ciba-oidf-results.md) | NI-007 public FAPI-CIBA results. |
+| [conformance/2026-07-08-m2-official-parallel-isolated-oidf-results.md](conformance/2026-07-08-m2-official-parallel-isolated-oidf-results.md) | M2 official parallel-isolated OIDF results. |
 
 ### Coverage
 

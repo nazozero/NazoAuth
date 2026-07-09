@@ -578,7 +578,19 @@ pub(crate) async fn authorization_response_redirect(
     state: &AppState,
     input: AuthorizationResponseRedirect<'_>,
 ) -> HttpResponse {
-    if input.response_mode == Some("jwt") && !input.client_id.trim().is_empty() {
+    let signed_response_required = state
+        .settings
+        .authorization_server_profile
+        .requires_signed_authorization_response();
+    if input.response_mode == Some("jwt") || signed_response_required {
+        if input.client_id.trim().is_empty() {
+            tracing::warn!("cannot build signed authorization response without client_id");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "authorization response signing failed.",
+            );
+        }
         return authorization_response_jwt_result(
             input.redirect_uri,
             make_authorization_response_jwt(
