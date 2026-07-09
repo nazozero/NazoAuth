@@ -1,4 +1,5 @@
 import json
+import re
 import unittest
 from pathlib import Path
 
@@ -7,6 +8,10 @@ def workflow_heredoc_json(workflow: str, name: str):
     marker = f"cat > {name} <<'JSON'"
     payload = workflow.split(marker, 1)[1].split("JSON", 1)[0]
     return json.loads(payload)
+
+
+def browser_sensitive_plan_expressions(workflow: str):
+    return re.findall(r'plan_expression: "([^"]+)"', workflow)
 
 
 class OidfWorkflowTests(unittest.TestCase):
@@ -33,32 +38,26 @@ class OidfWorkflowTests(unittest.TestCase):
         self.assertIn("runner_mode:", workflow)
         self.assertIn("parallel-isolated", workflow)
         self.assertIn("oidf-concurrent-plan-set.json", workflow)
-        self.assertIn("oidf-frontchannel-plan-set.json", workflow)
-        self.assertIn("oidf-session-management-plan-set.json", workflow)
+        self.assertIn("oidf-browser-sensitive-plan-set.json", workflow)
 
         full_plan_set = workflow_heredoc_json(workflow, "oidf-full-plan-set.json")
         concurrent_plan_set = workflow_heredoc_json(
             workflow,
             "oidf-concurrent-plan-set.json",
         )
-        frontchannel_plan_set = workflow_heredoc_json(
-            workflow,
-            "oidf-frontchannel-plan-set.json",
-        )
-        session_management_plan_set = workflow_heredoc_json(
-            workflow,
-            "oidf-session-management-plan-set.json",
-        )
+        browser_sensitive_plan_set = browser_sensitive_plan_expressions(workflow)
 
+        self.assertFalse(any("oidcc-basic-certification-test-plan" in plan for plan in concurrent_plan_set))
         self.assertFalse(
             any("frontchannel-rp-initiated-logout" in plan for plan in concurrent_plan_set)
         )
         self.assertFalse(
             any("session-management-certification-test-plan" in plan for plan in concurrent_plan_set)
         )
+        self.assertFalse(any("fapi_profile=plain_fapi" in plan for plan in concurrent_plan_set))
         self.assertEqual(
             sorted(full_plan_set),
-            sorted(concurrent_plan_set + frontchannel_plan_set + session_management_plan_set),
+            sorted(concurrent_plan_set + browser_sensitive_plan_set),
         )
 
         self.assertIn('"$GITHUB_WORKSPACE/oidf-results/$export_subdir"', workflow)
@@ -73,17 +72,18 @@ class OidfWorkflowTests(unittest.TestCase):
 
         parallel_case = workflow.split("parallel-isolated)", 1)[1].split(";;", 1)[0]
         self.assertIn("run_oidf_plan_set oidf-concurrent-plan-set.json concurrent", parallel_case)
-        self.assertNotIn("oidf-frontchannel-plan-set.json", parallel_case)
-        self.assertNotIn("oidf-session-management-plan-set.json", parallel_case)
+        self.assertNotIn("oidf-browser-sensitive-plan-set.json", parallel_case)
 
         self.assertIn("oidf-conformance-browser-isolated:", workflow)
         self.assertIn("fail-fast: false", workflow)
-        self.assertIn("plan_set_file: oidf-frontchannel-plan-set.json", workflow)
-        self.assertIn("plan_set_file: oidf-session-management-plan-set.json", workflow)
+        self.assertIn("max-parallel: 1", workflow)
+        self.assertIn("plan_set_file: oidf-browser-sensitive-plan-set.json", workflow)
         self.assertIn('--plan-set-json-file "${{ matrix.plan_set_file }}"', workflow)
         self.assertIn("--no-parallel", workflow)
+        self.assertIn("oidf-conformance-results-oidcc-basic-static", workflow)
         self.assertIn("oidf-conformance-results-frontchannel", workflow)
         self.assertIn("oidf-conformance-results-session-management", workflow)
+        self.assertIn("oidf-conformance-results-fapi-security-mtls-dpop-openid", workflow)
 
 
 if __name__ == "__main__":
