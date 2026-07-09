@@ -65,6 +65,7 @@ client onboarding guidance lives in
 | Device Authorization Grant | Default-closed constrained-input client profile that requires the client grant allowlist. | Device endpoint and `device_code` grant metadata appear only when `ENABLE_DEVICE_AUTHORIZATION_GRANT=true`. |
 | Token Exchange local profile | Bounded RFC 8693 access-token to access-token exchange for locally issued subject/actor tokens and explicitly allowed targets. | The grant type is advertised only because the local profile is implemented; external, refresh-token, and ID-token exchange profiles are not implied. |
 | Third-party JWT bearer assertion trust | Deferred profile for external assertion issuers and non-client subjects; the implemented JWT bearer grant remains client-bound. | No discovery metadata is advertised until issuer allowlists, subject mapping, replay, revocation, audit, and negative tests exist. |
+| Third-party login RP providers | Product login surface for external OIDC, OAuth2 social, and SAML gateway providers. Provider registry is configuration-driven and default-closed; each provider has independent enablement, display metadata, adapter type, redirect URI, scope, endpoints, and claim mapping. | Third-party login is an RP/client capability and must not appear in OP discovery metadata. Public login metadata comes from `/auth/federation/providers`; admin onboarding metadata comes from `/admin/federation/providers` without secrets. |
 
 ## `oauth2-security-bcp`
 

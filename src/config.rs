@@ -50,15 +50,7 @@ const ENV_CONFIG_KEYS: &[&str] = &[
     "EMAIL_SMTP_TLS",
     "EMAIL_SMTP_USERNAME",
     "FRONTEND_BASE_URL",
-    "FEDERATION_OIDC_AUTHORIZATION_ENDPOINT",
-    "FEDERATION_OIDC_CLIENT_ID",
-    "FEDERATION_OIDC_CLIENT_SECRET",
-    "FEDERATION_OIDC_JWKS_URL",
-    "FEDERATION_OIDC_PROVIDER_ID",
-    "FEDERATION_OIDC_REDIRECT_URI",
-    "FEDERATION_OIDC_SCOPES",
-    "FEDERATION_OIDC_TOKEN_ENDPOINT",
-    "FEDERATION_OIDC_ISSUER",
+    "FEDERATION_PROVIDER_CONFIGS",
     "FEDERATION_SAML_GATEWAY_AUDIENCE",
     "FEDERATION_SAML_GATEWAY_ENABLED",
     "FEDERATION_SAML_GATEWAY_ISSUER",
@@ -126,6 +118,17 @@ impl ConfigSource {
                 .into_iter()
                 .map(|(key, value)| (key.to_owned(), value.to_owned()))
                 .collect(),
+            env_values: HashMap::new(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_owned_pairs_for_test(
+        values: impl IntoIterator<Item = (String, String)>,
+    ) -> Self {
+        // 动态端点测试需要在运行时生成配置值；生产加载仍只走文件和环境变量。
+        Self {
+            file_values: values.into_iter().collect(),
             env_values: HashMap::new(),
         }
     }

@@ -41,6 +41,22 @@ fn audit_event_definitions_include_dynamic_client_lifecycle() {
 }
 
 #[test]
+fn audit_event_definitions_include_external_identity_lifecycle() {
+    assert_eq!(
+        audit_event_category("external_identity_linked"),
+        Some("identity_lifecycle")
+    );
+    assert_eq!(
+        audit_event_category("external_identity_unlinked"),
+        Some("identity_lifecycle")
+    );
+    assert_eq!(
+        audit_event_category("external_identity_relink_denied"),
+        Some("identity_lifecycle")
+    );
+}
+
+#[test]
 fn audit_schema_version_is_stable_for_collectors() {
     assert_eq!(AUDIT_SCHEMA_VERSION, "nazo.audit.v1");
 }

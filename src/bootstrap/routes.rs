@@ -121,14 +121,18 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
                 .route("/register", web::post().to(register))
                 .route("/login", web::post().to(login))
                 .route(
-                    "/federation/oidc/start",
-                    web::get().to(federation_oidc_start),
-                )
-                .route(
-                    "/federation/oidc/callback",
-                    web::get().to(federation_oidc_callback),
+                    "/federation/providers",
+                    web::get().to(federation_provider_list),
                 )
                 .route("/federation/saml/acs", web::post().to(federation_saml_acs))
+                .route(
+                    "/federation/{provider_id}/start",
+                    web::get().to(federation_provider_start),
+                )
+                .route(
+                    "/federation/{provider_id}/callback",
+                    web::get().to(federation_provider_callback),
+                )
                 .route("/passkey/begin", web::post().to(passkey_login_begin))
                 .route("/passkey/finish", web::post().to(passkey_login_finish))
                 .route("/mfa/verify", web::post().to(mfa_verify))
@@ -160,6 +164,11 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
                         .route("/avatar", web::get().to(get_avatar))
                         .route("/avatar", web::delete().to(delete_avatar))
                         .route("/applications", web::get().to(my_applications))
+                        .route("/federation/links", web::get().to(my_federation_links))
+                        .route(
+                            "/federation/links/{link_id}",
+                            web::delete().to(unlink_my_federation_link),
+                        )
                         .route("/access-requests", web::get().to(my_access_requests))
                         .route("/access-requests", web::post().to(create_access_request))
                         .route("/access-delivery", web::get().to(access_delivery)),
@@ -188,6 +197,10 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
                 .route("/clients", web::post().to(admin_create_client))
                 .route("/clients/{client_id}", web::get().to(admin_get_client))
                 .route("/clients/{client_id}", web::patch().to(admin_patch_client))
+                .route(
+                    "/federation/providers",
+                    web::get().to(admin_federation_providers),
+                )
                 .route("/grants", web::get().to(admin_grants))
                 .route("/grants/revoke", web::post().to(admin_revoke_grant))
                 .route("/access-requests", web::get().to(admin_access_requests))
