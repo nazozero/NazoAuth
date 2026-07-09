@@ -82,84 +82,33 @@ def markdown_table(rows: list[tuple[str, str]]) -> str:
     return "\n".join(lines)
 
 
-def environment_block(*, suffix: str, scenario: str) -> str:
+def evidence_block(*, suffix: str, scenario: str) -> str:
     cpuset = cpuset_for_suffix(suffix)
-    compose_project = f"nazoauth-dev-capacity-dev-{suffix}"
     rows = [
         ("Source commit", run(["git", "rev-parse", "HEAD"], 4)),
         ("Runner tag", "cnb:arch:amd64"),
-        ("Requested runner CPUs", "64"),
-        ("Observed logical CPUs", run(["nproc", "--all"], 4)),
-        (
-            "Process allowed CPUs",
-            run(["sh", "-lc", "awk -F':\\t' '/Cpus_allowed_list/ { print $2; exit }' /proc/self/status"], 4),
-        ),
-        ("Observed CPU model", run(["sh", "-lc", "awk -F': ' '/model name/ { print $2; exit }' /proc/cpuinfo"], 4)),
-        ("Cgroup CPU max", read_text(Path("/sys/fs/cgroup/cpu.max")).strip() or "unknown"),
-        ("Memory total", run(["sh", "-lc", "awk '/MemTotal/ { printf \"%.2f GiB\", $2 / 1024 / 1024 }' /proc/meminfo"], 4)),
-        ("Cgroup memory max", read_text(Path("/sys/fs/cgroup/memory.max")).strip() or "unknown"),
-        ("Workspace disk available", run(["sh", "-lc", "df -h . | awk 'NR==2 { print $4 \" on \" $6 }'"], 4)),
-        ("Kernel", run(["uname", "-a"], 4)),
-        ("Docker server", run(["docker", "version", "--format", "{{.Server.Version}}"], 8)),
-        ("Docker compose", run(["docker", "compose", "version", "--short"], 8)),
-        ("Compose project", compose_project),
-        ("Compose files", f"docker-compose.perf.yml + perf/results/docker-compose.cpuset-dev-{suffix}.yml"),
         ("CPU set", cpuset),
         ("CPU set size", cpuset_count(cpuset)),
-        ("Services pinned to CPU set", "postgres, valkey, keyset, migrate, nazoauth, perf"),
-        (
-            "Per-container CPU model",
-            "Docker cpuset isolation; no CPU quota. Each service container may run on the listed CPU set. "
-            "NazoAuth is additionally scaled by the stage instance count.",
-        ),
         ("Capacity scenario", scenario),
         ("Duration per point", DURATION),
         ("App instance stages", f"{INSTANCES} NazoAuth replica(s)"),
         ("Target rates", SCENARIO_RATES.get(scenario, "custom")),
-        ("Load executor", "k6 constant-arrival-rate, time unit 1s"),
-        (
-            "Network topology",
-            "Single Docker bridge network; perf runner reaches NazoAuth at http://nazoauth:8000; "
-            "NazoAuth reaches PostgreSQL and Valkey inside the same network.",
-        ),
-        (
-            "PostgreSQL container",
-            "docker.io/library/postgres:18-alpine; pg_stat_statements enabled; track_io_timing enabled; ephemeral Docker volume.",
-        ),
-        (
-            "Valkey container",
-            "docker.io/valkey/valkey:8-alpine; RDB save disabled; AOF disabled; warning log level; ephemeral benchmark state.",
-        ),
-        (
-            "NazoAuth container",
-            "Built from local Containerfile target runtime; PERF_METRICS_ENABLED=true; runtime key volume shared with keyset/migrate.",
-        ),
-        ("Key material setup", "keyset service generates runtime RS256 and PS256 keys before migration and benchmark traffic."),
-        ("Migration setup", "migrate service runs nazo-oauth-migrate before benchmark traffic."),
-        (
-            "Perf runner",
-            "Built from perf/runner/Containerfile; mounts Docker socket for container stats; "
-            "writes Markdown reports to docs/performance/ and runtime JSON/logs to ignored perf/results/.",
-        ),
-        (
-            "Metrics sources",
-            "k6 HTTP metrics; Docker stats CPU/memory samples; PostgreSQL pg_stat_statements; "
-            "NazoAuth DB pool metrics; Valkey INFO counters.",
-        ),
+        ("Results JSON", f"[perf/results/capacity-dev-{suffix}.json](../../../../perf/results/capacity-dev-{suffix}.json)"),
     ]
-    return "## Test Environment and Topology\n\n" + markdown_table(rows) + "\n\n"
+    return "## Evidence\n\n" + markdown_table(rows) + "\n\n"
 
 
-def insert_environment(source: str, env: str) -> str:
+def insert_evidence(source: str, evidence: str) -> str:
     source = re.sub(
         r"\n## Test Environment(?: and Topology)?\n\n\| Field \| Value \|\n\| --- \| --- \|\n(?:\| .* \| .* \|\n)+\n",
         "\n",
         source,
     )
+    source = re.sub(r"\n## Notes\n\n(?:- .*\n)+", "\n", source)
     marker = "\n## Run Configuration\n"
     if marker in source:
-        return source.replace(marker, "\n" + env + "## Run Configuration\n", 1)
-    return source.rstrip() + "\n\n" + env
+        return source.replace(marker, "\n" + evidence + "## Run Configuration\n", 1)
+    return source.rstrip() + "\n\n" + evidence
 
 
 def finalize_report(*, capacity, suffix: str, scenario: str, require_complete: bool) -> None:
@@ -175,7 +124,7 @@ def finalize_report(*, capacity, suffix: str, scenario: str, require_complete: b
         raise SystemExit(f"{suffix}: expected 15 capacity points before writeback, got {len(data)}")
     capacity.write_report(data, duration=DURATION, report_path=report_path, results_path=results_path)
     source = report_path.read_text(encoding="utf-8")
-    source = insert_environment(source, environment_block(suffix=suffix, scenario=scenario))
+    source = insert_evidence(source, evidence_block(suffix=suffix, scenario=scenario))
     report_path.write_text(source, encoding="utf-8", newline="\n")
     print(f"finalized {report_path}")
 
