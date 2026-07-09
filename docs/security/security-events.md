@@ -56,6 +56,10 @@ Raw credentials and bearer material must never appear in audit fields. The audit
 | `client_assertion_replay_detected` | `credential_replay` | Duplicate `private_key_jwt` assertion `jti` was detected. |
 | `client_created` | `client_lifecycle` | Client registration was created through admin or access-request flow. |
 | `client_updated` | `client_lifecycle` | Client registration metadata was updated. |
+| `dynamic_client_registered` | `client_lifecycle` | RFC 7591 dynamic client registration succeeded without logging management credentials. |
+| `dynamic_client_configuration_read` | `client_lifecycle` | RFC 7592 client configuration read succeeded and rotated management credentials. |
+| `dynamic_client_configuration_updated` | `client_lifecycle` | RFC 7592 full-replacement client configuration update succeeded and rotated management credentials. |
+| `dynamic_client_deleted` | `client_lifecycle` | RFC 7592 client deletion deactivated the dynamic client. |
 | `admin_user_updated` | `administration` | Administrator changed user status, role, or admin level. |
 | `scim_token_used` | `provisioning` | SCIM bearer credential was accepted without logging raw token material. |
 | `scim_token_denied` | `provisioning` | SCIM bearer credential was missing, invalid, or lacked the required scope. |
