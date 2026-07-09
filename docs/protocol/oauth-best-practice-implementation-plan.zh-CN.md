@@ -216,12 +216,12 @@ CIBA 等 profile 明确注册、测试和运维。
 
 优先任务：
 
-- [ ] **M3-01：收口 NI-004 Dynamic Client Registration**
+- [x] **M3-01：收口 NI-004 Dynamic Client Registration**
   - 明确 `software_statement`、远端 `jwks_uri`、client metadata trust、注册审计和默认权限边界。
   - 默认注册出来的 client 不得自动获得 FAPI、高权限 scope、CIBA 或管理能力。
-- [ ] **M3-02：保持 NI-005 DCR Management 完成状态**
+- [x] **M3-02：保持 NI-005 DCR Management 完成状态**
   - registration access token 轮换、client secret 轮换、PUT 全量替换、DELETE 撤销链路继续有测试覆盖。
-- [ ] **M3-03：新增 client onboarding 文档**
+- [x] **M3-03：新增 client onboarding 文档**
   - 分别说明 baseline、FAPI2、FAPI2 Message Signing、CIBA、Device Grant、DCR/DCRM 的注册字段、认证方式、metadata 和错误语义。
 
 预计涉及：
@@ -247,10 +247,10 @@ baseline 和 FAPI2 默认链路。
 
 优先任务：
 
-- [ ] **M4-01：收口 NI-003 RFC 8693 Token Exchange local profile**
+- [x] **M4-01：收口 NI-003 RFC 8693 Token Exchange local profile**
   - 当前 local access-token exchange 必须明确支持边界：本 AS 签发 token、显式 target、scope downscope、revocation、actor token。
   - 外部 issuer、refresh-token exchange、ID-token exchange、`authorization_details` 传播作为独立 profile，不混入 local profile。
-- [ ] **M4-02：设计 NI-006 third-party JWT bearer assertion trust**
+- [x] **M4-02：设计 NI-006 third-party JWT bearer assertion trust**
   - 只有业务需要第三方 assertion issuer 时实施。
   - 必须包含 issuer allowlist、subject mapping、audience、`jti` replay、撤销、审计事件和负向测试。
 
@@ -409,10 +409,10 @@ cargo test --locked well_known --lib
 | --- | --- |
 | 已具备的 OP/AS 基线 | BP-001 到 BP-028 已作为当前基础能力维护；TP-001 到 TP-008 已作为精确测试包维护。 |
 | Public OP/AS 基线硬化 | M1 / BP-029 已完成；后续新增 endpoint 必须复用同等 CORS、cookie/session、CSRF、rate limit、日志脱敏和错误语义门禁。 |
-| 当前优先缺口 | M2 是下一阶段主线：复核 FAPI2 Security Final 与 FAPI2 Message Signing 的完成标准，并继续保持 FAPI1 兼容行为与 FAPI2 默认链路隔离。 |
-| FAPI2 / Message Signing | PS-001 与 NI-001 保持部分完成 / profile-scoped，完成前不得勾选。 |
-| DCR / DCRM | NI-004 部分完成；NI-005 完成但需要和 NI-004 的 onboarding 文档协同维护。 |
-| Token trust | NI-003、NI-006 均是部分完成 / bounded profile；外部 issuer trust 不属于当前默认能力。 |
+| 当前优先缺口 | M5 外部第三方登录是下一阶段主线；M3/M4 已收口为默认关闭、profile-scoped 或 deferred-by-design 的明确边界。 |
+| FAPI2 / Message Signing | M2 已完成；后续新增 FAPI / Message Signing 行为必须继续保持 profile-scoped metadata truth 与负向测试。 |
+| DCR / DCRM | M3 已完成；NI-004 / NI-005 以 default-closed DCR/DCRM、管理凭据轮换、非秘密审计事件和 onboarding 文档维护。 |
+| Token trust | M4 已完成；NI-003 是 bounded local Token Exchange，NI-006 是第三方 JWT bearer trust 设计完成且实现 deferred，外部 issuer trust 不属于当前默认能力。 |
 | CIBA | NI-007 部分完成 / profile-scoped；官方 FAPI-CIBA 兼容 profile 与内部 `fapi2-ciba` 必须隔离。 |
 | 外部第三方登录 | RP-001 到 RP-006 是新增未来路线任务，当前未实现。 |
 | 非目标 | NI-010 OpenID Federation 当前不实现；第三方登录不依赖 OpenID Federation。 |

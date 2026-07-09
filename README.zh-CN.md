@@ -218,6 +218,7 @@ RUST_LOG: "info"
 | OAuth/OIDC/FAPI best-practice matrix | [docs/protocol/rfc-compliance-matrix.md](docs/protocol/rfc-compliance-matrix.md) |
 | OAuth/OIDC/FAPI 未来路线图 | [docs/protocol/oauth-best-practice-implementation-plan.zh-CN.md](docs/protocol/oauth-best-practice-implementation-plan.zh-CN.md) |
 | Profile matrix | [docs/protocol/profile-matrix.md](docs/protocol/profile-matrix.md) |
+| Ecosystem client onboarding | [docs/features/ecosystem-onboarding.md](docs/features/ecosystem-onboarding.md) |
 | Threat model | [docs/security/threat-model.md](docs/security/threat-model.md) |
 | 发布安全 | [docs/operations/release-security.md](docs/operations/release-security.md) |
 | PostgreSQL 和 Valkey 运维 | [docs/operations/ha-operations.md](docs/operations/ha-operations.md) |

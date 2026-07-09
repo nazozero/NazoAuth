@@ -626,3 +626,18 @@ async fn dynamic_registration_created_response_includes_registration_management_
     );
     assert_eq!(body["client_id_issued_at"], now.timestamp());
 }
+
+#[test]
+fn dynamic_client_audit_fields_exclude_management_credentials() {
+    let client = dynamic_registration_client_row();
+    let fields = dynamic_client_audit_fields(&client, "source-ip-hash".to_owned());
+
+    assert_eq!(fields.get("client_id"), Some(&json!("dynamic-client")));
+    assert_eq!(fields.get("source_ip_hash"), Some(&json!("source-ip-hash")));
+    assert_eq!(
+        fields.get("token_endpoint_auth_method"),
+        Some(&json!("client_secret_basic"))
+    );
+    assert!(!fields.contains_key("registration_access_token"));
+    assert!(!fields.contains_key("client_secret"));
+}

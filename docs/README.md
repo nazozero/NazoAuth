@@ -27,7 +27,7 @@ set can be scanned from one place.
 | --- | --- | --- |
 | Operations | [operations](operations) | Configuration, deployment, release-security, PostgreSQL, and Valkey operations. |
 | Protocol | [protocol](protocol) | OAuth/OIDC/FAPI profile matrices, RFC coverage, protocol self-audits, and implementation backlog. |
-| Features | [features](features) | Feature design and integration notes for tenancy, SCIM, federation, MFA, passkeys, and resource-server verification. |
+| Features | [features](features) | Feature design and integration notes for ecosystem onboarding, tenancy, SCIM, federation, MFA, passkeys, and resource-server verification. |
 | Security | [security](security) | Threat model, security policy links, and runtime security event taxonomy. |
 | Conformance | [conformance](conformance) | OIDF and protocol conformance matrices, run records, and negative fixture notes. |
 | Coverage | [coverage](coverage) | Coverage runbooks and evidence. |
@@ -72,7 +72,7 @@ set can be scanned from one place.
 
 | Document | Role |
 | --- | --- |
-| [features/ecosystem-onboarding.md](features/ecosystem-onboarding.md) | Ecosystem onboarding notes. |
+| [features/ecosystem-onboarding.md](features/ecosystem-onboarding.md) | External client onboarding, DCR/DCRM, Token Exchange, and third-party JWT bearer trust boundaries. |
 | [features/federation.md](features/federation.md) | External identity federation design notes. |
 | [features/mfa.md](features/mfa.md) | MFA and step-up authentication design notes. |
 | [features/passkeys.md](features/passkeys.md) | WebAuthn passkey behavior. |
