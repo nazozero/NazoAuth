@@ -71,7 +71,7 @@ class OidfWorkflowTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         parallel_case = workflow.split("parallel-isolated)", 1)[1].split(";;", 1)[0]
-        self.assertIn("run_oidf_plan_set oidf-concurrent-plan-set.json concurrent", parallel_case)
+        self.assertIn('run_oidf_plan_set oidf-concurrent-plan-set.json concurrent ""', parallel_case)
         self.assertNotIn("oidf-browser-sensitive-plan-set.json", parallel_case)
 
         self.assertIn("oidf-conformance-browser-isolated:", workflow)
@@ -84,6 +84,8 @@ class OidfWorkflowTests(unittest.TestCase):
         self.assertIn("oidf-conformance-results-frontchannel", workflow)
         self.assertIn("oidf-conformance-results-session-management", workflow)
         self.assertIn("oidf-conformance-results-fapi-security-mtls-dpop-openid", workflow)
+        self.assertIn('if [ "${{ matrix.name }}" = "oidcc-basic-dynamic" ]; then', workflow)
+        self.assertIn("args+=(--expected-skips-file oidf-expected-skips.json)", workflow)
 
 
 if __name__ == "__main__":
