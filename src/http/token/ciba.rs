@@ -313,8 +313,7 @@ pub(crate) async fn backchannel_authentication(
         last_poll_at: None,
     };
     let auth_req_id =
-        match create_unique_ciba_request(&state.valkey, &state_payload, || random_urlsafe_token())
-            .await
+        match create_unique_ciba_request(&state.valkey, &state_payload, random_urlsafe_token).await
         {
             Ok(auth_req_id) => auth_req_id,
             Err(error) => {
