@@ -85,6 +85,38 @@ struct CibaAuthorizationRequestView {
     expires_at: DateTime<Utc>,
 }
 
+#[derive(Clone, Debug)]
+struct CommittedCibaDecision {
+    auth_req_id_hash: String,
+    state: CibaRequestState,
+    decision: CibaDecision,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum CibaDecisionSource {
+    User,
+    Automation,
+}
+
+impl CibaDecisionSource {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Automation => "automation",
+        }
+    }
+}
+
+#[derive(Debug)]
+enum CibaDecisionFailure {
+    Missing,
+    UserMismatch,
+    AlreadyHandled,
+    Expired,
+    Storage(CibaStateError),
+    Contended,
+}
+
 pub(crate) async fn backchannel_authentication(
     state: Data<AppState>,
     req: HttpRequest,
@@ -802,6 +834,7 @@ pub(crate) async fn ciba_verification(
 
 pub(crate) async fn ciba_automated_decision(
     state: Data<AppState>,
+    req: HttpRequest,
     Query(query): Query<CibaAutomatedDecisionQuery>,
 ) -> HttpResponse {
     if !state.settings.enable_ciba {
@@ -835,8 +868,8 @@ pub(crate) async fn ciba_automated_decision(
         .or(query.r#type.as_deref())
         .map(str::trim)
     {
-        Some("allow" | "approve") => CibaStatus::Approved,
-        Some("deny") => CibaStatus::Denied,
+        Some("allow" | "approve") => CibaDecision::Approve,
+        Some("deny") => CibaDecision::Deny,
         _ => {
             return oauth_error(
                 StatusCode::BAD_REQUEST,
@@ -845,7 +878,15 @@ pub(crate) async fn ciba_automated_decision(
             );
         }
     };
-    set_ciba_request_decision(&state, auth_req_id, decision, None).await
+    set_ciba_request_decision(
+        &state,
+        auth_req_id,
+        decision,
+        None,
+        CibaDecisionSource::Automation,
+        Some(blake3_hex(&client_ip(&req, &state.settings))),
+    )
+    .await
 }
 
 pub(crate) async fn ciba_decision(
@@ -873,57 +914,143 @@ pub(crate) async fn ciba_decision(
         );
     }
     let decision = if payload.decision == "approve" {
-        CibaStatus::Approved
+        CibaDecision::Approve
     } else {
-        CibaStatus::Denied
+        CibaDecision::Deny
     };
-    set_ciba_request_decision(&state, &auth_req_id, decision, Some(user.id)).await
+    set_ciba_request_decision(
+        &state,
+        &auth_req_id,
+        decision,
+        Some(user.id),
+        CibaDecisionSource::User,
+        Some(blake3_hex(&client_ip(&req, &state.settings))),
+    )
+    .await
 }
 
 async fn set_ciba_request_decision(
     state: &AppState,
     auth_req_id: &str,
-    decision: CibaStatus,
+    decision: CibaDecision,
     expected_user_id: Option<Uuid>,
+    source: CibaDecisionSource,
+    source_ip_hash: Option<String>,
 ) -> HttpResponse {
-    let mut state_payload = match load_ciba_request_payload(state, auth_req_id).await {
-        Ok(Some(value)) => value,
-        Ok(None) => {
-            return oauth_error(
-                StatusCode::NOT_FOUND,
-                "invalid_request",
-                "CIBA request expired.",
-            );
+    complete_ciba_decision(
+        commit_ciba_decision(&state.valkey, auth_req_id, decision, expected_user_id).await,
+        source,
+        source_ip_hash,
+    )
+}
+
+async fn commit_ciba_decision(
+    valkey: &fred::prelude::Client,
+    auth_req_id: &str,
+    decision: CibaDecision,
+    expected_user_id: Option<Uuid>,
+) -> Result<CommittedCibaDecision, CibaDecisionFailure> {
+    for _ in 0..CIBA_TRANSITION_MAX_ATTEMPTS {
+        let stored = load_ciba_request_state(valkey, auth_req_id)
+            .await
+            .map_err(CibaDecisionFailure::Storage)?
+            .ok_or(CibaDecisionFailure::Missing)?;
+        match evaluate_ciba_decision(
+            &stored.state,
+            expected_user_id,
+            decision,
+            Utc::now().timestamp(),
+        ) {
+            CibaDecisionEvaluation::UserMismatch => {
+                return Err(CibaDecisionFailure::UserMismatch);
+            }
+            CibaDecisionEvaluation::AlreadyHandled => {
+                return Err(CibaDecisionFailure::AlreadyHandled);
+            }
+            CibaDecisionEvaluation::Expired => {
+                match delete_ciba_request_state(
+                    valkey,
+                    auth_req_id,
+                    &stored.raw,
+                    stored.state.retention_expires_at,
+                )
+                .await
+                .map_err(CibaDecisionFailure::Storage)?
+                {
+                    ValkeyAtomicResult::Applied | ValkeyAtomicResult::DeadlineElapsed => {
+                        return Err(CibaDecisionFailure::Expired);
+                    }
+                    ValkeyAtomicResult::Conflict => continue,
+                }
+            }
+            CibaDecisionEvaluation::Commit(next) => {
+                match replace_ciba_request_state(valkey, auth_req_id, &stored.raw, &next)
+                    .await
+                    .map_err(CibaDecisionFailure::Storage)?
+                {
+                    ValkeyAtomicResult::Applied => {
+                        return Ok(CommittedCibaDecision {
+                            auth_req_id_hash: blake3_hex(auth_req_id),
+                            state: next,
+                            decision,
+                        });
+                    }
+                    ValkeyAtomicResult::Conflict => continue,
+                    ValkeyAtomicResult::DeadlineElapsed => {
+                        return Err(CibaDecisionFailure::Expired);
+                    }
+                }
+            }
         }
-        Err(response) => return response,
-    };
-    if expected_user_id.is_some_and(|user_id| state_payload.user_id != user_id) {
-        return oauth_error(
-            StatusCode::FORBIDDEN,
-            "access_denied",
-            "CIBA request user mismatch.",
-        );
     }
-    if state_payload.status != CibaStatus::Pending {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "CIBA request was already handled.",
-        );
-    }
-    if state_payload.expires_at <= Utc::now().timestamp() {
-        let _ = valkey_del(&state.valkey, ciba_request_key(auth_req_id)).await;
-        return oauth_error(
+    Err(CibaDecisionFailure::Contended)
+}
+
+fn complete_ciba_decision(
+    result: Result<CommittedCibaDecision, CibaDecisionFailure>,
+    source: CibaDecisionSource,
+    source_ip_hash: Option<String>,
+) -> HttpResponse {
+    match result {
+        Ok(committed) => {
+            let event = match committed.decision {
+                CibaDecision::Approve => "ciba_authorization_approved",
+                CibaDecision::Deny => "ciba_authorization_denied",
+            };
+            let mut fields = audit_fields(&[
+                ("client_id", json!(committed.state.client_id)),
+                ("user_id", json!(committed.state.user_id)),
+                ("auth_req_id_hash", json!(committed.auth_req_id_hash)),
+                ("decision_source", json!(source.as_str())),
+            ]);
+            if let Some(source_ip_hash) = source_ip_hash {
+                fields.insert("source_ip_hash".to_owned(), json!(source_ip_hash));
+            }
+            audit_event(event, fields);
+            json_response_no_store(json!({"success": true}))
+        }
+        Err(CibaDecisionFailure::Missing | CibaDecisionFailure::Expired) => ciba_error_no_store(
             StatusCode::NOT_FOUND,
             "invalid_request",
             "CIBA request expired.",
-        );
+        ),
+        Err(CibaDecisionFailure::UserMismatch) => ciba_error_no_store(
+            StatusCode::FORBIDDEN,
+            "access_denied",
+            "CIBA request user mismatch.",
+        ),
+        Err(CibaDecisionFailure::AlreadyHandled) => ciba_error_no_store(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "CIBA request was already handled.",
+        ),
+        Err(CibaDecisionFailure::Storage(error)) => ciba_state_error_response(error),
+        Err(CibaDecisionFailure::Contended) => ciba_error_no_store(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "CIBA state is busy.",
+        ),
     }
-    state_payload.status = decision;
-    if let Err(response) = store_ciba_request_payload(state, auth_req_id, &state_payload).await {
-        return response;
-    }
-    json_response_no_store(json!({"success": true}))
 }
 
 async fn ciba_authorization_request_view(
@@ -1228,11 +1355,22 @@ async fn store_ciba_request_payload(
 
 fn ciba_state_error_response(error: CibaStateError) -> HttpResponse {
     tracing::warn!(%error, "failed to load CIBA state");
-    oauth_error(
+    ciba_error_no_store(
         StatusCode::SERVICE_UNAVAILABLE,
         "server_error",
         "CIBA state unavailable.",
     )
+}
+
+fn ciba_error_no_store(status: StatusCode, error: &str, description: &str) -> HttpResponse {
+    let mut response = oauth_error(status, error, description);
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+        .headers_mut()
+        .insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
+    response
 }
 
 #[cfg(test)]

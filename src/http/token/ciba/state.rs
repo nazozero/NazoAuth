@@ -1,8 +1,8 @@
 //! CIBA request persistence model and deterministic state transitions.
 
 use crate::support::{
-    ValkeyAtomicError, ValkeyAtomicResult, valkey_atomic_snapshot, valkey_compare_set_at_deadline,
-    valkey_set_nx_at_deadline,
+    ValkeyAtomicError, ValkeyAtomicResult, valkey_atomic_snapshot,
+    valkey_compare_delete_at_deadline, valkey_compare_set_at_deadline, valkey_set_nx_at_deadline,
 };
 use fred::prelude::Client as ValkeyClient;
 use serde::{Deserialize, Serialize};
@@ -303,6 +303,21 @@ pub(super) async fn replace_ciba_request_state(
         expected_raw,
         &body,
         state.retention_expires_at,
+    )
+    .await?)
+}
+
+pub(super) async fn delete_ciba_request_state(
+    valkey: &ValkeyClient,
+    auth_req_id: &str,
+    expected_raw: &str,
+    retention_expires_at: i64,
+) -> Result<ValkeyAtomicResult, CibaStateError> {
+    Ok(valkey_compare_delete_at_deadline(
+        valkey,
+        &ciba_request_key(auth_req_id),
+        expected_raw,
+        retention_expires_at,
     )
     .await?)
 }

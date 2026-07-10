@@ -335,3 +335,107 @@ async fn ciba_creation_stops_after_four_collisions() {
 
     assert!(matches!(error, CibaCreateFailure::CollisionLimit));
 }
+
+#[actix_web::test]
+async fn concurrent_ciba_decisions_commit_exactly_one_terminal_state() {
+    let Some(valkey) = live_valkey().await else {
+        return;
+    };
+    let now = valkey_server_time(&valkey).await;
+    let state = pending_state(now);
+    let auth_req_id = format!("decision-race-{}", Uuid::now_v7());
+    create_ciba_request_state(&valkey, &auth_req_id, &state)
+        .await
+        .unwrap();
+
+    let (approve, deny) = tokio::join!(
+        commit_ciba_decision(
+            &valkey,
+            &auth_req_id,
+            CibaDecision::Approve,
+            Some(state.user_id)
+        ),
+        commit_ciba_decision(
+            &valkey,
+            &auth_req_id,
+            CibaDecision::Deny,
+            Some(state.user_id)
+        )
+    );
+
+    assert_eq!(usize::from(approve.is_ok()) + usize::from(deny.is_ok()), 1);
+    assert!(matches!(
+        approve.as_ref().err().or_else(|| deny.as_ref().err()),
+        Some(CibaDecisionFailure::AlreadyHandled)
+    ));
+    let stored = load_ciba_request_state(&valkey, &auth_req_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        stored.state.status,
+        CibaStatus::Approved | CibaStatus::Denied
+    ));
+}
+
+#[actix_web::test]
+async fn ciba_decision_rejects_user_mismatch_without_mutation() {
+    let Some(valkey) = live_valkey().await else {
+        return;
+    };
+    let now = valkey_server_time(&valkey).await;
+    let state = pending_state(now);
+    let auth_req_id = format!("decision-user-{}", Uuid::now_v7());
+    create_ciba_request_state(&valkey, &auth_req_id, &state)
+        .await
+        .unwrap();
+
+    let result = commit_ciba_decision(
+        &valkey,
+        &auth_req_id,
+        CibaDecision::Approve,
+        Some(Uuid::now_v7()),
+    )
+    .await;
+
+    assert!(matches!(result, Err(CibaDecisionFailure::UserMismatch)));
+    assert_eq!(
+        load_ciba_request_state(&valkey, &auth_req_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .state,
+        state
+    );
+}
+
+#[actix_web::test]
+async fn expired_ciba_decision_consumes_state_without_success_outcome() {
+    let Some(valkey) = live_valkey().await else {
+        return;
+    };
+    let now = valkey_server_time(&valkey).await;
+    let mut state = pending_state(now);
+    state.expires_at = now - 1;
+    state.retention_expires_at = now + 60;
+    let auth_req_id = format!("decision-expired-{}", Uuid::now_v7());
+    create_ciba_request_state(&valkey, &auth_req_id, &state)
+        .await
+        .unwrap();
+
+    let result = commit_ciba_decision(
+        &valkey,
+        &auth_req_id,
+        CibaDecision::Approve,
+        Some(state.user_id),
+    )
+    .await;
+
+    assert!(matches!(result, Err(CibaDecisionFailure::Expired)));
+    assert!(
+        load_ciba_request_state(&valkey, &auth_req_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
