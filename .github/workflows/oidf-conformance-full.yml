@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       runner_mode:
-        description: "serial keeps the default deterministic runner mode; parallel-isolated runs non-browser plans in parallel and browser-sensitive plans serially."
+        description: "serial keeps the default deterministic runner mode; parallel-isolated runs concurrency-safe plans in parallel and browser-sensitive plans separately."
         required: false
         default: serial
         type: choice
@@ -82,12 +82,34 @@ jobs:
           JSON
           cat > oidf-concurrent-plan-set.json <<'JSON'
           [
+            "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] oidf-oidcc-basic-plan-config.json",
+            "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=dynamic_client] oidf-oidcc-dynamic-plan-config.json",
             "oidcc-config-certification-test-plan oidf-oidcc-config-plan-config.json",
             "fapi-ciba-id1-test-plan[client_auth_type=private_key_jwt][fapi_ciba_profile=plain_fapi][ciba_mode=poll][client_registration=static_client] oidf-fapi-ciba-plain-private-key-jwt-poll-plan-config.json",
+            "fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=jarm][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-jarm-plan-config.json",
+            "fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=plain_fapi][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-security-final-mtls-dpop-openid-connect-plain-fapi-plain-response-plan-config.json",
             "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=fapi_client_credentials_grant][sender_constrain=dpop][openid=plain_oauth] oidf-fapi-matrix-security-final-mtls-dpop-plain-oauth-fapi-client-credentials-grant-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=plain_fapi][sender_constrain=dpop][openid=plain_oauth] oidf-fapi-matrix-security-final-mtls-dpop-plain-oauth-plain-fapi-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=plain_fapi][sender_constrain=mtls][openid=openid_connect] oidf-fapi-matrix-security-final-mtls-mtls-openid-connect-plain-fapi-plain-response-plan-config.json",
             "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=fapi_client_credentials_grant][sender_constrain=mtls][openid=plain_oauth] oidf-fapi-matrix-security-final-mtls-mtls-plain-oauth-fapi-client-credentials-grant-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=plain_fapi][sender_constrain=mtls][openid=plain_oauth] oidf-fapi-matrix-security-final-mtls-mtls-plain-oauth-plain-fapi-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-security-final-private-key-jwt-dpop-openid-connect-plain-fapi-plain-response-plan-config.json",
             "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=fapi_client_credentials_grant][sender_constrain=dpop][openid=plain_oauth] oidf-fapi-matrix-security-final-private-key-jwt-dpop-plain-oauth-fapi-client-credentials-grant-plain-response-plan-config.json",
-            "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=fapi_client_credentials_grant][sender_constrain=mtls][openid=plain_oauth] oidf-fapi-matrix-security-final-private-key-jwt-mtls-plain-oauth-fapi-client-credentials-grant-plain-response-plan-config.json"
+            "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=dpop][openid=plain_oauth] oidf-fapi-matrix-security-final-private-key-jwt-dpop-plain-oauth-plain-fapi-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=mtls][openid=openid_connect] oidf-fapi-matrix-security-final-private-key-jwt-mtls-openid-connect-plain-fapi-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=fapi_client_credentials_grant][sender_constrain=mtls][openid=plain_oauth] oidf-fapi-matrix-security-final-private-key-jwt-mtls-plain-oauth-fapi-client-credentials-grant-plain-response-plan-config.json",
+            "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=mtls][openid=plain_oauth] oidf-fapi-matrix-security-final-private-key-jwt-mtls-plain-oauth-plain-fapi-plain-response-plan-config.json"
+          ]
+          JSON
+          cat > oidf-frontchannel-plan-set.json <<'JSON'
+          [
+            "oidcc-frontchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-frontchannel-logout-plan-config.json"
+          ]
+          JSON
+          cat > oidf-session-management-plan-set.json <<'JSON'
+          [
+            "oidcc-session-management-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-session-management-plan-config.json"
           ]
           JSON
           cat > oidf-expected-skips.json <<'JSON'
@@ -160,21 +182,18 @@ jobs:
           run_oidf_plan_set() {
             local plan_set_file="$1"
             local export_subdir="$2"
-            local expected_skips_file="$3"
-            shift 3
+            shift 2
 
             local args=(
               --suite-dir oidf-conformance-suite
               --conformance-server "$CONFORMANCE_SERVER"
               --config-json-file oidf-plan-configs.json
               --plan-set-json-file "$plan_set_file"
+              --expected-skips-file oidf-expected-skips.json
               --target-issuer "$OIDF_TARGET_ISSUER"
               --timeout-seconds "$RUN_TIMEOUT_SECONDS"
               --monitor-interval-seconds "$MONITOR_INTERVAL_SECONDS"
             )
-            if [ -n "$expected_skips_file" ]; then
-              args+=(--expected-skips-file "$expected_skips_file")
-            fi
             if [ "$EXPORT_RESULTS" = "true" ]; then
               if [ -n "$export_subdir" ]; then
                 args+=(--export-dir "$GITHUB_WORKSPACE/oidf-results/$export_subdir")
@@ -198,10 +217,10 @@ jobs:
               if [ "$NO_PARALLEL" = "true" ]; then
                 serial_args+=(--no-parallel)
               fi
-              run_oidf_plan_set oidf-full-plan-set.json "" oidf-expected-skips.json "${serial_args[@]}"
+              run_oidf_plan_set oidf-full-plan-set.json "" "${serial_args[@]}"
               ;;
             parallel-isolated)
-              run_oidf_plan_set oidf-concurrent-plan-set.json concurrent ""
+              run_oidf_plan_set oidf-concurrent-plan-set.json concurrent
               ;;
             *)
               echo "Unsupported RUNNER_MODE: $RUNNER_MODE" >&2
@@ -227,80 +246,18 @@ jobs:
     timeout-minutes: 360
     strategy:
       fail-fast: false
-      # 官方 WebRunner 会驱动真实登录/同意页面；这些计划必须串行，避免页面导航和会话状态互相抢占。
-      max-parallel: 1
       matrix:
         include:
-          - name: oidcc-basic-static
-            plan_set_file: oidf-browser-sensitive-plan-set.json
-            result_subdir: oidcc-basic-static
-            artifact_name: oidf-conformance-results-oidcc-basic-static
-            plan_expression: "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] oidf-oidcc-basic-plan-config.json"
-          - name: oidcc-basic-dynamic
-            plan_set_file: oidf-browser-sensitive-plan-set.json
-            result_subdir: oidcc-basic-dynamic
-            artifact_name: oidf-conformance-results-oidcc-basic-dynamic
-            plan_expression: "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=dynamic_client] oidf-oidcc-dynamic-plan-config.json"
           - name: frontchannel
-            plan_set_file: oidf-browser-sensitive-plan-set.json
+            plan_set_file: oidf-frontchannel-plan-set.json
             result_subdir: frontchannel
             artifact_name: oidf-conformance-results-frontchannel
             plan_expression: "oidcc-frontchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-frontchannel-logout-plan-config.json"
           - name: session-management
-            plan_set_file: oidf-browser-sensitive-plan-set.json
+            plan_set_file: oidf-session-management-plan-set.json
             result_subdir: session-management
             artifact_name: oidf-conformance-results-session-management
             plan_expression: "oidcc-session-management-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-session-management-plan-config.json"
-          - name: fapi-message-dpop-jarm
-            plan_set_file: oidf-browser-sensitive-plan-set.json
-            result_subdir: fapi-message-dpop-jarm
-            artifact_name: oidf-conformance-results-fapi-message-dpop-jarm
-            plan_expression: "fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=jarm][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-jarm-plan-config.json"
-          - name: fapi-message-dpop-plain
-            plan_set_file: oidf-browser-sensitive-plan-set.json
-            result_subdir: fapi-message-dpop-plain
-            artifact_name: oidf-conformance-results-fapi-message-dpop-plain
-            plan_expression: "fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-plain-response-plan-config.json"
-          - name: fapi-security-mtls-dpop-openid
-            plan_set_file: oidf-browser-sensitive-plan-set.json
-            result_subdir: fapi-security-mtls-dpop-openid
-            artifact_name: oidf-conformance-results-fapi-security-mtls-dpop-openid
-            plan_expression: "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=plain_fapi][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-security-final-mtls-dpop-openid-connect-plain-fapi-plain-response-plan-config.json"
-          - name: fapi-security-mtls-dpop-plain
-            plan_set_file: oidf-browser-sensitive-plan-set.json
-            result_subdir: fapi-security-mtls-dpop-plain
-            artifact_name: oidf-conformance-results-fapi-security-mtls-dpop-plain
-            plan_expression: "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=plain_fapi][sender_constrain=dpop][openid=plain_oauth] oidf-fapi-matrix-security-final-mtls-dpop-plain-oauth-plain-fapi-plain-response-plan-config.json"
-          - name: fapi-security-mtls-mtls-openid
-            plan_set_file: oidf-browser-sensitive-plan-set.json
-            result_subdir: fapi-security-mtls-mtls-openid
-            artifact_name: oidf-conformance-results-fapi-security-mtls-mtls-openid
-            plan_expression: "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=plain_fapi][sender_constrain=mtls][openid=openid_connect] oidf-fapi-matrix-security-final-mtls-mtls-openid-connect-plain-fapi-plain-response-plan-config.json"
-          - name: fapi-security-mtls-mtls-plain
-            plan_set_file: oidf-browser-sensitive-plan-set.json
-            result_subdir: fapi-security-mtls-mtls-plain
-            artifact_name: oidf-conformance-results-fapi-security-mtls-mtls-plain
-            plan_expression: "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=plain_fapi][sender_constrain=mtls][openid=plain_oauth] oidf-fapi-matrix-security-final-mtls-mtls-plain-oauth-plain-fapi-plain-response-plan-config.json"
-          - name: fapi-security-pkjwt-dpop-openid
-            plan_set_file: oidf-browser-sensitive-plan-set.json
-            result_subdir: fapi-security-pkjwt-dpop-openid
-            artifact_name: oidf-conformance-results-fapi-security-pkjwt-dpop-openid
-            plan_expression: "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-security-final-private-key-jwt-dpop-openid-connect-plain-fapi-plain-response-plan-config.json"
-          - name: fapi-security-pkjwt-dpop-plain
-            plan_set_file: oidf-browser-sensitive-plan-set.json
-            result_subdir: fapi-security-pkjwt-dpop-plain
-            artifact_name: oidf-conformance-results-fapi-security-pkjwt-dpop-plain
-            plan_expression: "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=dpop][openid=plain_oauth] oidf-fapi-matrix-security-final-private-key-jwt-dpop-plain-oauth-plain-fapi-plain-response-plan-config.json"
-          - name: fapi-security-pkjwt-mtls-openid
-            plan_set_file: oidf-browser-sensitive-plan-set.json
-            result_subdir: fapi-security-pkjwt-mtls-openid
-            artifact_name: oidf-conformance-results-fapi-security-pkjwt-mtls-openid
-            plan_expression: "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=mtls][openid=openid_connect] oidf-fapi-matrix-security-final-private-key-jwt-mtls-openid-connect-plain-fapi-plain-response-plan-config.json"
-          - name: fapi-security-pkjwt-mtls-plain
-            plan_set_file: oidf-browser-sensitive-plan-set.json
-            result_subdir: fapi-security-pkjwt-mtls-plain
-            artifact_name: oidf-conformance-results-fapi-security-pkjwt-mtls-plain
-            plan_expression: "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=mtls][openid=plain_oauth] oidf-fapi-matrix-security-final-private-key-jwt-mtls-plain-oauth-plain-fapi-plain-response-plan-config.json"
     env:
       CONFORMANCE_SERVER: ${{ vars.OIDF_CONFORMANCE_SERVER || 'https://www.certification.openid.net/' }}
       OIDF_REF: ${{ vars.OIDF_CONFORMANCE_SUITE_REF || '33a724c7d809a6f9db05cbb513ff2a77cbac905e' }}
@@ -339,20 +296,6 @@ jobs:
           cat > "${{ matrix.plan_set_file }}" <<'JSON'
           [
             "${{ matrix.plan_expression }}"
-          ]
-          JSON
-          cat > oidf-expected-skips.json <<'JSON'
-          [
-            {
-              "test-name": "oidcc-idtoken-unsigned",
-              "variant": "*",
-              "configuration-filename": "oidf-oidcc-dynamic-plan-config.json"
-            },
-            {
-              "test-name": "oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported",
-              "variant": "*",
-              "configuration-filename": "oidf-oidcc-dynamic-plan-config.json"
-            }
           ]
           JSON
 
@@ -408,10 +351,6 @@ jobs:
             --monitor-interval-seconds "$MONITOR_INTERVAL_SECONDS"
             --no-parallel
           )
-          # 只有 dynamic client 计划包含这两个官方跳过项，避免其它拆分组触发 unused expected skip。
-          if [ "${{ matrix.name }}" = "oidcc-basic-dynamic" ]; then
-            args+=(--expected-skips-file oidf-expected-skips.json)
-          fi
           if [ "$EXPORT_RESULTS" = "true" ]; then
             args+=(--export-dir "$GITHUB_WORKSPACE/oidf-results/${{ matrix.result_subdir }}")
           fi
