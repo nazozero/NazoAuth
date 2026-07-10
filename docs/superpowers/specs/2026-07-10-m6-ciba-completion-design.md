@@ -21,7 +21,7 @@ The official frontend repository has an unmerged CIBA page in commit `0ebf6c7`, 
 
 1. Make every CIBA state transition conditional on the exact Valkey state that was evaluated.
 2. Guarantee that an approved `auth_req_id` can be consumed by at most one token request.
-3. Preserve the original protocol expiry and retention deadline across every update; polling must never extend either deadline.
+3. Store the original protocol expiry and retention deadline in each request state and preserve both across every update; polling must never extend either deadline.
 4. Consume each client assertion exactly once even when a CIBA state transition retries after a comparison conflict.
 5. Propagate Valkey failures as protocol-level server failures instead of continuing with stale state.
 6. Record structured, redacted audit events for CIBA request creation and user/automation decisions.
@@ -62,24 +62,40 @@ Loading a CIBA request returns both:
 
 The raw value is the optimistic-concurrency version. A transition is valid only if Valkey still contains that exact value.
 
-`CibaRequestState.expires_at` is the immutable absolute protocol expiry. The immutable retention deadline is derived once as `expires_at + CIBA_EXPIRED_STATE_RETENTION_SECONDS`. Every transition preserves `expires_at` byte-for-byte and reuses that same absolute retention deadline. It must not calculate a fresh full TTL from the transition time.
+`CibaRequestState` stores two immutable absolute Unix-second timestamps:
+
+- `expires_at`: the protocol expiry;
+- `retention_expires_at`: the Valkey retention deadline.
+
+Both values are calculated once when the request is created. Every transition preserves them unchanged. No read, poll, decision, retry, or configuration reload derives a new retention deadline from `expires_at` and the current retention setting.
 
 The Valkey key expiry is set to the absolute retention deadline. As wall-clock time advances, the remaining TTL only decreases. Pending polls, `slow_down`, approval, and denial cannot refresh or extend it.
 
+For a rolling upgrade, a pre-M6 state that lacks `retention_expires_at` is migrated only from that key’s existing absolute Valkey `EXPIRETIME`, read atomically with the raw value. It is never reconstructed from the running binary’s current retention setting. A legacy key without a finite expiry, or a new-format state whose stored deadline disagrees with the key’s absolute expiry, is malformed and returns HTTP 503 `server_error`. The next successful compare-and-set persists the migrated field.
+
 ### 5.2 Atomic primitives
 
-The existing Valkey support module gains two small operations implemented with Valkey-side Lua and the existing client dependency:
+The existing Valkey support module gains snapshot and conditional-transition operations implemented with Valkey-side Lua and the existing client dependency:
 
-- compare-and-set-at-absolute-deadline: replace a key only when its current value exactly equals the expected raw value, then retain the original absolute retention deadline;
+- atomic snapshot read: return the raw value and its Valkey `EXPIRETIME` from one script;
+- compare-and-set-at-absolute-deadline: replace a key only when its current value exactly equals the expected raw value, then retain the state’s stored `retention_expires_at`;
 - compare-and-delete: delete a key only when its current value exactly equals the expected raw value.
 
-Each operation returns `true` when it applied the transition, `false` on a state conflict, and a Valkey error on storage failure. No new crate is introduced.
+Both conditional operations return one of:
 
-The compare-and-set script uses an absolute expiry operation such as `EXPIREAT`; it does not use `SETEX` with the original duration. A replacement whose absolute retention deadline has already passed is not retained.
+- `Applied`: the expected value matched and the transition committed before the deadline;
+- `Conflict`: another operation changed or consumed the state before this operation;
+- `DeadlineElapsed`: Valkey server time reached `retention_expires_at` at the transition’s linearization point.
+
+Transport or script failures remain Valkey errors. No new crate is introduced.
+
+The scripts use Valkey `TIME` as the deadline clock and `EXPIREAT` as the absolute expiry operation. They do not use `SETEX` with the original duration. Immediately before applying the mutation, the script compares the server’s Unix time with the stored deadline. If `now >= retention_expires_at`, it does not report `Applied`; it removes the expected expired value when still present and returns `DeadlineElapsed`.
+
+Callers treat `DeadlineElapsed` as an expiry result, not as a successful pending, slow-down, approval, denial, or consumption result. It does not enter the comparison retry budget and cannot produce a success audit or token issuance.
 
 ### 5.3 Conflict handling
 
-CIBA transition callers use at most four read/evaluate/compare attempts. A comparison conflict reloads the current snapshot and recomputes the protocol result. The caller never continues using the stale snapshot.
+CIBA transition callers use at most four read/evaluate/compare attempts. Only `Conflict` reloads the current snapshot and recomputes the protocol result. The caller never continues using the stale snapshot. `DeadlineElapsed` immediately follows the operation-specific expiry path.
 
 Four consecutive conflicts or any Valkey command failure returns the existing non-cacheable `server_error` response with HTTP 503. This bound prevents an unbounded loop under hostile concurrent polling while failing closed.
 
@@ -123,7 +139,7 @@ All audit entries in this table are emitted only after the named atomic operatio
 
 | Current stored state | Operation and condition | Atomic operation | State after success | HTTP/protocol result | Successful audit |
 | --- | --- | --- | --- | --- | --- |
-| No key | Create a valid backchannel request | Initial set with the absolute retention deadline | `Pending` | `auth_req_id`, `expires_in`, and `interval` | `ciba_authorization_started` |
+| No key | Create a valid backchannel request | `SET NX` with stored `retention_expires_at` | `Pending` | `auth_req_id`, `expires_in`, and `interval` | `ciba_authorization_started` |
 | No key | Read a decision/verification request | None | No key | HTTP 404 `invalid_request` | None |
 | No key | Poll token endpoint | None | No key | `invalid_grant` | None |
 | `Pending`, unexpired | Verification read by the bound user | None | Unchanged | HTTP 200 request view | None |
@@ -143,6 +159,7 @@ All audit entries in this table are emitted only after the named atomic operatio
 | Any retained state, expired, matching client | Poll token endpoint | Compare-and-delete | No key | `expired_token` | None |
 | Any stored state | Poll by a different client | None | Unchanged | `invalid_grant` | None |
 | Any state | Compare conflict | No transition committed; reload and reevaluate | Current winner’s state | Winner-dependent result, or HTTP 503 `server_error` after four conflicts | None for the failed attempt |
+| Any state | Conditional script returns `DeadlineElapsed` | No successful transition; remove expected expired value when present | No key | Decision path: expired `invalid_request`; token path: `expired_token` | None |
 | Any state | Valkey read, compare, write, or delete error | No successful atomic operation | Unknown; processing stops | HTTP 503 `server_error` | None |
 | Malformed stored JSON | Read for verification, decision, or poll | None | Unchanged | HTTP 503 `server_error` | None |
 
@@ -158,11 +175,14 @@ The existing order remains:
 4. require the registered CIBA grant;
 5. apply the selected CIBA profile and request-object policy;
 6. validate scope, user hint, requested expiry, ACR, and binding message;
-7. persist the pending state with expiry plus the existing expired-state retention window;
-8. emit the start audit event;
-9. return `auth_req_id`, `expires_in`, and `interval`.
+7. calculate and store immutable `expires_at` and `retention_expires_at` values;
+8. persist the pending state with `SET NX` and the stored absolute retention deadline;
+9. emit the start audit event;
+10. return `auth_req_id`, `expires_in`, and `interval`.
 
 The audit event is emitted only after persistence succeeds.
+
+An `auth_req_id` collision does not overwrite an existing key. The handler generates a new random identifier and retries `SET NX` up to four times. Four collisions return HTTP 503 `server_error`; no start audit is emitted for failed attempts.
 
 ### 7.2 User and automated decisions
 
@@ -194,6 +214,8 @@ Only a request that successfully compare-deletes an approved snapshot can constr
 The approved state is consumed before database-backed token issuance, matching the project’s one-time authorization-code and device-code security boundary. If downstream issuance fails, the one-time grant is not restored; replay prevention takes precedence over retrying a partially executed grant.
 
 The token-issuance branch is reachable only through a successful approved compare-delete result. A failed comparison, missing key, malformed state, or Valkey error cannot call token issuance. No code path recreates or restores a consumed `auth_req_id`.
+
+If compare-and-set or compare-and-delete returns `DeadlineElapsed`, token polling returns `expired_token`; decision handling returns its existing expired `invalid_request` response. The caller cannot return `authorization_pending`, `slow_down`, decision success, or a token response for that attempt.
 
 ## 8. Error Semantics
 
@@ -239,6 +261,18 @@ Raw `auth_req_id`, binding message, decision token, client assertion, DPoP proof
 
 Decision handling returns a committed-decision outcome only after compare-and-set succeeds. Audit emission accepts that committed outcome rather than the uncommitted request payload. Conflict retries and every error/terminal outcome have no committed-decision value and therefore cannot emit `ciba_authorization_approved` or `ciba_authorization_denied`.
 
+### 9.1 Audit delivery failure policy
+
+The existing project audit API returns `()` and publishes through `tracing`; it has no failure result that can be propagated to an HTTP handler. CIBA follows that existing best-effort delivery policy:
+
+1. the Valkey state transition commits first;
+2. the handler publishes the audit event;
+3. the handler returns the already committed protocol result.
+
+An absent or failing tracing subscriber does not turn a committed decision into HTTP 503. It never rolls back, restores, or repeats the state transition, and it never retries the client assertion or decision. Audit delivery health belongs to the operational logging pipeline rather than the OAuth state machine.
+
+If the project later replaces `audit_event` with a fallible sink, CIBA records a redacted internal delivery error through the available independent operational channel and still returns the committed result. The state transition remains authoritative and is never replayed to obtain another audit attempt.
+
 ## 10. FAPI-CIBA and Internal Profile Isolation
 
 `fapi-ciba-id1-plain-private-key-jwt-poll` remains the compatibility profile used by the official OIDF plan. Existing per-client request-object policy, private-key JWT endpoint-audience compatibility, and mTLS holder-of-key compatibility remain unchanged unless a failing conformance test proves otherwise.
@@ -276,6 +310,8 @@ The page:
 - displays client name and ID, scopes, audiences, binding message, issue time, and expiry time;
 - submits approve or deny with the existing CSRF value;
 - disables both actions during submission and removes the request after a terminal success;
+- does not automatically repeat a decision after a network timeout;
+- after an ambiguous decision timeout, reloads the request status and tells the user that the request may already have been processed before offering another action;
 - does not render the raw `auth_req_id` as page content;
 - uses the current i18n provider for user-visible copy;
 - follows the existing design tokens and responsive behavior.
@@ -295,12 +331,16 @@ Tests cover:
 - sequential early polls, with exactly five seconds added for every successfully committed `slow_down`;
 - concurrent early polls, with every completed premature poll returning `slow_down` and the final interval increasing by exactly five seconds per successful poll;
 - approved, denied, and expired transition selection;
+- serialization of immutable `expires_at` and `retention_expires_at` fields;
+- preservation of a stored retention deadline when the running configuration differs;
+- one-time legacy migration from the key’s actual `EXPIRETIME`, never from current configuration;
 - manual decision user mismatch;
 - repeated decision rejection;
 - client assertion validation and replay consumption occurring exactly once across comparison retries;
 - audit field construction and exclusion of raw secrets;
 - approve/deny audit creation only for a committed decision outcome;
 - no success decision audit for a conflict, repeated decision, user mismatch, expiry, malformed state, or Valkey error;
+- committed decision behavior remaining successful with no audit subscriber and with a test subscriber whose writer returns an I/O error, with no state restoration or repeated transition;
 - FAPI-CIBA compatibility behavior;
 - internal `fapi2-ciba` requirements;
 - sender constraint propagation to both access and refresh tokens;
@@ -313,10 +353,13 @@ Tests cover:
 
 Docker-backed tests cover:
 
+- `SET NX` collision rejection, identifier regeneration, and no overwrite of an existing request;
 - compare-and-set success and expected-value mismatch;
 - compare-and-delete success and second-consumer failure;
 - an unchanged absolute `expires_at` and unchanged Valkey `EXPIRETIME` across pending, `slow_down`, approve, and deny transitions;
 - decreasing remaining TTL across transitions, proving that a state update cannot refresh the original duration;
+- compare-and-set and compare-and-delete returning `DeadlineElapsed` when Valkey `TIME` reaches the stored deadline;
+- `DeadlineElapsed` never producing `authorization_pending`, `slow_down`, decision success, or token issuance;
 - concurrent pending polls producing one applied transition and conflict-driven recomputation;
 - three concurrent premature polls producing three `slow_down` responses and an exact fifteen-second interval increase;
 - concurrent approved consumers producing exactly one successful terminal consumption;
@@ -333,7 +376,9 @@ The tests assert these invariants directly rather than inferring them from gener
 3. without a successful decision compare-and-set, no approve/deny success audit record is constructed or emitted;
 4. every Valkey error returns HTTP 503 `server_error` and stops state-transition, decision, or issuance processing;
 5. every transition preserves the original protocol expiry and absolute retention deadline;
-6. comparison retries consume the client assertion no more than once.
+6. comparison retries consume the client assertion no more than once;
+7. `DeadlineElapsed` is never treated as an applied transition;
+8. audit delivery failure never restores or repeats an already committed state transition.
 
 ### 13.4 Frontend gate
 
@@ -383,17 +428,20 @@ M6 is complete only when all of the following are true:
 
 1. approved CIBA state is atomically consumable at most once;
 2. the original protocol expiry and absolute retention deadline never move forward during an update;
-3. pending poll interval state and every terminal transition are atomic;
-4. each successfully committed premature poll adds exactly five seconds to the active interval;
-5. assertion validation and replay consumption execute once per token request, outside state-transition retries;
-6. token issuance is unreachable without successful approved compare-and-delete;
-7. consumed `auth_req_id` state is never restored, including after downstream failure;
-8. approve/deny success audits are unreachable without successful decision compare-and-set;
-9. every Valkey failure returns HTTP 503 and stops further protocol processing;
-10. start, approve, and deny audit events are registered, emitted after successful transitions, and redacted;
-11. the official frontend contains the authenticated CIBA confirmation flow and passes `npm test`;
-12. compatibility and internal profiles remain behaviorally and textually isolated;
-13. Discovery and runtime client-grant gates match the implemented surface;
-14. targeted and full backend Docker gates pass;
-15. the fresh official FAPI-CIBA OIDF run passes and its run/job evidence is recorded;
-16. all three M6 roadmap tasks and the status summary are updated only after the evidence above exists.
+3. `retention_expires_at` is stored in the state and never reconstructed from current configuration;
+4. `DeadlineElapsed` is distinct from `Applied` and follows the expiry path;
+5. pending poll interval state and every terminal transition are atomic;
+6. each successfully committed premature poll adds exactly five seconds to the active interval;
+7. assertion validation and replay consumption execute once per token request, outside state-transition retries;
+8. token issuance is unreachable without successful approved compare-and-delete;
+9. consumed `auth_req_id` state is never restored, including after downstream failure;
+10. approve/deny success audits are unreachable without successful decision compare-and-set;
+11. audit delivery failure never rolls back or repeats a committed transition;
+12. every Valkey failure returns HTTP 503 and stops further protocol processing;
+13. start, approve, and deny audit events are registered, emitted after successful transitions, and redacted;
+14. the official frontend contains the authenticated CIBA confirmation flow and passes `npm test`;
+15. compatibility and internal profiles remain behaviorally and textually isolated;
+16. Discovery and runtime client-grant gates match the implemented surface;
+17. targeted and full backend Docker gates pass;
+18. the fresh official FAPI-CIBA OIDF run passes and its run/job evidence is recorded;
+19. all three M6 roadmap tasks and the status summary are updated only after the evidence above exists.
