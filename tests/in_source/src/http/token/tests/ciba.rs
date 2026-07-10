@@ -371,18 +371,6 @@ fn ciba_selected_acr_uses_supported_requested_value() {
 }
 
 #[test]
-fn ciba_state_storage_ttl_retains_expired_state_briefly() {
-    assert_eq!(
-        ciba_state_storage_ttl(1_030, 1_000),
-        30 + CIBA_EXPIRED_STATE_RETENTION_SECONDS
-    );
-    assert_eq!(
-        ciba_state_storage_ttl(900, 1_000),
-        CIBA_EXPIRED_STATE_RETENTION_SECONDS
-    );
-}
-
-#[test]
 fn ciba_token_issue_allows_refresh_and_binds_refresh_sender_constraint() {
     let ciba = CibaRequestState {
         client_id: "client-1".to_owned(),
@@ -395,6 +383,7 @@ fn ciba_token_issue_allows_refresh_and_binds_refresh_sender_constraint() {
         status: CibaStatus::Approved,
         interval_seconds: 5,
         expires_at: Utc::now().timestamp() + 600,
+        retention_expires_at: Utc::now().timestamp() + 720,
         last_poll_at: None,
     };
 
@@ -429,6 +418,7 @@ fn ciba_token_grant_state_rejects_other_client_auth_req_id_as_invalid_grant() {
         status: CibaStatus::Pending,
         interval_seconds: 5,
         expires_at: Utc::now().timestamp() + 600,
+        retention_expires_at: Utc::now().timestamp() + 720,
         last_poll_at: None,
     };
     let mut client = ciba_private_key_jwt_client("ciba-kid", &key);

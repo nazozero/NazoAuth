@@ -1,5 +1,7 @@
 //! OpenID Connect CIBA poll-mode grant.
 
+mod state;
+
 use super::{
     TokenForm, TokenManagementClientAuthError, consume_token_client_assertion,
     consume_token_management_client_assertion, issue_token_response, token_management_auth_error,
@@ -8,39 +10,13 @@ use super::{
 use crate::http::prelude::*;
 use actix_web::web::Payload;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use state::*;
 use std::collections::HashSet;
 
 pub(crate) const CIBA_GRANT_TYPE: &str = "urn:openid:params:grant-type:ciba";
 const CIBA_REQUEST_OBJECT_MAX_TTL_SECONDS: i64 = 300;
 const CIBA_REQUEST_OBJECT_CLOCK_SKEW_SECONDS: i64 = 30;
 const CIBA_BINDING_MESSAGE_MAX_CHARS: usize = 64;
-const CIBA_EXPIRED_STATE_RETENTION_SECONDS: u64 = 120;
-
-#[derive(Deserialize, serde::Serialize)]
-struct CibaRequestState {
-    client_id: String,
-    user_id: Uuid,
-    scopes: Vec<String>,
-    audiences: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    acr: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    binding_message: Option<String>,
-    #[serde(default)]
-    issued_at: i64,
-    status: CibaStatus,
-    interval_seconds: u64,
-    expires_at: i64,
-    last_poll_at: Option<i64>,
-}
-
-#[derive(Clone, Copy, Deserialize, serde::Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-enum CibaStatus {
-    Pending,
-    Approved,
-    Denied,
-}
 
 #[derive(Default)]
 struct BackchannelAuthenticationForm {
@@ -267,7 +243,9 @@ pub(crate) async fn backchannel_authentication(
         }
         None => None,
     };
+    let now = Utc::now().timestamp();
     let auth_req_id = random_urlsafe_token();
+    let expires_at = now.saturating_add(expires_in.min(i64::MAX as u64) as i64);
     let state_payload = CibaRequestState {
         client_id: client.client_id,
         user_id: user.id,
@@ -275,10 +253,11 @@ pub(crate) async fn backchannel_authentication(
         audiences: vec![state.settings.default_audience.clone()],
         acr,
         binding_message: form.binding_message,
-        issued_at: Utc::now().timestamp(),
+        issued_at: now,
         status: CibaStatus::Pending,
         interval_seconds: state.settings.ciba_poll_interval_seconds,
-        expires_at: Utc::now().timestamp() + expires_in as i64,
+        expires_at,
+        retention_expires_at: ciba_retention_deadline(expires_at),
         last_poll_at: None,
     };
     let body =
@@ -287,7 +266,10 @@ pub(crate) async fn backchannel_authentication(
         &state.valkey,
         ciba_request_key(&auth_req_id),
         body,
-        expires_in.saturating_add(CIBA_EXPIRED_STATE_RETENTION_SECONDS),
+        state_payload
+            .retention_expires_at
+            .saturating_sub(now)
+            .max(1) as u64,
     )
     .await
     {
@@ -764,7 +746,7 @@ pub(crate) async fn ciba_verification(
         Err(response) => return response,
     };
     let auth_req_id = path.into_inner();
-    let state_payload = match load_ciba_request_state(&state, &auth_req_id).await {
+    let state_payload = match load_ciba_request_payload(&state, &auth_req_id).await {
         Ok(Some(value)) => value,
         Ok(None) => {
             return oauth_error(
@@ -885,7 +867,7 @@ async fn set_ciba_request_decision(
     decision: CibaStatus,
     expected_user_id: Option<Uuid>,
 ) -> HttpResponse {
-    let mut state_payload = match load_ciba_request_state(state, auth_req_id).await {
+    let mut state_payload = match load_ciba_request_payload(state, auth_req_id).await {
         Ok(Some(value)) => value,
         Ok(None) => {
             return oauth_error(
@@ -919,7 +901,7 @@ async fn set_ciba_request_decision(
         );
     }
     state_payload.status = decision;
-    if let Err(response) = store_ciba_request_state(state, auth_req_id, &state_payload).await {
+    if let Err(response) = store_ciba_request_payload(state, auth_req_id, &state_payload).await {
         return response;
     }
     json_response_no_store(json!({"success": true}))
@@ -994,7 +976,7 @@ pub(crate) async fn token_ciba(
         Ok(binding) => binding,
         Err(response) => return response,
     };
-    let mut ciba = match load_ciba_request_state(state, auth_req_id).await {
+    let mut ciba = match load_ciba_request_payload(state, auth_req_id).await {
         Ok(Some(value)) => value,
         Ok(None) => {
             return oauth_token_error(
@@ -1029,7 +1011,7 @@ pub(crate) async fn token_ciba(
         {
             ciba.interval_seconds = ciba.interval_seconds.saturating_add(5);
             ciba.last_poll_at = Some(now);
-            let _ = store_ciba_request_state(state, auth_req_id, &ciba).await;
+            let _ = store_ciba_request_payload(state, auth_req_id, &ciba).await;
             return oauth_token_error(
                 StatusCode::BAD_REQUEST,
                 "slow_down",
@@ -1038,7 +1020,7 @@ pub(crate) async fn token_ciba(
             );
         }
         ciba.last_poll_at = Some(now);
-        let _ = store_ciba_request_state(state, auth_req_id, &ciba).await;
+        let _ = store_ciba_request_payload(state, auth_req_id, &ciba).await;
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "authorization_pending",
@@ -1191,41 +1173,30 @@ fn ciba_subject_for_client(
     )
 }
 
-async fn load_ciba_request_state(
+async fn load_ciba_request_payload(
     state: &AppState,
     auth_req_id: &str,
 ) -> Result<Option<CibaRequestState>, HttpResponse> {
-    let raw = valkey_get(&state.valkey, ciba_request_key(auth_req_id))
+    load_ciba_request_state(&state.valkey, auth_req_id)
         .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to load CIBA state");
-            oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "CIBA state unavailable.",
-            )
-        })?;
-    raw.map(|raw| serde_json::from_str(&raw))
-        .transpose()
-        .map_err(|error| {
-            tracing::warn!(%error, "CIBA state is malformed");
-            oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "CIBA state invalid.",
-            )
-        })
+        .map(|stored| stored.map(|stored| stored.state))
+        .map_err(ciba_state_error_response)
 }
 
-async fn store_ciba_request_state(
+async fn store_ciba_request_payload(
     state: &AppState,
     auth_req_id: &str,
     payload: &CibaRequestState,
 ) -> Result<(), HttpResponse> {
-    let ttl = ciba_state_storage_ttl(payload.expires_at, Utc::now().timestamp());
     let body = serde_json::to_string(payload).expect("CIBA state serialization must be infallible");
-    valkey_set_ex(&state.valkey, ciba_request_key(auth_req_id), body, ttl)
+    valkey_eval_string(
+        &state.valkey,
+        "redis.call('SET', KEYS[1], ARGV[1]); redis.call('EXPIREAT', KEYS[1], ARGV[2]); return 'OK'",
+        vec![ciba_request_key(auth_req_id)],
+        vec![body, payload.retention_expires_at.to_string()],
+    )
         .await
+        .map(|_| ())
         .map_err(|error| {
             tracing::warn!(%error, "failed to store CIBA state");
             oauth_error(
@@ -1236,16 +1207,19 @@ async fn store_ciba_request_state(
         })
 }
 
-fn ciba_state_storage_ttl(expires_at: i64, now: i64) -> u64 {
-    (expires_at.saturating_sub(now).max(0) as u64)
-        .saturating_add(CIBA_EXPIRED_STATE_RETENTION_SECONDS)
-        .max(1)
-}
-
-fn ciba_request_key(auth_req_id: &str) -> String {
-    format!("oauth:ciba:{}", blake3_hex(auth_req_id))
+fn ciba_state_error_response(error: CibaStateError) -> HttpResponse {
+    tracing::warn!(%error, "failed to load CIBA state");
+    oauth_error(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "server_error",
+        "CIBA state unavailable.",
+    )
 }
 
 #[cfg(test)]
 #[path = "../../../tests/in_source/src/http/token/tests/ciba.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../../tests/in_source/src/http/token/tests/ciba_state.rs"]
+mod state_tests;
