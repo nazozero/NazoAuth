@@ -647,6 +647,7 @@ impl LiveLoginFixture {
         let valkey_url = std::env::var("VALKEY_URL").ok()?;
         let config = ConfigSource::from_pairs_for_test([
             ("ISSUER", "https://example.com"),
+            ("FRONTEND_BASE_URL", "https://app.example"),
             (
                 "CLIENT_SECRET_PEPPER",
                 "client-secret-pepper-for-tests-000000000001",
