@@ -10,6 +10,7 @@ use serde_json::{Number, Value};
 use std::fmt;
 use uuid::Uuid;
 
+pub(super) const CIBA_TRANSITION_MAX_ATTEMPTS: usize = 4;
 const CIBA_EXPIRED_STATE_RETENTION_SECONDS: i64 = 120;
 const CIBA_SLOW_DOWN_INCREMENT_SECONDS: u64 = 5;
 
@@ -74,6 +75,32 @@ pub(super) enum CibaStateError {
     Atomic(ValkeyAtomicError),
     Malformed(String),
     Serialization(serde_json::Error),
+}
+
+#[derive(Debug)]
+pub(super) enum CibaCreateFailure {
+    DeadlineElapsed,
+    Storage(CibaStateError),
+    CollisionLimit,
+}
+
+impl fmt::Display for CibaCreateFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DeadlineElapsed => formatter.write_str("CIBA creation deadline elapsed"),
+            Self::Storage(error) => write!(formatter, "CIBA creation storage failed: {error}"),
+            Self::CollisionLimit => formatter.write_str("CIBA auth_req_id collision limit reached"),
+        }
+    }
+}
+
+impl std::error::Error for CibaCreateFailure {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Storage(error) => Some(error),
+            Self::DeadlineElapsed | Self::CollisionLimit => None,
+        }
+    }
 }
 
 impl fmt::Display for CibaStateError {
@@ -239,6 +266,28 @@ pub(super) async fn create_ciba_request_state(
         state.retention_expires_at,
     )
     .await?)
+}
+
+pub(super) async fn create_unique_ciba_request<F>(
+    valkey: &ValkeyClient,
+    state: &CibaRequestState,
+    mut generate_id: F,
+) -> Result<String, CibaCreateFailure>
+where
+    F: FnMut() -> String,
+{
+    for _ in 0..CIBA_TRANSITION_MAX_ATTEMPTS {
+        let auth_req_id = generate_id();
+        match create_ciba_request_state(valkey, &auth_req_id, state).await {
+            Ok(ValkeyAtomicResult::Applied) => return Ok(auth_req_id),
+            Ok(ValkeyAtomicResult::Conflict) => continue,
+            Ok(ValkeyAtomicResult::DeadlineElapsed) => {
+                return Err(CibaCreateFailure::DeadlineElapsed);
+            }
+            Err(error) => return Err(CibaCreateFailure::Storage(error)),
+        }
+    }
+    Err(CibaCreateFailure::CollisionLimit)
 }
 
 pub(super) async fn replace_ciba_request_state(

@@ -5,6 +5,7 @@ use fred::prelude::{
     Builder as ValkeyBuilder, Client as ValkeyClient, Config as ValkeyConfig, ConnectionConfig,
     PerformanceConfig,
 };
+use std::collections::VecDeque;
 use std::time::Duration as StdDuration;
 
 fn pending_state(now: i64) -> CibaRequestState {
@@ -255,4 +256,82 @@ async fn ciba_compare_set_persists_legacy_deadline_without_refreshing_it() {
     assert_eq!(snapshot.expire_at, state.retention_expires_at);
     assert_eq!(replaced.expires_at, state.expires_at);
     assert_eq!(replaced.retention_expires_at, state.retention_expires_at);
+}
+
+#[actix_web::test]
+async fn ciba_creation_retries_collision_without_overwriting_existing_state() {
+    let Some(valkey) = live_valkey().await else {
+        return;
+    };
+    let now = valkey_server_time(&valkey).await;
+    let state = pending_state(now);
+    let occupied_id = format!("occupied-{}", Uuid::now_v7());
+    let created_id = format!("created-{}", Uuid::now_v7());
+    let mut occupied = state.clone();
+    occupied.client_id = "existing-client".to_owned();
+    assert_eq!(
+        create_ciba_request_state(&valkey, &occupied_id, &occupied)
+            .await
+            .unwrap(),
+        ValkeyAtomicResult::Applied
+    );
+    let occupied_raw = load_ciba_request_state(&valkey, &occupied_id)
+        .await
+        .unwrap()
+        .unwrap()
+        .raw;
+    let mut candidates = VecDeque::from([occupied_id.clone(), created_id.clone()]);
+
+    let actual = create_unique_ciba_request(&valkey, &state, || {
+        candidates.pop_front().expect("candidate should exist")
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(actual, created_id);
+    assert_eq!(
+        load_ciba_request_state(&valkey, &occupied_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .raw,
+        occupied_raw
+    );
+    assert_eq!(
+        load_ciba_request_state(&valkey, &actual)
+            .await
+            .unwrap()
+            .unwrap()
+            .state,
+        state
+    );
+}
+
+#[actix_web::test]
+async fn ciba_creation_stops_after_four_collisions() {
+    let Some(valkey) = live_valkey().await else {
+        return;
+    };
+    let now = valkey_server_time(&valkey).await;
+    let state = pending_state(now);
+    let ids = (0..4)
+        .map(|index| format!("collision-{index}-{}", Uuid::now_v7()))
+        .collect::<Vec<_>>();
+    for auth_req_id in &ids {
+        assert_eq!(
+            create_ciba_request_state(&valkey, auth_req_id, &state)
+                .await
+                .unwrap(),
+            ValkeyAtomicResult::Applied
+        );
+    }
+    let mut candidates = VecDeque::from(ids);
+
+    let error = create_unique_ciba_request(&valkey, &state, || {
+        candidates.pop_front().expect("candidate should exist")
+    })
+    .await
+    .expect_err("four collisions must fail closed");
+
+    assert!(matches!(error, CibaCreateFailure::CollisionLimit));
 }

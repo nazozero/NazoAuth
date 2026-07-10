@@ -57,6 +57,17 @@ fn audit_event_definitions_include_external_identity_lifecycle() {
 }
 
 #[test]
+fn audit_event_definitions_include_ciba_authorization_lifecycle() {
+    for name in [
+        "ciba_authorization_started",
+        "ciba_authorization_approved",
+        "ciba_authorization_denied",
+    ] {
+        assert_eq!(audit_event_category(name), Some("authorization"));
+    }
+}
+
+#[test]
 fn audit_schema_version_is_stable_for_collectors() {
     assert_eq!(AUDIT_SCHEMA_VERSION, "nazo.audit.v1");
 }

@@ -151,6 +151,40 @@ fn ciba_status_serializes_as_protocol_state() {
     );
 }
 
+#[test]
+fn ciba_start_audit_fields_are_redacted() {
+    let now = Utc::now().timestamp();
+    let state = CibaRequestState {
+        client_id: "client-1".to_owned(),
+        user_id: Uuid::now_v7(),
+        scopes: vec!["openid".to_owned(), "profile".to_owned()],
+        audiences: vec!["resource://default".to_owned()],
+        acr: None,
+        binding_message: Some("sensitive binding text".to_owned()),
+        issued_at: now,
+        status: CibaStatus::Pending,
+        interval_seconds: 5,
+        expires_at: now + 60,
+        retention_expires_at: now + 180,
+        last_poll_at: None,
+    };
+
+    let fields = ciba_start_audit_fields(
+        &state,
+        "secret-auth-req-id",
+        Some("source-ip-hash".to_owned()),
+    );
+    let serialized = serde_json::to_string(&fields).unwrap();
+
+    assert!(serialized.contains(&blake3_hex("secret-auth-req-id")));
+    assert!(!serialized.contains("secret-auth-req-id"));
+    assert!(!serialized.contains("sensitive binding text"));
+    assert!(!serialized.contains("binding_message"));
+    assert!(!serialized.contains("client_assertion"));
+    assert_eq!(fields.get("client_id"), Some(&json!("client-1")));
+    assert_eq!(fields.get("source_ip_hash"), Some(&json!("source-ip-hash")));
+}
+
 #[actix_web::test]
 async fn ciba_automated_decision_route_accepts_empty_post_without_json_content_type() {
     let state = ciba_test_state_with(|settings| {

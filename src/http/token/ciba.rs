@@ -244,7 +244,6 @@ pub(crate) async fn backchannel_authentication(
         None => None,
     };
     let now = Utc::now().timestamp();
-    let auth_req_id = random_urlsafe_token();
     let expires_at = now.saturating_add(expires_in.min(i64::MAX as u64) as i64);
     let state_payload = CibaRequestState {
         client_id: client.client_id,
@@ -260,31 +259,51 @@ pub(crate) async fn backchannel_authentication(
         retention_expires_at: ciba_retention_deadline(expires_at),
         last_poll_at: None,
     };
-    let body =
-        serde_json::to_string(&state_payload).expect("CIBA state serialization must be infallible");
-    if let Err(error) = valkey_set_ex(
-        &state.valkey,
-        ciba_request_key(&auth_req_id),
-        body,
-        state_payload
-            .retention_expires_at
-            .saturating_sub(now)
-            .max(1) as u64,
-    )
-    .await
-    {
-        tracing::warn!(%error, "failed to store CIBA auth_req_id");
-        return oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "CIBA failed.",
-        );
-    }
+    let auth_req_id =
+        match create_unique_ciba_request(&state.valkey, &state_payload, || random_urlsafe_token())
+            .await
+        {
+            Ok(auth_req_id) => auth_req_id,
+            Err(error) => {
+                tracing::warn!(%error, "failed to create CIBA auth_req_id");
+                return oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "CIBA failed.",
+                );
+            }
+        };
+    audit_event(
+        "ciba_authorization_started",
+        ciba_start_audit_fields(
+            &state_payload,
+            &auth_req_id,
+            Some(blake3_hex(&client_ip(&req, &state.settings))),
+        ),
+    );
     json_response_no_store(json!({
         "auth_req_id": auth_req_id,
         "expires_in": expires_in,
         "interval": state.settings.ciba_poll_interval_seconds
     }))
+}
+
+fn ciba_start_audit_fields(
+    state: &CibaRequestState,
+    auth_req_id: &str,
+    source_ip_hash: Option<String>,
+) -> serde_json::Map<String, Value> {
+    let mut fields = audit_fields(&[
+        ("client_id", json!(state.client_id)),
+        ("user_id", json!(state.user_id)),
+        ("auth_req_id_hash", json!(blake3_hex(auth_req_id))),
+        ("scopes", json!(state.scopes)),
+        ("audiences", json!(state.audiences)),
+    ]);
+    if let Some(source_ip_hash) = source_ip_hash {
+        fields.insert("source_ip_hash".to_owned(), json!(source_ip_hash));
+    }
+    fields
 }
 
 async fn parse_backchannel_authentication_form(
