@@ -913,6 +913,35 @@ fn discovery_ciba_request_object_algs_are_fapi_ciba_scoped() {
 }
 
 #[test]
+fn discovery_omits_entire_ciba_surface_when_disabled() {
+    let settings = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
+    assert!(!settings.enable_ciba);
+    let metadata =
+        authorization_server_metadata(&settings, &keyset(jsonwebtoken::Algorithm::PS256));
+
+    assert!(
+        !metadata
+            .get("grant_types_supported")
+            .and_then(Value::as_array)
+            .expect("grant types should be present")
+            .iter()
+            .any(|value| value.as_str() == Some(CIBA_GRANT_TYPE))
+    );
+    for field in [
+        "backchannel_authentication_endpoint",
+        "backchannel_token_delivery_modes_supported",
+        "backchannel_user_code_parameter_supported",
+        "backchannel_authentication_request_signing_alg_values_supported",
+        "pushed_backchannel_authentication_request_endpoint",
+    ] {
+        assert!(
+            metadata.get(field).is_none(),
+            "unexpected CIBA field {field}"
+        );
+    }
+}
+
+#[test]
 fn discovery_fapi2_ciba_internal_profile_advertises_only_standard_capabilities() {
     let mut settings = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
     settings.enable_ciba = true;

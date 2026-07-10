@@ -2005,6 +2005,17 @@ fn active_client_with_registered_grant_is_allowed_to_dispatch() {
 }
 
 #[test]
+fn ciba_dispatch_requires_the_client_registered_grant() {
+    let client = client();
+
+    let response = validate_token_client_enabled(&client, CIBA_GRANT_TYPE)
+        .expect_err("client without the CIBA grant must fail before CIBA execution");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(&response), "unauthorized_client");
+}
+
+#[test]
 fn missing_grant_registration_is_rejected_before_grant_dispatch() {
     let client = client();
 
