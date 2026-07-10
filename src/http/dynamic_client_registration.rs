@@ -832,6 +832,8 @@ impl PreparedDynamicClientRegistration {
             self.token_endpoint_auth_method.as_str(),
             "client_secret_basic" | "client_secret_post"
         );
+        let allow_authorization_code_without_pkce =
+            self.client_type == "confidential" && !self.require_dpop_bound_tokens;
         CreateClientRequest {
             client_name: self.client_name.clone(),
             client_type: self.client_type.clone(),
@@ -847,7 +849,7 @@ impl PreparedDynamicClientRegistration {
             allow_client_assertion_audience_array: false,
             allow_client_assertion_endpoint_audience: false,
             require_par_request_object: false,
-            allow_authorization_code_without_pkce: false,
+            allow_authorization_code_without_pkce,
             backchannel_logout_uri: self.backchannel_logout_uri.clone(),
             backchannel_logout_session_required: self.backchannel_logout_session_required,
             frontchannel_logout_uri: self.frontchannel_logout_uri.clone(),
