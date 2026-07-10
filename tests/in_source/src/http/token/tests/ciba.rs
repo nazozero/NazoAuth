@@ -319,6 +319,29 @@ fn ciba_decision_storage_failure_maps_to_non_cacheable_server_error() {
     );
 }
 
+#[test]
+fn ciba_poll_storage_failure_returns_503_and_never_protocol_progress() {
+    let response = ciba_poll_failure_response(CibaPollFailure::Storage(CibaStateError::Malformed(
+        "bad state".to_owned(),
+    )));
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("server_error")
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get(header::CACHE_CONTROL)
+            .and_then(|value| value.to_str().ok()),
+        Some("no-store")
+    );
+}
+
 #[actix_web::test]
 async fn ciba_automated_decision_route_accepts_empty_post_without_json_content_type() {
     let state = ciba_test_state_with(|settings| {
