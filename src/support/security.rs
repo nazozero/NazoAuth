@@ -2,7 +2,7 @@
 
 use super::prelude::*;
 use super::{audit_event, audit_fields, request_mtls_client_certificate, valkey_set_ex_nx};
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use hmac::{Hmac, KeyInit, Mac};
 use std::sync::{
     Arc, OnceLock,
@@ -30,6 +30,7 @@ static PASSWORD_HASH_MAX_CONCURRENCY: AtomicUsize =
 static PASSWORD_HASH_QUEUE_TIMEOUT_MS: AtomicU64 =
     AtomicU64::new(DEFAULT_PASSWORD_HASH_QUEUE_TIMEOUT_MS);
 static PASSWORD_HASH_CONCURRENCY_LIMIT: OnceLock<Arc<Semaphore>> = OnceLock::new();
+static DUMMY_PASSWORD_HASH: OnceLock<Result<String, String>> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PasswordVerificationError {
@@ -61,6 +62,19 @@ pub(crate) fn verify_password(password: &str, password_hash: &str) -> bool {
     password_hasher()
         .verify_password(password.as_bytes(), &parsed)
         .is_ok()
+}
+
+pub(crate) fn initialize_dummy_password_hash() -> anyhow::Result<()> {
+    dummy_password_hash().map(drop)
+}
+
+pub(crate) fn dummy_password_hash() -> anyhow::Result<String> {
+    match DUMMY_PASSWORD_HASH
+        .get_or_init(|| hash_password(&random_urlsafe_token()).map_err(|error| error.to_string()))
+    {
+        Ok(hash) => Ok(hash.clone()),
+        Err(error) => Err(anyhow!("failed to initialize dummy password hash: {error}")),
+    }
 }
 
 pub(crate) fn default_password_hash_max_concurrency() -> usize {

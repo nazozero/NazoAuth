@@ -317,6 +317,13 @@ async fn authorize_request(
                 .await;
         }
     };
+    let acr = match requested_acr(q, requested_claims.acr.as_ref()) {
+        Ok(acr) => acr,
+        Err(()) => {
+            return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q)
+                .await;
+        }
+    };
 
     let session = match current_session(&state, &req).await {
         Ok(session) => session,
@@ -450,7 +457,7 @@ async fn authorize_request(
         auth_time: session.auth_time,
         amr: session.amr,
         oidc_sid: Some(session.oidc_sid),
-        acr: requested_acr(q, requested_claims.acr),
+        acr,
         userinfo_claims: claim_request_names(&requested_claims.userinfo),
         userinfo_claim_requests: requested_claims.userinfo,
         id_token_claims: claim_request_names(&requested_claims.id_token),

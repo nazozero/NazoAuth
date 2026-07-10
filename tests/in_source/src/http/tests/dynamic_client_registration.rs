@@ -80,7 +80,7 @@ fn oidc_dynamic_registration_defaults_to_confidential_authorization_code_client(
 }
 
 #[test]
-fn oidc_dynamic_secret_clients_keep_non_pkce_code_flow_compatibility() {
+fn oidc_dynamic_confidential_secret_clients_allow_code_without_pkce() {
     let prepared = prepare_dynamic_client_registration(
         DynamicClientRegistrationRequest {
             redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),

@@ -103,3 +103,11 @@ async fn verify_password_blocking_matches_argon2_verifier() {
             .expect("password verification should run")
     );
 }
+
+#[test]
+fn dummy_password_hash_is_valid_and_never_matches_the_probe_password() {
+    let hash = dummy_password_hash().expect("dummy password hash should initialize");
+
+    assert!(PasswordHash::new(&hash).is_ok());
+    assert!(!verify_password("attacker supplied password", &hash));
+}

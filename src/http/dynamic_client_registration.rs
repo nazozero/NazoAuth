@@ -833,7 +833,7 @@ impl PreparedDynamicClientRegistration {
             "client_secret_basic" | "client_secret_post"
         );
         let allow_authorization_code_without_pkce =
-            self.allows_non_pkce_authorization_code_compatibility(secret_auth_method);
+            self.client_type == "confidential" && !self.require_dpop_bound_tokens;
         CreateClientRequest {
             client_name: self.client_name.clone(),
             client_type: self.client_type.clone(),
@@ -869,16 +869,6 @@ impl PreparedDynamicClientRegistration {
 
     fn into_create_client_request(self) -> CreateClientRequest {
         self.to_create_client_request()
-    }
-
-    fn allows_non_pkce_authorization_code_compatibility(&self, secret_auth_method: bool) -> bool {
-        self.client_type == "confidential"
-            && secret_auth_method
-            && !self.require_dpop_bound_tokens
-            && self
-                .grant_types
-                .iter()
-                .any(|grant| grant == "authorization_code")
     }
 }
 

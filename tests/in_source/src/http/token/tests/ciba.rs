@@ -162,7 +162,7 @@ async fn ciba_automated_decision_route_accepts_empty_post_without_json_content_t
     let app = actix_web::test::init_service(
         actix_web::App::new()
             .app_data(actix_web::web::Data::new(state))
-            .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings)),
+            .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings, false)),
     )
     .await;
 
