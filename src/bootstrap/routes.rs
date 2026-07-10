@@ -8,7 +8,11 @@ use crate::settings::Settings;
 
 use super::cors;
 
-pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
+pub(crate) fn configure(
+    cfg: &mut web::ServiceConfig,
+    settings: &Settings,
+    perf_metrics_enabled: bool,
+) {
     cfg.service(
         web::resource("/health")
             .wrap(cors::cors_well_known(settings))
@@ -222,13 +226,7 @@ pub(crate) fn configure(cfg: &mut web::ServiceConfig, settings: &Settings) {
                     .route(web::delete().to(client_configuration_delete)),
             );
     }
-    if perf_metrics_enabled() {
+    if perf_metrics_enabled {
         cfg.route("/__perf/metrics", web::get().to(perf_metrics));
     }
-}
-
-fn perf_metrics_enabled() -> bool {
-    std::env::var("PERF_METRICS_ENABLED")
-        .ok()
-        .is_some_and(|value| matches!(value.trim(), "1" | "true" | "TRUE" | "yes" | "YES"))
 }

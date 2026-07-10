@@ -80,7 +80,7 @@ fn oidc_dynamic_registration_defaults_to_confidential_authorization_code_client(
 }
 
 #[test]
-fn oidc_dynamic_secret_clients_keep_non_pkce_code_flow_compatibility() {
+fn oidc_dynamic_secret_clients_require_pkce_by_default() {
     let prepared = prepare_dynamic_client_registration(
         DynamicClientRegistrationRequest {
             redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
@@ -95,7 +95,7 @@ fn oidc_dynamic_secret_clients_keep_non_pkce_code_flow_compatibility() {
     .expect("OIDC dynamic client metadata should be accepted");
 
     let create_request = prepared.to_create_client_request();
-    assert!(create_request.allow_authorization_code_without_pkce);
+    assert!(!create_request.allow_authorization_code_without_pkce);
 }
 
 #[test]
@@ -293,7 +293,7 @@ async fn dynamic_registration_accepts_oidf_inline_jwks_without_kid_for_secret_cl
             "offline_access"
         ]
     );
-    assert!(create_request.allow_authorization_code_without_pkce);
+    assert!(!create_request.allow_authorization_code_without_pkce);
 
     prepare_admin_client_insert_for_test(create_request, None, "https://issuer.example")
         .await
