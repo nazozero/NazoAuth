@@ -446,6 +446,33 @@ fn fapi_ciba_compatibility_profile_preserves_client_request_object_policy() {
 }
 
 #[test]
+fn ciba_profile_does_not_apply_authorization_code_only_controls() {
+    let mut settings = ciba_test_state().settings.as_ref().clone();
+    settings.authorization_server_profile =
+        crate::settings::AuthorizationServerProfile::Fapi2Security;
+    settings.require_pushed_authorization_requests = true;
+    settings.enable_request_uri_parameter = false;
+    settings.ciba_security_profile =
+        crate::settings::CibaSecurityProfile::FapiCibaId1PlainPrivateKeyJwtPoll;
+    let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
+        .expect("client key should generate")
+        .private_pkcs8_der;
+    let mut client = ciba_private_key_jwt_client("ciba-kid", &key);
+    client.require_dpop_bound_tokens = true;
+    let form = BackchannelAuthenticationForm {
+        request: Some("signed-request-object".to_owned()),
+        ..BackchannelAuthenticationForm::default()
+    };
+
+    validate_token_request_profile(&settings, &client, "private_key_jwt")
+        .expect("CIBA-compatible client authentication should pass the server profile");
+    validate_ciba_security_profile_client(&settings, &client, "private_key_jwt")
+        .expect("official FAPI-CIBA compatibility policy should remain separate");
+    validate_ciba_request_object_presence(&settings, &client, &form)
+        .expect("CIBA must not require PAR, PKCE, or authorization response_type fields");
+}
+
+#[test]
 fn fapi2_ciba_profile_requires_signed_backchannel_authentication_request() {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
