@@ -574,6 +574,8 @@ fn validate_client_jwks_with_policy(
         anyhow::bail!("jwks.keys 不能为空");
     }
     let mut seen_kids = std::collections::HashSet::new();
+    let mut signing_key_count = 0usize;
+    let mut kidless_signing_key_count = 0usize;
     for key in keys {
         let key_object = key
             .as_object()
@@ -581,15 +583,20 @@ fn validate_client_jwks_with_policy(
         reject_private_jwk_members(key_object)
             .map_err(|_| anyhow::anyhow!("jwks 不能包含私钥材料或对称密钥材料"))?;
         let kid = key.get("kid").and_then(Value::as_str).unwrap_or_default();
-        if kid.trim().is_empty() && !policy.allow_missing_kid {
-            anyhow::bail!("jwks 公钥必须包含 kid");
-        }
-        if !kid.trim().is_empty() && !seen_kids.insert(kid) {
-            anyhow::bail!("jwks kid 不能重复: {kid}");
-        }
         let public_key_use = key.get("use").and_then(Value::as_str).unwrap_or("sig");
-        if public_key_use == "enc" && kid.trim().is_empty() {
-            anyhow::bail!("jwks 加密公钥必须包含 kid");
+        if public_key_use == "sig" {
+            signing_key_count += 1;
+        }
+        if kid.trim().is_empty() {
+            if public_key_use == "enc" {
+                anyhow::bail!("jwks 加密公钥必须包含 kid");
+            }
+            if !policy.allow_missing_kid {
+                anyhow::bail!("jwks 公钥必须包含 kid");
+            }
+            kidless_signing_key_count += 1;
+        } else if !seen_kids.insert(kid) {
+            anyhow::bail!("jwks kid 不能重复: {kid}");
         }
         let Some(alg) = key.get("alg").and_then(Value::as_str) else {
             anyhow::bail!("jwks 公钥必须声明 alg");
@@ -618,6 +625,9 @@ fn validate_client_jwks_with_policy(
             }
             _ => anyhow::bail!("jwks 公钥 use 必须为 sig 或 enc"),
         }
+    }
+    if kidless_signing_key_count > 0 && signing_key_count != 1 {
+        anyhow::bail!("省略 kid 时 jwks 必须且只能包含一个签名公钥");
     }
     Ok(())
 }

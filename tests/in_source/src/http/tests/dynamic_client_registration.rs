@@ -558,7 +558,7 @@ fn client_configuration_update_requires_matching_client_id_and_secret() {
 }
 
 #[actix_web::test]
-async fn dynamic_registration_rejects_private_key_jwt_jwks_without_kid() {
+async fn dynamic_registration_accepts_single_oidf_private_key_jwt_jwk_without_kid() {
     let request = DynamicClientRegistrationRequest {
         redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
         token_endpoint_auth_method: Some("private_key_jwt".to_owned()),
@@ -589,8 +589,44 @@ async fn dynamic_registration_rejects_private_key_jwt_jwks_without_kid() {
     )
     .await;
     assert!(
+        result.is_ok(),
+        "OIDF dynamic registration must accept one unambiguous signing JWK without kid"
+    );
+}
+
+#[actix_web::test]
+async fn dynamic_registration_rejects_ambiguous_private_key_jwt_jwks_without_kid() {
+    let signing_jwk = json!({
+        "kty": "RSA",
+        "e": "AQAB",
+        "use": "sig",
+        "alg": "RS256",
+        "n": "tHZtslxU00LSm1czViLa4PGegfMzw2LJci1nDiwws-UgJdPRgwffLBUoFDW1FZVFt7dDUK8H1emYG4QimXPS6BuE6XZQ6MN2y9rbfs6pvQz6bsITuOjNAxydM4FNiU4M4SlA9bqOf7PAU8NMsNBLP8_3HpWogUPvafgr8pymHgWmV6NJgRp41LQtul-1qzsDbO-pvLRWeFX0d2mFdKVPJttxK2_eIJVCtMzIcGfFj0bPEvQWxMUMRAra3Qu-HqTzzV3DnsZWs1B3bSBRedZVSroLzKBIfKXo5JhqqZsDu_CRL3g2V0D8gs0zmM2A46XEX-PlUq-39mEswFgTGQ3y4Q"
+    });
+    let request = DynamicClientRegistrationRequest {
+        redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
+        token_endpoint_auth_method: Some("private_key_jwt".to_owned()),
+        jwks: Some(json!({"keys": [signing_jwk.clone(), signing_jwk]})),
+        ..Default::default()
+    };
+
+    let prepared = prepare_dynamic_client_registration(
+        request,
+        DynamicRegistrationDefaults {
+            default_audience: "https://issuer.example/fapi/resource",
+        },
+    )
+    .expect("private_key_jwt registration metadata should parse before key policy validation");
+
+    let result = prepare_admin_client_insert_for_test(
+        prepared.to_create_client_request(),
+        None,
+        "https://issuer.example",
+    )
+    .await;
+    assert!(
         result.is_err(),
-        "private_key_jwt clients must register signing keys with kid"
+        "kid omission must remain rejected when signing-key selection is ambiguous"
     );
 }
 

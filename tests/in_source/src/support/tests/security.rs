@@ -94,6 +94,31 @@ fn signed_client_assertion(
     .expect("client assertion should sign")
 }
 
+fn signed_client_assertion_without_kid(
+    client_id: &str,
+    audience: &str,
+    private_pkcs8_der: &[u8],
+    jti: &str,
+) -> String {
+    let now = Utc::now().timestamp();
+    let claims = json!({
+        "iss": client_id,
+        "sub": client_id,
+        "aud": audience,
+        "iat": now,
+        "nbf": now,
+        "exp": now + 120,
+        "jti": jti
+    });
+    let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+    jsonwebtoken::encode(
+        &header,
+        &claims,
+        &jsonwebtoken::EncodingKey::from_rsa_der(private_pkcs8_der),
+    )
+    .expect("kidless client assertion should sign")
+}
+
 #[tokio::test]
 async fn verify_password_blocking_matches_argon2_verifier() {
     let hash = hash_password("correct horse battery staple").expect("password should hash");

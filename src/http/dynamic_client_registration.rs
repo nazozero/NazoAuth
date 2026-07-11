@@ -863,10 +863,6 @@ pub(crate) fn parse_client_configuration_update_with_secret_pepper(
 
 impl PreparedDynamicClientRegistration {
     fn to_create_client_request(&self) -> CreateClientRequest {
-        let secret_auth_method = matches!(
-            self.token_endpoint_auth_method.as_str(),
-            "client_secret_basic" | "client_secret_post"
-        );
         let allow_authorization_code_without_pkce =
             self.client_type == "confidential" && !self.require_dpop_bound_tokens;
         CreateClientRequest {
@@ -904,7 +900,7 @@ impl PreparedDynamicClientRegistration {
             authorization_signed_response_alg: self.authorization_signed_response_alg.clone(),
             authorization_encrypted_response_alg: self.authorization_encrypted_response_alg.clone(),
             authorization_encrypted_response_enc: self.authorization_encrypted_response_enc.clone(),
-            allow_jwks_without_kid: secret_auth_method,
+            allow_jwks_without_kid: true,
         }
     }
 

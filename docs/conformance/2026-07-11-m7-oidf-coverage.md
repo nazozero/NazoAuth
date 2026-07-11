@@ -17,6 +17,13 @@ non-empty `kid`. Unsupported, incomplete, or unusable metadata is rejected at
 registration or fails closed with no JSON/plain authorization-response
 fallback.
 
+RFC 7517 does not require `kid` on a JWK. Dynamic registration therefore
+accepts the OIDF suite's bounded single-key form only when the JWKS contains
+exactly one signing key and that key is otherwise valid. A `private_key_jwt`
+assertion without `kid` can select only that sole kidless, algorithm-matching
+key. Multiple signing keys, any ambiguous selection, and every encryption key
+without `kid` remain rejected.
+
 ## OIDF Suite Mapping
 
 The OpenID Foundation conformance-suite source was checked on 2026-07-11 at
