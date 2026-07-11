@@ -75,6 +75,46 @@ class SourcePolicyTests(unittest.TestCase):
         executed = self.run_registry(lambda case, _params: evidence.observe(case, True), evidence)
         self.assertEqual(executed, ("required_case",))
 
+    def test_nested_execution_cleans_state_and_next_run_succeeds(self) -> None:
+        evidence = RuntimeCaseEvidence(self.required)
+
+        def nested(_case: str, _params: dict[str, object]) -> None:
+            execute_case_registry(
+                self.registry,
+                {"handler": lambda case, _params: evidence.observe(case, True)},
+                required=self.required,
+                allowed_handlers=self.allowed,
+                evidence=evidence,
+            )
+
+        with self.assertRaisesRegex(AssertionError, "nested runtime case execution"):
+            self.run_registry(nested, evidence)
+        self.assertIsNone(evidence.active_case)
+        executed = self.run_registry(lambda case, _params: evidence.observe(case, True), evidence)
+        self.assertEqual(executed, ("required_case",))
+
+    def test_handler_map_missing_and_extra_keys_fail(self) -> None:
+        evidence = RuntimeCaseEvidence(self.required)
+        with self.assertRaisesRegex(AssertionError, "handler map is not exact"):
+            execute_case_registry(
+                self.registry,
+                {},
+                required=self.required,
+                allowed_handlers=self.allowed,
+                evidence=evidence,
+            )
+        with self.assertRaisesRegex(AssertionError, "handler map is not exact"):
+            execute_case_registry(
+                self.registry,
+                {
+                    "handler": lambda case, _params: evidence.observe(case, True),
+                    "extra_handler": lambda _case, _params: None,
+                },
+                required=self.required,
+                allowed_handlers=self.allowed,
+                evidence=evidence,
+            )
+
     def test_policy_self_tests_reject_dead_or_non_registry_evidence(self) -> None:
         result = subprocess.run(
             [sys.executable, str(SCRIPT), "--source-policy-self-test"],
