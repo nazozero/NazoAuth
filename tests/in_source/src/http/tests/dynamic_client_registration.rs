@@ -1,5 +1,6 @@
 use super::*;
 use crate::support::{LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER, hash_client_secret};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::json;
 
 async fn prepare_admin_client_insert_for_test(
@@ -300,6 +301,65 @@ async fn dynamic_registration_accepts_oidf_inline_jwks_without_kid_for_secret_cl
         .expect("OIDF inline jwks without kid should be accepted for secret clients");
 }
 
+#[actix_web::test]
+async fn dynamic_registration_preserves_valid_userinfo_and_jarm_crypto_metadata() {
+    let encryption_jwk = json!({
+        "kty": "RSA",
+        "kid": "dynamic-response-enc",
+        "use": "enc",
+        "alg": "RSA-OAEP-256",
+        "n": URL_SAFE_NO_PAD.encode([0x91u8; 256]),
+        "e": "AQAB"
+    });
+    let request = DynamicClientRegistrationRequest {
+        redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
+        jwks: Some(json!({"keys": [encryption_jwk]})),
+        userinfo_signed_response_alg: Some("RS256".to_owned()),
+        userinfo_encrypted_response_alg: Some("RSA-OAEP-256".to_owned()),
+        userinfo_encrypted_response_enc: Some("A256GCM".to_owned()),
+        authorization_signed_response_alg: Some("PS256".to_owned()),
+        authorization_encrypted_response_alg: Some("RSA-OAEP-256".to_owned()),
+        authorization_encrypted_response_enc: Some("A256GCM".to_owned()),
+        ..Default::default()
+    };
+
+    let prepared = prepare_dynamic_client_registration(
+        request,
+        DynamicRegistrationDefaults {
+            default_audience: "https://issuer.example/fapi/resource",
+        },
+    )
+    .expect("OIDC response crypto metadata should parse");
+    let create_request = prepared.to_create_client_request();
+    assert_eq!(
+        create_request.userinfo_signed_response_alg.as_deref(),
+        Some("RS256")
+    );
+    assert_eq!(
+        create_request.authorization_signed_response_alg.as_deref(),
+        Some("PS256")
+    );
+    assert_eq!(
+        create_request
+            .authorization_encrypted_response_enc
+            .as_deref(),
+        Some("A256GCM")
+    );
+
+    let inserted =
+        prepare_admin_client_insert_for_test(create_request, None, "https://issuer.example")
+            .await
+            .expect("supported response crypto metadata should pass shared validation");
+    assert_eq!(
+        inserted.userinfo_encrypted_response_alg.as_deref(),
+        Some("RSA-OAEP-256")
+    );
+    assert_eq!(
+        inserted.authorization_encrypted_response_alg.as_deref(),
+        Some("RSA-OAEP-256")
+    );
+}
+
 #[test]
 fn dynamic_registration_refresh_clients_receive_offline_access_by_default() {
     let request = DynamicClientRegistrationRequest {
@@ -565,6 +625,12 @@ fn dynamic_registration_client_row() -> ClientRow {
         jwks: None,
         introspection_encrypted_response_alg: None,
         introspection_encrypted_response_enc: None,
+        userinfo_signed_response_alg: None,
+        userinfo_encrypted_response_alg: None,
+        userinfo_encrypted_response_enc: None,
+        authorization_signed_response_alg: None,
+        authorization_encrypted_response_alg: None,
+        authorization_encrypted_response_enc: None,
         post_logout_redirect_uris: json!([]),
         backchannel_logout_uri: None,
         backchannel_logout_session_required: true,

@@ -2,6 +2,7 @@
 // 只处理 OAuth 语义中的集合判断和授权记录 upsert。
 
 use super::{
+    keyset::reject_private_jwk_members,
     mtls::{certificate_x5c_thumbprint, normalize_sha256_thumbprint},
     prelude::*,
     security::{
@@ -200,6 +201,12 @@ pub(crate) struct ClientMetadata<'a> {
     pub(crate) allow_jwks_without_kid: bool,
     pub(crate) introspection_encrypted_response_alg: Option<&'a str>,
     pub(crate) introspection_encrypted_response_enc: Option<&'a str>,
+    pub(crate) userinfo_signed_response_alg: Option<&'a str>,
+    pub(crate) userinfo_encrypted_response_alg: Option<&'a str>,
+    pub(crate) userinfo_encrypted_response_enc: Option<&'a str>,
+    pub(crate) authorization_signed_response_alg: Option<&'a str>,
+    pub(crate) authorization_encrypted_response_alg: Option<&'a str>,
+    pub(crate) authorization_encrypted_response_enc: Option<&'a str>,
     pub(crate) mtls_binding: Option<&'a ClientMtlsMetadata>,
 }
 
@@ -218,6 +225,12 @@ pub(crate) fn validate_client_metadata(metadata: ClientMetadata<'_>) -> anyhow::
         allow_jwks_without_kid,
         introspection_encrypted_response_alg,
         introspection_encrypted_response_enc,
+        userinfo_signed_response_alg,
+        userinfo_encrypted_response_alg,
+        userinfo_encrypted_response_enc,
+        authorization_signed_response_alg,
+        authorization_encrypted_response_alg,
+        authorization_encrypted_response_enc,
         mtls_binding,
     } = metadata;
     if !matches!(client_type, "public" | "confidential") {
@@ -253,6 +266,20 @@ pub(crate) fn validate_client_metadata(metadata: ClientMetadata<'_>) -> anyhow::
     validate_introspection_jwe_metadata(
         introspection_encrypted_response_alg,
         introspection_encrypted_response_enc,
+        jwks,
+    )?;
+    validate_response_crypto_metadata(
+        "userinfo",
+        userinfo_signed_response_alg,
+        userinfo_encrypted_response_alg,
+        userinfo_encrypted_response_enc,
+        jwks,
+    )?;
+    validate_response_crypto_metadata(
+        "authorization",
+        authorization_signed_response_alg,
+        authorization_encrypted_response_alg,
+        authorization_encrypted_response_enc,
         jwks,
     )?;
     if token_endpoint_auth_method == "private_key_jwt" {
@@ -358,6 +385,52 @@ fn validate_introspection_jwe_metadata(
         (Some(_), None) => anyhow::bail!(
             "introspection_encrypted_response_alg 必须同时配置 introspection_encrypted_response_enc"
         ),
+    }
+}
+
+fn validate_response_crypto_metadata(
+    response_name: &str,
+    signing_alg: Option<&str>,
+    encryption_alg: Option<&str>,
+    encryption_enc: Option<&str>,
+    jwks: Option<&Value>,
+) -> anyhow::Result<()> {
+    if let Some(signing_alg) = signing_alg
+        && !SUPPORTED_CLIENT_JWT_SIGNING_ALGS.contains(&signing_alg)
+    {
+        anyhow::bail!(
+            "{response_name}_signed_response_alg 签名算法必须是 {}",
+            SUPPORTED_CLIENT_JWT_SIGNING_ALGS.join(", ")
+        );
+    }
+    match (encryption_alg, encryption_enc) {
+        (None, None) => Ok(()),
+        (None, Some(_)) => anyhow::bail!(
+            "{response_name}_encrypted_response_enc 不能在未设置 {response_name}_encrypted_response_alg 时使用"
+        ),
+        (Some(_), None) => anyhow::bail!(
+            "{response_name}_encrypted_response_alg 必须同时配置 {response_name}_encrypted_response_enc"
+        ),
+        (Some(alg), Some(enc)) => {
+            if !SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS.contains(&alg) {
+                anyhow::bail!(
+                    "{response_name}_encrypted_response_alg 必须是 {}",
+                    SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS.join(", ")
+                );
+            }
+            if !SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS.contains(&enc) {
+                anyhow::bail!(
+                    "{response_name}_encrypted_response_enc 必须是 {}",
+                    SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS.join(", ")
+                );
+            }
+            if !jwks.is_some_and(|jwks| client_jwks_contains_encryption_key(jwks, alg)) {
+                anyhow::bail!(
+                    "启用 {response_name} encrypted response 必须配置匹配的 jwks 加密公钥"
+                );
+            }
+            Ok(())
+        }
     }
 }
 
@@ -502,6 +575,11 @@ fn validate_client_jwks_with_policy(
     }
     let mut seen_kids = std::collections::HashSet::new();
     for key in keys {
+        let key_object = key
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("jwks 公钥必须是 JSON object"))?;
+        reject_private_jwk_members(key_object)
+            .map_err(|_| anyhow::anyhow!("jwks 不能包含私钥材料或对称密钥材料"))?;
         let kid = key.get("kid").and_then(Value::as_str).unwrap_or_default();
         if kid.trim().is_empty() && !policy.allow_missing_kid {
             anyhow::bail!("jwks 公钥必须包含 kid");
@@ -509,10 +587,10 @@ fn validate_client_jwks_with_policy(
         if !kid.trim().is_empty() && !seen_kids.insert(kid) {
             anyhow::bail!("jwks kid 不能重复: {kid}");
         }
-        if key.get("d").is_some() {
-            anyhow::bail!("jwks 不能包含私钥材料");
-        }
         let public_key_use = key.get("use").and_then(Value::as_str).unwrap_or("sig");
+        if public_key_use == "enc" && kid.trim().is_empty() {
+            anyhow::bail!("jwks 加密公钥必须包含 kid");
+        }
         let Some(alg) = key.get("alg").and_then(Value::as_str) else {
             anyhow::bail!("jwks 公钥必须声明 alg");
         };

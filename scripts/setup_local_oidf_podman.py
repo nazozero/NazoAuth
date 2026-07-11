@@ -61,6 +61,7 @@ FAPI_SECURITY_ID2_USER_REJECTS_AUTHENTICATION = (
 PLAN_CONFIG_FILES = (
     "oidf-oidcc-basic-plan-config.json",
     "oidf-oidcc-dynamic-plan-config.json",
+    "oidf-oidcc-dynamic-crypto-plan-config.json",
     "oidf-oidcc-config-plan-config.json",
     "oidf-oidcc-frontchannel-logout-plan-config.json",
     "oidf-oidcc-session-management-plan-config.json",
@@ -299,7 +300,7 @@ def ensure_cert() -> None:
     key.chmod(0o600)
 
 
-def ensure_mtls_certs() -> None:
+def ensure_mtls_ca() -> None:
     cert_dir = RUNTIME / "certs"
     cert_dir.mkdir(parents=True, exist_ok=True)
     ca_key = cert_dir / "mtls-ca.key"
@@ -329,11 +330,15 @@ def ensure_mtls_certs() -> None:
         )
         ca_key.chmod(0o600)
 
+
+def ensure_mtls_certs() -> None:
+    ensure_mtls_ca()
     for name in ("mtls-client-1", "mtls-client-2"):
         ensure_mtls_client_cert(name)
 
 
 def ensure_mtls_client_cert(name: str) -> None:
+    ensure_mtls_ca()
     cert_dir = RUNTIME / "certs"
     ca_key = cert_dir / "mtls-ca.key"
     ca_cert = cert_dir / "mtls-ca.crt"
@@ -944,7 +949,7 @@ def write_basic_plan_config() -> dict[str, object]:
     return config
 
 
-def write_dynamic_plan_config() -> dict[str, object]:
+def dynamic_plan_config() -> dict[str, object]:
     browser = browser_automation()
     config = {
         "alias": f"{BASIC_ALIAS}-dynamic",
@@ -974,7 +979,22 @@ def write_dynamic_plan_config() -> dict[str, object]:
     config["override"][OIDCC_REGISTERED_REDIRECT_URI_MODULE] = {
         "browser": redirect_error_browser_automation()
     }
+    return config
+
+
+def write_dynamic_plan_config() -> dict[str, object]:
+    config = dynamic_plan_config()
     write_plan_config("oidf-oidcc-dynamic-plan-config.json", config)
+    return config
+
+
+def write_dynamic_crypto_plan_config() -> dict[str, object]:
+    config = copy.deepcopy(dynamic_plan_config())
+    config["alias"] = f"{BASIC_ALIAS}-dynamic-crypto"
+    config["description"] = (
+        "OIDC Dynamic Certification OP: signed UserInfo response coverage."
+    )
+    write_plan_config("oidf-oidcc-dynamic-crypto-plan-config.json", config)
     return config
 
 
@@ -1371,6 +1391,7 @@ def write_all_plan_configs() -> None:
     configs: dict[str, dict[str, object]] = {
         "oidf-oidcc-basic-plan-config.json": write_basic_plan_config(),
         "oidf-oidcc-dynamic-plan-config.json": write_dynamic_plan_config(),
+        "oidf-oidcc-dynamic-crypto-plan-config.json": write_dynamic_crypto_plan_config(),
         "oidf-oidcc-config-plan-config.json": write_oidcc_config_plan_config(),
         "oidf-oidcc-frontchannel-logout-plan-config.json": write_frontchannel_logout_plan_config(),
         "oidf-oidcc-session-management-plan-config.json": write_session_management_plan_config(),
@@ -1417,6 +1438,11 @@ def write_expected_skips() -> None:
             "variant": "*",
             "configuration-filename": "oidf-oidcc-dynamic-plan-config.json",
         },
+        {
+            "test-name": "oidcc-idtoken-unsigned",
+            "variant": "*",
+            "configuration-filename": "oidf-oidcc-dynamic-crypto-plan-config.json",
+        },
     ]
     write_text(
         RUNTIME / "oidf-expected-skips.json",
@@ -1431,6 +1457,8 @@ def plan_expressions_for_configs(configs: dict[str, dict[str, object]]) -> list[
         "oidf-oidcc-basic-plan-config.json",
         "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=dynamic_client] "
         "oidf-oidcc-dynamic-plan-config.json",
+        "oidcc-dynamic-certification-test-plan[response_type=code] "
+        "oidf-oidcc-dynamic-crypto-plan-config.json",
         "oidcc-config-certification-test-plan oidf-oidcc-config-plan-config.json",
         "oidcc-frontchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] "
         "oidf-oidcc-frontchannel-logout-plan-config.json",
@@ -1473,6 +1501,7 @@ def plan_manifest_for_expressions(
     oidc_titles = {
         "oidf-oidcc-basic-plan-config.json": "OIDC Basic OP",
         "oidf-oidcc-dynamic-plan-config.json": "OIDC Basic OP Dynamic Registration",
+        "oidf-oidcc-dynamic-crypto-plan-config.json": "OIDC Dynamic Certification: Signed UserInfo",
         "oidf-oidcc-config-plan-config.json": "OIDC Config OP",
         "oidf-oidcc-frontchannel-logout-plan-config.json": "OIDC Front-Channel Logout OP",
         "oidf-oidcc-session-management-plan-config.json": "OIDC Session Management OP",
@@ -1489,6 +1518,12 @@ def plan_manifest_for_expressions(
             "registration endpoint metadata",
             "authorization code flow",
             "userinfo and ID token interoperability",
+        ],
+        "oidf-oidcc-dynamic-crypto-plan-config.json": [
+            "RFC 7591 dynamic client registration",
+            "userinfo_signed_response_alg=RS256",
+            "signed UserInfo content type and claims",
+            "client response cryptography metadata",
         ],
         "oidf-oidcc-config-plan-config.json": [
             "provider metadata accuracy",

@@ -137,21 +137,30 @@ pub(crate) async fn make_id_token(
 ) -> jsonwebtoken::errors::Result<String> {
     let now = Utc::now().timestamp();
     let claims = id_token_claims(&state.settings.issuer, &input, now);
+    sign_response_jwt(state, &Value::Object(claims), "JWT", input.signing_alg).await
+}
+
+pub(crate) async fn sign_response_jwt(
+    state: &AppState,
+    claims: &Value,
+    typ: &str,
+    signing_alg: Option<jsonwebtoken::Algorithm>,
+) -> jsonwebtoken::errors::Result<String> {
     let keyset = state.keyset.snapshot();
-    let alg = input.signing_alg.unwrap_or(keyset.active_alg);
+    let alg = signing_alg.unwrap_or(keyset.active_alg);
     let (kid, token) = if alg == keyset.active_alg {
         let mut header = jsonwebtoken::Header::new(keyset.active_alg);
-        header.typ = Some("JWT".to_string());
+        header.typ = Some(typ.to_owned());
         header.kid = Some(keyset.active_kid.clone());
-        return keyset.sign_jwt(&header, &Value::Object(claims)).await;
+        return keyset.sign_jwt(&header, claims).await;
     } else {
         local_signing_key_for_alg(&state.settings.jwk_keys_dir, alg).await?
     };
     let mut header = jsonwebtoken::Header::new(alg);
-    header.typ = Some("JWT".to_string());
+    header.typ = Some(typ.to_owned());
     header.kid = Some(kid);
     let encoded_header = BASE64_URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header)?);
-    let encoded_claims = BASE64_URL_SAFE_NO_PAD.encode(serde_json::to_vec(&Value::Object(claims))?);
+    let encoded_claims = BASE64_URL_SAFE_NO_PAD.encode(serde_json::to_vec(claims)?);
     let signing_input = format!("{encoded_header}.{encoded_claims}");
     let signature = sign_local_jwt_input(alg, &token, signing_input.as_bytes())?;
     Ok(format!("{signing_input}.{signature}"))
@@ -321,14 +330,17 @@ pub(super) fn backchannel_logout_token_claims(
 pub(crate) async fn make_authorization_response_jwt(
     state: &AppState,
     input: AuthorizationResponseJwtInput<'_>,
+    signing_alg: Option<jsonwebtoken::Algorithm>,
 ) -> jsonwebtoken::errors::Result<String> {
     let now = Utc::now().timestamp();
     let claims = authorization_response_jwt_claims(&state.settings.issuer, &input, now);
-    let keyset = state.keyset.snapshot();
-    let mut header = jsonwebtoken::Header::new(keyset.active_alg);
-    header.typ = Some("oauth-authz-resp+jwt".to_string());
-    header.kid = Some(keyset.active_kid.clone());
-    keyset.sign_jwt(&header, &Value::Object(claims)).await
+    sign_response_jwt(
+        state,
+        &Value::Object(claims),
+        "oauth-authz-resp+jwt",
+        signing_alg,
+    )
+    .await
 }
 
 pub(super) fn authorization_response_jwt_claims(
