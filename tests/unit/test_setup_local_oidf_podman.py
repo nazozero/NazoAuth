@@ -62,7 +62,9 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
 
         self.assertTrue(config["alias"].endswith("-dynamic-crypto"))
         self.assertIn(
-            "oidcc-dynamic-certification-test-plan[response_type=code] " + filename,
+            "oidcc-dynamic-certification-test-plan[response_type=code]:"
+            "oidcc-userinfo-rs256 "
+            + filename,
             expressions,
         )
         dynamic_expression = next(

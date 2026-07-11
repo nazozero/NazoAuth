@@ -71,7 +71,7 @@
 
 检索日期为 2026-07-11，官方 conformance-suite 快照为 `f326f6aa25d6a2b8f1ae30a6ec80a57e342333ce`：
 
-- `oidcc-dynamic-certification-test-plan` 包含 `oidcc-userinfo-rs256`，加入 full matrix 的并行集合；
+- `oidcc-dynamic-certification-test-plan` 包含 `oidcc-userinfo-rs256`；full matrix 通过模块选择器只运行该 signed UserInfo 模块并纳入并行集合，不声明或伪造完整 dynamic certification profile 所需的 implicit-flow 能力；
 - 当前快照没有面向 OP 的 encrypted UserInfo 或 encrypted JARM 独立 plan/module；保留带日期的覆盖缺口，使用本地协议测试验证 compact JWE、嵌套顺序、header、alg/enc、密钥选择与 fail-closed。
 
 ## 交付门禁

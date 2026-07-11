@@ -33,13 +33,20 @@ snapshot `f326f6aa25d6a2b8f1ae30a6ec80a57e342333ce`.
 The repository full matrix therefore adds:
 
 ```text
-oidcc-dynamic-certification-test-plan[response_type=code] oidf-oidcc-dynamic-crypto-plan-config.json
+oidcc-dynamic-certification-test-plan[response_type=code]:oidcc-userinfo-rs256 oidf-oidcc-dynamic-crypto-plan-config.json
 ```
 
-This plan exercises dynamic registration of
+The module selector is intentional. The complete legacy dynamic-certification
+profile also requires the implicit grant and front-channel `id_token` /
+`token id_token` response types. Nazo Auth deliberately implements the
+authorization-code flow instead and does not advertise those capabilities.
+Running the complete plan would therefore test a profile the product does not
+claim. The selected official module exercises dynamic registration of
 `userinfo_signed_response_alg=RS256`, the signed UserInfo content type, and
 signed UserInfo claims. The generated configuration uses a distinct alias so
 it can run concurrently with the existing OIDC dynamic-registration plan.
+This is interoperability evidence for signed UserInfo, not a claim of OpenID
+Dynamic OP certification.
 
 No OP/authorization-server plan or module was found that requests encrypted
 UserInfo responses or encrypted JARM responses from the implementation under

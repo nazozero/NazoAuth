@@ -88,7 +88,7 @@ def derive_dynamic_oidcc_config(rendered: dict[str, Any], initial_access_token: 
     dynamic_crypto = copy.deepcopy(dynamic)
     dynamic_crypto["alias"] = f"{basic.get('alias', 'nazo-oauth-oidf-basic')}-dynamic-crypto"
     dynamic_crypto["description"] = (
-        "OIDC Dynamic Certification OP: signed UserInfo response coverage."
+        "OIDC dynamic-registration signed UserInfo interoperability coverage."
     )
     configs[OIDCC_DYNAMIC_CRYPTO_CONFIG_FILE] = dynamic_crypto
 
