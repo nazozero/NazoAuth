@@ -37,7 +37,7 @@ chrono = { version = "0.4.45", features = ["serde"] }
 diesel = { version = "2.3.10", features = ["postgres", "uuid", "chrono", "serde_json", "64-column-tables"] }
 diesel-async = { version = "0.9.2", features = ["postgres", "deadpool"] }
 diesel_migrations = "2.3.2"
-ed25519-dalek = "2.2"
+ed25519-dalek = "3.0"
 fred = { version = "10.1.0", features = ["i-scripts"] }
 futures-util = "0.3.32"
 hmac = "0.13.0"
