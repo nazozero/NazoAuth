@@ -19,7 +19,7 @@ The review produced these decisions:
 | OAuth for Browser-Based Applications | `draft-ietf-oauth-browser-based-apps-27`; RFC Editor queue in progress, no RFC number yet | The corrected pre-publication draft-27 audit is recorded in `2026-07-11-browser-based-applications-draft-27-audit.md`; repeat the delta audit after RFC publication and do not add a draft profile switch. |
 | Attestation-Based Client Authentication | active `draft-ietf-oauth-attestation-based-client-auth-10` | Defer while the draft and attester trust ecosystem remain unsettled. |
 | Transaction Tokens | active `draft-ietf-oauth-transaction-tokens-09` | Defer until NazoAuth has a trusted-domain workload call-chain product requirement. |
-| Grant Management | OIDF working draft `oauth-v2-grant-management-03`, dated 2023-05-09; its `ID1` snapshot is an approved Implementer's Draft, with no Final status | Keep the existing admin grant controls; defer protocol metadata and a client-facing API. |
+| Grant Management | OIDF working draft `oauth-v2-grant-management-03`, rolling copy built 2026-06-26; its `ID1` snapshot is an approved Implementer's Draft, with no Final status | Keep the existing admin grant controls; defer protocol metadata and a client-facing API. |
 | OpenID4VCI 1.0 / OpenID4VP 1.0 | OIDF Final Specifications, published 2025-09-16 and 2025-07-09 | Treat as a separate credential product program, not an extension of the current OP/AS profile. |
 
 No endpoint, grant, authentication method, token type, SCIM capability,
@@ -311,7 +311,7 @@ authorization-server metadata. No client adopter requires that protocol, and no
 policy defines partial updates or grants shared across related client IDs.
 
 **Specification and conformance.** The current working document is
-`oauth-v2-grant-management-03`, dated 2023-05-09. Its `ID1` snapshot was
+`oauth-v2-grant-management-03`, whose rolling copy was built 2026-06-26. Its `ID1` snapshot was
 approved as an Implementer's Draft on 2023-07-10. It is not a Final
 Specification. No `grant_management` code or plan was found in
 conformance-suite `v5.2.0`.

@@ -44,7 +44,7 @@ OAuth 2.1 draft / OIDC / FAPI 2.0 / FAPI-CIBA / CIBA 相关能力，并同时支
 | OAuth 安全基线 | RFC 9700 OAuth 2.0 Security BCP；OAuth 2.1 仍是 `draft-ietf-oauth-v2-1-15`。 | 以 RFC 9700 和 OAuth 2.1 草案方向作为默认安全约束；不得声明 OAuth 2.1 final RFC 合规。 |
 | FAPI 2.0 | FAPI 2.0 Security Profile Final；FAPI 2.0 Message Signing Final。 | 作为高价值 API 主线；Message Signing 选项单独 gating。 |
 | OIDC | Core、Discovery、DCR、RP-Initiated Logout、Back-Channel Logout、Front-Channel Logout、Session Management 等 OIDF 规范。 | 我们作为 OP 时只广告已实现能力；我们作为 RP 时通过 provider adapter 接入外部登录。 |
-| CIBA / FAPI-CIBA | OpenID Connect CIBA Core 1.0 为 Final；FAPI-CIBA 仍按官方 Draft-02 兼容 profile 处理。 | CIBA 默认关闭；FAPI-CIBA 做兼容 profile；`fapi2-ciba` 只表示内部强化 profile。 |
+| CIBA / FAPI-CIBA | OpenID Connect CIBA Core 1.0 为 Final；已实现的 FAPI-CIBA 仍是 ID1 / Draft-02 兼容 profile，当前 working draft 已为 `fapi-ciba-03`（2026-06-26）。 | CIBA 默认关闭；FAPI-CIBA 做 ID1 兼容 profile；`fapi2-ciba` 只表示内部强化 profile；采用 working draft 前必须单独做 delta 审计。 |
 | OpenID Federation | OpenID Federation 1.1 与 OpenID Federation for OpenID Connect 1.1 是当前规范线。 | 当前非目标；第三方登录不依赖 OpenID Federation 信任链。 |
 | Browser-based apps | OAuth 2.0 for Browser-Based Applications 仍是 draft。 | 默认偏向 BFF/same-site session；纯 SPA token storage 是产品/部署边界。 |
 | 新兴草案 | Attestation-Based Client Authentication、Transaction Tokens、Grant Management、OpenID4VCI/VP、HTTP message signatures 等。 | 进入 watchlist；没有明确产品需求、威胁模型、metadata gating 和测试前不实现。 |

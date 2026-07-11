@@ -16,7 +16,8 @@ suites are not version authorities.
 | Transaction Tokens | `draft-ietf-oauth-transaction-tokens-09` |
 | Layered Cookies | `draft-ietf-httpbis-layered-cookies-02` |
 | FAPI 2.0 HTTP Signatures | working draft dated 2026-06-26 |
-| Grant Management | working draft `oauth-v2-grant-management-03`; approved stable snapshot `ID1` |
+| FAPI-CIBA | working draft `fapi-ciba-03` dated 2026-06-26; implemented compatibility target remains stable `ID1` / draft 02 |
+| Grant Management | working draft `oauth-v2-grant-management-03` built 2026-06-26; approved stable snapshot `ID1` |
 | OpenID Connect Native SSO | draft 07 / Second Implementer's Draft |
 | OpenID conformance-suite | `release-v5.2.0` at `dee9a25160e789f0f80517674693ef7989ab9fa1` |
 
@@ -44,4 +45,3 @@ Pull requests touching protocol sources run the offline gate. A weekly and
 manual workflow runs the online gate. When it reports drift, update the
 inventory only after reviewing the normative delta and its implementation,
 metadata, documentation, and conformance consequences.
-

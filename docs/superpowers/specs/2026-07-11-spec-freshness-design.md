@@ -67,9 +67,11 @@ drift automatically.
 ## Known corrections
 
 - Browser-Based Applications: `-26` to `-27`, published 2026-07-06.
+- FAPI-CIBA: distinguish the implemented stable `ID1` / draft-02 compatibility
+  target from the current `fapi-ciba-03` working copy dated 2026-06-26.
 - Grant Management: old `fapi-grant-management-01` naming to the current
-  `oauth-v2-grant-management-03` working draft; its stable `ID1` snapshot was
-  approved as an Implementer's Draft.
+  `oauth-v2-grant-management-03` working copy built 2026-06-26; its stable
+  `ID1` snapshot was approved as an Implementer's Draft.
 - OIDF conformance-suite default: old commit to `release-v5.2.0` at
   `dee9a25160e789f0f80517674693ef7989ab9fa1`.
 - Active candidate records must consistently use Client Attestation `-10` and
