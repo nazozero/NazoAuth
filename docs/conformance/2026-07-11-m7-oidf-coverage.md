@@ -13,9 +13,11 @@ M7 adds per-client response protection for two existing protocol surfaces:
 
 The implemented JWE policy is deliberately narrow:
 `alg=RSA-OAEP-256`, `enc=A256GCM`, a public RSA JWK with `use=enc`, and a
-non-empty `kid`. Unsupported, incomplete, or unusable metadata is rejected at
-registration or fails closed with no JSON/plain authorization-response
-fallback.
+non-empty `kid`. Each configured response alg must match exactly one such key;
+ambiguous key selection is rejected both during registration and again at the
+runtime encryption boundary. Unsupported, incomplete, ambiguous, or unusable
+metadata is rejected at registration or fails closed with no JSON/plain
+authorization-response fallback.
 
 RFC 7517 does not require `kid` on a JWK. Dynamic registration therefore
 accepts the OIDF suite's bounded single-key form only when the JWKS contains
@@ -63,10 +65,16 @@ Signing JARM plans continue to cover signed JARM only.
   or encryption failures never expose a code, state, or plain query fallback.
 - DCR/admin metadata persistence and rejection of `none`, symmetric signing,
   incomplete JWE pairs, unsupported algorithms, missing keys, private key
-  material, and encryption keys without `kid`.
-- Discovery assertions for exactly the implemented signing and encryption
-  algorithm families.
+  material, encryption keys without `kid`, and ambiguous matching encryption
+  keys. DCR/DCRM response and GET-to-PUT round-trip tests prove that all six
+  response-protection fields remain present.
+- Discovery and registration assertions use the same current Keyset snapshot
+  as response signing. Public verification keys without usable signing
+  material are neither advertised nor accepted as response algorithms.
 
 The official full matrix remains a regression gate, but the local negative
 tests above are the authoritative coverage for encrypted UserInfo and encrypted
 JARM until the OIDF suite adds corresponding OP plans.
+
+The completed Hostinger and official 21-plan regression is recorded in
+[M7 encrypted-response OIDF results](2026-07-11-m7-official-encrypted-responses-oidf-results.md).

@@ -58,15 +58,18 @@ Required negative tests:
 | Field | Policy |
 | --- | --- |
 | UserInfo default | UTF-8 JSON with `application/json` when no response-protection metadata is registered |
-| Signed UserInfo | `userinfo_signed_response_alg` selects an allowlisted asymmetric JWS algorithm; signed claims include `iss` and client-bound `aud` |
-| Encrypted UserInfo | `userinfo_encrypted_response_alg=RSA-OAEP-256` and `userinfo_encrypted_response_enc=A256GCM` require a matching public RSA JWK with `use=enc` and `kid`; signing plus encryption produces a nested JWT |
+| Signed UserInfo | `userinfo_signed_response_alg` selects an asymmetric JWS algorithm that the current Keyset snapshot can actually sign; signed claims include `iss` and client-bound `aud` |
+| Encrypted UserInfo | `userinfo_encrypted_response_alg=RSA-OAEP-256` and `userinfo_encrypted_response_enc=A256GCM` require exactly one matching public RSA JWK with `use=enc` and `kid`; signing plus encryption produces a nested JWT |
 | Encrypted JARM | A JARM response is signed first, then encrypted with the same narrow JWE policy when `authorization_encrypted_response_alg` and `authorization_encrypted_response_enc` are registered |
 | Metadata surfaces | Admin client management and RFC 7591/7592 registration persist and return all six response-crypto metadata fields |
 | Failure behavior | Metadata, key lookup, signing, and encryption failures return `server_error`; UserInfo never falls back to JSON and JARM never exposes a code/state in a plain query response |
 
 The server does not fetch remote `jwks_uri` values. Encryption keys are
-registered by value, validated as public material, and selected by explicit
-`use`, `alg`, and `kid` policy.
+registered by value, validated as public material, and selected only when the
+`use` and `alg` policy has exactly one matching non-empty `kid`. UserInfo and
+authorization-response signing algorithms advertised by discovery are the
+same Keyset-snapshot capabilities accepted by registration and used by
+signing execution.
 
 ## Ecosystem Onboarding Surfaces
 
