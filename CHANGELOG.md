@@ -7,6 +7,9 @@ semantic versioning once public release tags are cut.
 
 ### Added
 
+- Added RFC 9865 forward cursor pagination for SCIM user listing with index as
+  the default, stateless AES-256-GCM actor/query-bound cursors, deterministic
+  keyset traversal, exact pagination errors, and truthful capability metadata.
 - Added durable OpenID Foundation conformance evidence under `docs/conformance`, including retained full 16-plan matrix records, workflow URLs, artifact metadata, plan IDs, profile combinations, pass counts, and exported artifact filenames.
 - Added a production deployment guide covering container deployment, reverse proxy boundaries, key rotation, database and Valkey operations, live verification, and OIDF readiness.
 - Added `SECURITY.md` with reporting guidance, vulnerability classes, production boundaries, and disclosure expectations.

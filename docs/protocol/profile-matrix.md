@@ -304,3 +304,8 @@ Transaction Tokens, Grant Management, and OpenID4VC. Until a candidate's
 separate implementation and negative tests complete, all existing baseline,
 FAPI2, Message Signing, CIBA, SCIM, and external-provider profile behavior must
 be byte-for-byte unaffected by selecting any existing runtime profile.
+
+RFC 9865 is the first admitted M8 candidate. Its completed implementation is
+limited to SCIM `/Users` listing and `/ServiceProviderConfig`; it is not an
+OAuth authorization-server profile and cannot change any profile selection or
+OAuth/OIDC/FAPI metadata.

@@ -104,7 +104,7 @@ Other protocol surfaces:
 
 | Standard | Implementation |
 | --- | --- |
-| SCIM 2.0 provisioning with [RFC 9865](https://www.rfc-editor.org/rfc/rfc9865) / [RFC 9967](https://www.rfc-editor.org/rfc/rfc9967) capability discovery | default-tenant user provisioning; index pagination is advertised, cursor pagination and SCIM Security Events are explicitly disabled |
+| SCIM 2.0 provisioning with [RFC 9865](https://www.rfc-editor.org/rfc/rfc9865) / [RFC 9967](https://www.rfc-editor.org/rfc/rfc9967) capability discovery | default-tenant user provisioning; index pagination remains the default and forward cursor pagination uses opaque 10-minute actor/query-bound cursors; RFC 9967 Security Events remain disabled |
 | WebAuthn | passkey registration and login |
 
 Emerging protocols are tracked through the

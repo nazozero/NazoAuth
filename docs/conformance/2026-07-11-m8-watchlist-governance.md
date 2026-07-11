@@ -13,7 +13,7 @@ The review produced these decisions:
 | Candidate | Standards status on 2026-07-11 | NazoAuth decision |
 | --- | --- | --- |
 | FAPI 2.0 HTTP Signatures | OIDF working draft dated 2026-06-26; not an OIDF Final Specification | Defer until the profile stabilizes and a resource-API non-repudiation customer exists. |
-| RFC 9865 cursor pagination | IETF Standards Track RFC, published 2025-10 | Suitable for a separate, bounded SCIM implementation proposal now. It is not implemented by this governance change. |
+| RFC 9865 cursor pagination | IETF Standards Track RFC, published 2025-10 | Implemented after this governance review with local codec, handler, metadata, security, and SCIM regression evidence; no applicable OIDF plan was found. |
 | RFC 9967 SCIM SET profile | IETF Standards Track RFC, published 2026-05 | Defer pending a defined event consumer, delivery topology, trust model, and retention owner. |
 | OAuth for Browser-Based Applications | `draft-ietf-oauth-browser-based-apps-26`; RFC Editor queue in progress, no RFC number yet | Audit current AS/frontend architecture after RFC publication; do not add a draft profile switch. |
 | Attestation-Based Client Authentication | active `draft-ietf-oauth-attestation-based-client-auth-10` | Defer while the draft and attester trust ecosystem remain unsettled. |
@@ -115,9 +115,9 @@ key-discovery and evidence-retention operating model.
 **Product demand and integration.** SCIM provisioning clients listing a changing
 or large user directory benefit from stable cursor traversal. NazoAuth already
 implements `GET /scim/v2/Users`, database-backed tenant-scoped SCIM credentials,
-bounded page sizes, filtering, and truthful `cursor: false` capability output.
-This is the narrowest candidate with a mature specification and an existing
-product surface.
+bounded page sizes and filtering. The follow-up implementation now advertises
+cursor support while retaining index as the default. This was the narrowest
+candidate with a mature specification and an existing product surface.
 
 **Specification and conformance.** RFC 9865 is an IETF Standards Track RFC
 published in October 2025 and updates RFC 7643 and RFC 7644. The inspected OIDF
@@ -141,9 +141,15 @@ last-page behavior, concurrent insert/delete behavior, empty sets, filter and
 count binding, tampering, expiry, tenant mismatch, malformed/duplicate
 parameters, maximum page size, capability truth, and unchanged write/auth rules.
 
-**Decision and re-entry.** Selected for a separate bounded implementation
-design. Runtime support remains absent until that design, TDD cycle, and
-verification complete.
+**Decision and evidence.** Implemented as forward-only stateless cursor
+pagination. AES-256-GCM cursors expire after 600 seconds and bind credential,
+tenant, exact filter, effective count, ordering policy, and the last
+`(created_at, id)` row. Local evidence covers codec tampering and context
+binding, handler errors, metadata truth, authorization-before-decoding, SCIM
+regression, and a PostgreSQL isolated-schema traversal test. The database test
+is compiled everywhere and runs when `DATABASE_URL` is available. No RFC
+9865-specific OIDF plan was found in the inspected suite revision, so this is
+not an OIDF certification claim.
 
 ### RFC 9967 SCIM Security Event Tokens and asynchronous completion
 
@@ -387,6 +393,7 @@ Every future candidate implementation must prove all applicable rows below:
 M8-01, M8-02, and M8-03 can be marked complete as governance gates because
 product boundaries, exact standards/conformance status, local test policy, and
 security isolation are now explicit. The candidate features themselves remain
-absent. RFC 9865 is the only candidate selected for an immediate bounded design;
-OpenID4VCI/OpenID4VP require a separate product program; the remaining items
-stay on the dated watchlist until their named re-entry conditions are met.
+absent except for the separately designed and locally verified RFC 9865 SCIM
+cursor implementation. OpenID4VCI/OpenID4VP require a separate product program;
+the remaining items stay on the dated watchlist until their named re-entry
+conditions are met.

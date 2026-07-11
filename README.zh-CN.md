@@ -93,7 +93,7 @@ OpenID Foundation：
 
 | 标准 | 实现 |
 | --- | --- |
-| SCIM 2.0 provisioning，包含 [RFC 9865](https://www.rfc-editor.org/rfc/rfc9865) / [RFC 9967](https://www.rfc-editor.org/rfc/rfc9967) 能力发现 | 默认 tenant 的 user provisioning；声明使用 index pagination，明确关闭 cursor pagination 和 SCIM Security Events |
+| SCIM 2.0 provisioning，包含 [RFC 9865](https://www.rfc-editor.org/rfc/rfc9865) / [RFC 9967](https://www.rfc-editor.org/rfc/rfc9967) 能力发现 | 默认 tenant 的 user provisioning；index pagination 仍为默认方法，forward cursor pagination 使用 10 分钟有效、绑定 actor/query 的不透明 cursor；RFC 9967 Security Events 仍关闭 |
 | WebAuthn | passkey 注册和登录 |
 
 新兴协议由 [M8 watchlist 治理审计](docs/conformance/2026-07-11-m8-watchlist-governance.md)
