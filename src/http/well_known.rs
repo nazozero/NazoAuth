@@ -85,6 +85,7 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
     let issuer = settings.issuer.as_str();
     let mtls_base = settings.mtls_endpoint_base_url.as_str();
     let id_token_signing_algs = id_token_signing_alg_values_supported(keyset);
+    let userinfo_signing_algs = id_token_signing_algs.clone();
     let authorization_signing_algs = active_signing_alg_values_supported(keyset);
     let mtls_enabled = !settings.trusted_proxy_cidrs.is_empty();
     let token_auth_methods = token_endpoint_auth_methods_supported(
@@ -133,7 +134,12 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
             (Some(_), _) => vec!["public", "pairwise"],
         },
         "id_token_signing_alg_values_supported": id_token_signing_algs,
+        "userinfo_signing_alg_values_supported": userinfo_signing_algs,
+        "userinfo_encryption_alg_values_supported": SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
+        "userinfo_encryption_enc_values_supported": SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
         "authorization_signing_alg_values_supported": authorization_signing_algs,
+        "authorization_encryption_alg_values_supported": SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
+        "authorization_encryption_enc_values_supported": SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
         "token_endpoint_auth_methods_supported": token_auth_methods,
         "token_endpoint_auth_signing_alg_values_supported": token_auth_signing_algs,
         "revocation_endpoint_auth_methods_supported": token_auth_methods,

@@ -19,6 +19,7 @@ in the repository.
 - Latest NI-006~NI-011 official parallel-isolated full matrix: [2026-07-03 NI-006~NI-011 official parallel-isolated OIDF results](2026-07-03-ni-006-011-official-parallel-isolated-oidf-results.md)
 - Latest M2 official parallel-isolated full matrix: [2026-07-08 M2 official parallel-isolated OIDF results](2026-07-08-m2-official-parallel-isolated-oidf-results.md)
 - Latest M6 FAPI-CIBA local and official full matrix: [2026-07-11 M6 FAPI-CIBA OIDF results](2026-07-11-m6-official-fapi-ciba-oidf-results.md)
+- Latest encrypted-response coverage check: [2026-07-11 M7 encrypted response OIDF coverage](2026-07-11-m7-oidf-coverage.md)
 
 The latest recorded official full-matrix suite run is the 2026-07-11 M6
 parallel-isolated run against `https://auth.nazo.run`. It ran from workflow head

@@ -56,6 +56,18 @@ pub(crate) struct DynamicClientRegistrationRequest {
     #[serde(default)]
     pub(crate) jwks: Option<Value>,
     #[serde(default)]
+    pub(crate) userinfo_signed_response_alg: Option<String>,
+    #[serde(default)]
+    pub(crate) userinfo_encrypted_response_alg: Option<String>,
+    #[serde(default)]
+    pub(crate) userinfo_encrypted_response_enc: Option<String>,
+    #[serde(default)]
+    pub(crate) authorization_signed_response_alg: Option<String>,
+    #[serde(default)]
+    pub(crate) authorization_encrypted_response_alg: Option<String>,
+    #[serde(default)]
+    pub(crate) authorization_encrypted_response_enc: Option<String>,
+    #[serde(default)]
     pub(crate) request_uris: Vec<String>,
     #[serde(default)]
     pub(crate) software_statement: Option<String>,
@@ -91,6 +103,12 @@ pub(crate) struct PreparedDynamicClientRegistration {
     pub(crate) tls_client_auth_san_ip: Vec<String>,
     pub(crate) tls_client_auth_san_email: Vec<String>,
     pub(crate) jwks: Option<Value>,
+    pub(crate) userinfo_signed_response_alg: Option<String>,
+    pub(crate) userinfo_encrypted_response_alg: Option<String>,
+    pub(crate) userinfo_encrypted_response_enc: Option<String>,
+    pub(crate) authorization_signed_response_alg: Option<String>,
+    pub(crate) authorization_encrypted_response_alg: Option<String>,
+    pub(crate) authorization_encrypted_response_enc: Option<String>,
 }
 
 #[derive(Debug)]
@@ -499,6 +517,17 @@ async fn replace_client_configuration(
             .eq(&prepared.introspection_encrypted_response_alg),
         oauth_clients::introspection_encrypted_response_enc
             .eq(&prepared.introspection_encrypted_response_enc),
+        oauth_clients::userinfo_signed_response_alg.eq(&prepared.userinfo_signed_response_alg),
+        oauth_clients::userinfo_encrypted_response_alg
+            .eq(&prepared.userinfo_encrypted_response_alg),
+        oauth_clients::userinfo_encrypted_response_enc
+            .eq(&prepared.userinfo_encrypted_response_enc),
+        oauth_clients::authorization_signed_response_alg
+            .eq(&prepared.authorization_signed_response_alg),
+        oauth_clients::authorization_encrypted_response_alg
+            .eq(&prepared.authorization_encrypted_response_alg),
+        oauth_clients::authorization_encrypted_response_enc
+            .eq(&prepared.authorization_encrypted_response_enc),
         oauth_clients::updated_at.eq(diesel_now),
     ))
     .returning(ClientRow::as_returning())
@@ -724,6 +753,12 @@ pub(crate) fn prepare_dynamic_client_registration(
         tls_client_auth_san_ip: request.tls_client_auth_san_ip,
         tls_client_auth_san_email: request.tls_client_auth_san_email,
         jwks: request.jwks,
+        userinfo_signed_response_alg: request.userinfo_signed_response_alg,
+        userinfo_encrypted_response_alg: request.userinfo_encrypted_response_alg,
+        userinfo_encrypted_response_enc: request.userinfo_encrypted_response_enc,
+        authorization_signed_response_alg: request.authorization_signed_response_alg,
+        authorization_encrypted_response_alg: request.authorization_encrypted_response_alg,
+        authorization_encrypted_response_enc: request.authorization_encrypted_response_enc,
     })
 }
 
@@ -863,6 +898,12 @@ impl PreparedDynamicClientRegistration {
             jwks: self.jwks.clone(),
             introspection_encrypted_response_alg: None,
             introspection_encrypted_response_enc: None,
+            userinfo_signed_response_alg: self.userinfo_signed_response_alg.clone(),
+            userinfo_encrypted_response_alg: self.userinfo_encrypted_response_alg.clone(),
+            userinfo_encrypted_response_enc: self.userinfo_encrypted_response_enc.clone(),
+            authorization_signed_response_alg: self.authorization_signed_response_alg.clone(),
+            authorization_encrypted_response_alg: self.authorization_encrypted_response_alg.clone(),
+            authorization_encrypted_response_enc: self.authorization_encrypted_response_enc.clone(),
             allow_jwks_without_kid: secret_auth_method,
         }
     }

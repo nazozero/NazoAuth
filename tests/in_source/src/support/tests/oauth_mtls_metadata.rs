@@ -31,6 +31,12 @@ fn metadata<'a>(
         allow_jwks_without_kid: false,
         introspection_encrypted_response_alg: None,
         introspection_encrypted_response_enc: None,
+        userinfo_signed_response_alg: None,
+        userinfo_encrypted_response_alg: None,
+        userinfo_encrypted_response_enc: None,
+        authorization_signed_response_alg: None,
+        authorization_encrypted_response_alg: None,
+        authorization_encrypted_response_enc: None,
         mtls_binding,
     }
 }

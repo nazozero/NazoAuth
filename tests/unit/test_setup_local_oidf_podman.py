@@ -53,12 +53,26 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
         self.assertIn("mtls", config)
         self.assertIn("mtls2", config)
 
+    def test_dynamic_crypto_plan_has_distinct_alias_and_matrix_expression(self):
+        module = load_setup_module()
+
+        config = module.write_dynamic_crypto_plan_config()
+        filename = "oidf-oidcc-dynamic-crypto-plan-config.json"
+        expressions = module.plan_expressions_for_configs({filename: config})
+
+        self.assertTrue(config["alias"].endswith("-dynamic-crypto"))
+        self.assertIn(
+            "oidcc-dynamic-certification-test-plan[response_type=code] " + filename,
+            expressions,
+        )
+
     def test_all_generated_plans_allow_the_native_sso_metadata_extension(self):
         module = load_setup_module()
 
         configs = [
             module.write_basic_plan_config(),
             module.write_dynamic_plan_config(),
+            module.write_dynamic_crypto_plan_config(),
             module.write_oidcc_config_plan_config(),
             module.write_frontchannel_logout_plan_config(),
             module.write_session_management_plan_config(),
