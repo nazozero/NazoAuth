@@ -73,6 +73,23 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
         )
         self.assertIn("Twenty-one-plan", manifest["description"])
 
+    def test_dynamic_plan_uses_terminal_browser_flow_for_local_redirect_errors(self):
+        module = load_setup_module()
+
+        config = module.dynamic_plan_config()
+
+        for module_name in (
+            "oidcc-ensure-registered-redirect-uri",
+            "oidcc-ensure-redirect-uri-in-authorization-request",
+            "oidcc-redirect-uri-query-mismatch",
+            "oidcc-redirect-uri-query-added",
+        ):
+            tasks = config["override"][module_name]["browser"][0]["tasks"]
+            self.assertEqual(
+                [task["task"] for task in tasks],
+                ["Capture authorization error response"],
+            )
+
     def test_plan_partition_is_complete_and_isolates_browser_sensitive_plans(self):
         module = load_setup_module()
         parallel = "oidcc-basic-certification-test-plan basic.json"
