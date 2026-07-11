@@ -156,12 +156,17 @@ pub(crate) async fn dynamic_client_registration(
     };
     let response_types = prepared.response_types.clone();
     let registration_access_token = random_urlsafe_token();
+    let response_signing_algorithms = state
+        .keyset
+        .snapshot()
+        .response_signing_alg_values_supported();
     match prepare_dynamic_client_insert_with_secret_pepper(
         prepared,
         state.settings.pairwise_subject_secret.as_deref(),
         &state.settings.client_secret_pepper,
         &state.settings.issuer,
         &registration_access_token,
+        &response_signing_algorithms,
     )
     .await
     {
@@ -289,12 +294,17 @@ pub(crate) async fn client_configuration_put(
     };
     let response_types = registration.response_types.clone();
     let registration_access_token = random_urlsafe_token();
+    let response_signing_algorithms = state
+        .keyset
+        .snapshot()
+        .response_signing_alg_values_supported();
     let prepared = match prepare_dynamic_client_insert_with_secret_pepper(
         registration,
         state.settings.pairwise_subject_secret.as_deref(),
         &state.settings.client_secret_pepper,
         &state.settings.issuer,
         &registration_access_token,
+        &response_signing_algorithms,
     )
     .await
     {
@@ -353,12 +363,14 @@ pub(crate) async fn prepare_dynamic_client_insert_with_secret_pepper(
     client_secret_pepper: &str,
     issuer: &str,
     registration_access_token: &str,
+    response_signing_algorithms: &[&'static str],
 ) -> Result<PreparedClientInsert, InsertClientError> {
     let mut prepared = crate::http::admin::prepare_client_insert_with_secret_pepper(
         registration.into_create_client_request(),
         pairwise_subject_secret,
         client_secret_pepper,
         issuer,
+        response_signing_algorithms,
     )
     .await?;
     prepared.registration_access_token_blake3 = Some(blake3_hex(registration_access_token));
@@ -1047,6 +1059,36 @@ fn dynamic_registration_response(
     }
     if let Some(jwks) = &client.jwks {
         body["jwks"] = jwks.clone();
+    }
+    for (field, value) in [
+        (
+            "userinfo_signed_response_alg",
+            client.userinfo_signed_response_alg.as_ref(),
+        ),
+        (
+            "userinfo_encrypted_response_alg",
+            client.userinfo_encrypted_response_alg.as_ref(),
+        ),
+        (
+            "userinfo_encrypted_response_enc",
+            client.userinfo_encrypted_response_enc.as_ref(),
+        ),
+        (
+            "authorization_signed_response_alg",
+            client.authorization_signed_response_alg.as_ref(),
+        ),
+        (
+            "authorization_encrypted_response_alg",
+            client.authorization_encrypted_response_alg.as_ref(),
+        ),
+        (
+            "authorization_encrypted_response_enc",
+            client.authorization_encrypted_response_enc.as_ref(),
+        ),
+    ] {
+        if let Some(value) = value {
+            body[field] = json!(value);
+        }
     }
     if let Some(secret) = issued_secret {
         body["client_secret"] = json!(secret);

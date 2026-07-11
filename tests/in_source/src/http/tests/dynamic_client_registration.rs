@@ -13,6 +13,7 @@ async fn prepare_admin_client_insert_for_test(
         pairwise_subject_secret,
         LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
         issuer,
+        crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
 }
@@ -29,6 +30,7 @@ async fn prepare_dynamic_client_insert_for_test(
         LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
         issuer,
         registration_access_token,
+        crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
 }
@@ -357,6 +359,43 @@ async fn dynamic_registration_preserves_valid_userinfo_and_jarm_crypto_metadata(
     assert_eq!(
         inserted.authorization_encrypted_response_alg.as_deref(),
         Some("RSA-OAEP-256")
+    );
+}
+
+#[actix_web::test]
+async fn dynamic_registration_rejects_response_signing_alg_unavailable_to_runtime_keyset() {
+    let registration = prepare_dynamic_client_registration(
+        DynamicClientRegistrationRequest {
+            redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
+            userinfo_signed_response_alg: Some("RS256".to_owned()),
+            ..Default::default()
+        },
+        DynamicRegistrationDefaults {
+            default_audience: "https://issuer.example/fapi/resource",
+        },
+    )
+    .expect("dynamic response metadata should parse before runtime capability validation");
+
+    let error = match prepare_dynamic_client_insert_with_secret_pepper(
+        registration,
+        None,
+        LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
+        "https://issuer.example",
+        "registration-token",
+        &["PS256"],
+    )
+    .await
+    {
+        Ok(_) => panic!("unavailable response signing algorithm must be rejected"),
+        Err(InsertClientError::InvalidRequest(message)) => message,
+        Err(InsertClientError::Server(message)) => {
+            panic!("capability mismatch must be a client metadata error: {message}")
+        }
+    };
+
+    assert!(
+        error.contains("签名算法必须是当前服务可用算法: PS256"),
+        "unexpected error: {error}"
     );
 }
 
@@ -727,6 +766,98 @@ async fn dynamic_registration_created_response_includes_registration_management_
         "https://issuer.example/register/dynamic-client"
     );
     assert_eq!(body["client_id_issued_at"], now.timestamp());
+}
+
+#[test]
+fn dynamic_registration_response_includes_response_protection_metadata() {
+    let mut client = dynamic_registration_client_row();
+    client.userinfo_signed_response_alg = Some("RS256".to_owned());
+    client.userinfo_encrypted_response_alg = Some("RSA-OAEP-256".to_owned());
+    client.userinfo_encrypted_response_enc = Some("A256GCM".to_owned());
+    client.authorization_signed_response_alg = Some("PS256".to_owned());
+    client.authorization_encrypted_response_alg = Some("RSA-OAEP-256".to_owned());
+    client.authorization_encrypted_response_enc = Some("A256GCM".to_owned());
+
+    let body = dynamic_registration_response(
+        &client,
+        &["code".to_owned()],
+        None,
+        "https://issuer.example",
+        "registration-token",
+    );
+
+    assert_eq!(body["userinfo_signed_response_alg"], "RS256");
+    assert_eq!(body["userinfo_encrypted_response_alg"], "RSA-OAEP-256");
+    assert_eq!(body["userinfo_encrypted_response_enc"], "A256GCM");
+    assert_eq!(body["authorization_signed_response_alg"], "PS256");
+    assert_eq!(body["authorization_encrypted_response_alg"], "RSA-OAEP-256");
+    assert_eq!(body["authorization_encrypted_response_enc"], "A256GCM");
+}
+
+#[test]
+fn client_configuration_get_to_put_round_trip_preserves_response_protection_metadata() {
+    let mut client = dynamic_registration_client_row();
+    client.client_secret_hash = Some(hash_client_secret(
+        "current-secret",
+        LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
+    ));
+    client.jwks = Some(json!({
+        "keys": [{
+            "kty": "RSA",
+            "kid": "response-enc",
+            "use": "enc",
+            "alg": "RSA-OAEP-256",
+            "n": URL_SAFE_NO_PAD.encode([0x91u8; 256]),
+            "e": "AQAB"
+        }]
+    }));
+    client.userinfo_signed_response_alg = Some("RS256".to_owned());
+    client.userinfo_encrypted_response_alg = Some("RSA-OAEP-256".to_owned());
+    client.userinfo_encrypted_response_enc = Some("A256GCM".to_owned());
+    client.authorization_signed_response_alg = Some("PS256".to_owned());
+    client.authorization_encrypted_response_alg = Some("RSA-OAEP-256".to_owned());
+    client.authorization_encrypted_response_enc = Some("A256GCM".to_owned());
+
+    let mut get_body = dynamic_registration_response(
+        &client,
+        &["code".to_owned()],
+        Some("current-secret".to_owned()),
+        "https://issuer.example",
+        "registration-token",
+    );
+    let object = get_body
+        .as_object_mut()
+        .expect("configuration response should be an object");
+    object.remove("registration_access_token");
+    object.remove("registration_client_uri");
+    object.remove("client_secret_expires_at");
+
+    let update = parse_client_configuration_update_for_test(get_body, &client)
+        .expect("GET representation without server-managed fields should be a valid PUT body");
+    let prepared = prepare_dynamic_client_registration(
+        update,
+        DynamicRegistrationDefaults {
+            default_audience: "https://issuer.example/fapi/resource",
+        },
+    )
+    .expect("round-tripped response protection metadata should remain valid");
+
+    assert_eq!(
+        prepared.userinfo_signed_response_alg.as_deref(),
+        Some("RS256")
+    );
+    assert_eq!(
+        prepared.userinfo_encrypted_response_alg.as_deref(),
+        Some("RSA-OAEP-256")
+    );
+    assert_eq!(
+        prepared.authorization_signed_response_alg.as_deref(),
+        Some("PS256")
+    );
+    assert_eq!(
+        prepared.authorization_encrypted_response_enc.as_deref(),
+        Some("A256GCM")
+    );
 }
 
 #[test]

@@ -207,6 +207,7 @@ pub(crate) struct ClientMetadata<'a> {
     pub(crate) authorization_signed_response_alg: Option<&'a str>,
     pub(crate) authorization_encrypted_response_alg: Option<&'a str>,
     pub(crate) authorization_encrypted_response_enc: Option<&'a str>,
+    pub(crate) response_signing_algorithms: &'a [&'static str],
     pub(crate) mtls_binding: Option<&'a ClientMtlsMetadata>,
 }
 
@@ -231,6 +232,7 @@ pub(crate) fn validate_client_metadata(metadata: ClientMetadata<'_>) -> anyhow::
         authorization_signed_response_alg,
         authorization_encrypted_response_alg,
         authorization_encrypted_response_enc,
+        response_signing_algorithms,
         mtls_binding,
     } = metadata;
     if !matches!(client_type, "public" | "confidential") {
@@ -274,6 +276,7 @@ pub(crate) fn validate_client_metadata(metadata: ClientMetadata<'_>) -> anyhow::
         userinfo_encrypted_response_alg,
         userinfo_encrypted_response_enc,
         jwks,
+        response_signing_algorithms,
     )?;
     validate_response_crypto_metadata(
         "authorization",
@@ -281,6 +284,7 @@ pub(crate) fn validate_client_metadata(metadata: ClientMetadata<'_>) -> anyhow::
         authorization_encrypted_response_alg,
         authorization_encrypted_response_enc,
         jwks,
+        response_signing_algorithms,
     )?;
     if token_endpoint_auth_method == "private_key_jwt" {
         let Some(jwks) = jwks else {
@@ -377,8 +381,14 @@ fn validate_introspection_jwe_metadata(
                     SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS.join(", ")
                 );
             }
-            if !jwks.is_some_and(|jwks| client_jwks_contains_encryption_key(jwks, alg)) {
-                anyhow::bail!("启用 encrypted introspection response 必须配置匹配的 jwks 加密公钥");
+            match jwks.map(|jwks| client_jwks_matching_encryption_key_count(jwks, alg)) {
+                Some(1) => {}
+                Some(2..) => anyhow::bail!(
+                    "启用 encrypted introspection response 必须且只能配置一个匹配的 jwks 加密公钥"
+                ),
+                _ => anyhow::bail!(
+                    "启用 encrypted introspection response 必须配置匹配的 jwks 加密公钥"
+                ),
             }
             Ok(())
         }
@@ -394,13 +404,15 @@ fn validate_response_crypto_metadata(
     encryption_alg: Option<&str>,
     encryption_enc: Option<&str>,
     jwks: Option<&Value>,
+    response_signing_algorithms: &[&str],
 ) -> anyhow::Result<()> {
     if let Some(signing_alg) = signing_alg
-        && !SUPPORTED_CLIENT_JWT_SIGNING_ALGS.contains(&signing_alg)
+        && (!SUPPORTED_CLIENT_JWT_SIGNING_ALGS.contains(&signing_alg)
+            || !response_signing_algorithms.contains(&signing_alg))
     {
         anyhow::bail!(
-            "{response_name}_signed_response_alg 签名算法必须是 {}",
-            SUPPORTED_CLIENT_JWT_SIGNING_ALGS.join(", ")
+            "{response_name}_signed_response_alg 签名算法必须是当前服务可用算法: {}",
+            response_signing_algorithms.join(", ")
         );
     }
     match (encryption_alg, encryption_enc) {
@@ -424,25 +436,31 @@ fn validate_response_crypto_metadata(
                     SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS.join(", ")
                 );
             }
-            if !jwks.is_some_and(|jwks| client_jwks_contains_encryption_key(jwks, alg)) {
-                anyhow::bail!(
+            match jwks.map(|jwks| client_jwks_matching_encryption_key_count(jwks, alg)) {
+                Some(1) => {}
+                Some(2..) => anyhow::bail!(
+                    "启用 {response_name} encrypted response 必须且只能配置一个匹配的 jwks 加密公钥"
+                ),
+                _ => anyhow::bail!(
                     "启用 {response_name} encrypted response 必须配置匹配的 jwks 加密公钥"
-                );
+                ),
             }
             Ok(())
         }
     }
 }
 
-pub(crate) fn client_jwks_contains_encryption_key(jwks: &Value, alg: &str) -> bool {
+fn client_jwks_matching_encryption_key_count(jwks: &Value, alg: &str) -> usize {
     jwks.get("keys")
         .and_then(Value::as_array)
-        .is_some_and(|keys| {
-            keys.iter().any(|key| {
-                key.get("use").and_then(Value::as_str) == Some("enc")
-                    && key.get("alg").and_then(Value::as_str) == Some(alg)
-                    && valid_rsa_jwe_encryption_key(key)
-            })
+        .map_or(0, |keys| {
+            keys.iter()
+                .filter(|key| {
+                    key.get("use").and_then(Value::as_str) == Some("enc")
+                        && key.get("alg").and_then(Value::as_str) == Some(alg)
+                        && valid_rsa_jwe_encryption_key(key)
+                })
+                .count()
         })
 }
 

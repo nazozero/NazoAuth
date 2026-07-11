@@ -406,6 +406,7 @@ fn valid_keyset(kid: &str) -> Keyset {
         verification_keys: vec![VerificationKey {
             kid: kid.to_owned(),
             public_jwk,
+            local_signing_key: None,
         }],
     }
 }

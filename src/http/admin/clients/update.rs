@@ -110,11 +110,16 @@ pub(crate) async fn admin_patch_client(
         }
     };
 
+    let response_signing_algorithms = state
+        .keyset
+        .snapshot()
+        .response_signing_alg_values_supported();
     let prepared = match prepare_client_patch(
         &current,
         payload,
         state.settings.pairwise_subject_secret.as_deref(),
         &state.settings.issuer,
+        &response_signing_algorithms,
     )
     .await
     {
@@ -221,6 +226,7 @@ async fn prepare_client_patch(
     payload: PatchClientRequest,
     pairwise_subject_secret: Option<&str>,
     _issuer: &str,
+    response_signing_algorithms: &[&'static str],
 ) -> anyhow::Result<PreparedClientPatch> {
     let new_client_name = payload
         .client_name
@@ -419,6 +425,7 @@ async fn prepare_client_patch(
                 .as_deref(),
             authorization_encrypted_response_enc: new_authorization_encrypted_response_enc
                 .as_deref(),
+            response_signing_algorithms,
             mtls_binding: Some(&ClientMtlsMetadata {
                 tls_client_auth_subject_dn: new_tls_client_auth_subject_dn.clone(),
                 tls_client_auth_cert_sha256: new_tls_client_auth_cert_sha256.clone(),

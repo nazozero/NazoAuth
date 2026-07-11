@@ -18,6 +18,7 @@ fn keyset(alg: jsonwebtoken::Algorithm) -> Keyset {
         verification_keys: vec![VerificationKey {
             kid: "active".to_owned(),
             public_jwk: json!({"kty": "RSA", "kid": "active", "alg": alg_name, "use": "sig"}),
+            local_signing_key: None,
         }],
     }
 }
@@ -621,7 +622,7 @@ fn discovery_authorization_response_algs_match_active_key_only() {
 }
 
 #[test]
-fn discovery_advertises_only_implemented_userinfo_and_jarm_response_crypto() {
+fn discovery_advertises_only_response_algorithms_signable_by_current_keyset() {
     let metadata = authorization_server_metadata(
         &settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new()),
         &keyset(jsonwebtoken::Algorithm::PS256),
@@ -629,7 +630,11 @@ fn discovery_advertises_only_implemented_userinfo_and_jarm_response_crypto() {
 
     assert_eq!(
         metadata["userinfo_signing_alg_values_supported"],
-        json!(["PS256", "RS256"])
+        json!(["PS256"])
+    );
+    assert_eq!(
+        metadata["authorization_signing_alg_values_supported"],
+        json!(["PS256"])
     );
     assert_eq!(
         metadata["userinfo_encryption_alg_values_supported"],

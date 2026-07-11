@@ -74,6 +74,7 @@ fn live_refresh_state_from_database_url(
             verification_keys: vec![VerificationKey {
                 kid: active_kid,
                 public_jwk,
+                local_signing_key: None,
             }],
         }),
     })

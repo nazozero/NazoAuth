@@ -74,6 +74,7 @@ fn signed_introspection_offline_state() -> Data<AppState> {
             verification_keys: vec![VerificationKey {
                 kid: "introspect-offline-kid".to_owned(),
                 public_jwk,
+                local_signing_key: None,
             }],
         }),
     })
@@ -119,6 +120,7 @@ fn live_introspection_state_from_database_url(database_url: String) -> Option<Da
             verification_keys: vec![VerificationKey {
                 kid: "introspect-test-kid".to_owned(),
                 public_jwk,
+                local_signing_key: None,
             }],
         }),
     }))

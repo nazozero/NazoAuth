@@ -177,11 +177,16 @@ pub(crate) async fn insert_client_row(
     payload: CreateClientRequest,
 ) -> Result<(ClientRow, Option<String>), InsertClientError> {
     let pairwise_subject_secret = state.settings.pairwise_subject_secret.clone();
+    let response_signing_algorithms = state
+        .keyset
+        .snapshot()
+        .response_signing_alg_values_supported();
     let prepared = prepare_client_insert_with_secret_pepper(
         payload,
         pairwise_subject_secret.as_deref(),
         &state.settings.client_secret_pepper,
         &state.settings.issuer,
+        &response_signing_algorithms,
     )
     .await?;
     let issued_secret = prepared.issued_secret.clone();
@@ -212,8 +217,9 @@ pub(crate) async fn prepare_client_insert_with_secret_pepper(
     pairwise_subject_secret: Option<&str>,
     client_secret_pepper: &str,
     issuer: &str,
+    response_signing_algorithms: &[&'static str],
 ) -> Result<PreparedClientInsert, InsertClientError> {
-    validate_client_payload(&payload)
+    validate_client_payload(&payload, response_signing_algorithms)
         .map_err(|error| InsertClientError::InvalidRequest(error.to_string()))?;
     let (issued_secret, secret_hash) = issue_client_secret(
         &payload.client_type,
@@ -377,7 +383,10 @@ pub(crate) async fn insert_prepared_client(
 }
 
 /// 校验客户端注册请求的协议约束。
-fn validate_client_payload(payload: &CreateClientRequest) -> anyhow::Result<()> {
+fn validate_client_payload(
+    payload: &CreateClientRequest,
+    response_signing_algorithms: &[&'static str],
+) -> anyhow::Result<()> {
     validate_pkce_compatibility_policy(
         payload.allow_authorization_code_without_pkce,
         &payload.client_type,
@@ -411,6 +420,7 @@ fn validate_client_payload(payload: &CreateClientRequest) -> anyhow::Result<()> 
         authorization_encrypted_response_enc: payload
             .authorization_encrypted_response_enc
             .as_deref(),
+        response_signing_algorithms,
         mtls_binding: Some(&ClientMtlsMetadata {
             tls_client_auth_subject_dn: payload.tls_client_auth_subject_dn.clone(),
             tls_client_auth_cert_sha256: payload.tls_client_auth_cert_sha256.clone(),

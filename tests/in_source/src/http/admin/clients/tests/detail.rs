@@ -28,6 +28,7 @@ async fn prepare_client_insert_for_test(
         pairwise_subject_secret,
         crate::support::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
         issuer,
+        crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
 }
