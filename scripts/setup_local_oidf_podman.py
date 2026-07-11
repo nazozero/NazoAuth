@@ -1567,7 +1567,7 @@ def plan_manifest_for_expressions(
     return {
         "name": "NazoAuth OIDF full conformance matrix",
         "description": (
-            "Twenty-plan OpenID Foundation regression matrix for the public issuer. "
+            "Twenty-one-plan OpenID Foundation regression matrix for the public issuer. "
             "Targeted TP/PS checks are mapped onto these plans instead of being run as a separate matrix."
         ),
         "plans": plans,

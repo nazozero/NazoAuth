@@ -65,6 +65,13 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
             "oidcc-dynamic-certification-test-plan[response_type=code] " + filename,
             expressions,
         )
+        dynamic_expression = next(
+            expression for expression in expressions if expression.endswith(filename)
+        )
+        manifest = module.plan_manifest_for_expressions(
+            [dynamic_expression], {filename: config}
+        )
+        self.assertIn("Twenty-one-plan", manifest["description"])
 
     def test_all_generated_plans_allow_the_native_sso_metadata_extension(self):
         module = load_setup_module()
@@ -81,7 +88,7 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
         configs.extend(module.write_fapi_ciba_plan_config().values())
         configs.extend(module.write_fapi_matrix_plan_configs().values())
 
-        self.assertGreaterEqual(len(configs), 20)
+        self.assertGreaterEqual(len(configs), 21)
         for config in configs:
             self.assertEqual(
                 config["server"]["allow_unexpected_metadata_fields"],
