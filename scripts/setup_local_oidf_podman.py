@@ -45,7 +45,12 @@ OIDCC_SECOND_LOGIN_SCREENSHOT_MODULES = (
     "oidcc-prompt-login",
     "oidcc-max-age-1",
 )
-OIDCC_REGISTERED_REDIRECT_URI_MODULE = "oidcc-ensure-registered-redirect-uri"
+OIDCC_LOCAL_AUTHORIZATION_ERROR_MODULES = (
+    "oidcc-ensure-registered-redirect-uri",
+    "oidcc-ensure-redirect-uri-in-authorization-request",
+    "oidcc-redirect-uri-query-mismatch",
+    "oidcc-redirect-uri-query-added",
+)
 FAPI_SECURITY_FINAL_PAR_REUSE_BEFORE_AUTH = (
     "fapi2-security-profile-final-par-ensure-reused-request-uri-prior-to-auth-completion-succeeds"
 )
@@ -942,9 +947,10 @@ def write_basic_plan_config() -> dict[str, object]:
             for module_name in OIDCC_SECOND_LOGIN_SCREENSHOT_MODULES
         },
     }
-    config["override"][OIDCC_REGISTERED_REDIRECT_URI_MODULE] = {
-        "browser": redirect_error_browser_automation()
-    }
+    for module_name in OIDCC_LOCAL_AUTHORIZATION_ERROR_MODULES:
+        config["override"][module_name] = {
+            "browser": redirect_error_browser_automation()
+        }
     write_plan_config("oidf-oidcc-basic-plan-config.json", config)
     return config
 
@@ -976,9 +982,10 @@ def dynamic_plan_config() -> dict[str, object]:
             for module_name in OIDCC_SECOND_LOGIN_SCREENSHOT_MODULES
         },
     }
-    config["override"][OIDCC_REGISTERED_REDIRECT_URI_MODULE] = {
-        "browser": redirect_error_browser_automation()
-    }
+    for module_name in OIDCC_LOCAL_AUTHORIZATION_ERROR_MODULES:
+        config["override"][module_name] = {
+            "browser": redirect_error_browser_automation()
+        }
     return config
 
 
