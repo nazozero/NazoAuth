@@ -88,6 +88,23 @@ fn rejects_invalid_method() {
 }
 
 #[test]
+fn preserves_custom_method_case_in_the_signature_base() {
+    let prepared = prepare(
+        "m-search",
+        "https://api.example/fapi/resource",
+        &[("authorization", "DPoP opaque")],
+        b"",
+        "key",
+        "ed25519",
+    )
+    .unwrap();
+    let base = std::str::from_utf8(prepared.signature_base()).unwrap();
+
+    assert!(base.contains("\"@method\": m-search\n"));
+    assert!(!base.contains("\"@method\": M-SEARCH\n"));
+}
+
+#[test]
 fn rejects_invalid_target_uri() {
     assert!(
         prepare(
@@ -100,6 +117,27 @@ fn rejects_invalid_target_uri() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn rejects_target_uri_userinfo() {
+    for target_uri in [
+        "https://user@api.example/fapi/resource",
+        "https://user:password@api.example/fapi/resource",
+    ] {
+        assert!(
+            prepare(
+                "GET",
+                target_uri,
+                &[("authorization", "DPoP opaque")],
+                b"",
+                "key",
+                "ed25519"
+            )
+            .is_err(),
+            "userinfo must be rejected in {target_uri}"
+        );
+    }
 }
 
 #[test]
@@ -178,6 +216,26 @@ fn strips_outer_whitespace_from_covered_field_values() {
 
     assert!(base.contains("\"authorization\": DPoP opaque\n"));
     assert!(!base.contains("\"authorization\":  \t"));
+}
+
+#[test]
+fn rejects_non_ascii_covered_field_values() {
+    for headers in [
+        [("authorization", "DPoP opaqué"), ("x-unused", "ascii")],
+        [("authorization", "DPoP opaque"), ("dpop", "opaque-prööf")],
+    ] {
+        assert!(
+            prepare(
+                "GET",
+                "https://api.example/fapi/resource",
+                &headers,
+                b"",
+                "key",
+                "ed25519"
+            )
+            .is_err()
+        );
+    }
 }
 
 #[test]

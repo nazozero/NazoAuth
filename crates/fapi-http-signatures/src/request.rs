@@ -89,7 +89,7 @@ pub fn prepare_request(
     }
 
     let mut components = vec![
-        component("@method", input.method)?,
+        method_component(input.method)?,
         component("@target-uri", target_uri.as_str())?,
         field_component("authorization", authorization)?,
     ];
@@ -134,7 +134,11 @@ fn canonical_target_uri(target_uri: &str) -> Result<String, RequestError> {
     }
     let uri = Url::parse(target_uri)
         .map_err(|_| RequestError::InvalidInput("invalid target URI".into()))?;
-    if !matches!(uri.scheme(), "http" | "https") || uri.host().is_none() || uri.fragment().is_some()
+    if !matches!(uri.scheme(), "http" | "https")
+        || uri.host().is_none()
+        || uri.fragment().is_some()
+        || !uri.username().is_empty()
+        || uri.password().is_some()
     {
         return Err(RequestError::InvalidInput("invalid target URI".into()));
     }
@@ -204,7 +208,17 @@ fn component(name: &str, value: &str) -> Result<HttpMessageComponent, RequestErr
         .map_err(|error| RequestError::InvalidInput(error.to_string()))
 }
 
+fn method_component(method: &str) -> Result<HttpMessageComponent, RequestError> {
+    HttpMessageComponent::try_from(format!("\"@method\": {method}").as_str())
+        .map_err(|error| RequestError::InvalidInput(error.to_string()))
+}
+
 fn field_component(name: &str, value: &str) -> Result<HttpMessageComponent, RequestError> {
+    if !value.is_ascii() {
+        return Err(RequestError::InvalidInput(format!(
+            "non-ASCII covered field value: {name}"
+        )));
+    }
     component(name, value.trim_matches([' ', '\t']))
 }
 
