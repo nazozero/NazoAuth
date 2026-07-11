@@ -16,10 +16,10 @@ The review produced these decisions:
 | FAPI 2.0 HTTP Signatures | OIDF working draft dated 2026-06-26; not an OIDF Final Specification | Defer until the profile stabilizes and a resource-API non-repudiation customer exists. |
 | RFC 9865 cursor pagination | IETF Standards Track RFC, published 2025-10 | Implemented after this governance review with local codec, handler, metadata, security, and SCIM regression evidence; no applicable OIDF plan was found. |
 | RFC 9967 SCIM SET profile | IETF Standards Track RFC, published 2026-05 | Defer pending a defined event consumer, delivery topology, trust model, and retention owner. |
-| OAuth for Browser-Based Applications | `draft-ietf-oauth-browser-based-apps-26`; RFC Editor queue in progress, no RFC number yet | A separately approved pre-publication draft-26 audit is recorded in `2026-07-11-browser-based-applications-draft-26-audit.md`; repeat the delta audit after RFC publication and do not add a draft profile switch. |
+| OAuth for Browser-Based Applications | `draft-ietf-oauth-browser-based-apps-27`; RFC Editor queue in progress, no RFC number yet | The corrected pre-publication draft-27 audit is recorded in `2026-07-11-browser-based-applications-draft-27-audit.md`; repeat the delta audit after RFC publication and do not add a draft profile switch. |
 | Attestation-Based Client Authentication | active `draft-ietf-oauth-attestation-based-client-auth-10` | Defer while the draft and attester trust ecosystem remain unsettled. |
 | Transaction Tokens | active `draft-ietf-oauth-transaction-tokens-09` | Defer until NazoAuth has a trusted-domain workload call-chain product requirement. |
-| Grant Management | OIDF `fapi-grant-management-01`, published 2021-06-23; no Final status | Keep the existing admin grant controls; defer protocol metadata and a client-facing API. |
+| Grant Management | OIDF working draft `oauth-v2-grant-management-03`, dated 2023-05-09; its `ID1` snapshot is an approved Implementer's Draft, with no Final status | Keep the existing admin grant controls; defer protocol metadata and a client-facing API. |
 | OpenID4VCI 1.0 / OpenID4VP 1.0 | OIDF Final Specifications, published 2025-09-16 and 2025-07-09 | Treat as a separate credential product program, not an extension of the current OP/AS profile. |
 
 No endpoint, grant, authentication method, token type, SCIM capability,
@@ -35,14 +35,16 @@ Standards status was checked against primary sources:
 - [OAuth 2.0 for Browser-Based Applications](https://datatracker.ietf.org/doc/draft-ietf-oauth-browser-based-apps/)
 - [OAuth 2.0 Attestation-Based Client Authentication](https://datatracker.ietf.org/doc/draft-ietf-oauth-attestation-based-client-auth/)
 - [Transaction Tokens](https://datatracker.ietf.org/doc/draft-ietf-oauth-transaction-tokens/)
-- [Grant Management for OAuth 2.0 draft 01](https://openid.net/specs/fapi-grant-management-01.html)
+- [Grant Management for OAuth 2.0 draft 03](https://openid.net/specs/oauth-v2-grant-management.html)
 - [OpenID4VCI 1.0 Final](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html)
 - [OpenID4VP 1.0 Final](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html)
 
-OIDF coverage was inspected in the OpenID conformance-suite source at commit
-`33a724c7d809a6f9db05cbb513ff2a77cbac905e` (2026-06-29). An absence statement
+OIDF coverage was re-inspected in OpenID conformance-suite release `v5.2.0` at
+commit `dee9a25160e789f0f80517674693ef7989ab9fa1` (2026-07-06). An absence statement
 below means that no applicable plan was found in that revision. It does not
 predict future suite coverage.
+The candidate-by-candidate source findings are recorded in
+`2026-07-11-m8-oidf-v5.2.0-coverage.md`.
 
 The local code boundary was checked from route registration, well-known and
 SCIM capability output, token dispatch, client authentication, grant storage,
@@ -204,10 +206,12 @@ third-party SPA token architecture is supported. NazoAuth already has code-only
 flows, PKCE, no password/implicit grants, exact redirect policy, scoped CORS,
 refresh protection, and sender-constrained token support.
 
-**Specification and conformance.** `draft-ietf-oauth-browser-based-apps-26` is
+**Specification and conformance.** `draft-ietf-oauth-browser-based-apps-27` is
 in the RFC Editor publication queue with state “In Progress” on the review date,
 but no RFC number has been assigned. It is intended as a Best Current Practice.
-No dedicated browser-app plan was found in the inspected OIDF suite.
+No dedicated browser-app plan was found in conformance-suite `v5.2.0`. The only
+normative change from `-26` is a BFF cookie-name SHOULD that points to the
+`__Host-Http-` prefix in `draft-ietf-httpbis-layered-cookies-02`.
 
 **Threat and operations boundary.** The final audit must cover malicious
 JavaScript, single and persistent token theft, new-flow token acquisition,
@@ -225,9 +229,11 @@ authorization, PAR, token, refresh, CORS, redirect, cookie/session, and metadata
 tests; separately audit NazoAuthWeb architecture without conflating it with
 third-party SPA support.
 
-**Decision and re-entry.** A separately approved pre-publication audit mapped
-draft-26 to the current server and first-party Web architecture and tightened
-public OAuth CORS without adding a runtime profile. Publication watch remains:
+**Decision and re-entry.** The corrected pre-publication audit maps draft-27 to
+the current server and first-party Web architecture. NazoAuthWeb is the
+same-origin authorization-server frontend, not a BFF: it does not proxy resource
+requests or hold OAuth tokens. The new BFF cookie-prefix SHOULD is therefore
+recorded but not misapplied as a runtime requirement. Publication watch remains:
 re-audit immediately after an RFC number is assigned and implement only
 concrete gaps found in the final requirements delta.
 
@@ -304,10 +310,11 @@ defines client-visible grant identifiers, lifecycle actions, an API, and
 authorization-server metadata. No client adopter requires that protocol, and no
 policy defines partial updates or grants shared across related client IDs.
 
-**Specification and conformance.** `fapi-grant-management-01` was published on
-2021-06-23 as an OIDF Internet-Draft with intended Standards Track status. It is
-not a Final Specification. No `grant_management` code or plan was found in the
-inspected OIDF suite.
+**Specification and conformance.** The current working document is
+`oauth-v2-grant-management-03`, dated 2023-05-09. Its `ID1` snapshot was
+approved as an Implementer's Draft on 2023-07-10. It is not a Final
+Specification. No `grant_management` code or plan was found in
+conformance-suite `v5.2.0`.
 
 **Threat and operations boundary.** A future API must prevent grant identifier
 enumeration, cross-user/client access, privilege expansion during update or

@@ -9,6 +9,31 @@ def workflow_heredoc_json(workflow: str, name: str):
     return json.loads(payload)
 
 class OidfWorkflowTests(unittest.TestCase):
+    def test_oidf_workflows_default_to_latest_verified_release(self):
+        root = Path(__file__).resolve().parents[2]
+        expected = "dee9a25160e789f0f80517674693ef7989ab9fa1"
+        for name in ("oidf-conformance.yml", "oidf-conformance-full.yml"):
+            workflow = (root / ".github" / "workflows" / name).read_text(encoding="utf-8")
+            self.assertIn(f"OIDF_CONFORMANCE_SUITE_REF || '{expected}'", workflow)
+            self.assertNotIn("33a724c7d809a6f9db05cbb513ff2a77cbac905e", workflow)
+
+    def test_spec_freshness_workflow_separates_offline_and_online_checks(self):
+        workflow = (
+            Path(__file__).resolve().parents[2]
+            / ".github"
+            / "workflows"
+            / "spec-freshness.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("schedule:", workflow)
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("pull_request:", workflow)
+        self.assertIn("python scripts/check_spec_freshness.py --offline", workflow)
+        self.assertIn("python scripts/check_spec_freshness.py", workflow)
+        self.assertIn("github.event_name != 'pull_request'", workflow)
+        self.assertIn('      - "README.md"', workflow)
+        self.assertIn("    needs: offline", workflow)
+
     def test_full_matrix_workflow_defaults_to_no_parallel_runner(self):
         workflow = (
             Path(__file__).resolve().parents[2]

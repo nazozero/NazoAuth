@@ -64,6 +64,7 @@ set can be scanned from one place.
 | [protocol/profile-matrix.md](protocol/profile-matrix.md) | Runtime profile capability matrix. |
 | [protocol/rfc-compliance-matrix.md](protocol/rfc-compliance-matrix.md) | OAuth, OAuth 2.1, OIDC, and FAPI best-practice matrix. |
 | [protocol/oauth2-1-self-audit.md](protocol/oauth2-1-self-audit.md) | OAuth 2.1 and best-practice self-audit. |
+| [protocol/spec-freshness.md](protocol/spec-freshness.md) | Machine-checked current specification and OIDF suite baseline. |
 | [protocol/oauth-spec-implementation-backlog.md](protocol/oauth-spec-implementation-backlog.md) | Protocol implementation backlog. |
 | [protocol/oauth-best-practice-implementation-plan.zh-CN.md](protocol/oauth-best-practice-implementation-plan.zh-CN.md) | Chinese future roadmap for OAuth/OIDC/FAPI best practices. |
 | [protocol/refresh-token-rotation.md](protocol/refresh-token-rotation.md) | Refresh-token rotation behavior and boundaries. |
@@ -110,6 +111,7 @@ set can be scanned from one place.
 | [conformance/2026-07-03-ni-007-public-ciba-oidf-results.md](conformance/2026-07-03-ni-007-public-ciba-oidf-results.md) | NI-007 public FAPI-CIBA results. |
 | [conformance/2026-07-08-m2-official-parallel-isolated-oidf-results.md](conformance/2026-07-08-m2-official-parallel-isolated-oidf-results.md) | M2 official parallel-isolated OIDF results. |
 | [conformance/2026-07-11-m8-watchlist-governance.md](conformance/2026-07-11-m8-watchlist-governance.md) | M8 product, standards/conformance, and security-entry decisions; no candidate runtime-support claim. |
+| [conformance/2026-07-11-m8-oidf-v5.2.0-coverage.md](conformance/2026-07-11-m8-oidf-v5.2.0-coverage.md) | M8 candidate coverage recheck against official conformance-suite v5.2.0. |
 
 ### Coverage
 
