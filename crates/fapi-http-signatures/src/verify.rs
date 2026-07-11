@@ -55,6 +55,24 @@ impl VerifiedInput {
     pub fn replay_fingerprint(&self) -> &[u8; 32] {
         &self.replay_fingerprint
     }
+
+    pub(crate) fn new(
+        signature_base: Vec<u8>,
+        signature: Vec<u8>,
+        keyid: String,
+        algorithm: String,
+        created: i64,
+        replay_fingerprint: [u8; 32],
+    ) -> Self {
+        Self {
+            signature_base,
+            signature,
+            keyid,
+            algorithm,
+            created,
+            replay_fingerprint,
+        }
+    }
 }
 
 pub fn parse_request_for_verification(
@@ -197,7 +215,7 @@ fn prepared_input(prepared: &crate::PreparedSignature) -> String {
     format!("sig1={params}")
 }
 
-fn signature_bytes(entry: &ListEntry) -> Result<&[u8], VerifyError> {
+pub(crate) fn signature_bytes(entry: &ListEntry) -> Result<&[u8], VerifyError> {
     match entry {
         ListEntry::Item(item)
             if item.params.is_empty() && matches!(item.bare_item, BareItem::ByteSequence(_)) =>
@@ -227,21 +245,21 @@ fn component_names(inner: &InnerList) -> Result<Vec<String>, VerifyError> {
         .collect()
 }
 
-fn string_parameter<'a>(inner: &'a InnerList, name: &str) -> Option<&'a str> {
+pub(crate) fn string_parameter<'a>(inner: &'a InnerList, name: &str) -> Option<&'a str> {
     match inner.params.get(name) {
         Some(BareItem::String(value)) => Some(value.as_str()),
         _ => None,
     }
 }
 
-fn integer_parameter(inner: &InnerList, name: &str) -> Option<i64> {
+pub(crate) fn integer_parameter(inner: &InnerList, name: &str) -> Option<i64> {
     match inner.params.get(name) {
         Some(BareItem::Integer(value)) => Some((*value).into()),
         _ => None,
     }
 }
 
-fn validate_parameters(inner: &InnerList) -> Result<(), VerifyError> {
+pub(crate) fn validate_parameters(inner: &InnerList) -> Result<(), VerifyError> {
     if inner.params.keys().any(|key| {
         !matches!(
             key.as_str(),
@@ -253,7 +271,7 @@ fn validate_parameters(inner: &InnerList) -> Result<(), VerifyError> {
     Ok(())
 }
 
-fn validate_time(
+pub(crate) fn validate_time(
     inner: &InnerList,
     created: i64,
     policy: VerificationPolicy,
@@ -363,7 +381,7 @@ fn replace_content_digest(
     Ok(())
 }
 
-fn top_level_member_count(field: &str) -> usize {
+pub(crate) fn top_level_member_count(field: &str) -> usize {
     if field.trim().is_empty() {
         return 0;
     }
@@ -376,7 +394,7 @@ fn top_level_member_count(field: &str) -> usize {
     count
 }
 
-fn top_level_parameter_count(field: &str) -> usize {
+pub(crate) fn top_level_parameter_count(field: &str) -> usize {
     let mut count = 0;
     scan_unquoted(field, |byte, depth| {
         if byte == b';' && depth == 0 {
@@ -418,7 +436,7 @@ fn scan_unquoted(field: &str, mut visit: impl FnMut(u8, usize)) {
     }
 }
 
-fn fingerprint(
+pub(crate) fn fingerprint(
     parts0: &[u8],
     parts1: &[u8],
     parts2: &[u8],

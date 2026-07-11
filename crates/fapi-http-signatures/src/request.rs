@@ -29,6 +29,7 @@ pub struct SignatureFields {
 pub struct PreparedSignature {
     signature_base: Vec<u8>,
     signature_input: String,
+    signature_name: &'static str,
 }
 
 impl PreparedSignature {
@@ -38,7 +39,7 @@ impl PreparedSignature {
 
     pub fn finish(self, signature: &[u8]) -> SignatureFields {
         let mut serializer = DictSerializer::new();
-        let _ = serializer.bare_item(key(SIGNATURE_NAME), signature);
+        let _ = serializer.bare_item(key(self.signature_name), signature);
         let signature = serializer
             .finish()
             .expect("signature dictionary is non-empty");
@@ -46,6 +47,18 @@ impl PreparedSignature {
         SignatureFields {
             signature_input: self.signature_input,
             signature,
+        }
+    }
+
+    pub(crate) fn new(
+        signature_base: Vec<u8>,
+        signature_input: String,
+        signature_name: &'static str,
+    ) -> Self {
+        Self {
+            signature_base,
+            signature_input,
+            signature_name,
         }
     }
 }
@@ -115,6 +128,7 @@ pub fn prepare_request(
     Ok(PreparedSignature {
         signature_base: signature_base.into_bytes(),
         signature_input,
+        signature_name: SIGNATURE_NAME,
     })
 }
 
