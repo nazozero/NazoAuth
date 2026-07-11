@@ -116,7 +116,7 @@ jobs:
       - uses: actions/checkout@v7.0.0
       - name: Check real HTTP source policy
         run: |
-          python -m py_compile scripts/full_real_request_e2e.py
+          python -m py_compile scripts/full_real_request_source_policy.py scripts/full_real_request_e2e.py
           python scripts/full_real_request_e2e.py --source-policy-check
           python scripts/test_full_real_request_e2e_source_policy.py
       - uses: dtolnay/rust-toolchain@1.96.0

@@ -24,6 +24,12 @@ from email import message_from_bytes
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
+from full_real_request_source_policy import (
+    RuntimeCaseEvidence,
+    execute_case_registry,
+    validate_case_registry,
+)
+
 
 HTTP_SIGNATURE_REQUIRED_E2E_CASES = frozenset(
     {
@@ -79,72 +85,110 @@ HTTP_SIGNATURE_HANDLER_NAMES = frozenset(
         "wrong_key",
     }
 )
+HTTP_SIGNATURE_RUNTIME_EVIDENCE = RuntimeCaseEvidence(HTTP_SIGNATURE_REQUIRED_E2E_CASES)
 
 
 def validate_http_signature_case_registry(registry: tuple[tuple[str, str, dict[str, object]], ...]) -> None:
-    names = [name for name, _, _ in registry]
-    duplicates = sorted({name for name in names if names.count(name) > 1})
-    actual = set(names)
-    missing = sorted(HTTP_SIGNATURE_REQUIRED_E2E_CASES - actual)
-    extra = sorted(actual - HTTP_SIGNATURE_REQUIRED_E2E_CASES)
-    handlers = {handler for _, handler, _ in registry}
-    unknown_handlers = sorted(handlers - HTTP_SIGNATURE_HANDLER_NAMES)
-    if duplicates or missing or extra or unknown_handlers:
-        raise AssertionError(
-            f"invalid FAPI HTTP signature registry: duplicates={duplicates}, missing={missing}, "
-            f"extra={extra}, unknown_handlers={unknown_handlers}"
-        )
+    validate_case_registry(
+        registry,
+        required=HTTP_SIGNATURE_REQUIRED_E2E_CASES,
+        allowed_handlers=HTTP_SIGNATURE_HANDLER_NAMES,
+    )
 
 
 def execute_http_signature_case_registry(
     registry: tuple[tuple[str, str, dict[str, object]], ...],
     handlers: dict[str, object],
 ) -> tuple[str, ...]:
-    validate_http_signature_case_registry(registry)
-    if set(handlers) != HTTP_SIGNATURE_HANDLER_NAMES:
-        raise AssertionError("runtime FAPI HTTP signature handler map is not exact")
-    executed: list[str] = []
-    for name, handler_name, parameters in registry:
-        if name in executed:
-            raise AssertionError(f"duplicate executed FAPI HTTP signature case: {name}")
-        handler = handlers[handler_name]
-        if not callable(handler):
-            raise AssertionError(f"FAPI HTTP signature handler is not callable: {handler_name}")
-        handler(name, dict(parameters))
-        executed.append(name)
-    if set(executed) != HTTP_SIGNATURE_REQUIRED_E2E_CASES or len(executed) != len(HTTP_SIGNATURE_REQUIRED_E2E_CASES):
-        raise AssertionError("executed FAPI HTTP signature cases are not exact")
-    return tuple(executed)
+    return execute_case_registry(
+        registry,
+        handlers,
+        required=HTTP_SIGNATURE_REQUIRED_E2E_CASES,
+        allowed_handlers=HTTP_SIGNATURE_HANDLER_NAMES,
+        evidence=HTTP_SIGNATURE_RUNTIME_EVIDENCE,
+    )
 
 
 def run_source_policy_check() -> None:
     validate_http_signature_case_registry(HTTP_SIGNATURE_CASE_REGISTRY)
-    calls: list[tuple[str, dict[str, object]]] = []
     fake_handlers = {
-        name: (lambda case, params, calls=calls: calls.append((case, params)))
+        name: (lambda case, _params: HTTP_SIGNATURE_RUNTIME_EVIDENCE.observe(case, True))
         for name in HTTP_SIGNATURE_HANDLER_NAMES
     }
     executed = execute_http_signature_case_registry(HTTP_SIGNATURE_CASE_REGISTRY, fake_handlers)
     if tuple(name for name, _, _ in HTTP_SIGNATURE_CASE_REGISTRY) != executed:
         raise AssertionError("source-policy runner did not traverse the declared registry")
-    if [name for name, _ in calls] != list(executed):
-        raise AssertionError("source-policy handlers did not execute in registry order")
 
 
 def run_source_policy_self_tests() -> None:
     run_source_policy_check()
-    missing_registry = HTTP_SIGNATURE_CASE_REGISTRY[:-1]
-    inert_evidence = (
-        "# fapi_http_signature_unsigned_fallback",
-        "def never_called(): record_http_signature_case('fapi_http_signature_unsigned_fallback')",
-        "if False: signed_request('fapi_http_signature_unsigned_fallback')",
-    )
-    for evidence in inert_evidence:
+    required = frozenset({"required_case"})
+    allowed = frozenset({"handler"})
+    registry = (("required_case", "handler", {}),)
+
+    def must_fail(
+        candidate: tuple[tuple[str, str, dict[str, object]], ...],
+        handlers: dict[str, object],
+        expected: str,
+        evidence: RuntimeCaseEvidence | None = None,
+    ) -> None:
         try:
-            validate_http_signature_case_registry(missing_registry)
-        except AssertionError:
-            continue
-        raise AssertionError(f"inert source evidence incorrectly satisfied registry policy: {evidence}")
+            execute_case_registry(
+                candidate,
+                handlers,
+                required=required,
+                allowed_handlers=allowed,
+                evidence=evidence or RuntimeCaseEvidence(required),
+            )
+        except AssertionError as error:
+            if expected not in str(error):
+                raise AssertionError(f"unexpected contract failure: {error}") from error
+            return
+        raise AssertionError(f"contract case did not fail: {expected}")
+
+    noop = lambda _case, _params: None
+    must_fail((), {"handler": noop}, "missing")
+    must_fail(registry + (("extra", "handler", {}),), {"handler": noop}, "extra")
+    must_fail(registry + registry, {"handler": noop}, "duplicates")
+    must_fail((("required_case", "unknown", {}),), {}, "unknown_handlers")
+    must_fail(registry, {"handler": object()}, "not callable")
+    must_fail(registry, {"handler": noop}, "did not assert")
+    must_fail(registry, {"handler": lambda _case, _params: None if False else None}, "did not assert")
+
+    wrong_evidence = RuntimeCaseEvidence(required | {"other_case"})
+    must_fail(
+        registry,
+        {"handler": lambda _case, _params: wrong_evidence.observe("other_case", True)},
+        "wrong active case",
+        wrong_evidence,
+    )
+
+    duplicate_evidence = RuntimeCaseEvidence(required)
+    def duplicate(case: str, _params: dict[str, object]) -> None:
+        duplicate_evidence.observe(case, True)
+        duplicate_evidence.observe(case, True)
+    must_fail(registry, {"handler": duplicate}, "duplicate runtime case assertion", duplicate_evidence)
+
+    clean_evidence = RuntimeCaseEvidence(required)
+    try:
+        execute_case_registry(
+            registry,
+            {"handler": lambda _case, _params: (_ for _ in ()).throw(RuntimeError("boom"))},
+            required=required,
+            allowed_handlers=allowed,
+            evidence=clean_evidence,
+        )
+    except RuntimeError:
+        pass
+    if clean_evidence.active_case is not None:
+        raise AssertionError("runtime evidence state leaked after handler exception")
+    execute_case_registry(
+        registry,
+        {"handler": lambda case, _params: clean_evidence.observe(case, True)},
+        required=required,
+        allowed_handlers=allowed,
+        evidence=clean_evidence,
+    )
 
 
 if sys.argv[1:] == ["--source-policy-check"]:
@@ -229,6 +273,7 @@ def fail(message: str) -> None:
 
 
 def check(name: str, condition: bool, detail: Any = None) -> None:
+    HTTP_SIGNATURE_RUNTIME_EVIDENCE.observe(name, condition)
     if not condition:
         if detail is None:
             fail(name)
