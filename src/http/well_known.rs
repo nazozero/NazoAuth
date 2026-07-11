@@ -85,8 +85,10 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
     let issuer = settings.issuer.as_str();
     let mtls_base = settings.mtls_endpoint_base_url.as_str();
     let id_token_signing_algs = id_token_signing_alg_values_supported(keyset);
-    let userinfo_signing_algs = id_token_signing_algs.clone();
-    let authorization_signing_algs = active_signing_alg_values_supported(keyset);
+    let response_signing_algs = keyset.response_signing_alg_values_supported();
+    let userinfo_signing_algs = response_signing_algs.clone();
+    let authorization_signing_algs = response_signing_algs;
+    let active_signing_algs = active_signing_alg_values_supported(keyset);
     let mtls_enabled = !settings.trusted_proxy_cidrs.is_empty();
     let token_auth_methods = token_endpoint_auth_methods_supported(
         settings.authorization_server_profile,
@@ -96,7 +98,7 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
     let token_auth_signing_algs = token_endpoint_auth_signing_alg_values_supported(settings);
     let request_object_signing_algs = request_object_signing_alg_values_supported(
         settings.authorization_server_profile,
-        authorization_signing_algs.as_slice(),
+        active_signing_algs.as_slice(),
     );
     let response_modes = response_modes_supported(settings.authorization_server_profile);
     let mut grant_types = vec![

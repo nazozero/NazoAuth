@@ -49,12 +49,16 @@ pub(crate) fn client_jwe_key<'a>(
         .and_then(|jwks| jwks.get("keys"))
         .and_then(Value::as_array)
         .ok_or_else(|| anyhow::anyhow!("{response_name} JWE client has no jwks"))?;
-    let Some(jwk) = keys.iter().find(|key| {
+    let mut matching_keys = keys.iter().filter(|key| {
         key.get("use").and_then(Value::as_str) == Some("enc")
             && key.get("alg").and_then(Value::as_str) == Some(alg)
-    }) else {
+    });
+    let Some(jwk) = matching_keys.next() else {
         anyhow::bail!("{response_name} JWE client has no matching encryption key");
     };
+    if matching_keys.next().is_some() {
+        anyhow::bail!("{response_name} JWE client has ambiguous encryption keys");
+    }
     let kid = jwk
         .get("kid")
         .and_then(Value::as_str)
@@ -129,3 +133,7 @@ fn rsa_oaep_256_encrypt_jwk(jwk: &Value, plaintext: &[u8]) -> anyhow::Result<Vec
     encrypted.truncate(len);
     Ok(encrypted)
 }
+
+#[cfg(test)]
+#[path = "../../tests/in_source/src/support/tests/jwe.rs"]
+mod tests;

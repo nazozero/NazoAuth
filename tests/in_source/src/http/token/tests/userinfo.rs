@@ -103,6 +103,7 @@ async fn live_userinfo_state_from_database_url(database_url: String) -> Option<D
             verification_keys: vec![VerificationKey {
                 kid: "userinfo-test-kid".to_owned(),
                 public_jwk,
+                local_signing_key: None,
             }],
         }),
     }))
@@ -193,6 +194,7 @@ fn userinfo_state_with_valid_signing_key_invalid_db() -> Data<AppState> {
             verification_keys: vec![VerificationKey {
                 kid: "userinfo-test-kid".to_owned(),
                 public_jwk,
+                local_signing_key: None,
             }],
         }),
     })

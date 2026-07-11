@@ -31,6 +31,7 @@ fn metadata<'a>(
         authorization_signed_response_alg: None,
         authorization_encrypted_response_alg: None,
         authorization_encrypted_response_enc: None,
+        response_signing_algorithms: SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
         mtls_binding,
     }
 }
@@ -751,6 +752,18 @@ fn client_metadata_validates_userinfo_and_authorization_response_crypto_metadata
     validate_client_metadata(valid)
         .expect("supported UserInfo and JARM response crypto metadata should be accepted");
 
+    let mut unavailable_signing = base();
+    unavailable_signing.response_signing_algorithms = &["PS256"];
+    unavailable_signing.userinfo_signed_response_alg = Some("RS256");
+    let error = validate_client_metadata(unavailable_signing)
+        .expect_err("registration must reject algorithms unavailable to the current keyset");
+    assert!(
+        error
+            .to_string()
+            .contains("签名算法必须是当前服务可用算法: PS256"),
+        "unexpected error: {error}"
+    );
+
     let signing_only_jwks = json!({
         "keys": [{
             "kty": "OKP",
@@ -777,6 +790,40 @@ fn client_metadata_validates_userinfo_and_authorization_response_crypto_metadata
         .expect_err("response encryption requires a matching use=enc key");
     assert!(
         error.to_string().contains("必须配置匹配的 jwks 加密公钥"),
+        "unexpected error: {error}"
+    );
+
+    let duplicate_encryption_jwks = json!({
+        "keys": [
+            encryption_jwks["keys"][0].clone(),
+            {
+                "kty": "RSA",
+                "n": URL_SAFE_NO_PAD.encode([0x92u8; 256]),
+                "e": URL_SAFE_NO_PAD.encode([0x01u8, 0x00, 0x01]),
+                "alg": "RSA-OAEP-256",
+                "use": "enc",
+                "kid": "response-enc-key-2"
+            }
+        ]
+    });
+    let mut ambiguous_encryption_key = metadata(
+        "confidential",
+        &redirect_uris,
+        &scopes,
+        &audiences,
+        &grants,
+        "client_secret_basic",
+        Some(&duplicate_encryption_jwks),
+        None,
+    );
+    ambiguous_encryption_key.userinfo_encrypted_response_alg = Some("RSA-OAEP-256");
+    ambiguous_encryption_key.userinfo_encrypted_response_enc = Some("A256GCM");
+    let error = validate_client_metadata(ambiguous_encryption_key)
+        .expect_err("response encryption key selection must be unambiguous");
+    assert!(
+        error
+            .to_string()
+            .contains("必须且只能配置一个匹配的 jwks 加密公钥"),
         "unexpected error: {error}"
     );
 }

@@ -72,6 +72,7 @@ fn live_revocation_state_from_database_url(database_url: String) -> Option<Data<
             verification_keys: vec![VerificationKey {
                 kid: "revoke-test-kid".to_owned(),
                 public_jwk,
+                local_signing_key: None,
             }],
         }),
     }))
