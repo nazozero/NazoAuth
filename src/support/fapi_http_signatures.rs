@@ -2,6 +2,7 @@
 
 use anyhow::{Context, bail};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use serde_json::Value;
 use uuid::Uuid;
 
 use crate::domain::{ActiveSigningKey, ClientRow, HttpMessageSignature, Keyset};
@@ -24,6 +25,58 @@ fn jwt_algorithm(algorithm: &str) -> anyhow::Result<jsonwebtoken::Algorithm> {
         "ecdsa-p256-sha256" => Ok(jsonwebtoken::Algorithm::ES256),
         _ => bail!("unsupported HTTP message signature algorithm"),
     }
+}
+
+fn http_jwk_decoding_key(
+    key: &Value,
+    algorithm: jsonwebtoken::Algorithm,
+) -> Option<jsonwebtoken::DecodingKey> {
+    let expected_algorithm = match algorithm {
+        jsonwebtoken::Algorithm::EdDSA => "EdDSA",
+        jsonwebtoken::Algorithm::RS256 => "RS256",
+        jsonwebtoken::Algorithm::ES256 => "ES256",
+        _ => return None,
+    };
+    match key.get("alg") {
+        None => {}
+        Some(Value::String(value)) if value == expected_algorithm => {}
+        Some(_) => return None,
+    }
+    if ["d", "p", "q", "dp", "dq", "qi", "oth"]
+        .iter()
+        .any(|member| key.get(member).is_some())
+    {
+        return None;
+    }
+    if let Some(key_ops) = key.get("key_ops") {
+        let operations = key_ops.as_array()?;
+        let mut seen = std::collections::HashSet::with_capacity(operations.len());
+        let mut allows_verify = false;
+        for operation in operations {
+            let operation = operation.as_str()?;
+            if !seen.insert(operation) {
+                return None;
+            }
+            allows_verify |= operation == "verify";
+        }
+        if !allows_verify {
+            return None;
+        }
+    }
+    if algorithm == jsonwebtoken::Algorithm::RS256 {
+        let modulus = URL_SAFE_NO_PAD.decode(key.get("n")?.as_str()?).ok()?;
+        if unsigned_integer_bit_length(&modulus) < 2048 {
+            return None;
+        }
+    }
+    jwt_decoding_key_from_jwk(key, algorithm)
+}
+
+fn unsigned_integer_bit_length(bytes: &[u8]) -> usize {
+    let Some((offset, first)) = bytes.iter().enumerate().find(|(_, byte)| **byte != 0) else {
+        return 0;
+    };
+    (bytes.len() - offset - 1) * 8 + (u8::BITS - first.leading_zeros()) as usize
 }
 
 impl Keyset {
@@ -75,12 +128,6 @@ pub(crate) fn verify_client_http_message(
         bail!("HTTP signature client binding mismatch");
     }
     let jwt_algorithm = jwt_algorithm(algorithm)?;
-    let expected_jwk_algorithm = match jwt_algorithm {
-        jsonwebtoken::Algorithm::EdDSA => "EdDSA",
-        jsonwebtoken::Algorithm::RS256 => "RS256",
-        jsonwebtoken::Algorithm::ES256 => "ES256",
-        _ => unreachable!(),
-    };
     let keys = client
         .jwks
         .as_ref()
@@ -94,10 +141,7 @@ pub(crate) fn verify_client_http_message(
     if matching.next().is_some() {
         bail!("client JWK kid is ambiguous");
     }
-    if key.get("alg").and_then(serde_json::Value::as_str) != Some(expected_jwk_algorithm) {
-        bail!("client JWK algorithm mismatch");
-    }
-    let decoding_key = jwt_decoding_key_from_jwk(key, jwt_algorithm)
+    let decoding_key = http_jwk_decoding_key(key, jwt_algorithm)
         .context("client JWK is not usable for HTTP signature verification")?;
     let encoded_signature = URL_SAFE_NO_PAD.encode(signature);
     if !jsonwebtoken::crypto::verify(

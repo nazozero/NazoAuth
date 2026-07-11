@@ -90,8 +90,10 @@ async fn detached_signing_maps_only_fapi_algorithms_and_verifies_raw_bytes() {
             .unwrap();
         assert_eq!(signed.algorithm, http_algorithm);
         assert_eq!(signed.kid, keyset.active_kid);
+        let mut public_jwk = keyset.verification_keys[0].public_jwk.clone();
+        public_jwk.as_object_mut().unwrap().remove("alg");
         verify_client_http_message(
-            &client(json!({"keys": [keyset.verification_keys[0].public_jwk.clone()]})),
+            &client(json!({"keys": [public_jwk]})),
             DEFAULT_TENANT_ID,
             "client-1",
             &signed.kid,
@@ -177,6 +179,83 @@ fn verification_rejects_unknown_or_jwk_mismatched_algorithm() {
             )
             .is_err()
         );
+    }
+}
+
+#[test]
+fn http_verification_accepts_supported_public_jwks_without_alg() {
+    for algorithm in [
+        jsonwebtoken::Algorithm::EdDSA,
+        jsonwebtoken::Algorithm::RS256,
+        jsonwebtoken::Algorithm::ES256,
+    ] {
+        let mut jwk = local_keyset(algorithm).verification_keys[0]
+            .public_jwk
+            .clone();
+        jwk.as_object_mut().unwrap().remove("alg");
+
+        assert!(http_jwk_decoding_key(&jwk, algorithm).is_some());
+    }
+}
+
+#[test]
+fn http_verification_rejects_every_private_jwk_member() {
+    let public = local_keyset(jsonwebtoken::Algorithm::EdDSA).verification_keys[0]
+        .public_jwk
+        .clone();
+    for member in ["d", "p", "q", "dp", "dq", "qi", "oth"] {
+        let mut jwk = public.clone();
+        jwk[member] = if member == "oth" {
+            json!([])
+        } else {
+            json!("private")
+        };
+        assert!(
+            http_jwk_decoding_key(&jwk, jsonwebtoken::Algorithm::EdDSA).is_none(),
+            "accepted private member {member}"
+        );
+    }
+}
+
+#[test]
+fn http_verification_enforces_well_formed_verify_key_ops() {
+    let public = local_keyset(jsonwebtoken::Algorithm::EdDSA).verification_keys[0]
+        .public_jwk
+        .clone();
+    let with_ops = |key_ops: Value| {
+        let mut jwk = public.clone();
+        jwk["key_ops"] = key_ops;
+        http_jwk_decoding_key(&jwk, jsonwebtoken::Algorithm::EdDSA).is_some()
+    };
+
+    assert!(with_ops(json!(["verify"])));
+    assert!(with_ops(json!(["sign", "verify"])));
+    assert!(!with_ops(json!(["sign"])));
+    assert!(!with_ops(json!(["encrypt"])));
+    assert!(!with_ops(json!([])));
+    assert!(!with_ops(json!(["verify", "verify"])));
+    assert!(!with_ops(json!(["verify", 7])));
+    assert!(!with_ops(json!("verify")));
+}
+
+#[test]
+fn http_rsa_policy_uses_unsigned_modulus_bit_length() {
+    let mut jwk = local_keyset(jsonwebtoken::Algorithm::RS256).verification_keys[0]
+        .public_jwk
+        .clone();
+    assert!(http_jwk_decoding_key(&jwk, jsonwebtoken::Algorithm::RS256).is_some());
+
+    let mut modulus = URL_SAFE_NO_PAD.decode(jwk["n"].as_str().unwrap()).unwrap();
+    modulus.insert(0, 0);
+    jwk["n"] = json!(URL_SAFE_NO_PAD.encode(&modulus));
+    assert!(
+        http_jwk_decoding_key(&jwk, jsonwebtoken::Algorithm::RS256).is_some(),
+        "a leading zero must not change an unsigned 2048-bit modulus"
+    );
+
+    for modulus in [[&[0x7f][..], &[0xff; 255][..]].concat(), vec![0xff; 255]] {
+        jwk["n"] = json!(URL_SAFE_NO_PAD.encode(modulus));
+        assert!(http_jwk_decoding_key(&jwk, jsonwebtoken::Algorithm::RS256).is_none());
     }
 }
 
