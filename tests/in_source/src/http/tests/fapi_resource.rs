@@ -1,5 +1,8 @@
 use super::*;
-use std::sync::Arc;
+use std::{
+    io::Write,
+    sync::{Arc, Mutex},
+};
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
@@ -8,6 +11,26 @@ use crate::support::{generate_key_material, public_jwk_from_private_der};
 use diesel::sql_query;
 use diesel::sql_types::{Text, Timestamptz, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
+use fred::interfaces::{ClientLike, KeysInterface};
+use fred::prelude::{Builder as ValkeyBuilder, Config as ValkeyConfig};
+use nazo_fapi_http_signatures::{
+    OriginalRequest, RequestInput, RequestPolicy, ResponseInput, SignatureFields,
+    VerificationPolicy, parse_response_for_verification, prepare_request,
+};
+
+#[derive(Clone)]
+struct FapiLogWriter(Arc<Mutex<Vec<u8>>>);
+
+impl Write for FapiLogWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
 
 fn fapi_test_state() -> AppState {
     fapi_test_state_with_settings(
@@ -320,6 +343,117 @@ fn access_claims(cnf: Option<ConfirmationClaims>) -> Claims {
     }
 }
 
+fn fapi_http_signature_client(public_jwk: Value) -> ClientRow {
+    ClientRow {
+        id: Uuid::now_v7(),
+        tenant_id: DEFAULT_TENANT_ID,
+        realm_id: DEFAULT_REALM_ID,
+        organization_id: DEFAULT_ORGANIZATION_ID,
+        client_id: "client-1".to_owned(),
+        client_name: "HTTP Signature Client".to_owned(),
+        client_type: "confidential".to_owned(),
+        client_secret_hash: None,
+        redirect_uris: json!([]),
+        scopes: json!(["openid"]),
+        allowed_audiences: json!(["resource://default"]),
+        grant_types: json!(["client_credentials"]),
+        token_endpoint_auth_method: "private_key_jwt".to_owned(),
+        require_dpop_bound_tokens: false,
+        require_mtls_bound_tokens: false,
+        tls_client_auth_subject_dn: None,
+        tls_client_auth_cert_sha256: None,
+        tls_client_auth_san_dns: json!([]),
+        tls_client_auth_san_uri: json!([]),
+        tls_client_auth_san_ip: json!([]),
+        tls_client_auth_san_email: json!([]),
+        allow_client_assertion_audience_array: false,
+        allow_client_assertion_endpoint_audience: false,
+        require_par_request_object: false,
+        allow_authorization_code_without_pkce: false,
+        is_active: true,
+        jwks: Some(json!({"keys": [public_jwk]})),
+        introspection_encrypted_response_alg: None,
+        introspection_encrypted_response_enc: None,
+        userinfo_signed_response_alg: None,
+        userinfo_encrypted_response_alg: None,
+        userinfo_encrypted_response_enc: None,
+        authorization_signed_response_alg: None,
+        authorization_encrypted_response_alg: None,
+        authorization_encrypted_response_enc: None,
+        post_logout_redirect_uris: json!([]),
+        backchannel_logout_uri: None,
+        backchannel_logout_session_required: false,
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: false,
+        subject_type: "public".to_owned(),
+        sector_identifier_uri: None,
+        sector_identifier_host: None,
+    }
+}
+
+async fn signed_resource_request_fixture(
+    body: &[u8],
+) -> (Keyset, ClientRow, HttpRequest, SignatureFields) {
+    let material =
+        generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("client key generation");
+    let kid = "resource-client-ed25519";
+    let public_jwk = public_jwk_from_private_der(
+        kid,
+        jsonwebtoken::Algorithm::EdDSA,
+        &material.private_pkcs8_der,
+    )
+    .expect("client public JWK");
+    let client = fapi_http_signature_client(public_jwk.clone());
+    let keyset = Keyset {
+        active_kid: kid.to_owned(),
+        active_alg: jsonwebtoken::Algorithm::EdDSA,
+        active_signing_key: ActiveSigningKey::LocalPkcs8Der(material.private_pkcs8_der),
+        verification_keys: vec![VerificationKey {
+            kid: kid.to_owned(),
+            public_jwk,
+            local_signing_key: None,
+        }],
+    };
+    let digest = (!body.is_empty()).then(|| nazo_fapi_http_signatures::content_digest(body));
+    let mut headers = vec![("authorization", "Bearer opaque-access-token")];
+    if let Some(digest) = digest.as_deref() {
+        headers.push(("content-digest", digest));
+    }
+    let prepared = prepare_request(
+        RequestInput {
+            method: if body.is_empty() { "GET" } else { "POST" },
+            target_uri: "https://issuer.example/fapi/resource",
+            headers: &headers,
+            body,
+        },
+        RequestPolicy {
+            created: Utc::now().timestamp(),
+            keyid: kid,
+            algorithm: "ed25519",
+        },
+    )
+    .expect("request should prepare");
+    let detached = keyset
+        .sign_http_message(prepared.signature_base())
+        .await
+        .expect("request should sign");
+    let fields = prepared.finish(&detached.signature);
+    let mut request = if body.is_empty() {
+        actix_web::test::TestRequest::get()
+    } else {
+        actix_web::test::TestRequest::post()
+    };
+    request = request
+        .uri("/fapi/resource")
+        .insert_header((header::AUTHORIZATION, "Bearer opaque-access-token"))
+        .insert_header(("signature-input", fields.signature_input.clone()))
+        .insert_header(("signature", fields.signature.clone()));
+    if let Some(digest) = digest {
+        request = request.insert_header(("content-digest", digest));
+    }
+    (keyset, client, request.to_http_request(), fields)
+}
+
 fn oauth_error_code(response: &HttpResponse) -> Option<String> {
     response
         .extensions()
@@ -337,6 +471,8 @@ async fn fapi_resource_rejects_missing_or_conflicting_access_token_transport() {
     let missing = fapi_resource(state.clone(), missing_req, Bytes::new()).await;
     assert_eq!(missing.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(oauth_error_code(&missing).as_deref(), Some("invalid_token"));
+    assert!(!missing.headers().contains_key("signature-input"));
+    assert!(!missing.headers().contains_key("signature"));
 
     let duplicate_req = actix_web::test::TestRequest::post()
         .uri("/fapi/resource")
@@ -353,6 +489,328 @@ async fn fapi_resource_rejects_missing_or_conflicting_access_token_transport() {
     assert_eq!(
         oauth_error_code(&duplicate).as_deref(),
         Some("invalid_request")
+    );
+}
+
+#[test]
+fn fapi_resource_http_signature_enabled_rejects_form_body_token_transport() {
+    let req = actix_web::test::TestRequest::post()
+        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+        .to_http_request();
+    let token = resource_access_token(&req, &Bytes::from_static(b"access_token=body-token"), true);
+
+    assert!(matches!(token, ResourceAccessToken::InvalidRequest));
+}
+
+#[actix_web::test]
+async fn fapi_resource_http_signature_valid_request_uses_exact_client_jwk() {
+    let (_keyset, client, req, _fields) = signed_resource_request_fixture(b"").await;
+
+    let verified = verify_fapi_resource_http_signature(
+        &client,
+        &req,
+        &Bytes::new(),
+        FapiResourceSignaturePolicy {
+            tenant_id: DEFAULT_TENANT_ID,
+            client_id: "client-1",
+            issuer: "https://issuer.example",
+            now: Utc::now().timestamp(),
+            max_age_seconds: 60,
+        },
+    )
+    .expect("valid resource signature should verify");
+
+    assert_eq!(verified.keyid(), "resource-client-ed25519");
+    assert_eq!(verified.algorithm(), "ed25519");
+
+    let body = Bytes::from_static(br#"{"amount":10}"#);
+    let (_keyset, client, req, _fields) = signed_resource_request_fixture(&body).await;
+    assert!(
+        verify_fapi_resource_http_signature(
+            &client,
+            &req,
+            &body,
+            FapiResourceSignaturePolicy {
+                tenant_id: DEFAULT_TENANT_ID,
+                client_id: "client-1",
+                issuer: "https://issuer.example",
+                now: Utc::now().timestamp(),
+                max_age_seconds: 60,
+            },
+        )
+        .is_ok()
+    );
+}
+
+#[actix_web::test]
+async fn fapi_resource_http_signature_rejects_duplicate_signature_headers() {
+    let (_keyset, client, _req, fields) = signed_resource_request_fixture(b"").await;
+    let req = actix_web::test::TestRequest::get()
+        .uri("/fapi/resource")
+        .insert_header((header::AUTHORIZATION, "Bearer opaque-access-token"))
+        .insert_header(("signature-input", fields.signature_input))
+        .append_header(("signature", fields.signature))
+        .append_header(("signature", "sig1=:ZHVwbGljYXRlOg==:"))
+        .to_http_request();
+
+    assert!(
+        verify_fapi_resource_http_signature(
+            &client,
+            &req,
+            &Bytes::new(),
+            FapiResourceSignaturePolicy {
+                tenant_id: DEFAULT_TENANT_ID,
+                client_id: "client-1",
+                issuer: "https://issuer.example",
+                now: Utc::now().timestamp(),
+                max_age_seconds: 60,
+            },
+        )
+        .is_err()
+    );
+}
+
+#[actix_web::test]
+async fn fapi_resource_http_signature_response_is_request_linked_and_verifiable() {
+    let (_client_keyset, _client, req, request_fields) = signed_resource_request_fixture(b"").await;
+    let state = fapi_signing_state_with_invalid_db();
+    let response = json_response_no_store(json!({"sub": "protected-subject"}));
+
+    let signed =
+        sign_fapi_resource_response(&state, &req, &Bytes::new(), Some(&request_fields), response)
+            .await;
+
+    assert_eq!(signed.status(), StatusCode::OK);
+    let response_digest = signed
+        .headers()
+        .get("content-digest")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let response_fields = SignatureFields {
+        signature_input: signed
+            .headers()
+            .get("signature-input")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned(),
+        signature: signed
+            .headers()
+            .get("signature")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned(),
+    };
+    let body = actix_web::body::to_bytes(signed.into_body()).await.unwrap();
+    let response_headers = [("content-digest", response_digest.as_str())];
+    let request_headers = [("authorization", "Bearer opaque-access-token")];
+    let parsed = parse_response_for_verification(
+        ResponseInput {
+            status: 200,
+            headers: &response_headers,
+            body: &body,
+        },
+        OriginalRequest {
+            input: RequestInput {
+                method: "GET",
+                target_uri: "https://issuer.example/fapi/resource",
+                headers: &request_headers,
+                body: b"",
+            },
+            signature_fields: Some(&request_fields),
+        },
+        response_fields,
+        VerificationPolicy {
+            now: Utc::now().timestamp(),
+            max_age_seconds: 60,
+            future_skew_seconds: FAPI_HTTP_SIGNATURE_FUTURE_SKEW_SECONDS,
+        },
+    )
+    .expect("response signature should be linked to the original request");
+    let server = state.keyset.snapshot();
+    let verifier = fapi_http_signature_client(server.verification_keys[0].public_jwk.clone());
+    verify_client_http_message(
+        &verifier,
+        DEFAULT_TENANT_ID,
+        "client-1",
+        parsed.keyid(),
+        parsed.algorithm(),
+        parsed.signature_base(),
+        parsed.signature(),
+    )
+    .expect("server response signature should verify");
+}
+
+#[actix_web::test]
+async fn fapi_resource_http_signature_signer_failure_returns_empty_503() {
+    let state = Data::new(fapi_test_state());
+    let req = actix_web::test::TestRequest::get()
+        .uri("/fapi/resource")
+        .insert_header((header::AUTHORIZATION, "Bearer opaque-access-token"))
+        .to_http_request();
+    let protected = json_response_no_store(json!({"secret": "must-not-leak"}));
+
+    let response = sign_fapi_resource_response(&state, &req, &Bytes::new(), None, protected).await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert!(
+        actix_web::body::to_bytes(response.into_body())
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[actix_web::test]
+async fn fapi_resource_http_signature_logs_do_not_expose_request_or_response_secrets() {
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let writer = FapiLogWriter(Arc::clone(&captured));
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+    let state = Data::new(fapi_test_state());
+    let request_body = Bytes::from_static(b"request-body-secret");
+    let digest = nazo_fapi_http_signatures::content_digest(&request_body);
+    let req = actix_web::test::TestRequest::post()
+        .uri("/fapi/resource")
+        .insert_header((header::AUTHORIZATION, "Bearer authorization-secret"))
+        .insert_header(("content-digest", digest))
+        .to_http_request();
+    let fields = SignatureFields {
+        signature_input: "sig1=(\"@method\");created=1".to_owned(),
+        signature: "sig1=:cmF3LXNpZ25hdHVyZS1zZWNyZXQ=:".to_owned(),
+    };
+    let protected = json_response_no_store(json!({"value": "protected-body-secret"}));
+
+    let response =
+        sign_fapi_resource_response(&state, &req, &request_body, Some(&fields), protected).await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    drop(_guard);
+    let logs = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
+    for secret in [
+        "authorization-secret",
+        "request-body-secret",
+        "raw-signature-secret",
+        "protected-body-secret",
+    ] {
+        assert!(!logs.contains(secret), "logs exposed {secret}");
+    }
+}
+
+#[actix_web::test]
+async fn fapi_resource_http_signature_signs_success_errors_and_nonce_challenges() {
+    let (_client_keyset, _client, req, request_fields) = signed_resource_request_fixture(b"").await;
+    let state = fapi_signing_state_with_invalid_db();
+    let responses = [
+        HttpResponse::Ok()
+            .insert_header((header::CACHE_CONTROL, "no-store"))
+            .json(json!({"sub": "subject"})),
+        HttpResponse::Unauthorized()
+            .insert_header((header::WWW_AUTHENTICATE, "Bearer error=\"invalid_token\""))
+            .json(json!({"error": "invalid_token"})),
+        HttpResponse::Unauthorized()
+            .insert_header((header::WWW_AUTHENTICATE, "DPoP error=\"use_dpop_nonce\""))
+            .insert_header(("dpop-nonce", "bounded-nonce"))
+            .json(json!({"error": "use_dpop_nonce"})),
+        HttpResponse::ServiceUnavailable()
+            .insert_header((header::CACHE_CONTROL, "no-store"))
+            .json(json!({"error": "server_error"})),
+    ];
+
+    for response in responses {
+        let status = response.status();
+        let signed = sign_fapi_resource_response(
+            &state,
+            &req,
+            &Bytes::new(),
+            Some(&request_fields),
+            response,
+        )
+        .await;
+        assert_eq!(signed.status(), status);
+        assert!(signed.headers().contains_key("content-digest"));
+        assert!(signed.headers().contains_key("signature-input"));
+        assert!(signed.headers().contains_key("signature"));
+        if signed.headers().contains_key("dpop-nonce") {
+            assert_eq!(
+                signed
+                    .headers()
+                    .get("dpop-nonce")
+                    .unwrap()
+                    .to_str()
+                    .unwrap(),
+                "bounded-nonce"
+            );
+            assert!(signed.headers().contains_key(header::WWW_AUTHENTICATE));
+        }
+    }
+}
+
+#[actix_web::test]
+async fn fapi_resource_http_signature_replay_is_atomic_with_exact_ttl() {
+    let Ok(valkey_url) = std::env::var("VALKEY_URL") else {
+        return;
+    };
+    let valkey = ValkeyBuilder::from_config(ValkeyConfig::from_url(&valkey_url).unwrap())
+        .build()
+        .unwrap();
+    valkey.init().await.unwrap();
+    let first = *blake3::hash(b"first-safe-fingerprint").as_bytes();
+    let fresh = *blake3::hash(b"fresh-safe-fingerprint").as_bytes();
+
+    assert_eq!(
+        consume_fapi_http_signature_replay(&valkey, &first, 60).await,
+        ReplayConsumption::Accepted
+    );
+    assert_eq!(
+        consume_fapi_http_signature_replay(&valkey, &first, 60).await,
+        ReplayConsumption::Replay
+    );
+    assert_eq!(
+        consume_fapi_http_signature_replay(&valkey, &fresh, 60).await,
+        ReplayConsumption::Accepted
+    );
+    let ttl: i64 = valkey
+        .ttl(fapi_http_signature_replay_key(&first))
+        .await
+        .unwrap();
+    assert!((64..=65).contains(&ttl), "unexpected replay TTL: {ttl}");
+    let _: () = valkey
+        .del(vec![
+            fapi_http_signature_replay_key(&first),
+            fapi_http_signature_replay_key(&fresh),
+        ])
+        .await
+        .unwrap();
+}
+
+#[actix_web::test]
+async fn fapi_resource_http_signature_replay_dependency_failure_is_fail_closed() {
+    let mut builder = ValkeyBuilder::from_config(
+        ValkeyConfig::from_url("redis://127.0.0.1:1").expect("unavailable URL should parse"),
+    );
+    builder.with_performance_config(|performance| {
+        performance.default_command_timeout = std::time::Duration::from_millis(50);
+    });
+    builder.with_connection_config(|connection| {
+        connection.connection_timeout = std::time::Duration::from_millis(50);
+        connection.internal_command_timeout = std::time::Duration::from_millis(50);
+        connection.max_command_attempts = 1;
+    });
+    let disconnected = builder
+        .build()
+        .expect("unavailable Valkey client should construct");
+    let fingerprint = *blake3::hash(b"dependency-failure-fingerprint").as_bytes();
+
+    assert_eq!(
+        consume_fapi_http_signature_replay(&disconnected, &fingerprint, 60).await,
+        ReplayConsumption::DependencyFailure
     );
 }
 
@@ -535,7 +993,7 @@ fn post_body_access_token_accepts_single_form_value() {
     let req = actix_web::test::TestRequest::post()
         .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
         .to_http_request();
-    let token = resource_access_token(&req, &Bytes::from_static(b"access_token=token-1"));
+    let token = resource_access_token(&req, &Bytes::from_static(b"access_token=token-1"), false);
 
     let ResourceAccessToken::Present(AccessTokenAuthScheme::Bearer, token) = token else {
         panic!("expected bearer token from form body");
@@ -546,7 +1004,7 @@ fn post_body_access_token_accepts_single_form_value() {
 #[test]
 fn post_body_access_token_rejects_missing_content_type() {
     let req = actix_web::test::TestRequest::post().to_http_request();
-    let token = resource_access_token(&req, &Bytes::from_static(b"access_token=token-1"));
+    let token = resource_access_token(&req, &Bytes::from_static(b"access_token=token-1"), false);
 
     assert!(matches!(token, ResourceAccessToken::Missing));
 }
@@ -559,6 +1017,7 @@ fn post_body_access_token_rejects_duplicate_value() {
     let token = resource_access_token(
         &req,
         &Bytes::from_static(b"access_token=token-1&access_token=token-2"),
+        false,
     );
 
     assert!(matches!(token, ResourceAccessToken::InvalidRequest));
@@ -570,10 +1029,10 @@ fn post_body_access_token_treats_blank_or_absent_value_as_missing() {
         .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
         .to_http_request();
 
-    let blank = resource_access_token(&req, &Bytes::from_static(b"access_token=%20%09"));
+    let blank = resource_access_token(&req, &Bytes::from_static(b"access_token=%20%09"), false);
     assert!(matches!(blank, ResourceAccessToken::Missing));
 
-    let absent = resource_access_token(&req, &Bytes::from_static(b"scope=openid"));
+    let absent = resource_access_token(&req, &Bytes::from_static(b"scope=openid"), false);
     assert!(matches!(absent, ResourceAccessToken::Missing));
 }
 
@@ -582,7 +1041,7 @@ fn query_access_token_is_not_accepted() {
     let req = actix_web::test::TestRequest::get()
         .uri("/fapi/resource?access_token=query-token")
         .to_http_request();
-    let token = resource_access_token(&req, &Bytes::new());
+    let token = resource_access_token(&req, &Bytes::new(), false);
 
     assert!(matches!(token, ResourceAccessToken::Missing));
 }
@@ -592,7 +1051,7 @@ fn authorization_header_access_token_accepts_single_value() {
     let req = actix_web::test::TestRequest::get()
         .insert_header((header::AUTHORIZATION, "DPoP header-token"))
         .to_http_request();
-    let token = resource_access_token(&req, &Bytes::new());
+    let token = resource_access_token(&req, &Bytes::new(), false);
 
     let ResourceAccessToken::Present(AccessTokenAuthScheme::DPoP, token) = token else {
         panic!("expected dpop token from authorization header");
@@ -606,7 +1065,7 @@ fn access_token_rejects_multiple_transport_methods() {
         .insert_header((header::AUTHORIZATION, "Bearer header-token"))
         .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
         .to_http_request();
-    let token = resource_access_token(&req, &Bytes::from_static(b"access_token=body-token"));
+    let token = resource_access_token(&req, &Bytes::from_static(b"access_token=body-token"), false);
 
     assert!(matches!(token, ResourceAccessToken::InvalidRequest));
 }
