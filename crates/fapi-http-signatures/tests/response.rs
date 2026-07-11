@@ -72,6 +72,8 @@ fn prepares_response_signature_with_exact_request_linkage() {
             created: CREATED,
             keyid: "server-ed25519",
             algorithm: "ed25519",
+            covered_headers: &[],
+            covered_request_headers: &[],
         },
     )
     .unwrap();
@@ -105,6 +107,74 @@ fn prepares_response_signature_with_exact_request_linkage() {
 }
 
 #[test]
+fn response_extra_components_round_trip_from_their_exact_contexts() {
+    let response_digest = content_digest(RESPONSE_BODY);
+    let response_headers = [
+        ("Content-Digest", response_digest.as_str()),
+        ("Content-Type", "application/json"),
+        ("X-Fapi-Interaction-Id", "interaction-123"),
+    ];
+    let request_digest = content_digest(REQUEST_BODY);
+    let request_headers = [
+        ("Authorization", "DPoP opaque"),
+        ("Content-Digest", request_digest.as_str()),
+        ("Idempotency-Key", "operation-123"),
+    ];
+    let request_fields = request_fields();
+    let prepared = prepare_response(
+        ResponseInput {
+            status: 200,
+            headers: &response_headers,
+            body: RESPONSE_BODY,
+        },
+        OriginalRequest {
+            input: RequestInput {
+                method: "POST",
+                target_uri: "https://api.example/fapi/resource",
+                headers: &request_headers,
+                body: REQUEST_BODY,
+            },
+            signature_fields: Some(&request_fields),
+        },
+        ResponsePolicy {
+            created: CREATED,
+            keyid: "server-ed25519",
+            algorithm: "ed25519",
+            covered_headers: &["content-type", "x-fapi-interaction-id"],
+            covered_request_headers: &["idempotency-key"],
+        },
+    )
+    .unwrap();
+    let expected = prepared.signature_base().to_vec();
+    let fields = prepared.finish(&[1, 2, 3]);
+    let parsed = parse_response_for_verification(
+        ResponseInput {
+            status: 200,
+            headers: &response_headers,
+            body: RESPONSE_BODY,
+        },
+        OriginalRequest {
+            input: RequestInput {
+                method: "POST",
+                target_uri: "https://api.example/fapi/resource",
+                headers: &request_headers,
+                body: REQUEST_BODY,
+            },
+            signature_fields: Some(&request_fields),
+        },
+        fields,
+        verification_policy(),
+    )
+    .unwrap();
+    let base = std::str::from_utf8(parsed.signature_base()).unwrap();
+
+    assert_eq!(parsed.signature_base(), expected);
+    assert!(base.contains("\"content-type\": application/json"));
+    assert!(base.contains("\"x-fapi-interaction-id\": interaction-123"));
+    assert!(base.contains("\"idempotency-key\";req: operation-123"));
+}
+
+#[test]
 fn response_signing_requires_a_physical_content_digest_for_a_non_empty_body() {
     let request_headers = request_headers(REQUEST_BODY);
     let request_headers = borrowed(&request_headers);
@@ -128,6 +198,8 @@ fn response_signing_requires_a_physical_content_digest_for_a_non_empty_body() {
             created: CREATED,
             keyid: "server-ed25519",
             algorithm: "ed25519",
+            covered_headers: &[],
+            covered_request_headers: &[],
         },
     );
 
@@ -160,6 +232,8 @@ fn response_signing_accepts_and_preserves_valid_multi_algorithm_digest_serializa
             created: CREATED,
             keyid: "server-ed25519",
             algorithm: "ed25519",
+            covered_headers: &[],
+            covered_request_headers: &[],
         },
     )
     .unwrap();
@@ -200,6 +274,8 @@ fn response_signing_rejects_invalid_physical_digest_fields() {
                 created: CREATED,
                 keyid: "server-ed25519",
                 algorithm: "ed25519",
+                covered_headers: &[],
+                covered_request_headers: &[],
             },
         );
         assert!(result.is_err(), "invalid digest accepted: {digest}");
@@ -237,6 +313,8 @@ fn request_req_digest_requires_a_physical_strict_digest_field() {
             created: CREATED,
             keyid: "server-ed25519",
             algorithm: "ed25519",
+            covered_headers: &[],
+            covered_request_headers: &[],
         },
     );
     assert!(missing_result.is_err());
@@ -265,6 +343,8 @@ fn request_req_digest_requires_a_physical_strict_digest_field() {
                 created: CREATED,
                 keyid: "server-ed25519",
                 algorithm: "ed25519",
+                covered_headers: &[],
+                covered_request_headers: &[],
             },
         );
         assert!(result.is_err(), "invalid request digest accepted: {digest}");
@@ -300,6 +380,8 @@ fn request_req_digest_accepts_and_preserves_valid_multi_algorithm_serialization(
             created: CREATED,
             keyid: "server-ed25519",
             algorithm: "ed25519",
+            covered_headers: &[],
+            covered_request_headers: &[],
         },
     )
     .unwrap();
@@ -343,6 +425,8 @@ fn unrelated_obs_text_headers_do_not_affect_response_signing() {
                 created: CREATED,
                 keyid: "server-ed25519",
                 algorithm: "ed25519",
+                covered_headers: &[],
+                covered_request_headers: &[],
             },
         )
         .is_ok()
@@ -378,6 +462,8 @@ fn covered_request_signature_fields_still_reject_non_ascii_values() {
                 created: CREATED,
                 keyid: "server-ed25519",
                 algorithm: "ed25519",
+                covered_headers: &[],
+                covered_request_headers: &[],
             },
         )
         .is_err()
@@ -415,6 +501,8 @@ fn fixture() -> Fixture {
             created: CREATED,
             keyid: "server-ed25519",
             algorithm: "ed25519",
+            covered_headers: &[],
+            covered_request_headers: &[],
         },
     )
     .unwrap();
@@ -483,6 +571,116 @@ fn client_reconstructs_exact_response_signature_base() {
     assert_eq!(parsed.keyid(), "server-ed25519");
     assert_eq!(parsed.algorithm(), "ed25519");
     assert_eq!(parsed.created(), CREATED);
+}
+
+#[test]
+fn response_verifier_reconstructs_required_components_in_received_order() {
+    let mut fixture = fixture();
+    fixture.response_fields.signature_input = fixture.response_fields.signature_input.replace(
+        "(\"@status\" \"content-digest\"",
+        "(\"content-digest\" \"@status\"",
+    );
+    let request_headers = request_headers(REQUEST_BODY);
+    let request_headers = borrowed(&request_headers);
+    let response_headers = response_headers(RESPONSE_BODY);
+    let response_headers = borrowed(&response_headers);
+    let parsed = parse(
+        200,
+        RESPONSE_BODY,
+        &response_headers,
+        "POST",
+        "https://api.example/fapi/resource",
+        REQUEST_BODY,
+        &request_headers,
+        &fixture.request_fields,
+        fixture.response_fields,
+    )
+    .unwrap();
+    assert!(
+        std::str::from_utf8(parsed.signature_base())
+            .unwrap()
+            .starts_with("\"content-digest\": sha-256=:")
+    );
+}
+
+#[test]
+fn response_extra_header_tampering_reconstructs_a_different_base() {
+    let request_headers = request_headers(REQUEST_BODY);
+    let request_headers = borrowed(&request_headers);
+    let digest = content_digest(RESPONSE_BODY);
+    let first_headers = [
+        ("Content-Digest", digest.as_str()),
+        ("Content-Type", "application/json"),
+    ];
+    let second_headers = [
+        ("Content-Digest", digest.as_str()),
+        ("Content-Type", "text/plain"),
+    ];
+    let mut first = fixture();
+    first.response_fields.signature_input = first.response_fields.signature_input.replace(
+        "\"content-digest\" ",
+        "\"content-digest\" \"content-type\" ",
+    );
+    let mut second = fixture();
+    second.response_fields.signature_input = first.response_fields.signature_input.clone();
+    let first_parsed = parse(
+        200,
+        RESPONSE_BODY,
+        &first_headers,
+        "POST",
+        "https://api.example/fapi/resource",
+        REQUEST_BODY,
+        &request_headers,
+        &first.request_fields,
+        first.response_fields,
+    )
+    .unwrap();
+    let second_parsed = parse(
+        200,
+        RESPONSE_BODY,
+        &second_headers,
+        "POST",
+        "https://api.example/fapi/resource",
+        REQUEST_BODY,
+        &request_headers,
+        &second.request_fields,
+        second.response_fields,
+    )
+    .unwrap();
+    assert_ne!(
+        first_parsed.signature_base(),
+        second_parsed.signature_base()
+    );
+}
+
+#[test]
+fn response_verifier_rejects_unsafe_or_ambiguous_extra_components() {
+    for item in ["\"@authority\"", "\"x-missing\"", "\"content-type\";foo"] {
+        let mut fixture = fixture();
+        fixture.response_fields.signature_input = fixture.response_fields.signature_input.replace(
+            "\"content-digest\" ",
+            &format!("\"content-digest\" {item} "),
+        );
+        let request_headers = request_headers(REQUEST_BODY);
+        let request_headers = borrowed(&request_headers);
+        let response_headers = response_headers(RESPONSE_BODY);
+        let response_headers = borrowed(&response_headers);
+        assert!(
+            parse(
+                200,
+                RESPONSE_BODY,
+                &response_headers,
+                "POST",
+                "https://api.example/fapi/resource",
+                REQUEST_BODY,
+                &request_headers,
+                &fixture.request_fields,
+                fixture.response_fields,
+            )
+            .is_err(),
+            "unsafe item accepted: {item}"
+        );
+    }
 }
 
 #[test]

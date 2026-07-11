@@ -31,6 +31,8 @@ pub struct ResponsePolicy<'a> {
     pub created: i64,
     pub keyid: &'a str,
     pub algorithm: &'a str,
+    pub covered_headers: &'a [&'a str],
+    pub covered_request_headers: &'a [&'a str],
 }
 
 #[derive(Debug, Error)]
@@ -39,14 +41,14 @@ pub enum ResponseError {
     InvalidInput(String),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum Source {
     Response,
     Request,
 }
 
 struct Component {
-    name: &'static str,
+    name: String,
     source: Source,
     value: String,
 }
@@ -57,7 +59,7 @@ pub fn prepare_response(
     policy: ResponsePolicy<'_>,
 ) -> Result<PreparedSignature, ResponseError> {
     validate_policy(policy.keyid, policy.algorithm)?;
-    let components = response_components(&response, &original)?;
+    let components = response_components(&response, &original, &policy)?;
     let signature_input = serialize_signature_input(&components, policy)?;
     let params = signature_input
         .strip_prefix(&format!("{SIGNATURE_NAME}="))
@@ -131,9 +133,7 @@ pub fn parse_response_for_verification(
     validate_parameters(params)?;
     validate_time(params, created, policy)?;
 
-    let expected_components =
-        response_components(&response, &original).map_err(|_| VerifyError::MissingComponent)?;
-    validate_covered_components(params, &expected_components)?;
+    let expected_components = received_response_components(params, &response, &original)?;
 
     let serialized = signature_input
         .serialize()
@@ -170,6 +170,7 @@ pub fn parse_response_for_verification(
 fn response_components(
     response: &ResponseInput<'_>,
     original: &OriginalRequest<'_>,
+    policy: &ResponsePolicy<'_>,
 ) -> Result<Vec<Component>, ResponseError> {
     if !(100..=599).contains(&response.status) {
         return Err(invalid("invalid HTTP response status"));
@@ -195,47 +196,87 @@ fn response_components(
     validate_original_digest(original)?;
 
     let mut components = vec![Component {
-        name: "@status",
+        name: "@status".into(),
         source: Source::Response,
         value: response.status.to_string(),
     }];
     if let Some(digest) = response_digest {
         components.push(Component {
-            name: "content-digest",
+            name: "content-digest".into(),
             source: Source::Response,
             value: digest,
         });
     }
+    append_extra_headers(
+        &mut components,
+        response.headers,
+        policy.covered_headers,
+        Source::Response,
+    )?;
     components.push(Component {
-        name: "@method",
+        name: "@method".into(),
         source: Source::Request,
         value: original.input.method.to_owned(),
     });
     components.push(Component {
-        name: "@target-uri",
+        name: "@target-uri".into(),
         source: Source::Request,
         value: target_uri,
     });
     if let Some(digest) = unique_header(original.input.headers, "content-digest")? {
         components.push(Component {
-            name: "content-digest",
+            name: "content-digest".into(),
             source: Source::Request,
             value: normalize_field("content-digest", digest)?,
         });
     }
     if let Some(fields) = original.signature_fields {
         components.push(Component {
-            name: "signature-input",
+            name: "signature-input".into(),
             source: Source::Request,
             value: normalize_field("signature-input", &fields.signature_input)?,
         });
         components.push(Component {
-            name: "signature",
+            name: "signature".into(),
             source: Source::Request,
             value: normalize_field("signature", &fields.signature)?,
         });
     }
+    append_extra_headers(
+        &mut components,
+        original.input.headers,
+        policy.covered_request_headers,
+        Source::Request,
+    )?;
     Ok(components)
+}
+
+fn append_extra_headers(
+    components: &mut Vec<Component>,
+    headers: &[(&str, &str)],
+    selected: &[&str],
+    source: Source,
+) -> Result<(), ResponseError> {
+    for selected_name in selected {
+        if selected_name.is_empty() || !selected_name.bytes().all(is_token_byte) {
+            return Err(invalid("invalid additional covered header name"));
+        }
+        let name = selected_name.to_ascii_lowercase();
+        if components
+            .iter()
+            .any(|component| component.source == source && component.name == name)
+        {
+            return Err(invalid("duplicate additional covered component"));
+        }
+        let value = unique_header(headers, &name)?
+            .ok_or_else(|| invalid(format!("missing additional covered header: {name}")))?;
+        components.push(Component {
+            name: name.clone(),
+            source,
+            value: normalize_field(&name, value)?,
+        });
+    }
+    Ok(())
 }
 
 fn serialize_signature_input(
@@ -250,7 +291,8 @@ fn serialize_signature_input(
     let mut serializer = DictSerializer::new();
     let mut inner = serializer.inner_list(key(SIGNATURE_NAME));
     for component in components {
-        let name = StringRef::from_str(component.name).expect("static component names are valid");
+        let name =
+            StringRef::from_str(&component.name).map_err(|error| invalid(error.to_string()))?;
         let item = inner.bare_item(name);
         if component.source == Source::Request {
             let _ = item.parameter(key("req"), true);
@@ -267,31 +309,109 @@ fn serialize_signature_input(
         .ok_or_else(|| invalid("empty signature input"))
 }
 
-fn validate_covered_components(
+fn received_response_components(
     params: &sfv::InnerList,
-    expected: &[Component],
-) -> Result<(), VerifyError> {
-    if params.items.len() != expected.len() {
+    response: &ResponseInput<'_>,
+    original: &OriginalRequest<'_>,
+) -> Result<Vec<Component>, VerifyError> {
+    if !(100..=599).contains(&response.status) {
         return Err(VerifyError::MissingComponent);
     }
-    for (item, expected) in params.items.iter().zip(expected) {
+    validate_method(original.input.method).map_err(|_| VerifyError::MissingComponent)?;
+    let target_uri = canonical_target_uri(original.input.target_uri)
+        .map_err(|_| VerifyError::MissingComponent)?;
+    let mut required = vec![
+        ("@status", Source::Response),
+        ("@method", Source::Request),
+        ("@target-uri", Source::Request),
+    ];
+    if !response.body.is_empty() {
+        required.push(("content-digest", Source::Response));
+    }
+    if !original.input.body.is_empty() {
+        required.push(("content-digest", Source::Request));
+    }
+    if original.signature_fields.is_some() {
+        required.push(("signature-input", Source::Request));
+        required.push(("signature", Source::Request));
+    }
+
+    let mut seen = std::collections::HashSet::with_capacity(params.items.len());
+    let mut components = Vec::with_capacity(params.items.len());
+    for item in &params.items {
         let BareItem::String(name) = &item.bare_item else {
             return Err(VerifyError::MalformedSignature);
         };
-        if name.as_str() != expected.name {
+        let source = if item.params.is_empty() {
+            Source::Response
+        } else if item.params.len() == 1
+            && matches!(item.params.get("req"), Some(BareItem::Boolean(true)))
+        {
+            Source::Request
+        } else {
+            return Err(VerifyError::MalformedSignature);
+        };
+        let name = name.as_str();
+        if !seen.insert((name, source)) {
             return Err(VerifyError::MissingComponent);
         }
-        let has_req = item.params.len() == 1
-            && matches!(item.params.get("req"), Some(BareItem::Boolean(true)));
-        match expected.source {
-            Source::Request if !has_req => return Err(VerifyError::MissingComponent),
-            Source::Response if !item.params.is_empty() => {
+        let value = match (name, source) {
+            ("@status", Source::Response) => response.status.to_string(),
+            ("@method", Source::Request) => original.input.method.to_owned(),
+            ("@target-uri", Source::Request) => target_uri.clone(),
+            (name, _) if name.starts_with('@') => return Err(VerifyError::MissingComponent),
+            (name, _)
+                if name.is_empty()
+                    || name != name.to_ascii_lowercase()
+                    || !name.bytes().all(is_token_byte) =>
+            {
                 return Err(VerifyError::MissingComponent);
             }
-            _ => {}
-        }
+            ("signature-input", Source::Request) => original
+                .signature_fields
+                .map(|fields| normalize_field("signature-input", &fields.signature_input))
+                .transpose()
+                .map_err(|_| VerifyError::MissingComponent)?
+                .ok_or(VerifyError::MissingComponent)?,
+            ("signature", Source::Request) => original
+                .signature_fields
+                .map(|fields| normalize_field("signature", &fields.signature))
+                .transpose()
+                .map_err(|_| VerifyError::MissingComponent)?
+                .ok_or(VerifyError::MissingComponent)?,
+            (name, Source::Response) => unique_header_for_verification(response.headers, name)?,
+            (name, Source::Request) => {
+                unique_header_for_verification(original.input.headers, name)?
+            }
+        };
+        components.push(Component {
+            name: name.to_owned(),
+            source,
+            value,
+        });
     }
-    Ok(())
+    if required
+        .iter()
+        .any(|(name, source)| !seen.contains(&(*name, *source)))
+    {
+        return Err(VerifyError::MissingComponent);
+    }
+    Ok(components)
+}
+
+fn unique_header_for_verification(
+    headers: &[(&str, &str)],
+    wanted: &str,
+) -> Result<String, VerifyError> {
+    let mut values = headers
+        .iter()
+        .filter(|(name, _)| name.eq_ignore_ascii_case(wanted))
+        .map(|(_, value)| *value);
+    let value = values.next().ok_or(VerifyError::MissingComponent)?;
+    if values.next().is_some() {
+        return Err(VerifyError::MissingComponent);
+    }
+    normalize_field(wanted, value).map_err(|_| VerifyError::MissingComponent)
 }
 
 fn component_line(component: &Component) -> String {

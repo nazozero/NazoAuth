@@ -37,6 +37,8 @@ HTTP_SIGNATURE_REQUIRED_E2E_CASES = frozenset(
         "fapi_http_signature_signed_post",
         "fapi_http_signature_signed_dpop_bound_resource",
         "fapi_http_signature_response_verification_and_request_binding",
+        "fapi_http_signature_response_tampered_content_type",
+        "fapi_http_signature_response_tampered_interaction_id",
         "fapi_http_signature_tampered_method",
         "fapi_http_signature_tampered_uri",
         "fapi_http_signature_tampered_authorization",
@@ -56,6 +58,8 @@ HTTP_SIGNATURE_CASE_REGISTRY = (
     ("fapi_http_signature_signed_post", "signed_post", {"query": "signed-post", "expected_status": 200}),
     ("fapi_http_signature_signed_dpop_bound_resource", "signed_dpop", {"query": "signed-dpop-bound", "expected_status": 200}),
     ("fapi_http_signature_response_verification_and_request_binding", "response_binding", {"query": "response-binding", "expected_status": 200}),
+    ("fapi_http_signature_response_tampered_content_type", "response_header_tamper", {"query": "response-tampered-content-type", "header": "Content-Type", "value": "text/plain", "expected_status": 200}),
+    ("fapi_http_signature_response_tampered_interaction_id", "response_header_tamper", {"query": "response-tampered-interaction-id", "header": "X-Fapi-Interaction-Id", "value": "tampered-interaction-id", "expected_status": 200}),
     ("fapi_http_signature_tampered_method", "signed_request", {"method": "POST", "signed_method": "GET", "query": "tampered-method", "expected_status": 401}),
     ("fapi_http_signature_tampered_uri", "tampered_uri", {"query": "tampered-uri", "expected_status": 401}),
     ("fapi_http_signature_tampered_authorization", "tampered_authorization", {"query": "tampered-authorization", "expected_status": 401}),
@@ -74,6 +78,7 @@ HTTP_SIGNATURE_HANDLER_NAMES = frozenset(
         "relative_created",
         "replay",
         "response_binding",
+        "response_header_tamper",
         "signed_dpop",
         "signed_post",
         "signed_request",
@@ -230,6 +235,7 @@ import redis
 import requests
 from aiosmtpd.controller import Controller
 from argon2 import PasswordHasher
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519, padding, rsa
 
@@ -404,7 +410,11 @@ def verify_fapi_http_signature_response(
         and bool(request_body)
         and request_headers.get("Content-Digest") == content_digest(request_body)
     )
-    expected_components = ['"@status"', '"content-digest"', '"@method";req', '"@target-uri";req']
+    expected_components = ['"@status"', '"content-digest"']
+    for header_name in ("Content-Type", "X-Fapi-Interaction-Id"):
+        if response.headers.get(header_name) is not None:
+            expected_components.append(f'"{header_name.lower()}"')
+    expected_components.extend(['"@method";req', '"@target-uri";req'])
     if valid_request_digest:
         expected_components.append('"content-digest";req')
     if request_headers is not None:
@@ -417,6 +427,10 @@ def verify_fapi_http_signature_response(
     digest = response.headers.get("Content-Digest", "")
     check("fapi_http_signature_response_digest", digest == content_digest(response.content))
     lines = [f'"@status": {response.status_code}', f'"content-digest": {digest}']
+    for header_name in ("Content-Type", "X-Fapi-Interaction-Id"):
+        header_value = response.headers.get(header_name)
+        if header_value is not None:
+            lines.append(f'"{header_name.lower()}": {header_value}')
     lines.extend([f'"@method";req: {method}', f'"@target-uri";req: {target_uri}'])
     if valid_request_digest:
         assert request_headers is not None
@@ -1817,6 +1831,25 @@ def exercise_fapi_http_signature_profile(admin: requests.Session) -> None:
         response, _, _ = signed_request(case, **parameters)
         check("fapi_http_signature_response_binding_body", expect_json(response).get("client_id") == client["client_id"])
 
+    def handle_response_header_tamper(case: str, parameters: dict[str, object]) -> None:
+        header = str(parameters.pop("header"))
+        value = str(parameters.pop("value"))
+        response, request_headers, target_uri = signed_request(f"{case}_baseline", **parameters)
+        response.headers[header] = value
+        rejected = False
+        try:
+            verify_fapi_http_signature_response(
+                response,
+                server_jwks,
+                method="GET",
+                target_uri=target_uri,
+                request_body=b"",
+                request_headers=request_headers,
+            )
+        except InvalidSignature:
+            rejected = True
+        check(case, rejected)
+
     def handle_tampered_uri(case: str, parameters: dict[str, object]) -> None:
         signed_request(case, signed_target=f"{target}?case=different-uri", **parameters)
 
@@ -1932,6 +1965,7 @@ def exercise_fapi_http_signature_profile(admin: requests.Session) -> None:
         "relative_created": handle_relative_created,
         "replay": handle_replay,
         "response_binding": handle_response_binding,
+        "response_header_tamper": handle_response_header_tamper,
         "signed_dpop": handle_signed_dpop,
         "signed_post": handle_signed_post,
         "signed_request": handle_signed_request,

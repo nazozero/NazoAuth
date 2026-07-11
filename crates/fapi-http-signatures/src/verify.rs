@@ -4,10 +4,10 @@ use sfv::{BareItem, Dictionary, FieldType, InnerList, ListEntry, Parser};
 use sha2::{Digest, Sha256};
 use url::Url;
 
-use crate::{
-    RequestInput, RequestPolicy, SignatureFields, VerifyError, content_digest_field_matches,
-    prepare_request,
+use crate::request::{
+    canonical_target_uri, component, field_component, is_token_byte, method_component,
 };
+use crate::{RequestInput, SignatureFields, VerifyError, content_digest_field_matches};
 
 const REQUEST_TAG: &str = "fapi-2-request";
 
@@ -135,36 +135,46 @@ pub fn parse_request_for_verification(
     validate_time(params, created, policy)?;
     let supplied_digest = validate_digest(&input)?;
 
-    let authorization =
-        unique_header(input.headers, "authorization").ok_or(VerifyError::MissingComponent)?;
-    let headers_without_digest = input
-        .headers
-        .iter()
-        .copied()
-        .filter(|(name, _)| !name.eq_ignore_ascii_case("content-digest"))
-        .collect::<Vec<_>>();
-    let prepared = prepare_request(
-        RequestInput {
-            method: input.method,
-            target_uri: input.target_uri,
-            headers: &headers_without_digest,
-            body: input.body,
-        },
-        RequestPolicy {
-            created,
-            keyid,
-            algorithm,
-        },
-    )
-    .map_err(|_| VerifyError::MissingComponent)?;
-    let expected_input: Dictionary = Parser::new(&prepared_input(&prepared))
-        .parse()
-        .map_err(|_| VerifyError::MalformedSignature)?;
-    let expected_components = match expected_input.first().map(|(_, value)| value) {
-        Some(ListEntry::InnerList(inner)) => component_names(inner)?,
-        _ => return Err(VerifyError::MalformedSignature),
-    };
-    if components != expected_components {
+    let authorization = unique_header(input.headers, "authorization")
+        .map_err(|_| VerifyError::MissingComponent)?
+        .ok_or(VerifyError::MissingComponent)?;
+    let dpop = unique_header(input.headers, "dpop").map_err(|_| VerifyError::MissingComponent)?;
+    let mut required = vec!["@method", "@target-uri", "authorization"];
+    if dpop.is_some() {
+        required.push("dpop");
+    }
+    if supplied_digest.is_some() {
+        required.push("content-digest");
+    }
+    let mut seen = std::collections::HashSet::with_capacity(components.len());
+    let target_uri =
+        canonical_target_uri(input.target_uri).map_err(|_| VerifyError::MissingComponent)?;
+    let mut reconstructed = Vec::with_capacity(components.len());
+    for name in &components {
+        if !seen.insert(name.as_str()) {
+            return Err(VerifyError::MissingComponent);
+        }
+        let value = match name.as_str() {
+            "@method" => method_component(input.method),
+            "@target-uri" => component("@target-uri", &target_uri),
+            name if name.starts_with('@')
+                || name.is_empty()
+                || name != name.to_ascii_lowercase()
+                || !name.bytes().all(is_token_byte) =>
+            {
+                return Err(VerifyError::MissingComponent);
+            }
+            name => {
+                let value = unique_header(input.headers, name)
+                    .map_err(|_| VerifyError::MissingComponent)?
+                    .ok_or(VerifyError::MissingComponent)?;
+                field_component(name, value)
+            }
+        }
+        .map_err(|_| VerifyError::MissingComponent)?;
+        reconstructed.push(value);
+    }
+    if required.iter().any(|name| !seen.contains(name)) {
         return Err(VerifyError::MissingComponent);
     }
 
@@ -175,16 +185,13 @@ pub fn parse_request_for_verification(
         .strip_prefix(label.as_str())
         .and_then(|value| value.strip_prefix('='))
         .ok_or(VerifyError::MalformedSignature)?;
-    let mut signature_base = prepared.signature_base().to_vec();
-    if let Some(supplied_digest) = supplied_digest {
-        replace_content_digest(&mut signature_base, supplied_digest)?;
-    }
-    let parameter_offset = signature_base
-        .windows(b"\"@signature-params\": ".len())
-        .position(|window| window == b"\"@signature-params\": ")
-        .ok_or(VerifyError::MalformedSignature)?
-        + b"\"@signature-params\": ".len();
-    signature_base.truncate(parameter_offset);
+    let mut signature_base = reconstructed
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .into_bytes();
+    signature_base.extend_from_slice(b"\n\"@signature-params\": ");
     signature_base.extend_from_slice(signature_params.as_bytes());
 
     let target_uri = Url::parse(input.target_uri)
@@ -206,15 +213,6 @@ pub fn parse_request_for_verification(
         created,
         replay_fingerprint,
     })
-}
-
-fn prepared_input(prepared: &crate::PreparedSignature) -> String {
-    let base = String::from_utf8_lossy(prepared.signature_base());
-    let params = base
-        .rsplit_once("\"@signature-params\": ")
-        .map(|(_, params)| params)
-        .expect("prepare_request always emits signature parameters");
-    format!("sig1={params}")
 }
 
 pub(crate) fn signature_bytes(entry: &ListEntry) -> Result<&[u8], VerifyError> {
@@ -298,7 +296,8 @@ pub(crate) fn validate_time(
 }
 
 fn validate_digest<'a>(input: &'a RequestInput<'_>) -> Result<Option<&'a str>, VerifyError> {
-    let supplied = unique_header(input.headers, "content-digest");
+    let supplied =
+        unique_header(input.headers, "content-digest").map_err(|_| VerifyError::DigestMismatch)?;
     if input.body.is_empty() {
         return supplied
             .is_none()
@@ -312,31 +311,16 @@ fn validate_digest<'a>(input: &'a RequestInput<'_>) -> Result<Option<&'a str>, V
     Ok(Some(supplied))
 }
 
-fn unique_header<'a>(headers: &'a [(&str, &'a str)], wanted: &str) -> Option<&'a str> {
+fn unique_header<'a>(headers: &'a [(&str, &'a str)], wanted: &str) -> Result<Option<&'a str>, ()> {
     let mut values = headers
         .iter()
         .filter(|(name, _)| name.eq_ignore_ascii_case(wanted))
         .map(|(_, value)| *value);
-    let first = values.next()?;
-    values.next().is_none().then_some(first)
-}
-
-fn replace_content_digest(
-    signature_base: &mut Vec<u8>,
-    supplied_digest: &str,
-) -> Result<(), VerifyError> {
-    let base = std::str::from_utf8(signature_base).map_err(|_| VerifyError::MalformedSignature)?;
-    let prefix = "\"content-digest\": ";
-    let value_start = base.find(prefix).ok_or(VerifyError::MissingComponent)? + prefix.len();
-    let value_end = base[value_start..]
-        .find('\n')
-        .map(|offset| value_start + offset)
-        .ok_or(VerifyError::MalformedSignature)?;
-    signature_base.splice(
-        value_start..value_end,
-        supplied_digest.trim_matches([' ', '\t']).bytes(),
-    );
-    Ok(())
+    let first = values.next();
+    if values.next().is_some() {
+        return Err(());
+    }
+    Ok(first)
 }
 
 pub(crate) fn top_level_member_count(field: &str) -> usize {

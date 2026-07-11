@@ -42,6 +42,11 @@ fn http_jwk_decoding_key(
         Some(Value::String(value)) if value == expected_algorithm => {}
         Some(_) => return None,
     }
+    match key.get("use") {
+        None => {}
+        Some(Value::String(value)) if value == "sig" => {}
+        Some(_) => return None,
+    }
     if ["d", "p", "q", "dp", "dq", "qi", "oth"]
         .iter()
         .any(|member| key.get(member).is_some())

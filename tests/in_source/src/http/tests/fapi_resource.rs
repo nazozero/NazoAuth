@@ -8,11 +8,14 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
+    time::Duration as StdDuration,
 };
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{ActiveSigningKey, ConfirmationClaims, Keyset, KeysetStore, VerificationKey};
+use crate::domain::{
+    ActiveSigningKey, ConfirmationClaims, ExternalSigningKey, Keyset, KeysetStore, VerificationKey,
+};
 use crate::settings::DpopNoncePolicy;
 use crate::support::{generate_key_material, public_jwk_from_private_der};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -104,6 +107,47 @@ fn fapi_signing_state_with_invalid_db() -> Data<AppState> {
             }],
         }),
     })
+}
+
+fn fapi_external_signer_failure_state(stderr_secret: &str) -> Data<AppState> {
+    let material = generate_key_material(jsonwebtoken::Algorithm::EdDSA).unwrap();
+    let public_jwk = public_jwk_from_private_der(
+        "external-failure-kid",
+        jsonwebtoken::Algorithm::EdDSA,
+        &material.private_pkcs8_der,
+    )
+    .unwrap();
+    #[cfg(windows)]
+    let command = vec![
+        "pwsh".to_owned(),
+        "-NoLogo".to_owned(),
+        "-NoProfile".to_owned(),
+        "-NonInteractive".to_owned(),
+        "-Command".to_owned(),
+        format!("[Console]::Error.Write('{stderr_secret}'); exit 7"),
+    ];
+    #[cfg(unix)]
+    let command = vec![
+        "sh".to_owned(),
+        "-c".to_owned(),
+        format!("printf '%s' '{stderr_secret}' >&2; exit 7"),
+    ];
+    let mut state = fapi_test_state();
+    state.keyset = KeysetStore::new(Keyset {
+        active_kid: "external-failure-kid".to_owned(),
+        active_alg: jsonwebtoken::Algorithm::EdDSA,
+        active_signing_key: ActiveSigningKey::ExternalCommand(ExternalSigningKey {
+            command: Arc::new(command),
+            key_ref: "test-external-failure".to_owned(),
+            timeout: StdDuration::from_secs(5),
+        }),
+        verification_keys: vec![VerificationKey {
+            kid: "external-failure-kid".to_owned(),
+            public_jwk,
+            local_signing_key: None,
+        }],
+    });
+    Data::new(state)
 }
 
 fn fapi_enabled_signing_state_with_invalid_db() -> Data<AppState> {
@@ -476,6 +520,7 @@ async fn signed_resource_request_for_authorization(
             created: Utc::now().timestamp(),
             keyid: kid,
             algorithm: "ed25519",
+            covered_headers: &[],
         },
     )
     .expect("request should prepare");
@@ -538,6 +583,7 @@ async fn signed_resource_request_with_received_digest(
             created: Utc::now().timestamp(),
             keyid: kid,
             algorithm: "ed25519",
+            covered_headers: &[],
         },
     )
     .unwrap();
@@ -600,6 +646,18 @@ async fn assert_signed_error_covers_received_signature_fields(
         .to_str()
         .unwrap()
         .to_owned();
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let interaction_id = response
+        .headers()
+        .get("x-fapi-interaction-id")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
     let response_fields = SignatureFields {
         signature_input: response
             .headers()
@@ -629,7 +687,13 @@ async fn assert_signed_error_covers_received_signature_fields(
     let body = actix_web::body::to_bytes(response.into_body())
         .await
         .unwrap();
-    let response_headers = [("content-digest", digest.as_str())];
+    let mut response_headers = vec![
+        ("content-digest", digest.as_str()),
+        ("content-type", content_type.as_str()),
+    ];
+    if let Some(interaction_id) = interaction_id.as_deref() {
+        response_headers.push(("x-fapi-interaction-id", interaction_id));
+    }
     let parsed = parse_response_for_verification(
         ResponseInput {
             status: 401,
@@ -949,7 +1013,11 @@ async fn fapi_resource_http_signature_rejects_duplicate_signature_headers() {
 async fn fapi_resource_http_signature_response_is_request_linked_and_verifiable() {
     let (_client_keyset, _client, req, request_fields) = signed_resource_request_fixture(b"").await;
     let state = fapi_signing_state_with_invalid_db();
-    let response = json_response_no_store(json!({"sub": "protected-subject"}));
+    let mut response = json_response_no_store(json!({"sub": "protected-subject"}));
+    response.headers_mut().insert(
+        "x-fapi-interaction-id".parse().unwrap(),
+        "interaction-123".parse().unwrap(),
+    );
     let original = captured_fapi_request(&req, &Bytes::new());
 
     let signed = sign_fapi_resource_response(&state, &original, response).await;
@@ -978,8 +1046,34 @@ async fn fapi_resource_http_signature_response_is_request_linked_and_verifiable(
             .unwrap()
             .to_owned(),
     };
+    let response_signature_input = response_fields.signature_input.clone();
+    let response_signature = response_fields.signature.clone();
+    assert!(response_fields.signature_input.contains("\"content-type\""));
+    assert!(
+        response_fields
+            .signature_input
+            .contains("\"x-fapi-interaction-id\"")
+    );
+    let content_type = signed
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let interaction_id = signed
+        .headers()
+        .get("x-fapi-interaction-id")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
     let body = actix_web::body::to_bytes(signed.into_body()).await.unwrap();
-    let response_headers = [("content-digest", response_digest.as_str())];
+    let response_headers = [
+        ("content-digest", response_digest.as_str()),
+        ("content-type", content_type.as_str()),
+        ("x-fapi-interaction-id", interaction_id.as_str()),
+    ];
     let request_headers = [("authorization", "Bearer opaque-access-token")];
     let parsed = parse_response_for_verification(
         ResponseInput {
@@ -1016,6 +1110,55 @@ async fn fapi_resource_http_signature_response_is_request_linked_and_verifiable(
         parsed.signature(),
     )
     .expect("server response signature should verify");
+
+    for (tampered_content_type, tampered_interaction_id) in [
+        ("text/plain", interaction_id.as_str()),
+        (content_type.as_str(), "interaction-tampered"),
+    ] {
+        let tampered_headers = [
+            ("content-digest", response_digest.as_str()),
+            ("content-type", tampered_content_type),
+            ("x-fapi-interaction-id", tampered_interaction_id),
+        ];
+        let tampered = parse_response_for_verification(
+            ResponseInput {
+                status: 200,
+                headers: &tampered_headers,
+                body: &body,
+            },
+            OriginalRequest {
+                input: RequestInput {
+                    method: "GET",
+                    target_uri: "https://issuer.example/fapi/resource",
+                    headers: &request_headers,
+                    body: b"",
+                },
+                signature_fields: Some(&request_fields),
+            },
+            SignatureFields {
+                signature_input: response_signature_input.clone(),
+                signature: response_signature.clone(),
+            },
+            VerificationPolicy {
+                now: Utc::now().timestamp(),
+                max_age_seconds: 60,
+                future_skew_seconds: FAPI_HTTP_SIGNATURE_FUTURE_SKEW_SECONDS,
+            },
+        )
+        .expect("tampering must reconstruct a base for cryptographic rejection");
+        assert!(
+            verify_client_http_message(
+                &verifier,
+                DEFAULT_TENANT_ID,
+                "client-1",
+                tampered.keyid(),
+                tampered.algorithm(),
+                tampered.signature_base(),
+                tampered.signature(),
+            )
+            .is_err()
+        );
+    }
 }
 
 #[actix_web::test]
@@ -1076,6 +1219,37 @@ async fn fapi_resource_http_signature_logs_do_not_expose_request_or_response_sec
     ] {
         assert!(!logs.contains(secret), "logs exposed {secret}");
     }
+}
+
+#[actix_web::test]
+async fn fapi_response_signing_log_redacts_external_signer_stderr() {
+    const STDERR_SECRET: &str = "external-signer-stderr-secret";
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let writer = FapiLogWriter(Arc::clone(&captured));
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+    let state = fapi_external_signer_failure_state(STDERR_SECRET);
+    let req = actix_web::test::TestRequest::get()
+        .uri("/fapi/resource")
+        .insert_header((header::AUTHORIZATION, "Bearer opaque-access-token"))
+        .to_http_request();
+    let original = captured_fapi_request(&req, &Bytes::new());
+
+    let response = sign_fapi_resource_response(
+        &state,
+        &original,
+        json_response_no_store(json!({"value": "protected"})),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    drop(_guard);
+    let logs = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
+    assert!(logs.contains("category=\"signer_failure\""));
+    assert!(!logs.contains(STDERR_SECRET));
 }
 
 #[actix_web::test]
@@ -1408,6 +1582,20 @@ async fn fapi_resource_http_signature_post_preserves_semantic_received_digest_bi
         .to_str()
         .unwrap()
         .to_owned();
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let interaction_id = response
+        .headers()
+        .get("x-fapi-interaction-id")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
     let response_fields = SignatureFields {
         signature_input: response
             .headers()
@@ -1432,7 +1620,11 @@ async fn fapi_resource_http_signature_post_preserves_semantic_received_digest_bi
     let response_body = actix_web::body::to_bytes(response.into_body())
         .await
         .unwrap();
-    let response_headers = [("content-digest", response_digest.as_str())];
+    let response_headers = [
+        ("content-digest", response_digest.as_str()),
+        ("content-type", content_type.as_str()),
+        ("x-fapi-interaction-id", interaction_id.as_str()),
+    ];
     let request_headers = [
         ("authorization", authorization.as_str()),
         ("content-digest", received_digest.as_str()),

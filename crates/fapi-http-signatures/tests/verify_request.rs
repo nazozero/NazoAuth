@@ -47,6 +47,7 @@ fn fixture() -> (Vec<u8>, SignatureFields) {
             created: CREATED,
             keyid: "client-ed25519",
             algorithm: "ed25519",
+            covered_headers: &[],
         },
     )
     .unwrap();
@@ -511,13 +512,17 @@ fn reconstructs_a_different_base_for_an_altered_dpop_proof() {
 }
 
 #[test]
-fn rejects_reordered_covered_components() {
+fn reconstructs_required_components_in_received_order() {
     let (_, mut fields) = fixture();
     fields.signature_input = fields.signature_input.replace(
         "(\"@method\" \"@target-uri\"",
         "(\"@target-uri\" \"@method\"",
     );
-    assert_eq!(parse(fields).unwrap_err(), VerifyError::MissingComponent);
+    let parsed = parse(fields).unwrap();
+    let base = std::str::from_utf8(parsed.signature_base()).unwrap();
+    assert!(
+        base.starts_with("\"@target-uri\": https://api.example/fapi/resource\n\"@method\": POST")
+    );
 }
 
 #[test]
@@ -530,12 +535,181 @@ fn rejects_duplicated_covered_components() {
 }
 
 #[test]
-fn rejects_extra_covered_components() {
+fn accepts_and_reconstructs_a_safe_extra_covered_header() {
     let (_, mut fields) = fixture();
     fields.signature_input = fields
         .signature_input
         .replace(" \"content-digest\")", " \"content-digest\" \"x-extra\")");
-    assert_eq!(parse(fields).unwrap_err(), VerifyError::MissingComponent);
+    let mut with_extra = headers().to_vec();
+    with_extra.push(("X-Extra", "semantic-value"));
+    let parsed = parse_request_for_verification(
+        request(
+            "POST",
+            "https://api.example/fapi/resource",
+            &with_extra,
+            BODY,
+        ),
+        fields,
+        policy(),
+    )
+    .unwrap();
+    assert!(
+        std::str::from_utf8(parsed.signature_base())
+            .unwrap()
+            .contains("\"x-extra\": semantic-value")
+    );
+}
+
+#[test]
+fn extra_header_tampering_reconstructs_a_different_base() {
+    let (_, mut first_fields) = fixture();
+    first_fields.signature_input = first_fields.signature_input.replace(
+        " \"content-digest\")",
+        " \"content-digest\" \"idempotency-key\")",
+    );
+    let second_fields = SignatureFields {
+        signature_input: first_fields.signature_input.clone(),
+        signature: first_fields.signature.clone(),
+    };
+    let first_headers = [headers().as_slice(), &[("Idempotency-Key", "first")]].concat();
+    let second_headers = [headers().as_slice(), &[("Idempotency-Key", "second")]].concat();
+    let first = parse_request_for_verification(
+        request(
+            "POST",
+            "https://api.example/fapi/resource",
+            &first_headers,
+            BODY,
+        ),
+        first_fields,
+        policy(),
+    )
+    .unwrap();
+    let second = parse_request_for_verification(
+        request(
+            "POST",
+            "https://api.example/fapi/resource",
+            &second_headers,
+            BODY,
+        ),
+        second_fields,
+        policy(),
+    )
+    .unwrap();
+    assert_ne!(first.signature_base(), second.signature_base());
+}
+
+#[test]
+fn rejects_unsafe_or_ambiguous_extra_components() {
+    for component in ["@authority", "x-missing", "authorization;foo"] {
+        let (_, mut fields) = fixture();
+        fields.signature_input = fields.signature_input.replace(
+            " \"content-digest\")",
+            &format!(" \"content-digest\" \"{component}\")"),
+        );
+        assert!(
+            parse(fields).is_err(),
+            "accepted unsafe component {component}"
+        );
+    }
+
+    let (_, mut fields) = fixture();
+    fields.signature_input = fields
+        .signature_input
+        .replace(" \"content-digest\")", " \"content-digest\" \"x-extra\")");
+    let duplicate = [
+        headers().as_slice(),
+        &[("X-Extra", "one"), ("x-extra", "two")],
+    ]
+    .concat();
+    assert_eq!(
+        parse_request_for_verification(
+            request(
+                "POST",
+                "https://api.example/fapi/resource",
+                &duplicate,
+                BODY,
+            ),
+            fields,
+            policy(),
+        )
+        .unwrap_err(),
+        VerifyError::MissingComponent
+    );
+}
+
+#[test]
+fn rejects_duplicate_optional_profile_headers_even_when_not_covered() {
+    let base_headers = [("Authorization", "DPoP opaque")];
+    let prepared = prepare_request(
+        request(
+            "GET",
+            "https://api.example/fapi/resource",
+            &base_headers,
+            b"",
+        ),
+        RequestPolicy {
+            created: CREATED,
+            keyid: "client-ed25519",
+            algorithm: "ed25519",
+            covered_headers: &[],
+        },
+    )
+    .unwrap();
+    let fields = prepared.finish(&[1, 2, 3]);
+    let duplicate_dpop = [
+        ("Authorization", "DPoP opaque"),
+        ("DPoP", "first"),
+        ("dpop", "second"),
+    ];
+    assert_eq!(
+        parse_request_for_verification(
+            request(
+                "GET",
+                "https://api.example/fapi/resource",
+                &duplicate_dpop,
+                b"",
+            ),
+            fields,
+            policy(),
+        )
+        .unwrap_err(),
+        VerifyError::MissingComponent
+    );
+
+    let prepared = prepare_request(
+        request(
+            "GET",
+            "https://api.example/fapi/resource",
+            &base_headers,
+            b"",
+        ),
+        RequestPolicy {
+            created: CREATED,
+            keyid: "client-ed25519",
+            algorithm: "ed25519",
+            covered_headers: &[],
+        },
+    )
+    .unwrap();
+    let duplicate_digest = [
+        ("Authorization", "DPoP opaque"),
+        ("Content-Digest", "sha-256=:AA==:"),
+        ("content-digest", "sha-256=:AQ==:"),
+    ];
+    assert_eq!(
+        parse_request_for_verification(
+            request(
+                "GET",
+                "https://api.example/fapi/resource",
+                &duplicate_digest,
+                b"",
+            ),
+            prepared.finish(&[1, 2, 3]),
+            policy(),
+        )
+        .unwrap_err(),
+        VerifyError::DigestMismatch
+    );
 }
 
 #[test]
@@ -577,6 +751,7 @@ fn preserves_custom_method_case_when_reconstructing_the_base() {
             created: CREATED,
             keyid: "client-ed25519",
             algorithm: "ed25519",
+            covered_headers: &[],
         },
     )
     .unwrap();

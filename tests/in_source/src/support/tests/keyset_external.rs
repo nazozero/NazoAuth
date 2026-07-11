@@ -259,14 +259,14 @@ async fn external_signing_rejects_non_server_signing_algorithm_before_spawn() {
 }
 
 #[tokio::test]
-async fn external_signing_reports_signer_process_rejection() {
+async fn external_signing_reports_stable_process_rejection_without_stderr() {
     let error = sign_with_command(signer_error_command())
         .await
         .expect_err("non-zero signer exit must fail the JWT issuance boundary");
 
     let display = format!("{error}");
     assert!(
-        display.contains("exited with status") && display.contains("denied by signer"),
+        display.contains("exited with status") && !display.contains("denied by signer"),
         "unexpected error: {display}"
     );
 }

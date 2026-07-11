@@ -401,10 +401,20 @@ async fn sign_fapi_resource_response(
         Err(_) => return HttpResponse::ServiceUnavailable().finish(),
     };
     let digest = (!response_body.is_empty()).then(|| content_digest(&response_body));
-    let response_signature_headers = digest
+    let mut response_signature_headers = digest
         .as_deref()
         .map(|value| vec![("content-digest", value)])
         .unwrap_or_default();
+    let mut covered_response_headers = Vec::new();
+    for name in ["content-type", "x-fapi-interaction-id"] {
+        if let Some(value) = response_headers
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+        {
+            response_signature_headers.push((name, value));
+            covered_response_headers.push(name);
+        }
+    }
     let request_digest = original.valid_digest();
     let request_headers = request_digest
         .map(|digest| vec![("content-digest", digest)])
@@ -438,18 +448,26 @@ async fn sign_fapi_resource_response(
                 jsonwebtoken::Algorithm::ES256 => "ecdsa-p256-sha256",
                 _ => return HttpResponse::ServiceUnavailable().finish(),
             },
+            covered_headers: &covered_response_headers,
+            covered_request_headers: &[],
         },
     ) {
         Ok(signing) => signing,
-        Err(error) => {
-            tracing::warn!(%error, "failed to prepare FAPI resource response signature");
+        Err(_) => {
+            tracing::warn!(
+                category = "prepare_failure",
+                "failed to prepare FAPI resource response signature"
+            );
             return HttpResponse::ServiceUnavailable().finish();
         }
     };
     let detached = match keyset.sign_http_message(signing.signature_base()).await {
         Ok(detached) => detached,
-        Err(error) => {
-            tracing::warn!(%error, "failed to sign FAPI resource response");
+        Err(_) => {
+            tracing::warn!(
+                category = "signer_failure",
+                "failed to sign FAPI resource response"
+            );
             return HttpResponse::ServiceUnavailable().finish();
         }
     };

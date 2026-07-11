@@ -239,6 +239,24 @@ fn http_verification_enforces_well_formed_verify_key_ops() {
 }
 
 #[test]
+fn http_verification_requires_signing_jwk_use_when_present() {
+    let public = local_keyset(jsonwebtoken::Algorithm::EdDSA).verification_keys[0]
+        .public_jwk
+        .clone();
+    let usable = |use_value: Value, key_ops: Value| {
+        let mut jwk = public.clone();
+        jwk["use"] = use_value;
+        jwk["key_ops"] = key_ops;
+        http_jwk_decoding_key(&jwk, jsonwebtoken::Algorithm::EdDSA).is_some()
+    };
+
+    assert!(usable(json!("sig"), json!(["verify"])));
+    assert!(!usable(json!("enc"), json!(["verify"])));
+    assert!(!usable(json!(7), json!(["verify"])));
+    assert!(!usable(json!("sig"), json!(["encrypt"])));
+}
+
+#[test]
 fn http_rsa_policy_uses_unsigned_modulus_bit_length() {
     let mut jwk = local_keyset(jsonwebtoken::Algorithm::RS256).verification_keys[0]
         .public_jwk

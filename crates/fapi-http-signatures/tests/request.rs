@@ -45,6 +45,7 @@ fn prepares_the_required_fapi_request_signature_components() {
             created: 1_720_000_000,
             keyid: "client-ed25519",
             algorithm: "ed25519",
+            covered_headers: &[],
         },
     )
     .expect("valid request should be prepared");
@@ -70,6 +71,36 @@ fn prepares_the_required_fapi_request_signature_components() {
     assert_eq!(fields.signature, "sig1=:3q2+7w==:");
 }
 
+#[test]
+fn explicitly_covers_safe_additional_headers_in_caller_order() {
+    let headers = [
+        ("authorization", "DPoP opaque"),
+        ("content-type", "application/json"),
+        ("idempotency-key", "operation-123"),
+    ];
+    let prepared = prepare_request(
+        RequestInput {
+            method: "POST",
+            target_uri: "https://api.example/fapi/resource",
+            headers: &headers,
+            body: b"",
+        },
+        RequestPolicy {
+            created: 1_720_000_000,
+            keyid: "key",
+            algorithm: "ed25519",
+            covered_headers: &["content-type", "idempotency-key"],
+        },
+    )
+    .unwrap();
+    let base = std::str::from_utf8(prepared.signature_base()).unwrap();
+
+    assert!(base.contains(
+        "\"authorization\": DPoP opaque\n\"content-type\": application/json\n\"idempotency-key\": operation-123"
+    ));
+    assert!(base.contains("\"authorization\" \"content-type\" \"idempotency-key\")"));
+}
+
 fn prepare<'a>(
     method: &'a str,
     target_uri: &'a str,
@@ -89,6 +120,7 @@ fn prepare<'a>(
             created: 1_720_000_000,
             keyid,
             algorithm,
+            covered_headers: &[],
         },
     )
 }

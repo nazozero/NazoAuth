@@ -79,7 +79,7 @@ pub(super) async fn sign_external_jwt_input(
             jwt_provider_error(format!("external signer stdout join failed: {error}"))
         })?
         .map_err(|error| jwt_provider_error(format!("external signer failed: {error}")))?;
-    let stderr = stderr_task
+    let _stderr = stderr_task
         .await
         .map_err(|error| {
             jwt_provider_error(format!("external signer stderr join failed: {error}"))
@@ -87,9 +87,7 @@ pub(super) async fn sign_external_jwt_input(
         .map_err(|error| jwt_provider_error(format!("external signer failed: {error}")))?;
     if !status.success() {
         return Err(jwt_provider_error(format!(
-            "external signer exited with status {}: {}",
-            status,
-            String::from_utf8_lossy(&stderr)
+            "external signer exited with status {status}"
         )));
     }
     let response: Value = serde_json::from_slice(&stdout)?;

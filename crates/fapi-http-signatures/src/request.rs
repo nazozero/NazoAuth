@@ -19,6 +19,7 @@ pub struct RequestPolicy<'a> {
     pub created: i64,
     pub keyid: &'a str,
     pub algorithm: &'a str,
+    pub covered_headers: &'a [&'a str],
 }
 
 pub struct SignatureFields {
@@ -75,7 +76,6 @@ pub fn prepare_request(
 ) -> Result<PreparedSignature, RequestError> {
     validate_method(input.method)?;
     let target_uri = canonical_target_uri(input.target_uri)?;
-    validate_headers(input.headers)?;
     if !matches!(
         policy.algorithm,
         "ed25519" | "rsa-v1_5-sha256" | "ecdsa-p256-sha256"
@@ -112,6 +112,26 @@ pub fn prepare_request(
     if let Some(digest) = computed_digest {
         components.push(field_component("content-digest", &digest)?);
     }
+    let mut selected = std::collections::HashSet::new();
+    for name in policy.covered_headers {
+        if name.is_empty() || !name.bytes().all(is_token_byte) {
+            return Err(RequestError::InvalidInput(
+                "invalid additional covered header name".into(),
+            ));
+        }
+        let name = name.to_ascii_lowercase();
+        if matches!(name.as_str(), "authorization" | "dpop" | "content-digest")
+            || !selected.insert(name.clone())
+        {
+            return Err(RequestError::InvalidInput(
+                "duplicate additional covered component".into(),
+            ));
+        }
+        let value = unique_header(input.headers, &name)?.ok_or_else(|| {
+            RequestError::InvalidInput(format!("missing additional covered header: {name}"))
+        })?;
+        components.push(field_component(&name, value)?);
+    }
 
     let signature_input = signature_input(&components, policy)?;
     let parameters = signature_input
@@ -139,7 +159,7 @@ fn validate_method(method: &str) -> Result<(), RequestError> {
     Ok(())
 }
 
-fn canonical_target_uri(target_uri: &str) -> Result<String, RequestError> {
+pub(crate) fn canonical_target_uri(target_uri: &str) -> Result<String, RequestError> {
     if target_uri
         .bytes()
         .any(|byte| byte.is_ascii_control() || byte == b' ')
@@ -159,24 +179,6 @@ fn canonical_target_uri(target_uri: &str) -> Result<String, RequestError> {
     Ok(uri.into())
 }
 
-fn validate_headers(headers: &[(&str, &str)]) -> Result<(), RequestError> {
-    for (name, value) in headers {
-        if name.is_empty() || !name.bytes().all(is_token_byte) {
-            return Err(RequestError::InvalidInput("invalid header name".into()));
-        }
-        if value.bytes().any(|byte| {
-            byte == b'\r'
-                || byte == b'\n'
-                || byte == 0
-                || (byte < 0x20 && byte != b'\t')
-                || byte == 0x7f
-        }) {
-            return Err(RequestError::InvalidInput("invalid header value".into()));
-        }
-    }
-    Ok(())
-}
-
 fn unique_header<'a>(
     headers: &'a [(&str, &'a str)],
     wanted: &str,
@@ -194,7 +196,7 @@ fn unique_header<'a>(
     Ok(first)
 }
 
-fn is_token_byte(byte: u8) -> bool {
+pub(crate) fn is_token_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric()
         || matches!(
             byte,
@@ -215,20 +217,31 @@ fn is_token_byte(byte: u8) -> bool {
         )
 }
 
-fn component(name: &str, value: &str) -> Result<HttpMessageComponent, RequestError> {
+pub(crate) fn component(name: &str, value: &str) -> Result<HttpMessageComponent, RequestError> {
     let id = HttpMessageComponentId::try_from(name)
         .map_err(|error| RequestError::InvalidInput(error.to_string()))?;
     HttpMessageComponent::try_from((&id, &[value.to_owned()][..]))
         .map_err(|error| RequestError::InvalidInput(error.to_string()))
 }
 
-fn method_component(method: &str) -> Result<HttpMessageComponent, RequestError> {
+pub(crate) fn method_component(method: &str) -> Result<HttpMessageComponent, RequestError> {
     HttpMessageComponent::try_from(format!("\"@method\": {method}").as_str())
         .map_err(|error| RequestError::InvalidInput(error.to_string()))
 }
 
-fn field_component(name: &str, value: &str) -> Result<HttpMessageComponent, RequestError> {
-    if !value.is_ascii() {
+pub(crate) fn field_component(
+    name: &str,
+    value: &str,
+) -> Result<HttpMessageComponent, RequestError> {
+    if !value.is_ascii()
+        || value.bytes().any(|byte| {
+            byte == b'\r'
+                || byte == b'\n'
+                || byte == 0
+                || (byte < 0x20 && byte != b'\t')
+                || byte == 0x7f
+        })
+    {
         return Err(RequestError::InvalidInput(format!(
             "non-ASCII covered field value: {name}"
         )));
