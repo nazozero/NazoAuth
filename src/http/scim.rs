@@ -2,6 +2,7 @@
 use crate::http::prelude::*;
 
 mod auth;
+mod cursor;
 mod normalization;
 mod schema;
 
