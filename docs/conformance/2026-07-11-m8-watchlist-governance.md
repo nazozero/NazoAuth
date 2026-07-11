@@ -16,7 +16,7 @@ The review produced these decisions:
 | FAPI 2.0 HTTP Signatures | OIDF working draft dated 2026-06-26; not an OIDF Final Specification | Defer until the profile stabilizes and a resource-API non-repudiation customer exists. |
 | RFC 9865 cursor pagination | IETF Standards Track RFC, published 2025-10 | Implemented after this governance review with local codec, handler, metadata, security, and SCIM regression evidence; no applicable OIDF plan was found. |
 | RFC 9967 SCIM SET profile | IETF Standards Track RFC, published 2026-05 | Defer pending a defined event consumer, delivery topology, trust model, and retention owner. |
-| OAuth for Browser-Based Applications | `draft-ietf-oauth-browser-based-apps-26`; RFC Editor queue in progress, no RFC number yet | Audit current AS/frontend architecture after RFC publication; do not add a draft profile switch. |
+| OAuth for Browser-Based Applications | `draft-ietf-oauth-browser-based-apps-26`; RFC Editor queue in progress, no RFC number yet | A separately approved pre-publication draft-26 audit is recorded in `2026-07-11-browser-based-applications-draft-26-audit.md`; repeat the delta audit after RFC publication and do not add a draft profile switch. |
 | Attestation-Based Client Authentication | active `draft-ietf-oauth-attestation-based-client-auth-10` | Defer while the draft and attester trust ecosystem remain unsettled. |
 | Transaction Tokens | active `draft-ietf-oauth-transaction-tokens-09` | Defer until NazoAuth has a trusted-domain workload call-chain product requirement. |
 | Grant Management | OIDF `fapi-grant-management-01`, published 2021-06-23; no Final status | Keep the existing admin grant controls; defer protocol metadata and a client-facing API. |
@@ -225,9 +225,11 @@ authorization, PAR, token, refresh, CORS, redirect, cookie/session, and metadata
 tests; separately audit NazoAuthWeb architecture without conflating it with
 third-party SPA support.
 
-**Decision and re-entry.** Publication watch. Re-audit immediately after an RFC
-number is assigned; implement only concrete gaps found in that requirements
-mapping.
+**Decision and re-entry.** A separately approved pre-publication audit mapped
+draft-26 to the current server and first-party Web architecture and tightened
+public OAuth CORS without adding a runtime profile. Publication watch remains:
+re-audit immediately after an RFC number is assigned and implement only
+concrete gaps found in the final requirements delta.
 
 ### OAuth 2.0 Attestation-Based Client Authentication
 

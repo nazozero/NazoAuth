@@ -10,12 +10,16 @@ use crate::settings::{
 use crate::support::ClientIpHeaderMode;
 
 #[actix_web::test]
-async fn cors_preflight_allows_only_configured_origin_methods_and_security_headers() {
+async fn browser_token_management_cors_allows_post_dpop_without_credentials() {
     let settings = test_settings(vec!["https://app.example".to_owned()]);
-    let app = test::init_service(App::new().wrap(cors_browser_oauth(&settings)).route(
-        "/token",
-        web::post().to(|| async { HttpResponse::Ok().finish() }),
-    ))
+    let app = test::init_service(
+        App::new()
+            .wrap(cors_browser_token_management(&settings))
+            .route(
+                "/token",
+                web::post().to(|| async { HttpResponse::Ok().finish() }),
+            ),
+    )
     .await;
 
     let allowed = test::TestRequest::default()
@@ -23,7 +27,7 @@ async fn cors_preflight_allows_only_configured_origin_methods_and_security_heade
         .uri("/token")
         .insert_header((header::ORIGIN, "https://app.example"))
         .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, "POST"))
-        .insert_header((header::ACCESS_CONTROL_REQUEST_HEADERS, "dpop, x-csrf-token"))
+        .insert_header((header::ACCESS_CONTROL_REQUEST_HEADERS, "content-type, dpop"))
         .to_request();
     let response = test::call_service(&app, allowed).await;
     assert_eq!(response.status(), StatusCode::OK);
@@ -39,7 +43,7 @@ async fn cors_preflight_allows_only_configured_origin_methods_and_security_heade
             .headers()
             .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
             .is_none(),
-        "cors_browser_oauth must NOT allow credentials (no cookies)"
+        "browser token management must NOT allow credentials (no cookies)"
     );
     assert!(
         response
@@ -67,6 +71,44 @@ async fn cors_preflight_allows_only_configured_origin_methods_and_security_heade
             .is_none(),
         "unregistered browser origins must not receive CORS authorization"
     );
+}
+
+#[actix_web::test]
+async fn browser_userinfo_cors_allows_get_and_post_bearer_or_dpop() {
+    let settings = test_settings(vec!["https://app.example".to_owned()]);
+    for method in ["GET", "POST"] {
+        let app = test::init_service(
+            App::new()
+                .wrap(cors_browser_userinfo(&settings))
+                .route(
+                    "/userinfo",
+                    web::get().to(|| async { HttpResponse::Ok().finish() }),
+                )
+                .route(
+                    "/userinfo",
+                    web::post().to(|| async { HttpResponse::Ok().finish() }),
+                ),
+        )
+        .await;
+        let request = test::TestRequest::default()
+            .method(actix_web::http::Method::OPTIONS)
+            .uri("/userinfo")
+            .insert_header((header::ORIGIN, "https://app.example"))
+            .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, method))
+            .insert_header((
+                header::ACCESS_CONTROL_REQUEST_HEADERS,
+                "authorization, dpop",
+            ))
+            .to_request();
+        let response = test::call_service(&app, request).await;
+        assert_eq!(response.status(), StatusCode::OK, "method={method}");
+        assert!(
+            response
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+                .is_none()
+        );
+    }
 }
 
 #[actix_web::test]
@@ -172,7 +214,7 @@ async fn perf_metrics_route_is_controlled_by_the_typed_startup_flag() {
 #[actix_web::test]
 async fn cors_actual_response_exposes_oauth_challenge_nonce_and_retry_headers() {
     let settings = test_settings(vec!["https://app.example".to_owned()]);
-    let app = test::init_service(App::new().wrap(cors_browser_oauth(&settings)).route(
+    let app = test::init_service(App::new().wrap(cors_browser_userinfo(&settings)).route(
         "/resource",
         web::get().to(|| async {
             HttpResponse::Unauthorized()
@@ -373,6 +415,73 @@ async fn cors_scim_allows_put_without_browser_credentials() {
             .is_none(),
         "SCIM uses bearer authentication and must not authorize browser credentials"
     );
+}
+
+#[actix_web::test]
+async fn production_token_route_rejects_get_csrf_and_unknown_origins() {
+    let settings = test_settings(vec!["https://spa.example".to_owned()]);
+    let app =
+        test::init_service(App::new().configure(|cfg| routes::configure(cfg, &settings, false)))
+            .await;
+
+    for (origin, method, headers) in [
+        ("https://spa.example", "GET", "content-type"),
+        ("https://spa.example", "POST", "x-csrf-token"),
+        ("https://attacker.example", "POST", "content-type"),
+    ] {
+        let request = test::TestRequest::default()
+            .method(actix_web::http::Method::OPTIONS)
+            .uri("/token")
+            .insert_header((header::ORIGIN, origin))
+            .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, method))
+            .insert_header((header::ACCESS_CONTROL_REQUEST_HEADERS, headers))
+            .to_request();
+        let response = test::call_service(&app, request).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::BAD_REQUEST,
+            "token preflight must reject origin={origin}, method={method}, headers={headers}"
+        );
+        assert!(
+            response
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .is_none(),
+            "rejected token preflight must not authorize its origin"
+        );
+    }
+}
+
+#[actix_web::test]
+async fn production_browser_oauth_routes_expose_only_required_cors() {
+    let settings = test_settings(vec!["https://spa.example".to_owned()]);
+    let app =
+        test::init_service(App::new().configure(|cfg| routes::configure(cfg, &settings, false)))
+            .await;
+
+    for (path, method, headers) in [
+        ("/token", "POST", "content-type, dpop"),
+        ("/revoke", "POST", "content-type, authorization, dpop"),
+        ("/userinfo", "GET", "authorization, dpop"),
+        ("/userinfo", "POST", "authorization, content-type, dpop"),
+    ] {
+        let request = test::TestRequest::default()
+            .method(actix_web::http::Method::OPTIONS)
+            .uri(path)
+            .insert_header((header::ORIGIN, "https://spa.example"))
+            .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, method))
+            .insert_header((header::ACCESS_CONTROL_REQUEST_HEADERS, headers))
+            .to_request();
+        let response = test::call_service(&app, request).await;
+        assert_eq!(response.status(), StatusCode::OK, "{path} {method}");
+        assert!(
+            response
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+                .is_none(),
+            "public browser OAuth routes must not authorize cookies"
+        );
+    }
 }
 
 fn test_settings(cors_allowed_origins: Vec<String>) -> Settings {

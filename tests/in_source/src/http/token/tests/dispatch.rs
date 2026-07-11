@@ -8,7 +8,7 @@ use base64::{
     engine::general_purpose::{STANDARD as B64, URL_SAFE_NO_PAD},
 };
 use diesel::sql_query;
-use diesel::sql_types::{Bool, Jsonb, Nullable, Text};
+use diesel::sql_types::{Bool, Jsonb, Nullable, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
 use fred::interfaces::ClientLike;
 use fred::prelude::{
@@ -18,11 +18,15 @@ use fred::prelude::{
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
 use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
+use crate::http::{revoke, userinfo};
 use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, RateLimitSettings,
     RequestObjectJtiPolicy, SubjectType,
 };
-use crate::support::{ClientIpHeaderMode, IpCidr, hash_client_secret};
+use crate::support::{
+    ClientIpHeaderMode, IpCidr, SessionPayload, current_session, hash_client_secret, valkey_del,
+    valkey_set_ex,
+};
 
 fn code_payload(dpop_jkt: Option<&str>) -> CodePayload {
     CodePayload {
@@ -495,6 +499,116 @@ async fn assert_token_error(
     assert_eq!(body["error"], error);
     assert!(body.get("access_token").is_none());
     assert!(body.get("refresh_token").is_none());
+}
+
+#[actix_web::test]
+async fn valid_browser_session_cookie_cannot_authenticate_oauth_protocol_endpoints() {
+    let Some(state) = live_token_state(AuthorizationServerProfile::Oauth2Baseline).await else {
+        return;
+    };
+    let user_id = Uuid::now_v7();
+    let username = format!("browser-session-{}", Uuid::now_v7());
+    let email = format!("{username}@example.test");
+    let session_id = format!("browser-session-{}", Uuid::now_v7());
+    let unauthenticated_client_id = format!("browser-session-client-{}", Uuid::now_v7());
+    let session_key = format!("oauth:session:{session_id}");
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    sql_query(
+        r#"
+        INSERT INTO users (
+            id, tenant_id, realm_id, organization_id, username, email,
+            password_hash, is_active, mfa_enabled, email_verified, role, admin_level
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, 'unused-browser-session-hash',
+                true, false, true, 'user', 0)
+        "#,
+    )
+    .bind::<SqlUuid, _>(user_id)
+    .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+    .bind::<SqlUuid, _>(DEFAULT_REALM_ID)
+    .bind::<SqlUuid, _>(DEFAULT_ORGANIZATION_ID)
+    .bind::<Text, _>(&username)
+    .bind::<Text, _>(&email)
+    .execute(&mut conn)
+    .await
+    .expect("browser-session test user should insert");
+    drop(conn);
+    valkey_set_ex(
+        &state.valkey,
+        &session_key,
+        serde_json::to_string(&SessionPayload {
+            user_id,
+            auth_time: Utc::now().timestamp(),
+            amr: vec!["pwd".to_owned()],
+            pending_mfa: false,
+            oidc_sid: Some(format!("oidc-{session_id}")),
+        })
+        .expect("session should serialize"),
+        state.settings.session_ttl_seconds,
+    )
+    .await
+    .expect("valid browser session should store");
+
+    let request = |path: &str| {
+        actix_web::test::TestRequest::post()
+            .uri(path)
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+            .cookie(actix_web::cookie::Cookie::new(
+                state.settings.session_cookie_name.clone(),
+                session_id.clone(),
+            ))
+            .to_http_request()
+    };
+    assert!(
+        current_session(&state, &request("/auth/me"))
+            .await
+            .expect("session lookup should succeed")
+            .is_some(),
+        "fixture cookie must be a valid authenticated browser session"
+    );
+
+    let token_response = token(
+        state.clone(),
+        request("/token"),
+        Bytes::from(format!(
+            "grant_type=client_credentials&client_id={unauthenticated_client_id}"
+        )),
+    )
+    .await;
+    assert_token_error(
+        token_response,
+        StatusCode::UNAUTHORIZED,
+        "invalid_client",
+        false,
+    )
+    .await;
+
+    let revoke_response = revoke(
+        state.clone(),
+        request("/revoke"),
+        Bytes::from(format!(
+            "token=opaque-token&client_id={unauthenticated_client_id}"
+        )),
+    )
+    .await;
+    assert_eq!(revoke_response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(oauth_error_code(&revoke_response), "invalid_client");
+
+    let userinfo_response = userinfo(state.clone(), request("/userinfo"), Bytes::new()).await;
+    assert_eq!(userinfo_response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(oauth_error_code(&userinfo_response), "invalid_token");
+
+    let _ = valkey_del(&state.valkey, &session_key).await;
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    sql_query("DELETE FROM users WHERE id = $1")
+        .bind::<SqlUuid, _>(user_id)
+        .execute(&mut conn)
+        .await
+        .expect("browser-session test user should clean up");
 }
 
 fn token_request(content_type: &str) -> HttpRequest {

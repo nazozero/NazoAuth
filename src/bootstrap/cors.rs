@@ -22,14 +22,13 @@ pub(crate) fn cors_well_known(settings: &Settings) -> Cors {
     apply_allowed_origins(cors, settings)
 }
 
-pub(crate) fn cors_browser_oauth(settings: &Settings) -> Cors {
+fn public_oauth_cors(settings: &Settings, methods: Vec<&str>) -> Cors {
     let cors = Cors::default()
-        .allowed_methods(vec!["GET", "POST"])
+        .allowed_methods(methods)
         .allowed_headers(vec![
             header::AUTHORIZATION,
             header::CONTENT_TYPE,
             header::HeaderName::from_static("dpop"),
-            header::HeaderName::from_static("x-csrf-token"),
         ])
         .expose_headers(vec![
             header::WWW_AUTHENTICATE,
@@ -38,6 +37,14 @@ pub(crate) fn cors_browser_oauth(settings: &Settings) -> Cors {
         ])
         .max_age(0);
     apply_allowed_origins(cors, settings)
+}
+
+pub(crate) fn cors_browser_token_management(settings: &Settings) -> Cors {
+    public_oauth_cors(settings, vec!["POST"])
+}
+
+pub(crate) fn cors_browser_userinfo(settings: &Settings) -> Cors {
+    public_oauth_cors(settings, vec!["GET", "POST"])
 }
 
 pub(crate) fn cors_auth_api(settings: &Settings) -> Cors {

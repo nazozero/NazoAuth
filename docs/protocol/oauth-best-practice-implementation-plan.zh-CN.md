@@ -386,7 +386,7 @@ cargo test --locked well_known --lib
 
 - NI-014 FAPI / HTTP message signatures。
 - NI-015 RFC 9865 cursor pagination / RFC 9967 SCIM Security Event Tokens 与异步完成事件。
-- OAuth 2.0 for Browser-Based Applications draft 最终 RFC 发布后的审计。
+- OAuth 2.0 for Browser-Based Applications draft-26 预发布审计，以及最终 RFC 发布后的差异审计。
 - OAuth 2.0 Attestation-Based Client Authentication。
 - Transaction Tokens。
 - Grant Management。
@@ -405,7 +405,9 @@ M8 的完成表示三项进入实现路线的治理门禁已经审计并形成
 [`2026-07-11-m8-watchlist-governance.md`](../conformance/2026-07-11-m8-watchlist-governance.md)
 证据，不表示所有候选协议已经实现或通过认证。后续独立设计已完成 RFC 9865
 SCIM forward cursor pagination 的本地实现与负向测试；OpenID4VCI / OpenID4VP
-需要单独产品立项；其余候选项继续 deferred，直到各自证据记录中的 re-entry 条件满足。
+需要单独产品立项。Browser-Based Applications draft-26 已完成预发布安全审计，
+NazoAuthWeb 保持 same-origin session/BFF，第三方浏览器应用保持 public code + S256
+PKCE；最终 RFC 发布后仍必须执行差异审计。其余候选项继续 deferred，直到各自证据记录中的 re-entry 条件满足。
 
 ## 当前状态摘要
 
@@ -415,7 +417,7 @@ SCIM forward cursor pagination 的本地实现与负向测试；OpenID4VCI / Ope
 | --- | --- |
 | 已具备的 OP/AS 基线 | BP-001 到 BP-028 已作为当前基础能力维护；TP-001 到 TP-008 已作为精确测试包维护。 |
 | Public OP/AS 基线硬化 | M1 / BP-029 已完成；后续新增 endpoint 必须复用同等 CORS、cookie/session、CSRF、rate limit、日志脱敏和错误语义门禁。 |
-| 当前优先缺口 | M8 治理门禁与 RFC 9865 bounded SCIM cursor pagination 已完成；其余候选项保持 deferred 或等待单独产品立项。 |
+| 当前优先缺口 | M8 治理门禁、RFC 9865 bounded SCIM cursor pagination 与 Browser-Based Applications draft-26 预发布审计已完成；Browser 最终 RFC 差异审计及其余候选项保持 deferred 或等待单独产品立项。 |
 | FAPI2 / Message Signing | M2 已完成；后续新增 FAPI / Message Signing 行为必须继续保持 profile-scoped metadata truth 与负向测试。 |
 | DCR / DCRM | M3 已完成；NI-004 / NI-005 以 default-closed DCR/DCRM、管理凭据轮换、非秘密审计事件和 onboarding 文档维护。 |
 | Token trust | M4 已完成；NI-003 是 bounded local Token Exchange，NI-006 是第三方 JWT bearer trust 设计完成且实现 deferred，外部 issuer trust 不属于当前默认能力。 |
