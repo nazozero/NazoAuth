@@ -385,7 +385,7 @@ cargo test --locked well_known --lib
 候选项：
 
 - NI-014 FAPI / HTTP message signatures。
-- NI-015 RFC 9865 cursor pagination / RFC 9967 async SCIM or SCIM Security Events。
+- NI-015 RFC 9865 cursor pagination / RFC 9967 SCIM Security Event Tokens 与异步完成事件。
 - OAuth 2.0 for Browser-Based Applications draft 最终 RFC 发布后的审计。
 - OAuth 2.0 Attestation-Based Client Authentication。
 - Transaction Tokens。
@@ -394,12 +394,18 @@ cargo test --locked well_known --lib
 
 进入实现路线的前置条件：
 
-- [ ] **M8-01：产品需求明确**
+- [x] **M8-01：产品需求明确**
   - 必须说明谁会使用、接入方式、威胁模型、metadata 或配置面、失败场景和运维责任。
-- [ ] **M8-02：规范和 conformance 状态明确**
+- [x] **M8-02：规范和 conformance 状态明确**
   - 标准源、草案版本、OIDF/IETF 状态、conformance suite 覆盖和本地测试策略必须记录。
-- [ ] **M8-03：不会降低主线安全边界**
+- [x] **M8-03：不会降低主线安全边界**
   - 不能影响 `oauth2-oidc-baseline`、`fapi2-security`、`fapi2-message-signing-*`、CIBA 和 external provider login 的默认安全属性。
+
+M8 的完成表示三项进入实现路线的治理门禁已经审计并形成
+[`2026-07-11-m8-watchlist-governance.md`](../conformance/2026-07-11-m8-watchlist-governance.md)
+证据，不表示所有候选协议已经实现或通过认证。后续独立设计已完成 RFC 9865
+SCIM forward cursor pagination 的本地实现与负向测试；OpenID4VCI / OpenID4VP
+需要单独产品立项；其余候选项继续 deferred，直到各自证据记录中的 re-entry 条件满足。
 
 ## 当前状态摘要
 
@@ -409,7 +415,7 @@ cargo test --locked well_known --lib
 | --- | --- |
 | 已具备的 OP/AS 基线 | BP-001 到 BP-028 已作为当前基础能力维护；TP-001 到 TP-008 已作为精确测试包维护。 |
 | Public OP/AS 基线硬化 | M1 / BP-029 已完成；后续新增 endpoint 必须复用同等 CORS、cookie/session、CSRF、rate limit、日志脱敏和错误语义门禁。 |
-| 当前优先缺口 | M7 已完成；M8 watchlist 保持 deferred，尚未开始。 |
+| 当前优先缺口 | M8 治理门禁与 RFC 9865 bounded SCIM cursor pagination 已完成；其余候选项保持 deferred 或等待单独产品立项。 |
 | FAPI2 / Message Signing | M2 已完成；后续新增 FAPI / Message Signing 行为必须继续保持 profile-scoped metadata truth 与负向测试。 |
 | DCR / DCRM | M3 已完成；NI-004 / NI-005 以 default-closed DCR/DCRM、管理凭据轮换、非秘密审计事件和 onboarding 文档维护。 |
 | Token trust | M4 已完成；NI-003 是 bounded local Token Exchange，NI-006 是第三方 JWT bearer trust 设计完成且实现 deferred，外部 issuer trust 不属于当前默认能力。 |
@@ -417,7 +423,7 @@ cargo test --locked well_known --lib
 | 加密响应 | M7 已完成；UserInfo 支持 JSON、JWS、JWE 和 nested JWS/JWE，JARM 支持 per-client 签名与 nested JWE；OIDF signed UserInfo 模块及本地与官方 19+2 全矩阵已纳入验收。 |
 | 外部第三方登录 | M5 已完成为配置驱动的热插拔 provider registry；外部 OIDC、OAuth2 social、SAML gateway、非敏感 admin onboarding 和本地 session 边界已实现。 |
 | 非目标 | NI-010 OpenID Federation 当前不实现；第三方登录不依赖 OpenID Federation。 |
-| 可选未来项 | NI-014、NI-015 和 M8 watchlist 仍为 deferred，不属于当前实现范围。 |
+| 可选未来项 | M8 候选项已有逐项产品、规范/conformance 与安全边界结论；治理完成不代表运行时支持，具体决定见 2026-07-11 M8 watchlist 证据。 |
 
 ## 更新规则
 
