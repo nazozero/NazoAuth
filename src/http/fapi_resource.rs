@@ -1,5 +1,7 @@
 //! FAPI-style protected resource endpoint.
 //! Enforces RFC 6750 access-token transport rules plus sender-constrained token binding.
+use std::{future::Future, pin::Pin};
+
 use crate::domain::Claims;
 use crate::http::prelude::*;
 use nazo_fapi_http_signatures::{
@@ -8,26 +10,111 @@ use nazo_fapi_http_signatures::{
     prepare_response,
 };
 
+type FapiStoreFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+trait FapiResourceStore: Send + Sync {
+    fn revoked<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        jti: &'a str,
+    ) -> FapiStoreFuture<'a, anyhow::Result<bool>>;
+
+    fn client<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        client_id: &'a str,
+    ) -> FapiStoreFuture<'a, anyhow::Result<Option<ClientRow>>>;
+
+    fn consume_replay<'a>(
+        &'a self,
+        fingerprint: &'a [u8; 32],
+        max_age_seconds: i64,
+    ) -> FapiStoreFuture<'a, ReplayConsumption>;
+
+    #[cfg(test)]
+    fn protected_work_reached(&self) {}
+}
+
+impl FapiResourceStore for AppState {
+    fn revoked<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        jti: &'a str,
+    ) -> FapiStoreFuture<'a, anyhow::Result<bool>> {
+        Box::pin(async move {
+            let mut conn = get_conn(&self.diesel_db).await?;
+            let count = access_token_revocations::table
+                .filter(access_token_revocations::tenant_id.eq(tenant_id))
+                .filter(access_token_revocations::access_token_jti_blake3.eq(blake3_hex(jti)))
+                .select(count_star())
+                .first::<i64>(&mut conn)
+                .await?;
+            Ok(count > 0)
+        })
+    }
+
+    fn client<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        client_id: &'a str,
+    ) -> FapiStoreFuture<'a, anyhow::Result<Option<ClientRow>>> {
+        Box::pin(async move { find_client_in_tenant(&self.diesel_db, tenant_id, client_id).await })
+    }
+
+    fn consume_replay<'a>(
+        &'a self,
+        fingerprint: &'a [u8; 32],
+        max_age_seconds: i64,
+    ) -> FapiStoreFuture<'a, ReplayConsumption> {
+        Box::pin(async move {
+            consume_fapi_http_signature_replay(&self.valkey, fingerprint, max_age_seconds).await
+        })
+    }
+}
+
+#[cfg(test)]
+#[derive(Clone)]
+struct FapiResourceStoreOverride(std::sync::Arc<dyn FapiResourceStore>);
+
 pub(crate) async fn fapi_resource(
     state: Data<AppState>,
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
+    #[cfg(test)]
+    {
+        use actix_web::HttpMessage;
+        let store_override = req.extensions().get::<FapiResourceStoreOverride>().cloned();
+        if let Some(store) = store_override {
+            return fapi_resource_with_store(&state, req, body, store.0.as_ref()).await;
+        }
+    }
+    fapi_resource_with_store(&state, req, body, state.get_ref()).await
+}
+
+async fn fapi_resource_with_store(
+    state: &Data<AppState>,
+    req: HttpRequest,
+    body: Bytes,
+    store: &dyn FapiResourceStore,
+) -> HttpResponse {
     if !state.settings.enable_fapi_http_signatures {
-        return fapi_resource_inner(&state, &req, &body, false).await;
+        return fapi_resource_inner(state, &req, &body, None, store).await;
     }
 
-    let request_fields = request_signature_fields(&req);
-    let response = fapi_resource_inner(&state, &req, &body, true).await;
-    sign_fapi_resource_response(&state, &req, &body, request_fields.as_ref(), response).await
+    let original = FapiOriginalRequest::capture(&state.settings.issuer, &req, &body);
+    let response = fapi_resource_inner(state, &req, &body, Some(&original), store).await;
+    sign_fapi_resource_response(state, &original, response).await
 }
 
 async fn fapi_resource_inner(
     state: &Data<AppState>,
     req: &HttpRequest,
     body: &Bytes,
-    http_signatures_enabled: bool,
+    original: Option<&FapiOriginalRequest>,
+    store: &dyn FapiResourceStore,
 ) -> HttpResponse {
+    let http_signatures_enabled = original.is_some();
     let (scheme, token) = match resource_access_token(req, body, http_signatures_enabled) {
         ResourceAccessToken::Present(scheme, token) => (scheme, token),
         ResourceAccessToken::Missing => {
@@ -67,35 +154,46 @@ async fn fapi_resource_inner(
         );
     };
 
+    let revoked = match store.revoked(tenant_id, &claims.jti).await {
+        Ok(revoked) => revoked,
+        Err(error) => {
+            tracing::warn!(%error, "failed to query FAPI resource token revocation state");
+            return oauth_bearer_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "resource 查询失败.",
+            );
+        }
+    };
+    if revoked || claims.exp <= Utc::now().timestamp() {
+        return oauth_bearer_error(StatusCode::UNAUTHORIZED, "invalid_token", "访问令牌已失效.");
+    }
+
     if http_signatures_enabled {
-        let client =
-            match find_client_in_tenant(&state.diesel_db, tenant_id, &claims.client_id).await {
-                Ok(Some(client)) if client.is_active => client,
-                Ok(_) => {
-                    return oauth_bearer_error(
-                        StatusCode::UNAUTHORIZED,
-                        "invalid_token",
-                        "访问令牌客户端无效.",
-                    );
-                }
-                Err(error) => {
-                    tracing::warn!(%error, "failed to load FAPI HTTP signature client");
-                    return oauth_bearer_error(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "server_error",
-                        "resource 查询失败.",
-                    );
-                }
-            };
+        let client = match store.client(tenant_id, &claims.client_id).await {
+            Ok(Some(client)) if client.is_active => client,
+            Ok(_) => {
+                return oauth_bearer_error(
+                    StatusCode::UNAUTHORIZED,
+                    "invalid_token",
+                    "访问令牌客户端无效.",
+                );
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to load FAPI HTTP signature client");
+                return oauth_bearer_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "resource 查询失败.",
+                );
+            }
+        };
         let verified = match verify_fapi_resource_http_signature(
             &client,
-            req,
-            body,
+            original.expect("enabled resource flow captures its original request"),
             FapiResourceSignaturePolicy {
                 tenant_id,
                 client_id: &claims.client_id,
-                issuer: &state.settings.issuer,
-                now: Utc::now().timestamp(),
                 max_age_seconds: state.settings.fapi_http_signature_max_age_seconds,
             },
         ) {
@@ -108,12 +206,12 @@ async fn fapi_resource_inner(
                 );
             }
         };
-        match consume_fapi_http_signature_replay(
-            &state.valkey,
-            verified.replay_fingerprint(),
-            state.settings.fapi_http_signature_max_age_seconds,
-        )
-        .await
+        match store
+            .consume_replay(
+                verified.replay_fingerprint(),
+                state.settings.fapi_http_signature_max_age_seconds,
+            )
+            .await
         {
             ReplayConsumption::Accepted => {}
             ReplayConsumption::Replay => {
@@ -134,36 +232,8 @@ async fn fapi_resource_inner(
         }
     }
 
-    let revoked = match get_conn(&state.diesel_db).await {
-        Ok(mut conn) => match access_token_revocations::table
-            .filter(access_token_revocations::tenant_id.eq(tenant_id))
-            .filter(access_token_revocations::access_token_jti_blake3.eq(blake3_hex(&claims.jti)))
-            .select(count_star())
-            .first::<i64>(&mut conn)
-            .await
-        {
-            Ok(count) => count > 0,
-            Err(error) => {
-                tracing::warn!(%error, "failed to query FAPI resource token revocation state");
-                return oauth_bearer_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "resource 查询失败.",
-                );
-            }
-        },
-        Err(error) => {
-            tracing::warn!(%error, "failed to check FAPI resource token revocation");
-            return oauth_bearer_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "resource 查询失败.",
-            );
-        }
-    };
-    if revoked || claims.exp <= Utc::now().timestamp() {
-        return oauth_bearer_error(StatusCode::UNAUTHORIZED, "invalid_token", "访问令牌已失效.");
-    }
+    #[cfg(test)]
+    store.protected_work_reached();
     let mut response = json_response_no_store(json!({
         "sub": claims.sub,
         "client_id": claims.client_id,
@@ -177,87 +247,134 @@ async fn fapi_resource_inner(
     response
 }
 
-fn request_signature_fields(req: &HttpRequest) -> Option<SignatureFields> {
-    request_signature_fields_checked(req).ok().flatten()
+#[derive(Clone, Debug)]
+enum CapturedHeader {
+    Missing,
+    Unique(String),
+    Invalid,
 }
 
-fn request_signature_fields_checked(req: &HttpRequest) -> Result<Option<SignatureFields>, ()> {
-    let signature_input = unique_request_header(req, "signature-input")?;
-    let signature = unique_request_header(req, "signature")?;
-    match (signature_input, signature) {
-        (Some(signature_input), Some(signature)) => Ok(Some(SignatureFields {
-            signature_input: signature_input.to_owned(),
-            signature: signature.to_owned(),
-        })),
-        (None, None) => Ok(None),
-        _ => Err(()),
-    }
-}
-
-fn fapi_resource_target_uri(issuer: &str, req: &HttpRequest) -> String {
-    format!(
-        "{}{}",
-        issuer.trim_end_matches('/'),
-        req.uri()
-            .path_and_query()
-            .map(|value| value.as_str())
-            .unwrap_or(req.path())
-    )
-}
-
-fn fapi_request_headers(req: &HttpRequest) -> Result<Vec<(&str, &str)>, ()> {
-    let mut headers = Vec::with_capacity(3);
-    for name in ["authorization", "dpop", "content-digest"] {
-        if let Some(value) = unique_request_header(req, name)? {
-            headers.push((name, value));
+impl CapturedHeader {
+    fn capture(req: &HttpRequest, name: &str) -> Self {
+        let mut values = req.headers().get_all(name);
+        let Some(value) = values.next() else {
+            return Self::Missing;
+        };
+        if values.next().is_some() {
+            return Self::Invalid;
+        }
+        match value.to_str() {
+            Ok(value) => Self::Unique(value.to_owned()),
+            Err(_) => Self::Invalid,
         }
     }
-    Ok(headers)
+
+    fn unique(&self) -> Result<Option<&str>, ()> {
+        match self {
+            Self::Missing => Ok(None),
+            Self::Unique(value) => Ok(Some(value)),
+            Self::Invalid => Err(()),
+        }
+    }
 }
 
-fn unique_request_header<'a>(req: &'a HttpRequest, name: &str) -> Result<Option<&'a str>, ()> {
-    let mut values = req.headers().get_all(name);
-    let Some(value) = values.next() else {
-        return Ok(None);
-    };
-    if values.next().is_some() {
-        return Err(());
+struct FapiOriginalRequest {
+    method: String,
+    target_uri: String,
+    body: Bytes,
+    authorization: CapturedHeader,
+    dpop: CapturedHeader,
+    content_digest: CapturedHeader,
+    signature_input: CapturedHeader,
+    signature: CapturedHeader,
+    captured_at: i64,
+}
+
+impl FapiOriginalRequest {
+    fn capture(issuer: &str, req: &HttpRequest, body: &Bytes) -> Self {
+        let target_uri = format!(
+            "{}{}",
+            issuer.trim_end_matches('/'),
+            req.uri()
+                .path_and_query()
+                .map(|value| value.as_str())
+                .unwrap_or(req.path())
+        );
+        Self {
+            method: req.method().as_str().to_owned(),
+            target_uri,
+            body: body.clone(),
+            authorization: CapturedHeader::capture(req, "authorization"),
+            dpop: CapturedHeader::capture(req, "dpop"),
+            content_digest: CapturedHeader::capture(req, "content-digest"),
+            signature_input: CapturedHeader::capture(req, "signature-input"),
+            signature: CapturedHeader::capture(req, "signature"),
+            captured_at: Utc::now().timestamp(),
+        }
     }
-    value.to_str().map(Some).map_err(|_| ())
+
+    fn signature_fields(&self) -> Result<SignatureFields, ()> {
+        match (self.signature_input.unique()?, self.signature.unique()?) {
+            (Some(signature_input), Some(signature)) => Ok(SignatureFields {
+                signature_input: signature_input.to_owned(),
+                signature: signature.to_owned(),
+            }),
+            _ => Err(()),
+        }
+    }
+
+    fn verification_headers(&self) -> Result<Vec<(&str, &str)>, ()> {
+        let mut headers = Vec::with_capacity(3);
+        for (name, captured) in [
+            ("authorization", &self.authorization),
+            ("dpop", &self.dpop),
+            ("content-digest", &self.content_digest),
+        ] {
+            if let Some(value) = captured.unique()? {
+                headers.push((name, value));
+            }
+        }
+        Ok(headers)
+    }
+
+    fn parse(&self, max_age_seconds: i64) -> Result<VerifiedInput, ()> {
+        let fields = self.signature_fields()?;
+        let headers = self.verification_headers()?;
+        parse_request_for_verification(
+            RequestInput {
+                method: &self.method,
+                target_uri: &self.target_uri,
+                headers: &headers,
+                body: &self.body,
+            },
+            fields,
+            VerificationPolicy {
+                now: self.captured_at,
+                max_age_seconds,
+                future_skew_seconds: FAPI_HTTP_SIGNATURE_FUTURE_SKEW_SECONDS,
+            },
+        )
+        .map_err(|_| ())
+    }
+
+    fn valid_digest(&self) -> Option<&str> {
+        let value = self.content_digest.unique().ok().flatten()?;
+        (!self.body.is_empty() && value == content_digest(&self.body)).then_some(value)
+    }
 }
 
 struct FapiResourceSignaturePolicy<'a> {
     tenant_id: Uuid,
     client_id: &'a str,
-    issuer: &'a str,
-    now: i64,
     max_age_seconds: i64,
 }
 
 fn verify_fapi_resource_http_signature(
     client: &ClientRow,
-    req: &HttpRequest,
-    body: &Bytes,
+    original: &FapiOriginalRequest,
     policy: FapiResourceSignaturePolicy<'_>,
 ) -> Result<VerifiedInput, ()> {
-    let fields = request_signature_fields_checked(req)?.ok_or(())?;
-    let headers = fapi_request_headers(req)?;
-    let target_uri = fapi_resource_target_uri(policy.issuer, req);
-    let verified = parse_request_for_verification(
-        RequestInput {
-            method: req.method().as_str(),
-            target_uri: &target_uri,
-            headers: &headers,
-            body,
-        },
-        fields,
-        VerificationPolicy {
-            now: policy.now,
-            max_age_seconds: policy.max_age_seconds,
-            future_skew_seconds: FAPI_HTTP_SIGNATURE_FUTURE_SKEW_SECONDS,
-        },
-    )
-    .map_err(|_| ())?;
+    let verified = original.parse(policy.max_age_seconds)?;
     verify_client_http_message(
         client,
         policy.tenant_id,
@@ -273,9 +390,7 @@ fn verify_fapi_resource_http_signature(
 
 async fn sign_fapi_resource_response(
     state: &AppState,
-    req: &HttpRequest,
-    request_body: &Bytes,
-    request_fields: Option<&SignatureFields>,
+    original: &FapiOriginalRequest,
     response: HttpResponse,
 ) -> HttpResponse {
     let status = response.status();
@@ -289,19 +404,17 @@ async fn sign_fapi_resource_response(
         .as_deref()
         .map(|value| vec![("content-digest", value)])
         .unwrap_or_default();
-    let request_headers = match fapi_request_headers(req) {
-        Ok(headers) => headers,
-        Err(()) => return HttpResponse::ServiceUnavailable().finish(),
-    };
-    let target_uri = fapi_resource_target_uri(&state.settings.issuer, req);
-    let original_body = if request_headers
-        .iter()
-        .any(|(name, _)| *name == "content-digest")
-    {
-        request_body.as_ref()
-    } else {
-        b""
-    };
+    let request_digest = original.valid_digest();
+    let request_headers = request_digest
+        .map(|digest| vec![("content-digest", digest)])
+        .unwrap_or_default();
+    let request_fields = original
+        .parse(state.settings.fapi_http_signature_max_age_seconds)
+        .ok()
+        .and_then(|_| original.signature_fields().ok());
+    let original_body = request_digest
+        .map(|_| original.body.as_ref())
+        .unwrap_or(b"");
     let keyset = state.keyset.snapshot();
     let signing = match prepare_response(
         ResponseInput {
@@ -311,12 +424,12 @@ async fn sign_fapi_resource_response(
         },
         OriginalRequest {
             input: RequestInput {
-                method: req.method().as_str(),
-                target_uri: &target_uri,
+                method: &original.method,
+                target_uri: &original.target_uri,
                 headers: &request_headers,
                 body: original_body,
             },
-            signature_fields: request_fields,
+            signature_fields: request_fields.as_ref(),
         },
         ResponsePolicy {
             created: Utc::now().timestamp(),
@@ -350,7 +463,7 @@ async fn sign_fapi_resource_response(
             && name.as_str() != "signature-input"
             && name.as_str() != "signature"
         {
-            builder.insert_header((name.clone(), value.clone()));
+            builder.append_header((name.clone(), value.clone()));
         }
     }
     if let Some(digest) = digest {
@@ -438,7 +551,7 @@ fn resource_access_token(
     let header_token = authorization_access_token(req.headers());
     let body_token = resource_form_body_access_token(req, body);
 
-    if http_signatures_enabled && matches!(body_token, ResourceFormBodyAccessToken::Present(_)) {
+    if http_signatures_enabled && !matches!(&body_token, ResourceFormBodyAccessToken::Missing) {
         return ResourceAccessToken::InvalidRequest;
     }
 
