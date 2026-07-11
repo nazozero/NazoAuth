@@ -1,6 +1,6 @@
 # OAuth, OAuth 2.1, OIDC, and FAPI Best-Practice Matrix — 10/10 Revision
 
-Last reviewed: 2026-06-30.
+Last reviewed: 2026-07-11.
 
 ## Scope
 
@@ -67,6 +67,7 @@ conditions:
 | FAPI 2.0 Security Profile | OIDF FAPI 2.0 Security Profile Final. | Confidential clients only, authenticated PAR, S256 PKCE, `code` response type, `redirect_uri` in PAR, sender-constrained access tokens via DPoP or mTLS, authorization-code lifetime <= 60 seconds, PAR `request_uri` `expires_in` < 600 seconds, issuer identification, strict JWT/JWKS policy, and DPoP nonce support. Requiring DPoP nonce is project hardening, not a base FAPI claim. | Advertise FAPI behavior only under the FAPI runtime profile and after conformance tests plus local negative tests remain green. |
 | FAPI 2.0 Message Signing | FAPI message-signing options for signed authorization requests, signed authorization responses, and signed or nested encrypted introspection responses. | Signed request object at PAR, JARM where selected, and RFC 9701 signed/nested encrypted introspection where the introspection profile is selected; no fallback to unsigned response after signing failure. | Advertise each message-signing option independently. Introspection JWT response metadata appears only under the signed-introspection runtime profile. |
 | Compatibility profile | Narrow support for legacy clients that cannot satisfy all modern controls. | Explicit per-client exceptions only; never for sender-constrained or FAPI clients. | Compatibility capabilities must not leak into high-security metadata. |
+| M8 emerging-protocol watchlist | Governance-only boundary for FAPI HTTP Signatures, RFC 9865/9967, browser-app guidance, client attestation, Transaction Tokens, Grant Management, and OpenID4VC. | No runtime profile. Candidate behavior remains absent until a separate product design, threat model, metadata gate, local negative tests, and conformance decision are complete. | Never advertise a watchlist item from discovery, registration, SCIM capability output, or README status. See the [2026-07-11 M8 review](../conformance/2026-07-11-m8-watchlist-governance.md). |
 
 ## Control Status
 
@@ -173,11 +174,12 @@ conditions:
 | OIDC Native SSO | Mobile app SSO using ID Token plus `device_secret`. | Implemented/profile-scoped/default-closed | Advertise only when `ENABLE_NATIVE_SSO=true`; bind `device_secret` to ID Token `ds_hash`/`sid`, validate refresh-family activity, and require destination clients to be explicitly scoped for `device_sso`. |
 | FAPI 2.0 Security Profile Final | Highest current practical server profile for high-value API access. | Implemented/profile-scoped | Keep conformance evidence and local negative tests aligned with runtime profile. Enforce authenticated PAR, `code`, S256 PKCE, `redirect_uri` in PAR, code lifetime <= 60 seconds, PAR `expires_in` < 600 seconds, FAPI client authentication, sender constraints, issuer metadata, JWT/JWKS rules, and authorization endpoint parameter restrictions. |
 | FAPI 2.0 Message Signing Final | Implement signed authorization requests, signed authorization responses, and signed or nested encrypted introspection as independent options layered on FAPI 2.0 Security Profile. | Implemented/profile-scoped | Keep each option independently gated: signed PAR request objects, JARM, and introspection JWT responses must only be advertised by the matching runtime profile. |
-| FAPI 2.0 HTTP Signatures draft | Draft-level advanced message integrity. | Deferred | Track maturity; do not implement until target ecosystem needs it. |
-| RFC 9865 / RFC 9967 SCIM extensions | Adjacent identity provisioning capabilities, not OAuth/OIDC/FAPI core. | Not advertised | Keep disabled capabilities explicit in SCIM docs and service provider config. |
+| FAPI 2.0 HTTP Signatures draft | OIDF working draft for RFC 9421/RFC 9530 resource request and response non-repudiation; separate from Message Signing Final. | Deferred/not implemented | Track OIDF maturity, conformance, resource/client key discovery, and evidence retention; do not advertise or treat current FAPI resource behavior as signed HTTP messages. |
+| RFC 9865 cursor pagination | Adjacent SCIM listing capability, not OAuth/OIDC/FAPI core. | Implemented/bounded | Index remains the default; forward cursor pages use opaque AES-256-GCM 600-second actor/tenant/filter/count-bound markers and deterministic `(created_at, id)` order. No `previousCursor` or OIDF certification is claimed. |
+| RFC 9967 SCIM SETs and asynchronous completion | Adjacent SCIM event-delivery and asynchronous-processing capability. | Deferred/not implemented | Keep `asyncRequest: none` and event URIs empty until a consumer, SET trust/delivery model, durable queue, replay policy, and retention owner exist. |
 | RFC 8725 | Governing JWT implementation BCP across ID Tokens, access-token JWTs, client assertions, request objects, JARM, DPoP proofs, and signed introspection. | Implemented/profile-scoped | Enforce explicit alg allowlists, key/alg binding, no `none`, full crypto validation, and cross-JWT confusion defenses. |
 | RFC 9325 / BCP 195 | Governing TLS deployment baseline. | External/profile-scoped | Prefer TLS 1.3; allow TLS 1.2 only with modern ciphers; forbid SSL/TLS legacy versions; use HSTS for browser-facing endpoints. |
-| OAuth 2.0 for Browser-Based Applications draft | Best-practice guidance for SPA/browser OAuth clients. | Profile-scoped | Prefer BFF/session architecture for first-party browser apps; if pure SPA is supported, enforce code+PKCE, no implicit, no token in authorization response, strict CORS, and safe refresh-token handling. |
+| OAuth 2.0 for Browser-Based Applications draft | BCP guidance for SPA/browser OAuth clients; draft 26 is in the RFC Editor queue without an RFC number on 2026-07-11. | External guidance/publication watch | Prefer BFF/session architecture for first-party browser apps; re-audit every AS requirement after RFC publication and do not invent a draft runtime profile. |
 
 ## Forbidden or Compatibility-Only Capabilities
 

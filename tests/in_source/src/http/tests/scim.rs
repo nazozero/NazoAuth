@@ -1,6 +1,6 @@
 use super::*;
 use diesel::sql_query;
-use diesel::sql_types::{BigInt, Nullable, Text, Uuid as SqlUuid};
+use diesel::sql_types::{BigInt, Jsonb, Nullable, Text, Timestamptz, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
 use std::sync::Arc;
 
@@ -231,6 +231,13 @@ fn scim_user_request_for_email(email: &str) -> ScimUserRequest {
 
 fn bearer_request(token: &str) -> HttpRequest {
     actix_web::test::TestRequest::default()
+        .insert_header((header::AUTHORIZATION, format!("Bearer {token}")))
+        .to_http_request()
+}
+
+fn bearer_request_uri(token: &str, uri: &str) -> HttpRequest {
+    actix_web::test::TestRequest::get()
+        .uri(uri)
         .insert_header((header::AUTHORIZATION, format!("Bearer {token}")))
         .to_http_request()
 }
@@ -593,11 +600,12 @@ async fn scim_service_provider_config_advertises_only_supported_capabilities() {
     assert_eq!(body["bulk"]["supported"], false);
     assert_eq!(body["filter"]["supported"], true);
     assert_eq!(body["filter"]["maxResults"], 200);
-    assert_eq!(body["pagination"]["cursor"], false);
+    assert_eq!(body["pagination"]["cursor"], true);
     assert_eq!(body["pagination"]["index"], true);
     assert_eq!(body["pagination"]["defaultPaginationMethod"], "index");
     assert_eq!(body["pagination"]["defaultPageSize"], 100);
     assert_eq!(body["pagination"]["maxPageSize"], 200);
+    assert_eq!(body["pagination"]["cursorTimeout"], 600);
     assert_eq!(body["securityEvents"]["asyncRequest"], "none");
     assert_eq!(body["securityEvents"]["eventUris"], json!([]));
     assert_eq!(body["authenticationSchemes"][0]["type"], "oauthbearertoken");
@@ -662,6 +670,115 @@ async fn scim_list_users_response_preserves_pagination_and_hides_internal_user_f
             "{forbidden} must not be exposed through SCIM user projection"
         );
     }
+}
+
+#[actix_web::test]
+async fn scim_pagination_selects_index_and_cursor_methods_without_changing_default() {
+    assert_eq!(
+        select_scim_pagination(&ScimListQuery {
+            start_index: None,
+            count: None,
+            filter: None,
+            cursor: None,
+        })
+        .expect("default pagination should select index"),
+        ScimPagination::Index {
+            start_index: 1,
+            count: SCIM_DEFAULT_PAGE_SIZE,
+        }
+    );
+    assert_eq!(
+        select_scim_pagination(&ScimListQuery {
+            start_index: Some(7),
+            count: Some(10),
+            filter: None,
+            cursor: None,
+        })
+        .expect("startIndex should select index"),
+        ScimPagination::Index {
+            start_index: 7,
+            count: 10,
+        }
+    );
+    assert_eq!(
+        select_scim_pagination(&ScimListQuery {
+            start_index: None,
+            count: Some(-1),
+            filter: None,
+            cursor: Some(String::new()),
+        })
+        .expect("empty cursor should select the first cursor page"),
+        ScimPagination::Cursor {
+            encoded: None,
+            count: 0,
+        }
+    );
+    assert_eq!(
+        select_scim_pagination(&ScimListQuery {
+            start_index: None,
+            count: Some(25),
+            filter: None,
+            cursor: Some("opaque".to_owned()),
+        })
+        .expect("non-empty cursor should select a later cursor page"),
+        ScimPagination::Cursor {
+            encoded: Some("opaque".to_owned()),
+            count: 25,
+        }
+    );
+}
+
+#[actix_web::test]
+async fn scim_pagination_rejects_mixed_methods_and_cursor_count_above_maximum() {
+    for (query, expected_type) in [
+        (
+            ScimListQuery {
+                start_index: Some(1),
+                count: Some(10),
+                filter: None,
+                cursor: Some(String::new()),
+            },
+            "invalidValue",
+        ),
+        (
+            ScimListQuery {
+                start_index: None,
+                count: Some(SCIM_MAX_PAGE_SIZE + 1),
+                filter: None,
+                cursor: Some(String::new()),
+            },
+            "invalidCount",
+        ),
+    ] {
+        let response = select_scim_pagination(&query).expect_err("query should be rejected");
+        let (status, body) = response_json(response).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["scimType"], expected_type);
+    }
+}
+
+#[actix_web::test]
+async fn scim_cursor_list_response_uses_cursor_attributes_only() {
+    let user = user_row(
+        uuid_fixture(0x66666666666666666666666666666666),
+        "cursor@example.test",
+    );
+    let (status, body) = response_json(scim_cursor_list_users_response(
+        10,
+        vec![user],
+        Some("opaque-next".to_owned()),
+    ))
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["totalResults"], 10);
+    assert_eq!(body["itemsPerPage"], 1);
+    assert_eq!(body["nextCursor"], "opaque-next");
+    assert!(body.get("startIndex").is_none());
+    assert!(body.get("previousCursor").is_none());
+
+    let (_, final_body) = response_json(scim_cursor_list_users_response(0, Vec::new(), None)).await;
+    assert!(final_body.get("nextCursor").is_none());
 }
 
 #[actix_web::test]
@@ -754,6 +871,57 @@ async fn scim_metadata_endpoints_accept_configured_legacy_bearer_token() {
 }
 
 #[actix_web::test]
+async fn scim_list_users_authenticates_before_parsing_malformed_query() {
+    let app = actix_web::test::init_service(
+        actix_web::App::new()
+            .app_data(Data::new(test_state_with_scim_bearer_token(Some(
+                "legacy-scim-secret",
+            ))))
+            .route("/Users", actix_web::web::get().to(scim_list_users)),
+    )
+    .await;
+    let request = actix_web::test::TestRequest::get()
+        .uri("/Users?cursor&count=not-a-number")
+        .to_request();
+
+    let response = actix_web::test::call_service(&app, request).await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let body: Value = actix_web::test::read_body_json(response).await;
+    assert_eq!(body["schemas"], json!([SCIM_ERROR_SCHEMA]));
+    assert_eq!(body["status"], "401");
+}
+
+#[actix_web::test]
+async fn scim_list_users_maps_malformed_and_duplicate_query_to_scim_errors() {
+    let app = actix_web::test::init_service(
+        actix_web::App::new()
+            .app_data(Data::new(test_state_with_scim_bearer_token(Some(
+                "legacy-scim-secret",
+            ))))
+            .route("/Users", actix_web::web::get().to(scim_list_users)),
+    )
+    .await;
+
+    for (query, expected_type) in [
+        ("cursor&count=not-a-number", "invalidCount"),
+        ("cursor&count=10&count=11", "invalidCount"),
+        ("cursor&cursor=again&count=10", "invalidCursor"),
+        ("cursor&startIndex=1&startIndex=2", "invalidValue"),
+        ("cursor&filter=a&filter=b", "invalidValue"),
+    ] {
+        let request = actix_web::test::TestRequest::get()
+            .uri(&format!("/Users?{query}"))
+            .insert_header((header::AUTHORIZATION, "Bearer legacy-scim-secret"))
+            .to_request();
+        let response = actix_web::test::call_service(&app, request).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{query}");
+        let body: Value = actix_web::test::read_body_json(response).await;
+        assert_eq!(body["schemas"], json!([SCIM_ERROR_SCHEMA]), "{query}");
+        assert_eq!(body["scimType"], expected_type, "{query}");
+    }
+}
+
+#[actix_web::test]
 async fn scim_list_users_rejects_invalid_filter_before_database_access() {
     let state = Data::new(test_state_with_scim_bearer_token(Some(
         "legacy-scim-secret",
@@ -761,13 +929,14 @@ async fn scim_list_users_rejects_invalid_filter_before_database_access() {
     let req = bearer_request("legacy-scim-secret");
 
     assert_scim_error_response(
-        scim_list_users(
+        scim_list_users_with_query(
             state,
             req,
             Query(ScimListQuery {
                 start_index: Some(1),
                 count: Some(10),
                 filter: Some(r#"email eq "user@example.test""#.to_owned()),
+                cursor: None,
             }),
         )
         .await,
@@ -776,6 +945,216 @@ async fn scim_list_users_rejects_invalid_filter_before_database_access() {
         "only userName filters are supported",
     )
     .await;
+}
+
+#[actix_web::test]
+async fn scim_cursor_validation_runs_after_auth_and_before_database_access() {
+    let state = Data::new(test_state_with_scim_bearer_token(Some(
+        "legacy-scim-secret",
+    )));
+    let req = bearer_request("legacy-scim-secret");
+
+    assert_scim_error_response(
+        scim_list_users_with_query(
+            state,
+            req,
+            Query(ScimListQuery {
+                start_index: None,
+                count: Some(10),
+                filter: None,
+                cursor: Some("not-a-valid-cursor".to_owned()),
+            }),
+        )
+        .await,
+        StatusCode::BAD_REQUEST,
+        "invalidCursor",
+        "invalid cursor",
+    )
+    .await;
+}
+
+#[actix_web::test]
+async fn scim_cursor_database_traverses_equal_timestamps_exactly_once() {
+    let schema = format!("scim_cursor_{}", Uuid::now_v7().simple());
+    let token = format!("legacy-scim-cursor-{}", Uuid::now_v7().simple());
+    let Some(state) = live_state_with_isolated_scim_bearer_token(&token, &schema, &["users"]).await
+    else {
+        return;
+    };
+    let req = bearer_request(&token);
+    let mut expected = Vec::new();
+    for index in 0..3 {
+        let email = format!("cursor-{index}-{}@example.test", Uuid::now_v7().simple());
+        expected.push(create_scim_user_id(state.clone(), &req, &email).await);
+    }
+    expected.sort();
+    let fixed_created_at = Utc::now() - Duration::minutes(5);
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    for user_id in &expected {
+        sql_query("UPDATE users SET created_at = $1 WHERE id = $2")
+            .bind::<Timestamptz, _>(fixed_created_at)
+            .bind::<SqlUuid, _>(*user_id)
+            .execute(&mut conn)
+            .await
+            .expect("cursor fixture timestamp should update");
+    }
+    drop(conn);
+
+    let (zero_status, zero_body) = response_json(
+        scim_list_users(
+            state.clone(),
+            bearer_request_uri(&token, "/scim/v2/Users?cursor&count=0"),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(zero_status, StatusCode::OK);
+    assert_eq!(zero_body["totalResults"], 3);
+    assert_eq!(zero_body["itemsPerPage"], 0);
+    assert!(zero_body["Resources"].as_array().unwrap().is_empty());
+    assert!(zero_body.get("nextCursor").is_none());
+
+    let (boundary_status, boundary_body) = response_json(
+        scim_list_users(
+            state.clone(),
+            bearer_request_uri(&token, "/scim/v2/Users?cursor&count=3"),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(boundary_status, StatusCode::OK);
+    assert_eq!(boundary_body["itemsPerPage"], 3);
+    assert!(boundary_body.get("nextCursor").is_none());
+
+    let mut cursor = String::new();
+    let mut collected = Vec::new();
+    loop {
+        let uri = if cursor.is_empty() {
+            "/scim/v2/Users?cursor&count=1".to_owned()
+        } else {
+            format!("/scim/v2/Users?cursor={cursor}&count=1")
+        };
+        let (status, body) =
+            response_json(scim_list_users(state.clone(), bearer_request_uri(&token, &uri)).await)
+                .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["totalResults"], 3);
+        assert_eq!(body["itemsPerPage"], 1);
+        assert!(body.get("startIndex").is_none());
+        assert!(body.get("previousCursor").is_none());
+        collected.push(
+            serde_json::from_value::<Uuid>(body["Resources"][0]["id"].clone())
+                .expect("cursor resource should include an id"),
+        );
+        let Some(next) = body.get("nextCursor").and_then(Value::as_str) else {
+            break;
+        };
+        if collected.len() == 1 {
+            assert_scim_error_response(
+                scim_list_users(
+                    state.clone(),
+                    bearer_request_uri(&token, &format!("/scim/v2/Users?cursor={next}&count=2")),
+                )
+                .await,
+                StatusCode::BAD_REQUEST,
+                "invalidCount",
+                "count does not match cursor",
+            )
+            .await;
+            assert_scim_error_response(
+                scim_list_users(
+                    state.clone(),
+                    bearer_request_uri(
+                        &token,
+                        &format!(
+                            "/scim/v2/Users?cursor={next}&count=1&filter=userName%20eq%20%22other%40example.test%22"
+                        ),
+                    ),
+                )
+                .await,
+                StatusCode::BAD_REQUEST,
+                "invalidCursor",
+                "invalid cursor",
+            )
+            .await;
+
+            let database_token = format!("cursor-database-{}", Uuid::now_v7().simple());
+            let database_token_id = Uuid::now_v7();
+            let mut conn = get_conn(&state.diesel_db)
+                .await
+                .expect("database connection should be available");
+            sql_query(
+                "INSERT INTO public.scim_tokens \
+                 (id, tenant_id, token_hash, label, scopes) \
+                 VALUES ($1, $2, $3, $4, $5)",
+            )
+            .bind::<SqlUuid, _>(database_token_id)
+            .bind::<SqlUuid, _>(default_tenant_context().tenant_id)
+            .bind::<Text, _>(blake3_hex(&database_token))
+            .bind::<Text, _>(format!("cursor-database-{database_token_id}"))
+            .bind::<Jsonb, _>(json!([SCIM_SCOPE_READ]))
+            .execute(&mut conn)
+            .await
+            .expect("database cursor credential should insert");
+            drop(conn);
+            assert_scim_error_response(
+                scim_list_users(
+                    state.clone(),
+                    bearer_request_uri(
+                        &database_token,
+                        &format!("/scim/v2/Users?cursor={next}&count=1"),
+                    ),
+                )
+                .await,
+                StatusCode::BAD_REQUEST,
+                "invalidCursor",
+                "invalid cursor",
+            )
+            .await;
+            let mut conn = get_conn(&state.diesel_db)
+                .await
+                .expect("database connection should be available");
+            sql_query("DELETE FROM public.scim_audit_events WHERE scim_token_id = $1")
+                .bind::<SqlUuid, _>(database_token_id)
+                .execute(&mut conn)
+                .await
+                .expect("database cursor audit fixture should clean up");
+            sql_query("DELETE FROM public.scim_tokens WHERE id = $1")
+                .bind::<SqlUuid, _>(database_token_id)
+                .execute(&mut conn)
+                .await
+                .expect("database cursor credential should clean up");
+            drop(conn);
+
+            let deleted_id = expected.remove(1);
+            let inserted_email =
+                format!("cursor-inserted-{}@example.test", Uuid::now_v7().simple());
+            let inserted_id = create_scim_user_id(state.clone(), &req, &inserted_email).await;
+            let mut conn = get_conn(&state.diesel_db)
+                .await
+                .expect("database connection should be available");
+            sql_query("DELETE FROM users WHERE id = $1")
+                .bind::<SqlUuid, _>(deleted_id)
+                .execute(&mut conn)
+                .await
+                .expect("concurrent cursor fixture deletion should succeed");
+            sql_query("UPDATE users SET created_at = $1 WHERE id = $2")
+                .bind::<Timestamptz, _>(fixed_created_at)
+                .bind::<SqlUuid, _>(inserted_id)
+                .execute(&mut conn)
+                .await
+                .expect("concurrent cursor fixture insertion should update");
+            drop(conn);
+            expected.push(inserted_id);
+            expected.sort();
+        }
+        cursor = next.to_owned();
+    }
+
+    cleanup_scim_schema(&state, &schema).await;
+    assert_eq!(collected, expected);
 }
 
 #[actix_web::test]
@@ -872,13 +1251,14 @@ async fn scim_read_endpoints_surface_backend_unavailable_after_legacy_auth() {
     let user_id = uuid_fixture(0x99999999999999999999999999999999);
 
     assert_scim_error_response(
-        scim_list_users(
+        scim_list_users_with_query(
             state.clone(),
             req.clone(),
             Query(ScimListQuery {
                 start_index: Some(1),
                 count: Some(10),
                 filter: Some(r#"userName eq "user@example.test""#.to_owned()),
+                cursor: None,
             }),
         )
         .await,
@@ -1000,13 +1380,14 @@ async fn scim_user_lifecycle_enforces_bearer_scope_identity_uniqueness_and_soft_
     .await;
 
     let (list_status, list) = response_json(
-        scim_list_users(
+        scim_list_users_with_query(
             state.clone(),
             req.clone(),
             Query(ScimListQuery {
                 start_index: Some(1),
                 count: Some(10),
                 filter: Some(format!(r#"userName eq "{email}""#)),
+                cursor: None,
             }),
         )
         .await,
@@ -1017,13 +1398,14 @@ async fn scim_user_lifecycle_enforces_bearer_scope_identity_uniqueness_and_soft_
     assert_eq!(list["Resources"][0]["id"], json!(user_id));
 
     let (empty_list_status, empty_list) = response_json(
-        scim_list_users(
+        scim_list_users_with_query(
             state.clone(),
             req.clone(),
             Query(ScimListQuery {
                 start_index: Some(1),
                 count: Some(0),
                 filter: Some(format!(r#"userName eq "{email}""#)),
+                cursor: None,
             }),
         )
         .await,
@@ -1158,13 +1540,14 @@ async fn scim_delete_is_a_soft_delete_and_keeps_resource_visible_as_inactive() {
     assert!(got.get("tenant_id").is_none());
 
     let (list_status, list) = response_json(
-        scim_list_users(
+        scim_list_users_with_query(
             state,
             req,
             Query(ScimListQuery {
                 start_index: Some(1),
                 count: Some(10),
                 filter: Some(format!(r#"userName eq "{email}""#)),
+                cursor: None,
             }),
         )
         .await,
@@ -1409,13 +1792,14 @@ async fn scim_patch_bulk_replace_updates_identity_profile_and_filter_projection(
     assert!(patched.get("tenant_id").is_none());
 
     let (list_status, list) = response_json(
-        scim_list_users(
+        scim_list_users_with_query(
             state,
             req,
             Query(ScimListQuery {
                 start_index: Some(1),
                 count: Some(10),
                 filter: Some(format!(r#"userName eq "{updated_email}""#)),
+                cursor: None,
             }),
         )
         .await,
@@ -1474,13 +1858,14 @@ async fn scim_user_endpoints_require_bearer_before_user_state_access() {
     };
 
     assert_missing_bearer_is_scim_unauthorized(
-        scim_list_users(
+        scim_list_users_with_query(
             state.clone(),
             req.clone(),
             Query(ScimListQuery {
                 start_index: Some(1),
                 count: Some(10),
                 filter: None,
+                cursor: None,
             }),
         )
         .await,
@@ -1550,13 +1935,14 @@ async fn scim_list_users_surfaces_backend_unavailable_when_projection_query_brea
     )
     .await;
 
-    let response = scim_list_users(
+    let response = scim_list_users_with_query(
         state.clone(),
         req,
         Query(ScimListQuery {
             start_index: Some(1),
             count: Some(10),
             filter: Some(format!(r#"userName eq "{email}""#)),
+            cursor: None,
         }),
     )
     .await;

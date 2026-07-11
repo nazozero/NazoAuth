@@ -290,3 +290,22 @@ Required negative tests:
 - wrong response issuer/audience
 - stale or revoked token reported active
 - top-level token subject/expiry confusion in the signed response
+
+## M8 emerging-protocol watchlist boundary
+
+M8 is not an authorization-server runtime profile. Completing its governance
+tasks does not add a profile name, endpoint, grant, authentication method,
+token type, SCIM capability, credential role, or discovery field.
+
+The dated [M8 governance review](../conformance/2026-07-11-m8-watchlist-governance.md)
+defines the admission and isolation requirements for FAPI HTTP Signatures,
+RFC 9865/9967, browser-based application guidance, client attestation,
+Transaction Tokens, Grant Management, and OpenID4VC. Until a candidate's
+separate implementation and negative tests complete, all existing baseline,
+FAPI2, Message Signing, CIBA, SCIM, and external-provider profile behavior must
+be byte-for-byte unaffected by selecting any existing runtime profile.
+
+RFC 9865 is the first admitted M8 candidate. Its completed implementation is
+limited to SCIM `/Users` listing and `/ServiceProviderConfig`; it is not an
+OAuth authorization-server profile and cannot change any profile selection or
+OAuth/OIDC/FAPI metadata.
