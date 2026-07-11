@@ -35,7 +35,7 @@ Standards status was checked against primary sources:
 - [OAuth 2.0 for Browser-Based Applications](https://datatracker.ietf.org/doc/draft-ietf-oauth-browser-based-apps/)
 - [OAuth 2.0 Attestation-Based Client Authentication](https://datatracker.ietf.org/doc/draft-ietf-oauth-attestation-based-client-auth/)
 - [Transaction Tokens](https://datatracker.ietf.org/doc/draft-ietf-oauth-transaction-tokens/)
-- [Grant Management for OAuth 2.0 draft 03](https://openid.net/specs/oauth-v2-grant-management.html)
+- [Grant Management for OAuth 2.0 draft 03](https://openid.bitbucket.io/fapi/oauth-v2-grant-management.html)
 - [OpenID4VCI 1.0 Final](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html)
 - [OpenID4VP 1.0 Final](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html)
 
