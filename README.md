@@ -107,6 +107,11 @@ Other protocol surfaces:
 | SCIM 2.0 provisioning with [RFC 9865](https://www.rfc-editor.org/rfc/rfc9865) / [RFC 9967](https://www.rfc-editor.org/rfc/rfc9967) capability discovery | default-tenant user provisioning; index pagination is advertised, cursor pagination and SCIM Security Events are explicitly disabled |
 | WebAuthn | passkey registration and login |
 
+Emerging protocols are tracked through the
+[M8 watchlist governance review](docs/conformance/2026-07-11-m8-watchlist-governance.md).
+That review records product and conformance entry gates; it does not claim
+runtime support for the deferred candidates.
+
 ## Certification
 
 Nazo Auth Server is listed by the OpenID Foundation as

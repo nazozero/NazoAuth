@@ -109,6 +109,7 @@ set can be scanned from one place.
 | [conformance/2026-07-03-ni-006-011-official-parallel-isolated-oidf-results.md](conformance/2026-07-03-ni-006-011-official-parallel-isolated-oidf-results.md) | NI-006 through NI-011 official parallel-isolated results. |
 | [conformance/2026-07-03-ni-007-public-ciba-oidf-results.md](conformance/2026-07-03-ni-007-public-ciba-oidf-results.md) | NI-007 public FAPI-CIBA results. |
 | [conformance/2026-07-08-m2-official-parallel-isolated-oidf-results.md](conformance/2026-07-08-m2-official-parallel-isolated-oidf-results.md) | M2 official parallel-isolated OIDF results. |
+| [conformance/2026-07-11-m8-watchlist-governance.md](conformance/2026-07-11-m8-watchlist-governance.md) | M8 product, standards/conformance, and security-entry decisions; no candidate runtime-support claim. |
 
 ### Coverage
 
