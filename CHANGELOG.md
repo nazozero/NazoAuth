@@ -26,6 +26,10 @@ semantic versioning once public release tags are cut.
 
 ### Changed
 
+- Completed the M8 emerging-protocol governance review with dated product,
+  standards/conformance, local-test, and security-isolation decisions. This
+  documentation change adds no candidate runtime capability or certification
+  claim.
 - Changed the project license metadata to AGPL-3.0-or-later and added the top-level
   license text.
 - Reworked `README.md` and `README.zh-CN.md` into project-level entry points for scope,

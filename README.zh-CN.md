@@ -96,6 +96,9 @@ OpenID Foundation：
 | SCIM 2.0 provisioning，包含 [RFC 9865](https://www.rfc-editor.org/rfc/rfc9865) / [RFC 9967](https://www.rfc-editor.org/rfc/rfc9967) 能力发现 | 默认 tenant 的 user provisioning；声明使用 index pagination，明确关闭 cursor pagination 和 SCIM Security Events |
 | WebAuthn | passkey 注册和登录 |
 
+新兴协议由 [M8 watchlist 治理审计](docs/conformance/2026-07-11-m8-watchlist-governance.md)
+跟踪。该记录完成产品与 conformance 准入门禁，不表示 deferred 候选项已经获得运行时支持。
+
 ## 认证
 
 Nazo Auth Server 已列入 OpenID Foundation 认证列表，名称为

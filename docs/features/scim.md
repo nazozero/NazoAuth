@@ -71,8 +71,9 @@ boundary explicitly:
 
 - RFC 9865 cursor pagination is not supported; index pagination is the default.
 - The default page size is 100 and the maximum page size is 200.
-- RFC 9967 asynchronous SCIM requests and SCIM Security Events are not supported;
-  `securityEvents.asyncRequest` is `none` and `eventUris` is empty.
+- RFC 9967 SCIM Security Event Tokens, event feeds, and asynchronous completion
+  events are not supported; `securityEvents.asyncRequest` is `none` and
+  `eventUris` is empty.
 
 PATCH supports `replace` for:
 
