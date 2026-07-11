@@ -15,13 +15,75 @@ use schema::*;
 const SCIM_DEFAULT_PAGE_SIZE: i64 = 100;
 const SCIM_MAX_PAGE_SIZE: i64 = 200;
 
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 pub(crate) struct ScimListQuery {
     #[serde(rename = "startIndex")]
     start_index: Option<i64>,
     count: Option<i64>,
     filter: Option<String>,
     cursor: Option<String>,
+}
+
+fn parse_scim_list_query(raw_query: &str) -> Result<ScimListQuery, HttpResponse> {
+    let mut query = ScimListQuery::default();
+    for (name, value) in url::form_urlencoded::parse(raw_query.as_bytes()) {
+        match name.as_ref() {
+            "startIndex" => {
+                if query.start_index.is_some() {
+                    return Err(scim_error(
+                        StatusCode::BAD_REQUEST,
+                        "invalidValue",
+                        "startIndex must not be repeated",
+                    ));
+                }
+                query.start_index = Some(value.parse().map_err(|_| {
+                    scim_error(
+                        StatusCode::BAD_REQUEST,
+                        "invalidValue",
+                        "startIndex must be an integer",
+                    )
+                })?);
+            }
+            "count" => {
+                if query.count.is_some() {
+                    return Err(scim_error(
+                        StatusCode::BAD_REQUEST,
+                        "invalidCount",
+                        "count must not be repeated",
+                    ));
+                }
+                query.count = Some(value.parse().map_err(|_| {
+                    scim_error(
+                        StatusCode::BAD_REQUEST,
+                        "invalidCount",
+                        "count must be an integer",
+                    )
+                })?);
+            }
+            "filter" => {
+                if query.filter.is_some() {
+                    return Err(scim_error(
+                        StatusCode::BAD_REQUEST,
+                        "invalidValue",
+                        "filter must not be repeated",
+                    ));
+                }
+                query.filter = Some(value.into_owned());
+            }
+            "cursor" => {
+                if query.cursor.is_some() {
+                    return Err(scim_error(
+                        StatusCode::BAD_REQUEST,
+                        "invalidCursor",
+                        "cursor must not be repeated",
+                    ));
+                }
+                query.cursor = Some(value.into_owned());
+            }
+            _ => {}
+        }
+    }
+    Ok(query)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -143,7 +205,20 @@ fn scim_resource_types_response() -> HttpResponse {
     })))
 }
 
-pub(crate) async fn scim_list_users(
+pub(crate) async fn scim_list_users(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
+    let credential = match require_scim_bearer(&state, &req, ScimRequiredScope::Read).await {
+        Ok(credential) => credential,
+        Err(response) => return response,
+    };
+    let query = match parse_scim_list_query(req.query_string()) {
+        Ok(query) => query,
+        Err(response) => return response,
+    };
+    scim_list_users_authorized(state, query, credential).await
+}
+
+#[cfg(test)]
+async fn scim_list_users_with_query(
     state: Data<AppState>,
     req: HttpRequest,
     Query(query): Query<ScimListQuery>,
@@ -152,6 +227,14 @@ pub(crate) async fn scim_list_users(
         Ok(credential) => credential,
         Err(response) => return response,
     };
+    scim_list_users_authorized(state, query, credential).await
+}
+
+async fn scim_list_users_authorized(
+    state: Data<AppState>,
+    query: ScimListQuery,
+    credential: ScimCredential,
+) -> HttpResponse {
     let pagination = match select_scim_pagination(&query) {
         Ok(pagination) => pagination,
         Err(response) => return response,
