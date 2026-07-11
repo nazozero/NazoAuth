@@ -1413,7 +1413,7 @@ def run() -> None:
             headers={
                 "Origin": E2E_CORS_ORIGIN,
                 "Access-Control-Request-Method": "POST",
-                "Access-Control-Request-Headers": "authorization,content-type,dpop,x-csrf-token",
+                "Access-Control-Request-Headers": "authorization,content-type,dpop",
             },
             timeout=10,
         )
@@ -1421,6 +1421,21 @@ def run() -> None:
         check(
             "CORS allow origin",
             cors.headers.get("access-control-allow-origin") == E2E_CORS_ORIGIN,
+        )
+        cors_csrf = anonymous.options(
+            f"{BASE_URL}/token",
+            headers={
+                "Origin": E2E_CORS_ORIGIN,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "x-csrf-token",
+            },
+            timeout=10,
+        )
+        check(
+            "OPTIONS /token rejects CSRF header",
+            cors_csrf.status_code >= 400
+            and "access-control-allow-origin" not in cors_csrf.headers,
+            {"status": cors_csrf.status_code, "headers": dict(cors_csrf.headers)},
         )
         cors_actual = anonymous.get(
             f"{BASE_URL}/health",
