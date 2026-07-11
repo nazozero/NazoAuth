@@ -407,7 +407,12 @@ M8 的完成表示三项进入实现路线的治理门禁已经审计并形成
 SCIM forward cursor pagination 的本地实现与负向测试；OpenID4VCI / OpenID4VP
 需要单独产品立项。Browser-Based Applications draft-27 已完成预发布安全审计，
 NazoAuthWeb 保持授权服务器同源前端与 server-managed session 边界（不是 BFF），第三方浏览器应用保持 public code + S256
-PKCE；最终 RFC 发布后仍必须执行差异审计。其余候选项继续 deferred，直到各自证据记录中的 re-entry 条件满足。
+PKCE；最终 RFC 发布后仍必须执行差异审计。FAPI HTTP Signatures 也已作为第二个
+bounded candidate 完成 M8-01/02/03：仅在 `ENABLE_FAPI_HTTP_SIGNATURES=true`
+时约束 `/fapi/resource`，默认关闭、不发布 metadata，并以 2026-06-26 working
+draft、RFC 9421/RFC 9530 Rust 向量和真实 HTTP 正负矩阵作为本地证据。OIDF suite
+当前没有专用计划，因此不能表述为认证；草案或 Final Specification 更新时必须重新执行
+delta audit。其他候选项继续 deferred，直到各自证据记录中的 re-entry 条件满足。
 
 ## 当前状态摘要
 

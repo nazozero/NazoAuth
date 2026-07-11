@@ -184,9 +184,11 @@ fn feature_and_polling_settings_are_in_the_canonical_key_set() {
         "DEVICE_AUTHORIZATION_TTL_SECONDS",
         "ENABLE_CIBA",
         "ENABLE_DEVICE_AUTHORIZATION_GRANT",
+        "ENABLE_FAPI_HTTP_SIGNATURES",
         "ENABLE_FRONTCHANNEL_LOGOUT",
         "ENABLE_NATIVE_SSO",
         "ENABLE_SESSION_MANAGEMENT",
+        "FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS",
         "PERF_METRICS_ENABLED",
     ] {
         assert!(ENV_CONFIG_KEYS.contains(&key), "missing config key {key}");
