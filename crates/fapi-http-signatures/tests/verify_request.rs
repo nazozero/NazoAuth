@@ -161,6 +161,26 @@ fn rejects_missing_digest_coverage() {
 }
 
 #[test]
+fn rejects_a_non_empty_body_without_an_actual_content_digest_header() {
+    let (_, fields) = fixture();
+    let no_digest = [("Authorization", "DPoP opaque"), ("DPoP", "opaque-proof")];
+    assert_eq!(
+        parse_request_for_verification(
+            request(
+                "POST",
+                "https://api.example/fapi/resource",
+                &no_digest,
+                BODY,
+            ),
+            fields,
+            policy(),
+        )
+        .unwrap_err(),
+        VerifyError::DigestMismatch
+    );
+}
+
+#[test]
 fn rejects_stale_created_time() {
     let (_, fields) = fixture();
     assert_eq!(
@@ -205,11 +225,71 @@ fn rejects_created_too_far_in_the_future() {
 }
 
 #[test]
+fn accepts_created_at_the_exact_max_age_boundary() {
+    let (_, fields) = fixture();
+    let parsed = parse_request_for_verification(
+        request(
+            "POST",
+            "https://api.example/fapi/resource",
+            &headers(),
+            BODY,
+        ),
+        fields,
+        VerificationPolicy {
+            now: CREATED + 60,
+            ..policy()
+        },
+    )
+    .unwrap();
+    assert_eq!(parsed.created(), CREATED);
+}
+
+#[test]
+fn accepts_created_at_the_exact_future_skew_boundary() {
+    let (_, fields) = fixture();
+    let parsed = parse_request_for_verification(
+        request(
+            "POST",
+            "https://api.example/fapi/resource",
+            &headers(),
+            BODY,
+        ),
+        fields,
+        VerificationPolicy {
+            now: CREATED - 5,
+            ..policy()
+        },
+    )
+    .unwrap();
+    assert_eq!(parsed.created(), CREATED);
+}
+
+#[test]
 fn rejects_expires_before_created() {
     let (_, mut fields) = fixture();
     fields.signature_input = fields.signature_input.replace(
         ";created=1720000000",
         ";created=1720000000;expires=1719999999",
+    );
+    assert_eq!(parse(fields).unwrap_err(), VerifyError::InvalidCreated);
+}
+
+#[test]
+fn accepts_expires_at_the_exact_current_time_boundary() {
+    let (_, mut fields) = fixture();
+    fields.signature_input = fields.signature_input.replace(
+        ";created=1720000000",
+        ";created=1720000000;expires=1720000030",
+    );
+    assert!(parse(fields).is_ok());
+}
+
+#[test]
+fn rejects_expires_one_second_before_current_time() {
+    let (_, mut fields) = fixture();
+    fields.signature_input = fields.signature_input.replace(
+        ";created=1720000000",
+        ";created=1720000000;expires=1720000029",
     );
     assert_eq!(parse(fields).unwrap_err(), VerifyError::InvalidCreated);
 }
@@ -241,6 +321,116 @@ fn rejects_wrong_content_digest() {
                 "POST",
                 "https://api.example/fapi/resource",
                 &wrong_headers,
+                BODY,
+            ),
+            fields,
+            policy(),
+        )
+        .unwrap_err(),
+        VerifyError::DigestMismatch
+    );
+}
+
+#[test]
+fn accepts_an_rfc_9530_digest_dictionary_with_other_algorithms_and_ows() {
+    let (_, fields) = fixture();
+    let varied_headers = [
+        ("Authorization", "DPoP opaque"),
+        ("DPoP", "opaque-proof"),
+        (
+            "Content-Digest",
+            "sha-512=:AA==: ,  sha-256=:qLiLgv6QoWBI64hR/jgkBTlc05Xa+qfKm+kOwA+Cpys=:",
+        ),
+    ];
+    let parsed = parse_request_for_verification(
+        request(
+            "POST",
+            "https://api.example/fapi/resource",
+            &varied_headers,
+            BODY,
+        ),
+        fields,
+        policy(),
+    )
+    .unwrap();
+    assert!(
+        std::str::from_utf8(parsed.signature_base())
+            .unwrap()
+            .contains("sha-512=:AA==: ,  sha-256=:qLiLgv6Q")
+    );
+}
+
+#[test]
+fn rejects_duplicate_raw_sha_256_digest_members() {
+    let (_, fields) = fixture();
+    let duplicate_headers = [
+        ("Authorization", "DPoP opaque"),
+        ("DPoP", "opaque-proof"),
+        (
+            "Content-Digest",
+            concat!(
+                "sha-256=:qLiLgv6QoWBI64hR/jgkBTlc05Xa+qfKm+kOwA+Cpys=:, ",
+                "sha-256=:qLiLgv6QoWBI64hR/jgkBTlc05Xa+qfKm+kOwA+Cpys=:"
+            ),
+        ),
+    ];
+    assert_eq!(
+        parse_request_for_verification(
+            request(
+                "POST",
+                "https://api.example/fapi/resource",
+                &duplicate_headers,
+                BODY,
+            ),
+            fields,
+            policy(),
+        )
+        .unwrap_err(),
+        VerifyError::DigestMismatch
+    );
+}
+
+#[test]
+fn rejects_a_sha_256_digest_member_with_the_wrong_sfv_type() {
+    let (_, fields) = fixture();
+    let wrong_type_headers = [
+        ("Authorization", "DPoP opaque"),
+        ("DPoP", "opaque-proof"),
+        (
+            "Content-Digest",
+            "sha-256=\"qLiLgv6QoWBI64hR/jgkBTlc05Xa+qfKm+kOwA+Cpys=\"",
+        ),
+    ];
+    assert_eq!(
+        parse_request_for_verification(
+            request(
+                "POST",
+                "https://api.example/fapi/resource",
+                &wrong_type_headers,
+                BODY,
+            ),
+            fields,
+            policy(),
+        )
+        .unwrap_err(),
+        VerifyError::DigestMismatch
+    );
+}
+
+#[test]
+fn rejects_a_sha_256_digest_that_is_not_exactly_32_bytes() {
+    let (_, fields) = fixture();
+    let short_digest_headers = [
+        ("Authorization", "DPoP opaque"),
+        ("DPoP", "opaque-proof"),
+        ("Content-Digest", "sha-256=:AA==:"),
+    ];
+    assert_eq!(
+        parse_request_for_verification(
+            request(
+                "POST",
+                "https://api.example/fapi/resource",
+                &short_digest_headers,
                 BODY,
             ),
             fields,
@@ -321,6 +511,34 @@ fn reconstructs_a_different_base_for_an_altered_dpop_proof() {
 }
 
 #[test]
+fn rejects_reordered_covered_components() {
+    let (_, mut fields) = fixture();
+    fields.signature_input = fields.signature_input.replace(
+        "(\"@method\" \"@target-uri\"",
+        "(\"@target-uri\" \"@method\"",
+    );
+    assert_eq!(parse(fields).unwrap_err(), VerifyError::MissingComponent);
+}
+
+#[test]
+fn rejects_duplicated_covered_components() {
+    let (_, mut fields) = fixture();
+    fields.signature_input = fields
+        .signature_input
+        .replace("(\"@method\"", "(\"@method\" \"@method\"");
+    assert_eq!(parse(fields).unwrap_err(), VerifyError::MissingComponent);
+}
+
+#[test]
+fn rejects_extra_covered_components() {
+    let (_, mut fields) = fixture();
+    fields.signature_input = fields
+        .signature_input
+        .replace(" \"content-digest\")", " \"content-digest\" \"x-extra\")");
+    assert_eq!(parse(fields).unwrap_err(), VerifyError::MissingComponent);
+}
+
+#[test]
 fn replay_fingerprint_changes_with_authenticated_request_context() {
     let (_, first_fields) = fixture();
     let first = parse(first_fields).unwrap();
@@ -389,6 +607,25 @@ fn rejects_unknown_algorithm() {
         parse(fields).unwrap_err(),
         VerifyError::UnsupportedAlgorithm
     );
+}
+
+#[test]
+fn verified_input_debug_output_is_fully_redacted() {
+    let (_, fields) = fixture();
+    let parsed = parse(fields).unwrap();
+    let debug = format!("{parsed:?}");
+
+    assert_eq!(debug, "VerifiedInput { .. }");
+    for sensitive in [
+        "client-ed25519",
+        "opaque",
+        "api.example",
+        "222",
+        "sha-256",
+        "authorization",
+    ] {
+        assert!(!debug.contains(sensitive));
+    }
 }
 
 #[test]

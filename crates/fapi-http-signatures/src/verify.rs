@@ -1,10 +1,11 @@
-use sfv::{BareItem, Dictionary, FieldType, InnerList, ListEntry, Parser};
+use std::fmt;
+
+use sfv::{BareItem, Dictionary, FieldType, InnerList, ListEntry, Parser, Version};
 use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
 use url::Url;
 
-use crate::{
-    RequestInput, RequestPolicy, SignatureFields, VerifyError, content_digest, prepare_request,
-};
+use crate::{RequestInput, RequestPolicy, SignatureFields, VerifyError, prepare_request};
 
 const REQUEST_TAG: &str = "fapi-2-request";
 
@@ -15,7 +16,6 @@ pub struct VerificationPolicy {
     pub future_skew_seconds: i64,
 }
 
-#[derive(Debug)]
 pub struct VerifiedInput {
     signature_base: Vec<u8>,
     signature: Vec<u8>,
@@ -23,6 +23,12 @@ pub struct VerifiedInput {
     algorithm: String,
     created: i64,
     replay_fingerprint: [u8; 32],
+}
+
+impl fmt::Debug for VerifiedInput {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("VerifiedInput { .. }")
+    }
 }
 
 impl VerifiedInput {
@@ -107,15 +113,21 @@ pub fn parse_request_for_verification(
     }
     validate_parameters(params)?;
     validate_time(params, created, policy)?;
-    validate_digest(&input)?;
+    let supplied_digest = validate_digest(&input)?;
 
     let authorization =
         unique_header(input.headers, "authorization").ok_or(VerifyError::MissingComponent)?;
+    let headers_without_digest = input
+        .headers
+        .iter()
+        .copied()
+        .filter(|(name, _)| !name.eq_ignore_ascii_case("content-digest"))
+        .collect::<Vec<_>>();
     let prepared = prepare_request(
         RequestInput {
             method: input.method,
             target_uri: input.target_uri,
-            headers: input.headers,
+            headers: &headers_without_digest,
             body: input.body,
         },
         RequestPolicy {
@@ -144,6 +156,9 @@ pub fn parse_request_for_verification(
         .and_then(|value| value.strip_prefix('='))
         .ok_or(VerifyError::MalformedSignature)?;
     let mut signature_base = prepared.signature_base().to_vec();
+    if let Some(supplied_digest) = supplied_digest {
+        replace_content_digest(&mut signature_base, supplied_digest)?;
+    }
     let parameter_offset = signature_base
         .windows(b"\"@signature-params\": ".len())
         .position(|window| window == b"\"@signature-params\": ")
@@ -262,18 +277,49 @@ fn validate_time(
     Ok(())
 }
 
-fn validate_digest(input: &RequestInput<'_>) -> Result<(), VerifyError> {
+fn validate_digest<'a>(input: &'a RequestInput<'_>) -> Result<Option<&'a str>, VerifyError> {
     let supplied = unique_header(input.headers, "content-digest");
-    let computed = (!input.body.is_empty()).then(|| content_digest(input.body));
-    match (supplied, computed.as_deref()) {
-        (None, None) | (None, Some(_)) => Ok(()),
-        (Some(supplied), Some(computed))
-            if constant_time_eq(supplied.as_bytes(), computed.as_bytes()) =>
-        {
-            Ok(())
-        }
-        _ => Err(VerifyError::DigestMismatch),
+    if input.body.is_empty() {
+        return supplied
+            .is_none()
+            .then_some(None)
+            .ok_or(VerifyError::DigestMismatch);
     }
+    let supplied = supplied.ok_or(VerifyError::DigestMismatch)?;
+    let dictionary: Dictionary = Parser::new(supplied)
+        .with_version(Version::Rfc8941)
+        .parse()
+        .map_err(|_| VerifyError::DigestMismatch)?;
+    if top_level_member_count(supplied) != dictionary.len()
+        || raw_dictionary_key_count(supplied, "sha-256") != 1
+    {
+        return Err(VerifyError::DigestMismatch);
+    }
+    for entry in dictionary.values() {
+        if !matches!(
+            entry,
+            ListEntry::Item(item)
+                if item.params.is_empty()
+                    && matches!(item.bare_item, BareItem::ByteSequence(_))
+        ) {
+            return Err(VerifyError::DigestMismatch);
+        }
+    }
+    let digest: [u8; 32] = match dictionary.get("sha-256") {
+        Some(ListEntry::Item(item)) => match &item.bare_item {
+            BareItem::ByteSequence(bytes) => bytes
+                .as_slice()
+                .try_into()
+                .map_err(|_| VerifyError::DigestMismatch)?,
+            _ => return Err(VerifyError::DigestMismatch),
+        },
+        _ => return Err(VerifyError::DigestMismatch),
+    };
+    let computed: [u8; 32] = Sha256::digest(input.body).into();
+    if !bool::from(digest.ct_eq(&computed)) {
+        return Err(VerifyError::DigestMismatch);
+    }
+    Ok(Some(supplied))
 }
 
 fn unique_header<'a>(headers: &'a [(&str, &'a str)], wanted: &str) -> Option<&'a str> {
@@ -285,15 +331,36 @@ fn unique_header<'a>(headers: &'a [(&str, &'a str)], wanted: &str) -> Option<&'a
     values.next().is_none().then_some(first)
 }
 
-fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
-    let mut difference = left.len() ^ right.len();
-    let length = left.len().max(right.len());
-    for index in 0..length {
-        difference |= usize::from(
-            left.get(index).copied().unwrap_or(0) ^ right.get(index).copied().unwrap_or(0),
-        );
-    }
-    difference == 0
+fn raw_dictionary_key_count(field: &str, wanted: &str) -> usize {
+    field
+        .split(',')
+        .filter_map(|member| {
+            member
+                .trim_start()
+                .split_once(['=', ';'])
+                .map(|(key, _)| key)
+                .or_else(|| Some(member.trim()))
+        })
+        .filter(|key| *key == wanted)
+        .count()
+}
+
+fn replace_content_digest(
+    signature_base: &mut Vec<u8>,
+    supplied_digest: &str,
+) -> Result<(), VerifyError> {
+    let base = std::str::from_utf8(signature_base).map_err(|_| VerifyError::MalformedSignature)?;
+    let prefix = "\"content-digest\": ";
+    let value_start = base.find(prefix).ok_or(VerifyError::MissingComponent)? + prefix.len();
+    let value_end = base[value_start..]
+        .find('\n')
+        .map(|offset| value_start + offset)
+        .ok_or(VerifyError::MalformedSignature)?;
+    signature_base.splice(
+        value_start..value_end,
+        supplied_digest.trim_matches([' ', '\t']).bytes(),
+    );
+    Ok(())
 }
 
 fn top_level_member_count(field: &str) -> usize {

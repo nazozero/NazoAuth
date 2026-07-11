@@ -8,6 +8,7 @@ license = "AGPL-3.0-or-later"
 httpsig = "0.0.24"
 sfv = "0.15.0"
 sha2 = "0.11.0"
+subtle = "2.6.1"
 thiserror = "2.0.17"
 url = "2.5.8"
 
