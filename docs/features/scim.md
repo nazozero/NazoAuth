@@ -77,6 +77,9 @@ only `userName eq "email@example.com"` filters.
 - Each cursor is bound to the SCIM credential, tenant, exact filter, effective
   count, ordering policy, and last row. Every page repeats bearer, scope, and
   tenant authorization.
+- Bearer authorization runs before raw query parsing. Malformed or duplicate
+  pagination fields therefore retain the SCIM error envelope instead of being
+  rejected by the framework's generic query extractor.
 - Invalid or substituted cursors use `invalidCursor`, authenticated expired
   cursors use `expiredCursor`, and count changes use `invalidCount`.
 - Results are a live ordered set rather than a database snapshot: later inserts

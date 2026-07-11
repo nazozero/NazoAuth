@@ -5,8 +5,9 @@ Date: 2026-07-11
 ## Scope and conclusion
 
 This record completes the product, standards/conformance, and security-entry
-gates in roadmap tasks M8-01 through M8-03. It does **not** claim that the
-reviewed protocols are implemented or certified.
+gates in roadmap tasks M8-01 through M8-03. The governance review itself added
+no runtime capability or certification claim. RFC 9865 was then implemented in
+a separately approved, designed, and verified follow-up recorded below.
 
 The review produced these decisions:
 
@@ -145,11 +146,14 @@ parameters, maximum page size, capability truth, and unchanged write/auth rules.
 pagination. AES-256-GCM cursors expire after 600 seconds and bind credential,
 tenant, exact filter, effective count, ordering policy, and the last
 `(created_at, id)` row. Local evidence covers codec tampering and context
-binding, handler errors, metadata truth, authorization-before-decoding, SCIM
-regression, and a PostgreSQL isolated-schema traversal test. The database test
-is compiled everywhere and runs when `DATABASE_URL` is available. No RFC
-9865-specific OIDF plan was found in the inspected suite revision, so this is
-not an OIDF certification claim.
+binding, handler errors, authentication before raw-query parsing, malformed and
+duplicate parameter mapping, metadata truth, SCIM regression, and a PostgreSQL
+isolated-schema traversal test. The database test exercises equal timestamps,
+zero/exact-boundary pages, filter/count/credential substitution, and concurrent
+insert/delete behavior. It was executed locally against PostgreSQL 18 on
+2026-07-11, and the non-skippable CI library-test gate supplies `DATABASE_URL`.
+No RFC 9865-specific OIDF plan was found in the inspected suite revision, so
+this is not an OIDF certification claim.
 
 ### RFC 9967 SCIM Security Event Tokens and asynchronous completion
 
