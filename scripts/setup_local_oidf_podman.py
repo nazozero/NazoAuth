@@ -1400,9 +1400,29 @@ def write_all_plan_configs() -> None:
     configs.update(write_fapi_ciba_plan_config())
     configs.update(write_fapi_matrix_plan_configs())
     plan_set = plan_expressions_for_configs(configs)
+    concurrent, frontchannel, session = partition_plan_expressions(plan_set)
+    if len(frontchannel) != 1 or len(session) != 1:
+        raise RuntimeError(
+            "OIDF full matrix must contain exactly one front-channel and one session-management plan"
+        )
     plan_manifest = plan_manifest_for_expressions(plan_set, configs)
     write_text(RUNTIME / "oidf-plan-configs.json", json.dumps({"configs": configs}, indent=2) + "\n", 0o600)
     write_text(RUNTIME / "oidf-plan-set.json", json.dumps(plan_set, indent=2) + "\n", 0o600)
+    write_text(
+        RUNTIME / "oidf-plan-set-concurrent.json",
+        json.dumps(concurrent, indent=2) + "\n",
+        0o600,
+    )
+    write_text(
+        RUNTIME / "oidf-plan-set-frontchannel.json",
+        json.dumps(frontchannel, indent=2) + "\n",
+        0o600,
+    )
+    write_text(
+        RUNTIME / "oidf-plan-set-session.json",
+        json.dumps(session, indent=2) + "\n",
+        0o600,
+    )
     write_text(RUNTIME / "oidf-plan-set-manifest.json", json.dumps(plan_manifest, indent=2) + "\n", 0o600)
     write_text(
         RUNTIME / "oidf-local.env",
@@ -1492,6 +1512,26 @@ def plan_expressions_for_configs(configs: dict[str, dict[str, object]]) -> list[
             variants.append(f"openid={nazo['openid']}")
             expressions.append(f"{plan_kind}[{']['.join(variants)}] {name}")
     return expressions
+
+
+def partition_plan_expressions(
+    expressions: list[str],
+) -> tuple[list[str], list[str], list[str]]:
+    frontchannel = [
+        expression
+        for expression in expressions
+        if "frontchannel-rp-initiated-logout" in expression
+    ]
+    session = [
+        expression
+        for expression in expressions
+        if "session-management-certification-test-plan" in expression
+    ]
+    browser_sensitive = set(frontchannel + session)
+    concurrent = [
+        expression for expression in expressions if expression not in browser_sensitive
+    ]
+    return concurrent, frontchannel, session
 
 
 def plan_manifest_for_expressions(
