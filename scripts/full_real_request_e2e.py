@@ -8,6 +8,7 @@ declared Actix route through real requests against a running server.
 
 from __future__ import annotations
 
+import ast
 import base64
 import hashlib
 import hmac
@@ -16,6 +17,7 @@ import os
 import re
 import secrets
 import struct
+import sys
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -23,14 +25,56 @@ from email import message_from_bytes
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
+
+HTTP_SIGNATURE_REQUIRED_E2E_CASES = frozenset(
+    {
+        "fapi_http_signature_signed_get",
+        "fapi_http_signature_signed_post",
+        "fapi_http_signature_response_verification_and_request_binding",
+        "fapi_http_signature_tampered_method",
+        "fapi_http_signature_tampered_uri",
+        "fapi_http_signature_tampered_authorization",
+        "fapi_http_signature_tampered_dpop",
+        "fapi_http_signature_tampered_body",
+        "fapi_http_signature_stale_created",
+        "fapi_http_signature_future_created",
+        "fapi_http_signature_replay",
+        "fapi_http_signature_wrong_key",
+        "fapi_http_signature_wrong_client",
+        "fapi_http_signature_unsigned_fallback",
+    }
+)
+def run_source_policy_check() -> None:
+    tree = ast.parse(open(__file__, encoding="utf-8").read(), filename=__file__)
+    implemented = {
+        node.args[0].value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in {"record_http_signature_case", "signed_request"}
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str)
+    }
+    missing = sorted(HTTP_SIGNATURE_REQUIRED_E2E_CASES - implemented)
+    if missing:
+        raise SystemExit(
+            "missing required FAPI HTTP signature E2E cases: " + ", ".join(missing)
+        )
+
+
+if sys.argv[1:] == ["--source-policy-check"]:
+    run_source_policy_check()
+    raise SystemExit(0)
+
 import jwt
 import psycopg
 import redis
 import requests
 from aiosmtpd.controller import Controller
 from argon2 import PasswordHasher
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec, ed25519, padding, rsa
 
 
 BASE_URL = os.environ.get("E2E_BASE_URL", "http://nazo-oauth-e2e-server:8000")
@@ -90,7 +134,6 @@ DEFAULT_ORGANIZATION_ID = "00000000-0000-0000-0000-000000000003"
 CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 SESSION_COOKIE_NAME = "nazo_oauth_session"
 
-
 checks: list[str] = []
 
 
@@ -128,6 +171,147 @@ def comma_header_values(response: requests.Response, name: str) -> set[str]:
 
 def b64url(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+
+def content_digest(body: bytes) -> str:
+    return f"sha-256=:{base64.b64encode(hashlib.sha256(body).digest()).decode('ascii')}:"
+
+
+def fapi_http_signature_fields(
+    key: ed25519.Ed25519PrivateKey,
+    kid: str,
+    method: str,
+    target_uri: str,
+    authorization: str,
+    *,
+    body: bytes = b"",
+    dpop: str | None = None,
+    created: int | None = None,
+) -> dict[str, str]:
+    """Mirror the Rust core's fixed Ed25519 request vector for black-box transport tests.
+
+    The Rust crate remains the canonical cryptographic/vector implementation; the source-policy
+    gate pins every caller below and the crate tests independently pin canonicalization.
+    """
+    created = now() if created is None else created
+    components = ["@method", "@target-uri", "authorization"]
+    values = [
+        f'"@method": {method}',
+        f'"@target-uri": {target_uri}',
+        f'"authorization": {authorization.strip()}',
+    ]
+    if dpop is not None:
+        components.append("dpop")
+        values.append(f'"dpop": {dpop.strip()}')
+    headers = {"Authorization": authorization}
+    if dpop is not None:
+        headers["DPoP"] = dpop
+    if body:
+        digest = content_digest(body)
+        components.append("content-digest")
+        values.append(f'"content-digest": {digest}')
+        headers["Content-Digest"] = digest
+    component_list = " ".join(f'"{component}"' for component in components)
+    params = (
+        f'({component_list});created={created};keyid="{kid}";alg="ed25519";'
+        'tag="fapi-2-request"'
+    )
+    signature_input = f"sig1={params}"
+    signature_base = "\n".join(values) + f'\n"@signature-params": {params}'
+    signature = key.sign(signature_base.encode("ascii"))
+    headers["Signature-Input"] = signature_input
+    headers["Signature"] = f"sig1=:{base64.b64encode(signature).decode('ascii')}:"
+    return headers
+
+
+def verify_fapi_http_signature_response(
+    response: requests.Response,
+    server_jwks: dict[str, Any],
+    *,
+    method: str,
+    target_uri: str,
+    request_body: bytes,
+    request_headers: dict[str, str] | None,
+) -> None:
+    signature_input = response.headers.get("Signature-Input", "")
+    signature_field = response.headers.get("Signature", "")
+    match = re.fullmatch(
+        r'nazo=\((?P<components>.+)\);created=(?P<created>-?\d+);keyid="(?P<kid>[^"]+)";alg="(?P<alg>ed25519|rsa-v1_5-sha256|ecdsa-p256-sha256)";tag="fapi-2-response"',
+        signature_input,
+    )
+    check("fapi_http_signature_response_input_shape", match is not None, signature_input)
+    assert match is not None
+    valid_request_digest = (
+        request_headers is not None
+        and bool(request_body)
+        and request_headers.get("Content-Digest") == content_digest(request_body)
+    )
+    expected_components = ['"@status"', '"content-digest"', '"@method";req', '"@target-uri";req']
+    if valid_request_digest:
+        expected_components.append('"content-digest";req')
+    if request_headers is not None:
+        expected_components.extend(['"signature-input";req', '"signature";req'])
+    check(
+        "fapi_http_signature_response_components",
+        match.group("components").split(" ") == expected_components,
+        match.group("components"),
+    )
+    digest = response.headers.get("Content-Digest", "")
+    check("fapi_http_signature_response_digest", digest == content_digest(response.content))
+    lines = [f'"@status": {response.status_code}', f'"content-digest": {digest}']
+    lines.extend([f'"@method";req: {method}', f'"@target-uri";req: {target_uri}'])
+    if valid_request_digest:
+        assert request_headers is not None
+        lines.append(f'"content-digest";req: {request_headers["Content-Digest"]}')
+    if request_headers is not None:
+        lines.extend(
+            [
+                f'"signature-input";req: {request_headers["Signature-Input"]}',
+                f'"signature";req: {request_headers["Signature"]}',
+            ]
+        )
+    params = signature_input.removeprefix("nazo=")
+    signature_base = "\n".join(lines) + f'\n"@signature-params": {params}'
+    signature_match = re.fullmatch(r"nazo=:(?P<value>[A-Za-z0-9+/]+={0,2}):", signature_field)
+    check("fapi_http_signature_response_value_shape", signature_match is not None)
+    assert signature_match is not None
+    jwk = next(
+        (item for item in server_jwks.get("keys", []) if item.get("kid") == match.group("kid")),
+        None,
+    )
+    check("fapi_http_signature_response_kid_resolves", jwk is not None)
+    assert jwk is not None
+    signature_bytes = base64.b64decode(signature_match.group("value"))
+    signature_base_bytes = signature_base.encode("ascii")
+    if match.group("alg") == "ed25519":
+        check("fapi_http_signature_response_key_is_ed25519", jwk.get("kty") == "OKP" and jwk.get("crv") == "Ed25519")
+        public_key = ed25519.Ed25519PublicKey.from_public_bytes(
+            base64.urlsafe_b64decode(jwk["x"] + "=" * (-len(jwk["x"]) % 4))
+        )
+        public_key.verify(signature_bytes, signature_base_bytes)
+    elif match.group("alg") == "rsa-v1_5-sha256":
+        check("fapi_http_signature_response_key_is_rsa", jwk.get("kty") == "RSA")
+        modulus = int.from_bytes(base64.urlsafe_b64decode(jwk["n"] + "=" * (-len(jwk["n"]) % 4)))
+        exponent = int.from_bytes(base64.urlsafe_b64decode(jwk["e"] + "=" * (-len(jwk["e"]) % 4)))
+        rsa.RSAPublicNumbers(exponent, modulus).public_key().verify(
+            signature_bytes,
+            signature_base_bytes,
+            padding.PKCS1v15(),
+            hashes.SHA256(),
+        )
+    else:
+        check("fapi_http_signature_response_key_is_p256", jwk.get("kty") == "EC" and jwk.get("crv") == "P-256")
+        x = int.from_bytes(base64.urlsafe_b64decode(jwk["x"] + "=" * (-len(jwk["x"]) % 4)))
+        y = int.from_bytes(base64.urlsafe_b64decode(jwk["y"] + "=" * (-len(jwk["y"]) % 4)))
+        ec.EllipticCurvePublicNumbers(x, y, ec.SECP256R1()).public_key().verify(
+            signature_bytes,
+            signature_base_bytes,
+            ec.ECDSA(hashes.SHA256()),
+        )
+
+
+def record_http_signature_case(name: str, condition: bool, detail: Any = None) -> None:
+    check(name, condition, detail)
 
 
 def now() -> int:
@@ -1341,6 +1525,222 @@ def token_with_dpop(
     )
     expect_status(check_name, response, 200)
     return expect_json(response)
+
+
+def exercise_fapi_http_signature_profile(admin: requests.Session) -> None:
+    signed_base = os.environ.get("E2E_SIGNED_BASE_URL")
+    check("fapi_http_signature_signed_base_configured", bool(signed_base))
+    target = f"{ISSUER_URL.rstrip('/')}/fapi/resource"
+    kid = "fapi-http-signature-e2e"
+    other_kid = "fapi-http-signature-other-e2e"
+    key = ed25519.Ed25519PrivateKey.generate()
+    other_key = ed25519.Ed25519PrivateKey.generate()
+
+    def signature_client(name: str, public_key: ed25519.Ed25519PrivateKey, key_id: str) -> dict[str, Any]:
+        return create_client(
+            admin,
+            {
+                "client_name": name,
+                "client_type": "confidential",
+                "redirect_uris": [],
+                "scopes": ["profile"],
+                "allowed_audiences": [target],
+                "grant_types": ["client_credentials"],
+                "token_endpoint_auth_method": "client_secret_post",
+                "jwks": {"keys": [ed25519_public_jwk(public_key, key_id)]},
+            },
+            f"POST /admin/clients {name}",
+        )
+
+    client = signature_client("FAPI HTTP Signature E2E", key, kid)
+    other_client = signature_client("FAPI HTTP Signature Other E2E", other_key, other_kid)
+
+    def access_token(client_record: dict[str, Any]) -> str:
+        token = expect_json(
+            expect_status(
+                "POST /token FAPI HTTP signature client_credentials",
+                requests.post(
+                    f"{BASE_URL}/token",
+                    data={
+                        "grant_type": "client_credentials",
+                        "client_id": client_record["client_id"],
+                        "client_secret": client_record["client_secret"],
+                        "scope": "profile",
+                        "resource": target,
+                    },
+                    timeout=10,
+                ),
+                200,
+            )
+        )
+        return str(token["access_token"])
+
+    token = access_token(client)
+    other_token = access_token(other_client)
+    server_jwks = expect_json(requests.get(f"{BASE_URL}/jwks.json", timeout=10))
+
+    def signed_request(
+        case: str,
+        *,
+        method: str = "GET",
+        query: str,
+        body: bytes = b"",
+        signing_key: ed25519.Ed25519PrivateKey = key,
+        signing_kid: str = kid,
+        signed_method: str | None = None,
+        signed_target: str | None = None,
+        signed_authorization: str | None = None,
+        sent_authorization: str | None = None,
+        signed_dpop: str | None = None,
+        sent_dpop: str | None = None,
+        signed_body: bytes | None = None,
+        created: int | None = None,
+        expected_status: int,
+    ) -> tuple[requests.Response, dict[str, str], str]:
+        target_uri = f"{target}?case={query}"
+        authorization = sent_authorization or f"Bearer {token}"
+        headers = fapi_http_signature_fields(
+            signing_key,
+            signing_kid,
+            signed_method or method,
+            signed_target or target_uri,
+            signed_authorization or authorization,
+            body=body if signed_body is None else signed_body,
+            dpop=signed_dpop,
+            created=created,
+        )
+        headers["Authorization"] = authorization
+        if sent_dpop is not None:
+            headers["DPoP"] = sent_dpop
+        response = requests.request(
+            method,
+            f"{signed_base}/fapi/resource?case={query}",
+            headers=headers,
+            data=body,
+            timeout=10,
+        )
+        record_http_signature_case(case, response.status_code == expected_status, response.status_code)
+        verify_fapi_http_signature_response(
+            response,
+            server_jwks,
+            method=method,
+            target_uri=target_uri,
+            request_body=body,
+            request_headers=headers,
+        )
+        return response, headers, target_uri
+
+    signed_request(
+        "fapi_http_signature_signed_get",
+        query="signed-get",
+        expected_status=200,
+    )
+    post_body = b'{"operation":"read"}'
+    signed_request(
+        "fapi_http_signature_signed_post",
+        method="POST",
+        query="signed-post",
+        body=post_body,
+        expected_status=200,
+    )
+    bound_response, _, _ = signed_request(
+        "fapi_http_signature_response_verification_and_request_binding",
+        query="response-binding",
+        expected_status=200,
+    )
+    check("fapi_http_signature_response_binding_body", expect_json(bound_response).get("client_id") == client["client_id"])
+    signed_request(
+        "fapi_http_signature_tampered_method",
+        method="POST",
+        signed_method="GET",
+        query="tampered-method",
+        expected_status=401,
+    )
+    signed_request(
+        "fapi_http_signature_tampered_uri",
+        query="tampered-uri",
+        signed_target=f"{target}?case=different-uri",
+        expected_status=401,
+    )
+    signed_request(
+        "fapi_http_signature_tampered_authorization",
+        query="tampered-authorization",
+        signed_authorization=f"Bearer {token}",
+        sent_authorization=f"Bearer {other_token}",
+        expected_status=401,
+    )
+    signed_request(
+        "fapi_http_signature_tampered_dpop",
+        query="tampered-dpop",
+        signed_dpop="signed-dpop-value",
+        sent_dpop="altered-dpop-value",
+        expected_status=401,
+    )
+    signed_request(
+        "fapi_http_signature_tampered_body",
+        method="POST",
+        query="tampered-body",
+        body=b'{"operation":"altered"}',
+        signed_body=b'{"operation":"signed"}',
+        expected_status=401,
+    )
+    signed_request(
+        "fapi_http_signature_stale_created",
+        query="stale-created",
+        created=now() - 61,
+        expected_status=401,
+    )
+    signed_request(
+        "fapi_http_signature_future_created",
+        query="future-created",
+        created=now() + 6,
+        expected_status=401,
+    )
+    replay_response, replay_headers, replay_target = signed_request(
+        "fapi_http_signature_replay",
+        query="replay",
+        expected_status=200,
+    )
+    replay = requests.get(
+        f"{signed_base}/fapi/resource?case=replay",
+        headers=replay_headers,
+        timeout=10,
+    )
+    check("fapi_http_signature_replay_second_request_rejected", replay.status_code == 401)
+    verify_fapi_http_signature_response(
+        replay,
+        server_jwks,
+        method="GET",
+        target_uri=replay_target,
+        request_body=b"",
+        request_headers=replay_headers,
+    )
+    check("fapi_http_signature_replay_first_request_succeeded", replay_response.status_code == 200)
+    signed_request(
+        "fapi_http_signature_wrong_key",
+        query="wrong-key",
+        signing_key=ed25519.Ed25519PrivateKey.generate(),
+        expected_status=401,
+    )
+    signed_request(
+        "fapi_http_signature_wrong_client",
+        query="wrong-client",
+        signing_key=other_key,
+        signing_kid=other_kid,
+        expected_status=401,
+    )
+    unsigned = requests.get(
+        f"{BASE_URL}/fapi/resource",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=10,
+    )
+    record_http_signature_case(
+        "fapi_http_signature_unsigned_fallback",
+        unsigned.status_code == 200
+        and "Signature" not in unsigned.headers
+        and "Signature-Input" not in unsigned.headers,
+        unsigned.status_code,
+    )
 
 
 def run() -> None:
@@ -4043,6 +4443,8 @@ def run() -> None:
             )
         )
         check("client_secret_post_access_token", bool(secret_cc.get("access_token")))
+
+        exercise_fapi_http_signature_profile(admin)
 
         for algorithm, key, public_jwk in [
             ("ES256", ec_key, ec_public_jwk(ec_key, "dpop-es256-e2e")),

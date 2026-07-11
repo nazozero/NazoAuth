@@ -317,6 +317,14 @@ curl -fsS https://oauth.example.com/jwks.json
 Check that discovery `issuer` exactly equals `PUBLIC_BASE_URL`, unless `ISSUER`
 was explicitly overridden.
 
+If the experimental FAPI HTTP Signatures resource profile is enabled, also
+send signed GET and POST probes and verify the response signature against the
+current server JWKS. Confirm tampered method, target URI, Authorization, DPoP,
+body, time, replay, client, and key cases fail closed. Do not enable the flag
+until client JWK rotation, clock monitoring, Valkey replay storage, signing-key
+custody, and evidence retention have named owners. The profile is default-off,
+is not advertised in metadata, and has no dedicated OIDF conformance plan.
+
 The `nazo.run` deployment helper [scripts/verify_live_full_interfaces.py](../../scripts/verify_live_full_interfaces.py) exercises a broader HTTPS path against `https://auth.nazo.run`. It reads host-local secrets and runs only in the intended deployment environment.
 
 ## OIDF Readiness

@@ -59,6 +59,8 @@ AVATAR_STORAGE_DIR = DATA_DIR + "/avatars"
 | `LOGIN_FAILURE_IP_EMAIL_MAX_ATTEMPTS` | `5` | Maximum failed login attempts per source IP and normalized email in the failed-login window |
 | `AUTHORIZATION_SERVER_PROFILE` | `oauth2-baseline` | `oauth2-baseline`, `fapi2-security`, `fapi2-message-signing-authz-request`, `fapi2-message-signing-jarm`, or `fapi2-message-signing-introspection` |
 | `CIBA_SECURITY_PROFILE` | `fapi-ciba-id1-plain-private-key-jwt-poll` | CIBA-specific policy: `fapi-ciba-id1-plain-private-key-jwt-poll` for OIDF FAPI-CIBA compatibility, or internal `fapi2-ciba` hardening |
+| `ENABLE_FAPI_HTTP_SIGNATURES` | `false` | Experimental resource-only profile for the 2026-06-26 FAPI 2.0 HTTP Signatures working draft; when enabled, `/fapi/resource` requires a registered client JWK and RFC 9421 signature and signs every response |
+| `FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS` | `60` | Request signature age and replay-marker lifetime; accepted range is 1–300 seconds, with at most five seconds of future clock skew |
 | `RUST_LOG` | `info` | Tracing filter |
 
 ## Derived settings
@@ -77,6 +79,22 @@ AVATAR_STORAGE_DIR = DATA_DIR + "/avatars"
 
 Explicit overrides are retained for advanced deployments and backward
 compatibility. New deployments should prefer same-origin defaults.
+
+## Experimental FAPI HTTP signatures
+
+`ENABLE_FAPI_HTTP_SIGNATURES=true` changes only `/fapi/resource`. It is
+default-off, has no discovery metadata, and is not an OIDF-certified profile.
+Each token's `client_id` must resolve to an active client with an exact public
+JWK matching the request `keyid` and algorithm. Supported algorithms are
+Ed25519, RSA PKCS#1 v1.5 SHA-256 with RSA keys of at least 2048 bits, and
+ECDSA P-256 SHA-256. Private JWK material, ambiguous keys, unsupported curves,
+or algorithm/key mismatches fail closed.
+
+Operators own client-key provisioning and revocation, clock synchronization,
+Valkey availability for atomic replay consumption, server signing-key custody,
+and signed-message evidence retention. A replay-store or response-signing
+failure returns a signed error when possible and never falls back to an
+unsigned success. See the [dated draft audit](../protocol/fapi-http-signatures-draft-audit.md).
 
 ## Public OP/AS security boundary
 

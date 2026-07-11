@@ -9,6 +9,7 @@ RUN mkdir -p /usr/local/cargo \
     && rm -rf /var/lib/apt/lists/*
 
 COPY Cargo.toml Cargo.lock* ./
+COPY crates ./crates
 COPY src ./src
 COPY migrations ./migrations
 

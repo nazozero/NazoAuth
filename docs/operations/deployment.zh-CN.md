@@ -230,6 +230,12 @@ curl -fsS https://auth.nazo.run/jwks.json
 检查 discovery 的 `issuer` 必须精确等于 `PUBLIC_BASE_URL`，除非显式覆盖了
 `ISSUER`。
 
+若启用实验性的 FAPI HTTP Signatures 资源 profile，还必须发送带签名的 GET、POST
+探针，并使用当前服务端 JWKS 验证响应签名；method、target URI、Authorization、
+DPoP、body、时间、重放、client 与 key 任一被篡改时都应 fail closed。只有在 client
+JWK 轮换、时钟监控、Valkey 重放存储、服务端签名密钥托管和证据留存均有明确责任人后，
+才可开启该开关。此 profile 默认关闭、不发布 metadata，且当前没有 OIDF 专用测试计划。
+
 ## OIDF 准备
 
 启动 OpenID Foundation conformance run 前，固定按以下顺序执行，不从失败的 run
