@@ -194,3 +194,48 @@ fn scim_cursor_rejects_tampering_padding_truncation_and_oversize_input() {
         );
     }
 }
+
+#[test]
+fn scim_cursor_rejects_authenticated_unknown_version_sort_and_lifetime() {
+    let settings = cursor_settings();
+    let credential = database_credential();
+    let now = Utc::now();
+    let base = ScimCursorPayload {
+        v: SCIM_CURSOR_VERSION,
+        tenant_id: credential.tenant_id,
+        actor: credential_actor(&credential),
+        filter: None,
+        count: 25,
+        sort: SCIM_CURSOR_SORT.to_owned(),
+        last_created_at: now - Duration::seconds(30),
+        last_id: Uuid::from_u128(0x33333333333333333333333333333333),
+        issued_at: now.timestamp(),
+        expires_at: now.timestamp() + SCIM_CURSOR_TIMEOUT_SECONDS,
+    };
+
+    for invalid in [
+        ScimCursorPayload {
+            v: 2,
+            ..base.clone()
+        },
+        ScimCursorPayload {
+            sort: "created_at".to_owned(),
+            ..base.clone()
+        },
+        ScimCursorPayload {
+            expires_at: base.issued_at + SCIM_CURSOR_TIMEOUT_SECONDS + 1,
+            ..base.clone()
+        },
+        ScimCursorPayload {
+            expires_at: base.issued_at,
+            ..base.clone()
+        },
+    ] {
+        let encoded = encrypt_scim_cursor_payload(&settings, &invalid)
+            .expect("authenticated invalid cursor fixture should encode");
+        assert_eq!(
+            decode_scim_cursor(&settings, &encoded, &credential, None, 25, now),
+            Err(ScimCursorError::Invalid)
+        );
+    }
+}

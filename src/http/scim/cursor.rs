@@ -41,7 +41,7 @@ pub(super) enum ScimCursorError {
     InvalidCount,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct ScimCursorPayload {
     v: u8,
     tenant_id: Uuid,
@@ -72,7 +72,14 @@ pub(super) fn encode_scim_cursor(
         issued_at: now.timestamp(),
         expires_at: now.timestamp() + SCIM_CURSOR_TIMEOUT_SECONDS,
     };
-    let plaintext = serde_json::to_vec(&payload)?;
+    encrypt_scim_cursor_payload(settings, &payload)
+}
+
+fn encrypt_scim_cursor_payload(
+    settings: &Settings,
+    payload: &ScimCursorPayload,
+) -> anyhow::Result<String> {
+    let plaintext = serde_json::to_vec(payload)?;
     let key = cursor_key(settings)?;
     let nonce = rand::random::<[u8; SCIM_CURSOR_NONCE_LEN]>();
     let mut tag = [0u8; SCIM_CURSOR_TAG_LEN];
