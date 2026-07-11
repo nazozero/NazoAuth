@@ -13,7 +13,7 @@ use crate::verify::{
 };
 use crate::{
     PreparedSignature, RequestInput, SignatureFields, VerificationPolicy, VerifiedInput,
-    VerifyError, content_digest,
+    VerifyError,
 };
 
 const SIGNATURE_NAME: &str = "nazo";
@@ -60,7 +60,7 @@ pub fn prepare_response(
     policy: ResponsePolicy<'_>,
 ) -> Result<PreparedSignature, ResponseError> {
     validate_policy(policy.keyid, policy.algorithm)?;
-    let components = response_components(&response, &original, false)?;
+    let components = response_components(&response, &original)?;
     let signature_input = serialize_signature_input(&components, policy)?;
     let params = signature_input
         .strip_prefix(&format!("{SIGNATURE_NAME}="))
@@ -134,8 +134,8 @@ pub fn parse_response_for_verification(
     validate_parameters(params)?;
     validate_time(params, created, policy)?;
 
-    let expected_components = response_components(&response, &original, true)
-        .map_err(|_| VerifyError::MissingComponent)?;
+    let expected_components =
+        response_components(&response, &original).map_err(|_| VerifyError::MissingComponent)?;
     validate_covered_components(params, &expected_components)?;
 
     let serialized = signature_input
@@ -173,13 +173,10 @@ pub fn parse_response_for_verification(
 fn response_components(
     response: &ResponseInput<'_>,
     original: &OriginalRequest<'_>,
-    preserve_response_digest: bool,
 ) -> Result<Vec<Component>, ResponseError> {
     if !(100..=599).contains(&response.status) {
         return Err(invalid("invalid HTTP response status"));
     }
-    validate_headers(response.headers)?;
-    validate_headers(original.input.headers)?;
     validate_method(original.input.method)?;
     let target_uri = canonical_target_uri(original.input.target_uri)?;
 
@@ -192,18 +189,11 @@ fn response_components(
         }
         None
     } else {
-        let computed = content_digest(response.body);
-        if preserve_response_digest {
-            Some(normalize_field(
-                "content-digest",
-                supplied_response_digest
-                    .ok_or_else(|| invalid("response Content-Digest is missing"))?,
-            )?)
-        } else if supplied_response_digest.is_some_and(|value| value != computed) {
-            return Err(invalid("Content-Digest does not match the response body"));
-        } else {
-            Some(computed)
-        }
+        let supplied = supplied_response_digest
+            .ok_or_else(|| invalid("response Content-Digest is missing"))?;
+        validate_digest_value(supplied, response.body)
+            .map_err(|_| invalid("response Content-Digest does not match its body"))?;
+        Some(normalize_field("content-digest", supplied)?)
     };
     validate_original_digest(original)?;
 
@@ -413,16 +403,6 @@ fn canonical_target_uri(target_uri: &str) -> Result<String, ResponseError> {
         return Err(invalid("invalid target URI"));
     }
     Ok(uri.into())
-}
-
-fn validate_headers(headers: &[(&str, &str)]) -> Result<(), ResponseError> {
-    for (name, value) in headers {
-        if name.is_empty() || !name.bytes().all(is_token_byte) {
-            return Err(invalid("invalid header name"));
-        }
-        normalize_field(name, value)?;
-    }
-    Ok(())
 }
 
 fn normalize_field(name: &str, value: &str) -> Result<String, ResponseError> {

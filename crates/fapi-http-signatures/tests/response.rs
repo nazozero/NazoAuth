@@ -104,6 +104,286 @@ fn prepares_response_signature_with_exact_request_linkage() {
     assert_eq!(finished.signature, "nazo=:3q2+7w==:");
 }
 
+#[test]
+fn response_signing_requires_a_physical_content_digest_for_a_non_empty_body() {
+    let request_headers = request_headers(REQUEST_BODY);
+    let request_headers = borrowed(&request_headers);
+    let fields = request_fields();
+    let result = prepare_response(
+        ResponseInput {
+            status: 200,
+            headers: &[],
+            body: RESPONSE_BODY,
+        },
+        OriginalRequest {
+            input: RequestInput {
+                method: "POST",
+                target_uri: "https://api.example/fapi/resource",
+                headers: &request_headers,
+                body: REQUEST_BODY,
+            },
+            signature_fields: Some(&fields),
+        },
+        ResponsePolicy {
+            created: CREATED,
+            keyid: "server-ed25519",
+            algorithm: "ed25519",
+        },
+    );
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn response_signing_accepts_and_preserves_valid_multi_algorithm_digest_serialization() {
+    let request_headers = request_headers(REQUEST_BODY);
+    let request_headers = borrowed(&request_headers);
+    let fields = request_fields();
+    let varied_digest = format!("  sha-512=:AA==: ,  {}  ", content_digest(RESPONSE_BODY));
+    let response_headers = [("Content-Digest", varied_digest.as_str())];
+    let prepared = prepare_response(
+        ResponseInput {
+            status: 200,
+            headers: &response_headers,
+            body: RESPONSE_BODY,
+        },
+        OriginalRequest {
+            input: RequestInput {
+                method: "POST",
+                target_uri: "https://api.example/fapi/resource",
+                headers: &request_headers,
+                body: REQUEST_BODY,
+            },
+            signature_fields: Some(&fields),
+        },
+        ResponsePolicy {
+            created: CREATED,
+            keyid: "server-ed25519",
+            algorithm: "ed25519",
+        },
+    )
+    .unwrap();
+
+    let base = std::str::from_utf8(prepared.signature_base()).unwrap();
+    assert!(base.contains(&format!("\"content-digest\": {}", varied_digest.trim())));
+}
+
+#[test]
+fn response_signing_rejects_invalid_physical_digest_fields() {
+    let correct = content_digest(RESPONSE_BODY);
+    let invalid = [
+        format!("{correct}, {correct}"),
+        format!("{correct}, bogus=\"not-a-digest\""),
+        "sha-256=:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=:".into(),
+    ];
+    for digest in invalid {
+        let request_headers = request_headers(REQUEST_BODY);
+        let request_headers = borrowed(&request_headers);
+        let fields = request_fields();
+        let response_headers = [("Content-Digest", digest.as_str())];
+        let result = prepare_response(
+            ResponseInput {
+                status: 200,
+                headers: &response_headers,
+                body: RESPONSE_BODY,
+            },
+            OriginalRequest {
+                input: RequestInput {
+                    method: "POST",
+                    target_uri: "https://api.example/fapi/resource",
+                    headers: &request_headers,
+                    body: REQUEST_BODY,
+                },
+                signature_fields: Some(&fields),
+            },
+            ResponsePolicy {
+                created: CREATED,
+                keyid: "server-ed25519",
+                algorithm: "ed25519",
+            },
+        );
+        assert!(result.is_err(), "invalid digest accepted: {digest}");
+    }
+}
+
+#[test]
+fn request_req_digest_requires_a_physical_strict_digest_field() {
+    let response_headers = response_headers(RESPONSE_BODY);
+    let response_headers = borrowed(&response_headers);
+    let fields = request_fields();
+    let missing = [("Authorization", "DPoP opaque")];
+    let correct = content_digest(REQUEST_BODY);
+    let invalid = [
+        format!("{correct}, {correct}"),
+        format!("{correct}, bogus=\"not-a-digest\""),
+        "sha-256=:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=:".into(),
+    ];
+    let missing_result = prepare_response(
+        ResponseInput {
+            status: 200,
+            headers: &response_headers,
+            body: RESPONSE_BODY,
+        },
+        OriginalRequest {
+            input: RequestInput {
+                method: "POST",
+                target_uri: "https://api.example/fapi/resource",
+                headers: &missing,
+                body: REQUEST_BODY,
+            },
+            signature_fields: Some(&fields),
+        },
+        ResponsePolicy {
+            created: CREATED,
+            keyid: "server-ed25519",
+            algorithm: "ed25519",
+        },
+    );
+    assert!(missing_result.is_err());
+
+    for digest in invalid {
+        let invalid_headers = [
+            ("Authorization", "DPoP opaque"),
+            ("Content-Digest", digest.as_str()),
+        ];
+        let result = prepare_response(
+            ResponseInput {
+                status: 200,
+                headers: &response_headers,
+                body: RESPONSE_BODY,
+            },
+            OriginalRequest {
+                input: RequestInput {
+                    method: "POST",
+                    target_uri: "https://api.example/fapi/resource",
+                    headers: &invalid_headers,
+                    body: REQUEST_BODY,
+                },
+                signature_fields: Some(&fields),
+            },
+            ResponsePolicy {
+                created: CREATED,
+                keyid: "server-ed25519",
+                algorithm: "ed25519",
+            },
+        );
+        assert!(result.is_err(), "invalid request digest accepted: {digest}");
+    }
+}
+
+#[test]
+fn request_req_digest_accepts_and_preserves_valid_multi_algorithm_serialization() {
+    let response_headers = response_headers(RESPONSE_BODY);
+    let response_headers = borrowed(&response_headers);
+    let varied_digest = format!("  sha-512=:AA==: ,  {}  ", content_digest(REQUEST_BODY));
+    let request_headers = [
+        ("Authorization", "DPoP opaque"),
+        ("Content-Digest", varied_digest.as_str()),
+    ];
+    let fields = request_fields();
+    let prepared = prepare_response(
+        ResponseInput {
+            status: 200,
+            headers: &response_headers,
+            body: RESPONSE_BODY,
+        },
+        OriginalRequest {
+            input: RequestInput {
+                method: "POST",
+                target_uri: "https://api.example/fapi/resource",
+                headers: &request_headers,
+                body: REQUEST_BODY,
+            },
+            signature_fields: Some(&fields),
+        },
+        ResponsePolicy {
+            created: CREATED,
+            keyid: "server-ed25519",
+            algorithm: "ed25519",
+        },
+    )
+    .unwrap();
+
+    let base = std::str::from_utf8(prepared.signature_base()).unwrap();
+    assert!(base.contains(&format!("\"content-digest\";req: {}", varied_digest.trim())));
+}
+
+#[test]
+fn unrelated_obs_text_headers_do_not_affect_response_signing() {
+    let request_digest = content_digest(REQUEST_BODY);
+    let request_headers = [
+        ("Authorization", "DPoP opaque"),
+        ("Content-Digest", request_digest.as_str()),
+        ("X-Uncovered-Request", "opaque-é"),
+    ];
+    let response_digest = content_digest(RESPONSE_BODY);
+    let response_headers = [
+        ("Content-Digest", response_digest.as_str()),
+        ("X-Uncovered-Response", "opaque-é"),
+    ];
+    let fields = request_fields();
+
+    assert!(
+        prepare_response(
+            ResponseInput {
+                status: 200,
+                headers: &response_headers,
+                body: RESPONSE_BODY,
+            },
+            OriginalRequest {
+                input: RequestInput {
+                    method: "POST",
+                    target_uri: "https://api.example/fapi/resource",
+                    headers: &request_headers,
+                    body: REQUEST_BODY,
+                },
+                signature_fields: Some(&fields),
+            },
+            ResponsePolicy {
+                created: CREATED,
+                keyid: "server-ed25519",
+                algorithm: "ed25519",
+            },
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn covered_request_signature_fields_still_reject_non_ascii_values() {
+    let request_headers = request_headers(REQUEST_BODY);
+    let request_headers = borrowed(&request_headers);
+    let response_headers = response_headers(RESPONSE_BODY);
+    let response_headers = borrowed(&response_headers);
+    let mut fields = request_fields();
+    fields.signature = "sig1=:AQID:é".into();
+
+    assert!(
+        prepare_response(
+            ResponseInput {
+                status: 200,
+                headers: &response_headers,
+                body: RESPONSE_BODY,
+            },
+            OriginalRequest {
+                input: RequestInput {
+                    method: "POST",
+                    target_uri: "https://api.example/fapi/resource",
+                    headers: &request_headers,
+                    body: REQUEST_BODY,
+                },
+                signature_fields: Some(&fields),
+            },
+            ResponsePolicy {
+                created: CREATED,
+                keyid: "server-ed25519",
+                algorithm: "ed25519",
+            },
+        )
+        .is_err()
+    );
+}
+
 struct Fixture {
     base: Vec<u8>,
     response_fields: SignatureFields,
