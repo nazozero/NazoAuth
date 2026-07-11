@@ -111,6 +111,23 @@ pub(super) async fn sign_external_jwt_input(
     Ok(signature.to_owned())
 }
 
+pub(crate) async fn sign_external_http_input(
+    external: &ExternalSigningKey,
+    kid: &str,
+    alg: jsonwebtoken::Algorithm,
+    signing_input: &[u8],
+    public_jwk: &Value,
+) -> jsonwebtoken::errors::Result<Vec<u8>> {
+    let signing_input = std::str::from_utf8(signing_input)
+        .map_err(|_| jwt_provider_error("HTTP signature base is not valid UTF-8"))?;
+    let encoded = sign_external_jwt_input(external, kid, alg, signing_input, public_jwk).await?;
+    URL_SAFE_NO_PAD.decode(encoded).map_err(|error| {
+        jwt_provider_error(format!(
+            "external signer returned invalid signature: {error}"
+        ))
+    })
+}
+
 fn verify_external_jwt_signature(
     external: &ExternalSigningKey,
     kid: &str,

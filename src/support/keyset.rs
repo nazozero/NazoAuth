@@ -16,6 +16,7 @@ use super::prelude::*;
 
 mod external;
 
+pub(super) use external::sign_external_http_input;
 use external::{jwt_provider_error, sign_external_jwt_input};
 
 const OIDC_DEFAULT_ID_TOKEN_SIGNING_ALG: jsonwebtoken::Algorithm = jsonwebtoken::Algorithm::RS256;

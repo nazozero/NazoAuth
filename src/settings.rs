@@ -87,6 +87,16 @@ pub(crate) struct Settings {
     pub(crate) enable_session_management: bool,
     pub(crate) enable_ciba: bool,
     pub(crate) enable_native_sso: bool,
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "consumed by the Task 5 resource endpoint adapter")
+    )]
+    pub(crate) enable_fapi_http_signatures: bool,
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "consumed by the Task 5 resource endpoint adapter")
+    )]
+    pub(crate) fapi_http_signature_max_age_seconds: i64,
     pub(crate) dynamic_client_registration_initial_access_token: Option<String>,
     pub(crate) device_authorization_ttl_seconds: u64,
     pub(crate) device_authorization_poll_interval_seconds: u64,
@@ -218,6 +228,11 @@ impl Settings {
             config.parse("SIGNING_KEY_ROTATION_INTERVAL_SECONDS", 7_776_000)?;
         let signing_key_prepublish_seconds =
             config.parse("SIGNING_KEY_PREPUBLISH_SECONDS", 86_400)?;
+        let fapi_http_signature_max_age_seconds =
+            config.parse("FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS", 60)?;
+        if !(1..=300).contains(&fapi_http_signature_max_age_seconds) {
+            bail!("FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS must be between 1 and 300");
+        }
         if signing_key_rotation_interval_seconds <= 0 {
             bail!("SIGNING_KEY_ROTATION_INTERVAL_SECONDS must be positive");
         }
@@ -321,6 +336,8 @@ impl Settings {
             enable_session_management: config.bool("ENABLE_SESSION_MANAGEMENT", false)?,
             enable_ciba: config.bool("ENABLE_CIBA", false)?,
             enable_native_sso: config.bool("ENABLE_NATIVE_SSO", false)?,
+            enable_fapi_http_signatures: config.bool("ENABLE_FAPI_HTTP_SIGNATURES", false)?,
+            fapi_http_signature_max_age_seconds,
             enable_dynamic_client_registration,
             dynamic_client_registration_initial_access_token,
             device_authorization_ttl_seconds,

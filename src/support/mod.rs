@@ -8,6 +8,7 @@ mod cookies;
 mod dpop;
 mod email;
 mod email_templates;
+mod fapi_http_signatures;
 mod jwe;
 mod keyset;
 mod mfa;
