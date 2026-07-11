@@ -35,10 +35,10 @@ pub(crate) fn configure(
         .route("/device", web::get().to(device_verification_page))
         .route("/device/verification", web::get().to(device_verification))
         .route("/device/decision", web::post().to(device_decision))
-        // CORS: cors_browser_oauth — /token
+        // CORS: non-credentialed browser token management — /token
         .service(
             web::resource("/token")
-                .wrap(cors::cors_browser_oauth(settings))
+                .wrap(cors::cors_browser_token_management(settings))
                 .route(web::post().to(token)),
         )
         // NO CORS: /logout (backchannel)
@@ -49,10 +49,10 @@ pub(crate) fn configure(
         )
         .route("/check_session", web::get().to(check_session_iframe))
         .route("/check_session/status", web::get().to(check_session_status))
-        // CORS: cors_browser_oauth — /revoke
+        // CORS: non-credentialed browser token management — /revoke
         .service(
             web::resource("/revoke")
-                .wrap(cors::cors_browser_oauth(settings))
+                .wrap(cors::cors_browser_token_management(settings))
                 .route(web::post().to(revoke)),
         )
         // NO CORS: /introspect (backchannel)
@@ -87,10 +87,10 @@ pub(crate) fn configure(
                 .wrap(cors::cors_well_known(settings))
                 .route(web::get().to(jwks)),
         )
-        // CORS: cors_browser_oauth — /userinfo
+        // CORS: non-credentialed browser bearer/DPoP access — /userinfo
         .service(
             web::resource("/userinfo")
-                .wrap(cors::cors_browser_oauth(settings))
+                .wrap(cors::cors_browser_userinfo(settings))
                 .route(web::get().to(userinfo))
                 .route(web::post().to(userinfo)),
         )

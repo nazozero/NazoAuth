@@ -103,11 +103,16 @@ client assertions, DPoP proofs, access tokens, refresh tokens, authorization
 codes, provider tokens, and secret references must not be logged or returned in
 error responses.
 
-CORS is endpoint-scoped. Authorization and browser-redirect endpoints are not
-CORS APIs. Browser OAuth APIs expose only the protocol headers needed for DPoP
-nonce, challenge, and retry handling and do not allow credentialed CORS. Auth
-and admin session APIs may use credentialed CORS only for exact configured
-origins and only with CSRF-bearing write requests. Session cookies are
+CORS is endpoint-scoped. `CORS_ALLOWED_ORIGINS` is an exact allowlist, not proof
+that a browser client is confidential. Authorization and browser-redirect
+endpoints are navigation-only and are not CORS APIs. `/token` and `/revoke`
+allow non-credentialed browser CORS only for POST with the protocol headers
+needed for content type, client/token authorization, DPoP nonce, challenge, and
+retry handling. `/userinfo` permits non-credentialed GET/POST bearer or DPoP
+access. These public OAuth routes do not accept the session-only
+`X-CSRF-Token` header. Auth and admin session APIs may use credentialed CORS
+only for exact configured origins and only with CSRF-bearing write requests.
+Session cookies are
 `HttpOnly`, `SameSite=Lax`, and `Secure` by default; disabling `COOKIE_SECURE`
 is only appropriate for local loopback development.
 
