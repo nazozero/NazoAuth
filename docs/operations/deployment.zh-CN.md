@@ -72,7 +72,7 @@ RUST_LOG: "info"
 - `private_key_jwt` 或 mTLS client authentication
 - DPoP 或 mTLS sender-constrained token
 
-当 signed request object 是强制要求时，使用 `fapi2-message-signing-authz-request`。Discovery metadata 会反映当前 profile；除非配置了可信代理，否则不会发布 mTLS 能力。
+当 signed request object 是强制要求时，使用 `fapi2-message-signing-authz-request`；当所有授权响应都必须签名时，使用 `fapi2-message-signing-jarm`；当需要 RFC 9701 signed introspection 和 nested encrypted introspection response 时，使用 `fapi2-message-signing-introspection`。Discovery metadata 会反映当前 profile；除非配置了可信代理，否则不会发布 mTLS 能力。
 
 ## 构建和运行容器
 
@@ -110,7 +110,7 @@ docker run -d --name nazo-oauth-server \
 
 ## 在线部署脚本
 
-仓库提供 [scripts/deploy_live.ps1](../scripts/deploy_live.ps1)，用于构建镜像、传输到远端、执行迁移、替换 Podman 容器，并校验 health 与 discovery。
+仓库提供 [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1)，用于构建镜像、传输到远端、执行迁移、替换 Podman 容器，并校验 health 与 discovery。
 
 默认 live 假设：
 

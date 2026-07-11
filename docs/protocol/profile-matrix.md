@@ -16,7 +16,7 @@ deployment can satisfy.
 | `oidc-config` | OIDC discovery/server metadata verification. | OIDF-tested |
 | `fapi2-security` | FAPI2 Security profile without message-signing options. | Runtime profile switch implemented; OIDF-tested for recorded matrix variants |
 | `fapi2-message-signing-authz-request` | FAPI2 Security plus signed authorization requests at PAR. | Runtime profile switch implemented; OIDF-tested for recorded matrix variants |
-| `fapi2-message-signing-jarm` | FAPI2 Message Signing authorization response signing option. | OIDF-tested for recorded matrix variant |
+| `fapi2-message-signing-jarm` | FAPI2 Message Signing authorization response signing option. | Runtime profile switch implemented; OIDF-tested for recorded matrix variant |
 | `fapi2-message-signing-introspection` | FAPI2 Message Signing signed and encrypted introspection response option. | Runtime profile switch implemented; advertised only by this profile |
 | `fapi-ciba-id1-plain-private-key-jwt-poll` | OIDF FAPI-CIBA AS compatibility profile for private_key_jwt and poll delivery. | Default CIBA security profile when `ENABLE_CIBA=true`; OIDF-tested for recorded matrix variant |
 | `fapi2-ciba` | Internal CIBA hardening profile: CIBA Core + FAPI-CIBA compatibility + applicable FAPI2 Security controls. | Runtime CIBA security switch implemented; not an official OIDF certification profile name |
@@ -38,7 +38,7 @@ deployment can satisfy.
 | Token TTLs | Authorization code <= configured `AUTH_CODE_TTL_SECONDS`; access token <= configured `ACCESS_TOKEN_TTL_SECONDS` |
 | Metadata | Generated from `AUTHORIZATION_SERVER_PROFILE`; mTLS capabilities advertised only when trusted proxy CIDRs are configured; `authorization_details_types_supported` is advertised only when `ENABLE_AUTHORIZATION_DETAILS=true`; `device_authorization_endpoint` and device_code grant metadata are advertised only when `ENABLE_DEVICE_AUTHORIZATION_GRANT=true` |
 
-Refresh-token rotation follows the state machine in `docs/refresh-token-rotation.md`. The lost-response retry window is a compatibility recovery path, not a replay bypass.
+Refresh-token rotation follows the state machine in `docs/protocol/refresh-token-rotation.md`. The lost-response retry window is a compatibility recovery path, not a replay bypass.
 
 Required negative tests:
 
@@ -52,6 +52,20 @@ Required negative tests:
 - disabled, unknown, or malformed `authorization_details`
 - disabled Device Authorization Grant metadata or token dispatch overclaim
 - Token Exchange subject/actor token type, target, scope, and sender-constraint boundary violations
+
+## Ecosystem Onboarding Surfaces
+
+These surfaces are profile-scoped additions to baseline behavior. Detailed
+client onboarding guidance lives in
+[`docs/features/ecosystem-onboarding.md`](../features/ecosystem-onboarding.md).
+
+| Surface | Profile boundary | Metadata rule |
+| --- | --- | --- |
+| Dynamic Client Registration / DCRM | Default-closed RFC 7591 and RFC 7592 client lifecycle for DCR-created clients only; registration and management operations emit non-secret audit events. | `registration_endpoint` appears only when `ENABLE_DYNAMIC_CLIENT_REGISTRATION=true`; software statements and remote `jwks_uri` trust remain deferred. |
+| Device Authorization Grant | Default-closed constrained-input client profile that requires the client grant allowlist. | Device endpoint and `device_code` grant metadata appear only when `ENABLE_DEVICE_AUTHORIZATION_GRANT=true`. |
+| Token Exchange local profile | Bounded RFC 8693 access-token to access-token exchange for locally issued subject/actor tokens and explicitly allowed targets. | The grant type is advertised only because the local profile is implemented; external, refresh-token, and ID-token exchange profiles are not implied. |
+| Third-party JWT bearer assertion trust | Deferred profile for external assertion issuers and non-client subjects; the implemented JWT bearer grant remains client-bound. | No discovery metadata is advertised until issuer allowlists, subject mapping, replay, revocation, audit, and negative tests exist. |
+| Third-party login RP providers | Product login surface for external OIDC, OAuth2 social, and SAML gateway providers. Provider registry is configuration-driven and default-closed; each provider has independent enablement, display metadata, adapter type, redirect URI, scope, endpoints, and claim mapping. | Third-party login is an RP/client capability and must not appear in OP discovery metadata. Public login metadata comes from `/auth/federation/providers`; admin onboarding metadata comes from `/admin/federation/providers` without secrets. |
 
 ## `oauth2-security-bcp`
 
@@ -148,7 +162,7 @@ Required negative tests:
 
 Deployments that enable refresh-token rotation for migration or compatibility
 must document that exception and keep the replay-detection state machine from
-`docs/refresh-token-rotation.md`.
+`docs/protocol/refresh-token-rotation.md`.
 
 Runtime enforcement is selected with `AUTHORIZATION_SERVER_PROFILE=fapi2-security`.
 The setting forces PAR globally, caps authorization code lifetime at 60 seconds,
@@ -222,6 +236,14 @@ Required negative tests:
 | Authorization response | Signed authorization response JWT |
 | Metadata | `authorization_signing_alg_values_supported` must match active signing capability |
 | Failure behavior | Signing failure must not fall back to query response |
+
+Runtime enforcement is selected with
+`AUTHORIZATION_SERVER_PROFILE=fapi2-message-signing-jarm`. The profile includes
+the `fapi2-security` controls and requires signed authorization responses even
+when the request omits `response_mode=jwt` or explicitly uses the default query
+mode. Discovery metadata advertises `response_modes_supported=["jwt"]` for this
+profile. The base `fapi2-security` profile continues to advertise `query` and
+`jwt` and signs authorization responses only when JARM is negotiated.
 
 Required negative tests:
 
