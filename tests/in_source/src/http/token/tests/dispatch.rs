@@ -510,6 +510,7 @@ async fn valid_browser_session_cookie_cannot_authenticate_oauth_protocol_endpoin
     let username = format!("browser-session-{}", Uuid::now_v7());
     let email = format!("{username}@example.test");
     let session_id = format!("browser-session-{}", Uuid::now_v7());
+    let unauthenticated_client_id = format!("browser-session-client-{}", Uuid::now_v7());
     let session_key = format!("oauth:session:{session_id}");
     let mut conn = get_conn(&state.diesel_db)
         .await
@@ -571,7 +572,9 @@ async fn valid_browser_session_cookie_cannot_authenticate_oauth_protocol_endpoin
     let token_response = token(
         state.clone(),
         request("/token"),
-        Bytes::from_static(b"grant_type=client_credentials"),
+        Bytes::from(format!(
+            "grant_type=client_credentials&client_id={unauthenticated_client_id}"
+        )),
     )
     .await;
     assert_token_error(
@@ -585,7 +588,9 @@ async fn valid_browser_session_cookie_cannot_authenticate_oauth_protocol_endpoin
     let revoke_response = revoke(
         state.clone(),
         request("/revoke"),
-        Bytes::from_static(b"token=opaque-token"),
+        Bytes::from(format!(
+            "token=opaque-token&client_id={unauthenticated_client_id}"
+        )),
     )
     .await;
     assert_eq!(revoke_response.status(), StatusCode::UNAUTHORIZED);
