@@ -38,6 +38,13 @@ pub(crate) struct Keyset {
     pub(crate) verification_keys: Vec<VerificationKey>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct HttpMessageSignature {
+    pub(crate) kid: String,
+    pub(crate) algorithm: &'static str,
+    pub(crate) signature: Vec<u8>,
+}
+
 #[derive(Clone)]
 pub(crate) struct KeysetStore {
     inner: Arc<RwLock<Arc<Keyset>>>,

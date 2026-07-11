@@ -99,6 +99,8 @@ fn settings(profile: AuthorizationServerProfile, trusted_proxy_cidrs: Vec<IpCidr
         enable_session_management: false,
         enable_ciba: false,
         enable_native_sso: false,
+        enable_fapi_http_signatures: false,
+        fapi_http_signature_max_age_seconds: 60,
         dynamic_client_registration_initial_access_token: None,
         device_authorization_ttl_seconds: 600,
         device_authorization_poll_interval_seconds: 5,
@@ -106,6 +108,19 @@ fn settings(profile: AuthorizationServerProfile, trusted_proxy_cidrs: Vec<IpCidr
         ciba_poll_interval_seconds: 5,
         ciba_automated_decision_token: None,
     }
+}
+
+#[test]
+fn fapi_http_signatures_are_not_advertised_in_standard_metadata() {
+    let mut disabled = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
+    let keyset = keyset(jsonwebtoken::Algorithm::RS256);
+    let baseline = authorization_server_metadata(&disabled, &keyset);
+
+    disabled.enable_fapi_http_signatures = true;
+    let enabled = authorization_server_metadata(&disabled, &keyset);
+
+    assert_eq!(enabled, baseline);
+    assert!(enabled.get("fapi_http_signatures").is_none());
 }
 
 #[test]

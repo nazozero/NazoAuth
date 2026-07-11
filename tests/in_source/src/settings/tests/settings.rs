@@ -887,3 +887,36 @@ fn saml_gateway_requires_strong_shared_secret_when_enabled() {
         "FEDERATION_SAML_GATEWAY_SECRET must be at least 32 bytes"
     );
 }
+#[test]
+fn fapi_http_signature_settings_default_closed() {
+    let settings = Settings::from_config(&ConfigSource::default()).unwrap();
+
+    assert!(!settings.enable_fapi_http_signatures);
+    assert_eq!(settings.fapi_http_signature_max_age_seconds, 60);
+}
+
+#[test]
+fn fapi_http_signature_max_age_accepts_inclusive_boundaries() {
+    for value in ["1", "300"] {
+        let config = ConfigSource::from_pairs_for_test([
+            ("ENABLE_FAPI_HTTP_SIGNATURES", "true"),
+            ("FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS", value),
+        ]);
+        let settings = Settings::from_config(&config).unwrap();
+
+        assert!(settings.enable_fapi_http_signatures);
+        assert_eq!(
+            settings.fapi_http_signature_max_age_seconds.to_string(),
+            value
+        );
+    }
+}
+
+#[test]
+fn fapi_http_signature_max_age_rejects_invalid_values() {
+    for value in ["0", "301", "not-an-integer"] {
+        let config =
+            ConfigSource::from_pairs_for_test([("FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS", value)]);
+        assert!(Settings::from_config(&config).is_err(), "accepted {value}");
+    }
+}

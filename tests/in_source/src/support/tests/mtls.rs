@@ -265,6 +265,8 @@ fn trusted_proxy_settings() -> Settings {
         enable_session_management: false,
         enable_ciba: false,
         enable_native_sso: false,
+        enable_fapi_http_signatures: false,
+        fapi_http_signature_max_age_seconds: 60,
         dynamic_client_registration_initial_access_token: None,
         device_authorization_ttl_seconds: 600,
         device_authorization_poll_interval_seconds: 5,

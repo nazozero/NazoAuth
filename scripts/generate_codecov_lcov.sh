@@ -19,6 +19,7 @@ if [[ -z "$PYTHON_BIN" ]]; then
   fi
 fi
 SERVER_PID=""
+SIGNED_SERVER_PID=""
 POSTGRES_CONTAINER="${CODECOV_POSTGRES_CONTAINER:-nazo-oauth-codecov-postgres}"
 VALKEY_CONTAINER="${CODECOV_VALKEY_CONTAINER:-nazo-oauth-codecov-valkey}"
 POSTGRES_HOST="${CODECOV_POSTGRES_HOST:-127.0.0.1}"
@@ -34,6 +35,10 @@ if [[ -n "$DOCKER_NETWORK" ]]; then
 fi
 
 cleanup() {
+  if [[ -n "$SIGNED_SERVER_PID" ]]; then
+    kill -INT "$SIGNED_SERVER_PID" 2>/dev/null || true
+    wait "$SIGNED_SERVER_PID" 2>/dev/null || true
+  fi
   if [[ -n "$SERVER_PID" ]]; then
     kill -INT "$SERVER_PID" 2>/dev/null || true
     wait "$SERVER_PID" 2>/dev/null || true
@@ -256,16 +261,25 @@ cargo build --locked --workspace --all-features --bins
 LLVM_PROFILE_FILE="$(profile_path 'migrate-%p.profraw')" "$BIN_DIR/nazo-oauth-migrate"
 LLVM_PROFILE_FILE="$(profile_path 'server-%p.profraw')" "$BIN_DIR/nazo-oauth-server" &
 SERVER_PID=$!
+ENABLE_FAPI_HTTP_SIGNATURES='true' \
+  BIND='127.0.0.1:18001' \
+  LLVM_PROFILE_FILE="$(profile_path 'signed-server-%p.profraw')" \
+  "$BIN_DIR/nazo-oauth-server" &
+SIGNED_SERVER_PID=$!
 
 for _ in $(seq 1 60); do
-  if curl -fsS http://127.0.0.1:18000/health >/dev/null; then
+  if curl -fsS http://127.0.0.1:18000/health >/dev/null \
+    && curl -fsS http://127.0.0.1:18001/health >/dev/null
+  then
     break
   fi
   sleep 2
 done
 curl -fsS http://127.0.0.1:18000/health >/dev/null
+curl -fsS http://127.0.0.1:18001/health >/dev/null
 
 E2E_BASE_URL='http://127.0.0.1:18000' \
+E2E_SIGNED_BASE_URL='http://127.0.0.1:18001' \
 E2E_ISSUER_URL='http://127.0.0.1:18000' \
 E2E_DATABASE_URL="$DATABASE_URL" \
 E2E_VALKEY_URL="$VALKEY_URL" \
@@ -277,6 +291,9 @@ E2E_ALLOW_CODEX_COVERAGE_LOOPBACK='1' \
 E2E_SMTP_BIND_HOST='127.0.0.1' \
   "$PYTHON_BIN" scripts/full_real_request_e2e.py
 
+kill -INT "$SIGNED_SERVER_PID"
+wait "$SIGNED_SERVER_PID" || true
+SIGNED_SERVER_PID=""
 kill -INT "$SERVER_PID"
 wait "$SERVER_PID" || true
 SERVER_PID=""

@@ -318,3 +318,13 @@ browser-only application remains a public `oauth2-oidc-baseline` client using
 authorization code + S256 PKCE, exact redirects, and non-credentialed
 endpoint-specific CORS. The final RFC requires a separate delta audit before
 any final-standard claim.
+
+FAPI HTTP Signatures is the second bounded M8 implementation candidate. It is
+available only through `ENABLE_FAPI_HTTP_SIGNATURES=true` on `/fapi/resource`;
+it is not an authorization-server profile, emits no metadata, and leaves every
+existing profile unchanged while disabled. The implementation is pinned to the
+OIDF working draft built 2026-06-26 and the RFC 9421/RFC 9530 primitives listed
+in the [dated audit](fapi-http-signatures-draft-audit.md). No dedicated OIDF
+plan exists, so local Rust vectors and real-HTTP positive/negative coverage are
+evidence, not certification. A newer draft or Final Specification triggers a
+fresh delta audit before any version claim changes.

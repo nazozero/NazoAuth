@@ -43,6 +43,7 @@ futures-util = "0.3.32"
 hmac = "0.13.0"
 jsonwebtoken = { version = "10.4.0", default-features = false, features = ["aws_lc_rs", "use_pem"] }
 lettre = { version = "0.11.22", default-features = false, features = ["builder", "smtp-transport", "tokio1", "tokio1-native-tls"] }
+nazo-fapi-http-signatures = { version = "0.1.0", path = "crates/fapi-http-signatures" }
 openssl = "0.10.81"
 opentelemetry = "0.32.0"
 opentelemetry-appender-tracing = "0.32.0"
@@ -75,3 +76,6 @@ lto = "thin"
 codegen-units = 1
 strip = "symbols"
 panic = "abort"
+
+[workspace]
+members = ["crates/fapi-http-signatures"]

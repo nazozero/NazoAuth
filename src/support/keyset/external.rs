@@ -79,7 +79,7 @@ pub(super) async fn sign_external_jwt_input(
             jwt_provider_error(format!("external signer stdout join failed: {error}"))
         })?
         .map_err(|error| jwt_provider_error(format!("external signer failed: {error}")))?;
-    let stderr = stderr_task
+    let _stderr = stderr_task
         .await
         .map_err(|error| {
             jwt_provider_error(format!("external signer stderr join failed: {error}"))
@@ -87,9 +87,7 @@ pub(super) async fn sign_external_jwt_input(
         .map_err(|error| jwt_provider_error(format!("external signer failed: {error}")))?;
     if !status.success() {
         return Err(jwt_provider_error(format!(
-            "external signer exited with status {}: {}",
-            status,
-            String::from_utf8_lossy(&stderr)
+            "external signer exited with status {status}"
         )));
     }
     let response: Value = serde_json::from_slice(&stdout)?;
@@ -109,6 +107,23 @@ pub(super) async fn sign_external_jwt_input(
     }
     verify_external_jwt_signature(external, kid, alg, signing_input, signature, public_jwk)?;
     Ok(signature.to_owned())
+}
+
+pub(crate) async fn sign_external_http_input(
+    external: &ExternalSigningKey,
+    kid: &str,
+    alg: jsonwebtoken::Algorithm,
+    signing_input: &[u8],
+    public_jwk: &Value,
+) -> jsonwebtoken::errors::Result<Vec<u8>> {
+    let signing_input = std::str::from_utf8(signing_input)
+        .map_err(|_| jwt_provider_error("HTTP signature base is not valid UTF-8"))?;
+    let encoded = sign_external_jwt_input(external, kid, alg, signing_input, public_jwk).await?;
+    URL_SAFE_NO_PAD.decode(encoded).map_err(|error| {
+        jwt_provider_error(format!(
+            "external signer returned invalid signature: {error}"
+        ))
+    })
 }
 
 fn verify_external_jwt_signature(
