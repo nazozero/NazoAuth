@@ -73,6 +73,25 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
         )
         self.assertIn("Twenty-one-plan", manifest["description"])
 
+    def test_plan_partition_is_complete_and_isolates_browser_sensitive_plans(self):
+        module = load_setup_module()
+        parallel = "oidcc-basic-certification-test-plan basic.json"
+        frontchannel = (
+            "oidcc-frontchannel-rp-initiated-logout-certification-test-plan "
+            "frontchannel.json"
+        )
+        session = (
+            "oidcc-session-management-certification-test-plan session.json"
+        )
+
+        concurrent, frontchannel_only, session_only = module.partition_plan_expressions(
+            [parallel, frontchannel, session]
+        )
+
+        self.assertEqual(concurrent, [parallel])
+        self.assertEqual(frontchannel_only, [frontchannel])
+        self.assertEqual(session_only, [session])
+
     def test_all_generated_plans_allow_the_native_sso_metadata_extension(self):
         module = load_setup_module()
 
