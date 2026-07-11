@@ -152,6 +152,12 @@ def run_source_policy_self_tests() -> None:
     must_fail(registry + registry, {"handler": noop}, "duplicates")
     must_fail((("required_case", "unknown", {}),), {}, "unknown_handlers")
     must_fail(registry, {"handler": object()}, "not callable")
+    must_fail(registry, {}, "handler map is not exact")
+    must_fail(
+        registry,
+        {"handler": noop, "extra_handler": noop},
+        "handler map is not exact",
+    )
     must_fail(registry, {"handler": noop}, "did not assert")
     must_fail(registry, {"handler": lambda _case, _params: None if False else None}, "did not assert")
 
@@ -188,6 +194,26 @@ def run_source_policy_self_tests() -> None:
         required=required,
         allowed_handlers=allowed,
         evidence=clean_evidence,
+    )
+
+    nested_evidence = RuntimeCaseEvidence(required)
+    def nested(_case: str, _params: dict[str, object]) -> None:
+        execute_case_registry(
+            registry,
+            {"handler": lambda case, _params: nested_evidence.observe(case, True)},
+            required=required,
+            allowed_handlers=allowed,
+            evidence=nested_evidence,
+        )
+    must_fail(registry, {"handler": nested}, "nested runtime case execution", nested_evidence)
+    if nested_evidence.active_case is not None:
+        raise AssertionError("runtime evidence state leaked after nested execution")
+    execute_case_registry(
+        registry,
+        {"handler": lambda case, _params: nested_evidence.observe(case, True)},
+        required=required,
+        allowed_handlers=allowed,
+        evidence=nested_evidence,
     )
 
 
