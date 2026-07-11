@@ -4,7 +4,7 @@ mod request;
 mod response;
 mod verify;
 
-pub use digest::content_digest;
+pub use digest::{content_digest, content_digest_field_matches};
 pub use error::VerifyError;
 pub use request::{
     PreparedSignature, RequestError, RequestInput, RequestPolicy, SignatureFields, prepare_request,

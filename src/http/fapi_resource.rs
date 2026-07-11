@@ -6,8 +6,8 @@ use crate::domain::Claims;
 use crate::http::prelude::*;
 use nazo_fapi_http_signatures::{
     OriginalRequest, RequestInput, ResponseInput, ResponsePolicy, SignatureFields,
-    VerificationPolicy, VerifiedInput, content_digest, parse_request_for_verification,
-    prepare_response,
+    VerificationPolicy, VerifiedInput, content_digest, content_digest_field_matches,
+    parse_request_for_verification, prepare_response,
 };
 
 type FapiStoreFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -359,7 +359,8 @@ impl FapiOriginalRequest {
 
     fn valid_digest(&self) -> Option<&str> {
         let value = self.content_digest.unique().ok().flatten()?;
-        (!self.body.is_empty() && value == content_digest(&self.body)).then_some(value)
+        (!self.body.is_empty() && content_digest_field_matches(value, &self.body))
+            .then(|| value.trim_matches([' ', '\t']))
     }
 }
 
@@ -408,10 +409,7 @@ async fn sign_fapi_resource_response(
     let request_headers = request_digest
         .map(|digest| vec![("content-digest", digest)])
         .unwrap_or_default();
-    let request_fields = original
-        .parse(state.settings.fapi_http_signature_max_age_seconds)
-        .ok()
-        .and_then(|_| original.signature_fields().ok());
+    let request_fields = original.signature_fields().ok();
     let original_body = request_digest
         .map(|_| original.body.as_ref())
         .unwrap_or(b"");

@@ -1,9 +1,6 @@
 use sfv::{
     BareItem, DictSerializer, Dictionary, FieldType, Integer, KeyRef, ListEntry, Parser, StringRef,
-    Version,
 };
-use sha2::{Digest, Sha256};
-use subtle::ConstantTimeEq;
 use thiserror::Error;
 use url::Url;
 
@@ -13,7 +10,7 @@ use crate::verify::{
 };
 use crate::{
     PreparedSignature, RequestInput, SignatureFields, VerificationPolicy, VerifiedInput,
-    VerifyError,
+    VerifyError, content_digest_field_matches,
 };
 
 const SIGNATURE_NAME: &str = "nazo";
@@ -329,35 +326,7 @@ fn validate_body_digest(headers: &[(&str, &str)], body: &[u8]) -> Result<(), Ver
 }
 
 fn validate_digest_value(value: &str, body: &[u8]) -> Result<(), VerifyError> {
-    let dictionary: Dictionary = Parser::new(value)
-        .with_version(Version::Rfc8941)
-        .parse()
-        .map_err(|_| VerifyError::DigestMismatch)?;
-    if top_level_member_count(value) != dictionary.len()
-        || raw_dictionary_key_count(value, "sha-256") != 1
-        || dictionary.values().any(|entry| {
-            !matches!(
-                entry,
-                ListEntry::Item(item)
-                    if item.params.is_empty()
-                        && matches!(item.bare_item, BareItem::ByteSequence(_))
-            )
-        })
-    {
-        return Err(VerifyError::DigestMismatch);
-    }
-    let digest: [u8; 32] = match dictionary.get("sha-256") {
-        Some(ListEntry::Item(item)) if item.params.is_empty() => match &item.bare_item {
-            BareItem::ByteSequence(bytes) => bytes
-                .as_slice()
-                .try_into()
-                .map_err(|_| VerifyError::DigestMismatch)?,
-            _ => return Err(VerifyError::DigestMismatch),
-        },
-        _ => return Err(VerifyError::DigestMismatch),
-    };
-    let computed: [u8; 32] = Sha256::digest(body).into();
-    bool::from(digest.ct_eq(&computed))
+    content_digest_field_matches(value, body)
         .then_some(())
         .ok_or(VerifyError::DigestMismatch)
 }
@@ -448,20 +417,6 @@ fn unique_header_verify<'a>(
         return Err(VerifyError::DigestMismatch);
     }
     Ok(first)
-}
-
-fn raw_dictionary_key_count(field: &str, wanted: &str) -> usize {
-    field
-        .split(',')
-        .filter_map(|member| {
-            member
-                .trim_start()
-                .split_once(['=', ';'])
-                .map(|(name, _)| name)
-                .or_else(|| Some(member.trim()))
-        })
-        .filter(|name| *name == wanted)
-        .count()
 }
 
 fn is_token_byte(byte: u8) -> bool {

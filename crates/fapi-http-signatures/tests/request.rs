@@ -1,4 +1,6 @@
-use nazo_fapi_http_signatures::{RequestInput, RequestPolicy, content_digest, prepare_request};
+use nazo_fapi_http_signatures::{
+    RequestInput, RequestPolicy, content_digest, content_digest_field_matches, prepare_request,
+};
 use proptest::prelude::*;
 use sfv::{BareItem, Dictionary, ListEntry, Parser};
 
@@ -8,6 +10,25 @@ fn content_digest_encodes_sha256_as_a_structured_field_byte_sequence() {
         content_digest(b"hello"),
         "sha-256=:LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=:"
     );
+}
+
+#[test]
+fn content_digest_semantics_accept_outer_ows_and_additional_digest_members() {
+    let body = b"semantic digest body";
+    let field = format!(" \t sha-512=:AA==:, {} \t", content_digest(body));
+
+    assert!(content_digest_field_matches(&field, body));
+    assert!(!content_digest_field_matches(
+        &format!(
+            "{}, sha-256=:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=:",
+            content_digest(body)
+        ),
+        body
+    ));
+    assert!(!content_digest_field_matches(
+        &content_digest(b"different"),
+        body
+    ));
 }
 
 #[test]

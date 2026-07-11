@@ -1,11 +1,13 @@
 use std::fmt;
 
-use sfv::{BareItem, Dictionary, FieldType, InnerList, ListEntry, Parser, Version};
+use sfv::{BareItem, Dictionary, FieldType, InnerList, ListEntry, Parser};
 use sha2::{Digest, Sha256};
-use subtle::ConstantTimeEq;
 use url::Url;
 
-use crate::{RequestInput, RequestPolicy, SignatureFields, VerifyError, prepare_request};
+use crate::{
+    RequestInput, RequestPolicy, SignatureFields, VerifyError, content_digest_field_matches,
+    prepare_request,
+};
 
 const REQUEST_TAG: &str = "fapi-2-request";
 
@@ -304,37 +306,7 @@ fn validate_digest<'a>(input: &'a RequestInput<'_>) -> Result<Option<&'a str>, V
             .ok_or(VerifyError::DigestMismatch);
     }
     let supplied = supplied.ok_or(VerifyError::DigestMismatch)?;
-    let dictionary: Dictionary = Parser::new(supplied)
-        .with_version(Version::Rfc8941)
-        .parse()
-        .map_err(|_| VerifyError::DigestMismatch)?;
-    if top_level_member_count(supplied) != dictionary.len()
-        || raw_dictionary_key_count(supplied, "sha-256") != 1
-    {
-        return Err(VerifyError::DigestMismatch);
-    }
-    for entry in dictionary.values() {
-        if !matches!(
-            entry,
-            ListEntry::Item(item)
-                if item.params.is_empty()
-                    && matches!(item.bare_item, BareItem::ByteSequence(_))
-        ) {
-            return Err(VerifyError::DigestMismatch);
-        }
-    }
-    let digest: [u8; 32] = match dictionary.get("sha-256") {
-        Some(ListEntry::Item(item)) => match &item.bare_item {
-            BareItem::ByteSequence(bytes) => bytes
-                .as_slice()
-                .try_into()
-                .map_err(|_| VerifyError::DigestMismatch)?,
-            _ => return Err(VerifyError::DigestMismatch),
-        },
-        _ => return Err(VerifyError::DigestMismatch),
-    };
-    let computed: [u8; 32] = Sha256::digest(input.body).into();
-    if !bool::from(digest.ct_eq(&computed)) {
+    if !content_digest_field_matches(supplied, input.body) {
         return Err(VerifyError::DigestMismatch);
     }
     Ok(Some(supplied))
@@ -347,20 +319,6 @@ fn unique_header<'a>(headers: &'a [(&str, &'a str)], wanted: &str) -> Option<&'a
         .map(|(_, value)| *value);
     let first = values.next()?;
     values.next().is_none().then_some(first)
-}
-
-fn raw_dictionary_key_count(field: &str, wanted: &str) -> usize {
-    field
-        .split(',')
-        .filter_map(|member| {
-            member
-                .trim_start()
-                .split_once(['=', ';'])
-                .map(|(key, _)| key)
-                .or_else(|| Some(member.trim()))
-        })
-        .filter(|key| *key == wanted)
-        .count()
 }
 
 fn replace_content_digest(

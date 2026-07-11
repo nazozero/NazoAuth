@@ -500,6 +500,173 @@ async fn signed_resource_request_for_authorization(
     (keyset, client, request.to_http_request(), fields)
 }
 
+async fn signed_resource_request_with_received_digest(
+    body: &[u8],
+    authorization: &str,
+    received_digest: &str,
+) -> (ClientRow, HttpRequest, SignatureFields) {
+    let material =
+        generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("client key generation");
+    let kid = "resource-client-varied-digest";
+    let public_jwk = public_jwk_from_private_der(
+        kid,
+        jsonwebtoken::Algorithm::EdDSA,
+        &material.private_pkcs8_der,
+    )
+    .unwrap();
+    let client = fapi_http_signature_client(public_jwk.clone());
+    let keyset = Keyset {
+        active_kid: kid.to_owned(),
+        active_alg: jsonwebtoken::Algorithm::EdDSA,
+        active_signing_key: ActiveSigningKey::LocalPkcs8Der(material.private_pkcs8_der),
+        verification_keys: vec![VerificationKey {
+            kid: kid.to_owned(),
+            public_jwk,
+            local_signing_key: None,
+        }],
+    };
+    let canonical = nazo_fapi_http_signatures::content_digest(body);
+    let headers = [("authorization", authorization)];
+    let prepared = prepare_request(
+        RequestInput {
+            method: "POST",
+            target_uri: "https://issuer.example/fapi/resource",
+            headers: &headers,
+            body,
+        },
+        RequestPolicy {
+            created: Utc::now().timestamp(),
+            keyid: kid,
+            algorithm: "ed25519",
+        },
+    )
+    .unwrap();
+    let canonical_line = format!("\"content-digest\": {canonical}");
+    let received_line = format!(
+        "\"content-digest\": {}",
+        received_digest.trim_matches([' ', '\t'])
+    );
+    let modified_base = String::from_utf8(prepared.signature_base().to_vec())
+        .unwrap()
+        .replace(&canonical_line, &received_line);
+    let detached = keyset
+        .sign_http_message(modified_base.as_bytes())
+        .await
+        .unwrap();
+    let fields = prepared.finish(&detached.signature);
+    let req = actix_web::test::TestRequest::post()
+        .uri("/fapi/resource")
+        .insert_header((header::AUTHORIZATION, authorization))
+        .insert_header(("content-digest", received_digest))
+        .insert_header(("signature-input", fields.signature_input.clone()))
+        .insert_header(("signature", fields.signature.clone()))
+        .to_http_request();
+    (client, req, fields)
+}
+
+fn copied_signature_fields(fields: &SignatureFields) -> SignatureFields {
+    SignatureFields {
+        signature_input: fields.signature_input.clone(),
+        signature: fields.signature.clone(),
+    }
+}
+
+fn replace_created(signature_input: &str, created: i64) -> String {
+    let marker = ";created=";
+    let start = signature_input.find(marker).unwrap() + marker.len();
+    let end = signature_input[start..]
+        .find(';')
+        .map(|offset| start + offset)
+        .unwrap_or(signature_input.len());
+    format!(
+        "{}{}{}",
+        &signature_input[..start],
+        created,
+        &signature_input[end..]
+    )
+}
+
+async fn assert_signed_error_covers_received_signature_fields(
+    state: &Data<AppState>,
+    response: HttpResponse,
+    method: &str,
+    fields: &SignatureFields,
+) {
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let digest = response
+        .headers()
+        .get("content-digest")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let response_fields = SignatureFields {
+        signature_input: response
+            .headers()
+            .get("signature-input")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned(),
+        signature: response
+            .headers()
+            .get("signature")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned(),
+    };
+    assert!(
+        response_fields
+            .signature_input
+            .contains("\"signature-input\";req")
+    );
+    assert!(
+        response_fields
+            .signature_input
+            .contains("\"signature\";req")
+    );
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .unwrap();
+    let response_headers = [("content-digest", digest.as_str())];
+    let parsed = parse_response_for_verification(
+        ResponseInput {
+            status: 401,
+            headers: &response_headers,
+            body: &body,
+        },
+        OriginalRequest {
+            input: RequestInput {
+                method,
+                target_uri: "https://issuer.example/fapi/resource",
+                headers: &[],
+                body: b"",
+            },
+            signature_fields: Some(fields),
+        },
+        response_fields,
+        VerificationPolicy {
+            now: Utc::now().timestamp(),
+            max_age_seconds: 60,
+            future_skew_seconds: FAPI_HTTP_SIGNATURE_FUTURE_SKEW_SECONDS,
+        },
+    )
+    .expect("client should reconstruct the signed error from the received request fields");
+    let server = state.keyset.snapshot();
+    let verifier = fapi_http_signature_client(server.verification_keys[0].public_jwk.clone());
+    verify_client_http_message(
+        &verifier,
+        DEFAULT_TENANT_ID,
+        "client-1",
+        parsed.keyid(),
+        parsed.algorithm(),
+        parsed.signature_base(),
+        parsed.signature(),
+    )
+    .unwrap();
+}
+
 #[derive(Clone, Copy)]
 enum FakeReplayMode {
     Track,
@@ -1212,6 +1379,169 @@ async fn fapi_resource_http_signature_endpoint_signs_dpop_nonce_challenge() {
     assert!(response.headers().contains_key("signature-input"));
     assert!(response.headers().contains_key("signature"));
     assert_eq!(store.calls(), (0, 0, 0, 0));
+}
+
+#[actix_web::test]
+async fn fapi_resource_http_signature_post_preserves_semantic_received_digest_binding() {
+    let state = fapi_enabled_signing_state_with_invalid_db();
+    let mut claims = access_claims(None);
+    claims.iss = state.settings.issuer.clone();
+    claims.client_id = "client-1".to_owned();
+    let token = signed_fapi_claims(&state, claims).await;
+    let authorization = format!("Bearer {token}");
+    let body = Bytes::from_static(br#"{"semantic":true}"#);
+    let received_digest = format!(
+        "\t sha-512=:AA==:, {} \t",
+        nazo_fapi_http_signatures::content_digest(&body)
+    );
+    let (client, req, request_fields) =
+        signed_resource_request_with_received_digest(&body, &authorization, &received_digest).await;
+    let store = FakeFapiResourceStore::accepting(client);
+
+    let response = fapi_resource(state.clone(), with_fapi_store(req, store), body.clone()).await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let response_digest = response
+        .headers()
+        .get("content-digest")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let response_fields = SignatureFields {
+        signature_input: response
+            .headers()
+            .get("signature-input")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned(),
+        signature: response
+            .headers()
+            .get("signature")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned(),
+    };
+    assert!(
+        response_fields
+            .signature_input
+            .contains("\"content-digest\";req")
+    );
+    let response_body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .unwrap();
+    let response_headers = [("content-digest", response_digest.as_str())];
+    let request_headers = [
+        ("authorization", authorization.as_str()),
+        ("content-digest", received_digest.as_str()),
+    ];
+    let parsed = parse_response_for_verification(
+        ResponseInput {
+            status: 200,
+            headers: &response_headers,
+            body: &response_body,
+        },
+        OriginalRequest {
+            input: RequestInput {
+                method: "POST",
+                target_uri: "https://issuer.example/fapi/resource",
+                headers: &request_headers,
+                body: &body,
+            },
+            signature_fields: Some(&request_fields),
+        },
+        response_fields,
+        VerificationPolicy {
+            now: Utc::now().timestamp(),
+            max_age_seconds: 60,
+            future_skew_seconds: FAPI_HTTP_SIGNATURE_FUTURE_SKEW_SECONDS,
+        },
+    )
+    .expect("client should verify the response using the received digest serialization");
+    let server = state.keyset.snapshot();
+    let verifier = fapi_http_signature_client(server.verification_keys[0].public_jwk.clone());
+    verify_client_http_message(
+        &verifier,
+        DEFAULT_TENANT_ID,
+        "client-1",
+        parsed.keyid(),
+        parsed.algorithm(),
+        parsed.signature_base(),
+        parsed.signature(),
+    )
+    .unwrap();
+}
+
+#[actix_web::test]
+async fn fapi_resource_http_signature_errors_preserve_unique_received_signature_bindings() {
+    let state = fapi_enabled_signing_state_with_invalid_db();
+    let mut claims = access_claims(None);
+    claims.iss = state.settings.issuer.clone();
+    claims.client_id = "client-1".to_owned();
+    let token = signed_fapi_claims(&state, claims).await;
+    let authorization = format!("Bearer {token}");
+    let (_keyset, client, _req, valid_fields) =
+        signed_resource_request_for_authorization(b"", &authorization).await;
+    let now = Utc::now().timestamp();
+    let mut stale = copied_signature_fields(&valid_fields);
+    stale.signature_input = replace_created(&stale.signature_input, now - 600);
+    let mut future = copied_signature_fields(&valid_fields);
+    future.signature_input = replace_created(&future.signature_input, now + 600);
+    let mut wrong_tag = copied_signature_fields(&valid_fields);
+    wrong_tag.signature_input = wrong_tag
+        .signature_input
+        .replace("fapi-2-request", "wrong-request-tag");
+    let mut missing_coverage = copied_signature_fields(&valid_fields);
+    missing_coverage.signature_input =
+        missing_coverage
+            .signature_input
+            .replacen(" \"authorization\"", "", 1);
+    assert_ne!(
+        missing_coverage.signature_input,
+        valid_fields.signature_input
+    );
+
+    for fields in [stale, future, wrong_tag, missing_coverage] {
+        let req = actix_web::test::TestRequest::get()
+            .uri("/fapi/resource")
+            .insert_header((header::AUTHORIZATION, authorization.as_str()))
+            .insert_header(("signature-input", fields.signature_input.clone()))
+            .insert_header(("signature", fields.signature.clone()))
+            .to_http_request();
+        let store = FakeFapiResourceStore::accepting(client.clone());
+        let response = fapi_resource(
+            state.clone(),
+            with_fapi_store(req, store.clone()),
+            Bytes::new(),
+        )
+        .await;
+        assert_eq!(store.calls(), (1, 1, 0, 0));
+        assert_signed_error_covers_received_signature_fields(&state, response, "GET", &fields)
+            .await;
+    }
+
+    let request_body = Bytes::from_static(br#"{"digest":"mismatch"}"#);
+    let (_keyset, client, _req, fields) =
+        signed_resource_request_for_authorization(&request_body, &authorization).await;
+    let wrong_digest = nazo_fapi_http_signatures::content_digest(b"different body");
+    let req = actix_web::test::TestRequest::post()
+        .uri("/fapi/resource")
+        .insert_header((header::AUTHORIZATION, authorization))
+        .insert_header(("content-digest", wrong_digest))
+        .insert_header(("signature-input", fields.signature_input.clone()))
+        .insert_header(("signature", fields.signature.clone()))
+        .to_http_request();
+    let store = FakeFapiResourceStore::accepting(client);
+    let response = fapi_resource(
+        state.clone(),
+        with_fapi_store(req, store.clone()),
+        request_body,
+    )
+    .await;
+    assert_eq!(store.calls(), (1, 1, 0, 0));
+    assert_signed_error_covers_received_signature_fields(&state, response, "POST", &fields).await;
 }
 
 #[actix_web::test]
