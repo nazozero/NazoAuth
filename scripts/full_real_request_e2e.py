@@ -35,6 +35,8 @@ HTTP_SIGNATURE_REQUIRED_E2E_CASES = frozenset(
     {
         "fapi_http_signature_signed_get",
         "fapi_http_signature_signed_post",
+        "fapi_http_signature_signed_extra_headers",
+        "fapi_http_signature_tampered_extra_header",
         "fapi_http_signature_signed_dpop_bound_resource",
         "fapi_http_signature_response_verification_and_request_binding",
         "fapi_http_signature_response_tampered_content_type",
@@ -56,6 +58,8 @@ HTTP_SIGNATURE_REQUIRED_E2E_CASES = frozenset(
 HTTP_SIGNATURE_CASE_REGISTRY = (
     ("fapi_http_signature_signed_get", "signed_request", {"query": "signed-get", "expected_status": 200}),
     ("fapi_http_signature_signed_post", "signed_post", {"query": "signed-post", "expected_status": 200}),
+    ("fapi_http_signature_signed_extra_headers", "signed_request", {"query": "signed-extra-headers", "signed_extra_headers": {"Content-Type": "application/json", "Idempotency-Key": "operation-123"}, "expected_status": 200}),
+    ("fapi_http_signature_tampered_extra_header", "signed_request", {"query": "tampered-extra-header", "signed_extra_headers": {"Content-Type": "application/json", "Idempotency-Key": "operation-123"}, "sent_extra_headers": {"Content-Type": "application/json", "Idempotency-Key": "operation-999"}, "expected_status": 401}),
     ("fapi_http_signature_signed_dpop_bound_resource", "signed_dpop", {"query": "signed-dpop-bound", "expected_status": 200}),
     ("fapi_http_signature_response_verification_and_request_binding", "response_binding", {"query": "response-binding", "expected_status": 200}),
     ("fapi_http_signature_response_tampered_content_type", "response_header_tamper", {"query": "response-tampered-content-type", "header": "Content-Type", "value": "text/plain", "expected_status": 200}),
@@ -351,6 +355,7 @@ def fapi_http_signature_fields(
     body: bytes = b"",
     dpop: str | None = None,
     created: int | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> dict[str, str]:
     """Mirror the Rust core's fixed Ed25519 request vector for black-box transport tests.
 
@@ -375,6 +380,11 @@ def fapi_http_signature_fields(
         components.append("content-digest")
         values.append(f'"content-digest": {digest}')
         headers["Content-Digest"] = digest
+    for name, value in (extra_headers or {}).items():
+        component = name.lower()
+        components.append(component)
+        values.append(f'"{component}": {value.strip()}')
+        headers[name] = value
     component_list = " ".join(f'"{component}"' for component in components)
     params = (
         f'({component_list});created={created};keyid="{kid}";alg="ed25519";'
@@ -1784,6 +1794,8 @@ def exercise_fapi_http_signature_profile(admin: requests.Session) -> None:
         sent_authorization: str | None = None,
         signed_dpop: str | None = None,
         sent_dpop: str | None = None,
+        signed_extra_headers: dict[str, str] | None = None,
+        sent_extra_headers: dict[str, str] | None = None,
         signed_body: bytes | None = None,
         created: int | None = None,
         expected_status: int,
@@ -1799,10 +1811,13 @@ def exercise_fapi_http_signature_profile(admin: requests.Session) -> None:
             body=body if signed_body is None else signed_body,
             dpop=signed_dpop,
             created=created,
+            extra_headers=signed_extra_headers,
         )
         headers["Authorization"] = authorization
         if sent_dpop is not None:
             headers["DPoP"] = sent_dpop
+        for name, value in (sent_extra_headers or signed_extra_headers or {}).items():
+            headers[name] = value
         response = requests.request(
             method,
             f"{signed_base}/fapi/resource?case={query}",

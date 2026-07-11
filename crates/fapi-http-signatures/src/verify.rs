@@ -5,7 +5,8 @@ use sha2::{Digest, Sha256};
 use url::Url;
 
 use crate::request::{
-    canonical_target_uri, component, field_component, is_token_byte, method_component,
+    canonical_target_uri, component, field_component, is_reserved_signature_field, is_token_byte,
+    method_component,
 };
 use crate::{RequestInput, SignatureFields, VerifyError, content_digest_field_matches};
 
@@ -159,6 +160,7 @@ pub fn parse_request_for_verification(
             "@target-uri" => component("@target-uri", &target_uri),
             name if name.starts_with('@')
                 || name.is_empty()
+                || is_reserved_signature_field(name)
                 || name != name.to_ascii_lowercase()
                 || !name.bytes().all(is_token_byte) =>
             {

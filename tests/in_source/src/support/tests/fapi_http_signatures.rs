@@ -229,7 +229,9 @@ fn http_verification_enforces_well_formed_verify_key_ops() {
     };
 
     assert!(with_ops(json!(["verify"])));
-    assert!(with_ops(json!(["sign", "verify"])));
+    assert!(!with_ops(json!(["sign", "verify"])));
+    assert!(!with_ops(json!(["verify", "encrypt"])));
+    assert!(!with_ops(json!(["verify", "decrypt"])));
     assert!(!with_ops(json!(["sign"])));
     assert!(!with_ops(json!(["encrypt"])));
     assert!(!with_ops(json!([])));

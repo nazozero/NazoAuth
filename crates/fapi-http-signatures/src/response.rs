@@ -4,6 +4,7 @@ use sfv::{
 use thiserror::Error;
 use url::Url;
 
+use crate::request::is_reserved_signature_field;
 use crate::verify::{
     fingerprint, integer_parameter, signature_bytes, string_parameter, top_level_member_count,
     top_level_parameter_count, validate_parameters, validate_time,
@@ -262,9 +263,10 @@ fn append_extra_headers(
             return Err(invalid("invalid additional covered header name"));
         }
         let name = selected_name.to_ascii_lowercase();
-        if components
-            .iter()
-            .any(|component| component.source == source && component.name == name)
+        if is_reserved_signature_field(&name)
+            || components
+                .iter()
+                .any(|component| component.source == source && component.name == name)
         {
             return Err(invalid("duplicate additional covered component"));
         }
@@ -360,6 +362,9 @@ fn received_response_components(
             ("@method", Source::Request) => original.input.method.to_owned(),
             ("@target-uri", Source::Request) => target_uri.clone(),
             (name, _) if name.starts_with('@') => return Err(VerifyError::MissingComponent),
+            (name, Source::Response) if is_reserved_signature_field(name) => {
+                return Err(VerifyError::MissingComponent);
+            }
             (name, _)
                 if name.is_empty()
                     || name != name.to_ascii_lowercase()

@@ -610,6 +610,87 @@ async fn signed_resource_request_with_received_digest(
     (client, req, fields)
 }
 
+#[derive(Clone, Copy)]
+enum ExtraHeaderMode {
+    Exact,
+    Tampered,
+    Duplicate,
+    NonUtf8,
+}
+
+async fn enabled_request_with_signed_extras(
+    state: &Data<AppState>,
+    mode: ExtraHeaderMode,
+) -> (HttpRequest, ClientRow, SignatureFields, String) {
+    let mut claims = access_claims(None);
+    claims.iss = state.settings.issuer.clone();
+    claims.client_id = "client-1".to_owned();
+    let token = signed_fapi_claims(state, claims).await;
+    let authorization = format!("Bearer {token}");
+    let material = generate_key_material(jsonwebtoken::Algorithm::EdDSA).unwrap();
+    let kid = "resource-client-extra-headers";
+    let public_jwk = public_jwk_from_private_der(
+        kid,
+        jsonwebtoken::Algorithm::EdDSA,
+        &material.private_pkcs8_der,
+    )
+    .unwrap();
+    let client = fapi_http_signature_client(public_jwk.clone());
+    let keyset = Keyset {
+        active_kid: kid.to_owned(),
+        active_alg: jsonwebtoken::Algorithm::EdDSA,
+        active_signing_key: ActiveSigningKey::LocalPkcs8Der(material.private_pkcs8_der),
+        verification_keys: vec![VerificationKey {
+            kid: kid.to_owned(),
+            public_jwk,
+            local_signing_key: None,
+        }],
+    };
+    let signed_headers = [
+        ("authorization", authorization.as_str()),
+        ("content-type", "application/json"),
+        ("idempotency-key", "operation-123"),
+    ];
+    let prepared = prepare_request(
+        RequestInput {
+            method: "GET",
+            target_uri: "https://issuer.example/fapi/resource",
+            headers: &signed_headers,
+            body: b"",
+        },
+        RequestPolicy {
+            created: Utc::now().timestamp(),
+            keyid: kid,
+            algorithm: "ed25519",
+            covered_headers: &["content-type", "idempotency-key"],
+        },
+    )
+    .unwrap();
+    let detached = keyset
+        .sign_http_message(prepared.signature_base())
+        .await
+        .unwrap();
+    let fields = prepared.finish(&detached.signature);
+    let mut request = actix_web::test::TestRequest::get()
+        .uri("/fapi/resource")
+        .insert_header((header::AUTHORIZATION, authorization.as_str()))
+        .insert_header(("content-type", "application/json"))
+        .insert_header(("signature-input", fields.signature_input.clone()))
+        .insert_header(("signature", fields.signature.clone()));
+    request = match mode {
+        ExtraHeaderMode::Exact => request.insert_header(("idempotency-key", "operation-123")),
+        ExtraHeaderMode::Tampered => request.insert_header(("idempotency-key", "operation-999")),
+        ExtraHeaderMode::Duplicate => request
+            .append_header(("idempotency-key", "operation-123"))
+            .append_header(("idempotency-key", "operation-123")),
+        ExtraHeaderMode::NonUtf8 => request.insert_header((
+            "idempotency-key",
+            HeaderValue::from_bytes(b"operation-\xff").unwrap(),
+        )),
+    };
+    (request.to_http_request(), client, fields, authorization)
+}
+
 fn copied_signature_fields(fields: &SignatureFields) -> SignatureFields {
     SignatureFields {
         signature_input: fields.signature_input.clone(),
@@ -1415,6 +1496,121 @@ async fn fapi_resource_http_signature_enabled_endpoint_covers_get_post_and_repla
     let post = fapi_resource(state, with_fapi_store(post_req, post_store), post_body).await;
     assert_eq!(post.status(), StatusCode::OK);
     assert!(post.headers().contains_key("content-digest"));
+}
+
+#[actix_web::test]
+async fn fapi_resource_enabled_endpoint_interoperates_with_safe_signed_extra_headers() {
+    let state = fapi_enabled_signing_state_with_invalid_db();
+    let (req, client, request_fields, authorization) =
+        enabled_request_with_signed_extras(&state, ExtraHeaderMode::Exact).await;
+    let store = FakeFapiResourceStore::accepting(client);
+    let response = fapi_resource(state.clone(), with_fapi_store(req, store), Bytes::new()).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let digest = response
+        .headers()
+        .get("content-digest")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let interaction_id = response
+        .headers()
+        .get("x-fapi-interaction-id")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let response_fields = SignatureFields {
+        signature_input: response
+            .headers()
+            .get("signature-input")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned(),
+        signature: response
+            .headers()
+            .get("signature")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned(),
+    };
+    assert!(
+        response_fields
+            .signature_input
+            .contains("\"signature-input\";req")
+    );
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .unwrap();
+    let response_headers = [
+        ("content-digest", digest.as_str()),
+        ("content-type", content_type.as_str()),
+        ("x-fapi-interaction-id", interaction_id.as_str()),
+    ];
+    let request_headers = [
+        ("authorization", authorization.as_str()),
+        ("content-type", "application/json"),
+        ("idempotency-key", "operation-123"),
+    ];
+    let parsed = parse_response_for_verification(
+        ResponseInput {
+            status: 200,
+            headers: &response_headers,
+            body: &body,
+        },
+        OriginalRequest {
+            input: RequestInput {
+                method: "GET",
+                target_uri: "https://issuer.example/fapi/resource",
+                headers: &request_headers,
+                body: b"",
+            },
+            signature_fields: Some(&request_fields),
+        },
+        response_fields,
+        VerificationPolicy {
+            now: Utc::now().timestamp(),
+            max_age_seconds: 60,
+            future_skew_seconds: FAPI_HTTP_SIGNATURE_FUTURE_SKEW_SECONDS,
+        },
+    )
+    .unwrap();
+    let server = state.keyset.snapshot();
+    let verifier = fapi_http_signature_client(server.verification_keys[0].public_jwk.clone());
+    verify_client_http_message(
+        &verifier,
+        DEFAULT_TENANT_ID,
+        "client-1",
+        parsed.keyid(),
+        parsed.algorithm(),
+        parsed.signature_base(),
+        parsed.signature(),
+    )
+    .unwrap();
+
+    for mode in [
+        ExtraHeaderMode::Tampered,
+        ExtraHeaderMode::Duplicate,
+        ExtraHeaderMode::NonUtf8,
+    ] {
+        let (req, client, _, _) = enabled_request_with_signed_extras(&state, mode).await;
+        let response = fapi_resource(
+            state.clone(),
+            with_fapi_store(req, FakeFapiResourceStore::accepting(client)),
+            Bytes::new(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
 }
 
 #[actix_web::test]

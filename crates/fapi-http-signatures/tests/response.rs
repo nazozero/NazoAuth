@@ -175,6 +175,51 @@ fn response_extra_components_round_trip_from_their_exact_contexts() {
 }
 
 #[test]
+fn response_signing_rejects_reserved_signature_fields_as_explicit_extras() {
+    for (response_selected, request_selected) in [
+        (&["Signature"][..], &[][..]),
+        (&["signature-input"][..], &[][..]),
+        (&[][..], &["Signature"][..]),
+        (&[][..], &["signature-input"][..]),
+    ] {
+        let response_headers = [
+            ("signature", "nazo=:AQ==:"),
+            ("signature-input", "nazo=(\"@status\")"),
+        ];
+        let request_headers = [
+            ("signature", "sig1=:AQ==:"),
+            ("signature-input", "sig1=(\"@method\")"),
+        ];
+        assert!(
+            prepare_response(
+                ResponseInput {
+                    status: 204,
+                    headers: &response_headers,
+                    body: b"",
+                },
+                OriginalRequest {
+                    input: RequestInput {
+                        method: "GET",
+                        target_uri: "https://api.example/fapi/resource",
+                        headers: &request_headers,
+                        body: b"",
+                    },
+                    signature_fields: None,
+                },
+                ResponsePolicy {
+                    created: CREATED,
+                    keyid: "server-ed25519",
+                    algorithm: "ed25519",
+                    covered_headers: response_selected,
+                    covered_request_headers: request_selected,
+                },
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
 fn response_signing_requires_a_physical_content_digest_for_a_non_empty_body() {
     let request_headers = request_headers(REQUEST_BODY);
     let request_headers = borrowed(&request_headers);
@@ -681,6 +726,37 @@ fn response_verifier_rejects_unsafe_or_ambiguous_extra_components() {
             "unsafe item accepted: {item}"
         );
     }
+}
+
+#[test]
+fn response_verifier_rejects_a_present_reserved_response_signature_extra() {
+    let mut fixture = fixture();
+    fixture.response_fields.signature_input = fixture
+        .response_fields
+        .signature_input
+        .replace("\"content-digest\" ", "\"content-digest\" \"signature\" ");
+    let request_headers = request_headers(REQUEST_BODY);
+    let request_headers = borrowed(&request_headers);
+    let digest = content_digest(RESPONSE_BODY);
+    let response_headers = [
+        ("Content-Digest", digest.as_str()),
+        ("Signature", "nazo=:AQ==:"),
+    ];
+    assert_eq!(
+        parse(
+            200,
+            RESPONSE_BODY,
+            &response_headers,
+            "POST",
+            "https://api.example/fapi/resource",
+            REQUEST_BODY,
+            &request_headers,
+            &fixture.request_fields,
+            fixture.response_fields,
+        )
+        .unwrap_err(),
+        VerifyError::MissingComponent
+    );
 }
 
 #[test]

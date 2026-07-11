@@ -638,6 +638,29 @@ fn rejects_unsafe_or_ambiguous_extra_components() {
 }
 
 #[test]
+fn verifier_rejects_a_present_reserved_signature_extra() {
+    let (_, mut fields) = fixture();
+    fields.signature_input = fields
+        .signature_input
+        .replace(" \"content-digest\")", " \"content-digest\" \"signature\")");
+    let with_reserved = [headers().as_slice(), &[("Signature", "sig2=:AQ==:")]].concat();
+    assert_eq!(
+        parse_request_for_verification(
+            request(
+                "POST",
+                "https://api.example/fapi/resource",
+                &with_reserved,
+                BODY,
+            ),
+            fields,
+            policy(),
+        )
+        .unwrap_err(),
+        VerifyError::MissingComponent
+    );
+}
+
+#[test]
 fn rejects_duplicate_optional_profile_headers_even_when_not_covered() {
     let base_headers = [("Authorization", "DPoP opaque")];
     let prepared = prepare_request(

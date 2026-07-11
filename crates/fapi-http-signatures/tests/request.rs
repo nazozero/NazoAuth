@@ -101,6 +101,35 @@ fn explicitly_covers_safe_additional_headers_in_caller_order() {
     assert!(base.contains("\"authorization\" \"content-type\" \"idempotency-key\")"));
 }
 
+#[test]
+fn rejects_reserved_signature_fields_as_additional_components() {
+    for selected in ["signature", "Signature-Input"] {
+        let headers = [
+            ("authorization", "DPoP opaque"),
+            ("signature", "sig1=:AQ==:"),
+            ("signature-input", "sig1=(\"@method\")"),
+        ];
+        assert!(
+            prepare_request(
+                RequestInput {
+                    method: "GET",
+                    target_uri: "https://api.example/fapi/resource",
+                    headers: &headers,
+                    body: b"",
+                },
+                RequestPolicy {
+                    created: 1_720_000_000,
+                    keyid: "key",
+                    algorithm: "ed25519",
+                    covered_headers: &[selected],
+                },
+            )
+            .is_err(),
+            "accepted reserved field {selected}"
+        );
+    }
+}
+
 fn prepare<'a>(
     method: &'a str,
     target_uri: &'a str,

@@ -55,16 +55,7 @@ fn http_jwk_decoding_key(
     }
     if let Some(key_ops) = key.get("key_ops") {
         let operations = key_ops.as_array()?;
-        let mut seen = std::collections::HashSet::with_capacity(operations.len());
-        let mut allows_verify = false;
-        for operation in operations {
-            let operation = operation.as_str()?;
-            if !seen.insert(operation) {
-                return None;
-            }
-            allows_verify |= operation == "verify";
-        }
-        if !allows_verify {
+        if operations.len() != 1 || operations[0].as_str() != Some("verify") {
             return None;
         }
     }

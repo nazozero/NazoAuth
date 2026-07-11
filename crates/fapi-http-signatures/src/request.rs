@@ -120,8 +120,10 @@ pub fn prepare_request(
             ));
         }
         let name = name.to_ascii_lowercase();
-        if matches!(name.as_str(), "authorization" | "dpop" | "content-digest")
-            || !selected.insert(name.clone())
+        if matches!(
+            name.as_str(),
+            "authorization" | "dpop" | "content-digest" | "signature" | "signature-input"
+        ) || !selected.insert(name.clone())
         {
             return Err(RequestError::InvalidInput(
                 "duplicate additional covered component".into(),
@@ -215,6 +217,10 @@ pub(crate) fn is_token_byte(byte: u8) -> bool {
                 | b'|'
                 | b'~'
         )
+}
+
+pub(crate) fn is_reserved_signature_field(name: &str) -> bool {
+    matches!(name, "signature" | "signature-input")
 }
 
 pub(crate) fn component(name: &str, value: &str) -> Result<HttpMessageComponent, RequestError> {

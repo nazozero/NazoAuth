@@ -287,6 +287,7 @@ struct FapiOriginalRequest {
     content_digest: CapturedHeader,
     signature_input: CapturedHeader,
     signature: CapturedHeader,
+    safe_headers: Vec<(String, String)>,
     captured_at: i64,
 }
 
@@ -300,6 +301,26 @@ impl FapiOriginalRequest {
                 .map(|value| value.as_str())
                 .unwrap_or(req.path())
         );
+        let safe_headers = req
+            .headers()
+            .keys()
+            .filter_map(|name| {
+                let name = name.as_str().to_ascii_lowercase();
+                if matches!(name.as_str(), "signature" | "signature-input") {
+                    return None;
+                }
+                let mut values = req.headers().get_all(name.as_str());
+                let value = values.next()?;
+                if values.next().is_some() {
+                    return None;
+                }
+                let value = value.to_str().ok()?;
+                if value.chars().any(char::is_control) {
+                    return None;
+                }
+                Some((name, value.to_owned()))
+            })
+            .collect();
         Self {
             method: req.method().as_str().to_owned(),
             target_uri,
@@ -309,6 +330,7 @@ impl FapiOriginalRequest {
             content_digest: CapturedHeader::capture(req, "content-digest"),
             signature_input: CapturedHeader::capture(req, "signature-input"),
             signature: CapturedHeader::capture(req, "signature"),
+            safe_headers,
             captured_at: Utc::now().timestamp(),
         }
     }
@@ -324,12 +346,19 @@ impl FapiOriginalRequest {
     }
 
     fn verification_headers(&self) -> Result<Vec<(&str, &str)>, ()> {
-        let mut headers = Vec::with_capacity(3);
+        let mut headers = self
+            .safe_headers
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str()))
+            .collect::<Vec<_>>();
         for (name, captured) in [
             ("authorization", &self.authorization),
             ("dpop", &self.dpop),
             ("content-digest", &self.content_digest),
         ] {
+            if headers.iter().any(|(captured, _)| *captured == name) {
+                continue;
+            }
             if let Some(value) = captured.unique()? {
                 headers.push((name, value));
             }
@@ -416,9 +445,15 @@ async fn sign_fapi_resource_response(
         }
     }
     let request_digest = original.valid_digest();
-    let request_headers = request_digest
-        .map(|digest| vec![("content-digest", digest)])
-        .unwrap_or_default();
+    let mut request_headers = original
+        .safe_headers
+        .iter()
+        .filter(|(name, _)| name != "content-digest")
+        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .collect::<Vec<_>>();
+    if let Some(digest) = request_digest {
+        request_headers.push(("content-digest", digest));
+    }
     let request_fields = original.signature_fields().ok();
     let original_body = request_digest
         .map(|_| original.body.as_ref())
