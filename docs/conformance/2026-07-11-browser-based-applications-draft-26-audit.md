@@ -12,9 +12,11 @@ certification claim.
 The audit confirms two intentionally different architectures:
 
 - NazoAuthWeb is a same-origin first-party application using server-managed
-  sessions and CSRF-protected `/auth/*` APIs. It does not receive or persist
-  OAuth access tokens, refresh tokens, ID Tokens, client secrets, private keys,
-  OIDF private configuration, or PKCE verifiers.
+  sessions. Unsafe authenticated `/auth/me/*` operations are CSRF-protected;
+  unauthenticated `/auth/*` entry points retain their separate controls. The
+  Web application does not receive or persist OAuth access tokens, refresh
+  tokens, ID Tokens, client secrets, private keys, OIDF private configuration,
+  or PKCE verifiers.
 - Third-party browser applications are public OAuth clients. They use
   Authorization Code with S256 PKCE and exact redirect URIs; they cannot become
   confidential by embedding a static secret in JavaScript.
@@ -28,21 +30,32 @@ Primary source:
 
 - <https://datatracker.ietf.org/doc/draft-ietf-oauth-browser-based-apps/26/>
 
+Coordinated NazoAuthWeb evidence is pinned to commit
+`82c99f9088aaeabce5ee2f4070127d34cfb14a89`. The corresponding PR URL must be
+added before either coordinated PR is marked ready.
+
 ## Requirement and evidence matrix
 
 | Draft-26 area | NazoAuth role | Current control | Evidence | Outcome |
 | --- | --- | --- | --- | --- |
-| BFF architecture | First-party web/session backend | NazoAuthWeb receives an opaque secure session, not OAuth tokens; unsafe session writes require CSRF. | `src/http/profile/session.rs`, `src/http/auth/csrf.rs`, session/CSRF tests, coordinated NazoAuthWeb persistence gate | Covered for the first-party application. |
+| BFF architecture | First-party web/session backend | NazoAuthWeb receives an opaque secure session, not OAuth tokens; unsafe authenticated session writes require CSRF. | `src/http/profile/session.rs`; `src/http/auth/csrf.rs`; `http::profile::tests::session`; `http::auth::tests::csrf`; NazoAuthWeb commit `82c99f9` | Covered for the first-party application. |
 | Authorization endpoint | Authorization server | `/authorize` is a navigation endpoint and has no CORS middleware. | `authorization_endpoint_is_not_cors_enabled` | Covered. |
-| Public browser client | Authorization server | Code-only flow, S256 PKCE for public clients, exact redirect binding, one-time authorization code. | `authorization_request_requires_pkce_for_public_client`, authorization PKCE and authorization-code tests | Covered. |
+| Public browser client classification | Authorization server | A browser client is public and cannot authenticate with a bundled static secret. | `prepare_client_insert_rejects_secret_auth_for_public_clients`; `dynamic_registration_requires_pkce_for_public_or_sender_constrained_clients` | Covered. |
+| Authorization Code + PKCE | Authorization server | Code-only flow and S256 PKCE for public clients; plain, missing, malformed, and wrong verifiers are rejected. | `authorization_request_requires_pkce_for_public_client`; `authorization_pkce_rejects_challenge_with_plain_method`; `token_authorization_code_marks_failed_states_for_redirect_pkce_and_audience_errors` | Covered. |
+| PAR separation | Authorization server | PAR remains a backchannel endpoint with client authentication and no browser CORS; FAPI requirements do not become a browser shortcut. | `authorization_get_requires_par_before_untrusted_runtime_parameters`; `par_rejects_non_form_content_type_before_client_lookup`; `par_fapi2_rejects_shared_secret_client_auth_after_authentication` | Covered. |
 | Token endpoint CORS | Authorization server | Exact configured origins, POST only, no credentials, no CSRF header, explicit DPoP/content-type support. | `browser_token_management_cors_allows_post_dpop_without_credentials`, `production_token_route_rejects_get_csrf_and_unknown_origins` | Tightened in this change. |
 | Revocation CORS | Authorization server | Shares the POST-only non-credentialed token-management policy. | `production_browser_oauth_routes_expose_only_required_cors` | Covered. |
-| UserInfo CORS | Authorization server/resource endpoint | Exact origins, GET/POST, Authorization/DPoP, no browser credentials. | `browser_userinfo_cors_allows_get_and_post_bearer_or_dpop`, production-route test | Covered. |
-| Redirect attacks | Authorization server | Redirect URI is registered and matched exactly at authorization and code exchange. | authorization request tests and `client_or_redirect_uri_mismatch` token test | Covered. |
-| Authorization-code theft/replay | Authorization server | Code is short-lived, PKCE-bound, atomically consumed, and replay affects the associated refresh family. | authorization-code consumption/replay tests | Covered. |
-| Refresh tokens | Authorization server | Issuance is client/policy gated; rotation, family binding, reuse detection, and fail-closed persistence are tested. | `refresh_grant_marks_family_reuse_and_revokes_active_family_tokens` and refresh failure tests | Covered. |
-| Browser token storage | First-party app / third-party responsibility | NazoAuthWeb stores no OAuth credentials; arbitrary third-party SPA storage cannot be enforced by the AS. | Coordinated NazoAuthWeb `check-browser-security.mjs` gate | Bounded claim; third-party storage remains application responsibility. |
-| Malicious JavaScript | BFF/public SPA | First-party tokens remain server-side; session/CSRF and response headers reduce impact. The AS cannot make arbitrary third-party JavaScript trustworthy. | session, CSRF, CORS, response-header, dependency/build gates | Covered for NazoAuth-controlled surfaces with stated residual risk. |
+| UserInfo CORS | Authorization server/resource endpoint | Exact origins, GET/POST, Authorization/DPoP, no browser credentials. | `browser_userinfo_cors_allows_get_and_post_bearer_or_dpop`; `production_browser_oauth_routes_expose_only_required_cors` | Covered. |
+| Cookie/OAuth credential separation | Authorization server | A valid first-party browser session cannot authenticate `/token`, `/revoke`, or `/userinfo`. | `valid_browser_session_cookie_cannot_authenticate_oauth_protocol_endpoints` | Covered by a real Valkey/PostgreSQL session test in the non-skippable CI environment. |
+| Redirect attacks | Authorization server | Redirect URI is registered and matched exactly at authorization and code exchange. | `authorization_request_rejects_unregistered_redirect_uri_before_session_lookup`; `authorization_code_redirect_uri_matching_preserves_oauth_binding_rules`; `token_authorization_code_marks_failed_states_for_redirect_pkce_and_audience_errors` | Covered. |
+| Authorization-code theft/replay | Authorization server | Code is short-lived, PKCE-bound, atomically consumed, and replay affects the associated refresh family. | `authorization_code_consumption_parser_maps_terminal_states_fail_closed`; `token_authorization_code_replay_revokes_previous_tokens_and_rejects_reuse`; `token_authorization_code_replay_fails_closed_when_replayed_client_lookup_errors` | Covered. |
+| Refresh tokens | Authorization server | Issuance is client/policy gated; rotation, family binding, reuse detection, and fail-closed persistence are tested. | `refresh_grant_marks_family_reuse_and_revokes_active_family_tokens`; `refresh_grant_fails_closed_when_reuse_marker_cannot_be_persisted`; `refresh_token_rotation_failure_does_not_return_partial_credentials` | Covered. |
+| DPoP and sender constraints | Authorization/resource server | DPoP remains independent of CORS and session cookies; nonce/replay and token binding are validated by the existing profile. | `browser_token_management_cors_allows_post_dpop_without_credentials`; `support::tests::dpop`; resource-server DPoP tests | Covered; no weaker browser-only DPoP path added. |
+| Session fixation and CSRF | First-party session backend | Login rotates/creates server session state; unsafe authenticated writes require CSRF and exact credentialed origin. | login/session tests; `cors_auth_api_credentials_are_limited_to_configured_origins_and_csrf_headers`; MFA CSRF side-effect tests | Covered for authenticated first-party operations. |
+| Error and log redaction | Authorization server | OAuth errors omit credentials; request objects, assertions, tokens, proofs, and secrets are not logged. | `par_error_log_fields_skip_success_and_include_only_safe_error_metadata`; token error assertions verify no `access_token`/`refresh_token`; security logging tests | Covered. |
+| Discovery truth | Authorization server | No draft runtime profile, grant, auth method, endpoint, or metadata field is advertised by this audit. | `discovery_does_not_advertise_unimplemented_protocol_extensions`; `discovery_fapi2_security_metadata_is_profile_scoped`; `discovery_baseline_advertises_unsigned_request_object_compatibility_only` | Covered. |
+| Browser token storage | First-party app / third-party responsibility | NazoAuthWeb stores no OAuth credentials; arbitrary third-party SPA storage cannot be enforced by the AS. | NazoAuthWeb `scripts/check-browser-security.test.mjs` and `check-browser-security.mjs` at commit `82c99f9` | Bounded claim; third-party storage remains application responsibility. |
+| Malicious JavaScript | BFF/public SPA | First-party tokens remain server-side; session/CSRF and response headers reduce impact. The AS cannot make arbitrary third-party JavaScript trustworthy. | session/CSRF/CORS tests; NazoAuthWeb source, artifact, lint, TypeScript, and build gates at `82c99f9` | Covered for NazoAuth-controlled surfaces with stated residual risk. |
 | Final RFC delta | Governance | The reviewed document has no RFC number. | IETF Datatracker status on 2026-07-11 | Re-audit required immediately after publication. |
 
 ## Threat review
