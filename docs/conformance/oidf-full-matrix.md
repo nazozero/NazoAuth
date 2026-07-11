@@ -28,14 +28,14 @@ The execution entry point is still `runtime/oidf/oidf-plan-set.json`. `scripts/s
 | 18 | OIDC Front-Channel Logout OP | Validates front-channel logout metadata, RP-initiated logout, iframe logout notification, `iss`/`sid` parameters, and `post_logout_redirect_uri`. |
 | 19 | OIDC Session Management OP | Validates `check_session_iframe` metadata, authorization response `session_state`, and the session-state transition after RP-initiated logout. |
 | 20 | FAPI-CIBA ID1 / private_key_jwt / poll / plain FAPI | Validates FAPI-CIBA AS discovery, the backchannel authentication endpoint, `private_key_jwt` client authentication, poll-mode token exchange, error handling, refresh tokens, and resource access. |
-| 21 | OIDC Dynamic Certification / Signed UserInfo | Dynamically registers `userinfo_signed_response_alg=RS256` and validates signed UserInfo response serialization, content type, and claims. |
+| 21 | OIDC Dynamic Registration / Signed UserInfo | Runs the official `oidcc-userinfo-rs256` module only, dynamically registers `userinfo_signed_response_alg=RS256`, and validates signed UserInfo response serialization, content type, and claims without claiming the legacy implicit-flow dynamic certification profile. |
 
 ## TP/PS Coverage Boundary
 
 The matrix covers the current TP/PS work through these paths:
 
 - `OIDC Basic OP Dynamic Registration` covers RFC 7591 dynamic client registration and `registration_endpoint` metadata.
-- `OIDC Dynamic Certification / Signed UserInfo` covers the official OP-side signed UserInfo module; encrypted UserInfo and encrypted JARM remain local-test-only because no corresponding OP module exists in suite snapshot `f326f6aa25d6a2b8f1ae30a6ec80a57e342333ce`.
+- `OIDC Dynamic Registration / Signed UserInfo` selects the official OP-side `oidcc-userinfo-rs256` module. The complete legacy dynamic-certification plan is not used because it requires implicit-flow capabilities that the issuer deliberately does not implement or advertise. Encrypted UserInfo and encrypted JARM remain local-test-only because no corresponding OP module exists in suite snapshot `f326f6aa25d6a2b8f1ae30a6ec80a57e342333ce`.
 - `OIDC Config OP` covers metadata truth and prevents discovery from advertising unsupported capabilities.
 - FAPI2 Security and Message Signing plans cover PAR enforcement, `request_uri` expiry, `request_uri` replay, cross-client `request_uri` use, outer authorization request parameters, PKCE, redirect URI, audience, and client assertions.
 - `private_key_jwt / DPoP / OpenID Connect / authorization code` is the closest single-plan regression for TP/PS change sets; full evidence comes from the 21-plan matrix.
@@ -50,12 +50,11 @@ Targeted plan-sets are useful for development triage. Durable regression evidenc
 
 ## Expected Skip Policy
 
-The current official workflow allows three expected skips across the two OIDC
-dynamic-registration plans:
+The current official workflow allows two expected skips in the general OIDC
+dynamic-registration plan:
 
 - `oidcc-idtoken-unsigned`
 - `oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported`
-- `oidcc-idtoken-unsigned` in the signed-UserInfo dynamic certification plan
 
 The skips reflect intentionally unsupported optional compatibility features:
 unsigned ID Tokens are not advertised, and the OIDC `request_uri` parameter is

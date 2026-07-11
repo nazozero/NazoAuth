@@ -999,7 +999,7 @@ def write_dynamic_crypto_plan_config() -> dict[str, object]:
     config = copy.deepcopy(dynamic_plan_config())
     config["alias"] = f"{BASIC_ALIAS}-dynamic-crypto"
     config["description"] = (
-        "OIDC Dynamic Certification OP: signed UserInfo response coverage."
+        "OIDC dynamic-registration signed UserInfo interoperability coverage."
     )
     write_plan_config("oidf-oidcc-dynamic-crypto-plan-config.json", config)
     return config
@@ -1465,11 +1465,6 @@ def write_expected_skips() -> None:
             "variant": "*",
             "configuration-filename": "oidf-oidcc-dynamic-plan-config.json",
         },
-        {
-            "test-name": "oidcc-idtoken-unsigned",
-            "variant": "*",
-            "configuration-filename": "oidf-oidcc-dynamic-crypto-plan-config.json",
-        },
     ]
     write_text(
         RUNTIME / "oidf-expected-skips.json",
@@ -1484,7 +1479,8 @@ def plan_expressions_for_configs(configs: dict[str, dict[str, object]]) -> list[
         "oidf-oidcc-basic-plan-config.json",
         "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=dynamic_client] "
         "oidf-oidcc-dynamic-plan-config.json",
-        "oidcc-dynamic-certification-test-plan[response_type=code] "
+        "oidcc-dynamic-certification-test-plan[response_type=code]:"
+        "oidcc-userinfo-rs256 "
         "oidf-oidcc-dynamic-crypto-plan-config.json",
         "oidcc-config-certification-test-plan oidf-oidcc-config-plan-config.json",
         "oidcc-frontchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] "
@@ -1548,7 +1544,7 @@ def plan_manifest_for_expressions(
     oidc_titles = {
         "oidf-oidcc-basic-plan-config.json": "OIDC Basic OP",
         "oidf-oidcc-dynamic-plan-config.json": "OIDC Basic OP Dynamic Registration",
-        "oidf-oidcc-dynamic-crypto-plan-config.json": "OIDC Dynamic Certification: Signed UserInfo",
+        "oidf-oidcc-dynamic-crypto-plan-config.json": "OIDC Dynamic Registration: Signed UserInfo",
         "oidf-oidcc-config-plan-config.json": "OIDC Config OP",
         "oidf-oidcc-frontchannel-logout-plan-config.json": "OIDC Front-Channel Logout OP",
         "oidf-oidcc-session-management-plan-config.json": "OIDC Session Management OP",
