@@ -18,13 +18,16 @@ in the repository.
 - Latest public NI-007 FAPI-CIBA targeted OIDF result: [2026-07-03 NI-007 public FAPI-CIBA OIDF results](2026-07-03-ni-007-public-ciba-oidf-results.md)
 - Latest NI-006~NI-011 official parallel-isolated full matrix: [2026-07-03 NI-006~NI-011 official parallel-isolated OIDF results](2026-07-03-ni-006-011-official-parallel-isolated-oidf-results.md)
 - Latest M2 official parallel-isolated full matrix: [2026-07-08 M2 official parallel-isolated OIDF results](2026-07-08-m2-official-parallel-isolated-oidf-results.md)
+- Latest M6 FAPI-CIBA local and official full matrix: [2026-07-11 M6 FAPI-CIBA OIDF results](2026-07-11-m6-official-fapi-ciba-oidf-results.md)
 
-The latest recorded official full-matrix suite run is the 2026-07-08 M2
+The latest recorded official full-matrix suite run is the 2026-07-11 M6
 parallel-isolated run against `https://auth.nazo.run`. It ran from workflow head
-SHA `7ddc6b3354799f2401071d44c616b0deb224753c`, deployed image
-`localhost/nazo-oauth-server:m2-7ddc6b3`, and completed the repository's
+SHA `07e69855948ca0a12d4dcd26bb9372e3ea2d04d3`, deployed image
+`localhost/nazo-oauth-server:m6-07e6985`, and completed the repository's
 20-plan public OIDF matrix in the 18+2 layout with all GitHub Actions jobs
-ending in `success`.
+ending in `success`. The exported results contain 639 modules: 631 passed, 6
+expected review states, 2 expected skips, and no failed module, condition
+failure, or warning.
 
 The latest private full-matrix regression record is the 2026-07-01 TP/PS run
 against `https://auth.nazo.run` at runtime commit `31e8f9f`. It used the
