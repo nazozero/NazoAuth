@@ -94,6 +94,52 @@ class SpecFreshnessTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "expected revision 27, official source reports 26"):
             self.module.check_entry(entry, opener)
 
+    def test_ietf_draft_rfc_transition_fails_even_when_revision_is_unchanged(self):
+        entry = {
+            "id": "browser",
+            "title": "Browser",
+            "kind": "ietf_draft",
+            "url": "https://datatracker.ietf.org/doc/draft-example/",
+            "document": "draft-example",
+            "revision": "27",
+        }
+        opener = lambda *_args, **_kwargs: FakeResponse(
+            json.dumps(
+                {
+                    "name": "draft-example",
+                    "rev": "27",
+                    "rfc": "/api/v1/doc/document/rfc9999/",
+                }
+            ).encode()
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "published or replaced by an RFC"):
+            self.module.check_entry(entry, opener)
+
+    def test_expired_ietf_draft_requires_status_review(self):
+        entry = {
+            "id": "draft",
+            "title": "Draft",
+            "kind": "ietf_draft",
+            "url": "https://datatracker.ietf.org/doc/draft-example/",
+            "document": "draft-example",
+            "revision": "01",
+        }
+        opener = lambda *_args, **_kwargs: FakeResponse(
+            json.dumps(
+                {
+                    "name": "draft-example",
+                    "rev": "01",
+                    "rfc": None,
+                    "rfc_number": None,
+                    "expires": "2000-01-01T00:00:00Z",
+                }
+            ).encode()
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "official draft is expired"):
+            self.module.check_entry(entry, opener)
+
     def test_openid_marker_and_final_url_are_required(self):
         entry = {
             "id": "grant",

@@ -9,6 +9,7 @@ import re
 import sys
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
@@ -144,6 +145,17 @@ def check_entry(entry: dict, opener=urllib.request.urlopen) -> str:
             )
         if data.get("name") != document:
             raise RuntimeError(f"{entry['id']}: official document name mismatch")
+        if data.get("rfc") is not None or data.get("rfc_number") is not None:
+            raise RuntimeError(
+                f"{entry['id']}: draft was published or replaced by an RFC; review the final document"
+            )
+        expires = data.get("expires")
+        if isinstance(expires, str):
+            expires_at = datetime.fromisoformat(expires.replace("Z", "+00:00"))
+            if expires_at <= datetime.now(timezone.utc):
+                raise RuntimeError(
+                    f"{entry['id']}: official draft is expired; review its current status"
+                )
         return f"{entry['id']}: {document}-{expected}"
 
     if kind in {"rfc", "openid_document"}:
