@@ -87,15 +87,7 @@ pub(crate) struct Settings {
     pub(crate) enable_session_management: bool,
     pub(crate) enable_ciba: bool,
     pub(crate) enable_native_sso: bool,
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "consumed by the Task 5 resource endpoint adapter")
-    )]
     pub(crate) enable_fapi_http_signatures: bool,
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "consumed by the Task 5 resource endpoint adapter")
-    )]
     pub(crate) fapi_http_signature_max_age_seconds: i64,
     pub(crate) dynamic_client_registration_initial_access_token: Option<String>,
     pub(crate) device_authorization_ttl_seconds: u64,

@@ -2,13 +2,33 @@
 //! Enforces RFC 6750 access-token transport rules plus sender-constrained token binding.
 use crate::domain::Claims;
 use crate::http::prelude::*;
+use nazo_fapi_http_signatures::{
+    OriginalRequest, RequestInput, ResponseInput, ResponsePolicy, SignatureFields,
+    VerificationPolicy, VerifiedInput, content_digest, parse_request_for_verification,
+    prepare_response,
+};
 
 pub(crate) async fn fapi_resource(
     state: Data<AppState>,
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
-    let (scheme, token) = match resource_access_token(&req, &body) {
+    if !state.settings.enable_fapi_http_signatures {
+        return fapi_resource_inner(&state, &req, &body, false).await;
+    }
+
+    let request_fields = request_signature_fields(&req);
+    let response = fapi_resource_inner(&state, &req, &body, true).await;
+    sign_fapi_resource_response(&state, &req, &body, request_fields.as_ref(), response).await
+}
+
+async fn fapi_resource_inner(
+    state: &Data<AppState>,
+    req: &HttpRequest,
+    body: &Bytes,
+    http_signatures_enabled: bool,
+) -> HttpResponse {
+    let (scheme, token) = match resource_access_token(req, body, http_signatures_enabled) {
         ResourceAccessToken::Present(scheme, token) => (scheme, token),
         ResourceAccessToken::Missing => {
             return oauth_bearer_error(StatusCode::UNAUTHORIZED, "invalid_token", "缺少访问令牌.");
@@ -21,15 +41,14 @@ pub(crate) async fn fapi_resource(
             );
         }
     };
-    let Some(claims) = decode_access_claims(&state, &token) else {
+    let Some(claims) = decode_access_claims(state, &token) else {
         return oauth_bearer_error(
             StatusCode::UNAUTHORIZED,
             "invalid_token",
             "访问令牌无效或已过期.",
         );
     };
-    if let Err(response) =
-        validate_access_token_binding(&state, &req, &token, scheme, &claims).await
+    if let Err(response) = validate_access_token_binding(state, req, &token, scheme, &claims).await
     {
         return response;
     }
@@ -47,6 +66,74 @@ pub(crate) async fn fapi_resource(
             "访问令牌租户边界无效.",
         );
     };
+
+    if http_signatures_enabled {
+        let client =
+            match find_client_in_tenant(&state.diesel_db, tenant_id, &claims.client_id).await {
+                Ok(Some(client)) if client.is_active => client,
+                Ok(_) => {
+                    return oauth_bearer_error(
+                        StatusCode::UNAUTHORIZED,
+                        "invalid_token",
+                        "访问令牌客户端无效.",
+                    );
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "failed to load FAPI HTTP signature client");
+                    return oauth_bearer_error(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "server_error",
+                        "resource 查询失败.",
+                    );
+                }
+            };
+        let verified = match verify_fapi_resource_http_signature(
+            &client,
+            req,
+            body,
+            FapiResourceSignaturePolicy {
+                tenant_id,
+                client_id: &claims.client_id,
+                issuer: &state.settings.issuer,
+                now: Utc::now().timestamp(),
+                max_age_seconds: state.settings.fapi_http_signature_max_age_seconds,
+            },
+        ) {
+            Ok(verified) => verified,
+            Err(()) => {
+                return oauth_bearer_error(
+                    StatusCode::UNAUTHORIZED,
+                    "invalid_token",
+                    "HTTP message signature is missing or invalid.",
+                );
+            }
+        };
+        match consume_fapi_http_signature_replay(
+            &state.valkey,
+            verified.replay_fingerprint(),
+            state.settings.fapi_http_signature_max_age_seconds,
+        )
+        .await
+        {
+            ReplayConsumption::Accepted => {}
+            ReplayConsumption::Replay => {
+                return oauth_bearer_error(
+                    StatusCode::UNAUTHORIZED,
+                    "invalid_token",
+                    "HTTP message signature replay detected.",
+                );
+            }
+            ReplayConsumption::DependencyFailure => {
+                tracing::warn!("failed to consume FAPI HTTP signature replay marker");
+                return oauth_bearer_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "resource 暂时不可用.",
+                );
+            }
+        }
+    }
+
     let revoked = match get_conn(&state.diesel_db).await {
         Ok(mut conn) => match access_token_revocations::table
             .filter(access_token_revocations::tenant_id.eq(tenant_id))
@@ -85,9 +172,193 @@ pub(crate) async fn fapi_resource(
     }));
     response.headers_mut().insert(
         "x-fapi-interaction-id".parse().unwrap(),
-        fapi_interaction_id(&req),
+        fapi_interaction_id(req),
     );
     response
+}
+
+fn request_signature_fields(req: &HttpRequest) -> Option<SignatureFields> {
+    request_signature_fields_checked(req).ok().flatten()
+}
+
+fn request_signature_fields_checked(req: &HttpRequest) -> Result<Option<SignatureFields>, ()> {
+    let signature_input = unique_request_header(req, "signature-input")?;
+    let signature = unique_request_header(req, "signature")?;
+    match (signature_input, signature) {
+        (Some(signature_input), Some(signature)) => Ok(Some(SignatureFields {
+            signature_input: signature_input.to_owned(),
+            signature: signature.to_owned(),
+        })),
+        (None, None) => Ok(None),
+        _ => Err(()),
+    }
+}
+
+fn fapi_resource_target_uri(issuer: &str, req: &HttpRequest) -> String {
+    format!(
+        "{}{}",
+        issuer.trim_end_matches('/'),
+        req.uri()
+            .path_and_query()
+            .map(|value| value.as_str())
+            .unwrap_or(req.path())
+    )
+}
+
+fn fapi_request_headers(req: &HttpRequest) -> Result<Vec<(&str, &str)>, ()> {
+    let mut headers = Vec::with_capacity(3);
+    for name in ["authorization", "dpop", "content-digest"] {
+        if let Some(value) = unique_request_header(req, name)? {
+            headers.push((name, value));
+        }
+    }
+    Ok(headers)
+}
+
+fn unique_request_header<'a>(req: &'a HttpRequest, name: &str) -> Result<Option<&'a str>, ()> {
+    let mut values = req.headers().get_all(name);
+    let Some(value) = values.next() else {
+        return Ok(None);
+    };
+    if values.next().is_some() {
+        return Err(());
+    }
+    value.to_str().map(Some).map_err(|_| ())
+}
+
+struct FapiResourceSignaturePolicy<'a> {
+    tenant_id: Uuid,
+    client_id: &'a str,
+    issuer: &'a str,
+    now: i64,
+    max_age_seconds: i64,
+}
+
+fn verify_fapi_resource_http_signature(
+    client: &ClientRow,
+    req: &HttpRequest,
+    body: &Bytes,
+    policy: FapiResourceSignaturePolicy<'_>,
+) -> Result<VerifiedInput, ()> {
+    let fields = request_signature_fields_checked(req)?.ok_or(())?;
+    let headers = fapi_request_headers(req)?;
+    let target_uri = fapi_resource_target_uri(policy.issuer, req);
+    let verified = parse_request_for_verification(
+        RequestInput {
+            method: req.method().as_str(),
+            target_uri: &target_uri,
+            headers: &headers,
+            body,
+        },
+        fields,
+        VerificationPolicy {
+            now: policy.now,
+            max_age_seconds: policy.max_age_seconds,
+            future_skew_seconds: FAPI_HTTP_SIGNATURE_FUTURE_SKEW_SECONDS,
+        },
+    )
+    .map_err(|_| ())?;
+    verify_client_http_message(
+        client,
+        policy.tenant_id,
+        policy.client_id,
+        verified.keyid(),
+        verified.algorithm(),
+        verified.signature_base(),
+        verified.signature(),
+    )
+    .map_err(|_| ())?;
+    Ok(verified)
+}
+
+async fn sign_fapi_resource_response(
+    state: &AppState,
+    req: &HttpRequest,
+    request_body: &Bytes,
+    request_fields: Option<&SignatureFields>,
+    response: HttpResponse,
+) -> HttpResponse {
+    let status = response.status();
+    let response_headers = response.headers().clone();
+    let response_body = match actix_web::body::to_bytes(response.into_body()).await {
+        Ok(body) => body,
+        Err(_) => return HttpResponse::ServiceUnavailable().finish(),
+    };
+    let digest = (!response_body.is_empty()).then(|| content_digest(&response_body));
+    let response_signature_headers = digest
+        .as_deref()
+        .map(|value| vec![("content-digest", value)])
+        .unwrap_or_default();
+    let request_headers = match fapi_request_headers(req) {
+        Ok(headers) => headers,
+        Err(()) => return HttpResponse::ServiceUnavailable().finish(),
+    };
+    let target_uri = fapi_resource_target_uri(&state.settings.issuer, req);
+    let original_body = if request_headers
+        .iter()
+        .any(|(name, _)| *name == "content-digest")
+    {
+        request_body.as_ref()
+    } else {
+        b""
+    };
+    let keyset = state.keyset.snapshot();
+    let signing = match prepare_response(
+        ResponseInput {
+            status: status.as_u16(),
+            headers: &response_signature_headers,
+            body: &response_body,
+        },
+        OriginalRequest {
+            input: RequestInput {
+                method: req.method().as_str(),
+                target_uri: &target_uri,
+                headers: &request_headers,
+                body: original_body,
+            },
+            signature_fields: request_fields,
+        },
+        ResponsePolicy {
+            created: Utc::now().timestamp(),
+            keyid: &keyset.active_kid,
+            algorithm: match keyset.active_alg {
+                jsonwebtoken::Algorithm::EdDSA => "ed25519",
+                jsonwebtoken::Algorithm::RS256 => "rsa-v1_5-sha256",
+                jsonwebtoken::Algorithm::ES256 => "ecdsa-p256-sha256",
+                _ => return HttpResponse::ServiceUnavailable().finish(),
+            },
+        },
+    ) {
+        Ok(signing) => signing,
+        Err(error) => {
+            tracing::warn!(%error, "failed to prepare FAPI resource response signature");
+            return HttpResponse::ServiceUnavailable().finish();
+        }
+    };
+    let detached = match keyset.sign_http_message(signing.signature_base()).await {
+        Ok(detached) => detached,
+        Err(error) => {
+            tracing::warn!(%error, "failed to sign FAPI resource response");
+            return HttpResponse::ServiceUnavailable().finish();
+        }
+    };
+    let fields = signing.finish(&detached.signature);
+    let mut builder = HttpResponse::build(status);
+    for (name, value) in &response_headers {
+        if name != header::CONTENT_LENGTH
+            && name.as_str() != "content-digest"
+            && name.as_str() != "signature-input"
+            && name.as_str() != "signature"
+        {
+            builder.insert_header((name.clone(), value.clone()));
+        }
+    }
+    if let Some(digest) = digest {
+        builder.insert_header(("content-digest", digest));
+    }
+    builder.insert_header(("signature-input", fields.signature_input));
+    builder.insert_header(("signature", fields.signature));
+    builder.body(response_body)
 }
 
 fn fapi_interaction_id(req: &HttpRequest) -> actix_web::http::header::HeaderValue {
@@ -159,9 +430,17 @@ enum ResourceAccessToken {
     InvalidRequest,
 }
 
-fn resource_access_token(req: &HttpRequest, body: &Bytes) -> ResourceAccessToken {
+fn resource_access_token(
+    req: &HttpRequest,
+    body: &Bytes,
+    http_signatures_enabled: bool,
+) -> ResourceAccessToken {
     let header_token = authorization_access_token(req.headers());
     let body_token = resource_form_body_access_token(req, body);
+
+    if http_signatures_enabled && matches!(body_token, ResourceFormBodyAccessToken::Present(_)) {
+        return ResourceAccessToken::InvalidRequest;
+    }
 
     match (header_token, body_token) {
         (Some(_), ResourceFormBodyAccessToken::Present(_)) => ResourceAccessToken::InvalidRequest,
