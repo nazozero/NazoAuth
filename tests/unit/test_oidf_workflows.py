@@ -33,6 +33,7 @@ class OidfWorkflowTests(unittest.TestCase):
         self.assertIn("github.event_name != 'pull_request'", workflow)
         self.assertIn('      - "README.md"', workflow)
         self.assertIn("    needs: offline", workflow)
+        self.assertIn("rhysd/actionlint:1.7.12", workflow)
 
     def test_full_matrix_workflow_defaults_to_no_parallel_runner(self):
         workflow = (

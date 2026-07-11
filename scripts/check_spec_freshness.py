@@ -7,6 +7,7 @@ import argparse
 import json
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -23,6 +24,7 @@ ALLOWED_HOSTS = {
     "oidf_suite": {"gitlab.com"},
 }
 DRAFT_PIN = re.compile(r"\b(draft-[a-z0-9-]+)-(\d{2})\b")
+RFC_REFERENCE = re.compile(r"\bRFC\s*(\d{4})\b", re.IGNORECASE)
 
 
 def _required_text(value: object, field: str, entry_id: str) -> str:
@@ -91,20 +93,41 @@ def validate_manifest(manifest: dict, root: Path = ROOT) -> None:
     paths = manifest.get("active_document_paths", [])
     if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
         raise ValueError("active_document_paths must be a list of strings")
+    globs = manifest.get("active_document_globs", [])
+    if not isinstance(globs, list) or not all(isinstance(pattern, str) for pattern in globs):
+        raise ValueError("active_document_globs must be a list of strings")
     forbidden = manifest.get("forbidden_active_markers", {})
     if not isinstance(forbidden, dict):
         raise ValueError("forbidden_active_markers must be an object")
 
     resolved_root = root.resolve()
+    managed: dict[str, Path] = {}
     for relative in paths:
-        path = (root / relative).resolve()
+        path = (resolved_root / relative).resolve()
         if not path.is_relative_to(resolved_root):
             raise ValueError(
                 f"active document path must stay within the repository: {relative}"
             )
         if not path.is_file():
             raise ValueError(f"active document does not exist: {relative}")
+        managed[path.relative_to(resolved_root).as_posix()] = path
+    for pattern in globs:
+        if Path(pattern).is_absolute() or ".." in Path(pattern).parts:
+            raise ValueError(f"active document glob must stay within the repository: {pattern}")
+        matches = [path.resolve() for path in resolved_root.glob(pattern) if path.is_file()]
+        if not matches:
+            raise ValueError(f"active document glob matched no files: {pattern}")
+        for path in matches:
+            if not path.is_relative_to(resolved_root):
+                raise ValueError(
+                    f"active document glob must stay within the repository: {pattern}"
+                )
+            managed[path.relative_to(resolved_root).as_posix()] = path
+
+    referenced_rfcs: set[int] = set()
+    for relative, path in sorted(managed.items()):
         text = path.read_text(encoding="utf-8")
+        referenced_rfcs.update(int(number) for number in RFC_REFERENCE.findall(text))
         for document, revision in DRAFT_PIN.findall(text):
             expected = current_drafts.get(document)
             if expected is not None and revision != expected:
@@ -117,13 +140,70 @@ def validate_manifest(manifest: dict, root: Path = ROOT) -> None:
                     f"{relative}: stale active marker {marker!r}; use {replacement!r}"
                 )
 
+    inventoried_rfcs = {
+        entry["number"] for entry in sources if entry["kind"] == "rfc"
+    }
+    for number in sorted(referenced_rfcs - inventoried_rfcs):
+        raise ValueError(f"active documents reference untracked RFC {number}")
 
-def _open_bytes(opener, request: urllib.request.Request) -> tuple[bytes, str]:
-    try:
-        with opener(request, timeout=30) as response:
-            return response.read(), response.geturl()
-    except (OSError, urllib.error.URLError) as error:
-        raise RuntimeError(f"network failure for {request.full_url}: {error}") from error
+    expected_markers = manifest.get("expected_file_markers", {})
+    if not isinstance(expected_markers, dict):
+        raise ValueError("expected_file_markers must be an object")
+    for relative, markers in expected_markers.items():
+        path = (resolved_root / relative).resolve()
+        if not path.is_relative_to(resolved_root):
+            raise ValueError(f"expected marker path must stay within the repository: {relative}")
+        if not path.is_file():
+            raise ValueError(f"expected marker file does not exist: {relative}")
+        if not isinstance(markers, list) or not all(
+            isinstance(marker, str) and marker for marker in markers
+        ):
+            raise ValueError(f"expected markers for {relative} must be non-empty strings")
+        text = path.read_text(encoding="utf-8")
+        for marker in markers:
+            if marker not in text:
+                raise ValueError(
+                    f"{relative}: missing expected active marker {marker!r}"
+                )
+
+
+def _open_bytes(
+    opener,
+    request: urllib.request.Request,
+    *,
+    attempts: int = 3,
+    sleeper=time.sleep,
+) -> tuple[bytes, str]:
+    last_error: BaseException | None = None
+    for attempt in range(attempts):
+        try:
+            with opener(request, timeout=30) as response:
+                return response.read(), response.geturl()
+        except urllib.error.HTTPError as error:
+            if error.code != 429 and error.code < 500:
+                raise RuntimeError(
+                    f"official source rejected {request.full_url}: HTTP {error.code}"
+                ) from error
+            last_error = error
+        except (OSError, urllib.error.URLError) as error:
+            last_error = error
+        if attempt + 1 < attempts:
+            sleeper(2**attempt)
+    raise RuntimeError(f"network failure for {request.full_url}: {last_error}") from last_error
+
+
+def _normalized_url(url: str) -> tuple[str, str, str]:
+    parsed = urlparse(url)
+    path = parsed.path.rstrip("/") or "/"
+    return parsed.scheme.lower(), parsed.netloc.lower(), path
+
+
+def _validate_final_url(entry: dict, final_url: str) -> None:
+    allowed = entry.get("allowed_final_urls", [entry["url"]])
+    if _normalized_url(final_url) not in {_normalized_url(url) for url in allowed}:
+        raise RuntimeError(
+            f"{entry['id']}: official source returned unexpected redirect target {final_url}"
+        )
 
 
 def check_entry(entry: dict, opener=urllib.request.urlopen) -> str:
@@ -163,6 +243,7 @@ def check_entry(entry: dict, opener=urllib.request.urlopen) -> str:
             entry["url"], headers={"User-Agent": "NazoAuth-spec-freshness/1"}
         )
         payload, final_url = _open_bytes(opener, request)
+        _validate_final_url(entry, final_url)
         text = payload.decode("utf-8", errors="replace")
         searchable = re.sub(r"\s+", " ", text)
         for marker in entry["markers"]:
