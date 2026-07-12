@@ -94,6 +94,29 @@ fn raw_http_header_extractors_fail_closed_on_non_utf8_values() {
 }
 
 #[test]
+fn http_request_authorizer_inserts_verified_claims_into_extensions() {
+    let fixture = fixture();
+    let token = bearer(&token(&fixture, json!({}), None));
+    let mut request = http::Request::builder()
+        .uri("https://api.example/orders")
+        .header(http::header::AUTHORIZATION, token)
+        .body(())
+        .unwrap();
+
+    let verified = authorize_http_request(&fixture.verifier, &mut request).unwrap();
+
+    assert_eq!(verified.subject, "subject-1");
+    assert_eq!(
+        request
+            .extensions()
+            .get::<VerifiedAccessToken>()
+            .unwrap()
+            .client_id,
+        "client-1"
+    );
+}
+
+#[test]
 fn request_authorizer_rejects_query_access_tokens() {
     let fixture = fixture();
     let token = bearer(&token(&fixture, json!({}), None));
