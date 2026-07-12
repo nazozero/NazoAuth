@@ -316,3 +316,50 @@ async fn audit_repository_records_scim_use_and_drives_logout_outbox() {
             .is_empty()
     );
 }
+
+#[test]
+fn server_auth_callers_do_not_query_diesel_or_auth_tables() {
+    let server = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../server/src");
+    for relative in [
+        "domain/rows.rs",
+        "http/admin/grants.rs",
+        "http/authorization/request/prompt_none.rs",
+        "http/fapi_resource.rs",
+        "http/profile/oidc_logout.rs",
+        "http/scim/auth.rs",
+        "http/token/introspect.rs",
+        "http/token/issue/authorization_code_state.rs",
+        "http/token/issue/refresh_persistence.rs",
+        "http/token/native_sso.rs",
+        "http/token/refresh.rs",
+        "http/token/revoke.rs",
+        "http/token/token_exchange.rs",
+        "http/token/userinfo.rs",
+        "support/oauth.rs",
+        "support/views.rs",
+    ] {
+        let source = std::fs::read_to_string(server.join(relative))
+            .unwrap_or_else(|error| panic!("failed to read {relative}: {error}"));
+        for forbidden in [
+            "diesel::",
+            "diesel_async",
+            "oauth_tokens::",
+            "user_client_grants::",
+            "access_token_revocations::",
+            "scim_tokens::",
+            "scim_audit_events::",
+            "backchannel_logout_deliveries::",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "{relative} retained forbidden persistence token {forbidden}"
+            );
+        }
+    }
+    let schema = std::fs::read_to_string(server.join("schema.rs")).expect("server schema reads");
+    assert_eq!(
+        schema.matches("diesel::table!").count(),
+        0,
+        "server production schema must not define persistence tables"
+    );
+}
