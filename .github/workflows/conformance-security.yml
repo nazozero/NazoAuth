@@ -13,6 +13,7 @@ on:
       - ".cargo/**"
       - "rust-toolchain"
       - "rust-toolchain.toml"
+      - "crates/**"
       - "src/**"
       - "tests/**"
       - "benches/**"
@@ -38,6 +39,7 @@ on:
       - ".cargo/**"
       - "rust-toolchain"
       - "rust-toolchain.toml"
+      - "crates/**"
       - "src/**"
       - "tests/**"
       - "benches/**"
@@ -143,7 +145,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.0
-      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: dtolnay/rust-toolchain@1.97.0
       - name: Install native dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev
       - name: Install Rust supply-chain tools
@@ -168,9 +170,9 @@ jobs:
         run: cargo deny check advisories bans licenses sources
       - name: Generate Rust SBOM
         run: |
-          cargo cyclonedx --format json --override-filename nazo-oauth-server.cdx
+          cargo cyclonedx --manifest-path crates/server/Cargo.toml --format json --override-filename nazo-oauth-server.cdx
           mkdir -p target
-          mv nazo-oauth-server.cdx.json target/nazo-oauth-server.cdx.json
+          mv crates/server/nazo-oauth-server.cdx.json target/nazo-oauth-server.cdx.json
       - uses: docker/setup-buildx-action@v4.2.0
       - name: Build service image
         uses: docker/build-push-action@v7.3.0

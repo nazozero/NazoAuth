@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.0
-      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: dtolnay/rust-toolchain@1.97.0
       - name: Install native dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev
       - name: Build release binaries
@@ -33,9 +33,9 @@ jobs:
           cargo install cargo-cyclonedx --locked
       - name: Generate Rust SBOM
         run: |
-          cargo cyclonedx --format json --override-filename nazo-oauth-server.cdx
+          cargo cyclonedx --manifest-path crates/server/Cargo.toml --format json --override-filename nazo-oauth-server.cdx
           mkdir -p target
-          mv nazo-oauth-server.cdx.json target/nazo-oauth-server.cdx.json
+          mv crates/server/nazo-oauth-server.cdx.json target/nazo-oauth-server.cdx.json
       - name: Build release image
         run: docker build -f Containerfile -t nazo-oauth-server:${{ github.sha }} .
       - name: Export release image
