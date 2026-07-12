@@ -7,6 +7,7 @@ use diesel::{BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryD
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_identity::{
     TenantId, UserId,
+    mfa::MFA_BACKUP_CODE_COUNT,
     ports::{MfaRepositoryPort, RepositoryError, RepositoryFuture, TotpCredential, TotpEnrollment},
 };
 
@@ -134,10 +135,7 @@ impl MfaRepository {
                 }
             })
             .await
-            .map_err(|error| match error {
-                diesel::result::Error::RollbackTransaction => RepositoryError::Conflict,
-                other => RepositoryError::Unexpected(other.to_string()),
-            })
+            .map_err(map_mfa_error)
     }
     pub async fn confirm_totp_and_replace_backup_hashes(
         &self,
@@ -146,6 +144,7 @@ impl MfaRepository {
         step: i64,
         hashes: Vec<String>,
     ) -> Result<(), RepositoryError> {
+        validate_backup_hash_count(&hashes)?;
         let mut connection = self
             .pool
             .get()
@@ -197,10 +196,7 @@ impl MfaRepository {
                 Ok(())
             })
             .await
-            .map_err(|error| match error {
-                diesel::result::Error::NotFound => RepositoryError::Conflict,
-                other => RepositoryError::Unexpected(other.to_string()),
-            })
+            .map_err(map_mfa_error)
     }
     pub async fn compare_and_set_totp_step(
         &self,
@@ -249,10 +245,15 @@ impl MfaRepository {
             .filter(user_mfa_backup_codes::user_id.eq(user_id.as_uuid()))
             .filter(user_mfa_backup_codes::used_at.is_null())
             .select((user_mfa_backup_codes::id, user_mfa_backup_codes::code_hash))
-            .limit(25)
+            .limit(i64::try_from(MFA_BACKUP_CODE_COUNT + 1).expect("backup-code limit fits i64"))
             .load::<(uuid::Uuid, String)>(&mut connection)
             .await
             .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
+        if candidates.len() > MFA_BACKUP_CODE_COUNT {
+            return Err(RepositoryError::Consistency(
+                "persisted backup-code count exceeds the supported maximum".into(),
+            ));
+        }
         let Some((id, _)) = candidates.into_iter().find(|(_, hash)| {
             PasswordHash::new(hash).ok().is_some_and(|parsed| {
                 Argon2::default()
@@ -279,6 +280,7 @@ impl MfaRepository {
         user_id: UserId,
         hashes: Vec<String>,
     ) -> Result<(), RepositoryError> {
+        validate_backup_hash_count(&hashes)?;
         let mut connection = self
             .pool
             .get()
@@ -432,6 +434,27 @@ impl MfaRepository {
             .map_err(|error| RepositoryError::Unexpected(error.to_string()))
     }
 }
+
+fn validate_backup_hash_count(hashes: &[String]) -> Result<(), RepositoryError> {
+    if hashes.len() > MFA_BACKUP_CODE_COUNT {
+        Err(RepositoryError::Conflict)
+    } else {
+        Ok(())
+    }
+}
+
+fn map_mfa_error(error: diesel::result::Error) -> RepositoryError {
+    match error {
+        diesel::result::Error::NotFound
+        | diesel::result::Error::RollbackTransaction
+        | diesel::result::Error::DatabaseError(
+            diesel::result::DatabaseErrorKind::UniqueViolation,
+            _,
+        ) => RepositoryError::Conflict,
+        other => RepositoryError::Unexpected(other.to_string()),
+    }
+}
+
 impl MfaRepositoryPort for MfaRepository {
     fn totp_credential<'a>(
         &'a self,
@@ -479,5 +502,19 @@ impl MfaRepositoryPort for MfaRepository {
         user_id: UserId,
     ) -> RepositoryFuture<'a, ()> {
         Box::pin(async move { self.clear_mfa_state(tenant_id, user_id).await })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn enrollment_unique_violation_is_a_typed_conflict() {
+        let error = diesel::result::Error::DatabaseError(
+            diesel::result::DatabaseErrorKind::UniqueViolation,
+            Box::new("duplicate enrollment".to_owned()),
+        );
+        assert_eq!(map_mfa_error(error), RepositoryError::Conflict);
     }
 }

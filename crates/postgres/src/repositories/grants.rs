@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use diesel::{ExpressionMethods, JoinOnDsl, QueryDsl};
+use diesel::{BoolExpressionMethods, ExpressionMethods, JoinOnDsl, QueryDsl};
 use diesel_async::RunQueryDsl;
 use nazo_identity::ports::RepositoryError;
 use serde_json::Value;
@@ -78,9 +78,15 @@ impl GrantRepository {
             .await
             .map_err(map_error)?;
         let records = user_client_grants::table
-            .inner_join(users::table.on(users::id.eq(user_client_grants::user_id)))
             .inner_join(
-                oauth_clients::table.on(oauth_clients::id.eq(user_client_grants::client_id)),
+                users::table.on(users::id
+                    .eq(user_client_grants::user_id)
+                    .and(users::tenant_id.eq(user_client_grants::tenant_id))),
+            )
+            .inner_join(
+                oauth_clients::table.on(oauth_clients::id
+                    .eq(user_client_grants::client_id)
+                    .and(oauth_clients::tenant_id.eq(user_client_grants::tenant_id))),
             )
             .select((
                 user_client_grants::user_id,

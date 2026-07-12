@@ -99,6 +99,7 @@ diesel::table! {
 diesel::table! {
     oauth_clients (id) {
         id -> Uuid,
+        tenant_id -> Uuid,
         client_id -> Varchar,
         client_name -> Varchar,
     }

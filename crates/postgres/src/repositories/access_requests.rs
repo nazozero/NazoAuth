@@ -78,7 +78,11 @@ impl AccessRequestRepository {
     ) -> Result<i64, RepositoryError> {
         let mut connection = self.connection().await?;
         let mut query = client_access_requests::table
-            .inner_join(users::table.on(users::id.eq(client_access_requests::user_id)))
+            .inner_join(
+                users::table.on(users::id
+                    .eq(client_access_requests::user_id)
+                    .and(users::tenant_id.eq(client_access_requests::tenant_id))),
+            )
             .into_boxed();
         if let Some(status) = status {
             query = query.filter(client_access_requests::status.eq(status));
@@ -107,7 +111,11 @@ impl AccessRequestRepository {
     ) -> Result<Vec<AccessRequestProjection>, RepositoryError> {
         let mut connection = self.connection().await?;
         let mut query = client_access_requests::table
-            .inner_join(users::table.on(users::id.eq(client_access_requests::user_id)))
+            .inner_join(
+                users::table.on(users::id
+                    .eq(client_access_requests::user_id)
+                    .and(users::tenant_id.eq(client_access_requests::tenant_id))),
+            )
             .into_boxed();
         if let Some(status) = status {
             query = query.filter(client_access_requests::status.eq(status));
@@ -149,7 +157,11 @@ impl AccessRequestRepository {
     ) -> Result<Option<AccessRequestProjection>, RepositoryError> {
         let mut connection = self.connection().await?;
         client_access_requests::table
-            .inner_join(users::table.on(users::id.eq(client_access_requests::user_id)))
+            .inner_join(
+                users::table.on(users::id
+                    .eq(client_access_requests::user_id)
+                    .and(users::tenant_id.eq(client_access_requests::tenant_id))),
+            )
             .filter(client_access_requests::id.eq(id))
             .select((
                 client_access_requests::id,

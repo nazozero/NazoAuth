@@ -336,6 +336,83 @@ async fn subject_claims_reject_invalid_persisted_role_invariant() {
 }
 
 #[tokio::test]
+async fn mfa_backup_code_bounds_and_enrollment_conflict_are_explicit() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        panic!("NAZO_TEST_DATABASE_URL or DATABASE_URL is required");
+    };
+    let repository = MfaRepository::new(pool.clone());
+    assert_eq!(
+        repository
+            .replace_backup_code_hashes(
+                tenant.tenant_id,
+                user_id,
+                (0..=nazo_identity::mfa::MFA_BACKUP_CODE_COUNT)
+                    .map(|index| format!("hash-{index}"))
+                    .collect(),
+            )
+            .await
+            .unwrap_err(),
+        RepositoryError::Conflict
+    );
+
+    let mut connection = get_conn(&pool).await.unwrap();
+    for index in 0..=nazo_identity::mfa::MFA_BACKUP_CODE_COUNT {
+        sql_query(
+            "INSERT INTO user_mfa_backup_codes (tenant_id,user_id,code_hash) VALUES ($1,$2,$3)",
+        )
+        .bind::<SqlUuid, _>(tenant.tenant_id.as_uuid())
+        .bind::<SqlUuid, _>(user_id.as_uuid())
+        .bind::<Text, _>(format!("invalid-hash-{index}"))
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    }
+    drop(connection);
+    assert!(matches!(
+        repository
+            .consume_backup_code(tenant.tenant_id, user_id, "candidate")
+            .await,
+        Err(RepositoryError::Consistency(_))
+    ));
+
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("DELETE FROM user_mfa_backup_codes WHERE tenant_id=$1 AND user_id=$2")
+        .bind::<SqlUuid, _>(tenant.tenant_id.as_uuid())
+        .bind::<SqlUuid, _>(user_id.as_uuid())
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM user_totp_credentials WHERE tenant_id=$1 AND user_id=$2")
+        .bind::<SqlUuid, _>(tenant.tenant_id.as_uuid())
+        .bind::<SqlUuid, _>(user_id.as_uuid())
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+    let (left, right) = tokio::join!(
+        repository.begin_totp_enrollment(
+            tenant.tenant_id,
+            user_id,
+            "JBSWY3DPEHPK3PXP".into(),
+            "first".into()
+        ),
+        repository.begin_totp_enrollment(
+            tenant.tenant_id,
+            user_id,
+            "GEZDGNBVGY3TQOJQ".into(),
+            "second".into()
+        )
+    );
+    assert!(
+        left.is_ok() || right.is_ok(),
+        "left={left:?}, right={right:?}"
+    );
+    assert!(matches!(left, Ok(()) | Err(RepositoryError::Conflict)));
+    assert!(matches!(right, Ok(()) | Err(RepositoryError::Conflict)));
+    cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
 async fn scim_replace_returns_domain_claims_from_one_transaction() {
     let Some((pool, tenant, user_id)) = database_fixture().await else {
         return;
