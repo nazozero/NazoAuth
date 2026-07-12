@@ -45,6 +45,17 @@ pub(crate) struct SessionRotation {
     pub(crate) csrf_token: String,
 }
 
+pub(crate) fn require_active_session_principal(user: &IdentityUser) -> Result<(), HttpResponse> {
+    if user.principal.active {
+        return Ok(());
+    }
+    Err(oauth_error(
+        StatusCode::UNAUTHORIZED,
+        "access_denied",
+        "当前账号已停用.",
+    ))
+}
+
 pub(crate) async fn current_user(
     state: &AppState,
     req: &HttpRequest,

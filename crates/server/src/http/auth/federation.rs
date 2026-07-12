@@ -630,6 +630,9 @@ async fn create_federated_session(
     user: &IdentityUser,
     method: &str,
 ) -> HttpResponse {
+    if let Err(response) = require_active_session_principal(user) {
+        return response;
+    }
     let session_id = random_urlsafe_token();
     let csrf_token = random_urlsafe_token();
     let session = SessionPayload {

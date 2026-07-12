@@ -112,6 +112,10 @@ pub(crate) async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) 
     let user = user.expect("successful authentication requires an active user");
     clear_login_failures(&state, &req, &email).await;
 
+    if let Err(response) = require_active_session_principal(&user) {
+        return response;
+    }
+
     let session_id = random_urlsafe_token();
     let csrf_token = random_urlsafe_token();
     let key = format!("oauth:session:{session_id}");
