@@ -1,6 +1,8 @@
-# Domain Task 4 Report — Complete
+# Domain Task 4 Report — Remediation A Follow-up
 
-Domain Task 4 is complete. `nazo-postgres` is the production owner of identity
+Domain Task 4 is **not complete**. This report records the implemented
+Remediation A follow-up; Remediation B and independent re-review remain required
+before Task 4 may be called complete. `nazo-postgres` is the production owner of identity
 PostgreSQL schema, private persistence records, conversions, and repository
 queries. Server production source no longer defines or directly queries the
 `users`, MFA, passkey, or external-identity tables.
@@ -22,6 +24,14 @@ queries. Server production source no longer defines or directly queries the
 - MFA/projection invariants: `682550c07891a565b592cf54cfcf86f9f31d403e`
 - CI database and API privacy gates: `4e1fbff10901b81ada9f68b1df48247cacb2f373`
 - Optional server integration gates: `260cc9532c3290f3754c0d3bc8172e7d914040d2`
+- Inactive social session rejection and provider constraint: `fe1a142`
+- Atomic refresh-family serialization: `2511f56`
+- Admin empty-PATCH timestamp preservation: `01dab58`
+- Non-conflicting social migration name: `79749e4`
+- Social migration up/down compatibility contract: `b592fdd`
+- PostgreSQL integration CI gates: `44d19ec`
+- Deterministic no-email social callback completion test: `41eac28`
+- Isolated refresh-family fixtures: `1a68e15`
 
 No commit was pushed and no PR or deployment was created.
 
@@ -41,15 +51,27 @@ No commit was pushed and no PR or deployment was created.
   anti-replay CAS, remembered-device operations, passkey counter updates,
   federation link resolution/creation, and SCIM lifecycle mutations are owned
   by focused postgres repositories.
-- Revoked refresh tokens are never substituted with a successor. Replay marks
-  and revokes the token family; concurrent use produces one success and one
-  `invalid_grant`. Inactive linked federation users preserve the compatible
-  unauthorized response, and SCIM cursor `count=0` performs an empty query.
+- Revoked refresh tokens are never substituted with a successor. Rotation and
+  replay mutation acquire the same stable PostgreSQL advisory transaction lock
+  for the token family. Replay marking and family revocation are one database
+  transaction; concurrent use produces one HTTP 200 and one `invalid_grant`,
+  after which the family has no active refresh token. The HTTP winner does not
+  guarantee that its returned refresh token remains valid after family
+  compromise. Inactive linked federation users, including social identities
+  without email, receive the compatible `401 access_denied` response.
 - Admin role/level PATCH reads under a row lock, validates the final typed
   combination, performs one update, and converts before commit. Passkey counter
   writes use expected-counter CAS and monotonic validation while retaining the
   WebAuthn `0 -> 0` counterless-authenticator case. Concurrent first-time
   federation provisioning re-reads the unique link after a conflict.
+- An empty admin user PATCH is a baseline-compatible no-op: it returns the
+  current representation without mutating `updated_at`.
+- Migration `20260712000050_social_federation_provider_type` permits the
+  production `oauth2_social` provider type while preserving existing OIDC/SAML
+  rows. Its down migration fails while social links exist; operators must
+  migrate or remove those links explicitly before rollback. Timestamp
+  `20260712000100` remains available for the planned runtime desired-state
+  migration.
 - Subject-claim conversion uses the same persisted-user invariant as principal
   conversion. Backup-code input and candidate scans share the explicit maximum
   of 10, enrollment unique violations map to `Conflict`, and focused joins bind
@@ -90,10 +112,9 @@ production identity schema definitions. It passes after 4B2.
   - exit 0; server: 1654 passed, 0 failed; postgres: 3 passed, 0 failed;
     identity: 0 tests.
 - `rtk proxy cargo test -p nazo-postgres --all-features --locked -- --nocapture`
-  - with the migrated disposable PostgreSQL service: exit 0; 3 repository unit
-    tests and 13 integration/contract tests passed, including concurrent CAS,
-    idempotent provisioning, atomic admin PATCH, MFA bounds, and the production-
-    source boundary contract.
+  - with the migrated PostgreSQL service: exit 0; 3 repository unit tests, 13
+    identity integration/contract tests, 1 migration up/down test, and 2
+    compile-fail privacy doctests passed.
 - `cargo test -p nazo-postgres --doc --all-features --locked`
   - exit 0; 2 compile-fail privacy tests passed with `E0603` for private
     `schema` and `rows` modules.
@@ -130,6 +151,15 @@ one-shot HTTP fixture waited beyond 60 seconds; the repository concurrency test
 itself completed in 0.11 seconds and showed no database deadlock. The final
 exact/workspace aggregate gates used `NAZO_TEST_DATABASE_URL` for mandatory
 postgres tests while leaving optional server integration variables unset.
+
+The follow-up re-ran the no-email social completion regression and the three
+refresh-family/admin exact tests against the real services. Each completed in
+under 0.1 seconds. A broad `inactive_linked_user` filter was explicitly not
+counted as passing: two unrelated one-shot HTTP fixtures ran concurrently and
+waited indefinitely. The new no-email regression avoids that invalid signal by
+testing the production callback-completion boundary with a resolved
+`SocialIdentity`, a real PostgreSQL external link, a real Valkey client, and a
+five-second deadline.
 
 Run the real database slice with:
 
