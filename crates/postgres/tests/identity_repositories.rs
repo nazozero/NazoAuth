@@ -6,7 +6,7 @@ use diesel::{
 use diesel_async::RunQueryDsl;
 use nazo_identity::{
     TenantContext, TenantId, UserId,
-    ports::{NewFederationLink, RepositoryError},
+    ports::{AdminUserUpdate, NewFederationLink, RepositoryError},
     scim::NormalizedScimUser,
 };
 use nazo_postgres::{
@@ -192,6 +192,67 @@ async fn scim_replace_returns_domain_claims_from_one_transaction() {
         .unwrap();
     assert_eq!(user.user_id(), user_id);
     assert_eq!(user.login.username, "replacement");
+    cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
+async fn admin_partial_update_validates_final_role_level_before_commit() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        panic!("NAZO_TEST_DATABASE_URL or DATABASE_URL is required");
+    };
+    let repository = UserRepository::new(pool.clone());
+
+    assert_eq!(
+        repository
+            .admin_update(
+                user_id,
+                AdminUserUpdate {
+                    role: Some("admin".into()),
+                    admin_level: None,
+                    active: None,
+                },
+            )
+            .await
+            .unwrap_err(),
+        RepositoryError::Conflict
+    );
+    let unchanged = repository
+        .user_by_id(tenant.tenant_id, user_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(unchanged.role_name(), "user");
+    assert_eq!(unchanged.admin_level(), 0);
+
+    let promoted = repository
+        .admin_update(
+            user_id,
+            AdminUserUpdate {
+                role: Some("admin".into()),
+                admin_level: Some(5),
+                active: None,
+            },
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(promoted.role_name(), "admin");
+    assert_eq!(promoted.admin_level(), 5);
+
+    let level_only = repository
+        .admin_update(
+            user_id,
+            AdminUserUpdate {
+                role: None,
+                admin_level: Some(7),
+                active: None,
+            },
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(level_only.role_name(), "admin");
+    assert_eq!(level_only.admin_level(), 7);
     cleanup(&pool, user_id).await;
 }
 

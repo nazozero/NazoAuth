@@ -61,9 +61,19 @@ pub(crate) async fn admin_patch_user(
     if let Some(response) = patch_user_validation_error(&payload) {
         return response;
     }
+    let user_id = match nazo_identity::UserId::new(user_id) {
+        Ok(user_id) => user_id,
+        Err(_) => {
+            return oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "user_id 格式无效.",
+            );
+        }
+    };
     let updated = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
         .admin_update(
-            nazo_identity::UserId::new(user_id).expect("path UUID is non-nil"),
+            user_id,
             nazo_identity::ports::AdminUserUpdate {
                 role: payload.role,
                 admin_level: payload.admin_level,
@@ -73,6 +83,13 @@ pub(crate) async fn admin_patch_user(
         .await
     {
         Ok(updated) => updated,
+        Err(nazo_identity::ports::RepositoryError::Conflict) => {
+            return oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "role 与 admin_level 组合无效.",
+            );
+        }
         Err(error) => {
             tracing::warn!(%error, "failed to update user");
             return oauth_error(

@@ -227,55 +227,46 @@ impl UserRepository {
             .get()
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        let row = diesel_async::AsyncConnection::transaction::<_, diesel::result::Error, _>(
+        diesel_async::AsyncConnection::transaction::<_, AdminUpdateError, _>(
             &mut connection,
             async move |connection| {
-                if let Some(role) = update.role
-                    && diesel::update(users::table.find(user_id.as_uuid()))
-                        .set((users::role.eq(role), users::updated_at.eq(diesel::dsl::now)))
-                        .execute(connection)
-                        .await?
-                        == 0
-                {
-                    return Ok(None);
-                }
-                if let Some(level) = update.admin_level
-                    && diesel::update(users::table.find(user_id.as_uuid()))
-                        .set((
-                            users::admin_level.eq(level),
-                            users::updated_at.eq(diesel::dsl::now),
-                        ))
-                        .execute(connection)
-                        .await?
-                        == 0
-                {
-                    return Ok(None);
-                }
-                if let Some(active) = update.active
-                    && diesel::update(users::table.find(user_id.as_uuid()))
-                        .set((
-                            users::is_active.eq(active),
-                            users::updated_at.eq(diesel::dsl::now),
-                        ))
-                        .execute(connection)
-                        .await?
-                        == 0
-                {
-                    return Ok(None);
-                }
-                users::table
+                let current = users::table
                     .find(user_id.as_uuid())
                     .select(UserRow::as_select())
+                    .for_update()
                     .first::<UserRow>(connection)
                     .await
-                    .optional()
+                    .optional()?;
+                let Some(current) = current else {
+                    return Ok(None);
+                };
+                let role = update.role.unwrap_or(current.role);
+                let admin_level = update.admin_level.unwrap_or(current.admin_level);
+                if !valid_role_admin_level(&role, admin_level) {
+                    return Err(AdminUpdateError::Conflict);
+                }
+                let active = update.active.unwrap_or(current.is_active);
+                let updated = diesel::update(users::table.find(user_id.as_uuid()))
+                    .set((
+                        users::role.eq(role),
+                        users::admin_level.eq(admin_level),
+                        users::is_active.eq(active),
+                        users::updated_at.eq(diesel::dsl::now),
+                    ))
+                    .returning(UserRow::as_returning())
+                    .get_result::<UserRow>(connection)
+                    .await?;
+                let user = IdentityUser::try_from(updated)
+                    .map_err(|error| AdminUpdateError::Consistency(error.0))?;
+                Ok(Some(user))
             },
         )
         .await
-        .map_err(map_error)?;
-        row.map(IdentityUser::try_from)
-            .transpose()
-            .map_err(|error| RepositoryError::Consistency(error.0))
+        .map_err(|error| match error {
+            AdminUpdateError::Diesel(error) => map_error(error),
+            AdminUpdateError::Conflict => RepositoryError::Conflict,
+            AdminUpdateError::Consistency(message) => RepositoryError::Consistency(message),
+        })
     }
     pub async fn subject_claims_by_id(
         &self,
@@ -287,6 +278,22 @@ impl UserRepository {
             .map(identity::subject_claims)
             .transpose()
             .map_err(|error| RepositoryError::Consistency(error.0))
+    }
+}
+
+fn valid_role_admin_level(role: &str, admin_level: i32) -> bool {
+    matches!((role, admin_level), ("user", 0) | ("admin", 1..))
+}
+
+enum AdminUpdateError {
+    Diesel(diesel::result::Error),
+    Conflict,
+    Consistency(String),
+}
+
+impl From<diesel::result::Error> for AdminUpdateError {
+    fn from(error: diesel::result::Error) -> Self {
+        Self::Diesel(error)
     }
 }
 fn map_error(error: diesel::result::Error) -> RepositoryError {
