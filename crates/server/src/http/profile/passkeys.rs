@@ -47,8 +47,19 @@ pub(crate) async fn passkey_registration_begin(
         }
     };
     let webauthn = passkey_webauthn(&state.settings);
+    let user_handle = match passkey_user_handle(&user) {
+        Ok(user_handle) => user_handle,
+        Err(error) => {
+            tracing::warn!(%error, user_id = %user.id, "stored passkey owner identifiers are invalid");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "passkey state unavailable.",
+            );
+        }
+    };
     let (challenge, registration_state) = webauthn.start_registration(
-        &passkey_user_handle(&user),
+        &user_handle,
         &user.email,
         user.display_name.as_deref().unwrap_or(&user.email),
         &existing_ids,

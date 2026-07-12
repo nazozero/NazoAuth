@@ -61,7 +61,7 @@ pub(crate) async fn mfa_totp_begin(state: Data<AppState>, req: HttpRequest) -> H
         return oauth_error(StatusCode::CONFLICT, "invalid_request", "TOTP MFA 已启用.");
     }
 
-    let secret = generate_totp_secret_base32();
+    let secret = nazo_identity::mfa::generate_totp_secret_base32();
     let label = format!("{} ({})", user.email, state.settings.issuer);
     let result = if let Some(credential) = existing {
         diesel::update(user_totp_credentials::table.find(credential.id))
@@ -96,7 +96,11 @@ pub(crate) async fn mfa_totp_begin(state: Data<AppState>, req: HttpRequest) -> H
 
     json_response(json!({
         "secret_base32": secret,
-        "otpauth_uri": otpauth_uri(&state.settings.issuer, &user.email, &secret),
+        "otpauth_uri": nazo_identity::mfa::otpauth_uri(
+            &state.settings.issuer,
+            &user.email,
+            &secret,
+        ),
         "period": MFA_TOTP_PERIOD_SECONDS,
         "digits": MFA_TOTP_DIGITS
     }))
@@ -148,7 +152,7 @@ pub(crate) async fn mfa_totp_confirm(
             );
         }
     };
-    let Some(step) = verified_totp_step(
+    let Some(step) = nazo_identity::mfa::verified_totp_step(
         &credential.secret_base32,
         &payload.code,
         Utc::now().timestamp(),

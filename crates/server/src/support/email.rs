@@ -22,8 +22,7 @@ pub(crate) struct EmailRecipient {
 }
 
 pub(crate) fn normalize_email_address(raw: &str) -> anyhow::Result<String> {
-    let normalized = nazo_identity::email::normalize_email_address(raw)?;
-    Ok(parse_email_address(&normalized)?.to_string())
+    Ok(nazo_identity::email::normalize_email_address(raw)?)
 }
 
 fn parse_email_address(raw: &str) -> anyhow::Result<Address> {
