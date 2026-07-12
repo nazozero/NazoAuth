@@ -267,8 +267,11 @@ async fn revoke_replayed_authorization_code(
     state: &AppState,
     marker: ConsumedAuthorizationCode,
 ) -> Result<bool, HttpResponse> {
-    let client = match find_client_by_id(&state.diesel_db, marker.client_id).await {
-        Ok(Some(client)) => client,
+    let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .by_id(marker.client_id)
+        .await
+    {
+        Ok(Some(client)) => ClientRow::from(client),
         Ok(None) => {
             return Ok(false);
         }

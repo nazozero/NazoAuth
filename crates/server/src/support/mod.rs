@@ -81,7 +81,7 @@ pub(crate) mod prelude {
     pub(crate) use crate::domain::{AppState, ClientRow};
     #[cfg(test)]
     pub(crate) use crate::domain::{DatabasePasskeyFixture, DatabaseUserFixture};
-    pub(crate) use crate::schema::{oauth_clients, user_client_grants};
+    pub(crate) use crate::schema::user_client_grants;
     pub(crate) use crate::settings::Settings;
     pub(crate) use nazo_auth::Claims;
     pub(crate) use nazo_identity::PublicAccount;

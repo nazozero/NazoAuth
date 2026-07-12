@@ -58,7 +58,14 @@ impl FapiResourceStore for AppState {
         tenant_id: Uuid,
         client_id: &'a str,
     ) -> FapiStoreFuture<'a, anyhow::Result<Option<ClientRow>>> {
-        Box::pin(async move { find_client_in_tenant(&self.diesel_db, tenant_id, client_id).await })
+        let repository = nazo_postgres::OAuthClientRepository::new(self.diesel_db.clone());
+        Box::pin(async move {
+            repository
+                .by_client_id(tenant_id, client_id)
+                .await
+                .map(|client| client.map(ClientRow::from))
+                .map_err(|error| anyhow::anyhow!("failed to load OAuth client: {error}"))
+        })
     }
 
     fn consume_replay<'a>(

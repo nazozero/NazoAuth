@@ -7,7 +7,7 @@ use nazo_auth::ValidatedClientRegistration;
 use nazo_identity::{
     AccessRequestStatus, NewAccessRequest, TenantContext, TenantId, UserId, ports::RepositoryError,
 };
-use nazo_postgres::{AccessRequestRepository, create_pool, get_conn};
+use nazo_postgres::{AccessRequestRepository, OAuthClientRepository, create_pool, get_conn};
 use uuid::Uuid;
 
 async fn fixture() -> Option<(nazo_postgres::DbPool, TenantContext, UserId)> {
@@ -333,6 +333,25 @@ async fn duplicate_client_conflict_does_not_report_request_as_processed() {
         .approve(tenant, first.id, user_id, &prepared, None, None)
         .await
         .unwrap();
+    let client_repository = OAuthClientRepository::new(pool.clone());
+    assert_eq!(
+        client_repository
+            .by_id(approved.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .client_id,
+        approved.client_id
+    );
+    assert_eq!(
+        client_repository
+            .by_client_id(tenant.tenant_id.as_uuid(), &approved.client_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .id,
+        approved.id
+    );
     assert!(
         repository
             .approved_delivery_matches(

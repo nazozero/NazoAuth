@@ -207,8 +207,11 @@ pub(crate) async fn device_authorization(
             "缺少 client_id.",
         );
     };
-    let client = match find_client(&state.diesel_db, client_id).await {
-        Ok(Some(client)) if client.is_active => client,
+    let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .by_client_id(DEFAULT_TENANT_ID, client_id)
+        .await
+    {
+        Ok(Some(client)) if client.is_active => ClientRow::from(client),
         Ok(_) => {
             return oauth_error(
                 StatusCode::UNAUTHORIZED,
@@ -741,8 +744,11 @@ pub(crate) async fn device_decision(
             denied_at: now,
         },
         "approve" => {
-            let client = match find_client(&state.diesel_db, &payload.client_id).await {
-                Ok(Some(client)) if client.is_active => client,
+            let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+                .by_client_id(DEFAULT_TENANT_ID, &payload.client_id)
+                .await
+            {
+                Ok(Some(client)) if client.is_active => ClientRow::from(client),
                 Ok(_) => {
                     return oauth_error(
                         StatusCode::BAD_REQUEST,

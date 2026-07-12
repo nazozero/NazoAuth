@@ -180,8 +180,11 @@ pub(crate) async fn backchannel_authentication(
             "客户端认证失败.",
         );
     };
-    let client = match find_client(&state.diesel_db, client_id).await {
-        Ok(Some(client)) if client.is_active => client,
+    let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .by_client_id(DEFAULT_TENANT_ID, client_id)
+        .await
+    {
+        Ok(Some(client)) if client.is_active => ClientRow::from(client),
         Ok(_) => {
             return oauth_error(
                 StatusCode::UNAUTHORIZED,
@@ -1083,8 +1086,11 @@ async fn ciba_authorization_request_view(
     state: &AppState,
     payload: &CibaRequestState,
 ) -> Result<Option<CibaAuthorizationRequestView>, HttpResponse> {
-    let client = match find_client(&state.diesel_db, &payload.client_id).await {
-        Ok(Some(client)) if client.is_active => client,
+    let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .by_client_id(DEFAULT_TENANT_ID, &payload.client_id)
+        .await
+    {
+        Ok(Some(client)) if client.is_active => ClientRow::from(client),
         Ok(_) => return Ok(None),
         Err(error) => {
             tracing::warn!(%error, "failed to load CIBA client for verification page");

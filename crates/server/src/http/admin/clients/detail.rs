@@ -13,8 +13,11 @@ pub(crate) async fn admin_get_client(
         return response;
     }
 
-    match find_client(&state.diesel_db, &client_id).await {
-        Ok(Some(client)) => client_detail_response(client),
+    match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .by_client_id(DEFAULT_TENANT_ID, &client_id)
+        .await
+    {
+        Ok(Some(client)) => client_detail_response(ClientRow::from(client)),
         Ok(None) => client_detail_not_found_response(),
         Err(error) => {
             tracing::warn!(%error, "failed to query oauth client detail");

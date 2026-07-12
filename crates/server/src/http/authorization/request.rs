@@ -160,8 +160,11 @@ async fn authorize_request(
         );
     };
 
-    let client = match find_client(&state.diesel_db, client_id).await {
-        Ok(Some(client)) => client,
+    let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .by_client_id(DEFAULT_TENANT_ID, client_id)
+        .await
+    {
+        Ok(Some(client)) => ClientRow::from(client),
         Ok(None) => {
             return oauth_error(
                 StatusCode::UNAUTHORIZED,
@@ -598,8 +601,11 @@ pub(crate) async fn authorization_response_redirect(
                 "authorization response signing failed.",
             );
         }
-        let client = match find_client(&state.diesel_db, input.client_id).await {
-            Ok(Some(client)) if client.is_active => client,
+        let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+            .by_client_id(DEFAULT_TENANT_ID, input.client_id)
+            .await
+        {
+            Ok(Some(client)) if client.is_active => ClientRow::from(client),
             Ok(_) => {
                 tracing::warn!(client_id_hash = %blake3_hex(input.client_id), "JARM client is missing or inactive");
                 return oauth_error(

@@ -42,9 +42,22 @@ async fn mtls_client_credentials_without_client_id(
     let Some(certificate) = request_mtls_client_certificate(req, &state.settings) else {
         return Ok(None);
     };
-    match find_active_mtls_client_by_certificate(&state.diesel_db, &certificate).await {
-        Ok(Some(client)) => Ok(Some(mtls_client_credentials(client.client_id))),
-        Ok(None) => Ok(None),
+    match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .active_mtls_candidates(DEFAULT_TENANT_ID, 1000)
+        .await
+    {
+        Ok(candidates) => {
+            let clients = candidates
+                .into_iter()
+                .map(ClientRow::from)
+                .filter(|client| client_mtls_certificate_matches(client, &certificate))
+                .take(2)
+                .collect::<Vec<_>>();
+            Ok(match clients.as_slice() {
+                [client] => Some(mtls_client_credentials(client.client_id.clone())),
+                _ => None,
+            })
+        }
         Err(error) => {
             tracing::warn!(%error, "failed to query mTLS client by certificate identity");
             Err(oauth_token_error(
@@ -135,7 +148,10 @@ async fn missing_client_authorization_code_holder_error(
     ) {
         return Some(response);
     }
-    match find_client(&state.diesel_db, &payload.client_id).await {
+    match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .by_client_id(DEFAULT_TENANT_ID, &payload.client_id)
+        .await
+    {
         Ok(Some(client))
             if client.require_dpop_bound_tokens || client.require_mtls_bound_tokens =>
         {
@@ -288,8 +304,11 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
             has_basic,
         );
     };
-    let client = match find_client(&state.diesel_db, client_id).await {
-        Ok(Some(client)) => client,
+    let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .by_client_id(DEFAULT_TENANT_ID, client_id)
+        .await
+    {
+        Ok(Some(client)) => ClientRow::from(client),
         Ok(None) => {
             return oauth_token_error(
                 StatusCode::UNAUTHORIZED,
