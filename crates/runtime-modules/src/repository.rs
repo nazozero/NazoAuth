@@ -1,0 +1,120 @@
+use std::future::Future;
+use std::time::SystemTime;
+
+use crate::{DesiredMode, ModuleEventType, ModuleId, ModuleRevision, ModuleState};
+
+/// Durable desired state, independent of any database row representation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DesiredStateRecord {
+    pub module_id: ModuleId,
+    pub mode: DesiredMode,
+    pub revision: ModuleRevision,
+    pub actor_id: Option<String>,
+    pub reason: Option<String>,
+    pub updated_at: SystemTime,
+}
+
+/// Input to an atomic desired-state compare-and-set operation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DesiredStateChange {
+    /// `None` means that no durable desired-state record is expected to exist.
+    pub expected_revision: Option<ModuleRevision>,
+    pub next: DesiredStateRecord,
+}
+
+/// Durable actual state for one module on one process instance.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InstanceStateRecord {
+    pub instance_id: String,
+    pub module_id: ModuleId,
+    pub state: ModuleState,
+    pub transition_revision: ModuleRevision,
+    pub applied_revision: Option<ModuleRevision>,
+    pub drain_deadline: Option<SystemTime>,
+    pub error_code: Option<String>,
+    pub updated_at: SystemTime,
+}
+
+/// Input to an actual-state compare-and-set operation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InstanceStateChange {
+    /// `None` means that no durable instance-state record is expected to exist.
+    pub expected_revision: Option<ModuleRevision>,
+    pub next: InstanceStateRecord,
+}
+
+/// Typed before/after value for module audit events.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ModuleEventState {
+    Desired(DesiredMode),
+    Actual(ModuleState),
+}
+
+/// Infrastructure-neutral append-only module audit event.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModuleEventRecord {
+    pub event_id: String,
+    pub module_id: ModuleId,
+    pub event_type: ModuleEventType,
+    pub revision: ModuleRevision,
+    pub instance_id: Option<String>,
+    pub actor_id: Option<String>,
+    pub reason: Option<String>,
+    pub before: Option<ModuleEventState>,
+    pub after: Option<ModuleEventState>,
+    pub outcome_code: Option<String>,
+    pub occurred_at: SystemTime,
+}
+
+/// Result of a durable compare-and-set, including the state that won a race.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CasOutcome<T> {
+    Applied(T),
+    Stale { current: Option<T> },
+}
+
+/// Persistence inversion port for desired state, actual state, and audit events.
+///
+/// The returned futures require no particular executor. Implementations may use
+/// an async runtime internally, but this core crate does not depend on one.
+pub trait ModuleStateRepository: Send + Sync {
+    type Error: Send;
+
+    fn read_desired(
+        &self,
+        module_id: ModuleId,
+    ) -> impl Future<Output = Result<Option<DesiredStateRecord>, Self::Error>> + Send;
+
+    /// Compares and sets desired state and appends the matching
+    /// [`ModuleEventType::DesiredStateChanged`] event in one atomic commit.
+    /// A stale outcome must mutate neither desired state nor the event stream.
+    fn compare_and_set_desired(
+        &self,
+        change: DesiredStateChange,
+    ) -> impl Future<Output = Result<CasOutcome<DesiredStateRecord>, Self::Error>> + Send;
+
+    fn read_instance(
+        &self,
+        instance_id: &str,
+        module_id: ModuleId,
+    ) -> impl Future<Output = Result<Option<InstanceStateRecord>, Self::Error>> + Send;
+
+    fn compare_and_set_instance(
+        &self,
+        change: InstanceStateChange,
+    ) -> impl Future<Output = Result<CasOutcome<InstanceStateRecord>, Self::Error>> + Send;
+
+    /// Appends transition, drain, or stale-transition audit events.
+    /// Desired-state events are committed by [`Self::compare_and_set_desired`].
+    fn append_event(
+        &self,
+        event: ModuleEventRecord,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
+    /// Validates the bound revision against durable desired state.
+    fn validate_revision(
+        &self,
+        module_id: ModuleId,
+        expected: ModuleRevision,
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
+}

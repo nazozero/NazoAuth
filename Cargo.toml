@@ -2,6 +2,7 @@
 members = [
     "crates/server",
     "crates/fapi-http-signatures",
+    "crates/runtime-modules",
 ]
 default-members = ["crates/server"]
 resolver = "3"
