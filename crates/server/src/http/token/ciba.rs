@@ -263,7 +263,13 @@ pub(crate) async fn backchannel_authentication(
             "CIBA requires login_hint.",
         );
     };
-    let user = match find_user_by_email(&state.diesel_db, login_hint).await {
+    let user = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
+        .public_account_by_email(
+            nazo_identity::TenantId::new(DEFAULT_TENANT_ID).expect("default tenant ID is non-nil"),
+            login_hint,
+        )
+        .await
+    {
         Ok(Some(user)) if user.principal.active => user,
         Ok(_) => {
             return oauth_error(
@@ -1337,7 +1343,13 @@ pub(crate) async fn token_ciba(
             Ok(CibaPollCommit::Approved(ciba)) => ciba,
             Err(failure) => return ciba_poll_failure_response(failure),
         };
-    let user = match find_user_by_id(&state.diesel_db, ciba.user_id).await {
+    let user = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
+        .public_account_by_id(
+            nazo_identity::TenantId::new(DEFAULT_TENANT_ID).expect("default tenant ID is non-nil"),
+            nazo_identity::UserId::new(ciba.user_id).expect("persisted CIBA user ID is non-nil"),
+        )
+        .await
+    {
         Ok(Some(user)) if user.principal.active => user,
         Ok(_) => {
             return oauth_token_error(

@@ -602,6 +602,7 @@ fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
     let admin_path = manifest.join("../server/src/http/admin/access_requests.rs");
     let profile_path = manifest.join("../server/src/http/profile/access_requests.rs");
     let support_path = manifest.join("../server/src/support/access_requests.rs");
+    let forwarding_repositories_path = manifest.join("../server/src/support/repositories.rs");
     let admin = std::fs::read_to_string(admin_path).expect("admin access handler is readable");
     let profile =
         std::fs::read_to_string(profile_path).expect("profile access handler is readable");
@@ -614,6 +615,11 @@ fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
         !support_path.exists(),
         "forwarding access-request support layer must stay deleted"
     );
+    assert!(
+        !forwarding_repositories_path.exists(),
+        "forwarding repository helpers must not hide focused repository use"
+    );
+    assert!(admin.contains("RepositoryError::AlreadyProcessed"));
     assert!(
         admin.find("valkey_set_ex").unwrap() < admin.find(".approve(").unwrap(),
         "delivery must fail closed before the PostgreSQL approval transaction"

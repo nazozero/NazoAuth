@@ -179,8 +179,8 @@ pub(crate) async fn admin_approve_access_request(
             if let Err(cleanup_error) = valkey_del(&state.valkey, &delivery_key).await {
                 tracing::warn!(%cleanup_error, "failed to remove client delivery payload");
             }
-            if matches!(error, nazo_identity::ports::RepositoryError::Conflict) {
-                return access_request_already_approved_response();
+            if let Some(response) = access_request_approval_error_response(&error) {
+                return response;
             }
             tracing::warn!(%error, "failed to approve access request");
             return oauth_error(
@@ -301,6 +301,26 @@ fn access_request_already_approved_response() -> HttpResponse {
         "invalid_request",
         "该申请已处理,不可重复审批.",
     )
+}
+
+fn access_request_approval_error_response(
+    error: &nazo_identity::ports::RepositoryError,
+) -> Option<HttpResponse> {
+    let (mut response, conflict_type) = match error {
+        nazo_identity::ports::RepositoryError::AlreadyProcessed => {
+            (access_request_already_approved_response(), "request_state")
+        }
+        nazo_identity::ports::RepositoryError::Conflict => (
+            oauth_error(StatusCode::CONFLICT, "invalid_request", "客户端标识已存在."),
+            "client_unique",
+        ),
+        _ => return None,
+    };
+    response.headers_mut().insert(
+        header::HeaderName::from_static("x-nazo-conflict-type"),
+        HeaderValue::from_static(conflict_type),
+    );
+    Some(response)
 }
 
 fn access_request_already_rejected_response() -> HttpResponse {

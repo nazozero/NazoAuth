@@ -16,7 +16,6 @@ mod oidc_claims;
 mod passkeys;
 mod rate_limit;
 mod redis_keys;
-mod repositories;
 mod responses;
 mod sector_identifier;
 mod security;
@@ -43,7 +42,6 @@ pub(crate) use oidc_claims::*;
 pub(crate) use passkeys::*;
 pub(crate) use rate_limit::*;
 pub(crate) use redis_keys::*;
-pub(crate) use repositories::*;
 pub(crate) use responses::*;
 pub(crate) use sector_identifier::*;
 pub(crate) use security::*;
@@ -92,7 +90,7 @@ pub(crate) mod prelude {
     #[cfg(test)]
     pub(crate) use super::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
     pub(crate) use super::{
-        clear_cookie, constant_time_eq, cookie_value, default_tenant_context, find_client,
-        find_user_by_id, json_array_to_strings, valkey_get, with_cookie_headers,
+        clear_cookie, constant_time_eq, cookie_value, default_tenant_context,
+        json_array_to_strings, valkey_get, with_cookie_headers,
     };
 }

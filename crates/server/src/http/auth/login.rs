@@ -129,7 +129,11 @@ pub(crate) async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) 
         return oauth_error(StatusCode::UNAUTHORIZED, "access_denied", "邮箱或密码错误.");
     }
     let authenticated = authentication.expect("successful authentication requires an active user");
-    let user = match find_user_by_id(&state.diesel_db, authenticated.principal.user_id.as_uuid())
+    let user = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
+        .public_account_by_id(
+            authenticated.principal.tenant.tenant_id,
+            authenticated.principal.user_id,
+        )
         .await
     {
         Ok(Some(user)) => user,

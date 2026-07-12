@@ -52,7 +52,13 @@ pub(crate) async fn register_after_rate_limit(
         );
     }
 
-    match find_user_by_email(&state.diesel_db, &email).await {
+    match nazo_postgres::UserRepository::new(state.diesel_db.clone())
+        .public_account_by_email(
+            nazo_identity::TenantId::new(DEFAULT_TENANT_ID).expect("default tenant ID is non-nil"),
+            &email,
+        )
+        .await
+    {
         Ok(Some(_)) => {
             return oauth_error(StatusCode::CONFLICT, "invalid_request", "该邮箱已注册.");
         }

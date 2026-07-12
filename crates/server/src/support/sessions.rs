@@ -4,8 +4,8 @@
 #[cfg(test)]
 use super::valkey_set_ex;
 use super::{
-    login_required_response, oauth_error, prelude::*, random_urlsafe_token, valkey_del,
-    valkey_eval_string,
+    DEFAULT_TENANT_ID, login_required_response, oauth_error, prelude::*, random_urlsafe_token,
+    valkey_del, valkey_eval_string,
 };
 use nazo_identity::session::add_amr;
 
@@ -201,7 +201,10 @@ async fn session_from_payload(
     session_key: String,
     payload: SessionPayload,
 ) -> anyhow::Result<Option<CurrentSession>> {
-    let Some(user) = find_user_by_id(&state.diesel_db, payload.user_id)
+    let tenant_id = nazo_identity::TenantId::new(DEFAULT_TENANT_ID)?;
+    let user_id = nazo_identity::UserId::new(payload.user_id)?;
+    let Some(user) = nazo_postgres::UserRepository::new(state.diesel_db.clone())
+        .public_account_by_id(tenant_id, user_id)
         .await?
         .filter(|u| u.principal.active)
     else {
