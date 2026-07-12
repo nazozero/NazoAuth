@@ -73,7 +73,7 @@ fn fixture_mtls_thumbprint(label: &str) -> String {
 }
 
 fn confidential_client_with_secret(secret: &str) -> ClientRow {
-    ClientRow {
+    crate::client_row! {
         id: Uuid::now_v7(),
         tenant_id: DEFAULT_TENANT_ID,
         realm_id: DEFAULT_REALM_ID,
@@ -306,7 +306,6 @@ async fn token_client_assertion_store_failure_fails_token_grant_as_server_error(
     let public_jwk = key.public_jwk("client-kid");
     let mut client = confidential_client_with_secret(&fixture_secret("unused"));
     client.token_endpoint_auth_method = "private_key_jwt".to_owned();
-    client.client_secret_hash = None;
     client.jwks = Some(json!({"keys": [public_jwk]}));
     let req = TestRequest::post().uri("/token").to_http_request();
     let assertion = signed_client_assertion(
@@ -318,7 +317,7 @@ async fn token_client_assertion_store_failure_fails_token_grant_as_server_error(
     );
     let mut credentials = client_credentials("private_key_jwt");
     credentials.client_assertion = Some(assertion);
-    let assertion = match verify_confidential_client(&state, &req, &client, &credentials) {
+    let assertion = match verify_confidential_client(&state, &req, &client, &credentials).await {
         Ok(Some(assertion)) => assertion,
         Ok(None) => panic!("private_key_jwt verification should return replay material"),
         Err(_) => panic!("signed private_key_jwt assertion should verify"),
@@ -338,38 +337,30 @@ async fn token_client_assertion_store_failure_fails_token_grant_as_server_error(
     );
 }
 
-#[test]
-fn confidential_client_secret_auth_accepts_only_registered_method_and_secret() {
+#[actix_web::test]
+async fn confidential_client_secret_auth_fails_closed_when_store_is_unavailable() {
     let state = token_management_state();
     let req = TestRequest::default().to_http_request();
     let correct_secret = fixture_secret("correct");
-    let wrong_secret_value = fixture_secret("wrong");
     let client = confidential_client_with_secret(&correct_secret);
     let mut credentials = client_credentials("client_secret_basic");
     credentials.client_secret = Some(correct_secret.clone());
 
-    assert!(
-        verify_confidential_client(&state, &req, &client, &credentials).is_ok(),
-        "registered confidential client with the correct auth method and secret may authenticate"
-    );
-
-    let mut wrong_secret = client_credentials("client_secret_basic");
-    wrong_secret.client_secret = Some(wrong_secret_value);
     assert!(matches!(
-        verify_confidential_client(&state, &req, &client, &wrong_secret),
-        Err(TokenManagementClientAuthError::InvalidClient)
+        verify_confidential_client(&state, &req, &client, &credentials).await,
+        Err(TokenManagementClientAuthError::StoreUnavailable)
     ));
 
     let mut wrong_method = client_credentials("client_secret_post");
     wrong_method.client_secret = Some(correct_secret);
     assert!(matches!(
-        verify_confidential_client(&state, &req, &client, &wrong_method),
+        verify_confidential_client(&state, &req, &client, &wrong_method).await,
         Err(TokenManagementClientAuthError::InvalidClient)
     ));
 }
 
-#[test]
-fn confidential_client_auth_rejects_public_or_unknown_auth_method_even_with_secret() {
+#[actix_web::test]
+async fn confidential_client_auth_rejects_public_or_unknown_auth_method_even_with_secret() {
     let state = token_management_state();
     let req = TestRequest::default().to_http_request();
     let correct_secret = fixture_secret("correct");
@@ -379,7 +370,7 @@ fn confidential_client_auth_rejects_public_or_unknown_auth_method_even_with_secr
 
     client.client_type = "public".to_owned();
     assert!(matches!(
-        verify_confidential_client(&state, &req, &client, &credentials),
+        verify_confidential_client(&state, &req, &client, &credentials).await,
         Err(TokenManagementClientAuthError::InvalidClient)
     ));
 
@@ -387,34 +378,33 @@ fn confidential_client_auth_rejects_public_or_unknown_auth_method_even_with_secr
     client.token_endpoint_auth_method = "unsupported_method".to_owned();
     credentials.method = "unsupported_method".to_owned();
     assert!(matches!(
-        verify_confidential_client(&state, &req, &client, &credentials),
+        verify_confidential_client(&state, &req, &client, &credentials).await,
         Err(TokenManagementClientAuthError::InvalidClient)
     ));
 }
 
-#[test]
-fn private_key_jwt_requires_present_and_well_formed_assertion() {
+#[actix_web::test]
+async fn private_key_jwt_requires_present_and_well_formed_assertion() {
     let state = token_management_state();
     let req = TestRequest::default().to_http_request();
     let mut client = confidential_client_with_secret(&fixture_secret("unused"));
     client.token_endpoint_auth_method = "private_key_jwt".to_owned();
-    client.client_secret_hash = None;
 
     let mut missing_assertion = client_credentials("private_key_jwt");
     assert!(matches!(
-        verify_confidential_client(&state, &req, &client, &missing_assertion),
+        verify_confidential_client(&state, &req, &client, &missing_assertion).await,
         Err(TokenManagementClientAuthError::InvalidClient)
     ));
 
     missing_assertion.client_assertion = Some("not-a-jwt".to_owned());
     assert!(matches!(
-        verify_confidential_client(&state, &req, &client, &missing_assertion),
+        verify_confidential_client(&state, &req, &client, &missing_assertion).await,
         Err(TokenManagementClientAuthError::InvalidClient)
     ));
 }
 
-#[test]
-fn mtls_client_auth_requires_certificate_from_trusted_request_context() {
+#[actix_web::test]
+async fn mtls_client_auth_requires_certificate_from_trusted_request_context() {
     let state = token_management_state();
     let thumbprint = fixture_mtls_thumbprint("untrusted-context");
     let req = TestRequest::default()
@@ -423,17 +413,16 @@ fn mtls_client_auth_requires_certificate_from_trusted_request_context() {
         .to_http_request();
     let mut client = confidential_client_with_secret(&fixture_secret("unused"));
     client.token_endpoint_auth_method = "tls_client_auth".to_owned();
-    client.client_secret_hash = None;
     let credentials = client_credentials("tls_client_auth");
 
     assert!(matches!(
-        verify_confidential_client(&state, &req, &client, &credentials),
+        verify_confidential_client(&state, &req, &client, &credentials).await,
         Err(TokenManagementClientAuthError::InvalidClient)
     ));
 }
 
-#[test]
-fn mtls_client_auth_accepts_matching_certificate_from_trusted_proxy() {
+#[actix_web::test]
+async fn mtls_client_auth_accepts_matching_certificate_from_trusted_proxy() {
     let state = token_management_state_with_trusted_proxy();
     let thumbprint = fixture_mtls_thumbprint("trusted-proxy");
     let req = TestRequest::default()
@@ -443,18 +432,19 @@ fn mtls_client_auth_accepts_matching_certificate_from_trusted_proxy() {
         .to_http_request();
     let mut client = confidential_client_with_secret(&fixture_secret("unused"));
     client.token_endpoint_auth_method = "tls_client_auth".to_owned();
-    client.client_secret_hash = None;
     client.tls_client_auth_cert_sha256 = Some(thumbprint);
     let credentials = client_credentials("tls_client_auth");
 
     assert!(
-        verify_confidential_client(&state, &req, &client, &credentials).is_ok(),
+        verify_confidential_client(&state, &req, &client, &credentials)
+            .await
+            .is_ok(),
         "matching mTLS certificate from trusted proxy should authenticate the client"
     );
 }
 
-#[test]
-fn ciba_private_key_jwt_accepts_ps256_endpoint_and_issuer_audiences() {
+#[actix_web::test]
+async fn ciba_private_key_jwt_accepts_ps256_endpoint_and_issuer_audiences() {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.issuer = "https://auth.nazo.run".to_owned();
@@ -463,7 +453,6 @@ fn ciba_private_key_jwt_accepts_ps256_endpoint_and_issuer_audiences() {
     let public_jwk = key.public_jwk("client-kid");
     let mut client = confidential_client_with_secret(&fixture_secret("unused"));
     client.token_endpoint_auth_method = "private_key_jwt".to_owned();
-    client.client_secret_hash = None;
     client.require_mtls_bound_tokens = true;
     client.allow_client_assertion_endpoint_audience = true;
     client.jwks = Some(json!({"keys": [public_jwk]}));
@@ -488,7 +477,9 @@ fn ciba_private_key_jwt_accepts_ps256_endpoint_and_issuer_audiences() {
         ));
 
         assert!(
-            verify_confidential_client(&state, &req, &client, &credentials).is_ok(),
+            verify_confidential_client(&state, &req, &client, &credentials)
+                .await
+                .is_ok(),
             "CIBA private_key_jwt should accept {audience} as client assertion audience"
         );
     }

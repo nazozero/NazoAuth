@@ -29,7 +29,7 @@ fn request_object(payload: Value, alg: &str, signature: &str) -> String {
 }
 
 fn jar_client(client_id: &str) -> ClientRow {
-    ClientRow {
+    crate::client_row! {
         id: Uuid::now_v7(),
         tenant_id: DEFAULT_TENANT_ID,
         realm_id: DEFAULT_REALM_ID,

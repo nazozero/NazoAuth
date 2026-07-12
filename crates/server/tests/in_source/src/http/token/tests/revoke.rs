@@ -138,7 +138,7 @@ async fn insert_revocation_client(
     client_id: &str,
     secret: &str,
 ) -> ClientRow {
-    let row = ClientRow {
+    let row = crate::client_row! {
         id: Uuid::now_v7(),
         tenant_id: DEFAULT_TENANT_ID,
         realm_id: DEFAULT_REALM_ID,
@@ -255,11 +255,14 @@ async fn insert_revocation_client(
     .bind::<Text, _>(row.client_id.as_str())
     .bind::<Text, _>(row.client_name.as_str())
     .bind::<Text, _>(row.client_type.as_str())
-    .bind::<Nullable<Text>, _>(row.client_secret_hash.as_deref())
-    .bind::<Jsonb, _>(row.redirect_uris.clone())
-    .bind::<Jsonb, _>(row.scopes.clone())
-    .bind::<Jsonb, _>(row.allowed_audiences.clone())
-    .bind::<Jsonb, _>(row.grant_types.clone())
+    .bind::<Nullable<Text>, _>(Some(hash_client_secret(
+        secret,
+        &state.settings.client_secret_pepper,
+    )))
+    .bind::<Jsonb, _>(json!(&row.redirect_uris))
+    .bind::<Jsonb, _>(json!(&row.scopes))
+    .bind::<Jsonb, _>(json!(&row.allowed_audiences))
+    .bind::<Jsonb, _>(json!(&row.grant_types))
     .bind::<Text, _>(row.token_endpoint_auth_method.as_str())
     .bind::<Bool, _>(row.require_dpop_bound_tokens)
     .bind::<Bool, _>(row.require_mtls_bound_tokens)

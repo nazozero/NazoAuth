@@ -13,7 +13,7 @@ fn form_request() -> HttpRequest {
 }
 
 fn device_client() -> ClientRow {
-    ClientRow {
+    crate::client_row! {
         id: Uuid::now_v7(),
         tenant_id: DEFAULT_TENANT_ID,
         realm_id: DEFAULT_REALM_ID,
@@ -166,7 +166,7 @@ fn device_authorization_request_rejects_disabled_or_unregistered_client_grant() 
 
     settings.enable_device_authorization_grant = true;
     let mut client = client;
-    client.grant_types = json!(["authorization_code"]);
+    client.grant_types = vec!["authorization_code".to_owned()];
     assert!(matches!(
         device_authorization_request_payload(&settings, &client, &form),
         Err(DeviceAuthorizationRequestError::UnauthorizedClient)

@@ -547,7 +547,7 @@ async fn admin_revoke_grant_requires_admin_even_with_valid_csrf() {
         fixture.admin_post_request(&sid, &csrf, "/admin/grants/revoke"),
         Json(GrantRevokeRequest {
             user_id: target.id.to_string(),
-            client_id: client.client_id,
+            client_id: client.client_id.clone(),
         }),
     )
     .await;
@@ -740,7 +740,7 @@ async fn admin_revoke_grant_surfaces_client_lookup_failure_after_admin_authentic
         fixture.admin_post_request(&sid, &csrf, "/admin/grants/revoke"),
         Json(GrantRevokeRequest {
             user_id: end_user.id.to_string(),
-            client_id: client.client_id,
+            client_id: client.client_id.clone(),
         }),
     )
     .await;

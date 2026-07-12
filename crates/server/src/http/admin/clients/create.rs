@@ -383,9 +383,11 @@ pub(crate) async fn insert_prepared_client(
                 .eq(&prepared.authorization_encrypted_response_enc),
             oauth_clients::is_active.eq(true),
         ))
-        .returning(ClientRow::as_returning())
-        .get_result::<ClientRow>(conn)
-        .await
+        .returning(ClientRecord::as_returning())
+        .get_result::<ClientRecord>(conn)
+        .await?
+        .try_into()
+        .map_err(|error| diesel::result::Error::DeserializationError(Box::new(error)))
 }
 
 /// 校验客户端注册请求的协议约束。

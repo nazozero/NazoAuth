@@ -99,7 +99,7 @@ fn settings(profile: AuthorizationServerProfile) -> Settings {
 }
 
 fn client() -> ClientRow {
-    ClientRow {
+    crate::client_row! {
         id: Uuid::now_v7(),
         tenant_id: DEFAULT_TENANT_ID,
         realm_id: DEFAULT_REALM_ID,
@@ -243,7 +243,7 @@ fn client_credentials_scope_request_may_only_narrow_registered_scopes() {
 fn client_credentials_rejects_openid_scope_even_if_registered() {
     let settings = settings(AuthorizationServerProfile::Oauth2Baseline);
     let mut client = client();
-    client.scopes = json!(["accounts", "openid"]);
+    client.scopes = vec!["accounts".to_owned(), "openid".to_owned()];
 
     let default_response = client_credentials_issue_request(&settings, &client, &form(None, &[]))
         .expect_err("client_credentials must not inherit openid from legacy client metadata");

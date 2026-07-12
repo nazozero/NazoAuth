@@ -1,4 +1,5 @@
 use serde_json::Value;
+use std::ops::{Deref, DerefMut};
 use uuid::Uuid;
 
 /// Validated protocol metadata for an OAuth client registration.
@@ -49,4 +50,34 @@ pub struct ValidatedClientRegistration {
 pub struct ApprovedClient {
     pub id: Uuid,
     pub client_id: String,
+}
+
+/// Runtime OAuth client policy independent of any persistence adapter.
+///
+/// The validated registration metadata is composed rather than copied into a
+/// second flat persistence-shaped DTO. Credential digests deliberately do not
+/// cross this boundary.
+#[derive(Clone, Debug)]
+pub struct OAuthClient {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub realm_id: Uuid,
+    pub organization_id: Uuid,
+    pub registration: ValidatedClientRegistration,
+    pub require_mtls_bound_tokens: bool,
+    pub is_active: bool,
+}
+
+impl Deref for OAuthClient {
+    type Target = ValidatedClientRegistration;
+
+    fn deref(&self) -> &Self::Target {
+        &self.registration
+    }
+}
+
+impl DerefMut for OAuthClient {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.registration
+    }
 }

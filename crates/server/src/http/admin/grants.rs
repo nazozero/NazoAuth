@@ -80,7 +80,7 @@ pub(crate) async fn admin_revoke_grant(
         .by_client_id(DEFAULT_TENANT_ID, &payload.client_id)
         .await
     {
-        Ok(Some(client)) => ClientRow::from(client),
+        Ok(Some(client)) => client,
         Ok(None) => {
             return oauth_error(StatusCode::NOT_FOUND, "invalid_request", "未找到该客户端.");
         }

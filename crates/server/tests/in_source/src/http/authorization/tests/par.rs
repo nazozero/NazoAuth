@@ -23,7 +23,7 @@ use fred::prelude::{
 };
 
 fn client(require_dpop_bound_tokens: bool) -> ClientRow {
-    ClientRow {
+    crate::client_row! {
         id: Uuid::now_v7(),
         tenant_id: DEFAULT_TENANT_ID,
         realm_id: DEFAULT_REALM_ID,
@@ -193,7 +193,10 @@ fn par_test_secret() -> String {
 #[test]
 fn pushed_authorization_request_resources_allow_registered_targets() {
     let mut client = client(false);
-    client.allowed_audiences = json!(["https://api.example/one", "https://api.example/two"]);
+    client.allowed_audiences = vec![
+        "https://api.example/one".to_owned(),
+        "https://api.example/two".to_owned(),
+    ];
     let mut params = HashMap::new();
     params.insert(
         "resource".to_owned(),
@@ -206,7 +209,7 @@ fn pushed_authorization_request_resources_allow_registered_targets() {
 #[test]
 fn pushed_authorization_request_resources_reject_unregistered_target() {
     let mut client = client(false);
-    client.allowed_audiences = json!(["https://api.example/one"]);
+    client.allowed_audiences = vec!["https://api.example/one".to_owned()];
     let mut params = HashMap::new();
     params.insert("resource".to_owned(), "https://api.example/two".to_owned());
 
@@ -508,12 +511,9 @@ fn message_signing_profile_requires_request_object_at_par() {
 #[test]
 fn baseline_profile_does_not_reject_legacy_par_client_auth_combinations() {
     let settings = baseline_settings();
-    let public_client = ClientRow {
-        client_type: "public".to_owned(),
-        token_endpoint_auth_method: "none".to_owned(),
-        require_dpop_bound_tokens: false,
-        ..client(false)
-    };
+    let mut public_client = client(false);
+    public_client.client_type = "public".to_owned();
+    public_client.token_endpoint_auth_method = "none".to_owned();
 
     assert!(
         validate_pushed_authorization_request_profile(&settings, &public_client, "none").is_ok()
@@ -526,12 +526,9 @@ fn fapi2_profile_requires_confidential_clients() {
         authorization_server_profile: AuthorizationServerProfile::Fapi2Security,
         ..baseline_settings()
     };
-    let public_client = ClientRow {
-        client_type: "public".to_owned(),
-        token_endpoint_auth_method: "none".to_owned(),
-        require_dpop_bound_tokens: true,
-        ..client(true)
-    };
+    let mut public_client = client(true);
+    public_client.client_type = "public".to_owned();
+    public_client.token_endpoint_auth_method = "none".to_owned();
 
     let response = validate_pushed_authorization_request_profile(&settings, &public_client, "none")
         .expect_err("FAPI2 PAR must reject public clients");
@@ -549,11 +546,8 @@ fn fapi2_profile_requires_private_key_jwt_or_mtls_client_auth() {
         authorization_server_profile: AuthorizationServerProfile::Fapi2Security,
         ..baseline_settings()
     };
-    let confidential_client = ClientRow {
-        require_dpop_bound_tokens: true,
-        token_endpoint_auth_method: "client_secret_basic".to_owned(),
-        ..client(true)
-    };
+    let mut confidential_client = client(true);
+    confidential_client.token_endpoint_auth_method = "client_secret_basic".to_owned();
 
     let response = validate_pushed_authorization_request_profile(
         &settings,
@@ -592,11 +586,7 @@ fn fapi2_profile_requires_sender_constrained_tokens() {
         authorization_server_profile: AuthorizationServerProfile::Fapi2Security,
         ..baseline_settings()
     };
-    let bearer_client = ClientRow {
-        require_dpop_bound_tokens: false,
-        require_mtls_bound_tokens: false,
-        ..client(false)
-    };
+    let bearer_client = client(false);
 
     let response =
         validate_pushed_authorization_request_profile(&settings, &bearer_client, "private_key_jwt")
@@ -683,10 +673,10 @@ fn par_validation_binds_request_uri_to_registered_redirect_uri() {
     );
 
     let mut multi_redirect_client = client(false);
-    multi_redirect_client.redirect_uris = json!([
-        "https://client.example/callback",
-        "https://client.example/secondary-callback"
-    ]);
+    multi_redirect_client.redirect_uris = vec![
+        "https://client.example/callback".to_owned(),
+        "https://client.example/secondary-callback".to_owned(),
+    ];
     let missing = validate_pushed_authorization_request(&multi_redirect_client, &params)
         .expect_err("PAR must not mint a request_uri when redirect_uri is ambiguous");
     assert_eq!(missing.status(), StatusCode::BAD_REQUEST);

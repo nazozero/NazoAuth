@@ -716,6 +716,42 @@ fn oauth_client_queries_use_the_focused_postgres_repository_without_a_server_fac
 }
 
 #[test]
+fn oauth_client_repository_keeps_records_private_and_returns_domain_clients() {
+    let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let repository = std::fs::read_to_string(manifest.join("src/repositories/clients.rs"))
+        .expect("OAuth client repository source is readable");
+    let postgres_root = std::fs::read_to_string(manifest.join("src/lib.rs"))
+        .expect("postgres crate root is readable");
+    let server_rows = std::fs::read_to_string(manifest.join("../server/src/domain/rows.rs"))
+        .expect("server rows source is readable");
+
+    assert!(
+        repository.contains("struct OAuthClientRecord"),
+        "the Diesel OAuth client record must be explicitly private"
+    );
+    assert!(
+        !repository.contains("pub struct OAuthClient {"),
+        "postgres must not publish a Diesel OAuth client result row"
+    );
+    assert!(
+        !repository.contains("pub client_secret_hash"),
+        "client secret hashes must not be public repository result fields"
+    );
+    assert!(
+        !postgres_root.contains("OAuthClient,"),
+        "postgres must not re-export an OAuth client persistence row"
+    );
+    assert!(
+        !server_rows.contains("impl From<nazo_postgres::"),
+        "server must not reconstruct a duplicate full row from a postgres adapter result"
+    );
+    assert!(
+        repository.contains("use nazo_auth::{OAuthClient,"),
+        "repository lookups must return the auth-owned storage-independent client"
+    );
+}
+
+#[test]
 fn identity_claim_boundaries_use_narrow_single_snapshot_reads() {
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let users = std::fs::read_to_string(manifest.join("src/repositories/users.rs"))

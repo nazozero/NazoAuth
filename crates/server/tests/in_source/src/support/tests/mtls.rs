@@ -17,7 +17,7 @@ struct TestCertificate {
 }
 
 fn client() -> ClientRow {
-    ClientRow {
+    crate::client_row! {
         id: Uuid::now_v7(),
         tenant_id: DEFAULT_TENANT_ID,
         realm_id: DEFAULT_REALM_ID,
@@ -613,7 +613,7 @@ fn client_certificate_matches_registered_thumbprint() {
 #[test]
 fn client_certificate_matches_registered_san_dns() {
     let mut client = client();
-    client.tls_client_auth_san_dns = json!(["client.example"]);
+    client.tls_client_auth_san_dns = vec!["client.example".to_owned()];
     let certificate = MtlsClientCertificate {
         san_dns: vec!["api.client.example".to_owned(), "client.example".to_owned()],
         ..MtlsClientCertificate::default()
@@ -632,15 +632,15 @@ fn client_certificate_matches_registered_san_uri_ip_and_email() {
     };
 
     let mut uri_client = client();
-    uri_client.tls_client_auth_san_uri = json!(["urn:client:one"]);
+    uri_client.tls_client_auth_san_uri = vec!["urn:client:one".to_owned()];
     assert!(client_mtls_certificate_matches(&uri_client, &certificate));
 
     let mut ip_client = client();
-    ip_client.tls_client_auth_san_ip = json!(["192.0.2.44"]);
+    ip_client.tls_client_auth_san_ip = vec!["192.0.2.44".to_owned()];
     assert!(client_mtls_certificate_matches(&ip_client, &certificate));
 
     let mut email_client = client();
-    email_client.tls_client_auth_san_email = json!(["client@example.com"]);
+    email_client.tls_client_auth_san_email = vec!["client@example.com".to_owned()];
     assert!(client_mtls_certificate_matches(&email_client, &certificate));
 }
 
@@ -648,7 +648,7 @@ fn client_certificate_matches_registered_san_uri_ip_and_email() {
 fn client_certificate_rejects_unregistered_subject_and_san() {
     let mut client = client();
     client.tls_client_auth_subject_dn = Some("CN=client-1,O=Example".to_owned());
-    client.tls_client_auth_san_uri = json!(["urn:client:1"]);
+    client.tls_client_auth_san_uri = vec!["urn:client:1".to_owned()];
     let certificate = MtlsClientCertificate {
         subject_dn: Some("CN=other,O=Example".to_owned()),
         san_uri: vec!["urn:client:2".to_owned()],

@@ -31,13 +31,22 @@ pub(crate) async fn admin_clients(
                 }
             };
             let rows = match oauth_clients::table
-                .select(ClientRow::as_select())
+                .select(ClientRecord::as_select())
                 .order(oauth_clients::created_at.desc())
                 .limit(page_size as i64)
                 .offset(offset as i64)
-                .load::<ClientRow>(&mut conn)
+                .load::<ClientRecord>(&mut conn)
                 .await
-            {
+                .and_then(|records| {
+                    records
+                        .into_iter()
+                        .map(|record| {
+                            record.try_into().map_err(|error| {
+                                diesel::result::Error::DeserializationError(Box::new(error))
+                            })
+                        })
+                        .collect()
+                }) {
                 Ok(rows) => rows,
                 Err(error) => {
                     tracing::warn!(%error, "failed to load oauth clients");

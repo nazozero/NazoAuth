@@ -61,12 +61,22 @@ pub(crate) async fn revoke_after_rate_limit(
     let client = match oauth_clients::table
         .filter(oauth_clients::tenant_id.eq(DEFAULT_TENANT_ID))
         .filter(oauth_clients::client_id.eq(client_id))
-        .select(ClientRow::as_select())
-        .first::<ClientRow>(&mut conn)
+        .select(ClientRecord::as_select())
+        .first::<ClientRecord>(&mut conn)
         .await
         .optional()
     {
-        Ok(Some(client)) => client,
+        Ok(Some(client)) => match ClientRow::try_from(client) {
+            Ok(client) => client,
+            Err(error) => {
+                tracing::warn!(%error, "invalid persisted revocation client");
+                return token_management_oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "客户端查询失败.",
+                );
+            }
+        },
         Ok(None) => {
             return token_management_client_auth_error(
                 TokenManagementClientAuthError::InvalidClient,

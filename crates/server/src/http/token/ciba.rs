@@ -184,7 +184,7 @@ pub(crate) async fn backchannel_authentication(
         .by_client_id(DEFAULT_TENANT_ID, client_id)
         .await
     {
-        Ok(Some(client)) if client.is_active => ClientRow::from(client),
+        Ok(Some(client)) if client.is_active => client,
         Ok(_) => {
             return oauth_error(
                 StatusCode::UNAUTHORIZED,
@@ -208,7 +208,7 @@ pub(crate) async fn backchannel_authentication(
             "该客户端未启用 CIBA 授权类型.",
         );
     }
-    let assertion = match verify_confidential_client(&state, &req, &client, &credentials) {
+    let assertion = match verify_confidential_client(&state, &req, &client, &credentials).await {
         Ok(assertion) => assertion,
         Err(error) => return token_management_auth_error(error),
     };
@@ -308,7 +308,7 @@ pub(crate) async fn backchannel_authentication(
     let now = Utc::now().timestamp();
     let expires_at = now.saturating_add(expires_in.min(i64::MAX as u64) as i64);
     let state_payload = CibaRequestState {
-        client_id: client.client_id,
+        client_id: client.client_id.clone(),
         user_id: user.id(),
         scopes,
         audiences: vec![state.settings.default_audience.clone()],
@@ -1090,7 +1090,7 @@ async fn ciba_authorization_request_view(
         .by_client_id(DEFAULT_TENANT_ID, &payload.client_id)
         .await
     {
-        Ok(Some(client)) if client.is_active => ClientRow::from(client),
+        Ok(Some(client)) if client.is_active => client,
         Ok(_) => return Ok(None),
         Err(error) => {
             tracing::warn!(%error, "failed to load CIBA client for verification page");
@@ -1103,7 +1103,7 @@ async fn ciba_authorization_request_view(
     };
     Ok(Some(CibaAuthorizationRequestView {
         client_id: payload.client_id.clone(),
-        client_name: client.client_name,
+        client_name: client.client_name.clone(),
         scopes: payload.scopes.clone(),
         audiences: payload.audiences.clone(),
         binding_message: payload.binding_message.clone(),

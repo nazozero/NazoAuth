@@ -49,7 +49,7 @@ fn test_state() -> AppState {
 }
 
 fn pkce_policy_client() -> ClientRow {
-    ClientRow {
+    crate::client_row! {
         id: Uuid::now_v7(),
         tenant_id: DEFAULT_TENANT_ID,
         realm_id: DEFAULT_REALM_ID,
@@ -235,11 +235,11 @@ impl LiveAuthorizationCodeFixture {
         .bind::<Text, _>(client.client_id.as_str())
         .bind::<Text, _>(client.client_name.as_str())
         .bind::<Text, _>(client.client_type.as_str())
-        .bind::<Nullable<Text>, _>(client.client_secret_hash.as_deref())
-        .bind::<Jsonb, _>(client.redirect_uris.clone())
-        .bind::<Jsonb, _>(client.scopes.clone())
-        .bind::<Jsonb, _>(client.allowed_audiences.clone())
-        .bind::<Jsonb, _>(client.grant_types.clone())
+        .bind::<Nullable<Text>, _>(Option::<&str>::None)
+        .bind::<Jsonb, _>(json!(&client.redirect_uris))
+        .bind::<Jsonb, _>(json!(&client.scopes))
+        .bind::<Jsonb, _>(json!(&client.allowed_audiences))
+        .bind::<Jsonb, _>(json!(&client.grant_types))
         .bind::<Text, _>(client.token_endpoint_auth_method.as_str())
         .bind::<Bool, _>(client.require_dpop_bound_tokens)
         .bind::<Bool, _>(client.require_mtls_bound_tokens)
@@ -389,9 +389,9 @@ fn live_client(client_id: &str) -> ClientRow {
     client.id = Uuid::now_v7();
     client.client_id = client_id.to_owned();
     client.client_name = "Live Token Client".to_owned();
-    client.grant_types = json!(["authorization_code", "refresh_token"]);
-    client.allowed_audiences = json!(["resource://default"]);
-    client.redirect_uris = json!(["https://client.example/callback"]);
+    client.grant_types = vec!["authorization_code".to_owned(), "refresh_token".to_owned()];
+    client.allowed_audiences = vec!["resource://default".to_owned()];
+    client.redirect_uris = vec!["https://client.example/callback".to_owned()];
     client.allow_authorization_code_without_pkce = true;
     client
 }

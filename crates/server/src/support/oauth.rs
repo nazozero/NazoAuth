@@ -53,16 +53,31 @@ pub(crate) enum RedirectUriError {
     Invalid,
 }
 
-pub(crate) fn json_array_to_strings(value: &Value) -> Vec<String> {
-    value
-        .as_array()
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|v| v.as_str().map(ToOwned::to_owned))
-                .collect()
-        })
-        .unwrap_or_default()
+pub(crate) trait StringArraySource {
+    fn strings(&self) -> Vec<String>;
+}
+
+impl StringArraySource for Value {
+    fn strings(&self) -> Vec<String> {
+        self.as_array()
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|value| value.as_str().map(ToOwned::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+}
+
+impl StringArraySource for Vec<String> {
+    fn strings(&self) -> Vec<String> {
+        self.clone()
+    }
+}
+
+pub(crate) fn json_array_to_strings(value: &impl StringArraySource) -> Vec<String> {
+    value.strings()
 }
 
 pub(crate) fn parse_scope(raw: &str) -> Vec<String> {
@@ -727,7 +742,6 @@ pub(crate) async fn upsert_grant(
         .by_client_id(DEFAULT_TENANT_ID, client_id)
         .await
         .map_err(|error| anyhow::anyhow!("failed to load OAuth client: {error}"))?
-        .map(ClientRow::from)
     else {
         return Ok(());
     };

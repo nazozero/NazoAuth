@@ -394,8 +394,7 @@ fn ipaddress_to_string(bytes: &[u8]) -> Option<String> {
     .map(|ip| ip.to_string())
 }
 
-fn registered_values_match(registered: &Value, actual: &[String]) -> bool {
-    let registered = json_array_to_strings(registered);
+fn registered_values_match(registered: &[String], actual: &[String]) -> bool {
     registered.iter().any(|registered| {
         actual
             .iter()

@@ -133,20 +133,15 @@ fn client_json_exposes_protocol_metadata_without_client_secret_hash() {
 }
 
 #[test]
-fn json_array_to_strings_drops_non_string_values_for_admin_views() {
+fn domain_client_string_arrays_are_preserved_in_admin_views() {
     let mut client = client_row();
-    client.redirect_uris = json!([
-        "https://client.example/callback",
-        42,
-        null,
-        {"uri": "https://evil.example/callback"}
-    ]);
+    client.redirect_uris = vec!["https://client.example/callback".to_owned()];
 
     let value = client_json(client);
     assert_eq!(
         value["redirect_uris"],
         json!(["https://client.example/callback"]),
-        "admin JSON must not stringify malformed JSON array entries into protocol metadata"
+        "admin JSON must preserve validated protocol metadata"
     );
 }
 
@@ -192,7 +187,7 @@ fn user_row() -> PublicAccount {
 }
 
 fn client_row() -> ClientRow {
-    ClientRow {
+    crate::client_row! {
         id: Uuid::now_v7(),
         tenant_id: Uuid::now_v7(),
         realm_id: Uuid::now_v7(),

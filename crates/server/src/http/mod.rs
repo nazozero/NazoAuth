@@ -46,7 +46,7 @@ pub(crate) mod prelude {
     pub(crate) use uuid::Uuid;
 
     pub(crate) use crate::domain::{
-        AppState, AuthorizationCodeState, ClientRow, CodePayload, ConsentPayload,
+        AppState, AuthorizationCodeState, ClientRecord, ClientRow, CodePayload, ConsentPayload,
         ConsumedAuthorizationCode, MyApplicationRow, NativeSsoTokenBinding,
         PushedAuthorizationRequest, RefreshTokenPolicy, TokenIssue, TokenRow,
     };

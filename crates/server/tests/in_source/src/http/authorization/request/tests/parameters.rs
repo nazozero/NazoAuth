@@ -27,61 +27,35 @@ fn reauth_nonce_parameter_returns_expected_name() {
 
 #[test]
 fn authorization_request_requires_pkce_for_public_client() {
-    let client = ClientRow {
-        client_type: "public".to_owned(),
-        require_dpop_bound_tokens: false,
-        require_mtls_bound_tokens: false,
-        allow_authorization_code_without_pkce: true,
-        ..default_client_row()
-    };
+    let mut client = default_client_row();
+    client.client_type = "public".to_owned();
     assert!(authorization_request_requires_pkce(&client));
 }
 
 #[test]
 fn authorization_request_requires_pkce_for_dpop_bound_client() {
-    let client = ClientRow {
-        client_type: "confidential".to_owned(),
-        require_dpop_bound_tokens: true,
-        require_mtls_bound_tokens: false,
-        allow_authorization_code_without_pkce: true,
-        ..default_client_row()
-    };
+    let mut client = default_client_row();
+    client.require_dpop_bound_tokens = true;
     assert!(authorization_request_requires_pkce(&client));
 }
 
 #[test]
 fn authorization_request_requires_pkce_for_mtls_bound_client() {
-    let client = ClientRow {
-        client_type: "confidential".to_owned(),
-        require_dpop_bound_tokens: false,
-        require_mtls_bound_tokens: true,
-        allow_authorization_code_without_pkce: true,
-        ..default_client_row()
-    };
+    let mut client = default_client_row();
+    client.require_mtls_bound_tokens = true;
     assert!(authorization_request_requires_pkce(&client));
 }
 
 #[test]
 fn authorization_request_requires_pkce_when_pkce_not_optional() {
-    let client = ClientRow {
-        client_type: "confidential".to_owned(),
-        require_dpop_bound_tokens: false,
-        require_mtls_bound_tokens: false,
-        allow_authorization_code_without_pkce: false,
-        ..default_client_row()
-    };
+    let mut client = default_client_row();
+    client.allow_authorization_code_without_pkce = false;
     assert!(authorization_request_requires_pkce(&client));
 }
 
 #[test]
 fn authorization_request_does_not_require_pkce_for_confidential_with_pkce_optional() {
-    let client = ClientRow {
-        client_type: "confidential".to_owned(),
-        require_dpop_bound_tokens: false,
-        require_mtls_bound_tokens: false,
-        allow_authorization_code_without_pkce: true,
-        ..default_client_row()
-    };
+    let client = default_client_row();
     assert!(!authorization_request_requires_pkce(&client));
 }
 
@@ -1002,7 +976,7 @@ fn authorization_login_url_for_frontend_trims_trailing_slash_from_base() {
 }
 
 fn default_client_row() -> ClientRow {
-    ClientRow {
+    crate::client_row! {
         id: Uuid::from_u128(1),
         tenant_id: Uuid::from_u128(1),
         realm_id: Uuid::from_u128(2),

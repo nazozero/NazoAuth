@@ -194,7 +194,7 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Byte
         .by_client_id(tenant_id, &claims.client_id)
         .await
     {
-        Ok(Some(client)) if client.is_active => ClientRow::from(client),
+        Ok(Some(client)) if client.is_active => client,
         Ok(_) => {
             return oauth_bearer_error(
                 StatusCode::SERVICE_UNAVAILABLE,
