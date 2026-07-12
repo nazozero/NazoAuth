@@ -114,8 +114,8 @@ fn generated_test_login_passwords_are_unique() {
     assert_ne!(test_login_password(), test_login_password());
 }
 
-fn form_encoded_test_login_password() -> String {
-    test_login_password().replace(' ', "+")
+fn form_encoded_test_login_password(password: &str) -> String {
+    password.replace(' ', "+")
 }
 
 async fn error_json(response: HttpResponse) -> (StatusCode, Value) {
@@ -315,7 +315,7 @@ async fn login_form_request_creates_session_and_redirects_to_safe_next() {
     let body = Bytes::from(format!(
         "email={}&password={}&next=%2Fauthorize%3Fclient_id%3Dabc",
         urlencoding::encode(&user.email),
-        form_encoded_test_login_password()
+        form_encoded_test_login_password(&password)
     ));
 
     let response = login(fixture.state.clone(), req, body.clone()).await;
