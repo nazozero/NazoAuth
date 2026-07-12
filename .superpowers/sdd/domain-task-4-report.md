@@ -457,3 +457,62 @@ No refresh behavior, frontend, push, deployment, or PR state was changed.
 
 The workspace test emitted only the existing localized MSVC linker stdout
 warnings; strict Clippy remained warning-free.
+
+## OAuth client persistence final completion (2026-07-13)
+
+All remaining server OAuth-client persistence is now owned by the focused
+`nazo-postgres::OAuthClientRepository`. The server `ClientRow` is only an alias
+of the auth-owned `OAuthClient`; the complete Diesel `ClientRecord`, its
+field-copy conversion, and direct server `oauth_clients` Diesel/raw-SQL reads
+and writes are deleted. Admin create/list/update/detail, DCR authentication and
+credential rotation/replacement/deactivation, PAR/token client authentication,
+introspection, revocation, profile applications, OIDC logout, and the OIDF seed
+binary call focused repository operations directly. No facade, trait object,
+`block_on`, refresh behavior, frontend, push, deployment, or PR state was
+introduced or changed.
+
+Client-secret verification preserves the existing
+`client-secret-v1:<salt>:<HMAC-SHA256>` format, pepper input, salt/candidate
+input ordering, and compatibility. The adapter keeps stored verifiers private
+and exposes only boolean `has_client_secret`/`client_secret_matches` results;
+no digest is returned by a public lookup or result type. Default non-live tests
+again cover correct and incorrect candidates. Repository/query failures remain
+`503 server_error`, while a valid lookup with mismatched credentials remains
+`401 invalid_client`. The review suggestion to collapse both cases to 401 was
+explicitly rejected because it would break the established public error
+taxonomy and obscure infrastructure failures.
+
+### TDD evidence and commits
+
+- The strengthened recursive architecture contract first failed with twelve
+  semantic violations: seed raw SQL/persistence shape, the server record and
+  field-copy conversion, admin create/list/update, DCR, profile applications
+  and logout, introspection, and revocation. It does not depend on the former
+  record name: it detects Diesel schema use, raw CRUD/JOIN SQL, a
+  persistence-shaped client struct by field sentinels, and field-copy
+  conversions. It now passes with no violation.
+- `7af9ac4` — `refactor: move OAuth client writes into postgres repository`.
+- `651e892` — `refactor: route OAuth client profile reads through postgres`.
+- `c2d6a8f` — `refactor: complete OAuth client persistence ownership`.
+- Default correct/wrong/store-unavailable secret tests pass 3/3. Focused DCR,
+  admin clients, client auth, PAR, dispatch, introspection, and revocation
+  suites pass 25, 39, 16, 31, 56, 24, and 15 tests respectively.
+
+### Real-service and workspace verification
+
+- Real PostgreSQL `rtk cargo test -p nazo-postgres --all-features --locked --
+  --nocapture` — 33/33 passed across five suites.
+- Real PostgreSQL/Valkey exact tests passed for wrong token-endpoint,
+  introspection, and revocation secrets, plus successful authenticated refresh
+  token introspection: 1/1 each. Live-enabled focused DCR/admin/PAR suites
+  passed 25/25, 39/39, and 31/31.
+- `rtk cargo fmt --all -- --check` and `rtk git diff --check` — exit 0.
+- `rtk cargo check --workspace --all-targets --all-features --locked` — exit 0.
+- `rtk cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
+  — exit 0, no issues.
+- `rtk cargo test --workspace --all-features --locked` with the mandatory live
+  PostgreSQL URL and optional server live-service variables unset — 2,065
+  passed in 37 suites.
+- `rtk cargo doc --workspace --no-deps --all-features --locked` — exit 0.
+  `nazo-postgres` public docs contain no `OAuthClientRecord`, `ClientRecord`, or
+  `client_secret_hash` item.
