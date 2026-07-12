@@ -95,8 +95,11 @@ pub(crate) async fn admin_patch_client(
         return response;
     }
 
-    let current = match find_client(&state.diesel_db, &client_id).await {
-        Ok(Some(client)) => client,
+    let current = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .by_client_id(DEFAULT_TENANT_ID, &client_id)
+        .await
+    {
+        Ok(Some(client)) => ClientRow::from(client),
         Ok(None) => {
             return oauth_error(StatusCode::NOT_FOUND, "invalid_request", "未找到该客户端.");
         }

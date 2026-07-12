@@ -190,27 +190,27 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Byte
             );
         }
     };
-    let client =
-        match crate::support::find_client_in_tenant(&state.diesel_db, tenant_id, &claims.client_id)
-            .await
-        {
-            Ok(Some(client)) if client.is_active => client,
-            Ok(_) => {
-                return oauth_bearer_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "userinfo 客户端状态不可用.",
-                );
-            }
-            Err(error) => {
-                tracing::warn!(%error, "failed to load userinfo client response policy");
-                return oauth_bearer_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "userinfo 查询失败.",
-                );
-            }
-        };
+    let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .by_client_id(tenant_id, &claims.client_id)
+        .await
+    {
+        Ok(Some(client)) if client.is_active => ClientRow::from(client),
+        Ok(_) => {
+            return oauth_bearer_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "userinfo 客户端状态不可用.",
+            );
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to load userinfo client response policy");
+            return oauth_bearer_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "userinfo 查询失败.",
+            );
+        }
+    };
     let response_claims = oidc_user_claims(
         &subject_claims,
         &scopes,

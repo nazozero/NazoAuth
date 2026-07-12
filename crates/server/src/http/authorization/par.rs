@@ -164,8 +164,11 @@ async fn par_after_rate_limit_inner(
             "缺少 client_id.",
         );
     };
-    let client = match find_client(&state.diesel_db, &client_id).await {
-        Ok(Some(client)) if client.is_active => client,
+    let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .by_client_id(DEFAULT_TENANT_ID, &client_id)
+        .await
+    {
+        Ok(Some(client)) if client.is_active => ClientRow::from(client),
         Ok(_) => {
             return oauth_error(
                 StatusCode::UNAUTHORIZED,

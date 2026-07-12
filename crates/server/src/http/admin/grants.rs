@@ -76,8 +76,11 @@ pub(crate) async fn admin_revoke_grant(
             "user_id 格式无效.",
         );
     };
-    let client = match find_client(&state.diesel_db, &payload.client_id).await {
-        Ok(Some(client)) => client,
+    let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .by_client_id(DEFAULT_TENANT_ID, &payload.client_id)
+        .await
+    {
+        Ok(Some(client)) => ClientRow::from(client),
         Ok(None) => {
             return oauth_error(StatusCode::NOT_FOUND, "invalid_request", "未找到该客户端.");
         }

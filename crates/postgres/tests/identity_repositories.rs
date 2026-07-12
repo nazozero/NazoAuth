@@ -648,6 +648,74 @@ fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
 }
 
 #[test]
+fn oauth_client_queries_use_the_focused_postgres_repository_without_a_server_facade() {
+    const FORBIDDEN_DEFINITIONS: &[&str] = &[
+        "async fn find_client(",
+        "async fn find_client_in_tenant(",
+        "async fn find_client_by_id(",
+        "async fn find_active_mtls_client_by_certificate(",
+    ];
+
+    fn visit(
+        path: &std::path::Path,
+        support_root: &std::path::Path,
+        violations: &mut Vec<String>,
+        direct_repository_calls: &mut usize,
+    ) {
+        for entry in std::fs::read_dir(path).expect("server source directory is readable") {
+            let path = entry.expect("server source entry is readable").path();
+            if path.is_dir() {
+                visit(&path, support_root, violations, direct_repository_calls);
+                continue;
+            }
+            if !path.extension().is_some_and(|extension| extension == "rs") {
+                continue;
+            }
+            let source = std::fs::read_to_string(&path).expect("server source is UTF-8");
+            *direct_repository_calls += source.matches("OAuthClientRepository::new").count();
+            for forbidden in FORBIDDEN_DEFINITIONS {
+                if source.contains(forbidden) {
+                    violations.push(format!("{} contains {forbidden}", path.display()));
+                }
+            }
+            if path.starts_with(support_root)
+                && (source.contains("oauth_clients::table")
+                    || source.contains("select(ClientRow::as_select())"))
+            {
+                violations.push(format!(
+                    "{} hides an OAuth client query in server support",
+                    path.display()
+                ));
+            }
+        }
+    }
+
+    let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let server_root = manifest.join("../server/src");
+    let support_root = server_root.join("support");
+    let mut violations = Vec::new();
+    let mut direct_repository_calls = 0;
+    visit(
+        &server_root,
+        &support_root,
+        &mut violations,
+        &mut direct_repository_calls,
+    );
+    assert!(
+        violations.is_empty(),
+        "OAuth client query facades are forbidden:\n{}",
+        violations.join("\n")
+    );
+    assert!(
+        direct_repository_calls >= 10,
+        "focused repository calls must remain at their actual callers"
+    );
+    let oauth_support =
+        std::fs::read_to_string(manifest.join("../server/src/support/oauth.rs")).unwrap();
+    assert!(!oauth_support.contains("oauth_clients::table"));
+}
+
+#[test]
 fn identity_claim_boundaries_use_narrow_single_snapshot_reads() {
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let users = std::fs::read_to_string(manifest.join("src/repositories/users.rs"))
