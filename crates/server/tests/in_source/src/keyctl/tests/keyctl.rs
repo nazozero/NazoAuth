@@ -9,6 +9,26 @@ use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
 #[test]
+fn key_record_status_labels_preserve_cli_output_contract() {
+    assert_eq!(
+        key_record_status_label(nazo_key_management::KeyRecordStatus::Active),
+        "active"
+    );
+    assert_eq!(
+        key_record_status_label(nazo_key_management::KeyRecordStatus::Prepublished),
+        "prepublished"
+    );
+    assert_eq!(
+        key_record_status_label(nazo_key_management::KeyRecordStatus::Grace),
+        "grace"
+    );
+    assert_eq!(
+        key_record_status_label(nazo_key_management::KeyRecordStatus::Retired),
+        "retired"
+    );
+}
+
+#[test]
 fn register_external_parser_requires_complete_metadata() {
     let options = parse_register_external_args(vec![
         "--kid".to_owned(),

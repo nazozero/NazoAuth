@@ -24,7 +24,7 @@ use uuid::Uuid;
 
 use crate::model::{
     ActiveSigningKey, ExternalKeyRegistration, ExternalSigningKey, KeyHandle, KeyRecord,
-    KeySettings, KeyState, LoadedKeyset, ManagedKey, StoredVerificationKey,
+    KeyRecordStatus, KeySettings, KeyState, LoadedKeyset, ManagedKey, StoredVerificationKey,
 };
 
 const OIDC_DEFAULT_ID_TOKEN_SIGNING_ALG: jsonwebtoken::Algorithm = jsonwebtoken::Algorithm::RS256;
@@ -558,13 +558,13 @@ mod tests {
         assert_eq!(
             records
                 .iter()
-                .map(|record| (record.kid.as_str(), record.state))
+                .map(|record| (record.kid.as_str(), record.status))
                 .collect::<Vec<_>>(),
             vec![
-                ("active", KeyState::Active),
-                ("candidate", KeyState::Prepublished),
-                ("grace", KeyState::Grace),
-                ("retired", KeyState::Retired),
+                ("active", KeyRecordStatus::Active),
+                ("candidate", KeyRecordStatus::Prepublished),
+                ("grace", KeyRecordStatus::Grace),
+                ("retired", KeyRecordStatus::Retired),
             ]
         );
         tokio::fs::remove_dir_all(directory).await.unwrap();
@@ -630,18 +630,18 @@ pub(crate) async fn list_keys(settings: &KeySettings) -> anyhow::Result<Vec<KeyR
                 .and_then(Value::as_str)
                 .ok_or_else(|| anyhow!("key entry missing kid"))?;
             let retire_at = key_entry_retire_at(key)?;
-            let state = if kid == active_kid {
-                KeyState::Active
+            let status = if kid == active_kid {
+                KeyRecordStatus::Active
             } else if retire_at.is_some_and(|retire_at| retire_at <= now) {
-                KeyState::Retired
+                KeyRecordStatus::Retired
             } else if retire_at.is_some() {
-                KeyState::Grace
+                KeyRecordStatus::Grace
             } else {
-                KeyState::Prepublished
+                KeyRecordStatus::Prepublished
             };
             Ok(KeyRecord {
                 kid: kid.to_owned(),
-                state,
+                status,
                 algorithm: key
                     .get("alg")
                     .and_then(Value::as_str)

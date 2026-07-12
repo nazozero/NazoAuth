@@ -754,6 +754,17 @@ async fn loader_distinguishes_same_algorithm_prepublished_from_auxiliary_active_
     assert!(auxiliary.managed.can_sign(SigningPurpose::IdToken));
     assert!(auxiliary.managed.can_sign(SigningPurpose::Jarm));
     assert!(!auxiliary.managed.can_sign(SigningPurpose::HttpMessage));
+    let listed = KeyManager::list_keys(&settings).await.unwrap();
+    let listed_auxiliary = listed
+        .iter()
+        .find(|record| record.kid == "auxiliary")
+        .unwrap();
+    assert_eq!(
+        listed_auxiliary.status,
+        crate::KeyRecordStatus::Prepublished,
+        "operator status describes persisted rotation position, not runtime signability"
+    );
+    assert_eq!(listed_auxiliary.status.as_str(), "prepublished");
     let external_candidate = loaded
         .verification_keys
         .iter()

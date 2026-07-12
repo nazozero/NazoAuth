@@ -39,12 +39,7 @@ fn load_settings() -> anyhow::Result<Settings> {
 
 async fn list_keys(settings: &Settings) -> anyhow::Result<()> {
     for key in nazo_key_management::KeyManager::list_keys(&settings.key_settings()).await? {
-        let status = match key.state {
-            nazo_key_management::KeyState::Prepublished => "prepublished",
-            nazo_key_management::KeyState::Active => "active",
-            nazo_key_management::KeyState::Grace => "grace",
-            nazo_key_management::KeyState::Retired => "retired",
-        };
+        let status = key_record_status_label(key.status);
         println!(
             "{}\t{}\t{}\t{}\t{}\t{}",
             key.kid,
@@ -56,6 +51,10 @@ async fn list_keys(settings: &Settings) -> anyhow::Result<()> {
         );
     }
     Ok(())
+}
+
+fn key_record_status_label(status: nazo_key_management::KeyRecordStatus) -> &'static str {
+    status.as_str()
 }
 
 #[derive(Debug)]
