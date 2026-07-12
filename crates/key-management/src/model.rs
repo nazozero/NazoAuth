@@ -95,11 +95,38 @@ pub struct KeySettings {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct KeyRecord {
     pub kid: String,
-    pub state: KeyState,
+    pub status: KeyRecordStatus,
     pub algorithm: String,
     pub backend: String,
     pub locator: String,
     pub retire_at: Option<String>,
+}
+
+/// Operator-facing categorization derived from persisted keyset metadata.
+///
+/// This status preserves keyctl's storage/lifecycle presentation and does not
+/// describe runtime signing capability. A persisted non-active auxiliary key
+/// can therefore be `Prepublished` here while its runtime [`ManagedKey`] is
+/// [`KeyState::Active`] for a restricted purpose set.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KeyRecordStatus {
+    Prepublished,
+    Active,
+    Grace,
+    Retired,
+}
+
+impl KeyRecordStatus {
+    /// Stable keyctl text used in the tab-separated list output.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Prepublished => "prepublished",
+            Self::Active => "active",
+            Self::Grace => "grace",
+            Self::Retired => "retired",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
