@@ -1,8 +1,6 @@
 use super::fixtures::*;
 use super::*;
-use crate::resource_server::dpop::{
-    decode_and_verify_dpop_proof, dpop_jwk_decoding_key, dpop_jwk_thumbprint,
-};
+use crate::dpop::{decode_and_verify_dpop_proof, dpop_jwk_decoding_key, dpop_jwk_thumbprint};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use jsonwebtoken::{Algorithm, Header};
 use serde_json::json;

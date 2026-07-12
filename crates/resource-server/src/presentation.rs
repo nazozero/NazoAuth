@@ -119,5 +119,5 @@ pub(super) fn validate_presented_sender_constraint(
 }
 
 #[cfg(test)]
-#[path = "../../tests/in_source/src/resource_server/tests/presentation.rs"]
+#[path = "../tests/in_source/presentation.rs"]
 mod tests;
