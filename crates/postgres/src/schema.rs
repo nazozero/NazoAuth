@@ -148,6 +148,46 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    runtime_module_desired_states (module_id) {
+        module_id -> Varchar,
+        desired_mode -> Varchar,
+        revision -> Int8,
+        actor_id -> Nullable<Uuid>,
+        reason -> Nullable<Varchar>,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    runtime_module_instance_states (instance_id, module_id) {
+        instance_id -> Varchar,
+        module_id -> Varchar,
+        actual_state -> Varchar,
+        transition_revision -> Int8,
+        applied_revision -> Nullable<Int8>,
+        drain_deadline -> Nullable<Timestamptz>,
+        error_code -> Nullable<Varchar>,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    runtime_module_state_events (event_id) {
+        event_id -> Uuid,
+        module_id -> Varchar,
+        event_type -> Varchar,
+        revision -> Int8,
+        instance_id -> Nullable<Varchar>,
+        actor_id -> Nullable<Uuid>,
+        reason -> Nullable<Varchar>,
+        before_state -> Nullable<Varchar>,
+        after_state -> Nullable<Varchar>,
+        outcome_code -> Nullable<Varchar>,
+        occurred_at -> Timestamptz,
+    }
+}
+
 diesel::joinable!(client_access_requests -> users (user_id));
 diesel::joinable!(user_client_grants -> oauth_clients (client_id));
 diesel::joinable!(user_client_grants -> users (user_id));
@@ -162,5 +202,8 @@ diesel::allow_tables_to_appear_in_same_query!(
     oauth_tokens,
     user_client_grants,
     client_access_requests,
-    oauth_clients
+    oauth_clients,
+    runtime_module_desired_states,
+    runtime_module_instance_states,
+    runtime_module_state_events
 );
