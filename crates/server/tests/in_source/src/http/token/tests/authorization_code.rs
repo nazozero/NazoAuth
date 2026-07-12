@@ -135,7 +135,8 @@ struct LiveAuthorizationCodeFixture {
 impl LiveAuthorizationCodeFixture {
     async fn new() -> Option<Self> {
         let settings = Self::settings();
-        Self::new_with_settings_and_keyset(settings, crate::test_support::test_key_manager()).await
+        Self::new_with_settings_and_keyset(settings, crate::test_support::failing_key_manager())
+            .await
     }
 
     fn settings() -> Settings {
