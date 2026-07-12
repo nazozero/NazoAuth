@@ -120,12 +120,19 @@ fn delivery_tokens_are_deterministic_and_request_scoped() {
     let state = test_state();
     let user_id = Uuid::now_v7();
     let request_id = Uuid::now_v7();
-    let first = access_delivery_token(&state, user_id, request_id);
+    let first = access_delivery_token(&state.settings.client_secret_pepper, user_id, request_id);
 
-    assert_eq!(first, access_delivery_token(&state, user_id, request_id));
+    assert_eq!(
+        first,
+        access_delivery_token(&state.settings.client_secret_pepper, user_id, request_id)
+    );
     assert_ne!(
         first,
-        access_delivery_token(&state, user_id, Uuid::now_v7())
+        access_delivery_token(
+            &state.settings.client_secret_pepper,
+            user_id,
+            Uuid::now_v7()
+        )
     );
 }
 
@@ -853,21 +860,67 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
     assert_eq!(client.token_endpoint_auth_method, "client_secret_post");
     assert_eq!(client.client_type, "confidential");
     assert!(client.client_secret_hash.is_some());
+    assert!(body.get("delivery_token").is_none());
+    assert!(body.get("delivery_url").is_none());
 
-    let delivery_keys: Vec<String> = fixture
-        .state
-        .valkey
-        .custom(
-            fred::cmd!("KEYS"),
-            vec![format!("oauth:client_delivery:{}:*", applicant.id)],
-        )
-        .await
-        .expect("committed delivery key should be discoverable in the test fixture");
-    assert_eq!(delivery_keys.len(), 1);
+    let applicant_sid = format!("applicant-{suffix}");
+    fixture.store_session(&applicant, &applicant_sid).await;
+    let list_request = fixture.admin_get_request(&applicant_sid, "/auth/me/access-requests");
+    let listed =
+        crate::http::profile::my_access_requests(fixture.state.clone(), list_request).await;
+    let (list_status, list_body) = json_body(listed).await;
+    assert_eq!(list_status, StatusCode::OK);
+    let approved_item = list_body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["id"] == json!(request_id))
+        .expect("applicant should see the approved request");
+    let delivery_token = approved_item["delivery_token"]
+        .as_str()
+        .expect("production owner response should provide the one-time token")
+        .to_owned();
+    assert!(
+        approved_item["delivery_url"]
+            .as_str()
+            .is_some_and(|url| url.ends_with(&format!("/delivery?token={delivery_token}")))
+    );
+    let other_applicant = fixture
+        .create_user(&format!("{suffix}-other-user"), "user", 0)
+        .await;
+    let other_sid = format!("other-applicant-{suffix}");
+    fixture.store_session(&other_applicant, &other_sid).await;
+    let other_list = crate::http::profile::my_access_requests(
+        fixture.state.clone(),
+        fixture.admin_get_request(&other_sid, "/auth/me/access-requests"),
+    )
+    .await;
+    let (_, other_body) = json_body(other_list).await;
+    assert!(
+        other_body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item.get("delivery_token").is_none())
+    );
+    let other_claim = crate::http::profile::access_delivery(
+        fixture.state.clone(),
+        fixture.admin_get_request(
+            &other_sid,
+            &format!("/profile/access-delivery?token={delivery_token}"),
+        ),
+        Query(HashMap::from([(
+            "token".to_owned(),
+            delivery_token.clone(),
+        )])),
+    )
+    .await;
+    assert_eq!(other_claim.status(), StatusCode::NOT_FOUND);
+    let delivery_key = format!("oauth:client_delivery:{}:{delivery_token}", applicant.id);
     let staged_raw: String = fixture
         .state
         .valkey
-        .get(&delivery_keys[0])
+        .get(&delivery_key)
         .await
         .expect("committed delivery payload should exist");
     let mut staged: Value = serde_json::from_str(&staged_raw).unwrap();
@@ -878,7 +931,7 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
         .remove("approved_client_id");
     valkey_set_ex(
         &fixture.state.valkey,
-        &delivery_keys[0],
+        &delivery_key,
         staged.to_string(),
         fixture.state.settings.client_delivery_ttl_seconds,
     )
@@ -897,20 +950,13 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
     let recovered_raw: String = fixture
         .state
         .valkey
-        .get(&delivery_keys[0])
+        .get(&delivery_key)
         .await
         .expect("recovered delivery payload should exist");
     assert_eq!(
         serde_json::from_str::<Value>(&recovered_raw).unwrap()["delivery_state"],
         "committed"
     );
-    let delivery_token = delivery_keys[0]
-        .rsplit(':')
-        .next()
-        .expect("delivery key contains token")
-        .to_owned();
-    let applicant_sid = format!("applicant-{suffix}");
-    fixture.store_session(&applicant, &applicant_sid).await;
     let delivery_request = fixture.admin_get_request(
         &applicant_sid,
         &format!("/profile/access-delivery?token={delivery_token}"),
@@ -927,6 +973,21 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
     let (delivery_status, delivery_body) = json_body(delivered).await;
     assert_eq!(delivery_status, StatusCode::OK);
     assert!(delivery_body["client_secret"].as_str().is_some());
+
+    let after_claim = crate::http::profile::my_access_requests(
+        fixture.state.clone(),
+        fixture.admin_get_request(&applicant_sid, "/auth/me/access-requests"),
+    )
+    .await;
+    let (_, after_claim_body) = json_body(after_claim).await;
+    let claimed_item = after_claim_body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["id"] == json!(request_id))
+        .unwrap();
+    assert!(claimed_item.get("delivery_token").is_none());
+    assert!(claimed_item.get("delivery_url").is_none());
 
     let replay_request = fixture.admin_get_request(
         &applicant_sid,

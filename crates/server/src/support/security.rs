@@ -134,6 +134,14 @@ pub(crate) fn hash_client_secret(secret: &str, pepper: &str) -> String {
     format!("{CLIENT_SECRET_HASH_VERSION}:{salt}:{mac}")
 }
 
+pub(crate) fn access_delivery_token(secret: &str, user_id: Uuid, request_id: Uuid) -> String {
+    let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC accepts any key");
+    mac.update(b"client-delivery-v1\0");
+    mac.update(user_id.as_bytes());
+    mac.update(request_id.as_bytes());
+    URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
+}
+
 pub(crate) fn verify_client_secret(secret: &str, stored_hash: &str, pepper: &str) -> bool {
     let mut parts = stored_hash.split(':');
     let Some(version) = parts.next() else {
