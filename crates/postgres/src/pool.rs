@@ -56,18 +56,28 @@ pub fn db_pool_metrics() -> DbPoolMetrics {
 }
 
 pub async fn run_pending_migrations(database_url: &str) -> anyhow::Result<()> {
-    let mut connection = diesel::PgConnection::establish(database_url)?;
-    connection
-        .run_pending_migrations(MIGRATIONS)
-        .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+    let database_url = database_url.to_owned();
+    tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+        let mut connection = diesel::PgConnection::establish(&database_url)?;
+        connection
+            .run_pending_migrations(MIGRATIONS)
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        Ok(())
+    })
+    .await??;
     Ok(())
 }
 
 pub async fn cleanup_expired_security_state(database_url: &str) -> anyhow::Result<()> {
-    use diesel::RunQueryDsl;
+    let database_url = database_url.to_owned();
+    tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+        use diesel::RunQueryDsl;
 
-    let mut connection = diesel::PgConnection::establish(database_url)?;
-    diesel::sql_query("SELECT * FROM nazo_oauth_cleanup_expired_security_state()")
-        .execute(&mut connection)?;
+        let mut connection = diesel::PgConnection::establish(&database_url)?;
+        diesel::sql_query("SELECT * FROM nazo_oauth_cleanup_expired_security_state()")
+            .execute(&mut connection)?;
+        Ok(())
+    })
+    .await??;
     Ok(())
 }
