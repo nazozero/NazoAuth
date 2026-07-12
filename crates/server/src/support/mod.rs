@@ -27,9 +27,7 @@ mod valkey;
 mod views;
 
 #[cfg(test)]
-pub(crate) use crate::test_support::{
-    der_to_pem, generate_key_material, public_jwk_from_private_der,
-};
+pub(crate) use crate::test_support::{ClientSigningFixture, client_signing_fixture};
 pub(crate) use access_requests::*;
 pub(crate) use audit::*;
 pub(crate) use avatars::*;
@@ -41,10 +39,7 @@ pub(crate) use fapi_http_signatures::*;
 pub(crate) use jwe::*;
 pub(crate) use mfa::*;
 pub(crate) use mtls::*;
-pub(crate) use nazo_key_management::{
-    reject_private_jwk_members, signing_algorithm_from_name, signing_algorithm_name,
-    write_json_atomic,
-};
+pub(crate) use nazo_key_management::{signing_algorithm_from_name, signing_algorithm_name};
 pub(crate) use oauth::*;
 pub(crate) use oidc_claims::*;
 pub(crate) use passkeys::*;

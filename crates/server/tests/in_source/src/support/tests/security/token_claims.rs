@@ -102,14 +102,8 @@ async fn make_jwt_rejects_conflicting_sender_constraints_before_signing() {
 
 #[tokio::test]
 async fn response_signing_uses_auxiliary_key_from_current_keyset_snapshot() {
-    let auxiliary = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("auxiliary response signing key should generate");
-    let _public_jwk = public_jwk_from_private_der(
-        "auxiliary-rs256",
-        jsonwebtoken::Algorithm::RS256,
-        &auxiliary.private_pkcs8_der,
-    )
-    .expect("auxiliary public JWK should derive");
+    let auxiliary = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let _public_jwk = auxiliary.public_jwk("auxiliary-rs256");
     let state = AppState {
         diesel_db: crate::db::create_pool(
             "postgres://nazo_token_test_invalid:nazo_token_test_invalid@127.0.0.1:1/nazo"

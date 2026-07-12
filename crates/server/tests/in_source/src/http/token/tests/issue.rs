@@ -5,7 +5,7 @@ use std::time::Duration as StdDuration;
 use crate::config::ConfigSource;
 use crate::db::create_pool;
 
-use crate::support::generate_key_material;
+use crate::support::client_signing_fixture;
 use fred::prelude::{Builder as ValkeyBuilder, ConnectionConfig, PerformanceConfig};
 
 fn disconnected_valkey_client() -> fred::prelude::Client {
@@ -118,8 +118,7 @@ fn issue_state_with_invalid_signing_key() -> AppState {
 }
 
 fn issue_state_with_valid_signing_key() -> AppState {
-    let _key_material =
-        generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
+    let _key_material = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
     AppState {
         diesel_db: create_pool(
             "postgres://nazo_issue_test_invalid:nazo_issue_test_invalid@127.0.0.1:1/nazo"
@@ -137,8 +136,7 @@ fn issue_state_with_valid_signing_key() -> AppState {
 
 fn issue_state_with_live_database() -> Option<AppState> {
     let database_url = std::env::var("DATABASE_URL").ok()?;
-    let _key_material =
-        generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
+    let _key_material = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
     Some(AppState {
         diesel_db: create_pool(database_url, 1).expect("database pool should build"),
         valkey: disconnected_valkey_client(),

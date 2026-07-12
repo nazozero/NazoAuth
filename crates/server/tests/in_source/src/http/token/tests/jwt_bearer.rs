@@ -8,10 +8,8 @@ use fred::{
 };
 use std::sync::Arc;
 
-fn jwt_bearer_client(client_id: &str, kid: &str, private_pkcs8_der: &[u8]) -> ClientRow {
-    let public_jwk =
-        public_jwk_from_private_der(kid, jsonwebtoken::Algorithm::RS256, private_pkcs8_der)
-            .expect("public jwk should derive");
+fn jwt_bearer_client(client_id: &str, kid: &str, fixture: &ClientSigningFixture) -> ClientRow {
+    let public_jwk = fixture.public_jwk(kid);
     ClientRow {
         id: Uuid::now_v7(),
         tenant_id: DEFAULT_TENANT_ID,
@@ -62,7 +60,7 @@ fn jwt_bearer_client(client_id: &str, kid: &str, private_pkcs8_der: &[u8]) -> Cl
 fn signed_jwt_bearer_assertion(
     client_id: &str,
     kid: &str,
-    private_pkcs8_der: &[u8],
+    fixture: &ClientSigningFixture,
     extra: Value,
 ) -> String {
     let now = Utc::now().timestamp();
@@ -81,12 +79,7 @@ fn signed_jwt_bearer_assertion(
     }
     let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
     header.kid = Some(kid.to_owned());
-    jsonwebtoken::encode(
-        &header,
-        &claims,
-        &jsonwebtoken::EncodingKey::from_rsa_der(private_pkcs8_der),
-    )
-    .expect("JWT bearer assertion should sign")
+    fixture.encode_jwt(&header, &claims)
 }
 
 fn jwt_bearer_settings() -> Settings {
@@ -172,9 +165,7 @@ fn jwt_bearer_claims(now: i64) -> JwtBearerAssertionClaims {
 
 #[test]
 fn jwt_bearer_assertion_validation_binds_client_issuer_audience_and_times() {
-    let private_key = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("JWT bearer test key should generate")
-        .private_pkcs8_der;
+    let private_key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
     let client = jwt_bearer_client("client-a", "jwt-bearer-kid", &private_key);
     let settings = jwt_bearer_settings();
     let assertion =
@@ -267,9 +258,7 @@ fn jwt_bearer_time_jti_and_replay_ttl_boundaries_are_enforced() {
 
 #[actix_web::test]
 async fn jwt_bearer_grant_rejects_public_clients_and_missing_assertions() {
-    let private_key = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("JWT bearer test key should generate")
-        .private_pkcs8_der;
+    let private_key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
     let mut public_client = jwt_bearer_client("client-a", "jwt-bearer-kid", &private_key);
     public_client.client_type = "public".to_owned();
     let state = jwt_bearer_state();
@@ -310,9 +299,7 @@ async fn jwt_bearer_assertion_jti_replay_is_rejected() {
     let Some(state) = live_jwt_bearer_state().await else {
         return;
     };
-    let private_key = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("JWT bearer test key should generate")
-        .private_pkcs8_der;
+    let private_key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
     let client = jwt_bearer_client("client-a", "jwt-bearer-kid", &private_key);
     let assertion = ValidatedJwtBearerAssertion {
         subject: "client-a".to_owned(),

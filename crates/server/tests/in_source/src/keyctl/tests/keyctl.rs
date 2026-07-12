@@ -3,7 +3,8 @@ use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, FederationSettings,
     PasskeySettings, RateLimitSettings, RequestObjectJtiPolicy, SubjectType,
 };
-use crate::support::{ClientIpHeaderMode, der_to_pem, generate_key_material};
+use crate::support::ClientIpHeaderMode;
+use serde_json::{Value, json};
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
@@ -165,196 +166,6 @@ fn run_list_and_validate_fail_closed_without_keyset_in_isolated_workspace() {
     });
 }
 
-#[test]
-fn keyset_validation_requires_active_unique_supported_non_retired_key() {
-    let valid = keyset_with_keys(
-        "active",
-        vec![local_key("active", "EdDSA", "active.pem", None)],
-    );
-    assert!(validate_keyset_json(&valid).is_ok());
-
-    let duplicate = keyset_with_keys(
-        "active",
-        vec![
-            local_key("active", "EdDSA", "active.pem", None),
-            local_key("active", "RS256", "other.pem", None),
-        ],
-    );
-    assert_error_contains(
-        validate_keyset_json(&duplicate).unwrap_err(),
-        "duplicate key kid active",
-    );
-
-    let missing_active = keyset_with_keys(
-        "missing",
-        vec![local_key("active", "EdDSA", "active.pem", None)],
-    );
-    assert_error_contains(
-        validate_keyset_json(&missing_active).unwrap_err(),
-        "active key missing does not exist",
-    );
-
-    let unsupported_alg = keyset_with_keys(
-        "active",
-        vec![local_key("active", "HS256", "active.pem", None)],
-    );
-    assert_error_contains(
-        validate_keyset_json(&unsupported_alg).unwrap_err(),
-        "unsupported alg HS256",
-    );
-
-    let retired_active = keyset_with_keys(
-        "active",
-        vec![local_key("active", "EdDSA", "active.pem", Some(past()))],
-    );
-    assert_error_contains(
-        validate_keyset_json(&retired_active).unwrap_err(),
-        "active key active cannot have retire_at",
-    );
-}
-
-#[test]
-fn keyset_validation_enforces_backend_specific_required_fields() {
-    let missing_file = keyset_with_keys(
-        "active",
-        vec![json!({
-            "kid": "active",
-            "alg": "EdDSA",
-            "created_at": "2026-01-01T00:00:00Z",
-            "retire_at": null
-        })],
-    );
-    assert_error_contains(
-        validate_keyset_json(&missing_file).unwrap_err(),
-        "key active missing file",
-    );
-
-    let unsupported_backend = keyset_with_keys(
-        "active",
-        vec![json!({
-            "kid": "active",
-            "alg": "EdDSA",
-            "backend": "network-hsm",
-            "key_ref": "ref"
-        })],
-    );
-    assert_error_contains(
-        validate_keyset_json(&unsupported_backend).unwrap_err(),
-        "unsupported backend network-hsm",
-    );
-
-    let missing_external_ref = keyset_with_keys(
-        "active",
-        vec![json!({
-            "kid": "active",
-            "alg": "RS256",
-            "backend": "external-command",
-            "public_jwk": public_jwk("active", "RS256", "sig")
-        })],
-    );
-    assert_error_contains(
-        validate_keyset_json(&missing_external_ref).unwrap_err(),
-        "key active missing key_ref",
-    );
-
-    let missing_public_jwk = keyset_with_keys(
-        "active",
-        vec![json!({
-            "kid": "active",
-            "alg": "RS256",
-            "backend": "external-command",
-            "key_ref": "kms://key/1"
-        })],
-    );
-    assert_error_contains(
-        validate_keyset_json(&missing_public_jwk).unwrap_err(),
-        "key active missing public_jwk",
-    );
-}
-
-#[test]
-fn external_public_jwk_metadata_is_bound_to_keyset_entry() {
-    let valid = keyset_with_keys(
-        "active",
-        vec![external_key(
-            "active",
-            "RS256",
-            public_jwk("active", "RS256", "sig"),
-        )],
-    );
-    assert!(validate_keyset_json(&valid).is_ok());
-
-    let kid_mismatch = keyset_with_keys(
-        "active",
-        vec![external_key(
-            "active",
-            "RS256",
-            public_jwk("other", "RS256", "sig"),
-        )],
-    );
-    assert_error_contains(
-        validate_keyset_json(&kid_mismatch).unwrap_err(),
-        "public_jwk kid mismatch",
-    );
-
-    let alg_mismatch = keyset_with_keys(
-        "active",
-        vec![external_key(
-            "active",
-            "RS256",
-            public_jwk("active", "PS256", "sig"),
-        )],
-    );
-    assert_error_contains(
-        validate_keyset_json(&alg_mismatch).unwrap_err(),
-        "public_jwk alg mismatch",
-    );
-
-    let use_mismatch = keyset_with_keys(
-        "active",
-        vec![external_key(
-            "active",
-            "RS256",
-            public_jwk("active", "RS256", "enc"),
-        )],
-    );
-    assert_error_contains(
-        validate_keyset_json(&use_mismatch).unwrap_err(),
-        "public_jwk use must be sig",
-    );
-}
-
-#[test]
-fn external_public_jwk_rejects_private_or_symmetric_key_material() {
-    for private_member in ["d", "p", "q", "dp", "dq", "qi", "oth", "k"] {
-        let mut jwk = public_jwk("active", "RS256", "sig");
-        jwk[private_member] = json!("secret");
-        let keyset = keyset_with_keys("active", vec![external_key("active", "RS256", jwk)]);
-
-        assert_error_contains(
-            validate_keyset_json(&keyset).unwrap_err(),
-            "private or symmetric key material",
-        );
-    }
-}
-
-#[test]
-fn retired_key_detection_uses_rfc3339_time_and_rejects_malformed_metadata() {
-    assert!(key_is_retired(&local_key("old", "EdDSA", "old.pem", Some(past()))).unwrap());
-    assert!(!key_is_retired(&local_key("future", "EdDSA", "future.pem", Some(future()))).unwrap());
-    assert_error_contains(
-        key_is_retired(&local_key(
-            "bad",
-            "EdDSA",
-            "bad.pem",
-            Some("not-rfc3339".to_owned()),
-        ))
-        .unwrap_err(),
-        "retire_at",
-    );
-    assert!(!key_is_retired(&local_key("none", "EdDSA", "none.pem", None)).unwrap());
-}
-
 #[tokio::test]
 async fn list_keys_accepts_supported_keyset_states() {
     let dir = temp_keys_dir("list");
@@ -378,51 +189,11 @@ async fn list_keys_accepts_supported_keyset_states() {
             }),
         ],
     );
-    write_json_atomic(&keyset_path(&settings), &keyset)
-        .await
-        .unwrap();
+    write_test_keyset(&settings, &keyset).await;
 
     list_keys(&settings).await.unwrap();
 
     let _ = tokio::fs::remove_dir_all(&dir).await;
-}
-
-#[test]
-fn keyset_validation_rejects_malformed_retire_at_metadata() {
-    let keyset = keyset_with_keys(
-        "active",
-        vec![
-            local_key("active", "EdDSA", "active.pem", None),
-            local_key(
-                "previous",
-                "RS256",
-                "previous.pem",
-                Some("not-rfc3339".to_owned()),
-            ),
-        ],
-    );
-
-    let err = validate_keyset_json(&keyset)
-        .expect_err("malformed key retirement timestamps must fail closed");
-    assert_error_contains(err, "retire_at");
-}
-
-#[test]
-fn keyset_validation_accepts_non_active_key_without_retire_at() {
-    let keyset = keyset_with_keys(
-        "active",
-        vec![
-            local_key("active", "EdDSA", "active.pem", None),
-            json!({
-                "kid": "previous",
-                "alg": "RS256",
-                "file": "previous.pem",
-                "created_at": "2026-01-01T00:00:00Z"
-            }),
-        ],
-    );
-
-    validate_keyset_json(&keyset).expect("missing retire_at means the non-active key is live");
 }
 
 #[tokio::test]
@@ -450,9 +221,9 @@ async fn register_external_key_persists_only_valid_public_signing_metadata() {
     .await
     .unwrap();
 
-    let keyset = load_keyset_json(&settings).await.unwrap();
-    assert_eq!(active_kid(&keyset).unwrap(), "external");
-    let entry = &keys_array(&keyset).unwrap()[0];
+    let keyset = read_test_keyset(&settings).await;
+    assert_eq!(keyset["active_kid"], "external");
+    let entry = &keyset["keys"][0];
     assert_eq!(entry["backend"], "external-command");
     assert_eq!(entry["key_ref"], "kms://key/1");
     assert_eq!(entry["public_jwk"]["kid"], "external");
@@ -488,15 +259,14 @@ async fn register_external_key_preserves_active_key_and_rejects_duplicate_kids()
     let dir = temp_keys_dir("external-existing");
     tokio::fs::create_dir_all(&dir).await.unwrap();
     let settings = test_settings(dir.clone());
-    write_json_atomic(
-        &keyset_path(&settings),
+    write_test_keyset(
+        &settings,
         &keyset_with_keys(
             "active",
             vec![local_key("active", "EdDSA", "active.pem", None)],
         ),
     )
-    .await
-    .unwrap();
+    .await;
 
     let external_jwk = dir.join("external-public.jwk.json");
     tokio::fs::write(
@@ -518,13 +288,12 @@ async fn register_external_key_preserves_active_key_and_rejects_duplicate_kids()
     .await
     .unwrap();
 
-    let keyset = load_keyset_json(&settings).await.unwrap();
+    let keyset = read_test_keyset(&settings).await;
     assert_eq!(
-        active_kid(&keyset).unwrap(),
-        "active",
+        keyset["active_kid"], "active",
         "registering a standby key must not silently rotate the active signer"
     );
-    let keys = keys_array(&keyset).unwrap();
+    let keys = keyset["keys"].as_array().unwrap();
     assert_eq!(keys.len(), 2);
     let external = keys.iter().find(|key| key["kid"] == "external").unwrap();
     assert_eq!(external["backend"], "external-command");
@@ -550,10 +319,10 @@ async fn register_external_key_preserves_active_key_and_rejects_duplicate_kids()
     .unwrap_err();
     assert_error_contains(err, "duplicate key kid active");
 
-    let keyset = load_keyset_json(&settings).await.unwrap();
-    assert_eq!(active_kid(&keyset).unwrap(), "active");
+    let keyset = read_test_keyset(&settings).await;
+    assert_eq!(keyset["active_kid"], "active");
     assert_eq!(
-        keys_array(&keyset).unwrap().len(),
+        keyset["keys"].as_array().unwrap().len(),
         2,
         "duplicate registration attempts must not partially append invalid keys"
     );
@@ -570,20 +339,7 @@ async fn validate_keyset_requires_existing_file_and_accepts_valid_stored_keyset(
     let err = validate_keyset(&settings).await.unwrap_err();
     assert_error_contains(err, "keyset.json does not exist");
 
-    write_json_atomic(
-        &keyset_path(&settings),
-        &keyset_with_keys(
-            "active",
-            vec![local_key("active", "EdDSA", "active.pem", None)],
-        ),
-    )
-    .await
-    .unwrap();
-    let private_pkcs8_der = generate_key_material(jsonwebtoken::Algorithm::EdDSA)
-        .unwrap()
-        .private_pkcs8_der;
-    let private_pem = der_to_pem(&private_pkcs8_der, "PRIVATE KEY");
-    tokio::fs::write(dir.join("active.pem"), private_pem)
+    nazo_key_management::KeyManager::load_or_create(settings.key_settings())
         .await
         .unwrap();
 
@@ -599,6 +355,27 @@ fn keyset_with_keys(active_kid: &str, keys: Vec<Value>) -> Value {
     })
 }
 
+async fn write_test_keyset(settings: &Settings, value: &Value) {
+    tokio::fs::create_dir_all(&settings.jwk_keys_dir)
+        .await
+        .unwrap();
+    tokio::fs::write(
+        settings.jwk_keys_dir.join("keyset.json"),
+        serde_json::to_vec_pretty(value).unwrap(),
+    )
+    .await
+    .unwrap();
+}
+
+async fn read_test_keyset(settings: &Settings) -> Value {
+    serde_json::from_slice(
+        &tokio::fs::read(settings.jwk_keys_dir.join("keyset.json"))
+            .await
+            .unwrap(),
+    )
+    .unwrap()
+}
+
 fn local_key(kid: &str, alg: &str, file: &str, retire_at: Option<String>) -> Value {
     json!({
         "kid": kid,
@@ -606,18 +383,6 @@ fn local_key(kid: &str, alg: &str, file: &str, retire_at: Option<String>) -> Val
         "file": file,
         "created_at": "2026-01-01T00:00:00Z",
         "retire_at": retire_at,
-    })
-}
-
-fn external_key(kid: &str, alg: &str, public_jwk: Value) -> Value {
-    json!({
-        "kid": kid,
-        "alg": alg,
-        "backend": "external-command",
-        "key_ref": "kms://key/1",
-        "public_jwk": public_jwk,
-        "created_at": "2026-01-01T00:00:00Z",
-        "retire_at": null,
     })
 }
 
@@ -633,11 +398,13 @@ fn public_jwk(kid: &str, alg: &str, key_use: &str) -> Value {
 }
 
 fn past() -> String {
-    (Utc::now() - chrono::Duration::seconds(1)).to_rfc3339_opts(SecondsFormat::Secs, true)
+    (chrono::Utc::now() - chrono::Duration::seconds(1))
+        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
 fn future() -> String {
-    (Utc::now() + chrono::Duration::seconds(60)).to_rfc3339_opts(SecondsFormat::Secs, true)
+    (chrono::Utc::now() + chrono::Duration::seconds(60))
+        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
 fn assert_error_contains(error: anyhow::Error, expected: &str) {

@@ -2,7 +2,7 @@ use super::*;
 use crate::config::ConfigSource;
 use crate::db::create_pool;
 
-use crate::support::{generate_key_material, public_jwk_from_private_der};
+use crate::support::{ClientSigningFixture, client_signing_fixture};
 use std::io::{self, Write};
 use std::sync::{
     Arc,
@@ -60,13 +60,8 @@ fn ciba_test_state() -> AppState {
     ciba_test_state_with(|_| {})
 }
 
-fn ciba_private_key_jwt_client_with_alg(
-    kid: &str,
-    alg: jsonwebtoken::Algorithm,
-    private_pkcs8_der: &[u8],
-) -> ClientRow {
-    let public_jwk =
-        public_jwk_from_private_der(kid, alg, private_pkcs8_der).expect("public jwk should derive");
+fn ciba_private_key_jwt_client_with_alg(kid: &str, fixture: &ClientSigningFixture) -> ClientRow {
+    let public_jwk = fixture.public_jwk(kid);
     ClientRow {
         id: Uuid::now_v7(),
         tenant_id: DEFAULT_TENANT_ID,
@@ -114,14 +109,14 @@ fn ciba_private_key_jwt_client_with_alg(
     }
 }
 
-fn ciba_private_key_jwt_client(kid: &str, private_pkcs8_der: &[u8]) -> ClientRow {
-    ciba_private_key_jwt_client_with_alg(kid, jsonwebtoken::Algorithm::PS256, private_pkcs8_der)
+fn ciba_private_key_jwt_client(kid: &str, fixture: &ClientSigningFixture) -> ClientRow {
+    ciba_private_key_jwt_client_with_alg(kid, fixture)
 }
 
 fn signed_ciba_request_object_with_alg(
     kid: &str,
     alg: jsonwebtoken::Algorithm,
-    private_pkcs8_der: &[u8],
+    fixture: &ClientSigningFixture,
     extra_claims: Value,
 ) -> String {
     let now = Utc::now().timestamp();
@@ -149,21 +144,15 @@ fn signed_ciba_request_object_with_alg(
     }
     let mut header = jsonwebtoken::Header::new(alg);
     header.kid = Some(kid.to_owned());
-    jsonwebtoken::encode(
-        &header,
-        &claims,
-        &jsonwebtoken::EncodingKey::from_rsa_der(private_pkcs8_der),
-    )
-    .expect("CIBA request object should sign")
+    fixture.encode_jwt(&header, &claims)
 }
 
-fn signed_ciba_request_object(kid: &str, private_pkcs8_der: &[u8], extra_claims: Value) -> String {
-    signed_ciba_request_object_with_alg(
-        kid,
-        jsonwebtoken::Algorithm::PS256,
-        private_pkcs8_der,
-        extra_claims,
-    )
+fn signed_ciba_request_object(
+    kid: &str,
+    fixture: &ClientSigningFixture,
+    extra_claims: Value,
+) -> String {
+    signed_ciba_request_object_with_alg(kid, jsonwebtoken::Algorithm::PS256, fixture, extra_claims)
 }
 
 #[test]
@@ -371,9 +360,7 @@ async fn ciba_automated_decision_route_accepts_empty_post_without_json_content_t
 #[test]
 fn ciba_signed_request_object_claims_apply_to_backchannel_form() {
     let state = ciba_test_state();
-    let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
-        .expect("client key should generate")
-        .private_pkcs8_der;
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let client = ciba_private_key_jwt_client("ciba-kid", &key);
     let request_object = signed_ciba_request_object(
         "ciba-kid",
@@ -397,9 +384,7 @@ fn ciba_signed_request_object_claims_apply_to_backchannel_form() {
 
 #[test]
 fn ciba_request_object_presence_enforces_client_policy() {
-    let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
-        .expect("client key should generate")
-        .private_pkcs8_der;
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let mut client = ciba_private_key_jwt_client("ciba-kid", &key);
     client.require_par_request_object = true;
 
@@ -433,9 +418,7 @@ fn ciba_request_object_presence_enforces_client_policy() {
 fn fapi_ciba_compatibility_profile_preserves_client_request_object_policy() {
     let settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
-        .expect("client key should generate")
-        .private_pkcs8_der;
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let client = ciba_private_key_jwt_client("ciba-kid", &key);
 
     validate_ciba_request_object_presence(
@@ -455,9 +438,7 @@ fn ciba_profile_does_not_apply_authorization_code_only_controls() {
     settings.enable_request_uri_parameter = false;
     settings.ciba_security_profile =
         crate::settings::CibaSecurityProfile::FapiCibaId1PlainPrivateKeyJwtPoll;
-    let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
-        .expect("client key should generate")
-        .private_pkcs8_der;
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let mut client = ciba_private_key_jwt_client("ciba-kid", &key);
     client.require_dpop_bound_tokens = true;
     let form = BackchannelAuthenticationForm {
@@ -478,9 +459,7 @@ fn fapi2_ciba_profile_requires_signed_backchannel_authentication_request() {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.ciba_security_profile = crate::settings::CibaSecurityProfile::Fapi2Ciba;
-    let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
-        .expect("client key should generate")
-        .private_pkcs8_der;
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let client = ciba_private_key_jwt_client("ciba-kid", &key);
 
     let response = validate_ciba_request_object_presence(
@@ -505,9 +484,7 @@ fn fapi2_ciba_client_policy_rejects_public_weak_auth_and_bearer_tokens() {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.ciba_security_profile = crate::settings::CibaSecurityProfile::Fapi2Ciba;
-    let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
-        .expect("client key should generate")
-        .private_pkcs8_der;
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let mut client = ciba_private_key_jwt_client("ciba-kid", &key);
 
     let response = validate_ciba_security_profile_client(&settings, &client, "private_key_jwt")
@@ -558,9 +535,7 @@ fn fapi2_ciba_private_key_jwt_requires_issuer_audience_only() {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.ciba_security_profile = crate::settings::CibaSecurityProfile::Fapi2Ciba;
-    let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
-        .expect("client key should generate")
-        .private_pkcs8_der;
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let mut client = ciba_private_key_jwt_client("ciba-kid", &key);
     client.require_mtls_bound_tokens = true;
     client.allow_client_assertion_endpoint_audience = true;
@@ -623,9 +598,7 @@ fn ciba_token_issue_allows_refresh_and_binds_refresh_sender_constraint() {
 
 #[test]
 fn ciba_token_grant_state_rejects_other_client_auth_req_id_as_invalid_grant() {
-    let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
-        .expect("client key should generate")
-        .private_pkcs8_der;
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let mut ciba = CibaRequestState {
         client_id: "client-1".to_owned(),
         user_id: Uuid::now_v7(),
@@ -664,9 +637,7 @@ async fn ciba_token_request_validates_mtls_before_auth_req_id_state() {
     let state = ciba_test_state_with(|settings| {
         settings.enable_ciba = true;
     });
-    let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
-        .expect("client key should generate")
-        .private_pkcs8_der;
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let mut client = ciba_private_key_jwt_client("ciba-kid", &key);
     client.require_mtls_bound_tokens = true;
     let req = actix_web::test::TestRequest::post()
@@ -711,9 +682,7 @@ async fn ciba_token_request_validates_mtls_before_auth_req_id_state() {
 #[test]
 fn ciba_signed_request_object_missing_audience_maps_to_invalid_request() {
     let state = ciba_test_state();
-    let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
-        .expect("client key should generate")
-        .private_pkcs8_der;
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let client = ciba_private_key_jwt_client("ciba-kid", &key);
     let request_object = signed_ciba_request_object("ciba-kid", &key, json!({"aud": null}));
     let mut form = BackchannelAuthenticationForm {
@@ -739,9 +708,7 @@ fn ciba_signed_request_object_missing_audience_maps_to_invalid_request() {
 fn ciba_signed_request_object_missing_required_claim_maps_to_invalid_request() {
     for claim in ["iss", "aud", "iat", "nbf", "exp", "jti"] {
         let state = ciba_test_state();
-        let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
-            .expect("client key should generate")
-            .private_pkcs8_der;
+        let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
         let client = ciba_private_key_jwt_client("ciba-kid", &key);
         let request_object = signed_ciba_request_object(
             "ciba-kid",
@@ -778,11 +745,8 @@ fn ciba_signed_request_object_missing_required_claim_maps_to_invalid_request() {
 #[test]
 fn ciba_rejects_rs256_request_object_signing_algorithm() {
     let state = ciba_test_state();
-    let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("client key should generate")
-        .private_pkcs8_der;
-    let client =
-        ciba_private_key_jwt_client_with_alg("ciba-kid", jsonwebtoken::Algorithm::RS256, &key);
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let client = ciba_private_key_jwt_client_with_alg("ciba-kid", &key);
     let request_object = signed_ciba_request_object_with_alg(
         "ciba-kid",
         jsonwebtoken::Algorithm::RS256,

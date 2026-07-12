@@ -5,7 +5,7 @@ use std::time::Duration as StdDuration;
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
 
-use crate::support::{IpCidr, generate_key_material, public_jwk_from_private_der};
+use crate::support::{IpCidr, client_signing_fixture};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Text, Timestamptz, Uuid as SqlUuid};
@@ -75,14 +75,8 @@ async fn live_userinfo_state_from_database_url(database_url: String) -> Option<D
     });
     let valkey = valkey_builder.build().expect("valkey client should build");
     valkey.init().await.expect("valkey should connect");
-    let key_material =
-        generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
-    let _public_jwk = public_jwk_from_private_der(
-        "userinfo-test-kid",
-        jsonwebtoken::Algorithm::EdDSA,
-        &key_material.private_pkcs8_der,
-    )
-    .expect("test public JWK should derive");
+    let key_material = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
+    let _public_jwk = key_material.public_jwk("userinfo-test-kid");
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.issuer = "https://issuer.example".to_owned();
@@ -152,14 +146,8 @@ async fn drop_schema(state: &Data<AppState>, schema: &str) {
 }
 
 fn userinfo_state_with_valid_signing_key_invalid_db() -> Data<AppState> {
-    let key_material =
-        generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
-    let _public_jwk = public_jwk_from_private_der(
-        "userinfo-test-kid",
-        jsonwebtoken::Algorithm::EdDSA,
-        &key_material.private_pkcs8_der,
-    )
-    .expect("test public JWK should derive");
+    let key_material = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
+    let _public_jwk = key_material.public_jwk("userinfo-test-kid");
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.issuer = "https://issuer.example".to_owned();

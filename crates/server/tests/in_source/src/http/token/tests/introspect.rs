@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
 
-use crate::support::{generate_key_material, hash_client_secret, public_jwk_from_private_der};
+use crate::support::{client_signing_fixture, hash_client_secret};
 use actix_web::test::TestRequest;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use diesel::sql_query;
@@ -38,14 +38,8 @@ fn introspection_state() -> Data<AppState> {
 }
 
 fn signed_introspection_offline_state() -> Data<AppState> {
-    let key_material =
-        generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
-    let _public_jwk = public_jwk_from_private_der(
-        "introspect-offline-kid",
-        jsonwebtoken::Algorithm::EdDSA,
-        &key_material.private_pkcs8_der,
-    )
-    .expect("test public JWK should derive");
+    let key_material = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
+    let _public_jwk = key_material.public_jwk("introspect-offline-kid");
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.issuer = "https://issuer.example".to_owned();
@@ -80,14 +74,8 @@ fn fixture_token(label: &str) -> String {
 }
 
 fn live_introspection_state_from_database_url(database_url: String) -> Option<Data<AppState>> {
-    let key_material =
-        generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
-    let _public_jwk = public_jwk_from_private_der(
-        "introspect-test-kid",
-        jsonwebtoken::Algorithm::EdDSA,
-        &key_material.private_pkcs8_der,
-    )
-    .expect("test public JWK should derive");
+    let key_material = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
+    let _public_jwk = key_material.public_jwk("introspect-test-kid");
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.issuer = "https://issuer.example".to_owned();

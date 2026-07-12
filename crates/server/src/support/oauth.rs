@@ -8,13 +8,25 @@ use nazo_auth::{
 use super::{
     mtls::certificate_x5c_thumbprint,
     prelude::*,
-    reject_private_jwk_members,
     security::{
         SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
         SUPPORTED_CLIENT_JWT_SIGNING_ALGS, blake3_hex, client_jwt_algorithm_from_name,
         jwt_decoding_key_from_jwk, supported_client_jwt_algorithm_name,
     },
 };
+
+fn ensure_public_client_jwk(jwk: &serde_json::Map<String, Value>) -> anyhow::Result<()> {
+    const PRIVATE_MEMBERS: &[&str] = &["d", "p", "q", "dp", "dq", "qi", "oth", "k"];
+    if let Some(member) = PRIVATE_MEMBERS
+        .iter()
+        .find(|member| jwk.contains_key(**member))
+    {
+        anyhow::bail!(
+            "public JWK must not contain private or symmetric key material member {member}"
+        );
+    }
+    Ok(())
+}
 
 const SUPPORTED_GRANT_TYPES: &[&str] = &[
     "authorization_code",
@@ -594,7 +606,7 @@ fn validate_client_jwks_with_policy(
         let key_object = key
             .as_object()
             .ok_or_else(|| anyhow::anyhow!("jwks 公钥必须是 JSON object"))?;
-        reject_private_jwk_members(key_object)
+        ensure_public_client_jwk(key_object)
             .map_err(|_| anyhow::anyhow!("jwks 不能包含私钥材料或对称密钥材料"))?;
         let kid = key.get("kid").and_then(Value::as_str).unwrap_or_default();
         let public_key_use = key.get("use").and_then(Value::as_str).unwrap_or("sig");

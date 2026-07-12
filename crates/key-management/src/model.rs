@@ -92,16 +92,31 @@ pub struct KeySettings {
     pub verification_grace: chrono::Duration,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HttpMessageSignature {
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KeyRecord {
     pub kid: String,
-    pub algorithm: &'static str,
-    pub signature: Vec<u8>,
+    pub state: KeyState,
+    pub algorithm: String,
+    pub backend: String,
+    pub locator: String,
+    pub retire_at: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ExternalKeyRegistration {
+    pub kid: String,
+    pub algorithm: jsonwebtoken::Algorithm,
+    pub key_ref: String,
+    pub public_jwk_file: PathBuf,
+}
+
+pub(crate) struct KeyGeneration {
+    pub(crate) loaded: LoadedKeyset,
+    pub(crate) snapshot: Arc<KeySnapshot>,
 }
 
 pub(crate) struct KeyManagerInner {
-    pub(crate) snapshot: ArcSwap<KeySnapshot>,
-    pub(crate) loaded: ArcSwap<LoadedKeyset>,
+    pub(crate) generation: ArcSwap<KeyGeneration>,
     pub(crate) settings: KeySettings,
 }
 
@@ -110,7 +125,40 @@ pub struct KeyManager {
     pub(crate) inner: Arc<KeyManagerInner>,
 }
 
-#[cfg(feature = "test-support")]
+pub struct HttpSigningLease {
+    generation: Arc<KeyGeneration>,
+    kid: String,
+    algorithm: jsonwebtoken::Algorithm,
+    http_algorithm: &'static str,
+}
+
+impl HttpSigningLease {
+    #[must_use]
+    pub fn kid(&self) -> &str {
+        &self.kid
+    }
+
+    #[must_use]
+    pub fn algorithm(&self) -> &'static str {
+        self.http_algorithm
+    }
+
+    pub async fn sign(&self, signing_input: &[u8]) -> anyhow::Result<Signature> {
+        let selected = self
+            .generation
+            .loaded
+            .selected_key(SigningPurpose::HttpMessage, self.algorithm)
+            .filter(|selected| selected.kid == self.kid)
+            .ok_or_else(|| {
+                anyhow::anyhow!("HTTP signing lease no longer matches its generation")
+            })?;
+        sign_selected(&selected, signing_input)
+            .await
+            .map_err(anyhow::Error::from)
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
 pub enum TestSigningBehavior {
     Working,
     Failing,
@@ -123,22 +171,27 @@ impl LoadedKeyset {
         purpose: SigningPurpose,
         algorithm: jsonwebtoken::Algorithm,
     ) -> Option<SelectedKey<'_>> {
-        if algorithm == self.active_alg {
-            let public_jwk = &self
-                .verification_keys
-                .iter()
-                .find(|key| key.managed.kid == self.active_kid)?
-                .public_jwk;
+        let algorithm_name = crate::store::signing_algorithm_name(algorithm)?;
+        let active = self
+            .verification_keys
+            .iter()
+            .find(|key| key.managed.kid == self.active_kid)?;
+        if algorithm == self.active_alg
+            && active.managed.algorithm == algorithm_name
+            && active.managed.can_sign(purpose)
+            && active.public_jwk.get("alg").and_then(Value::as_str) == Some(algorithm_name)
+        {
             return Some(SelectedKey {
                 kid: &self.active_kid,
                 algorithm,
                 handle: SelectedHandle::Active(&self.active_signing_key),
-                public_jwk,
+                public_jwk: &active.public_jwk,
             });
         }
-        let algorithm_name = crate::store::signing_algorithm_name(algorithm)?;
         self.verification_keys.iter().find_map(|key| {
-            if !key.managed.can_sign(purpose)
+            if key.managed.kid == self.active_kid
+                || !key.managed.can_sign(purpose)
+                || key.managed.algorithm != algorithm_name
                 || key.public_jwk.get("alg").and_then(Value::as_str) != Some(algorithm_name)
             {
                 return None;
@@ -172,13 +225,24 @@ pub(crate) enum SelectedHandle<'a> {
 }
 
 impl KeyManager {
-    #[cfg(feature = "test-support")]
+    pub async fn list_keys(settings: &KeySettings) -> anyhow::Result<Vec<KeyRecord>> {
+        crate::store::list_keys(settings).await
+    }
+
+    pub async fn register_external(
+        settings: &KeySettings,
+        registration: ExternalKeyRegistration,
+    ) -> anyhow::Result<()> {
+        crate::store::register_external_key(settings, registration).await
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
     #[must_use]
     pub fn for_test(algorithm: jsonwebtoken::Algorithm) -> Self {
         Self::for_test_behavior(algorithm, TestSigningBehavior::Working)
     }
 
-    #[cfg(feature = "test-support")]
+    #[cfg(any(test, feature = "test-support"))]
     #[must_use]
     pub fn for_test_behavior(
         algorithm: jsonwebtoken::Algorithm,
@@ -223,11 +287,10 @@ impl KeyManager {
                 },
             }],
         };
-        let snapshot = snapshot_from_loaded(&loaded);
+        let generation = KeyGeneration::new(loaded);
         Self {
             inner: Arc::new(KeyManagerInner {
-                snapshot: ArcSwap::from_pointee(snapshot),
-                loaded: ArcSwap::from_pointee(loaded),
+                generation: ArcSwap::from_pointee(generation),
                 settings: KeySettings {
                     keys_dir: PathBuf::new(),
                     external_command: Vec::new(),
@@ -240,11 +303,11 @@ impl KeyManager {
         }
     }
 
-    #[cfg(feature = "test-support")]
+    #[cfg(any(test, feature = "test-support"))]
     #[must_use]
     pub fn for_test_with_auxiliary(algorithm: jsonwebtoken::Algorithm) -> Self {
         let manager = Self::for_test(jsonwebtoken::Algorithm::EdDSA);
-        let mut loaded = (*manager.inner.loaded.load_full()).clone();
+        let mut loaded = manager.inner.generation.load().loaded.clone();
         let material = crate::store::generate_key_material(algorithm).unwrap();
         let kid = format!(
             "test-aux-{}",
@@ -267,9 +330,10 @@ impl KeyManager {
                 handle: KeyHandle::Local(material.private_pkcs8_der),
             },
         });
-        let snapshot = snapshot_from_loaded(&loaded);
-        manager.inner.loaded.store(Arc::new(loaded));
-        manager.inner.snapshot.store(Arc::new(snapshot));
+        manager
+            .inner
+            .generation
+            .store(Arc::new(KeyGeneration::new(loaded)));
         manager
     }
 
@@ -290,11 +354,9 @@ impl KeyManager {
     }
 
     pub(crate) fn from_loaded(settings: KeySettings, loaded: LoadedKeyset) -> Self {
-        let snapshot = snapshot_from_loaded(&loaded);
         Self {
             inner: Arc::new(KeyManagerInner {
-                snapshot: ArcSwap::from_pointee(snapshot),
-                loaded: ArcSwap::from_pointee(loaded),
+                generation: ArcSwap::from_pointee(KeyGeneration::new(loaded)),
                 settings,
             }),
         }
@@ -302,7 +364,7 @@ impl KeyManager {
 
     #[must_use]
     pub fn snapshot(&self) -> Arc<KeySnapshot> {
-        self.inner.snapshot.load_full()
+        Arc::clone(&self.inner.generation.load().snapshot)
     }
 
     pub async fn encode_jwt<T: Serialize>(
@@ -311,8 +373,9 @@ impl KeyManager {
         header: &jsonwebtoken::Header,
         claims: &T,
     ) -> jsonwebtoken::errors::Result<String> {
-        let loaded = self.inner.loaded.load_full();
-        let selected = loaded
+        let generation = self.inner.generation.load_full();
+        let selected = generation
+            .loaded
             .selected_key(purpose, header.alg)
             .ok_or(jsonwebtoken::errors::ErrorKind::InvalidAlgorithm)?;
         if header.kid.as_deref().is_some_and(|kid| kid != selected.kid) {
@@ -332,38 +395,36 @@ impl KeyManager {
         ))
     }
 
-    pub async fn sign_http_message(
-        &self,
-        signing_input: &[u8],
-    ) -> anyhow::Result<HttpMessageSignature> {
-        let loaded = self.inner.loaded.load_full();
-        let selected = loaded
-            .selected_key(SigningPurpose::HttpMessage, loaded.active_alg)
+    pub fn prepare_http_signing(&self) -> anyhow::Result<HttpSigningLease> {
+        let generation = self.inner.generation.load_full();
+        let selected = generation
+            .loaded
+            .selected_key(SigningPurpose::HttpMessage, generation.loaded.active_alg)
             .ok_or_else(|| anyhow::anyhow!("HTTP message signing key unavailable"))?;
-        let algorithm = match selected.algorithm {
+        let http_algorithm = match selected.algorithm {
             jsonwebtoken::Algorithm::EdDSA => "ed25519",
             jsonwebtoken::Algorithm::RS256 => "rsa-v1_5-sha256",
             jsonwebtoken::Algorithm::ES256 => "ecdsa-p256-sha256",
             _ => anyhow::bail!("unsupported HTTP message signing algorithm"),
         };
-        let signature = sign_selected(&selected, signing_input).await?;
-        Ok(HttpMessageSignature {
+        Ok(HttpSigningLease {
+            algorithm: selected.algorithm,
             kid: selected.kid.to_owned(),
-            algorithm,
-            signature: signature.into_bytes(),
+            http_algorithm,
+            generation,
         })
     }
 
     pub async fn refresh(&self) -> anyhow::Result<()> {
         let loaded = crate::store::load_or_create_keyset(&self.inner.settings).await?;
-        let snapshot = snapshot_from_loaded(&loaded);
-        self.inner.loaded.store(Arc::new(loaded));
-        self.inner.snapshot.store(Arc::new(snapshot));
+        self.inner
+            .generation
+            .store(Arc::new(KeyGeneration::new(loaded)));
         Ok(())
     }
 }
 
-#[cfg(all(feature = "test-support", windows))]
+#[cfg(all(any(test, feature = "test-support"), windows))]
 fn external_failure_command(stderr: &str) -> Vec<String> {
     vec![
         "pwsh".to_owned(),
@@ -378,7 +439,7 @@ fn external_failure_command(stderr: &str) -> Vec<String> {
     ]
 }
 
-#[cfg(all(feature = "test-support", unix))]
+#[cfg(all(any(test, feature = "test-support"), unix))]
 fn external_failure_command(stderr: &str) -> Vec<String> {
     vec![
         "sh".to_owned(),
@@ -394,8 +455,9 @@ impl Signer for KeyManager {
     async fn sign<'a>(&'a self, request: SignRequest<'a>) -> Result<Signature, SignError> {
         let algorithm = crate::store::signing_algorithm_from_name(request.algorithm)
             .ok_or(SignError::UnsupportedAlgorithm)?;
-        let loaded = self.inner.loaded.load_full();
-        let selected = loaded
+        let generation = self.inner.generation.load_full();
+        let selected = generation
+            .loaded
             .selected_key(request.purpose, algorithm)
             .ok_or(SignError::KeyUnavailable)?;
         sign_selected(&selected, request.signing_input).await
@@ -437,6 +499,13 @@ fn sign_error_to_jwt(error: SignError) -> jsonwebtoken::errors::Error {
     crate::external::jwt_provider_error(error.to_string())
 }
 
+impl KeyGeneration {
+    fn new(loaded: LoadedKeyset) -> Self {
+        let snapshot = Arc::new(snapshot_from_loaded(&loaded));
+        Self { loaded, snapshot }
+    }
+}
+
 pub(crate) fn snapshot_from_loaded(loaded: &LoadedKeyset) -> KeySnapshot {
     const ORDERED: [jsonwebtoken::Algorithm; 4] = [
         jsonwebtoken::Algorithm::EdDSA,
@@ -470,7 +539,7 @@ pub(crate) fn snapshot_from_loaded(loaded: &LoadedKeyset) -> KeySnapshot {
     }
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 fn all_signing_purposes() -> BTreeSet<SigningPurpose> {
     [
         SigningPurpose::AccessToken,
@@ -509,11 +578,12 @@ impl ManagedKey {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::{collections::BTreeSet, sync::Arc};
 
-    use nazo_auth::SigningPurpose;
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    use nazo_auth::{SignRequest, Signer, SigningPurpose};
 
-    use super::{KeyHandle, KeyState, ManagedKey};
+    use super::{KeyGeneration, KeyHandle, KeyManager, KeyState, ManagedKey};
 
     fn managed_key(state: KeyState, purposes: &[SigningPurpose]) -> ManagedKey {
         ManagedKey {
@@ -523,6 +593,18 @@ mod tests {
             state,
             handle: KeyHandle::Local(Vec::new()),
         }
+    }
+
+    fn manager_with_policy(state: KeyState, purposes: &[SigningPurpose]) -> KeyManager {
+        let manager = KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);
+        let mut loaded = manager.inner.generation.load().loaded.clone();
+        loaded.verification_keys[0].managed.state = state;
+        loaded.verification_keys[0].managed.purposes = purposes.iter().copied().collect();
+        manager
+            .inner
+            .generation
+            .store(Arc::new(KeyGeneration::new(loaded)));
+        manager
     }
 
     #[test]
@@ -544,5 +626,107 @@ mod tests {
         let key = managed_key(KeyState::Retired, &[SigningPurpose::AccessToken]);
         assert!(!key.can_verify());
         assert!(!key.can_sign(SigningPurpose::AccessToken));
+    }
+
+    #[tokio::test]
+    async fn http_signing_lease_keeps_label_and_key_on_one_generation_during_rotation() {
+        let manager = KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);
+        let original_snapshot = manager.snapshot();
+        let lease = manager
+            .prepare_http_signing()
+            .expect("active HTTP signing key should produce a lease");
+        assert_eq!(lease.kid(), original_snapshot.active_kid);
+        assert_eq!(lease.algorithm(), "ed25519");
+
+        let replacement = KeyManager::for_test(jsonwebtoken::Algorithm::RS256);
+        manager
+            .inner
+            .generation
+            .store(replacement.inner.generation.load_full());
+
+        let signature = lease
+            .sign(b"generation-bound signature base")
+            .await
+            .expect("lease must retain its captured signing generation");
+        let public = &original_snapshot
+            .verification_key(lease.kid())
+            .expect("lease kid must identify a captured public key")
+            .public_jwk;
+        let decoding_key =
+            jsonwebtoken::DecodingKey::from_ed_components(public["x"].as_str().unwrap()).unwrap();
+        assert!(
+            jsonwebtoken::crypto::verify(
+                &URL_SAFE_NO_PAD.encode(signature.as_bytes()),
+                b"generation-bound signature base",
+                &decoding_key,
+                jsonwebtoken::Algorithm::EdDSA,
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            manager.snapshot().active_alg,
+            jsonwebtoken::Algorithm::RS256
+        );
+    }
+
+    #[tokio::test]
+    async fn http_signing_lease_fails_closed_when_identity_does_not_match_generation() {
+        let manager = KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);
+        let mut lease = manager.prepare_http_signing().unwrap();
+        lease.kid = "mismatched-kid".to_owned();
+
+        let error = lease
+            .sign(b"identity mismatch")
+            .await
+            .expect_err("a mismatched lease identity must fail closed");
+        assert!(format!("{error:#}").contains("no longer matches"));
+    }
+
+    #[tokio::test]
+    async fn signer_rejects_active_key_with_wrong_purpose() {
+        let manager = manager_with_policy(KeyState::Active, &[SigningPurpose::IdToken]);
+        let error = manager
+            .sign(SignRequest {
+                purpose: SigningPurpose::HttpMessage,
+                algorithm: "EdDSA",
+                signing_input: b"wrong purpose",
+            })
+            .await
+            .expect_err("purpose policy must be enforced by the real Signer path");
+        assert_eq!(error, nazo_auth::SignError::KeyUnavailable);
+    }
+
+    #[tokio::test]
+    async fn jwt_encoding_rejects_grace_and_retired_keys() {
+        for state in [KeyState::Grace, KeyState::Retired] {
+            let manager = manager_with_policy(state, &[SigningPurpose::IdToken]);
+            let error = manager
+                .encode_jwt(
+                    SigningPurpose::IdToken,
+                    &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::EdDSA),
+                    &serde_json::json!({"sub":"policy-test"}),
+                )
+                .await
+                .expect_err("non-active keys must not encode JWTs");
+            assert!(matches!(
+                error.kind(),
+                jsonwebtoken::errors::ErrorKind::InvalidAlgorithm
+            ));
+        }
+    }
+
+    #[test]
+    fn http_signing_rejects_wrong_purpose_grace_and_retired_keys() {
+        for (state, purposes) in [
+            (KeyState::Active, vec![SigningPurpose::IdToken]),
+            (KeyState::Grace, vec![SigningPurpose::HttpMessage]),
+            (KeyState::Retired, vec![SigningPurpose::HttpMessage]),
+        ] {
+            let manager = manager_with_policy(state, &purposes);
+            assert!(
+                manager.prepare_http_signing().is_err(),
+                "HTTP signing must reject policy state {state:?}"
+            );
+        }
     }
 }

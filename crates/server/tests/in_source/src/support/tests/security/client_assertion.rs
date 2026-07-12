@@ -117,12 +117,8 @@ fn token_client_assertion_accepts_issuer_and_token_endpoint_audience() {
 
 #[test]
 fn ciba_backchannel_client_assertion_accepts_token_endpoint_audience_when_allowed() {
-    let private_key = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("client key should generate")
-        .private_pkcs8_der;
-    let public_jwk =
-        public_jwk_from_private_der("client-kid", jsonwebtoken::Algorithm::RS256, &private_key)
-            .expect("client jwk should derive");
+    let private_key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let public_jwk = private_key.public_jwk("client-kid");
     let mut client = private_key_jwt_client(json!({"keys": [public_jwk]}));
     client.allow_client_assertion_endpoint_audience = true;
     let settings = test_settings();
@@ -164,16 +160,10 @@ fn ciba_backchannel_client_assertion_rejects_token_endpoint_audience_when_not_al
 
 #[test]
 fn private_key_jwt_accepts_current_and_previous_jwks_during_rotation() {
-    let first = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("first key should generate")
-        .private_pkcs8_der;
-    let second = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("second key should generate")
-        .private_pkcs8_der;
-    let first_jwk = public_jwk_from_private_der("kid-1", jsonwebtoken::Algorithm::RS256, &first)
-        .expect("first jwk should derive");
-    let second_jwk = public_jwk_from_private_der("kid-2", jsonwebtoken::Algorithm::RS256, &second)
-        .expect("second jwk should derive");
+    let first = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let second = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let first_jwk = first.public_jwk("kid-1");
+    let second_jwk = second.public_jwk("kid-2");
     let client = private_key_jwt_client(json!({"keys": [first_jwk, second_jwk]}));
     let settings = test_settings();
     let req = TestRequest::post().uri("/token").to_http_request();
@@ -204,15 +194,8 @@ fn private_key_jwt_accepts_current_and_previous_jwks_during_rotation() {
 
 #[test]
 fn private_key_jwt_accepts_missing_kid_only_for_one_kidless_matching_key() {
-    let private_key = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("client key should generate")
-        .private_pkcs8_der;
-    let mut public_jwk = public_jwk_from_private_der(
-        "temporary-kid",
-        jsonwebtoken::Algorithm::RS256,
-        &private_key,
-    )
-    .expect("client jwk should derive");
+    let private_key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let mut public_jwk = private_key.public_jwk("temporary-kid");
     public_jwk
         .as_object_mut()
         .expect("public JWK should be an object")
@@ -234,18 +217,10 @@ fn private_key_jwt_accepts_missing_kid_only_for_one_kidless_matching_key() {
 
 #[test]
 fn private_key_jwt_rejects_missing_kid_when_key_selection_is_ambiguous() {
-    let first = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("first key should generate")
-        .private_pkcs8_der;
-    let second = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("second key should generate")
-        .private_pkcs8_der;
-    let mut first_jwk =
-        public_jwk_from_private_der("first", jsonwebtoken::Algorithm::RS256, &first)
-            .expect("first jwk should derive");
-    let mut second_jwk =
-        public_jwk_from_private_der("second", jsonwebtoken::Algorithm::RS256, &second)
-            .expect("second jwk should derive");
+    let first = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let second = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let mut first_jwk = first.public_jwk("first");
+    let mut second_jwk = second.public_jwk("second");
     first_jwk
         .as_object_mut()
         .expect("first JWK should be an object")
@@ -271,12 +246,8 @@ fn private_key_jwt_rejects_missing_kid_when_key_selection_is_ambiguous() {
 
 #[test]
 fn private_key_jwt_rejects_valid_signature_with_wrong_audience() {
-    let private_key = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("client key should generate")
-        .private_pkcs8_der;
-    let public_jwk =
-        public_jwk_from_private_der("client-kid", jsonwebtoken::Algorithm::RS256, &private_key)
-            .expect("client jwk should derive");
+    let private_key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let public_jwk = private_key.public_jwk("client-kid");
     let client = private_key_jwt_client(json!({"keys": [public_jwk]}));
     let settings = test_settings();
     let req = TestRequest::post().uri("/token").to_http_request();
@@ -295,15 +266,9 @@ fn private_key_jwt_rejects_valid_signature_with_wrong_audience() {
 
 #[test]
 fn private_key_jwt_rejects_assertions_after_key_retirement() {
-    let retired = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("retired key should generate")
-        .private_pkcs8_der;
-    let active = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("active key should generate")
-        .private_pkcs8_der;
-    let active_jwk =
-        public_jwk_from_private_der("active-kid", jsonwebtoken::Algorithm::RS256, &active)
-            .expect("active jwk should derive");
+    let retired = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let active = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let active_jwk = active.public_jwk("active-kid");
     let client = private_key_jwt_client(json!({"keys": [active_jwk]}));
     let settings = test_settings();
     let req = TestRequest::post().uri("/token").to_http_request();
@@ -418,19 +383,15 @@ fn private_key_jwt_clock_skew_accepts_small_future_times_and_rejects_over_sixty_
 
 #[test]
 fn private_key_jwt_decode_accepts_small_future_nbf_and_iat() {
-    let private_key = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("client key should generate")
-        .private_pkcs8_der;
-    let public_jwk =
-        public_jwk_from_private_der("client-kid", jsonwebtoken::Algorithm::RS256, &private_key)
-            .expect("client jwk should derive");
+    let private_key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let public_jwk = private_key.public_jwk("client-kid");
     let client = private_key_jwt_client(json!({"keys": [public_jwk]}));
     let settings = test_settings();
     let req = TestRequest::post().uri("/par").to_http_request();
     let now = Utc::now().timestamp();
     let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
     header.kid = Some("client-kid".to_owned());
-    let assertion = jsonwebtoken::encode(
+    let assertion = private_key.encode_jwt(
         &header,
         &json!({
             "iss": client.client_id,
@@ -441,9 +402,7 @@ fn private_key_jwt_decode_accepts_small_future_nbf_and_iat() {
             "iat": now + 8,
             "jti": "future-client-assertion-jti"
         }),
-        &jsonwebtoken::EncodingKey::from_rsa_der(&private_key),
-    )
-    .expect("client assertion should sign");
+    );
 
     let result = verify_private_key_jwt_claims_with_settings(&settings, &req, &client, &assertion);
 

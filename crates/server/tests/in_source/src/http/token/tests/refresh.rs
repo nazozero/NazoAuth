@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
 
-use crate::support::{generate_key_material, public_jwk_from_private_der};
+use crate::support::client_signing_fixture;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Jsonb, Nullable, Text, Timestamptz, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
@@ -45,13 +45,9 @@ fn live_refresh_state_from_database_url(
     profile: AuthorizationServerProfile,
     database_url: String,
 ) -> Option<AppState> {
-    let key_material =
-        generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
+    let key_material = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
     let active_kid = "refresh-test-kid".to_owned();
-    let active_alg = jsonwebtoken::Algorithm::EdDSA;
-    let _public_jwk =
-        public_jwk_from_private_der(&active_kid, active_alg, &key_material.private_pkcs8_der)
-            .expect("test public JWK should derive from signing key");
+    let _public_jwk = key_material.public_jwk(&active_kid);
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.authorization_server_profile = profile;

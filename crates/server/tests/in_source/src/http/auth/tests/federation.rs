@@ -5,7 +5,7 @@ use crate::config::ConfigSource;
 use crate::db::create_pool;
 
 use crate::settings::{OidcFederationSettings, SamlGatewaySettings};
-use crate::support::{generate_key_material, public_jwk_from_private_der, random_urlsafe_token};
+use crate::support::{ClientSigningFixture, client_signing_fixture, random_urlsafe_token};
 use actix_web::http::header;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Text, Uuid as SqlUuid};
@@ -15,7 +15,7 @@ use fred::{
         Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
     },
 };
-use jsonwebtoken::{Algorithm, EncodingKey, Header};
+use jsonwebtoken::{Algorithm, Header};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
@@ -396,7 +396,7 @@ async fn one_shot_json_server(body: Value) -> (String, tokio::task::JoinHandle<S
 fn signed_oidc_token(
     provider: &OidcFederationSettings,
     kid: &str,
-    private_pkcs8_der: &[u8],
+    fixture: &ClientSigningFixture,
     nonce: &str,
     overrides: Value,
 ) -> String {
@@ -424,12 +424,7 @@ fn signed_oidc_token(
     }
     let mut header = Header::new(Algorithm::RS256);
     header.kid = Some(kid.to_owned());
-    jsonwebtoken::encode(
-        &header,
-        &claims,
-        &EncodingKey::from_rsa_der(private_pkcs8_der),
-    )
-    .expect("test ID token should sign")
+    fixture.encode_jwt(&header, &claims)
 }
 
 async fn provider_backed_by_local_oidc(
@@ -442,16 +437,9 @@ async fn provider_backed_by_local_oidc(
 ) {
     let mut provider = oidc_provider();
     let nonce = random_urlsafe_token();
-    let key = generate_key_material(Algorithm::RS256).expect("RSA key should generate");
-    let jwk = public_jwk_from_private_der("oidc-kid", Algorithm::RS256, &key.private_pkcs8_der)
-        .expect("public JWK should derive");
-    let id_token = signed_oidc_token(
-        &provider,
-        "oidc-kid",
-        &key.private_pkcs8_der,
-        &nonce,
-        id_token_overrides,
-    );
+    let key = client_signing_fixture(Algorithm::RS256);
+    let jwk = key.public_jwk("oidc-kid");
+    let id_token = signed_oidc_token(&provider, "oidc-kid", &key, &nonce, id_token_overrides);
     let (token_endpoint, token_request) =
         one_shot_json_server(json!({ "id_token": id_token })).await;
     let (jwks_url, jwks_request) = one_shot_json_server(json!({ "keys": [jwk] })).await;
@@ -1285,15 +1273,9 @@ async fn oidc_callback_denies_failed_token_exchange_and_consumes_state() {
 #[actix_web::test]
 async fn oidc_callback_returns_server_error_when_jwks_response_is_invalid() {
     let mut provider = oidc_provider();
-    let key = generate_key_material(Algorithm::RS256).expect("RSA key should generate");
+    let key = client_signing_fixture(Algorithm::RS256);
     let nonce = random_urlsafe_token();
-    let id_token = signed_oidc_token(
-        &provider,
-        "oidc-kid",
-        &key.private_pkcs8_der,
-        &nonce,
-        json!({}),
-    );
+    let id_token = signed_oidc_token(&provider, "oidc-kid", &key, &nonce, json!({}));
     let (token_endpoint, token_request) =
         one_shot_json_server(json!({ "id_token": id_token })).await;
     let (jwks_url, jwks_request) = one_shot_json_server(json!({ "not_keys": [] })).await;

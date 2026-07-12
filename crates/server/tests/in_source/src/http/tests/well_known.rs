@@ -9,7 +9,7 @@ use crate::support::{ClientIpHeaderMode, IpCidr};
 use nazo_auth::SUPPORTED_AUTHORIZATION_DETAILS_TYPES;
 use std::sync::Arc;
 
-fn keyset(alg: jsonwebtoken::Algorithm) -> Arc<Keyset> {
+fn keyset(alg: jsonwebtoken::Algorithm) -> Arc<KeySnapshot> {
     crate::test_support::test_key_manager_with_algorithm(alg).snapshot()
 }
 

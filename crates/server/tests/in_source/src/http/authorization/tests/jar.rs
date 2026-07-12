@@ -12,7 +12,7 @@ use std::time::Duration as StdDuration;
 use crate::config::ConfigSource;
 use crate::db::create_pool;
 
-use crate::support::{generate_key_material, public_jwk_from_private_der};
+use crate::support::{ClientSigningFixture, client_signing_fixture};
 
 fn request_object(payload: Value, alg: &str, signature: &str) -> String {
     let header = if alg == "none" {
@@ -76,11 +76,9 @@ fn jar_client(client_id: &str) -> ClientRow {
     }
 }
 
-fn signed_jar_client(client_id: &str, kid: &str, private_pkcs8_der: &[u8]) -> ClientRow {
+fn signed_jar_client(client_id: &str, kid: &str, fixture: &ClientSigningFixture) -> ClientRow {
     let mut client = jar_client(client_id);
-    let public_jwk =
-        public_jwk_from_private_der(kid, jsonwebtoken::Algorithm::RS256, private_pkcs8_der)
-            .expect("public jwk should derive from private key");
+    let public_jwk = fixture.public_jwk(kid);
     client.jwks = Some(json!({"keys": [public_jwk]}));
     client
 }
@@ -152,15 +150,10 @@ fn unavailable_jar_state(issuer: &str) -> AppState {
     )
 }
 
-fn signed_request_object_token(kid: &str, private_pkcs8_der: &[u8], claims: Value) -> String {
+fn signed_request_object_token(kid: &str, fixture: &ClientSigningFixture, claims: Value) -> String {
     let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
     header.kid = Some(kid.to_owned());
-    jsonwebtoken::encode(
-        &header,
-        &claims,
-        &jsonwebtoken::EncodingKey::from_rsa_der(private_pkcs8_der),
-    )
-    .expect("request object should sign")
+    fixture.encode_jwt(&header, &claims)
 }
 
 fn signed_request_object_claims_json(extra: Value) -> Value {
@@ -697,9 +690,7 @@ fn request_object_audience_presence_depends_on_request_object_mode() {
 #[actix_web::test]
 async fn signed_request_object_requires_redirect_uri_before_applying_claims() {
     let state = jar_state("https://issuer.example");
-    let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("request object key should generate")
-        .private_pkcs8_der;
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
     let client = signed_jar_client("client-a", "jar-kid", &key);
     let request_object = signed_request_object_token(
         "jar-kid",
@@ -727,9 +718,7 @@ async fn signed_request_object_requires_redirect_uri_before_applying_claims() {
 #[actix_web::test]
 async fn holder_bound_signed_request_object_rejects_outer_authorization_parameter_override() {
     let state = jar_state("https://issuer.example");
-    let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("request object key should generate")
-        .private_pkcs8_der;
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
     let mut client = signed_jar_client("client-a", "jar-kid", &key);
     client.require_dpop_bound_tokens = true;
     let request_object = signed_request_object_token(
@@ -762,9 +751,7 @@ async fn holder_bound_signed_request_object_applies_only_jwt_authorization_param
     let Some(state) = live_jar_state("https://issuer.example").await else {
         return;
     };
-    let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("request object key should generate")
-        .private_pkcs8_der;
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
     let mut client = signed_jar_client("client-a", "jar-kid", &key);
     client.require_dpop_bound_tokens = true;
     let request_object = signed_request_object_token(
@@ -797,9 +784,7 @@ async fn holder_bound_signed_request_object_applies_only_jwt_authorization_param
 #[actix_web::test]
 async fn par_policy_signed_request_object_rejects_outer_authorization_parameter_override() {
     let state = jar_state("https://issuer.example");
-    let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("request object key should generate")
-        .private_pkcs8_der;
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
     let mut client = signed_jar_client("client-a", "jar-kid", &key);
     client.require_par_request_object = true;
     let request_object = signed_request_object_token(
@@ -833,9 +818,7 @@ async fn par_policy_signed_request_object_applies_only_jwt_authorization_paramet
     let Some(state) = live_jar_state("https://issuer.example").await else {
         return;
     };
-    let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("request object key should generate")
-        .private_pkcs8_der;
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
     let mut client = signed_jar_client("client-a", "jar-kid", &key);
     client.require_par_request_object = true;
     let request_object = signed_request_object_token(
@@ -869,9 +852,7 @@ async fn par_policy_signed_request_object_applies_only_jwt_authorization_paramet
 fn signed_request_object_rejects_unsupported_algorithm_before_claims_are_trusted() {
     let token = signed_request_object_token(
         "jar-kid",
-        &generate_key_material(jsonwebtoken::Algorithm::RS256)
-            .expect("request object key should generate")
-            .private_pkcs8_der,
+        &client_signing_fixture(jsonwebtoken::Algorithm::RS256),
         signed_request_object_claims_json(json!({
             "redirect_uri": "https://client.example/callback"
         })),
@@ -894,9 +875,7 @@ fn signed_request_object_rejects_unsupported_algorithm_before_claims_are_trusted
 
 #[test]
 fn signed_request_object_rejects_missing_or_unknown_key_id() {
-    let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("request object key should generate")
-        .private_pkcs8_der;
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
     let token = signed_request_object_token(
         "jar-kid",
         &key,
@@ -934,12 +913,8 @@ fn signed_request_object_rejects_missing_or_unknown_key_id() {
 
 #[test]
 fn signed_request_object_rejects_invalid_signature_with_registered_kid() {
-    let trusted_key = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("trusted request object key should generate")
-        .private_pkcs8_der;
-    let attacker_key = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("attacker request object key should generate")
-        .private_pkcs8_der;
+    let trusted_key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let attacker_key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
     let token = signed_request_object_token(
         "jar-kid",
         &attacker_key,
@@ -965,9 +940,7 @@ fn signed_request_object_rejects_invalid_signature_with_registered_kid() {
 #[actix_web::test]
 async fn request_object_jti_store_failure_fails_closed_without_applying_claims() {
     let state = unavailable_jar_state("https://issuer.example");
-    let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("request object key should generate")
-        .private_pkcs8_der;
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
     let client = signed_jar_client("client-a", "jar-kid", &key);
     let request_object = signed_request_object_token(
         "jar-kid",
@@ -1029,9 +1002,7 @@ async fn request_object_jti_replay_is_client_scoped_and_rejected() {
     let Some(state) = live_jar_state("https://issuer.example").await else {
         return;
     };
-    let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("request object key should generate")
-        .private_pkcs8_der;
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
     let client = signed_jar_client("client-a", "jar-kid", &key);
     let request_object = signed_request_object_token(
         "jar-kid",
@@ -1128,20 +1099,14 @@ fn signed_request_object_rejects_invalid_nbf_window() {
 
 #[test]
 fn signed_request_object_accepts_small_future_nbf_during_decode() {
-    let key =
-        generate_key_material(jsonwebtoken::Algorithm::RS256).expect("client key should generate");
-    let public_jwk = public_jwk_from_private_der(
-        "jar-kid",
-        jsonwebtoken::Algorithm::RS256,
-        &key.private_pkcs8_der,
-    )
-    .expect("public jwk should derive");
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let public_jwk = key.public_jwk("jar-kid");
     let mut client = jar_client("client-a");
     client.jwks = Some(json!({"keys": [public_jwk]}));
     let now = Utc::now().timestamp();
     let request_object = signed_request_object_token(
         "jar-kid",
-        &key.private_pkcs8_der,
+        &key,
         signed_request_object_claims_json(json!({
             "iat": now,
             "nbf": now + 8,

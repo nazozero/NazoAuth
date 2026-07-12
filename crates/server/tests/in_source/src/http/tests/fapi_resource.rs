@@ -14,7 +14,7 @@ use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
 
 use crate::settings::DpopNoncePolicy;
-use crate::support::{generate_key_material, public_jwk_from_private_der};
+use crate::support::{ClientSigningFixture, client_signing_fixture};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use diesel::sql_query;
 use diesel::sql_types::{Text, Timestamptz, Uuid as SqlUuid};
@@ -410,16 +410,8 @@ async fn signed_resource_request_fixture(
     signed_resource_request_for_authorization(body, "Bearer opaque-access-token").await
 }
 
-fn client_http_signature(private_key: &[u8], signing_input: &[u8]) -> Vec<u8> {
-    let encoded = jsonwebtoken::crypto::sign(
-        signing_input,
-        &jsonwebtoken::EncodingKey::from_ed_der(private_key),
-        jsonwebtoken::Algorithm::EdDSA,
-    )
-    .expect("client request should sign");
-    URL_SAFE_NO_PAD
-        .decode(encoded)
-        .expect("signature should decode")
+fn client_http_signature(fixture: &ClientSigningFixture, signing_input: &[u8]) -> Vec<u8> {
+    fixture.sign_http_message(signing_input)
 }
 
 async fn signed_resource_request_for_authorization(
@@ -431,15 +423,9 @@ async fn signed_resource_request_for_authorization(
     HttpRequest,
     SignatureFields,
 ) {
-    let material =
-        generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("client key generation");
+    let material = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
     let kid = "resource-client-ed25519";
-    let public_jwk = public_jwk_from_private_der(
-        kid,
-        jsonwebtoken::Algorithm::EdDSA,
-        &material.private_pkcs8_der,
-    )
-    .expect("client public JWK");
+    let public_jwk = material.public_jwk(kid);
     let client = fapi_http_signature_client(public_jwk.clone());
     let digest = (!body.is_empty()).then(|| nazo_http_signatures::content_digest(body));
     let mut headers = vec![("authorization", authorization)];
@@ -461,7 +447,7 @@ async fn signed_resource_request_for_authorization(
         },
     )
     .expect("request should prepare");
-    let detached = client_http_signature(&material.private_pkcs8_der, prepared.signature_base());
+    let detached = client_http_signature(&material, prepared.signature_base());
     let fields = prepared.finish(&detached);
     let mut request = if body.is_empty() {
         actix_web::test::TestRequest::get()
@@ -485,15 +471,9 @@ async fn signed_resource_request_with_received_digest(
     authorization: &str,
     received_digest: &str,
 ) -> (ClientRow, HttpRequest, SignatureFields) {
-    let material =
-        generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("client key generation");
+    let material = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
     let kid = "resource-client-varied-digest";
-    let public_jwk = public_jwk_from_private_der(
-        kid,
-        jsonwebtoken::Algorithm::EdDSA,
-        &material.private_pkcs8_der,
-    )
-    .unwrap();
+    let public_jwk = material.public_jwk(kid);
     let client = fapi_http_signature_client(public_jwk.clone());
     let canonical = nazo_http_signatures::content_digest(body);
     let headers = [("authorization", authorization)];
@@ -520,7 +500,7 @@ async fn signed_resource_request_with_received_digest(
     let modified_base = String::from_utf8(prepared.signature_base().to_vec())
         .unwrap()
         .replace(&canonical_line, &received_line);
-    let detached = client_http_signature(&material.private_pkcs8_der, modified_base.as_bytes());
+    let detached = client_http_signature(&material, modified_base.as_bytes());
     let fields = prepared.finish(&detached);
     let req = actix_web::test::TestRequest::post()
         .uri("/fapi/resource")
@@ -549,14 +529,9 @@ async fn enabled_request_with_signed_extras(
     claims.client_id = "client-1".to_owned();
     let token = signed_fapi_claims(state, claims).await;
     let authorization = format!("Bearer {token}");
-    let material = generate_key_material(jsonwebtoken::Algorithm::EdDSA).unwrap();
+    let material = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
     let kid = "resource-client-extra-headers";
-    let public_jwk = public_jwk_from_private_der(
-        kid,
-        jsonwebtoken::Algorithm::EdDSA,
-        &material.private_pkcs8_der,
-    )
-    .unwrap();
+    let public_jwk = material.public_jwk(kid);
     let client = fapi_http_signature_client(public_jwk.clone());
     let signed_headers = [
         ("authorization", authorization.as_str()),
@@ -578,7 +553,7 @@ async fn enabled_request_with_signed_extras(
         },
     )
     .unwrap();
-    let detached = client_http_signature(&material.private_pkcs8_der, prepared.signature_base());
+    let detached = client_http_signature(&material, prepared.signature_base());
     let fields = prepared.finish(&detached);
     let mut request = actix_web::test::TestRequest::get()
         .uri("/fapi/resource")

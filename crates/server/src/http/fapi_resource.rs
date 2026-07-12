@@ -458,7 +458,10 @@ async fn sign_fapi_resource_response(
     let original_body = request_digest
         .map(|_| original.body.as_ref())
         .unwrap_or(b"");
-    let keyset = state.keyset.snapshot();
+    let signing_lease = match state.keyset.prepare_http_signing() {
+        Ok(lease) => lease,
+        Err(_) => return HttpResponse::ServiceUnavailable().finish(),
+    };
     let signing = match prepare_response(
         ResponseInput {
             status: status.as_u16(),
@@ -476,13 +479,8 @@ async fn sign_fapi_resource_response(
         },
         ResponsePolicy {
             created: Utc::now().timestamp(),
-            keyid: &keyset.active_kid,
-            algorithm: match keyset.active_alg {
-                jsonwebtoken::Algorithm::EdDSA => "ed25519",
-                jsonwebtoken::Algorithm::RS256 => "rsa-v1_5-sha256",
-                jsonwebtoken::Algorithm::ES256 => "ecdsa-p256-sha256",
-                _ => return HttpResponse::ServiceUnavailable().finish(),
-            },
+            keyid: signing_lease.kid(),
+            algorithm: signing_lease.algorithm(),
             covered_headers: &covered_response_headers,
             covered_request_headers: &[],
         },
@@ -496,12 +494,8 @@ async fn sign_fapi_resource_response(
             return HttpResponse::ServiceUnavailable().finish();
         }
     };
-    let detached = match state
-        .keyset
-        .sign_http_message(signing.signature_base())
-        .await
-    {
-        Ok(detached) => detached,
+    let signature = match signing_lease.sign(signing.signature_base()).await {
+        Ok(signature) => signature,
         Err(_) => {
             tracing::warn!(
                 category = "signer_failure",
@@ -510,7 +504,7 @@ async fn sign_fapi_resource_response(
             return HttpResponse::ServiceUnavailable().finish();
         }
     };
-    let fields = signing.finish(&detached.signature);
+    let fields = signing.finish(signature.as_bytes());
     let mut builder = HttpResponse::build(status);
     for (name, value) in &response_headers {
         if name != header::CONTENT_LENGTH

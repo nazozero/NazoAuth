@@ -5,8 +5,7 @@ use uuid::Uuid;
 use super::*;
 use crate::domain::ClientRow;
 use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, generate_key_material,
-    public_jwk_from_private_der,
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, client_signing_fixture,
 };
 
 fn client(jwks: Value) -> ClientRow {
@@ -64,9 +63,8 @@ struct TestPublicKey {
 
 fn local_keyset(algorithm: jsonwebtoken::Algorithm) -> TestPublicKey {
     let active_kid = format!("{algorithm:?}-kid");
-    let material = generate_key_material(algorithm).unwrap();
-    let public_jwk =
-        public_jwk_from_private_der(&active_kid, algorithm, &material.private_pkcs8_der).unwrap();
+    let material = client_signing_fixture(algorithm);
+    let public_jwk = material.public_jwk(&active_kid);
     TestPublicKey {
         active_kid,
         public_jwk,

@@ -5,7 +5,7 @@ mod rows;
 mod state;
 mod status;
 
-pub(crate) use nazo_key_management::KeySnapshot as Keyset;
+pub(crate) use nazo_key_management::KeySnapshot;
 pub(crate) use oauth::*;
 pub(crate) use rows::*;
 pub(crate) use state::*;

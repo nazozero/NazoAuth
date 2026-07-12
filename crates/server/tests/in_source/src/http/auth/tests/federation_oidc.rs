@@ -1,7 +1,7 @@
 use super::*;
 use crate::settings::OidcFederationSettings;
-use crate::support::{generate_key_material, public_jwk_from_private_der, random_urlsafe_token};
-use jsonwebtoken::{Algorithm, EncodingKey, Header};
+use crate::support::{ClientSigningFixture, client_signing_fixture, random_urlsafe_token};
+use jsonwebtoken::{Algorithm, Header};
 use std::net::SocketAddr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -251,7 +251,7 @@ async fn fetch_oidc_jwks_requires_keys_array_from_provider_response() {
 fn signed_id_token(
     provider: &OidcFederationSettings,
     kid: &str,
-    private_pkcs8_der: &[u8],
+    fixture: &ClientSigningFixture,
     nonce: &str,
     overrides: Value,
 ) -> String {
@@ -275,29 +275,17 @@ fn signed_id_token(
     }
     let mut header = Header::new(Algorithm::RS256);
     header.kid = Some(kid.to_owned());
-    jsonwebtoken::encode(
-        &header,
-        &claims,
-        &EncodingKey::from_rsa_der(private_pkcs8_der),
-    )
-    .expect("test ID token should sign")
+    fixture.encode_jwt(&header, &claims)
 }
 
 #[test]
 fn verify_oidc_id_token_accepts_matching_signed_claims_and_rejects_policy_mismatches() {
     let provider = provider();
-    let key = generate_key_material(Algorithm::RS256).expect("RSA key should generate");
-    let jwk = public_jwk_from_private_der("oidc-kid", Algorithm::RS256, &key.private_pkcs8_der)
-        .expect("public JWK should derive");
+    let key = client_signing_fixture(Algorithm::RS256);
+    let jwk = key.public_jwk("oidc-kid");
     let jwks = json!({"keys": [jwk]});
     let nonce = random_urlsafe_token();
-    let token = signed_id_token(
-        &provider,
-        "oidc-kid",
-        &key.private_pkcs8_der,
-        &nonce,
-        json!({}),
-    );
+    let token = signed_id_token(&provider, "oidc-kid", &key, &nonce, json!({}));
 
     let claims = verify_oidc_id_token(&provider, &jwks, &token, &nonce)
         .expect("matching issuer, audience, nonce, kid, and signature should pass");
@@ -312,7 +300,7 @@ fn verify_oidc_id_token_accepts_matching_signed_claims_and_rejects_policy_mismat
     let wrong_audience = signed_id_token(
         &provider,
         "oidc-kid",
-        &key.private_pkcs8_der,
+        &key,
         &nonce,
         json!({"aud": "other-client"}),
     );
@@ -321,7 +309,7 @@ fn verify_oidc_id_token_accepts_matching_signed_claims_and_rejects_policy_mismat
     let future_iat = signed_id_token(
         &provider,
         "oidc-kid",
-        &key.private_pkcs8_der,
+        &key,
         &nonce,
         json!({"iat": Utc::now().timestamp() + 120}),
     );
@@ -331,23 +319,16 @@ fn verify_oidc_id_token_accepts_matching_signed_claims_and_rejects_policy_mismat
 #[test]
 fn verify_oidc_id_token_requires_kid_and_matching_supported_jwk() {
     let provider = provider();
-    let key = generate_key_material(Algorithm::RS256).expect("RSA key should generate");
-    let jwk = public_jwk_from_private_der("oidc-kid", Algorithm::RS256, &key.private_pkcs8_der)
-        .expect("public JWK should derive");
+    let key = client_signing_fixture(Algorithm::RS256);
+    let jwk = key.public_jwk("oidc-kid");
     let jwks = json!({"keys": [jwk]});
     let nonce = random_urlsafe_token();
-    let unknown_kid = signed_id_token(
-        &provider,
-        "unknown-kid",
-        &key.private_pkcs8_der,
-        &nonce,
-        json!({}),
-    );
+    let unknown_kid = signed_id_token(&provider, "unknown-kid", &key, &nonce, json!({}));
     assert!(verify_oidc_id_token(&provider, &jwks, &unknown_kid, &nonce).is_err());
 
     let mut header = Header::new(Algorithm::RS256);
     header.kid = None;
-    let token_without_kid = jsonwebtoken::encode(
+    let token_without_kid = key.encode_jwt(
         &header,
         &json!({
             "iss": provider.issuer,
@@ -356,19 +337,11 @@ fn verify_oidc_id_token_requires_kid_and_matching_supported_jwk() {
             "exp": Utc::now().timestamp() + 300,
             "nonce": nonce
         }),
-        &EncodingKey::from_rsa_der(&key.private_pkcs8_der),
-    )
-    .expect("test token should sign");
+    );
     assert!(verify_oidc_id_token(&provider, &jwks, &token_without_kid, &nonce).is_err());
 
     let mut private_jwk = jwks.clone();
     private_jwk["keys"][0]["d"] = json!("private-material");
-    let valid_token = signed_id_token(
-        &provider,
-        "oidc-kid",
-        &key.private_pkcs8_der,
-        &nonce,
-        json!({}),
-    );
+    let valid_token = signed_id_token(&provider, "oidc-kid", &key, &nonce, json!({}));
     assert!(verify_oidc_id_token(&provider, &private_jwk, &valid_token, &nonce).is_err());
 }

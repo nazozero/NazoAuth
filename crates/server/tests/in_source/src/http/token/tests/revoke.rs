@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
 
-use crate::support::{generate_key_material, hash_client_secret, public_jwk_from_private_der};
+use crate::support::{client_signing_fixture, hash_client_secret};
 use actix_web::test::TestRequest;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Jsonb, Nullable, Text, Uuid as SqlUuid};
@@ -44,14 +44,8 @@ fn fixture_token(label: &str) -> String {
 }
 
 fn live_revocation_state_from_database_url(database_url: String) -> Option<Data<AppState>> {
-    let key_material =
-        generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
-    let _public_jwk = public_jwk_from_private_der(
-        "revoke-test-kid",
-        jsonwebtoken::Algorithm::EdDSA,
-        &key_material.private_pkcs8_der,
-    )
-    .expect("test public JWK should derive");
+    let key_material = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
+    let _public_jwk = key_material.public_jwk("revoke-test-kid");
     Some(Data::new(AppState {
         diesel_db: create_pool(database_url, 1).expect("database pool should build"),
         valkey: fred::prelude::Builder::default_centralized()

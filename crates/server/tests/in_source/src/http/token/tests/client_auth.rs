@@ -4,9 +4,7 @@ use std::sync::Arc;
 use crate::config::ConfigSource;
 use crate::db::create_pool;
 
-use crate::support::{
-    IpCidr, generate_key_material, hash_client_secret, public_jwk_from_private_der,
-};
+use crate::support::{ClientSigningFixture, IpCidr, client_signing_fixture, hash_client_secret};
 use actix_web::test::TestRequest;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
@@ -135,14 +133,14 @@ fn signed_client_assertion(
     client_id: &str,
     audience: &str,
     kid: &str,
-    private_pkcs8_der: &[u8],
+    fixture: &ClientSigningFixture,
     jti: &str,
 ) -> String {
     signed_client_assertion_with_alg(
         client_id,
         audience,
         kid,
-        private_pkcs8_der,
+        fixture,
         jti,
         jsonwebtoken::Algorithm::RS256,
     )
@@ -152,7 +150,7 @@ fn signed_client_assertion_with_alg(
     client_id: &str,
     audience: &str,
     kid: &str,
-    private_pkcs8_der: &[u8],
+    fixture: &ClientSigningFixture,
     jti: &str,
     alg: jsonwebtoken::Algorithm,
 ) -> String {
@@ -168,12 +166,7 @@ fn signed_client_assertion_with_alg(
     });
     let mut header = jsonwebtoken::Header::new(alg);
     header.kid = Some(kid.to_owned());
-    jsonwebtoken::encode(
-        &header,
-        &claims,
-        &jsonwebtoken::EncodingKey::from_rsa_der(private_pkcs8_der),
-    )
-    .expect("client assertion should sign")
+    fixture.encode_jwt(&header, &claims)
 }
 
 #[test]
@@ -309,12 +302,8 @@ fn client_assertion_store_failure_maps_to_server_error_without_challenge() {
 async fn token_client_assertion_store_failure_fails_token_grant_as_server_error() {
     let mut state = token_management_state();
     state.valkey = unavailable_valkey_client();
-    let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("test client key should generate")
-        .private_pkcs8_der;
-    let public_jwk =
-        public_jwk_from_private_der("client-kid", jsonwebtoken::Algorithm::RS256, &key)
-            .expect("test client jwk should derive");
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let public_jwk = key.public_jwk("client-kid");
     let mut client = confidential_client_with_secret(&fixture_secret("unused"));
     client.token_endpoint_auth_method = "private_key_jwt".to_owned();
     client.client_secret_hash = None;
@@ -470,12 +459,8 @@ fn ciba_private_key_jwt_accepts_ps256_endpoint_and_issuer_audiences() {
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.issuer = "https://auth.nazo.run".to_owned();
     let state = token_management_state_with_settings(settings);
-    let key = generate_key_material(jsonwebtoken::Algorithm::PS256)
-        .expect("test client key should generate")
-        .private_pkcs8_der;
-    let public_jwk =
-        public_jwk_from_private_der("client-kid", jsonwebtoken::Algorithm::PS256, &key)
-            .expect("test client jwk should derive");
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
+    let public_jwk = key.public_jwk("client-kid");
     let mut client = confidential_client_with_secret(&fixture_secret("unused"));
     client.token_endpoint_auth_method = "private_key_jwt".to_owned();
     client.client_secret_hash = None;

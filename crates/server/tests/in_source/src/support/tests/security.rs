@@ -1,7 +1,7 @@
 use super::tokens::*;
 use super::*;
 use crate::config::ConfigSource;
-use crate::support::{generate_key_material, public_jwk_from_private_der};
+use crate::support::{ClientSigningFixture, client_signing_fixture};
 use actix_web::test::TestRequest;
 
 #[path = "security/client_assertion.rs"]
@@ -71,7 +71,7 @@ fn signed_client_assertion(
     client_id: &str,
     audience: &str,
     kid: &str,
-    private_pkcs8_der: &[u8],
+    fixture: &ClientSigningFixture,
     jti: &str,
 ) -> String {
     let now = Utc::now().timestamp();
@@ -86,18 +86,13 @@ fn signed_client_assertion(
     });
     let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
     header.kid = Some(kid.to_owned());
-    jsonwebtoken::encode(
-        &header,
-        &claims,
-        &jsonwebtoken::EncodingKey::from_rsa_der(private_pkcs8_der),
-    )
-    .expect("client assertion should sign")
+    fixture.encode_jwt(&header, &claims)
 }
 
 fn signed_client_assertion_without_kid(
     client_id: &str,
     audience: &str,
-    private_pkcs8_der: &[u8],
+    fixture: &ClientSigningFixture,
     jti: &str,
 ) -> String {
     let now = Utc::now().timestamp();
@@ -111,12 +106,7 @@ fn signed_client_assertion_without_kid(
         "jti": jti
     });
     let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
-    jsonwebtoken::encode(
-        &header,
-        &claims,
-        &jsonwebtoken::EncodingKey::from_rsa_der(private_pkcs8_der),
-    )
-    .expect("kidless client assertion should sign")
+    fixture.encode_jwt(&header, &claims)
 }
 
 #[tokio::test]

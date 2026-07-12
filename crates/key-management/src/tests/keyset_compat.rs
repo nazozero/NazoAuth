@@ -711,6 +711,60 @@ async fn retired_previous_key_entry_is_skipped() {
 }
 
 #[tokio::test]
+async fn loader_distinguishes_same_algorithm_prepublished_from_auxiliary_active_key() {
+    let keys_dir = temp_keys_dir("loader_states");
+    tokio::fs::create_dir_all(&keys_dir).await.unwrap();
+    let settings = test_settings(keys_dir.clone());
+    let now = Utc::now();
+    write_local_key_entry(&keys_dir, "active", "EdDSA", "active.pem", now).await;
+    write_local_key_entry(&keys_dir, "candidate", "EdDSA", "candidate.pem", now).await;
+    write_local_key_entry(&keys_dir, "auxiliary", "RS256", "auxiliary.pem", now).await;
+    write_json_atomic(
+        &keys_dir.join("keyset.json"),
+        &json!({
+            "active_kid":"active",
+            "keys":[
+                {"kid":"active","alg":"EdDSA","file":"active.pem","created_at":timestamp(now),"retire_at":null},
+                {"kid":"candidate","alg":"EdDSA","file":"candidate.pem","created_at":timestamp(now),"retire_at":null},
+                {"kid":"auxiliary","alg":"RS256","file":"auxiliary.pem","created_at":timestamp(now),"retire_at":null},
+                {"kid":"external-candidate","alg":"ES256","backend":"external-command","key_ref":"kms://candidate","public_jwk":{"kty":"EC","crv":"P-256","x":"eA","y":"eQ","kid":"external-candidate","alg":"ES256","use":"sig"},"created_at":timestamp(now),"retire_at":null}
+            ]
+        }),
+    )
+    .await
+    .unwrap();
+
+    let loaded = try_load_keyset(&settings, &keys_dir.join("keyset.json"))
+        .await
+        .unwrap()
+        .unwrap();
+    let candidate = loaded
+        .verification_keys
+        .iter()
+        .find(|key| key.managed.kid == "candidate")
+        .unwrap();
+    assert_eq!(candidate.managed.state, KeyState::Prepublished);
+    assert!(!candidate.managed.can_sign(SigningPurpose::IdToken));
+    let auxiliary = loaded
+        .verification_keys
+        .iter()
+        .find(|key| key.managed.kid == "auxiliary")
+        .unwrap();
+    assert_eq!(auxiliary.managed.state, KeyState::Active);
+    assert!(auxiliary.managed.can_sign(SigningPurpose::IdToken));
+    assert!(auxiliary.managed.can_sign(SigningPurpose::Jarm));
+    assert!(!auxiliary.managed.can_sign(SigningPurpose::HttpMessage));
+    let external_candidate = loaded
+        .verification_keys
+        .iter()
+        .find(|key| key.managed.kid == "external-candidate")
+        .unwrap();
+    assert_eq!(external_candidate.managed.state, KeyState::Prepublished);
+    assert!(!external_candidate.managed.can_sign(SigningPurpose::IdToken));
+    tokio::fs::remove_dir_all(keys_dir).await.unwrap();
+}
+
+#[tokio::test]
 async fn malformed_retire_at_in_keyset_fails_closed() {
     let keys_dir = temp_keys_dir("malformed_retire_at");
     tokio::fs::create_dir_all(&keys_dir).await.unwrap();
@@ -1231,11 +1285,9 @@ async fn detached_signing_maps_only_fapi_algorithms_and_verifies_raw_bytes() {
         (jsonwebtoken::Algorithm::ES256, "ecdsa-p256-sha256"),
     ] {
         let manager = in_memory_manager(algorithm);
-        let signed = manager
-            .sign_http_message(b"exact signature base")
-            .await
-            .unwrap();
-        assert_eq!(signed.algorithm, http_name);
+        let lease = manager.prepare_http_signing().unwrap();
+        assert_eq!(lease.algorithm(), http_name);
+        let signature = lease.sign(b"exact signature base").await.unwrap();
         let public = &manager.snapshot().verification_keys[0].public_jwk;
         let decoding_key = match algorithm {
             jsonwebtoken::Algorithm::EdDSA => {
@@ -1254,7 +1306,7 @@ async fn detached_signing_maps_only_fapi_algorithms_and_verifies_raw_bytes() {
             .unwrap(),
             _ => unreachable!(),
         };
-        let encoded = URL_SAFE_NO_PAD.encode(&signed.signature);
+        let encoded = URL_SAFE_NO_PAD.encode(signature.as_bytes());
         assert!(
             jsonwebtoken::crypto::verify(
                 &encoded,
@@ -1270,9 +1322,9 @@ async fn detached_signing_maps_only_fapi_algorithms_and_verifies_raw_bytes() {
 #[tokio::test]
 async fn detached_signing_rejects_ps256_active_server_key() {
     let error = in_memory_manager(jsonwebtoken::Algorithm::PS256)
-        .sign_http_message(b"input")
-        .await
-        .expect_err("PS256 is not an allowed HTTP message signature algorithm");
+        .prepare_http_signing()
+        .err()
+        .expect("PS256 is not an allowed HTTP message signature algorithm");
     assert!(format!("{error:#}").contains("unsupported"));
 }
 

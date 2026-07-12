@@ -23,8 +23,8 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::model::{
-    ActiveSigningKey, ExternalSigningKey, KeyHandle, KeySettings, KeyState, LoadedKeyset,
-    ManagedKey, StoredVerificationKey,
+    ActiveSigningKey, ExternalKeyRegistration, ExternalSigningKey, KeyHandle, KeyRecord,
+    KeySettings, KeyState, LoadedKeyset, ManagedKey, StoredVerificationKey,
 };
 
 const OIDC_DEFAULT_ID_TOKEN_SIGNING_ALG: jsonwebtoken::Algorithm = jsonwebtoken::Algorithm::RS256;
@@ -266,6 +266,11 @@ pub(crate) async fn try_load_keyset(
         .get("keys")
         .and_then(Value::as_array)
         .ok_or_else(|| anyhow!("keyset.json missing keys array"))?;
+    let declared_active_alg = keys
+        .iter()
+        .find(|entry| entry.get("kid").and_then(Value::as_str) == Some(active_kid))
+        .map(key_entry_algorithm)
+        .transpose()?;
     let mut active_signing_key = None;
     let mut active_alg = None;
     let mut seen_kids = std::collections::HashSet::new();
@@ -362,7 +367,10 @@ pub(crate) async fn try_load_keyset(
                 algorithm: signing_algorithm_name(alg).unwrap().to_owned(),
                 purposes: if is_active {
                     all_signing_purposes()
-                } else if retire_at.is_none() {
+                } else if retire_at.is_none()
+                    && declared_active_alg.is_some_and(|active_alg| alg != active_alg)
+                    && backend == "local-pem"
+                {
                     [SigningPurpose::IdToken, SigningPurpose::Jarm]
                         .into_iter()
                         .collect()
@@ -373,8 +381,12 @@ pub(crate) async fn try_load_keyset(
                     KeyState::Active
                 } else if retire_at.is_some() {
                     KeyState::Grace
-                } else {
+                } else if declared_active_alg.is_some_and(|active_alg| alg != active_alg)
+                    && backend == "local-pem"
+                {
                     KeyState::Active
+                } else {
+                    KeyState::Prepublished
                 },
                 handle,
             },
@@ -521,9 +533,273 @@ mod tests {
         assert!(previous["retire_at"].as_str().is_some());
         tokio::fs::remove_dir_all(directory).await.unwrap();
     }
+
+    #[tokio::test]
+    async fn key_manager_lists_persisted_key_states_without_server_schema_logic() {
+        let directory = std::env::temp_dir().join(format!("nazo-key-list-{}", Uuid::now_v7()));
+        let settings = settings(directory.clone());
+        let now = Utc::now();
+        write_json_atomic(
+            &directory.join("keyset.json"),
+            &json!({
+                "active_kid":"active",
+                "keys":[
+                    {"kid":"active","alg":"EdDSA","file":"active.pem","retire_at":null},
+                    {"kid":"candidate","alg":"EdDSA","file":"candidate.pem","retire_at":null},
+                    {"kid":"grace","alg":"RS256","file":"grace.pem","retire_at":timestamp(now + chrono::Duration::minutes(5))},
+                    {"kid":"retired","alg":"RS256","file":"retired.pem","retire_at":timestamp(now - chrono::Duration::minutes(5))}
+                ]
+            }),
+        )
+        .await
+        .unwrap();
+
+        let records = crate::KeyManager::list_keys(&settings).await.unwrap();
+        assert_eq!(
+            records
+                .iter()
+                .map(|record| (record.kid.as_str(), record.state))
+                .collect::<Vec<_>>(),
+            vec![
+                ("active", KeyState::Active),
+                ("candidate", KeyState::Prepublished),
+                ("grace", KeyState::Grace),
+                ("retired", KeyState::Retired),
+            ]
+        );
+        tokio::fs::remove_dir_all(directory).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn key_manager_registers_exact_external_key_schema_atomically() {
+        let directory = std::env::temp_dir().join(format!("nazo-key-register-{}", Uuid::now_v7()));
+        let settings = settings(directory.clone());
+        let public_jwk_file = directory.join("external-public.jwk.json");
+        tokio::fs::create_dir_all(&directory).await.unwrap();
+        tokio::fs::write(
+            &public_jwk_file,
+            serde_json::to_vec(&json!({
+                "kty":"RSA","kid":"external","alg":"RS256","use":"sig",
+                "n":"modulus","e":"AQAB"
+            }))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+
+        crate::KeyManager::register_external(
+            &settings,
+            crate::ExternalKeyRegistration {
+                kid: "external".to_owned(),
+                algorithm: jsonwebtoken::Algorithm::RS256,
+                key_ref: "kms://key/1".to_owned(),
+                public_jwk_file,
+            },
+        )
+        .await
+        .unwrap();
+
+        let payload: Value = serde_json::from_slice(
+            &tokio::fs::read(directory.join("keyset.json"))
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(payload["active_kid"], "external");
+        let entry = &payload["keys"][0];
+        assert_eq!(entry["kid"], "external");
+        assert_eq!(entry["alg"], "RS256");
+        assert_eq!(entry["backend"], "external-command");
+        assert_eq!(entry["key_ref"], "kms://key/1");
+        assert_eq!(entry["retire_at"], Value::Null);
+        assert!(entry["created_at"].as_str().is_some());
+        assert_eq!(entry["public_jwk"]["kid"], "external");
+        tokio::fs::remove_dir_all(directory).await.unwrap();
+    }
 }
 
-pub async fn write_json_atomic(path: &Path, value: &Value) -> anyhow::Result<()> {
+pub(crate) async fn list_keys(settings: &KeySettings) -> anyhow::Result<Vec<KeyRecord>> {
+    let value = load_keyset_json(settings).await?;
+    let active_kid = keyset_active_kid(&value)?;
+    let now = Utc::now();
+    keyset_keys(&value)?
+        .iter()
+        .map(|key| {
+            let kid = key
+                .get("kid")
+                .and_then(Value::as_str)
+                .ok_or_else(|| anyhow!("key entry missing kid"))?;
+            let retire_at = key_entry_retire_at(key)?;
+            let state = if kid == active_kid {
+                KeyState::Active
+            } else if retire_at.is_some_and(|retire_at| retire_at <= now) {
+                KeyState::Retired
+            } else if retire_at.is_some() {
+                KeyState::Grace
+            } else {
+                KeyState::Prepublished
+            };
+            Ok(KeyRecord {
+                kid: kid.to_owned(),
+                state,
+                algorithm: key
+                    .get("alg")
+                    .and_then(Value::as_str)
+                    .unwrap_or("EdDSA")
+                    .to_owned(),
+                backend: key_entry_backend(key).to_owned(),
+                locator: key
+                    .get("file")
+                    .or_else(|| key.get("key_ref"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned(),
+                retire_at: key
+                    .get("retire_at")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+            })
+        })
+        .collect()
+}
+
+pub(crate) async fn register_external_key(
+    settings: &KeySettings,
+    registration: ExternalKeyRegistration,
+) -> anyhow::Result<()> {
+    let algorithm = signing_algorithm_name(registration.algorithm)
+        .ok_or_else(|| anyhow!("unsupported signing alg"))?;
+    let public_jwk_raw = tokio::fs::read_to_string(&registration.public_jwk_file)
+        .await
+        .with_context(|| format!("failed to read {}", registration.public_jwk_file.display()))?;
+    let public_jwk: Value = serde_json::from_str(&public_jwk_raw)
+        .with_context(|| format!("failed to parse {}", registration.public_jwk_file.display()))?;
+    let path = settings.keys_dir.join("keyset.json");
+    let mut keyset = if path.exists() {
+        load_keyset_json(settings).await?
+    } else {
+        json!({"active_kid":registration.kid,"keys":[]})
+    };
+    keyset_keys_mut(&mut keyset)?.push(json!({
+        "kid":registration.kid,
+        "alg":algorithm,
+        "backend":"external-command",
+        "key_ref":registration.key_ref,
+        "public_jwk":public_jwk,
+        "created_at":Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        "retire_at":null
+    }));
+    validate_keyset_json(&keyset)?;
+    write_json_atomic(&path, &keyset).await
+}
+
+async fn load_keyset_json(settings: &KeySettings) -> anyhow::Result<Value> {
+    let path = settings.keys_dir.join("keyset.json");
+    let raw = tokio::fs::read_to_string(&path)
+        .await
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    let value = serde_json::from_str(&raw)
+        .with_context(|| format!("failed to parse {}", path.display()))?;
+    validate_keyset_json(&value)?;
+    Ok(value)
+}
+
+fn validate_keyset_json(value: &Value) -> anyhow::Result<()> {
+    let active = keyset_active_kid(value)?;
+    let mut seen = std::collections::HashSet::new();
+    let mut active_exists = false;
+    for key in keyset_keys(value)? {
+        let kid = key
+            .get("kid")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("key entry missing kid"))?;
+        if !seen.insert(kid) {
+            anyhow::bail!("duplicate key kid {kid}");
+        }
+        let backend = key_entry_backend(key);
+        let alg = key.get("alg").and_then(Value::as_str).unwrap_or("EdDSA");
+        if signing_algorithm_from_name(alg).is_none() {
+            anyhow::bail!("key {kid} has unsupported alg {alg}");
+        }
+        match backend {
+            "local-pem" => {
+                if key.get("file").and_then(Value::as_str).is_none() {
+                    anyhow::bail!("key {kid} missing file");
+                }
+            }
+            "external-command" => {
+                if key.get("key_ref").and_then(Value::as_str).is_none() {
+                    anyhow::bail!("key {kid} missing key_ref");
+                }
+                validate_external_public_jwk_metadata(key, kid, alg)?;
+            }
+            _ => anyhow::bail!("key {kid} has unsupported backend {backend}"),
+        }
+        let retire_at = key_entry_retire_at(key)?;
+        if kid == active {
+            active_exists = true;
+            if retire_at.is_some() {
+                anyhow::bail!("active key {kid} cannot have retire_at");
+            }
+        }
+    }
+    if !active_exists {
+        anyhow::bail!("active key {active} does not exist");
+    }
+    Ok(())
+}
+
+fn validate_external_public_jwk_metadata(key: &Value, kid: &str, alg: &str) -> anyhow::Result<()> {
+    let public_jwk = key
+        .get("public_jwk")
+        .and_then(Value::as_object)
+        .ok_or_else(|| anyhow!("key {kid} missing public_jwk"))?;
+    if public_jwk
+        .get("kid")
+        .and_then(Value::as_str)
+        .is_some_and(|value| value != kid)
+    {
+        anyhow::bail!("key {kid} public_jwk kid mismatch");
+    }
+    if public_jwk
+        .get("alg")
+        .and_then(Value::as_str)
+        .is_some_and(|value| value != alg)
+    {
+        anyhow::bail!("key {kid} public_jwk alg mismatch");
+    }
+    if public_jwk
+        .get("use")
+        .and_then(Value::as_str)
+        .is_some_and(|value| value != "sig")
+    {
+        anyhow::bail!("key {kid} public_jwk use must be sig");
+    }
+    reject_private_jwk_members(public_jwk)
+}
+
+fn keyset_active_kid(value: &Value) -> anyhow::Result<&str> {
+    value
+        .get("active_kid")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("keyset.json missing active_kid"))
+}
+
+fn keyset_keys(value: &Value) -> anyhow::Result<&Vec<Value>> {
+    value
+        .get("keys")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("keyset.json missing keys array"))
+}
+
+fn keyset_keys_mut(value: &mut Value) -> anyhow::Result<&mut Vec<Value>> {
+    value
+        .get_mut("keys")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| anyhow!("keyset.json missing keys array"))
+}
+
+pub(crate) async fn write_json_atomic(path: &Path, value: &Value) -> anyhow::Result<()> {
     let body = serde_json::to_string_pretty(value)?;
     write_file_atomic(path, body.as_bytes()).await
 }
@@ -683,7 +959,9 @@ fn key_entry_backend(entry: &Value) -> &str {
         .unwrap_or("local-pem")
 }
 
-pub fn reject_private_jwk_members(jwk: &serde_json::Map<String, Value>) -> anyhow::Result<()> {
+pub(crate) fn reject_private_jwk_members(
+    jwk: &serde_json::Map<String, Value>,
+) -> anyhow::Result<()> {
     const PRIVATE_JWK_MEMBERS: &[&str] = &["d", "p", "q", "dp", "dq", "qi", "oth", "k"];
     if let Some(member) = PRIVATE_JWK_MEMBERS
         .iter()

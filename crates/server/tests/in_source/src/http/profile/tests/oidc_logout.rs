@@ -17,7 +17,7 @@ use tokio::net::{TcpListener, TcpStream};
 use crate::config::ConfigSource;
 use crate::db::create_pool;
 
-use crate::support::{generate_key_material, public_jwk_from_private_der};
+use crate::support::client_signing_fixture;
 
 #[derive(QueryableByName)]
 struct IdRow {
@@ -63,14 +63,8 @@ impl LiveLogoutFixture {
             ("ENABLE_FRONTCHANNEL_LOGOUT", "true"),
         ]);
         let settings = Settings::from_config(&config).expect("test settings should load");
-        let key_material =
-            generate_key_material(Algorithm::EdDSA).expect("EdDSA key should generate");
-        let _verification_key = public_jwk_from_private_der(
-            "logout-kid",
-            Algorithm::EdDSA,
-            &key_material.private_pkcs8_der,
-        )
-        .expect("public JWK should derive");
+        let key_material = client_signing_fixture(Algorithm::EdDSA);
+        let _verification_key = key_material.public_jwk("logout-kid");
         let mut valkey_builder = fred::prelude::Builder::from_config(
             fred::prelude::Config::from_url(&valkey_url).expect("VALKEY_URL should parse"),
         );
@@ -722,10 +716,8 @@ fn multi_audience_id_token_hint_requires_explicit_matching_client_id() {
 
 #[test]
 fn id_token_hint_decoder_rejects_malformed_unsupported_and_unidentified_tokens() {
-    let key = generate_key_material(Algorithm::RS256).expect("RSA key should generate");
-    let _public_jwk =
-        public_jwk_from_private_der("logout-kid", Algorithm::RS256, &key.private_pkcs8_der)
-            .expect("public JWK should derive");
+    let key = client_signing_fixture(Algorithm::RS256);
+    let _public_jwk = key.public_jwk("logout-kid");
     let state = test_state_with_keyset(crate::test_support::test_key_manager());
     let claims = json!({
         "iss": state.settings.issuer,
@@ -739,12 +731,7 @@ fn id_token_hint_decoder_rejects_malformed_unsupported_and_unidentified_tokens()
     let mut non_jwt_header = Header::new(Algorithm::RS256);
     non_jwt_header.kid = Some("logout-kid".to_owned());
     non_jwt_header.typ = Some("JOSE".to_owned());
-    let non_jwt = jsonwebtoken::encode(
-        &non_jwt_header,
-        &claims,
-        &EncodingKey::from_rsa_der(&key.private_pkcs8_der),
-    )
-    .expect("test token should sign");
+    let non_jwt = key.encode_jwt(&non_jwt_header, &claims);
     assert!(decode_id_token_hint(&state, &non_jwt).is_none());
 
     let unsupported_alg = jsonwebtoken::encode(
@@ -755,12 +742,7 @@ fn id_token_hint_decoder_rejects_malformed_unsupported_and_unidentified_tokens()
     .expect("test token should sign");
     assert!(decode_id_token_hint(&state, &unsupported_alg).is_none());
 
-    let missing_kid = jsonwebtoken::encode(
-        &Header::new(Algorithm::RS256),
-        &claims,
-        &EncodingKey::from_rsa_der(&key.private_pkcs8_der),
-    )
-    .expect("test token should sign");
+    let missing_kid = key.encode_jwt(&Header::new(Algorithm::RS256), &claims);
     assert!(decode_id_token_hint(&state, &missing_kid).is_none());
 }
 

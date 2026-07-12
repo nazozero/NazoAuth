@@ -11,8 +11,7 @@ use crate::settings::{
     RequestObjectJtiPolicy, SubjectType,
 };
 use crate::support::{
-    ClientIpHeaderMode, IpCidr, generate_key_material, hash_client_secret,
-    public_jwk_from_private_der,
+    ClientIpHeaderMode, ClientSigningFixture, IpCidr, client_signing_fixture, hash_client_secret,
 };
 use actix_web::test::TestRequest;
 use diesel::sql_query;
@@ -220,7 +219,7 @@ fn pushed_authorization_request_resources_reject_unregistered_target() {
     );
 }
 
-fn signed_request_object(client_id: &str, private_pkcs8_der: &[u8], extra: Value) -> String {
+fn signed_request_object(client_id: &str, fixture: &ClientSigningFixture, extra: Value) -> String {
     let now = Utc::now().timestamp();
     let mut claims = json!({
         "client_id": client_id,
@@ -240,12 +239,7 @@ fn signed_request_object(client_id: &str, private_pkcs8_der: &[u8], extra: Value
     }
     let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
     header.kid = Some("par-request-object-kid".to_owned());
-    jsonwebtoken::encode(
-        &header,
-        &claims,
-        &jsonwebtoken::EncodingKey::from_rsa_der(private_pkcs8_der),
-    )
-    .expect("PAR request object should sign")
+    fixture.encode_jwt(&header, &claims)
 }
 
 fn unsigned_request_object(client_id: &str) -> String {
@@ -946,15 +940,8 @@ async fn par_rejects_request_uri_from_request_object_after_client_authentication
     fixture
         .insert_client_secret_post_client(&client_id, &secret)
         .await;
-    let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("request object key should generate")
-        .private_pkcs8_der;
-    let public_jwk = public_jwk_from_private_der(
-        "par-request-object-kid",
-        jsonwebtoken::Algorithm::RS256,
-        &key,
-    )
-    .expect("request object public jwk should derive");
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let public_jwk = key.public_jwk("par-request-object-kid");
     fixture
         .set_client_jwks(&client_id, json!({"keys": [public_jwk]}))
         .await;
@@ -1027,15 +1014,8 @@ async fn par_rejects_authorization_details_from_request_object_when_disabled() {
     fixture
         .insert_client_secret_post_client(&client_id, &secret)
         .await;
-    let key = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("request object key should generate")
-        .private_pkcs8_der;
-    let public_jwk = public_jwk_from_private_der(
-        "par-request-object-kid",
-        jsonwebtoken::Algorithm::RS256,
-        &key,
-    )
-    .expect("request object public jwk should derive");
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let public_jwk = key.public_jwk("par-request-object-kid");
     fixture
         .set_client_jwks(&client_id, json!({"keys": [public_jwk]}))
         .await;

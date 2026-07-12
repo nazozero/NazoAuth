@@ -1,5 +1,5 @@
 use super::prelude::*;
-use crate::domain::Keyset;
+use crate::domain::KeySnapshot;
 use crate::http::authorization::BASELINE_ACR_VALUE;
 use crate::http::token::{
     CIBA_GRANT_TYPE, DEVICE_CODE_GRANT_TYPE, JWT_BEARER_GRANT_TYPE, TOKEN_EXCHANGE_GRANT_TYPE,
@@ -81,7 +81,7 @@ fn authorization_server_metadata_value(state: &AppState) -> Value {
     authorization_server_metadata(&state.settings, &keyset)
 }
 
-fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value {
+fn authorization_server_metadata(settings: &Settings, keyset: &KeySnapshot) -> Value {
     let issuer = settings.issuer.as_str();
     let mtls_base = settings.mtls_endpoint_base_url.as_str();
     let id_token_signing_algs = id_token_signing_alg_values_supported(keyset);
@@ -223,7 +223,7 @@ fn authorization_server_metadata(settings: &Settings, keyset: &Keyset) -> Value 
     metadata
 }
 
-fn protected_resource_metadata(settings: &Settings, _keyset: &Keyset) -> Value {
+fn protected_resource_metadata(settings: &Settings, _keyset: &KeySnapshot) -> Value {
     let mtls_enabled = !settings.trusted_proxy_cidrs.is_empty();
     let mut metadata = json!({
         "resource": settings.protected_resource_identifier.as_str(),
@@ -289,13 +289,13 @@ fn response_modes_supported(profile: AuthorizationServerProfile) -> Vec<&'static
     vec!["query", "jwt"]
 }
 
-fn active_signing_alg_values_supported(keyset: &Keyset) -> Vec<&'static str> {
+fn active_signing_alg_values_supported(keyset: &KeySnapshot) -> Vec<&'static str> {
     signing_algorithm_name(keyset.active_alg)
         .map(|alg| vec![alg])
         .unwrap_or_default()
 }
 
-fn id_token_signing_alg_values_supported(keyset: &Keyset) -> Vec<&'static str> {
+fn id_token_signing_alg_values_supported(keyset: &KeySnapshot) -> Vec<&'static str> {
     let mut values = active_signing_alg_values_supported(keyset);
     values.push("RS256");
     values.sort_unstable();
