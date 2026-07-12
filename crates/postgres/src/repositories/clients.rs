@@ -238,6 +238,31 @@ impl OAuthClientRepository {
             .into_domain()
     }
 
+    pub async fn upsert(
+        &self,
+        client: &OAuthClient,
+        client_secret_hash: Option<&str>,
+    ) -> Result<OAuthClient, RepositoryError> {
+        if let Some(existing) = self
+            .by_client_id(client.tenant_id, &client.client_id)
+            .await?
+        {
+            let updated = OAuthClient {
+                id: existing.id,
+                tenant_id: client.tenant_id,
+                realm_id: client.realm_id,
+                organization_id: client.organization_id,
+                registration: client.registration.clone(),
+                require_mtls_bound_tokens: client.require_mtls_bound_tokens,
+                is_active: true,
+            };
+            self.replace(&updated, Some((client_secret_hash, None)))
+                .await
+        } else {
+            self.insert(client, client_secret_hash, None).await
+        }
+    }
+
     pub async fn update_metadata(
         &self,
         client: &OAuthClient,

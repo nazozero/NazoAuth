@@ -1,6 +1,7 @@
 //! token 管理端点复用的客户端认证。
 
 use crate::http::prelude::*;
+use nazo_identity::ports::RepositoryError;
 
 pub(crate) enum TokenManagementClientAuthError {
     InvalidClient,
@@ -55,14 +56,10 @@ pub(crate) async fn verify_confidential_client(
                 log_client_auth_rejection(req, client, credentials, "client_secret");
                 return Err(TokenManagementClientAuthError::InvalidClient);
             };
-            let valid_secret = nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+            let secret_match = nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
                 .client_secret_matches(client.id, secret, &state.settings.client_secret_pepper)
-                .await
-                .map_err(|error| {
-                    tracing::warn!(%error, "failed to verify management client secret");
-                    TokenManagementClientAuthError::StoreUnavailable
-                })?;
-            if valid_secret {
+                .await;
+            if client_secret_auth_result(secret_match)? {
                 Ok(None)
             } else {
                 log_client_auth_rejection(req, client, credentials, "client_secret");
@@ -86,6 +83,15 @@ pub(crate) async fn verify_confidential_client(
             Err(TokenManagementClientAuthError::InvalidClient)
         }
     }
+}
+
+fn client_secret_auth_result(
+    result: Result<bool, RepositoryError>,
+) -> Result<bool, TokenManagementClientAuthError> {
+    result.map_err(|error| {
+        tracing::warn!(%error, "failed to verify management client secret");
+        TokenManagementClientAuthError::StoreUnavailable
+    })
 }
 
 fn client_assertion_error_reason(error: &ClientAssertionError) -> &'static str {

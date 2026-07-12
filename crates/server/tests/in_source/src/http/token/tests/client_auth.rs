@@ -337,20 +337,42 @@ async fn token_client_assertion_store_failure_fails_token_grant_as_server_error(
     );
 }
 
+#[test]
+fn confidential_client_secret_auth_accepts_correct_and_rejects_wrong_secret_by_default() {
+    let correct_secret = fixture_secret("correct");
+    let wrong_secret = fixture_secret("wrong");
+    let hash = fixture_secret_hash(&correct_secret);
+    let settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+
+    assert!(verify_client_secret(
+        &correct_secret,
+        &hash,
+        &settings.client_secret_pepper
+    ));
+    assert!(!verify_client_secret(
+        &wrong_secret,
+        &hash,
+        &settings.client_secret_pepper
+    ));
+    assert!(matches!(client_secret_auth_result(Ok(true)), Ok(true)));
+    assert!(matches!(client_secret_auth_result(Ok(false)), Ok(false)));
+}
+
+#[test]
+fn confidential_client_secret_auth_fails_closed_when_store_is_unavailable() {
+    assert!(matches!(
+        client_secret_auth_result(Err(nazo_identity::ports::RepositoryError::Unavailable)),
+        Err(TokenManagementClientAuthError::StoreUnavailable)
+    ));
+}
+
 #[actix_web::test]
-async fn confidential_client_secret_auth_fails_closed_when_store_is_unavailable() {
+async fn confidential_client_secret_auth_rejects_wrong_method_without_store_access() {
     let state = token_management_state();
     let req = TestRequest::default().to_http_request();
     let correct_secret = fixture_secret("correct");
     let client = confidential_client_with_secret(&correct_secret);
-    let mut credentials = client_credentials("client_secret_basic");
-    credentials.client_secret = Some(correct_secret.clone());
-
-    assert!(matches!(
-        verify_confidential_client(&state, &req, &client, &credentials).await,
-        Err(TokenManagementClientAuthError::StoreUnavailable)
-    ));
-
     let mut wrong_method = client_credentials("client_secret_post");
     wrong_method.client_secret = Some(correct_secret);
     assert!(matches!(

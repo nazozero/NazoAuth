@@ -7,6 +7,7 @@ use argon2::{
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use diesel::{Connection, PgConnection, RunQueryDsl, sql_query};
 use hmac::{Hmac, KeyInit, Mac};
+use nazo_auth::{OAuthClient, ValidatedClientRegistration};
 use nazo_oauth_server::config::{ConfigSource, database_url};
 use nazo_oauth_server::oidf_seed::{
     callback_uris, config::client_scopes, config::mtls_thumbprint, config::plan_config_files,
@@ -16,6 +17,7 @@ use nazo_oauth_server::oidf_seed::{
 use serde_json::{Value, json};
 use sha2::Sha256;
 use std::{collections::BTreeSet, env, path::Path};
+use uuid::Uuid;
 
 const DEFAULT_TENANT_ID: &str = "00000000-0000-0000-0000-000000000001";
 const DEFAULT_REALM_ID: &str = "00000000-0000-0000-0000-000000000002";
@@ -45,7 +47,6 @@ struct FapiClientSeed {
 struct ClientUpsert<'a> {
     client_id: &'a str,
     client_name: &'a str,
-    client_secret_hash: Option<&'a str>,
     auth_method: &'a str,
     redirect_uris: &'a Value,
     post_logout_redirect_uris: &'a Value,
@@ -202,96 +203,62 @@ fn upsert_user(
     Ok(())
 }
 
-fn upsert_client(connection: &mut PgConnection, client: ClientUpsert<'_>) -> anyhow::Result<()> {
-    sql_query(
-        r#"
-        INSERT INTO oauth_clients (
-            tenant_id,
-            realm_id,
-            organization_id,
-            client_id,
-            client_name,
-            client_type,
-            client_secret_hash,
-            redirect_uris,
-            post_logout_redirect_uris,
-            scopes,
-            allowed_audiences,
-            grant_types,
-            token_endpoint_auth_method,
-            require_dpop_bound_tokens,
-            require_mtls_bound_tokens,
-            tls_client_auth_subject_dn,
-            tls_client_auth_cert_sha256,
-            allow_client_assertion_audience_array,
-            allow_client_assertion_endpoint_audience,
-            require_par_request_object,
-            allow_authorization_code_without_pkce,
-            frontchannel_logout_uri,
-            frontchannel_logout_session_required,
-            jwks,
-            is_active
-        )
-        VALUES (
-            $18::uuid, $19::uuid, $20::uuid,
-            $1, $2, 'confidential', $3, $4, $5, $6, $7, $8, $9,
-            $10, $11, $12, $13, $14, $15, $16, $21, $22, $23, $17, TRUE
-        )
-        ON CONFLICT (tenant_id, client_id) DO UPDATE
-        SET client_name = EXCLUDED.client_name,
-            client_type = EXCLUDED.client_type,
-            client_secret_hash = EXCLUDED.client_secret_hash,
-            redirect_uris = EXCLUDED.redirect_uris,
-            post_logout_redirect_uris = EXCLUDED.post_logout_redirect_uris,
-            scopes = EXCLUDED.scopes,
-            allowed_audiences = EXCLUDED.allowed_audiences,
-            grant_types = EXCLUDED.grant_types,
-            token_endpoint_auth_method = EXCLUDED.token_endpoint_auth_method,
-            require_dpop_bound_tokens = EXCLUDED.require_dpop_bound_tokens,
-            require_mtls_bound_tokens = EXCLUDED.require_mtls_bound_tokens,
-            tls_client_auth_subject_dn = EXCLUDED.tls_client_auth_subject_dn,
-            tls_client_auth_cert_sha256 = EXCLUDED.tls_client_auth_cert_sha256,
-            allow_client_assertion_audience_array = EXCLUDED.allow_client_assertion_audience_array,
-            allow_client_assertion_endpoint_audience = EXCLUDED.allow_client_assertion_endpoint_audience,
-            require_par_request_object = EXCLUDED.require_par_request_object,
-            allow_authorization_code_without_pkce = EXCLUDED.allow_authorization_code_without_pkce,
-            frontchannel_logout_uri = EXCLUDED.frontchannel_logout_uri,
-            frontchannel_logout_session_required = EXCLUDED.frontchannel_logout_session_required,
-            jwks = EXCLUDED.jwks,
-            is_active = TRUE,
-            updated_at = CURRENT_TIMESTAMP
-        "#,
-    )
-    .bind::<diesel::sql_types::VarChar, _>(client.client_id)
-    .bind::<diesel::sql_types::VarChar, _>(client.client_name)
-    .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(client.client_secret_hash)
-    .bind::<diesel::sql_types::Jsonb, _>(client.redirect_uris)
-    .bind::<diesel::sql_types::Jsonb, _>(client.post_logout_redirect_uris)
-    .bind::<diesel::sql_types::Jsonb, _>(client.scopes)
-    .bind::<diesel::sql_types::Jsonb, _>(client.allowed_audiences)
-    .bind::<diesel::sql_types::Jsonb, _>(client.grant_types)
-    .bind::<diesel::sql_types::VarChar, _>(client.auth_method)
-    .bind::<diesel::sql_types::Bool, _>(client.require_dpop_bound_tokens)
-    .bind::<diesel::sql_types::Bool, _>(client.require_mtls_bound_tokens)
-    .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(
-        client.tls_client_auth_subject_dn,
-    )
-    .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(
-        client.tls_client_auth_cert_sha256,
-    )
-    .bind::<diesel::sql_types::Bool, _>(client.allow_client_assertion_audience_array)
-    .bind::<diesel::sql_types::Bool, _>(client.allow_client_assertion_endpoint_audience)
-    .bind::<diesel::sql_types::Bool, _>(client.require_par_request_object)
-    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Jsonb>, _>(client.jwks)
-    .bind::<diesel::sql_types::VarChar, _>(DEFAULT_TENANT_ID)
-    .bind::<diesel::sql_types::VarChar, _>(DEFAULT_REALM_ID)
-    .bind::<diesel::sql_types::VarChar, _>(DEFAULT_ORGANIZATION_ID)
-    .bind::<diesel::sql_types::Bool, _>(client.allow_authorization_code_without_pkce)
-    .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(
-        client.frontchannel_logout_uri,
-    )
-    .bind::<diesel::sql_types::Bool, _>(client.frontchannel_logout_session_required)
-    .execute(connection)?;
+async fn upsert_client(
+    repository: &nazo_postgres::OAuthClientRepository,
+    client: ClientUpsert<'_>,
+    client_secret_hash: Option<&str>,
+) -> anyhow::Result<()> {
+    let string_array = |value: &Value| -> anyhow::Result<Vec<String>> {
+        serde_json::from_value(value.clone()).map_err(Into::into)
+    };
+    let client = OAuthClient {
+        id: Uuid::now_v7(),
+        tenant_id: DEFAULT_TENANT_ID.parse()?,
+        realm_id: DEFAULT_REALM_ID.parse()?,
+        organization_id: DEFAULT_ORGANIZATION_ID.parse()?,
+        registration: ValidatedClientRegistration {
+            client_id: client.client_id.to_owned(),
+            client_name: client.client_name.to_owned(),
+            client_type: "confidential".to_owned(),
+            redirect_uris: string_array(client.redirect_uris)?,
+            post_logout_redirect_uris: string_array(client.post_logout_redirect_uris)?,
+            scopes: string_array(client.scopes)?,
+            allowed_audiences: string_array(client.allowed_audiences)?,
+            grant_types: string_array(client.grant_types)?,
+            token_endpoint_auth_method: client.auth_method.to_owned(),
+            subject_type: "public".to_owned(),
+            sector_identifier_uri: None,
+            sector_identifier_host: None,
+            require_dpop_bound_tokens: client.require_dpop_bound_tokens,
+            allow_client_assertion_audience_array: client.allow_client_assertion_audience_array,
+            allow_client_assertion_endpoint_audience: client
+                .allow_client_assertion_endpoint_audience,
+            require_par_request_object: client.require_par_request_object,
+            allow_authorization_code_without_pkce: client.allow_authorization_code_without_pkce,
+            backchannel_logout_uri: None,
+            backchannel_logout_session_required: true,
+            frontchannel_logout_uri: client.frontchannel_logout_uri.map(ToOwned::to_owned),
+            frontchannel_logout_session_required: client.frontchannel_logout_session_required,
+            tls_client_auth_subject_dn: client.tls_client_auth_subject_dn.map(ToOwned::to_owned),
+            tls_client_auth_cert_sha256: client.tls_client_auth_cert_sha256.map(ToOwned::to_owned),
+            tls_client_auth_san_dns: Vec::new(),
+            tls_client_auth_san_uri: Vec::new(),
+            tls_client_auth_san_ip: Vec::new(),
+            tls_client_auth_san_email: Vec::new(),
+            jwks: client.jwks.cloned(),
+            introspection_encrypted_response_alg: None,
+            introspection_encrypted_response_enc: None,
+            userinfo_signed_response_alg: None,
+            userinfo_encrypted_response_alg: None,
+            userinfo_encrypted_response_enc: None,
+            authorization_signed_response_alg: None,
+            authorization_encrypted_response_alg: None,
+            authorization_encrypted_response_enc: None,
+        },
+        require_mtls_bound_tokens: client.require_mtls_bound_tokens,
+        is_active: true,
+    };
+    repository.upsert(&client, client_secret_hash).await?;
     Ok(())
 }
 
@@ -331,7 +298,8 @@ fn fapi_client_policy(file_name: &str, plan: &Value) -> FapiClientPolicy {
     }
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let config = ConfigSource::load()?;
     let database_url = database_url(&config);
     let suite_base_url = env_or("OIDF_LOCAL_SUITE_BASE_URL", "https://nginx:8443");
@@ -366,6 +334,8 @@ fn main() -> anyhow::Result<()> {
     let user_password_hash = hash_password(&user_password)?;
     let client_secret_hash = hash_client_secret(&client_secret, &client_secret_pepper);
     let mut connection = PgConnection::establish(&database_url)?;
+    let client_repository =
+        nazo_postgres::OAuthClientRepository::new(nazo_postgres::create_pool(&database_url, 2)?);
     let default_scopes = json!([
         "openid",
         "profile",
@@ -379,11 +349,10 @@ fn main() -> anyhow::Result<()> {
 
     upsert_user(&mut connection, &user_email, &user_password_hash)?;
     upsert_client(
-        &mut connection,
+        &client_repository,
         ClientUpsert {
             client_id: "local-oidf-basic-client",
             client_name: "Local OIDF Basic Client",
-            client_secret_hash: Some(&client_secret_hash),
             auth_method: "client_secret_basic",
             redirect_uris: &basic_redirect_uris,
             post_logout_redirect_uris: &empty_post_logout_redirect_uris,
@@ -402,13 +371,14 @@ fn main() -> anyhow::Result<()> {
             frontchannel_logout_session_required: true,
             jwks: None,
         },
-    )?;
+        Some(&client_secret_hash),
+    )
+    .await?;
     upsert_client(
-        &mut connection,
+        &client_repository,
         ClientUpsert {
             client_id: "local-oidf-basic-client-2",
             client_name: "Local OIDF Basic Client 2",
-            client_secret_hash: Some(&client_secret_hash),
             auth_method: "client_secret_basic",
             redirect_uris: &basic_redirect_uris,
             post_logout_redirect_uris: &empty_post_logout_redirect_uris,
@@ -427,13 +397,14 @@ fn main() -> anyhow::Result<()> {
             frontchannel_logout_session_required: true,
             jwks: None,
         },
-    )?;
+        Some(&client_secret_hash),
+    )
+    .await?;
     upsert_client(
-        &mut connection,
+        &client_repository,
         ClientUpsert {
             client_id: "local-oidf-post-client",
             client_name: "Local OIDF Post Client",
-            client_secret_hash: Some(&client_secret_hash),
             auth_method: "client_secret_post",
             redirect_uris: &basic_redirect_uris,
             post_logout_redirect_uris: &empty_post_logout_redirect_uris,
@@ -452,13 +423,14 @@ fn main() -> anyhow::Result<()> {
             frontchannel_logout_session_required: true,
             jwks: None,
         },
-    )?;
+        Some(&client_secret_hash),
+    )
+    .await?;
     upsert_client(
-        &mut connection,
+        &client_repository,
         ClientUpsert {
             client_id: "local-oidf-frontchannel-client",
             client_name: "Local OIDF Front-Channel Logout Client",
-            client_secret_hash: Some(&client_secret_hash),
             auth_method: "client_secret_basic",
             redirect_uris: &frontchannel_redirect_uris,
             post_logout_redirect_uris: &frontchannel_post_logout_redirect_uris,
@@ -477,13 +449,14 @@ fn main() -> anyhow::Result<()> {
             frontchannel_logout_session_required: true,
             jwks: None,
         },
-    )?;
+        Some(&client_secret_hash),
+    )
+    .await?;
     upsert_client(
-        &mut connection,
+        &client_repository,
         ClientUpsert {
             client_id: "local-oidf-session-client",
             client_name: "Local OIDF Session Management Client",
-            client_secret_hash: Some(&client_secret_hash),
             auth_method: "client_secret_basic",
             redirect_uris: &session_redirect_uris,
             post_logout_redirect_uris: &session_post_logout_redirect_uris,
@@ -502,7 +475,9 @@ fn main() -> anyhow::Result<()> {
             frontchannel_logout_session_required: true,
             jwks: None,
         },
-    )?;
+        Some(&client_secret_hash),
+    )
+    .await?;
 
     let mut fapi_redirect_uris = BTreeSet::new();
     let mut fapi_clients = Vec::<FapiClientSeed>::new();
@@ -551,11 +526,10 @@ fn main() -> anyhow::Result<()> {
         };
         let client_name = format!("Local OIDF FAPI Client {}", seed.client_id);
         upsert_client(
-            &mut connection,
+            &client_repository,
             ClientUpsert {
                 client_id: &seed.client_id,
                 client_name: &client_name,
-                client_secret_hash: None,
                 auth_method: seed.policy.auth_method,
                 redirect_uris: &fapi_redirect_uris,
                 post_logout_redirect_uris: &empty_post_logout_redirect_uris,
@@ -578,7 +552,9 @@ fn main() -> anyhow::Result<()> {
                 frontchannel_logout_session_required: true,
                 jwks: Some(&seed.jwks),
             },
-        )?;
+            None,
+        )
+        .await?;
     }
 
     println!("Seeded local OIDF user, OIDC basic clients, and FAPI clients.");

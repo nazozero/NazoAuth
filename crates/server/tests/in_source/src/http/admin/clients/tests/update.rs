@@ -1,6 +1,5 @@
 use super::*;
 use actix_web::cookie::Cookie;
-use diesel::prelude::SelectableHelper;
 use diesel::sql_query;
 use diesel::sql_types::{Int4, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
