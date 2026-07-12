@@ -63,8 +63,6 @@ impl LiveLogoutFixture {
             ("ENABLE_FRONTCHANNEL_LOGOUT", "true"),
         ]);
         let settings = Settings::from_config(&config).expect("test settings should load");
-        let key_material = client_signing_fixture(Algorithm::EdDSA);
-        let _verification_key = key_material.public_jwk("logout-kid");
         let mut valkey_builder = fred::prelude::Builder::from_config(
             fred::prelude::Config::from_url(&valkey_url).expect("VALKEY_URL should parse"),
         );
@@ -1286,11 +1284,10 @@ async fn oidc_logout_clears_session_and_sends_backchannel_logout_token_with_regi
     let header =
         jsonwebtoken::decode_header(&logout_token).expect("logout token header should decode");
     assert_eq!(header.typ.as_deref(), Some("logout+jwt"));
-    assert_eq!(header.kid.as_deref(), Some("logout-kid"));
-
     let keyset = fixture.state.keyset.snapshot();
+    assert_eq!(header.kid.as_deref(), Some(keyset.active_kid.as_str()));
     let verification_key = keyset
-        .verification_key("logout-kid")
+        .verification_key(&keyset.active_kid)
         .expect("verification key should load");
     let decoding_key = jwt_decoding_key_from_jwk(&verification_key.public_jwk, Algorithm::EdDSA)
         .expect("logout token decoding key should derive");
