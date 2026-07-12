@@ -55,21 +55,8 @@ pub(crate) async fn make_jwt(
     let now = Utc::now().timestamp();
     let jti = Uuid::now_v7().to_string();
     let exp = now + input.ttl;
-    let claims = access_token_claims(&state.settings.issuer, input, now, &jti);
-    let keyset = state.keyset.snapshot();
-    let header = access_token_header(keyset.active_alg, &keyset.active_kid);
-    let token = keyset.sign_jwt(&header, &claims).await?;
-    Ok(IssuedAccessToken { token, jti, exp })
-}
-
-pub(super) fn access_token_claims(
-    issuer: &str,
-    input: AccessTokenJwtInput<'_>,
-    now: i64,
-    jti: &str,
-) -> Claims {
-    nazo_auth::access_token_claims(
-        issuer,
+    let claims = nazo_auth::access_token_claims(
+        &state.settings.issuer,
         AccessTokenClaimsInput {
             tenant_id: input.tenant_id,
             subject: input.subject,
@@ -87,8 +74,12 @@ pub(super) fn access_token_claims(
             actor: input.actor,
         },
         now,
-        jti,
-    )
+        &jti,
+    );
+    let keyset = state.keyset.snapshot();
+    let header = access_token_header(keyset.active_alg, &keyset.active_kid);
+    let token = keyset.sign_jwt(&header, &claims).await?;
+    Ok(IssuedAccessToken { token, jti, exp })
 }
 
 pub(super) fn access_token_header(alg: jsonwebtoken::Algorithm, kid: &str) -> jsonwebtoken::Header {
@@ -116,7 +107,21 @@ pub(crate) async fn make_id_token(
     input: IdTokenInput<'_>,
 ) -> jsonwebtoken::errors::Result<String> {
     let now = Utc::now().timestamp();
-    let claims = id_token_claims(&state.settings.issuer, &input, now);
+    let claims = nazo_auth::id_token_claims(
+        &state.settings.issuer,
+        &IdTokenClaimsInput {
+            subject: input.subject,
+            client_id: input.client_id,
+            nonce: input.nonce.as_deref(),
+            auth_time: input.auth_time,
+            amr: input.amr,
+            sid: input.sid,
+            acr: input.acr,
+            extra_claims: input.extra_claims,
+            ttl: input.ttl,
+        },
+        now,
+    );
     sign_response_jwt(state, &Value::Object(claims), "JWT", input.signing_alg).await
 }
 
@@ -150,28 +155,6 @@ pub(crate) async fn sign_response_jwt(
 const BASE64_URL_SAFE_NO_PAD: base64::engine::general_purpose::GeneralPurpose =
     base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
-pub(super) fn id_token_claims(
-    issuer: &str,
-    input: &IdTokenInput<'_>,
-    now: i64,
-) -> serde_json::Map<String, Value> {
-    nazo_auth::id_token_claims(
-        issuer,
-        &IdTokenClaimsInput {
-            subject: input.subject,
-            client_id: input.client_id,
-            nonce: input.nonce.as_deref(),
-            auth_time: input.auth_time,
-            amr: input.amr,
-            sid: input.sid,
-            acr: input.acr,
-            extra_claims: input.extra_claims,
-            ttl: input.ttl,
-        },
-        now,
-    )
-}
-
 pub(crate) struct AuthorizationResponseJwtInput<'a> {
     pub(crate) client_id: &'a str,
     pub(crate) code: Option<&'a str>,
@@ -192,21 +175,8 @@ pub(crate) async fn make_backchannel_logout_token(
     input: BackchannelLogoutTokenInput<'_>,
 ) -> jsonwebtoken::errors::Result<String> {
     let now = Utc::now().timestamp();
-    let claims = backchannel_logout_token_claims(&state.settings.issuer, &input, now);
-    let keyset = state.keyset.snapshot();
-    let mut header = jsonwebtoken::Header::new(keyset.active_alg);
-    header.typ = Some("logout+jwt".to_string());
-    header.kid = Some(keyset.active_kid.clone());
-    keyset.sign_jwt(&header, &Value::Object(claims)).await
-}
-
-pub(super) fn backchannel_logout_token_claims(
-    issuer: &str,
-    input: &BackchannelLogoutTokenInput<'_>,
-    now: i64,
-) -> serde_json::Map<String, Value> {
-    nazo_auth::backchannel_logout_token_claims(
-        issuer,
+    let claims = nazo_auth::backchannel_logout_token_claims(
+        &state.settings.issuer,
         &BackchannelLogoutClaimsInput {
             client_id: input.client_id,
             subject: input.subject,
@@ -214,7 +184,12 @@ pub(super) fn backchannel_logout_token_claims(
             ttl: input.ttl,
         },
         now,
-    )
+    );
+    let keyset = state.keyset.snapshot();
+    let mut header = jsonwebtoken::Header::new(keyset.active_alg);
+    header.typ = Some("logout+jwt".to_string());
+    header.kid = Some(keyset.active_kid.clone());
+    keyset.sign_jwt(&header, &Value::Object(claims)).await
 }
 
 pub(crate) async fn make_authorization_response_jwt(
@@ -223,23 +198,8 @@ pub(crate) async fn make_authorization_response_jwt(
     signing_alg: Option<jsonwebtoken::Algorithm>,
 ) -> jsonwebtoken::errors::Result<String> {
     let now = Utc::now().timestamp();
-    let claims = authorization_response_jwt_claims(&state.settings.issuer, &input, now);
-    sign_response_jwt(
-        state,
-        &Value::Object(claims),
-        "oauth-authz-resp+jwt",
-        signing_alg,
-    )
-    .await
-}
-
-pub(super) fn authorization_response_jwt_claims(
-    issuer: &str,
-    input: &AuthorizationResponseJwtInput<'_>,
-    now: i64,
-) -> serde_json::Map<String, Value> {
-    nazo_auth::authorization_response_jwt_claims(
-        issuer,
+    let claims = nazo_auth::authorization_response_jwt_claims(
+        &state.settings.issuer,
         &AuthorizationResponseClaimsInput {
             client_id: input.client_id,
             code: input.code,
@@ -248,7 +208,14 @@ pub(super) fn authorization_response_jwt_claims(
             ttl: input.ttl,
         },
         now,
+    );
+    sign_response_jwt(
+        state,
+        &Value::Object(claims),
+        "oauth-authz-resp+jwt",
+        signing_alg,
     )
+    .await
 }
 
 pub(crate) fn decode_access_claims(state: &AppState, token: &str) -> Option<Claims> {
