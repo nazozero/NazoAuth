@@ -116,9 +116,7 @@ fn delivery_candidate(
     state: &AppState,
     row: &nazo_identity::AccessRequest,
 ) -> Option<DeliveryCandidate> {
-    let Some(approved_client_id) = row.approved_client_id else {
-        return None;
-    };
+    let approved_client_id = row.approved_client_id?;
     if row.status != nazo_identity::AccessRequestStatus::Approved {
         return None;
     }
