@@ -509,6 +509,39 @@ async fn admin_patch_user_rejects_nil_user_id_without_panicking() {
 }
 
 #[actix_web::test]
+async fn admin_patch_user_empty_payload_is_noop_and_preserves_updated_at() {
+    let Some(fixture) = LiveAdminUsersFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let admin = fixture
+        .create_user(&format!("{suffix}-admin"), "admin", 10)
+        .await;
+    let user = fixture
+        .create_user(&format!("{suffix}-user"), "user", 0)
+        .await;
+    let updated_at = user.updated_at;
+    let sid = format!("sid-{suffix}");
+    let csrf = format!("csrf-{suffix}");
+    fixture.store_session(&admin, &sid).await;
+
+    let response = admin_patch_user(
+        fixture.state.clone(),
+        fixture.admin_post_request(&sid, &csrf, "/admin/users/update"),
+        actix_web::web::Path::from(user.id),
+        Json(empty_patch()),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let persisted = fixture.load_user(user.id).await;
+    assert_eq!(persisted.updated_at, updated_at);
+    assert_eq!(persisted.role, user.role);
+    assert_eq!(persisted.admin_level, user.admin_level);
+    assert_eq!(persisted.is_active, user.is_active);
+}
+
+#[actix_web::test]
 async fn admin_patch_user_rejects_invalid_partial_role_level_without_mutation() {
     let Some(fixture) = LiveAdminUsersFixture::new().await else {
         return;

@@ -240,6 +240,12 @@ impl UserRepository {
                 let Some(current) = current else {
                     return Ok(None);
                 };
+                if update.role.is_none() && update.admin_level.is_none() && update.active.is_none()
+                {
+                    let user = IdentityUser::try_from(current)
+                        .map_err(|error| AdminUpdateError::Consistency(error.0))?;
+                    return Ok(Some(user));
+                }
                 let role = update.role.unwrap_or(current.role);
                 let admin_level = update.admin_level.unwrap_or(current.admin_level);
                 if !valid_role_admin_level(&role, admin_level) {
