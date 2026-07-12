@@ -584,5 +584,45 @@ taxonomy and obscure infrastructure failures.
   PostgreSQL URL and optional server live-service variables unset — 2,065
   passed in 37 suites.
 - `rtk cargo doc --workspace --no-deps --all-features --locked` — exit 0.
-  `nazo-postgres` public docs contain no `OAuthClientRecord`, `ClientRecord`, or
-  `client_secret_hash` item.
+`nazo-postgres` public docs contain no `OAuthClientRecord`, `ClientRecord`, or
+`client_secret_hash` item.
+
+## OAuth client schema-alias contract completion (2026-07-13)
+
+The server OAuth-client ownership contract now rejects the physical table name
+as a case-insensitive identifier token instead of relying on the literal
+`oauth_clients::` Diesel module path. This closes local Diesel declaration and
+alias bypasses such as `#[sql_name = "oauth_clients"] clients` followed by
+`clients::table`, as well as direct declarations, schema import aliases, and
+quoted/case-varied raw SQL. The existing visitor recursively scans every Rust
+file under `crates/server/src`, including nested `schema.rs` files. The
+separate `crates/server/tests/in_source` fixture tree remains outside that
+production root, and documentation comments plus the existing directly gated
+`#[cfg(test)]` schema import are not reported.
+
+### TDD evidence and commit
+
+- RED: the in-memory local-alias mutation produced no violation and failed
+  `oauth_client_persistence_contract_rejects_a_locally_aliased_table_declaration`.
+- GREEN: the consolidated mutation contract detects local SQL-name aliases,
+  direct Diesel declarations, schema import aliases, and case-insensitive
+  quoted raw SQL. A separate negative fixture proves documentation and the
+  existing `#[cfg(test)]` schema import do not become false positives.
+- `ef51c6e` — `test: close OAuth client schema alias loopholes`.
+
+### Fresh verification
+
+- Live PostgreSQL `rtk cargo test -p nazo-postgres --test identity_repositories
+  --all-features --locked` — exit 0; 24/24 passed, including the mutation and
+  recursive production-source ownership contracts.
+- `rtk cargo fmt --all -- --check` — exit 0.
+- `rtk cargo check --workspace --all-targets --all-features --locked` — exit 0.
+- `rtk cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
+  — exit 0, no issues.
+- `rtk cargo test --workspace --all-features --locked` with the mandatory
+  isolated PostgreSQL URL and optional server live-service variables unset —
+  exit 0; 2,070 passed across 38 suites.
+- `rtk cargo doc --workspace --no-deps --all-features --locked` — exit 0.
+
+No production behavior, refresh implementation, frontend, push, deployment,
+or PR state was changed.
