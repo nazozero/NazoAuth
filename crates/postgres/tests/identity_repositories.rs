@@ -986,6 +986,81 @@ fn oauth_client_queries_use_the_focused_postgres_repository_without_a_server_fac
     assert!(!oauth_support.contains("oauth_clients::table"));
 }
 
+fn contains_oauth_clients_table_name(source: &str) -> bool {
+    const TABLE: &str = "oauth_clients";
+    let source = source.to_ascii_lowercase();
+    source.match_indices(TABLE).any(|(offset, _)| {
+        let before = source[..offset].bytes().next_back();
+        let after = source[offset + TABLE.len()..].bytes().next();
+        let is_identifier = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_';
+        let is_table_name = before.is_none_or(|byte| !is_identifier(byte))
+            && after.is_none_or(|byte| !is_identifier(byte));
+        let line_start = source[..offset].rfind('\n').map_or(0, |line| line + 1);
+        let same_line = source[line_start..offset].trim();
+        let previous_line = source[..line_start]
+            .lines()
+            .rev()
+            .find(|line| !line.trim().is_empty())
+            .map(str::trim);
+        let is_cfg_test_item = same_line.starts_with("#[cfg(test)]")
+            || previous_line.is_some_and(|line| line == "#[cfg(test)]");
+        let line_comment = same_line.starts_with("//");
+        let block_comment = source[..offset].rfind("/*") > source[..offset].rfind("*/");
+        is_table_name && !is_cfg_test_item && !line_comment && !block_comment
+    })
+}
+
+#[test]
+fn oauth_client_persistence_contract_rejects_aliases_declarations_imports_and_raw_sql() {
+    let mutations = [
+        (
+            "local SQL-name alias",
+            r#"diesel::table! { #[sql_name = "oauth_clients"] clients (id) { id -> Uuid, } } fn load() { clients::table; }"#,
+        ),
+        (
+            "direct Diesel declaration",
+            r#"diesel::table! { oauth_clients (id) { id -> diesel::sql_types::Uuid, } }"#,
+        ),
+        (
+            "schema import alias",
+            r#"use crate::schema::oauth_clients as clients; fn load() { clients::table; }"#,
+        ),
+        (
+            "case-insensitive quoted raw SQL",
+            r##"sql_query(r#"SELECT * FROM \"OAUTH_CLIENTS\""#);"##,
+        ),
+    ];
+
+    for (name, mutation) in mutations {
+        assert!(
+            contains_oauth_clients_table_name(mutation),
+            "{name} must not bypass the production ownership contract"
+        );
+    }
+}
+
+#[test]
+fn oauth_client_persistence_contract_ignores_documentation_and_cfg_test_items() {
+    let documentation = r#"
+        /// The server must not query `oauth_clients::table` or declare
+        /// `#[sql_name = "oauth_clients"]` in production.
+        /* Raw SQL such as SELECT * FROM oauth_clients is also forbidden. */
+        fn repository_boundary_documentation() {}
+    "#;
+    assert!(
+        !contains_oauth_clients_table_name(documentation),
+        "documentation must not be reported as production persistence"
+    );
+    let test_only_schema = r#"
+        #[cfg(test)]
+        pub(crate) use crate::schema::oauth_clients;
+    "#;
+    assert!(
+        !contains_oauth_clients_table_name(test_only_schema),
+        "cfg(test) schema imports must not be reported as production persistence"
+    );
+}
+
 #[test]
 fn oauth_client_repository_keeps_records_private_and_returns_domain_clients() {
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -1049,36 +1124,15 @@ fn oauth_client_repository_keeps_records_private_and_returns_domain_clients() {
                 visit(&path, violations);
                 continue;
             }
-            if !path.extension().is_some_and(|extension| extension == "rs")
-                || path.file_name().is_some_and(|name| name == "schema.rs")
-            {
+            if !path.extension().is_some_and(|extension| extension == "rs") {
                 continue;
             }
             let source = std::fs::read_to_string(&path).expect("server source is UTF-8");
-            let compact = source
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ")
-                .to_ascii_lowercase();
-            if source.contains("oauth_clients::") {
+            if contains_oauth_clients_table_name(&source) {
                 violations.push(format!(
-                    "{} directly references the OAuth-client Diesel schema",
+                    "{} references or declares the OAuth-client table",
                     path.display()
                 ));
-            }
-            for operation in [
-                "insert into oauth_clients",
-                "update oauth_clients",
-                "delete from oauth_clients",
-                "from oauth_clients",
-                "join oauth_clients",
-            ] {
-                if compact.contains(operation) {
-                    violations.push(format!(
-                        "{} contains direct OAuth-client SQL ({operation})",
-                        path.display()
-                    ));
-                }
             }
             for body in source.split("struct ").skip(1) {
                 let Some(body) = body.split_once('}').map(|(body, _)| body) else {
