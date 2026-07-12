@@ -224,3 +224,97 @@ Run the real database slice with:
 $env:NAZO_TEST_DATABASE_URL='postgres://.../nazo_test'
 rtk proxy cargo test -p nazo-postgres --test identity_repositories -- --nocapture
 ```
+
+## Remediation B independent-review follow-up (2026-07-12)
+
+All six Important and both Minor findings from
+`domain-task-4-remediation-b-review.md` were remediated in production code and
+regression tests. The follow-up also addressed the five Critical CodeQL
+hard-coded-password annotations in the login tests and the SCIM formatting
+notice. No Task 5 persistence migration, refresh/DPoP change, old migration
+edit, push, deployment, or PR mutation was performed.
+
+### Follow-up commits
+
+- `856fac2` — separate authentication verifier reads from write-side password
+  hash material; `PasswordHash` no longer has a public extraction API.
+- `c464923` — generate unique per-test login passwords instead of hard-coded
+  wrong-password fixtures flagged by CodeQL.
+- `a1db5d3` — inline the SCIM boolean field format capture.
+- `a08f864` — add true `PrincipalRow` and `SubjectClaimsRow` SQL projections,
+  password-free mutation returning clauses, and a single active+claims query
+  for ID-token and UserInfo boundaries.
+- `1ce4ca0` — delete `server/support/repositories.rs`, call the focused user
+  repository directly, and distinguish request-state CAS loss from OAuth
+  client uniqueness conflicts (including a stable response classification).
+- `4770af0` — enforce access-request user/tenant ownership on create and full
+  tenant/realm/organization consistency for requester, actor, and inserted
+  client during approval.
+- `160a6ae` — replace auth core's 40+ field persistence-ready DTO with validated
+  protocol metadata; plaintext remains server-private and PostgreSQL builds a
+  crate-private `ClientInsertCommand` from metadata plus digests only.
+- `4f1ed52` — implement staged/committed Valkey delivery, deterministic
+  request-scoped recovery, PostgreSQL linkage validation before GETDEL, and
+  one-time consumption. Staged or orphaned payloads are never claimable.
+- `3ff89e6` — prove the double-failure case: Valkey SET succeeds, PostgreSQL
+  rolls back, compensation DEL is denied, the staged key remains unclaimable,
+  and the delivery endpoint returns 404 and removes it.
+
+### TDD evidence
+
+- Password verifier compile-fail RED: the new doctest failed because public
+  `into_inner()` compiled; GREEN: identity doctests 4/4 pass.
+- Login fixture RED: two generated password calls were equal; GREEN: UUID-based
+  test passwords are unique and the five flagged login calls contain no
+  hard-coded wrong password.
+- Projection/snapshot RED: source contract found no `PrincipalRow` and two
+  token-boundary reads; GREEN: narrow projection contract passes and a real
+  disabled PostgreSQL account returns no issuable claims.
+- Forwarder/conflict RED: `support/repositories.rs` existed and approval had no
+  state-specific conflict; GREEN: the file is absent and repository/HTTP tests
+  distinguish `AlreadyProcessed` from client uniqueness.
+- Tenant RED: a valid second tenant plus a user owned by the default tenant
+  reached the composite FK as an unexpected error; GREEN: repository precheck
+  returns `NotFound`, and approval rejects mismatched actor/client contexts.
+- DTO/plaintext RED: auth core exposed `PreparedClientRegistration` with
+  plaintext and persistence digests; GREEN: boundary test proves those fields
+  are absent from auth and issued plaintext is absent from PostgreSQL source.
+- Delivery RED: staged/orphan payloads returned HTTP 200; GREEN: they return
+  404, committed payloads require approved request/client linkage, recovery is
+  idempotent, and replay returns 404 after one successful claim.
+
+### Fresh verification results
+
+- `rtk cargo fmt --all -- --check` — exit 0.
+- `rtk cargo check --workspace --all-targets --all-features --locked` — exit 0.
+- `rtk cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
+  — exit 0, no issues.
+- `rtk cargo test -p nazo-identity -p nazo-auth -p nazo-postgres -p nazo-oauth-server --lib --all-features --locked`
+  — exit 0; 1,663 passed.
+- `cargo test -p nazo-postgres --all-features --locked -- --nocapture` with the
+  live container-derived PostgreSQL URL — exit 0: 4 unit, 6 access-request, 17
+  identity repository, 1 migration, and 2 compile-fail doctests passed.
+- Live PostgreSQL/Valkey focused server slices — 31 access-request tests and 3
+  delivery tests passed. The approval recovery/one-time test returned one 200
+  delivery then 404 on replay; the SET+PG rollback+DEL-denied test returned 404
+  and removed the residual staged key.
+- `rtk cargo test --workspace --all-features --locked` with mandatory live
+  PostgreSQL and optional live server variables unset — exit 0 across the full
+  workspace, including doctests.
+- `rtk cargo doc -p nazo-identity -p nazo-auth -p nazo-postgres --no-deps --all-features --locked`
+  — exit 0.
+
+An intentional no-URL `nazo-postgres --all-features` probe failed explicitly
+instead of skipping six live database tests; the immediately repeated gate
+with the live container-derived URL passed completely. Windows emitted the
+existing localized MSVC linker-stdout warning during server test linking; it
+did not fail compilation or tests.
+
+### Residual concerns
+
+- The external CodeQL check-run was not locally re-executed; its five cited
+  login locations were replaced with generated fixtures and the relevant
+  source/test gates pass. CI must provide the final scanner readback.
+- No known functional remediation concern remains within Domain Task 4. The
+  separately owned DPoP lost-response failure and refresh implementation were
+  intentionally untouched.
