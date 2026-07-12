@@ -4,9 +4,7 @@ use std::{sync::Arc, time::Duration};
 use crate::config::ConfigSource;
 use nazo_postgres::create_pool;
 
-use crate::settings::{
-    OidcFederationSettings, SamlGatewaySettings, SocialProviderKind, SocialProviderSettings,
-};
+use crate::settings::{OidcFederationSettings, SamlGatewaySettings};
 use crate::support::{ClientSigningFixture, client_signing_fixture, random_urlsafe_token};
 use actix_web::http::header;
 use diesel::sql_query;
@@ -346,23 +344,6 @@ async fn response_json(response: HttpResponse) -> (StatusCode, Value) {
 async fn store_oidc_state(state: &AppState, state_token: &str, created_at: i64) {
     let nonce = random_urlsafe_token();
     store_oidc_state_with_nonce(state, state_token, &nonce, created_at).await;
-}
-
-async fn store_social_state(state: &AppState, provider_id: &str, state_token: &str) {
-    let body = serde_json::to_string(&SocialFederationState {
-        provider_id: provider_id.to_owned(),
-        pkce_verifier: "social-verifier-1".to_owned(),
-        created_at: Utc::now().timestamp(),
-    })
-    .expect("test social federation state should serialize");
-    valkey_set_ex(
-        &state.valkey,
-        social_state_key(state_token),
-        body,
-        SOCIAL_STATE_TTL_SECONDS,
-    )
-    .await
-    .expect("social federation state should store");
 }
 
 async fn store_oidc_state_with_nonce(
@@ -1717,26 +1698,6 @@ async fn social_callback_without_email_rejects_inactive_linked_user() {
     let suffix = Uuid::now_v7().simple().to_string();
     let subject = format!("social-inactive-subject-{suffix}");
     let email = format!("social-inactive-{suffix}@example.com");
-    let (token_endpoint, token_request) =
-        one_shot_json_server(json!({ "access_token": "social-access-token" })).await;
-    let (userinfo_endpoint, userinfo_request) =
-        one_shot_json_server(json!({ "sub": subject, "name": "Inactive Social User" })).await;
-    let provider = SocialProviderSettings {
-        kind: SocialProviderKind::Custom,
-        authorization_endpoint: "https://social.example/authorize".to_owned(),
-        token_endpoint,
-        openid_endpoint: None,
-        userinfo_endpoint,
-        client_id: "social-client".to_owned(),
-        client_secret: "social-secret".to_owned(),
-        redirect_uri: "https://auth.example/federation/test-social/callback".to_owned(),
-        scopes: "profile".to_owned(),
-        subject_claim: "sub".to_owned(),
-        email_claim: None,
-        email_verified_claim: None,
-        name_claim: Some("name".to_owned()),
-        union_id_claim: None,
-    };
     let Some(fixture) = LiveFederationFixture::new(None, None).await else {
         return;
     };
@@ -1750,34 +1711,28 @@ async fn social_callback_without_email_rejects_inactive_linked_user() {
             &email,
         )
         .await;
-    let state_token = random_urlsafe_token();
-    store_social_state(&fixture.state, provider_id, &state_token).await;
-
-    let response = social_callback_after_rate_limit(
-        fixture.state.clone(),
-        actix_web::test::TestRequest::get()
-            .peer_addr(
-                "198.51.100.23:443"
-                    .parse()
-                    .expect("peer address should parse"),
-            )
-            .to_http_request(),
-        OidcCallbackQuery {
-            code: Some("social-code-1".to_owned()),
-            state: Some(state_token),
-            error: None,
-        },
-        provider_id.to_owned(),
-        provider,
+    let response = tokio::time::timeout(
+        Duration::from_secs(5),
+        complete_social_callback(
+            fixture.state.clone(),
+            actix_web::test::TestRequest::get()
+                .peer_addr(
+                    "198.51.100.23:443"
+                        .parse()
+                        .expect("peer address should parse"),
+                )
+                .to_http_request(),
+            provider_id.to_owned(),
+            SocialIdentity {
+                subject,
+                email: None,
+                display_name: Some("Inactive Social User".to_owned()),
+                claims: json!({"adapter": "oauth2_social"}),
+            },
+        ),
     )
-    .await;
-    token_request
-        .await
-        .expect("social token endpoint should receive the exchange request");
-    userinfo_request
-        .await
-        .expect("social userinfo endpoint should receive the request");
-
+    .await
+    .expect("social callback should complete within the fixture deadline");
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(
         oauth_error_code(&response).as_deref(),

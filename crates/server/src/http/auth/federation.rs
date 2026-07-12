@@ -309,6 +309,15 @@ async fn social_callback_after_rate_limit(
             );
         }
     };
+    complete_social_callback(state, req, provider_id, identity).await
+}
+
+async fn complete_social_callback(
+    state: Data<AppState>,
+    req: HttpRequest,
+    provider_id: String,
+    identity: SocialIdentity,
+) -> HttpResponse {
     let user = if let Some(email) = identity.email.as_deref() {
         match resolve_external_identity(
             &state,
