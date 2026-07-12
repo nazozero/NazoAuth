@@ -626,3 +626,42 @@ production root, and documentation comments plus the existing directly gated
 
 No production behavior, refresh implementation, frontend, push, deployment,
 or PR state was changed.
+
+## OAuth client contract cfg(test) scope correction (2026-07-13)
+
+The OAuth-client table-name contract now removes complete directly
+`#[cfg(test)]`-gated Rust items before looking for production references. The
+bounded scrubber follows stacked item attributes and balances item braces while
+ignoring braces in line/block comments, normal strings, raw strings, byte
+strings, and character literals. It is local to the architecture test and does
+not parse or change production code. Production string contents remain visible
+to the table-name detector so direct raw SQL is still rejected.
+
+### TDD evidence and commit
+
+- RED: a `#[cfg(test)] mod tests { ... }` fixture containing an OAuth-client
+  raw SQL string and Diesel schema reference failed because the old detector
+  inspected only the token's current and preceding line.
+- GREEN: the contract ignores the entire gated module and a gated item with an
+  additional stacked attribute. Two positive mutations prove that a schema
+  import and Diesel declaration after gated items remain detectable, including
+  when comments and strings contain misleading closing braces.
+- `fe0b3a6` — `test: scope OAuth contract cfg exclusions`.
+
+### Fresh verification
+
+- Focused OAuth-client contract tests — exit 0; 3/3 passed.
+- Live PostgreSQL `rtk cargo test -p nazo-postgres --test
+  identity_repositories --all-features --locked -- --nocapture` — exit 0;
+  25/25 passed.
+- `rtk cargo fmt --all -- --check` and `rtk git diff --check` — exit 0.
+- `rtk cargo check --workspace --all-targets --all-features --locked` — exit 0.
+- `rtk cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
+  — exit 0, no issues.
+- `rtk cargo test --workspace --all-features --locked` with the mandatory
+  isolated PostgreSQL URL and optional server live-service variables unset —
+  exit 0; 2,071 passed across 38 suites.
+- `rtk cargo doc --workspace --no-deps --all-features --locked` — exit 0.
+
+No production behavior, refresh implementation, frontend, push, deployment,
+PR, or review-package state was changed.
