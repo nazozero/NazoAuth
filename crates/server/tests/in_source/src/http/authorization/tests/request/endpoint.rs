@@ -158,7 +158,12 @@ impl LiveAuthorizationFixture {
         })
     }
 
-    async fn create_user(&self, suffix: &str, auth_role: &str, admin_level: i32) -> UserRow {
+    async fn create_user(
+        &self,
+        suffix: &str,
+        auth_role: &str,
+        admin_level: i32,
+    ) -> DatabaseUserFixture {
         let email = format!("authorize-{suffix}@example.com");
         let username = format!("authorize-{suffix}");
         let mut conn = get_conn(&self.state.diesel_db)
@@ -181,7 +186,7 @@ impl LiveAuthorizationFixture {
         .bind::<Text, _>(email)
         .bind::<Text, _>(auth_role.to_owned())
         .bind::<Int4, _>(admin_level)
-        .get_result::<UserRow>(&mut conn)
+        .get_result::<DatabaseUserFixture>(&mut conn)
         .await
         .expect("test user should insert")
     }
@@ -271,7 +276,7 @@ impl LiveAuthorizationFixture {
         .expect("test client sender constraint update should succeed");
     }
 
-    async fn store_session(&self, user: &UserRow, sid: &str, auth_time: i64) {
+    async fn store_session(&self, user: &DatabaseUserFixture, sid: &str, auth_time: i64) {
         let payload = SessionPayload {
             user_id: user.id,
             auth_time,

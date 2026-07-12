@@ -17,14 +17,6 @@ pub(crate) struct MfaProtectedRequest {
     code: String,
 }
 
-#[derive(Queryable)]
-struct TotpCredentialRow {
-    id: Uuid,
-    secret_base32: String,
-    confirmed_at: Option<DateTime<Utc>>,
-    last_used_step: Option<i64>,
-}
-
 pub(crate) async fn mfa_totp_begin(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
     if !has_valid_csrf_token(&state, &req, None) {
         return csrf_error();
@@ -33,17 +25,11 @@ pub(crate) async fn mfa_totp_begin(state: Data<AppState>, req: HttpRequest) -> H
         Ok(user) => user,
         Err(response) => return response,
     };
-    let mut conn = match get_conn(&state.diesel_db).await {
-        Ok(conn) => conn,
-        Err(_) => {
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "数据库连接失败.",
-            );
-        }
-    };
-    let existing = match load_totp_credential(&mut conn, &user).await {
+    let repository = nazo_postgres::MfaRepository::new(state.diesel_db.clone());
+    let existing = match repository
+        .totp_enrollment(user.tenant().tenant_id, user.user_id())
+        .await
+    {
         Ok(value) => value,
         Err(error) => {
             tracing::warn!(%error, "failed to load TOTP credential");
@@ -56,35 +42,21 @@ pub(crate) async fn mfa_totp_begin(state: Data<AppState>, req: HttpRequest) -> H
     };
     if existing
         .as_ref()
-        .is_some_and(|credential| credential.confirmed_at.is_some())
+        .is_some_and(|credential| credential.confirmed)
     {
         return oauth_error(StatusCode::CONFLICT, "invalid_request", "TOTP MFA 已启用.");
     }
 
     let secret = nazo_identity::mfa::generate_totp_secret_base32();
-    let label = format!("{} ({})", user.email, state.settings.issuer);
-    let result = if let Some(credential) = existing {
-        diesel::update(user_totp_credentials::table.find(credential.id))
-            .set((
-                user_totp_credentials::secret_base32.eq(&secret),
-                user_totp_credentials::label.eq(&label),
-                user_totp_credentials::confirmed_at.eq::<Option<DateTime<Utc>>>(None),
-                user_totp_credentials::last_used_step.eq::<Option<i64>>(None),
-                user_totp_credentials::updated_at.eq(diesel_now),
-            ))
-            .execute(&mut conn)
-            .await
-    } else {
-        diesel::insert_into(user_totp_credentials::table)
-            .values((
-                user_totp_credentials::tenant_id.eq(user.tenant_id),
-                user_totp_credentials::user_id.eq(user.id),
-                user_totp_credentials::secret_base32.eq(&secret),
-                user_totp_credentials::label.eq(&label),
-            ))
-            .execute(&mut conn)
-            .await
-    };
+    let label = format!("{} ({})", user.login.email, state.settings.issuer);
+    let result = repository
+        .begin_totp_enrollment(
+            user.tenant().tenant_id,
+            user.user_id(),
+            secret.clone(),
+            label,
+        )
+        .await;
     if let Err(error) = result {
         tracing::warn!(%error, "failed to store TOTP enrollment secret");
         return oauth_error(
@@ -98,7 +70,7 @@ pub(crate) async fn mfa_totp_begin(state: Data<AppState>, req: HttpRequest) -> H
         "secret_base32": secret,
         "otpauth_uri": nazo_identity::mfa::otpauth_uri(
             &state.settings.issuer,
-            &user.email,
+            &user.login.email,
             &secret,
         ),
         "period": MFA_TOTP_PERIOD_SECONDS,
@@ -121,18 +93,12 @@ pub(crate) async fn mfa_totp_confirm(
     if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
         return response;
     }
-    let mut conn = match get_conn(&state.diesel_db).await {
-        Ok(conn) => conn,
-        Err(_) => {
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "数据库连接失败.",
-            );
-        }
-    };
-    let credential = match load_totp_credential(&mut conn, &user).await {
-        Ok(Some(credential)) if credential.confirmed_at.is_none() => credential,
+    let repository = nazo_postgres::MfaRepository::new(state.diesel_db.clone());
+    let credential = match repository
+        .totp_enrollment(user.tenant().tenant_id, user.user_id())
+        .await
+    {
+        Ok(Some(credential)) if !credential.confirmed => credential,
         Ok(Some(_)) => {
             return oauth_error(StatusCode::CONFLICT, "invalid_request", "TOTP MFA 已启用.");
         }
@@ -179,51 +145,8 @@ pub(crate) async fn mfa_totp_confirm(
                 );
             }
         };
-    let confirm_result = diesel::update(user_totp_credentials::table.find(credential.id))
-        .set((
-            user_totp_credentials::confirmed_at.eq(Utc::now()),
-            user_totp_credentials::last_used_step.eq(step),
-            user_totp_credentials::updated_at.eq(diesel_now),
-        ))
-        .execute(&mut conn)
-        .await;
-    if let Err(error) = confirm_result {
-        tracing::warn!(%error, "failed to confirm TOTP credential");
-        return with_rotated_session_cookies(
-            &state,
-            &rotation,
-            oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "MFA 启用失败.",
-            ),
-        );
-    }
-    if let Err(error) = diesel::update(
-        users::table
-            .find(user.id)
-            .filter(users::tenant_id.eq(user.tenant_id)),
-    )
-    .set((
-        users::mfa_enabled.eq(true),
-        users::updated_at.eq(diesel_now),
-    ))
-    .execute(&mut conn)
-    .await
-    {
-        tracing::warn!(%error, "failed to enable MFA flag");
-        return with_rotated_session_cookies(
-            &state,
-            &rotation,
-            oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "MFA 启用失败.",
-            ),
-        );
-    }
-    let backup_codes = match replace_backup_codes(&state.diesel_db, &user).await {
-        Ok(codes) => codes,
+    let (backup_codes, hashes) = match generate_backup_codes_and_hashes() {
+        Ok(value) => value,
         Err(error) => {
             tracing::warn!(%error, "failed to generate backup codes");
             return with_rotated_session_cookies(
@@ -237,9 +160,29 @@ pub(crate) async fn mfa_totp_confirm(
             );
         }
     };
+    if let Err(error) = repository
+        .confirm_totp_and_replace_backup_hashes(
+            user.tenant().tenant_id,
+            user.user_id(),
+            step,
+            hashes,
+        )
+        .await
+    {
+        tracing::warn!(%error, "failed to confirm TOTP credential");
+        return with_rotated_session_cookies(
+            &state,
+            &rotation,
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "MFA 启用失败.",
+            ),
+        );
+    }
     audit_event(
         "mfa_totp_enabled",
-        audit_fields(&[("user_id", json!(user.id)), ("method", json!("totp"))]),
+        audit_fields(&[("user_id", json!(user.id())), ("method", json!("totp"))]),
     );
     with_cookie_headers(
         json_response(json!({
@@ -284,7 +227,7 @@ pub(crate) async fn mfa_verify(
         Ok(None) => {
             audit_event(
                 "mfa_challenge_failure",
-                audit_fields(&[("user_id", json!(session.user.id))]),
+                audit_fields(&[("user_id", json!(session.user.id()))]),
             );
             return oauth_error(StatusCode::BAD_REQUEST, "invalid_grant", "MFA 验证码无效.");
         }
@@ -339,7 +282,7 @@ pub(crate) async fn mfa_verify(
     audit_event(
         "mfa_challenge_success",
         audit_fields(&[
-            ("user_id", json!(session.user.id)),
+            ("user_id", json!(session.user.id())),
             ("method", json!(method.amr())),
         ]),
     );
@@ -367,7 +310,7 @@ pub(crate) async fn mfa_backup_codes_regenerate(
     if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
         return response;
     }
-    if !user.mfa_enabled {
+    if !user.login.mfa_enabled {
         return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "MFA 未启用.");
     }
     let method = match verify_user_mfa_code(&state.diesel_db, &user, &payload.code).await {
@@ -419,7 +362,10 @@ pub(crate) async fn mfa_backup_codes_regenerate(
     };
     audit_event(
         "mfa_backup_codes_regenerated",
-        audit_fields(&[("user_id", json!(user.id)), ("method", json!(method.amr()))]),
+        audit_fields(&[
+            ("user_id", json!(user.id())),
+            ("method", json!(method.amr())),
+        ]),
     );
     with_cookie_headers(
         json_response(json!({ "backup_codes": backup_codes })),
@@ -472,7 +418,7 @@ pub(crate) async fn mfa_disable(
     if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
         return response;
     }
-    if !user.mfa_enabled {
+    if !user.login.mfa_enabled {
         return json_response(json!({ "mfa_enabled": false }));
     }
     match verify_user_mfa_code(&state.diesel_db, &user, &payload.code).await {
@@ -497,7 +443,10 @@ pub(crate) async fn mfa_disable(
             "MFA 禁用失败.",
         );
     }
-    audit_event("mfa_disabled", audit_fields(&[("user_id", json!(user.id))]));
+    audit_event(
+        "mfa_disabled",
+        audit_fields(&[("user_id", json!(user.id()))]),
+    );
     with_cookie_headers(
         json_response(json!({ "mfa_enabled": false })),
         &[clear_cookie(
@@ -505,24 +454,6 @@ pub(crate) async fn mfa_disable(
             state.settings.cookie_secure,
         )],
     )
-}
-
-async fn load_totp_credential(
-    conn: &mut diesel_async::AsyncPgConnection,
-    user: &UserRow,
-) -> Result<Option<TotpCredentialRow>, diesel::result::Error> {
-    user_totp_credentials::table
-        .filter(user_totp_credentials::tenant_id.eq(user.tenant_id))
-        .filter(user_totp_credentials::user_id.eq(user.id))
-        .select((
-            user_totp_credentials::id,
-            user_totp_credentials::secret_base32,
-            user_totp_credentials::confirmed_at,
-            user_totp_credentials::last_used_step,
-        ))
-        .first::<TotpCredentialRow>(conn)
-        .await
-        .optional()
 }
 
 #[cfg(test)]

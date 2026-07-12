@@ -204,7 +204,7 @@ pub(crate) async fn admin_approve_access_request(
                 ))
                 .set((
                     client_access_requests::status.eq(AccessRequestStatus::Approved.code()),
-                    client_access_requests::resolved_by_user_id.eq(admin.id),
+                    client_access_requests::resolved_by_user_id.eq(admin.id()),
                     client_access_requests::approved_client_id.eq(client.id),
                     client_access_requests::resolved_at.eq(diesel_now),
                     client_access_requests::updated_at.eq(diesel_now),
@@ -239,7 +239,7 @@ pub(crate) async fn admin_approve_access_request(
         audit_fields(&[
             ("client_id", json!(client.client_id)),
             ("request_id", json!(request_id)),
-            ("admin_user_id", json!(admin.id)),
+            ("admin_user_id", json!(admin.id())),
             (
                 "source_ip_hash",
                 json!(blake3_hex(&client_ip(&req, &state.settings))),
@@ -288,7 +288,7 @@ pub(crate) async fn admin_reject_access_request(
         .set((
             client_access_requests::status.eq(AccessRequestStatus::Rejected.code()),
             client_access_requests::admin_note.eq(payload.admin_note),
-            client_access_requests::resolved_by_user_id.eq(admin.id),
+            client_access_requests::resolved_by_user_id.eq(admin.id()),
             client_access_requests::resolved_at.eq(diesel_now),
             client_access_requests::updated_at.eq(diesel_now),
         ))

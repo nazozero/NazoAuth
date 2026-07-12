@@ -94,7 +94,7 @@ impl LiveEmailCodeFixture {
         })
     }
 
-    async fn create_user(&self, email: &str) -> UserRow {
+    async fn create_user(&self, email: &str) -> DatabaseUserFixture {
         let tenant = default_tenant_context();
         let username = format!("email-code-{}", Uuid::now_v7().simple());
         let mut conn = get_conn(&self.state.diesel_db)
@@ -115,7 +115,7 @@ impl LiveEmailCodeFixture {
         .bind::<SqlUuid, _>(tenant.organization_id)
         .bind::<Text, _>(username)
         .bind::<Text, _>(email.to_owned())
-        .get_result::<UserRow>(&mut conn)
+        .get_result::<DatabaseUserFixture>(&mut conn)
         .await
         .expect("test user should insert")
     }

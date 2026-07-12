@@ -91,7 +91,7 @@ impl LiveLogoutFixture {
         })
     }
 
-    async fn create_user(&self, suffix: &str) -> UserRow {
+    async fn create_user(&self, suffix: &str) -> DatabaseUserFixture {
         let email = format!("logout-{suffix}@example.com");
         let username = format!("logout-{suffix}");
         let mut conn = get_conn(&self.state.diesel_db)
@@ -113,12 +113,12 @@ impl LiveLogoutFixture {
         .bind::<Text, _>(username)
         .bind::<Text, _>(email)
         .bind::<Bool, _>(true)
-        .get_result::<UserRow>(&mut conn)
+        .get_result::<DatabaseUserFixture>(&mut conn)
         .await
         .expect("test user should insert")
     }
 
-    async fn store_session(&self, user: &UserRow, sid: &str, oidc_sid: &str) {
+    async fn store_session(&self, user: &DatabaseUserFixture, sid: &str, oidc_sid: &str) {
         let payload = SessionPayload {
             user_id: user.id,
             auth_time: Utc::now().timestamp(),
@@ -206,7 +206,7 @@ impl LiveLogoutFixture {
         .id
     }
 
-    async fn grant_client(&self, user: &UserRow, client_id: Uuid) {
+    async fn grant_client(&self, user: &DatabaseUserFixture, client_id: Uuid) {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");

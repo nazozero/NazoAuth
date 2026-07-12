@@ -1,4 +1,5 @@
 use super::*;
+use nazo_identity::{TenantId, UserId, ports::TotpEnrollment};
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
@@ -86,7 +87,7 @@ impl LiveMfaFixture {
         })
     }
 
-    async fn create_user(&self, suffix: &str, mfa_enabled: bool) -> UserRow {
+    async fn create_user(&self, suffix: &str, mfa_enabled: bool) -> DatabaseUserFixture {
         let email = format!("mfa-{suffix}@example.com");
         let username = format!("mfa-{suffix}");
         let mut conn = get_conn(&self.state.diesel_db)
@@ -109,12 +110,12 @@ impl LiveMfaFixture {
         .bind::<Text, _>(email)
         .bind::<Bool, _>(true)
         .bind::<Bool, _>(mfa_enabled)
-        .get_result::<UserRow>(&mut conn)
+        .get_result::<DatabaseUserFixture>(&mut conn)
         .await
         .expect("test user should insert")
     }
 
-    async fn insert_confirmed_totp(&self, user: &UserRow, secret_base32: &str) {
+    async fn insert_confirmed_totp(&self, user: &DatabaseUserFixture, secret_base32: &str) {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
@@ -134,7 +135,7 @@ impl LiveMfaFixture {
         .expect("confirmed TOTP credential should insert");
     }
 
-    async fn store_session(&self, user: &UserRow, sid: &str, pending_mfa: bool) {
+    async fn store_session(&self, user: &DatabaseUserFixture, sid: &str, pending_mfa: bool) {
         let payload = SessionPayload {
             user_id: user.id,
             auth_time: Utc::now().timestamp(),
@@ -201,7 +202,7 @@ fn set_cookie_value(response: &HttpResponse, cookie_name: &str) -> Option<String
         })
 }
 
-async fn remembered_device_count(fixture: &LiveMfaFixture, user: &UserRow) -> i64 {
+async fn remembered_device_count(fixture: &LiveMfaFixture, user: &DatabaseUserFixture) -> i64 {
     let mut conn = get_conn(&fixture.state.diesel_db)
         .await
         .expect("database connection");
@@ -214,7 +215,7 @@ async fn remembered_device_count(fixture: &LiveMfaFixture, user: &UserRow) -> i6
         .expect("remembered device count should load")
 }
 
-async fn backup_code_count(fixture: &LiveMfaFixture, user: &UserRow) -> i64 {
+async fn backup_code_count(fixture: &LiveMfaFixture, user: &DatabaseUserFixture) -> i64 {
     let mut conn = get_conn(&fixture.state.diesel_db)
         .await
         .expect("database connection");
@@ -227,7 +228,7 @@ async fn backup_code_count(fixture: &LiveMfaFixture, user: &UserRow) -> i64 {
         .expect("backup code count should load")
 }
 
-async fn totp_credential_count(fixture: &LiveMfaFixture, user: &UserRow) -> i64 {
+async fn totp_credential_count(fixture: &LiveMfaFixture, user: &DatabaseUserFixture) -> i64 {
     let mut conn = get_conn(&fixture.state.diesel_db)
         .await
         .expect("database connection");
@@ -240,24 +241,28 @@ async fn totp_credential_count(fixture: &LiveMfaFixture, user: &UserRow) -> i64 
         .expect("totp credential count should load")
 }
 
-async fn pending_totp_credential(fixture: &LiveMfaFixture, user: &UserRow) -> TotpCredentialRow {
-    let mut conn = get_conn(&fixture.state.diesel_db)
-        .await
-        .expect("database connection");
-    load_totp_credential(&mut conn, user)
+async fn pending_totp_credential(
+    fixture: &LiveMfaFixture,
+    user: &DatabaseUserFixture,
+) -> TotpEnrollment {
+    nazo_postgres::MfaRepository::new(fixture.state.diesel_db.clone())
+        .totp_enrollment(
+            TenantId::new(user.tenant_id).expect("valid fixture tenant ID"),
+            UserId::new(user.id).expect("valid fixture user ID"),
+        )
         .await
         .expect("totp credential lookup should succeed")
         .expect("totp credential should exist")
 }
 
-async fn fresh_user(fixture: &LiveMfaFixture, user_id: Uuid) -> UserRow {
+async fn fresh_user(fixture: &LiveMfaFixture, user_id: Uuid) -> DatabaseUserFixture {
     let mut conn = get_conn(&fixture.state.diesel_db)
         .await
         .expect("database connection");
     users::table
         .find(user_id)
-        .select(UserRow::as_select())
-        .first::<UserRow>(&mut conn)
+        .select(DatabaseUserFixture::as_select())
+        .first::<DatabaseUserFixture>(&mut conn)
         .await
         .expect("user should reload")
 }
@@ -396,7 +401,7 @@ async fn mfa_totp_begin_replaces_unconfirmed_enrollment_and_clears_replay_state(
         .expect("begin response should expose the new TOTP secret");
     assert_eq!(credential.secret_base32, secret);
     assert_ne!(credential.secret_base32, "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ");
-    assert!(credential.confirmed_at.is_none());
+    assert!(!credential.confirmed);
     assert!(
         credential.last_used_step.is_none(),
         "restarting enrollment must clear stale anti-replay state"
@@ -490,7 +495,7 @@ async fn mfa_totp_confirm_rejects_wrong_code_without_enabling_mfa_or_backup_code
     assert!(body.get("backup_codes").is_none());
     assert!(!has_set_cookie);
     let credential = pending_totp_credential(&fixture, &user).await;
-    assert!(credential.confirmed_at.is_none());
+    assert!(!credential.confirmed);
     assert!(credential.last_used_step.is_none());
     assert!(!fresh_user(&fixture, user.id).await.mfa_enabled);
     assert_eq!(backup_code_count(&fixture, &user).await, 0);
@@ -849,7 +854,7 @@ async fn mfa_verify_remember_device_sets_cookie_and_persists_remembered_device()
         .insert_header((header::USER_AGENT, user_agent))
         .to_http_request();
     assert!(
-        remembered_mfa_device_valid(&fixture.state, &remembered_req, &user)
+        remembered_mfa_device_valid(&fixture.state, &remembered_req, &user.identity())
             .await
             .expect("remembered device lookup should succeed"),
         "remember-device success must persist a reusable device marker"
@@ -897,7 +902,7 @@ async fn mfa_backup_codes_regenerate_rotates_codes_after_valid_totp() {
     let secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".to_owned();
     fixture.insert_confirmed_totp(&user, &secret).await;
     fixture.store_session(&user, &sid, false).await;
-    let previous_codes = replace_backup_codes(&fixture.state.diesel_db, &user)
+    let previous_codes = replace_backup_codes(&fixture.state.diesel_db, &user.identity())
         .await
         .expect("initial backup codes should generate");
     let code = nazo_identity::mfa::totp_for_step(
@@ -927,16 +932,20 @@ async fn mfa_backup_codes_regenerate_rotates_codes_after_valid_totp() {
         MFA_BACKUP_CODE_COUNT as i64
     );
     assert_eq!(
-        verify_user_mfa_code(&fixture.state.diesel_db, &user, &previous_codes[0])
-            .await
-            .expect("old backup code verification should succeed"),
+        verify_user_mfa_code(
+            &fixture.state.diesel_db,
+            &user.identity(),
+            &previous_codes[0]
+        )
+        .await
+        .expect("old backup code verification should succeed"),
         None,
         "rotating backup codes must invalidate previously issued codes"
     );
     assert_eq!(
         verify_user_mfa_code(
             &fixture.state.diesel_db,
-            &user,
+            &user.identity(),
             rotated_codes[0]
                 .as_str()
                 .expect("backup code should serialize as a string"),
@@ -966,7 +975,7 @@ async fn mfa_backup_codes_regenerate_rejects_wrong_totp_without_rotating_codes()
         .insert_confirmed_totp(&user, "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")
         .await;
     fixture.store_session(&user, &sid, false).await;
-    let previous_codes = replace_backup_codes(&fixture.state.diesel_db, &user)
+    let previous_codes = replace_backup_codes(&fixture.state.diesel_db, &user.identity())
         .await
         .expect("initial backup codes should generate");
 
@@ -991,9 +1000,13 @@ async fn mfa_backup_codes_regenerate_rejects_wrong_totp_without_rotating_codes()
         MFA_BACKUP_CODE_COUNT as i64
     );
     assert_eq!(
-        verify_user_mfa_code(&fixture.state.diesel_db, &user, &previous_codes[0])
-            .await
-            .expect("existing backup code verification should succeed"),
+        verify_user_mfa_code(
+            &fixture.state.diesel_db,
+            &user.identity(),
+            &previous_codes[0]
+        )
+        .await
+        .expect("existing backup code verification should succeed"),
         Some(MfaVerificationMethod::BackupCode),
         "failed regeneration must not rotate or consume existing recovery codes"
     );
@@ -1012,13 +1025,13 @@ async fn mfa_disable_clears_totp_backup_codes_and_remembered_devices() {
     let user_agent = format!("nazo-mfa-disable/{suffix}");
     fixture.insert_confirmed_totp(&user, &secret).await;
     fixture.store_session(&user, &sid, false).await;
-    replace_backup_codes(&fixture.state.diesel_db, &user)
+    replace_backup_codes(&fixture.state.diesel_db, &user.identity())
         .await
         .expect("backup codes should generate");
     let remembered_req = actix_web::test::TestRequest::default()
         .insert_header((header::USER_AGENT, user_agent))
         .to_http_request();
-    remember_mfa_device(&fixture.state, &remembered_req, &user)
+    remember_mfa_device(&fixture.state, &remembered_req, &user.identity())
         .await
         .expect("remembered device should persist");
     let code = nazo_identity::mfa::totp_for_step(
@@ -1070,7 +1083,7 @@ async fn mfa_totp_begin_rejects_confirmed_credential_without_rotating_secret() {
     assert!(!has_set_cookie);
     let credential = pending_totp_credential(&fixture, &user).await;
     assert_eq!(credential.secret_base32, secret);
-    assert!(credential.confirmed_at.is_some());
+    assert!(credential.confirmed);
     assert_eq!(totp_credential_count(&fixture, &user).await, 1);
     assert!(fresh_user(&fixture, user.id).await.mfa_enabled);
 }
@@ -1126,13 +1139,13 @@ async fn mfa_disable_rejects_wrong_code_without_clearing_existing_state() {
         .insert_confirmed_totp(&user, "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")
         .await;
     fixture.store_session(&user, &sid, false).await;
-    let previous_codes = replace_backup_codes(&fixture.state.diesel_db, &user)
+    let previous_codes = replace_backup_codes(&fixture.state.diesel_db, &user.identity())
         .await
         .expect("backup codes should generate");
     let remembered_req = actix_web::test::TestRequest::default()
         .insert_header((header::USER_AGENT, user_agent))
         .to_http_request();
-    remember_mfa_device(&fixture.state, &remembered_req, &user)
+    remember_mfa_device(&fixture.state, &remembered_req, &user.identity())
         .await
         .expect("remembered device should persist");
 
@@ -1160,9 +1173,13 @@ async fn mfa_disable_rejects_wrong_code_without_clearing_existing_state() {
     assert_eq!(remembered_device_count(&fixture, &user).await, 1);
     assert!(fresh_user(&fixture, user.id).await.mfa_enabled);
     assert_eq!(
-        verify_user_mfa_code(&fixture.state.diesel_db, &user, &previous_codes[0])
-            .await
-            .expect("existing backup code verification should succeed"),
+        verify_user_mfa_code(
+            &fixture.state.diesel_db,
+            &user.identity(),
+            &previous_codes[0]
+        )
+        .await
+        .expect("existing backup code verification should succeed"),
         Some(MfaVerificationMethod::BackupCode),
         "failed disable must not clear recovery codes"
     );

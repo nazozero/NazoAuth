@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
-use crate::domain::UserRow;
+use crate::domain::DatabaseUserFixture;
 use crate::support::oidc_subject;
 use nazo_postgres::{create_pool, get_conn};
 
@@ -253,7 +253,7 @@ impl LiveAuthorizationCodeFixture {
         .expect("test client insert should succeed");
     }
 
-    async fn insert_user(&self) -> UserRow {
+    async fn insert_user(&self) -> DatabaseUserFixture {
         let suffix = Uuid::now_v7();
         let mut conn = get_conn(&self.state.diesel_db)
             .await
@@ -277,7 +277,7 @@ impl LiveAuthorizationCodeFixture {
         .bind::<SqlUuid, _>(DEFAULT_ORGANIZATION_ID)
         .bind::<Text, _>(format!("auth-code-{suffix}"))
         .bind::<Text, _>(format!("auth-code-{suffix}@example.com"))
-        .get_result::<UserRow>(&mut conn)
+        .get_result::<DatabaseUserFixture>(&mut conn)
         .await
         .expect("test user should insert")
     }

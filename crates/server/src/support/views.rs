@@ -3,11 +3,11 @@
 
 use super::prelude::*;
 
-pub(crate) async fn auth_me_json(state: &AppState, user: &UserRow) -> anyhow::Result<Value> {
+pub(crate) async fn auth_me_json(state: &AppState, user: &IdentityUser) -> anyhow::Result<Value> {
     let count = match get_conn(&state.diesel_db).await {
         Ok(mut conn) => {
             user_client_grants::table
-                .filter(user_client_grants::user_id.eq(user.id))
+                .filter(user_client_grants::user_id.eq(user.id()))
                 .select(count(user_client_grants::client_id).aggregate_distinct())
                 .first::<i64>(&mut conn)
                 .await?
@@ -15,31 +15,31 @@ pub(crate) async fn auth_me_json(state: &AppState, user: &UserRow) -> anyhow::Re
         Err(error) => return Err(error),
     };
     Ok(json!({
-        "id": user.id,
-        "email": user.email,
-        "display_name": user.display_name,
-        "avatar_url": user.avatar_url,
-        "given_name": user.given_name,
-        "family_name": user.family_name,
-        "middle_name": user.middle_name,
-        "nickname": user.nickname,
-        "profile_url": user.profile_url,
-        "website_url": user.website_url,
-        "gender": user.gender,
-        "birthdate": user.birthdate,
-        "zoneinfo": user.zoneinfo,
-        "locale": user.locale,
-        "address_formatted": user.address_formatted,
-        "address_street_address": user.address_street_address,
-        "address_locality": user.address_locality,
-        "address_region": user.address_region,
-        "address_postal_code": user.address_postal_code,
-        "address_country": user.address_country,
-        "phone_number": user.phone_number,
-        "phone_number_verified": user.phone_number_verified,
-        "mfa_enabled": user.mfa_enabled,
-        "role": user.role,
-        "admin_level": user.admin_level,
+        "id": user.id(),
+        "email": user.login.email,
+        "display_name": user.profile.display_name,
+        "avatar_url": user.profile.avatar_url,
+        "given_name": user.profile.given_name,
+        "family_name": user.profile.family_name,
+        "middle_name": user.profile.middle_name,
+        "nickname": user.profile.nickname,
+        "profile_url": user.profile.profile_url,
+        "website_url": user.profile.website_url,
+        "gender": user.profile.gender,
+        "birthdate": user.profile.birthdate,
+        "zoneinfo": user.profile.zoneinfo,
+        "locale": user.profile.locale,
+        "address_formatted": user.profile.address.formatted,
+        "address_street_address": user.profile.address.street_address,
+        "address_locality": user.profile.address.locality,
+        "address_region": user.profile.address.region,
+        "address_postal_code": user.profile.address.postal_code,
+        "address_country": user.profile.address.country,
+        "phone_number": user.profile.phone_number,
+        "phone_number_verified": user.profile.phone_number_verified,
+        "mfa_enabled": user.login.mfa_enabled,
+        "role": user.role_name(),
+        "admin_level": user.admin_level(),
         "authorized_app_count": count
     }))
 }
@@ -52,33 +52,33 @@ pub(crate) fn is_cross_site_fetch(headers: &HeaderMap) -> bool {
         .unwrap_or(false)
 }
 
-pub(crate) fn admin_user_json(user: UserRow) -> Value {
+pub(crate) fn admin_user_json(user: IdentityUser) -> Value {
     json!({
-        "id": user.id,
-        "email": user.email,
-        "display_name": user.display_name,
-        "given_name": user.given_name,
-        "family_name": user.family_name,
-        "middle_name": user.middle_name,
-        "nickname": user.nickname,
-        "profile_url": user.profile_url,
-        "website_url": user.website_url,
-        "gender": user.gender,
-        "birthdate": user.birthdate,
-        "zoneinfo": user.zoneinfo,
-        "locale": user.locale,
-        "address_formatted": user.address_formatted,
-        "address_street_address": user.address_street_address,
-        "address_locality": user.address_locality,
-        "address_region": user.address_region,
-        "address_postal_code": user.address_postal_code,
-        "address_country": user.address_country,
-        "phone_number": user.phone_number,
-        "phone_number_verified": user.phone_number_verified,
-        "mfa_enabled": user.mfa_enabled,
-        "is_active": user.is_active,
-        "role": user.role,
-        "admin_level": user.admin_level,
+        "id": user.id(),
+        "email": user.login.email,
+        "display_name": user.profile.display_name,
+        "given_name": user.profile.given_name,
+        "family_name": user.profile.family_name,
+        "middle_name": user.profile.middle_name,
+        "nickname": user.profile.nickname,
+        "profile_url": user.profile.profile_url,
+        "website_url": user.profile.website_url,
+        "gender": user.profile.gender,
+        "birthdate": user.profile.birthdate,
+        "zoneinfo": user.profile.zoneinfo,
+        "locale": user.profile.locale,
+        "address_formatted": user.profile.address.formatted,
+        "address_street_address": user.profile.address.street_address,
+        "address_locality": user.profile.address.locality,
+        "address_region": user.profile.address.region,
+        "address_postal_code": user.profile.address.postal_code,
+        "address_country": user.profile.address.country,
+        "phone_number": user.profile.phone_number,
+        "phone_number_verified": user.profile.phone_number_verified,
+        "mfa_enabled": user.login.mfa_enabled,
+        "is_active": user.principal.active,
+        "role": user.role_name(),
+        "admin_level": user.admin_level(),
         "created_at": user.created_at
     })
 }

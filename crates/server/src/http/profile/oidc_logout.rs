@@ -124,7 +124,7 @@ pub(crate) async fn oidc_logout(
                     .into_iter()
                     .collect::<Vec<_>>()
             } else {
-                match frontchannel_logout_clients_for_user(&state, session.user.id).await {
+                match frontchannel_logout_clients_for_user(&state, session.user.id()).await {
                     Ok(clients) => clients,
                     Err(error) => {
                         tracing::warn!(%error, "failed to query front-channel logout clients");
@@ -181,7 +181,7 @@ pub(crate) async fn oidc_logout(
                 json!(
                     current_session
                         .as_ref()
-                        .map(|session| blake3_hex(&session.user.id.to_string()))
+                        .map(|session| blake3_hex(&session.user.id().to_string()))
                 ),
             ),
         ]),
@@ -385,7 +385,7 @@ fn logout_request_authorizes_session_clear(
             id_token_hint_matches_current_session(
                 settings,
                 client,
-                session.user.id,
+                session.user.id(),
                 &session.oidc_sid,
                 hint,
             )
@@ -576,7 +576,7 @@ async fn enqueue_backchannel_logout(
         && !id_token_hint_matches_current_session(
             &state.settings,
             hinted_client,
-            session.user.id,
+            session.user.id(),
             &session.oidc_sid,
             hint,
         )
@@ -584,7 +584,7 @@ async fn enqueue_backchannel_logout(
         tracing::warn!("id_token_hint subject or sid did not match the current OP session");
         return Ok(());
     }
-    let clients = match backchannel_logout_clients_for_user(state, session.user.id).await {
+    let clients = match backchannel_logout_clients_for_user(state, session.user.id()).await {
         Ok(mut clients) => {
             if let Some(client) = hinted_client
                 && !clients
@@ -602,7 +602,7 @@ async fn enqueue_backchannel_logout(
             continue;
         };
         let subject =
-            match unique_logout_subject_for_client(&state.settings, session.user.id, &client) {
+            match unique_logout_subject_for_client(&state.settings, session.user.id(), &client) {
                 Ok(subject) => subject,
                 Err(_) => continue,
             };

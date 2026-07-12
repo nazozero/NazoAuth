@@ -1,11 +1,12 @@
 use std::{collections::HashMap, sync::Mutex};
 use std::{future::Future, pin::Pin};
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::{Principal, SubjectClaims, TenantContext, TenantId, UserId};
+use crate::{Principal, SubjectClaims, TenantContext, TenantId, UserId, UserProfile};
 
 pub type RepositoryFuture<'a, T> =
     Pin<Box<dyn Future<Output = Result<T, RepositoryError>> + Send + 'a>>;
@@ -14,13 +15,39 @@ pub type RepositoryFuture<'a, T> =
 pub enum RepositoryError {
     Unavailable,
     Conflict,
+    NotFound,
     Consistency(String),
     Unexpected(String),
 }
 
+impl std::fmt::Display for RepositoryError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unavailable => formatter.write_str("repository unavailable"),
+            Self::Conflict => formatter.write_str("repository conflict"),
+            Self::NotFound => formatter.write_str("repository value not found"),
+            Self::Consistency(message) => {
+                write!(formatter, "repository consistency error: {message}")
+            }
+            Self::Unexpected(message) => {
+                write!(formatter, "unexpected repository error: {message}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for RepositoryError {}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TotpCredential {
     pub secret_base32: String,
+    pub last_used_step: Option<i64>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TotpEnrollment {
+    pub secret_base32: String,
+    pub confirmed: bool,
     pub last_used_step: Option<i64>,
 }
 
@@ -33,9 +60,9 @@ pub struct PasskeyCredential {
     pub credential: Value,
     pub label: String,
     pub sign_count: i64,
-    pub last_used_at: Option<i64>,
-    pub created_at: i64,
-    pub updated_at: i64,
+    pub last_used_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -48,9 +75,9 @@ pub struct FederationLink {
     pub subject: String,
     pub email: String,
     pub claims: Value,
-    pub created_at: i64,
-    pub updated_at: i64,
-    pub last_login_at: Option<i64>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub last_login_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -62,6 +89,67 @@ pub struct NewFederationLink {
     pub subject: String,
     pub email: String,
     pub claims: Value,
+}
+
+#[derive(Clone, Debug)]
+pub struct FederationLogin {
+    pub tenant: TenantContext,
+    pub provider_type: String,
+    pub provider_id: String,
+    pub subject: String,
+    pub email: Option<String>,
+    pub claims: Value,
+}
+
+#[derive(Clone, Debug)]
+pub struct NewFederatedIdentity {
+    pub login: FederationLogin,
+    pub email: String,
+    pub display_name: Option<String>,
+    pub password_hash: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct NewUser {
+    pub tenant: TenantContext,
+    pub username: String,
+    pub email: String,
+    pub password_hash: String,
+    pub email_verified: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct ProfileUpdate {
+    pub profile: UserProfile,
+}
+
+#[derive(Clone, Debug)]
+pub struct AdminUserUpdate {
+    pub role: Option<String>,
+    pub admin_level: Option<i32>,
+    pub active: Option<bool>,
+}
+
+#[derive(Clone, Debug)]
+pub struct UserPage {
+    pub total: i64,
+    pub users: Vec<crate::IdentityUser>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ScimListQuery {
+    pub tenant_id: TenantId,
+    pub email: Option<String>,
+    pub after: Option<(DateTime<Utc>, Uuid)>,
+    pub limit: i64,
+    pub offset: i64,
+}
+
+#[derive(Clone, Debug)]
+pub struct NewScimUser {
+    pub tenant: TenantContext,
+    pub input: crate::scim::NormalizedScimUser,
+    pub password_hash: String,
 }
 
 pub trait UserRepositoryPort: Send + Sync {

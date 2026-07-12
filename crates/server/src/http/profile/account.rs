@@ -9,8 +9,8 @@ pub(crate) async fn me(state: Data<AppState>, req: HttpRequest) -> HttpResponse 
             Ok(Some(session)) => {
                 return json_response(json!({
                     "mfa_required": true,
-                    "id": session.user.id,
-                    "email": session.user.email,
+                    "id": session.user.id(),
+                    "email": session.user.login.email,
                     "csrf_token": cookie_value(&req, &state.settings.csrf_cookie_name)
                 }));
             }
@@ -163,42 +163,39 @@ pub(crate) async fn update_me(
         Ok(value) => value,
         Err(response) => return response,
     };
-    let phone_number_verified = user.phone_number_verified && user.phone_number == phone_number;
-    let mut conn = match get_conn(&state.diesel_db).await {
-        Ok(conn) => conn,
-        Err(_) => {
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "数据库连接失败.",
-            );
-        }
-    };
-    let updated = diesel::update(users::table.find(user.id))
-        .set((
-            users::display_name.eq(display_name),
-            users::given_name.eq(given_name),
-            users::family_name.eq(family_name),
-            users::middle_name.eq(middle_name),
-            users::nickname.eq(nickname),
-            users::profile_url.eq(profile_url),
-            users::website_url.eq(website_url),
-            users::gender.eq(gender),
-            users::birthdate.eq(birthdate),
-            users::zoneinfo.eq(zoneinfo),
-            users::locale.eq(locale),
-            users::address_formatted.eq(address_formatted),
-            users::address_street_address.eq(address_street_address),
-            users::address_locality.eq(address_locality),
-            users::address_region.eq(address_region),
-            users::address_postal_code.eq(address_postal_code),
-            users::address_country.eq(address_country),
-            users::phone_number.eq(phone_number),
-            users::phone_number_verified.eq(phone_number_verified),
-            users::updated_at.eq(diesel_now),
-        ))
-        .returning(UserRow::as_returning())
-        .get_result::<UserRow>(&mut conn)
+    let phone_number_verified =
+        user.profile.phone_number_verified && user.profile.phone_number == phone_number;
+    let updated = nazo_postgres::UserRepository::new(state.diesel_db.clone())
+        .update_profile(
+            user.tenant().tenant_id,
+            user.user_id(),
+            nazo_identity::ports::ProfileUpdate {
+                profile: nazo_identity::UserProfile {
+                    display_name,
+                    avatar_url: user.profile.avatar_url.clone(),
+                    given_name,
+                    family_name,
+                    middle_name,
+                    nickname,
+                    profile_url,
+                    website_url,
+                    gender,
+                    birthdate,
+                    zoneinfo,
+                    locale,
+                    address: nazo_identity::PostalAddress {
+                        formatted: address_formatted,
+                        street_address: address_street_address,
+                        locality: address_locality,
+                        region: address_region,
+                        postal_code: address_postal_code,
+                        country: address_country,
+                    },
+                    phone_number,
+                    phone_number_verified,
+                },
+            },
+        )
         .await;
     match updated {
         Ok(user) => match auth_me_json(&state, &user).await {

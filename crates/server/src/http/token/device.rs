@@ -760,7 +760,7 @@ pub(crate) async fn device_decision(
                     );
                 }
             };
-            let subject = match device_authorization_subject(&state.settings, user.id, &client) {
+            let subject = match device_authorization_subject(&state.settings, user.id(), &client) {
                 Ok(subject) => subject,
                 Err(error) => {
                     tracing::warn!(%error, "failed to compute device authorization subject");
@@ -773,7 +773,7 @@ pub(crate) async fn device_decision(
             };
             if let Err(error) = upsert_grant(
                 &state,
-                user.id,
+                user.id(),
                 &payload.client_id,
                 &payload.scopes,
                 &payload.resource_indicators,
@@ -791,7 +791,7 @@ pub(crate) async fn device_decision(
             DeviceAuthorizationState::Approved {
                 payload: payload.clone(),
                 approval: DeviceAuthorizationApproval {
-                    user_id: user.id,
+                    user_id: user.id(),
                     subject,
                     auth_time: now.timestamp(),
                     amr: vec!["pwd".to_owned()],

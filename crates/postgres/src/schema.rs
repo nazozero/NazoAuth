@@ -54,11 +54,30 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    oauth_tokens (id) {
+        id -> Uuid,
+        tenant_id -> Uuid,
+        user_id -> Nullable<Uuid>,
+        revoked_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
+    user_client_grants (id) {
+        id -> Uuid,
+        tenant_id -> Uuid,
+        user_id -> Uuid,
+    }
+}
+
 diesel::allow_tables_to_appear_in_same_query!(
     users,
     user_totp_credentials,
     user_mfa_backup_codes,
     user_mfa_remembered_devices,
     user_passkey_credentials,
-    external_identity_links
+    external_identity_links,
+    oauth_tokens,
+    user_client_grants
 );

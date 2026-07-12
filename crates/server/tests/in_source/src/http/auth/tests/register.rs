@@ -88,7 +88,7 @@ async fn find_user_by_email_treats_like_metacharacters_literally() {
             .user_by_email(&victim_email)
             .await
             .expect("literal victim email should still resolve")
-            .id,
+            .id(),
         victim.id
     );
 }
@@ -123,7 +123,7 @@ impl LiveRegisterFixture {
         })
     }
 
-    async fn create_user(&self, email: &str) -> UserRow {
+    async fn create_user(&self, email: &str) -> DatabaseUserFixture {
         let tenant = default_tenant_context();
         let username = format!("register-{}", Uuid::now_v7().simple());
         let mut conn = get_conn(&self.state.diesel_db)
@@ -144,12 +144,12 @@ impl LiveRegisterFixture {
         .bind::<SqlUuid, _>(tenant.organization_id)
         .bind::<Text, _>(username)
         .bind::<Text, _>(email.to_owned())
-        .get_result::<UserRow>(&mut conn)
+        .get_result::<DatabaseUserFixture>(&mut conn)
         .await
         .expect("test user should insert")
     }
 
-    async fn user_by_email(&self, email: &str) -> Option<UserRow> {
+    async fn user_by_email(&self, email: &str) -> Option<IdentityUser> {
         let email = normalize_email_address(email).expect("test email should normalize");
         find_user_by_email(&self.state.diesel_db, &email)
             .await
@@ -181,9 +181,9 @@ impl LiveRegisterFixture {
     }
 }
 
-fn user_row() -> UserRow {
+fn user_row() -> IdentityUser {
     let now = Utc::now();
-    UserRow {
+    DatabaseUserFixture {
         id: Uuid::now_v7(),
         tenant_id: Uuid::now_v7(),
         realm_id: Uuid::now_v7(),
@@ -219,6 +219,7 @@ fn user_row() -> UserRow {
         created_at: now,
         updated_at: now,
     }
+    .identity()
 }
 
 async fn response_json(response: HttpResponse) -> (StatusCode, Value) {
@@ -278,7 +279,7 @@ async fn register_success_response_exposes_only_public_identity() {
         .expect("register success response should collect");
     let body: Value = serde_json::from_slice(&body).unwrap();
 
-    assert_eq!(body["id"], json!(user.id));
+    assert_eq!(body["id"], json!(user.id()));
     assert_eq!(body["email"], "user@example.com");
     assert!(body.get("password_hash").is_none());
     assert!(body.get("access_token").is_none());
@@ -314,7 +315,7 @@ async fn register_rejects_existing_email_without_consuming_verification_code() {
             .user_by_email(&email)
             .await
             .expect("existing user should remain present")
-            .id,
+            .id(),
         existing.id
     );
     assert!(
@@ -402,10 +403,10 @@ async fn register_creates_verified_user_and_consumes_verification_code() {
         .user_by_email(&email)
         .await
         .expect("successful registration should create a user");
-    assert_eq!(body["id"], json!(created.id));
-    assert!(created.email_verified);
+    assert_eq!(body["id"], json!(created.id()));
+    assert!(created.login.email_verified);
     assert_ne!(
-        created.password_hash, password,
+        created.login.password_hash, password,
         "passwords must be hashed before they reach the database"
     );
     assert!(

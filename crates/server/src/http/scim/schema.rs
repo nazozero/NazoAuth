@@ -5,26 +5,26 @@ pub(super) use nazo_identity::scim::{
     SCIM_SCHEMA_SCHEMA, SCIM_SERVICE_PROVIDER_CONFIG_SCHEMA, SCIM_USER_SCHEMA,
 };
 
-pub(super) fn scim_user_json(user: UserRow) -> Value {
+pub(super) fn scim_user_json(user: IdentityUser) -> Value {
     scim_base(json!({
         "schemas": [SCIM_USER_SCHEMA],
-        "id": user.id,
-        "userName": user.email,
-        "active": user.is_active,
+        "id": user.id(),
+        "userName": user.login.email,
+        "active": user.principal.active,
         "name": {
-            "formatted": user.display_name,
-            "givenName": user.given_name,
-            "familyName": user.family_name
+            "formatted": user.profile.display_name,
+            "givenName": user.profile.given_name,
+            "familyName": user.profile.family_name
         },
         "emails": [{
-            "value": user.email,
+            "value": user.login.email,
             "primary": true
         }],
         "meta": {
             "resourceType": "User",
             "created": user.created_at,
             "lastModified": user.updated_at,
-            "location": format!("/scim/v2/Users/{}", user.id)
+            "location": format!("/scim/v2/Users/{}", user.id())
         }
     }))
 }

@@ -151,7 +151,7 @@ impl LiveAccountFixture {
         display_name: Option<&str>,
         phone_number: Option<&str>,
         phone_number_verified: bool,
-    ) -> UserRow {
+    ) -> DatabaseUserFixture {
         let email = format!("account-{suffix}@example.com");
         let username = format!("account-{suffix}");
         let mut conn = get_conn(&self.state.diesel_db)
@@ -177,12 +177,12 @@ impl LiveAccountFixture {
         .bind::<Nullable<Text>, _>(display_name.map(str::to_owned))
         .bind::<Nullable<Text>, _>(phone_number.map(str::to_owned))
         .bind::<Bool, _>(phone_number_verified)
-        .get_result::<UserRow>(&mut conn)
+        .get_result::<DatabaseUserFixture>(&mut conn)
         .await
         .expect("test user should insert")
     }
 
-    async fn store_session(&self, user: &UserRow, sid: &str, pending_mfa: bool) {
+    async fn store_session(&self, user: &DatabaseUserFixture, sid: &str, pending_mfa: bool) {
         let payload = SessionPayload {
             user_id: user.id,
             auth_time: Utc::now().timestamp(),
@@ -227,14 +227,14 @@ impl LiveAccountFixture {
             .to_http_request()
     }
 
-    async fn fresh_user(&self, user_id: Uuid) -> UserRow {
+    async fn fresh_user(&self, user_id: Uuid) -> DatabaseUserFixture {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
         users::table
             .find(user_id)
-            .select(UserRow::as_select())
-            .first::<UserRow>(&mut conn)
+            .select(DatabaseUserFixture::as_select())
+            .first::<DatabaseUserFixture>(&mut conn)
             .await
             .expect("user should reload")
     }

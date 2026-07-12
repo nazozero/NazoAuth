@@ -2,8 +2,8 @@ use super::*;
 use crate::support::OAuthJsonErrorFields;
 use passkey_auth::{CosePublicKey, CredentialId, PasskeyCredential};
 
-fn passkey_user() -> UserRow {
-    UserRow {
+fn passkey_user_fixture() -> DatabaseUserFixture {
+    DatabaseUserFixture {
         id: Uuid::now_v7(),
         tenant_id: Uuid::now_v7(),
         realm_id: Uuid::now_v7(),
@@ -41,34 +41,38 @@ fn passkey_user() -> UserRow {
     }
 }
 
+fn passkey_user() -> IdentityUser {
+    passkey_user_fixture().identity()
+}
+
 #[test]
 fn passkey_user_handle_binds_tenant_and_user() {
     let user = passkey_user();
 
     let handle = passkey_user_handle(&user).unwrap();
     assert_eq!(handle.len(), 32);
-    assert!(handle.starts_with(user.tenant_id.as_bytes()));
-    assert!(handle.ends_with(user.id.as_bytes()));
+    assert!(handle.starts_with(user.tenant_id().as_bytes()));
+    assert!(handle.ends_with(user.id().as_bytes()));
 }
 
 #[test]
 fn passkey_user_handle_rejects_nil_persisted_tenant_id_without_panicking() {
-    let user = UserRow {
+    let user = DatabaseUserFixture {
         tenant_id: Uuid::nil(),
-        ..passkey_user()
+        ..passkey_user_fixture()
     };
 
-    assert!(passkey_user_handle(&user).is_err());
+    assert!(IdentityUser::try_from(user).is_err());
 }
 
 #[test]
 fn passkey_user_handle_rejects_nil_persisted_user_id_without_panicking() {
-    let user = UserRow {
+    let user = DatabaseUserFixture {
         id: Uuid::nil(),
-        ..passkey_user()
+        ..passkey_user_fixture()
     };
 
-    assert!(passkey_user_handle(&user).is_err());
+    assert!(IdentityUser::try_from(user).is_err());
 }
 
 #[test]
@@ -146,7 +150,7 @@ fn passkey_row_parsing_and_public_json_do_not_expose_private_row_context() {
         transports: vec!["internal".to_owned(), "hybrid".to_owned()],
         aaguid: [7; 16],
     };
-    let row = PasskeyCredentialRow {
+    let row = DatabasePasskeyFixture {
         id: Uuid::now_v7(),
         tenant_id: Uuid::now_v7(),
         user_id: Uuid::now_v7(),
@@ -159,6 +163,7 @@ fn passkey_row_parsing_and_public_json_do_not_expose_private_row_context() {
         updated_at: now,
     };
 
+    let row = row.credential();
     let parsed = passkey_credential_from_row(&row).unwrap();
     assert_eq!(parsed.id, credential.id);
     assert_eq!(
@@ -179,7 +184,7 @@ fn passkey_row_parsing_and_public_json_do_not_expose_private_row_context() {
 #[test]
 fn malformed_passkey_credential_rows_fail_closed() {
     let now = Utc::now();
-    let row = PasskeyCredentialRow {
+    let row = DatabasePasskeyFixture {
         id: Uuid::now_v7(),
         tenant_id: Uuid::now_v7(),
         user_id: Uuid::now_v7(),
@@ -193,11 +198,11 @@ fn malformed_passkey_credential_rows_fail_closed() {
     };
 
     assert!(
-        passkey_credential_from_row(&row).is_err(),
+        passkey_credential_from_row(&row.credential()).is_err(),
         "malformed stored passkey credential JSON must not be accepted"
     );
     assert!(
-        passkey_credential_ids(&[row]).is_err(),
+        passkey_credential_ids(&[row.credential()]).is_err(),
         "credential-id extraction must fail when any stored credential is malformed"
     );
 }

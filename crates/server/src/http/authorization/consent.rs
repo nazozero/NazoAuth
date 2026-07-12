@@ -88,7 +88,7 @@ pub(crate) async fn authorize_consent(
     let Some(payload) = parse_consent_payload(raw) else {
         return malformed_or_missing_consent_response();
     };
-    let payload = match validate_consent_payload_user(payload, user.id) {
+    let payload = match validate_consent_payload_user(payload, user.id()) {
         Ok(payload) => payload,
         Err(response) => return response,
     };

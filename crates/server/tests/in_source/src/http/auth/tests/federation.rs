@@ -221,7 +221,7 @@ impl LiveFederationFixture {
         })
     }
 
-    async fn create_user(&self, email: &str, is_active: bool) -> UserRow {
+    async fn create_user(&self, email: &str, is_active: bool) -> DatabaseUserFixture {
         let username = format!("federation-{}", Uuid::now_v7().simple());
         let mut conn = get_conn(&self.state.diesel_db)
             .await
@@ -242,19 +242,19 @@ impl LiveFederationFixture {
         .bind::<Text, _>(username)
         .bind::<Text, _>(email.to_owned())
         .bind::<Bool, _>(is_active)
-        .get_result::<UserRow>(&mut conn)
+        .get_result::<DatabaseUserFixture>(&mut conn)
         .await
         .expect("test user should insert")
     }
 
     async fn insert_external_identity_link(
         &self,
-        user: &UserRow,
+        user: &DatabaseUserFixture,
         provider_type: &str,
         provider_id: &str,
         subject: &str,
         email: &str,
-    ) -> ExternalIdentityLinkRow {
+    ) -> DatabaseExternalIdentityFixture {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
@@ -269,13 +269,13 @@ impl LiveFederationFixture {
                 external_identity_links::claims.eq(json!({"sub": subject})),
                 external_identity_links::last_login_at.eq(Utc::now()),
             ))
-            .returning(ExternalIdentityLinkRow::as_returning())
-            .get_result::<ExternalIdentityLinkRow>(&mut conn)
+            .returning(DatabaseExternalIdentityFixture::as_returning())
+            .get_result::<DatabaseExternalIdentityFixture>(&mut conn)
             .await
             .expect("external identity link should insert")
     }
 
-    async fn user_by_email(&self, email: &str) -> Option<UserRow> {
+    async fn user_by_email(&self, email: &str) -> Option<IdentityUser> {
         find_user_by_email(&self.state.diesel_db, email)
             .await
             .expect("user lookup should succeed")
@@ -286,7 +286,7 @@ impl LiveFederationFixture {
         provider_type: &str,
         provider_id: &str,
         subject: &str,
-    ) -> Option<ExternalIdentityLinkRow> {
+    ) -> Option<DatabaseExternalIdentityFixture> {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
@@ -295,8 +295,8 @@ impl LiveFederationFixture {
             .filter(external_identity_links::provider_type.eq(provider_type))
             .filter(external_identity_links::provider_id.eq(provider_id))
             .filter(external_identity_links::subject.eq(subject))
-            .select(ExternalIdentityLinkRow::as_select())
-            .first::<ExternalIdentityLinkRow>(&mut conn)
+            .select(DatabaseExternalIdentityFixture::as_select())
+            .first::<DatabaseExternalIdentityFixture>(&mut conn)
             .await
             .optional()
             .expect("external identity link lookup should succeed")
@@ -1488,11 +1488,11 @@ async fn oidc_callback_creates_new_federated_user_session_and_external_link() {
         .expect("OIDC login should persist the external identity link");
     let session = fixture.session_payload(&session_cookie).await;
 
-    assert_eq!(user.display_name.as_deref(), Some("Federated User"));
-    assert!(user.email_verified);
-    assert_eq!(link.user_id, user.id);
+    assert_eq!(user.profile.display_name.as_deref(), Some("Federated User"));
+    assert!(user.login.email_verified);
+    assert_eq!(link.user_id, user.id());
     assert_eq!(link.email, email);
-    assert_eq!(session.user_id, user.id);
+    assert_eq!(session.user_id, user.id());
     assert_eq!(session.amr, vec!["oidc".to_owned(), "federated".to_owned()]);
     assert!(!session.pending_mfa);
     assert!(session.oidc_sid.is_some());
@@ -1553,7 +1553,7 @@ async fn oidc_callback_rejects_existing_active_email_account_without_explicit_li
     // 自动把外部 subject 绑定到该账号。
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(body["error"], "access_denied");
-    assert_eq!(linked_user.id, existing_user.id);
+    assert_eq!(linked_user.id(), existing_user.id);
     assert!(
         fixture
             .external_identity_link("oidc", TEST_OIDC_PROVIDER_ID, &subject)
@@ -1626,8 +1626,8 @@ async fn oidc_callback_rejects_existing_inactive_email_account_without_link_or_s
         .user_by_email(&email)
         .await
         .expect("inactive user should remain present");
-    assert_eq!(reloaded.id, inactive_user.id);
-    assert!(!reloaded.is_active);
+    assert_eq!(reloaded.id(), inactive_user.id);
+    assert!(!reloaded.principal.active);
 }
 
 #[actix_web::test]
@@ -1742,8 +1742,8 @@ async fn saml_acs_creates_new_federated_user_session_and_external_link() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["mfa_required"], false);
     assert_eq!(body["csrf_token"], csrf_cookie);
-    assert_eq!(user.display_name.as_deref(), Some("SAML User"));
-    assert_eq!(link.user_id, user.id);
-    assert_eq!(session.user_id, user.id);
+    assert_eq!(user.profile.display_name.as_deref(), Some("SAML User"));
+    assert_eq!(link.user_id, user.id());
+    assert_eq!(session.user_id, user.id());
     assert_eq!(session.amr, vec!["saml".to_owned(), "federated".to_owned()]);
 }

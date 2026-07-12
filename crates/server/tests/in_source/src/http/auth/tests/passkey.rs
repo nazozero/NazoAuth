@@ -1,8 +1,8 @@
 use super::*;
 use std::sync::Arc;
 
-fn passkey_user_handle(user: &UserRow) -> Vec<u8> {
-    crate::support::passkey_user_handle(user).expect("test user IDs must be valid")
+fn passkey_user_handle(user: &DatabaseUserFixture) -> Vec<u8> {
+    crate::support::passkey_user_handle(&user.identity()).expect("test user IDs must be valid")
 }
 use std::time::Duration as StdDuration;
 
@@ -194,12 +194,12 @@ impl LivePasskeyFixture {
         })
     }
 
-    async fn create_user(&self, suffix: &str) -> UserRow {
+    async fn create_user(&self, suffix: &str) -> DatabaseUserFixture {
         self.create_user_with_email(&format!("passkey-login-{suffix}@example.com"), true)
             .await
     }
 
-    async fn create_user_with_email(&self, email: &str, is_active: bool) -> UserRow {
+    async fn create_user_with_email(&self, email: &str, is_active: bool) -> DatabaseUserFixture {
         let username = format!("passkey-login-{}", Uuid::now_v7().simple());
         let mut conn = get_conn(&self.state.diesel_db)
             .await
@@ -220,7 +220,7 @@ impl LivePasskeyFixture {
         .bind::<Text, _>(username)
         .bind::<Text, _>(email.to_owned())
         .bind::<Bool, _>(is_active)
-        .get_result::<UserRow>(&mut conn)
+        .get_result::<DatabaseUserFixture>(&mut conn)
         .await
         .expect("test user should insert")
     }
@@ -257,7 +257,7 @@ impl LivePasskeyFixture {
 
     fn register_credential(
         &self,
-        user: &UserRow,
+        user: &DatabaseUserFixture,
         authenticator: &FakeAuthenticator,
     ) -> PasskeyCredential {
         let webauthn = passkey_webauthn(&self.state.settings);
@@ -280,9 +280,9 @@ impl LivePasskeyFixture {
 
     async fn insert_credential(
         &self,
-        user: &UserRow,
+        user: &DatabaseUserFixture,
         credential: &PasskeyCredential,
-    ) -> PasskeyCredentialRow {
+    ) -> DatabasePasskeyFixture {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
@@ -296,17 +296,17 @@ impl LivePasskeyFixture {
                 user_passkey_credentials::label.eq("Security key"),
                 user_passkey_credentials::sign_count.eq(i64::from(credential.counter)),
             ))
-            .returning(PasskeyCredentialRow::as_returning())
-            .get_result::<PasskeyCredentialRow>(&mut conn)
+            .returning(DatabasePasskeyFixture::as_returning())
+            .get_result::<DatabasePasskeyFixture>(&mut conn)
             .await
             .expect("passkey credential should insert")
     }
 
     async fn insert_malformed_credential(
         &self,
-        user: &UserRow,
+        user: &DatabaseUserFixture,
         credential_id: &str,
-    ) -> PasskeyCredentialRow {
+    ) -> DatabasePasskeyFixture {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
@@ -319,8 +319,8 @@ impl LivePasskeyFixture {
                 user_passkey_credentials::label.eq("Broken credential"),
                 user_passkey_credentials::sign_count.eq(0_i64),
             ))
-            .returning(PasskeyCredentialRow::as_returning())
-            .get_result::<PasskeyCredentialRow>(&mut conn)
+            .returning(DatabasePasskeyFixture::as_returning())
+            .get_result::<DatabasePasskeyFixture>(&mut conn)
             .await
             .expect("malformed passkey credential should insert")
     }
@@ -596,7 +596,7 @@ async fn passkey_login_finish_creates_session_updates_counter_and_consumes_cerem
     assert_eq!(body["mfa_required"], false);
     assert!(body.get("session_id").is_none());
 
-    let rows = load_user_passkeys(&fixture.state, &user)
+    let rows = load_user_passkeys(&fixture.state, &user.identity())
         .await
         .expect("passkeys should load");
     let updated = rows
@@ -636,7 +636,7 @@ async fn passkey_login_finish_requires_mfa_for_mfa_enabled_user_without_remember
     let suffix = Uuid::now_v7().simple().to_string();
     let user = fixture.create_user(&format!("required-mfa-{suffix}")).await;
     fixture.set_user_mfa_enabled(user.id, true).await;
-    let user = find_user_by_id(&fixture.state.diesel_db, user.id)
+    let identity_user = find_user_by_id(&fixture.state.diesel_db, user.id)
         .await
         .expect("user lookup should succeed")
         .expect("user should exist");
@@ -644,7 +644,7 @@ async fn passkey_login_finish_requires_mfa_for_mfa_enabled_user_without_remember
         FakeAuthenticator::new(format!("mfa-login-credential-{suffix}").as_bytes());
     let credential = fixture.register_credential(&user, &authenticator);
     fixture.insert_credential(&user, &credential).await;
-    let (ceremony_id, challenge) = begin_passkey_login(&fixture, &user.email).await;
+    let (ceremony_id, challenge) = begin_passkey_login(&fixture, &identity_user.login.email).await;
 
     let finish_response = passkey_login_finish(
         fixture.state.clone(),
@@ -686,21 +686,21 @@ async fn passkey_login_finish_skips_pending_mfa_for_remembered_device() {
         .create_user(&format!("remembered-mfa-{suffix}"))
         .await;
     fixture.set_user_mfa_enabled(user.id, true).await;
-    let user = find_user_by_id(&fixture.state.diesel_db, user.id)
+    let identity_user = find_user_by_id(&fixture.state.diesel_db, user.id)
         .await
         .expect("user lookup should succeed")
         .expect("user should exist");
     let remember_request = actix_web::test::TestRequest::default()
         .insert_header((header::USER_AGENT, user_agent.clone()))
         .to_http_request();
-    let remember_token = remember_mfa_device(&fixture.state, &remember_request, &user)
+    let remember_token = remember_mfa_device(&fixture.state, &remember_request, &identity_user)
         .await
         .expect("remembered device token should be generated");
     let mut authenticator =
         FakeAuthenticator::new(format!("remembered-mfa-credential-{suffix}").as_bytes());
     let credential = fixture.register_credential(&user, &authenticator);
     fixture.insert_credential(&user, &credential).await;
-    let (ceremony_id, challenge) = begin_passkey_login(&fixture, &user.email).await;
+    let (ceremony_id, challenge) = begin_passkey_login(&fixture, &identity_user.login.email).await;
 
     let finish_response = passkey_login_finish(
         fixture.state.clone(),
@@ -1018,7 +1018,7 @@ async fn passkey_login_finish_rejects_malformed_credential_id_before_credential_
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"], "invalid_request");
     assert_eq!(body["error_description"], "invalid passkey credential id.");
-    let rows = load_user_passkeys(&fixture.state, &user)
+    let rows = load_user_passkeys(&fixture.state, &user.identity())
         .await
         .expect("passkeys should load after rejected login");
     assert_eq!(rows.len(), 1);

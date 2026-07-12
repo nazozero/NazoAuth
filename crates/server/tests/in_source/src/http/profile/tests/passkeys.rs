@@ -44,9 +44,9 @@ fn request_with_session_but_no_csrf(state: &AppState) -> HttpRequest {
         .to_http_request()
 }
 
-fn passkey_row(id: Uuid, tenant_id: Uuid, user_id: Uuid, label: &str) -> PasskeyCredentialRow {
+fn passkey_row(id: Uuid, tenant_id: Uuid, user_id: Uuid, label: &str) -> DatabasePasskeyFixture {
     let now = Utc::now();
-    PasskeyCredentialRow {
+    DatabasePasskeyFixture {
         id,
         tenant_id,
         user_id,
@@ -190,7 +190,7 @@ impl LivePasskeyFixture {
         })
     }
 
-    async fn create_user(&self, suffix: &str) -> UserRow {
+    async fn create_user(&self, suffix: &str) -> DatabaseUserFixture {
         let email = format!("passkey-{suffix}@example.com");
         let username = format!("passkey-{suffix}");
         let mut conn = get_conn(&self.state.diesel_db)
@@ -212,12 +212,12 @@ impl LivePasskeyFixture {
         .bind::<Text, _>(username)
         .bind::<Text, _>(email)
         .bind::<Bool, _>(true)
-        .get_result::<UserRow>(&mut conn)
+        .get_result::<DatabaseUserFixture>(&mut conn)
         .await
         .expect("test user should insert")
     }
 
-    async fn store_session(&self, user: &UserRow, sid: &str) {
+    async fn store_session(&self, user: &DatabaseUserFixture, sid: &str) {
         let payload = SessionPayload {
             user_id: user.id,
             auth_time: Utc::now().timestamp(),
@@ -251,11 +251,11 @@ impl LivePasskeyFixture {
 
     async fn insert_passkey_credential(
         &self,
-        user: &UserRow,
+        user: &DatabaseUserFixture,
         credential_id: &str,
         credential: Value,
         label: &str,
-    ) -> PasskeyCredentialRow {
+    ) -> DatabasePasskeyFixture {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
@@ -273,7 +273,7 @@ impl LivePasskeyFixture {
         .bind::<Text, _>(credential_id.to_owned())
         .bind::<Jsonb, _>(credential)
         .bind::<Text, _>(label.to_owned())
-        .get_result::<PasskeyCredentialRow>(&mut conn)
+        .get_result::<DatabasePasskeyFixture>(&mut conn)
         .await
         .expect("passkey credential should insert")
     }
@@ -449,7 +449,10 @@ async fn passkey_list_response_exposes_only_public_credential_projection() {
         "Laptop",
     );
 
-    let (status, body) = response_json(passkey_list_response(std::slice::from_ref(&row))).await;
+    let (status, body) = response_json(passkey_list_response(std::slice::from_ref(
+        &row.credential(),
+    )))
+    .await;
 
     assert_eq!(status, StatusCode::OK);
     let passkeys = body["passkeys"]
@@ -492,7 +495,7 @@ async fn passkey_created_response_uses_created_status_and_public_projection_only
         "Security key",
     );
 
-    let (status, body) = response_json(passkey_created_response(&row)).await;
+    let (status, body) = response_json(passkey_created_response(&row.credential())).await;
 
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["id"], json!(row.id));
@@ -733,11 +736,11 @@ async fn registration_finish_rejects_ceremony_user_mismatch_without_inserting_cr
     assert_eq!(body["error"], "invalid_request");
     assert_eq!(body["error_description"], "passkey ceremony mismatch.");
 
-    let owner_rows = load_user_passkeys(&fixture.state, &owner)
+    let owner_rows = load_user_passkeys(&fixture.state, &owner.identity())
         .await
         .expect("owner passkeys should load");
     assert!(owner_rows.is_empty());
-    let attacker_rows = load_user_passkeys(&fixture.state, &attacker)
+    let attacker_rows = load_user_passkeys(&fixture.state, &attacker.identity())
         .await
         .expect("attacker passkeys should load");
     assert!(attacker_rows.is_empty());
@@ -858,7 +861,7 @@ async fn registration_finish_rejects_invalid_authenticator_response_without_pers
     assert_eq!(body["error"], "invalid_request");
     assert_eq!(body["error_description"], "passkey registration failed.");
     assert!(
-        load_user_passkeys(&fixture.state, &user)
+        load_user_passkeys(&fixture.state, &user.identity())
             .await
             .expect("passkeys should load")
             .is_empty(),
@@ -930,7 +933,7 @@ async fn delete_passkey_removes_authenticated_user_credential() {
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert!(body.is_empty());
     assert!(
-        load_user_passkeys(&fixture.state, &user)
+        load_user_passkeys(&fixture.state, &user.identity())
             .await
             .expect("passkeys should load")
             .is_empty(),
@@ -1017,7 +1020,7 @@ async fn registration_finish_returns_conflict_without_second_row_on_duplicate_cr
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["error"], "invalid_request");
     assert_eq!(body["error_description"], "passkey already registered.");
-    let rows = load_user_passkeys(&fixture.state, &user)
+    let rows = load_user_passkeys(&fixture.state, &user.identity())
         .await
         .expect("passkeys should load");
     assert_eq!(rows.len(), 1);
@@ -1059,13 +1062,13 @@ async fn delete_passkey_cannot_remove_another_users_credential() {
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["error"], "invalid_request");
     assert_eq!(body["error_description"], "passkey not found.");
-    let owner_rows = load_user_passkeys(&fixture.state, &owner)
+    let owner_rows = load_user_passkeys(&fixture.state, &owner.identity())
         .await
         .expect("owner passkeys should load");
     assert_eq!(owner_rows.len(), 1);
     assert_eq!(owner_rows[0].label, "Owner key");
     assert!(
-        load_user_passkeys(&fixture.state, &attacker)
+        load_user_passkeys(&fixture.state, &attacker.identity())
             .await
             .expect("attacker passkeys should load")
             .is_empty()

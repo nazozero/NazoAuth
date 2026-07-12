@@ -1,7 +1,7 @@
 use super::*;
 
-fn user_in_context(context: TenantContext) -> UserRow {
-    UserRow {
+fn user_in_context(context: TenantContext) -> IdentityUser {
+    DatabaseUserFixture {
         id: Uuid::now_v7(),
         tenant_id: context.tenant_id,
         realm_id: context.realm_id,
@@ -37,6 +37,7 @@ fn user_in_context(context: TenantContext) -> UserRow {
         created_at: Utc::now(),
         updated_at: Utc::now(),
     }
+    .identity()
 }
 
 fn client_in_context(context: TenantContext) -> ClientRow {

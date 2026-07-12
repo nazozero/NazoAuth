@@ -106,7 +106,7 @@ pub(crate) async fn authorize_decision(
             "授权请求不存在或已过期,请重新发起授权.",
         );
     };
-    if payload.user_id != user.id {
+    if payload.user_id != user.id() {
         return oauth_error(
             StatusCode::FORBIDDEN,
             "access_denied",
@@ -131,7 +131,7 @@ pub(crate) async fn authorize_decision(
             "授权请求不存在或已过期,请重新发起授权.",
         );
     };
-    if payload.user_id != user.id {
+    if payload.user_id != user.id() {
         return oauth_error(
             StatusCode::FORBIDDEN,
             "access_denied",
