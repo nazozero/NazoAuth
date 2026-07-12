@@ -473,17 +473,11 @@ impl LiveAdminAccessRequestFixture {
     }
 
     async fn client_row(&self, approved_client_id: Uuid) -> ClientRow {
-        let mut conn = get_conn(&self.state.diesel_db)
+        nazo_postgres::OAuthClientRepository::new(self.state.diesel_db.clone())
+            .by_id(approved_client_id)
             .await
-            .expect("database connection");
-        oauth_clients::table
-            .find(approved_client_id)
-            .select(ClientRecord::as_select())
-            .first::<ClientRecord>(&mut conn)
-            .await
+            .expect("client lookup should succeed")
             .expect("approved client should exist")
-            .try_into()
-            .expect("approved client metadata should be valid")
     }
 
     async fn client_has_secret_hash(&self, approved_client_id: Uuid) -> bool {

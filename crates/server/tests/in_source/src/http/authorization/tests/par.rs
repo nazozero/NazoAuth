@@ -37,7 +37,7 @@ fn client(require_dpop_bound_tokens: bool) -> ClientRow {
         allowed_audiences: json!([]),
         grant_types: json!(["authorization_code"]),
         token_endpoint_auth_method: "private_key_jwt".to_owned(),
-        require_dpop_bound_tokens,
+        require_dpop_bound_tokens: require_dpop_bound_tokens,
         require_mtls_bound_tokens: false,
         tls_client_auth_subject_dn: None,
         tls_client_auth_cert_sha256: None,

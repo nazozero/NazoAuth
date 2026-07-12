@@ -270,9 +270,6 @@ impl LiveAdminClientUpdateFixture {
     }
 
     async fn insert_client(&self, client_name: &str) -> ClientRow {
-        let mut conn = get_conn(&self.state.diesel_db)
-            .await
-            .expect("database connection");
         let prepared = prepare_client_insert_for_test(
             create_client_request(client_name),
             None,
@@ -280,23 +277,17 @@ impl LiveAdminClientUpdateFixture {
         )
         .await
         .expect("client creation payload should be valid");
-        insert_prepared_client(&mut conn, &prepared)
+        insert_prepared_client(&self.state.diesel_db, &prepared)
             .await
             .expect("client should insert")
     }
 
     async fn client_row(&self, client_id: &str) -> ClientRow {
-        let mut conn = get_conn(&self.state.diesel_db)
+        nazo_postgres::OAuthClientRepository::new(self.state.diesel_db.clone())
+            .by_client_id(DEFAULT_TENANT_ID, client_id)
             .await
-            .expect("database connection");
-        oauth_clients::table
-            .filter(oauth_clients::client_id.eq(client_id))
-            .select(ClientRecord::as_select())
-            .first::<ClientRecord>(&mut conn)
-            .await
+            .expect("client lookup should succeed")
             .expect("client should load")
-            .try_into()
-            .expect("client metadata should be valid")
     }
 }
 

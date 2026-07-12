@@ -13,54 +13,13 @@ pub(crate) async fn admin_clients(
     }
 
     let (page, page_size, offset) = pagination(&q);
-    let (total, clients) = match get_conn(&state.diesel_db).await {
-        Ok(mut conn) => {
-            let total = match oauth_clients::table
-                .select(count_star())
-                .first::<i64>(&mut conn)
-                .await
-            {
-                Ok(total) => total,
-                Err(error) => {
-                    tracing::warn!(%error, "failed to count oauth clients");
-                    return oauth_error(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "server_error",
-                        "客户端列表查询失败.",
-                    );
-                }
-            };
-            let rows = match oauth_clients::table
-                .select(ClientRecord::as_select())
-                .order(oauth_clients::created_at.desc())
-                .limit(page_size as i64)
-                .offset(offset as i64)
-                .load::<ClientRecord>(&mut conn)
-                .await
-                .and_then(|records| {
-                    records
-                        .into_iter()
-                        .map(|record| {
-                            record.try_into().map_err(|error| {
-                                diesel::result::Error::DeserializationError(Box::new(error))
-                            })
-                        })
-                        .collect()
-                }) {
-                Ok(rows) => rows,
-                Err(error) => {
-                    tracing::warn!(%error, "failed to load oauth clients");
-                    return oauth_error(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "server_error",
-                        "客户端列表查询失败.",
-                    );
-                }
-            };
-            (total, rows)
-        }
+    let (clients, total) = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .page(offset as i64, page_size as i64)
+        .await
+    {
+        Ok(page) => page,
         Err(error) => {
-            tracing::warn!(%error, "failed to get database connection for client list");
+            tracing::warn!(%error, "failed to load oauth clients");
             return oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",

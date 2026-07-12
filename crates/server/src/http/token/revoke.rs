@@ -47,36 +47,11 @@ pub(crate) async fn revoke_after_rate_limit(
             has_basic,
         );
     };
-    let mut conn = match get_conn(&state.diesel_db).await {
-        Ok(conn) => conn,
-        Err(error) => {
-            tracing::warn!(%error, "failed to get database connection for token revocation client lookup");
-            return token_management_oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "客户端查询失败.",
-            );
-        }
-    };
-    let client = match oauth_clients::table
-        .filter(oauth_clients::tenant_id.eq(DEFAULT_TENANT_ID))
-        .filter(oauth_clients::client_id.eq(client_id))
-        .select(ClientRecord::as_select())
-        .first::<ClientRecord>(&mut conn)
+    let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .by_client_id(DEFAULT_TENANT_ID, client_id)
         .await
-        .optional()
     {
-        Ok(Some(client)) => match ClientRow::try_from(client) {
-            Ok(client) => client,
-            Err(error) => {
-                tracing::warn!(%error, "invalid persisted revocation client");
-                return token_management_oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "客户端查询失败.",
-                );
-            }
-        },
+        Ok(Some(client)) => client,
         Ok(None) => {
             return token_management_client_auth_error(
                 TokenManagementClientAuthError::InvalidClient,
@@ -92,7 +67,6 @@ pub(crate) async fn revoke_after_rate_limit(
             );
         }
     };
-    drop(conn);
     if let Err(error) = authenticate_revocation_client(&state, &req, &client, &credentials).await {
         return token_management_client_auth_error(error, has_basic);
     }

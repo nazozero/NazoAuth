@@ -135,75 +135,46 @@ pub(crate) async fn admin_patch_client(
             );
         }
     };
-    let mut conn = match get_conn(&state.diesel_db).await {
-        Ok(conn) => conn,
-        Err(error) => {
-            tracing::warn!(%error, "failed to get database connection for client update");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "客户端更新失败.",
-            );
-        }
-    };
-    let client: ClientRow = match diesel::update(
-        oauth_clients::table.filter(oauth_clients::client_id.eq(&current.client_id)),
-    )
-    .set((
-        oauth_clients::client_name.eq(prepared.client_name),
-        oauth_clients::redirect_uris.eq(prepared.redirect_uris),
-        oauth_clients::post_logout_redirect_uris.eq(prepared.post_logout_redirect_uris),
-        oauth_clients::scopes.eq(prepared.scopes),
-        oauth_clients::allowed_audiences.eq(prepared.allowed_audiences),
-        oauth_clients::grant_types.eq(prepared.grant_types),
-        oauth_clients::subject_type.eq(&prepared.subject_type),
-        oauth_clients::sector_identifier_uri.eq(&prepared.sector_identifier_uri),
-        oauth_clients::sector_identifier_host.eq(&prepared.sector_identifier_host),
-        oauth_clients::require_dpop_bound_tokens.eq(prepared.require_dpop_bound_tokens),
-        oauth_clients::allow_client_assertion_audience_array
-            .eq(prepared.allow_client_assertion_audience_array),
-        oauth_clients::allow_client_assertion_endpoint_audience
-            .eq(prepared.allow_client_assertion_endpoint_audience),
-        oauth_clients::require_par_request_object.eq(prepared.require_par_request_object),
-        oauth_clients::allow_authorization_code_without_pkce
-            .eq(prepared.allow_authorization_code_without_pkce),
-        oauth_clients::backchannel_logout_uri.eq(prepared.backchannel_logout_uri),
-        oauth_clients::backchannel_logout_session_required
-            .eq(prepared.backchannel_logout_session_required),
-        oauth_clients::frontchannel_logout_uri.eq(prepared.frontchannel_logout_uri),
-        oauth_clients::frontchannel_logout_session_required
-            .eq(prepared.frontchannel_logout_session_required),
-        oauth_clients::tls_client_auth_subject_dn.eq(prepared.tls_client_auth_subject_dn),
-        oauth_clients::tls_client_auth_cert_sha256.eq(prepared.tls_client_auth_cert_sha256),
-        oauth_clients::tls_client_auth_san_dns.eq(prepared.tls_client_auth_san_dns),
-        oauth_clients::tls_client_auth_san_uri.eq(prepared.tls_client_auth_san_uri),
-        oauth_clients::tls_client_auth_san_ip.eq(prepared.tls_client_auth_san_ip),
-        oauth_clients::tls_client_auth_san_email.eq(prepared.tls_client_auth_san_email),
-        oauth_clients::jwks.eq(prepared.jwks),
-        oauth_clients::introspection_encrypted_response_alg
-            .eq(prepared.introspection_encrypted_response_alg),
-        oauth_clients::introspection_encrypted_response_enc
-            .eq(prepared.introspection_encrypted_response_enc),
-        oauth_clients::userinfo_signed_response_alg.eq(prepared.userinfo_signed_response_alg),
-        oauth_clients::userinfo_encrypted_response_alg.eq(prepared.userinfo_encrypted_response_alg),
-        oauth_clients::userinfo_encrypted_response_enc.eq(prepared.userinfo_encrypted_response_enc),
-        oauth_clients::authorization_signed_response_alg
-            .eq(prepared.authorization_signed_response_alg),
-        oauth_clients::authorization_encrypted_response_alg
-            .eq(prepared.authorization_encrypted_response_alg),
-        oauth_clients::authorization_encrypted_response_enc
-            .eq(prepared.authorization_encrypted_response_enc),
-        oauth_clients::is_active.eq(prepared.is_active),
-        oauth_clients::updated_at.eq(diesel_now),
-    ))
-    .returning(ClientRecord::as_returning())
-    .get_result::<ClientRecord>(&mut conn)
-    .await
-    .and_then(|record| {
-        record
-            .try_into()
-            .map_err(|error| diesel::result::Error::DeserializationError(Box::new(error)))
-    }) {
+    let mut updated = current.clone();
+    updated.client_name = prepared.client_name;
+    updated.redirect_uris = json_array_to_strings(&prepared.redirect_uris);
+    updated.post_logout_redirect_uris = json_array_to_strings(&prepared.post_logout_redirect_uris);
+    updated.scopes = json_array_to_strings(&prepared.scopes);
+    updated.allowed_audiences = json_array_to_strings(&prepared.allowed_audiences);
+    updated.grant_types = json_array_to_strings(&prepared.grant_types);
+    updated.subject_type = prepared.subject_type;
+    updated.sector_identifier_uri = prepared.sector_identifier_uri;
+    updated.sector_identifier_host = prepared.sector_identifier_host;
+    updated.require_dpop_bound_tokens = prepared.require_dpop_bound_tokens;
+    updated.allow_client_assertion_audience_array = prepared.allow_client_assertion_audience_array;
+    updated.allow_client_assertion_endpoint_audience =
+        prepared.allow_client_assertion_endpoint_audience;
+    updated.require_par_request_object = prepared.require_par_request_object;
+    updated.allow_authorization_code_without_pkce = prepared.allow_authorization_code_without_pkce;
+    updated.backchannel_logout_uri = prepared.backchannel_logout_uri;
+    updated.backchannel_logout_session_required = prepared.backchannel_logout_session_required;
+    updated.frontchannel_logout_uri = prepared.frontchannel_logout_uri;
+    updated.frontchannel_logout_session_required = prepared.frontchannel_logout_session_required;
+    updated.tls_client_auth_subject_dn = prepared.tls_client_auth_subject_dn;
+    updated.tls_client_auth_cert_sha256 = prepared.tls_client_auth_cert_sha256;
+    updated.tls_client_auth_san_dns = json_array_to_strings(&prepared.tls_client_auth_san_dns);
+    updated.tls_client_auth_san_uri = json_array_to_strings(&prepared.tls_client_auth_san_uri);
+    updated.tls_client_auth_san_ip = json_array_to_strings(&prepared.tls_client_auth_san_ip);
+    updated.tls_client_auth_san_email = json_array_to_strings(&prepared.tls_client_auth_san_email);
+    updated.jwks = prepared.jwks;
+    updated.introspection_encrypted_response_alg = prepared.introspection_encrypted_response_alg;
+    updated.introspection_encrypted_response_enc = prepared.introspection_encrypted_response_enc;
+    updated.userinfo_signed_response_alg = prepared.userinfo_signed_response_alg;
+    updated.userinfo_encrypted_response_alg = prepared.userinfo_encrypted_response_alg;
+    updated.userinfo_encrypted_response_enc = prepared.userinfo_encrypted_response_enc;
+    updated.authorization_signed_response_alg = prepared.authorization_signed_response_alg;
+    updated.authorization_encrypted_response_alg = prepared.authorization_encrypted_response_alg;
+    updated.authorization_encrypted_response_enc = prepared.authorization_encrypted_response_enc;
+    updated.is_active = prepared.is_active;
+    let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .update_metadata(&updated)
+        .await
+    {
         Ok(client) => client,
         Err(error) => {
             tracing::warn!(%error, "failed to update oauth client");

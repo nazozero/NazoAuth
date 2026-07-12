@@ -1,7 +1,6 @@
 //! 管理端客户端创建端点。
 // confidential 客户端只在创建响应中返回一次明文 secret。
 use crate::http::prelude::*;
-use diesel_async::AsyncPgConnection;
 use nazo_auth::ValidatedClientRegistration;
 
 pub(crate) struct PreparedClientRegistration {
@@ -196,10 +195,7 @@ pub(crate) async fn insert_prepared_client_row(
     state: &AppState,
     prepared: &PreparedClientRegistration,
 ) -> Result<ClientRow, InsertClientError> {
-    let mut conn = get_conn(&state.diesel_db)
-        .await
-        .map_err(|error| InsertClientError::Server(format!("数据库连接失败: {error}")))?;
-    let client = insert_prepared_client(&mut conn, prepared)
+    let client = insert_prepared_client(&state.diesel_db, prepared)
         .await
         .map_err(|error| InsertClientError::Server(format!("客户端写入失败: {error}")))?;
     if client.tenant_id != prepared.tenant.tenant_id.as_uuid()
@@ -322,72 +318,25 @@ pub(crate) fn issue_client_secret(
 }
 
 pub(crate) async fn insert_prepared_client(
-    conn: &mut AsyncPgConnection,
+    pool: &nazo_postgres::DbPool,
     prepared: &PreparedClientRegistration,
-) -> diesel::QueryResult<ClientRow> {
-    diesel::insert_into(oauth_clients::table)
-        .values((
-            oauth_clients::tenant_id.eq(prepared.tenant.tenant_id.as_uuid()),
-            oauth_clients::realm_id.eq(prepared.tenant.realm_id.as_uuid()),
-            oauth_clients::organization_id.eq(prepared.tenant.organization_id.as_uuid()),
-            oauth_clients::client_id.eq(&prepared.client_id),
-            oauth_clients::client_name.eq(&prepared.client_name),
-            oauth_clients::client_type.eq(&prepared.client_type),
-            oauth_clients::client_secret_hash.eq(&prepared.client_secret_hash),
-            oauth_clients::registration_access_token_blake3
-                .eq(&prepared.registration_access_token_blake3),
-            oauth_clients::redirect_uris.eq(json!(&prepared.redirect_uris)),
-            oauth_clients::post_logout_redirect_uris.eq(json!(&prepared.post_logout_redirect_uris)),
-            oauth_clients::scopes.eq(json!(&prepared.scopes)),
-            oauth_clients::allowed_audiences.eq(json!(&prepared.allowed_audiences)),
-            oauth_clients::grant_types.eq(json!(&prepared.grant_types)),
-            oauth_clients::token_endpoint_auth_method.eq(&prepared.token_endpoint_auth_method),
-            oauth_clients::subject_type.eq(&prepared.subject_type),
-            oauth_clients::sector_identifier_uri.eq(&prepared.sector_identifier_uri),
-            oauth_clients::sector_identifier_host.eq(&prepared.sector_identifier_host),
-            oauth_clients::require_dpop_bound_tokens.eq(prepared.require_dpop_bound_tokens),
-            oauth_clients::allow_client_assertion_audience_array
-                .eq(prepared.allow_client_assertion_audience_array),
-            oauth_clients::allow_client_assertion_endpoint_audience
-                .eq(prepared.allow_client_assertion_endpoint_audience),
-            oauth_clients::require_par_request_object.eq(prepared.require_par_request_object),
-            oauth_clients::allow_authorization_code_without_pkce
-                .eq(prepared.allow_authorization_code_without_pkce),
-            oauth_clients::backchannel_logout_uri.eq(&prepared.backchannel_logout_uri),
-            oauth_clients::backchannel_logout_session_required
-                .eq(prepared.backchannel_logout_session_required),
-            oauth_clients::frontchannel_logout_uri.eq(&prepared.frontchannel_logout_uri),
-            oauth_clients::frontchannel_logout_session_required
-                .eq(prepared.frontchannel_logout_session_required),
-            oauth_clients::tls_client_auth_subject_dn.eq(&prepared.tls_client_auth_subject_dn),
-            oauth_clients::tls_client_auth_cert_sha256.eq(&prepared.tls_client_auth_cert_sha256),
-            oauth_clients::tls_client_auth_san_dns.eq(json!(&prepared.tls_client_auth_san_dns)),
-            oauth_clients::tls_client_auth_san_uri.eq(json!(&prepared.tls_client_auth_san_uri)),
-            oauth_clients::tls_client_auth_san_ip.eq(json!(&prepared.tls_client_auth_san_ip)),
-            oauth_clients::tls_client_auth_san_email.eq(json!(&prepared.tls_client_auth_san_email)),
-            oauth_clients::jwks.eq(&prepared.jwks),
-            oauth_clients::introspection_encrypted_response_alg
-                .eq(&prepared.introspection_encrypted_response_alg),
-            oauth_clients::introspection_encrypted_response_enc
-                .eq(&prepared.introspection_encrypted_response_enc),
-            oauth_clients::userinfo_signed_response_alg.eq(&prepared.userinfo_signed_response_alg),
-            oauth_clients::userinfo_encrypted_response_alg
-                .eq(&prepared.userinfo_encrypted_response_alg),
-            oauth_clients::userinfo_encrypted_response_enc
-                .eq(&prepared.userinfo_encrypted_response_enc),
-            oauth_clients::authorization_signed_response_alg
-                .eq(&prepared.authorization_signed_response_alg),
-            oauth_clients::authorization_encrypted_response_alg
-                .eq(&prepared.authorization_encrypted_response_alg),
-            oauth_clients::authorization_encrypted_response_enc
-                .eq(&prepared.authorization_encrypted_response_enc),
-            oauth_clients::is_active.eq(true),
-        ))
-        .returning(ClientRecord::as_returning())
-        .get_result::<ClientRecord>(conn)
-        .await?
-        .try_into()
-        .map_err(|error| diesel::result::Error::DeserializationError(Box::new(error)))
+) -> Result<ClientRow, nazo_identity::ports::RepositoryError> {
+    let client = ClientRow {
+        id: Uuid::now_v7(),
+        tenant_id: prepared.tenant.tenant_id.as_uuid(),
+        realm_id: prepared.tenant.realm_id.as_uuid(),
+        organization_id: prepared.tenant.organization_id.as_uuid(),
+        registration: prepared.registration.clone(),
+        require_mtls_bound_tokens: false,
+        is_active: true,
+    };
+    nazo_postgres::OAuthClientRepository::new(pool.clone())
+        .insert(
+            &client,
+            prepared.client_secret_hash.as_deref(),
+            prepared.registration_access_token_blake3.as_deref(),
+        )
+        .await
 }
 
 /// 校验客户端注册请求的协议约束。

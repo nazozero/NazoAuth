@@ -1,7 +1,6 @@
 //! Diesel query rows for auth/runtime tables pending Domain Task 5 extraction.
 use chrono::{DateTime, Utc};
 use diesel::{Queryable, QueryableByName, Selectable};
-use serde::Serialize;
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -10,156 +9,92 @@ pub(crate) type ClientRow = nazo_auth::OAuthClient;
 #[cfg(test)]
 #[macro_export]
 macro_rules! client_row {
-    ($($field:tt)*) => {{
-        $crate::domain::ClientRow::try_from($crate::domain::ClientRecord { $($field)* })
-            .expect("test OAuth client record must contain valid string arrays")
-    }};
-}
-
-/// oauth_clients 表完整客户端持久化记录（等待 Domain Task 5 迁移）。
-#[derive(Debug, Queryable, QueryableByName, Selectable, Serialize, Clone)]
-#[diesel(table_name = crate::schema::oauth_clients)]
-pub(crate) struct ClientRecord {
-    #[diesel(sql_type = diesel::sql_types::Uuid)]
-    pub(crate) id: Uuid,
-    #[diesel(sql_type = diesel::sql_types::Uuid)]
-    pub(crate) tenant_id: Uuid,
-    #[diesel(sql_type = diesel::sql_types::Uuid)]
-    pub(crate) realm_id: Uuid,
-    #[diesel(sql_type = diesel::sql_types::Uuid)]
-    pub(crate) organization_id: Uuid,
-    #[diesel(sql_type = diesel::sql_types::VarChar)]
-    pub(crate) client_id: String,
-    #[diesel(sql_type = diesel::sql_types::VarChar)]
-    pub(crate) client_name: String,
-    #[diesel(sql_type = diesel::sql_types::Text)]
-    pub(crate) client_type: String,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
-    pub(crate) client_secret_hash: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Jsonb)]
-    pub(crate) redirect_uris: Value,
-    #[diesel(sql_type = diesel::sql_types::Jsonb)]
-    pub(crate) scopes: Value,
-    #[diesel(sql_type = diesel::sql_types::Jsonb)]
-    pub(crate) allowed_audiences: Value,
-    #[diesel(sql_type = diesel::sql_types::Jsonb)]
-    pub(crate) grant_types: Value,
-    #[diesel(sql_type = diesel::sql_types::VarChar)]
-    pub(crate) token_endpoint_auth_method: String,
-    #[diesel(sql_type = diesel::sql_types::Bool)]
-    pub(crate) require_dpop_bound_tokens: bool,
-    #[diesel(sql_type = diesel::sql_types::Bool)]
-    pub(crate) require_mtls_bound_tokens: bool,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
-    pub(crate) tls_client_auth_subject_dn: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
-    pub(crate) tls_client_auth_cert_sha256: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Jsonb)]
-    pub(crate) tls_client_auth_san_dns: Value,
-    #[diesel(sql_type = diesel::sql_types::Jsonb)]
-    pub(crate) tls_client_auth_san_uri: Value,
-    #[diesel(sql_type = diesel::sql_types::Jsonb)]
-    pub(crate) tls_client_auth_san_ip: Value,
-    #[diesel(sql_type = diesel::sql_types::Jsonb)]
-    pub(crate) tls_client_auth_san_email: Value,
-    #[diesel(sql_type = diesel::sql_types::Bool)]
-    pub(crate) allow_client_assertion_audience_array: bool,
-    #[diesel(sql_type = diesel::sql_types::Bool)]
-    pub(crate) allow_client_assertion_endpoint_audience: bool,
-    #[diesel(sql_type = diesel::sql_types::Bool)]
-    pub(crate) require_par_request_object: bool,
-    #[diesel(sql_type = diesel::sql_types::Bool)]
-    pub(crate) allow_authorization_code_without_pkce: bool,
-    #[diesel(sql_type = diesel::sql_types::Bool)]
-    pub(crate) is_active: bool,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Jsonb>)]
-    pub(crate) jwks: Option<Value>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
-    pub(crate) introspection_encrypted_response_alg: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
-    pub(crate) introspection_encrypted_response_enc: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
-    pub(crate) userinfo_signed_response_alg: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
-    pub(crate) userinfo_encrypted_response_alg: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
-    pub(crate) userinfo_encrypted_response_enc: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
-    pub(crate) authorization_signed_response_alg: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
-    pub(crate) authorization_encrypted_response_alg: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
-    pub(crate) authorization_encrypted_response_enc: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Jsonb)]
-    pub(crate) post_logout_redirect_uris: Value,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
-    pub(crate) backchannel_logout_uri: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Bool)]
-    pub(crate) backchannel_logout_session_required: bool,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
-    pub(crate) frontchannel_logout_uri: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Bool)]
-    pub(crate) frontchannel_logout_session_required: bool,
-    #[diesel(sql_type = diesel::sql_types::Text)]
-    pub(crate) subject_type: String,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
-    pub(crate) sector_identifier_uri: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
-    pub(crate) sector_identifier_host: Option<String>,
-}
-
-impl TryFrom<ClientRecord> for ClientRow {
-    type Error = serde_json::Error;
-
-    fn try_from(value: ClientRecord) -> Result<Self, Self::Error> {
-        Ok(Self {
-            id: value.id,
-            tenant_id: value.tenant_id,
-            realm_id: value.realm_id,
-            organization_id: value.organization_id,
+    (
+        id: $id:expr, tenant_id: $tenant_id:expr, realm_id: $realm_id:expr,
+        organization_id: $organization_id:expr, client_id: $client_id:expr,
+        client_name: $client_name:expr, client_type: $client_type:expr,
+        client_secret_hash: $client_secret_hash:expr, redirect_uris: $redirect_uris:expr,
+        scopes: $scopes:expr, allowed_audiences: $allowed_audiences:expr,
+        grant_types: $grant_types:expr, token_endpoint_auth_method: $auth_method:expr,
+        require_dpop_bound_tokens: $require_dpop:expr,
+        require_mtls_bound_tokens: $require_mtls:expr,
+        tls_client_auth_subject_dn: $subject_dn:expr,
+        tls_client_auth_cert_sha256: $cert_sha256:expr,
+        tls_client_auth_san_dns: $san_dns:expr, tls_client_auth_san_uri: $san_uri:expr,
+        tls_client_auth_san_ip: $san_ip:expr, tls_client_auth_san_email: $san_email:expr,
+        allow_client_assertion_audience_array: $allow_aud_array:expr,
+        allow_client_assertion_endpoint_audience: $allow_endpoint_aud:expr,
+        require_par_request_object: $require_par:expr,
+        allow_authorization_code_without_pkce: $allow_no_pkce:expr,
+        is_active: $is_active:expr, jwks: $jwks:expr,
+        introspection_encrypted_response_alg: $introspection_alg:expr,
+        introspection_encrypted_response_enc: $introspection_enc:expr,
+        userinfo_signed_response_alg: $userinfo_signed:expr,
+        userinfo_encrypted_response_alg: $userinfo_alg:expr,
+        userinfo_encrypted_response_enc: $userinfo_enc:expr,
+        authorization_signed_response_alg: $authorization_signed:expr,
+        authorization_encrypted_response_alg: $authorization_alg:expr,
+        authorization_encrypted_response_enc: $authorization_enc:expr,
+        post_logout_redirect_uris: $post_logout:expr,
+        backchannel_logout_uri: $backchannel_uri:expr,
+        backchannel_logout_session_required: $backchannel_session:expr,
+        frontchannel_logout_uri: $frontchannel_uri:expr,
+        frontchannel_logout_session_required: $frontchannel_session:expr,
+        subject_type: $subject_type:expr, sector_identifier_uri: $sector_uri:expr,
+        sector_identifier_host: $sector_host:expr $(,)?
+    ) => {{
+        let _: Option<String> = $client_secret_hash;
+        $crate::domain::ClientRow {
+            id: $id,
+            tenant_id: $tenant_id,
+            realm_id: $realm_id,
+            organization_id: $organization_id,
             registration: nazo_auth::ValidatedClientRegistration {
-                client_id: value.client_id,
-                client_name: value.client_name,
-                client_type: value.client_type,
-                redirect_uris: serde_json::from_value(value.redirect_uris)?,
-                scopes: serde_json::from_value(value.scopes)?,
-                allowed_audiences: serde_json::from_value(value.allowed_audiences)?,
-                grant_types: serde_json::from_value(value.grant_types)?,
-                token_endpoint_auth_method: value.token_endpoint_auth_method,
-                require_dpop_bound_tokens: value.require_dpop_bound_tokens,
-                tls_client_auth_subject_dn: value.tls_client_auth_subject_dn,
-                tls_client_auth_cert_sha256: value.tls_client_auth_cert_sha256,
-                tls_client_auth_san_dns: serde_json::from_value(value.tls_client_auth_san_dns)?,
-                tls_client_auth_san_uri: serde_json::from_value(value.tls_client_auth_san_uri)?,
-                tls_client_auth_san_ip: serde_json::from_value(value.tls_client_auth_san_ip)?,
-                tls_client_auth_san_email: serde_json::from_value(value.tls_client_auth_san_email)?,
-                allow_client_assertion_audience_array: value.allow_client_assertion_audience_array,
-                allow_client_assertion_endpoint_audience: value
-                    .allow_client_assertion_endpoint_audience,
-                require_par_request_object: value.require_par_request_object,
-                allow_authorization_code_without_pkce: value.allow_authorization_code_without_pkce,
-                jwks: value.jwks,
-                introspection_encrypted_response_alg: value.introspection_encrypted_response_alg,
-                introspection_encrypted_response_enc: value.introspection_encrypted_response_enc,
-                userinfo_signed_response_alg: value.userinfo_signed_response_alg,
-                userinfo_encrypted_response_alg: value.userinfo_encrypted_response_alg,
-                userinfo_encrypted_response_enc: value.userinfo_encrypted_response_enc,
-                authorization_signed_response_alg: value.authorization_signed_response_alg,
-                authorization_encrypted_response_alg: value.authorization_encrypted_response_alg,
-                authorization_encrypted_response_enc: value.authorization_encrypted_response_enc,
-                post_logout_redirect_uris: serde_json::from_value(value.post_logout_redirect_uris)?,
-                backchannel_logout_uri: value.backchannel_logout_uri,
-                backchannel_logout_session_required: value.backchannel_logout_session_required,
-                frontchannel_logout_uri: value.frontchannel_logout_uri,
-                frontchannel_logout_session_required: value.frontchannel_logout_session_required,
-                subject_type: value.subject_type,
-                sector_identifier_uri: value.sector_identifier_uri,
-                sector_identifier_host: value.sector_identifier_host,
+                client_id: $client_id,
+                client_name: $client_name,
+                client_type: $client_type,
+                redirect_uris: serde_json::from_value($redirect_uris)
+                    .expect("redirect_uris fixture"),
+                scopes: serde_json::from_value($scopes).expect("scopes fixture"),
+                allowed_audiences: serde_json::from_value($allowed_audiences)
+                    .expect("audiences fixture"),
+                grant_types: serde_json::from_value($grant_types).expect("grants fixture"),
+                token_endpoint_auth_method: $auth_method,
+                require_dpop_bound_tokens: $require_dpop,
+                tls_client_auth_subject_dn: $subject_dn,
+                tls_client_auth_cert_sha256: $cert_sha256,
+                tls_client_auth_san_dns: serde_json::from_value($san_dns).expect("dns fixture"),
+                tls_client_auth_san_uri: serde_json::from_value($san_uri).expect("uri fixture"),
+                tls_client_auth_san_ip: serde_json::from_value($san_ip).expect("ip fixture"),
+                tls_client_auth_san_email: serde_json::from_value($san_email)
+                    .expect("email fixture"),
+                allow_client_assertion_audience_array: $allow_aud_array,
+                allow_client_assertion_endpoint_audience: $allow_endpoint_aud,
+                require_par_request_object: $require_par,
+                allow_authorization_code_without_pkce: $allow_no_pkce,
+                jwks: $jwks,
+                introspection_encrypted_response_alg: $introspection_alg,
+                introspection_encrypted_response_enc: $introspection_enc,
+                userinfo_signed_response_alg: $userinfo_signed,
+                userinfo_encrypted_response_alg: $userinfo_alg,
+                userinfo_encrypted_response_enc: $userinfo_enc,
+                authorization_signed_response_alg: $authorization_signed,
+                authorization_encrypted_response_alg: $authorization_alg,
+                authorization_encrypted_response_enc: $authorization_enc,
+                post_logout_redirect_uris: serde_json::from_value($post_logout)
+                    .expect("post logout fixture"),
+                backchannel_logout_uri: $backchannel_uri,
+                backchannel_logout_session_required: $backchannel_session,
+                frontchannel_logout_uri: $frontchannel_uri,
+                frontchannel_logout_session_required: $frontchannel_session,
+                subject_type: $subject_type,
+                sector_identifier_uri: $sector_uri,
+                sector_identifier_host: $sector_host,
             },
-            require_mtls_bound_tokens: value.require_mtls_bound_tokens,
-            is_active: value.is_active,
-        })
-    }
+            require_mtls_bound_tokens: $require_mtls,
+            is_active: $is_active,
+        }
+    }};
 }
 
 /// oauth_tokens 表 token 行。

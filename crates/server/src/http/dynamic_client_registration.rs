@@ -5,7 +5,6 @@ use crate::http::{
     admin::{CreateClientRequest, InsertClientError},
     prelude::*,
 };
-use diesel_async::AsyncConnection;
 use url::Url;
 
 #[derive(Debug, Default, Deserialize)]
@@ -276,15 +275,42 @@ pub(crate) async fn client_configuration_put(
         Ok(client) => client,
         Err(response) => return response,
     };
-    let payload = match parse_client_configuration_update_with_secret_pepper(
-        payload,
-        &current,
-        current.client_secret_hash.as_deref(),
-        &state.settings.client_secret_pepper,
-    ) {
-        Ok(payload) => payload,
-        Err(error) => return dynamic_registration_error_response(error),
+    let repository = nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone());
+    let submitted_secret = payload.get("client_secret").and_then(Value::as_str);
+    let has_secret = match repository.has_client_secret(current.id).await {
+        Ok(has_secret) => has_secret,
+        Err(error) => {
+            tracing::warn!(%error, "failed to inspect dynamic client secret state");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "Client configuration lookup failed.",
+            );
+        }
     };
+    let secret_matches = if let Some(secret) = submitted_secret {
+        match repository
+            .client_secret_matches(current.id, secret, &state.settings.client_secret_pepper)
+            .await
+        {
+            Ok(matches) => matches,
+            Err(error) => {
+                tracing::warn!(%error, "failed to verify dynamic client secret");
+                return oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "Client configuration lookup failed.",
+                );
+            }
+        }
+    } else {
+        false
+    };
+    let payload =
+        match parse_client_configuration_update(payload, &current, has_secret, secret_matches) {
+            Ok(payload) => payload,
+            Err(error) => return dynamic_registration_error_response(error),
+        };
     let registration = match prepare_dynamic_client_registration(
         payload,
         DynamicRegistrationDefaults {
@@ -383,26 +409,20 @@ async fn authenticate_registration_client(
     state: &AppState,
     req: &HttpRequest,
     client_id: &str,
-) -> Result<RegistrationClient, HttpResponse> {
-    let mut conn = get_conn(&state.diesel_db).await.map_err(|error| {
-        tracing::warn!(%error, "failed to get database connection for client configuration auth");
-        oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "Client configuration lookup failed.",
-        )
-    })?;
-    let found = oauth_clients::table
-        .filter(oauth_clients::tenant_id.eq(DEFAULT_TENANT_ID))
-        .filter(oauth_clients::client_id.eq(client_id))
-        .select((
-            ClientRecord::as_select(),
-            oauth_clients::registration_access_token_blake3,
-            oauth_clients::client_secret_hash,
-        ))
-        .first::<(ClientRecord, Option<String>, Option<String>)>(&mut conn)
+) -> Result<ClientRow, HttpResponse> {
+    let Some(token) = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().strip_prefix("Bearer "))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Err(registration_access_denied());
+    };
+    let found = nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .by_registration_access_token(DEFAULT_TENANT_ID, client_id, &blake3_hex(token))
         .await
-        .optional()
         .map_err(|error| {
             tracing::warn!(%error, "failed to query dynamic client configuration credentials");
             oauth_error(
@@ -411,44 +431,10 @@ async fn authenticate_registration_client(
                 "Client configuration lookup failed.",
             )
         })?;
-    let Some((client, registration_token_hash, client_secret_hash)) = found else {
+    let Some(client) = found else {
         return Err(registration_access_denied());
     };
-    let client = ClientRow::try_from(client).map_err(|error| {
-        tracing::warn!(%error, "invalid persisted dynamic client configuration");
-        oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "Client configuration lookup failed.",
-        )
-    })?;
-    if !client.is_active
-        || !registration_access_token_authorized(
-            req.headers()
-                .get(header::AUTHORIZATION)
-                .and_then(|value| value.to_str().ok()),
-            registration_token_hash.as_deref(),
-        )
-    {
-        return Err(registration_access_denied());
-    }
-    Ok(RegistrationClient {
-        client,
-        client_secret_hash,
-    })
-}
-
-struct RegistrationClient {
-    client: ClientRow,
-    client_secret_hash: Option<String>,
-}
-
-impl std::ops::Deref for RegistrationClient {
-    type Target = ClientRow;
-
-    fn deref(&self) -> &Self::Target {
-        &self.client
-    }
+    Ok(client)
 }
 
 fn registration_access_denied() -> HttpResponse {
@@ -465,33 +451,14 @@ async fn rotate_client_management_credentials(
     registration_access_token_hash: String,
     client_secret_hash: Option<String>,
 ) -> Result<ClientRow, HttpResponse> {
-    let mut conn = get_conn(&state.diesel_db).await.map_err(|error| {
-        tracing::warn!(%error, "failed to get database connection for credential rotation");
-        oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "Client configuration update failed.",
-        )
-    })?;
-    diesel::update(
-        oauth_clients::table
-            .filter(oauth_clients::tenant_id.eq(current.tenant_id))
-            .filter(oauth_clients::id.eq(current.id))
-            .filter(oauth_clients::is_active.eq(true)),
+    nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+    .rotate_credentials(
+        current.tenant_id,
+        current.id,
+        client_secret_hash.as_deref(),
+        &registration_access_token_hash,
     )
-    .set((
-        oauth_clients::registration_access_token_blake3.eq(Some(registration_access_token_hash)),
-        oauth_clients::client_secret_hash.eq(client_secret_hash),
-        oauth_clients::updated_at.eq(diesel_now),
-    ))
-    .returning(ClientRecord::as_returning())
-    .get_result::<ClientRecord>(&mut conn)
     .await
-    .and_then(|record| {
-        record
-            .try_into()
-            .map_err(|error| diesel::result::Error::DeserializationError(Box::new(error)))
-    })
     .map_err(|error| {
         tracing::warn!(%error, client_id = %current.client_id, "failed to rotate dynamic client management credentials");
         oauth_error(
@@ -507,81 +474,22 @@ async fn replace_client_configuration(
     current: &ClientRow,
     prepared: &PreparedClientRegistration,
 ) -> Result<ClientRow, HttpResponse> {
-    let mut conn = get_conn(&state.diesel_db).await.map_err(|error| {
-        tracing::warn!(%error, "failed to get database connection for client configuration update");
-        oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "Client configuration update failed.",
-        )
-    })?;
-    diesel::update(
-        oauth_clients::table
-            .filter(oauth_clients::tenant_id.eq(current.tenant_id))
-            .filter(oauth_clients::id.eq(current.id))
-            .filter(oauth_clients::is_active.eq(true)),
+    let updated = ClientRow {
+        id: current.id,
+        tenant_id: current.tenant_id,
+        realm_id: current.realm_id,
+        organization_id: current.organization_id,
+        registration: prepared.registration.clone(),
+        require_mtls_bound_tokens: current.require_mtls_bound_tokens,
+        is_active: current.is_active,
+    };
+    nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+    .replace_registration(
+        &updated,
+        prepared.client_secret_hash.as_deref(),
+        prepared.registration_access_token_blake3.as_deref(),
     )
-    .set((
-        oauth_clients::client_name.eq(&prepared.client_name),
-        oauth_clients::client_type.eq(&prepared.client_type),
-        oauth_clients::client_secret_hash.eq(&prepared.client_secret_hash),
-        oauth_clients::registration_access_token_blake3
-            .eq(&prepared.registration_access_token_blake3),
-        oauth_clients::redirect_uris.eq(json!(&prepared.redirect_uris)),
-        oauth_clients::post_logout_redirect_uris.eq(json!(&prepared.post_logout_redirect_uris)),
-        oauth_clients::scopes.eq(json!(&prepared.scopes)),
-        oauth_clients::allowed_audiences.eq(json!(&prepared.allowed_audiences)),
-        oauth_clients::grant_types.eq(json!(&prepared.grant_types)),
-        oauth_clients::token_endpoint_auth_method.eq(&prepared.token_endpoint_auth_method),
-        oauth_clients::subject_type.eq(&prepared.subject_type),
-        oauth_clients::sector_identifier_uri.eq(&prepared.sector_identifier_uri),
-        oauth_clients::sector_identifier_host.eq(&prepared.sector_identifier_host),
-        oauth_clients::require_dpop_bound_tokens.eq(prepared.require_dpop_bound_tokens),
-        oauth_clients::allow_client_assertion_audience_array
-            .eq(prepared.allow_client_assertion_audience_array),
-        oauth_clients::allow_client_assertion_endpoint_audience
-            .eq(prepared.allow_client_assertion_endpoint_audience),
-        oauth_clients::require_par_request_object.eq(prepared.require_par_request_object),
-        oauth_clients::allow_authorization_code_without_pkce
-            .eq(prepared.allow_authorization_code_without_pkce),
-        oauth_clients::backchannel_logout_uri.eq(&prepared.backchannel_logout_uri),
-        oauth_clients::backchannel_logout_session_required
-            .eq(prepared.backchannel_logout_session_required),
-        oauth_clients::frontchannel_logout_uri.eq(&prepared.frontchannel_logout_uri),
-        oauth_clients::frontchannel_logout_session_required
-            .eq(prepared.frontchannel_logout_session_required),
-        oauth_clients::tls_client_auth_subject_dn.eq(&prepared.tls_client_auth_subject_dn),
-        oauth_clients::tls_client_auth_cert_sha256.eq(&prepared.tls_client_auth_cert_sha256),
-        oauth_clients::tls_client_auth_san_dns.eq(json!(&prepared.tls_client_auth_san_dns)),
-        oauth_clients::tls_client_auth_san_uri.eq(json!(&prepared.tls_client_auth_san_uri)),
-        oauth_clients::tls_client_auth_san_ip.eq(json!(&prepared.tls_client_auth_san_ip)),
-        oauth_clients::tls_client_auth_san_email.eq(json!(&prepared.tls_client_auth_san_email)),
-        oauth_clients::jwks.eq(&prepared.jwks),
-        oauth_clients::introspection_encrypted_response_alg
-            .eq(&prepared.introspection_encrypted_response_alg),
-        oauth_clients::introspection_encrypted_response_enc
-            .eq(&prepared.introspection_encrypted_response_enc),
-        oauth_clients::userinfo_signed_response_alg.eq(&prepared.userinfo_signed_response_alg),
-        oauth_clients::userinfo_encrypted_response_alg
-            .eq(&prepared.userinfo_encrypted_response_alg),
-        oauth_clients::userinfo_encrypted_response_enc
-            .eq(&prepared.userinfo_encrypted_response_enc),
-        oauth_clients::authorization_signed_response_alg
-            .eq(&prepared.authorization_signed_response_alg),
-        oauth_clients::authorization_encrypted_response_alg
-            .eq(&prepared.authorization_encrypted_response_alg),
-        oauth_clients::authorization_encrypted_response_enc
-            .eq(&prepared.authorization_encrypted_response_enc),
-        oauth_clients::updated_at.eq(diesel_now),
-    ))
-    .returning(ClientRecord::as_returning())
-    .get_result::<ClientRecord>(&mut conn)
     .await
-    .and_then(|record| {
-        record
-            .try_into()
-            .map_err(|error| diesel::result::Error::DeserializationError(Box::new(error)))
-    })
     .map_err(|error| {
         tracing::warn!(%error, client_id = %current.client_id, "failed to replace dynamic client configuration");
         oauth_error(
@@ -596,46 +504,10 @@ async fn deactivate_dynamic_client(
     state: &AppState,
     current: &ClientRow,
 ) -> Result<(), HttpResponse> {
-    let mut conn = get_conn(&state.diesel_db).await.map_err(|error| {
-        tracing::warn!(%error, "failed to get database connection for client deletion");
-        oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "Client deletion failed.",
-        )
-    })?;
-    conn.transaction::<(), diesel::result::Error, _>(async |conn| {
-        diesel::update(
-            oauth_clients::table
-                .filter(oauth_clients::tenant_id.eq(current.tenant_id))
-                .filter(oauth_clients::id.eq(current.id)),
-        )
-        .set((
-            oauth_clients::is_active.eq(false),
-            oauth_clients::registration_access_token_blake3.eq::<Option<String>>(None),
-            oauth_clients::updated_at.eq(diesel_now),
-        ))
-        .execute(conn)
-        .await?;
-        diesel::update(
-            oauth_tokens::table
-                .filter(oauth_tokens::tenant_id.eq(current.tenant_id))
-                .filter(oauth_tokens::client_id.eq(current.id))
-                .filter(oauth_tokens::revoked_at.is_null()),
-        )
-        .set(oauth_tokens::revoked_at.eq(diesel_now))
-        .execute(conn)
-        .await?;
-        diesel::delete(
-            user_client_grants::table
-                .filter(user_client_grants::tenant_id.eq(current.tenant_id))
-                .filter(user_client_grants::client_id.eq(current.id)),
-        )
-        .execute(conn)
-        .await?;
-        Ok(())
-    })
+    nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+    .deactivate(current.tenant_id, current.id)
     .await
+    .and_then(|changed| changed.then_some(()).ok_or(nazo_identity::ports::RepositoryError::NotFound))
     .map_err(|error| {
         tracing::warn!(%error, client_id = %current.client_id, "failed to delete dynamic client");
         oauth_error(
@@ -846,11 +718,11 @@ pub(crate) fn registration_access_token_authorized(
     constant_time_eq(actual_hash.as_bytes(), stored_token_hash.as_bytes())
 }
 
-pub(crate) fn parse_client_configuration_update_with_secret_pepper(
+pub(crate) fn parse_client_configuration_update(
     mut payload: Value,
     current: &ClientRow,
-    current_client_secret_hash: Option<&str>,
-    client_secret_pepper: &str,
+    current_has_secret: bool,
+    submitted_secret_matches: bool,
 ) -> Result<DynamicClientRegistrationRequest, DynamicRegistrationError> {
     let Some(object) = payload.as_object_mut() else {
         return Err(DynamicRegistrationError::new(
@@ -888,20 +760,19 @@ pub(crate) fn parse_client_configuration_update_with_secret_pepper(
     }
 
     let client_secret = object.remove("client_secret");
-    match (current_client_secret_hash, client_secret) {
-        (Some(stored_hash), Some(Value::String(secret)))
-            if verify_client_secret(&secret, stored_hash, client_secret_pepper) => {}
-        (Some(_), _) => {
+    match (current_has_secret, client_secret) {
+        (true, Some(Value::String(_))) if submitted_secret_matches => {}
+        (true, _) => {
             return Err(DynamicRegistrationError::invalid_client_metadata(
                 "client_secret must match the current client secret.",
             ));
         }
-        (None, Some(_)) => {
+        (false, Some(_)) => {
             return Err(DynamicRegistrationError::invalid_client_metadata(
                 "public or assertion-based clients must not submit client_secret.",
             ));
         }
-        (None, None) => {}
+        (false, None) => {}
     }
 
     serde_json::from_value(payload).map_err(|error| {

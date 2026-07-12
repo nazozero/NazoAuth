@@ -136,7 +136,7 @@ fn introspection_response_client(
         require_par_request_object: false,
         allow_authorization_code_without_pkce: false,
         is_active: true,
-        jwks,
+        jwks: jwks,
         introspection_encrypted_response_alg: encrypted_response_alg.map(ToOwned::to_owned),
         introspection_encrypted_response_enc: encrypted_response_enc.map(ToOwned::to_owned),
         userinfo_signed_response_alg: None,

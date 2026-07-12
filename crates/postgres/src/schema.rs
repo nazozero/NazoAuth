@@ -58,6 +58,7 @@ diesel::table! {
     oauth_tokens (id) {
         id -> Uuid,
         tenant_id -> Uuid,
+        client_id -> Uuid,
         user_id -> Nullable<Uuid>,
         revoked_at -> Nullable<Timestamptz>,
     }

@@ -40,11 +40,18 @@ fn parse_client_configuration_update_for_test(
     current: &ClientRow,
     current_client_secret_hash: Option<&str>,
 ) -> Result<DynamicClientRegistrationRequest, DynamicRegistrationError> {
-    parse_client_configuration_update_with_secret_pepper(
+    let submitted_matches = payload
+        .get("client_secret")
+        .and_then(Value::as_str)
+        .zip(current_client_secret_hash)
+        .is_some_and(|(candidate, stored)| {
+            verify_client_secret(candidate, stored, LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER)
+        });
+    parse_client_configuration_update(
         payload,
         current,
-        current_client_secret_hash,
-        LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
+        current_client_secret_hash.is_some(),
+        submitted_matches,
     )
 }
 
