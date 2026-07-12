@@ -111,10 +111,11 @@ fn signed_client_assertion_without_kid(
 
 #[tokio::test]
 async fn verify_password_blocking_matches_argon2_verifier() {
-    let hash = hash_password("correct horse battery staple").expect("password should hash");
+    let password = uuid::Uuid::now_v7().to_string();
+    let hash = hash_password(&password).expect("password should hash");
 
     assert!(
-        verify_password_blocking_limited("correct horse battery staple".to_owned(), hash.clone())
+        verify_password_blocking_limited(password, hash.clone())
             .await
             .expect("password verification should run")
     );

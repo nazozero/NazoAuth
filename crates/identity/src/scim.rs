@@ -319,7 +319,7 @@ pub fn required_email_value(value: Value, field: &str) -> Result<String, ScimErr
 pub fn required_bool_value(value: Value, field: &str) -> Result<bool, ScimError> {
     value
         .as_bool()
-        .ok_or_else(|| ScimError::new("invalidValue", format!("{field} must be boolean")))
+        .ok_or_else(|| ScimError::new("invalidValue", format!("{} must be boolean", field)))
 }
 
 #[must_use]
