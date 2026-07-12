@@ -1,4 +1,194 @@
 use super::*;
+use crate::domain::OidcClaimRequest;
+
+fn normalize_generated_jti(mut claims: serde_json::Map<String, Value>) -> Value {
+    let jti = claims
+        .get("jti")
+        .and_then(Value::as_str)
+        .expect("claim constructor must emit a string jti");
+    assert_eq!(
+        Uuid::parse_str(jti)
+            .expect("claim constructor must emit a UUID jti")
+            .get_version_num(),
+        7,
+        "claim constructor must emit a UUIDv7 jti"
+    );
+    claims.insert("jti".to_owned(), json!("<generated-uuid-v7>"));
+    Value::Object(claims)
+}
+
+#[test]
+fn token_claim_constructors_are_locked_to_complete_reviewed_shapes() {
+    let user_id = Uuid::parse_str("01890f3c-7b00-7000-8000-000000000001").unwrap();
+    let subject = user_id.to_string();
+    let audiences = vec![
+        "resource://default".to_owned(),
+        "https://api.example".to_owned(),
+    ];
+    let scopes = vec!["write".to_owned(), "read".to_owned()];
+    let authorization_details = json!([
+        {"type": "payment_initiation", "actions": ["write"]}
+    ]);
+    let actor = json!({"sub": "delegating-client"});
+    let userinfo_claims = vec!["email".to_owned()];
+    let userinfo_claim_requests = vec![OidcClaimRequest {
+        name: "email".to_owned(),
+        essential: true,
+        value: Some(json!("alice@example.com")),
+        values: vec![json!("alice@example.com"), json!("admin@example.com")],
+    }];
+    let access_claims = access_token_claims(
+        "https://issuer.example",
+        AccessTokenJwtInput {
+            tenant_id: DEFAULT_TENANT_ID,
+            subject: &subject,
+            user_id: Some(user_id),
+            subject_type: "user",
+            client_id: "client-1",
+            audiences: &audiences,
+            scopes: &scopes,
+            authorization_details: &authorization_details,
+            userinfo_claims: &userinfo_claims,
+            userinfo_claim_requests: &userinfo_claim_requests,
+            ttl: 300,
+            dpop_jkt: Some("thumbprint-jkt"),
+            mtls_x5t_s256: None,
+            actor: Some(&actor),
+        },
+        1_000,
+        "access-jti-1",
+    );
+
+    let id_extra_claims = json!({
+        "email": "alice@example.com",
+        "sid": "attacker-controlled-sid"
+    });
+    let id_input = IdTokenInput {
+        subject: "subject-1",
+        client_id: "client-1",
+        nonce: Some("nonce-1".to_owned()),
+        auth_time: Some(900),
+        amr: &["password".to_owned(), "otp".to_owned()],
+        sid: Some("server-session-sid"),
+        acr: Some("urn:acr:2"),
+        extra_claims: Some(&id_extra_claims),
+        ttl: 600,
+        signing_alg: None,
+    };
+    let id_claims =
+        normalize_generated_jti(id_token_claims("https://issuer.example", &id_input, 1_000));
+
+    let logout_input = BackchannelLogoutTokenInput {
+        client_id: "client-1",
+        subject: Some("subject-1"),
+        sid: Some("server-session-sid"),
+        ttl: 120,
+    };
+    let logout_claims = normalize_generated_jti(backchannel_logout_token_claims(
+        "https://issuer.example",
+        &logout_input,
+        1_000,
+    ));
+
+    let authorization_response_input = AuthorizationResponseJwtInput {
+        client_id: "client-1",
+        code: Some("code-1"),
+        error: None,
+        state: Some(""),
+        ttl: 60,
+    };
+    let authorization_response_claims = normalize_generated_jti(authorization_response_jwt_claims(
+        "https://issuer.example",
+        &authorization_response_input,
+        1_000,
+    ));
+
+    for (name, actual, expected) in [
+        (
+            "access token",
+            serde_json::to_value(access_claims).unwrap(),
+            json!({
+                "iss": "https://issuer.example",
+                "sub": subject,
+                "tenant_id": DEFAULT_TENANT_ID.to_string(),
+                "user_id": user_id.to_string(),
+                "subject_type": "user",
+                "aud": ["resource://default", "https://api.example"],
+                "client_id": "client-1",
+                "scope": "read write",
+                "authorization_details": [
+                    {"type": "payment_initiation", "actions": ["write"]}
+                ],
+                "token_use": "access",
+                "jti": "access-jti-1",
+                "iat": 1_000,
+                "nbf": 1_000,
+                "exp": 1_300,
+                "cnf": {"jkt": "thumbprint-jkt"},
+                "act": {"sub": "delegating-client"},
+                "userinfo_claims": ["email"],
+                "userinfo_claim_requests": [{
+                    "name": "email",
+                    "essential": true,
+                    "value": "alice@example.com",
+                    "values": ["alice@example.com", "admin@example.com"]
+                }]
+            }),
+        ),
+        (
+            "ID token",
+            id_claims,
+            json!({
+                "iss": "https://issuer.example",
+                "sub": "subject-1",
+                "aud": "client-1",
+                "iat": 1_000,
+                "nbf": 1_000,
+                "exp": 1_600,
+                "jti": "<generated-uuid-v7>",
+                "nonce": "nonce-1",
+                "auth_time": 900,
+                "amr": ["password", "otp"],
+                "sid": "server-session-sid",
+                "acr": "urn:acr:2",
+                "email": "alice@example.com"
+            }),
+        ),
+        (
+            "backchannel logout token",
+            logout_claims,
+            json!({
+                "iss": "https://issuer.example",
+                "aud": "client-1",
+                "iat": 1_000,
+                "nbf": 1_000,
+                "exp": 1_120,
+                "jti": "<generated-uuid-v7>",
+                "events": {
+                    "http://schemas.openid.net/event/backchannel-logout": {}
+                },
+                "sub": "subject-1",
+                "sid": "server-session-sid"
+            }),
+        ),
+        (
+            "authorization response JWT",
+            authorization_response_claims,
+            json!({
+                "iss": "https://issuer.example",
+                "aud": "client-1",
+                "iat": 1_000,
+                "nbf": 1_000,
+                "exp": 1_060,
+                "jti": "<generated-uuid-v7>",
+                "code": "code-1",
+                "state": ""
+            }),
+        ),
+    ] {
+        assert_eq!(actual, expected, "{name} claim contract changed");
+    }
+}
 
 #[test]
 fn authorization_response_jwt_preserves_explicit_empty_state() {
