@@ -76,7 +76,7 @@ pub(crate) async fn register_after_rate_limit(
             );
         }
     };
-    let password_hash = match nazo_identity::PasswordHash::new(password_hash) {
+    let password_hash = match nazo_identity::ports::PasswordHashInput::new(password_hash) {
         Ok(hash) => hash,
         Err(error) => {
             tracing::error!(%error, "generated password hash is invalid");

@@ -172,7 +172,7 @@ impl UserRepository {
                 users::organization_id.eq(new_user.tenant.organization_id.as_uuid()),
                 users::username.eq(new_user.username),
                 users::email.eq(new_user.email),
-                users::password_hash.eq(new_user.password_hash.into_inner()),
+                users::password_hash.eq(new_user.password_hash.into_persistence_value()),
                 users::email_verified.eq(new_user.email_verified),
             ))
             .returning(UserRow::as_returning())

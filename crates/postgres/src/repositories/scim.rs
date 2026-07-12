@@ -116,7 +116,7 @@ impl ScimRepository {
                 users::organization_id.eq(tenant.organization_id.as_uuid()),
                 users::username.eq(input.user_name),
                 users::email.eq(input.email),
-                users::password_hash.eq(new_user.password_hash.into_inner()),
+                users::password_hash.eq(new_user.password_hash.into_persistence_value()),
                 users::email_verified.eq(true),
                 users::is_active.eq(input.active),
                 users::display_name.eq(input.display_name),

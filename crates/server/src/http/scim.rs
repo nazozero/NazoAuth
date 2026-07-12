@@ -419,7 +419,7 @@ pub(crate) async fn scim_create_user(
             );
         }
     };
-    let password_hash = match nazo_identity::PasswordHash::new(password_hash) {
+    let password_hash = match nazo_identity::ports::PasswordHashInput::new(password_hash) {
         Ok(hash) => hash,
         Err(error) => {
             tracing::error!(%error, "generated SCIM password hash is invalid");

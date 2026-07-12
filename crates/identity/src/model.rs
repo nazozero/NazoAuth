@@ -297,6 +297,13 @@ pub struct PublicAccount {
 /// fn assert_deserialize<T: serde::de::DeserializeOwned>() {}
 /// assert_deserialize::<nazo_identity::PasswordHash>();
 /// ```
+///
+/// Authentication-facing callers cannot extract the persisted verifier.
+///
+/// ```compile_fail
+/// let hash = nazo_identity::PasswordHash::new("$argon2id$test").unwrap();
+/// let _: String = hash.into_inner();
+/// ```
 #[derive(Clone, Eq, PartialEq)]
 pub struct PasswordHash(String);
 
@@ -312,10 +319,6 @@ impl PasswordHash {
     #[must_use]
     pub fn expose_for_verification(&self) -> &str {
         &self.0
-    }
-
-    pub fn into_inner(self) -> String {
-        self.0
     }
 }
 

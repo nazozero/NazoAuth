@@ -5,7 +5,10 @@ use chrono::{DateTime, Utc};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::{PasswordHash, Principal, SubjectClaims, TenantContext, TenantId, UserId, UserProfile};
+use crate::{
+    IdentityModelError, PasswordHash, Principal, SubjectClaims, TenantContext, TenantId, UserId,
+    UserProfile,
+};
 
 pub type RepositoryFuture<'a, T> =
     Pin<Box<dyn Future<Output = Result<T, RepositoryError>> + Send + 'a>>;
@@ -105,7 +108,28 @@ pub struct NewFederatedIdentity {
     pub login: FederationLogin,
     pub email: String,
     pub display_name: Option<String>,
-    pub password_hash: PasswordHash,
+    pub password_hash: PasswordHashInput,
+}
+
+/// Write-side password verifier material.
+///
+/// This capability is accepted only by new-identity commands. Authentication
+/// projections return [`PasswordHash`], which deliberately has no extraction
+/// API.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PasswordHashInput(String);
+
+impl PasswordHashInput {
+    pub fn new(value: impl Into<String>) -> Result<Self, IdentityModelError> {
+        let value = value.into();
+        PasswordHash::new(value.clone())?;
+        Ok(Self(value))
+    }
+
+    #[must_use]
+    pub fn into_persistence_value(self) -> String {
+        self.0
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -113,7 +137,7 @@ pub struct NewUser {
     pub tenant: TenantContext,
     pub username: String,
     pub email: String,
-    pub password_hash: PasswordHash,
+    pub password_hash: PasswordHashInput,
     pub email_verified: bool,
 }
 
@@ -148,7 +172,7 @@ pub struct ScimListQuery {
 pub struct NewScimUser {
     pub tenant: TenantContext,
     pub input: crate::scim::NormalizedScimUser,
-    pub password_hash: PasswordHash,
+    pub password_hash: PasswordHashInput,
 }
 
 pub trait UserRepositoryPort: Send + Sync {
