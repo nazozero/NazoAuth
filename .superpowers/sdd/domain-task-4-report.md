@@ -458,6 +458,76 @@ No refresh behavior, frontend, push, deployment, or PR state was changed.
 The workspace test emitted only the existing localized MSVC linker stdout
 warnings; strict Clippy remained warning-free.
 
+## Client persistence regression follow-up (2026-07-13)
+
+The four Important and one Minor findings from
+`client-persistence-review-regressions.md` are remediated. Stored client-secret
+verifiers are never selected into Rust: PostgreSQL returns only the non-secret
+salt, the server security boundary derives the exact compatible
+`client-secret-v1:<salt>:<HMAC-SHA256>` candidate, and PostgreSQL returns only
+an equality/`EXISTS` boolean. The auth crate's public stored-verifier API is
+deleted. Invalid credentials remain `401 invalid_client`; repository failures
+remain `503 server_error`.
+
+DCR replacement is an active-row CAS. Its single parameterized `UPDATE` has
+`WHERE tenant_id = $1 AND id = $2 AND is_active = TRUE` and does not assign
+`is_active`, so a stale PUT snapshot cannot resurrect a concurrently deleted
+client. The admin lifecycle mutation remains separate. The OIDF seed operation
+is again one PostgreSQL `INSERT ... ON CONFLICT DO UPDATE`, using exactly the
+managed columns from the pre-migration SQL. It preserves
+`registration_access_token_blake3` and all fields the former seed did not
+manage, while atomically updating the former managed fields and reactivating
+the seed client.
+
+Profile application projection again retains mixed JSON scope arrays through
+the repository and filters non-string elements at the response boundary. The
+original mixed-scope regression is restored. Production server schema no
+longer declares, joins, or allow-lists `oauth_clients`; its declaration exists
+only in the in-source test fixture. Architecture contracts now detect support
+forwarding wrappers by function body rather than exact function names and scan
+raw SQL case-insensitively.
+
+### TDD evidence and commits
+
+- Secret-boundary RED failed because `clients.rs` selected
+  `oauth_clients::client_secret_hash`; the live equality test and default
+  correct/wrong tests are GREEN.
+- DCR RED ran against PostgreSQL and returned an active client from the stale
+  PUT after DELETE; GREEN returns typed `NotFound` and leaves the row inactive.
+- Seed RED showed an unmanaged `subject_type` overwritten from `pairwise` to
+  `public`; GREEN preserves the registration token and every unmanaged sentinel,
+  updates managed fields, and permits two concurrent missing-row upserts.
+- Mixed-scope RED returned `RepositoryError::Unexpected` for integer `42`;
+  GREEN returns `openid` and `profile` and does not turn the malformed elements
+  into a 503.
+- `41aff0b` — keep client-secret digest material inside PostgreSQL/server
+  security boundaries and restore mixed-scope response filtering.
+- `0073380` — make DCR replacement an active-client CAS with a real concurrent
+  PostgreSQL regression.
+- `cd0b385` — restore the atomic, old-SQL-compatible seed upsert.
+- `eeec3ec` — remove the production server OAuth-client schema and strengthen
+  persistence contracts.
+- `031b7f8` — make forwarding-wrapper detection semantic and independent of
+  exact helper names.
+
+### Fresh verification
+
+- Real PostgreSQL `cargo test -p nazo-postgres --all-features --locked` — exit
+  0; 37 passed across 6 suites, including DCR concurrency, seed compatibility,
+  digest equality, mixed scopes, and architecture contracts.
+- Server focused all-feature tests — DCR 25/25, profile applications 1/1, and
+  client authentication 16/16 passed.
+- `cargo fmt --all -- --check` and `git diff --check` — exit 0.
+- `cargo check --workspace --all-targets --all-features --locked` — exit 0.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
+  — exit 0, no issues.
+- `cargo test --workspace --all-features --locked` with mandatory live
+  PostgreSQL and optional server live-service variables unset — exit 0; 2,068
+  passed across 38 suites.
+- `cargo doc --workspace --no-deps --all-features --locked` — exit 0.
+
+No refresh behavior, frontend, push, deployment, or PR state was changed.
+
 ## OAuth client persistence final completion (2026-07-13)
 
 All remaining server OAuth-client persistence is now owned by the focused
