@@ -20,7 +20,7 @@ struct LogoutRequest {
     state: Option<String>,
 }
 
-#[derive(Clone, Debug, Queryable)]
+#[derive(Clone, Debug)]
 struct BackchannelLogoutClient {
     id: Uuid,
     tenant_id: Uuid,
@@ -34,7 +34,7 @@ struct BackchannelLogoutClient {
     sector_identifier_host: Option<String>,
 }
 
-#[derive(Clone, Debug, Queryable)]
+#[derive(Clone, Debug)]
 struct FrontchannelLogoutClient {
     client_id: String,
     frontchannel_logout_uri: String,
@@ -481,32 +481,9 @@ async fn lookup_logout_client(
     let Some(client_id) = client_id else {
         return Ok(None);
     };
-    let mut conn = get_conn(&state.diesel_db).await.map_err(|error| {
-        tracing::warn!(%error, "failed to get database connection for oidc logout client lookup");
-        oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "logout client lookup failed.",
-        )
-    })?;
-    oauth_clients::table
-        .filter(oauth_clients::client_id.eq(client_id))
-        .filter(oauth_clients::is_active.eq(true))
-        .select((
-            oauth_clients::id,
-            oauth_clients::tenant_id,
-            oauth_clients::client_id,
-            oauth_clients::redirect_uris,
-            oauth_clients::post_logout_redirect_uris,
-            oauth_clients::backchannel_logout_uri,
-            oauth_clients::frontchannel_logout_uri,
-            oauth_clients::frontchannel_logout_session_required,
-            oauth_clients::subject_type,
-            oauth_clients::sector_identifier_host,
-        ))
-        .first::<BackchannelLogoutClient>(&mut conn)
+    nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .by_client_id(DEFAULT_TENANT_ID, client_id)
         .await
-        .optional()
         .map_err(|error| {
             tracing::warn!(%error, "failed to query oidc logout client");
             oauth_error(
@@ -516,7 +493,7 @@ async fn lookup_logout_client(
             )
         })
         .and_then(|client| {
-            client.map_or_else(
+            client.filter(|client| client.is_active).map_or_else(
                 || {
                     Err(oauth_error(
                         StatusCode::BAD_REQUEST,
@@ -524,7 +501,7 @@ async fn lookup_logout_client(
                         "logout client is not registered or active.",
                     ))
                 },
-                |client| Ok(Some(client)),
+                |client| Ok(Some(logout_client(client))),
             )
         })
 }
@@ -636,45 +613,51 @@ async fn backchannel_logout_clients_for_user(
     state: &AppState,
     user_id: Uuid,
 ) -> anyhow::Result<Vec<BackchannelLogoutClient>> {
-    let mut conn = get_conn(&state.diesel_db).await?;
-    Ok(user_client_grants::table
-        .inner_join(oauth_clients::table.on(oauth_clients::id.eq(user_client_grants::client_id)))
-        .filter(user_client_grants::user_id.eq(user_id))
-        .filter(oauth_clients::is_active.eq(true))
-        .filter(oauth_clients::backchannel_logout_uri.is_not_null())
-        .select((
-            oauth_clients::id,
-            oauth_clients::tenant_id,
-            oauth_clients::client_id,
-            oauth_clients::redirect_uris,
-            oauth_clients::post_logout_redirect_uris,
-            oauth_clients::backchannel_logout_uri,
-            oauth_clients::frontchannel_logout_uri,
-            oauth_clients::frontchannel_logout_session_required,
-            oauth_clients::subject_type,
-            oauth_clients::sector_identifier_host,
-        ))
-        .load::<BackchannelLogoutClient>(&mut conn)
-        .await?)
+    Ok(
+        nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+            .active_for_user(user_id)
+            .await?
+            .into_iter()
+            .filter(|client| client.backchannel_logout_uri.is_some())
+            .map(logout_client)
+            .collect(),
+    )
 }
 
 async fn frontchannel_logout_clients_for_user(
     state: &AppState,
     user_id: Uuid,
 ) -> anyhow::Result<Vec<FrontchannelLogoutClient>> {
-    let mut conn = get_conn(&state.diesel_db).await?;
-    Ok(user_client_grants::table
-        .inner_join(oauth_clients::table.on(oauth_clients::id.eq(user_client_grants::client_id)))
-        .filter(user_client_grants::user_id.eq(user_id))
-        .filter(oauth_clients::is_active.eq(true))
-        .filter(oauth_clients::frontchannel_logout_uri.is_not_null())
-        .select((
-            oauth_clients::client_id,
-            oauth_clients::frontchannel_logout_uri.assume_not_null(),
-            oauth_clients::frontchannel_logout_session_required,
-        ))
-        .load::<FrontchannelLogoutClient>(&mut conn)
-        .await?)
+    Ok(
+        nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+            .active_for_user(user_id)
+            .await?
+            .into_iter()
+            .filter_map(|client| {
+                Some(FrontchannelLogoutClient {
+                    client_id: client.client_id.clone(),
+                    frontchannel_logout_uri: client.frontchannel_logout_uri.clone()?,
+                    frontchannel_logout_session_required: client
+                        .frontchannel_logout_session_required,
+                })
+            })
+            .collect(),
+    )
+}
+
+fn logout_client(client: ClientRow) -> BackchannelLogoutClient {
+    BackchannelLogoutClient {
+        id: client.id,
+        tenant_id: client.tenant_id,
+        client_id: client.client_id.clone(),
+        redirect_uris: json!(&client.redirect_uris),
+        post_logout_redirect_uris: json!(&client.post_logout_redirect_uris),
+        backchannel_logout_uri: client.backchannel_logout_uri.clone(),
+        frontchannel_logout_uri: client.frontchannel_logout_uri.clone(),
+        frontchannel_logout_session_required: client.frontchannel_logout_session_required,
+        subject_type: client.subject_type.clone(),
+        sector_identifier_host: client.sector_identifier_host.clone(),
+    }
 }
 
 fn frontchannel_logout_client_for_logout_client(

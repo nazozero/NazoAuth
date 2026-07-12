@@ -1,4 +1,5 @@
-use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper};
+use chrono::{DateTime, Utc};
+use diesel::{ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl, SelectableHelper};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_auth::{OAuthClient, ValidatedClientRegistration};
 use nazo_identity::ports::RepositoryError;
@@ -9,6 +10,15 @@ use crate::{
     DbPool,
     schema::{oauth_clients, oauth_tokens, user_client_grants},
 };
+
+#[derive(Clone, Debug)]
+pub struct OAuthClientApplication {
+    pub client_id: String,
+    pub client_name: String,
+    pub last_scopes: Vec<String>,
+    pub last_authorized_at: DateTime<Utc>,
+    pub authorization_count: i32,
+}
 
 #[derive(Clone, Debug, diesel::Queryable, diesel::Selectable)]
 #[diesel(table_name = crate::schema::oauth_clients)]
@@ -431,6 +441,62 @@ impl OAuthClientRepository {
         .get_result(&mut connection)
         .await
         .map_err(map_error)
+    }
+
+    pub async fn active_for_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<OAuthClient>, RepositoryError> {
+        let mut connection = self.connection().await?;
+        user_client_grants::table
+            .inner_join(
+                oauth_clients::table.on(oauth_clients::id.eq(user_client_grants::client_id)),
+            )
+            .filter(user_client_grants::user_id.eq(user_id))
+            .filter(oauth_clients::is_active.eq(true))
+            .select(OAuthClientRecord::as_select())
+            .load::<OAuthClientRecord>(&mut connection)
+            .await
+            .map_err(map_error)?
+            .into_iter()
+            .map(OAuthClientRecord::into_domain)
+            .collect()
+    }
+
+    pub async fn applications_for_user(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<OAuthClientApplication>, RepositoryError> {
+        let mut connection = self.connection().await?;
+        let rows = user_client_grants::table
+            .inner_join(
+                oauth_clients::table.on(oauth_clients::id.eq(user_client_grants::client_id)),
+            )
+            .filter(user_client_grants::user_id.eq(user_id))
+            .select((
+                oauth_clients::client_id,
+                oauth_clients::client_name,
+                user_client_grants::last_scopes,
+                user_client_grants::last_authorized_at,
+                user_client_grants::authorization_count,
+            ))
+            .order(user_client_grants::last_authorized_at.desc())
+            .load::<(String, String, Value, DateTime<Utc>, i32)>(&mut connection)
+            .await
+            .map_err(map_error)?;
+        rows.into_iter()
+            .map(
+                |(client_id, client_name, scopes, last_authorized_at, authorization_count)| {
+                    Ok(OAuthClientApplication {
+                        client_id,
+                        client_name,
+                        last_scopes: string_array(scopes, "last_scopes")?,
+                        last_authorized_at,
+                        authorization_count,
+                    })
+                },
+            )
+            .collect()
     }
 
     /// Verifies a secret candidate while keeping the persisted digest private.

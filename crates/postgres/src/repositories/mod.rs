@@ -7,7 +7,7 @@ mod passkeys;
 mod scim;
 mod users;
 pub use access_requests::AccessRequestRepository;
-pub use clients::OAuthClientRepository;
+pub use clients::{OAuthClientApplication, OAuthClientRepository};
 pub use federation::FederationRepository;
 pub use grants::{GrantPage, GrantProjection, GrantRepository};
 pub use mfa::MfaRepository;
