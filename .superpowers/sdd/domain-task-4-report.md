@@ -440,3 +440,20 @@ existing `invalid_client` behavior. No public lookup returns a digest.
   `nazo-auth` passed 70 tests and `nazo-postgres` passed 5 unit tests.
 
 No refresh behavior, frontend, push, deployment, or PR state was changed.
+
+### Commit and full verification
+
+- Implementation: `beffc74` — `refactor: isolate OAuth client persistence rows`.
+- `rtk cargo fmt --all -- --check` — exit 0.
+- `rtk cargo check --workspace --all-targets --all-features --locked` — exit 0.
+- `rtk cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
+  — exit 0, no issues.
+- `rtk cargo test --workspace --all-features --locked` with the mandatory
+  isolated PostgreSQL URL and optional server live-service variables unset —
+  exit 0 across all workspace tests and doctests.
+- `rtk cargo doc --workspace --no-deps --all-features --locked` — exit 0.
+  The `nazo-postgres` public item index lists `OAuthClientRepository` but no
+  OAuth client result row, `OAuthClientRecord`, or client-secret digest field.
+
+The workspace test emitted only the existing localized MSVC linker stdout
+warnings; strict Clippy remained warning-free.
