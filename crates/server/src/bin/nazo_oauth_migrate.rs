@@ -4,7 +4,7 @@ use diesel::{Connection, PgConnection, RunQueryDsl};
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use nazo_oauth_server::config::{ConfigSource, database_url};
 
-const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
+const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../../migrations");
 
 fn main() -> anyhow::Result<()> {
     let config = ConfigSource::load()?;

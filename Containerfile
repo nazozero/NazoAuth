@@ -1,4 +1,4 @@
-FROM docker.io/library/rust:1.96-slim AS builder
+FROM docker.io/library/rust:1.97.0-slim AS builder
 
 WORKDIR /app
 
@@ -8,9 +8,8 @@ RUN mkdir -p /usr/local/cargo \
     && apt-get install -y --no-install-recommends pkg-config libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY Cargo.toml Cargo.lock* ./
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates ./crates
-COPY src ./src
 COPY migrations ./migrations
 
 RUN cargo build --release

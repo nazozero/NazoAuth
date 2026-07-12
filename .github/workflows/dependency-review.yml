@@ -6,6 +6,9 @@ on:
       - ".github/workflows/dependency-review.yml"
       - "Cargo.toml"
       - "Cargo.lock"
+      - "rust-toolchain"
+      - "rust-toolchain.toml"
+      - "crates/**/Cargo.toml"
       - "deny.toml"
       - "Containerfile"
       - ".github/e2e-runner.Containerfile"
@@ -37,7 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.0
 
-      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: dtolnay/rust-toolchain@1.97.0
 
       - name: Install cargo-audit
         uses: taiki-e/install-action@cargo-audit
