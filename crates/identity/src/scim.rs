@@ -2,6 +2,7 @@ use std::{error::Error, fmt};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use uuid::Uuid;
 
 use crate::email::normalize_email_address;
 
@@ -13,6 +14,13 @@ pub const SCIM_SERVICE_PROVIDER_CONFIG_SCHEMA: &str =
     "urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig";
 pub const SCIM_SCHEMA_SCHEMA: &str = "urn:ietf:params:scim:schemas:core:2.0:Schema";
 pub const SCIM_RESOURCE_TYPE_SCHEMA: &str = "urn:ietf:params:scim:schemas:core:2.0:ResourceType";
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScimTokenCredential {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub scopes: Vec<String>,
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ScimUserRequest {

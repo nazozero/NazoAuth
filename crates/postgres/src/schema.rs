@@ -88,6 +88,32 @@ diesel::table! {
 }
 
 diesel::table! {
+    scim_tokens (id) {
+        id -> Uuid, tenant_id -> Uuid, token_hash -> Varchar, label -> Varchar,
+        scopes -> Jsonb, expires_at -> Nullable<Timestamptz>, revoked_at -> Nullable<Timestamptz>,
+        last_used_at -> Nullable<Timestamptz>, created_at -> Timestamptz, updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    scim_audit_events (id) {
+        id -> Uuid, tenant_id -> Uuid, scim_token_id -> Nullable<Uuid>, event_type -> Varchar,
+        scopes -> Jsonb, ip_hash -> Nullable<Varchar>, user_agent_hash -> Nullable<Varchar>,
+        created_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    backchannel_logout_deliveries (id) {
+        id -> Uuid, tenant_id -> Uuid, client_id -> Uuid, client_public_id -> Varchar,
+        logout_uri -> Text, logout_token -> Text, attempts -> Int4, next_attempt_at -> Timestamptz,
+        locked_at -> Nullable<Timestamptz>, delivered_at -> Nullable<Timestamptz>,
+        failed_at -> Nullable<Timestamptz>, last_error -> Nullable<Text>, expires_at -> Timestamptz,
+        created_at -> Timestamptz, updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
     user_client_grants (id) {
         id -> Uuid,
         tenant_id -> Uuid,
@@ -212,6 +238,7 @@ diesel::table! {
 }
 
 diesel::joinable!(client_access_requests -> users (user_id));
+diesel::joinable!(scim_audit_events -> scim_tokens (scim_token_id));
 diesel::joinable!(user_client_grants -> oauth_clients (client_id));
 diesel::joinable!(user_client_grants -> users (user_id));
 
@@ -227,6 +254,9 @@ diesel::allow_tables_to_appear_in_same_query!(
     client_access_requests,
     oauth_clients,
     access_token_revocations,
+    scim_tokens,
+    scim_audit_events,
+    backchannel_logout_deliveries,
     runtime_module_desired_states,
     runtime_module_instance_states,
     runtime_module_state_events

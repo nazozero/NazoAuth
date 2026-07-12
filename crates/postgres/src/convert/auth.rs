@@ -1,7 +1,7 @@
-use nazo_auth::RefreshToken;
+use nazo_auth::{BackchannelLogoutDelivery, RefreshToken};
 use nazo_identity::ports::RepositoryError;
 
-use crate::rows::auth::RefreshTokenRow;
+use crate::rows::auth::{BackchannelLogoutDeliveryRow, RefreshTokenRow};
 
 impl TryFrom<RefreshTokenRow> for RefreshToken {
     type Error = RepositoryError;
@@ -23,5 +23,17 @@ impl TryFrom<RefreshTokenRow> for RefreshToken {
             dpop_jkt: row.dpop_jkt,
             mtls_x5t_s256: row.mtls_x5t_s256,
         })
+    }
+}
+
+impl From<BackchannelLogoutDeliveryRow> for BackchannelLogoutDelivery {
+    fn from(row: BackchannelLogoutDeliveryRow) -> Self {
+        Self {
+            id: row.id,
+            logout_uri: row.logout_uri,
+            logout_token: row.logout_token,
+            attempts: row.attempts,
+            expires_at: row.expires_at,
+        }
     }
 }

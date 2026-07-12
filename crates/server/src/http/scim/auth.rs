@@ -68,34 +68,14 @@ async fn load_scim_credential(
     state: &AppState,
     token_hash: &str,
 ) -> Result<Option<ScimCredential>, HttpResponse> {
-    let mut conn = match get_conn(&state.diesel_db).await {
-        Ok(conn) => conn,
-        Err(error) => {
-            tracing::warn!(%error, "failed to get database connection for SCIM token lookup");
-            return Err(scim_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "backend unavailable",
-            ));
-        }
-    };
-    let row = scim_tokens::table
-        .filter(scim_tokens::token_hash.eq(token_hash))
-        .filter(scim_tokens::revoked_at.is_null())
-        .filter(
-            scim_tokens::expires_at
-                .is_null()
-                .or(scim_tokens::expires_at.gt(diesel_now)),
-        )
-        .select((scim_tokens::id, scim_tokens::tenant_id, scim_tokens::scopes))
-        .first::<(Uuid, Uuid, Value)>(&mut conn)
+    match nazo_postgres::AuditRepository::new(state.diesel_db.clone())
+        .active_scim_credential(token_hash)
         .await
-        .optional();
-    match row {
-        Ok(Some((token_id, tenant_id, scopes))) => Ok(Some(ScimCredential {
-            token_id: Some(token_id),
-            tenant_id,
-            scopes: scim_scope_values(&scopes),
+    {
+        Ok(Some(credential)) => Ok(Some(ScimCredential {
+            token_id: Some(credential.id),
+            tenant_id: credential.tenant_id,
+            scopes: credential.scopes,
             source: "database",
         })),
         Ok(None) => Ok(None),
@@ -188,6 +168,7 @@ pub(super) fn scim_credential_allows(
         .any(|scope| scope == SCIM_SCOPE_ALL || scope == required_scope.as_str())
 }
 
+#[cfg(test)]
 pub(super) fn scim_scope_values(value: &Value) -> Vec<String> {
     value
         .as_array()
@@ -208,38 +189,19 @@ async fn record_scim_token_use(
     let Some(token_id) = credential.token_id else {
         return;
     };
-    let mut conn = match get_conn(&state.diesel_db).await {
-        Ok(conn) => conn,
-        Err(error) => {
-            tracing::warn!(%error, "failed to get database connection for SCIM token audit");
-            return;
-        }
-    };
-    if let Err(error) = diesel::update(scim_tokens::table.find(token_id))
-        .set((
-            scim_tokens::last_used_at.eq(diesel_now),
-            scim_tokens::updated_at.eq(diesel_now),
-        ))
-        .execute(&mut conn)
-        .await
-    {
-        tracing::warn!(%error, token_id = %token_id, "failed to update SCIM token last_used_at");
-    }
     let user_agent_hash = req
         .headers()
         .get(header::USER_AGENT)
         .and_then(|value| value.to_str().ok())
         .map(blake3_hex);
-    if let Err(error) = diesel::insert_into(scim_audit_events::table)
-        .values((
-            scim_audit_events::tenant_id.eq(credential.tenant_id),
-            scim_audit_events::scim_token_id.eq(Some(token_id)),
-            scim_audit_events::event_type.eq("scim_token_used"),
-            scim_audit_events::scopes.eq(json!([required_scope.as_str()])),
-            scim_audit_events::ip_hash.eq(Some(blake3_hex(&client_ip(req, &state.settings)))),
-            scim_audit_events::user_agent_hash.eq(user_agent_hash),
-        ))
-        .execute(&mut conn)
+    if let Err(error) = nazo_postgres::AuditRepository::new(state.diesel_db.clone())
+        .record_scim_token_use(
+            token_id,
+            credential.tenant_id,
+            &[required_scope.as_str().to_owned()],
+            Some(blake3_hex(&client_ip(req, &state.settings))),
+            user_agent_hash,
+        )
         .await
     {
         tracing::warn!(%error, token_id = %token_id, "failed to insert SCIM token audit event");

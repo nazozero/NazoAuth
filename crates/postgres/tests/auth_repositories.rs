@@ -1,7 +1,12 @@
-use diesel::{QueryableByName, sql_query, sql_types::Uuid as SqlUuid};
+use diesel::{
+    QueryableByName, sql_query,
+    sql_types::{BigInt, Uuid as SqlUuid},
+};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_auth::{NewRefreshToken, RefreshTokenPersistResult};
-use nazo_postgres::{GrantRepository, TokenRepository, create_pool};
+use nazo_postgres::{
+    AuditRepository, AuthorizationRepository, GrantRepository, TokenRepository, create_pool,
+};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -21,6 +26,12 @@ struct FixtureIds {
     user_id: Uuid,
     #[diesel(sql_type = SqlUuid)]
     client_id: Uuid,
+}
+
+#[derive(QueryableByName)]
+struct CountRow {
+    #[diesel(sql_type = BigInt)]
+    count: i64,
 }
 
 async fn fixture(database_url: &str) -> FixtureIds {
@@ -183,5 +194,125 @@ async fn refresh_rotation_reuse_compromises_the_whole_family() {
             .family_active(tenant_id, family_id, fixture.user_id)
             .await
             .expect("family state should load")
+    );
+}
+
+#[tokio::test]
+async fn authorization_code_replay_compensation_revokes_both_token_kinds() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let family_id = Uuid::now_v7();
+    let token_hash = Uuid::now_v7().simple().to_string().repeat(2);
+    let access_jti = format!("authorization-replay-{}", Uuid::now_v7());
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    sql_query(format!(
+        r#"
+        INSERT INTO oauth_tokens (
+            refresh_token_blake3, token_family_id, client_id, user_id, scopes,
+            issued_at, expires_at, subject
+        ) VALUES (
+            '{token_hash}', '{family_id}', '{}', '{}', '["openid"]'::jsonb,
+            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 hour', '{}'
+        )
+        "#,
+        fixture.client_id, fixture.user_id, fixture.user_id
+    ))
+    .execute(&mut connection)
+    .await
+    .expect("authorization replay refresh fixture should insert");
+
+    AuthorizationRepository::new(create_pool(&database_url, 4).unwrap())
+        .revoke_issued_tokens(
+            tenant_id,
+            fixture.client_id,
+            &access_jti,
+            Some(chrono::Utc::now() + chrono::Duration::hours(1)),
+            Some(family_id),
+        )
+        .await
+        .expect("authorization replay compensation should commit");
+    let tokens = TokenRepository::new(create_pool(&database_url, 4).unwrap());
+    assert!(
+        tokens
+            .access_token_revoked(tenant_id, &access_jti)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !tokens
+            .family_active(tenant_id, family_id, fixture.user_id)
+            .await
+            .unwrap()
+    );
+}
+
+#[tokio::test]
+async fn audit_repository_records_scim_use_and_drives_logout_outbox() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let token_hash = Uuid::now_v7().simple().to_string().repeat(2);
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    sql_query(format!(
+        "INSERT INTO scim_tokens (tenant_id, token_hash, label, scopes) VALUES ('{tenant_id}', '{token_hash}', 'audit repository test', '[\"scim:read\"]'::jsonb)"
+    ))
+    .execute(&mut connection)
+    .await
+    .expect("SCIM token fixture should insert");
+    let repository = AuditRepository::new(create_pool(&database_url, 4).unwrap());
+    let credential = repository
+        .active_scim_credential(&token_hash)
+        .await
+        .expect("SCIM credential should load")
+        .expect("SCIM credential should exist");
+    repository
+        .record_scim_token_use(
+            credential.id,
+            credential.tenant_id,
+            &["scim:read".to_owned()],
+            Some("a".repeat(64)),
+            Some("b".repeat(64)),
+        )
+        .await
+        .expect("SCIM use audit should commit");
+    let count =
+        sql_query("SELECT COUNT(*) AS count FROM scim_audit_events WHERE scim_token_id = $1")
+            .bind::<SqlUuid, _>(credential.id)
+            .get_result::<CountRow>(&mut connection)
+            .await
+            .expect("SCIM audit count should load");
+    assert_eq!(count.count, 1);
+
+    repository
+        .enqueue_backchannel_logout(
+            tenant_id,
+            fixture.client_id,
+            "audit-repository-client",
+            "https://client.example/backchannel-logout",
+            "logout-token-test",
+            chrono::Utc::now() + chrono::Duration::minutes(2),
+        )
+        .await
+        .expect("backchannel delivery should enqueue");
+    let claimed = repository
+        .claim_due_backchannel_logout(10, 300)
+        .await
+        .expect("backchannel delivery should claim");
+    assert_eq!(claimed.len(), 1);
+    repository
+        .complete_backchannel_logout(claimed[0].id)
+        .await
+        .expect("backchannel delivery should complete");
+    assert!(
+        repository
+            .claim_due_backchannel_logout(10, 300)
+            .await
+            .expect("completed delivery should not reclaim")
+            .is_empty()
     );
 }

@@ -133,37 +133,16 @@ pub(crate) async fn revoke_issued_authorization_code_tokens(
     access_token_expires_at: i64,
     refresh_token_family_id: Option<Uuid>,
 ) -> anyhow::Result<()> {
-    let mut conn = get_conn(&state.diesel_db).await?;
-    if let Some(expires_at) = DateTime::<Utc>::from_timestamp(access_token_expires_at, 0) {
-        diesel::insert_into(access_token_revocations::table)
-            .values((
-                access_token_revocations::access_token_jti_blake3.eq(blake3_hex(access_token_jti)),
-                access_token_revocations::tenant_id.eq(client.tenant_id),
-                access_token_revocations::client_id.eq(client.id),
-                access_token_revocations::revoked_at.eq(Utc::now()),
-                access_token_revocations::expires_at.eq(expires_at),
-            ))
-            .on_conflict((
-                access_token_revocations::tenant_id,
-                access_token_revocations::access_token_jti_blake3,
-            ))
-            .do_nothing()
-            .execute(&mut conn)
-            .await?;
-    }
-    if let Some(family_id) = refresh_token_family_id {
-        diesel::update(
-            oauth_tokens::table
-                .filter(oauth_tokens::tenant_id.eq(client.tenant_id))
-                .filter(oauth_tokens::client_id.eq(client.id))
-                .filter(oauth_tokens::token_family_id.eq(family_id))
-                .filter(oauth_tokens::revoked_at.is_null()),
+    nazo_postgres::AuthorizationRepository::new(state.diesel_db.clone())
+        .revoke_issued_tokens(
+            client.tenant_id,
+            client.id,
+            access_token_jti,
+            DateTime::<Utc>::from_timestamp(access_token_expires_at, 0),
+            refresh_token_family_id,
         )
-        .set(oauth_tokens::revoked_at.eq(diesel_now))
-        .execute(&mut conn)
-        .await?;
-    }
-    Ok(())
+        .await
+        .map_err(|error| anyhow::anyhow!("failed to revoke authorization-code tokens: {error}"))
 }
 
 #[cfg(test)]

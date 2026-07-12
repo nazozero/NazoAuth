@@ -36,7 +36,10 @@ pub use sender_constraint::{
     SenderConstraintPolicy, is_valid_dpop_jkt, normalize_sha256_thumbprint,
 };
 pub use signing::{SignError, SignRequest, Signature, Signer, SigningPurpose};
-pub use token::{LostResponseRetry, NewRefreshToken, RefreshToken, RefreshTokenPersistResult};
+pub use token::{
+    BackchannelLogoutDelivery, LostResponseRetry, NewRefreshToken, RefreshToken,
+    RefreshTokenPersistResult,
+};
 pub use uri_policy::{
     is_loopback_http_url, oauth_redirect_uri_matches, validate_cors_origin,
     validate_frontend_base_url, validate_issuer_url, validate_oauth_redirect_uri,

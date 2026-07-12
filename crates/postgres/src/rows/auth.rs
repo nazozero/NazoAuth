@@ -34,3 +34,17 @@ pub(crate) struct RefreshTokenRow {
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
     pub(crate) mtls_x5t_s256: Option<String>,
 }
+
+#[derive(Clone, Debug, diesel::QueryableByName)]
+pub(crate) struct BackchannelLogoutDeliveryRow {
+    #[diesel(sql_type = diesel::sql_types::Uuid)]
+    pub(crate) id: Uuid,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub(crate) logout_uri: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub(crate) logout_token: String,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub(crate) attempts: i32,
+    #[diesel(sql_type = diesel::sql_types::Timestamptz)]
+    pub(crate) expires_at: DateTime<Utc>,
+}

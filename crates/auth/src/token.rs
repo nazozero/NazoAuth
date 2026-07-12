@@ -50,3 +50,12 @@ pub enum RefreshTokenPersistResult {
     Inserted,
     RotationConflict,
 }
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BackchannelLogoutDelivery {
+    pub id: Uuid,
+    pub logout_uri: String,
+    pub logout_token: String,
+    pub attempts: i32,
+    pub expires_at: DateTime<Utc>,
+}

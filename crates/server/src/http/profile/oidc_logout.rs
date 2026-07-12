@@ -4,7 +4,6 @@
 
 use crate::http::prelude::*;
 use actix_web::web::Payload;
-use diesel::QueryableByName;
 use std::time::Duration as StdDuration;
 
 const BACKCHANNEL_LOGOUT_TOKEN_TTL_SECONDS: i64 = 120;
@@ -41,19 +40,7 @@ struct FrontchannelLogoutClient {
     frontchannel_logout_session_required: bool,
 }
 
-#[derive(Clone, Debug, QueryableByName)]
-struct BackchannelLogoutDelivery {
-    #[diesel(sql_type = diesel::sql_types::Uuid)]
-    id: Uuid,
-    #[diesel(sql_type = diesel::sql_types::Text)]
-    logout_uri: String,
-    #[diesel(sql_type = diesel::sql_types::Text)]
-    logout_token: String,
-    #[diesel(sql_type = diesel::sql_types::Integer)]
-    attempts: i32,
-    #[diesel(sql_type = diesel::sql_types::Timestamptz)]
-    expires_at: DateTime<Utc>,
-}
+type BackchannelLogoutDelivery = nazo_auth::BackchannelLogoutDelivery;
 
 pub(crate) async fn oidc_logout(
     state: Data<AppState>,
@@ -757,19 +744,17 @@ async fn persist_backchannel_logout_delivery(
     token: &str,
     expires_at: DateTime<Utc>,
 ) -> anyhow::Result<()> {
-    let mut conn = get_conn(&state.diesel_db).await?;
-    diesel::insert_into(backchannel_logout_deliveries::table)
-        .values((
-            backchannel_logout_deliveries::tenant_id.eq(client.tenant_id),
-            backchannel_logout_deliveries::client_id.eq(client.id),
-            backchannel_logout_deliveries::client_public_id.eq(client.client_id.clone()),
-            backchannel_logout_deliveries::logout_uri.eq(uri.to_owned()),
-            backchannel_logout_deliveries::logout_token.eq(token.to_owned()),
-            backchannel_logout_deliveries::expires_at.eq(expires_at),
-        ))
-        .execute(&mut conn)
-        .await?;
-    Ok(())
+    nazo_postgres::AuditRepository::new(state.diesel_db.clone())
+        .enqueue_backchannel_logout(
+            client.tenant_id,
+            client.id,
+            &client.client_id,
+            uri,
+            token,
+            expires_at,
+        )
+        .await
+        .map_err(|error| anyhow::anyhow!("failed to enqueue backchannel logout: {error}"))
 }
 
 fn backchannel_logout_next_retry_at(
@@ -791,52 +776,20 @@ async fn claim_due_backchannel_logout_deliveries(
     state: &AppState,
     limit: i64,
 ) -> anyhow::Result<Vec<BackchannelLogoutDelivery>> {
-    let mut conn = get_conn(&state.diesel_db).await?;
-    let deliveries = diesel::sql_query(
-        r#"
-        UPDATE backchannel_logout_deliveries
-        SET attempts = attempts + 1,
-            locked_at = CURRENT_TIMESTAMP,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id IN (
-            SELECT id
-            FROM backchannel_logout_deliveries
-            WHERE delivered_at IS NULL
-              AND failed_at IS NULL
-              AND expires_at > CURRENT_TIMESTAMP
-              AND next_attempt_at <= CURRENT_TIMESTAMP
-              AND (
-                  locked_at IS NULL
-                  OR locked_at < CURRENT_TIMESTAMP - ($2::int * INTERVAL '1 second')
-              )
-            ORDER BY next_attempt_at ASC, created_at ASC
-            FOR UPDATE SKIP LOCKED
-            LIMIT $1
-        )
-        RETURNING id, logout_uri, logout_token, attempts, expires_at
-        "#,
-    )
-    .bind::<diesel::sql_types::BigInt, _>(limit)
-    .bind::<diesel::sql_types::Integer, _>(BACKCHANNEL_LOGOUT_LOCK_TIMEOUT_SECONDS as i32)
-    .load::<BackchannelLogoutDelivery>(&mut conn)
-    .await?;
-    Ok(deliveries)
+    nazo_postgres::AuditRepository::new(state.diesel_db.clone())
+        .claim_due_backchannel_logout(limit, BACKCHANNEL_LOGOUT_LOCK_TIMEOUT_SECONDS as i32)
+        .await
+        .map_err(|error| anyhow::anyhow!("failed to claim backchannel logout: {error}"))
 }
 
 async fn mark_backchannel_logout_delivery_success(
     state: &AppState,
     delivery_id: Uuid,
 ) -> anyhow::Result<()> {
-    let mut conn = get_conn(&state.diesel_db).await?;
-    diesel::update(backchannel_logout_deliveries::table.find(delivery_id))
-        .set((
-            backchannel_logout_deliveries::delivered_at.eq(diesel_now),
-            backchannel_logout_deliveries::locked_at.eq::<Option<DateTime<Utc>>>(None),
-            backchannel_logout_deliveries::updated_at.eq(diesel_now),
-        ))
-        .execute(&mut conn)
-        .await?;
-    Ok(())
+    nazo_postgres::AuditRepository::new(state.diesel_db.clone())
+        .complete_backchannel_logout(delivery_id)
+        .await
+        .map_err(|error| anyhow::anyhow!("failed to complete backchannel logout: {error}"))
 }
 
 async fn mark_backchannel_logout_delivery_failure(
@@ -846,31 +799,12 @@ async fn mark_backchannel_logout_delivery_failure(
 ) -> anyhow::Result<()> {
     let now = Utc::now();
     let last_error = truncate_backchannel_logout_error(error);
-    let mut conn = get_conn(&state.diesel_db).await?;
-    if let Some(next_attempt_at) =
-        backchannel_logout_next_retry_at(delivery.attempts - 1, now, delivery.expires_at)
-    {
-        diesel::update(backchannel_logout_deliveries::table.find(delivery.id))
-            .set((
-                backchannel_logout_deliveries::next_attempt_at.eq(next_attempt_at),
-                backchannel_logout_deliveries::locked_at.eq::<Option<DateTime<Utc>>>(None),
-                backchannel_logout_deliveries::last_error.eq(Some(last_error)),
-                backchannel_logout_deliveries::updated_at.eq(diesel_now),
-            ))
-            .execute(&mut conn)
-            .await?;
-    } else {
-        diesel::update(backchannel_logout_deliveries::table.find(delivery.id))
-            .set((
-                backchannel_logout_deliveries::failed_at.eq(diesel_now),
-                backchannel_logout_deliveries::locked_at.eq::<Option<DateTime<Utc>>>(None),
-                backchannel_logout_deliveries::last_error.eq(Some(last_error)),
-                backchannel_logout_deliveries::updated_at.eq(diesel_now),
-            ))
-            .execute(&mut conn)
-            .await?;
-    }
-    Ok(())
+    let next_attempt_at =
+        backchannel_logout_next_retry_at(delivery.attempts - 1, now, delivery.expires_at);
+    nazo_postgres::AuditRepository::new(state.diesel_db.clone())
+        .fail_backchannel_logout(delivery.id, next_attempt_at, &last_error)
+        .await
+        .map_err(|error| anyhow::anyhow!("failed to update backchannel logout: {error}"))
 }
 
 fn truncate_backchannel_logout_error(error: &str) -> String {

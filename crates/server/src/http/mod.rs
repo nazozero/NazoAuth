@@ -34,7 +34,9 @@ pub(crate) mod prelude {
         web::{Data, Form, Json, Query},
     };
     pub(crate) use chrono::{DateTime, Duration, Utc};
-    pub(crate) use diesel::{OptionalExtension, dsl::now as diesel_now, prelude::*};
+    #[cfg(test)]
+    pub(crate) use diesel::{QueryableByName, prelude::*};
+    #[cfg(test)]
     pub(crate) use diesel_async::RunQueryDsl;
     pub(crate) use futures_util::StreamExt;
     pub(crate) use serde::Deserialize;
@@ -51,11 +53,7 @@ pub(crate) mod prelude {
         DatabaseExternalIdentityFixture, DatabasePasskeyFixture, DatabaseUserFixture,
     };
     #[cfg(test)]
-    pub(crate) use crate::schema::oauth_clients;
-    pub(crate) use crate::schema::{
-        access_token_revocations, backchannel_logout_deliveries, oauth_tokens, scim_audit_events,
-        scim_tokens,
-    };
+    pub(crate) use crate::schema::{access_token_revocations, oauth_clients, oauth_tokens};
     #[cfg(test)]
     pub(crate) use crate::schema::{
         external_identity_links, user_passkey_credentials, user_totp_credentials, users,
@@ -71,5 +69,6 @@ pub(crate) mod prelude {
     pub(crate) use nazo_identity::AccessRequestStatus;
     pub(crate) use nazo_identity::PublicAccount;
     pub(crate) use nazo_identity::ports::{FederationLink, PasskeyCredential};
+    #[cfg(test)]
     pub(crate) use nazo_postgres::get_conn;
 }

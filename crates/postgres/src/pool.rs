@@ -62,3 +62,12 @@ pub async fn run_pending_migrations(database_url: &str) -> anyhow::Result<()> {
         .map_err(|error| anyhow::anyhow!(error.to_string()))?;
     Ok(())
 }
+
+pub async fn cleanup_expired_security_state(database_url: &str) -> anyhow::Result<()> {
+    use diesel::RunQueryDsl;
+
+    let mut connection = diesel::PgConnection::establish(database_url)?;
+    diesel::sql_query("SELECT * FROM nazo_oauth_cleanup_expired_security_state()")
+        .execute(&mut connection)?;
+    Ok(())
+}

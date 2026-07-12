@@ -19,11 +19,12 @@ pub(crate) mod rows;
 pub(crate) mod schema;
 
 pub use pool::{
-    DbConnection, DbPool, DbPoolMetrics, create_pool, db_pool_metrics, get_conn,
-    run_pending_migrations,
+    DbConnection, DbPool, DbPoolMetrics, cleanup_expired_security_state, create_pool,
+    db_pool_metrics, get_conn, run_pending_migrations,
 };
 pub use repositories::{
-    AccessRequestRepository, FederationRepository, GrantAuthorization, GrantPage, GrantProjection,
-    GrantRepository, GrantRevocation, MfaRepository, OAuthClientApplication, OAuthClientRepository,
-    PasskeyRepository, RuntimeModuleRepository, ScimRepository, TokenRepository, UserRepository,
+    AccessRequestRepository, AuditRepository, AuthorizationRepository, FederationRepository,
+    GrantAuthorization, GrantPage, GrantProjection, GrantRepository, GrantRevocation,
+    MfaRepository, OAuthClientApplication, OAuthClientRepository, PasskeyRepository,
+    RuntimeModuleRepository, ScimRepository, TokenRepository, UserRepository,
 };
