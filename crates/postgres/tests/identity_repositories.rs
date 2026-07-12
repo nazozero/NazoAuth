@@ -315,6 +315,27 @@ async fn concurrent_federated_create_is_idempotent_and_tenant_scoped() {
 }
 
 #[tokio::test]
+async fn subject_claims_reject_invalid_persisted_role_invariant() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        panic!("NAZO_TEST_DATABASE_URL or DATABASE_URL is required");
+    };
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE users SET role = 'admin', admin_level = 0 WHERE id = $1")
+        .bind::<SqlUuid, _>(user_id.as_uuid())
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+
+    let error = UserRepository::new(pool.clone())
+        .subject_claims_by_id(tenant, user_id)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, RepositoryError::Consistency(_)));
+    cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
 async fn scim_replace_returns_domain_claims_from_one_transaction() {
     let Some((pool, tenant, user_id)) = database_fixture().await else {
         return;
