@@ -665,3 +665,48 @@ to the table-name detector so direct raw SQL is still rejected.
 
 No production behavior, refresh implementation, frontend, push, deployment,
 PR, or review-package state was changed.
+
+## OAuth client contract parser correction (2026-07-13)
+
+The OAuth-client ownership contract now parses every server production Rust
+source with `syn` 2 (`full` and `visit`) instead of maintaining a test-local
+Rust lexer and item-brace scrubber. The bounded AST visitor skips complete
+items carrying an exact `#[cfg(test)]`, including inline modules and associated
+items, while continuing recursively through production inline modules,
+functions, and statements. Documentation attributes and comments are not
+scanned. Production identifiers and paths, macro token streams such as Diesel
+table declarations and `sql_name`, and normal or raw string literals retain
+case-insensitive `oauth_clients` identifier-boundary detection. No `quote`
+dependency was added.
+
+### TDD evidence and commit
+
+- RED: the reviewer lifetime/character-literal fixture and const-generic
+  fixture produced 3 passing and 2 failing focused contract tests. The former
+  exposed the hand-written lexer hiding an exact `cfg(test)` gate on the same
+  line; the latter exposed a const-generic expression brace being mistaken for
+  the gated function body.
+- GREEN: the focused OAuth-client contract slice passes 5/5, retaining local
+  alias, direct declaration, schema import, case-varied raw SQL,
+  documentation/comment, whole cfg module, stacked-attribute, and continued
+  production traversal coverage. An associated-item fixture also failed before
+  the visitor was extended to skip exact cfg-gated impl, trait, and foreign
+  items, then passed.
+- `5e3b9c0` — `test: parse OAuth contract sources with syn`.
+
+### Fresh verification
+
+- Isolated live PostgreSQL `rtk cargo test -p nazo-postgres --test
+  identity_repositories --all-features --locked -- --nocapture` — exit 0;
+  27/27 passed.
+- `rtk cargo fmt --all -- --check` and `rtk git diff --check` — exit 0.
+- `rtk cargo check --workspace --all-targets --all-features --locked` — exit 0.
+- `rtk cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
+  — exit 0, no issues.
+- `rtk cargo test --workspace --all-features --locked` with the mandatory
+  isolated PostgreSQL URL and optional server live-service variables unset —
+  exit 0; 2,073 passed across 38 suites.
+- `rtk cargo doc --workspace --no-deps --all-features --locked` — exit 0.
+
+No production behavior, refresh implementation, frontend, push, deployment,
+PR, or review-package state was changed.
