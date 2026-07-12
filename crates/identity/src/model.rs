@@ -1,5 +1,6 @@
 use std::{error::Error, fmt};
 
+use argon2::{Argon2, PasswordHash as EncodedPasswordHash, PasswordVerifier};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -285,8 +286,9 @@ pub struct PublicAccount {
 
 /// A password verifier owned by the identity domain.
 ///
-/// The inner verifier is deliberately unavailable to serializers and is only
-/// exposed by an explicitly named verification accessor.
+/// The inner verifier is deliberately unavailable to serializers and callers.
+/// Candidate verification is completed inside this type and returns only a
+/// boolean result.
 ///
 /// ```compile_fail
 /// fn assert_serialize<T: serde::Serialize>() {}
@@ -304,6 +306,11 @@ pub struct PublicAccount {
 /// let hash = nazo_identity::PasswordHash::new("$argon2id$test").unwrap();
 /// let _: String = hash.into_inner();
 /// ```
+///
+/// ```compile_fail
+/// let hash = nazo_identity::PasswordHash::new("$argon2id$test").unwrap();
+/// let _: &str = hash.expose_for_verification();
+/// ```
 #[derive(Clone, Eq, PartialEq)]
 pub struct PasswordHash(String);
 
@@ -316,9 +323,15 @@ impl PasswordHash {
         Ok(Self(value))
     }
 
+    /// Verifies a password candidate without releasing the persisted verifier.
     #[must_use]
-    pub fn expose_for_verification(&self) -> &str {
-        &self.0
+    pub fn verify_password(&self, candidate: &str) -> bool {
+        let Ok(encoded) = EncodedPasswordHash::new(&self.0) else {
+            return false;
+        };
+        Argon2::default()
+            .verify_password(candidate.as_bytes(), &encoded)
+            .is_ok()
     }
 }
 
@@ -379,6 +392,7 @@ impl PublicAccount {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
 
     #[test]
     fn login_identity_debug_never_exposes_password_hash() {
@@ -394,5 +408,20 @@ mod tests {
         };
 
         assert!(!format!("{login:?}").contains(secret));
+    }
+
+    #[test]
+    fn password_hash_verifies_candidates_without_exposing_the_verifier() {
+        let encoded = Argon2::default()
+            .hash_password(
+                b"correct horse battery staple",
+                &SaltString::from_b64("c2FsdHNhbHQ").unwrap(),
+            )
+            .unwrap()
+            .to_string();
+        let hash = PasswordHash::new(encoded).unwrap();
+
+        assert!(hash.verify_password("correct horse battery staple"));
+        assert!(!hash.verify_password("wrong password"));
     }
 }
