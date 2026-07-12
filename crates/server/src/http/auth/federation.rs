@@ -507,6 +507,13 @@ async fn resolve_external_identity(
             )
         })?
     {
+        if !user.principal.active {
+            return Err(oauth_error(
+                StatusCode::UNAUTHORIZED,
+                "access_denied",
+                "federation login failed.",
+            ));
+        }
         return Ok(user);
     }
     let user = match find_user_by_email(&state.diesel_db, email).await {
