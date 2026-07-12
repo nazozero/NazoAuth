@@ -58,7 +58,7 @@ pub(crate) mod prelude {
     pub(crate) use crate::schema::oauth_clients;
     pub(crate) use crate::schema::{
         access_token_revocations, backchannel_logout_deliveries, oauth_tokens, scim_audit_events,
-        scim_tokens, user_client_grants,
+        scim_tokens,
     };
     #[cfg(test)]
     pub(crate) use crate::schema::{

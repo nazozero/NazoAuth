@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
-use diesel::{BoolExpressionMethods, ExpressionMethods, JoinOnDsl, QueryDsl};
-use diesel_async::RunQueryDsl;
+use diesel::{
+    AggregateExpressionMethods, BoolExpressionMethods, ExpressionMethods, JoinOnDsl, QueryDsl,
+};
+use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_identity::ports::RepositoryError;
 use serde_json::Value;
 use uuid::Uuid;
@@ -26,6 +28,20 @@ pub struct GrantProjection {
 pub struct GrantPage {
     pub total: i64,
     pub grants: Vec<GrantProjection>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct GrantAuthorization {
+    pub scopes: Value,
+    pub resource_indicators: Value,
+    pub authorization_details: Value,
+    pub authorization_count: i32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GrantRevocation {
+    pub revoked_refresh_tokens: usize,
+    pub removed_grants: usize,
 }
 
 #[derive(diesel::Queryable)]
@@ -108,6 +124,136 @@ impl GrantRepository {
             total,
             grants: records.into_iter().map(Into::into).collect(),
         })
+    }
+
+    pub async fn upsert(
+        &self,
+        tenant_id: Uuid,
+        user_id: Uuid,
+        client_id: Uuid,
+        scopes: &[String],
+        resource_indicators: &[String],
+        authorization_details: &Value,
+    ) -> Result<(), RepositoryError> {
+        let mut connection = self.connection().await?;
+        let now = Utc::now();
+        diesel::insert_into(user_client_grants::table)
+            .values((
+                user_client_grants::tenant_id.eq(tenant_id),
+                user_client_grants::user_id.eq(user_id),
+                user_client_grants::client_id.eq(client_id),
+                user_client_grants::first_authorized_at.eq(now),
+                user_client_grants::last_authorized_at.eq(now),
+                user_client_grants::last_scopes.eq(serde_json::json!(scopes)),
+                user_client_grants::last_resource_indicators
+                    .eq(serde_json::json!(resource_indicators)),
+                user_client_grants::last_authorization_details.eq(authorization_details),
+                user_client_grants::authorization_count.eq(1),
+            ))
+            .on_conflict((
+                user_client_grants::tenant_id,
+                user_client_grants::user_id,
+                user_client_grants::client_id,
+            ))
+            .do_update()
+            .set((
+                user_client_grants::last_authorized_at.eq(now),
+                user_client_grants::last_scopes.eq(serde_json::json!(scopes)),
+                user_client_grants::last_resource_indicators
+                    .eq(serde_json::json!(resource_indicators)),
+                user_client_grants::last_authorization_details.eq(authorization_details),
+                user_client_grants::authorization_count
+                    .eq(user_client_grants::authorization_count + 1),
+            ))
+            .execute(&mut connection)
+            .await
+            .map_err(map_error)?;
+        Ok(())
+    }
+
+    pub async fn authorization(
+        &self,
+        user_id: Uuid,
+        client_id: Uuid,
+    ) -> Result<Option<GrantAuthorization>, RepositoryError> {
+        use diesel::OptionalExtension;
+
+        let mut connection = self.connection().await?;
+        user_client_grants::table
+            .filter(user_client_grants::user_id.eq(user_id))
+            .filter(user_client_grants::client_id.eq(client_id))
+            .select((
+                user_client_grants::last_scopes,
+                user_client_grants::last_resource_indicators,
+                user_client_grants::last_authorization_details,
+                user_client_grants::authorization_count,
+            ))
+            .first::<(Value, Value, Value, i32)>(&mut connection)
+            .await
+            .optional()
+            .map(|value| {
+                value.map(
+                    |(scopes, resource_indicators, authorization_details, authorization_count)| {
+                        GrantAuthorization {
+                            scopes,
+                            resource_indicators,
+                            authorization_details,
+                            authorization_count,
+                        }
+                    },
+                )
+            })
+            .map_err(map_error)
+    }
+
+    pub async fn authorized_client_count(&self, user_id: Uuid) -> Result<i64, RepositoryError> {
+        let mut connection = self.connection().await?;
+        user_client_grants::table
+            .filter(user_client_grants::user_id.eq(user_id))
+            .select(diesel::dsl::count(user_client_grants::client_id).aggregate_distinct())
+            .first::<i64>(&mut connection)
+            .await
+            .map_err(map_error)
+    }
+
+    pub async fn revoke(
+        &self,
+        user_id: Uuid,
+        client_id: Uuid,
+    ) -> Result<GrantRevocation, RepositoryError> {
+        let mut connection = self.connection().await?;
+        connection
+            .transaction::<GrantRevocation, diesel::result::Error, _>(async |connection| {
+                let revoked_refresh_tokens = diesel::update(
+                    crate::schema::oauth_tokens::table
+                        .filter(crate::schema::oauth_tokens::user_id.eq(user_id))
+                        .filter(crate::schema::oauth_tokens::client_id.eq(client_id))
+                        .filter(crate::schema::oauth_tokens::revoked_at.is_null()),
+                )
+                .set(crate::schema::oauth_tokens::revoked_at.eq(diesel::dsl::now))
+                .execute(connection)
+                .await?;
+                let removed_grants = diesel::delete(
+                    user_client_grants::table
+                        .filter(user_client_grants::user_id.eq(user_id))
+                        .filter(user_client_grants::client_id.eq(client_id)),
+                )
+                .execute(connection)
+                .await?;
+                Ok(GrantRevocation {
+                    revoked_refresh_tokens,
+                    removed_grants,
+                })
+            })
+            .await
+            .map_err(map_error)
+    }
+
+    async fn connection(&self) -> Result<crate::DbConnection, RepositoryError> {
+        self.pool
+            .get()
+            .await
+            .map_err(|_| RepositoryError::Unavailable)
     }
 }
 

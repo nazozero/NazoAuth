@@ -1,7 +1,6 @@
 //! 管理端用户授权关系接口。
 // 授权列表与撤销逻辑只依赖授权表和 refresh token 撤销。
 use crate::http::prelude::*;
-use diesel_async::AsyncConnection;
 
 pub(crate) async fn admin_grants(
     state: Data<AppState>,
@@ -93,39 +92,11 @@ pub(crate) async fn admin_revoke_grant(
             );
         }
     };
-    let (revoked, removed) = match get_conn(&state.diesel_db).await {
-        Ok(mut conn) => match conn
-            .transaction::<(usize, usize), diesel::result::Error, _>(async |conn| {
-                let revoked = diesel::update(
-                    oauth_tokens::table
-                        .filter(oauth_tokens::user_id.eq(user_id))
-                        .filter(oauth_tokens::client_id.eq(client.id))
-                        .filter(oauth_tokens::revoked_at.is_null()),
-                )
-                .set(oauth_tokens::revoked_at.eq(diesel_now))
-                .execute(conn)
-                .await?;
-                let removed = diesel::delete(
-                    user_client_grants::table
-                        .filter(user_client_grants::user_id.eq(user_id))
-                        .filter(user_client_grants::client_id.eq(client.id)),
-                )
-                .execute(conn)
-                .await?;
-                Ok((revoked, removed))
-            })
-            .await
-        {
-            Ok(result) => result,
-            Err(error) => {
-                tracing::warn!(%error, "failed to revoke user client grant");
-                return oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "授权记录撤销失败.",
-                );
-            }
-        },
+    let revoked = match nazo_postgres::GrantRepository::new(state.diesel_db.clone())
+        .revoke(user_id, client.id)
+        .await
+    {
+        Ok(result) => result,
         Err(error) => {
             tracing::warn!(%error, "failed to get database connection for grant revocation");
             return oauth_error(
@@ -135,7 +106,7 @@ pub(crate) async fn admin_revoke_grant(
             );
         }
     };
-    grant_revocation_response(revoked, removed)
+    grant_revocation_response(revoked.revoked_refresh_tokens, revoked.removed_grants)
 }
 
 fn grant_revocation_response(revoked_refresh_tokens: usize, removed_grants: usize) -> HttpResponse {

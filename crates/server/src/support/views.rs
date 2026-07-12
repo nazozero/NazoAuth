@@ -4,16 +4,10 @@
 use super::prelude::*;
 
 pub(crate) async fn auth_me_json(state: &AppState, user: &PublicAccount) -> anyhow::Result<Value> {
-    let count = match get_conn(&state.diesel_db).await {
-        Ok(mut conn) => {
-            user_client_grants::table
-                .filter(user_client_grants::user_id.eq(user.id()))
-                .select(count(user_client_grants::client_id).aggregate_distinct())
-                .first::<i64>(&mut conn)
-                .await?
-        }
-        Err(error) => return Err(error),
-    };
+    let count = nazo_postgres::GrantRepository::new(state.diesel_db.clone())
+        .authorized_client_count(user.id())
+        .await
+        .map_err(|error| anyhow::anyhow!("failed to count authorized clients: {error}"))?;
     Ok(json!({
         "id": user.id(),
         "email": user.account.email,

@@ -68,8 +68,6 @@ pub(crate) mod prelude {
         engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
     };
     pub(crate) use chrono::Utc;
-    pub(crate) use diesel::{dsl::count, prelude::*};
-    pub(crate) use diesel_async::RunQueryDsl;
     pub(crate) use fred::prelude::{
         Client as ValkeyClient, Error as ValkeyError, Expiration, KeysInterface, SetOptions,
     };
@@ -81,11 +79,10 @@ pub(crate) mod prelude {
     pub(crate) use crate::domain::{AppState, ClientRow};
     #[cfg(test)]
     pub(crate) use crate::domain::{DatabasePasskeyFixture, DatabaseUserFixture};
-    pub(crate) use crate::schema::user_client_grants;
     pub(crate) use crate::settings::Settings;
     pub(crate) use nazo_auth::Claims;
     pub(crate) use nazo_identity::PublicAccount;
-    pub(crate) use nazo_postgres::{DbPool, get_conn};
+    pub(crate) use nazo_postgres::DbPool;
 
     #[cfg(test)]
     pub(crate) use super::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};

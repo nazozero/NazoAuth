@@ -12,29 +12,9 @@ pub(super) async fn user_grant_covers_requested_scopes(
     requested_resource_indicators: &[String],
     requested_authorization_details: &Value,
 ) -> Result<bool, HttpResponse> {
-    let mut conn = match get_conn(&state.diesel_db).await {
-        Ok(conn) => conn,
-        Err(error) => {
-            tracing::warn!(%error, "failed to get database connection for authorization grant lookup");
-            return Err(oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "授权记录查询失败.",
-            ));
-        }
-    };
-    let stored = match user_client_grants::table
-        .filter(user_client_grants::tenant_id.eq(DEFAULT_TENANT_ID))
-        .filter(user_client_grants::user_id.eq(user_id))
-        .filter(user_client_grants::client_id.eq(client_id))
-        .select((
-            user_client_grants::last_scopes,
-            user_client_grants::last_resource_indicators,
-            user_client_grants::last_authorization_details,
-        ))
-        .first::<(Value, Value, Value)>(&mut conn)
+    let stored = match nazo_postgres::GrantRepository::new(state.diesel_db.clone())
+        .authorization(user_id, client_id)
         .await
-        .optional()
     {
         Ok(value) => value,
         Err(error) => {
@@ -46,18 +26,16 @@ pub(super) async fn user_grant_covers_requested_scopes(
             ));
         }
     };
-    Ok(stored.as_ref().is_some_and(
-        |(stored_scopes, stored_resource_indicators, stored_authorization_details)| {
-            stored_grant_covers_requested_authorization(
-                stored_scopes,
-                stored_resource_indicators,
-                stored_authorization_details,
-                requested_scopes,
-                requested_resource_indicators,
-                requested_authorization_details,
-            )
-        },
-    ))
+    Ok(stored.as_ref().is_some_and(|stored| {
+        stored_grant_covers_requested_authorization(
+            &stored.scopes,
+            &stored.resource_indicators,
+            &stored.authorization_details,
+            requested_scopes,
+            requested_resource_indicators,
+            requested_authorization_details,
+        )
+    }))
 }
 
 pub(super) fn stored_grant_covers_requested_authorization(

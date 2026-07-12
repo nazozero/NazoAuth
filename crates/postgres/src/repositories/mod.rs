@@ -11,7 +11,9 @@ mod users;
 pub use access_requests::AccessRequestRepository;
 pub use clients::{OAuthClientApplication, OAuthClientRepository};
 pub use federation::FederationRepository;
-pub use grants::{GrantPage, GrantProjection, GrantRepository};
+pub use grants::{
+    GrantAuthorization, GrantPage, GrantProjection, GrantRepository, GrantRevocation,
+};
 pub use mfa::MfaRepository;
 pub use passkeys::PasskeyRepository;
 pub use runtime_modules::RuntimeModuleRepository;

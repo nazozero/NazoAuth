@@ -749,35 +749,17 @@ pub(crate) async fn upsert_grant(
     if !tenant.same_tenant(client.tenant_id) {
         anyhow::bail!("client resolved outside the default tenant context");
     }
-    let now = Utc::now();
-    let mut conn = get_conn(&state.diesel_db).await?;
-    diesel::insert_into(user_client_grants::table)
-        .values((
-            user_client_grants::tenant_id.eq(client.tenant_id),
-            user_client_grants::user_id.eq(user_id),
-            user_client_grants::client_id.eq(client.id),
-            user_client_grants::first_authorized_at.eq(now),
-            user_client_grants::last_authorized_at.eq(now),
-            user_client_grants::last_scopes.eq(json!(scopes)),
-            user_client_grants::last_resource_indicators.eq(json!(resource_indicators)),
-            user_client_grants::last_authorization_details.eq(authorization_details.clone()),
-            user_client_grants::authorization_count.eq(1),
-        ))
-        .on_conflict((
-            user_client_grants::tenant_id,
-            user_client_grants::user_id,
-            user_client_grants::client_id,
-        ))
-        .do_update()
-        .set((
-            user_client_grants::last_authorized_at.eq(now),
-            user_client_grants::last_scopes.eq(json!(scopes)),
-            user_client_grants::last_resource_indicators.eq(json!(resource_indicators)),
-            user_client_grants::last_authorization_details.eq(authorization_details.clone()),
-            user_client_grants::authorization_count.eq(user_client_grants::authorization_count + 1),
-        ))
-        .execute(&mut conn)
-        .await?;
+    nazo_postgres::GrantRepository::new(state.diesel_db.clone())
+        .upsert(
+            client.tenant_id,
+            user_id,
+            client.id,
+            scopes,
+            resource_indicators,
+            authorization_details,
+        )
+        .await
+        .map_err(|error| anyhow::anyhow!("failed to persist grant: {error}"))?;
     Ok(())
 }
 
