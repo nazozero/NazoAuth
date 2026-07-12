@@ -91,7 +91,7 @@ impl TryFrom<UserRow> for IdentityUser {
 }
 
 pub(crate) fn subject_claims(row: UserRow) -> Result<SubjectClaims, ConversionError> {
-    let _ = tenant(&row)?;
+    let principal = principal(&row)?;
     let address = PostalAddress {
         formatted: row.address_formatted,
         street_address: row.address_street_address,
@@ -101,7 +101,7 @@ pub(crate) fn subject_claims(row: UserRow) -> Result<SubjectClaims, ConversionEr
         country: row.address_country,
     };
     Ok(SubjectClaims {
-        subject: UserId::new(row.id)?,
+        subject: principal.user_id,
         preferred_username: row.username,
         name: row.display_name,
         given_name: row.given_name,
@@ -156,4 +156,65 @@ pub(crate) fn federation_link(
         updated_at: row.updated_at,
         last_login_at: row.last_login_at,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use uuid::Uuid;
+
+    fn user_row() -> UserRow {
+        UserRow {
+            id: Uuid::now_v7(),
+            tenant_id: Uuid::now_v7(),
+            realm_id: Uuid::now_v7(),
+            organization_id: Uuid::now_v7(),
+            username: "user".into(),
+            email: "user@example.test".into(),
+            password_hash: "hash".into(),
+            is_active: true,
+            mfa_enabled: false,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            email_verified: true,
+            display_name: None,
+            avatar_url: None,
+            given_name: None,
+            family_name: None,
+            middle_name: None,
+            nickname: None,
+            profile_url: None,
+            website_url: None,
+            gender: None,
+            birthdate: None,
+            zoneinfo: None,
+            locale: None,
+            role: "user".into(),
+            admin_level: 0,
+            address_formatted: None,
+            address_street_address: None,
+            address_locality: None,
+            address_region: None,
+            address_postal_code: None,
+            address_country: None,
+            phone_number: None,
+            phone_number_verified: false,
+        }
+    }
+
+    #[test]
+    fn subject_claims_uses_full_persisted_user_invariant() {
+        let mut invalid_role = user_row();
+        invalid_role.role = "admin".into();
+        assert!(subject_claims(invalid_role).is_err());
+
+        let mut nil_user = user_row();
+        nil_user.id = Uuid::nil();
+        assert!(subject_claims(nil_user).is_err());
+
+        let mut nil_tenant = user_row();
+        nil_tenant.tenant_id = Uuid::nil();
+        assert!(subject_claims(nil_tenant).is_err());
+    }
 }
