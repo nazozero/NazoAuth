@@ -2160,6 +2160,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "nazo-identity"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "hmac 0.13.0",
+ "rand 0.10.2",
+ "serde",
+ "serde_json",
+ "sha1",
+ "urlencoding",
+ "uuid",
+]
+
+[[package]]
 name = "nazo-oauth-server"
 version = "0.1.0"
 dependencies = [
@@ -2181,6 +2195,7 @@ dependencies = [
  "jsonwebtoken",
  "lettre",
  "nazo-http-signatures",
+ "nazo-identity",
  "nazo-resource-server",
  "openssl",
  "opentelemetry",

@@ -1,10 +1,6 @@
 //! MFA helper functions.
 //! TOTP follows RFC 6238 with SHA-1, 30-second steps, six digits, and one-step clock skew.
 
-use openssl::hash::MessageDigest;
-use openssl::pkey::PKey;
-use openssl::sign::Signer;
-
 use chrono::Duration;
 use diesel::dsl::now as diesel_now;
 
@@ -13,41 +9,17 @@ use super::{blake3_hex, hash_password, random_urlsafe_token, verify_password};
 
 pub(crate) const MFA_REMEMBERED_COOKIE_NAME: &str = "nazo_oauth_mfa_remembered";
 pub(crate) const MFA_REMEMBERED_TTL_SECONDS: u64 = 2_592_000;
-pub(crate) const MFA_TOTP_PERIOD_SECONDS: i64 = 30;
-pub(crate) const MFA_TOTP_DIGITS: usize = 6;
-pub(crate) const MFA_BACKUP_CODE_COUNT: usize = 10;
-const MFA_TOTP_SKEW_STEPS: i64 = 1;
-const BASE32_ALPHABET: &[u8; 32] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum MfaVerificationMethod {
-    Totp,
-    BackupCode,
-}
-
-impl MfaVerificationMethod {
-    pub(crate) fn amr(self) -> &'static str {
-        match self {
-            Self::Totp => "otp",
-            Self::BackupCode => "recovery_code",
-        }
-    }
-}
+pub(crate) use nazo_identity::mfa::MfaVerificationMethod;
+pub(crate) const MFA_TOTP_PERIOD_SECONDS: i64 = nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
+pub(crate) const MFA_TOTP_DIGITS: usize = nazo_identity::mfa::MFA_TOTP_DIGITS;
+pub(crate) const MFA_BACKUP_CODE_COUNT: usize = nazo_identity::mfa::MFA_BACKUP_CODE_COUNT;
 
 pub(crate) fn generate_totp_secret_base32() -> String {
-    base32_encode(&rand::random::<[u8; 20]>())
+    nazo_identity::mfa::generate_totp_secret_base32()
 }
 
 pub(crate) fn otpauth_uri(issuer: &str, account_name: &str, secret_base32: &str) -> String {
-    format!(
-        "otpauth://totp/{}:{}?secret={}&issuer={}&algorithm=SHA1&digits={}&period={}",
-        urlencoding::encode(issuer),
-        urlencoding::encode(account_name),
-        secret_base32,
-        urlencoding::encode(issuer),
-        MFA_TOTP_DIGITS,
-        MFA_TOTP_PERIOD_SECONDS
-    )
+    nazo_identity::mfa::otpauth_uri(issuer, account_name, secret_base32)
 }
 
 pub(crate) fn verified_totp_step(
@@ -56,53 +28,15 @@ pub(crate) fn verified_totp_step(
     now: i64,
     last_used_step: Option<i64>,
 ) -> Option<i64> {
-    let candidate = code.trim();
-    if candidate.len() != MFA_TOTP_DIGITS || !candidate.bytes().all(|value| value.is_ascii_digit())
-    {
-        return None;
-    }
-    let secret = base32_decode(secret_base32)?;
-    let step = now.div_euclid(MFA_TOTP_PERIOD_SECONDS);
-    (-MFA_TOTP_SKEW_STEPS..=MFA_TOTP_SKEW_STEPS).find_map(|offset| {
-        let candidate_step = step.checked_add(offset)?;
-        if last_used_step.is_some_and(|last| candidate_step <= last) {
-            return None;
-        }
-        let expected = totp_for_step(&secret, candidate_step).ok()?;
-        constant_time_eq(expected.as_bytes(), candidate.as_bytes()).then_some(candidate_step)
-    })
+    nazo_identity::mfa::verified_totp_step(secret_base32, code, now, last_used_step)
 }
 
 pub(crate) fn generate_backup_code() -> String {
-    const RANGE: u32 = 100_000;
-    const LIMIT: u32 = u32::MAX - (u32::MAX % RANGE);
-
-    fn chunk() -> u32 {
-        loop {
-            let value = u32::from_be_bytes(rand::random::<[u8; 4]>());
-            if value < LIMIT {
-                return value % RANGE;
-            }
-        }
-    }
-
-    format!("{:05}-{:05}", chunk(), chunk())
+    nazo_identity::mfa::generate_backup_code()
 }
 
 pub(crate) fn normalize_backup_code(value: &str) -> Option<String> {
-    let trimmed = value.trim();
-    if trimmed.len() == 10 && trimmed.bytes().all(|value| value.is_ascii_digit()) {
-        return Some(trimmed.to_owned());
-    }
-    let bytes = trimmed.as_bytes();
-    if bytes.len() == 11
-        && matches!(bytes[5], b'-' | b' ')
-        && bytes[..5].iter().all(u8::is_ascii_digit)
-        && bytes[6..].iter().all(u8::is_ascii_digit)
-    {
-        return Some(format!("{}{}", &trimmed[..5], &trimmed[6..]));
-    }
-    None
+    nazo_identity::mfa::normalize_backup_code(value)
 }
 
 pub(crate) async fn remembered_mfa_device_valid(
@@ -323,74 +257,19 @@ fn request_user_agent_hash(req: &HttpRequest) -> Option<String> {
         .map(blake3_hex)
 }
 
+#[cfg(test)]
 pub(crate) fn totp_for_step(secret: &[u8], step: i64) -> anyhow::Result<String> {
-    if step < 0 {
-        anyhow::bail!("TOTP step must be non-negative");
-    }
-    let key = PKey::hmac(secret)?;
-    let mut signer = Signer::new(MessageDigest::sha1(), &key)?;
-    signer.update(&(step as u64).to_be_bytes())?;
-    let digest = signer.sign_to_vec()?;
-    let offset = digest
-        .last()
-        .map(|value| (value & 0x0f) as usize)
-        .filter(|offset| offset + 4 <= digest.len())
-        .ok_or_else(|| anyhow::anyhow!("TOTP HMAC digest is too short"))?;
-    let binary = (((digest[offset] & 0x7f) as u32) << 24)
-        | ((digest[offset + 1] as u32) << 16)
-        | ((digest[offset + 2] as u32) << 8)
-        | (digest[offset + 3] as u32);
-    Ok(format!(
-        "{:0width$}",
-        binary % 10u32.pow(MFA_TOTP_DIGITS as u32),
-        width = MFA_TOTP_DIGITS
-    ))
+    Ok(nazo_identity::mfa::totp_for_step(secret, step)?)
 }
 
+#[cfg(test)]
 fn base32_encode(bytes: &[u8]) -> String {
-    let mut output = String::with_capacity((bytes.len() * 8).div_ceil(5));
-    let mut buffer = 0u32;
-    let mut bits = 0u8;
-    for byte in bytes {
-        buffer = (buffer << 8) | (*byte as u32);
-        bits += 8;
-        while bits >= 5 {
-            let index = ((buffer >> (bits - 5)) & 0x1f) as usize;
-            output.push(BASE32_ALPHABET[index] as char);
-            bits -= 5;
-        }
-    }
-    if bits > 0 {
-        let index = ((buffer << (5 - bits)) & 0x1f) as usize;
-        output.push(BASE32_ALPHABET[index] as char);
-    }
-    output
+    nazo_identity::mfa::base32_encode(bytes)
 }
 
+#[cfg(test)]
 fn base32_decode(value: &str) -> Option<Vec<u8>> {
-    let mut buffer = 0u32;
-    let mut bits = 0u8;
-    let mut output = Vec::new();
-    for ch in value.chars().filter(|ch| !ch.is_ascii_whitespace()) {
-        let ch = ch.to_ascii_uppercase();
-        let index = match ch {
-            'A'..='Z' => ch as u32 - 'A' as u32,
-            '2'..='7' => ch as u32 - '2' as u32 + 26,
-            '=' => continue,
-            _ => return None,
-        };
-        buffer = (buffer << 5) | index;
-        bits += 5;
-        if bits >= 8 {
-            output.push(((buffer >> (bits - 8)) & 0xff) as u8);
-            bits -= 8;
-        }
-    }
-    if output.is_empty() {
-        None
-    } else {
-        Some(output)
-    }
+    nazo_identity::mfa::base32_decode(value)
 }
 
 #[cfg(test)]
