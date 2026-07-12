@@ -41,7 +41,7 @@ fn passkey_user_fixture() -> DatabaseUserFixture {
     }
 }
 
-fn passkey_user() -> IdentityUser {
+fn passkey_user() -> PublicAccount {
     passkey_user_fixture().identity()
 }
 
@@ -62,7 +62,7 @@ fn passkey_user_handle_rejects_nil_persisted_tenant_id_without_panicking() {
         ..passkey_user_fixture()
     };
 
-    assert!(IdentityUser::try_from(user).is_err());
+    assert!(PublicAccount::try_from(user).is_err());
 }
 
 #[test]
@@ -72,7 +72,7 @@ fn passkey_user_handle_rejects_nil_persisted_user_id_without_panicking() {
         ..passkey_user_fixture()
     };
 
-    assert!(IdentityUser::try_from(user).is_err());
+    assert!(PublicAccount::try_from(user).is_err());
 }
 
 #[test]

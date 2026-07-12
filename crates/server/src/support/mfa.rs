@@ -15,7 +15,7 @@ pub(crate) use nazo_identity::mfa::{
 pub(crate) async fn remembered_mfa_device_valid(
     state: &AppState,
     req: &HttpRequest,
-    user: &IdentityUser,
+    user: &PublicAccount,
 ) -> anyhow::Result<bool> {
     let Some(token) = cookie_value(req, MFA_REMEMBERED_COOKIE_NAME) else {
         return Ok(false);
@@ -37,7 +37,7 @@ pub(crate) async fn remembered_mfa_device_valid(
 pub(crate) async fn remember_mfa_device(
     state: &AppState,
     req: &HttpRequest,
-    user: &IdentityUser,
+    user: &PublicAccount,
 ) -> anyhow::Result<String> {
     let token = random_urlsafe_token();
     let token_hash = blake3_hex(&token);
@@ -57,7 +57,7 @@ pub(crate) async fn remember_mfa_device(
 
 pub(crate) async fn verify_user_mfa_code(
     db: &DbPool,
-    user: &IdentityUser,
+    user: &PublicAccount,
     code: &str,
 ) -> anyhow::Result<Option<MfaVerificationMethod>> {
     let now = Utc::now();
@@ -95,7 +95,7 @@ pub(crate) async fn verify_user_mfa_code(
 
 pub(crate) async fn replace_backup_codes(
     db: &DbPool,
-    user: &IdentityUser,
+    user: &PublicAccount,
 ) -> anyhow::Result<Vec<String>> {
     let (codes, hashes) = generate_backup_codes_and_hashes()?;
     let tenant_id = user.tenant().tenant_id;
@@ -122,7 +122,7 @@ pub(crate) fn generate_backup_codes_and_hashes() -> anyhow::Result<(Vec<String>,
     Ok((codes, hashes))
 }
 
-pub(crate) async fn clear_user_mfa_state(db: &DbPool, user: &IdentityUser) -> anyhow::Result<()> {
+pub(crate) async fn clear_user_mfa_state(db: &DbPool, user: &PublicAccount) -> anyhow::Result<()> {
     let tenant_id = user.tenant().tenant_id;
     let user_id = user.user_id();
     nazo_postgres::MfaRepository::new(db.clone())

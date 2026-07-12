@@ -7,8 +7,6 @@ use uuid::Uuid;
 
 use nazo_auth::{OidcClaimRequest, deserialize_authorization_details, empty_authorization_details};
 
-use nazo_identity::IdentityUser;
-
 /// 用户待确认的授权请求快照。
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct ConsentPayload {
@@ -169,7 +167,6 @@ pub(crate) struct TokenIssue {
     pub(crate) userinfo_claim_requests: Vec<OidcClaimRequest>,
     pub(crate) id_token_claims: Vec<String>,
     pub(crate) id_token_claim_requests: Vec<OidcClaimRequest>,
-    pub(crate) id_token_user: Option<Box<IdentityUser>>,
     pub(crate) include_refresh: bool,
     pub(crate) refresh_token_policy: RefreshTokenPolicy,
     pub(crate) dpop_jkt: Option<String>,

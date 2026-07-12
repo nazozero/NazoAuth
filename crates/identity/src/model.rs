@@ -236,12 +236,23 @@ pub struct SubjectClaims {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LoginIdentity {
+pub struct AccountIdentity {
     pub username: String,
     pub email: String,
-    pub password_hash: PasswordHash,
     pub email_verified: bool,
     pub mfa_enabled: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LoginIdentity {
+    pub account: AccountIdentity,
+    pub password_hash: PasswordHash,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuthenticationIdentity {
+    pub principal: Principal,
+    pub login: LoginIdentity,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -264,9 +275,9 @@ pub struct UserProfile {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct IdentityUser {
+pub struct PublicAccount {
     pub principal: Principal,
-    pub login: LoginIdentity,
+    pub account: AccountIdentity,
     pub profile: UserProfile,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -314,7 +325,7 @@ impl fmt::Debug for PasswordHash {
     }
 }
 
-impl IdentityUser {
+impl PublicAccount {
     #[must_use]
     pub const fn id(&self) -> uuid::Uuid {
         self.principal.user_id.as_uuid()
@@ -344,7 +355,7 @@ impl IdentityUser {
         self.profile
             .display_name
             .as_deref()
-            .unwrap_or(&self.login.username)
+            .unwrap_or(&self.account.username)
     }
     #[must_use]
     pub const fn role_name(&self) -> &'static str {
@@ -370,11 +381,13 @@ mod tests {
     fn login_identity_debug_never_exposes_password_hash() {
         let secret = "$argon2id$v=19$m=19456,t=2,p=1$secret-salt$secret-digest";
         let login = LoginIdentity {
-            username: "alice".to_owned(),
-            email: "alice@example.test".to_owned(),
+            account: AccountIdentity {
+                username: "alice".to_owned(),
+                email: "alice@example.test".to_owned(),
+                email_verified: true,
+                mfa_enabled: false,
+            },
             password_hash: PasswordHash::new(secret).unwrap(),
-            email_verified: true,
-            mfa_enabled: false,
         };
 
         assert!(!format!("{login:?}").contains(secret));

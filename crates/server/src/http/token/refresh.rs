@@ -185,20 +185,17 @@ pub(crate) async fn token_refresh(
         );
     }
     let original_scopes = json_array_to_strings(&token.scopes);
-    let includes_openid = original_scopes.iter().any(|scope| scope == "openid");
-    let id_token_user = match token.user_id {
+    match token.user_id {
         Some(user_id) => match (
             nazo_identity::TenantId::new(token.tenant_id),
             nazo_identity::UserId::new(user_id),
         ) {
             (Ok(tenant_id), Ok(user_id)) => {
                 match nazo_postgres::UserRepository::new(state.diesel_db.clone())
-                    .user_by_id(tenant_id, user_id)
+                    .principal_by_tenant_id(tenant_id, user_id)
                     .await
                 {
-                    Ok(Some(user)) if user.principal.active => {
-                        includes_openid.then(|| Box::new(user))
-                    }
+                    Ok(Some(principal)) if principal.active => {}
                     Ok(_) => {
                         return oauth_token_error(
                             StatusCode::BAD_REQUEST,
@@ -228,8 +225,8 @@ pub(crate) async fn token_refresh(
                 );
             }
         },
-        None => None,
-    };
+        None => {}
+    }
     let dpop_jkt = if dpop_proof_present(req) {
         match validate_dpop_proof(state, req, None, token.dpop_jkt.as_deref()).await {
             Ok(value) => value.or(token.dpop_jkt.clone()),
@@ -353,7 +350,6 @@ pub(crate) async fn token_refresh(
             userinfo_claim_requests: Vec::new(),
             id_token_claims: Vec::new(),
             id_token_claim_requests: Vec::new(),
-            id_token_user,
             include_refresh: true,
             refresh_token_policy,
             dpop_jkt: dpop_jkt.clone(),

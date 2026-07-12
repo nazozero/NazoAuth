@@ -138,7 +138,7 @@ async fn cleanup_scim_user_by_email(state: &AppState, email: &str) {
         .expect("SCIM test user cleanup should succeed");
 }
 
-fn user_row(id: Uuid, email: &str) -> IdentityUser {
+fn user_row(id: Uuid, email: &str) -> PublicAccount {
     let now = Utc::now();
     DatabaseUserFixture {
         id,

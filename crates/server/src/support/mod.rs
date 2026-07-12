@@ -88,7 +88,7 @@ pub(crate) mod prelude {
     pub(crate) use crate::schema::{oauth_clients, user_client_grants};
     pub(crate) use crate::settings::Settings;
     pub(crate) use nazo_auth::Claims;
-    pub(crate) use nazo_identity::IdentityUser;
+    pub(crate) use nazo_identity::PublicAccount;
     pub(crate) use nazo_postgres::{DbPool, get_conn};
 
     #[cfg(test)]

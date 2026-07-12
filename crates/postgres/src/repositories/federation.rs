@@ -1,7 +1,7 @@
 use crate::{
     DbPool,
     convert::identity,
-    rows::identity::{ExternalIdentityLinkRow, UserRow},
+    rows::identity::{ExternalIdentityLinkRow, PublicAccountRow, UserRow},
     schema::{external_identity_links, users},
 };
 use diesel::{
@@ -10,7 +10,7 @@ use diesel::{
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_identity::{
-    IdentityUser, TenantId, UserId,
+    PublicAccount, TenantId, UserId,
     ports::{
         FederationLink, FederationLogin, NewFederatedIdentity, NewFederationLink, RepositoryError,
     },
@@ -98,7 +98,7 @@ impl FederationRepository {
     pub async fn resolve_existing(
         &self,
         login: FederationLogin,
-    ) -> Result<Option<IdentityUser>, RepositoryError> {
+    ) -> Result<Option<PublicAccount>, RepositoryError> {
         let mut connection = self
             .pool
             .get()
@@ -121,8 +121,8 @@ impl FederationRepository {
                 let user = users::table
                     .find(link.user_id)
                     .filter(users::tenant_id.eq(login.tenant.tenant_id.as_uuid()))
-                    .select(UserRow::as_select())
-                    .first::<UserRow>(connection)
+                    .select(PublicAccountRow::as_select())
+                    .first::<PublicAccountRow>(connection)
                     .await?;
                 let email = login.email.unwrap_or(link.email);
                 diesel::update(external_identity_links::table.find(link.id))
@@ -138,14 +138,14 @@ impl FederationRepository {
             })
             .await
             .map_err(map_error)?
-            .map(IdentityUser::try_from)
+            .map(PublicAccount::try_from)
             .transpose()
             .map_err(|error| RepositoryError::Consistency(error.0))
     }
     pub async fn create_federated(
         &self,
         new_identity: NewFederatedIdentity,
-    ) -> Result<IdentityUser, RepositoryError> {
+    ) -> Result<PublicAccount, RepositoryError> {
         let retry_login = new_identity.login.clone();
         let mut connection = self
             .pool

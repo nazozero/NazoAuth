@@ -353,7 +353,11 @@ fn scim_cursor_error_response(error: ScimCursorError) -> HttpResponse {
     }
 }
 
-fn scim_list_users_response(total: i64, start_index: i64, rows: Vec<IdentityUser>) -> HttpResponse {
+fn scim_list_users_response(
+    total: i64,
+    start_index: i64,
+    rows: Vec<PublicAccount>,
+) -> HttpResponse {
     json_response(scim_base(json!({
         "schemas": [SCIM_LIST_SCHEMA],
         "totalResults": total,
@@ -365,7 +369,7 @@ fn scim_list_users_response(total: i64, start_index: i64, rows: Vec<IdentityUser
 
 fn scim_cursor_list_users_response(
     total: i64,
-    rows: Vec<IdentityUser>,
+    rows: Vec<PublicAccount>,
     next_cursor: Option<String>,
 ) -> HttpResponse {
     let mut body = scim_base(json!({
@@ -380,7 +384,7 @@ fn scim_cursor_list_users_response(
     json_response(body)
 }
 
-fn scim_create_user_response(user: IdentityUser) -> HttpResponse {
+fn scim_create_user_response(user: PublicAccount) -> HttpResponse {
     json_response_status(StatusCode::CREATED, scim_user_json(user))
 }
 
@@ -612,7 +616,7 @@ fn scim_delete_user_response(updated_count: usize) -> HttpResponse {
 async fn load_scim_user(
     state: &AppState,
     user_id: Uuid,
-) -> Result<Option<IdentityUser>, HttpResponse> {
+) -> Result<Option<PublicAccount>, HttpResponse> {
     let tenant = default_tenant_context();
     let user_id = match nazo_identity::UserId::new(user_id) {
         Ok(id) => id,

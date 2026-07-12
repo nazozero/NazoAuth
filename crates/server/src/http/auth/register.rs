@@ -132,10 +132,10 @@ fn verification_code_for_lookup(payload: &RegisterRequest) -> String {
     payload.verification_code.trim().to_owned()
 }
 
-fn register_success_response(user: IdentityUser) -> HttpResponse {
+fn register_success_response(user: PublicAccount) -> HttpResponse {
     json_response_status(
         StatusCode::CREATED,
-        json!({"id": user.id(), "email": user.login.email}),
+        json!({"id": user.id(), "email": user.account.email}),
     )
 }
 

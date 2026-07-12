@@ -22,7 +22,7 @@ impl Default for TenantContext {
 }
 
 impl TenantContext {
-    pub(crate) fn includes_user(&self, user: &IdentityUser) -> bool {
+    pub(crate) fn includes_user(&self, user: &PublicAccount) -> bool {
         self.as_identity_context().is_some_and(|context| {
             context.matches_raw(user.tenant_id(), user.realm_id(), user.organization_id())
         })

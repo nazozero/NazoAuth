@@ -1,7 +1,11 @@
-use crate::rows::identity::{ExternalIdentityLinkRow, PasskeyCredentialRow, UserRow};
+use crate::rows::identity::{
+    AuthenticationIdentityRow, ExternalIdentityLinkRow, PasskeyCredentialRow, PublicAccountRow,
+    UserRow,
+};
 use nazo_identity::{
-    IdentityModelError, IdentityUser, LoginIdentity, OrganizationId, PasswordHash, PostalAddress,
-    Principal, RealmId, SubjectClaims, TenantContext, TenantId, UserId, UserProfile, UserRole,
+    AccountIdentity, AuthenticationIdentity, IdentityModelError, LoginIdentity, OrganizationId,
+    PasswordHash, PostalAddress, Principal, PublicAccount, RealmId, SubjectClaims, TenantContext,
+    TenantId, UserId, UserProfile, UserRole,
 };
 
 #[derive(Debug)]
@@ -11,14 +15,6 @@ impl From<IdentityModelError> for ConversionError {
         Self(error.to_string())
     }
 }
-fn tenant(row: &UserRow) -> Result<TenantContext, ConversionError> {
-    Ok(TenantContext {
-        tenant_id: TenantId::new(row.tenant_id)?,
-        realm_id: RealmId::new(row.realm_id)?,
-        organization_id: OrganizationId::new(row.organization_id)?,
-    })
-}
-
 impl TryFrom<UserRow> for Principal {
     type Error = ConversionError;
     fn try_from(row: UserRow) -> Result<Self, Self::Error> {
@@ -27,7 +23,27 @@ impl TryFrom<UserRow> for Principal {
 }
 
 fn principal(row: &UserRow) -> Result<Principal, ConversionError> {
-    let role = match (row.role.as_str(), row.admin_level) {
+    principal_parts(
+        row.id,
+        row.tenant_id,
+        row.realm_id,
+        row.organization_id,
+        &row.role,
+        row.admin_level,
+        row.is_active,
+    )
+}
+
+fn principal_parts(
+    id: uuid::Uuid,
+    tenant_id: uuid::Uuid,
+    realm_id: uuid::Uuid,
+    organization_id: uuid::Uuid,
+    role: &str,
+    admin_level: i32,
+    active: bool,
+) -> Result<Principal, ConversionError> {
+    let role = match (role, admin_level) {
         ("user", 0) => UserRole::User,
         ("admin", level) if level > 0 => UserRole::Admin {
             level: u32::try_from(level).map_err(|error| ConversionError(error.to_string()))?,
@@ -39,24 +55,70 @@ fn principal(row: &UserRow) -> Result<Principal, ConversionError> {
         }
     };
     Ok(Principal {
-        user_id: UserId::new(row.id)?,
-        tenant: tenant(row)?,
+        user_id: UserId::new(id)?,
+        tenant: TenantContext {
+            tenant_id: TenantId::new(tenant_id)?,
+            realm_id: RealmId::new(realm_id)?,
+            organization_id: OrganizationId::new(organization_id)?,
+        },
         role,
-        active: row.is_active,
+        active,
     })
 }
 
-impl TryFrom<UserRow> for IdentityUser {
-    type Error = ConversionError;
+fn account(row: &UserRow) -> AccountIdentity {
+    AccountIdentity {
+        username: row.username.clone(),
+        email: row.email.clone(),
+        email_verified: row.email_verified,
+        mfa_enabled: row.mfa_enabled,
+    }
+}
 
-    fn try_from(row: UserRow) -> Result<Self, Self::Error> {
-        let principal = principal(&row)?;
-        Ok(Self {
-            principal,
-            login: LoginIdentity {
+pub(crate) fn authentication_identity(
+    row: AuthenticationIdentityRow,
+) -> Result<AuthenticationIdentity, ConversionError> {
+    let principal = principal_parts(
+        row.id,
+        row.tenant_id,
+        row.realm_id,
+        row.organization_id,
+        &row.role,
+        row.admin_level,
+        row.is_active,
+    )?;
+    Ok(AuthenticationIdentity {
+        principal,
+        login: LoginIdentity {
+            account: AccountIdentity {
                 username: row.username,
                 email: row.email,
-                password_hash: PasswordHash::new(row.password_hash)?,
+                email_verified: row.email_verified,
+                mfa_enabled: row.mfa_enabled,
+            },
+            password_hash: PasswordHash::new(row.password_hash)?,
+        },
+    })
+}
+
+impl TryFrom<PublicAccountRow> for PublicAccount {
+    type Error = ConversionError;
+
+    fn try_from(row: PublicAccountRow) -> Result<Self, Self::Error> {
+        let principal = principal_parts(
+            row.id,
+            row.tenant_id,
+            row.realm_id,
+            row.organization_id,
+            &row.role,
+            row.admin_level,
+            row.is_active,
+        )?;
+        Ok(Self {
+            principal,
+            account: AccountIdentity {
+                username: row.username,
+                email: row.email,
                 email_verified: row.email_verified,
                 mfa_enabled: row.mfa_enabled,
             },
@@ -90,6 +152,74 @@ impl TryFrom<UserRow> for IdentityUser {
     }
 }
 
+pub(crate) fn subject_claims_from_public(
+    row: PublicAccountRow,
+) -> Result<SubjectClaims, ConversionError> {
+    let account = PublicAccount::try_from(row)?;
+    Ok(SubjectClaims {
+        subject: account.principal.user_id,
+        preferred_username: account.account.username,
+        name: account.profile.display_name,
+        given_name: account.profile.given_name,
+        family_name: account.profile.family_name,
+        middle_name: account.profile.middle_name,
+        nickname: account.profile.nickname,
+        profile: account.profile.profile_url,
+        picture: account.profile.avatar_url,
+        website: account.profile.website_url,
+        gender: account.profile.gender,
+        birthdate: account.profile.birthdate,
+        zoneinfo: account.profile.zoneinfo,
+        locale: account.profile.locale,
+        email: account.account.email,
+        email_verified: account.account.email_verified,
+        address: (account.profile.address != PostalAddress::default())
+            .then_some(account.profile.address),
+        phone_number: account.profile.phone_number,
+        phone_number_verified: account.profile.phone_number_verified,
+        updated_at: account.updated_at.timestamp(),
+    })
+}
+
+impl TryFrom<UserRow> for PublicAccount {
+    type Error = ConversionError;
+
+    fn try_from(row: UserRow) -> Result<Self, Self::Error> {
+        let principal = principal(&row)?;
+        Ok(Self {
+            principal,
+            account: account(&row),
+            profile: UserProfile {
+                display_name: row.display_name,
+                avatar_url: row.avatar_url,
+                given_name: row.given_name,
+                family_name: row.family_name,
+                middle_name: row.middle_name,
+                nickname: row.nickname,
+                profile_url: row.profile_url,
+                website_url: row.website_url,
+                gender: row.gender,
+                birthdate: row.birthdate,
+                zoneinfo: row.zoneinfo,
+                locale: row.locale,
+                address: PostalAddress {
+                    formatted: row.address_formatted,
+                    street_address: row.address_street_address,
+                    locality: row.address_locality,
+                    region: row.address_region,
+                    postal_code: row.address_postal_code,
+                    country: row.address_country,
+                },
+                phone_number: row.phone_number,
+                phone_number_verified: row.phone_number_verified,
+            },
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        })
+    }
+}
+
+#[cfg(test)]
 pub(crate) fn subject_claims(row: UserRow) -> Result<SubjectClaims, ConversionError> {
     let principal = principal(&row)?;
     let address = PostalAddress {
@@ -203,6 +333,23 @@ mod tests {
         }
     }
 
+    fn authentication_row(row: UserRow) -> AuthenticationIdentityRow {
+        AuthenticationIdentityRow {
+            id: row.id,
+            tenant_id: row.tenant_id,
+            realm_id: row.realm_id,
+            organization_id: row.organization_id,
+            username: row.username,
+            email: row.email,
+            password_hash: row.password_hash,
+            is_active: row.is_active,
+            mfa_enabled: row.mfa_enabled,
+            email_verified: row.email_verified,
+            role: row.role,
+            admin_level: row.admin_level,
+        }
+    }
+
     #[test]
     fn subject_claims_uses_full_persisted_user_invariant() {
         let mut invalid_role = user_row();
@@ -223,7 +370,7 @@ mod tests {
         let mut row = user_row();
         row.password_hash = "   ".to_owned();
 
-        let error = IdentityUser::try_from(row).unwrap_err();
+        let error = authentication_identity(authentication_row(row)).unwrap_err();
 
         assert_eq!(error.0, "password hash must not be blank");
     }

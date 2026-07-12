@@ -10,7 +10,7 @@ pub(crate) async fn me(state: Data<AppState>, req: HttpRequest) -> HttpResponse 
                 return json_response(json!({
                     "mfa_required": true,
                     "id": session.user.id(),
-                    "email": session.user.login.email,
+                    "email": session.user.account.email,
                     "csrf_token": cookie_value(&req, &state.settings.csrf_cookie_name)
                 }));
             }

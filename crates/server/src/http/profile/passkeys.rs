@@ -60,11 +60,11 @@ pub(crate) async fn passkey_registration_begin(
     };
     let (challenge, registration_state) = webauthn.start_registration(
         &user_handle,
-        &user.login.email,
+        &user.account.email,
         user.profile
             .display_name
             .as_deref()
-            .unwrap_or(&user.login.email),
+            .unwrap_or(&user.account.email),
         &existing_ids,
     );
     let ceremony_id = random_urlsafe_token();
@@ -274,7 +274,7 @@ fn passkey_delete_response(deleted_count: usize) -> HttpResponse {
 
 pub(crate) async fn load_user_passkeys(
     state: &AppState,
-    user: &IdentityUser,
+    user: &PublicAccount,
 ) -> Result<Vec<PasskeyCredential>, HttpResponse> {
     nazo_postgres::PasskeyRepository::new(state.diesel_db.clone())
         .list(user.tenant().tenant_id, user.user_id())

@@ -34,7 +34,7 @@ pub(crate) struct SessionPayload {
 }
 
 pub(crate) struct CurrentSession {
-    pub(crate) user: IdentityUser,
+    pub(crate) user: PublicAccount,
     pub(crate) auth_time: i64,
     pub(crate) amr: Vec<String>,
     pub(crate) oidc_sid: String,
@@ -45,7 +45,7 @@ pub(crate) struct SessionRotation {
     pub(crate) csrf_token: String,
 }
 
-pub(crate) fn require_active_session_principal(user: &IdentityUser) -> Result<(), HttpResponse> {
+pub(crate) fn require_active_session_principal(user: &PublicAccount) -> Result<(), HttpResponse> {
     if user.principal.active {
         return Ok(());
     }
@@ -59,7 +59,7 @@ pub(crate) fn require_active_session_principal(user: &IdentityUser) -> Result<()
 pub(crate) async fn current_user(
     state: &AppState,
     req: &HttpRequest,
-) -> anyhow::Result<Option<IdentityUser>> {
+) -> anyhow::Result<Option<PublicAccount>> {
     Ok(current_session(state, req)
         .await?
         .map(|session| session.user))
@@ -228,7 +228,7 @@ fn valid_session_payload(payload: &SessionPayload, now: i64) -> bool {
 pub(crate) async fn require_admin(
     state: &AppState,
     req: &HttpRequest,
-) -> anyhow::Result<Option<IdentityUser>> {
+) -> anyhow::Result<Option<PublicAccount>> {
     Ok(current_user(state, req)
         .await?
         .filter(|u| u.admin_level() > 0))
@@ -237,7 +237,7 @@ pub(crate) async fn require_admin(
 pub(crate) async fn current_user_or_login_required(
     state: &AppState,
     req: &HttpRequest,
-) -> Result<IdentityUser, HttpResponse> {
+) -> Result<PublicAccount, HttpResponse> {
     match current_user(state, req).await {
         Ok(Some(user)) => Ok(user),
         Ok(None) => Err(login_required_response(state)),
@@ -248,7 +248,7 @@ pub(crate) async fn current_user_or_login_required(
 pub(crate) async fn require_admin_or_forbidden(
     state: &AppState,
     req: &HttpRequest,
-) -> Result<IdentityUser, HttpResponse> {
+) -> Result<PublicAccount, HttpResponse> {
     match require_admin(state, req).await {
         Ok(Some(user)) => Ok(user),
         Ok(None) => Err(oauth_error(

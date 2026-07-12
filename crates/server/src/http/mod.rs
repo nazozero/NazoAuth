@@ -70,7 +70,7 @@ pub(crate) mod prelude {
         high_risk_authorization_details, is_valid_dpop_jkt, normalize_authorization_details,
         parse_authorization_details,
     };
-    pub(crate) use nazo_identity::IdentityUser;
+    pub(crate) use nazo_identity::PublicAccount;
     pub(crate) use nazo_identity::ports::{FederationLink, PasskeyCredential};
     pub(crate) use nazo_postgres::get_conn;
 }

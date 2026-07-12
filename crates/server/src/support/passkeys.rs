@@ -33,7 +33,7 @@ pub(crate) fn passkey_webauthn(settings: &Settings) -> Webauthn {
     .strict_base64(settings.passkey.strict_base64)
 }
 
-pub(crate) fn passkey_user_handle(user: &IdentityUser) -> anyhow::Result<Vec<u8>> {
+pub(crate) fn passkey_user_handle(user: &PublicAccount) -> anyhow::Result<Vec<u8>> {
     let tenant_id = nazo_identity::TenantId::new(user.tenant_id())
         .map_err(|error| anyhow::anyhow!("invalid persisted passkey tenant ID: {error}"))?;
     let user_id = nazo_identity::UserId::new(user.id())

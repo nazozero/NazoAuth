@@ -5,47 +5,36 @@ use crate::settings::{
 };
 use crate::support::ClientIpHeaderMode;
 
-fn user() -> IdentityUser {
-    let now = Utc::now();
-    DatabaseUserFixture {
-        id: Uuid::now_v7(),
-        tenant_id: DEFAULT_TENANT_ID,
-        realm_id: DEFAULT_REALM_ID,
-        organization_id: DEFAULT_ORGANIZATION_ID,
-        username: "alice".to_owned(),
+fn user() -> nazo_identity::SubjectClaims {
+    nazo_identity::SubjectClaims {
+        subject: nazo_identity::UserId::new(Uuid::now_v7()).unwrap(),
+        preferred_username: "alice".to_owned(),
         email: "alice@example.com".to_owned(),
-        display_name: Some("Alice Example".to_owned()),
-        avatar_url: Some("https://cdn.example/alice.png".to_owned()),
+        name: Some("Alice Example".to_owned()),
+        picture: Some("https://cdn.example/alice.png".to_owned()),
         given_name: Some("Alice".to_owned()),
         family_name: Some("Example".to_owned()),
         middle_name: Some("Quinn".to_owned()),
         nickname: Some("ally".to_owned()),
-        profile_url: Some("https://profiles.example/alice".to_owned()),
-        website_url: Some("https://alice.example".to_owned()),
+        profile: Some("https://profiles.example/alice".to_owned()),
+        website: Some("https://alice.example".to_owned()),
         gender: Some("female".to_owned()),
         birthdate: Some("1990-01-02".to_owned()),
         zoneinfo: Some("Asia/Shanghai".to_owned()),
         locale: Some("zh-CN".to_owned()),
-        role: "user".to_owned(),
-        admin_level: 0,
-        address_formatted: Some(
-            "100 Universal City Plaza\nUniversal City, CA 91608\nUS".to_owned(),
-        ),
-        address_street_address: Some("100 Universal City Plaza".to_owned()),
-        address_locality: Some("Universal City".to_owned()),
-        address_region: Some("CA".to_owned()),
-        address_postal_code: Some("91608".to_owned()),
-        address_country: Some("US".to_owned()),
+        address: Some(nazo_identity::PostalAddress {
+            formatted: Some("100 Universal City Plaza\nUniversal City, CA 91608\nUS".to_owned()),
+            street_address: Some("100 Universal City Plaza".to_owned()),
+            locality: Some("Universal City".to_owned()),
+            region: Some("CA".to_owned()),
+            postal_code: Some("91608".to_owned()),
+            country: Some("US".to_owned()),
+        }),
         phone_number: Some("+15555550000".to_owned()),
         phone_number_verified: true,
         email_verified: true,
-        mfa_enabled: false,
-        password_hash: "hash".to_owned(),
-        is_active: true,
-        created_at: now,
-        updated_at: now,
+        updated_at: Utc::now().timestamp(),
     }
-    .identity()
 }
 
 fn settings() -> Settings {
@@ -238,7 +227,7 @@ fn id_token_user_claims_do_not_expose_email_scope_claims() {
 #[test]
 fn requested_userinfo_claims_allow_explicit_profile_claims_without_profile_scope() {
     let mut user = user();
-    user.profile.display_name = None;
+    user.name = None;
     let claims = oidc_user_claims(
         &user,
         &["openid".to_owned()],

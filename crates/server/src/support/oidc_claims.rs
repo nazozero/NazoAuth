@@ -91,7 +91,7 @@ pub(crate) fn supported_user_claim(name: &str) -> bool {
 }
 
 pub(crate) fn oidc_user_claims(
-    user: &IdentityUser,
+    user: &nazo_identity::SubjectClaims,
     scopes: &[String],
     subject: &str,
     requested_claims: &[String],
@@ -109,9 +109,9 @@ pub(crate) fn oidc_user_claims(
         requested_claims,
         requested_claim_requests,
         "preferred_username",
-        &json!(user.login.username),
+        &json!(user.preferred_username),
     ) {
-        claims["preferred_username"] = json!(user.login.username);
+        claims["preferred_username"] = json!(user.preferred_username);
     }
     let name = user_display_name(user);
     if claim_allowed(
@@ -128,113 +128,101 @@ pub(crate) fn oidc_user_claims(
         requested_claims,
         requested_claim_requests,
         "given_name",
-        user.profile.given_name.as_deref(),
+        user.given_name.as_deref(),
     ) {
-        optional_string_claim(
-            &mut claims,
-            "given_name",
-            user.profile.given_name.as_deref(),
-        );
+        optional_string_claim(&mut claims, "given_name", user.given_name.as_deref());
     }
     if optional_string_claim_allowed(
         has_profile_scope,
         requested_claims,
         requested_claim_requests,
         "family_name",
-        user.profile.family_name.as_deref(),
+        user.family_name.as_deref(),
     ) {
-        optional_string_claim(
-            &mut claims,
-            "family_name",
-            user.profile.family_name.as_deref(),
-        );
+        optional_string_claim(&mut claims, "family_name", user.family_name.as_deref());
     }
     if optional_string_claim_allowed(
         has_profile_scope,
         requested_claims,
         requested_claim_requests,
         "middle_name",
-        user.profile.middle_name.as_deref(),
+        user.middle_name.as_deref(),
     ) {
-        optional_string_claim(
-            &mut claims,
-            "middle_name",
-            user.profile.middle_name.as_deref(),
-        );
+        optional_string_claim(&mut claims, "middle_name", user.middle_name.as_deref());
     }
     if optional_string_claim_allowed(
         has_profile_scope,
         requested_claims,
         requested_claim_requests,
         "nickname",
-        user.profile.nickname.as_deref(),
+        user.nickname.as_deref(),
     ) {
-        optional_string_claim(&mut claims, "nickname", user.profile.nickname.as_deref());
+        optional_string_claim(&mut claims, "nickname", user.nickname.as_deref());
     }
     if optional_string_claim_allowed(
         has_profile_scope,
         requested_claims,
         requested_claim_requests,
         "profile",
-        user.profile.profile_url.as_deref(),
+        user.profile.as_deref(),
     ) {
-        optional_string_claim(&mut claims, "profile", user.profile.profile_url.as_deref());
+        optional_string_claim(&mut claims, "profile", user.profile.as_deref());
     }
     if optional_string_claim_allowed(
         has_profile_scope,
         requested_claims,
         requested_claim_requests,
         "picture",
-        user.profile.avatar_url.as_deref(),
+        user.picture.as_deref(),
     ) {
-        optional_string_claim(&mut claims, "picture", user.profile.avatar_url.as_deref());
+        optional_string_claim(&mut claims, "picture", user.picture.as_deref());
     }
     if optional_string_claim_allowed(
         has_profile_scope,
         requested_claims,
         requested_claim_requests,
         "website",
-        user.profile.website_url.as_deref(),
+        user.website.as_deref(),
     ) {
-        optional_string_claim(&mut claims, "website", user.profile.website_url.as_deref());
+        optional_string_claim(&mut claims, "website", user.website.as_deref());
     }
     if optional_string_claim_allowed(
         has_profile_scope,
         requested_claims,
         requested_claim_requests,
         "gender",
-        user.profile.gender.as_deref(),
+        user.gender.as_deref(),
     ) {
-        optional_string_claim(&mut claims, "gender", user.profile.gender.as_deref());
+        optional_string_claim(&mut claims, "gender", user.gender.as_deref());
     }
     if optional_string_claim_allowed(
         has_profile_scope,
         requested_claims,
         requested_claim_requests,
         "birthdate",
-        user.profile.birthdate.as_deref(),
+        user.birthdate.as_deref(),
     ) {
-        optional_string_claim(&mut claims, "birthdate", user.profile.birthdate.as_deref());
+        optional_string_claim(&mut claims, "birthdate", user.birthdate.as_deref());
     }
     if optional_string_claim_allowed(
         has_profile_scope,
         requested_claims,
         requested_claim_requests,
         "zoneinfo",
-        user.profile.zoneinfo.as_deref(),
+        user.zoneinfo.as_deref(),
     ) {
-        optional_string_claim(&mut claims, "zoneinfo", user.profile.zoneinfo.as_deref());
+        optional_string_claim(&mut claims, "zoneinfo", user.zoneinfo.as_deref());
     }
     if optional_string_claim_allowed(
         has_profile_scope,
         requested_claims,
         requested_claim_requests,
         "locale",
-        user.profile.locale.as_deref(),
+        user.locale.as_deref(),
     ) {
-        optional_string_claim(&mut claims, "locale", user.profile.locale.as_deref());
+        optional_string_claim(&mut claims, "locale", user.locale.as_deref());
     }
-    let updated_at = json!(user.updated_at.timestamp());
+    let updated_at = json!(user.updated_at);
     if claim_allowed(
         has_profile_scope,
         requested_claims,
@@ -242,7 +230,7 @@ pub(crate) fn oidc_user_claims(
         "updated_at",
         &updated_at,
     ) {
-        claims["updated_at"] = json!(user.updated_at.timestamp());
+        claims["updated_at"] = json!(user.updated_at);
     }
 
     if claim_allowed(
@@ -250,18 +238,18 @@ pub(crate) fn oidc_user_claims(
         requested_claims,
         requested_claim_requests,
         "email",
-        &json!(user.login.email),
+        &json!(user.email),
     ) {
-        claims["email"] = json!(user.login.email);
+        claims["email"] = json!(user.email);
     }
     if claim_allowed(
         has_email_scope,
         requested_claims,
         requested_claim_requests,
         "email_verified",
-        &json!(user.login.email_verified),
+        &json!(user.email_verified),
     ) {
-        claims["email_verified"] = json!(user.login.email_verified);
+        claims["email_verified"] = json!(user.email_verified);
     }
     let address = address_claim(user);
     if let Some(address) = address
@@ -280,59 +268,36 @@ pub(crate) fn oidc_user_claims(
         requested_claims,
         requested_claim_requests,
         "phone_number",
-        user.profile.phone_number.as_deref(),
+        user.phone_number.as_deref(),
     ) {
-        optional_string_claim(
-            &mut claims,
-            "phone_number",
-            user.profile.phone_number.as_deref(),
-        );
+        optional_string_claim(&mut claims, "phone_number", user.phone_number.as_deref());
     }
     if claim_allowed(
         has_phone_scope,
         requested_claims,
         requested_claim_requests,
         "phone_number_verified",
-        &json!(user.profile.phone_number_verified),
+        &json!(user.phone_number_verified),
     ) {
-        claims["phone_number_verified"] = json!(user.profile.phone_number_verified);
+        claims["phone_number_verified"] = json!(user.phone_number_verified);
     }
 
     claims
 }
 
-fn address_claim(user: &IdentityUser) -> Option<Value> {
+fn address_claim(user: &nazo_identity::SubjectClaims) -> Option<Value> {
+    let source = user.address.as_ref()?;
     let mut address = json!({});
-    optional_string_claim(
-        &mut address,
-        "formatted",
-        user.profile.address.formatted.as_deref(),
-    );
+    optional_string_claim(&mut address, "formatted", source.formatted.as_deref());
     optional_string_claim(
         &mut address,
         "street_address",
-        user.profile.address.street_address.as_deref(),
+        source.street_address.as_deref(),
     );
-    optional_string_claim(
-        &mut address,
-        "locality",
-        user.profile.address.locality.as_deref(),
-    );
-    optional_string_claim(
-        &mut address,
-        "region",
-        user.profile.address.region.as_deref(),
-    );
-    optional_string_claim(
-        &mut address,
-        "postal_code",
-        user.profile.address.postal_code.as_deref(),
-    );
-    optional_string_claim(
-        &mut address,
-        "country",
-        user.profile.address.country.as_deref(),
-    );
+    optional_string_claim(&mut address, "locality", source.locality.as_deref());
+    optional_string_claim(&mut address, "region", source.region.as_deref());
+    optional_string_claim(&mut address, "postal_code", source.postal_code.as_deref());
+    optional_string_claim(&mut address, "country", source.country.as_deref());
     address
         .as_object()
         .is_some_and(|object| !object.is_empty())
@@ -406,17 +371,16 @@ fn claim_value_matches_request(request: &OidcClaimRequest, actual: &Value) -> bo
     }
 }
 
-fn user_display_name(user: &IdentityUser) -> &str {
-    user.profile
-        .display_name
+fn user_display_name(user: &nazo_identity::SubjectClaims) -> &str {
+    user.name
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .unwrap_or(&user.login.username)
+        .unwrap_or(&user.preferred_username)
 }
 
 pub(crate) fn oidc_id_token_user_claims(
-    user: &IdentityUser,
+    user: &nazo_identity::SubjectClaims,
     scopes: &[String],
     subject: &str,
     requested_claims: &[String],

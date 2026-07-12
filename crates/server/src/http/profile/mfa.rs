@@ -48,7 +48,7 @@ pub(crate) async fn mfa_totp_begin(state: Data<AppState>, req: HttpRequest) -> H
     }
 
     let secret = nazo_identity::mfa::generate_totp_secret_base32();
-    let label = format!("{} ({})", user.login.email, state.settings.issuer);
+    let label = format!("{} ({})", user.account.email, state.settings.issuer);
     let result = repository
         .begin_totp_enrollment(
             user.tenant().tenant_id,
@@ -70,7 +70,7 @@ pub(crate) async fn mfa_totp_begin(state: Data<AppState>, req: HttpRequest) -> H
         "secret_base32": secret,
         "otpauth_uri": nazo_identity::mfa::otpauth_uri(
             &state.settings.issuer,
-            &user.login.email,
+            &user.account.email,
             &secret,
         ),
         "period": MFA_TOTP_PERIOD_SECONDS,
@@ -310,7 +310,7 @@ pub(crate) async fn mfa_backup_codes_regenerate(
     if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
         return response;
     }
-    if !user.login.mfa_enabled {
+    if !user.account.mfa_enabled {
         return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "MFA 未启用.");
     }
     let method = match verify_user_mfa_code(&state.diesel_db, &user, &payload.code).await {
@@ -418,7 +418,7 @@ pub(crate) async fn mfa_disable(
     if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
         return response;
     }
-    if !user.login.mfa_enabled {
+    if !user.account.mfa_enabled {
         return json_response(json!({ "mfa_enabled": false }));
     }
     match verify_user_mfa_code(&state.diesel_db, &user, &payload.code).await {

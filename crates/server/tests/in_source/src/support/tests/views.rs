@@ -150,7 +150,7 @@ fn json_array_to_strings_drops_non_string_values_for_admin_views() {
     );
 }
 
-fn user_row() -> IdentityUser {
+fn user_row() -> PublicAccount {
     let now = Utc::now();
     DatabaseUserFixture {
         id: Uuid::now_v7(),

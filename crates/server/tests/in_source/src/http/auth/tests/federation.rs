@@ -275,7 +275,7 @@ impl LiveFederationFixture {
             .expect("external identity link should insert")
     }
 
-    async fn user_by_email(&self, email: &str) -> Option<IdentityUser> {
+    async fn user_by_email(&self, email: &str) -> Option<PublicAccount> {
         find_user_by_email(&self.state.diesel_db, email)
             .await
             .expect("user lookup should succeed")
@@ -1489,7 +1489,7 @@ async fn oidc_callback_creates_new_federated_user_session_and_external_link() {
     let session = fixture.session_payload(&session_cookie).await;
 
     assert_eq!(user.profile.display_name.as_deref(), Some("Federated User"));
-    assert!(user.login.email_verified);
+    assert!(user.account.email_verified);
     assert_eq!(link.user_id, user.id());
     assert_eq!(link.email, email);
     assert_eq!(session.user_id, user.id());

@@ -14,7 +14,7 @@ use std::time::Duration as StdDuration;
 use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
 
-fn user_row() -> IdentityUser {
+fn user_row() -> PublicAccount {
     let now = Utc::now();
     DatabaseUserFixture {
         id: Uuid::now_v7(),

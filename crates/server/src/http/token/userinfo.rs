@@ -146,17 +146,46 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Byte
             );
         }
     };
-    let user = match find_user_by_id(&state.diesel_db, user_id).await {
-        Ok(Some(user)) if user.principal.active => user,
-        Ok(_) => {
+    let tenant = match nazo_identity::TenantId::new(tenant_id) {
+        Ok(tenant) => tenant,
+        Err(error) => {
+            tracing::warn!(%error, "userinfo token contains invalid tenant ID");
             return oauth_bearer_error(
                 StatusCode::UNAUTHORIZED,
                 "invalid_token",
                 "访问令牌主体不存在或已停用.",
             );
         }
+    };
+    let identity_user_id = match nazo_identity::UserId::new(user_id) {
+        Ok(user_id) => user_id,
         Err(error) => {
-            tracing::warn!(%error, "failed to load userinfo subject");
+            tracing::warn!(%error, "userinfo token contains invalid user ID");
+            return oauth_bearer_error(
+                StatusCode::UNAUTHORIZED,
+                "invalid_token",
+                "访问令牌主体不存在或已停用.",
+            );
+        }
+    };
+    let repository = nazo_postgres::UserRepository::new(state.diesel_db.clone());
+    let principal = repository
+        .principal_by_tenant_id(tenant, identity_user_id)
+        .await;
+    let subject_claims = repository
+        .subject_claims_by_tenant_id(tenant, identity_user_id)
+        .await;
+    let subject_claims = match (principal, subject_claims) {
+        (Ok(Some(principal)), Ok(Some(claims))) if principal.active => claims,
+        (Ok(_), Ok(_)) => {
+            return oauth_bearer_error(
+                StatusCode::UNAUTHORIZED,
+                "invalid_token",
+                "访问令牌主体不存在或已停用.",
+            );
+        }
+        (Err(error), _) | (_, Err(error)) => {
+            tracing::warn!(%error, "failed to load userinfo subject claims");
             return oauth_bearer_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -186,7 +215,7 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Byte
             }
         };
     let response_claims = oidc_user_claims(
-        &user,
+        &subject_claims,
         &scopes,
         &claims.sub,
         &claims.userinfo_claims,

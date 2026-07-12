@@ -32,7 +32,7 @@ fn admin_users_list_response(
     page: i32,
     page_size: i32,
     total: i64,
-    user_rows: Vec<IdentityUser>,
+    user_rows: Vec<PublicAccount>,
 ) -> HttpResponse {
     let items: Vec<Value> = user_rows.into_iter().map(admin_user_json).collect();
     json_response(json!({"total": total, "page": page, "page_size": page_size, "items": items}))

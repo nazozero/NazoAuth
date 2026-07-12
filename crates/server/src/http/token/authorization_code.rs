@@ -192,7 +192,6 @@ fn token_issue_from_authorization_code(input: AuthorizationCodeIssueInput) -> To
         userinfo_claim_requests: input.payload.userinfo_claim_requests,
         id_token_claims: input.payload.id_token_claims,
         id_token_claim_requests: input.payload.id_token_claim_requests,
-        id_token_user: None,
         include_refresh: true,
         refresh_token_policy: RefreshTokenPolicy::IssueNew,
         dpop_jkt: input.dpop_jkt,

@@ -438,7 +438,7 @@ async fn scim_replace_returns_domain_claims_from_one_transaction() {
         .await
         .unwrap();
     assert_eq!(user.user_id(), user_id);
-    assert_eq!(user.login.username, "replacement");
+    assert_eq!(user.account.username, "replacement");
     cleanup(&pool, user_id).await;
 }
 
@@ -464,7 +464,7 @@ async fn admin_partial_update_validates_final_role_level_before_commit() {
         RepositoryError::Conflict
     );
     let unchanged = repository
-        .user_by_id(tenant.tenant_id, user_id)
+        .public_account_by_id(tenant.tenant_id, user_id)
         .await
         .unwrap()
         .unwrap();

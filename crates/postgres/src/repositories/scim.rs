@@ -1,7 +1,7 @@
 use crate::{
     DbPool,
     convert::identity,
-    rows::identity::UserRow,
+    rows::identity::{PublicAccountRow, UserRow},
     schema::{oauth_tokens, user_client_grants, users},
 };
 use diesel::{
@@ -11,7 +11,7 @@ use diesel::{
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_identity::{
-    IdentityUser, TenantContext, UserId,
+    PublicAccount, TenantContext, UserId,
     ports::{NewScimUser, RepositoryError, ScimListQuery, UserPage},
     scim::{NormalizedScimUser, ScimPatch},
 };
@@ -63,16 +63,16 @@ impl ScimRepository {
             );
         }
         let rows = rows_query
-            .select(UserRow::as_select())
+            .select(PublicAccountRow::as_select())
             .order((users::created_at.asc(), users::id.asc()))
             .limit(query.limit)
             .offset(query.offset)
-            .load::<UserRow>(&mut connection)
+            .load::<PublicAccountRow>(&mut connection)
             .await
             .map_err(map_error)?;
         let users = rows
             .into_iter()
-            .map(IdentityUser::try_from)
+            .map(PublicAccount::try_from)
             .collect::<Result<Vec<_>, _>>()
             .map_err(|error| RepositoryError::Consistency(error.0))?;
         Ok(UserPage { total, users })
@@ -82,7 +82,7 @@ impl ScimRepository {
         &self,
         tenant: TenantContext,
         user_id: UserId,
-    ) -> Result<Option<IdentityUser>, RepositoryError> {
+    ) -> Result<Option<PublicAccount>, RepositoryError> {
         let mut connection = self
             .pool
             .get()
@@ -91,17 +91,17 @@ impl ScimRepository {
         users::table
             .find(user_id.as_uuid())
             .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
-            .select(UserRow::as_select())
-            .first::<UserRow>(&mut connection)
+            .select(PublicAccountRow::as_select())
+            .first::<PublicAccountRow>(&mut connection)
             .await
             .optional()
             .map_err(map_error)?
-            .map(IdentityUser::try_from)
+            .map(PublicAccount::try_from)
             .transpose()
             .map_err(|error| RepositoryError::Consistency(error.0))
     }
 
-    pub async fn create(&self, new_user: NewScimUser) -> Result<IdentityUser, RepositoryError> {
+    pub async fn create(&self, new_user: NewScimUser) -> Result<PublicAccount, RepositoryError> {
         let mut connection = self
             .pool
             .get()
@@ -136,7 +136,7 @@ impl ScimRepository {
         tenant: TenantContext,
         user_id: UserId,
         replacement: NormalizedScimUser,
-    ) -> Result<IdentityUser, RepositoryError> {
+    ) -> Result<PublicAccount, RepositoryError> {
         let mut connection = self
             .pool
             .get()
@@ -178,7 +178,7 @@ impl ScimRepository {
         tenant: TenantContext,
         user_id: UserId,
         patch: ScimPatch,
-    ) -> Result<IdentityUser, RepositoryError> {
+    ) -> Result<PublicAccount, RepositoryError> {
         let mut connection = self
             .pool
             .get()

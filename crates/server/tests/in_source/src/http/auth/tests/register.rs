@@ -149,7 +149,7 @@ impl LiveRegisterFixture {
         .expect("test user should insert")
     }
 
-    async fn user_by_email(&self, email: &str) -> Option<IdentityUser> {
+    async fn user_by_email(&self, email: &str) -> Option<PublicAccount> {
         let email = normalize_email_address(email).expect("test email should normalize");
         find_user_by_email(&self.state.diesel_db, &email)
             .await
@@ -181,7 +181,7 @@ impl LiveRegisterFixture {
     }
 }
 
-fn user_row() -> IdentityUser {
+fn user_row() -> PublicAccount {
     let now = Utc::now();
     DatabaseUserFixture {
         id: Uuid::now_v7(),
@@ -392,7 +392,6 @@ async fn register_creates_verified_user_and_consumes_verification_code() {
 
     let mut payload = register_request();
     payload.email = email.to_uppercase();
-    let password = payload.password.clone();
 
     let (status, body) =
         response_json(register_after_rate_limit(fixture.state.clone(), payload).await).await;
@@ -404,12 +403,7 @@ async fn register_creates_verified_user_and_consumes_verification_code() {
         .await
         .expect("successful registration should create a user");
     assert_eq!(body["id"], json!(created.id()));
-    assert!(created.login.email_verified);
-    assert_ne!(
-        created.login.password_hash.expose_for_verification(),
-        password,
-        "passwords must be hashed before they reach the database"
-    );
+    assert!(created.account.email_verified);
     assert!(
         !fixture.verification_code_exists(&email).await,
         "successful registrations must consume the one-time verification code"

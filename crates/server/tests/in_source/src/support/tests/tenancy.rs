@@ -1,6 +1,6 @@
 use super::*;
 
-fn user_in_context(context: TenantContext) -> IdentityUser {
+fn user_in_context(context: TenantContext) -> PublicAccount {
     DatabaseUserFixture {
         id: Uuid::now_v7(),
         tenant_id: context.tenant_id,

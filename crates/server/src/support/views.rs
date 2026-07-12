@@ -3,7 +3,7 @@
 
 use super::prelude::*;
 
-pub(crate) async fn auth_me_json(state: &AppState, user: &IdentityUser) -> anyhow::Result<Value> {
+pub(crate) async fn auth_me_json(state: &AppState, user: &PublicAccount) -> anyhow::Result<Value> {
     let count = match get_conn(&state.diesel_db).await {
         Ok(mut conn) => {
             user_client_grants::table
@@ -16,7 +16,7 @@ pub(crate) async fn auth_me_json(state: &AppState, user: &IdentityUser) -> anyho
     };
     Ok(json!({
         "id": user.id(),
-        "email": user.login.email,
+        "email": user.account.email,
         "display_name": user.profile.display_name,
         "avatar_url": user.profile.avatar_url,
         "given_name": user.profile.given_name,
@@ -37,7 +37,7 @@ pub(crate) async fn auth_me_json(state: &AppState, user: &IdentityUser) -> anyho
         "address_country": user.profile.address.country,
         "phone_number": user.profile.phone_number,
         "phone_number_verified": user.profile.phone_number_verified,
-        "mfa_enabled": user.login.mfa_enabled,
+        "mfa_enabled": user.account.mfa_enabled,
         "role": user.role_name(),
         "admin_level": user.admin_level(),
         "authorized_app_count": count
@@ -52,10 +52,10 @@ pub(crate) fn is_cross_site_fetch(headers: &HeaderMap) -> bool {
         .unwrap_or(false)
 }
 
-pub(crate) fn admin_user_json(user: IdentityUser) -> Value {
+pub(crate) fn admin_user_json(user: PublicAccount) -> Value {
     json!({
         "id": user.id(),
-        "email": user.login.email,
+        "email": user.account.email,
         "display_name": user.profile.display_name,
         "given_name": user.profile.given_name,
         "family_name": user.profile.family_name,
@@ -75,7 +75,7 @@ pub(crate) fn admin_user_json(user: IdentityUser) -> Value {
         "address_country": user.profile.address.country,
         "phone_number": user.profile.phone_number,
         "phone_number_verified": user.profile.phone_number_verified,
-        "mfa_enabled": user.login.mfa_enabled,
+        "mfa_enabled": user.account.mfa_enabled,
         "is_active": user.principal.active,
         "role": user.role_name(),
         "admin_level": user.admin_level(),

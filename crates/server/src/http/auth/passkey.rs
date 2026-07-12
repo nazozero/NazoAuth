@@ -204,7 +204,7 @@ fn passkey_ceremony_expired_response() -> HttpResponse {
 
 async fn load_passkey_by_credential_id(
     state: &AppState,
-    user: &IdentityUser,
+    user: &PublicAccount,
     credential_id: &str,
 ) -> Result<Option<PasskeyCredential>, HttpResponse> {
     nazo_postgres::PasskeyRepository::new(state.diesel_db.clone())
@@ -222,7 +222,7 @@ async fn load_passkey_by_credential_id(
 
 async fn update_passkey_counter(
     state: &AppState,
-    user: &IdentityUser,
+    user: &PublicAccount,
     row: &PasskeyCredential,
     new_counter: u32,
 ) -> Result<(), HttpResponse> {
@@ -270,7 +270,7 @@ async fn update_passkey_counter(
 async fn create_passkey_session(
     state: &AppState,
     req: &HttpRequest,
-    user: &IdentityUser,
+    user: &PublicAccount,
 ) -> HttpResponse {
     if let Err(response) = require_active_session_principal(user) {
         return response;
@@ -278,7 +278,7 @@ async fn create_passkey_session(
     let session_id = random_urlsafe_token();
     let csrf_token = random_urlsafe_token();
     let key = format!("oauth:session:{session_id}");
-    let remembered_mfa = if user.login.mfa_enabled {
+    let remembered_mfa = if user.account.mfa_enabled {
         match remembered_mfa_device_valid(state, req, user).await {
             Ok(value) => value,
             Err(error) => {
@@ -302,7 +302,7 @@ async fn create_passkey_session(
         user_id: user.id(),
         auth_time: Utc::now().timestamp(),
         amr,
-        pending_mfa: user.login.mfa_enabled && !remembered_mfa,
+        pending_mfa: user.account.mfa_enabled && !remembered_mfa,
         oidc_sid: Some(random_urlsafe_token()),
     };
     let session_body = match serde_json::to_string(&session) {

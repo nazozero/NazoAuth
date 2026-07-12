@@ -255,11 +255,18 @@ pub(crate) async fn issue_token_response(
             .user_id
             .expect("openid token issues are rejected before signing without a user subject");
         let sector_identifier_host = client.sector_identifier_host.as_deref();
-        let loaded_user = if let Some(user) = issue.id_token_user.take() {
-            if user.id() == user_id && user.tenant_id() == client.tenant_id && user.principal.active
-            {
-                Some(*user)
-            } else {
+        let tenant_id = nazo_identity::TenantId::new(client.tenant_id)
+            .expect("persisted client tenant ID is validated before token issue");
+        let user_id = nazo_identity::UserId::new(user_id)
+            .expect("token issue user ID is validated before token issue");
+        let repository = nazo_postgres::UserRepository::new(state.diesel_db.clone());
+        let principal = repository.principal_by_tenant_id(tenant_id, user_id).await;
+        let loaded_claims = repository
+            .subject_claims_by_tenant_id(tenant_id, user_id)
+            .await;
+        let loaded_claims = match (principal, loaded_claims) {
+            (Ok(Some(principal)), Ok(Some(claims))) if principal.active => Some(claims),
+            (Ok(_), Ok(_)) => {
                 mark_failed_authorization_code_if_needed(
                     state,
                     issue.authorization_code_hash.as_deref(),
@@ -273,43 +280,25 @@ pub(crate) async fn issue_token_response(
                     false,
                 );
             }
-        } else {
-            match find_user_by_id(&state.diesel_db, user_id).await {
-                Ok(Some(user)) if user.principal.active => Some(user),
-                Ok(_) => {
-                    mark_failed_authorization_code_if_needed(
-                        state,
-                        issue.authorization_code_hash.as_deref(),
-                        "id_token_subject_invalid",
-                    )
-                    .await;
-                    return oauth_token_error(
-                        StatusCode::BAD_REQUEST,
-                        "invalid_grant",
-                        "授权用户不存在或已停用.",
-                        false,
-                    );
-                }
-                Err(error) => {
-                    tracing::warn!(%error, "failed to load id_token subject");
-                    mark_failed_authorization_code_if_needed(
-                        state,
-                        issue.authorization_code_hash.as_deref(),
-                        "id_token_subject_load_failed",
-                    )
-                    .await;
-                    return oauth_token_error(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "server_error",
-                        "id_token 用户声明加载失败.",
-                        false,
-                    );
-                }
+            (Err(error), _) | (_, Err(error)) => {
+                tracing::warn!(%error, "failed to load id_token subject claims");
+                mark_failed_authorization_code_if_needed(
+                    state,
+                    issue.authorization_code_hash.as_deref(),
+                    "id_token_subject_load_failed",
+                )
+                .await;
+                return oauth_token_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "id_token 用户声明加载失败.",
+                    false,
+                );
             }
         };
-        let mut user_claims = loaded_user.map(|user| {
+        let mut user_claims = loaded_claims.map(|claims| {
             oidc_id_token_user_claims(
-                &user,
+                &claims,
                 &issue.scopes,
                 &issue.subject,
                 &issue.id_token_claims,

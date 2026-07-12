@@ -132,7 +132,7 @@ pub struct AdminUserUpdate {
 #[derive(Clone, Debug)]
 pub struct UserPage {
     pub total: i64,
-    pub users: Vec<crate::IdentityUser>,
+    pub users: Vec<crate::PublicAccount>,
 }
 
 #[derive(Clone, Debug)]

@@ -37,8 +37,14 @@ pub(crate) async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) 
         return response;
     }
 
-    let user = match find_user_by_email(&state.diesel_db, &email).await {
-        Ok(user) => user,
+    let authentication = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
+        .authentication_by_email(
+            nazo_identity::TenantId::new(DEFAULT_TENANT_ID).expect("default tenant ID is valid"),
+            &email,
+        )
+        .await
+    {
+        Ok(authentication) => authentication,
         Err(error) => {
             tracing::warn!(%error, "failed to query user for login");
             return oauth_error(
@@ -48,9 +54,12 @@ pub(crate) async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) 
             );
         }
     };
-    let authenticatable = user.as_ref().is_some_and(|user| user.principal.active);
+    let authenticatable = authentication
+        .as_ref()
+        .is_some_and(|identity| identity.principal.active);
     let password_hash = if authenticatable {
-        user.as_ref()
+        authentication
+            .as_ref()
             .expect("authenticatable users must exist")
             .login
             .password_hash
@@ -113,13 +122,30 @@ pub(crate) async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) 
                 json!(blake3_hex(&client_ip(&req, &state.settings))),
             ),
         ];
-        if let Some(user) = &user {
-            fields.push(("user_id", json!(user.id())));
+        if let Some(identity) = &authentication {
+            fields.push(("user_id", json!(identity.principal.user_id.as_uuid())));
         }
         audit_event("login_failure", audit_fields(&fields));
         return oauth_error(StatusCode::UNAUTHORIZED, "access_denied", "邮箱或密码错误.");
     }
-    let user = user.expect("successful authentication requires an active user");
+    let authenticated = authentication.expect("successful authentication requires an active user");
+    let user = match find_user_by_id(&state.diesel_db, authenticated.principal.user_id.as_uuid())
+        .await
+    {
+        Ok(Some(user)) => user,
+        Ok(None) => {
+            tracing::warn!(user_id = %authenticated.principal.user_id.as_uuid(), "authenticated user disappeared before session composition");
+            return oauth_error(StatusCode::UNAUTHORIZED, "access_denied", "邮箱或密码错误.");
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to load authenticated public account");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "用户查询失败.",
+            );
+        }
+    };
     clear_login_failures(&state, &req, &email).await;
 
     if let Err(response) = require_active_session_principal(&user) {
@@ -129,7 +155,7 @@ pub(crate) async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) 
     let session_id = random_urlsafe_token();
     let csrf_token = random_urlsafe_token();
     let key = format!("oauth:session:{session_id}");
-    let remembered_mfa = if user.login.mfa_enabled {
+    let remembered_mfa = if user.account.mfa_enabled {
         match remembered_mfa_device_valid(&state, &req, &user).await {
             Ok(value) => value,
             Err(error) => {
@@ -153,7 +179,7 @@ pub(crate) async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) 
         user_id: user.id(),
         auth_time: Utc::now().timestamp(),
         amr,
-        pending_mfa: user.login.mfa_enabled && !remembered_mfa,
+        pending_mfa: user.account.mfa_enabled && !remembered_mfa,
         oidc_sid: Some(random_urlsafe_token()),
     };
     let session_body = match serde_json::to_string(&session) {

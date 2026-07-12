@@ -491,7 +491,7 @@ async fn resolve_external_identity(
     email: &str,
     display_name: Option<&str>,
     claims: Value,
-) -> Result<IdentityUser, HttpResponse> {
+) -> Result<PublicAccount, HttpResponse> {
     let tenant = default_tenant_context();
     let identity_tenant = tenant
         .as_identity_context()
@@ -612,7 +612,7 @@ async fn resolve_existing_external_identity(
     provider_id: &str,
     subject: &str,
     claims: Value,
-) -> Result<Option<IdentityUser>, HttpResponse> {
+) -> Result<Option<PublicAccount>, HttpResponse> {
     // QQ/微信这类 social provider 可能不返回 email。此时只能使用已有
     // external_identity_links 绑定登录，不能创建新用户或按 email 自动关联。
     let tenant = default_tenant_context();
@@ -645,7 +645,7 @@ fn normalize_federation_token(value: &str) -> Option<String> {
 async fn create_federated_session(
     state: &AppState,
     req: &HttpRequest,
-    user: &IdentityUser,
+    user: &PublicAccount,
     method: &str,
 ) -> HttpResponse {
     if let Err(response) = require_active_session_principal(user) {

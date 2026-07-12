@@ -5,8 +5,8 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use nazo_identity::{
-    IdentityUser, LoginIdentity, OrganizationId, PostalAddress, Principal, RealmId, TenantContext,
-    TenantId, UserId, UserProfile, UserRole,
+    AccountIdentity, OrganizationId, PostalAddress, Principal, PublicAccount, RealmId,
+    TenantContext, TenantId, UserId, UserProfile, UserRole,
     ports::{FederationLink, PasskeyCredential},
 };
 
@@ -56,14 +56,14 @@ pub(crate) struct DatabaseUserFixture {
 }
 
 impl DatabaseUserFixture {
-    pub(crate) fn identity(&self) -> IdentityUser {
+    pub(crate) fn identity(&self) -> PublicAccount {
         self.clone()
             .try_into()
             .expect("database user fixture must contain a valid identity")
     }
 }
 
-impl TryFrom<DatabaseUserFixture> for IdentityUser {
+impl TryFrom<DatabaseUserFixture> for PublicAccount {
     type Error = &'static str;
 
     fn try_from(row: DatabaseUserFixture) -> Result<Self, Self::Error> {
@@ -86,11 +86,9 @@ impl TryFrom<DatabaseUserFixture> for IdentityUser {
                 role,
                 active: row.is_active,
             },
-            login: LoginIdentity {
+            account: AccountIdentity {
                 username: row.username,
                 email: row.email,
-                password_hash: nazo_identity::PasswordHash::new(row.password_hash)
-                    .map_err(|_| "invalid password hash")?,
                 email_verified: row.email_verified,
                 mfa_enabled: row.mfa_enabled,
             },

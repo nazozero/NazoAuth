@@ -644,7 +644,8 @@ async fn passkey_login_finish_requires_mfa_for_mfa_enabled_user_without_remember
         FakeAuthenticator::new(format!("mfa-login-credential-{suffix}").as_bytes());
     let credential = fixture.register_credential(&user, &authenticator);
     fixture.insert_credential(&user, &credential).await;
-    let (ceremony_id, challenge) = begin_passkey_login(&fixture, &identity_user.login.email).await;
+    let (ceremony_id, challenge) =
+        begin_passkey_login(&fixture, &identity_user.account.email).await;
 
     let finish_response = passkey_login_finish(
         fixture.state.clone(),
@@ -700,7 +701,8 @@ async fn passkey_login_finish_skips_pending_mfa_for_remembered_device() {
         FakeAuthenticator::new(format!("remembered-mfa-credential-{suffix}").as_bytes());
     let credential = fixture.register_credential(&user, &authenticator);
     fixture.insert_credential(&user, &credential).await;
-    let (ceremony_id, challenge) = begin_passkey_login(&fixture, &identity_user.login.email).await;
+    let (ceremony_id, challenge) =
+        begin_passkey_login(&fixture, &identity_user.account.email).await;
 
     let finish_response = passkey_login_finish(
         fixture.state.clone(),
