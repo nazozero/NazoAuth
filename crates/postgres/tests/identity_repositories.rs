@@ -988,26 +988,223 @@ fn oauth_client_queries_use_the_focused_postgres_repository_without_a_server_fac
 
 fn contains_oauth_clients_table_name(source: &str) -> bool {
     const TABLE: &str = "oauth_clients";
-    let source = source.to_ascii_lowercase();
+    let bytes = source.as_bytes();
+    let mut code = vec![true; bytes.len()];
+    let mut comments = vec![false; bytes.len()];
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        let start = cursor;
+        let (end, is_comment) = if bytes[cursor..].starts_with(b"//") {
+            (
+                bytes[cursor..]
+                    .iter()
+                    .position(|byte| *byte == b'\n')
+                    .map_or(bytes.len(), |length| cursor + length),
+                true,
+            )
+        } else if bytes[cursor..].starts_with(b"/*") {
+            let mut depth = 1;
+            cursor += 2;
+            while cursor < bytes.len() && depth > 0 {
+                if bytes[cursor..].starts_with(b"/*") {
+                    depth += 1;
+                    cursor += 2;
+                } else if bytes[cursor..].starts_with(b"*/") {
+                    depth -= 1;
+                    cursor += 2;
+                } else {
+                    cursor += 1;
+                }
+            }
+            (cursor, true)
+        } else if let Some((prefix, hashes)) = raw_string_prefix(&bytes[cursor..]) {
+            cursor += prefix;
+            while cursor < bytes.len() {
+                if bytes[cursor] == b'"'
+                    && bytes.get(cursor + 1..cursor + 1 + hashes) == Some(&vec![b'#'; hashes])
+                {
+                    cursor += 1 + hashes;
+                    break;
+                }
+                cursor += 1;
+            }
+            (cursor, false)
+        } else if bytes[cursor] == b'"'
+            || (bytes[cursor] == b'b' && bytes.get(cursor + 1) == Some(&b'"'))
+        {
+            cursor += usize::from(bytes[cursor] == b'b') + 1;
+            while cursor < bytes.len() {
+                match bytes[cursor] {
+                    b'\\' => cursor = (cursor + 2).min(bytes.len()),
+                    b'"' => {
+                        cursor += 1;
+                        break;
+                    }
+                    _ => cursor += 1,
+                }
+            }
+            (cursor, false)
+        } else if bytes[cursor] == b'\'' {
+            let mut end = cursor + 1;
+            let mut escaped = false;
+            while end < bytes.len() && bytes[end] != b'\n' {
+                if bytes[end] == b'\'' && !escaped {
+                    end += 1;
+                    break;
+                }
+                escaped = bytes[end] == b'\\' && !escaped;
+                if bytes[end] != b'\\' {
+                    escaped = false;
+                }
+                end += 1;
+            }
+            if end <= bytes.len() && bytes.get(end.wrapping_sub(1)) == Some(&b'\'') {
+                (end, false)
+            } else {
+                cursor += 1;
+                continue;
+            }
+        } else {
+            cursor += 1;
+            continue;
+        };
+        code[start..end].fill(false);
+        if is_comment {
+            comments[start..end].fill(true);
+        }
+        cursor = end;
+    }
+
+    let mut scrubbed = bytes.to_vec();
+    for (offset, is_comment) in comments.into_iter().enumerate() {
+        if is_comment {
+            scrubbed[offset] = b' ';
+        }
+    }
+
+    let mut cursor = 0;
+    while let Some(attribute_start) = next_cfg_test_attribute(bytes, &code, cursor) {
+        let mut item_start = attribute_end(bytes, &code, attribute_start)
+            .expect("a matched cfg(test) attribute has a closing bracket");
+        loop {
+            item_start = skip_trivia(bytes, &code, item_start);
+            if bytes.get(item_start) != Some(&b'#') {
+                break;
+            }
+            let Some(end) = attribute_end(bytes, &code, item_start) else {
+                break;
+            };
+            item_start = end;
+        }
+        item_start = skip_trivia(bytes, &code, item_start);
+        let item_end = cfg_test_item_end(bytes, &code, item_start);
+        scrubbed[attribute_start..item_end].fill(b' ');
+        cursor = item_end.max(attribute_start + 1);
+    }
+
+    let source = String::from_utf8(scrubbed)
+        .expect("the scrubbed source preserves UTF-8")
+        .to_ascii_lowercase();
     source.match_indices(TABLE).any(|(offset, _)| {
         let before = source[..offset].bytes().next_back();
         let after = source[offset + TABLE.len()..].bytes().next();
         let is_identifier = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_';
-        let is_table_name = before.is_none_or(|byte| !is_identifier(byte))
-            && after.is_none_or(|byte| !is_identifier(byte));
-        let line_start = source[..offset].rfind('\n').map_or(0, |line| line + 1);
-        let same_line = source[line_start..offset].trim();
-        let previous_line = source[..line_start]
-            .lines()
-            .rev()
-            .find(|line| !line.trim().is_empty())
-            .map(str::trim);
-        let is_cfg_test_item = same_line.starts_with("#[cfg(test)]")
-            || previous_line.is_some_and(|line| line == "#[cfg(test)]");
-        let line_comment = same_line.starts_with("//");
-        let block_comment = source[..offset].rfind("/*") > source[..offset].rfind("*/");
-        is_table_name && !is_cfg_test_item && !line_comment && !block_comment
+        before.is_none_or(|byte| !is_identifier(byte))
+            && after.is_none_or(|byte| !is_identifier(byte))
     })
+}
+
+fn raw_string_prefix(source: &[u8]) -> Option<(usize, usize)> {
+    let mut cursor = usize::from(source.starts_with(b"br"));
+    if source.get(cursor) != Some(&b'r') {
+        return None;
+    }
+    cursor += 1;
+    let hashes = source[cursor..]
+        .iter()
+        .take_while(|byte| **byte == b'#')
+        .count();
+    cursor += hashes;
+    (source.get(cursor) == Some(&b'"')).then_some((cursor + 1, hashes))
+}
+
+fn skip_trivia(source: &[u8], code: &[bool], mut cursor: usize) -> usize {
+    while cursor < source.len() && (source[cursor].is_ascii_whitespace() || !code[cursor]) {
+        cursor += 1;
+    }
+    cursor
+}
+
+fn attribute_end(source: &[u8], code: &[bool], start: usize) -> Option<usize> {
+    if source.get(start..start + 2) != Some(b"#[") {
+        return None;
+    }
+    let mut depth = 1;
+    let mut cursor = start + 2;
+    while cursor < source.len() {
+        if code[cursor] {
+            match source[cursor] {
+                b'[' => depth += 1,
+                b']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(cursor + 1);
+                    }
+                }
+                _ => {}
+            }
+        }
+        cursor += 1;
+    }
+    None
+}
+
+fn next_cfg_test_attribute(source: &[u8], code: &[bool], mut cursor: usize) -> Option<usize> {
+    while cursor < source.len() {
+        if code[cursor] && source.get(cursor..cursor + 2) == Some(b"#[") {
+            let end = attribute_end(source, code, cursor)?;
+            let compact: Vec<u8> = (cursor..end)
+                .filter(|offset| code[*offset] && !source[*offset].is_ascii_whitespace())
+                .map(|offset| source[offset])
+                .collect();
+            if compact == b"#[cfg(test)]" {
+                return Some(cursor);
+            }
+            cursor = end;
+        } else {
+            cursor += 1;
+        }
+    }
+    None
+}
+
+fn cfg_test_item_end(source: &[u8], code: &[bool], start: usize) -> usize {
+    let mut cursor = start;
+    while cursor < source.len() {
+        if code[cursor] {
+            match source[cursor] {
+                b';' => return cursor + 1,
+                b'{' => {
+                    let mut depth = 1;
+                    cursor += 1;
+                    while cursor < source.len() && depth > 0 {
+                        if code[cursor] {
+                            match source[cursor] {
+                                b'{' => depth += 1,
+                                b'}' => depth -= 1,
+                                _ => {}
+                            }
+                        }
+                        cursor += 1;
+                    }
+                    return cursor;
+                }
+                _ => {}
+            }
+        }
+        cursor += 1;
+    }
+    source.len()
 }
 
 #[test]
@@ -1059,6 +1256,57 @@ fn oauth_client_persistence_contract_ignores_documentation_and_cfg_test_items() 
         !contains_oauth_clients_table_name(test_only_schema),
         "cfg(test) schema imports must not be reported as production persistence"
     );
+
+    let test_module = r##"
+        #[cfg(test)]
+        mod tests {
+            const QUERY: &str = r#"SELECT * FROM oauth_clients"#;
+
+            fn fixture() {
+                // A closing brace in a comment must not end the test module: }
+                let brace = "}";
+                crate::schema::oauth_clients::table;
+            }
+        }
+    "##;
+    assert!(
+        !contains_oauth_clients_table_name(test_module),
+        "an entire cfg(test) module must be outside the production-source contract"
+    );
+
+    let stacked_attributes = r#"
+        #[cfg(test)]
+        #[allow(dead_code)]
+        pub(crate) use crate::schema::oauth_clients;
+    "#;
+    assert!(
+        !contains_oauth_clients_table_name(stacked_attributes),
+        "attributes stacked after cfg(test) must remain attached to the gated item"
+    );
+}
+
+#[test]
+fn oauth_client_persistence_contract_keeps_scanning_after_cfg_test_items() {
+    let production_violations = [
+        r#"
+            #[cfg(test)]
+            mod tests { const QUERY: &str = "SELECT * FROM oauth_clients"; }
+            use crate::schema::oauth_clients as clients;
+        "#,
+        r#"
+            #[cfg(test)]
+            #[allow(dead_code)]
+            fn fixture() { let query = "SELECT * FROM oauth_clients"; }
+            diesel::table! { oauth_clients (id) { id -> Uuid, } }
+        "#,
+    ];
+
+    for source in production_violations {
+        assert!(
+            contains_oauth_clients_table_name(source),
+            "a real production violation after a cfg(test) item must still be detected"
+        );
+    }
 }
 
 #[test]
