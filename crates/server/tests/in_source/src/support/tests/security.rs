@@ -115,14 +115,20 @@ async fn verify_password_blocking_matches_argon2_verifier() {
     let hash = hash_password(&password).expect("password should hash");
 
     assert!(
-        verify_password_blocking_limited(password, hash.clone())
-            .await
-            .expect("password verification should run")
+        verify_password_blocking_limited(
+            password,
+            nazo_identity::PasswordHash::new(hash.clone()).unwrap(),
+        )
+        .await
+        .expect("password verification should run")
     );
     assert!(
-        !verify_password_blocking_limited("wrong password".to_owned(), hash)
-            .await
-            .expect("password verification should run")
+        !verify_password_blocking_limited(
+            "wrong password".to_owned(),
+            nazo_identity::PasswordHash::new(hash).unwrap(),
+        )
+        .await
+        .expect("password verification should run")
     );
 }
 

@@ -290,7 +290,7 @@ async fn concurrent_federated_create_is_idempotent_and_tenant_scoped() {
         login: login.clone(),
         email: login.email.clone().unwrap(),
         display_name: Some("Concurrent Federation".into()),
-        password_hash: "test-only-bootstrap-hash".into(),
+        password_hash: nazo_identity::PasswordHash::new("test-only-bootstrap-hash").unwrap(),
     };
 
     let (left, right) = tokio::join!(

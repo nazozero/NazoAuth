@@ -116,16 +116,18 @@ pub(crate) fn configure_password_hash_limits(
 
 pub(crate) async fn verify_password_blocking_limited(
     password: String,
-    password_hash: String,
+    password_hash: nazo_identity::PasswordHash,
 ) -> Result<bool, PasswordVerificationError> {
     let acquire = password_hash_concurrency_limit().clone().acquire_owned();
     let Ok(Ok(_permit)) = timeout(password_hash_queue_timeout(), acquire).await else {
         return Err(PasswordVerificationError::Saturated);
     };
 
-    tokio::task::spawn_blocking(move || verify_password(&password, &password_hash))
-        .await
-        .map_err(|_| PasswordVerificationError::WorkerFailed)
+    tokio::task::spawn_blocking(move || {
+        verify_password(&password, password_hash.expose_for_verification())
+    })
+    .await
+    .map_err(|_| PasswordVerificationError::WorkerFailed)
 }
 
 pub(crate) fn hash_client_secret(secret: &str, pepper: &str) -> String {

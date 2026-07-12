@@ -8,6 +8,7 @@ use crate::{TenantContext, UserId};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IdentityModelError {
     EmptyId,
+    EmptyPasswordHash,
     InvalidAuthenticationTime,
     FutureAuthenticationTime,
     EmptyAuthenticationMethods,
@@ -18,6 +19,7 @@ impl fmt::Display for IdentityModelError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::EmptyId => "identity ID must not be nil",
+            Self::EmptyPasswordHash => "password hash must not be blank",
             Self::InvalidAuthenticationTime => "authentication time must be positive",
             Self::FutureAuthenticationTime => "authentication time exceeds allowed clock skew",
             Self::EmptyAuthenticationMethods => "authentication methods must not be empty",
@@ -233,16 +235,16 @@ pub struct SubjectClaims {
     pub updated_at: i64,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LoginIdentity {
     pub username: String,
     pub email: String,
-    pub password_hash: String,
+    pub password_hash: PasswordHash,
     pub email_verified: bool,
     pub mfa_enabled: bool,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct UserProfile {
     pub display_name: Option<String>,
     pub avatar_url: Option<String>,
@@ -261,13 +263,55 @@ pub struct UserProfile {
     pub phone_number_verified: bool,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IdentityUser {
     pub principal: Principal,
     pub login: LoginIdentity,
     pub profile: UserProfile,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// A password verifier owned by the identity domain.
+///
+/// The inner verifier is deliberately unavailable to serializers and is only
+/// exposed by an explicitly named verification accessor.
+///
+/// ```compile_fail
+/// fn assert_serialize<T: serde::Serialize>() {}
+/// assert_serialize::<nazo_identity::PasswordHash>();
+/// ```
+///
+/// ```compile_fail
+/// fn assert_deserialize<T: serde::de::DeserializeOwned>() {}
+/// assert_deserialize::<nazo_identity::PasswordHash>();
+/// ```
+#[derive(Clone, Eq, PartialEq)]
+pub struct PasswordHash(String);
+
+impl PasswordHash {
+    pub fn new(value: impl Into<String>) -> Result<Self, IdentityModelError> {
+        let value = value.into();
+        if value.trim().is_empty() {
+            return Err(IdentityModelError::EmptyPasswordHash);
+        }
+        Ok(Self(value))
+    }
+
+    #[must_use]
+    pub fn expose_for_verification(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl fmt::Debug for PasswordHash {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("PasswordHash([REDACTED])")
+    }
 }
 
 impl IdentityUser {
@@ -315,5 +359,24 @@ impl IdentityUser {
             UserRole::User => 0,
             UserRole::Admin { level } => level,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn login_identity_debug_never_exposes_password_hash() {
+        let secret = "$argon2id$v=19$m=19456,t=2,p=1$secret-salt$secret-digest";
+        let login = LoginIdentity {
+            username: "alice".to_owned(),
+            email: "alice@example.test".to_owned(),
+            password_hash: PasswordHash::new(secret).unwrap(),
+            email_verified: true,
+            mfa_enabled: false,
+        };
+
+        assert!(!format!("{login:?}").contains(secret));
     }
 }

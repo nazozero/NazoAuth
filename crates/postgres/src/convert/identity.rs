@@ -1,7 +1,7 @@
 use crate::rows::identity::{ExternalIdentityLinkRow, PasskeyCredentialRow, UserRow};
 use nazo_identity::{
-    IdentityModelError, IdentityUser, LoginIdentity, OrganizationId, PostalAddress, Principal,
-    RealmId, SubjectClaims, TenantContext, TenantId, UserId, UserProfile, UserRole,
+    IdentityModelError, IdentityUser, LoginIdentity, OrganizationId, PasswordHash, PostalAddress,
+    Principal, RealmId, SubjectClaims, TenantContext, TenantId, UserId, UserProfile, UserRole,
 };
 
 #[derive(Debug)]
@@ -56,7 +56,7 @@ impl TryFrom<UserRow> for IdentityUser {
             login: LoginIdentity {
                 username: row.username,
                 email: row.email,
-                password_hash: row.password_hash,
+                password_hash: PasswordHash::new(row.password_hash)?,
                 email_verified: row.email_verified,
                 mfa_enabled: row.mfa_enabled,
             },
@@ -216,5 +216,15 @@ mod tests {
         let mut nil_tenant = user_row();
         nil_tenant.tenant_id = Uuid::nil();
         assert!(subject_claims(nil_tenant).is_err());
+    }
+
+    #[test]
+    fn persisted_blank_password_hash_is_rejected() {
+        let mut row = user_row();
+        row.password_hash = "   ".to_owned();
+
+        let error = IdentityUser::try_from(row).unwrap_err();
+
+        assert_eq!(error.0, "password hash must not be blank");
     }
 }

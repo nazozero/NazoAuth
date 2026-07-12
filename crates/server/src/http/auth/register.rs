@@ -76,6 +76,17 @@ pub(crate) async fn register_after_rate_limit(
             );
         }
     };
+    let password_hash = match nazo_identity::PasswordHash::new(password_hash) {
+        Ok(hash) => hash,
+        Err(error) => {
+            tracing::error!(%error, "generated password hash is invalid");
+            return oauth_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "server_error",
+                "密码哈希失败.",
+            );
+        }
+    };
     let username = format!("user_{}", Uuid::now_v7());
     let tenant = default_tenant_context();
     let row = nazo_postgres::UserRepository::new(state.diesel_db.clone())

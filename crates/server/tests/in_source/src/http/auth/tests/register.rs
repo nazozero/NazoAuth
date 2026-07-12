@@ -406,7 +406,8 @@ async fn register_creates_verified_user_and_consumes_verification_code() {
     assert_eq!(body["id"], json!(created.id()));
     assert!(created.login.email_verified);
     assert_ne!(
-        created.login.password_hash, password,
+        created.login.password_hash.expose_for_verification(),
+        password,
         "passwords must be hashed before they reach the database"
     );
     assert!(
