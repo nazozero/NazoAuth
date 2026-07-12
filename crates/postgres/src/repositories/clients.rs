@@ -366,11 +366,102 @@ impl OAuthClientRepository {
         client_secret_hash: Option<&str>,
         registration_access_token_blake3: Option<&str>,
     ) -> Result<OAuthClient, RepositoryError> {
-        self.replace(
-            client,
-            Some((client_secret_hash, registration_access_token_blake3)),
+        let mut connection = self.connection().await?;
+        let metadata = serde_json::json!({
+            "client_name": client.client_name,
+            "client_type": client.client_type,
+            "redirect_uris": client.redirect_uris,
+            "post_logout_redirect_uris": client.post_logout_redirect_uris,
+            "scopes": client.scopes,
+            "allowed_audiences": client.allowed_audiences,
+            "grant_types": client.grant_types,
+            "token_endpoint_auth_method": client.token_endpoint_auth_method,
+            "subject_type": client.subject_type,
+            "sector_identifier_uri": client.sector_identifier_uri,
+            "sector_identifier_host": client.sector_identifier_host,
+            "require_dpop_bound_tokens": client.require_dpop_bound_tokens,
+            "require_mtls_bound_tokens": client.require_mtls_bound_tokens,
+            "allow_client_assertion_audience_array": client.allow_client_assertion_audience_array,
+            "allow_client_assertion_endpoint_audience": client.allow_client_assertion_endpoint_audience,
+            "require_par_request_object": client.require_par_request_object,
+            "allow_authorization_code_without_pkce": client.allow_authorization_code_without_pkce,
+            "backchannel_logout_uri": client.backchannel_logout_uri,
+            "backchannel_logout_session_required": client.backchannel_logout_session_required,
+            "frontchannel_logout_uri": client.frontchannel_logout_uri,
+            "frontchannel_logout_session_required": client.frontchannel_logout_session_required,
+            "tls_client_auth_subject_dn": client.tls_client_auth_subject_dn,
+            "tls_client_auth_cert_sha256": client.tls_client_auth_cert_sha256,
+            "tls_client_auth_san_dns": client.tls_client_auth_san_dns,
+            "tls_client_auth_san_uri": client.tls_client_auth_san_uri,
+            "tls_client_auth_san_ip": client.tls_client_auth_san_ip,
+            "tls_client_auth_san_email": client.tls_client_auth_san_email,
+            "jwks": client.jwks,
+            "introspection_encrypted_response_alg": client.introspection_encrypted_response_alg,
+            "introspection_encrypted_response_enc": client.introspection_encrypted_response_enc,
+            "userinfo_signed_response_alg": client.userinfo_signed_response_alg,
+            "userinfo_encrypted_response_alg": client.userinfo_encrypted_response_alg,
+            "userinfo_encrypted_response_enc": client.userinfo_encrypted_response_enc,
+            "authorization_signed_response_alg": client.authorization_signed_response_alg,
+            "authorization_encrypted_response_alg": client.authorization_encrypted_response_alg,
+            "authorization_encrypted_response_enc": client.authorization_encrypted_response_enc,
+        });
+        let changed = diesel::sql_query(
+            r#"
+            UPDATE oauth_clients SET
+                client_name = $3->>'client_name',
+                client_type = $3->>'client_type',
+                client_secret_hash = $4,
+                registration_access_token_blake3 = $5,
+                redirect_uris = $3->'redirect_uris',
+                post_logout_redirect_uris = $3->'post_logout_redirect_uris',
+                scopes = $3->'scopes', allowed_audiences = $3->'allowed_audiences',
+                grant_types = $3->'grant_types',
+                token_endpoint_auth_method = $3->>'token_endpoint_auth_method',
+                subject_type = $3->>'subject_type',
+                sector_identifier_uri = $3->>'sector_identifier_uri',
+                sector_identifier_host = $3->>'sector_identifier_host',
+                require_dpop_bound_tokens = ($3->>'require_dpop_bound_tokens')::boolean,
+                require_mtls_bound_tokens = ($3->>'require_mtls_bound_tokens')::boolean,
+                allow_client_assertion_audience_array = ($3->>'allow_client_assertion_audience_array')::boolean,
+                allow_client_assertion_endpoint_audience = ($3->>'allow_client_assertion_endpoint_audience')::boolean,
+                require_par_request_object = ($3->>'require_par_request_object')::boolean,
+                allow_authorization_code_without_pkce = ($3->>'allow_authorization_code_without_pkce')::boolean,
+                backchannel_logout_uri = $3->>'backchannel_logout_uri',
+                backchannel_logout_session_required = ($3->>'backchannel_logout_session_required')::boolean,
+                frontchannel_logout_uri = $3->>'frontchannel_logout_uri',
+                frontchannel_logout_session_required = ($3->>'frontchannel_logout_session_required')::boolean,
+                tls_client_auth_subject_dn = $3->>'tls_client_auth_subject_dn',
+                tls_client_auth_cert_sha256 = $3->>'tls_client_auth_cert_sha256',
+                tls_client_auth_san_dns = $3->'tls_client_auth_san_dns',
+                tls_client_auth_san_uri = $3->'tls_client_auth_san_uri',
+                tls_client_auth_san_ip = $3->'tls_client_auth_san_ip',
+                tls_client_auth_san_email = $3->'tls_client_auth_san_email',
+                jwks = NULLIF($3->'jwks', 'null'::jsonb),
+                introspection_encrypted_response_alg = $3->>'introspection_encrypted_response_alg',
+                introspection_encrypted_response_enc = $3->>'introspection_encrypted_response_enc',
+                userinfo_signed_response_alg = $3->>'userinfo_signed_response_alg',
+                userinfo_encrypted_response_alg = $3->>'userinfo_encrypted_response_alg',
+                userinfo_encrypted_response_enc = $3->>'userinfo_encrypted_response_enc',
+                authorization_signed_response_alg = $3->>'authorization_signed_response_alg',
+                authorization_encrypted_response_alg = $3->>'authorization_encrypted_response_alg',
+                authorization_encrypted_response_enc = $3->>'authorization_encrypted_response_enc',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE tenant_id = $1 AND id = $2 AND is_active = TRUE
+            "#,
         )
+        .bind::<diesel::sql_types::Uuid, _>(client.tenant_id)
+        .bind::<diesel::sql_types::Uuid, _>(client.id)
+        .bind::<diesel::sql_types::Jsonb, _>(&metadata)
+        .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(client_secret_hash)
+        .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(registration_access_token_blake3)
+        .execute(&mut connection)
         .await
+        .map_err(map_error)?;
+        if changed == 1 {
+            Ok(client.clone())
+        } else {
+            Err(RepositoryError::NotFound)
+        }
     }
 
     pub async fn rotate_credentials(
