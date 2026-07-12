@@ -525,7 +525,13 @@ async fn resolve_external_identity(
         }
         return Ok(user);
     }
-    let user = match find_user_by_email(&state.diesel_db, email).await {
+    let user = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
+        .public_account_by_email(
+            nazo_identity::TenantId::new(DEFAULT_TENANT_ID).expect("default tenant ID is non-nil"),
+            email,
+        )
+        .await
+    {
         Ok(Some(_)) => {
             // 第三方 email claim 只能作为已验证联系信息，不能作为账号根身份。
             // 没有既有 external_identity_links 绑定时，遇到同邮箱本地账号必须拒绝，

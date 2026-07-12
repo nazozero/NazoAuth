@@ -182,8 +182,8 @@ async fn concurrent_approval_has_one_cas_winner_and_rolls_back_losing_client() {
     );
     assert_eq!(usize::from(left.is_ok()) + usize::from(right.is_ok()), 1);
     assert!(
-        matches!(left, Err(RepositoryError::Conflict))
-            || matches!(right, Err(RepositoryError::Conflict))
+        matches!(left, Err(RepositoryError::AlreadyProcessed))
+            || matches!(right, Err(RepositoryError::AlreadyProcessed))
     );
     let state = repository
         .by_id(tenant.tenant_id, request.id)
@@ -235,6 +235,45 @@ async fn concurrent_rejection_has_one_cas_winner() {
     assert!(
         matches!(left, Err(RepositoryError::Conflict))
             || matches!(right, Err(RepositoryError::Conflict))
+    );
+    cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
+async fn duplicate_client_conflict_does_not_report_request_as_processed() {
+    let Some((pool, tenant, user_id)) = fixture().await else {
+        return;
+    };
+    let repository = AccessRequestRepository::new(pool.clone());
+    let suffix = Uuid::now_v7().simple().to_string();
+    let first = repository
+        .create(new_request(tenant, user_id, &format!("first-{suffix}")))
+        .await
+        .unwrap();
+    let prepared = client(tenant, &suffix);
+    repository
+        .approve(tenant.tenant_id, first.id, user_id, &prepared)
+        .await
+        .unwrap();
+    let second = repository
+        .create(new_request(tenant, user_id, &format!("second-{suffix}")))
+        .await
+        .unwrap();
+
+    let error = repository
+        .approve(tenant.tenant_id, second.id, user_id, &prepared)
+        .await
+        .unwrap_err();
+
+    assert_eq!(error, RepositoryError::Conflict);
+    assert_eq!(
+        repository
+            .by_id(tenant.tenant_id, second.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .status,
+        AccessRequestStatus::Pending
     );
     cleanup(&pool, user_id).await;
 }

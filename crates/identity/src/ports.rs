@@ -17,6 +17,7 @@ pub type RepositoryFuture<'a, T> =
 pub enum RepositoryError {
     Unavailable,
     Conflict,
+    AlreadyProcessed,
     NotFound,
     Consistency(String),
     Unexpected(String),
@@ -27,6 +28,7 @@ impl std::fmt::Display for RepositoryError {
         match self {
             Self::Unavailable => formatter.write_str("repository unavailable"),
             Self::Conflict => formatter.write_str("repository conflict"),
+            Self::AlreadyProcessed => formatter.write_str("repository value already processed"),
             Self::NotFound => formatter.write_str("repository value not found"),
             Self::Consistency(message) => {
                 write!(formatter, "repository consistency error: {message}")

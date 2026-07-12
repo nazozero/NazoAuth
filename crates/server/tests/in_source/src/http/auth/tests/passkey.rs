@@ -636,7 +636,11 @@ async fn passkey_login_finish_requires_mfa_for_mfa_enabled_user_without_remember
     let suffix = Uuid::now_v7().simple().to_string();
     let user = fixture.create_user(&format!("required-mfa-{suffix}")).await;
     fixture.set_user_mfa_enabled(user.id, true).await;
-    let identity_user = find_user_by_id(&fixture.state.diesel_db, user.id)
+    let identity_user = nazo_postgres::UserRepository::new(fixture.state.diesel_db.clone())
+        .public_account_by_id(
+            nazo_identity::TenantId::new(DEFAULT_TENANT_ID).unwrap(),
+            nazo_identity::UserId::new(user.id).unwrap(),
+        )
         .await
         .expect("user lookup should succeed")
         .expect("user should exist");
@@ -687,7 +691,11 @@ async fn passkey_login_finish_skips_pending_mfa_for_remembered_device() {
         .create_user(&format!("remembered-mfa-{suffix}"))
         .await;
     fixture.set_user_mfa_enabled(user.id, true).await;
-    let identity_user = find_user_by_id(&fixture.state.diesel_db, user.id)
+    let identity_user = nazo_postgres::UserRepository::new(fixture.state.diesel_db.clone())
+        .public_account_by_id(
+            nazo_identity::TenantId::new(DEFAULT_TENANT_ID).unwrap(),
+            nazo_identity::UserId::new(user.id).unwrap(),
+        )
         .await
         .expect("user lookup should succeed")
         .expect("user should exist");

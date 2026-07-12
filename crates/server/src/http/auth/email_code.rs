@@ -36,7 +36,13 @@ pub(crate) async fn send_code_after_rate_limit(
         );
     }
     let dev_response_enabled = state.settings.email_code_dev_response_enabled;
-    match find_user_by_email(&state.diesel_db, &email).await {
+    match nazo_postgres::UserRepository::new(state.diesel_db.clone())
+        .public_account_by_email(
+            nazo_identity::TenantId::new(DEFAULT_TENANT_ID).expect("default tenant ID is non-nil"),
+            &email,
+        )
+        .await
+    {
         Ok(Some(_)) => return send_code_success_response(dev_response_enabled, None),
         Ok(None) => {}
         Err(_) => {

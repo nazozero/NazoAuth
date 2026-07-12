@@ -264,7 +264,7 @@ impl AccessRequestRepository {
                     .optional()
                     .map_err(map_error)?;
                 if pending.is_none() {
-                    return Err(ApprovalError::Repository(RepositoryError::Conflict));
+                    return Err(ApprovalError::Repository(RepositoryError::AlreadyProcessed));
                 }
                 let approved = insert_client(connection, client).await?;
                 let updated = diesel::update(
@@ -286,7 +286,7 @@ impl AccessRequestRepository {
                 .await
                 .map_err(map_error)?;
                 if updated != 1 {
-                    return Err(ApprovalError::Repository(RepositoryError::Conflict));
+                    return Err(ApprovalError::Repository(RepositoryError::AlreadyProcessed));
                 }
                 Ok(approved)
             })

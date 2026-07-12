@@ -151,7 +151,11 @@ impl LiveRegisterFixture {
 
     async fn user_by_email(&self, email: &str) -> Option<PublicAccount> {
         let email = normalize_email_address(email).expect("test email should normalize");
-        find_user_by_email(&self.state.diesel_db, &email)
+        nazo_postgres::UserRepository::new(self.state.diesel_db.clone())
+            .public_account_by_email(
+                nazo_identity::TenantId::new(DEFAULT_TENANT_ID).unwrap(),
+                &email,
+            )
             .await
             .expect("user lookup should succeed")
     }

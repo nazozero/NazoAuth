@@ -453,6 +453,24 @@ async fn json_body(response: HttpResponse) -> (StatusCode, Value) {
     (status, value)
 }
 
+#[actix_web::test]
+async fn approval_conflicts_distinguish_request_state_from_client_uniqueness() {
+    let processed = access_request_approval_error_response(
+        &nazo_identity::ports::RepositoryError::AlreadyProcessed,
+    )
+    .unwrap();
+    let duplicate_client =
+        access_request_approval_error_response(&nazo_identity::ports::RepositoryError::Conflict)
+            .unwrap();
+
+    assert_eq!(processed.status(), StatusCode::CONFLICT);
+    assert_eq!(duplicate_client.status(), StatusCode::CONFLICT);
+    assert_ne!(
+        processed.headers().get("x-nazo-conflict-type"),
+        duplicate_client.headers().get("x-nazo-conflict-type")
+    );
+}
+
 #[test]
 fn parse_access_request_status_accepts_only_protocol_state_codes() {
     assert!(

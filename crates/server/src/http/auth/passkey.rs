@@ -25,7 +25,13 @@ pub(crate) async fn passkey_login_begin(
         return response;
     }
     let email = payload.email.trim().to_lowercase();
-    let user = match find_user_by_email(&state.diesel_db, &email).await {
+    let user = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
+        .public_account_by_email(
+            nazo_identity::TenantId::new(DEFAULT_TENANT_ID).expect("default tenant ID is non-nil"),
+            &email,
+        )
+        .await
+    {
         Ok(Some(user)) if user.principal.active => user,
         Ok(_) => {
             audit_event(
@@ -127,7 +133,14 @@ pub(crate) async fn passkey_login_finish(
         }
         Err(response) => return response,
     };
-    let user = match find_user_by_id(&state.diesel_db, stored.user_id).await {
+    let user = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
+        .public_account_by_id(
+            nazo_identity::TenantId::new(stored.tenant_id)
+                .expect("stored passkey tenant ID is non-nil"),
+            nazo_identity::UserId::new(stored.user_id).expect("stored passkey user ID is non-nil"),
+        )
+        .await
+    {
         Ok(Some(user)) if user.principal.active && user.tenant_id() == stored.tenant_id => user,
         Ok(_) => {
             return passkey_login_failed_response();
