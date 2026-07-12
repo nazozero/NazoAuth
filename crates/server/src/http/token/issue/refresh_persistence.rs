@@ -1,6 +1,7 @@
 use diesel_async::{AsyncConnection, AsyncPgConnection};
 
 use super::*;
+use crate::http::token::refresh_family::{lock_token_family, mark_token_family_reuse};
 
 pub(super) enum RefreshPersistResult {
     Inserted,
@@ -18,25 +19,6 @@ pub(super) struct PendingRefreshToken {
 pub(crate) fn should_issue_refresh_token(client: &ClientRow, scopes: &[String]) -> bool {
     client_supports_grant(client, "refresh_token")
         && scopes.iter().any(|scope| scope == "offline_access")
-}
-
-async fn mark_token_family_reuse(
-    conn: &mut AsyncPgConnection,
-    token_family_id: Uuid,
-) -> diesel::QueryResult<()> {
-    diesel::update(oauth_tokens::table.filter(oauth_tokens::token_family_id.eq(token_family_id)))
-        .set(oauth_tokens::reuse_detected_at.eq(diesel_now))
-        .execute(conn)
-        .await?;
-    diesel::update(
-        oauth_tokens::table
-            .filter(oauth_tokens::token_family_id.eq(token_family_id))
-            .filter(oauth_tokens::revoked_at.is_null()),
-    )
-    .set(oauth_tokens::revoked_at.eq(diesel_now))
-    .execute(conn)
-    .await?;
-    Ok(())
 }
 
 async fn insert_refresh_token(
@@ -75,6 +57,7 @@ pub(super) async fn persist_refresh_token(
     let mut conn = get_conn(&state.diesel_db).await?;
     let result = conn
         .transaction::<RefreshPersistResult, diesel::result::Error, _>(async |conn| {
+            lock_token_family(conn, refresh.family).await?;
             if let Some(rotated_from) = refresh.rotated_from {
                 let rotated = diesel::update(
                     oauth_tokens::table
@@ -86,7 +69,7 @@ pub(super) async fn persist_refresh_token(
                 .execute(conn)
                 .await?;
                 if rotated == 0 {
-                    mark_token_family_reuse(conn, refresh.family).await?;
+                    mark_token_family_reuse(conn, client.tenant_id, refresh.family).await?;
                     return Ok(RefreshPersistResult::RotationConflict);
                 }
             }
