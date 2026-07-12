@@ -10,7 +10,7 @@ use nazo_runtime_modules::{
     ActiveModuleSnapshot, CasOutcome, DesiredMode, DesiredStateChange, DesiredStateRecord,
     DisablePolicy, InstanceStateChange, InstanceStateRecord, ModuleEventRecord, ModuleEventState,
     ModuleEventType, ModuleId, ModuleRevision, ModuleSpec, ModuleState, ModuleStateRepository,
-    SnapshotStore, TransitionGuard, validate_module_specs,
+    SnapshotStore, StaleTransition, TransitionGuard, validate_module_specs,
 };
 
 fn complete_fixture_catalog() -> Vec<ModuleSpec> {
@@ -154,11 +154,19 @@ fn revision_guards_and_snapshot_publication_reject_stale_transitions() {
     );
     latest.store(8, Ordering::Release);
 
-    assert!(guard.ensure_current().is_err());
-    assert!(
-        store
-            .compare_and_publish(ModuleRevision::new(7), snapshot(9, [ModuleId::Ciba]))
-            .is_err()
+    assert_eq!(
+        guard.ensure_current(),
+        Err(StaleTransition::RevisionChanged {
+            expected: ModuleRevision::new(7),
+            current: ModuleRevision::new(8),
+        })
+    );
+    assert_eq!(
+        store.compare_and_publish(ModuleRevision::new(7), snapshot(9, [ModuleId::Ciba])),
+        Err(StaleTransition::RevisionChanged {
+            expected: ModuleRevision::new(7),
+            current: ModuleRevision::new(8),
+        })
     );
     assert_eq!(store.load().revision.get(), 8);
 }
@@ -180,6 +188,67 @@ fn request_lease_retains_the_old_snapshot_generation() {
     let new_lease = store.load();
     assert_eq!(new_lease.revision.get(), 8);
     assert!(new_lease.accepting.contains(&ModuleId::TokenExchange));
+}
+
+#[test]
+fn snapshot_publication_rejects_an_equal_revision() {
+    let store = SnapshotStore::new(snapshot(7, [ModuleId::Scim]));
+
+    let result = store.compare_and_publish(ModuleRevision::new(7), snapshot(7, [ModuleId::Ciba]));
+
+    assert_eq!(
+        result,
+        Err(StaleTransition::NonMonotonicPublication {
+            expected: ModuleRevision::new(7),
+            attempted: ModuleRevision::new(7),
+        })
+    );
+    let current = store.load();
+    assert_eq!(current.revision.get(), 7);
+    assert!(current.accepting.contains(&ModuleId::Scim));
+    assert!(!current.accepting.contains(&ModuleId::Ciba));
+}
+
+#[test]
+fn snapshot_publication_rejects_a_revision_rollback() {
+    let store = SnapshotStore::new(snapshot(7, [ModuleId::Scim]));
+
+    let result = store.compare_and_publish(ModuleRevision::new(7), snapshot(6, [ModuleId::Ciba]));
+
+    assert_eq!(
+        result,
+        Err(StaleTransition::NonMonotonicPublication {
+            expected: ModuleRevision::new(7),
+            attempted: ModuleRevision::new(6),
+        })
+    );
+    let current = store.load();
+    assert_eq!(current.revision.get(), 7);
+    assert!(current.accepting.contains(&ModuleId::Scim));
+    assert!(!current.accepting.contains(&ModuleId::Ciba));
+}
+
+#[test]
+fn two_same_base_callers_allow_only_the_strictly_advancing_publication() {
+    let store = SnapshotStore::new(snapshot(7, [ModuleId::Scim]));
+
+    let non_advancing =
+        store.compare_and_publish(ModuleRevision::new(7), snapshot(7, [ModuleId::Ciba]));
+    let advancing =
+        store.compare_and_publish(ModuleRevision::new(7), snapshot(8, [ModuleId::Jarm]));
+
+    assert_eq!(
+        non_advancing,
+        Err(StaleTransition::NonMonotonicPublication {
+            expected: ModuleRevision::new(7),
+            attempted: ModuleRevision::new(7),
+        })
+    );
+    assert!(advancing.is_ok());
+    let current = store.load();
+    assert_eq!(current.revision.get(), 8);
+    assert!(current.accepting.contains(&ModuleId::Jarm));
+    assert!(!current.accepting.contains(&ModuleId::Ciba));
 }
 
 #[test]

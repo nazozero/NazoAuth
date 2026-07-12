@@ -36,9 +36,16 @@ impl SnapshotStore {
         expected: ModuleRevision,
         next: ActiveModuleSnapshot,
     ) -> Result<(), StaleTransition> {
+        if next.revision <= expected {
+            return Err(StaleTransition::NonMonotonicPublication {
+                expected,
+                attempted: next.revision,
+            });
+        }
+
         let current = self.current.load();
         if current.revision != expected {
-            return Err(StaleTransition {
+            return Err(StaleTransition::RevisionChanged {
                 expected,
                 current: current.revision,
             });
@@ -48,7 +55,7 @@ impl SnapshotStore {
         if Arc::ptr_eq(&previous, &current) {
             Ok(())
         } else {
-            Err(StaleTransition {
+            Err(StaleTransition::RevisionChanged {
                 expected,
                 current: previous.revision,
             })

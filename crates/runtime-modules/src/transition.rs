@@ -17,12 +17,23 @@ impl ModuleRevision {
     }
 }
 
-/// A transition attempted a side effect after a newer revision became current.
+/// A revision-bound transition or publication can no longer proceed safely.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("stale module transition: expected revision {expected:?}, current revision {current:?}")]
-pub struct StaleTransition {
-    pub expected: ModuleRevision,
-    pub current: ModuleRevision,
+pub enum StaleTransition {
+    #[error(
+        "stale module transition: expected revision {expected:?}, current revision {current:?}"
+    )]
+    RevisionChanged {
+        expected: ModuleRevision,
+        current: ModuleRevision,
+    },
+    #[error(
+        "non-monotonic snapshot publication: expected a revision after {expected:?}, attempted {attempted:?}"
+    )]
+    NonMonotonicPublication {
+        expected: ModuleRevision,
+        attempted: ModuleRevision,
+    },
 }
 
 /// Cheap revision token revalidated around transition side effects.
@@ -42,7 +53,7 @@ impl TransitionGuard {
         if current == self.bound {
             Ok(())
         } else {
-            Err(StaleTransition {
+            Err(StaleTransition::RevisionChanged {
                 expected: self.bound,
                 current,
             })
