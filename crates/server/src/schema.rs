@@ -76,57 +76,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    oauth_clients (id) {
-        id -> Uuid,
-        tenant_id -> Uuid,
-        realm_id -> Uuid,
-        organization_id -> Uuid,
-        client_id -> Varchar,
-        client_name -> Varchar,
-        client_type -> Text,
-        client_secret_hash -> Nullable<Varchar>,
-        registration_access_token_blake3 -> Nullable<Varchar>,
-        redirect_uris -> Jsonb,
-        scopes -> Jsonb,
-        grant_types -> Jsonb,
-        token_endpoint_auth_method -> Varchar,
-        require_dpop_bound_tokens -> Bool,
-        require_mtls_bound_tokens -> Bool,
-        tls_client_auth_subject_dn -> Nullable<Varchar>,
-        tls_client_auth_cert_sha256 -> Nullable<Varchar>,
-        tls_client_auth_san_dns -> Jsonb,
-        tls_client_auth_san_uri -> Jsonb,
-        tls_client_auth_san_ip -> Jsonb,
-        tls_client_auth_san_email -> Jsonb,
-        allow_client_assertion_audience_array -> Bool,
-        allow_client_assertion_endpoint_audience -> Bool,
-        require_par_request_object -> Bool,
-        allow_authorization_code_without_pkce -> Bool,
-        is_active -> Bool,
-        created_at -> Timestamptz,
-        updated_at -> Timestamptz,
-        allowed_audiences -> Jsonb,
-        jwks -> Nullable<Jsonb>,
-        introspection_encrypted_response_alg -> Nullable<Varchar>,
-        introspection_encrypted_response_enc -> Nullable<Varchar>,
-        userinfo_signed_response_alg -> Nullable<Varchar>,
-        userinfo_encrypted_response_alg -> Nullable<Varchar>,
-        userinfo_encrypted_response_enc -> Nullable<Varchar>,
-        authorization_signed_response_alg -> Nullable<Varchar>,
-        authorization_encrypted_response_alg -> Nullable<Varchar>,
-        authorization_encrypted_response_enc -> Nullable<Varchar>,
-        post_logout_redirect_uris -> Jsonb,
-        backchannel_logout_uri -> Nullable<Varchar>,
-        backchannel_logout_session_required -> Bool,
-        frontchannel_logout_uri -> Nullable<Varchar>,
-        frontchannel_logout_session_required -> Bool,
-        subject_type -> Text,
-        sector_identifier_uri -> Nullable<Text>,
-        sector_identifier_host -> Nullable<Text>,
-    }
-}
-
-diesel::table! {
     oauth_tokens (id) {
         id -> Uuid,
         tenant_id -> Uuid,
@@ -198,28 +147,19 @@ diesel::table! {
     }
 }
 
-diesel::joinable!(access_token_revocations -> oauth_clients (client_id));
-diesel::joinable!(backchannel_logout_deliveries -> oauth_clients (client_id));
-diesel::joinable!(client_access_requests -> oauth_clients (approved_client_id));
 diesel::joinable!(client_access_requests -> tenants (tenant_id));
-diesel::joinable!(oauth_clients -> organizations (organization_id));
-diesel::joinable!(oauth_clients -> realms (realm_id));
-diesel::joinable!(oauth_clients -> tenants (tenant_id));
-diesel::joinable!(oauth_tokens -> oauth_clients (client_id));
 diesel::joinable!(oauth_tokens -> tenants (tenant_id));
 diesel::joinable!(organizations -> tenants (tenant_id));
 diesel::joinable!(realms -> tenants (tenant_id));
 diesel::joinable!(scim_audit_events -> scim_tokens (scim_token_id));
 diesel::joinable!(scim_audit_events -> tenants (tenant_id));
 diesel::joinable!(scim_tokens -> tenants (tenant_id));
-diesel::joinable!(user_client_grants -> oauth_clients (client_id));
 diesel::joinable!(user_client_grants -> tenants (tenant_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     access_token_revocations,
     backchannel_logout_deliveries,
     client_access_requests,
-    oauth_clients,
     oauth_tokens,
     organizations,
     realms,

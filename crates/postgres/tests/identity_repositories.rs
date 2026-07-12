@@ -888,13 +888,6 @@ fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
 
 #[test]
 fn oauth_client_queries_use_the_focused_postgres_repository_without_a_server_facade() {
-    const FORBIDDEN_DEFINITIONS: &[&str] = &[
-        "async fn find_client(",
-        "async fn find_client_in_tenant(",
-        "async fn find_client_by_id(",
-        "async fn find_active_mtls_client_by_certificate(",
-    ];
-
     fn visit(
         path: &std::path::Path,
         support_root: &std::path::Path,
@@ -912,17 +905,13 @@ fn oauth_client_queries_use_the_focused_postgres_repository_without_a_server_fac
             }
             let source = std::fs::read_to_string(&path).expect("server source is UTF-8");
             *direct_repository_calls += source.matches("OAuthClientRepository::new").count();
-            for forbidden in FORBIDDEN_DEFINITIONS {
-                if source.contains(forbidden) {
-                    violations.push(format!("{} contains {forbidden}", path.display()));
-                }
-            }
             if path.starts_with(support_root)
-                && (source.contains("oauth_clients::table")
+                && (source.contains("OAuthClientRepository")
+                    || source.contains("oauth_clients::table")
                     || source.contains("select(ClientRow::as_select())"))
             {
                 violations.push(format!(
-                    "{} hides an OAuth client query in server support",
+                    "{} hides an OAuth client repository constructor/query in server support",
                     path.display()
                 ));
             }
@@ -988,6 +977,27 @@ fn oauth_client_repository_keeps_records_private_and_returns_domain_clients() {
         repository.contains("use nazo_auth::{OAuthClient,"),
         "repository lookups must return the auth-owned storage-independent client"
     );
+    assert!(
+        !repository.contains(".select(oauth_clients::client_secret_hash)"),
+        "stored client-secret hashes must never be selected into Rust"
+    );
+    assert!(
+        repository.contains("client_secret_hash.eq(candidate_digest)")
+            && repository.contains("diesel::dsl::exists"),
+        "candidate digests must be compared by PostgreSQL equality/EXISTS"
+    );
+    let auth_root = std::fs::read_to_string(manifest.join("../auth/src/lib.rs"))
+        .expect("auth crate root is readable");
+    assert!(
+        !auth_root.contains("verify_client_secret_hash"),
+        "auth must not expose a public stored-hash verifier"
+    );
+    let server_schema = std::fs::read_to_string(manifest.join("../server/src/schema.rs"))
+        .expect("server schema is readable");
+    assert!(
+        !server_schema.contains("oauth_clients"),
+        "server production schema must not declare, join, or allow oauth_clients"
+    );
 
     fn visit(path: &std::path::Path, violations: &mut Vec<String>) {
         for entry in std::fs::read_dir(path).expect("server source directory is readable") {
@@ -1002,7 +1012,11 @@ fn oauth_client_repository_keeps_records_private_and_returns_domain_clients() {
                 continue;
             }
             let source = std::fs::read_to_string(&path).expect("server source is UTF-8");
-            let compact = source.split_whitespace().collect::<Vec<_>>().join(" ");
+            let compact = source
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_ascii_lowercase();
             if source.contains("oauth_clients::") {
                 violations.push(format!(
                     "{} directly references the OAuth-client Diesel schema",
@@ -1010,11 +1024,11 @@ fn oauth_client_repository_keeps_records_private_and_returns_domain_clients() {
                 ));
             }
             for operation in [
-                "INSERT INTO oauth_clients",
-                "UPDATE oauth_clients",
-                "DELETE FROM oauth_clients",
-                "FROM oauth_clients",
-                "JOIN oauth_clients",
+                "insert into oauth_clients",
+                "update oauth_clients",
+                "delete from oauth_clients",
+                "from oauth_clients",
+                "join oauth_clients",
             ] {
                 if compact.contains(operation) {
                     violations.push(format!(
