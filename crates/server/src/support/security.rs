@@ -123,11 +123,9 @@ pub(crate) async fn verify_password_blocking_limited(
         return Err(PasswordVerificationError::Saturated);
     };
 
-    tokio::task::spawn_blocking(move || {
-        verify_password(&password, password_hash.expose_for_verification())
-    })
-    .await
-    .map_err(|_| PasswordVerificationError::WorkerFailed)
+    tokio::task::spawn_blocking(move || password_hash.verify_password(&password))
+        .await
+        .map_err(|_| PasswordVerificationError::WorkerFailed)
 }
 
 pub(crate) fn hash_client_secret(secret: &str, pepper: &str) -> String {
