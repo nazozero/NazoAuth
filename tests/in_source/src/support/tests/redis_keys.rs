@@ -19,6 +19,22 @@ fn fapi_http_signature_replay_key_contains_only_a_blake3_digest() {
 }
 
 #[test]
+fn valkey_key_builders_are_locked_to_the_reviewed_baseline() {
+    for (fingerprint, expected) in [
+        (
+            [0x00; 32],
+            "fapi_http_signature_replay:0000000000000000000000000000000000000000000000000000000000000000",
+        ),
+        (
+            [0xff; 32],
+            "fapi_http_signature_replay:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        ),
+    ] {
+        assert_eq!(fapi_http_signature_replay_key(&fingerprint), expected);
+    }
+}
+
+#[test]
 fn fapi_resource_http_signature_replay_accepts_only_exact_ok_reply() {
     assert_eq!(
         classify_fapi_http_signature_replay_reply(Some("OK")),

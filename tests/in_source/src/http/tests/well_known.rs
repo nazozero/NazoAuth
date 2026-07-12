@@ -110,6 +110,123 @@ fn settings(profile: AuthorizationServerProfile, trusted_proxy_cidrs: Vec<IpCidr
     }
 }
 
+fn merge_metadata_fixture(parts: impl IntoIterator<Item = Value>) -> Value {
+    let mut merged = serde_json::Map::new();
+    for part in parts {
+        merged.extend(
+            part.as_object()
+                .expect("metadata fixture parts must be objects")
+                .clone(),
+        );
+    }
+    Value::Object(merged)
+}
+
+#[test]
+fn metadata_constructors_are_locked_to_complete_reviewed_shapes() {
+    let settings = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
+    let keyset = keyset(jsonwebtoken::Algorithm::RS256);
+
+    for (name, actual, expected) in [
+        (
+            "authorization server",
+            authorization_server_metadata(&settings, &keyset),
+            merge_metadata_fixture([
+                json!({
+                    "issuer": "https://issuer.example",
+                    "authorization_endpoint": "https://issuer.example/authorize",
+                    "token_endpoint": "https://issuer.example/token",
+                    "end_session_endpoint": "https://issuer.example/logout",
+                    "pushed_authorization_request_endpoint": "https://issuer.example/par",
+                    "revocation_endpoint": "https://issuer.example/revoke",
+                    "introspection_endpoint": "https://issuer.example/introspect",
+                    "userinfo_endpoint": "https://issuer.example/userinfo",
+                    "jwks_uri": "https://issuer.example/jwks.json",
+                    "response_types_supported": ["code"],
+                    "response_modes_supported": ["query", "jwt"],
+                    "subject_types_supported": ["public"],
+                    "id_token_signing_alg_values_supported": ["RS256"],
+                    "userinfo_signing_alg_values_supported": ["RS256"],
+                    "userinfo_encryption_alg_values_supported": ["RSA-OAEP-256"],
+                    "userinfo_encryption_enc_values_supported": ["A256GCM"],
+                    "authorization_signing_alg_values_supported": ["RS256"],
+                    "authorization_encryption_alg_values_supported": ["RSA-OAEP-256"],
+                    "authorization_encryption_enc_values_supported": ["A256GCM"]
+                }),
+                json!({
+                    "token_endpoint_auth_methods_supported": [
+                        "client_secret_basic", "client_secret_post", "private_key_jwt", "none"
+                    ],
+                    "token_endpoint_auth_signing_alg_values_supported": [
+                        "EdDSA", "RS256", "ES256", "PS256"
+                    ],
+                    "revocation_endpoint_auth_methods_supported": [
+                        "client_secret_basic", "client_secret_post", "private_key_jwt", "none"
+                    ],
+                    "revocation_endpoint_auth_signing_alg_values_supported": [
+                        "EdDSA", "RS256", "ES256", "PS256"
+                    ],
+                    "introspection_endpoint_auth_methods_supported": [
+                        "client_secret_basic", "client_secret_post", "private_key_jwt", "none"
+                    ],
+                    "introspection_endpoint_auth_signing_alg_values_supported": [
+                        "EdDSA", "RS256", "ES256", "PS256"
+                    ],
+                    "scopes_supported": [
+                        "openid", "profile", "email", "address", "phone", "offline_access"
+                    ],
+                    "claims_supported": [
+                        "sub", "auth_time", "amr", "nonce", "acr", "preferred_username",
+                        "name", "given_name", "family_name", "middle_name", "nickname",
+                        "profile", "picture", "website", "gender", "birthdate", "zoneinfo",
+                        "locale", "email", "email_verified", "address", "phone_number",
+                        "phone_number_verified", "updated_at"
+                    ]
+                }),
+                json!({
+                    "acr_values_supported": ["1"],
+                    "prompt_values_supported": ["login", "consent", "select_account", "none"],
+                    "grant_types_supported": [
+                        "authorization_code",
+                        "refresh_token",
+                        "client_credentials",
+                        "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                        "urn:ietf:params:oauth:grant-type:token-exchange"
+                    ],
+                    "protected_resources": ["https://issuer.example/fapi/resource"],
+                    "authorization_response_iss_parameter_supported": true,
+                    "claims_parameter_supported": true,
+                    "backchannel_logout_supported": true,
+                    "backchannel_logout_session_supported": true,
+                    "require_pushed_authorization_requests": false,
+                    "code_challenge_methods_supported": ["S256"],
+                    "dpop_signing_alg_values_supported": ["EdDSA", "ES256"],
+                    "request_object_signing_alg_values_supported": [
+                        "none", "EdDSA", "RS256", "ES256", "PS256"
+                    ],
+                    "request_uri_parameter_supported": false
+                }),
+            ]),
+        ),
+        (
+            "protected resource",
+            protected_resource_metadata(&settings, &keyset),
+            json!({
+                "resource": "https://issuer.example/fapi/resource",
+                "authorization_servers": ["https://issuer.example"],
+                "resource_name": "Nazo OAuth Protected Resource",
+                "bearer_methods_supported": ["header", "body"],
+                "scopes_supported": [
+                    "openid", "profile", "email", "address", "phone", "offline_access"
+                ],
+                "dpop_signing_alg_values_supported": ["EdDSA", "ES256"]
+            }),
+        ),
+    ] {
+        assert_eq!(actual, expected, "{name} metadata contract changed");
+    }
+}
+
 #[test]
 fn fapi_http_signatures_are_not_advertised_in_standard_metadata() {
     let mut disabled = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());

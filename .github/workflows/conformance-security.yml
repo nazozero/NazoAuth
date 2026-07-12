@@ -126,6 +126,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev
       - name: Prepare runtime directories
         run: mkdir -p runtime/ci/avatars runtime/ci/keys
+      - name: Verify compatibility contracts
+        run: python scripts/verify_static_contracts.py --check
       - name: Format
         run: cargo fmt --check
       - name: Check
