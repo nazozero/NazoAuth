@@ -843,3 +843,54 @@ timing tolerance is involved.
 
 No production behavior, frontend, E2E assertion, push, deployment, or PR state
 was changed.
+
+## Refresh unbound lost-response hardening (2026-07-13)
+
+Lost-response recovery is now restricted to refresh-token families whose
+presented revoked token has a stable non-null sender constraint: a DPoP JKT or
+an mTLS `x5t#S256` thumbprint. The existing null-safe exact successor checks
+remain authoritative for both constraints. A revoked unbound bearer token is
+therefore never recoverable, even within 60 seconds with exactly one active
+child; presentation marks reuse and revokes the family atomically under the
+existing family advisory lock.
+
+This closes the coverage-instrumentation race without treating request start
+time as proof of concurrency. A deterministic real PostgreSQL regression first
+obtained HTTP 200 from an unbound refresh token, waited for that call to return
+and its rotation transaction to commit, then presented the same token again.
+Before the fix the second sequential request also returned HTTP 200; after the
+fix it returns `400 invalid_grant` and every family row has a reuse marker and
+revocation timestamp. The prior unbound lost-response success test now asserts
+the same fail-closed compromise behavior.
+
+Bound compatibility remains intact. Real PostgreSQL tests preserve the
+inclusive 60-second DPoP-bound window and exact nullable sender matching. An
+mTLS-bound lost-response retry with a matching verified certificate rotates
+the stored successor, returns a newly generated token distinct from both
+presented plaintext values, and persists only its hash. Concurrent mTLS-bound
+retries still yield one success and one `invalid_grant`, followed by family
+compromise; injected child-insert failure still rolls back successor
+revocation. The ordinary active-token concurrent replay test remains unchanged.
+
+### TDD and verification evidence
+
+- RED: real PostgreSQL
+  `sequential_unbound_replay_after_first_commit_fails_closed` failed in 0.08
+  seconds because the post-commit second request returned HTTP 200 instead of
+  400. The rewritten prior unbound-success test also failed because the
+  successor query returned the unbound child.
+- GREEN: real PostgreSQL refresh focused suite passed 39/39, covering unbound
+  fail-closed behavior, DPoP/mTLS bound recovery, concurrency, fixed-window
+  boundaries, constraint mismatch, family compromise, and transaction faults.
+- The same 39/39 focused suite passed with native Rust
+  `-C instrument-coverage`; `.profraw` files were produced in the isolated
+  instrumentation target directory. `cargo-llvm-cov` itself was not installed
+  locally.
+- A fresh release image built from the hardened source ran against a newly
+  migrated PostgreSQL 18 database and Valkey 8 instance. The unmodified full
+  real-request E2E returned `{"ok": true}`, including
+  `refresh_token_reuse_race_single_success`, family revocation after the race,
+  DPoP nonce 425, and DPoP-bound lost-response successor rotation.
+
+No E2E assertion, token plaintext storage, nonce behavior, frontend, migration,
+push, deployment, or PR state was changed.
