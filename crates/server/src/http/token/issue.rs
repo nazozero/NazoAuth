@@ -349,18 +349,29 @@ pub(crate) async fn issue_token_response(
     let mut refresh_rotated = None;
     if issue.include_refresh && should_issue_refresh_token(client, &issue.scopes) {
         let refresh_family = match issue.refresh_token_policy {
-            RefreshTokenPolicy::IssueNew => Some((Uuid::now_v7(), None)),
+            RefreshTokenPolicy::IssueNew => Some((Uuid::now_v7(), None, None)),
             RefreshTokenPolicy::Rotate {
                 family_id,
                 rotated_from_id,
-            } => Some((family_id, Some(rotated_from_id))),
+            } => Some((family_id, Some(rotated_from_id), None)),
+            RefreshTokenPolicy::RotateLostResponse {
+                family_id,
+                original_id,
+                successor_id,
+                retry_started_at,
+            } => Some((
+                family_id,
+                Some(successor_id),
+                Some((original_id, retry_started_at)),
+            )),
             RefreshTokenPolicy::PreserveExisting => None,
         };
-        if let Some((family, rotated_from)) = refresh_family {
+        if let Some((family, rotated_from, lost_response_retry)) = refresh_family {
             let refresh = PendingRefreshToken {
                 raw: format!("{}.{}", random_urlsafe_token(), random_urlsafe_token()),
                 family,
                 rotated_from,
+                lost_response_retry,
                 issued_at: now,
                 expires_at: now + Duration::seconds(state.settings.refresh_token_ttl_seconds),
             };

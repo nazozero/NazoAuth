@@ -149,6 +149,12 @@ pub(crate) enum RefreshTokenPolicy {
         family_id: Uuid,
         rotated_from_id: Uuid,
     },
+    RotateLostResponse {
+        family_id: Uuid,
+        original_id: Uuid,
+        successor_id: Uuid,
+        retry_started_at: DateTime<Utc>,
+    },
     PreserveExisting,
 }
 

@@ -1,7 +1,9 @@
 use diesel_async::{AsyncConnection, AsyncPgConnection};
 
 use super::*;
-use crate::http::token::refresh_family::{lock_token_family, mark_token_family_reuse};
+use crate::http::token::refresh_family::{
+    lock_token_family, lost_response_successor, mark_token_family_reuse,
+};
 
 pub(super) enum RefreshPersistResult {
     Inserted,
@@ -12,6 +14,7 @@ pub(super) struct PendingRefreshToken {
     pub(super) raw: String,
     pub(super) family: Uuid,
     pub(super) rotated_from: Option<Uuid>,
+    pub(super) lost_response_retry: Option<(Uuid, DateTime<Utc>)>,
     pub(super) issued_at: DateTime<Utc>,
     pub(super) expires_at: DateTime<Utc>,
 }
@@ -59,9 +62,33 @@ pub(super) async fn persist_refresh_token(
         .transaction::<RefreshPersistResult, diesel::result::Error, _>(async |conn| {
             lock_token_family(conn, refresh.family).await?;
             if let Some(rotated_from) = refresh.rotated_from {
+                if let Some((original_id, retry_started_at)) = refresh.lost_response_retry {
+                    let original = oauth_tokens::table
+                        .filter(oauth_tokens::tenant_id.eq(client.tenant_id))
+                        .filter(oauth_tokens::token_family_id.eq(refresh.family))
+                        .filter(oauth_tokens::client_id.eq(client.id))
+                        .filter(oauth_tokens::id.eq(original_id))
+                        .select(TokenRow::as_select())
+                        .first::<TokenRow>(conn)
+                        .await
+                        .optional()?;
+                    let successor = match original {
+                        Some(original) => {
+                            lost_response_successor(conn, &original, client.id, retry_started_at)
+                                .await?
+                        }
+                        None => None,
+                    };
+                    if successor.as_ref().map(|token| token.id) != Some(rotated_from) {
+                        mark_token_family_reuse(conn, client.tenant_id, refresh.family).await?;
+                        return Ok(RefreshPersistResult::RotationConflict);
+                    }
+                }
                 let rotated = diesel::update(
                     oauth_tokens::table
                         .filter(oauth_tokens::tenant_id.eq(client.tenant_id))
+                        .filter(oauth_tokens::token_family_id.eq(refresh.family))
+                        .filter(oauth_tokens::client_id.eq(client.id))
                         .filter(oauth_tokens::id.eq(rotated_from))
                         .filter(oauth_tokens::revoked_at.is_null()),
                 )
