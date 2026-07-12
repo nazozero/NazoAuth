@@ -185,8 +185,8 @@ pub(crate) async fn token_refresh(
         );
     }
     let original_scopes = json_array_to_strings(&token.scopes);
-    match token.user_id {
-        Some(user_id) => match (
+    if let Some(user_id) = token.user_id {
+        match (
             nazo_identity::TenantId::new(token.tenant_id),
             nazo_identity::UserId::new(user_id),
         ) {
@@ -224,8 +224,7 @@ pub(crate) async fn token_refresh(
                     false,
                 );
             }
-        },
-        None => {}
+        }
     }
     let dpop_jkt = if dpop_proof_present(req) {
         match validate_dpop_proof(state, req, None, token.dpop_jkt.as_deref()).await {

@@ -222,8 +222,7 @@ async fn prepare_client_insert_rejects_empty_array_metadata_before_storage() {
 
     let err = prepare_client_insert_for_test(payload, None, "http://localhost:8000")
         .await
-        .err()
-        .expect("empty array metadata must fail closed");
+        .expect_err("empty array metadata must fail closed");
     match err {
         InsertClientError::InvalidRequest(message) => assert!(
             message.contains("post_logout_redirect_uri"),
@@ -244,8 +243,7 @@ async fn prepare_client_insert_rejects_secret_auth_for_public_clients() {
 
     let err = prepare_client_insert_for_test(payload, None, "http://localhost:8000")
         .await
-        .err()
-        .expect("public clients must not be registered with client secrets");
+        .expect_err("public clients must not be registered with client secrets");
     match err {
         InsertClientError::InvalidRequest(message) => assert!(
             message.contains("public"),
@@ -266,8 +264,7 @@ async fn prepare_client_insert_rejects_pairwise_when_secret_is_not_configured() 
 
     let err = prepare_client_insert_for_test(payload, None, "http://localhost:8000")
         .await
-        .err()
-        .expect("pairwise subject registration requires a configured server secret");
+        .expect_err("pairwise subject registration requires a configured server secret");
 
     match err {
         InsertClientError::InvalidRequest(message) => assert!(
@@ -324,8 +321,7 @@ async fn prepare_client_insert_rejects_pairwise_redirects_with_multiple_hosts_wi
         "http://localhost:8000",
     )
     .await
-    .err()
-    .expect("multi-host pairwise redirect set requires a sector_identifier_uri");
+    .expect_err("multi-host pairwise redirect set requires a sector_identifier_uri");
 
     match err {
         InsertClientError::InvalidRequest(message) => assert!(
@@ -356,8 +352,7 @@ async fn prepare_client_insert_reports_sector_identifier_fetch_failure() {
         "http://localhost:8000",
     )
     .await
-    .err()
-    .expect("unresolvable sector_identifier_uri must fail registration");
+    .expect_err("unresolvable sector_identifier_uri must fail registration");
 
     match err {
         InsertClientError::InvalidRequest(message) => assert!(

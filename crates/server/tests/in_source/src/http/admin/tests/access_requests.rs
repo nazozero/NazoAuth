@@ -482,8 +482,7 @@ fn parse_access_request_status_accepts_only_protocol_state_codes() {
 fn parse_access_request_status_rejects_malformed_and_unknown_states_fail_closed() {
     for raw in ["-1", "3", "approved", "1.0"] {
         let response = parse_access_request_status(&query_with_status(raw))
-            .err()
-            .expect("invalid status must not reach database filtering");
+            .expect_err("invalid status must not reach database filtering");
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         assert_eq!(
