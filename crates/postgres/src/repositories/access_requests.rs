@@ -1,37 +1,28 @@
 use chrono::{DateTime, Utc};
 use diesel::{
-    BoolExpressionMethods, ExpressionMethods, JoinOnDsl, OptionalExtension,
-    PgTextExpressionMethods, QueryDsl,
+    BoolExpressionMethods, ExpressionMethods, JoinOnDsl, NullableExpressionMethods,
+    OptionalExtension, PgTextExpressionMethods, QueryDsl,
 };
-use diesel_async::RunQueryDsl;
-use nazo_identity::ports::RepositoryError;
+use diesel_async::{AsyncConnection, RunQueryDsl};
+use nazo_auth::{ApprovedClient, PreparedClientRegistration};
+use nazo_identity::{
+    AccessRequest, AccessRequestPage, AccessRequestStatus, NewAccessRequest, TenantId, UserId,
+    ports::RepositoryError,
+};
+use serde_json::json;
 use uuid::Uuid;
 
 use crate::{
     DbPool,
-    schema::{client_access_requests, users},
+    schema::{client_access_requests, oauth_clients, users},
 };
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct AccessRequestProjection {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub user_email: String,
-    pub site_name: String,
-    pub site_url: String,
-    pub request_description: String,
-    pub status: i16,
-    pub admin_note: Option<String>,
-    pub approved_client_id: Option<Uuid>,
-    pub created_at: DateTime<Utc>,
-    pub resolved_at: Option<DateTime<Utc>>,
-}
 
 #[derive(diesel::Queryable)]
 struct AccessRequestRecord {
     id: Uuid,
+    tenant_id: Uuid,
     user_id: Uuid,
-    user_email: String,
+    requester_email: Option<String>,
     site_name: String,
     site_url: String,
     request_description: String,
@@ -42,21 +33,66 @@ struct AccessRequestRecord {
     resolved_at: Option<DateTime<Utc>>,
 }
 
-impl From<AccessRequestRecord> for AccessRequestProjection {
-    fn from(record: AccessRequestRecord) -> Self {
-        Self {
+macro_rules! user_record_selection {
+    () => {
+        (
+            client_access_requests::id,
+            client_access_requests::tenant_id,
+            client_access_requests::user_id,
+            diesel::dsl::sql::<diesel::sql_types::Nullable<diesel::sql_types::Text>>("NULL"),
+            client_access_requests::site_name,
+            client_access_requests::site_url,
+            client_access_requests::request_description,
+            client_access_requests::status,
+            client_access_requests::admin_note,
+            client_access_requests::approved_client_id,
+            client_access_requests::created_at,
+            client_access_requests::resolved_at,
+        )
+    };
+}
+
+macro_rules! admin_record_selection {
+    () => {
+        (
+            client_access_requests::id,
+            client_access_requests::tenant_id,
+            client_access_requests::user_id,
+            users::email.nullable(),
+            client_access_requests::site_name,
+            client_access_requests::site_url,
+            client_access_requests::request_description,
+            client_access_requests::status,
+            client_access_requests::admin_note,
+            client_access_requests::approved_client_id,
+            client_access_requests::created_at,
+            client_access_requests::resolved_at,
+        )
+    };
+}
+
+impl TryFrom<AccessRequestRecord> for AccessRequest {
+    type Error = RepositoryError;
+
+    fn try_from(record: AccessRequestRecord) -> Result<Self, Self::Error> {
+        Ok(Self {
             id: record.id,
-            user_id: record.user_id,
-            user_email: record.user_email,
+            tenant_id: TenantId::new(record.tenant_id)
+                .map_err(|error| RepositoryError::Consistency(error.to_string()))?,
+            user_id: UserId::new(record.user_id)
+                .map_err(|error| RepositoryError::Consistency(error.to_string()))?,
+            requester_email: record.requester_email,
             site_name: record.site_name,
             site_url: record.site_url,
             request_description: record.request_description,
-            status: record.status,
+            status: AccessRequestStatus::from_code(record.status).ok_or_else(|| {
+                RepositoryError::Consistency("invalid persisted access-request status".to_owned())
+            })?,
             admin_note: record.admin_note,
             approved_client_id: record.approved_client_id,
             created_at: record.created_at,
             resolved_at: record.resolved_at,
-        }
+        })
     }
 }
 
@@ -71,90 +107,119 @@ impl AccessRequestRepository {
         Self { pool }
     }
 
-    pub async fn count(
+    pub async fn list_for_user(
         &self,
-        search: Option<&str>,
-        status: Option<i16>,
-    ) -> Result<i64, RepositoryError> {
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> Result<Vec<AccessRequest>, RepositoryError> {
         let mut connection = self.connection().await?;
-        let mut query = client_access_requests::table
-            .inner_join(
-                users::table.on(users::id
-                    .eq(client_access_requests::user_id)
-                    .and(users::tenant_id.eq(client_access_requests::tenant_id))),
-            )
-            .into_boxed();
-        if let Some(status) = status {
-            query = query.filter(client_access_requests::status.eq(status));
-        }
-        if let Some(pattern) = search_pattern(search) {
-            query = query.filter(
-                users::email
-                    .ilike(pattern.clone())
-                    .or(client_access_requests::site_name.ilike(pattern.clone()))
-                    .or(client_access_requests::site_url.ilike(pattern)),
-            );
-        }
-        query
-            .select(diesel::dsl::count(client_access_requests::id))
-            .first(&mut connection)
+        client_access_requests::table
+            .filter(client_access_requests::tenant_id.eq(tenant_id.as_uuid()))
+            .filter(client_access_requests::user_id.eq(user_id.as_uuid()))
+            .select(user_record_selection!())
+            .order(client_access_requests::created_at.desc())
+            .load::<AccessRequestRecord>(&mut connection)
             .await
-            .map_err(map_error)
+            .map_err(map_error)?
+            .into_iter()
+            .map(AccessRequest::try_from)
+            .collect()
+    }
+
+    pub async fn create(
+        &self,
+        request: NewAccessRequest,
+    ) -> Result<AccessRequest, RepositoryError> {
+        let mut connection = self.connection().await?;
+        diesel::insert_into(client_access_requests::table)
+            .values((
+                client_access_requests::tenant_id.eq(request.tenant_id.as_uuid()),
+                client_access_requests::user_id.eq(request.user_id.as_uuid()),
+                client_access_requests::site_name.eq(request.site_name),
+                client_access_requests::site_url.eq(request.site_url),
+                client_access_requests::request_description.eq(request.request_description),
+                client_access_requests::status.eq(AccessRequestStatus::Pending.code()),
+            ))
+            .returning(user_record_selection!())
+            .get_result::<AccessRequestRecord>(&mut connection)
+            .await
+            .map_err(map_error)?
+            .try_into()
     }
 
     pub async fn page(
         &self,
+        tenant_id: TenantId,
         limit: i64,
         offset: i64,
         search: Option<&str>,
-        status: Option<i16>,
-    ) -> Result<Vec<AccessRequestProjection>, RepositoryError> {
+        status: Option<AccessRequestStatus>,
+    ) -> Result<AccessRequestPage, RepositoryError> {
         let mut connection = self.connection().await?;
-        let mut query = client_access_requests::table
+        let pattern = search_pattern(search);
+        let mut count_query = client_access_requests::table
             .inner_join(
                 users::table.on(users::id
                     .eq(client_access_requests::user_id)
                     .and(users::tenant_id.eq(client_access_requests::tenant_id))),
             )
+            .filter(client_access_requests::tenant_id.eq(tenant_id.as_uuid()))
             .into_boxed();
         if let Some(status) = status {
-            query = query.filter(client_access_requests::status.eq(status));
+            count_query = count_query.filter(client_access_requests::status.eq(status.code()));
         }
-        if let Some(pattern) = search_pattern(search) {
-            query = query.filter(
+        if let Some(pattern) = &pattern {
+            count_query = count_query.filter(
+                users::email
+                    .ilike(pattern.clone())
+                    .or(client_access_requests::site_name.ilike(pattern.clone()))
+                    .or(client_access_requests::site_url.ilike(pattern.clone())),
+            );
+        }
+        let total = count_query
+            .select(diesel::dsl::count(client_access_requests::id))
+            .first(&mut connection)
+            .await
+            .map_err(map_error)?;
+
+        let mut items_query = client_access_requests::table
+            .inner_join(
+                users::table.on(users::id
+                    .eq(client_access_requests::user_id)
+                    .and(users::tenant_id.eq(client_access_requests::tenant_id))),
+            )
+            .filter(client_access_requests::tenant_id.eq(tenant_id.as_uuid()))
+            .into_boxed();
+        if let Some(status) = status {
+            items_query = items_query.filter(client_access_requests::status.eq(status.code()));
+        }
+        if let Some(pattern) = pattern {
+            items_query = items_query.filter(
                 users::email
                     .ilike(pattern.clone())
                     .or(client_access_requests::site_name.ilike(pattern.clone()))
                     .or(client_access_requests::site_url.ilike(pattern)),
             );
         }
-        query
-            .select((
-                client_access_requests::id,
-                client_access_requests::user_id,
-                users::email,
-                client_access_requests::site_name,
-                client_access_requests::site_url,
-                client_access_requests::request_description,
-                client_access_requests::status,
-                client_access_requests::admin_note,
-                client_access_requests::approved_client_id,
-                client_access_requests::created_at,
-                client_access_requests::resolved_at,
-            ))
+        let items = items_query
+            .select(admin_record_selection!())
             .order(client_access_requests::created_at.desc())
             .limit(limit)
             .offset(offset)
             .load::<AccessRequestRecord>(&mut connection)
             .await
-            .map(|records| records.into_iter().map(Into::into).collect())
-            .map_err(map_error)
+            .map_err(map_error)?
+            .into_iter()
+            .map(AccessRequest::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(AccessRequestPage { total, items })
     }
 
     pub async fn by_id(
         &self,
+        tenant_id: TenantId,
         id: Uuid,
-    ) -> Result<Option<AccessRequestProjection>, RepositoryError> {
+    ) -> Result<Option<AccessRequest>, RepositoryError> {
         let mut connection = self.connection().await?;
         client_access_requests::table
             .inner_join(
@@ -162,25 +227,126 @@ impl AccessRequestRepository {
                     .eq(client_access_requests::user_id)
                     .and(users::tenant_id.eq(client_access_requests::tenant_id))),
             )
+            .filter(client_access_requests::tenant_id.eq(tenant_id.as_uuid()))
             .filter(client_access_requests::id.eq(id))
-            .select((
-                client_access_requests::id,
-                client_access_requests::user_id,
-                users::email,
-                client_access_requests::site_name,
-                client_access_requests::site_url,
-                client_access_requests::request_description,
-                client_access_requests::status,
-                client_access_requests::admin_note,
-                client_access_requests::approved_client_id,
-                client_access_requests::created_at,
-                client_access_requests::resolved_at,
-            ))
+            .select(admin_record_selection!())
             .first::<AccessRequestRecord>(&mut connection)
             .await
             .optional()
-            .map(|record| record.map(Into::into))
-            .map_err(map_error)
+            .map_err(map_error)?
+            .map(AccessRequest::try_from)
+            .transpose()
+    }
+
+    pub async fn approve(
+        &self,
+        tenant_id: TenantId,
+        request_id: Uuid,
+        actor_user_id: UserId,
+        client: &PreparedClientRegistration,
+    ) -> Result<ApprovedClient, RepositoryError> {
+        if client.tenant_id != tenant_id.as_uuid() {
+            return Err(RepositoryError::Consistency(
+                "access request and approved client tenant differ".to_owned(),
+            ));
+        }
+        let mut connection = self.connection().await?;
+        connection
+            .transaction::<ApprovedClient, ApprovalError, _>(async |connection| {
+                let pending = client_access_requests::table
+                    .filter(client_access_requests::tenant_id.eq(tenant_id.as_uuid()))
+                    .filter(client_access_requests::id.eq(request_id))
+                    .filter(client_access_requests::status.eq(AccessRequestStatus::Pending.code()))
+                    .select(client_access_requests::id)
+                    .for_update()
+                    .first::<Uuid>(connection)
+                    .await
+                    .optional()
+                    .map_err(map_error)?;
+                if pending.is_none() {
+                    return Err(ApprovalError::Repository(RepositoryError::Conflict));
+                }
+                let approved = insert_client(connection, client).await?;
+                let updated = diesel::update(
+                    client_access_requests::table
+                        .filter(client_access_requests::tenant_id.eq(tenant_id.as_uuid()))
+                        .filter(client_access_requests::id.eq(request_id))
+                        .filter(
+                            client_access_requests::status.eq(AccessRequestStatus::Pending.code()),
+                        ),
+                )
+                .set((
+                    client_access_requests::status.eq(AccessRequestStatus::Approved.code()),
+                    client_access_requests::resolved_by_user_id.eq(actor_user_id.as_uuid()),
+                    client_access_requests::approved_client_id.eq(approved.id),
+                    client_access_requests::resolved_at.eq(diesel::dsl::now),
+                    client_access_requests::updated_at.eq(diesel::dsl::now),
+                ))
+                .execute(connection)
+                .await
+                .map_err(map_error)?;
+                if updated != 1 {
+                    return Err(ApprovalError::Repository(RepositoryError::Conflict));
+                }
+                Ok(approved)
+            })
+            .await
+            .map_err(ApprovalError::into_repository)
+    }
+
+    pub async fn reject(
+        &self,
+        tenant_id: TenantId,
+        request_id: Uuid,
+        actor_user_id: UserId,
+        admin_note: String,
+    ) -> Result<(), RepositoryError> {
+        let mut connection = self.connection().await?;
+        let updated = diesel::update(
+            client_access_requests::table
+                .filter(client_access_requests::tenant_id.eq(tenant_id.as_uuid()))
+                .filter(client_access_requests::id.eq(request_id))
+                .filter(client_access_requests::status.eq(AccessRequestStatus::Pending.code())),
+        )
+        .set((
+            client_access_requests::status.eq(AccessRequestStatus::Rejected.code()),
+            client_access_requests::admin_note.eq(admin_note),
+            client_access_requests::resolved_by_user_id.eq(actor_user_id.as_uuid()),
+            client_access_requests::resolved_at.eq(diesel::dsl::now),
+            client_access_requests::updated_at.eq(diesel::dsl::now),
+        ))
+        .execute(&mut connection)
+        .await
+        .map_err(map_error)?;
+        if updated == 1 {
+            Ok(())
+        } else {
+            Err(RepositoryError::Conflict)
+        }
+    }
+
+    pub async fn cancel_pending(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        request_id: Uuid,
+    ) -> Result<(), RepositoryError> {
+        let mut connection = self.connection().await?;
+        let deleted = diesel::delete(
+            client_access_requests::table
+                .filter(client_access_requests::tenant_id.eq(tenant_id.as_uuid()))
+                .filter(client_access_requests::user_id.eq(user_id.as_uuid()))
+                .filter(client_access_requests::id.eq(request_id))
+                .filter(client_access_requests::status.eq(AccessRequestStatus::Pending.code())),
+        )
+        .execute(&mut connection)
+        .await
+        .map_err(map_error)?;
+        if deleted == 1 {
+            Ok(())
+        } else {
+            Err(RepositoryError::Conflict)
+        }
     }
 
     async fn connection(&self) -> Result<crate::DbConnection, RepositoryError> {
@@ -191,6 +357,75 @@ impl AccessRequestRepository {
     }
 }
 
+async fn insert_client(
+    connection: &mut diesel_async::AsyncPgConnection,
+    prepared: &PreparedClientRegistration,
+) -> Result<ApprovedClient, RepositoryError> {
+    diesel::insert_into(oauth_clients::table)
+        .values((
+            oauth_clients::tenant_id.eq(prepared.tenant_id),
+            oauth_clients::realm_id.eq(prepared.realm_id),
+            oauth_clients::organization_id.eq(prepared.organization_id),
+            oauth_clients::client_id.eq(&prepared.client_id),
+            oauth_clients::client_name.eq(&prepared.client_name),
+            oauth_clients::client_type.eq(&prepared.client_type),
+            oauth_clients::client_secret_hash.eq(&prepared.client_secret_hash),
+            oauth_clients::registration_access_token_blake3
+                .eq(&prepared.registration_access_token_blake3),
+            oauth_clients::redirect_uris.eq(json!(&prepared.redirect_uris)),
+            oauth_clients::post_logout_redirect_uris.eq(json!(&prepared.post_logout_redirect_uris)),
+            oauth_clients::scopes.eq(json!(&prepared.scopes)),
+            oauth_clients::allowed_audiences.eq(json!(&prepared.allowed_audiences)),
+            oauth_clients::grant_types.eq(json!(&prepared.grant_types)),
+            oauth_clients::token_endpoint_auth_method.eq(&prepared.token_endpoint_auth_method),
+            oauth_clients::subject_type.eq(&prepared.subject_type),
+            oauth_clients::sector_identifier_uri.eq(&prepared.sector_identifier_uri),
+            oauth_clients::sector_identifier_host.eq(&prepared.sector_identifier_host),
+            oauth_clients::require_dpop_bound_tokens.eq(prepared.require_dpop_bound_tokens),
+            oauth_clients::allow_client_assertion_audience_array
+                .eq(prepared.allow_client_assertion_audience_array),
+            oauth_clients::allow_client_assertion_endpoint_audience
+                .eq(prepared.allow_client_assertion_endpoint_audience),
+            oauth_clients::require_par_request_object.eq(prepared.require_par_request_object),
+            oauth_clients::allow_authorization_code_without_pkce
+                .eq(prepared.allow_authorization_code_without_pkce),
+            oauth_clients::backchannel_logout_uri.eq(&prepared.backchannel_logout_uri),
+            oauth_clients::backchannel_logout_session_required
+                .eq(prepared.backchannel_logout_session_required),
+            oauth_clients::frontchannel_logout_uri.eq(&prepared.frontchannel_logout_uri),
+            oauth_clients::frontchannel_logout_session_required
+                .eq(prepared.frontchannel_logout_session_required),
+            oauth_clients::tls_client_auth_subject_dn.eq(&prepared.tls_client_auth_subject_dn),
+            oauth_clients::tls_client_auth_cert_sha256.eq(&prepared.tls_client_auth_cert_sha256),
+            oauth_clients::tls_client_auth_san_dns.eq(json!(&prepared.tls_client_auth_san_dns)),
+            oauth_clients::tls_client_auth_san_uri.eq(json!(&prepared.tls_client_auth_san_uri)),
+            oauth_clients::tls_client_auth_san_ip.eq(json!(&prepared.tls_client_auth_san_ip)),
+            oauth_clients::tls_client_auth_san_email.eq(json!(&prepared.tls_client_auth_san_email)),
+            oauth_clients::jwks.eq(&prepared.jwks),
+            oauth_clients::introspection_encrypted_response_alg
+                .eq(&prepared.introspection_encrypted_response_alg),
+            oauth_clients::introspection_encrypted_response_enc
+                .eq(&prepared.introspection_encrypted_response_enc),
+            oauth_clients::userinfo_signed_response_alg.eq(&prepared.userinfo_signed_response_alg),
+            oauth_clients::userinfo_encrypted_response_alg
+                .eq(&prepared.userinfo_encrypted_response_alg),
+            oauth_clients::userinfo_encrypted_response_enc
+                .eq(&prepared.userinfo_encrypted_response_enc),
+            oauth_clients::authorization_signed_response_alg
+                .eq(&prepared.authorization_signed_response_alg),
+            oauth_clients::authorization_encrypted_response_alg
+                .eq(&prepared.authorization_encrypted_response_alg),
+            oauth_clients::authorization_encrypted_response_enc
+                .eq(&prepared.authorization_encrypted_response_enc),
+            oauth_clients::is_active.eq(true),
+        ))
+        .returning((oauth_clients::id, oauth_clients::client_id))
+        .get_result::<(Uuid, String)>(connection)
+        .await
+        .map(|(id, client_id)| ApprovedClient { id, client_id })
+        .map_err(map_error)
+}
+
 fn search_pattern(search: Option<&str>) -> Option<String> {
     search
         .map(str::trim)
@@ -199,7 +434,39 @@ fn search_pattern(search: Option<&str>) -> Option<String> {
 }
 
 fn map_error(error: diesel::result::Error) -> RepositoryError {
-    RepositoryError::Unexpected(error.to_string())
+    match error {
+        diesel::result::Error::DatabaseError(
+            diesel::result::DatabaseErrorKind::UniqueViolation,
+            _,
+        ) => RepositoryError::Conflict,
+        other => RepositoryError::Unexpected(other.to_string()),
+    }
+}
+
+enum ApprovalError {
+    Diesel(diesel::result::Error),
+    Repository(RepositoryError),
+}
+
+impl ApprovalError {
+    fn into_repository(self) -> RepositoryError {
+        match self {
+            Self::Diesel(error) => map_error(error),
+            Self::Repository(error) => error,
+        }
+    }
+}
+
+impl From<diesel::result::Error> for ApprovalError {
+    fn from(error: diesel::result::Error) -> Self {
+        Self::Diesel(error)
+    }
+}
+
+impl From<RepositoryError> for ApprovalError {
+    fn from(error: RepositoryError) -> Self {
+        Self::Repository(error)
+    }
 }
 
 #[cfg(test)]

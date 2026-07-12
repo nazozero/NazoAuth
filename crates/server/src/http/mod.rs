@@ -46,18 +46,17 @@ pub(crate) mod prelude {
     pub(crate) use uuid::Uuid;
 
     pub(crate) use crate::domain::{
-        AccessRequestStatus, AppState, AuthorizationCodeState, ClientRow, CodePayload,
-        ConsentPayload, ConsumedAuthorizationCode, MyApplicationRow, NativeSsoTokenBinding,
-        PendingAccessRequestRow, PushedAuthorizationRequest, RefreshTokenPolicy, TokenIssue,
-        TokenRow, UserAccessRequestRow,
+        AppState, AuthorizationCodeState, ClientRow, CodePayload, ConsentPayload,
+        ConsumedAuthorizationCode, MyApplicationRow, NativeSsoTokenBinding,
+        PushedAuthorizationRequest, RefreshTokenPolicy, TokenIssue, TokenRow,
     };
     #[cfg(test)]
     pub(crate) use crate::domain::{
         DatabaseExternalIdentityFixture, DatabasePasskeyFixture, DatabaseUserFixture,
     };
     pub(crate) use crate::schema::{
-        access_token_revocations, backchannel_logout_deliveries, client_access_requests,
-        oauth_clients, oauth_tokens, scim_audit_events, scim_tokens, user_client_grants,
+        access_token_revocations, backchannel_logout_deliveries, oauth_clients, oauth_tokens,
+        scim_audit_events, scim_tokens, user_client_grants,
     };
     #[cfg(test)]
     pub(crate) use crate::schema::{
@@ -70,6 +69,8 @@ pub(crate) mod prelude {
         high_risk_authorization_details, is_valid_dpop_jkt, normalize_authorization_details,
         parse_authorization_details,
     };
+    #[cfg(test)]
+    pub(crate) use nazo_identity::AccessRequestStatus;
     pub(crate) use nazo_identity::PublicAccount;
     pub(crate) use nazo_identity::ports::{FederationLink, PasskeyCredential};
     pub(crate) use nazo_postgres::get_conn;

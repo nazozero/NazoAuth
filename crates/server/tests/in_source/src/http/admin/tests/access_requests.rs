@@ -3,7 +3,7 @@ use actix_web::cookie::Cookie;
 use diesel::QueryableByName;
 use diesel::prelude::SelectableHelper;
 use diesel::sql_query;
-use diesel::sql_types::{Int2, Int4, Text, Uuid as SqlUuid};
+use diesel::sql_types::{BigInt, Int2, Int4, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
 use fred::interfaces::ClientLike;
 use fred::prelude::{
@@ -19,6 +19,12 @@ use nazo_postgres::{create_pool, get_conn};
 struct IdRow {
     #[diesel(sql_type = SqlUuid)]
     id: Uuid,
+}
+
+#[derive(QueryableByName)]
+struct CountRow {
+    #[diesel(sql_type = BigInt)]
+    count: i64,
 }
 
 #[derive(QueryableByName)]
@@ -196,6 +202,81 @@ impl LiveAdminAccessRequestFixture {
             ))
             .await;
         }
+    }
+
+    async fn restricted_valkey_client(
+        &self,
+        username: &str,
+        password: &str,
+    ) -> fred::prelude::Client {
+        self.state
+            .valkey
+            .custom::<(), _>(
+                fred::cmd!("ACL"),
+                vec![
+                    "SETUSER".to_owned(),
+                    username.to_owned(),
+                    "reset".to_owned(),
+                    "on".to_owned(),
+                    format!(">{password}"),
+                    "~oauth:session:*".to_owned(),
+                    "+@all".to_owned(),
+                ],
+            )
+            .await
+            .expect("restricted Valkey ACL user should be configured");
+        let valkey_url = std::env::var("VALKEY_URL").expect("VALKEY_URL should be set");
+        let restricted_url =
+            valkey_url.replacen("redis://", &format!("redis://{username}:{password}@"), 1);
+        let mut builder = ValkeyBuilder::from_config(
+            ValkeyConfig::from_url(&restricted_url).expect("restricted VALKEY_URL should parse"),
+        );
+        builder.with_performance_config(|performance: &mut PerformanceConfig| {
+            performance.default_command_timeout = StdDuration::from_millis(1000);
+        });
+        builder.with_connection_config(|connection: &mut ConnectionConfig| {
+            connection.connection_timeout = StdDuration::from_millis(1000);
+            connection.internal_command_timeout = StdDuration::from_millis(1000);
+            connection.max_command_attempts = 1;
+        });
+        let client = builder
+            .build()
+            .expect("restricted Valkey client should build");
+        client
+            .init()
+            .await
+            .expect("restricted Valkey client should connect");
+        client
+    }
+
+    fn state_with_valkey(&self, valkey: fred::prelude::Client) -> Data<AppState> {
+        Data::new(AppState {
+            diesel_db: self.state.diesel_db.clone(),
+            valkey,
+            settings: self.state.settings.clone(),
+            keyset: self.state.keyset.clone(),
+        })
+    }
+
+    async fn delete_acl_user(&self, username: &str) {
+        let _: i64 = self
+            .state
+            .valkey
+            .custom(
+                fred::cmd!("ACL"),
+                vec!["DELUSER".to_owned(), username.to_owned()],
+            )
+            .await
+            .expect("restricted Valkey ACL user should be deleted");
+    }
+
+    async fn client_count(&self) -> i64 {
+        let mut connection = get_conn(&self.state.diesel_db).await.unwrap();
+        sql_query("SELECT COUNT(*)::bigint AS count FROM oauth_clients")
+            .get_result::<CountRow>(&mut connection)
+            .await
+            .unwrap()
+            .count
     }
 
     async fn exec_sql(&self, sql: &str) {
@@ -415,15 +496,25 @@ fn parse_access_request_status_rejects_malformed_and_unknown_states_fail_closed(
 #[actix_web::test]
 async fn access_requests_response_preserves_pagination_and_rows() {
     let request_id = Uuid::now_v7();
+    let now = Utc::now();
     let response = access_requests_response(
         4,
         25,
         77,
-        vec![json!({
-            "id": request_id,
-            "site_name": "Client App",
-            "status": AccessRequestStatus::Pending.code()
-        })],
+        vec![nazo_identity::AccessRequest {
+            id: request_id,
+            tenant_id: nazo_identity::TenantId::new(DEFAULT_TENANT_ID).unwrap(),
+            user_id: nazo_identity::UserId::new(Uuid::now_v7()).unwrap(),
+            requester_email: Some("applicant@example.test".to_owned()),
+            site_name: "Client App".to_owned(),
+            site_url: "https://client.example".to_owned(),
+            request_description: "Need API access".to_owned(),
+            status: AccessRequestStatus::Pending,
+            admin_note: None,
+            approved_client_id: None,
+            created_at: now,
+            resolved_at: None,
+        }],
     );
 
     assert_eq!(response.status(), StatusCode::OK);
@@ -638,12 +729,16 @@ async fn approve_access_request_validates_client_request_before_mutation() {
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"], "invalid_request");
-    let row = access_request_by_id(&fixture.state.diesel_db, request_id)
+    let row = nazo_postgres::AccessRequestRepository::new(fixture.state.diesel_db.clone())
+        .by_id(
+            nazo_identity::TenantId::new(DEFAULT_TENANT_ID).unwrap(),
+            request_id,
+        )
         .await
         .expect("access request should load")
         .expect("access request should remain present");
-    assert_eq!(row["status"], AccessRequestStatus::Pending.code());
-    assert!(row["approved_client_id"].is_null());
+    assert_eq!(row.status, AccessRequestStatus::Pending);
+    assert!(row.approved_client_id.is_none());
 }
 
 #[actix_web::test]
@@ -741,12 +836,16 @@ async fn approve_access_request_rejects_previously_rejected_request_without_crea
 
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["error"], "invalid_request");
-    let row = access_request_by_id(&fixture.state.diesel_db, request_id)
+    let row = nazo_postgres::AccessRequestRepository::new(fixture.state.diesel_db.clone())
+        .by_id(
+            nazo_identity::TenantId::new(DEFAULT_TENANT_ID).unwrap(),
+            request_id,
+        )
         .await
         .expect("access request should load")
         .expect("access request should remain present");
-    assert_eq!(row["status"], AccessRequestStatus::Rejected.code());
-    assert!(row["approved_client_id"].is_null());
+    assert_eq!(row.status, AccessRequestStatus::Rejected);
+    assert!(row.approved_client_id.is_none());
 }
 
 #[actix_web::test]
@@ -909,12 +1008,16 @@ async fn reject_access_request_rejects_previously_approved_request_without_losin
 
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["error"], "invalid_request");
-    let row = access_request_by_id(&fixture.state.diesel_db, request_id)
+    let row = nazo_postgres::AccessRequestRepository::new(fixture.state.diesel_db.clone())
+        .by_id(
+            nazo_identity::TenantId::new(DEFAULT_TENANT_ID).unwrap(),
+            request_id,
+        )
         .await
         .expect("access request should load")
         .expect("access request should remain present");
-    assert_eq!(row["status"], AccessRequestStatus::Approved.code());
-    assert_eq!(row["approved_client_id"], json!(approved_client_id));
+    assert_eq!(row.status, AccessRequestStatus::Approved);
+    assert_eq!(row.approved_client_id, Some(approved_client_id));
 }
 
 #[actix_web::test]
@@ -1004,6 +1107,48 @@ async fn approve_access_request_rolls_back_when_status_write_fails_after_client_
     assert_eq!(body["error"], "server_error");
     assert_eq!(state.status, AccessRequestStatus::Pending.code());
     assert!(state.approved_client_id.is_none());
+}
+
+#[actix_web::test]
+async fn approve_access_request_delivery_failure_is_fail_closed_before_database_commit() {
+    let schema = format!("admin_access_delivery_{}", Uuid::now_v7().simple());
+    let Some(fixture) = LiveAdminAccessRequestFixture::new_isolated(&schema).await else {
+        return;
+    };
+    let admin = fixture.create_user("delivery-admin", "admin", 10).await;
+    let applicant = fixture.create_user("delivery-user", "user", 0).await;
+    let sid = format!("sid-delivery-{}", Uuid::now_v7().simple());
+    let csrf = format!("csrf-delivery-{}", Uuid::now_v7().simple());
+    fixture.store_session(&admin, &sid).await;
+    let request_id = fixture
+        .insert_access_request(&applicant, "DeliveryFailure", AccessRequestStatus::Pending)
+        .await;
+    let before_clients = fixture.client_count().await;
+    let acl_user = format!("access_delivery_{}", Uuid::now_v7().simple());
+    let acl_password = format!("pw{}", Uuid::now_v7().simple());
+    let restricted = fixture
+        .restricted_valkey_client(&acl_user, &acl_password)
+        .await;
+    let req = fixture.admin_post_request(&sid, &csrf, "/admin/access-requests/request/approve");
+
+    let response = admin_approve_access_request(
+        fixture.state_with_valkey(restricted),
+        req,
+        actix_web::web::Path::from(request_id),
+        Json(create_client_request()),
+    )
+    .await;
+    let state = fixture.access_request_state(request_id).await;
+    let after_clients = fixture.client_count().await;
+    fixture.delete_acl_user(&acl_user).await;
+    fixture.cleanup().await;
+    let (status, body) = json_body(response).await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "body: {body}");
+    assert_eq!(body["error"], "server_error");
+    assert_eq!(state.status, AccessRequestStatus::Pending.code());
+    assert!(state.approved_client_id.is_none());
+    assert_eq!(after_clients, before_clients);
 }
 
 #[actix_web::test]

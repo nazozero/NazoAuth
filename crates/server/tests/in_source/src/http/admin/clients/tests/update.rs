@@ -15,7 +15,7 @@ use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
 
 use crate::http::admin::{
-    CreateClientRequest, InsertClientError, PreparedClientInsert, insert_prepared_client,
+    CreateClientRequest, InsertClientError, PreparedClientRegistration, insert_prepared_client,
     prepare_client_insert_with_secret_pepper,
 };
 
@@ -23,7 +23,7 @@ async fn prepare_client_insert_for_test(
     payload: CreateClientRequest,
     pairwise_subject_secret: Option<&str>,
     issuer: &str,
-) -> Result<PreparedClientInsert, InsertClientError> {
+) -> Result<PreparedClientRegistration, InsertClientError> {
     prepare_client_insert_with_secret_pepper(
         payload,
         pairwise_subject_secret,

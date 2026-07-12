@@ -2,6 +2,7 @@
 // confidential 客户端只在创建响应中返回一次明文 secret。
 use crate::http::prelude::*;
 use diesel_async::AsyncPgConnection;
+use nazo_auth::PreparedClientRegistration;
 
 #[derive(Deserialize)]
 pub(crate) struct CreateClientRequest {
@@ -73,49 +74,6 @@ pub(crate) struct CreateClientRequest {
 pub(crate) enum InsertClientError {
     InvalidRequest(String),
     Server(String),
-}
-
-pub(crate) struct PreparedClientInsert {
-    pub(crate) tenant: TenantContext,
-    pub(crate) client_id: String,
-    pub(crate) client_name: String,
-    pub(crate) client_type: String,
-    pub(crate) redirect_uris: Vec<String>,
-    pub(crate) post_logout_redirect_uris: Vec<String>,
-    pub(crate) scopes: Vec<String>,
-    pub(crate) allowed_audiences: Vec<String>,
-    pub(crate) grant_types: Vec<String>,
-    pub(crate) token_endpoint_auth_method: String,
-    pub(crate) subject_type: String,
-    pub(crate) sector_identifier_uri: Option<String>,
-    pub(crate) sector_identifier_host: Option<String>,
-    pub(crate) require_dpop_bound_tokens: bool,
-    pub(crate) allow_client_assertion_audience_array: bool,
-    pub(crate) allow_client_assertion_endpoint_audience: bool,
-    pub(crate) require_par_request_object: bool,
-    pub(crate) allow_authorization_code_without_pkce: bool,
-    pub(crate) backchannel_logout_uri: Option<String>,
-    pub(crate) backchannel_logout_session_required: bool,
-    pub(crate) frontchannel_logout_uri: Option<String>,
-    pub(crate) frontchannel_logout_session_required: bool,
-    pub(crate) tls_client_auth_subject_dn: Option<String>,
-    pub(crate) tls_client_auth_cert_sha256: Option<String>,
-    pub(crate) tls_client_auth_san_dns: Vec<String>,
-    pub(crate) tls_client_auth_san_uri: Vec<String>,
-    pub(crate) tls_client_auth_san_ip: Vec<String>,
-    pub(crate) tls_client_auth_san_email: Vec<String>,
-    pub(crate) jwks: Option<Value>,
-    pub(crate) introspection_encrypted_response_alg: Option<String>,
-    pub(crate) introspection_encrypted_response_enc: Option<String>,
-    pub(crate) userinfo_signed_response_alg: Option<String>,
-    pub(crate) userinfo_encrypted_response_alg: Option<String>,
-    pub(crate) userinfo_encrypted_response_enc: Option<String>,
-    pub(crate) authorization_signed_response_alg: Option<String>,
-    pub(crate) authorization_encrypted_response_alg: Option<String>,
-    pub(crate) authorization_encrypted_response_enc: Option<String>,
-    pub(crate) issued_secret: Option<String>,
-    pub(crate) client_secret_hash: Option<String>,
-    pub(crate) registration_access_token_blake3: Option<String>,
 }
 
 /// 创建 OAuth 客户端。
@@ -196,7 +154,7 @@ pub(crate) async fn insert_client_row(
 
 pub(crate) async fn insert_prepared_client_row(
     state: &AppState,
-    prepared: &PreparedClientInsert,
+    prepared: &PreparedClientRegistration,
 ) -> Result<ClientRow, InsertClientError> {
     let mut conn = get_conn(&state.diesel_db)
         .await
@@ -204,7 +162,10 @@ pub(crate) async fn insert_prepared_client_row(
     let client = insert_prepared_client(&mut conn, prepared)
         .await
         .map_err(|error| InsertClientError::Server(format!("客户端写入失败: {error}")))?;
-    if !prepared.tenant.includes_client(&client) {
+    if client.tenant_id != prepared.tenant_id
+        || client.realm_id != prepared.realm_id
+        || client.organization_id != prepared.organization_id
+    {
         return Err(InsertClientError::Server(
             "客户端写入后租户边界不匹配".to_owned(),
         ));
@@ -218,7 +179,7 @@ pub(crate) async fn prepare_client_insert_with_secret_pepper(
     client_secret_pepper: &str,
     issuer: &str,
     response_signing_algorithms: &[&'static str],
-) -> Result<PreparedClientInsert, InsertClientError> {
+) -> Result<PreparedClientRegistration, InsertClientError> {
     validate_client_payload(&payload, response_signing_algorithms)
         .map_err(|error| InsertClientError::InvalidRequest(error.to_string()))?;
     let (issued_secret, secret_hash) = issue_client_secret(
@@ -238,8 +199,10 @@ pub(crate) async fn prepare_client_insert_with_secret_pepper(
     )
     .await?;
 
-    Ok(PreparedClientInsert {
-        tenant: default_tenant_context(),
+    Ok(PreparedClientRegistration {
+        tenant_id: DEFAULT_TENANT_ID,
+        realm_id: DEFAULT_REALM_ID,
+        organization_id: DEFAULT_ORGANIZATION_ID,
         client_id: format!("client-{}", Uuid::now_v7()),
         client_name: payload.client_name,
         client_type: payload.client_type,
@@ -317,13 +280,13 @@ pub(crate) fn issue_client_secret(
 
 pub(crate) async fn insert_prepared_client(
     conn: &mut AsyncPgConnection,
-    prepared: &PreparedClientInsert,
+    prepared: &PreparedClientRegistration,
 ) -> diesel::QueryResult<ClientRow> {
     diesel::insert_into(oauth_clients::table)
         .values((
-            oauth_clients::tenant_id.eq(prepared.tenant.tenant_id),
-            oauth_clients::realm_id.eq(prepared.tenant.realm_id),
-            oauth_clients::organization_id.eq(prepared.tenant.organization_id),
+            oauth_clients::tenant_id.eq(prepared.tenant_id),
+            oauth_clients::realm_id.eq(prepared.realm_id),
+            oauth_clients::organization_id.eq(prepared.organization_id),
             oauth_clients::client_id.eq(&prepared.client_id),
             oauth_clients::client_name.eq(&prepared.client_name),
             oauth_clients::client_type.eq(&prepared.client_type),

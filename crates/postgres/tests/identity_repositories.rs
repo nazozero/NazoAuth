@@ -533,6 +533,10 @@ fn server_has_no_identity_rows_or_identity_diesel_queries() {
         "user_mfa_remembered_devices (id) {",
         "user_passkey_credentials (id) {",
         "external_identity_links (id) {",
+        "client_access_requests::",
+        "UserAccessRequestRow",
+        "PendingAccessRequestRow",
+        "AccessRequestProjection",
     ];
 
     fn visit(path: &std::path::Path, violations: &mut Vec<String>) {
@@ -566,5 +570,29 @@ fn server_has_no_identity_rows_or_identity_diesel_queries() {
         violations.is_empty(),
         "server identity persistence leaked outside nazo-postgres:\n{}",
         violations.join("\n")
+    );
+}
+
+#[test]
+fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
+    let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let admin_path = manifest.join("../server/src/http/admin/access_requests.rs");
+    let profile_path = manifest.join("../server/src/http/profile/access_requests.rs");
+    let support_path = manifest.join("../server/src/support/access_requests.rs");
+    let admin = std::fs::read_to_string(admin_path).expect("admin access handler is readable");
+    let profile =
+        std::fs::read_to_string(profile_path).expect("profile access handler is readable");
+
+    for source in [&admin, &profile] {
+        assert!(!source.contains("diesel::"));
+        assert!(!source.contains("client_access_requests::"));
+    }
+    assert!(
+        !support_path.exists(),
+        "forwarding access-request support layer must stay deleted"
+    );
+    assert!(
+        admin.find("valkey_set_ex").unwrap() < admin.find(".approve(").unwrap(),
+        "delivery must fail closed before the PostgreSQL approval transaction"
     );
 }

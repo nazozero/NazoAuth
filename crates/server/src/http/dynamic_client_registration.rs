@@ -1,10 +1,11 @@
 //! RFC 7591 dynamic client registration endpoint.
 
 use crate::http::{
-    admin::{CreateClientRequest, InsertClientError, PreparedClientInsert},
+    admin::{CreateClientRequest, InsertClientError},
     prelude::*,
 };
 use diesel_async::AsyncConnection;
+use nazo_auth::PreparedClientRegistration;
 use url::Url;
 
 #[derive(Debug, Default, Deserialize)]
@@ -364,7 +365,7 @@ pub(crate) async fn prepare_dynamic_client_insert_with_secret_pepper(
     issuer: &str,
     registration_access_token: &str,
     response_signing_algorithms: &[&'static str],
-) -> Result<PreparedClientInsert, InsertClientError> {
+) -> Result<PreparedClientRegistration, InsertClientError> {
     let mut prepared = crate::http::admin::prepare_client_insert_with_secret_pepper(
         registration.into_create_client_request(),
         pairwise_subject_secret,
@@ -473,7 +474,7 @@ async fn rotate_client_management_credentials(
 async fn replace_client_configuration(
     state: &AppState,
     current: &ClientRow,
-    prepared: &PreparedClientInsert,
+    prepared: &PreparedClientRegistration,
 ) -> Result<ClientRow, HttpResponse> {
     let mut conn = get_conn(&state.diesel_db).await.map_err(|error| {
         tracing::warn!(%error, "failed to get database connection for client configuration update");

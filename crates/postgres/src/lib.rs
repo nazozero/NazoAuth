@@ -23,7 +23,6 @@ pub use pool::{
     run_pending_migrations,
 };
 pub use repositories::{
-    AccessRequestProjection, AccessRequestRepository, FederationRepository, GrantPage,
-    GrantProjection, GrantRepository, MfaRepository, PasskeyRepository, ScimRepository,
-    UserRepository,
+    AccessRequestRepository, FederationRepository, GrantPage, GrantProjection, GrantRepository,
+    MfaRepository, PasskeyRepository, ScimRepository, UserRepository,
 };

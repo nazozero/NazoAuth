@@ -1,6 +1,5 @@
 //! 跨 HTTP handler 复用的领域支撑模块。
 // 子模块按职责拆分；外部仍通过 crate::support::* 使用稳定入口。
-mod access_requests;
 mod audit;
 mod avatars;
 mod client_ip;
@@ -28,7 +27,6 @@ mod views;
 
 #[cfg(test)]
 pub(crate) use crate::test_support::{ClientSigningFixture, client_signing_fixture};
-pub(crate) use access_requests::*;
 pub(crate) use audit::*;
 pub(crate) use avatars::*;
 pub(crate) use client_ip::*;
@@ -82,7 +80,7 @@ pub(crate) mod prelude {
     pub(crate) use sha2::{Digest, Sha256};
     pub(crate) use uuid::Uuid;
 
-    pub(crate) use crate::domain::{AccessRequestStatus, AppState, ClientRow};
+    pub(crate) use crate::domain::{AppState, ClientRow};
     #[cfg(test)]
     pub(crate) use crate::domain::{DatabasePasskeyFixture, DatabaseUserFixture};
     pub(crate) use crate::schema::{oauth_clients, user_client_grants};

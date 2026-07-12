@@ -6,7 +6,6 @@ mod database_user_fixture;
 mod oauth;
 mod rows;
 mod state;
-mod status;
 
 #[cfg(test)]
 pub(crate) use database_user_fixture::{
@@ -16,4 +15,3 @@ pub(crate) use nazo_key_management::KeySnapshot;
 pub(crate) use oauth::*;
 pub(crate) use rows::*;
 pub(crate) use state::*;
-pub(crate) use status::*;

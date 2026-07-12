@@ -7,7 +7,7 @@ async fn prepare_admin_client_insert_for_test(
     payload: crate::http::admin::CreateClientRequest,
     pairwise_subject_secret: Option<&str>,
     issuer: &str,
-) -> Result<crate::http::admin::PreparedClientInsert, crate::http::admin::InsertClientError> {
+) -> Result<crate::http::admin::PreparedClientRegistration, crate::http::admin::InsertClientError> {
     crate::http::admin::prepare_client_insert_with_secret_pepper(
         payload,
         pairwise_subject_secret,
@@ -23,7 +23,7 @@ async fn prepare_dynamic_client_insert_for_test(
     pairwise_subject_secret: Option<&str>,
     issuer: &str,
     registration_access_token: &str,
-) -> Result<crate::http::admin::PreparedClientInsert, crate::http::admin::InsertClientError> {
+) -> Result<crate::http::admin::PreparedClientRegistration, crate::http::admin::InsertClientError> {
     prepare_dynamic_client_insert_with_secret_pepper(
         registration,
         pairwise_subject_secret,

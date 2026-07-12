@@ -5,7 +5,7 @@ mod mfa;
 mod passkeys;
 mod scim;
 mod users;
-pub use access_requests::{AccessRequestProjection, AccessRequestRepository};
+pub use access_requests::AccessRequestRepository;
 pub use federation::FederationRepository;
 pub use grants::{GrantPage, GrantProjection, GrantRepository};
 pub use mfa::MfaRepository;

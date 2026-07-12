@@ -153,14 +153,17 @@ fn sample_access_request_payload() -> CreateAccessRequest {
     }
 }
 
-fn access_request_row(status: AccessRequestStatus) -> UserAccessRequestRow {
+fn access_request_row(status: AccessRequestStatus) -> nazo_identity::AccessRequest {
     let now = Utc::now();
-    UserAccessRequestRow {
+    nazo_identity::AccessRequest {
         id: Uuid::now_v7(),
+        tenant_id: nazo_identity::TenantId::new(DEFAULT_TENANT_ID).unwrap(),
+        user_id: nazo_identity::UserId::new(Uuid::now_v7()).unwrap(),
+        requester_email: None,
         site_name: "Client App".to_owned(),
         site_url: "https://client.example".to_owned(),
         request_description: "Need OpenID access".to_owned(),
-        status: status.code(),
+        status,
         admin_note: Some("review note".to_owned()),
         approved_client_id: Some(Uuid::now_v7()),
         created_at: now,

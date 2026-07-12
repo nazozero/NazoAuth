@@ -6,7 +6,7 @@ async fn prepare_client_insert_for_test(
     payload: CreateClientRequest,
     pairwise_subject_secret: Option<&str>,
     issuer: &str,
-) -> Result<PreparedClientInsert, InsertClientError> {
+) -> Result<PreparedClientRegistration, InsertClientError> {
     prepare_client_insert_with_secret_pepper(
         payload,
         pairwise_subject_secret,

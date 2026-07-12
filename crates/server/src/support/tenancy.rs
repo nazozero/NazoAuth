@@ -28,6 +28,7 @@ impl TenantContext {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn includes_client(&self, client: &ClientRow) -> bool {
         self.as_identity_context().is_some_and(|context| {
             context.matches_raw(client.tenant_id, client.realm_id, client.organization_id)

@@ -13,6 +13,7 @@ diesel = { version = "2.3.10", features = ["postgres", "uuid", "chrono", "serde_
 diesel-async = { version = "0.9.2", features = ["postgres", "deadpool"] }
 diesel_migrations = "2.3.2"
 nazo-identity = { version = "0.1.0", path = "../identity" }
+nazo-auth = { version = "0.1.0", path = "../auth" }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 uuid = { version = "1.23.4", features = ["v7", "serde"] }
