@@ -105,9 +105,14 @@ impl PasskeyRepository {
         tenant_id: TenantId,
         user_id: UserId,
         credential_id: &str,
-        sign_count: i64,
+        expected_sign_count: i64,
+        new_sign_count: i64,
         credential: Value,
-    ) -> Result<bool, RepositoryError> {
+    ) -> Result<(), RepositoryError> {
+        let zero_counter = expected_sign_count == 0 && new_sign_count == 0;
+        if expected_sign_count < 0 || (!zero_counter && new_sign_count <= expected_sign_count) {
+            return Err(RepositoryError::Conflict);
+        }
         let mut connection = self
             .pool
             .get()
@@ -117,18 +122,25 @@ impl PasskeyRepository {
             user_passkey_credentials::table
                 .filter(user_passkey_credentials::tenant_id.eq(tenant_id.as_uuid()))
                 .filter(user_passkey_credentials::user_id.eq(user_id.as_uuid()))
-                .filter(user_passkey_credentials::credential_id.eq(credential_id)),
+                .filter(user_passkey_credentials::credential_id.eq(credential_id))
+                .filter(user_passkey_credentials::sign_count.eq(expected_sign_count)),
         )
         .set((
             user_passkey_credentials::credential.eq(credential),
-            user_passkey_credentials::sign_count.eq(sign_count),
+            user_passkey_credentials::sign_count.eq(new_sign_count),
             user_passkey_credentials::last_used_at.eq(now),
             user_passkey_credentials::updated_at.eq(now),
         ))
         .execute(&mut connection)
         .await
-        .map(|count| count == 1)
         .map_err(map_error)
+        .and_then(|count| {
+            if count == 1 {
+                Ok(())
+            } else {
+                Err(RepositoryError::Conflict)
+            }
+        })
     }
     pub async fn delete(
         &self,

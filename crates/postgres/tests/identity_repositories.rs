@@ -171,6 +171,100 @@ async fn passkey_and_federation_uniqueness_are_typed_conflicts() {
 }
 
 #[tokio::test]
+async fn passkey_counter_update_is_monotonic_compare_and_set() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        panic!("NAZO_TEST_DATABASE_URL or DATABASE_URL is required");
+    };
+    let repository = PasskeyRepository::new(pool.clone());
+    repository
+        .insert(
+            tenant.tenant_id,
+            user_id,
+            "counter-cas".into(),
+            json!({"counter": 0}),
+            "counter test".into(),
+            0,
+        )
+        .await
+        .unwrap();
+
+    let (left, right) = tokio::join!(
+        repository.update_counter(
+            tenant.tenant_id,
+            user_id,
+            "counter-cas",
+            0,
+            1,
+            json!({"counter": 1})
+        ),
+        repository.update_counter(
+            tenant.tenant_id,
+            user_id,
+            "counter-cas",
+            0,
+            1,
+            json!({"counter": 1})
+        )
+    );
+    assert!(matches!(
+        (&left, &right),
+        (Ok(()), Err(RepositoryError::Conflict)) | (Err(RepositoryError::Conflict), Ok(()))
+    ));
+    assert_eq!(
+        repository
+            .update_counter(
+                tenant.tenant_id,
+                user_id,
+                "counter-cas",
+                0,
+                2,
+                json!({"counter": 2})
+            )
+            .await
+            .unwrap_err(),
+        RepositoryError::Conflict
+    );
+    assert_eq!(
+        repository
+            .update_counter(
+                tenant.tenant_id,
+                user_id,
+                "counter-cas",
+                1,
+                1,
+                json!({"counter": 1})
+            )
+            .await
+            .unwrap_err(),
+        RepositoryError::Conflict
+    );
+
+    repository
+        .insert(
+            tenant.tenant_id,
+            user_id,
+            "zero-counter".into(),
+            json!({"counter": 0}),
+            "zero counter".into(),
+            0,
+        )
+        .await
+        .unwrap();
+    repository
+        .update_counter(
+            tenant.tenant_id,
+            user_id,
+            "zero-counter",
+            0,
+            0,
+            json!({"counter": 0}),
+        )
+        .await
+        .unwrap();
+    cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
 async fn scim_replace_returns_domain_claims_from_one_transaction() {
     let Some((pool, tenant, user_id)) = database_fixture().await else {
         return;

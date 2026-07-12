@@ -248,11 +248,15 @@ async fn update_passkey_counter(
             user.tenant().tenant_id,
             user.user_id(),
             &row.credential_id,
+            row.sign_count,
             i64::from(new_counter),
             credential_json,
         )
         .await
         .map_err(|error| {
+            if error == nazo_identity::ports::RepositoryError::Conflict {
+                return passkey_login_failed_response();
+            }
             tracing::warn!(%error, "failed to update passkey counter");
             oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
