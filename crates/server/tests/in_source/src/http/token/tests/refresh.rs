@@ -1028,6 +1028,100 @@ async fn refresh_grant_rotates_from_active_successor_inside_lost_response_window
 }
 
 #[actix_web::test]
+async fn lost_response_successor_enforces_fixed_window_boundaries_in_real_postgres() {
+    let schema = format!("refresh_lost_window_{}", Uuid::now_v7().simple());
+    let Some(database_url) = database_url_with_search_path(&schema) else {
+        return;
+    };
+    let Some(state) = live_refresh_state_from_database_url(
+        AuthorizationServerProfile::Oauth2Baseline,
+        database_url,
+    ) else {
+        return;
+    };
+    create_isolated_schema(&state, &schema, &["oauth_tokens"]).await;
+
+    let now = DateTime::parse_from_rfc3339("2026-07-13T12:00:00Z")
+        .expect("fixed test timestamp should parse")
+        .with_timezone(&Utc);
+    let client_id = Uuid::now_v7();
+    let family_id = Uuid::now_v7();
+    let mut revoked = token_row();
+    revoked.client_id = client_id;
+    revoked.token_family_id = family_id;
+    revoked.user_id = None;
+    revoked.dpop_jkt = None;
+    revoked.issued_at = now - Duration::hours(1);
+    revoked.expires_at = now + Duration::hours(1);
+    revoked.revoked_at = Some(now);
+    insert_refresh_token_row(
+        &state,
+        &format!("refresh-lost-window-original-{}", Uuid::now_v7()),
+        &revoked,
+        None,
+        None,
+    )
+    .await;
+
+    let mut successor = token_row();
+    successor.client_id = client_id;
+    successor.token_family_id = family_id;
+    successor.user_id = None;
+    successor.dpop_jkt = None;
+    successor.issued_at = now;
+    successor.expires_at = now + Duration::hours(1);
+    insert_refresh_token_row(
+        &state,
+        &format!("refresh-lost-window-successor-{}", Uuid::now_v7()),
+        &successor,
+        Some(revoked.id),
+        None,
+    )
+    .await;
+
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    let boundary_results = conn
+        .transaction::<_, diesel::result::Error, _>(async |conn| {
+            revoked.revoked_at = Some(now);
+            let at_zero = lost_response_successor(conn, &revoked, client_id, now).await?;
+
+            revoked.revoked_at = Some(now - Duration::seconds(60));
+            let at_sixty_seconds = lost_response_successor(conn, &revoked, client_id, now).await?;
+
+            revoked.revoked_at = Some(now - Duration::seconds(60) - Duration::milliseconds(1));
+            let after_sixty_seconds =
+                lost_response_successor(conn, &revoked, client_id, now).await?;
+
+            revoked.revoked_at = Some(now + Duration::milliseconds(1));
+            let future = lost_response_successor(conn, &revoked, client_id, now).await?;
+
+            Ok((at_zero, at_sixty_seconds, after_sixty_seconds, future))
+        })
+        .await;
+    drop(conn);
+    drop_schema(&state, &schema).await;
+
+    let (at_zero, at_sixty_seconds, after_sixty_seconds, future) =
+        boundary_results.expect("fixed-window successor lookups should succeed");
+    assert_eq!(at_zero.map(|row| row.id), Some(successor.id));
+    assert_eq!(
+        at_sixty_seconds.map(|row| row.id),
+        Some(successor.id),
+        "the exact 60-second boundary must remain inclusive"
+    );
+    assert!(
+        after_sixty_seconds.is_none(),
+        "60 seconds plus 1 millisecond must be outside the retry window"
+    );
+    assert!(
+        future.is_none(),
+        "a future revocation must not become retryable"
+    );
+}
+
+#[actix_web::test]
 async fn refresh_grant_rejects_lost_response_retry_without_exactly_one_active_successor() {
     let Some(state) = live_refresh_state(AuthorizationServerProfile::Oauth2Baseline) else {
         return;
