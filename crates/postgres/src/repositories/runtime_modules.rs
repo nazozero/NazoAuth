@@ -3,7 +3,7 @@ use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_identity::ports::RepositoryError;
 use nazo_runtime_modules::{
-    CasOutcome, DesiredMode, DesiredStateChange, DesiredStateRecord, InstanceStateChange,
+    CasOutcome, DesiredMode, DesiredStateChange, DesiredStateRecord, InstanceStateMutation,
     InstanceStateRecord, ModuleEventRecord, ModuleEventState, ModuleEventType, ModuleId,
     ModuleRevision, ModuleState, ModuleStateRepository,
 };
@@ -178,12 +178,14 @@ impl ModuleStateRepository for RuntimeModuleRepository {
 
     async fn compare_and_set_instance(
         &self,
-        change: InstanceStateChange,
+        mutation: InstanceStateMutation,
     ) -> Result<CasOutcome<InstanceStateRecord>, Self::Error> {
+        validate_instance_mutation(&mutation)?;
         let mut connection = self.connection().await?;
         connection
             .transaction::<CasOutcome<InstanceStateRecord>, RuntimeTransactionError, _>(
                 async |connection| {
+                    let change = mutation.change;
                     let key = format!(
                         "{}:{}",
                         change.next.instance_id,
@@ -206,6 +208,9 @@ impl ModuleStateRepository for RuntimeModuleRepository {
                     if current.as_ref().map(|record| record.transition_revision)
                         != change.expected_revision
                     {
+                        append_runtime_event(connection, &mutation.stale_event)
+                            .await
+                            .map_err(RuntimeTransactionError::Repository)?;
                         return Ok(CasOutcome::Stale { current });
                     }
                     if change
@@ -256,6 +261,9 @@ impl ModuleStateRepository for RuntimeModuleRepository {
                         .await?;
                         if updated != 1 {
                             let current = load_instance(connection, &change.next).await?;
+                            append_runtime_event(connection, &mutation.stale_event)
+                                .await
+                                .map_err(RuntimeTransactionError::Repository)?;
                             return Ok(CasOutcome::Stale { current });
                         }
                     } else {
@@ -279,21 +287,14 @@ impl ModuleStateRepository for RuntimeModuleRepository {
                             .execute(connection)
                             .await?;
                     }
+                    append_runtime_event(connection, &mutation.applied_event)
+                        .await
+                        .map_err(RuntimeTransactionError::Repository)?;
                     Ok(CasOutcome::Applied(change.next))
                 },
             )
             .await
             .map_err(RuntimeTransactionError::into_repository)
-    }
-
-    async fn append_event(&self, event: ModuleEventRecord) -> Result<(), Self::Error> {
-        if event.event_type == ModuleEventType::DesiredStateChanged {
-            return Err(RepositoryError::Consistency(
-                "desired-state events must be committed by desired-state CAS".to_owned(),
-            ));
-        }
-        let mut connection = self.connection().await?;
-        append_runtime_event(&mut connection, &event).await
     }
 
     async fn validate_revision(
@@ -306,6 +307,45 @@ impl ModuleStateRepository for RuntimeModuleRepository {
             .await?
             .is_some_and(|record| record.revision == expected))
     }
+}
+
+fn validate_instance_mutation(mutation: &InstanceStateMutation) -> Result<(), RepositoryError> {
+    let next = &mutation.change.next;
+    let applied = &mutation.applied_event;
+    let stale = &mutation.stale_event;
+    if !matches!(
+        applied.event_type,
+        ModuleEventType::TransitionStarted
+            | ModuleEventType::TransitionCompleted
+            | ModuleEventType::TransitionFailed
+            | ModuleEventType::DrainStarted
+            | ModuleEventType::DrainCompleted
+    ) {
+        return Err(RepositoryError::Consistency(
+            "actual-state mutation requires a transition or drain event".to_owned(),
+        ));
+    }
+    if stale.event_type != ModuleEventType::StaleTransitionDiscarded {
+        return Err(RepositoryError::Consistency(
+            "actual-state mutation requires a stale-transition event".to_owned(),
+        ));
+    }
+    for event in [applied, stale] {
+        if event.module_id != next.module_id
+            || event.instance_id.as_deref() != Some(next.instance_id.as_str())
+            || event.revision != next.transition_revision
+        {
+            return Err(RepositoryError::Consistency(
+                "actual-state event does not match its revision-bound mutation".to_owned(),
+            ));
+        }
+    }
+    if applied.after != Some(ModuleEventState::Actual(next.state)) {
+        return Err(RepositoryError::Consistency(
+            "applied actual-state event must describe the committed state".to_owned(),
+        ));
+    }
+    Ok(())
 }
 
 async fn load_instance(

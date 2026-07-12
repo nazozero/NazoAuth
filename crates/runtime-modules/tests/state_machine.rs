@@ -8,9 +8,10 @@ use std::time::{Duration, SystemTime};
 
 use nazo_runtime_modules::{
     ActiveModuleSnapshot, CasOutcome, DesiredMode, DesiredStateChange, DesiredStateRecord,
-    DisablePolicy, InstanceStateChange, InstanceStateRecord, ModuleEventRecord, ModuleEventState,
-    ModuleEventType, ModuleId, ModuleRevision, ModuleSpec, ModuleState, ModuleStateRepository,
-    SnapshotStore, StaleTransition, TransitionGuard, validate_module_specs,
+    DisablePolicy, InstanceStateChange, InstanceStateMutation, InstanceStateRecord,
+    ModuleEventRecord, ModuleEventState, ModuleEventType, ModuleId, ModuleRevision, ModuleSpec,
+    ModuleState, ModuleStateRepository, SnapshotStore, StaleTransition, TransitionGuard,
+    validate_module_specs,
 };
 
 fn complete_fixture_catalog() -> Vec<ModuleSpec> {
@@ -374,25 +375,19 @@ impl ModuleStateRepository for InMemoryRepository {
 
     async fn compare_and_set_instance(
         &self,
-        change: InstanceStateChange,
+        mutation: InstanceStateMutation,
     ) -> Result<CasOutcome<InstanceStateRecord>, Self::Error> {
         let mut state = self.state.lock().expect("state lock poisoned");
+        let change = mutation.change;
         let key = (change.next.instance_id.clone(), change.next.module_id);
         let current = state.instances.get(&key).cloned();
         if current.as_ref().map(|record| record.transition_revision) != change.expected_revision {
+            state.events.push(mutation.stale_event);
             return Ok(CasOutcome::Stale { current });
         }
         state.instances.insert(key, change.next.clone());
+        state.events.push(mutation.applied_event);
         Ok(CasOutcome::Applied(change.next))
-    }
-
-    async fn append_event(&self, event: ModuleEventRecord) -> Result<(), Self::Error> {
-        self.state
-            .lock()
-            .expect("state lock poisoned")
-            .events
-            .push(event);
-        Ok(())
     }
 
     async fn validate_revision(
@@ -431,6 +426,30 @@ fn instance_record(revision: u64, state: ModuleState) -> InstanceStateRecord {
         drain_deadline: None,
         error_code: None,
         updated_at: SystemTime::UNIX_EPOCH,
+    }
+}
+
+fn instance_mutation(
+    change: InstanceStateChange,
+    event_type: ModuleEventType,
+) -> InstanceStateMutation {
+    let event = |event_type| ModuleEventRecord {
+        event_id: format!("{event_type:?}-{}", change.next.transition_revision.get()),
+        module_id: change.next.module_id,
+        event_type,
+        revision: change.next.transition_revision,
+        instance_id: Some(change.next.instance_id.clone()),
+        actor_id: None,
+        reason: None,
+        before: Some(ModuleEventState::Actual(ModuleState::Disabled)),
+        after: Some(ModuleEventState::Actual(change.next.state)),
+        outcome_code: None,
+        occurred_at: change.next.updated_at,
+    };
+    InstanceStateMutation {
+        applied_event: event(event_type),
+        stale_event: event(ModuleEventType::StaleTransitionDiscarded),
+        change,
     }
 }
 
@@ -487,17 +506,23 @@ fn instance_cas_returns_current_on_revision_conflict() {
     let repository = InMemoryRepository::default();
     let starting = instance_record(3, ModuleState::Starting);
     assert_eq!(
-        block_on(repository.compare_and_set_instance(InstanceStateChange {
-            expected_revision: None,
-            next: starting.clone(),
-        })),
+        block_on(repository.compare_and_set_instance(instance_mutation(
+            InstanceStateChange {
+                expected_revision: None,
+                next: starting.clone(),
+            },
+            ModuleEventType::TransitionStarted,
+        ))),
         Ok(CasOutcome::Applied(starting.clone()))
     );
 
-    let stale = block_on(repository.compare_and_set_instance(InstanceStateChange {
-        expected_revision: Some(ModuleRevision::new(2)),
-        next: instance_record(4, ModuleState::Enabled),
-    }));
+    let stale = block_on(repository.compare_and_set_instance(instance_mutation(
+        InstanceStateChange {
+            expected_revision: Some(ModuleRevision::new(2)),
+            next: instance_record(4, ModuleState::Enabled),
+        },
+        ModuleEventType::TransitionCompleted,
+    )));
     assert_eq!(
         stale,
         Ok(CasOutcome::Stale {
@@ -507,6 +532,11 @@ fn instance_cas_returns_current_on_revision_conflict() {
     assert_eq!(
         block_on(repository.read_instance("instance-1", ModuleId::Scim)),
         Ok(Some(starting))
+    );
+    assert_eq!(repository.events().len(), 2);
+    assert_eq!(
+        repository.events()[1].event_type,
+        ModuleEventType::StaleTransitionDiscarded
     );
 }
 
@@ -527,26 +557,4 @@ fn durable_desired_revision_can_be_revalidated() {
         block_on(repository.validate_revision(ModuleId::Scim, ModuleRevision::new(8))),
         Ok(false)
     );
-}
-
-#[test]
-fn transition_events_can_be_appended_independently() {
-    let repository = InMemoryRepository::default();
-    let event = ModuleEventRecord {
-        event_id: "transition-7".to_owned(),
-        module_id: ModuleId::Scim,
-        event_type: ModuleEventType::TransitionStarted,
-        revision: ModuleRevision::new(7),
-        instance_id: Some("instance-1".to_owned()),
-        actor_id: None,
-        reason: None,
-        before: Some(ModuleEventState::Actual(ModuleState::Disabled)),
-        after: Some(ModuleEventState::Actual(ModuleState::Starting)),
-        outcome_code: None,
-        occurred_at: SystemTime::UNIX_EPOCH,
-    };
-
-    assert_eq!(block_on(repository.append_event(event.clone())), Ok(()));
-    assert_eq!(repository.events(), vec![event]);
-    assert_eq!(block_on(repository.read_desired(ModuleId::Scim)), Ok(None));
 }

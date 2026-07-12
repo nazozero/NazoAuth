@@ -1,12 +1,12 @@
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 use diesel::{QueryableByName, sql_query, sql_types::BigInt};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_postgres::{RuntimeModuleRepository, create_pool};
 use nazo_runtime_modules::{
     CasOutcome, DesiredMode, DesiredStateChange, DesiredStateRecord, InstanceStateChange,
-    InstanceStateRecord, ModuleEventRecord, ModuleEventState, ModuleEventType, ModuleId,
-    ModuleRevision, ModuleState, ModuleStateRepository,
+    InstanceStateMutation, InstanceStateRecord, ModuleEventRecord, ModuleEventState,
+    ModuleEventType, ModuleId, ModuleRevision, ModuleState, ModuleStateRepository,
 };
 use uuid::Uuid;
 
@@ -49,6 +49,45 @@ fn instance(
     }
 }
 
+fn instance_event(
+    event_id: Uuid,
+    instance: &InstanceStateRecord,
+    event_type: ModuleEventType,
+    before: Option<ModuleState>,
+) -> ModuleEventRecord {
+    ModuleEventRecord {
+        event_id: event_id.to_string(),
+        module_id: instance.module_id,
+        event_type,
+        revision: instance.transition_revision,
+        instance_id: Some(instance.instance_id.clone()),
+        actor_id: None,
+        reason: Some("runtime repository integration test".to_owned()),
+        before: before.map(ModuleEventState::Actual),
+        after: Some(ModuleEventState::Actual(instance.state)),
+        outcome_code: None,
+        occurred_at: instance.updated_at,
+    }
+}
+
+fn instance_mutation(
+    change: InstanceStateChange,
+    event_type: ModuleEventType,
+    stale_event_id: Uuid,
+) -> InstanceStateMutation {
+    let before = change.expected_revision.map(|_| ModuleState::Starting);
+    InstanceStateMutation {
+        applied_event: instance_event(Uuid::now_v7(), &change.next, event_type, before),
+        stale_event: instance_event(
+            stale_event_id,
+            &change.next,
+            ModuleEventType::StaleTransitionDiscarded,
+            before,
+        ),
+        change,
+    }
+}
+
 #[derive(QueryableByName)]
 struct EventCount {
     #[diesel(sql_type = BigInt)]
@@ -62,6 +101,22 @@ async fn event_count(connection: &mut AsyncPgConnection, module_id: &str) -> i64
         .await
         .expect("event count should load")
         .count
+}
+
+async fn event_type_count(
+    connection: &mut AsyncPgConnection,
+    module_id: &str,
+    event_type: &str,
+) -> i64 {
+    sql_query(
+        "SELECT COUNT(*) AS count FROM runtime_module_state_events WHERE module_id = $1 AND event_type = $2",
+    )
+    .bind::<diesel::sql_types::Text, _>(module_id)
+    .bind::<diesel::sql_types::Text, _>(event_type)
+    .get_result::<EventCount>(connection)
+    .await
+    .expect("event type count should load")
+    .count
 }
 
 async fn clear_module(database_url: &str, module_id: &str) {
@@ -156,30 +211,112 @@ async fn instance_completion_cannot_overwrite_a_newer_transition_revision() {
     let module_id = ModuleId::TokenExchange;
 
     repository
-        .compare_and_set_instance(InstanceStateChange {
-            expected_revision: None,
-            next: instance(&instance_id, module_id, ModuleState::Starting, 7),
-        })
+        .compare_and_set_instance(instance_mutation(
+            InstanceStateChange {
+                expected_revision: None,
+                next: instance(&instance_id, module_id, ModuleState::Starting, 7),
+            },
+            ModuleEventType::TransitionStarted,
+            Uuid::now_v7(),
+        ))
         .await
         .expect("initial instance state should persist");
     repository
-        .compare_and_set_instance(InstanceStateChange {
-            expected_revision: Some(ModuleRevision::new(7)),
-            next: instance(&instance_id, module_id, ModuleState::Starting, 8),
-        })
+        .compare_and_set_instance(instance_mutation(
+            InstanceStateChange {
+                expected_revision: Some(ModuleRevision::new(7)),
+                next: instance(&instance_id, module_id, ModuleState::Starting, 8),
+            },
+            ModuleEventType::TransitionStarted,
+            Uuid::now_v7(),
+        ))
         .await
         .expect("newer transition should persist");
 
     let stale = repository
-        .compare_and_set_instance(InstanceStateChange {
-            expected_revision: Some(ModuleRevision::new(7)),
-            next: instance(&instance_id, module_id, ModuleState::Enabled, 7),
-        })
+        .compare_and_set_instance(instance_mutation(
+            InstanceStateChange {
+                expected_revision: Some(ModuleRevision::new(7)),
+                next: instance(&instance_id, module_id, ModuleState::Enabled, 7),
+            },
+            ModuleEventType::TransitionCompleted,
+            Uuid::now_v7(),
+        ))
         .await
         .expect("stale completion should be a typed outcome");
     assert!(
         matches!(stale, CasOutcome::Stale { current: Some(record) } if record.transition_revision == ModuleRevision::new(8) && record.state == ModuleState::Starting)
     );
+    let mut connection = AsyncPgConnection::establish(&database_url)
+        .await
+        .expect("test database should connect");
+    assert_eq!(
+        event_type_count(&mut connection, "token_exchange", "transition_completed").await,
+        0,
+        "stale completion must not be audited as completed"
+    );
+    assert_eq!(
+        event_type_count(
+            &mut connection,
+            "token_exchange",
+            "stale_transition_discarded",
+        )
+        .await,
+        1
+    );
+}
+
+#[tokio::test]
+async fn instance_event_insert_failure_rolls_back_state_mutation() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .expect("migrations should apply");
+    clear_module(&database_url, "device_authorization").await;
+    let repository = RuntimeModuleRepository::new(create_pool(&database_url, 4).unwrap());
+    let instance_id = format!("runtime-test-{}", Uuid::now_v7());
+    let module_id = ModuleId::DeviceAuthorization;
+    let duplicate_event_id = Uuid::now_v7();
+    let initial = instance(&instance_id, module_id, ModuleState::Starting, 1);
+    let mut initial_mutation = instance_mutation(
+        InstanceStateChange {
+            expected_revision: None,
+            next: initial.clone(),
+        },
+        ModuleEventType::TransitionStarted,
+        Uuid::now_v7(),
+    );
+    initial_mutation.applied_event.event_id = duplicate_event_id.to_string();
+    repository
+        .compare_and_set_instance(initial_mutation)
+        .await
+        .expect("initial transition should commit");
+
+    let enabled = instance(&instance_id, module_id, ModuleState::Enabled, 1);
+    let mut completion = instance_mutation(
+        InstanceStateChange {
+            expected_revision: Some(ModuleRevision::new(1)),
+            next: enabled,
+        },
+        ModuleEventType::TransitionCompleted,
+        Uuid::now_v7(),
+    );
+    completion.applied_event.event_id = duplicate_event_id.to_string();
+    assert!(
+        repository
+            .compare_and_set_instance(completion)
+            .await
+            .is_err(),
+        "duplicate audit event must fail the atomic mutation"
+    );
+    let stored = repository
+        .read_instance(&instance_id, module_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.state, ModuleState::Starting);
 }
 
 #[tokio::test]
@@ -201,28 +338,72 @@ async fn audit_persistence_accepts_every_closed_event_kind() {
         .await
         .expect("desired event should persist atomically");
 
-    for (index, event_type) in ModuleEventType::ALL.into_iter().enumerate().skip(1) {
+    let instance_id = format!("runtime-audit-{}", Uuid::now_v7());
+    let transitions = [
+        (
+            None,
+            ModuleState::Starting,
+            1,
+            ModuleEventType::TransitionStarted,
+        ),
+        (
+            Some(ModuleRevision::new(1)),
+            ModuleState::Enabled,
+            1,
+            ModuleEventType::TransitionCompleted,
+        ),
+        (
+            Some(ModuleRevision::new(1)),
+            ModuleState::Draining,
+            2,
+            ModuleEventType::DrainStarted,
+        ),
+        (
+            Some(ModuleRevision::new(2)),
+            ModuleState::Disabled,
+            2,
+            ModuleEventType::DrainCompleted,
+        ),
+        (
+            Some(ModuleRevision::new(2)),
+            ModuleState::Starting,
+            3,
+            ModuleEventType::TransitionStarted,
+        ),
+        (
+            Some(ModuleRevision::new(3)),
+            ModuleState::Failed,
+            3,
+            ModuleEventType::TransitionFailed,
+        ),
+    ];
+    for (expected_revision, state, revision, event_type) in transitions {
         repository
-            .append_event(ModuleEventRecord {
-                event_id: Uuid::now_v7().to_string(),
-                module_id,
+            .compare_and_set_instance(instance_mutation(
+                InstanceStateChange {
+                    expected_revision,
+                    next: instance(&instance_id, module_id, state, revision),
+                },
                 event_type,
-                revision: ModuleRevision::new((index + 1) as u64),
-                instance_id: Some("runtime-audit-test".to_owned()),
-                actor_id: None,
-                reason: Some("closed event catalog test".to_owned()),
-                before: Some(ModuleEventState::Actual(ModuleState::Starting)),
-                after: Some(ModuleEventState::Actual(ModuleState::Enabled)),
-                outcome_code: Some("ok".to_owned()),
-                occurred_at: SystemTime::UNIX_EPOCH
-                    + Duration::from_secs(1_800_000_000 + index as u64),
-            })
+                Uuid::now_v7(),
+            ))
             .await
-            .expect("closed event kind should persist");
+            .expect("transition event should persist atomically");
     }
+    repository
+        .compare_and_set_instance(instance_mutation(
+            InstanceStateChange {
+                expected_revision: Some(ModuleRevision::new(2)),
+                next: instance(&instance_id, module_id, ModuleState::Enabled, 2),
+            },
+            ModuleEventType::TransitionCompleted,
+            Uuid::now_v7(),
+        ))
+        .await
+        .expect("stale transition event should persist atomically");
 
     let mut connection = AsyncPgConnection::establish(&database_url)
         .await
         .expect("test database should connect");
-    assert_eq!(event_count(&mut connection, "jwt_bearer_grant").await, 7);
+    assert_eq!(event_count(&mut connection, "jwt_bearer_grant").await, 8);
 }
