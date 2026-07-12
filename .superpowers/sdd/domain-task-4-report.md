@@ -1,11 +1,12 @@
-# Domain Task 4 Report — Remediation A Follow-up
+# Domain Task 4 Report — Remediation B Completion
 
-Domain Task 4 is **not complete**. This report records the implemented
-Remediation A follow-up; Remediation B and independent re-review remain required
-before Task 4 may be called complete. `nazo-postgres` is the production owner of identity
-PostgreSQL schema, private persistence records, conversions, and repository
-queries. Server production source no longer defines or directly queries the
-`users`, MFA, passkey, or external-identity tables.
+Domain Task 4 is **complete for its identity and access-request scope**.
+`nazo-postgres` owns identity/access-request PostgreSQL schema, private
+persistence records, conversions, repositories, and the atomic access-request
+approval transaction. Server production source no longer defines or directly
+queries identity or `client_access_requests` persistence. The auth-owned admin
+grant repository remains explicitly bound to Task 5; access requests no longer
+depend on `GrantProjection` or `GrantPage`.
 
 ## Commits
 
@@ -32,6 +33,10 @@ queries. Server production source no longer defines or directly queries the
 - PostgreSQL integration CI gates: `44d19ec`
 - Deterministic no-email social callback completion test: `41eac28`
 - Isolated refresh-family fixtures: `1a68e15`
+- Remediation B password verifier boundary: `6faff27`
+- Remediation B focused identity projections: `1225ca0`
+- Remediation B access-request ownership: `db19755`
+- Strict lint follow-up: `51e1a1d`
 
 No commit was pushed and no PR or deployment was created.
 
@@ -40,9 +45,16 @@ No commit was pushed and no PR or deployment was created.
 - `nazo-postgres` owns the pool, embedded migration constructor, private Diesel
   schema, private persistence records, record-to-domain conversions, and
   concrete user/MFA/passkey/federation/SCIM repositories.
-- The domain-facing user model is `IdentityUser`, grouped into validated
-  `Principal`, `LoginIdentity`, and `UserProfile` values. The migration did not
-  introduce a flat copy of the former `UserRow` or a forwarding facade.
+- The catch-all `IdentityUser` API is deleted. Password authentication loads
+  `AuthenticationIdentity`, composed from `Principal`, `LoginIdentity`,
+  `AccountIdentity`, and `PasswordHash`. Session/profile/admin/SCIM callers load
+  the password-free `PublicAccount`; OIDC userinfo and ID-token paths load
+  `Principal` plus `SubjectClaims` directly. Focused Diesel selections prevent
+  public-account and claims reads from retrieving `password_hash`.
+- `PasswordHash` owns a private string, rejects blank persisted values, has a
+  redacted custom `Debug`, implements neither `Serialize` nor `Deserialize`,
+  and exposes verifier bytes only through `expose_for_verification()`. The
+  exposure occurs inside the bounded blocking password verifier.
 - Server registration, profile, avatar, admin-user, session, token, MFA
   enrollment/verification, passkey, federation, and SCIM callers consume
   repository/domain results instead of identity Diesel records.
@@ -76,11 +88,21 @@ No commit was pushed and no PR or deployment was created.
   conversion. Backup-code input and candidate scans share the explicit maximum
   of 10, enrollment unique violations map to `Conflict`, and focused joins bind
   user/client tenant IDs as defense in depth.
-- The remaining cross-auth joins used by access-request and admin-grant views
-  are implemented as `AccessRequestRepository` and `GrantRepository` focused
-  projections in `nazo-postgres`; they do not return Diesel row types. Refresh
-  token active-user validation uses `UserRepository` for both OpenID and
-  non-OpenID grants.
+- Access-request list/detail/create/cancel/reject/approve operations are
+  tenant-scoped `AccessRequestRepository` methods returning identity-domain
+  `AccessRequest` values, not adapter projections. Approval locks a pending
+  request, creates the OAuth client, and performs the tenant/status/actor CAS in
+  one PostgreSQL transaction. A losing concurrent approval rolls back its
+  client insert. `server/src/support/access_requests.rs` and server access
+  request row/status types are deleted.
+- Valkey delivery retains the compatible fail-closed ordering: the one-time
+  delivery record is written before the PostgreSQL approval transaction; a DB
+  failure or CAS loss compensates by deleting that request-specific key. A
+  delivery write failure does not call the repository and commits neither a
+  client nor an approval. This is explicitly a compensated cross-system flow,
+  not a distributed transaction.
+- `GrantRepository`, `GrantProjection`, `GrantPage`, and admin grant revoke are
+  auth-owned work deferred to Task 5. They are not used by access-request code.
 - `crates/server/src/schema.rs` contains no production identity table
   definitions, identity joinables, or identity allow-to-appear entries.
   Database-oriented in-source tests retain an explicitly `#[cfg(test)]`
@@ -103,6 +125,12 @@ The `http::admin::users` Rust module re-export is explicitly distinguished from
 the `users::` Diesel schema token. The contract first failed on the residual
 access-request joins, admin-grant join, refresh active-user lookup, and six
 production identity schema definitions. It passes after 4B2.
+
+Remediation B extends the contract to reject `client_access_requests::`,
+`UserAccessRequestRow`, `PendingAccessRequestRow`, and
+`AccessRequestProjection` in server production source. It also verifies that
+both handlers contain no Diesel token, the forwarding support file is absent,
+and fail-closed delivery precedes repository approval.
 
 ## Verification
 
@@ -127,9 +155,38 @@ production identity schema definitions. It passes after 4B2.
     PostgreSQL database; no test failures.
 - `rtk proxy cargo doc -p nazo-postgres --no-deps --all-features --locked`
   - exit 0.
-- `rg -n "UserRow|PasskeyCredentialRow|ExternalIdentityLinkRow|TotpCredentialRow|schema::|rows::|mod schema|mod rows" target/doc/nazo_postgres -g "*.html"`
-  - no matches; generated public documentation exposes neither private schema
-    nor persistence record names.
+- Public-item scan of `target/doc/nazo_postgres/all.html`
+  - no private schema module or persistence record is listed. The crate index
+    intentionally contains compile-fail examples naming private `schema` and
+    `rows` paths; those examples prove the paths are inaccessible and are not
+    API leaks.
+
+Remediation B verification:
+
+- Password-leak RED test first failed because derived `Debug` contained the
+  complete Argon2 verifier; after encapsulation, identity/postgres focused tests
+  passed and three identity compile-fail doctests proved the secret is not
+  serializable/deserializable.
+- `cargo test -p nazo-postgres --test access_requests --all-features --locked -- --nocapture`
+  - exit 0 against `127.0.0.1:15433/oauth`; 3 tests passed, covering
+    create/list/cancel, tenant and owner isolation, concurrent approve/reject
+    CAS, and losing-client rollback.
+- `cargo test -p nazo-oauth-server --lib access_requests::tests:: --all-features --locked -- --nocapture`
+  - exit 0 with real PostgreSQL and Valkey; 29 tests passed, including rollback
+    after client insert, duplicate transitions, and ACL-induced delivery write
+    failure with the request left pending and no client committed.
+- `cargo test -p nazo-identity -p nazo-postgres -p nazo-oauth-server --lib --all-features --locked`
+  - exit 0 with mandatory PostgreSQL configured and optional server live-service
+    variables unset; 1,660 tests passed.
+- `cargo test --workspace --all-features --locked`
+  - exit 0 with only `NAZO_TEST_DATABASE_URL` configured; 2,047 tests passed in
+    37 suites.
+- `cargo fmt --all -- --check`, workspace all-target/all-feature check, and
+  strict workspace Clippy with `-D warnings` all exited 0.
+- `cargo doc -p nazo-identity -p nazo-auth -p nazo-postgres --no-deps --all-features --locked`
+  and identity doctests exited 0. Public postgres docs expose no access-request
+  adapter projection or persistence record. The existing grant projections are
+  recorded above as Task 5 scope.
 
 Windows emitted the existing localized MSVC `linker stdout` warning while
 linking the server test binary; it did not fail compilation or tests.
