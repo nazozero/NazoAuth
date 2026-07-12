@@ -47,16 +47,18 @@ pub(crate) mod prelude {
 
     pub(crate) use crate::domain::{
         AppState, AuthorizationCodeState, ClientRow, CodePayload, ConsentPayload,
-        ConsumedAuthorizationCode, MyApplicationRow, NativeSsoTokenBinding,
-        PushedAuthorizationRequest, RefreshTokenPolicy, TokenIssue, TokenRow,
+        ConsumedAuthorizationCode, NativeSsoTokenBinding, PushedAuthorizationRequest,
+        RefreshTokenPolicy, TokenIssue, TokenRow,
     };
     #[cfg(test)]
     pub(crate) use crate::domain::{
         DatabaseExternalIdentityFixture, DatabasePasskeyFixture, DatabaseUserFixture,
     };
+    #[cfg(test)]
+    pub(crate) use crate::schema::oauth_clients;
     pub(crate) use crate::schema::{
-        access_token_revocations, backchannel_logout_deliveries, oauth_clients, oauth_tokens,
-        scim_audit_events, scim_tokens, user_client_grants,
+        access_token_revocations, backchannel_logout_deliveries, oauth_tokens, scim_audit_events,
+        scim_tokens, user_client_grants,
     };
     #[cfg(test)]
     pub(crate) use crate::schema::{

@@ -1,12 +1,12 @@
 use super::*;
 
 #[test]
-fn my_application_json_preserves_authorization_metadata_and_filters_bad_scope_values() {
+fn my_application_json_preserves_validated_authorization_metadata() {
     let now = Utc::now();
-    let value = my_application_json(MyApplicationRow {
+    let value = my_application_json(nazo_postgres::OAuthClientApplication {
         client_id: "client-1".to_owned(),
         client_name: "Example Client".to_owned(),
-        last_scopes: json!(["openid", "profile", 42, null, {"scope": "admin"}]),
+        last_scopes: vec!["openid".to_owned(), "profile".to_owned()],
         last_authorized_at: now,
         authorization_count: 3,
     });

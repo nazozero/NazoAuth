@@ -130,18 +130,3 @@ pub(crate) struct TokenRow {
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
     pub(crate) mtls_x5t_s256: Option<String>,
 }
-
-/// 当前用户已授权应用列表行。
-#[derive(Debug, Queryable, QueryableByName)]
-pub(crate) struct MyApplicationRow {
-    #[diesel(sql_type = diesel::sql_types::VarChar)]
-    pub(crate) client_id: String,
-    #[diesel(sql_type = diesel::sql_types::VarChar)]
-    pub(crate) client_name: String,
-    #[diesel(sql_type = diesel::sql_types::Jsonb)]
-    pub(crate) last_scopes: Value,
-    #[diesel(sql_type = diesel::sql_types::Timestamptz)]
-    pub(crate) last_authorized_at: DateTime<Utc>,
-    #[diesel(sql_type = diesel::sql_types::Int4)]
-    pub(crate) authorization_count: i32,
-}
