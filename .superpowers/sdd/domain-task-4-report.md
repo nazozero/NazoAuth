@@ -797,3 +797,49 @@ dependency was added.
 
 No production behavior, refresh implementation, frontend, push, deployment,
 PR, or review-package state was changed.
+
+## Refresh PostgreSQL fixed-window coverage correction (2026-07-13)
+
+The refresh remediation report previously overstated the live boundary
+coverage. Before this follow-up, the exact zero/60-second/60-second-plus-1-ms/
+future cases were asserted only by the pure
+`within_lost_refresh_token_retry_window` unit test. The real PostgreSQL tests
+called `lost_response_successor` for an approximate 35-second case, but did not
+hold one `now` value fixed while exercising the exact window boundaries.
+
+Commit `a14378e` (`test: exercise refresh retry window in postgres`) adds that
+missing coverage without changing production code. The test creates a unique
+schema and token family, uses the fixed timestamp
+`2026-07-13T12:00:00Z`, and calls the real `lost_response_successor` query four
+times on one PostgreSQL connection inside one transaction. It proves that
+zero seconds and exactly 60 seconds return the unique active successor, while
+60 seconds plus 1 millisecond and a 1-millisecond future revocation return
+none. The schema is dropped before result assertions; no sleep or wall-clock
+timing tolerance is involved.
+
+### TDD evidence
+
+- RED: with a temporary local boundary mutation from `<= 60 seconds` to
+  `< 60 seconds`, the new live test failed in 0.09 seconds at the exact
+  60-second assertion: PostgreSQL lookup returned `None` instead of the
+  inserted successor UUID. The test compiled, connected, created its fixture,
+  executed the query, and cleaned the schema before the assertion failed.
+- GREEN: after restoring the existing inclusive production expression, the
+  exact live test passed 1/1 in 0.08 seconds. The temporary mutation is not in
+  any commit or final diff.
+
+### Fresh verification
+
+- Real PostgreSQL exact fixed-window test — exit 0; 1/1 passed.
+- Real PostgreSQL focused refresh suite — exit 0; 37/37 passed.
+- `rtk cargo fmt --all -- --check` and `rtk git diff --check` — exit 0.
+- `rtk cargo check --workspace --all-targets --all-features --locked` — exit 0.
+- `rtk cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
+  — exit 0, no issues.
+- `rtk cargo test --workspace --all-features --locked` with the mandatory
+  isolated PostgreSQL URL and optional server live-service variables unset —
+  exit 0; 2,081 passed across 38 suites.
+- `rtk cargo doc --workspace --no-deps --all-features --locked` — exit 0.
+
+No production behavior, frontend, E2E assertion, push, deployment, or PR state
+was changed.
