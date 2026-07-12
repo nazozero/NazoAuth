@@ -18,14 +18,9 @@ use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{
-    ActiveSigningKey, ConsentPayload, Keyset, KeysetStore, PushedAuthorizationRequest,
-    VerificationKey,
-};
+use crate::domain::{ConsentPayload, PushedAuthorizationRequest};
 use crate::settings::AuthorizationServerProfile;
-use crate::support::{
-    generate_key_material, jwt_decoding_key_from_jwk, public_jwk_from_private_der,
-};
+use crate::support::jwt_decoding_key_from_jwk;
 
 fn unavailable_valkey_client() -> fred::prelude::Client {
     let mut builder = ValkeyBuilder::from_config(
@@ -65,33 +60,12 @@ fn endpoint_state(require_par: bool) -> AppState {
         .expect("pool construction should not connect"),
         valkey: unavailable_valkey_client(),
         settings: Arc::new(settings),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            verification_keys: Vec::new(),
-        }),
+        keyset: crate::test_support::test_key_manager(),
     }
 }
 
-fn local_signing_keyset() -> Keyset {
-    let kid = "test-rs256-kid";
-    let private_pkcs8_der = generate_key_material(jsonwebtoken::Algorithm::RS256)
-        .expect("test signing key should generate")
-        .private_pkcs8_der;
-    let public_jwk =
-        public_jwk_from_private_der(kid, jsonwebtoken::Algorithm::RS256, &private_pkcs8_der)
-            .expect("public JWK should derive from test signing key");
-    Keyset {
-        active_kid: kid.to_owned(),
-        active_alg: jsonwebtoken::Algorithm::RS256,
-        active_signing_key: ActiveSigningKey::LocalPkcs8Der(private_pkcs8_der),
-        verification_keys: vec![VerificationKey {
-            kid: kid.to_owned(),
-            public_jwk,
-            local_signing_key: None,
-        }],
-    }
+fn rs256_test_key_manager() -> nazo_key_management::KeyManager {
+    crate::test_support::test_key_manager_with_algorithm(jsonwebtoken::Algorithm::RS256)
 }
 
 async fn json_body(response: HttpResponse) -> (StatusCode, Value) {
@@ -153,12 +127,7 @@ impl LiveAuthorizationFixture {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
-                keyset: KeysetStore::new(Keyset {
-                    active_kid: "test-kid".to_owned(),
-                    active_alg: jsonwebtoken::Algorithm::EdDSA,
-                    active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-                    verification_keys: Vec::new(),
-                }),
+                keyset: crate::test_support::test_key_manager(),
             }),
         })
     }
@@ -1929,8 +1898,8 @@ async fn concurrent_pushed_authorization_request_consumption_allows_exactly_one_
 
 #[actix_web::test]
 async fn authorization_response_redirect_emits_signed_jarm_response() {
-    let state = endpoint_state(false);
-    state.keyset.replace(local_signing_keyset());
+    let mut state = endpoint_state(false);
+    state.keyset = rs256_test_key_manager();
     let state = Data::new(state);
 
     let response = authorization_response_redirect_with_protection(
@@ -1977,7 +1946,7 @@ async fn authorization_response_redirect_jarm_profile_signs_without_response_mod
         authorization_server_profile: AuthorizationServerProfile::Fapi2MessageSigningJarm,
         ..state.settings.as_ref().clone()
     });
-    state.keyset.replace(local_signing_keyset());
+    state.keyset = rs256_test_key_manager();
     let state = Data::new(state);
 
     let response = authorization_response_redirect_with_protection(
@@ -2018,8 +1987,8 @@ async fn authorization_response_redirect_jarm_profile_signs_without_response_mod
 
 #[actix_web::test]
 async fn authorization_response_redirect_signs_then_encrypts_jarm_for_client_policy() {
-    let state = endpoint_state(false);
-    state.keyset.replace(local_signing_keyset());
+    let mut state = endpoint_state(false);
+    state.keyset = rs256_test_key_manager();
     let state = Data::new(state);
     let (private_key, public_jwk) = rsa_jarm_jwe_keypair("jarm-enc");
     let (wrong_private_key, _) = rsa_jarm_jwe_keypair("wrong-jarm-enc");
@@ -2071,8 +2040,8 @@ async fn authorization_response_redirect_signs_then_encrypts_jarm_for_client_pol
 
 #[actix_web::test]
 async fn authorization_response_crypto_failure_never_falls_back_to_plain_query() {
-    let state = endpoint_state(false);
-    state.keyset.replace(local_signing_keyset());
+    let mut state = endpoint_state(false);
+    state.keyset = rs256_test_key_manager();
     let state = Data::new(state);
     for protection in [
         AuthorizationResponseProtection {

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::db::create_pool;
-use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
+
 use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, PasskeySettings,
     RateLimitSettings, RequestObjectJtiPolicy, SubjectType,
@@ -192,12 +192,7 @@ fn client_credentials_state() -> AppState {
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings(AuthorizationServerProfile::Oauth2Baseline)),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            verification_keys: Vec::new(),
-        }),
+        keyset: crate::test_support::test_key_manager(),
     }
 }
 
@@ -350,6 +345,7 @@ async fn token_client_credentials_binds_mtls_thumbprint_from_verified_certificat
     settings.trusted_proxy_cidrs =
         vec![IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse")];
     state.settings = Arc::new(settings);
+    state.keyset = crate::test_support::failing_key_manager();
     let state = Data::new(state);
     let mut client = client();
     client.require_mtls_bound_tokens = true;

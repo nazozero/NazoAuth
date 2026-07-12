@@ -1,7 +1,7 @@
 use super::*;
 use crate::config::ConfigSource;
 use crate::db::create_pool;
-use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
+
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
@@ -90,12 +90,7 @@ async fn form_login_without_trusted_origin_is_rejected_before_backend_access() {
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(form_origin_settings()),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            verification_keys: Vec::new(),
-        }),
+        keyset: crate::test_support::test_key_manager(),
     };
     let req = login_request("application/x-www-form-urlencoded");
     let response = login(
@@ -266,12 +261,7 @@ fn form_login_next_uses_safe_referer_next_or_profile_fallback() {
             .build()
             .expect("valkey client construction should not connect"),
         settings: std::sync::Arc::new(settings),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            verification_keys: Vec::new(),
-        }),
+        keyset: crate::test_support::test_key_manager(),
     };
     let safe_referer = actix_web::test::TestRequest::default()
         .insert_header((
@@ -680,12 +670,7 @@ impl LiveLoginFixture {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
-                keyset: KeysetStore::new(Keyset {
-                    active_kid: "test-kid".to_owned(),
-                    active_alg: jsonwebtoken::Algorithm::EdDSA,
-                    active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-                    verification_keys: Vec::new(),
-                }),
+                keyset: crate::test_support::test_key_manager(),
             }),
         })
     }
@@ -787,12 +772,7 @@ impl LoginBadValkeyState {
                 diesel_db: create_pool(database_url, 1).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
-                keyset: KeysetStore::new(Keyset {
-                    active_kid: "test-kid".to_owned(),
-                    active_alg: jsonwebtoken::Algorithm::EdDSA,
-                    active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-                    verification_keys: Vec::new(),
-                }),
+                keyset: crate::test_support::test_key_manager(),
             },
         })
     }
@@ -841,12 +821,7 @@ impl LoginBadDatabaseState {
                 .expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
-                keyset: KeysetStore::new(Keyset {
-                    active_kid: "test-kid".to_owned(),
-                    active_alg: jsonwebtoken::Algorithm::EdDSA,
-                    active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-                    verification_keys: Vec::new(),
-                }),
+                keyset: crate::test_support::test_key_manager(),
             },
         })
     }

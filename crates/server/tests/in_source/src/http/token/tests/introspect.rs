@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{ActiveSigningKey, Keyset, KeysetStore, VerificationKey};
+
 use crate::support::{generate_key_material, hash_client_secret, public_jwk_from_private_der};
 use actix_web::test::TestRequest;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -33,19 +33,14 @@ fn introspection_state() -> Data<AppState> {
         settings: Arc::new(
             Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
         ),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            verification_keys: Vec::new(),
-        }),
+        keyset: crate::test_support::test_key_manager(),
     })
 }
 
 fn signed_introspection_offline_state() -> Data<AppState> {
     let key_material =
         generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
-    let public_jwk = public_jwk_from_private_der(
+    let _public_jwk = public_jwk_from_private_der(
         "introspect-offline-kid",
         jsonwebtoken::Algorithm::EdDSA,
         &key_material.private_pkcs8_der,
@@ -67,16 +62,7 @@ fn signed_introspection_offline_state() -> Data<AppState> {
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "introspect-offline-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),
-            verification_keys: vec![VerificationKey {
-                kid: "introspect-offline-kid".to_owned(),
-                public_jwk,
-                local_signing_key: None,
-            }],
-        }),
+        keyset: crate::test_support::test_key_manager(),
     })
 }
 
@@ -96,7 +82,7 @@ fn fixture_token(label: &str) -> String {
 fn live_introspection_state_from_database_url(database_url: String) -> Option<Data<AppState>> {
     let key_material =
         generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
-    let public_jwk = public_jwk_from_private_der(
+    let _public_jwk = public_jwk_from_private_der(
         "introspect-test-kid",
         jsonwebtoken::Algorithm::EdDSA,
         &key_material.private_pkcs8_der,
@@ -113,16 +99,7 @@ fn live_introspection_state_from_database_url(database_url: String) -> Option<Da
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "introspect-test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),
-            verification_keys: vec![VerificationKey {
-                kid: "introspect-test-kid".to_owned(),
-                public_jwk,
-                local_signing_key: None,
-            }],
-        }),
+        keyset: crate::test_support::test_key_manager(),
     }))
 }
 

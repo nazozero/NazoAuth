@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 
 use crate::config::ConfigSource;
 use crate::db::create_pool;
-use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
+
 use crate::settings::{OidcFederationSettings, SamlGatewaySettings};
 use crate::support::{generate_key_material, public_jwk_from_private_der, random_urlsafe_token};
 use actix_web::http::header;
@@ -90,12 +90,7 @@ fn oidc_callback_state() -> AppState {
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            verification_keys: Vec::new(),
-        }),
+        keyset: crate::test_support::test_key_manager(),
     }
 }
 
@@ -146,12 +141,7 @@ fn provider_list_state() -> AppState {
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "test-kid".to_owned(),
-            active_alg: Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            verification_keys: Vec::new(),
-        }),
+        keyset: crate::test_support::test_key_manager(),
     }
 }
 
@@ -185,12 +175,7 @@ async fn live_federation_state(
         .expect("pool construction should not connect"),
         valkey,
         settings: Arc::new(settings),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "test-kid".to_owned(),
-            active_alg: Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            verification_keys: Vec::new(),
-        }),
+        keyset: crate::test_support::test_key_manager(),
     })
 }
 
@@ -231,12 +216,7 @@ impl LiveFederationFixture {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
-                keyset: KeysetStore::new(Keyset {
-                    active_kid: "test-kid".to_owned(),
-                    active_alg: Algorithm::EdDSA,
-                    active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-                    verification_keys: Vec::new(),
-                }),
+                keyset: crate::test_support::test_key_manager(),
             }),
         })
     }

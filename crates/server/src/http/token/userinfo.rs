@@ -242,7 +242,14 @@ async fn userinfo_success_response(
             .ok_or_else(|| anyhow::anyhow!("UserInfo claims must be a JSON object"))?;
         object.insert("iss".to_owned(), json!(state.settings.issuer));
         object.insert("aud".to_owned(), json!(client.client_id));
-        let signed = sign_response_jwt(state, &claims, "JWT", Some(signing_alg)).await?;
+        let signed = sign_response_jwt(
+            state,
+            nazo_auth::SigningPurpose::IdToken,
+            &claims,
+            "JWT",
+            Some(signing_alg),
+        )
+        .await?;
         match encryption_key {
             Some(key) => encrypt_compact_jwe(&key, signed.as_bytes(), JwePayloadKind::NestedJwt)?,
             None => signed,

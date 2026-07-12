@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
+
 use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, RateLimitSettings,
     RequestObjectJtiPolicy, SubjectType,
@@ -335,12 +335,7 @@ impl LiveParFixture {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
-                keyset: KeysetStore::new(Keyset {
-                    active_kid: "test-kid".to_owned(),
-                    active_alg: jsonwebtoken::Algorithm::EdDSA,
-                    active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-                    verification_keys: Vec::new(),
-                }),
+                keyset: crate::test_support::test_key_manager(),
             }),
         })
     }
@@ -443,12 +438,7 @@ fn par_state_without_live_services() -> Data<AppState> {
         .expect("pool construction should not connect"),
         valkey: unavailable_valkey_client(50),
         settings: Arc::new(settings),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            verification_keys: Vec::new(),
-        }),
+        keyset: crate::test_support::test_key_manager(),
     })
 }
 

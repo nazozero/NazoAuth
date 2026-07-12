@@ -5,18 +5,9 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::domain::{ActiveSigningKey, ClientRow, HttpMessageSignature, Keyset};
+use crate::domain::ClientRow;
 
-use super::{jwt_decoding_key_from_jwk, sign_local_jwt_input};
-
-fn http_algorithm(algorithm: jsonwebtoken::Algorithm) -> anyhow::Result<&'static str> {
-    match algorithm {
-        jsonwebtoken::Algorithm::EdDSA => Ok("ed25519"),
-        jsonwebtoken::Algorithm::RS256 => Ok("rsa-v1_5-sha256"),
-        jsonwebtoken::Algorithm::ES256 => Ok("ecdsa-p256-sha256"),
-        _ => bail!("unsupported HTTP message signature algorithm"),
-    }
-}
+use super::jwt_decoding_key_from_jwk;
 
 fn jwt_algorithm(algorithm: &str) -> anyhow::Result<jsonwebtoken::Algorithm> {
     match algorithm {
@@ -73,42 +64,6 @@ fn unsigned_integer_bit_length(bytes: &[u8]) -> usize {
         return 0;
     };
     (bytes.len() - offset - 1) * 8 + (u8::BITS - first.leading_zeros()) as usize
-}
-
-impl Keyset {
-    pub(crate) async fn sign_http_message(
-        &self,
-        signing_input: &[u8],
-    ) -> anyhow::Result<HttpMessageSignature> {
-        let algorithm = http_algorithm(self.active_alg)?;
-        let signature = match &self.active_signing_key {
-            ActiveSigningKey::LocalPkcs8Der(private_pkcs8_der) => {
-                let encoded =
-                    sign_local_jwt_input(self.active_alg, private_pkcs8_der, signing_input)?;
-                URL_SAFE_NO_PAD
-                    .decode(encoded)
-                    .context("local signer returned invalid signature encoding")?
-            }
-            ActiveSigningKey::ExternalCommand(external) => {
-                let verification_key = self
-                    .verification_key(&self.active_kid)
-                    .context("active signing key has no public JWK")?;
-                super::keyset::sign_external_http_input(
-                    external,
-                    &self.active_kid,
-                    self.active_alg,
-                    signing_input,
-                    &verification_key.public_jwk,
-                )
-                .await?
-            }
-        };
-        Ok(HttpMessageSignature {
-            kid: self.active_kid.clone(),
-            algorithm,
-            signature,
-        })
-    }
 }
 
 pub(crate) fn verify_client_http_message(

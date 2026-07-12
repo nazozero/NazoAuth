@@ -8,12 +8,11 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
-    time::Duration as StdDuration,
 };
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{ActiveSigningKey, ExternalSigningKey, Keyset, KeysetStore, VerificationKey};
+
 use crate::settings::DpopNoncePolicy;
 use crate::support::{generate_key_material, public_jwk_from_private_der};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -61,24 +60,11 @@ fn fapi_test_state_with_settings(settings: Settings) -> AppState {
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            verification_keys: Vec::new(),
-        }),
+        keyset: crate::test_support::test_key_manager(),
     }
 }
 
 fn fapi_signing_state_with_invalid_db() -> Data<AppState> {
-    let key_material =
-        generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
-    let public_jwk = public_jwk_from_private_der(
-        "fapi-resource-test-kid",
-        jsonwebtoken::Algorithm::EdDSA,
-        &key_material.private_pkcs8_der,
-    )
-    .expect("test public JWK should derive");
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.issuer = "https://issuer.example".to_owned();
@@ -95,57 +81,13 @@ fn fapi_signing_state_with_invalid_db() -> Data<AppState> {
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "fapi-resource-test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),
-            verification_keys: vec![VerificationKey {
-                kid: "fapi-resource-test-kid".to_owned(),
-                public_jwk,
-                local_signing_key: None,
-            }],
-        }),
+        keyset: crate::test_support::test_key_manager(),
     })
 }
 
 fn fapi_external_signer_failure_state(stderr_secret: &str) -> Data<AppState> {
-    let material = generate_key_material(jsonwebtoken::Algorithm::EdDSA).unwrap();
-    let public_jwk = public_jwk_from_private_der(
-        "external-failure-kid",
-        jsonwebtoken::Algorithm::EdDSA,
-        &material.private_pkcs8_der,
-    )
-    .unwrap();
-    #[cfg(windows)]
-    let command = vec![
-        "pwsh".to_owned(),
-        "-NoLogo".to_owned(),
-        "-NoProfile".to_owned(),
-        "-NonInteractive".to_owned(),
-        "-Command".to_owned(),
-        format!("[Console]::Error.Write('{stderr_secret}'); exit 7"),
-    ];
-    #[cfg(unix)]
-    let command = vec![
-        "sh".to_owned(),
-        "-c".to_owned(),
-        format!("printf '%s' '{stderr_secret}' >&2; exit 7"),
-    ];
     let mut state = fapi_test_state();
-    state.keyset = KeysetStore::new(Keyset {
-        active_kid: "external-failure-kid".to_owned(),
-        active_alg: jsonwebtoken::Algorithm::EdDSA,
-        active_signing_key: ActiveSigningKey::ExternalCommand(ExternalSigningKey {
-            command: Arc::new(command),
-            key_ref: "test-external-failure".to_owned(),
-            timeout: StdDuration::from_secs(5),
-        }),
-        verification_keys: vec![VerificationKey {
-            kid: "external-failure-kid".to_owned(),
-            public_jwk,
-            local_signing_key: None,
-        }],
-    });
+    state.keyset = crate::test_support::external_failure_key_manager(stderr_secret);
     Data::new(state)
 }
 
@@ -183,14 +125,6 @@ fn live_fapi_signing_state() -> Option<Data<AppState>> {
 }
 
 fn live_fapi_signing_state_from_database_url(database_url: String) -> Option<Data<AppState>> {
-    let key_material =
-        generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
-    let public_jwk = public_jwk_from_private_der(
-        "fapi-resource-test-kid",
-        jsonwebtoken::Algorithm::EdDSA,
-        &key_material.private_pkcs8_der,
-    )
-    .expect("test public JWK should derive");
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.issuer = "https://issuer.example".to_owned();
@@ -203,16 +137,7 @@ fn live_fapi_signing_state_from_database_url(database_url: String) -> Option<Dat
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "fapi-resource-test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),
-            verification_keys: vec![VerificationKey {
-                kid: "fapi-resource-test-kid".to_owned(),
-                public_jwk,
-                local_signing_key: None,
-            }],
-        }),
+        keyset: crate::test_support::test_key_manager(),
     }))
 }
 
@@ -314,8 +239,9 @@ async fn signed_fapi_claims(state: &Data<AppState>, claims: Claims) -> String {
     let mut header = jsonwebtoken::Header::new(keyset.active_alg);
     header.typ = Some("at+jwt".to_owned());
     header.kid = Some(keyset.active_kid.clone());
-    keyset
-        .sign_jwt(&header, &claims)
+    state
+        .keyset
+        .encode_jwt(nazo_auth::SigningPurpose::AccessToken, &header, &claims)
         .await
         .expect("FAPI resource claims should sign")
 }
@@ -475,14 +401,36 @@ fn fapi_http_signature_client(public_jwk: Value) -> ClientRow {
 
 async fn signed_resource_request_fixture(
     body: &[u8],
-) -> (Keyset, ClientRow, HttpRequest, SignatureFields) {
+) -> (
+    nazo_key_management::KeyManager,
+    ClientRow,
+    HttpRequest,
+    SignatureFields,
+) {
     signed_resource_request_for_authorization(body, "Bearer opaque-access-token").await
+}
+
+fn client_http_signature(private_key: &[u8], signing_input: &[u8]) -> Vec<u8> {
+    let encoded = jsonwebtoken::crypto::sign(
+        signing_input,
+        &jsonwebtoken::EncodingKey::from_ed_der(private_key),
+        jsonwebtoken::Algorithm::EdDSA,
+    )
+    .expect("client request should sign");
+    URL_SAFE_NO_PAD
+        .decode(encoded)
+        .expect("signature should decode")
 }
 
 async fn signed_resource_request_for_authorization(
     body: &[u8],
     authorization: &str,
-) -> (Keyset, ClientRow, HttpRequest, SignatureFields) {
+) -> (
+    nazo_key_management::KeyManager,
+    ClientRow,
+    HttpRequest,
+    SignatureFields,
+) {
     let material =
         generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("client key generation");
     let kid = "resource-client-ed25519";
@@ -493,16 +441,6 @@ async fn signed_resource_request_for_authorization(
     )
     .expect("client public JWK");
     let client = fapi_http_signature_client(public_jwk.clone());
-    let keyset = Keyset {
-        active_kid: kid.to_owned(),
-        active_alg: jsonwebtoken::Algorithm::EdDSA,
-        active_signing_key: ActiveSigningKey::LocalPkcs8Der(material.private_pkcs8_der),
-        verification_keys: vec![VerificationKey {
-            kid: kid.to_owned(),
-            public_jwk,
-            local_signing_key: None,
-        }],
-    };
     let digest = (!body.is_empty()).then(|| nazo_http_signatures::content_digest(body));
     let mut headers = vec![("authorization", authorization)];
     if let Some(digest) = digest.as_deref() {
@@ -523,11 +461,8 @@ async fn signed_resource_request_for_authorization(
         },
     )
     .expect("request should prepare");
-    let detached = keyset
-        .sign_http_message(prepared.signature_base())
-        .await
-        .expect("request should sign");
-    let fields = prepared.finish(&detached.signature);
+    let detached = client_http_signature(&material.private_pkcs8_der, prepared.signature_base());
+    let fields = prepared.finish(&detached);
     let mut request = if body.is_empty() {
         actix_web::test::TestRequest::get()
     } else {
@@ -541,6 +476,7 @@ async fn signed_resource_request_for_authorization(
     if let Some(digest) = digest {
         request = request.insert_header(("content-digest", digest));
     }
+    let keyset = crate::test_support::test_key_manager();
     (keyset, client, request.to_http_request(), fields)
 }
 
@@ -559,16 +495,6 @@ async fn signed_resource_request_with_received_digest(
     )
     .unwrap();
     let client = fapi_http_signature_client(public_jwk.clone());
-    let keyset = Keyset {
-        active_kid: kid.to_owned(),
-        active_alg: jsonwebtoken::Algorithm::EdDSA,
-        active_signing_key: ActiveSigningKey::LocalPkcs8Der(material.private_pkcs8_der),
-        verification_keys: vec![VerificationKey {
-            kid: kid.to_owned(),
-            public_jwk,
-            local_signing_key: None,
-        }],
-    };
     let canonical = nazo_http_signatures::content_digest(body);
     let headers = [("authorization", authorization)];
     let prepared = prepare_request(
@@ -594,11 +520,8 @@ async fn signed_resource_request_with_received_digest(
     let modified_base = String::from_utf8(prepared.signature_base().to_vec())
         .unwrap()
         .replace(&canonical_line, &received_line);
-    let detached = keyset
-        .sign_http_message(modified_base.as_bytes())
-        .await
-        .unwrap();
-    let fields = prepared.finish(&detached.signature);
+    let detached = client_http_signature(&material.private_pkcs8_der, modified_base.as_bytes());
+    let fields = prepared.finish(&detached);
     let req = actix_web::test::TestRequest::post()
         .uri("/fapi/resource")
         .insert_header((header::AUTHORIZATION, authorization))
@@ -635,16 +558,6 @@ async fn enabled_request_with_signed_extras(
     )
     .unwrap();
     let client = fapi_http_signature_client(public_jwk.clone());
-    let keyset = Keyset {
-        active_kid: kid.to_owned(),
-        active_alg: jsonwebtoken::Algorithm::EdDSA,
-        active_signing_key: ActiveSigningKey::LocalPkcs8Der(material.private_pkcs8_der),
-        verification_keys: vec![VerificationKey {
-            kid: kid.to_owned(),
-            public_jwk,
-            local_signing_key: None,
-        }],
-    };
     let signed_headers = [
         ("authorization", authorization.as_str()),
         ("content-type", "application/json"),
@@ -665,11 +578,8 @@ async fn enabled_request_with_signed_extras(
         },
     )
     .unwrap();
-    let detached = keyset
-        .sign_http_message(prepared.signature_base())
-        .await
-        .unwrap();
-    let fields = prepared.finish(&detached.signature);
+    let detached = client_http_signature(&material.private_pkcs8_der, prepared.signature_base());
+    let fields = prepared.finish(&detached);
     let mut request = actix_web::test::TestRequest::get()
         .uri("/fapi/resource")
         .insert_header((header::AUTHORIZATION, authorization.as_str()))
@@ -1243,7 +1153,9 @@ async fn fapi_resource_http_signature_response_is_request_linked_and_verifiable(
 
 #[actix_web::test]
 async fn fapi_resource_http_signature_signer_failure_returns_empty_503() {
-    let state = Data::new(fapi_test_state());
+    let mut state = fapi_test_state();
+    state.keyset = crate::test_support::failing_key_manager();
+    let state = Data::new(state);
     let req = actix_web::test::TestRequest::get()
         .uri("/fapi/resource")
         .insert_header((header::AUTHORIZATION, "Bearer opaque-access-token"))
@@ -1272,7 +1184,9 @@ async fn fapi_resource_http_signature_logs_do_not_expose_request_or_response_sec
         .with_writer(move || writer.clone())
         .finish();
     let _guard = tracing::subscriber::set_default(subscriber);
-    let state = Data::new(fapi_test_state());
+    let mut state = fapi_test_state();
+    state.keyset = crate::test_support::failing_key_manager();
+    let state = Data::new(state);
     let request_body = Bytes::from_static(b"request-body-secret");
     let digest = nazo_http_signatures::content_digest(&request_body);
     let request_signature_input = "sig1=(\"@method\");created=1";
@@ -1697,24 +1611,6 @@ async fn fapi_resource_http_signature_endpoint_signs_store_failures_and_hides_si
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert!(response.headers().contains_key("signature"));
     assert_eq!(replay_store.calls(), (1, 1, 1, 0));
-
-    let (req, body, client) = enabled_endpoint_request(&state, "client-1", 300, b"").await;
-    let signer_store = FakeFapiResourceStore::accepting(client);
-    let current = state.keyset.snapshot();
-    state.keyset.replace(Keyset {
-        active_kid: current.active_kid.clone(),
-        active_alg: current.active_alg,
-        active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-        verification_keys: current.verification_keys.clone(),
-    });
-    let response = fapi_resource(state, with_fapi_store(req, signer_store), body).await;
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    assert!(
-        actix_web::body::to_bytes(response.into_body())
-            .await
-            .unwrap()
-            .is_empty()
-    );
 }
 
 #[actix_web::test]

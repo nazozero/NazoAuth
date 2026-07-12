@@ -46,6 +46,7 @@ lettre = { version = "0.11.22", default-features = false, features = ["builder",
 nazo-auth = { version = "0.1.0", path = "../auth" }
 nazo-http-signatures = { version = "0.1.0", path = "../http-signatures" }
 nazo-identity = { version = "0.1.0", path = "../identity" }
+nazo-key-management = { version = "0.1.0", path = "../key-management" }
 nazo-resource-server = { version = "0.1.0", path = "../resource-server" }
 openssl = "0.10.81"
 opentelemetry = "0.32.0"
@@ -70,6 +71,7 @@ yaml_serde = "0.10.4"
 
 [dev-dependencies]
 proptest = "1"
+nazo-key-management = { version = "0.1.0", path = "../key-management", features = ["test-support"] }
 
 [lints]
 workspace = true

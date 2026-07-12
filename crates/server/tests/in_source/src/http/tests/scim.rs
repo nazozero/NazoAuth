@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
 
 fn uuid_fixture(value: u128) -> Uuid {
     Uuid::from_u128(value)
@@ -26,12 +25,7 @@ fn test_state_with_scim_bearer_token(scim_bearer_token: Option<&str>) -> AppStat
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            verification_keys: Vec::new(),
-        }),
+        keyset: crate::test_support::test_key_manager(),
     }
 }
 
@@ -82,12 +76,7 @@ async fn live_state_for_database_url(
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            verification_keys: Vec::new(),
-        }),
+        keyset: crate::test_support::test_key_manager(),
     }))
 }
 

@@ -6,9 +6,9 @@ use nazo_auth::{
 };
 
 use super::{
-    keyset::reject_private_jwk_members,
     mtls::certificate_x5c_thumbprint,
     prelude::*,
+    reject_private_jwk_members,
     security::{
         SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
         SUPPORTED_CLIENT_JWT_SIGNING_ALGS, blake3_hex, client_jwt_algorithm_from_name,

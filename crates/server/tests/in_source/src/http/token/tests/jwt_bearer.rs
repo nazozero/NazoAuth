@@ -1,9 +1,5 @@
 use super::*;
-use crate::{
-    config::ConfigSource,
-    db::create_pool,
-    domain::{ActiveSigningKey, Keyset, KeysetStore},
-};
+use crate::{config::ConfigSource, db::create_pool};
 use actix_web::test::TestRequest;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use fred::{
@@ -119,12 +115,7 @@ fn jwt_bearer_state() -> AppState {
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(jwt_bearer_settings()),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "jwt-bearer-test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            verification_keys: Vec::new(),
-        }),
+        keyset: crate::test_support::test_key_manager(),
     }
 }
 

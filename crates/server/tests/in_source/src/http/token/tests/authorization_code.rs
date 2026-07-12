@@ -12,8 +12,8 @@ use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{ActiveSigningKey, Keyset, KeysetStore, UserRow, VerificationKey};
-use crate::support::{generate_key_material, oidc_subject, public_jwk_from_private_der};
+use crate::domain::UserRow;
+use crate::support::oidc_subject;
 
 fn unavailable_valkey_client() -> fred::prelude::Client {
     let mut builder = ValkeyBuilder::from_config(
@@ -44,12 +44,7 @@ fn test_state() -> AppState {
         settings: Arc::new(
             Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
         ),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            verification_keys: Vec::new(),
-        }),
+        keyset: crate::test_support::test_key_manager(),
     }
 }
 
@@ -140,16 +135,7 @@ struct LiveAuthorizationCodeFixture {
 impl LiveAuthorizationCodeFixture {
     async fn new() -> Option<Self> {
         let settings = Self::settings();
-        Self::new_with_settings_and_keyset(
-            settings,
-            Keyset {
-                active_kid: "test-kid".to_owned(),
-                active_alg: jsonwebtoken::Algorithm::EdDSA,
-                active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-                verification_keys: Vec::new(),
-            },
-        )
-        .await
+        Self::new_with_settings_and_keyset(settings, crate::test_support::test_key_manager()).await
     }
 
     fn settings() -> Settings {
@@ -171,7 +157,10 @@ impl LiveAuthorizationCodeFixture {
         settings
     }
 
-    async fn new_with_settings_and_keyset(settings: Settings, keyset: Keyset) -> Option<Self> {
+    async fn new_with_settings_and_keyset(
+        settings: Settings,
+        keyset: nazo_key_management::KeyManager,
+    ) -> Option<Self> {
         let database_url = std::env::var("DATABASE_URL").ok()?;
         let valkey_url = std::env::var("VALKEY_URL").ok()?;
         let mut valkey_builder = ValkeyBuilder::from_config(
@@ -193,7 +182,7 @@ impl LiveAuthorizationCodeFixture {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
-                keyset: KeysetStore::new(keyset),
+                keyset,
             }),
         })
     }
@@ -390,25 +379,8 @@ impl LiveAuthorizationCodeFixture {
     }
 }
 
-fn valid_keyset(kid: &str) -> Keyset {
-    let key_material =
-        generate_key_material(jsonwebtoken::Algorithm::RS256).expect("test key should generate");
-    let public_jwk = public_jwk_from_private_der(
-        kid,
-        jsonwebtoken::Algorithm::RS256,
-        &key_material.private_pkcs8_der,
-    )
-    .expect("test public JWK should derive");
-    Keyset {
-        active_kid: kid.to_owned(),
-        active_alg: jsonwebtoken::Algorithm::RS256,
-        active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),
-        verification_keys: vec![VerificationKey {
-            kid: kid.to_owned(),
-            public_jwk,
-            local_signing_key: None,
-        }],
-    }
+fn valid_keyset(_kid: &str) -> nazo_key_management::KeyManager {
+    crate::test_support::test_key_manager_with_algorithm(jsonwebtoken::Algorithm::RS256)
 }
 
 fn live_client(client_id: &str) -> ClientRow {

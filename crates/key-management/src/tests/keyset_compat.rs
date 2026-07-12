@@ -1,174 +1,12 @@
 use super::*;
-use proptest::prelude::*;
-use std::path::{Path, PathBuf};
-
-use crate::domain::KeysetStore;
-use crate::settings::{EmailDelivery, EmailSettings, RateLimitSettings};
-use crate::support::ClientIpHeaderMode;
-
-#[test]
-fn jwks_publishes_active_and_previous_verification_keys() {
-    let active_der = ed25519_pkcs8_private_der(&[1u8; 32]);
-    let previous_der = ed25519_pkcs8_private_der(&[2u8; 32]);
-    let keyset = Keyset {
-        active_kid: "active".to_owned(),
-        active_alg: jsonwebtoken::Algorithm::EdDSA,
-        active_signing_key: ActiveSigningKey::LocalPkcs8Der(active_der.clone()),
-        verification_keys: vec![
-            VerificationKey {
-                kid: "active".to_owned(),
-                public_jwk: public_jwk_from_private_der(
-                    "active",
-                    jsonwebtoken::Algorithm::EdDSA,
-                    &active_der,
-                )
-                .unwrap(),
-                local_signing_key: None,
-            },
-            VerificationKey {
-                kid: "previous".to_owned(),
-                public_jwk: public_jwk_from_private_der(
-                    "previous",
-                    jsonwebtoken::Algorithm::EdDSA,
-                    &previous_der,
-                )
-                .unwrap(),
-                local_signing_key: None,
-            },
-        ],
-    };
-
-    let jwks = keyset.jwks();
-    assert_eq!(jwks["keys"].as_array().unwrap().len(), 2);
-    assert!(keyset.verification_key("previous").is_some());
-}
-
-#[test]
-fn response_signing_capabilities_include_only_active_or_locally_signable_keys() {
-    let rs256 = generate_key_material(jsonwebtoken::Algorithm::RS256).unwrap();
-    let ps256 = generate_key_material(jsonwebtoken::Algorithm::PS256).unwrap();
-    let keyset = Keyset {
-        active_kid: "active-eddsa".to_owned(),
-        active_alg: jsonwebtoken::Algorithm::EdDSA,
-        active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-        verification_keys: vec![
-            VerificationKey {
-                kid: "local-rs256".to_owned(),
-                public_jwk: public_jwk_from_private_der(
-                    "local-rs256",
-                    jsonwebtoken::Algorithm::RS256,
-                    &rs256.private_pkcs8_der,
-                )
-                .unwrap(),
-                local_signing_key: Some(rs256.private_pkcs8_der.clone()),
-            },
-            VerificationKey {
-                kid: "public-only-ps256".to_owned(),
-                public_jwk: public_jwk_from_private_der(
-                    "public-only-ps256",
-                    jsonwebtoken::Algorithm::PS256,
-                    &ps256.private_pkcs8_der,
-                )
-                .unwrap(),
-                local_signing_key: None,
-            },
-        ],
-    };
-
-    assert_eq!(
-        keyset.response_signing_alg_values_supported(),
-        vec!["EdDSA", "RS256"]
-    );
-    let (kid, private_key) = keyset
-        .local_response_signing_key(jsonwebtoken::Algorithm::RS256)
-        .expect("locally signable auxiliary key should be selectable");
-    assert_eq!(kid, "local-rs256");
-    assert_eq!(private_key, rs256.private_pkcs8_der.as_slice());
-    assert!(
-        keyset
-            .local_response_signing_key(jsonwebtoken::Algorithm::PS256)
-            .is_none(),
-        "verification-only keys must not be advertised as signing capabilities"
-    );
-}
-
-#[test]
-fn keyset_store_replaces_runtime_signing_snapshot() {
-    let first = Keyset {
-        active_kid: "first".to_owned(),
-        active_alg: jsonwebtoken::Algorithm::EdDSA,
-        active_signing_key: ActiveSigningKey::LocalPkcs8Der(ed25519_pkcs8_private_der(&[1u8; 32])),
-        verification_keys: Vec::new(),
-    };
-    let second = Keyset {
-        active_kid: "second".to_owned(),
-        active_alg: jsonwebtoken::Algorithm::RS256,
-        active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-        verification_keys: Vec::new(),
-    };
-
-    let store = KeysetStore::new(first);
-    assert_eq!(store.snapshot().active_kid, "first");
-
-    store.replace(second);
-
-    let snapshot = store.snapshot();
-    assert_eq!(snapshot.active_kid, "second");
-    assert_eq!(snapshot.active_alg, jsonwebtoken::Algorithm::RS256);
-}
-
-#[test]
-fn retired_non_active_key_entries_are_detected() {
-    let retired = json!({"retire_at": "2000-01-01T00:00:00Z"});
-    let live = json!({"retire_at": "2999-01-01T00:00:00Z"});
-    let missing = json!({});
-
-    assert!(
-        key_entry_retire_at(&retired)
-            .unwrap()
-            .is_some_and(|retire_at| retire_at <= Utc::now())
-    );
-    assert!(
-        key_entry_retire_at(&live)
-            .unwrap()
-            .is_none_or(|retire_at| retire_at > Utc::now())
-    );
-    assert!(
-        key_entry_retire_at(&missing).unwrap().is_none(),
-        "missing retire_at should mean the key is still publishable"
-    );
-}
-
-proptest! {
-    #[test]
-    fn ed25519_pkcs8_seed_roundtrips_through_der(seed in any::<[u8; 32]>()) {
-        let der = ed25519_pkcs8_private_der(&seed);
-
-        prop_assert_eq!(ed25519_seed_from_pkcs8(&der), Some(seed));
-        prop_assert!(public_jwk_from_private_der(
-            "kid-1",
-            jsonwebtoken::Algorithm::EdDSA,
-            &der
-        ).is_ok());
-    }
-
-    #[test]
-    fn pem_der_roundtrip_preserves_key_material(seed in any::<[u8; 32]>()) {
-        let der = ed25519_pkcs8_private_der(&seed);
-        let pem = der_to_pem(&der, "PRIVATE KEY");
-        let decoded = pem_to_der(&pem);
-
-        prop_assert_eq!(decoded.as_deref(), Some(der.as_slice()));
-    }
-
-    #[test]
-    fn unsupported_keyset_algorithms_are_rejected(alg in "[A-Z0-9]{1,12}") {
-        prop_assume!(!matches!(alg.as_str(), "EdDSA" | "RS256" | "ES256" | "PS256"));
-        let entry = json!({"alg": alg});
-
-        prop_assert!(key_entry_algorithm(&entry).is_err());
-    }
-}
+use crate::model::{
+    ActiveSigningKey, KeyHandle, KeyManager, KeyState, LoadedKeyset, ManagedKey,
+    StoredVerificationKey, snapshot_from_loaded,
+};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 #[tokio::test]
 async fn missing_keyset_file_allows_initial_creation() {
@@ -206,8 +44,8 @@ async fn load_or_create_keyset_prepublishes_next_local_key_before_rotation_deadl
     let keys_dir = temp_keys_dir("automatic_prepublish");
     tokio::fs::create_dir_all(&keys_dir).await.unwrap();
     let mut settings = test_settings(keys_dir.clone());
-    settings.signing_key_rotation_interval_seconds = 10;
-    settings.signing_key_prepublish_seconds = 3;
+    settings.rotation_interval = chrono::Duration::seconds(10);
+    settings.prepublish_window = chrono::Duration::seconds(3);
     write_local_key_entry(
         &keys_dir,
         "active",
@@ -256,8 +94,8 @@ async fn load_or_create_keyset_records_missing_active_created_at_without_rotatin
     let keys_dir = temp_keys_dir("automatic_missing_created_at");
     tokio::fs::create_dir_all(&keys_dir).await.unwrap();
     let mut settings = test_settings(keys_dir.clone());
-    settings.signing_key_rotation_interval_seconds = 10;
-    settings.signing_key_prepublish_seconds = 3;
+    settings.rotation_interval = chrono::Duration::seconds(10);
+    settings.prepublish_window = chrono::Duration::seconds(3);
     write_local_key_entry(&keys_dir, "active", "RS256", "active.pem", Utc::now()).await;
     tokio::fs::write(
         keys_dir.join("keyset.json"),
@@ -294,8 +132,8 @@ async fn load_or_create_keyset_due_without_candidate_prepublishes_without_activa
     let keys_dir = temp_keys_dir("automatic_due_no_candidate");
     tokio::fs::create_dir_all(&keys_dir).await.unwrap();
     let mut settings = test_settings(keys_dir.clone());
-    settings.signing_key_rotation_interval_seconds = 10;
-    settings.signing_key_prepublish_seconds = 3;
+    settings.rotation_interval = chrono::Duration::seconds(10);
+    settings.prepublish_window = chrono::Duration::seconds(3);
     write_local_key_entry(
         &keys_dir,
         "active",
@@ -347,8 +185,8 @@ async fn load_or_create_keyset_activates_prepublished_key_after_window_and_grace
     let keys_dir = temp_keys_dir("automatic_activate");
     tokio::fs::create_dir_all(&keys_dir).await.unwrap();
     let mut settings = test_settings(keys_dir.clone());
-    settings.signing_key_rotation_interval_seconds = 10;
-    settings.signing_key_prepublish_seconds = 3;
+    settings.rotation_interval = chrono::Duration::seconds(10);
+    settings.prepublish_window = chrono::Duration::seconds(3);
     write_local_key_entry(
         &keys_dir,
         "active",
@@ -423,8 +261,8 @@ async fn load_or_create_keyset_activates_oldest_local_candidate_and_ignores_exte
     let keys_dir = temp_keys_dir("automatic_candidate_selection");
     tokio::fs::create_dir_all(&keys_dir).await.unwrap();
     let mut settings = test_settings(keys_dir.clone());
-    settings.signing_key_rotation_interval_seconds = 10;
-    settings.signing_key_prepublish_seconds = 3;
+    settings.rotation_interval = chrono::Duration::seconds(10);
+    settings.prepublish_window = chrono::Duration::seconds(3);
     write_local_key_entry(
         &keys_dir,
         "active",
@@ -520,8 +358,8 @@ async fn load_or_create_keyset_does_not_activate_fresh_prepublished_key() {
     let keys_dir = temp_keys_dir("automatic_fresh_candidate");
     tokio::fs::create_dir_all(&keys_dir).await.unwrap();
     let mut settings = test_settings(keys_dir.clone());
-    settings.signing_key_rotation_interval_seconds = 10;
-    settings.signing_key_prepublish_seconds = 3;
+    settings.rotation_interval = chrono::Duration::seconds(10);
+    settings.prepublish_window = chrono::Duration::seconds(3);
     write_local_key_entry(
         &keys_dir,
         "active",
@@ -678,7 +516,10 @@ async fn created_keyset_uses_oidc_mandatory_default_signing_alg() {
     assert!(keyset.active_kid.starts_with("rs256-"));
     assert_eq!(keyset.active_alg, jsonwebtoken::Algorithm::RS256);
     assert_eq!(payload["keys"][0]["alg"], "RS256");
-    assert_eq!(keyset.jwks()["keys"][0]["alg"], "RS256");
+    assert_eq!(
+        snapshot_from_loaded(&keyset).jwks()["keys"][0]["alg"],
+        "RS256"
+    );
 }
 
 #[tokio::test]
@@ -734,19 +575,19 @@ async fn load_or_create_keyset_backfills_oidc_default_rs256_signing_key() {
         "RS256 must be available for clients relying on the OpenID Connect default id_token alg"
     );
     assert!(
-        keyset.jwks()["keys"]
+        snapshot_from_loaded(&keyset).jwks()["keys"]
             .as_array()
             .unwrap()
             .iter()
             .any(|key| key["alg"] == "RS256")
     );
     assert_eq!(
-        keyset.response_signing_alg_values_supported(),
+        snapshot_from_loaded(&keyset).response_signing_alg_values_supported(),
         vec!["RS256", "PS256"]
     );
     assert!(
         keyset
-            .local_response_signing_key(jsonwebtoken::Algorithm::RS256)
+            .selected_key(SigningPurpose::IdToken, jsonwebtoken::Algorithm::RS256)
             .is_some(),
         "the backfilled RS256 private key must remain available in the loaded snapshot"
     );
@@ -1247,7 +1088,7 @@ async fn external_command_signer_produces_verifiable_jwt() {
     .await
     .unwrap();
     let mut settings = test_settings(keys_dir.clone());
-    settings.signing_external_command = signer_command;
+    settings.external_command = signer_command;
     let keyset_path = keys_dir.join("keyset.json");
     let keyset = try_load_keyset(&settings, &keyset_path)
         .await
@@ -1257,9 +1098,18 @@ async fn external_command_signer_produces_verifiable_jwt() {
     header.kid = Some("external-active".to_owned());
     let claims = json!({"sub": "subject-1", "exp": 4_102_444_800_i64});
 
-    let token = keyset.sign_jwt(&header, &claims).await.unwrap();
-    let decoding_key =
-        crate::support::jwt_decoding_key_from_jwk(&keyset.jwks()["keys"][0], header.alg).unwrap();
+    let manager = KeyManager::from_loaded(settings.clone(), keyset);
+    let token = manager
+        .encode_jwt(SigningPurpose::IdToken, &header, &claims)
+        .await
+        .unwrap();
+    let snapshot = manager.snapshot();
+    let public_jwk = &snapshot.jwks()["keys"][0];
+    let decoding_key = jsonwebtoken::DecodingKey::from_rsa_components(
+        public_jwk["n"].as_str().unwrap(),
+        public_jwk["e"].as_str().unwrap(),
+    )
+    .unwrap();
     let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::RS256);
     validation.validate_exp = false;
     let decoded = jsonwebtoken::decode::<Value>(&token, &decoding_key, &validation).unwrap();
@@ -1308,7 +1158,7 @@ async fn external_command_signer_signature_must_match_active_public_jwk() {
     .await
     .unwrap();
     let mut settings = test_settings(keys_dir.clone());
-    settings.signing_external_command = signer_command;
+    settings.external_command = signer_command;
     let keyset_path = keys_dir.join("keyset.json");
     let keyset = try_load_keyset(&settings, &keyset_path)
         .await
@@ -1318,12 +1168,15 @@ async fn external_command_signer_signature_must_match_active_public_jwk() {
     header.kid = Some("external-active".to_owned());
     let claims = json!({"sub": "subject-1", "exp": 4_102_444_800_i64});
 
-    let result = keyset.sign_jwt(&header, &claims).await;
+    let manager = KeyManager::from_loaded(settings.clone(), keyset);
+    let result = manager
+        .encode_jwt(SigningPurpose::IdToken, &header, &claims)
+        .await;
     let _ = tokio::fs::remove_dir_all(&keys_dir).await;
 
     match result {
         Ok(_) => panic!("external signer signature mismatch should fail"),
-        Err(error) => assert!(format!("{error}").contains("does not verify")),
+        Err(error) => assert!(format!("{error}").contains("signing operation failed")),
     }
 }
 
@@ -1347,23 +1200,100 @@ fn key_material_helpers_reject_unsupported_or_malformed_inputs() {
     );
 }
 
+fn in_memory_manager(algorithm: jsonwebtoken::Algorithm) -> KeyManager {
+    let kid = format!("http-{algorithm:?}");
+    let material = generate_key_material(algorithm).unwrap();
+    let public_jwk =
+        public_jwk_from_private_der(&kid, algorithm, &material.private_pkcs8_der).unwrap();
+    let loaded = LoadedKeyset {
+        active_kid: kid.clone(),
+        active_alg: algorithm,
+        active_signing_key: ActiveSigningKey::LocalPkcs8Der(material.private_pkcs8_der.clone()),
+        verification_keys: vec![StoredVerificationKey {
+            public_jwk,
+            managed: ManagedKey {
+                kid,
+                algorithm: signing_algorithm_name(algorithm).unwrap().to_owned(),
+                purposes: all_signing_purposes(),
+                state: KeyState::Active,
+                handle: KeyHandle::Local(material.private_pkcs8_der),
+            },
+        }],
+    };
+    KeyManager::from_loaded(test_settings(PathBuf::new()), loaded)
+}
+
+#[tokio::test]
+async fn detached_signing_maps_only_fapi_algorithms_and_verifies_raw_bytes() {
+    for (algorithm, http_name) in [
+        (jsonwebtoken::Algorithm::EdDSA, "ed25519"),
+        (jsonwebtoken::Algorithm::RS256, "rsa-v1_5-sha256"),
+        (jsonwebtoken::Algorithm::ES256, "ecdsa-p256-sha256"),
+    ] {
+        let manager = in_memory_manager(algorithm);
+        let signed = manager
+            .sign_http_message(b"exact signature base")
+            .await
+            .unwrap();
+        assert_eq!(signed.algorithm, http_name);
+        let public = &manager.snapshot().verification_keys[0].public_jwk;
+        let decoding_key = match algorithm {
+            jsonwebtoken::Algorithm::EdDSA => {
+                jsonwebtoken::DecodingKey::from_ed_components(public["x"].as_str().unwrap())
+                    .unwrap()
+            }
+            jsonwebtoken::Algorithm::RS256 => jsonwebtoken::DecodingKey::from_rsa_components(
+                public["n"].as_str().unwrap(),
+                public["e"].as_str().unwrap(),
+            )
+            .unwrap(),
+            jsonwebtoken::Algorithm::ES256 => jsonwebtoken::DecodingKey::from_ec_components(
+                public["x"].as_str().unwrap(),
+                public["y"].as_str().unwrap(),
+            )
+            .unwrap(),
+            _ => unreachable!(),
+        };
+        let encoded = URL_SAFE_NO_PAD.encode(&signed.signature);
+        assert!(
+            jsonwebtoken::crypto::verify(
+                &encoded,
+                b"exact signature base",
+                &decoding_key,
+                algorithm,
+            )
+            .unwrap()
+        );
+    }
+}
+
+#[tokio::test]
+async fn detached_signing_rejects_ps256_active_server_key() {
+    let error = in_memory_manager(jsonwebtoken::Algorithm::PS256)
+        .sign_http_message(b"input")
+        .await
+        .expect_err("PS256 is not an allowed HTTP message signature algorithm");
+    assert!(format!("{error:#}").contains("unsupported"));
+}
+
 #[tokio::test]
 async fn sign_jwt_requires_active_algorithm_and_kid() {
-    let active_der = ed25519_pkcs8_private_der(&[5u8; 32]);
-    let keyset = Keyset {
-        active_kid: "active".to_owned(),
-        active_alg: jsonwebtoken::Algorithm::EdDSA,
-        active_signing_key: ActiveSigningKey::LocalPkcs8Der(active_der),
-        verification_keys: Vec::new(),
-    };
-    let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
-    header.kid = Some("active".to_owned());
-
-    let error = keyset
-        .sign_jwt(&header, &json!({"sub": "subject-1"}))
+    let keys_dir = temp_keys_dir("active_algorithm_and_kid");
+    let manager = KeyManager::load_or_create(test_settings(keys_dir.clone()))
         .await
-        .expect_err("JWT signing must reject headers that do not match the active key");
+        .unwrap();
+    let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
+    header.kid = Some("wrong-kid".to_owned());
 
+    let error = manager
+        .encode_jwt(
+            SigningPurpose::IdToken,
+            &header,
+            &json!({"sub":"subject-1"}),
+        )
+        .await
+        .expect_err("JWT signing must reject headers that do not match an eligible key");
+    let _ = tokio::fs::remove_dir_all(keys_dir).await;
     assert!(matches!(
         error.kind(),
         jsonwebtoken::errors::ErrorKind::InvalidAlgorithm
@@ -1372,20 +1302,22 @@ async fn sign_jwt_requires_active_algorithm_and_kid() {
 
 #[tokio::test]
 async fn local_signing_rejects_algorithms_outside_server_allowlist() {
-    let keyset = Keyset {
-        active_kid: "active".to_owned(),
-        active_alg: jsonwebtoken::Algorithm::HS256,
-        active_signing_key: ActiveSigningKey::LocalPkcs8Der(vec![1, 2, 3]),
-        verification_keys: Vec::new(),
-    };
+    let keys_dir = temp_keys_dir("symmetric_algorithm");
+    let manager = KeyManager::load_or_create(test_settings(keys_dir.clone()))
+        .await
+        .unwrap();
     let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256);
-    header.kid = Some("active".to_owned());
+    header.kid = Some(manager.snapshot().active_kid.clone());
 
-    let error = keyset
-        .sign_jwt(&header, &json!({"sub": "subject-1"}))
+    let error = manager
+        .encode_jwt(
+            SigningPurpose::IdToken,
+            &header,
+            &json!({"sub":"subject-1"}),
+        )
         .await
         .expect_err("local JWT signing must reject symmetric algorithms");
-
+    let _ = tokio::fs::remove_dir_all(keys_dir).await;
     assert!(matches!(
         error.kind(),
         jsonwebtoken::errors::ErrorKind::InvalidAlgorithm
@@ -1478,89 +1410,13 @@ fn timestamp(value: DateTime<Utc>) -> String {
     value.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
-fn test_settings(jwk_keys_dir: PathBuf) -> Settings {
-    Settings {
-        issuer: "https://issuer.example".to_owned(),
-        mtls_endpoint_base_url: "https://issuer.example".to_owned(),
-        frontend_base_url: "https://frontend.example".to_owned(),
-        cors_allowed_origins: vec!["https://frontend.example".to_owned()],
-        default_audience: "resource://default".to_owned(),
-        protected_resource_identifier: "https://issuer.example/fapi/resource".to_owned(),
-        authorization_server_profile: crate::settings::AuthorizationServerProfile::Oauth2Baseline,
-        ciba_security_profile:
-            crate::settings::CibaSecurityProfile::FapiCibaId1PlainPrivateKeyJwtPoll,
-        dpop_nonce_policy: crate::settings::DpopNoncePolicy::Required,
-        request_object_jti_policy: crate::settings::RequestObjectJtiPolicy::Optional,
-        session_cookie_name: "session".to_owned(),
-        csrf_cookie_name: "csrf".to_owned(),
-        cookie_secure: true,
-        session_ttl_seconds: 28_800,
-        auth_code_ttl_seconds: 300,
-        access_token_ttl_seconds: 300,
-        id_token_ttl_seconds: 600,
-        refresh_token_ttl_seconds: 2_592_000,
-        avatar_max_bytes: 2_097_152,
-        client_delivery_ttl_seconds: 86_400,
-        client_secret_pepper: "client-secret-pepper-for-tests-000000000001".to_owned(),
-        rate_limit: RateLimitSettings {
-            window_seconds: 60,
-            auth_max_requests: 30,
-            token_max_requests: 60,
-            token_management_max_requests: 120,
-            login_failure_window_seconds: 900,
-            login_failure_email_max_attempts: 50,
-            login_failure_ip_email_max_attempts: 5,
-        },
-        email: EmailSettings {
-            delivery: EmailDelivery::Disabled,
-            code_ttl_seconds: 900,
-            send_cooldown_seconds: 60,
-            send_peer_cooldown_seconds: 5,
-        },
-        email_code_dev_response_enabled: false,
-        avatar_storage_dir: jwk_keys_dir.join("avatars"),
-        jwk_keys_dir,
-        signing_external_command: Vec::new(),
-        signing_external_timeout_ms: 2_000,
-        signing_key_rotation_interval_seconds: 7_776_000,
-        signing_key_prepublish_seconds: 86_400,
-        trusted_proxy_cidrs: Vec::new(),
-        client_ip_header_mode: ClientIpHeaderMode::None,
-        subject_type: crate::settings::SubjectType::Public,
-        pairwise_subject_secret: None,
-        par_ttl_seconds: 90,
-        require_pushed_authorization_requests: false,
-        scim_bearer_token: None,
-        passkey: crate::settings::PasskeySettings {
-            rp_id: "issuer.example".to_owned(),
-            rp_name: "Nazo OAuth".to_owned(),
-            origin: "https://issuer.example".to_owned(),
-            require_user_verification: true,
-            require_user_handle: true,
-            strict_base64: true,
-        },
-        federation: crate::settings::FederationSettings {
-            providers: crate::settings::FederationProviderRegistry::default(),
-            saml_gateway: None,
-        },
-        enable_request_object: false,
-        enable_request_uri_parameter: false,
-        enable_par_request_object: false,
-        enable_authorization_details: false,
-        enable_legacy_audience_param: false,
-        enable_device_authorization_grant: false,
-        enable_dynamic_client_registration: false,
-        enable_frontchannel_logout: false,
-        enable_session_management: false,
-        enable_ciba: false,
-        enable_native_sso: false,
-        enable_fapi_http_signatures: false,
-        fapi_http_signature_max_age_seconds: 60,
-        dynamic_client_registration_initial_access_token: None,
-        device_authorization_ttl_seconds: 600,
-        device_authorization_poll_interval_seconds: 5,
-        ciba_auth_req_id_ttl_seconds: 600,
-        ciba_poll_interval_seconds: 5,
-        ciba_automated_decision_token: None,
+fn test_settings(keys_dir: PathBuf) -> KeySettings {
+    KeySettings {
+        keys_dir,
+        external_command: Vec::new(),
+        external_timeout: Duration::from_millis(2_000),
+        rotation_interval: chrono::Duration::seconds(7_776_000),
+        prepublish_window: chrono::Duration::seconds(86_400),
+        verification_grace: chrono::Duration::seconds(600),
     }
 }

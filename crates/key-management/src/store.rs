@@ -1,29 +1,37 @@
 //! JWT JWK/PEM 密钥管理。
 // 负责加载、生成和编码 OAuth/OIDC 签名密钥。
 
+use std::collections::BTreeSet;
 use std::io::ErrorKind;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
 
 use anyhow::{Context, anyhow};
+use base64::{
+    Engine,
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
+};
 use chrono::DateTime;
+use chrono::Utc;
+use ed25519_dalek::SigningKey;
 use jsonwebtoken::jwk::{Jwk, PublicKeyUse};
+use nazo_auth::SigningPurpose;
 use openssl::rsa::Rsa;
 use p256::elliptic_curve::{Generate, pkcs8::EncodePrivateKey as EncodeEcPrivateKey};
 
-use super::prelude::*;
+use serde_json::{Value, json};
+use uuid::Uuid;
 
-mod external;
-
-pub(super) use external::sign_external_http_input;
-use external::{jwt_provider_error, sign_external_jwt_input};
+use crate::model::{
+    ActiveSigningKey, ExternalSigningKey, KeyHandle, KeySettings, KeyState, LoadedKeyset,
+    ManagedKey, StoredVerificationKey,
+};
 
 const OIDC_DEFAULT_ID_TOKEN_SIGNING_ALG: jsonwebtoken::Algorithm = jsonwebtoken::Algorithm::RS256;
 
-pub(crate) async fn load_or_create_keyset(settings: &Settings) -> anyhow::Result<Keyset> {
-    tokio::fs::create_dir_all(&settings.jwk_keys_dir).await?;
-    let keyset_path = settings.jwk_keys_dir.join("keyset.json");
+pub(crate) async fn load_or_create_keyset(settings: &KeySettings) -> anyhow::Result<LoadedKeyset> {
+    tokio::fs::create_dir_all(&settings.keys_dir).await?;
+    let keyset_path = settings.keys_dir.join("keyset.json");
     if try_load_keyset(settings, &keyset_path).await?.is_some() {
         maintain_keyset_lifecycle(settings, &keyset_path).await?;
         if let Some(keyset) = try_load_keyset(settings, &keyset_path).await? {
@@ -35,7 +43,10 @@ pub(crate) async fn load_or_create_keyset(settings: &Settings) -> anyhow::Result
     }
 }
 
-async fn maintain_keyset_lifecycle(settings: &Settings, keyset_path: &Path) -> anyhow::Result<()> {
+pub(crate) async fn maintain_keyset_lifecycle(
+    settings: &KeySettings,
+    keyset_path: &Path,
+) -> anyhow::Result<()> {
     let raw = tokio::fs::read_to_string(keyset_path)
         .await
         .with_context(|| format!("failed to read {}", keyset_path.display()))?;
@@ -74,9 +85,8 @@ async fn maintain_keyset_lifecycle(settings: &Settings, keyset_path: &Path) -> a
             .ok_or_else(|| anyhow!("active key created_at could not be determined"))?;
         let current_active_alg = key_entry_algorithm(&keys[active_index])?;
         let active_backend = key_entry_backend(&keys[active_index]).to_owned();
-        let rotation_interval =
-            chrono::Duration::seconds(settings.signing_key_rotation_interval_seconds);
-        let prepublish_window = chrono::Duration::seconds(settings.signing_key_prepublish_seconds);
+        let rotation_interval = settings.rotation_interval;
+        let prepublish_window = settings.prepublish_window;
         let rotation_due_at = active_created_at + rotation_interval;
         let prepublish_due_at = rotation_due_at - prepublish_window;
         let candidate_index =
@@ -138,7 +148,7 @@ async fn maintain_keyset_lifecycle(settings: &Settings, keyset_path: &Path) -> a
 }
 
 fn find_prepublished_candidate(
-    settings: &Settings,
+    settings: &KeySettings,
     keys: &[Value],
     active_kid: &str,
     active_alg: jsonwebtoken::Algorithm,
@@ -153,7 +163,7 @@ fn find_prepublished_candidate(
             continue;
         }
         let backend = key_entry_backend(entry);
-        if backend == "external-command" && settings.signing_external_command.is_empty() {
+        if backend == "external-command" && settings.external_command.is_empty() {
             continue;
         }
         if backend != "local-pem" && backend != "external-command" {
@@ -194,7 +204,7 @@ fn has_live_local_key_for_alg(
 }
 
 async fn create_prepublished_local_key_entry(
-    settings: &Settings,
+    settings: &KeySettings,
     alg: jsonwebtoken::Algorithm,
     now: DateTime<Utc>,
 ) -> anyhow::Result<Value> {
@@ -204,7 +214,7 @@ async fn create_prepublished_local_key_entry(
     let kid = format!("{}-{}", alg_name.to_ascii_lowercase(), Uuid::now_v7());
     let file_name = format!("{kid}.pem");
     let pem = der_to_pem(&private_pkcs8_der, "PRIVATE KEY");
-    write_private_key_pem_atomic(&settings.jwk_keys_dir.join(&file_name), &pem).await?;
+    write_private_key_pem_atomic(&settings.keys_dir.join(&file_name), &pem).await?;
     Ok(json!({
         "kid": kid,
         "alg": alg_name,
@@ -215,19 +225,13 @@ async fn create_prepublished_local_key_entry(
 }
 
 fn activate_prepublished_key(
-    settings: &Settings,
+    settings: &KeySettings,
     keys: &mut [Value],
     previous_active_kid: &str,
     next_kid: &str,
     now: DateTime<Utc>,
 ) {
-    let retire_at = timestamp(
-        now + chrono::Duration::seconds(
-            settings
-                .access_token_ttl_seconds
-                .max(settings.id_token_ttl_seconds),
-        ),
-    );
+    let retire_at = timestamp(now + settings.verification_grace);
     for entry in keys {
         if entry.get("kid").and_then(Value::as_str) == Some(previous_active_kid) {
             entry["retire_at"] = json!(retire_at);
@@ -242,9 +246,9 @@ fn timestamp(value: DateTime<Utc>) -> String {
 }
 
 pub(crate) async fn try_load_keyset(
-    settings: &Settings,
-    keyset_path: &PathBuf,
-) -> anyhow::Result<Option<Keyset>> {
+    settings: &KeySettings,
+    keyset_path: &Path,
+) -> anyhow::Result<Option<LoadedKeyset>> {
     let raw = match tokio::fs::read_to_string(keyset_path).await {
         Ok(raw) => raw,
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
@@ -291,13 +295,13 @@ pub(crate) async fn try_load_keyset(
         let alg = key_entry_algorithm(entry)
             .with_context(|| format!("keyset entry {kid} has unsupported alg"))?;
         let backend = key_entry_backend(entry);
-        let (public_jwk, signing_key) = match backend {
+        let (public_jwk, signing_key, handle) = match backend {
             "local-pem" => {
                 let file_name = entry
                     .get("file")
                     .and_then(Value::as_str)
                     .ok_or_else(|| anyhow!("keyset entry {kid} missing file"))?;
-                let raw_key = tokio::fs::read_to_string(settings.jwk_keys_dir.join(file_name))
+                let raw_key = tokio::fs::read_to_string(settings.keys_dir.join(file_name))
                     .await
                     .with_context(|| {
                         format!("failed to read keyset entry {kid} from {file_name}")
@@ -308,7 +312,11 @@ pub(crate) async fn try_load_keyset(
                     public_jwk_from_private_der(kid, alg, &der).with_context(|| {
                         format!("keyset entry {kid} private key does not match alg")
                     })?;
-                (public_jwk, Some(ActiveSigningKey::LocalPkcs8Der(der)))
+                (
+                    public_jwk,
+                    Some(ActiveSigningKey::LocalPkcs8Der(der.clone())),
+                    KeyHandle::Local(der),
+                )
             }
             "external-command" => {
                 let public_jwk = external_public_jwk(entry)
@@ -320,39 +328,60 @@ pub(crate) async fn try_load_keyset(
                     .filter(|value| !value.is_empty())
                     .ok_or_else(|| anyhow!("keyset entry {kid} missing key_ref"))?;
                 let signing_key = if is_active {
-                    if settings.signing_external_command.is_empty() {
+                    if settings.external_command.is_empty() {
                         anyhow::bail!(
                             "SIGNING_EXTERNAL_COMMAND is required for active external-command key {kid}"
                         );
                     }
                     Some(ActiveSigningKey::ExternalCommand(ExternalSigningKey {
-                        command: Arc::new(settings.signing_external_command.clone()),
+                        command: Arc::new(settings.external_command.clone()),
                         key_ref: key_ref.to_owned(),
-                        timeout: Duration::from_millis(settings.signing_external_timeout_ms),
+                        timeout: settings.external_timeout,
                     }))
                 } else {
                     None
                 };
-                (public_jwk, signing_key)
+                (
+                    public_jwk,
+                    signing_key,
+                    KeyHandle::External {
+                        key_ref: key_ref.to_owned(),
+                    },
+                )
             }
             _ => anyhow::bail!("keyset entry {kid} has unsupported backend {backend}"),
-        };
-        let local_signing_key = match &signing_key {
-            Some(ActiveSigningKey::LocalPkcs8Der(der)) => Some(der.clone()),
-            _ => None,
         };
         if is_active {
             active_signing_key = signing_key;
             active_alg = Some(alg);
         }
-        verification_keys.push(VerificationKey {
-            kid: kid.to_owned(),
+        verification_keys.push(StoredVerificationKey {
             public_jwk,
-            local_signing_key,
+            managed: ManagedKey {
+                kid: kid.to_owned(),
+                algorithm: signing_algorithm_name(alg).unwrap().to_owned(),
+                purposes: if is_active {
+                    all_signing_purposes()
+                } else if retire_at.is_none() {
+                    [SigningPurpose::IdToken, SigningPurpose::Jarm]
+                        .into_iter()
+                        .collect()
+                } else {
+                    BTreeSet::new()
+                },
+                state: if is_active {
+                    KeyState::Active
+                } else if retire_at.is_some() {
+                    KeyState::Grace
+                } else {
+                    KeyState::Active
+                },
+                handle,
+            },
         });
     }
 
-    Ok(Some(Keyset {
+    Ok(Some(LoadedKeyset {
         active_kid: active_kid.to_owned(),
         active_alg: active_alg
             .ok_or_else(|| anyhow!("keyset.json active_kid does not reference a live key"))?,
@@ -362,13 +391,13 @@ pub(crate) async fn try_load_keyset(
     }))
 }
 
-pub(crate) async fn create_new_keyset(settings: &Settings) -> anyhow::Result<Keyset> {
+pub(crate) async fn create_new_keyset(settings: &KeySettings) -> anyhow::Result<LoadedKeyset> {
     let generated = generate_key_material(jsonwebtoken::Algorithm::RS256)?;
     let private_pkcs8_der = generated.private_pkcs8_der;
     let kid = format!("rs256-{}", Uuid::now_v7());
     let file_name = format!("{kid}.pem");
     let pem = der_to_pem(&private_pkcs8_der, "PRIVATE KEY");
-    write_private_key_pem_atomic(&settings.jwk_keys_dir.join(&file_name), &pem).await?;
+    write_private_key_pem_atomic(&settings.keys_dir.join(&file_name), &pem).await?;
     let now = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     let payload = json!({
         "active_kid": kid,
@@ -380,22 +409,121 @@ pub(crate) async fn create_new_keyset(settings: &Settings) -> anyhow::Result<Key
             "retire_at": null
         }]
     });
-    write_json_atomic(&settings.jwk_keys_dir.join("keyset.json"), &payload).await?;
+    write_json_atomic(&settings.keys_dir.join("keyset.json"), &payload).await?;
     let public_jwk =
         public_jwk_from_private_der(&kid, jsonwebtoken::Algorithm::RS256, &private_pkcs8_der)?;
-    Ok(Keyset {
+    Ok(LoadedKeyset {
         active_kid: kid.clone(),
         active_alg: jsonwebtoken::Algorithm::RS256,
         active_signing_key: ActiveSigningKey::LocalPkcs8Der(private_pkcs8_der.clone()),
-        verification_keys: vec![VerificationKey {
-            kid,
+        verification_keys: vec![StoredVerificationKey {
             public_jwk,
-            local_signing_key: Some(private_pkcs8_der),
+            managed: ManagedKey {
+                kid,
+                algorithm: "RS256".to_owned(),
+                purposes: all_signing_purposes(),
+                state: KeyState::Active,
+                handle: KeyHandle::Local(private_pkcs8_der),
+            },
         }],
     })
 }
 
-pub(crate) async fn write_json_atomic(path: &Path, value: &Value) -> anyhow::Result<()> {
+fn all_signing_purposes() -> BTreeSet<SigningPurpose> {
+    [
+        SigningPurpose::AccessToken,
+        SigningPurpose::IdToken,
+        SigningPurpose::Jarm,
+        SigningPurpose::LogoutToken,
+        SigningPurpose::HttpMessage,
+    ]
+    .into_iter()
+    .collect()
+}
+
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    fn settings(keys_dir: PathBuf) -> KeySettings {
+        KeySettings {
+            keys_dir,
+            external_command: Vec::new(),
+            external_timeout: std::time::Duration::from_secs(2),
+            rotation_interval: chrono::Duration::seconds(3_600),
+            prepublish_window: chrono::Duration::seconds(1_800),
+            verification_grace: chrono::Duration::seconds(600),
+        }
+    }
+
+    #[tokio::test]
+    async fn atomic_json_write_leaves_only_complete_target() {
+        let directory = std::env::temp_dir().join(format!("nazo-key-atomic-{}", Uuid::now_v7()));
+        let path = directory.join("keyset.json");
+        write_json_atomic(&path, &json!({"active_kid":"new","keys":[]}))
+            .await
+            .expect("atomic write should succeed");
+
+        let parsed: Value =
+            serde_json::from_slice(&tokio::fs::read(&path).await.expect("target should exist"))
+                .expect("target must contain complete JSON");
+        assert_eq!(parsed["active_kid"], "new");
+        let files = std::fs::read_dir(&directory)
+            .expect("directory should exist")
+            .map(|entry| entry.expect("entry should be readable").file_name())
+            .collect::<Vec<_>>();
+        assert_eq!(files, vec![std::ffi::OsString::from("keyset.json")]);
+        tokio::fs::remove_dir_all(directory)
+            .await
+            .expect("cleanup should succeed");
+    }
+
+    #[tokio::test]
+    async fn lifecycle_prepublishes_then_activates_with_grace() {
+        let directory = std::env::temp_dir().join(format!("nazo-key-lifecycle-{}", Uuid::now_v7()));
+        let settings = settings(directory.clone());
+        create_new_keyset(&settings)
+            .await
+            .expect("initial keyset should be created");
+        let path = directory.join("keyset.json");
+        let mut payload: Value =
+            serde_json::from_slice(&tokio::fs::read(&path).await.unwrap()).unwrap();
+        let original_kid = payload["active_kid"].as_str().unwrap().to_owned();
+        payload["keys"][0]["created_at"] =
+            json!(timestamp(Utc::now() - chrono::Duration::seconds(2_000)));
+        write_json_atomic(&path, &payload).await.unwrap();
+
+        maintain_keyset_lifecycle(&settings, &path).await.unwrap();
+        let mut payload: Value =
+            serde_json::from_slice(&tokio::fs::read(&path).await.unwrap()).unwrap();
+        assert_eq!(payload["active_kid"], original_kid);
+        assert_eq!(payload["keys"].as_array().unwrap().len(), 2);
+        payload["keys"][0]["created_at"] =
+            json!(timestamp(Utc::now() - chrono::Duration::seconds(4_000)));
+        payload["keys"][1]["created_at"] =
+            json!(timestamp(Utc::now() - chrono::Duration::seconds(2_000)));
+        let candidate_kid = payload["keys"][1]["kid"].as_str().unwrap().to_owned();
+        write_json_atomic(&path, &payload).await.unwrap();
+
+        maintain_keyset_lifecycle(&settings, &path).await.unwrap();
+        let payload: Value =
+            serde_json::from_slice(&tokio::fs::read(&path).await.unwrap()).unwrap();
+        assert_eq!(payload["active_kid"], candidate_kid);
+        let previous = payload["keys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["kid"] == original_kid)
+            .unwrap();
+        assert!(previous["retire_at"].as_str().is_some());
+        tokio::fs::remove_dir_all(directory).await.unwrap();
+    }
+}
+
+pub async fn write_json_atomic(path: &Path, value: &Value) -> anyhow::Result<()> {
     let body = serde_json::to_string_pretty(value)?;
     write_file_atomic(path, body.as_bytes()).await
 }
@@ -519,7 +647,7 @@ fn public_jwk_from_encoding_key(
     Ok(serde_json::to_value(jwk)?)
 }
 
-pub(crate) fn signing_algorithm_name(alg: jsonwebtoken::Algorithm) -> Option<&'static str> {
+pub fn signing_algorithm_name(alg: jsonwebtoken::Algorithm) -> Option<&'static str> {
     match alg {
         jsonwebtoken::Algorithm::EdDSA => Some("EdDSA"),
         jsonwebtoken::Algorithm::RS256 => Some("RS256"),
@@ -529,7 +657,7 @@ pub(crate) fn signing_algorithm_name(alg: jsonwebtoken::Algorithm) -> Option<&'s
     }
 }
 
-pub(crate) fn signing_algorithm_from_name(value: &str) -> Option<jsonwebtoken::Algorithm> {
+pub fn signing_algorithm_from_name(value: &str) -> Option<jsonwebtoken::Algorithm> {
     match value {
         "EdDSA" => Some(jsonwebtoken::Algorithm::EdDSA),
         "RS256" => Some(jsonwebtoken::Algorithm::RS256),
@@ -555,9 +683,7 @@ fn key_entry_backend(entry: &Value) -> &str {
         .unwrap_or("local-pem")
 }
 
-pub(crate) fn reject_private_jwk_members(
-    jwk: &serde_json::Map<String, Value>,
-) -> anyhow::Result<()> {
+pub fn reject_private_jwk_members(jwk: &serde_json::Map<String, Value>) -> anyhow::Result<()> {
     const PRIVATE_JWK_MEMBERS: &[&str] = &["d", "p", "q", "dp", "dq", "qi", "oth", "k"];
     if let Some(member) = PRIVATE_JWK_MEMBERS
         .iter()
@@ -675,101 +801,6 @@ pub(crate) fn pem_to_der(pem: &str) -> Option<Vec<u8>> {
     STANDARD.decode(body).ok()
 }
 
-impl Keyset {
-    pub(crate) fn response_signing_alg_values_supported(&self) -> Vec<&'static str> {
-        const ORDERED_ALGORITHMS: [jsonwebtoken::Algorithm; 4] = [
-            jsonwebtoken::Algorithm::EdDSA,
-            jsonwebtoken::Algorithm::RS256,
-            jsonwebtoken::Algorithm::ES256,
-            jsonwebtoken::Algorithm::PS256,
-        ];
-
-        ORDERED_ALGORITHMS
-            .into_iter()
-            .filter(|algorithm| {
-                *algorithm == self.active_alg
-                    || self.local_response_signing_key(*algorithm).is_some()
-            })
-            .filter_map(super::signing_algorithm_name)
-            .collect()
-    }
-
-    pub(crate) fn local_response_signing_key(
-        &self,
-        algorithm: jsonwebtoken::Algorithm,
-    ) -> Option<(&str, &[u8])> {
-        let algorithm_name = super::signing_algorithm_name(algorithm)?;
-        self.verification_keys.iter().find_map(|key| {
-            let private_key = key.local_signing_key.as_deref()?;
-            (key.public_jwk.get("alg").and_then(Value::as_str) == Some(algorithm_name))
-                .then_some((key.kid.as_str(), private_key))
-        })
-    }
-
-    pub(crate) fn jwks(&self) -> Value {
-        let keys = self
-            .verification_keys
-            .iter()
-            .map(|key| key.public_jwk.clone())
-            .collect::<Vec<_>>();
-        json!({
-            "keys": keys
-        })
-    }
-
-    pub(crate) fn verification_key(&self, kid: &str) -> Option<&VerificationKey> {
-        self.verification_keys.iter().find(|key| key.kid == kid)
-    }
-
-    pub(crate) async fn sign_jwt<T: Serialize>(
-        &self,
-        header: &jsonwebtoken::Header,
-        claims: &T,
-    ) -> jsonwebtoken::errors::Result<String> {
-        if header.alg != self.active_alg || header.kid.as_deref() != Some(&self.active_kid) {
-            return Err(jsonwebtoken::errors::ErrorKind::InvalidAlgorithm.into());
-        }
-        let encoded_header = URL_SAFE_NO_PAD.encode(serde_json::to_vec(header)?);
-        let encoded_claims = URL_SAFE_NO_PAD.encode(serde_json::to_vec(claims)?);
-        let signing_input = format!("{encoded_header}.{encoded_claims}");
-        let signature = match &self.active_signing_key {
-            ActiveSigningKey::LocalPkcs8Der(private_pkcs8_der) => {
-                sign_local_jwt_input(self.active_alg, private_pkcs8_der, signing_input.as_bytes())?
-            }
-            ActiveSigningKey::ExternalCommand(external) => {
-                let verification_key = self
-                    .verification_key(&self.active_kid)
-                    .ok_or_else(|| jwt_provider_error("active signing key has no public JWK"))?;
-                sign_external_jwt_input(
-                    external,
-                    &self.active_kid,
-                    self.active_alg,
-                    signing_input.as_str(),
-                    &verification_key.public_jwk,
-                )
-                .await?
-            }
-        };
-        Ok(format!("{signing_input}.{signature}"))
-    }
-}
-
-pub(crate) fn sign_local_jwt_input(
-    alg: jsonwebtoken::Algorithm,
-    private_pkcs8_der: &[u8],
-    signing_input: &[u8],
-) -> jsonwebtoken::errors::Result<String> {
-    let key = match alg {
-        jsonwebtoken::Algorithm::EdDSA => jsonwebtoken::EncodingKey::from_ed_der(private_pkcs8_der),
-        jsonwebtoken::Algorithm::RS256 | jsonwebtoken::Algorithm::PS256 => {
-            jsonwebtoken::EncodingKey::from_rsa_der(private_pkcs8_der)
-        }
-        jsonwebtoken::Algorithm::ES256 => jsonwebtoken::EncodingKey::from_ec_der(private_pkcs8_der),
-        _ => return Err(jsonwebtoken::errors::ErrorKind::InvalidAlgorithm.into()),
-    };
-    jsonwebtoken::crypto::sign(signing_input, &key, alg)
-}
-
 #[cfg(test)]
-#[path = "../../tests/in_source/src/support/tests/keyset.rs"]
-mod tests;
+#[path = "tests/keyset_compat.rs"]
+mod compatibility_tests;

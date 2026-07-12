@@ -10,7 +10,7 @@ use crate::config::ConfigSource;
 use crate::settings::Settings;
 use crate::support::{
     reject_private_jwk_members, signing_algorithm_from_name, signing_algorithm_name,
-    try_load_keyset, write_json_atomic,
+    write_json_atomic,
 };
 
 pub async fn run(args: impl IntoIterator<Item = String>) -> anyhow::Result<()> {
@@ -117,12 +117,7 @@ async fn register_external_key(
 }
 
 async fn validate_keyset(settings: &Settings) -> anyhow::Result<()> {
-    if try_load_keyset(settings, &keyset_path(settings))
-        .await?
-        .is_none()
-    {
-        bail!("keyset.json does not exist");
-    }
+    nazo_key_management::KeyManager::validate(&settings.key_settings()).await?;
     println!("ok");
     Ok(())
 }

@@ -282,7 +282,10 @@ async fn signed_introspection_response(
         "iat": Utc::now().timestamp(),
         "token_introspection": body
     });
-    let token = keyset.sign_jwt(&header, &claims).await?;
+    let token = state
+        .keyset
+        .encode_jwt(nazo_auth::SigningPurpose::AccessToken, &header, &claims)
+        .await?;
     let token = match introspection_encryption_key(resource_server)? {
         Some(key) => encrypt_compact_jwe(&key, token.as_bytes(), JwePayloadKind::NestedJwt)?,
         None => token,

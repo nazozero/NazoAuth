@@ -24,12 +24,12 @@ use fred::{
 
 use crate::config::{ConfigSource, database_max_connections, database_url};
 use crate::db::create_pool;
-use crate::domain::{AppState, KeysetStore};
+use crate::domain::AppState;
 use crate::http::spawn_backchannel_logout_delivery_worker;
 use crate::settings::Settings;
 use crate::support::{
     configure_password_hash_limits, default_password_hash_max_concurrency,
-    default_password_hash_queue_timeout_ms, initialize_dummy_password_hash, load_or_create_keyset,
+    default_password_hash_queue_timeout_ms, initialize_dummy_password_hash,
 };
 use tracing::Instrument;
 
@@ -78,8 +78,8 @@ pub async fn run() -> anyhow::Result<()> {
     tokio::fs::create_dir_all(&settings.avatar_storage_dir)
         .await
         .ok();
-    let keyset = KeysetStore::new(load_or_create_keyset(&settings).await?);
-    spawn_keyset_lifecycle_task(settings.clone(), keyset.clone());
+    let keyset = nazo_key_management::KeyManager::load_or_create(settings.key_settings()).await?;
+    tokio::spawn(keyset.clone().run_lifecycle());
 
     let state = web::Data::new(AppState {
         diesel_db,
@@ -132,35 +132,6 @@ pub async fn run() -> anyhow::Result<()> {
     .run()
     .await?;
     Ok(())
-}
-
-fn spawn_keyset_lifecycle_task(settings: Arc<Settings>, keyset: KeysetStore) {
-    let interval = signing_key_refresh_interval(&settings);
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(interval).await;
-            match load_or_create_keyset(&settings).await {
-                Ok(next) => keyset.replace(next),
-                Err(error) => terminate_after_keyset_refresh_failure(error),
-            }
-        }
-    });
-}
-
-fn terminate_after_keyset_refresh_failure(error: anyhow::Error) -> ! {
-    tracing::error!(
-        error = %error,
-        "signing key lifecycle refresh failed; terminating process"
-    );
-    #[cfg(test)]
-    panic!("signing key lifecycle refresh failed: {error:#}");
-    #[cfg(not(test))]
-    std::process::abort();
-}
-
-fn signing_key_refresh_interval(settings: &Settings) -> Duration {
-    let seconds = (settings.signing_key_prepublish_seconds / 2).clamp(1, 3_600);
-    Duration::from_secs(seconds as u64)
 }
 
 async fn security_headers<B>(

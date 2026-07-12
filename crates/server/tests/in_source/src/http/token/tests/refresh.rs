@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{ActiveSigningKey, Keyset, KeysetStore, VerificationKey};
+
 use crate::support::{generate_key_material, public_jwk_from_private_der};
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Jsonb, Nullable, Text, Timestamptz, Uuid as SqlUuid};
@@ -33,12 +33,7 @@ fn test_state() -> AppState {
         settings: Arc::new(
             Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
         ),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            verification_keys: Vec::new(),
-        }),
+        keyset: crate::test_support::test_key_manager(),
     }
 }
 
@@ -54,7 +49,7 @@ fn live_refresh_state_from_database_url(
         generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
     let active_kid = "refresh-test-kid".to_owned();
     let active_alg = jsonwebtoken::Algorithm::EdDSA;
-    let public_jwk =
+    let _public_jwk =
         public_jwk_from_private_der(&active_kid, active_alg, &key_material.private_pkcs8_der)
             .expect("test public JWK should derive from signing key");
     let mut settings =
@@ -67,16 +62,7 @@ fn live_refresh_state_from_database_url(
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: active_kid.clone(),
-            active_alg,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),
-            verification_keys: vec![VerificationKey {
-                kid: active_kid,
-                public_jwk,
-                local_signing_key: None,
-            }],
-        }),
+        keyset: crate::test_support::test_key_manager(),
     })
 }
 

@@ -1,26 +1,16 @@
 use super::*;
 use std::path::PathBuf;
 
-use crate::domain::VerificationKey;
 use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, RateLimitSettings,
     RequestObjectJtiPolicy, SubjectType,
 };
 use crate::support::{ClientIpHeaderMode, IpCidr};
 use nazo_auth::SUPPORTED_AUTHORIZATION_DETAILS_TYPES;
+use std::sync::Arc;
 
-fn keyset(alg: jsonwebtoken::Algorithm) -> Keyset {
-    let alg_name = signing_algorithm_name(alg).expect("test alg should be supported");
-    Keyset {
-        active_kid: "active".to_owned(),
-        active_alg: alg,
-        active_signing_key: crate::domain::ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-        verification_keys: vec![VerificationKey {
-            kid: "active".to_owned(),
-            public_jwk: json!({"kty": "RSA", "kid": "active", "alg": alg_name, "use": "sig"}),
-            local_signing_key: None,
-        }],
-    }
+fn keyset(alg: jsonwebtoken::Algorithm) -> Arc<Keyset> {
+    crate::test_support::test_key_manager_with_algorithm(alg).snapshot()
 }
 
 fn settings(profile: AuthorizationServerProfile, trusted_proxy_cidrs: Vec<IpCidr>) -> Settings {

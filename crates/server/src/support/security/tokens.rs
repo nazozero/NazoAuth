@@ -1,6 +1,5 @@
 use super::jwt_decoding_key_from_jwk;
 
-use base64::Engine as _;
 use chrono::Utc;
 use nazo_auth::{
     AccessTokenClaimsInput, AuthorizationResponseClaimsInput, BackchannelLogoutClaimsInput, Claims,
@@ -10,7 +9,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::domain::AppState;
-use crate::support::{sign_local_jwt_input, signing_algorithm_name};
+use crate::support::signing_algorithm_name;
 
 pub(crate) struct AccessTokenJwtInput<'a> {
     pub(crate) tenant_id: Uuid,
@@ -78,7 +77,10 @@ pub(crate) async fn make_jwt(
     );
     let keyset = state.keyset.snapshot();
     let header = access_token_header(keyset.active_alg, &keyset.active_kid);
-    let token = keyset.sign_jwt(&header, &claims).await?;
+    let token = state
+        .keyset
+        .encode_jwt(nazo_auth::SigningPurpose::AccessToken, &header, &claims)
+        .await?;
     Ok(IssuedAccessToken { token, jti, exp })
 }
 
@@ -122,38 +124,29 @@ pub(crate) async fn make_id_token(
         },
         now,
     );
-    sign_response_jwt(state, &Value::Object(claims), "JWT", input.signing_alg).await
+    sign_response_jwt(
+        state,
+        nazo_auth::SigningPurpose::IdToken,
+        &Value::Object(claims),
+        "JWT",
+        input.signing_alg,
+    )
+    .await
 }
 
 pub(crate) async fn sign_response_jwt(
     state: &AppState,
+    purpose: nazo_auth::SigningPurpose,
     claims: &Value,
     typ: &str,
     signing_alg: Option<jsonwebtoken::Algorithm>,
 ) -> jsonwebtoken::errors::Result<String> {
     let keyset = state.keyset.snapshot();
     let alg = signing_alg.unwrap_or(keyset.active_alg);
-    if alg == keyset.active_alg {
-        let mut header = jsonwebtoken::Header::new(keyset.active_alg);
-        header.typ = Some(typ.to_owned());
-        header.kid = Some(keyset.active_kid.clone());
-        return keyset.sign_jwt(&header, claims).await;
-    }
-    let (kid, private_key) = keyset
-        .local_response_signing_key(alg)
-        .ok_or(jsonwebtoken::errors::ErrorKind::InvalidAlgorithm)?;
     let mut header = jsonwebtoken::Header::new(alg);
     header.typ = Some(typ.to_owned());
-    header.kid = Some(kid.to_owned());
-    let encoded_header = BASE64_URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header)?);
-    let encoded_claims = BASE64_URL_SAFE_NO_PAD.encode(serde_json::to_vec(claims)?);
-    let signing_input = format!("{encoded_header}.{encoded_claims}");
-    let signature = sign_local_jwt_input(alg, private_key, signing_input.as_bytes())?;
-    Ok(format!("{signing_input}.{signature}"))
+    state.keyset.encode_jwt(purpose, &header, claims).await
 }
-
-const BASE64_URL_SAFE_NO_PAD: base64::engine::general_purpose::GeneralPurpose =
-    base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
 pub(crate) struct AuthorizationResponseJwtInput<'a> {
     pub(crate) client_id: &'a str,
@@ -189,7 +182,14 @@ pub(crate) async fn make_backchannel_logout_token(
     let mut header = jsonwebtoken::Header::new(keyset.active_alg);
     header.typ = Some("logout+jwt".to_string());
     header.kid = Some(keyset.active_kid.clone());
-    keyset.sign_jwt(&header, &Value::Object(claims)).await
+    state
+        .keyset
+        .encode_jwt(
+            nazo_auth::SigningPurpose::LogoutToken,
+            &header,
+            &Value::Object(claims),
+        )
+        .await
 }
 
 pub(crate) async fn make_authorization_response_jwt(
@@ -211,6 +211,7 @@ pub(crate) async fn make_authorization_response_jwt(
     );
     sign_response_jwt(
         state,
+        nazo_auth::SigningPurpose::Jarm,
         &Value::Object(claims),
         "oauth-authz-resp+jwt",
         signing_alg,

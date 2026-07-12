@@ -100,6 +100,21 @@ pub(crate) struct Settings {
 }
 
 impl Settings {
+    pub(crate) fn key_settings(&self) -> nazo_key_management::KeySettings {
+        nazo_key_management::KeySettings {
+            keys_dir: self.jwk_keys_dir.clone(),
+            external_command: self.signing_external_command.clone(),
+            external_timeout: std::time::Duration::from_millis(self.signing_external_timeout_ms),
+            rotation_interval: chrono::Duration::seconds(
+                self.signing_key_rotation_interval_seconds,
+            ),
+            prepublish_window: chrono::Duration::seconds(self.signing_key_prepublish_seconds),
+            verification_grace: chrono::Duration::seconds(
+                self.access_token_ttl_seconds.max(self.id_token_ttl_seconds),
+            ),
+        }
+    }
+
     /// Builds settings from the startup configuration source.
     pub(crate) fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
         let public_base_url = config.string("PUBLIC_BASE_URL", "http://127.0.0.1:8000");

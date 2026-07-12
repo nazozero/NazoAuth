@@ -1,6 +1,6 @@
 use std::{error::Error, fmt, future::Future};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum SigningPurpose {
     AccessToken,
     IdToken,

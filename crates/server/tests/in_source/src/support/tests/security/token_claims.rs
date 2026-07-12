@@ -63,12 +63,7 @@ async fn make_jwt_rejects_conflicting_sender_constraints_before_signing() {
             .build()
             .expect("valkey client construction should not connect"),
         settings: std::sync::Arc::new(test_settings()),
-        keyset: crate::domain::KeysetStore::new(Keyset {
-            active_kid: "invalid-test-key".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            verification_keys: Vec::new(),
-        }),
+        keyset: crate::test_support::test_key_manager(),
     };
     let audiences = vec!["resource://default".to_owned()];
     let scopes = vec!["read".to_owned()];
@@ -109,7 +104,7 @@ async fn make_jwt_rejects_conflicting_sender_constraints_before_signing() {
 async fn response_signing_uses_auxiliary_key_from_current_keyset_snapshot() {
     let auxiliary = generate_key_material(jsonwebtoken::Algorithm::RS256)
         .expect("auxiliary response signing key should generate");
-    let public_jwk = public_jwk_from_private_der(
+    let _public_jwk = public_jwk_from_private_der(
         "auxiliary-rs256",
         jsonwebtoken::Algorithm::RS256,
         &auxiliary.private_pkcs8_der,
@@ -126,20 +121,14 @@ async fn response_signing_uses_auxiliary_key_from_current_keyset_snapshot() {
             .build()
             .expect("valkey client construction should not connect"),
         settings: std::sync::Arc::new(test_settings()),
-        keyset: crate::domain::KeysetStore::new(Keyset {
-            active_kid: "active-eddsa".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            verification_keys: vec![VerificationKey {
-                kid: "auxiliary-rs256".to_owned(),
-                public_jwk,
-                local_signing_key: Some(auxiliary.private_pkcs8_der),
-            }],
-        }),
+        keyset: crate::test_support::test_key_manager_with_auxiliary(
+            jsonwebtoken::Algorithm::RS256,
+        ),
     };
 
     let token = sign_response_jwt(
         &state,
+        nazo_auth::SigningPurpose::IdToken,
         &json!({"sub": "subject-1"}),
         "JWT",
         Some(jsonwebtoken::Algorithm::RS256),
@@ -149,5 +138,5 @@ async fn response_signing_uses_auxiliary_key_from_current_keyset_snapshot() {
     let header = jsonwebtoken::decode_header(&token).expect("signed response header should decode");
 
     assert_eq!(header.alg, jsonwebtoken::Algorithm::RS256);
-    assert_eq!(header.kid.as_deref(), Some("auxiliary-rs256"));
+    assert_eq!(header.kid.as_deref(), Some("test-aux-RS256"));
 }

@@ -4,7 +4,7 @@ use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{ActiveSigningKey, Keyset, KeysetStore, VerificationKey};
+
 use crate::support::{IpCidr, generate_key_material, public_jwk_from_private_der};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use diesel::sql_query;
@@ -51,12 +51,7 @@ fn userinfo_test_state() -> AppState {
         .expect("pool construction should not connect"),
         valkey: disconnected_valkey_client(),
         settings: Arc::new(settings),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            verification_keys: Vec::new(),
-        }),
+        keyset: crate::test_support::test_key_manager(),
     }
 }
 
@@ -82,7 +77,7 @@ async fn live_userinfo_state_from_database_url(database_url: String) -> Option<D
     valkey.init().await.expect("valkey should connect");
     let key_material =
         generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
-    let public_jwk = public_jwk_from_private_der(
+    let _public_jwk = public_jwk_from_private_der(
         "userinfo-test-kid",
         jsonwebtoken::Algorithm::EdDSA,
         &key_material.private_pkcs8_der,
@@ -97,16 +92,7 @@ async fn live_userinfo_state_from_database_url(database_url: String) -> Option<D
         diesel_db: create_pool(database_url, 1).expect("database pool should build"),
         valkey,
         settings: Arc::new(settings),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "userinfo-test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),
-            verification_keys: vec![VerificationKey {
-                kid: "userinfo-test-kid".to_owned(),
-                public_jwk,
-                local_signing_key: None,
-            }],
-        }),
+        keyset: crate::test_support::test_key_manager(),
     }))
 }
 
@@ -168,7 +154,7 @@ async fn drop_schema(state: &Data<AppState>, schema: &str) {
 fn userinfo_state_with_valid_signing_key_invalid_db() -> Data<AppState> {
     let key_material =
         generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
-    let public_jwk = public_jwk_from_private_der(
+    let _public_jwk = public_jwk_from_private_der(
         "userinfo-test-kid",
         jsonwebtoken::Algorithm::EdDSA,
         &key_material.private_pkcs8_der,
@@ -188,16 +174,7 @@ fn userinfo_state_with_valid_signing_key_invalid_db() -> Data<AppState> {
         .expect("pool construction should not connect"),
         valkey: disconnected_valkey_client(),
         settings: Arc::new(settings),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "userinfo-test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(key_material.private_pkcs8_der),
-            verification_keys: vec![VerificationKey {
-                kid: "userinfo-test-kid".to_owned(),
-                public_jwk,
-                local_signing_key: None,
-            }],
-        }),
+        keyset: crate::test_support::test_key_manager(),
     })
 }
 
@@ -658,8 +635,9 @@ async fn userinfo_rejects_signed_access_token_without_valid_tenant_boundary() {
     let mut header = jsonwebtoken::Header::new(keyset.active_alg);
     header.typ = Some("at+jwt".to_owned());
     header.kid = Some(keyset.active_kid.clone());
-    let token = keyset
-        .sign_jwt(&header, &claims)
+    let token = state
+        .keyset
+        .encode_jwt(nazo_auth::SigningPurpose::AccessToken, &header, &claims)
         .await
         .expect("access token should sign");
 

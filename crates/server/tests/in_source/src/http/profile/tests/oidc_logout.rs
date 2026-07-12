@@ -16,7 +16,7 @@ use tokio::net::{TcpListener, TcpStream};
 
 use crate::config::ConfigSource;
 use crate::db::create_pool;
-use crate::domain::{ActiveSigningKey, Keyset, KeysetStore, VerificationKey};
+
 use crate::support::{generate_key_material, public_jwk_from_private_der};
 
 #[derive(QueryableByName)]
@@ -25,7 +25,7 @@ struct IdRow {
     id: Uuid,
 }
 
-fn test_state_with_keyset(keyset: Keyset) -> AppState {
+fn test_state_with_keyset(keyset: nazo_key_management::KeyManager) -> AppState {
     AppState {
         diesel_db: create_pool(
             "postgres://nazo_oidc_logout_test_invalid:nazo_oidc_logout_test_invalid@127.0.0.1:1/nazo"
@@ -39,7 +39,7 @@ fn test_state_with_keyset(keyset: Keyset) -> AppState {
         settings: Arc::new(
             Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
         ),
-        keyset: KeysetStore::new(keyset),
+        keyset,
     }
 }
 
@@ -65,7 +65,7 @@ impl LiveLogoutFixture {
         let settings = Settings::from_config(&config).expect("test settings should load");
         let key_material =
             generate_key_material(Algorithm::EdDSA).expect("EdDSA key should generate");
-        let verification_key = public_jwk_from_private_der(
+        let _verification_key = public_jwk_from_private_der(
             "logout-kid",
             Algorithm::EdDSA,
             &key_material.private_pkcs8_der,
@@ -94,18 +94,7 @@ impl LiveLogoutFixture {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
-                keyset: KeysetStore::new(Keyset {
-                    active_kid: "logout-kid".to_owned(),
-                    active_alg: Algorithm::EdDSA,
-                    active_signing_key: ActiveSigningKey::LocalPkcs8Der(
-                        key_material.private_pkcs8_der,
-                    ),
-                    verification_keys: vec![VerificationKey {
-                        kid: "logout-kid".to_owned(),
-                        public_jwk: verification_key,
-                        local_signing_key: None,
-                    }],
-                }),
+                keyset: crate::test_support::test_key_manager(),
             }),
         })
     }
@@ -289,8 +278,9 @@ impl LiveLogoutFixture {
         if let Some(oidc_sid) = oidc_sid {
             claims["sid"] = json!(oidc_sid);
         }
-        keyset
-            .sign_jwt(&header, &claims)
+        self.state
+            .keyset
+            .encode_jwt(nazo_auth::SigningPurpose::IdToken, &header, &claims)
             .await
             .expect("id_token_hint should sign")
     }
@@ -676,24 +666,14 @@ fn audience_contains_accepts_only_string_audience_members() {
 
 #[actix_web::test]
 async fn logout_client_lookup_without_client_id_does_not_touch_database() {
-    let state = test_state_with_keyset(Keyset {
-        active_kid: "test-kid".to_owned(),
-        active_alg: Algorithm::EdDSA,
-        active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-        verification_keys: Vec::new(),
-    });
+    let state = test_state_with_keyset(crate::test_support::test_key_manager());
 
     assert!(lookup_logout_client(&state, None).await.unwrap().is_none());
 }
 
 #[actix_web::test]
 async fn logout_client_lookup_reports_database_failure_for_registered_context() {
-    let state = test_state_with_keyset(Keyset {
-        active_kid: "test-kid".to_owned(),
-        active_alg: Algorithm::EdDSA,
-        active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-        verification_keys: Vec::new(),
-    });
+    let state = test_state_with_keyset(crate::test_support::test_key_manager());
 
     let response = lookup_logout_client(&state, Some("client-1"))
         .await
@@ -743,19 +723,10 @@ fn multi_audience_id_token_hint_requires_explicit_matching_client_id() {
 #[test]
 fn id_token_hint_decoder_rejects_malformed_unsupported_and_unidentified_tokens() {
     let key = generate_key_material(Algorithm::RS256).expect("RSA key should generate");
-    let public_jwk =
+    let _public_jwk =
         public_jwk_from_private_der("logout-kid", Algorithm::RS256, &key.private_pkcs8_der)
             .expect("public JWK should derive");
-    let state = test_state_with_keyset(Keyset {
-        active_kid: "logout-kid".to_owned(),
-        active_alg: Algorithm::RS256,
-        active_signing_key: ActiveSigningKey::LocalPkcs8Der(key.private_pkcs8_der.clone()),
-        verification_keys: vec![crate::domain::VerificationKey {
-            kid: "logout-kid".to_owned(),
-            public_jwk,
-            local_signing_key: None,
-        }],
-    });
+    let state = test_state_with_keyset(crate::test_support::test_key_manager());
     let claims = json!({
         "iss": state.settings.issuer,
         "sub": "user-1",
@@ -1198,12 +1169,9 @@ fn backchannel_logout_retry_schedule_stays_inside_logout_token_ttl() {
 
 #[actix_web::test]
 async fn oidc_logout_rejects_invalid_id_token_hint_before_client_lookup() {
-    let state = Data::new(test_state_with_keyset(Keyset {
-        active_kid: "test-kid".to_owned(),
-        active_alg: Algorithm::EdDSA,
-        active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-        verification_keys: Vec::new(),
-    }));
+    let state = Data::new(test_state_with_keyset(
+        crate::test_support::test_key_manager(),
+    ));
     let (req, payload) = logout_request_with_payload(
         actix_web::test::TestRequest::default().uri("/oidc/logout?id_token_hint=not-a-jwt"),
     )

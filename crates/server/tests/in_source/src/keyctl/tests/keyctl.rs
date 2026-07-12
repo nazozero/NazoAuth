@@ -3,7 +3,7 @@ use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, FederationSettings,
     PasskeySettings, RateLimitSettings, RequestObjectJtiPolicy, SubjectType,
 };
-use crate::support::{ClientIpHeaderMode, der_to_pem, generate_key_material, try_load_keyset};
+use crate::support::{ClientIpHeaderMode, der_to_pem, generate_key_material};
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
@@ -456,13 +456,9 @@ async fn register_external_key_persists_only_valid_public_signing_metadata() {
     assert_eq!(entry["backend"], "external-command");
     assert_eq!(entry["key_ref"], "kms://key/1");
     assert_eq!(entry["public_jwk"]["kid"], "external");
-    assert!(
-        try_load_keyset(&settings, &keyset_path(&settings))
-            .await
-            .unwrap()
-            .is_some(),
-        "registered external key must be loadable by production keyset validator"
-    );
+    nazo_key_management::KeyManager::validate(&settings.key_settings())
+        .await
+        .expect("registered external key must be loadable by production keyset validator");
 
     let bad_jwk = dir.join("bad-public.jwk.json");
     tokio::fs::write(

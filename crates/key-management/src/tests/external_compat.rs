@@ -1,7 +1,7 @@
 use super::*;
 use std::{sync::Arc, time::Duration};
 
-use crate::support::{generate_key_material, public_jwk_from_private_der};
+use crate::store::{generate_key_material, public_jwk_from_private_der};
 
 fn external_signing_key() -> ExternalSigningKey {
     external_signing_key_with_command(Arc::new(vec!["unused-test-signer".to_owned()]), 100)
@@ -336,5 +336,39 @@ async fn external_signing_times_out_and_fails_closed() {
     assert!(
         format!("{error}").contains("timed out"),
         "unexpected error: {error}"
+    );
+}
+
+#[tokio::test]
+async fn external_signer_output_is_verified_against_exact_message() {
+    let kid = "external-kid";
+    let (private_key, public_jwk) = eddsa_fixture(kid);
+    let signature = sign_input(&private_key, "expected");
+    let external = external_signing_key_with_command(
+        signer_stdout_command(&json!({"signature": signature}).to_string()),
+        500,
+    );
+
+    assert!(
+        sign_external_jwt_input(
+            &external,
+            kid,
+            jsonwebtoken::Algorithm::EdDSA,
+            "expected",
+            &public_jwk,
+        )
+        .await
+        .is_ok()
+    );
+    assert!(
+        sign_external_jwt_input(
+            &external,
+            kid,
+            jsonwebtoken::Algorithm::EdDSA,
+            "tampered",
+            &public_jwk,
+        )
+        .await
+        .is_err()
     );
 }

@@ -2189,6 +2189,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "nazo-key-management"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arc-swap",
+ "base64",
+ "chrono",
+ "ed25519-dalek",
+ "jsonwebtoken",
+ "nazo-auth",
+ "openssl",
+ "p256 0.14.0",
+ "rand 0.10.2",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "nazo-oauth-server"
 version = "0.1.0"
 dependencies = [
@@ -2212,6 +2233,7 @@ dependencies = [
  "nazo-auth",
  "nazo-http-signatures",
  "nazo-identity",
+ "nazo-key-management",
  "nazo-resource-server",
  "openssl",
  "opentelemetry",

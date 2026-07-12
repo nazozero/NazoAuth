@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
+
 use crate::http::authorization::request::pushed_authorization_request_key;
 use actix_web::test::TestRequest;
 use diesel::sql_query;
@@ -63,12 +63,7 @@ fn prompt_none_state_with_valkey(valkey: fred::prelude::Client) -> AppState {
         .expect("pool construction should not connect"),
         valkey,
         settings: Arc::new(settings),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            verification_keys: Vec::new(),
-        }),
+        keyset: crate::test_support::test_key_manager(),
     }
 }
 
@@ -129,12 +124,7 @@ fn prompt_none_state_with_database_url(database_url: String) -> AppState {
         diesel_db: create_pool(database_url, 1).expect("database pool should build"),
         valkey,
         settings: Arc::new(settings),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            verification_keys: Vec::new(),
-        }),
+        keyset: crate::test_support::test_key_manager(),
     }
 }
 

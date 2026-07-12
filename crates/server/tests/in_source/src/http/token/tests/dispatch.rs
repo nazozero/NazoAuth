@@ -17,7 +17,7 @@ use fred::prelude::{
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{ActiveSigningKey, Keyset, KeysetStore};
+
 use crate::http::{revoke, userinfo};
 use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, RateLimitSettings,
@@ -207,12 +207,7 @@ fn unavailable_valkey_token_state(profile: AuthorizationServerProfile) -> AppSta
         .expect("pool construction should not connect"),
         valkey: unavailable_token_valkey(),
         settings: Arc::new(settings(profile)),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            verification_keys: Vec::new(),
-        }),
+        keyset: crate::test_support::test_key_manager(),
     }
 }
 
@@ -253,12 +248,7 @@ async fn live_token_state(profile: AuthorizationServerProfile) -> Option<Data<Ap
         diesel_db: create_pool(database_url, 1).expect("database pool should build"),
         valkey,
         settings: Arc::new(settings),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            verification_keys: Vec::new(),
-        }),
+        keyset: crate::test_support::test_key_manager(),
     }))
 }
 
@@ -302,12 +292,7 @@ async fn live_valkey_invalid_db_token_state(
         .expect("pool construction should not connect"),
         valkey,
         settings: Arc::new(settings),
-        keyset: KeysetStore::new(Keyset {
-            active_kid: "test-kid".to_owned(),
-            active_alg: jsonwebtoken::Algorithm::EdDSA,
-            active_signing_key: ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            verification_keys: Vec::new(),
-        }),
+        keyset: crate::test_support::test_key_manager(),
     }))
 }
 

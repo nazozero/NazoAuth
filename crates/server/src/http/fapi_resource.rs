@@ -496,7 +496,11 @@ async fn sign_fapi_resource_response(
             return HttpResponse::ServiceUnavailable().finish();
         }
     };
-    let detached = match keyset.sign_http_message(signing.signature_base()).await {
+    let detached = match state
+        .keyset
+        .sign_http_message(signing.signature_base())
+        .await
+    {
         Ok(detached) => detached,
         Err(_) => {
             tracing::warn!(
