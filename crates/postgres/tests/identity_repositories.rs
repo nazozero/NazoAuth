@@ -222,12 +222,19 @@ fn server_has_no_identity_rows_or_identity_diesel_queries() {
         "UserRow",
         "PasskeyCredentialRow",
         "ExternalIdentityLinkRow",
+        "TotpCredentialRow",
         "users::",
         "user_totp_credentials::",
         "user_mfa_backup_codes::",
         "user_mfa_remembered_devices::",
         "user_passkey_credentials::",
         "external_identity_links::",
+        "users (id) {",
+        "user_totp_credentials (id) {",
+        "user_mfa_backup_codes (id) {",
+        "user_mfa_remembered_devices (id) {",
+        "user_passkey_credentials (id) {",
+        "external_identity_links (id) {",
     ];
 
     fn visit(path: &std::path::Path, violations: &mut Vec<String>) {
@@ -239,7 +246,12 @@ fn server_has_no_identity_rows_or_identity_diesel_queries() {
             } else if path.extension().is_some_and(|extension| extension == "rs") {
                 let source = std::fs::read_to_string(&path).expect("server source is UTF-8");
                 for forbidden in FORBIDDEN {
-                    if source.contains(forbidden) {
+                    let module_reexport = *forbidden == "users::"
+                        && source.lines().any(|line| {
+                            line.trim() == "pub(crate) use users::*;"
+                                && source.matches(forbidden).count() == 1
+                        });
+                    if source.contains(forbidden) && !module_reexport {
                         violations.push(format!("{} contains {forbidden}", path.display()));
                     }
                 }

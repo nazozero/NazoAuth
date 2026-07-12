@@ -261,7 +261,7 @@ pub(crate) async fn token_refresh(
     let original_scopes = json_array_to_strings(&token.scopes);
     let includes_openid = original_scopes.iter().any(|scope| scope == "openid");
     let id_token_user = match token.user_id {
-        Some(user_id) if includes_openid => match (
+        Some(user_id) => match (
             nazo_identity::TenantId::new(token.tenant_id),
             nazo_identity::UserId::new(user_id),
         ) {
@@ -270,7 +270,9 @@ pub(crate) async fn token_refresh(
                     .user_by_id(tenant_id, user_id)
                     .await
                 {
-                    Ok(Some(user)) if user.principal.active => Some(Box::new(user)),
+                    Ok(Some(user)) if user.principal.active => {
+                        includes_openid.then(|| Box::new(user))
+                    }
                     Ok(_) => {
                         return oauth_token_error(
                             StatusCode::BAD_REQUEST,
@@ -292,44 +294,6 @@ pub(crate) async fn token_refresh(
             }
             _ => {
                 tracing::warn!("persisted refresh token contains invalid identity IDs");
-                return oauth_token_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "refresh_token 用户校验失败.",
-                    false,
-                );
-            }
-        },
-        Some(user_id) => match get_conn(&state.diesel_db).await {
-            Ok(mut conn) => match users::table
-                .find(user_id)
-                .filter(users::tenant_id.eq(token.tenant_id))
-                .select(users::is_active)
-                .first::<bool>(&mut conn)
-                .await
-                .optional()
-            {
-                Ok(Some(true)) => None,
-                Ok(_) => {
-                    return oauth_token_error(
-                        StatusCode::BAD_REQUEST,
-                        "invalid_grant",
-                        "授权用户不存在或已停用.",
-                        false,
-                    );
-                }
-                Err(error) => {
-                    tracing::warn!(%error, "failed to load refresh token user");
-                    return oauth_token_error(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "server_error",
-                        "refresh_token 用户校验失败.",
-                        false,
-                    );
-                }
-            },
-            Err(error) => {
-                tracing::warn!(%error, "failed to get database connection for refresh token user lookup");
                 return oauth_token_error(
                     StatusCode::SERVICE_UNAVAILABLE,
                     "server_error",

@@ -1,9 +1,13 @@
+mod access_requests;
 mod federation;
+mod grants;
 mod mfa;
 mod passkeys;
 mod scim;
 mod users;
+pub use access_requests::{AccessRequestProjection, AccessRequestRepository};
 pub use federation::FederationRepository;
+pub use grants::{GrantPage, GrantProjection, GrantRepository};
 pub use mfa::MfaRepository;
 pub use passkeys::PasskeyRepository;
 pub use scim::ScimRepository;

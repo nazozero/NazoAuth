@@ -34,8 +34,8 @@ async fn prepare_client_insert_for_test(
     .await
 }
 
-fn grant_row() -> GrantRow {
-    GrantRow {
+fn grant_row() -> nazo_postgres::GrantProjection {
+    nazo_postgres::GrantProjection {
         user_id: Uuid::now_v7(),
         email: "user@example.com".to_owned(),
         client_id: "client-1".to_owned(),

@@ -68,8 +68,45 @@ diesel::table! {
         id -> Uuid,
         tenant_id -> Uuid,
         user_id -> Uuid,
+        client_id -> Uuid,
+        first_authorized_at -> Timestamptz,
+        last_authorized_at -> Timestamptz,
+        last_scopes -> Jsonb,
+        last_resource_indicators -> Jsonb,
+        last_authorization_details -> Jsonb,
+        authorization_count -> Int4,
     }
 }
+
+diesel::table! {
+    client_access_requests (id) {
+        id -> Uuid,
+        tenant_id -> Uuid,
+        user_id -> Uuid,
+        site_name -> Varchar,
+        site_url -> Varchar,
+        request_description -> Varchar,
+        status -> SmallInt,
+        admin_note -> Nullable<Varchar>,
+        resolved_by_user_id -> Nullable<Uuid>,
+        approved_client_id -> Nullable<Uuid>,
+        resolved_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    oauth_clients (id) {
+        id -> Uuid,
+        client_id -> Varchar,
+        client_name -> Varchar,
+    }
+}
+
+diesel::joinable!(client_access_requests -> users (user_id));
+diesel::joinable!(user_client_grants -> oauth_clients (client_id));
+diesel::joinable!(user_client_grants -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     users,
@@ -79,5 +116,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     user_passkey_credentials,
     external_identity_links,
     oauth_tokens,
-    user_client_grants
+    user_client_grants,
+    client_access_requests,
+    oauth_clients
 );

@@ -1,17 +1,6 @@
 use super::*;
 
 #[test]
-fn access_request_search_pattern_trims_and_ignores_blank_queries() {
-    assert_eq!(access_request_search_pattern(None), None);
-    assert_eq!(access_request_search_pattern(Some("")), None);
-    assert_eq!(access_request_search_pattern(Some("   \t")), None);
-    assert_eq!(
-        access_request_search_pattern(Some("  alice@example.com  ")).as_deref(),
-        Some("%alice@example.com%")
-    );
-}
-
-#[test]
 fn access_request_json_preserves_admin_review_fields() {
     let id = Uuid::now_v7();
     let user_id = Uuid::now_v7();
@@ -19,7 +8,7 @@ fn access_request_json_preserves_admin_review_fields() {
     let created_at = Utc::now();
     let resolved_at = created_at + chrono::Duration::minutes(5);
 
-    let body = access_request_json(AccessRequestRow {
+    let body = access_request_json(nazo_postgres::AccessRequestProjection {
         id,
         user_id,
         user_email: "user@example.com".to_owned(),

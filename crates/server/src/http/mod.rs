@@ -47,9 +47,9 @@ pub(crate) mod prelude {
 
     pub(crate) use crate::domain::{
         AccessRequestStatus, AppState, AuthorizationCodeState, ClientRow, CodePayload,
-        ConsentPayload, ConsumedAuthorizationCode, GrantRow, MyApplicationRow,
-        NativeSsoTokenBinding, PendingAccessRequestRow, PushedAuthorizationRequest,
-        RefreshTokenPolicy, TokenIssue, TokenRow, UserAccessRequestRow,
+        ConsentPayload, ConsumedAuthorizationCode, MyApplicationRow, NativeSsoTokenBinding,
+        PendingAccessRequestRow, PushedAuthorizationRequest, RefreshTokenPolicy, TokenIssue,
+        TokenRow, UserAccessRequestRow,
     };
     #[cfg(test)]
     pub(crate) use crate::domain::{
@@ -57,11 +57,11 @@ pub(crate) mod prelude {
     };
     pub(crate) use crate::schema::{
         access_token_revocations, backchannel_logout_deliveries, client_access_requests,
-        oauth_clients, oauth_tokens, scim_audit_events, scim_tokens, user_client_grants, users,
+        oauth_clients, oauth_tokens, scim_audit_events, scim_tokens, user_client_grants,
     };
     #[cfg(test)]
     pub(crate) use crate::schema::{
-        external_identity_links, user_passkey_credentials, user_totp_credentials,
+        external_identity_links, user_passkey_credentials, user_totp_credentials, users,
     };
     pub(crate) use crate::settings::Settings;
     pub(crate) use crate::support::*;

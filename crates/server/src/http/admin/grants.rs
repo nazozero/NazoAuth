@@ -12,58 +12,13 @@ pub(crate) async fn admin_grants(
         return response;
     }
     let (page, page_size, offset) = pagination(&q);
-    let (total, rows) = match get_conn(&state.diesel_db).await {
-        Ok(mut conn) => {
-            let total = match user_client_grants::table
-                .select(count_star())
-                .first::<i64>(&mut conn)
-                .await
-            {
-                Ok(total) => total,
-                Err(error) => {
-                    tracing::warn!(%error, "failed to count user client grants");
-                    return oauth_error(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "server_error",
-                        "授权记录查询失败.",
-                    );
-                }
-            };
-            let rows = match user_client_grants::table
-                .inner_join(users::table.on(users::id.eq(user_client_grants::user_id)))
-                .inner_join(
-                    oauth_clients::table.on(oauth_clients::id.eq(user_client_grants::client_id)),
-                )
-                .select((
-                    user_client_grants::user_id,
-                    users::email,
-                    oauth_clients::client_id,
-                    oauth_clients::client_name,
-                    user_client_grants::last_authorized_at,
-                    user_client_grants::authorization_count,
-                    user_client_grants::last_scopes,
-                    user_client_grants::last_authorization_details,
-                ))
-                .order(user_client_grants::last_authorized_at.desc())
-                .limit(page_size as i64)
-                .offset(offset as i64)
-                .load::<GrantRow>(&mut conn)
-                .await
-            {
-                Ok(rows) => rows,
-                Err(error) => {
-                    tracing::warn!(%error, "failed to load user client grants");
-                    return oauth_error(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "server_error",
-                        "授权记录查询失败.",
-                    );
-                }
-            };
-            (total, rows)
-        }
+    let page_result = match nazo_postgres::GrantRepository::new(state.diesel_db.clone())
+        .page(i64::from(page_size), i64::from(offset))
+        .await
+    {
+        Ok(page) => page,
         Err(error) => {
-            tracing::warn!(%error, "failed to get database connection for grant list");
+            tracing::warn!(%error, "failed to load user client grants");
             return oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -71,20 +26,20 @@ pub(crate) async fn admin_grants(
             );
         }
     };
-    grants_list_response(page, page_size, total, rows)
+    grants_list_response(page, page_size, page_result.total, page_result.grants)
 }
 
 fn grants_list_response(
     page: i32,
     page_size: i32,
     total: i64,
-    rows: Vec<GrantRow>,
+    rows: Vec<nazo_postgres::GrantProjection>,
 ) -> HttpResponse {
     let items: Vec<Value> = rows.into_iter().map(grant_json).collect();
     json_response(json!({"total": total, "page": page, "page_size": page_size, "items": items}))
 }
 
-fn grant_json(row: GrantRow) -> Value {
+fn grant_json(row: nazo_postgres::GrantProjection) -> Value {
     json!({
         "user_id": row.user_id,
         "email": row.email,
