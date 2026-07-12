@@ -56,9 +56,18 @@ pub(crate) async fn verify_confidential_client(
                 log_client_auth_rejection(req, client, credentials, "client_secret");
                 return Err(TokenManagementClientAuthError::InvalidClient);
             };
-            let secret_match = nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-                .client_secret_matches(client.id, secret, &state.settings.client_secret_pepper)
-                .await;
+            let repository = nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone());
+            let secret_match = match repository.client_secret_salt(client.id).await {
+                Ok(Some(salt)) => {
+                    let candidate_digest =
+                        client_secret_digest(secret, &state.settings.client_secret_pepper, &salt);
+                    repository
+                        .client_secret_digest_matches(client.id, &candidate_digest)
+                        .await
+                }
+                Ok(None) => Ok(false),
+                Err(error) => Err(error),
+            };
             if client_secret_auth_result(secret_match)? {
                 Ok(None)
             } else {

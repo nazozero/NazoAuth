@@ -1,5 +1,8 @@
 use chrono::{DateTime, Utc};
-use diesel::{ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl, SelectableHelper};
+use diesel::{
+    ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl, SelectableHelper,
+    TextExpressionMethods,
+};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_auth::{OAuthClient, ValidatedClientRegistration};
 use nazo_identity::ports::RepositoryError;
@@ -15,7 +18,7 @@ use crate::{
 pub struct OAuthClientApplication {
     pub client_id: String,
     pub client_name: String,
-    pub last_scopes: Vec<String>,
+    pub last_scopes: Value,
     pub last_authorized_at: DateTime<Utc>,
     pub authorization_count: i32,
 }
@@ -509,39 +512,52 @@ impl OAuthClientRepository {
             .load::<(String, String, Value, DateTime<Utc>, i32)>(&mut connection)
             .await
             .map_err(map_error)?;
-        rows.into_iter()
+        Ok(rows
+            .into_iter()
             .map(
-                |(client_id, client_name, scopes, last_authorized_at, authorization_count)| {
-                    Ok(OAuthClientApplication {
+                |(client_id, client_name, last_scopes, last_authorized_at, authorization_count)| {
+                    OAuthClientApplication {
                         client_id,
                         client_name,
-                        last_scopes: string_array(scopes, "last_scopes")?,
+                        last_scopes,
                         last_authorized_at,
                         authorization_count,
-                    })
+                    }
                 },
             )
-            .collect()
+            .collect())
     }
 
-    /// Verifies a secret candidate while keeping the persisted digest private.
-    pub async fn client_secret_matches(
-        &self,
-        id: Uuid,
-        candidate: &str,
-        pepper: &str,
-    ) -> Result<bool, RepositoryError> {
+    /// Returns only the non-secret salt needed to derive a candidate digest.
+    pub async fn client_secret_salt(&self, id: Uuid) -> Result<Option<String>, RepositoryError> {
         let mut connection = self.connection().await?;
-        let stored = oauth_clients::table
+        oauth_clients::table
             .find(id)
-            .select(oauth_clients::client_secret_hash)
-            .first::<Option<String>>(&mut connection)
+            .filter(oauth_clients::client_secret_hash.like("client-secret-v1:%:%"))
+            .select(diesel::dsl::sql::<diesel::sql_types::Text>(
+                "split_part(client_secret_hash, ':', 2)",
+            ))
+            .first::<String>(&mut connection)
             .await
             .optional()
-            .map_err(map_error)?
-            .flatten();
-        Ok(stored
-            .is_some_and(|stored| nazo_auth::verify_client_secret_hash(candidate, &stored, pepper)))
+            .map_err(map_error)
+    }
+
+    /// Compares an already-derived candidate digest without loading the stored digest.
+    pub async fn client_secret_digest_matches(
+        &self,
+        id: Uuid,
+        candidate_digest: &str,
+    ) -> Result<bool, RepositoryError> {
+        let mut connection = self.connection().await?;
+        diesel::select(diesel::dsl::exists(
+            oauth_clients::table
+                .find(id)
+                .filter(oauth_clients::client_secret_hash.eq(candidate_digest)),
+        ))
+        .get_result(&mut connection)
+        .await
+        .map_err(map_error)
     }
 
     async fn connection(&self) -> Result<crate::DbConnection, RepositoryError> {

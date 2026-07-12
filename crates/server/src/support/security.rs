@@ -130,7 +130,11 @@ pub(crate) async fn verify_password_blocking_limited(
 
 pub(crate) fn hash_client_secret(secret: &str, pepper: &str) -> String {
     let salt = random_urlsafe_token();
-    let mac = client_secret_mac(secret, pepper, &salt);
+    client_secret_digest(secret, pepper, &salt)
+}
+
+pub(crate) fn client_secret_digest(secret: &str, pepper: &str, salt: &str) -> String {
+    let mac = client_secret_mac(secret, pepper, salt);
     format!("{CLIENT_SECRET_HASH_VERSION}:{salt}:{mac}")
 }
 
@@ -140,11 +144,6 @@ pub(crate) fn access_delivery_token(secret: &str, user_id: Uuid, request_id: Uui
     mac.update(user_id.as_bytes());
     mac.update(request_id.as_bytes());
     URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
-}
-
-#[cfg(test)]
-pub(crate) fn verify_client_secret(secret: &str, stored_hash: &str, pepper: &str) -> bool {
-    nazo_auth::verify_client_secret_hash(secret, stored_hash, pepper)
 }
 
 fn client_secret_mac(secret: &str, pepper: &str, salt: &str) -> String {

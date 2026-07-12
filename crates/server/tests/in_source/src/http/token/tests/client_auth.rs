@@ -345,16 +345,18 @@ fn confidential_client_secret_auth_accepts_correct_and_rejects_wrong_secret_by_d
     let settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
 
-    assert!(verify_client_secret(
-        &correct_secret,
-        &hash,
-        &settings.client_secret_pepper
-    ));
-    assert!(!verify_client_secret(
-        &wrong_secret,
-        &hash,
-        &settings.client_secret_pepper
-    ));
+    let salt = hash
+        .split(':')
+        .nth(1)
+        .expect("fixture verifier contains a salt");
+    assert_eq!(
+        client_secret_digest(&correct_secret, &settings.client_secret_pepper, salt),
+        hash
+    );
+    assert_ne!(
+        client_secret_digest(&wrong_secret, &settings.client_secret_pepper, salt),
+        hash
+    );
     assert!(matches!(client_secret_auth_result(Ok(true)), Ok(true)));
     assert!(matches!(client_secret_auth_result(Ok(false)), Ok(false)));
 }

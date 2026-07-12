@@ -29,7 +29,7 @@ fn my_application_json(row: nazo_postgres::OAuthClientApplication) -> Value {
     json!({
         "client_id": row.client_id,
         "client_name": row.client_name,
-        "last_scopes": row.last_scopes,
+        "last_scopes": json_array_to_strings(&row.last_scopes),
         "last_authorized_at": row.last_authorized_at,
         "authorization_count": row.authorization_count
     })

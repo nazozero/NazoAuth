@@ -1,5 +1,5 @@
 use super::*;
-use crate::support::{LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER, verify_client_secret};
+use crate::support::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 
 async fn prepare_client_insert_for_test(
@@ -98,11 +98,10 @@ async fn prepare_client_insert_issues_secret_only_for_secret_based_confidential_
         assert_eq!(prepared.client_type, "confidential");
         assert_eq!(prepared.token_endpoint_auth_method, method);
         assert!(
-            verify_client_secret(
-                issued_secret,
-                stored_hash,
-                LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER
-            ),
+            stored_hash.split(':').nth(1).is_some_and(|salt| {
+                client_secret_digest(issued_secret, LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER, salt)
+                    == stored_hash
+            }),
             "stored secret digest must verify the one-time plaintext secret"
         );
         assert_ne!(
