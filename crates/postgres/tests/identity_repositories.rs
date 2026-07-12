@@ -987,224 +987,154 @@ fn oauth_client_queries_use_the_focused_postgres_repository_without_a_server_fac
 }
 
 fn contains_oauth_clients_table_name(source: &str) -> bool {
-    const TABLE: &str = "oauth_clients";
-    let bytes = source.as_bytes();
-    let mut code = vec![true; bytes.len()];
-    let mut comments = vec![false; bytes.len()];
-    let mut cursor = 0;
-    while cursor < bytes.len() {
-        let start = cursor;
-        let (end, is_comment) = if bytes[cursor..].starts_with(b"//") {
-            (
-                bytes[cursor..]
-                    .iter()
-                    .position(|byte| *byte == b'\n')
-                    .map_or(bytes.len(), |length| cursor + length),
-                true,
-            )
-        } else if bytes[cursor..].starts_with(b"/*") {
-            let mut depth = 1;
-            cursor += 2;
-            while cursor < bytes.len() && depth > 0 {
-                if bytes[cursor..].starts_with(b"/*") {
-                    depth += 1;
-                    cursor += 2;
-                } else if bytes[cursor..].starts_with(b"*/") {
-                    depth -= 1;
-                    cursor += 2;
-                } else {
-                    cursor += 1;
-                }
-            }
-            (cursor, true)
-        } else if let Some((prefix, hashes)) = raw_string_prefix(&bytes[cursor..]) {
-            cursor += prefix;
-            while cursor < bytes.len() {
-                if bytes[cursor] == b'"'
-                    && bytes.get(cursor + 1..cursor + 1 + hashes) == Some(&vec![b'#'; hashes])
-                {
-                    cursor += 1 + hashes;
-                    break;
-                }
-                cursor += 1;
-            }
-            (cursor, false)
-        } else if bytes[cursor] == b'"'
-            || (bytes[cursor] == b'b' && bytes.get(cursor + 1) == Some(&b'"'))
+    use syn::visit::Visit as _;
+
+    let file =
+        syn::parse_file(source).expect("contract fixtures and server sources are valid Rust");
+    let mut visitor = OAuthClientTableVisitor::default();
+    visitor.visit_file(&file);
+    visitor.found
+}
+
+#[derive(Default)]
+struct OAuthClientTableVisitor {
+    found: bool,
+}
+
+impl OAuthClientTableVisitor {
+    fn inspect(&mut self, source: &str) {
+        const TABLE: &str = "oauth_clients";
+        let source = source.to_ascii_lowercase();
+        self.found |= source.match_indices(TABLE).any(|(offset, _)| {
+            let before = source[..offset].bytes().next_back();
+            let after = source[offset + TABLE.len()..].bytes().next();
+            let is_identifier = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_';
+            before.is_none_or(|byte| !is_identifier(byte))
+                && after.is_none_or(|byte| !is_identifier(byte))
+        });
+    }
+}
+
+fn is_cfg_test(attribute: &syn::Attribute) -> bool {
+    attribute.path().is_ident("cfg")
+        && attribute
+            .parse_args::<syn::Path>()
+            .is_ok_and(|path| path.is_ident("test"))
+}
+
+fn attributes_have_cfg_test(attributes: &[syn::Attribute]) -> bool {
+    attributes.iter().any(is_cfg_test)
+}
+
+fn item_is_cfg_test(item: &syn::Item) -> bool {
+    let attributes = match item {
+        syn::Item::Const(item) => &item.attrs,
+        syn::Item::Enum(item) => &item.attrs,
+        syn::Item::ExternCrate(item) => &item.attrs,
+        syn::Item::Fn(item) => &item.attrs,
+        syn::Item::ForeignMod(item) => &item.attrs,
+        syn::Item::Impl(item) => &item.attrs,
+        syn::Item::Macro(item) => &item.attrs,
+        syn::Item::Mod(item) => &item.attrs,
+        syn::Item::Static(item) => &item.attrs,
+        syn::Item::Struct(item) => &item.attrs,
+        syn::Item::Trait(item) => &item.attrs,
+        syn::Item::TraitAlias(item) => &item.attrs,
+        syn::Item::Type(item) => &item.attrs,
+        syn::Item::Union(item) => &item.attrs,
+        syn::Item::Use(item) => &item.attrs,
+        syn::Item::Verbatim(_) => return false,
+        _ => return false,
+    };
+    attributes_have_cfg_test(attributes)
+}
+
+fn impl_item_is_cfg_test(item: &syn::ImplItem) -> bool {
+    let attributes = match item {
+        syn::ImplItem::Const(item) => &item.attrs,
+        syn::ImplItem::Fn(item) => &item.attrs,
+        syn::ImplItem::Type(item) => &item.attrs,
+        syn::ImplItem::Macro(item) => &item.attrs,
+        syn::ImplItem::Verbatim(_) => return false,
+        _ => return false,
+    };
+    attributes_have_cfg_test(attributes)
+}
+
+fn trait_item_is_cfg_test(item: &syn::TraitItem) -> bool {
+    let attributes = match item {
+        syn::TraitItem::Const(item) => &item.attrs,
+        syn::TraitItem::Fn(item) => &item.attrs,
+        syn::TraitItem::Type(item) => &item.attrs,
+        syn::TraitItem::Macro(item) => &item.attrs,
+        syn::TraitItem::Verbatim(_) => return false,
+        _ => return false,
+    };
+    attributes_have_cfg_test(attributes)
+}
+
+fn foreign_item_is_cfg_test(item: &syn::ForeignItem) -> bool {
+    let attributes = match item {
+        syn::ForeignItem::Fn(item) => &item.attrs,
+        syn::ForeignItem::Static(item) => &item.attrs,
+        syn::ForeignItem::Type(item) => &item.attrs,
+        syn::ForeignItem::Macro(item) => &item.attrs,
+        syn::ForeignItem::Verbatim(_) => return false,
+        _ => return false,
+    };
+    attributes_have_cfg_test(attributes)
+}
+
+impl<'ast> syn::visit::Visit<'ast> for OAuthClientTableVisitor {
+    fn visit_item(&mut self, item: &'ast syn::Item) {
+        if !item_is_cfg_test(item) {
+            syn::visit::visit_item(self, item);
+        }
+    }
+
+    fn visit_impl_item(&mut self, item: &'ast syn::ImplItem) {
+        if !impl_item_is_cfg_test(item) {
+            syn::visit::visit_impl_item(self, item);
+        }
+    }
+
+    fn visit_trait_item(&mut self, item: &'ast syn::TraitItem) {
+        if !trait_item_is_cfg_test(item) {
+            syn::visit::visit_trait_item(self, item);
+        }
+    }
+
+    fn visit_foreign_item(&mut self, item: &'ast syn::ForeignItem) {
+        if !foreign_item_is_cfg_test(item) {
+            syn::visit::visit_foreign_item(self, item);
+        }
+    }
+
+    fn visit_attribute(&mut self, attribute: &'ast syn::Attribute) {
+        if !attribute.path().is_ident("doc") {
+            syn::visit::visit_attribute(self, attribute);
+        }
+    }
+
+    fn visit_ident(&mut self, ident: &'ast syn::Ident) {
+        let ident = ident.to_string();
+        if ident
+            .strip_prefix("r#")
+            .unwrap_or(&ident)
+            .eq_ignore_ascii_case("oauth_clients")
         {
-            cursor += usize::from(bytes[cursor] == b'b') + 1;
-            while cursor < bytes.len() {
-                match bytes[cursor] {
-                    b'\\' => cursor = (cursor + 2).min(bytes.len()),
-                    b'"' => {
-                        cursor += 1;
-                        break;
-                    }
-                    _ => cursor += 1,
-                }
-            }
-            (cursor, false)
-        } else if bytes[cursor] == b'\'' {
-            let mut end = cursor + 1;
-            let mut escaped = false;
-            while end < bytes.len() && bytes[end] != b'\n' {
-                if bytes[end] == b'\'' && !escaped {
-                    end += 1;
-                    break;
-                }
-                escaped = bytes[end] == b'\\' && !escaped;
-                if bytes[end] != b'\\' {
-                    escaped = false;
-                }
-                end += 1;
-            }
-            if end <= bytes.len() && bytes.get(end.wrapping_sub(1)) == Some(&b'\'') {
-                (end, false)
-            } else {
-                cursor += 1;
-                continue;
-            }
-        } else {
-            cursor += 1;
-            continue;
-        };
-        code[start..end].fill(false);
-        if is_comment {
-            comments[start..end].fill(true);
-        }
-        cursor = end;
-    }
-
-    let mut scrubbed = bytes.to_vec();
-    for (offset, is_comment) in comments.into_iter().enumerate() {
-        if is_comment {
-            scrubbed[offset] = b' ';
+            self.found = true;
         }
     }
 
-    let mut cursor = 0;
-    while let Some(attribute_start) = next_cfg_test_attribute(bytes, &code, cursor) {
-        let mut item_start = attribute_end(bytes, &code, attribute_start)
-            .expect("a matched cfg(test) attribute has a closing bracket");
-        loop {
-            item_start = skip_trivia(bytes, &code, item_start);
-            if bytes.get(item_start) != Some(&b'#') {
-                break;
-            }
-            let Some(end) = attribute_end(bytes, &code, item_start) else {
-                break;
-            };
-            item_start = end;
-        }
-        item_start = skip_trivia(bytes, &code, item_start);
-        let item_end = cfg_test_item_end(bytes, &code, item_start);
-        scrubbed[attribute_start..item_end].fill(b' ');
-        cursor = item_end.max(attribute_start + 1);
+    fn visit_lit_str(&mut self, literal: &'ast syn::LitStr) {
+        self.inspect(&literal.value());
     }
 
-    let source = String::from_utf8(scrubbed)
-        .expect("the scrubbed source preserves UTF-8")
-        .to_ascii_lowercase();
-    source.match_indices(TABLE).any(|(offset, _)| {
-        let before = source[..offset].bytes().next_back();
-        let after = source[offset + TABLE.len()..].bytes().next();
-        let is_identifier = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_';
-        before.is_none_or(|byte| !is_identifier(byte))
-            && after.is_none_or(|byte| !is_identifier(byte))
-    })
-}
-
-fn raw_string_prefix(source: &[u8]) -> Option<(usize, usize)> {
-    let mut cursor = usize::from(source.starts_with(b"br"));
-    if source.get(cursor) != Some(&b'r') {
-        return None;
+    fn visit_macro(&mut self, mac: &'ast syn::Macro) {
+        self.inspect(&mac.tokens.to_string());
+        syn::visit::visit_macro(self, mac);
     }
-    cursor += 1;
-    let hashes = source[cursor..]
-        .iter()
-        .take_while(|byte| **byte == b'#')
-        .count();
-    cursor += hashes;
-    (source.get(cursor) == Some(&b'"')).then_some((cursor + 1, hashes))
-}
-
-fn skip_trivia(source: &[u8], code: &[bool], mut cursor: usize) -> usize {
-    while cursor < source.len() && (source[cursor].is_ascii_whitespace() || !code[cursor]) {
-        cursor += 1;
-    }
-    cursor
-}
-
-fn attribute_end(source: &[u8], code: &[bool], start: usize) -> Option<usize> {
-    if source.get(start..start + 2) != Some(b"#[") {
-        return None;
-    }
-    let mut depth = 1;
-    let mut cursor = start + 2;
-    while cursor < source.len() {
-        if code[cursor] {
-            match source[cursor] {
-                b'[' => depth += 1,
-                b']' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return Some(cursor + 1);
-                    }
-                }
-                _ => {}
-            }
-        }
-        cursor += 1;
-    }
-    None
-}
-
-fn next_cfg_test_attribute(source: &[u8], code: &[bool], mut cursor: usize) -> Option<usize> {
-    while cursor < source.len() {
-        if code[cursor] && source.get(cursor..cursor + 2) == Some(b"#[") {
-            let end = attribute_end(source, code, cursor)?;
-            let compact: Vec<u8> = (cursor..end)
-                .filter(|offset| code[*offset] && !source[*offset].is_ascii_whitespace())
-                .map(|offset| source[offset])
-                .collect();
-            if compact == b"#[cfg(test)]" {
-                return Some(cursor);
-            }
-            cursor = end;
-        } else {
-            cursor += 1;
-        }
-    }
-    None
-}
-
-fn cfg_test_item_end(source: &[u8], code: &[bool], start: usize) -> usize {
-    let mut cursor = start;
-    while cursor < source.len() {
-        if code[cursor] {
-            match source[cursor] {
-                b';' => return cursor + 1,
-                b'{' => {
-                    let mut depth = 1;
-                    cursor += 1;
-                    while cursor < source.len() && depth > 0 {
-                        if code[cursor] {
-                            match source[cursor] {
-                                b'{' => depth += 1,
-                                b'}' => depth -= 1,
-                                _ => {}
-                            }
-                        }
-                        cursor += 1;
-                    }
-                    return cursor;
-                }
-                _ => {}
-            }
-        }
-        cursor += 1;
-    }
-    source.len()
 }
 
 #[test]
@@ -1224,7 +1154,7 @@ fn oauth_client_persistence_contract_rejects_aliases_declarations_imports_and_ra
         ),
         (
             "case-insensitive quoted raw SQL",
-            r##"sql_query(r#"SELECT * FROM \"OAUTH_CLIENTS\""#);"##,
+            r##"fn load() { sql_query(r#"SELECT * FROM \"OAUTH_CLIENTS\""#); }"##,
         ),
     ];
 
@@ -1283,6 +1213,22 @@ fn oauth_client_persistence_contract_ignores_documentation_and_cfg_test_items() 
         !contains_oauth_clients_table_name(stacked_attributes),
         "attributes stacked after cfg(test) must remain attached to the gated item"
     );
+
+    let associated_items = r#"
+        struct Repository;
+
+        impl Repository {
+            #[cfg(test)]
+            const QUERY: &str = "SELECT * FROM oauth_clients";
+
+            #[cfg(test)]
+            fn fixture() { crate::schema::oauth_clients::table; }
+        }
+    "#;
+    assert!(
+        !contains_oauth_clients_table_name(associated_items),
+        "cfg(test) associated items must be outside the production-source contract"
+    );
 }
 
 #[test]
@@ -1307,6 +1253,33 @@ fn oauth_client_persistence_contract_keeps_scanning_after_cfg_test_items() {
             "a real production violation after a cfg(test) item must still be detected"
         );
     }
+}
+
+#[test]
+fn oauth_client_persistence_contract_distinguishes_lifetimes_from_character_literals() {
+    let test_only_fixture = r#"
+        fn marker<'connection>() {} #[cfg(test)] fn fixture() { crate::schema::oauth_clients::table; } const MARKER: char = 'x';
+    "#;
+
+    assert!(
+        !contains_oauth_clients_table_name(test_only_fixture),
+        "a lifetime before cfg(test) and a later character literal must not hide the gate"
+    );
+}
+
+#[test]
+fn oauth_client_persistence_contract_skips_cfg_test_items_with_const_generics() {
+    let test_only_fixture = r#"
+        #[cfg(test)]
+        fn fixture<const CAPACITY: usize = { 1 }>() {
+            crate::schema::oauth_clients::table;
+        }
+    "#;
+
+    assert!(
+        !contains_oauth_clients_table_name(test_only_fixture),
+        "a const-generic expression must not truncate the cfg(test) item boundary"
+    );
 }
 
 #[test]

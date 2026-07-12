@@ -2276,6 +2276,7 @@ dependencies = [
  "nazo-identity",
  "serde",
  "serde_json",
+ "syn",
  "tokio",
  "uuid",
 ]
