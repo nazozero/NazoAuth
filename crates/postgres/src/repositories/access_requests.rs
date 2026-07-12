@@ -4,7 +4,7 @@ use diesel::{
     OptionalExtension, PgTextExpressionMethods, QueryDsl,
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
-use nazo_auth::{ApprovedClient, PreparedClientRegistration};
+use nazo_auth::{ApprovedClient, ValidatedClientRegistration};
 use nazo_identity::{
     AccessRequest, AccessRequestPage, AccessRequestStatus, NewAccessRequest, TenantId, UserId,
     ports::RepositoryError,
@@ -31,6 +31,13 @@ struct AccessRequestRecord {
     approved_client_id: Option<Uuid>,
     created_at: DateTime<Utc>,
     resolved_at: Option<DateTime<Utc>>,
+}
+
+struct ClientInsertCommand<'a> {
+    tenant: nazo_identity::TenantContext,
+    registration: &'a ValidatedClientRegistration,
+    client_secret_hash: Option<&'a str>,
+    registration_access_token_blake3: Option<&'a str>,
 }
 
 macro_rules! user_record_selection {
@@ -255,16 +262,10 @@ impl AccessRequestRepository {
         tenant: nazo_identity::TenantContext,
         request_id: Uuid,
         actor_user_id: UserId,
-        client: &PreparedClientRegistration,
+        client: &ValidatedClientRegistration,
+        client_secret_hash: Option<&str>,
+        registration_access_token_blake3: Option<&str>,
     ) -> Result<ApprovedClient, RepositoryError> {
-        if client.tenant_id != tenant.tenant_id.as_uuid()
-            || client.realm_id != tenant.realm_id.as_uuid()
-            || client.organization_id != tenant.organization_id.as_uuid()
-        {
-            return Err(RepositoryError::Consistency(
-                "access request and approved client context differ".to_owned(),
-            ));
-        }
         let mut connection = self.connection().await?;
         connection
             .transaction::<ApprovedClient, ApprovalError, _>(async |connection| {
@@ -299,7 +300,16 @@ impl AccessRequestRepository {
                         )));
                     }
                 }
-                let approved = insert_client(connection, client).await?;
+                let approved = insert_client(
+                    connection,
+                    ClientInsertCommand {
+                        tenant,
+                        registration: client,
+                        client_secret_hash,
+                        registration_access_token_blake3,
+                    },
+                )
+                .await?;
                 let updated = diesel::update(
                     client_access_requests::table
                         .filter(client_access_requests::tenant_id.eq(tenant.tenant_id.as_uuid()))
@@ -392,19 +402,20 @@ impl AccessRequestRepository {
 
 async fn insert_client(
     connection: &mut diesel_async::AsyncPgConnection,
-    prepared: &PreparedClientRegistration,
+    command: ClientInsertCommand<'_>,
 ) -> Result<ApprovedClient, RepositoryError> {
+    let prepared = command.registration;
     diesel::insert_into(oauth_clients::table)
         .values((
-            oauth_clients::tenant_id.eq(prepared.tenant_id),
-            oauth_clients::realm_id.eq(prepared.realm_id),
-            oauth_clients::organization_id.eq(prepared.organization_id),
+            oauth_clients::tenant_id.eq(command.tenant.tenant_id.as_uuid()),
+            oauth_clients::realm_id.eq(command.tenant.realm_id.as_uuid()),
+            oauth_clients::organization_id.eq(command.tenant.organization_id.as_uuid()),
             oauth_clients::client_id.eq(&prepared.client_id),
             oauth_clients::client_name.eq(&prepared.client_name),
             oauth_clients::client_type.eq(&prepared.client_type),
-            oauth_clients::client_secret_hash.eq(&prepared.client_secret_hash),
+            oauth_clients::client_secret_hash.eq(command.client_secret_hash),
             oauth_clients::registration_access_token_blake3
-                .eq(&prepared.registration_access_token_blake3),
+                .eq(command.registration_access_token_blake3),
             oauth_clients::redirect_uris.eq(json!(&prepared.redirect_uris)),
             oauth_clients::post_logout_redirect_uris.eq(json!(&prepared.post_logout_redirect_uris)),
             oauth_clients::scopes.eq(json!(&prepared.scopes)),

@@ -3,7 +3,7 @@ use diesel::{
     sql_types::{BigInt, Text, Uuid as SqlUuid},
 };
 use diesel_async::RunQueryDsl;
-use nazo_auth::PreparedClientRegistration;
+use nazo_auth::ValidatedClientRegistration;
 use nazo_identity::{
     AccessRequestStatus, NewAccessRequest, TenantContext, TenantId, UserId, ports::RepositoryError,
 };
@@ -56,11 +56,8 @@ fn new_request(tenant: TenantContext, user_id: UserId, suffix: &str) -> NewAcces
     }
 }
 
-fn client(tenant: TenantContext, suffix: &str) -> PreparedClientRegistration {
-    PreparedClientRegistration {
-        tenant_id: tenant.tenant_id.as_uuid(),
-        realm_id: tenant.realm_id.as_uuid(),
-        organization_id: tenant.organization_id.as_uuid(),
+fn client(suffix: &str) -> ValidatedClientRegistration {
+    ValidatedClientRegistration {
         client_id: format!("access-client-{suffix}"),
         client_name: format!("Access Client {suffix}"),
         client_type: "public".to_owned(),
@@ -97,9 +94,6 @@ fn client(tenant: TenantContext, suffix: &str) -> PreparedClientRegistration {
         authorization_signed_response_alg: None,
         authorization_encrypted_response_alg: None,
         authorization_encrypted_response_enc: None,
-        issued_secret: None,
-        client_secret_hash: None,
-        registration_access_token_blake3: None,
     }
 }
 
@@ -215,15 +209,15 @@ async fn concurrent_approval_has_one_cas_winner_and_rolls_back_losing_client() {
         ))
         .await
         .unwrap();
-    let left_client = client(tenant, &Uuid::now_v7().simple().to_string());
-    let right_client = client(tenant, &Uuid::now_v7().simple().to_string());
+    let left_client = client(&Uuid::now_v7().simple().to_string());
+    let right_client = client(&Uuid::now_v7().simple().to_string());
     let client_ids = [
         left_client.client_id.clone(),
         right_client.client_id.clone(),
     ];
     let (left, right) = tokio::join!(
-        repository.approve(tenant, request.id, user_id, &left_client),
-        repository.approve(tenant, request.id, user_id, &right_client)
+        repository.approve(tenant, request.id, user_id, &left_client, None, None),
+        repository.approve(tenant, request.id, user_id, &right_client, None, None)
     );
     assert_eq!(usize::from(left.is_ok()) + usize::from(right.is_ok()), 1);
     assert!(
@@ -253,7 +247,7 @@ async fn concurrent_approval_has_one_cas_winner_and_rolls_back_losing_client() {
 }
 
 #[tokio::test]
-async fn approval_rejects_mismatched_client_and_actor_contexts() {
+async fn approval_rejects_mismatched_actor_context() {
     let Some((pool, tenant, user_id)) = fixture().await else {
         return;
     };
@@ -266,24 +260,18 @@ async fn approval_rejects_mismatched_client_and_actor_contexts() {
         ))
         .await
         .unwrap();
-    let mut mismatched_client = client(tenant, &Uuid::now_v7().simple().to_string());
-    mismatched_client.realm_id = Uuid::now_v7();
-
-    let client_error = repository
-        .approve(tenant, request.id, user_id, &mismatched_client)
-        .await
-        .unwrap_err();
     let actor_error = repository
         .approve(
             tenant,
             request.id,
             UserId::new(Uuid::now_v7()).unwrap(),
-            &client(tenant, &Uuid::now_v7().simple().to_string()),
+            &client(&Uuid::now_v7().simple().to_string()),
+            None,
+            None,
         )
         .await
         .unwrap_err();
 
-    assert!(matches!(client_error, RepositoryError::Consistency(_)));
     assert!(matches!(actor_error, RepositoryError::Consistency(_)));
     assert_eq!(
         repository
@@ -340,9 +328,9 @@ async fn duplicate_client_conflict_does_not_report_request_as_processed() {
         .create(new_request(tenant, user_id, &format!("first-{suffix}")))
         .await
         .unwrap();
-    let prepared = client(tenant, &suffix);
+    let prepared = client(&suffix);
     repository
-        .approve(tenant, first.id, user_id, &prepared)
+        .approve(tenant, first.id, user_id, &prepared, None, None)
         .await
         .unwrap();
     let second = repository
@@ -351,7 +339,7 @@ async fn duplicate_client_conflict_does_not_report_request_as_processed() {
         .unwrap();
 
     let error = repository
-        .approve(tenant, second.id, user_id, &prepared)
+        .approve(tenant, second.id, user_id, &prepared, None, None)
         .await
         .unwrap_err();
 

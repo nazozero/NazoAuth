@@ -26,7 +26,7 @@ pub use claims::{
     authorization_response_jwt_claims, backchannel_logout_token_claims, id_token_claims,
 };
 pub use client::{ClientProfile, validate_token_request_profile};
-pub use client_registration::{ApprovedClient, PreparedClientRegistration};
+pub use client_registration::{ApprovedClient, ValidatedClientRegistration};
 pub use error::{ProtocolError, ProtocolErrorCode};
 pub use grant::GrantType;
 pub use metadata::{CapabilityAdmission, MetadataCapabilities, module_admissible};
