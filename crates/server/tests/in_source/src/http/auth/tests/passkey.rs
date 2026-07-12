@@ -1,5 +1,9 @@
 use super::*;
 use std::sync::Arc;
+
+fn passkey_user_handle(user: &UserRow) -> Vec<u8> {
+    crate::support::passkey_user_handle(user).expect("test user IDs must be valid")
+}
 use std::time::Duration as StdDuration;
 
 use actix_web::http::header;

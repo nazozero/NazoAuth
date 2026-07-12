@@ -532,7 +532,7 @@ async fn mfa_totp_confirm_rotates_session_and_csrf_after_valid_code() {
         .execute(&mut conn)
         .await
         .expect("pending TOTP credential should insert");
-    let code = totp_for_step(
+    let code = nazo_identity::mfa::totp_for_step(
         b"12345678901234567890",
         Utc::now().timestamp() / MFA_TOTP_PERIOD_SECONDS,
     )
@@ -700,7 +700,7 @@ async fn mfa_verify_completes_pending_totp_challenge_and_updates_session_amr() {
     let secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".to_owned();
     fixture.insert_confirmed_totp(&user, &secret).await;
     fixture.store_session(&user, &sid, true).await;
-    let code = totp_for_step(
+    let code = nazo_identity::mfa::totp_for_step(
         b"12345678901234567890",
         Utc::now().timestamp() / MFA_TOTP_PERIOD_SECONDS,
     )
@@ -809,7 +809,7 @@ async fn mfa_verify_remember_device_sets_cookie_and_persists_remembered_device()
     let secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".to_owned();
     fixture.insert_confirmed_totp(&user, &secret).await;
     fixture.store_session(&user, &sid, true).await;
-    let code = totp_for_step(
+    let code = nazo_identity::mfa::totp_for_step(
         b"12345678901234567890",
         Utc::now().timestamp() / MFA_TOTP_PERIOD_SECONDS,
     )
@@ -910,7 +910,7 @@ async fn mfa_backup_codes_regenerate_rotates_codes_after_valid_totp() {
     let previous_codes = replace_backup_codes(&fixture.state.diesel_db, &user)
         .await
         .expect("initial backup codes should generate");
-    let code = totp_for_step(
+    let code = nazo_identity::mfa::totp_for_step(
         b"12345678901234567890",
         Utc::now().timestamp() / MFA_TOTP_PERIOD_SECONDS,
     )
@@ -1031,7 +1031,7 @@ async fn mfa_disable_clears_totp_backup_codes_and_remembered_devices() {
     remember_mfa_device(&fixture.state, &remembered_req, &user)
         .await
         .expect("remembered device should persist");
-    let code = totp_for_step(
+    let code = nazo_identity::mfa::totp_for_step(
         b"12345678901234567890",
         Utc::now().timestamp() / MFA_TOTP_PERIOD_SECONDS,
     )

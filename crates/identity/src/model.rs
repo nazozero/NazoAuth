@@ -80,7 +80,15 @@ impl AuthMethod {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+/// Validated authentication state. It is intentionally not deserializable;
+/// persisted AMR data must enter through [`AuthenticationContext::from_amr`].
+///
+/// ```compile_fail
+/// let _: nazo_identity::AuthenticationContext =
+///     serde_json::from_str(r#"{"auth_time":0,"methods":[],"oidc_sid":"","amr":["tampered"]}"#)
+///         .unwrap();
+/// ```
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct AuthenticationContext {
     pub auth_time: i64,
     pub methods: Vec<AuthMethod>,

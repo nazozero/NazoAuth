@@ -1,5 +1,7 @@
 use std::{error::Error, fmt};
 
+use lettre::Address;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EmailAddressError;
 
@@ -13,28 +15,10 @@ impl Error for EmailAddressError {}
 
 pub fn normalize_email_address(raw: &str) -> Result<String, EmailAddressError> {
     let normalized = raw.trim().to_ascii_lowercase();
-    if normalized.is_empty()
-        || normalized.bytes().any(|byte| {
-            byte.is_ascii_whitespace()
-                || byte.is_ascii_control()
-                || matches!(byte, b'<' | b'>' | b',' | b';')
-        })
-    {
-        return Err(EmailAddressError);
-    }
-    let mut parts = normalized.split('@');
-    let local = parts.next().unwrap_or_default();
-    let domain = parts.next().unwrap_or_default();
-    if local.is_empty()
-        || domain.is_empty()
-        || parts.next().is_some()
-        || domain.starts_with('.')
-        || domain.ends_with('.')
-        || domain.split('.').any(str::is_empty)
-    {
-        return Err(EmailAddressError);
-    }
-    Ok(normalized)
+    normalized
+        .parse::<Address>()
+        .map(|address| address.to_string())
+        .map_err(|_| EmailAddressError)
 }
 
 pub struct VerificationEmail<'a> {

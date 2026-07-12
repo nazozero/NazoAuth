@@ -33,12 +33,14 @@ pub(crate) fn passkey_webauthn(settings: &Settings) -> Webauthn {
     .strict_base64(settings.passkey.strict_base64)
 }
 
-pub(crate) fn passkey_user_handle(user: &UserRow) -> Vec<u8> {
+pub(crate) fn passkey_user_handle(user: &UserRow) -> anyhow::Result<Vec<u8>> {
     let tenant_id = nazo_identity::TenantId::new(user.tenant_id)
-        .expect("persisted passkey tenant ID must not be nil");
-    let user_id =
-        nazo_identity::UserId::new(user.id).expect("persisted passkey user ID must not be nil");
-    nazo_identity::passkey::passkey_user_handle(tenant_id, user_id)
+        .map_err(|error| anyhow::anyhow!("invalid persisted passkey tenant ID: {error}"))?;
+    let user_id = nazo_identity::UserId::new(user.id)
+        .map_err(|error| anyhow::anyhow!("invalid persisted passkey user ID: {error}"))?;
+    Ok(nazo_identity::passkey::passkey_user_handle(
+        tenant_id, user_id,
+    ))
 }
 
 pub(crate) fn normalize_passkey_label(value: Option<String>) -> Result<String, HttpResponse> {

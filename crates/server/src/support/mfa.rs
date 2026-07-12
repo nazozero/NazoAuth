@@ -9,35 +9,9 @@ use super::{blake3_hex, hash_password, random_urlsafe_token, verify_password};
 
 pub(crate) const MFA_REMEMBERED_COOKIE_NAME: &str = "nazo_oauth_mfa_remembered";
 pub(crate) const MFA_REMEMBERED_TTL_SECONDS: u64 = 2_592_000;
-pub(crate) use nazo_identity::mfa::MfaVerificationMethod;
-pub(crate) const MFA_TOTP_PERIOD_SECONDS: i64 = nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
-pub(crate) const MFA_TOTP_DIGITS: usize = nazo_identity::mfa::MFA_TOTP_DIGITS;
-pub(crate) const MFA_BACKUP_CODE_COUNT: usize = nazo_identity::mfa::MFA_BACKUP_CODE_COUNT;
-
-pub(crate) fn generate_totp_secret_base32() -> String {
-    nazo_identity::mfa::generate_totp_secret_base32()
-}
-
-pub(crate) fn otpauth_uri(issuer: &str, account_name: &str, secret_base32: &str) -> String {
-    nazo_identity::mfa::otpauth_uri(issuer, account_name, secret_base32)
-}
-
-pub(crate) fn verified_totp_step(
-    secret_base32: &str,
-    code: &str,
-    now: i64,
-    last_used_step: Option<i64>,
-) -> Option<i64> {
-    nazo_identity::mfa::verified_totp_step(secret_base32, code, now, last_used_step)
-}
-
-pub(crate) fn generate_backup_code() -> String {
-    nazo_identity::mfa::generate_backup_code()
-}
-
-pub(crate) fn normalize_backup_code(value: &str) -> Option<String> {
-    nazo_identity::mfa::normalize_backup_code(value)
-}
+pub(crate) use nazo_identity::mfa::{
+    MFA_BACKUP_CODE_COUNT, MFA_TOTP_DIGITS, MFA_TOTP_PERIOD_SECONDS, MfaVerificationMethod,
+};
 
 pub(crate) async fn remembered_mfa_device_valid(
     state: &AppState,
@@ -125,8 +99,12 @@ pub(crate) async fn verify_user_mfa_code(
         .await
         .optional()?;
     if let Some((id, secret_base32, last_used_step)) = totp_credential
-        && let Some(step) =
-            verified_totp_step(&secret_base32, code, now.timestamp(), last_used_step)
+        && let Some(step) = nazo_identity::mfa::verified_totp_step(
+            &secret_base32,
+            code,
+            now.timestamp(),
+            last_used_step,
+        )
     {
         let updated = diesel::update(
             user_totp_credentials::table.find(id).filter(
@@ -146,7 +124,7 @@ pub(crate) async fn verify_user_mfa_code(
         }
     }
 
-    let Some(normalized) = normalize_backup_code(code) else {
+    let Some(normalized) = nazo_identity::mfa::normalize_backup_code(code) else {
         return Ok(None);
     };
     let candidates = user_mfa_backup_codes::table
@@ -183,8 +161,9 @@ pub(crate) async fn replace_backup_codes(
     let mut codes = Vec::with_capacity(MFA_BACKUP_CODE_COUNT);
     let mut hashes = Vec::with_capacity(MFA_BACKUP_CODE_COUNT);
     for _ in 0..MFA_BACKUP_CODE_COUNT {
-        let code = generate_backup_code();
-        let normalized = normalize_backup_code(&code).expect("generated backup code is valid");
+        let code = nazo_identity::mfa::generate_backup_code();
+        let normalized = nazo_identity::mfa::normalize_backup_code(&code)
+            .expect("generated backup code is valid");
         let hash = hash_password(&normalized)
             .map_err(|error| anyhow::anyhow!("failed to hash backup code: {error}"))?;
         hashes.push(hash);
@@ -255,21 +234,6 @@ fn request_user_agent_hash(req: &HttpRequest) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(blake3_hex)
-}
-
-#[cfg(test)]
-pub(crate) fn totp_for_step(secret: &[u8], step: i64) -> anyhow::Result<String> {
-    Ok(nazo_identity::mfa::totp_for_step(secret, step)?)
-}
-
-#[cfg(test)]
-fn base32_encode(bytes: &[u8]) -> String {
-    nazo_identity::mfa::base32_encode(bytes)
-}
-
-#[cfg(test)]
-fn base32_decode(value: &str) -> Option<Vec<u8>> {
-    nazo_identity::mfa::base32_decode(value)
 }
 
 #[cfg(test)]
