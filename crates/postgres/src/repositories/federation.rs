@@ -162,7 +162,7 @@ impl FederationRepository {
                         users::organization_id.eq(tenant.organization_id.as_uuid()),
                         users::username.eq(&new_identity.email),
                         users::email.eq(&new_identity.email),
-                        users::password_hash.eq(new_identity.password_hash),
+                        users::password_hash.eq(new_identity.password_hash.into_inner()),
                         users::email_verified.eq(true),
                         users::display_name.eq(new_identity.display_name),
                     ))

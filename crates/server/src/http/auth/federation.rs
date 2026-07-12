@@ -553,6 +553,15 @@ async fn resolve_external_identity(
                     "federation login failed.",
                 )
             })?;
+            let password_hash =
+                nazo_identity::PasswordHash::new(password_hash).map_err(|error| {
+                    tracing::error!(%error, "generated federation password hash is invalid");
+                    oauth_error(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "server_error",
+                        "federation login failed.",
+                    )
+                })?;
             repository
                 .create_federated(nazo_identity::ports::NewFederatedIdentity {
                     login: nazo_identity::ports::FederationLogin {

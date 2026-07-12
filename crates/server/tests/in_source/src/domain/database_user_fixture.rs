@@ -89,7 +89,8 @@ impl TryFrom<DatabaseUserFixture> for IdentityUser {
             login: LoginIdentity {
                 username: row.username,
                 email: row.email,
-                password_hash: row.password_hash,
+                password_hash: nazo_identity::PasswordHash::new(row.password_hash)
+                    .map_err(|_| "invalid password hash")?,
                 email_verified: row.email_verified,
                 mfa_enabled: row.mfa_enabled,
             },

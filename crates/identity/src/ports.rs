@@ -2,11 +2,10 @@ use std::{collections::HashMap, sync::Mutex};
 use std::{future::Future, pin::Pin};
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::{Principal, SubjectClaims, TenantContext, TenantId, UserId, UserProfile};
+use crate::{PasswordHash, Principal, SubjectClaims, TenantContext, TenantId, UserId, UserProfile};
 
 pub type RepositoryFuture<'a, T> =
     Pin<Box<dyn Future<Output = Result<T, RepositoryError>> + Send + 'a>>;
@@ -51,7 +50,7 @@ pub struct TotpEnrollment {
     pub last_used_step: Option<i64>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PasskeyCredential {
     pub id: Uuid,
     pub tenant_id: TenantId,
@@ -65,7 +64,7 @@ pub struct PasskeyCredential {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FederationLink {
     pub id: Uuid,
     pub tenant_id: TenantId,
@@ -80,7 +79,7 @@ pub struct FederationLink {
     pub last_login_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct NewFederationLink {
     pub tenant_id: TenantId,
     pub user_id: UserId,
@@ -106,7 +105,7 @@ pub struct NewFederatedIdentity {
     pub login: FederationLogin,
     pub email: String,
     pub display_name: Option<String>,
-    pub password_hash: String,
+    pub password_hash: PasswordHash,
 }
 
 #[derive(Clone, Debug)]
@@ -114,7 +113,7 @@ pub struct NewUser {
     pub tenant: TenantContext,
     pub username: String,
     pub email: String,
-    pub password_hash: String,
+    pub password_hash: PasswordHash,
     pub email_verified: bool,
 }
 
@@ -149,7 +148,7 @@ pub struct ScimListQuery {
 pub struct NewScimUser {
     pub tenant: TenantContext,
     pub input: crate::scim::NormalizedScimUser,
-    pub password_hash: String,
+    pub password_hash: PasswordHash,
 }
 
 pub trait UserRepositoryPort: Send + Sync {

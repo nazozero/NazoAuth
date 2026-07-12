@@ -57,7 +57,17 @@ pub(crate) async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) 
             .clone()
     } else {
         match dummy_password_hash() {
-            Ok(hash) => hash,
+            Ok(hash) => match nazo_identity::PasswordHash::new(hash) {
+                Ok(hash) => hash,
+                Err(error) => {
+                    tracing::error!(%error, "dummy password hash is invalid");
+                    return oauth_error(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "server_error",
+                        "密码校验失败.",
+                    );
+                }
+            },
             Err(error) => {
                 tracing::error!(%error, "dummy password hash is unavailable");
                 return oauth_error(

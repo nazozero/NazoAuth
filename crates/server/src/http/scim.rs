@@ -415,6 +415,17 @@ pub(crate) async fn scim_create_user(
             );
         }
     };
+    let password_hash = match nazo_identity::PasswordHash::new(password_hash) {
+        Ok(hash) => hash,
+        Err(error) => {
+            tracing::error!(%error, "generated SCIM password hash is invalid");
+            return scim_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "backend unavailable",
+            );
+        }
+    };
     let tenant = default_tenant_context();
     let row = nazo_postgres::ScimRepository::new(state.diesel_db.clone())
         .create(nazo_identity::ports::NewScimUser {

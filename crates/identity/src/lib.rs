@@ -12,6 +12,6 @@ pub mod tenancy;
 
 pub use model::{
     AuthMethod, AuthenticationContext, IdentityModelError, IdentityUser, LoginIdentity,
-    PostalAddress, Principal, SubjectClaims, UserProfile, UserRole,
+    PasswordHash, PostalAddress, Principal, SubjectClaims, UserProfile, UserRole,
 };
 pub use tenancy::{OrganizationId, RealmId, TenantContext, TenantId, UserId};
