@@ -9,11 +9,9 @@ use chrono::Utc;
 use jsonwebtoken::{Algorithm, Validation};
 use serde::{Deserialize, Serialize};
 
-mod adapters;
 mod dpop;
 mod jwk;
 mod presentation;
-pub use adapters::*;
 pub use dpop::{DpopProofVerifier, DpopProofVerifierConfig, DpopProofVerifierError};
 #[cfg(test)]
 use dpop::{access_token_hash, dpop_jwk_thumbprint};
@@ -403,5 +401,5 @@ fn scope_values(value: &str) -> Vec<String> {
 }
 
 #[cfg(test)]
-#[path = "../tests/in_source/src/resource_server/tests/resource_server.rs"]
+#[path = "../tests/in_source/resource_server.rs"]
 mod tests;

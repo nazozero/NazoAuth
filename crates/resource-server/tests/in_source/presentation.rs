@@ -1,5 +1,5 @@
 use super::*;
-use crate::resource_server::{
+use crate::{
     ConfirmationClaims, ResourceServerRequestError, VerifiedAccessToken,
     VerifiedSenderConstraintProof,
 };
