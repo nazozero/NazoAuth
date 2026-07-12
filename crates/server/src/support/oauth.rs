@@ -13,7 +13,6 @@ use super::{
         SUPPORTED_CLIENT_JWT_SIGNING_ALGS, blake3_hex, client_jwt_algorithm_from_name,
         jwt_decoding_key_from_jwk, supported_client_jwt_algorithm_name,
     },
-    tenancy::DEFAULT_TENANT_ID,
 };
 
 fn ensure_public_client_jwk(jwk: &serde_json::Map<String, Value>) -> anyhow::Result<()> {
@@ -728,39 +727,6 @@ pub(crate) fn authorization_code_key(code: &str) -> String {
 
 pub(crate) fn authorization_code_key_from_hash(code_hash: &str) -> String {
     format!("oauth:auth_code:{code_hash}")
-}
-
-pub(crate) async fn upsert_grant(
-    state: &AppState,
-    user_id: Uuid,
-    client_id: &str,
-    scopes: &[String],
-    resource_indicators: &[String],
-    authorization_details: &Value,
-) -> anyhow::Result<()> {
-    let Some(client) = nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-        .by_client_id(DEFAULT_TENANT_ID, client_id)
-        .await
-        .map_err(|error| anyhow::anyhow!("failed to load OAuth client: {error}"))?
-    else {
-        return Ok(());
-    };
-    let tenant = default_tenant_context();
-    if !tenant.same_tenant(client.tenant_id) {
-        anyhow::bail!("client resolved outside the default tenant context");
-    }
-    nazo_postgres::GrantRepository::new(state.diesel_db.clone())
-        .upsert(
-            client.tenant_id,
-            user_id,
-            client.id,
-            scopes,
-            resource_indicators,
-            authorization_details,
-        )
-        .await
-        .map_err(|error| anyhow::anyhow!("failed to persist grant: {error}"))?;
-    Ok(())
 }
 
 #[cfg(test)]

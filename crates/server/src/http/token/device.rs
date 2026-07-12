@@ -776,15 +776,16 @@ pub(crate) async fn device_decision(
                     );
                 }
             };
-            if let Err(error) = upsert_grant(
-                &state,
-                user.id(),
-                &payload.client_id,
-                &payload.scopes,
-                &payload.resource_indicators,
-                &payload.authorization_details,
-            )
-            .await
+            if let Err(error) = nazo_postgres::GrantRepository::new(state.diesel_db.clone())
+                .upsert(
+                    client.tenant_id,
+                    user.id(),
+                    client.id,
+                    &payload.scopes,
+                    &payload.resource_indicators,
+                    &payload.authorization_details,
+                )
+                .await
             {
                 tracing::warn!(%error, "failed to persist device authorization grant");
                 return oauth_error(

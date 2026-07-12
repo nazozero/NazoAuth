@@ -209,16 +209,29 @@ pub(crate) async fn authorize_decision(
             "授权码创建失败.",
         );
     }
-    if let Err(error) = upsert_grant(
-        &state,
-        payload.user_id,
-        &payload.client_id,
-        &payload.scopes,
-        &payload.resource_indicators,
-        &payload.authorization_details,
-    )
-    .await
-    {
+    let grant_result = async {
+        let client = nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+            .by_client_id(DEFAULT_TENANT_ID, &payload.client_id)
+            .await
+            .map_err(|error| anyhow::anyhow!("failed to load OAuth client: {error}"))?
+            .ok_or_else(|| anyhow::anyhow!("OAuth client disappeared before grant commit"))?;
+        if !default_tenant_context().same_tenant(client.tenant_id) {
+            anyhow::bail!("OAuth client resolved outside default tenant");
+        }
+        nazo_postgres::GrantRepository::new(state.diesel_db.clone())
+            .upsert(
+                client.tenant_id,
+                payload.user_id,
+                client.id,
+                &payload.scopes,
+                &payload.resource_indicators,
+                &payload.authorization_details,
+            )
+            .await
+            .map_err(|error| anyhow::anyhow!("failed to persist grant: {error}"))
+    }
+    .await;
+    if let Err(error) = grant_result {
         tracing::warn!(%error, "failed to persist user client grant");
         if let Err(cleanup_error) = valkey_del(&state.valkey, &code_key).await {
             tracing::warn!(%cleanup_error, "failed to remove authorization code after grant failure");
