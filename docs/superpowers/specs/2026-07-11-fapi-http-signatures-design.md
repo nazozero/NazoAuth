@@ -66,9 +66,9 @@ test independently and cannot be consumed by a client.
 
 ### Reusable core crate plus server adapter (selected)
 
-A repository-local `nazo-fapi-http-signatures` crate owns structured-field
-parsing, signature-base construction, digest handling, FAPI coverage policy,
-and client helper APIs. NazoAuth owns access-token authentication, client/key
+A repository-local `nazo-http-signatures` crate owns structured-field
+parsing, signature-base construction, digest handling, and client helper APIs.
+NazoAuth owns FAPI coverage policy, access-token authentication, client/key
 resolution, cryptographic key custody, replay storage, and Actix response
 adaptation. This keeps draft churn isolated while giving server and client
 code the same canonicalization implementation.
@@ -155,7 +155,7 @@ while the feature is enabled.
 
 ## Client helper API
 
-Create `crates/fapi-http-signatures` as a normal Rust library package and add it
+Create `crates/http-signatures` as a normal Rust library package and add it
 as a path dependency of the server. Its public API is transport-neutral:
 
 - `content_digest(body)` returns the canonical RFC 9530 SHA-256 field value;

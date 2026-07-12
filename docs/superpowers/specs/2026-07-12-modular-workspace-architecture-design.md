@@ -42,7 +42,7 @@ tested, documented additions such as runtime module control.
   Its Actix/Tower/Tonic adapter module is the only framework coupling. Tower and
   Tonic are otherwise used only by adapter tests, so those historical adapters
   and direct dependencies can be deleted.
-- `nazo-fapi-http-signatures` depends only on framework-neutral
+- `nazo-http-signatures` depends only on framework-neutral
   `httpsig`, `sfv`, `sha2`, `subtle`, `thiserror`, and `url`. It is a real,
   independently testable HTTP protocol primitive and will be retained under
   the neutral name `nazo-http-signatures`; FAPI policy remains in auth.

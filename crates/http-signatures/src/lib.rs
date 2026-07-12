@@ -1,3 +1,9 @@
+//! Framework-neutral primitives for HTTP Message Signatures (RFC 9421) and
+//! Content-Digest fields (RFC 9530).
+//!
+//! The crate prepares and parses request and response signature fields,
+//! reconstructs signature bases, and computes or validates content digests.
+
 mod digest;
 mod error;
 mod request;

@@ -4,7 +4,7 @@ use std::{future::Future, pin::Pin};
 
 use crate::domain::Claims;
 use crate::http::prelude::*;
-use nazo_fapi_http_signatures::{
+use nazo_http_signatures::{
     OriginalRequest, RequestInput, ResponseInput, ResponsePolicy, SignatureFields,
     VerificationPolicy, VerifiedInput, content_digest, content_digest_field_matches,
     parse_request_for_verification, prepare_response,

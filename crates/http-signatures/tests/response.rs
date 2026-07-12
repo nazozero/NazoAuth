@@ -1,4 +1,4 @@
-use nazo_fapi_http_signatures::{
+use nazo_http_signatures::{
     OriginalRequest, RequestInput, ResponseInput, ResponsePolicy, SignatureFields,
     VerificationPolicy, VerifyError, content_digest, parse_response_for_verification,
     prepare_response,
@@ -570,7 +570,7 @@ fn parse(
     request_headers: &[(&str, &str)],
     request_fields: &SignatureFields,
     response_fields: SignatureFields,
-) -> Result<nazo_fapi_http_signatures::VerifiedInput, VerifyError> {
+) -> Result<nazo_http_signatures::VerifiedInput, VerifyError> {
     parse_response_for_verification(
         ResponseInput {
             status,
