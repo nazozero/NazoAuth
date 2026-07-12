@@ -143,21 +143,7 @@ pub(crate) fn access_delivery_token(secret: &str, user_id: Uuid, request_id: Uui
 }
 
 pub(crate) fn verify_client_secret(secret: &str, stored_hash: &str, pepper: &str) -> bool {
-    let mut parts = stored_hash.split(':');
-    let Some(version) = parts.next() else {
-        return false;
-    };
-    let Some(salt) = parts.next() else {
-        return false;
-    };
-    let Some(stored_mac) = parts.next() else {
-        return false;
-    };
-    if parts.next().is_some() || version != CLIENT_SECRET_HASH_VERSION {
-        return false;
-    }
-    let actual_mac = client_secret_mac(secret, pepper, salt);
-    constant_time_eq(actual_mac.as_bytes(), stored_mac.as_bytes())
+    nazo_auth::verify_client_secret_hash(secret, stored_hash, pepper)
 }
 
 fn client_secret_mac(secret: &str, pepper: &str, salt: &str) -> String {

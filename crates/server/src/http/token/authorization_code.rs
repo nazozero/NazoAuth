@@ -271,7 +271,7 @@ async fn revoke_replayed_authorization_code(
         .by_id(marker.client_id)
         .await
     {
-        Ok(Some(client)) => ClientRow::from(client),
+        Ok(Some(client)) => client,
         Ok(None) => {
             return Ok(false);
         }

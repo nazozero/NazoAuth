@@ -63,7 +63,6 @@ impl FapiResourceStore for AppState {
             repository
                 .by_client_id(tenant_id, client_id)
                 .await
-                .map(|client| client.map(ClientRow::from))
                 .map_err(|error| anyhow::anyhow!("failed to load OAuth client: {error}"))
         })
     }

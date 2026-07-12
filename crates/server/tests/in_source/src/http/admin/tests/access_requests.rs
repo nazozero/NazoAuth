@@ -478,10 +478,25 @@ impl LiveAdminAccessRequestFixture {
             .expect("database connection");
         oauth_clients::table
             .find(approved_client_id)
-            .select(ClientRow::as_select())
-            .first::<ClientRow>(&mut conn)
+            .select(ClientRecord::as_select())
+            .first::<ClientRecord>(&mut conn)
             .await
             .expect("approved client should exist")
+            .try_into()
+            .expect("approved client metadata should be valid")
+    }
+
+    async fn client_has_secret_hash(&self, approved_client_id: Uuid) -> bool {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        oauth_clients::table
+            .find(approved_client_id)
+            .select(oauth_clients::client_secret_hash)
+            .first::<Option<String>>(&mut conn)
+            .await
+            .expect("approved client should exist")
+            .is_some()
     }
 
     async fn access_request_state(&self, request_id: Uuid) -> AccessRequestStateRow {
@@ -859,7 +874,7 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
     let client = fixture.client_row(approved_client_id).await;
     assert_eq!(client.token_endpoint_auth_method, "client_secret_post");
     assert_eq!(client.client_type, "confidential");
-    assert!(client.client_secret_hash.is_some());
+    assert!(fixture.client_has_secret_hash(approved_client_id).await);
     assert!(body.get("delivery_token").is_none());
     assert!(body.get("delivery_url").is_none());
 

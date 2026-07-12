@@ -49,7 +49,6 @@ async fn mtls_client_credentials_without_client_id(
         Ok(candidates) => {
             let clients = candidates
                 .into_iter()
-                .map(ClientRow::from)
                 .filter(|client| client_mtls_certificate_matches(client, &certificate))
                 .take(2)
                 .collect::<Vec<_>>();
@@ -308,7 +307,7 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
         .by_client_id(DEFAULT_TENANT_ID, client_id)
         .await
     {
-        Ok(Some(client)) => ClientRow::from(client),
+        Ok(Some(client)) => client,
         Ok(None) => {
             return oauth_token_error(
                 StatusCode::UNAUTHORIZED,
@@ -363,11 +362,27 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
                     .client_secret
                     .as_deref()
                     .expect("secret-based client credentials must include client_secret");
-                if !verify_client_secret(
-                    secret,
-                    client.client_secret_hash.as_deref().unwrap_or(""),
-                    &state.settings.client_secret_pepper,
-                ) {
+                let secret_matches =
+                    nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+                        .client_secret_matches(
+                            client.id,
+                            secret,
+                            &state.settings.client_secret_pepper,
+                        )
+                        .await;
+                let secret_matches = match secret_matches {
+                    Ok(matches) => matches,
+                    Err(error) => {
+                        tracing::warn!(%error, "failed to verify token client secret");
+                        return oauth_token_error(
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            "server_error",
+                            "客户端认证状态不可用.",
+                            false,
+                        );
+                    }
+                };
+                if !secret_matches {
                     return oauth_token_error(
                         StatusCode::UNAUTHORIZED,
                         "invalid_client",

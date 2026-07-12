@@ -606,7 +606,7 @@ fn token_request(content_type: &str) -> HttpRequest {
 }
 
 fn client() -> ClientRow {
-    ClientRow {
+    crate::client_row! {
         id: Uuid::now_v7(),
         tenant_id: DEFAULT_TENANT_ID,
         realm_id: DEFAULT_REALM_ID,
@@ -2189,12 +2189,12 @@ fn fapi2_profile_accepts_self_signed_mtls_confidential_sender_constrained_client
 }
 
 #[test]
-fn grant_dispatch_rejects_malformed_grant_registration_without_panicking() {
+fn grant_dispatch_rejects_unregistered_grant_without_panicking() {
     let mut client = client();
-    client.grant_types = json!("authorization_code");
+    client.grant_types = vec!["authorization_code".to_owned()];
 
-    let response = validate_token_client_enabled(&client, "authorization_code")
-        .expect_err("non-array grant_types must fail closed");
+    let response = validate_token_client_enabled(&client, "refresh_token")
+        .expect_err("unregistered grant_types must fail closed");
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(oauth_error_code(&response), "unauthorized_client");

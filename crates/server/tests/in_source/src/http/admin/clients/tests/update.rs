@@ -291,10 +291,12 @@ impl LiveAdminClientUpdateFixture {
             .expect("database connection");
         oauth_clients::table
             .filter(oauth_clients::client_id.eq(client_id))
-            .select(ClientRow::as_select())
-            .first::<ClientRow>(&mut conn)
+            .select(ClientRecord::as_select())
+            .first::<ClientRecord>(&mut conn)
             .await
             .expect("client should load")
+            .try_into()
+            .expect("client metadata should be valid")
     }
 }
 
@@ -308,7 +310,7 @@ async fn json_body(response: HttpResponse) -> (StatusCode, Value) {
 }
 
 fn current_client() -> ClientRow {
-    ClientRow {
+    crate::client_row! {
         id: Uuid::now_v7(),
         tenant_id: DEFAULT_TENANT_ID,
         realm_id: DEFAULT_REALM_ID,
@@ -722,7 +724,11 @@ async fn admin_patch_client_validates_metadata_after_admin_authentication() {
         Json(payload),
     )
     .await;
-    let stored_name = fixture.client_row(&client.client_id).await.client_name;
+    let stored_name = fixture
+        .client_row(&client.client_id)
+        .await
+        .client_name
+        .clone();
     fixture.cleanup().await;
     let (status, body) = json_body(response).await;
 
@@ -750,7 +756,7 @@ async fn admin_patch_client_surfaces_client_lookup_failure_after_admin_authentic
     let response = admin_patch_client(
         fixture.state.clone(),
         req,
-        actix_web::web::Path::from(client.client_id),
+        actix_web::web::Path::from(client.client_id.clone()),
         Json(empty_patch()),
     )
     .await;
@@ -786,7 +792,11 @@ async fn admin_patch_client_surfaces_update_failure_without_mutating_current_cli
         Json(payload),
     )
     .await;
-    let stored_name = fixture.client_row(&client.client_id).await.client_name;
+    let stored_name = fixture
+        .client_row(&client.client_id)
+        .await
+        .client_name
+        .clone();
     fixture.cleanup().await;
     let (status, body) = json_body(response).await;
 

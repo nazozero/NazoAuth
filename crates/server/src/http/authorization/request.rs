@@ -164,7 +164,7 @@ async fn authorize_request(
         .by_client_id(DEFAULT_TENANT_ID, client_id)
         .await
     {
-        Ok(Some(client)) => ClientRow::from(client),
+        Ok(Some(client)) => client,
         Ok(None) => {
             return oauth_error(
                 StatusCode::UNAUTHORIZED,
@@ -447,8 +447,8 @@ async fn authorize_request(
     let payload = ConsentPayload {
         request_id: request_id.clone(),
         user_id: session.user.id(),
-        client_id: client.client_id,
-        client_name: client.client_name,
+        client_id: client.client_id.clone(),
+        client_name: client.client_name.clone(),
         redirect_uri: redirect_uri.clone(),
         redirect_uri_was_supplied: q.contains_key("redirect_uri"),
         scopes: requested_scopes,
@@ -605,7 +605,7 @@ pub(crate) async fn authorization_response_redirect(
             .by_client_id(DEFAULT_TENANT_ID, input.client_id)
             .await
         {
-            Ok(Some(client)) if client.is_active => ClientRow::from(client),
+            Ok(Some(client)) if client.is_active => client,
             Ok(_) => {
                 tracing::warn!(client_id_hash = %blake3_hex(input.client_id), "JARM client is missing or inactive");
                 return oauth_error(

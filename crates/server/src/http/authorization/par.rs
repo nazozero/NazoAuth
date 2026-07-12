@@ -168,7 +168,7 @@ async fn par_after_rate_limit_inner(
         .by_client_id(DEFAULT_TENANT_ID, &client_id)
         .await
     {
-        Ok(Some(client)) if client.is_active => ClientRow::from(client),
+        Ok(Some(client)) if client.is_active => client,
         Ok(_) => {
             return oauth_error(
                 StatusCode::UNAUTHORIZED,
@@ -196,7 +196,7 @@ async fn par_after_rate_limit_inner(
     let client_assertion = if client.client_type == "public" {
         None
     } else {
-        match verify_confidential_client(&state, &req, &client, &credentials) {
+        match verify_confidential_client(&state, &req, &client, &credentials).await {
             Ok(assertion) => assertion,
             Err(error) => return token_management_auth_error(error),
         }

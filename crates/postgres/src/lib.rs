@@ -24,6 +24,5 @@ pub use pool::{
 };
 pub use repositories::{
     AccessRequestRepository, FederationRepository, GrantPage, GrantProjection, GrantRepository,
-    MfaRepository, OAuthClient, OAuthClientRepository, PasskeyRepository, ScimRepository,
-    UserRepository,
+    MfaRepository, OAuthClientRepository, PasskeyRepository, ScimRepository, UserRepository,
 };

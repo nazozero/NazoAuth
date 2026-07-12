@@ -99,7 +99,7 @@ pub(crate) async fn admin_patch_client(
         .by_client_id(DEFAULT_TENANT_ID, &client_id)
         .await
     {
-        Ok(Some(client)) => ClientRow::from(client),
+        Ok(Some(client)) => client,
         Ok(None) => {
             return oauth_error(StatusCode::NOT_FOUND, "invalid_request", "未找到该客户端.");
         }
@@ -146,7 +146,7 @@ pub(crate) async fn admin_patch_client(
             );
         }
     };
-    let client = match diesel::update(
+    let client: ClientRow = match diesel::update(
         oauth_clients::table.filter(oauth_clients::client_id.eq(&current.client_id)),
     )
     .set((
@@ -196,10 +196,14 @@ pub(crate) async fn admin_patch_client(
         oauth_clients::is_active.eq(prepared.is_active),
         oauth_clients::updated_at.eq(diesel_now),
     ))
-    .returning(ClientRow::as_returning())
-    .get_result::<ClientRow>(&mut conn)
+    .returning(ClientRecord::as_returning())
+    .get_result::<ClientRecord>(&mut conn)
     .await
-    {
+    .and_then(|record| {
+        record
+            .try_into()
+            .map_err(|error| diesel::result::Error::DeserializationError(Box::new(error)))
+    }) {
         Ok(client) => client,
         Err(error) => {
             tracing::warn!(%error, "failed to update oauth client");

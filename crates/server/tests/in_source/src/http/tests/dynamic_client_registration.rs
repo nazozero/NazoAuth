@@ -38,10 +38,12 @@ async fn prepare_dynamic_client_insert_for_test(
 fn parse_client_configuration_update_for_test(
     payload: Value,
     current: &ClientRow,
+    current_client_secret_hash: Option<&str>,
 ) -> Result<DynamicClientRegistrationRequest, DynamicRegistrationError> {
     parse_client_configuration_update_with_secret_pepper(
         payload,
         current,
+        current_client_secret_hash,
         LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
     )
 }
@@ -530,7 +532,7 @@ fn client_configuration_update_rejects_forbidden_management_fields() {
             .expect("test payload should be an object")
             .insert(field.to_owned(), json!("client-controlled"));
 
-        let err = parse_client_configuration_update_for_test(payload, &client)
+        let err = parse_client_configuration_update_for_test(payload, &client, None)
             .expect_err("RFC 7592 forbids client-controlled management fields in PUT");
 
         assert_eq!(err.error, "invalid_request");
@@ -539,13 +541,11 @@ fn client_configuration_update_rejects_forbidden_management_fields() {
 
 #[test]
 fn client_configuration_update_requires_matching_client_id_and_secret() {
-    let mut client = dynamic_registration_client_row();
+    let client = dynamic_registration_client_row();
     let issued_secret = random_urlsafe_token();
     let wrong_submitted_secret = random_urlsafe_token();
-    client.client_secret_hash = Some(hash_client_secret(
-        &issued_secret,
-        LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
-    ));
+    let client_secret_hash =
+        hash_client_secret(&issued_secret, LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER);
 
     let missing_client_id = parse_client_configuration_update_for_test(
         json!({
@@ -553,6 +553,7 @@ fn client_configuration_update_requires_matching_client_id_and_secret() {
             "redirect_uris": ["https://client.example/callback"]
         }),
         &client,
+        Some(&client_secret_hash),
     )
     .expect_err("PUT must include the current client_id");
     assert_eq!(missing_client_id.error, "invalid_client_metadata");
@@ -564,6 +565,7 @@ fn client_configuration_update_requires_matching_client_id_and_secret() {
             "redirect_uris": ["https://client.example/callback"]
         }),
         &client,
+        Some(&client_secret_hash),
     )
     .expect_err("PUT client_id must match the current client");
     assert_eq!(wrong_client_id.error, "invalid_client_metadata");
@@ -575,6 +577,7 @@ fn client_configuration_update_requires_matching_client_id_and_secret() {
             "redirect_uris": ["https://client.example/callback"]
         }),
         &client,
+        Some(&client_secret_hash),
     )
     .expect_err("PUT client_secret must match the current secret");
     assert_eq!(wrong_secret.error, "invalid_client_metadata");
@@ -587,6 +590,7 @@ fn client_configuration_update_requires_matching_client_id_and_secret() {
             "scope": "openid profile"
         }),
         &client,
+        Some(&client_secret_hash),
     )
     .expect("matching client_id and secret should parse");
     assert_eq!(
@@ -670,7 +674,7 @@ async fn dynamic_registration_rejects_ambiguous_private_key_jwt_jwks_without_kid
 }
 
 fn dynamic_registration_client_row() -> ClientRow {
-    ClientRow {
+    crate::client_row! {
         id: uuid::Uuid::now_v7(),
         tenant_id: uuid::Uuid::now_v7(),
         realm_id: uuid::Uuid::now_v7(),
@@ -797,10 +801,8 @@ fn dynamic_registration_response_includes_response_protection_metadata() {
 #[test]
 fn client_configuration_get_to_put_round_trip_preserves_response_protection_metadata() {
     let mut client = dynamic_registration_client_row();
-    client.client_secret_hash = Some(hash_client_secret(
-        "current-secret",
-        LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
-    ));
+    let client_secret_hash =
+        hash_client_secret("current-secret", LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER);
     client.jwks = Some(json!({
         "keys": [{
             "kty": "RSA",
@@ -832,8 +834,9 @@ fn client_configuration_get_to_put_round_trip_preserves_response_protection_meta
     object.remove("registration_client_uri");
     object.remove("client_secret_expires_at");
 
-    let update = parse_client_configuration_update_for_test(get_body, &client)
-        .expect("GET representation without server-managed fields should be a valid PUT body");
+    let update =
+        parse_client_configuration_update_for_test(get_body, &client, Some(&client_secret_hash))
+            .expect("GET representation without server-managed fields should be a valid PUT body");
     let prepared = prepare_dynamic_client_registration(
         update,
         DynamicRegistrationDefaults {

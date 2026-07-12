@@ -41,7 +41,7 @@ fn user_in_context(context: TenantContext) -> PublicAccount {
 }
 
 fn client_in_context(context: TenantContext) -> ClientRow {
-    ClientRow {
+    crate::client_row! {
         id: Uuid::now_v7(),
         tenant_id: context.tenant_id,
         realm_id: context.realm_id,

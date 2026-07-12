@@ -279,6 +279,7 @@ pub(crate) async fn client_configuration_put(
     let payload = match parse_client_configuration_update_with_secret_pepper(
         payload,
         &current,
+        current.client_secret_hash.as_deref(),
         &state.settings.client_secret_pepper,
     ) {
         Ok(payload) => payload,
@@ -382,7 +383,7 @@ async fn authenticate_registration_client(
     state: &AppState,
     req: &HttpRequest,
     client_id: &str,
-) -> Result<ClientRow, HttpResponse> {
+) -> Result<RegistrationClient, HttpResponse> {
     let mut conn = get_conn(&state.diesel_db).await.map_err(|error| {
         tracing::warn!(%error, "failed to get database connection for client configuration auth");
         oauth_error(
@@ -395,10 +396,11 @@ async fn authenticate_registration_client(
         .filter(oauth_clients::tenant_id.eq(DEFAULT_TENANT_ID))
         .filter(oauth_clients::client_id.eq(client_id))
         .select((
-            ClientRow::as_select(),
+            ClientRecord::as_select(),
             oauth_clients::registration_access_token_blake3,
+            oauth_clients::client_secret_hash,
         ))
-        .first::<(ClientRow, Option<String>)>(&mut conn)
+        .first::<(ClientRecord, Option<String>, Option<String>)>(&mut conn)
         .await
         .optional()
         .map_err(|error| {
@@ -409,9 +411,17 @@ async fn authenticate_registration_client(
                 "Client configuration lookup failed.",
             )
         })?;
-    let Some((client, registration_token_hash)) = found else {
+    let Some((client, registration_token_hash, client_secret_hash)) = found else {
         return Err(registration_access_denied());
     };
+    let client = ClientRow::try_from(client).map_err(|error| {
+        tracing::warn!(%error, "invalid persisted dynamic client configuration");
+        oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "Client configuration lookup failed.",
+        )
+    })?;
     if !client.is_active
         || !registration_access_token_authorized(
             req.headers()
@@ -422,7 +432,23 @@ async fn authenticate_registration_client(
     {
         return Err(registration_access_denied());
     }
-    Ok(client)
+    Ok(RegistrationClient {
+        client,
+        client_secret_hash,
+    })
+}
+
+struct RegistrationClient {
+    client: ClientRow,
+    client_secret_hash: Option<String>,
+}
+
+impl std::ops::Deref for RegistrationClient {
+    type Target = ClientRow;
+
+    fn deref(&self) -> &Self::Target {
+        &self.client
+    }
 }
 
 fn registration_access_denied() -> HttpResponse {
@@ -458,9 +484,14 @@ async fn rotate_client_management_credentials(
         oauth_clients::client_secret_hash.eq(client_secret_hash),
         oauth_clients::updated_at.eq(diesel_now),
     ))
-    .returning(ClientRow::as_returning())
-    .get_result::<ClientRow>(&mut conn)
+    .returning(ClientRecord::as_returning())
+    .get_result::<ClientRecord>(&mut conn)
     .await
+    .and_then(|record| {
+        record
+            .try_into()
+            .map_err(|error| diesel::result::Error::DeserializationError(Box::new(error)))
+    })
     .map_err(|error| {
         tracing::warn!(%error, client_id = %current.client_id, "failed to rotate dynamic client management credentials");
         oauth_error(
@@ -543,9 +574,14 @@ async fn replace_client_configuration(
             .eq(&prepared.authorization_encrypted_response_enc),
         oauth_clients::updated_at.eq(diesel_now),
     ))
-    .returning(ClientRow::as_returning())
-    .get_result::<ClientRow>(&mut conn)
+    .returning(ClientRecord::as_returning())
+    .get_result::<ClientRecord>(&mut conn)
     .await
+    .and_then(|record| {
+        record
+            .try_into()
+            .map_err(|error| diesel::result::Error::DeserializationError(Box::new(error)))
+    })
     .map_err(|error| {
         tracing::warn!(%error, client_id = %current.client_id, "failed to replace dynamic client configuration");
         oauth_error(
@@ -813,6 +849,7 @@ pub(crate) fn registration_access_token_authorized(
 pub(crate) fn parse_client_configuration_update_with_secret_pepper(
     mut payload: Value,
     current: &ClientRow,
+    current_client_secret_hash: Option<&str>,
     client_secret_pepper: &str,
 ) -> Result<DynamicClientRegistrationRequest, DynamicRegistrationError> {
     let Some(object) = payload.as_object_mut() else {
@@ -851,7 +888,7 @@ pub(crate) fn parse_client_configuration_update_with_secret_pepper(
     }
 
     let client_secret = object.remove("client_secret");
-    match (&current.client_secret_hash, client_secret) {
+    match (current_client_secret_hash, client_secret) {
         (Some(stored_hash), Some(Value::String(secret)))
             if verify_client_secret(&secret, stored_hash, client_secret_pepper) => {}
         (Some(_), _) => {

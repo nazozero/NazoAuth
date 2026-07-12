@@ -401,3 +401,42 @@ refresh lost-response work, pushing, deploying, or changing PR state.
 The existing localized MSVC linker-stdout warning was emitted during Rust test
 linking and did not fail any gate. No external CI/CodeQL check was rerun
 locally.
+
+## Final OAuth client row-boundary remediation (2026-07-13)
+
+The final Important finding is remediated. `nazo-postgres` now keeps its
+`OAuthClientRecord` private and returns the auth-owned, storage-independent
+`OAuthClient`. The runtime type composes validated registration metadata with
+tenant identity and active/sender-constraint state; it is not Diesel-enabled,
+contains no client-secret digest, and is not re-exported by the PostgreSQL
+adapter. The server's `ClientRow` name is now only a compatibility alias to
+that domain type. Remaining Task 5 server writes use the explicitly private
+`ClientRecord` and convert to the domain type while rejecting malformed JSON
+arrays.
+
+Secret-basic/post authentication uses
+`OAuthClientRepository::client_secret_matches`, which selects only the digest,
+applies the unchanged `client-secret-v1` HMAC-SHA256 peppered verification in
+constant time, and returns only a boolean. Missing clients, missing digests,
+malformed digests, and wrong candidates fail closed. Repository errors retain
+the existing service-unavailable behavior; invalid credentials retain the
+existing `invalid_client` behavior. No public lookup returns a digest.
+
+### TDD and focused evidence
+
+- The new architecture contract first failed because the public Diesel result
+  row still existed. It now rejects a public OAuth client row, public digest
+  field, PostgreSQL re-export, and adapter-to-server `From` reconstruction,
+  while requiring the auth-owned client result.
+- The client-secret verifier test first failed with `E0425`; it now covers a
+  matching candidate, wrong candidate, and malformed digest. A PostgreSQL unit
+  test rejects non-array persisted client metadata.
+- Auth, PAR, dispatch, introspection, revocation, and admin-client focused
+  suites passed respectively: 14, 31, 56, 24, 15, and 39 tests.
+- Real PostgreSQL/Valkey exact tests passed for wrong token-endpoint secret,
+  wrong introspection secret, and successful authenticated refresh-token
+  introspection. The real PostgreSQL identity/architecture suite passed 19/19.
+- Server all-feature test compilation completed with zero errors and warnings;
+  `nazo-auth` passed 70 tests and `nazo-postgres` passed 5 unit tests.
+
+No refresh behavior, frontend, push, deployment, or PR state was changed.

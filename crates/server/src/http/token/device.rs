@@ -211,7 +211,7 @@ pub(crate) async fn device_authorization(
         .by_client_id(DEFAULT_TENANT_ID, client_id)
         .await
     {
-        Ok(Some(client)) if client.is_active => ClientRow::from(client),
+        Ok(Some(client)) if client.is_active => client,
         Ok(_) => {
             return oauth_error(
                 StatusCode::UNAUTHORIZED,
@@ -748,7 +748,7 @@ pub(crate) async fn device_decision(
                 .by_client_id(DEFAULT_TENANT_ID, &payload.client_id)
                 .await
             {
-                Ok(Some(client)) if client.is_active => ClientRow::from(client),
+                Ok(Some(client)) if client.is_active => client,
                 Ok(_) => {
                     return oauth_error(
                         StatusCode::BAD_REQUEST,
@@ -839,6 +839,7 @@ async fn authenticate_device_authorization_client(
         ));
     }
     let assertion = verify_confidential_client(state, req, client, credentials)
+        .await
         .map_err(token_management_auth_error)?;
     consume_token_management_client_assertion(state, client, assertion.as_ref())
         .await

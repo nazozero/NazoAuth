@@ -234,24 +234,24 @@ async fn insert_refresh_client(state: &AppState, client: &ClientRow) {
     .bind::<Text, _>(client.client_id.as_str())
     .bind::<Text, _>(client.client_name.as_str())
     .bind::<Text, _>(client.client_type.as_str())
-    .bind::<Nullable<Text>, _>(client.client_secret_hash.as_deref())
-    .bind::<Jsonb, _>(client.redirect_uris.clone())
-    .bind::<Jsonb, _>(client.scopes.clone())
-    .bind::<Jsonb, _>(client.allowed_audiences.clone())
-    .bind::<Jsonb, _>(client.grant_types.clone())
+    .bind::<Nullable<Text>, _>(Option::<&str>::None)
+    .bind::<Jsonb, _>(json!(&client.redirect_uris))
+    .bind::<Jsonb, _>(json!(&client.scopes))
+    .bind::<Jsonb, _>(json!(&client.allowed_audiences))
+    .bind::<Jsonb, _>(json!(&client.grant_types))
     .bind::<Text, _>(client.token_endpoint_auth_method.as_str())
     .bind::<Bool, _>(client.require_dpop_bound_tokens)
     .bind::<Bool, _>(client.require_mtls_bound_tokens)
-    .bind::<Jsonb, _>(client.tls_client_auth_san_dns.clone())
-    .bind::<Jsonb, _>(client.tls_client_auth_san_uri.clone())
-    .bind::<Jsonb, _>(client.tls_client_auth_san_ip.clone())
-    .bind::<Jsonb, _>(client.tls_client_auth_san_email.clone())
+    .bind::<Jsonb, _>(json!(&client.tls_client_auth_san_dns))
+    .bind::<Jsonb, _>(json!(&client.tls_client_auth_san_uri))
+    .bind::<Jsonb, _>(json!(&client.tls_client_auth_san_ip))
+    .bind::<Jsonb, _>(json!(&client.tls_client_auth_san_email))
     .bind::<Bool, _>(client.allow_client_assertion_audience_array)
     .bind::<Bool, _>(client.allow_client_assertion_endpoint_audience)
     .bind::<Bool, _>(client.require_par_request_object)
     .bind::<Bool, _>(client.allow_authorization_code_without_pkce)
     .bind::<Bool, _>(client.is_active)
-    .bind::<Jsonb, _>(client.post_logout_redirect_uris.clone())
+    .bind::<Jsonb, _>(json!(&client.post_logout_redirect_uris))
     .bind::<Bool, _>(client.backchannel_logout_session_required)
     .execute(&mut conn)
     .await
@@ -358,7 +358,7 @@ async fn response_json(response: HttpResponse) -> (StatusCode, Value) {
 }
 
 fn client_row() -> ClientRow {
-    ClientRow {
+    crate::client_row! {
         id: Uuid::now_v7(),
         tenant_id: DEFAULT_TENANT_ID,
         realm_id: DEFAULT_REALM_ID,
@@ -1065,7 +1065,7 @@ async fn refresh_grant_rejects_tokens_for_inactive_users_without_openid_scope() 
         .to_http_request();
     let mut client = client_row();
     client.require_dpop_bound_tokens = false;
-    client.scopes = json!(["offline_access", "api"]);
+    client.scopes = vec!["offline_access".to_owned(), "api".to_owned()];
     insert_refresh_client(&state, &client).await;
 
     let user_id = Uuid::now_v7();
@@ -1101,7 +1101,7 @@ async fn refresh_grant_accepts_tokens_for_active_users_without_openid_scope() {
         .to_http_request();
     let mut client = client_row();
     client.require_dpop_bound_tokens = false;
-    client.scopes = json!(["offline_access", "api"]);
+    client.scopes = vec!["offline_access".to_owned(), "api".to_owned()];
     insert_refresh_client(&state, &client).await;
 
     let user_id = Uuid::now_v7();

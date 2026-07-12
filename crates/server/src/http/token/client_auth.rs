@@ -13,11 +13,11 @@ async fn authenticate_confidential_client(
     client: &ClientRow,
     credentials: &ClientCredentials,
 ) -> Result<(), TokenManagementClientAuthError> {
-    let assertion = verify_confidential_client(state, req, client, credentials)?;
+    let assertion = verify_confidential_client(state, req, client, credentials).await?;
     consume_token_management_client_assertion(state, client, assertion.as_ref()).await
 }
 
-pub(crate) fn verify_confidential_client(
+pub(crate) async fn verify_confidential_client(
     state: &AppState,
     req: &HttpRequest,
     client: &ClientRow,
@@ -51,13 +51,17 @@ pub(crate) fn verify_confidential_client(
                 })
         }
         "client_secret_basic" | "client_secret_post" => {
-            let valid_secret = credentials.client_secret.as_deref().is_some_and(|secret| {
-                verify_client_secret(
-                    secret,
-                    client.client_secret_hash.as_deref().unwrap_or(""),
-                    &state.settings.client_secret_pepper,
-                )
-            });
+            let Some(secret) = credentials.client_secret.as_deref() else {
+                log_client_auth_rejection(req, client, credentials, "client_secret");
+                return Err(TokenManagementClientAuthError::InvalidClient);
+            };
+            let valid_secret = nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+                .client_secret_matches(client.id, secret, &state.settings.client_secret_pepper)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(%error, "failed to verify management client secret");
+                    TokenManagementClientAuthError::StoreUnavailable
+                })?;
             if valid_secret {
                 Ok(None)
             } else {
