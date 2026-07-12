@@ -481,6 +481,72 @@ async fn admin_patch_user_validates_role_and_admin_level_before_mutation() {
 }
 
 #[actix_web::test]
+async fn admin_patch_user_rejects_nil_user_id_without_panicking() {
+    let Some(fixture) = LiveAdminUsersFixture::new().await else {
+        panic!("DATABASE_URL and VALKEY_URL are required");
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let admin = fixture
+        .create_user(&format!("{suffix}-admin"), "admin", 10)
+        .await;
+    let sid = format!("sid-{suffix}");
+    let csrf = format!("csrf-{suffix}");
+    fixture.store_session(&admin, &sid).await;
+
+    let response = admin_patch_user(
+        fixture.state.clone(),
+        fixture.admin_post_request(&sid, &csrf, "/admin/users/update"),
+        actix_web::web::Path::from(Uuid::nil()),
+        Json(empty_patch()),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_name(&response).as_deref(),
+        Some("invalid_request")
+    );
+}
+
+#[actix_web::test]
+async fn admin_patch_user_rejects_invalid_partial_role_level_without_mutation() {
+    let Some(fixture) = LiveAdminUsersFixture::new().await else {
+        panic!("DATABASE_URL and VALKEY_URL are required");
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let admin = fixture
+        .create_user(&format!("{suffix}-admin"), "admin", 10)
+        .await;
+    let user = fixture
+        .create_user(&format!("{suffix}-user"), "user", 0)
+        .await;
+    let sid = format!("sid-{suffix}");
+    let csrf = format!("csrf-{suffix}");
+    fixture.store_session(&admin, &sid).await;
+
+    let response = admin_patch_user(
+        fixture.state.clone(),
+        fixture.admin_post_request(&sid, &csrf, "/admin/users/update"),
+        actix_web::web::Path::from(user.id),
+        Json(PatchUserRequest {
+            role: None,
+            admin_level: Some(7),
+            is_active: None,
+        }),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_name(&response).as_deref(),
+        Some("invalid_request")
+    );
+    let persisted = fixture.load_user(user.id).await;
+    assert_eq!(persisted.role, "user");
+    assert_eq!(persisted.admin_level, 0);
+}
+
+#[actix_web::test]
 async fn admin_patch_user_updates_role_level_and_active_state_and_reports_missing_users() {
     let Some(fixture) = LiveAdminUsersFixture::new().await else {
         return;
