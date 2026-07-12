@@ -6,7 +6,9 @@ use diesel::{
 use diesel_async::RunQueryDsl;
 use nazo_identity::{
     TenantContext, TenantId, UserId,
-    ports::{AdminUserUpdate, NewFederationLink, RepositoryError},
+    ports::{
+        AdminUserUpdate, FederationLogin, NewFederatedIdentity, NewFederationLink, RepositoryError,
+    },
     scim::NormalizedScimUser,
 };
 use nazo_postgres::{
@@ -262,6 +264,54 @@ async fn passkey_counter_update_is_monotonic_compare_and_set() {
         .await
         .unwrap();
     cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
+async fn concurrent_federated_create_is_idempotent_and_tenant_scoped() {
+    let Some((pool, tenant, fixture_user_id)) = database_fixture().await else {
+        panic!("NAZO_TEST_DATABASE_URL or DATABASE_URL is required");
+    };
+    let repository = FederationRepository::new(pool.clone());
+    let suffix = Uuid::now_v7();
+    let login = FederationLogin {
+        tenant,
+        provider_type: "oidc".into(),
+        provider_id: format!("provider-{suffix}"),
+        subject: format!("subject-{suffix}"),
+        email: Some(format!("federated-{suffix}@example.test")),
+        claims: json!({"sub": format!("subject-{suffix}")}),
+    };
+    let new_identity = NewFederatedIdentity {
+        login: login.clone(),
+        email: login.email.clone().unwrap(),
+        display_name: Some("Concurrent Federation".into()),
+        password_hash: "test-only-bootstrap-hash".into(),
+    };
+
+    let (left, right) = tokio::join!(
+        repository.create_federated(new_identity.clone()),
+        repository.create_federated(new_identity)
+    );
+    let left = left.unwrap();
+    let right = right.unwrap();
+    assert_eq!(left.user_id(), right.user_id());
+
+    let other_tenant = TenantContext {
+        tenant_id: TenantId::new(Uuid::now_v7()).unwrap(),
+        ..tenant
+    };
+    assert!(
+        repository
+            .resolve_existing(FederationLogin {
+                tenant: other_tenant,
+                ..login
+            })
+            .await
+            .unwrap()
+            .is_none()
+    );
+    cleanup(&pool, left.user_id()).await;
+    cleanup(&pool, fixture_user_id).await;
 }
 
 #[tokio::test]

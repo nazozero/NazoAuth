@@ -146,12 +146,13 @@ impl FederationRepository {
         &self,
         new_identity: NewFederatedIdentity,
     ) -> Result<IdentityUser, RepositoryError> {
+        let retry_login = new_identity.login.clone();
         let mut connection = self
             .pool
             .get()
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        let row = connection
+        let result = connection
             .transaction::<_, diesel::result::Error, _>(async move |connection| {
                 let tenant = new_identity.login.tenant;
                 let user = diesel::insert_into(users::table)
@@ -183,10 +184,17 @@ impl FederationRepository {
                     .await?;
                 Ok(user)
             })
-            .await
-            .map_err(map_error)?;
-        row.try_into()
-            .map_err(|error: identity::ConversionError| RepositoryError::Consistency(error.0))
+            .await;
+        match result {
+            Ok(row) => row
+                .try_into()
+                .map_err(|error: identity::ConversionError| RepositoryError::Consistency(error.0)),
+            Err(Error::DatabaseError(DatabaseErrorKind::UniqueViolation, _)) => self
+                .resolve_existing(retry_login)
+                .await?
+                .ok_or(RepositoryError::Conflict),
+            Err(error) => Err(map_error(error)),
+        }
     }
 }
 fn map_error(error: Error) -> RepositoryError {
