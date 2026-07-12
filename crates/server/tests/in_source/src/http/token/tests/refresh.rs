@@ -807,6 +807,7 @@ async fn refresh_grant_marks_family_reuse_and_revokes_active_family_tokens() {
     client.require_dpop_bound_tokens = false;
     insert_refresh_client(&state, &client).await;
     let family_id = Uuid::now_v7();
+    let suffix = Uuid::now_v7().simple();
 
     let mut reused = token_row();
     reused.client_id = client.id;
@@ -816,8 +817,8 @@ async fn refresh_grant_marks_family_reuse_and_revokes_active_family_tokens() {
     reused.user_id = None;
     reused.dpop_jkt = None;
     reused.revoked_at = Some(Utc::now() - Duration::seconds(65));
-    let reused_raw = "refresh-token-reused";
-    insert_refresh_token_row(&state, reused_raw, &reused, None, None).await;
+    let reused_raw = format!("refresh-token-reused-{suffix}");
+    insert_refresh_token_row(&state, &reused_raw, &reused, None, None).await;
 
     let mut active_sibling = token_row();
     active_sibling.client_id = client.id;
@@ -826,11 +827,11 @@ async fn refresh_grant_marks_family_reuse_and_revokes_active_family_tokens() {
     active_sibling.subject = client.client_id.clone();
     active_sibling.user_id = None;
     active_sibling.dpop_jkt = None;
-    let active_raw = "refresh-token-active-sibling";
-    insert_refresh_token_row(&state, active_raw, &active_sibling, Some(reused.id), None).await;
+    let active_raw = format!("refresh-token-active-sibling-{suffix}");
+    insert_refresh_token_row(&state, &active_raw, &active_sibling, Some(reused.id), None).await;
 
     let mut form = refresh_form_without_token();
-    form.refresh_token = Some(reused_raw.to_owned());
+    form.refresh_token = Some(reused_raw);
     let (status, body) =
         response_json(token_refresh(&state, &req, &client, &form, None).await).await;
 
