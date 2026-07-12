@@ -58,9 +58,32 @@ diesel::table! {
     oauth_tokens (id) {
         id -> Uuid,
         tenant_id -> Uuid,
+        refresh_token_blake3 -> Varchar,
+        token_family_id -> Uuid,
+        rotated_from_id -> Nullable<Uuid>,
         client_id -> Uuid,
         user_id -> Nullable<Uuid>,
+        scopes -> Jsonb,
+        audience -> Jsonb,
+        authorization_details -> Jsonb,
+        issued_at -> Timestamptz,
+        expires_at -> Timestamptz,
         revoked_at -> Nullable<Timestamptz>,
+        reuse_detected_at -> Nullable<Timestamptz>,
+        subject -> Varchar,
+        dpop_jkt -> Nullable<Varchar>,
+        mtls_x5t_s256 -> Nullable<Varchar>,
+    }
+}
+
+diesel::table! {
+    access_token_revocations (id) {
+        id -> Uuid,
+        access_token_jti_blake3 -> Varchar,
+        client_id -> Uuid,
+        tenant_id -> Uuid,
+        revoked_at -> Timestamptz,
+        expires_at -> Timestamptz,
     }
 }
 
@@ -203,6 +226,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     user_client_grants,
     client_access_requests,
     oauth_clients,
+    access_token_revocations,
     runtime_module_desired_states,
     runtime_module_instance_states,
     runtime_module_state_events

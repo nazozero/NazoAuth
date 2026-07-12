@@ -83,17 +83,7 @@ pub(crate) async fn introspect_after_rate_limit(
             .settings
             .authorization_server_profile
             .requires_signed_introspection();
-    let mut conn = match get_conn(&state.diesel_db).await {
-        Ok(conn) => conn,
-        Err(error) => {
-            tracing::warn!(%error, "failed to get database connection for token introspection state lookup");
-            return token_management_oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "token 状态查询失败.",
-            );
-        }
-    };
+    let token_repository = nazo_postgres::TokenRepository::new(state.diesel_db.clone());
     if let Some(claims) = decode_access_claims(&state, &form.token) {
         if claims.client_id != client.client_id && !token_audience_allowed(&client, &claims.aud) {
             return introspection_response(
@@ -113,14 +103,11 @@ pub(crate) async fn introspect_after_rate_limit(
             )
             .await;
         }
-        let revoked = match access_token_revocations::table
-            .filter(access_token_revocations::tenant_id.eq(client.tenant_id))
-            .filter(access_token_revocations::access_token_jti_blake3.eq(blake3_hex(&claims.jti)))
-            .select(count_star())
-            .first::<i64>(&mut conn)
+        let revoked = match token_repository
+            .access_token_revoked(client.tenant_id, &claims.jti)
             .await
         {
-            Ok(count) => count > 0,
+            Ok(revoked) => revoked,
             Err(error) => {
                 tracing::warn!(%error, "failed to query access token revocation state");
                 return token_management_oauth_error(
@@ -160,14 +147,9 @@ pub(crate) async fn introspect_after_rate_limit(
         )
         .await;
     }
-    let hash = blake3_hex(&form.token);
-    let token = match oauth_tokens::table
-        .filter(oauth_tokens::tenant_id.eq(client.tenant_id))
-        .filter(oauth_tokens::refresh_token_blake3.eq(hash))
-        .select(TokenRow::as_select())
-        .first::<TokenRow>(&mut conn)
+    let token = match token_repository
+        .by_raw_refresh_token(client.tenant_id, &form.token)
         .await
-        .optional()
     {
         Ok(value) => value,
         Err(error) => {

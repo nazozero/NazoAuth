@@ -175,23 +175,13 @@ async fn validate_exchange_access_token(
     {
         return Err(TokenExchangeTokenError::Invalid);
     }
-    let mut conn = get_conn(&state.diesel_db)
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to get database connection for token exchange revocation check");
-            TokenExchangeTokenError::StoreUnavailable
-        })?;
-    let revoked = access_token_revocations::table
-        .filter(access_token_revocations::tenant_id.eq(client.tenant_id))
-        .filter(access_token_revocations::access_token_jti_blake3.eq(blake3_hex(&claims.jti)))
-        .select(count_star())
-        .first::<i64>(&mut conn)
+    let revoked = nazo_postgres::TokenRepository::new(state.diesel_db.clone())
+        .access_token_revoked(client.tenant_id, &claims.jti)
         .await
         .map_err(|error| {
             tracing::warn!(%error, "failed to query token exchange access token revocation state");
             TokenExchangeTokenError::StoreUnavailable
-        })?
-        > 0;
+        })?;
     if revoked {
         return Err(TokenExchangeTokenError::Invalid);
     }

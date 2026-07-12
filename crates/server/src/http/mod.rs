@@ -34,11 +34,7 @@ pub(crate) mod prelude {
         web::{Data, Form, Json, Query},
     };
     pub(crate) use chrono::{DateTime, Duration, Utc};
-    pub(crate) use diesel::{
-        OptionalExtension,
-        dsl::{count_star, now as diesel_now},
-        prelude::*,
-    };
+    pub(crate) use diesel::{OptionalExtension, dsl::now as diesel_now, prelude::*};
     pub(crate) use diesel_async::RunQueryDsl;
     pub(crate) use futures_util::StreamExt;
     pub(crate) use serde::Deserialize;

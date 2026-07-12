@@ -128,25 +128,13 @@ async fn native_sso_refresh_family_active(
     state: &AppState,
     secret: &NativeSsoDeviceSecretState,
 ) -> Result<bool, HttpResponse> {
-    let mut conn = get_conn(&state.diesel_db).await.map_err(|error| {
-        tracing::warn!(%error, "failed to get DB connection for Native SSO refresh family check");
-        oauth_token_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "Native SSO session state is unavailable.",
-            false,
+    nazo_postgres::TokenRepository::new(state.diesel_db.clone())
+        .family_active(
+            secret.tenant_id,
+            secret.refresh_token_family_id,
+            secret.user_id,
         )
-    })?;
-    oauth_tokens::table
-        .filter(oauth_tokens::tenant_id.eq(secret.tenant_id))
-        .filter(oauth_tokens::token_family_id.eq(secret.refresh_token_family_id))
-        .filter(oauth_tokens::user_id.eq(secret.user_id))
-        .filter(oauth_tokens::revoked_at.is_null())
-        .filter(oauth_tokens::expires_at.gt(Utc::now()))
-        .select(count_star())
-        .first::<i64>(&mut conn)
         .await
-        .map(|count| count > 0)
         .map_err(|error| {
             tracing::warn!(%error, "failed to query Native SSO refresh family state");
             oauth_token_error(

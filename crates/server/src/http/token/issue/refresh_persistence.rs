@@ -1,14 +1,5 @@
-use diesel_async::{AsyncConnection, AsyncPgConnection};
-
 use super::*;
-use crate::http::token::refresh_family::{
-    lock_token_family, lost_response_successor, mark_token_family_reuse,
-};
-
-pub(super) enum RefreshPersistResult {
-    Inserted,
-    RotationConflict,
-}
+pub(super) use nazo_auth::RefreshTokenPersistResult as RefreshPersistResult;
 
 pub(super) struct PendingRefreshToken {
     pub(super) raw: String,
@@ -24,87 +15,37 @@ pub(crate) fn should_issue_refresh_token(client: &ClientRow, scopes: &[String]) 
         && scopes.iter().any(|scope| scope == "offline_access")
 }
 
-async fn insert_refresh_token(
-    conn: &mut AsyncPgConnection,
-    client: &ClientRow,
-    issue: &TokenIssue,
-    refresh: &PendingRefreshToken,
-) -> diesel::QueryResult<usize> {
-    diesel::insert_into(oauth_tokens::table)
-        .values((
-            oauth_tokens::refresh_token_blake3.eq(blake3_hex(&refresh.raw)),
-            oauth_tokens::tenant_id.eq(client.tenant_id),
-            oauth_tokens::token_family_id.eq(refresh.family),
-            oauth_tokens::rotated_from_id.eq(refresh.rotated_from),
-            oauth_tokens::client_id.eq(client.id),
-            oauth_tokens::user_id.eq(issue.user_id),
-            oauth_tokens::scopes.eq(json!(issue.scopes)),
-            oauth_tokens::audience.eq(json!(issue.audiences)),
-            oauth_tokens::authorization_details.eq(issue.authorization_details.clone()),
-            oauth_tokens::issued_at.eq(refresh.issued_at),
-            oauth_tokens::expires_at.eq(refresh.expires_at),
-            oauth_tokens::subject.eq(issue.subject.clone()),
-            oauth_tokens::dpop_jkt.eq(issue.refresh_token_dpop_jkt.clone()),
-            oauth_tokens::mtls_x5t_s256.eq(issue.refresh_token_mtls_x5t_s256.clone()),
-        ))
-        .execute(conn)
-        .await
-}
-
 pub(super) async fn persist_refresh_token(
     state: &AppState,
     client: &ClientRow,
     issue: &TokenIssue,
     refresh: &PendingRefreshToken,
 ) -> anyhow::Result<RefreshPersistResult> {
-    let mut conn = get_conn(&state.diesel_db).await?;
-    let result = conn
-        .transaction::<RefreshPersistResult, diesel::result::Error, _>(async |conn| {
-            lock_token_family(conn, refresh.family).await?;
-            if let Some(rotated_from) = refresh.rotated_from {
-                if let Some((original_id, retry_started_at)) = refresh.lost_response_retry {
-                    let original = oauth_tokens::table
-                        .filter(oauth_tokens::tenant_id.eq(client.tenant_id))
-                        .filter(oauth_tokens::token_family_id.eq(refresh.family))
-                        .filter(oauth_tokens::client_id.eq(client.id))
-                        .filter(oauth_tokens::id.eq(original_id))
-                        .select(TokenRow::as_select())
-                        .first::<TokenRow>(conn)
-                        .await
-                        .optional()?;
-                    let successor = match original {
-                        Some(original) => {
-                            lost_response_successor(conn, &original, client.id, retry_started_at)
-                                .await?
-                        }
-                        None => None,
-                    };
-                    if successor.as_ref().map(|token| token.id) != Some(rotated_from) {
-                        mark_token_family_reuse(conn, client.tenant_id, refresh.family).await?;
-                        return Ok(RefreshPersistResult::RotationConflict);
-                    }
-                }
-                let rotated = diesel::update(
-                    oauth_tokens::table
-                        .filter(oauth_tokens::tenant_id.eq(client.tenant_id))
-                        .filter(oauth_tokens::token_family_id.eq(refresh.family))
-                        .filter(oauth_tokens::client_id.eq(client.id))
-                        .filter(oauth_tokens::id.eq(rotated_from))
-                        .filter(oauth_tokens::revoked_at.is_null()),
-                )
-                .set(oauth_tokens::revoked_at.eq(diesel_now))
-                .execute(conn)
-                .await?;
-                if rotated == 0 {
-                    mark_token_family_reuse(conn, client.tenant_id, refresh.family).await?;
-                    return Ok(RefreshPersistResult::RotationConflict);
-                }
-            }
-            insert_refresh_token(conn, client, issue, refresh).await?;
-            Ok(RefreshPersistResult::Inserted)
+    nazo_postgres::TokenRepository::new(state.diesel_db.clone())
+        .persist_refresh_token(nazo_auth::NewRefreshToken {
+            raw_token: refresh.raw.clone(),
+            tenant_id: client.tenant_id,
+            family_id: refresh.family,
+            rotated_from_id: refresh.rotated_from,
+            lost_response_retry: refresh.lost_response_retry.map(
+                |(original_id, retry_started_at)| nazo_auth::LostResponseRetry {
+                    original_id,
+                    retry_started_at,
+                },
+            ),
+            client_id: client.id,
+            user_id: issue.user_id,
+            scopes: issue.scopes.clone(),
+            audiences: issue.audiences.clone(),
+            authorization_details: issue.authorization_details.clone(),
+            issued_at: refresh.issued_at,
+            expires_at: refresh.expires_at,
+            subject: issue.subject.clone(),
+            dpop_jkt: issue.refresh_token_dpop_jkt.clone(),
+            mtls_x5t_s256: issue.refresh_token_mtls_x5t_s256.clone(),
         })
-        .await?;
-    Ok(result)
+        .await
+        .map_err(|error| anyhow::anyhow!("failed to persist refresh token: {error}"))
 }
 
 #[cfg(test)]

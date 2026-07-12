@@ -39,24 +39,11 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Byte
             "访问令牌租户边界无效.",
         );
     };
-    let revoked = match get_conn(&state.diesel_db).await {
-        Ok(mut conn) => match access_token_revocations::table
-            .filter(access_token_revocations::tenant_id.eq(tenant_id))
-            .filter(access_token_revocations::access_token_jti_blake3.eq(blake3_hex(&claims.jti)))
-            .select(count_star())
-            .first::<i64>(&mut conn)
-            .await
-        {
-            Ok(count) => count > 0,
-            Err(error) => {
-                tracing::warn!(%error, "failed to query userinfo token revocation state");
-                return oauth_bearer_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "userinfo 查询失败.",
-                );
-            }
-        },
+    let revoked = match nazo_postgres::TokenRepository::new(state.diesel_db.clone())
+        .access_token_revoked(tenant_id, &claims.jti)
+        .await
+    {
+        Ok(revoked) => revoked,
         Err(error) => {
             tracing::warn!(%error, "failed to check userinfo token revocation");
             return oauth_bearer_error(
