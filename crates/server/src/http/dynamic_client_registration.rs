@@ -289,10 +289,18 @@ pub(crate) async fn client_configuration_put(
         }
     };
     let secret_matches = if let Some(secret) = submitted_secret {
-        match repository
-            .client_secret_matches(current.id, secret, &state.settings.client_secret_pepper)
-            .await
-        {
+        let candidate_match = match repository.client_secret_salt(current.id).await {
+            Ok(Some(salt)) => {
+                let candidate_digest =
+                    client_secret_digest(secret, &state.settings.client_secret_pepper, &salt);
+                repository
+                    .client_secret_digest_matches(current.id, &candidate_digest)
+                    .await
+            }
+            Ok(None) => Ok(false),
+            Err(error) => Err(error),
+        };
+        match candidate_match {
             Ok(matches) => matches,
             Err(error) => {
                 tracing::warn!(%error, "failed to verify dynamic client secret");

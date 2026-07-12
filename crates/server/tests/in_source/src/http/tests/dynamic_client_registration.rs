@@ -45,7 +45,12 @@ fn parse_client_configuration_update_for_test(
         .and_then(Value::as_str)
         .zip(current_client_secret_hash)
         .is_some_and(|(candidate, stored)| {
-            verify_client_secret(candidate, stored, LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER)
+            let mut parts = stored.split(':');
+            matches!(parts.next(), Some("client-secret-v1"))
+                && parts.next().is_some_and(|salt| {
+                    client_secret_digest(candidate, LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER, salt)
+                        == stored
+                })
         });
     parse_client_configuration_update(
         payload,

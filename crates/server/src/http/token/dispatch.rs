@@ -362,14 +362,21 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
                     .client_secret
                     .as_deref()
                     .expect("secret-based client credentials must include client_secret");
-                let secret_matches =
-                    nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-                        .client_secret_matches(
-                            client.id,
+                let repository = nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone());
+                let secret_matches = match repository.client_secret_salt(client.id).await {
+                    Ok(Some(salt)) => {
+                        let candidate_digest = client_secret_digest(
                             secret,
                             &state.settings.client_secret_pepper,
-                        )
-                        .await;
+                            &salt,
+                        );
+                        repository
+                            .client_secret_digest_matches(client.id, &candidate_digest)
+                            .await
+                    }
+                    Ok(None) => Ok(false),
+                    Err(error) => Err(error),
+                };
                 let secret_matches = match secret_matches {
                     Ok(matches) => matches,
                     Err(error) => {

@@ -6,7 +6,6 @@ mod authorization_details;
 mod claims;
 mod client;
 mod client_registration;
-mod client_secret;
 mod error;
 mod grant;
 mod metadata;
@@ -28,7 +27,6 @@ pub use claims::{
 };
 pub use client::{ClientProfile, validate_token_request_profile};
 pub use client_registration::{ApprovedClient, OAuthClient, ValidatedClientRegistration};
-pub use client_secret::verify_client_secret_hash;
 pub use error::{ProtocolError, ProtocolErrorCode};
 pub use grant::GrantType;
 pub use metadata::{CapabilityAdmission, MetadataCapabilities, module_admissible};
