@@ -8,6 +8,7 @@ repository.workspace = true
 [dependencies]
 anyhow = "1.0.103"
 base64 = "0.22.1"
+chrono = { version = "0.4.45", features = ["serde"] }
 nazo-runtime-modules = { version = "0.1.0", path = "../runtime-modules" }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"

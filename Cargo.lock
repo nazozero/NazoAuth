@@ -2152,6 +2152,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64",
+ "chrono",
  "nazo-runtime-modules",
  "proptest",
  "serde",
@@ -2268,6 +2269,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "argon2",
+ "blake3",
  "chrono",
  "diesel",
  "diesel-async",

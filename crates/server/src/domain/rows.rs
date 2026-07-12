@@ -1,9 +1,4 @@
 //! Diesel query rows for auth/runtime tables pending Domain Task 5 extraction.
-use chrono::{DateTime, Utc};
-use diesel::{Queryable, QueryableByName, Selectable};
-use serde_json::Value;
-use uuid::Uuid;
-
 pub(crate) type ClientRow = nazo_auth::OAuthClient;
 
 #[cfg(test)]
@@ -97,36 +92,4 @@ macro_rules! client_row {
     }};
 }
 
-/// oauth_tokens 表 token 行。
-#[derive(Debug, Queryable, QueryableByName, Selectable)]
-#[diesel(table_name = crate::schema::oauth_tokens)]
-pub(crate) struct TokenRow {
-    #[diesel(sql_type = diesel::sql_types::Uuid)]
-    pub(crate) id: Uuid,
-    #[diesel(sql_type = diesel::sql_types::Uuid)]
-    pub(crate) tenant_id: Uuid,
-    #[diesel(sql_type = diesel::sql_types::Uuid)]
-    pub(crate) token_family_id: Uuid,
-    #[diesel(sql_type = diesel::sql_types::Uuid)]
-    pub(crate) client_id: Uuid,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Uuid>)]
-    pub(crate) user_id: Option<Uuid>,
-    #[diesel(sql_type = diesel::sql_types::Jsonb)]
-    pub(crate) scopes: Value,
-    #[diesel(sql_type = diesel::sql_types::Jsonb)]
-    pub(crate) audience: Value,
-    #[diesel(sql_type = diesel::sql_types::Jsonb)]
-    pub(crate) authorization_details: Value,
-    #[diesel(sql_type = diesel::sql_types::Timestamptz)]
-    pub(crate) issued_at: DateTime<Utc>,
-    #[diesel(sql_type = diesel::sql_types::Timestamptz)]
-    pub(crate) expires_at: DateTime<Utc>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>)]
-    pub(crate) revoked_at: Option<DateTime<Utc>>,
-    #[diesel(sql_type = diesel::sql_types::VarChar)]
-    pub(crate) subject: String,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
-    pub(crate) dpop_jkt: Option<String>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
-    pub(crate) mtls_x5t_s256: Option<String>,
-}
+pub(crate) type TokenRow = nazo_auth::RefreshToken;

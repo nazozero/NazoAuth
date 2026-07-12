@@ -1007,17 +1007,14 @@ async fn refresh_grant_rejects_unbound_active_successor_inside_lost_response_win
     successor.dpop_jkt = None;
     let successor_raw = format!("refresh-token-retry-successor-{suffix}");
     insert_refresh_token_row(&state, &successor_raw, &successor, Some(revoked.id), None).await;
-    let mut inspection_conn = get_conn(&state.diesel_db)
-        .await
-        .expect("database connection should be available");
     assert!(
-        lost_response_successor(&mut inspection_conn, &revoked, client.id, Utc::now())
+        nazo_postgres::TokenRepository::new(state.diesel_db.clone())
+            .inspect_lost_response_successor(&revoked, client.id, Utc::now())
             .await
             .expect("lost-response successor inspection should succeed")
             .is_none(),
         "an unbound bearer refresh token must never be eligible for lost-response recovery"
     );
-    drop(inspection_conn);
 
     let mut form = refresh_form_without_token();
     form.refresh_token = Some(revoked_raw.clone());
@@ -1202,32 +1199,31 @@ async fn lost_response_successor_enforces_fixed_window_boundaries_in_real_postgr
     )
     .await;
 
-    let mut conn = get_conn(&state.diesel_db)
-        .await
-        .expect("database connection should be available");
-    let boundary_results = conn
-        .transaction::<_, diesel::result::Error, _>(async |conn| {
-            revoked.revoked_at = Some(now);
-            let at_zero = lost_response_successor(conn, &revoked, client_id, now).await?;
-
-            revoked.revoked_at = Some(now - Duration::seconds(60));
-            let at_sixty_seconds = lost_response_successor(conn, &revoked, client_id, now).await?;
-
-            revoked.revoked_at = Some(now - Duration::seconds(60) - Duration::milliseconds(1));
-            let after_sixty_seconds =
-                lost_response_successor(conn, &revoked, client_id, now).await?;
-
-            revoked.revoked_at = Some(now + Duration::milliseconds(1));
-            let future = lost_response_successor(conn, &revoked, client_id, now).await?;
-
-            Ok((at_zero, at_sixty_seconds, after_sixty_seconds, future))
-        })
+    let repository = nazo_postgres::TokenRepository::new(state.diesel_db.clone());
+    revoked.revoked_at = Some(now);
+    let at_zero = repository
+        .inspect_lost_response_successor(&revoked, client_id, now)
         .await;
-    drop(conn);
+    revoked.revoked_at = Some(now - Duration::seconds(60));
+    let at_sixty_seconds = repository
+        .inspect_lost_response_successor(&revoked, client_id, now)
+        .await;
+    revoked.revoked_at = Some(now - Duration::seconds(60) - Duration::milliseconds(1));
+    let after_sixty_seconds = repository
+        .inspect_lost_response_successor(&revoked, client_id, now)
+        .await;
+    revoked.revoked_at = Some(now + Duration::milliseconds(1));
+    let future = repository
+        .inspect_lost_response_successor(&revoked, client_id, now)
+        .await;
     drop_schema(&state, &schema).await;
 
-    let (at_zero, at_sixty_seconds, after_sixty_seconds, future) =
-        boundary_results.expect("fixed-window successor lookups should succeed");
+    let (at_zero, at_sixty_seconds, after_sixty_seconds, future) = (
+        at_zero.expect("zero boundary should load"),
+        at_sixty_seconds.expect("sixty-second boundary should load"),
+        after_sixty_seconds.expect("after-window lookup should load"),
+        future.expect("future lookup should load"),
+    );
     assert_eq!(at_zero.map(|row| row.id), Some(successor.id));
     assert_eq!(
         at_sixty_seconds.map(|row| row.id),
@@ -1452,17 +1448,14 @@ async fn lost_response_successor_requires_same_tenant_in_real_postgres() {
     )
     .await;
 
-    let mut conn = get_conn(&state.diesel_db)
-        .await
-        .expect("database connection should be available");
     assert!(
-        lost_response_successor(&mut conn, &revoked, client_id, Utc::now())
+        nazo_postgres::TokenRepository::new(state.diesel_db.clone())
+            .inspect_lost_response_successor(&revoked, client_id, Utc::now())
             .await
             .expect("successor lookup should succeed")
             .is_none(),
         "a cross-tenant child must not satisfy lost-response recovery"
     );
-    drop(conn);
     drop_schema(&state, &schema).await;
 }
 

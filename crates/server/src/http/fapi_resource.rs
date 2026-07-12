@@ -42,14 +42,9 @@ impl FapiResourceStore for AppState {
         jti: &'a str,
     ) -> FapiStoreFuture<'a, anyhow::Result<bool>> {
         Box::pin(async move {
-            let mut conn = get_conn(&self.diesel_db).await?;
-            let count = access_token_revocations::table
-                .filter(access_token_revocations::tenant_id.eq(tenant_id))
-                .filter(access_token_revocations::access_token_jti_blake3.eq(blake3_hex(jti)))
-                .select(count_star())
-                .first::<i64>(&mut conn)
-                .await?;
-            Ok(count > 0)
+            Ok(nazo_postgres::TokenRepository::new(self.diesel_db.clone())
+                .access_token_revoked(tenant_id, jti)
+                .await?)
         })
     }
 

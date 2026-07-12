@@ -12,7 +12,6 @@ mod issue;
 mod jwt_bearer;
 mod native_sso;
 mod refresh;
-mod refresh_family;
 mod revoke;
 mod token_exchange;
 mod userinfo;

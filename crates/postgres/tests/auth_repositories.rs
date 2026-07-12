@@ -1,6 +1,7 @@
 use diesel::{QueryableByName, sql_query, sql_types::Uuid as SqlUuid};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
-use nazo_postgres::{GrantRepository, create_pool};
+use nazo_auth::{NewRefreshToken, RefreshTokenPersistResult};
+use nazo_postgres::{GrantRepository, TokenRepository, create_pool};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -122,4 +123,65 @@ async fn grants_upsert_cover_and_revoke_tokens_atomically() {
         .expect("grant revocation should commit");
     assert_eq!(revoked.revoked_refresh_tokens, 1);
     assert_eq!(revoked.removed_grants, 1);
+}
+
+#[tokio::test]
+async fn refresh_rotation_reuse_compromises_the_whole_family() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let family_id = Uuid::now_v7();
+    let suffix = Uuid::now_v7();
+    let repository = TokenRepository::new(create_pool(&database_url, 4).unwrap());
+    let make = |label: &str, rotated_from_id| NewRefreshToken {
+        raw_token: format!("auth-repo-{label}-{suffix}"),
+        tenant_id,
+        family_id,
+        rotated_from_id,
+        lost_response_retry: None,
+        client_id: fixture.client_id,
+        user_id: Some(fixture.user_id),
+        scopes: vec!["openid".to_owned(), "offline_access".to_owned()],
+        audiences: vec!["resource://default".to_owned()],
+        authorization_details: json!([]),
+        issued_at: chrono::Utc::now(),
+        expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+        subject: fixture.user_id.to_string(),
+        dpop_jkt: None,
+        mtls_x5t_s256: None,
+    };
+    assert_eq!(
+        repository
+            .persist_refresh_token(make("original", None))
+            .await
+            .expect("original token should persist"),
+        RefreshTokenPersistResult::Inserted
+    );
+    let original = repository
+        .by_raw_refresh_token(tenant_id, &format!("auth-repo-original-{suffix}"))
+        .await
+        .expect("original token should load")
+        .expect("original token should exist");
+    assert_eq!(
+        repository
+            .persist_refresh_token(make("successor", Some(original.id)))
+            .await
+            .expect("successor should rotate"),
+        RefreshTokenPersistResult::Inserted
+    );
+    assert_eq!(
+        repository
+            .persist_refresh_token(make("reuse", Some(original.id)))
+            .await
+            .expect("reuse should be classified"),
+        RefreshTokenPersistResult::RotationConflict
+    );
+    assert!(
+        !repository
+            .family_active(tenant_id, family_id, fixture.user_id)
+            .await
+            .expect("family state should load")
+    );
 }

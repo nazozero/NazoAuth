@@ -5,11 +5,6 @@ use super::{
 };
 use crate::http::prelude::*;
 use crate::settings::AuthorizationServerProfile;
-use diesel_async::AsyncConnection;
-
-use super::refresh_family::{
-    lock_token_family, lost_response_successor, mark_token_family_reuse as mark_family_reuse,
-};
 
 fn refresh_token_policy_for_authorization_server_profile(
     profile: AuthorizationServerProfile,
@@ -86,19 +81,10 @@ async fn lost_response_successor_or_mark_reuse(
     client_id: Uuid,
     retry_started_at: DateTime<Utc>,
 ) -> anyhow::Result<Option<TokenRow>> {
-    let mut conn = get_conn(&state.diesel_db).await?;
-    let successor = conn
-        .transaction::<Option<TokenRow>, diesel::result::Error, _>(async move |conn| {
-            lock_token_family(conn, token.token_family_id).await?;
-            let successor =
-                lost_response_successor(conn, token, client_id, retry_started_at).await?;
-            if successor.is_none() {
-                mark_family_reuse(conn, token.tenant_id, token.token_family_id).await?;
-            }
-            Ok(successor)
-        })
-        .await?;
-    Ok(successor)
+    nazo_postgres::TokenRepository::new(state.diesel_db.clone())
+        .lost_response_successor_or_compromise(token, client_id, retry_started_at)
+        .await
+        .map_err(|error| anyhow::anyhow!("failed to inspect refresh family: {error}"))
 }
 
 pub(crate) async fn token_refresh(
@@ -117,29 +103,13 @@ pub(crate) async fn token_refresh(
             false,
         );
     };
-    let hash = blake3_hex(refresh_token);
-    let token = match get_conn(&state.diesel_db).await {
-        Ok(mut conn) => match oauth_tokens::table
-            .filter(oauth_tokens::tenant_id.eq(client.tenant_id))
-            .filter(oauth_tokens::refresh_token_blake3.eq(hash))
-            .select(TokenRow::as_select())
-            .first::<TokenRow>(&mut conn)
-            .await
-            .optional()
-        {
-            Ok(value) => value,
-            Err(error) => {
-                tracing::warn!(%error, "failed to load refresh token");
-                return oauth_token_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "refresh_token 校验失败.",
-                    false,
-                );
-            }
-        },
+    let token = match nazo_postgres::TokenRepository::new(state.diesel_db.clone())
+        .by_raw_refresh_token(client.tenant_id, refresh_token)
+        .await
+    {
+        Ok(value) => value,
         Err(error) => {
-            tracing::warn!(%error, "failed to get database connection for refresh token lookup");
+            tracing::warn!(%error, "failed to load refresh token");
             return oauth_token_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
