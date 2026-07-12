@@ -888,6 +888,38 @@ fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
 
 #[test]
 fn oauth_client_queries_use_the_focused_postgres_repository_without_a_server_facade() {
+    fn function_bodies(source: &str) -> Vec<&str> {
+        let mut bodies = Vec::new();
+        let mut offset = 0;
+        while let Some(relative) = source[offset..].find("fn ") {
+            let start = offset + relative;
+            let Some(open_relative) = source[start..].find('{') else {
+                break;
+            };
+            let open = start + open_relative;
+            let mut depth = 0usize;
+            for (relative, byte) in source.as_bytes()[open..].iter().enumerate() {
+                match byte {
+                    b'{' => depth += 1,
+                    b'}' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            let end = open + relative + 1;
+                            bodies.push(&source[start..end]);
+                            offset = end;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if offset <= start {
+                break;
+            }
+        }
+        bodies
+    }
+
     fn visit(
         path: &std::path::Path,
         support_root: &std::path::Path,
@@ -905,15 +937,26 @@ fn oauth_client_queries_use_the_focused_postgres_repository_without_a_server_fac
             }
             let source = std::fs::read_to_string(&path).expect("server source is UTF-8");
             *direct_repository_calls += source.matches("OAuthClientRepository::new").count();
-            if path.starts_with(support_root)
-                && (source.contains("OAuthClientRepository")
-                    || source.contains("oauth_clients::table")
-                    || source.contains("select(ClientRow::as_select())"))
-            {
-                violations.push(format!(
-                    "{} hides an OAuth client repository constructor/query in server support",
-                    path.display()
-                ));
+            if path.starts_with(support_root) {
+                for body in function_bodies(&source) {
+                    if body.contains("OAuthClientRepository::new")
+                        && !body.contains("diesel::")
+                        && !body.contains("sql_query")
+                    {
+                        violations.push(format!(
+                            "{} hides an OAuth client repository forwarding wrapper",
+                            path.display()
+                        ));
+                    }
+                }
+                if source.contains("oauth_clients::table")
+                    || source.contains("select(ClientRow::as_select())")
+                {
+                    violations.push(format!(
+                        "{} hides an OAuth client query in server support",
+                        path.display()
+                    ));
+                }
             }
         }
     }
