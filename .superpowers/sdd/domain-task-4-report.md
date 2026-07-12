@@ -666,6 +666,93 @@ to the table-name detector so direct raw SQL is still rejected.
 No production behavior, refresh implementation, frontend, push, deployment,
 PR, or review-package state was changed.
 
+## Refresh lost-response compatibility remediation (2026-07-13)
+
+The 60-second lost-response retry behavior is restored without reinstating the
+pre-`e252056` race. A revoked refresh token is eligible only when its
+`revoked_at` is at or before the request-start timestamp and no more than 60
+seconds old, its family has no reuse marker, and PostgreSQL contains exactly
+one unexpired active child linked by `rotated_from_id` with the same tenant,
+family, client, DPoP JKT, and mTLS thumbprint. Nullable sender constraints use
+PostgreSQL `IS NOT DISTINCT FROM`, so both bound and unbound families are
+matched exactly.
+
+The request-start timestamp is fixed before token lookup. This is security
+significant: a request that began while the token was active cannot become a
+lost-response retry merely because another concurrent request rotates the
+token before its lookup completes. The first real HTTP E2E run exposed that
+boundary by producing two successes in the existing refresh-reuse race. After
+carrying the request-start timestamp through the lost-response rotation policy
+and locked persistence revalidation, the race again produces one success and
+one `invalid_grant`, while a genuinely later retry remains compatible.
+
+Both preliminary inspect-or-compromise and the authoritative final decision
+use the existing stable PostgreSQL family advisory transaction lock. The
+refresh persistence transaction reloads the original row, repeats the window,
+reuse, unique-child, tenant/family/client, sender-constraint, active, and
+expiry checks using the same request-start timestamp, then revokes that exact
+successor and inserts a new child in the same transaction. A changed or
+non-eligible state marks reuse and revokes the family atomically. Insert
+failure rolls back successor revocation; family-revoke failure rolls back the
+reuse marker. The response contains only the newly generated refresh token
+whose BLAKE3 hash was inserted, never plaintext from the stored successor
+(plaintext successors are not stored).
+
+### TDD and commits
+
+- RED: against the migrated PostgreSQL service, the restored compatibility
+  assertion expected HTTP 200 for a token revoked 35 seconds earlier with one
+  exact active successor, but received HTTP 400 `invalid_grant`. The run took
+  0.07 seconds and failed at the response assertion, not compilation or
+  fixture setup.
+- The first implementation remained RED at the explicit successor-inspection
+  assertion because nullable sender equality did not match SQL `NULL`; the
+  null-safe PostgreSQL comparison made the exact test GREEN.
+- The first full real-request E2E then failed
+  `refresh_token_reuse_race_single_success` with two HTTP 200 responses. This
+  identified request-start time, rather than post-lookup wall time, as the
+  required future-revocation boundary. The timestamp-carrying implementation
+  made both that race and the lost-response retry pass in the same unmodified
+  E2E script.
+- `918b5e3` — `fix: restore safe refresh lost-response retries`.
+
+### Regression coverage
+
+Real PostgreSQL tests cover the inclusive zero/60-second boundary plus
+out-of-window and future revocations, no successor, two successors, expired or
+inactive state, existing reuse markers, wrong tenant/family/client/DPoP/mTLS
+constraints, newly persisted plaintext/hash linkage, concurrent ordinary
+replay, concurrent lost-response retry, family compromise, reuse rollback, and
+successor-revocation rollback after an injected child-insert failure. The live
+test pool uses four connections so concurrency exercises the advisory lock
+rather than a single pool connection queue.
+
+### Fresh verification
+
+- Real PostgreSQL focused refresh suite:
+  `cargo test -p nazo-oauth-server --lib http::token::refresh::tests::
+  --all-features --locked -- --nocapture` — exit 0; 36/36 passed.
+- A current release service image was built from the implementation commit; a fresh migrated
+  PostgreSQL 18 database, Valkey 8 instance, ordinary server, and signed server
+  ran the unmodified `scripts/full_real_request_e2e.py` — exit 0 with
+  `{"ok": true}`. Evidence includes
+  `refresh_token_reuse_race_single_success`,
+  `dpop_nonce_error_/token_425`,
+  `POST /token previous refresh_token inside lost response window`, and
+  `refresh_token_lost_response_rotates_successor`.
+- `rtk cargo fmt --all -- --check` and `rtk git diff --check` — exit 0.
+- `rtk cargo check --workspace --all-targets --all-features --locked` — exit 0.
+- `rtk cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
+  — exit 0, no issues.
+- `rtk cargo test --workspace --all-features --locked` with the mandatory
+  isolated PostgreSQL URL and optional server live-service variables unset —
+  exit 0 across all unit, integration, and doctest suites.
+- `rtk cargo doc --workspace --no-deps --all-features --locked` — exit 0.
+
+Only the existing localized MSVC linker-stdout notices appeared during test
+linking; strict Clippy was warning-free. No frontend file, migration, E2E
+assertion, push, deployment, or PR state was changed.
+
 ## OAuth client contract parser correction (2026-07-13)
 
 The OAuth-client ownership contract now parses every server production Rust
