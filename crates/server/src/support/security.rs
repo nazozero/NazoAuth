@@ -142,6 +142,7 @@ pub(crate) fn access_delivery_token(secret: &str, user_id: Uuid, request_id: Uui
     URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
 }
 
+#[cfg(test)]
 pub(crate) fn verify_client_secret(secret: &str, stored_hash: &str, pepper: &str) -> bool {
     nazo_auth::verify_client_secret_hash(secret, stored_hash, pepper)
 }

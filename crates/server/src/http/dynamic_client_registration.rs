@@ -700,6 +700,7 @@ pub(crate) fn initial_access_token_authorized(
     constant_time_eq(actual.as_bytes(), expected_token.as_bytes())
 }
 
+#[cfg(test)]
 pub(crate) fn registration_access_token_authorized(
     authorization_header: Option<&str>,
     stored_token_hash: Option<&str>,

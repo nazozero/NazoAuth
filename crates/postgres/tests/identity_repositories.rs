@@ -749,6 +749,86 @@ fn oauth_client_repository_keeps_records_private_and_returns_domain_clients() {
         repository.contains("use nazo_auth::{OAuthClient,"),
         "repository lookups must return the auth-owned storage-independent client"
     );
+
+    fn visit(path: &std::path::Path, violations: &mut Vec<String>) {
+        for entry in std::fs::read_dir(path).expect("server source directory is readable") {
+            let path = entry.expect("server source entry is readable").path();
+            if path.is_dir() {
+                visit(&path, violations);
+                continue;
+            }
+            if !path.extension().is_some_and(|extension| extension == "rs")
+                || path.file_name().is_some_and(|name| name == "schema.rs")
+            {
+                continue;
+            }
+            let source = std::fs::read_to_string(&path).expect("server source is UTF-8");
+            let compact = source.split_whitespace().collect::<Vec<_>>().join(" ");
+            if source.contains("oauth_clients::") {
+                violations.push(format!(
+                    "{} directly references the OAuth-client Diesel schema",
+                    path.display()
+                ));
+            }
+            for operation in [
+                "INSERT INTO oauth_clients",
+                "UPDATE oauth_clients",
+                "DELETE FROM oauth_clients",
+                "FROM oauth_clients",
+                "JOIN oauth_clients",
+            ] {
+                if compact.contains(operation) {
+                    violations.push(format!(
+                        "{} contains direct OAuth-client SQL ({operation})",
+                        path.display()
+                    ));
+                }
+            }
+            for body in source.split("struct ").skip(1) {
+                let Some(body) = body.split_once('}').map(|(body, _)| body) else {
+                    continue;
+                };
+                let persistence_sentinels = [
+                    "client_id",
+                    "client_secret_hash",
+                    "redirect_uris",
+                    "grant_types",
+                ]
+                .into_iter()
+                .filter(|field| body.contains(field))
+                .count();
+                if persistence_sentinels == 4 {
+                    violations.push(format!(
+                        "{} defines a persistence-shaped OAuth client struct",
+                        path.display()
+                    ));
+                }
+            }
+            if (source.contains("impl TryFrom<") || source.contains("impl From<"))
+                && [
+                    "client_id:",
+                    "client_name:",
+                    "client_type:",
+                    "redirect_uris:",
+                ]
+                .into_iter()
+                .all(|field| source.contains(field))
+            {
+                violations.push(format!(
+                    "{} contains a field-copy OAuth client conversion",
+                    path.display()
+                ));
+            }
+        }
+    }
+
+    let mut violations = Vec::new();
+    visit(&manifest.join("../server/src"), &mut violations);
+    assert!(
+        violations.is_empty(),
+        "server production code must not own OAuth-client persistence:\n{}",
+        violations.join("\n")
+    );
 }
 
 #[test]
