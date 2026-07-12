@@ -62,6 +62,9 @@ pub(super) async fn lost_response_successor(
     client_id: Uuid,
     now: DateTime<Utc>,
 ) -> diesel::QueryResult<Option<TokenRow>> {
+    if token.dpop_jkt.is_none() && token.mtls_x5t_s256.is_none() {
+        return Ok(None);
+    }
     let Some(revoked_at) = token.revoked_at else {
         return Ok(None);
     };
