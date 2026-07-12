@@ -1,9 +1,10 @@
 use std::collections::HashSet;
 
 use anyhow::{Context, bail};
+use nazo_auth::validate_issuer_url;
 use serde::Deserialize;
 
-use crate::{config::ConfigSource, support::validate_issuer_url};
+use crate::config::ConfigSource;
 
 use super::OidcFederationSettings;
 

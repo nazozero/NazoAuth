@@ -4,7 +4,7 @@ use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{ActiveSigningKey, Claims, Keyset, KeysetStore, VerificationKey};
+use crate::domain::{ActiveSigningKey, Keyset, KeysetStore, VerificationKey};
 use crate::support::{IpCidr, generate_key_material, public_jwk_from_private_der};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use diesel::sql_query;
@@ -14,6 +14,7 @@ use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
+use nazo_auth::Claims;
 use openssl::encrypt::Decrypter;
 use openssl::hash::MessageDigest;
 use openssl::pkey::{PKey, Private};

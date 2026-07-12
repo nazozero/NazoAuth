@@ -1,11 +1,9 @@
-//! OAuth/OIDC URL policy checks.
-//! These helpers encode the boundary between production HTTPS URLs and
-//! loopback/native-app exceptions that are explicitly allowed by OAuth BCP.
+//! OAuth/OIDC URL policy, including the OAuth native-app exceptions.
 
 use anyhow::bail;
 use url::Url;
 
-pub(crate) fn validate_issuer_url(value: &str) -> anyhow::Result<()> {
+pub fn validate_issuer_url(value: &str) -> anyhow::Result<()> {
     let url = parse_url("issuer", value)?;
     if !url.has_host() {
         bail!("issuer 必须包含 host");
@@ -20,7 +18,7 @@ pub(crate) fn validate_issuer_url(value: &str) -> anyhow::Result<()> {
     validate_https_or_loopback_http("issuer", &url)
 }
 
-pub(crate) fn validate_frontend_base_url(value: &str) -> anyhow::Result<()> {
+pub fn validate_frontend_base_url(value: &str) -> anyhow::Result<()> {
     let url = parse_url("FRONTEND_BASE_URL", value)?;
     if !url.has_host() {
         bail!("FRONTEND_BASE_URL 必须包含 host");
@@ -32,7 +30,7 @@ pub(crate) fn validate_frontend_base_url(value: &str) -> anyhow::Result<()> {
     validate_https_or_loopback_http("FRONTEND_BASE_URL", &url)
 }
 
-pub(crate) fn validate_cors_origin(value: &str) -> anyhow::Result<()> {
+pub fn validate_cors_origin(value: &str) -> anyhow::Result<()> {
     let url = parse_url("CORS_ALLOWED_ORIGINS", value)?;
     if !url.has_host() {
         bail!("CORS_ALLOWED_ORIGINS 必须包含 host");
@@ -44,7 +42,7 @@ pub(crate) fn validate_cors_origin(value: &str) -> anyhow::Result<()> {
     validate_https_or_loopback_http("CORS_ALLOWED_ORIGINS", &url)
 }
 
-pub(crate) fn validate_protected_resource_identifier(value: &str) -> anyhow::Result<()> {
+pub fn validate_protected_resource_identifier(value: &str) -> anyhow::Result<()> {
     let url = parse_url("PROTECTED_RESOURCE_IDENTIFIER", value)?;
     if !url.has_host() {
         bail!("PROTECTED_RESOURCE_IDENTIFIER 必须包含 host");
@@ -56,7 +54,7 @@ pub(crate) fn validate_protected_resource_identifier(value: &str) -> anyhow::Res
     validate_https_or_loopback_http("PROTECTED_RESOURCE_IDENTIFIER", &url)
 }
 
-pub(crate) fn validate_oauth_redirect_uri(client_type: &str, value: &str) -> anyhow::Result<()> {
+pub fn validate_oauth_redirect_uri(client_type: &str, value: &str) -> anyhow::Result<()> {
     if value.contains('*') {
         bail!("redirect_uri 不支持通配符");
     }
@@ -79,11 +77,8 @@ pub(crate) fn validate_oauth_redirect_uri(client_type: &str, value: &str) -> any
     }
 }
 
-pub(crate) fn oauth_redirect_uri_matches(
-    client_type: &str,
-    registered: &str,
-    requested: &str,
-) -> bool {
+#[must_use]
+pub fn oauth_redirect_uri_matches(client_type: &str, registered: &str, requested: &str) -> bool {
     if registered == requested {
         return true;
     }
@@ -106,7 +101,8 @@ pub(crate) fn oauth_redirect_uri_matches(
         && registered.fragment() == requested.fragment()
 }
 
-pub(crate) fn is_loopback_http_url(value: &str) -> bool {
+#[must_use]
+pub fn is_loopback_http_url(value: &str) -> bool {
     Url::parse(value)
         .ok()
         .is_some_and(|url| url.scheme() == "http" && is_loopback_host(&url))
@@ -147,9 +143,5 @@ fn is_private_use_scheme(scheme: &str) -> bool {
     scheme.contains('.')
         && scheme
             .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'-' | b'.'))
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.'))
 }
-
-#[cfg(test)]
-#[path = "../../tests/in_source/src/support/tests/uri_policy.rs"]
-mod tests;

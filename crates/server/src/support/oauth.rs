@@ -1,16 +1,19 @@
 //! OAuth 作用域、audience 与授权关系工具。
 // 只处理 OAuth 语义中的集合判断和授权记录 upsert。
 
+use nazo_auth::{
+    normalize_sha256_thumbprint, oauth_redirect_uri_matches, validate_oauth_redirect_uri,
+};
+
 use super::{
     keyset::reject_private_jwk_members,
-    mtls::{certificate_x5c_thumbprint, normalize_sha256_thumbprint},
+    mtls::certificate_x5c_thumbprint,
     prelude::*,
     security::{
         SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
         SUPPORTED_CLIENT_JWT_SIGNING_ALGS, blake3_hex, client_jwt_algorithm_from_name,
         jwt_decoding_key_from_jwk, supported_client_jwt_algorithm_name,
     },
-    uri_policy::{oauth_redirect_uri_matches, validate_oauth_redirect_uri},
 };
 
 const SUPPORTED_GRANT_TYPES: &[&str] = &[
@@ -142,13 +145,6 @@ pub(crate) fn token_audience_allowed(client: &ClientRow, audience: &Value) -> bo
     token_audience_values(audience)
         .iter()
         .any(|audience| audience_allowed(client, audience))
-}
-
-pub(crate) fn sorted_scope_string(scopes: &[String]) -> String {
-    let mut values = scopes.to_vec();
-    values.sort();
-    values.dedup();
-    values.join(" ")
 }
 
 pub(crate) fn has_duplicate_oauth_parameter(raw_query: &str, parameter_names: &[&str]) -> bool {

@@ -1,5 +1,5 @@
 use super::*;
-use crate::domain::OidcClaimRequest;
+use nazo_auth::OidcClaimRequest;
 
 fn normalize_generated_jti(mut claims: serde_json::Map<String, Value>) -> Value {
     let jti = claims

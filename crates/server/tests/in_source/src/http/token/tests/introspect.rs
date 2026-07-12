@@ -3,8 +3,7 @@ use std::sync::Arc;
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::ConfirmationClaims;
-use crate::domain::{ActiveSigningKey, Claims, Keyset, KeysetStore, VerificationKey};
+use crate::domain::{ActiveSigningKey, Keyset, KeysetStore, VerificationKey};
 use crate::support::{generate_key_material, hash_client_secret, public_jwk_from_private_der};
 use actix_web::test::TestRequest;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -13,6 +12,7 @@ use diesel::sql_types::{Bool, Jsonb, Nullable, Text, Timestamptz, Uuid as SqlUui
 use diesel_async::RunQueryDsl;
 use fred::interfaces::ClientLike;
 use fred::prelude::{Builder as ValkeyBuilder, Config as ValkeyConfig};
+use nazo_auth::{Claims, ConfirmationClaims};
 use openssl::encrypt::Decrypter;
 use openssl::hash::MessageDigest;
 use openssl::pkey::{PKey, Private};

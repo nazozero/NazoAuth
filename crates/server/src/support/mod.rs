@@ -24,7 +24,6 @@ mod sector_identifier;
 mod security;
 mod sessions;
 mod tenancy;
-mod uri_policy;
 mod valkey;
 mod views;
 
@@ -51,7 +50,6 @@ pub(crate) use sector_identifier::*;
 pub(crate) use security::*;
 pub(crate) use sessions::*;
 pub(crate) use tenancy::*;
-pub(crate) use uri_policy::*;
 pub(crate) use valkey::*;
 pub(crate) use views::*;
 
@@ -86,7 +84,7 @@ pub(crate) mod prelude {
 
     pub(crate) use crate::db::{DbPool, get_conn};
     pub(crate) use crate::domain::{
-        AccessRequestRow, AccessRequestStatus, ActiveSigningKey, AppState, Claims, ClientRow,
+        AccessRequestRow, AccessRequestStatus, ActiveSigningKey, AppState, ClientRow,
         ExternalSigningKey, Keyset, PasskeyCredentialRow, UserRow, VerificationKey,
     };
     pub(crate) use crate::schema::{
@@ -94,6 +92,7 @@ pub(crate) mod prelude {
         user_mfa_remembered_devices, user_totp_credentials, users,
     };
     pub(crate) use crate::settings::Settings;
+    pub(crate) use nazo_auth::Claims;
 
     #[cfg(test)]
     pub(crate) use super::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};

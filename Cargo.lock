@@ -2147,6 +2147,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "nazo-auth"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "nazo-runtime-modules",
+ "proptest",
+ "serde",
+ "serde_json",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "nazo-http-signatures"
 version = "0.1.0"
 dependencies = [
@@ -2195,6 +2209,7 @@ dependencies = [
  "hmac 0.13.0",
  "jsonwebtoken",
  "lettre",
+ "nazo-auth",
  "nazo-http-signatures",
  "nazo-identity",
  "nazo-resource-server",

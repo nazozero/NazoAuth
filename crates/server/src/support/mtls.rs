@@ -6,6 +6,7 @@
 
 use super::prelude::*;
 use super::request_from_trusted_proxy;
+use nazo_auth::normalize_sha256_thumbprint;
 use openssl::asn1::Asn1Time;
 use openssl::nid::Nid;
 use openssl::x509::{X509, X509NameRef};
@@ -145,32 +146,6 @@ pub(crate) fn certificate_pem_identity(value: &str) -> Option<MtlsClientCertific
     certificate.san_ip = sorted_unique(certificate.san_ip);
     certificate.san_email = sorted_unique(certificate.san_email);
     Some(certificate)
-}
-
-pub(crate) fn normalize_sha256_thumbprint(value: &str) -> Option<String> {
-    let trimmed = value.trim();
-    if trimmed.len() == 43
-        && trimmed
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
-    {
-        let decoded = URL_SAFE_NO_PAD.decode(trimmed).ok()?;
-        return (decoded.len() == 32).then(|| trimmed.to_owned());
-    }
-
-    let hex = trimmed
-        .chars()
-        .filter(|ch| !matches!(ch, ':' | ' ' | '\t' | '\r' | '\n'))
-        .collect::<String>();
-    if hex.len() != 64 || !hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
-        return None;
-    }
-    let mut bytes = Vec::with_capacity(32);
-    for idx in (0..hex.len()).step_by(2) {
-        let byte = u8::from_str_radix(&hex[idx..idx + 2], 16).ok()?;
-        bytes.push(byte);
-    }
-    Some(URL_SAFE_NO_PAD.encode(bytes))
 }
 
 pub(crate) fn certificate_x5c_thumbprint(value: &str) -> Option<String> {

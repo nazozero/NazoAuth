@@ -1,13 +1,13 @@
 use super::*;
 use std::path::PathBuf;
 
-use crate::domain::SUPPORTED_AUTHORIZATION_DETAILS_TYPES;
 use crate::domain::VerificationKey;
 use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, RateLimitSettings,
     RequestObjectJtiPolicy, SubjectType,
 };
 use crate::support::{ClientIpHeaderMode, IpCidr};
+use nazo_auth::SUPPORTED_AUTHORIZATION_DETAILS_TYPES;
 
 fn keyset(alg: jsonwebtoken::Algorithm) -> Keyset {
     let alg_name = signing_algorithm_name(alg).expect("test alg should be supported");

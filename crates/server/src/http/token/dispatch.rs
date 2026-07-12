@@ -6,6 +6,10 @@ use super::{
     token_client_credentials, token_device_code, token_exchange, token_jwt_bearer, token_refresh,
 };
 use crate::http::prelude::*;
+use nazo_auth::{
+    ClientProfile, ProtocolErrorCode, SecurityProfile, SenderConstraintPolicy,
+    validate_token_request_profile as validate_auth_token_request_profile,
+};
 
 fn pending_authorization_code_payload(raw: &str) -> Result<Option<CodePayload>, serde_json::Error> {
     match serde_json::from_str::<AuthorizationCodeState>(raw)? {
@@ -450,40 +454,39 @@ pub(crate) fn validate_token_request_profile(
     client: &ClientRow,
     auth_method: &str,
 ) -> Result<(), HttpResponse> {
-    if !settings
+    let profile = if settings
         .authorization_server_profile
         .requires_fapi2_security()
     {
-        return Ok(());
-    }
-    if client.client_type != "confidential" {
-        return Err(oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "unauthorized_client",
-            "FAPI2 profiles require confidential clients.",
-            false,
-        ));
-    }
-    if !matches!(
-        auth_method,
-        "private_key_jwt" | "tls_client_auth" | "self_signed_tls_client_auth"
+        SecurityProfile::Fapi2Security
+    } else {
+        SecurityProfile::Baseline
+    };
+    let sender_constraint = match (
+        client.require_dpop_bound_tokens,
+        client.require_mtls_bound_tokens,
     ) {
-        return Err(oauth_token_error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_client",
-            "FAPI2 profiles require private_key_jwt or mTLS client authentication.",
-            false,
-        ));
-    }
-    if !(client.require_dpop_bound_tokens || client.require_mtls_bound_tokens) {
-        return Err(oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "FAPI2 profiles require sender-constrained access tokens.",
-            false,
-        ));
-    }
-    Ok(())
+        (false, false) => SenderConstraintPolicy::BearerAllowed,
+        (true, false) => SenderConstraintPolicy::DpopRequired,
+        (false, true) => SenderConstraintPolicy::MtlsRequired,
+        (true, true) => SenderConstraintPolicy::DpopOrMtls,
+    };
+    validate_auth_token_request_profile(
+        profile,
+        ClientProfile {
+            client_type: &client.client_type,
+            authentication_method: auth_method,
+            sender_constraint,
+        },
+    )
+    .map_err(|error| {
+        let status = if error.code == ProtocolErrorCode::InvalidClient {
+            StatusCode::UNAUTHORIZED
+        } else {
+            StatusCode::BAD_REQUEST
+        };
+        oauth_token_error(status, error.code.as_str(), error.description, false)
+    })
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 use anyhow::bail;
+use nazo_auth::validate_issuer_url;
 
-use crate::{config::ConfigSource, support::validate_issuer_url};
+use crate::config::ConfigSource;
 
 #[derive(Clone)]
 pub(crate) struct PasskeySettings {

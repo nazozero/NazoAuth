@@ -4,13 +4,15 @@
 use std::path::PathBuf;
 
 use anyhow::bail;
+use nazo_auth::{
+    is_loopback_http_url, validate_cors_origin, validate_frontend_base_url, validate_issuer_url,
+    validate_protected_resource_identifier,
+};
 use url::Url;
 
 use crate::config::ConfigSource;
 use crate::support::{
-    ClientIpHeaderMode, IpCidr, LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER, is_loopback_http_url,
-    parse_trusted_proxy_cidrs, validate_cors_origin, validate_frontend_base_url,
-    validate_issuer_url, validate_protected_resource_identifier,
+    ClientIpHeaderMode, IpCidr, LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER, parse_trusted_proxy_cidrs,
 };
 
 mod email;

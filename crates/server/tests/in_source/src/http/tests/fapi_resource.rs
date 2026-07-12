@@ -13,9 +13,7 @@ use std::{
 
 use crate::config::ConfigSource;
 use crate::db::{create_pool, get_conn};
-use crate::domain::{
-    ActiveSigningKey, ConfirmationClaims, ExternalSigningKey, Keyset, KeysetStore, VerificationKey,
-};
+use crate::domain::{ActiveSigningKey, ExternalSigningKey, Keyset, KeysetStore, VerificationKey};
 use crate::settings::DpopNoncePolicy;
 use crate::support::{generate_key_material, public_jwk_from_private_der};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -25,6 +23,7 @@ use diesel_async::RunQueryDsl;
 use ed25519_dalek::{Signer, SigningKey};
 use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{Builder as ValkeyBuilder, Config as ValkeyConfig};
+use nazo_auth::ConfirmationClaims;
 use nazo_http_signatures::{
     OriginalRequest, RequestInput, RequestPolicy, ResponseInput, SignatureFields,
     VerificationPolicy, parse_response_for_verification, prepare_request,

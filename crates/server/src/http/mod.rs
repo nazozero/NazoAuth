@@ -49,11 +49,9 @@ pub(crate) mod prelude {
     pub(crate) use crate::domain::{
         AccessRequestStatus, AppState, AuthorizationCodeState, ClientRow, CodePayload,
         ConsentPayload, ConsumedAuthorizationCode, ExternalIdentityLinkRow, GrantRow,
-        MyApplicationRow, NativeSsoTokenBinding, OidcClaimRequest, PasskeyCredentialRow,
-        PendingAccessRequestRow, PushedAuthorizationRequest, RefreshTokenPolicy, TokenIssue,
-        TokenRow, UserAccessRequestRow, UserRow, authorization_details_empty,
-        canonical_authorization_details, high_risk_authorization_details,
-        normalize_authorization_details, parse_authorization_details,
+        MyApplicationRow, NativeSsoTokenBinding, PasskeyCredentialRow, PendingAccessRequestRow,
+        PushedAuthorizationRequest, RefreshTokenPolicy, TokenIssue, TokenRow, UserAccessRequestRow,
+        UserRow,
     };
     pub(crate) use crate::schema::{
         access_token_revocations, backchannel_logout_deliveries, client_access_requests,
@@ -62,4 +60,9 @@ pub(crate) mod prelude {
     };
     pub(crate) use crate::settings::Settings;
     pub(crate) use crate::support::*;
+    pub(crate) use nazo_auth::{
+        OidcClaimRequest, authorization_details_empty, canonical_authorization_details,
+        high_risk_authorization_details, is_valid_dpop_jkt, normalize_authorization_details,
+        parse_authorization_details,
+    };
 }

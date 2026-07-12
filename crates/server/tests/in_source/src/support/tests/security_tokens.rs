@@ -1,5 +1,5 @@
 use super::*;
-use crate::domain::OidcClaimRequest;
+use nazo_auth::OidcClaimRequest;
 
 // ---------------------------------------------------------------------------
 // access_token_claims

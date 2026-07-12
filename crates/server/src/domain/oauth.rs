@@ -5,60 +5,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
+use nazo_auth::{OidcClaimRequest, deserialize_authorization_details, empty_authorization_details};
+
 use super::UserRow;
-
-/// RFC 9449/RFC 7800 confirmation claim for proof-of-possession access tokens.
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub(crate) struct ConfirmationClaims {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) jkt: Option<String>,
-    #[serde(rename = "x5t#S256", default, skip_serializing_if = "Option::is_none")]
-    pub(crate) x5t_s256: Option<String>,
-}
-
-/// One requested OIDC Claim from the `claims` authorization request parameter.
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub(crate) struct OidcClaimRequest {
-    pub(crate) name: String,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub(crate) essential: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) value: Option<Value>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) values: Vec<Value>,
-}
-
-/// Access token 中的 JWT claims。
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub(crate) struct Claims {
-    pub(crate) iss: String,
-    pub(crate) sub: String,
-    pub(crate) tenant_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) user_id: Option<String>,
-    pub(crate) subject_type: String,
-    pub(crate) aud: Value,
-    pub(crate) client_id: String,
-    pub(crate) scope: String,
-    #[serde(
-        default,
-        skip_serializing_if = "crate::domain::authorization_details_empty"
-    )]
-    pub(crate) authorization_details: Value,
-    pub(crate) token_use: String,
-    pub(crate) jti: String,
-    pub(crate) iat: i64,
-    pub(crate) nbf: i64,
-    pub(crate) exp: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) cnf: Option<ConfirmationClaims>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) act: Option<Value>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) userinfo_claims: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) userinfo_claim_requests: Vec<OidcClaimRequest>,
-}
 
 /// 用户待确认的授权请求快照。
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -73,8 +22,8 @@ pub(crate) struct ConsentPayload {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) resource_indicators: Vec<String>,
     #[serde(
-        default = "crate::domain::empty_authorization_details",
-        deserialize_with = "crate::domain::deserialize_authorization_details"
+        default = "empty_authorization_details",
+        deserialize_with = "deserialize_authorization_details"
     )]
     pub(crate) authorization_details: Value,
     pub(crate) state: Option<String>,
@@ -133,8 +82,8 @@ pub(crate) struct CodePayload {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) resource_indicators: Vec<String>,
     #[serde(
-        default = "crate::domain::empty_authorization_details",
-        deserialize_with = "crate::domain::deserialize_authorization_details"
+        default = "empty_authorization_details",
+        deserialize_with = "deserialize_authorization_details"
     )]
     pub(crate) authorization_details: Value,
     pub(crate) nonce: Option<String>,

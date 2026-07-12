@@ -5,8 +5,8 @@ use super::{
     token_management_client_auth_error, token_management_form_error,
     token_management_has_conflicting_client_auth, token_management_oauth_error,
 };
-use crate::domain::Claims;
 use crate::http::prelude::*;
+use nazo_auth::Claims;
 
 const TOKEN_INTROSPECTION_JWT_MEDIA_TYPE: &str = "application/token-introspection+jwt";
 

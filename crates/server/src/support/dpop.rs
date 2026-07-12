@@ -1,5 +1,8 @@
 use serde::Deserialize;
 
+#[cfg(test)]
+use nazo_auth::is_valid_dpop_jkt;
+
 use super::prelude::*;
 use super::{
     audit_event, audit_fields, blake3_hex, client_jwt_algorithm_from_name,
@@ -125,13 +128,6 @@ pub(crate) fn authorization_access_token(
 pub(crate) fn dpop_proof_present(req: &HttpRequest) -> bool {
     req.headers()
         .contains_key(header::HeaderName::from_static("dpop"))
-}
-
-pub(crate) fn is_valid_dpop_jkt(value: &str) -> bool {
-    value.len() == 43
-        && URL_SAFE_NO_PAD
-            .decode(value)
-            .is_ok_and(|bytes| bytes.len() == 32)
 }
 
 pub(crate) async fn validate_dpop_proof(

@@ -96,7 +96,7 @@ pub(crate) async fn issue_token_response(
     issue.authorization_details = match normalize_authorization_details(issue.authorization_details)
     {
         Ok(value) => value,
-        Err(()) => {
+        Err(_) => {
             mark_failed_authorization_code_if_needed(
                 state,
                 issue.authorization_code_hash.as_deref(),

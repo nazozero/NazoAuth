@@ -56,8 +56,8 @@ pub(crate) struct DeviceAuthorizationPayload {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) resource_indicators: Vec<String>,
     #[serde(
-        default = "crate::domain::empty_authorization_details",
-        deserialize_with = "crate::domain::deserialize_authorization_details"
+        default = "nazo_auth::empty_authorization_details",
+        deserialize_with = "nazo_auth::deserialize_authorization_details"
     )]
     pub(crate) authorization_details: Value,
     pub(crate) interval_seconds: u64,

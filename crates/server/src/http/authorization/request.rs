@@ -429,7 +429,7 @@ async fn authorize_request(
     let authorization_details =
         match parse_authorization_details(q.get("authorization_details").map(String::as_str)) {
             Ok(value) => value,
-            Err(()) => {
+            Err(_) => {
                 return authorization_oauth_error_redirect(
                     &state,
                     &redirect_uri,

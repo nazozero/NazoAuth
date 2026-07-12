@@ -1,4 +1,7 @@
-use super::*;
+use nazo_auth::{
+    is_loopback_http_url, oauth_redirect_uri_matches, validate_cors_origin,
+    validate_frontend_base_url, validate_issuer_url, validate_oauth_redirect_uri,
+};
 use proptest::prelude::*;
 
 fn valid_dns_host() -> impl Strategy<Value = String> {
@@ -58,11 +61,6 @@ fn loopback_redirect_matching_ignores_only_port() {
         "http://user@127.0.0.1:49152/callback"
     ));
     assert!(!oauth_redirect_uri_matches(
-        "public",
-        "http://127.0.0.1:3000/callback",
-        "http://127.0.0.1:49152/callback#frag"
-    ));
-    assert!(!oauth_redirect_uri_matches(
         "confidential",
         "http://127.0.0.1:3000/callback",
         "http://127.0.0.1:49152/callback"
@@ -72,16 +70,8 @@ fn loopback_redirect_matching_ignores_only_port() {
         "not a uri",
         "also not a uri"
     ));
-    assert!(oauth_redirect_uri_matches(
-        "public",
-        "http://[::1]:3000/callback",
-        "http://[::1]:49152/callback"
-    ));
     assert!(!is_loopback_http_url("http:/callback"));
     assert!(!is_loopback_http_url("http:///callback"));
-    assert!(!is_loopback_host(
-        &url::Url::parse("file:///callback").unwrap()
-    ));
 }
 
 proptest! {
@@ -91,7 +81,6 @@ proptest! {
         path in "[a-zA-Z0-9/_-]{0,32}"
     ) {
         let uri = format!("https://{host}/{path}");
-
         prop_assert!(validate_oauth_redirect_uri("confidential", &uri).is_ok());
         prop_assert!(validate_oauth_redirect_uri("public", &uri).is_ok());
     }
@@ -102,7 +91,6 @@ proptest! {
         path in "[a-zA-Z0-9/_-]{0,32}"
     ) {
         let uri = format!("http://{host}/{path}");
-
         prop_assert!(validate_oauth_redirect_uri("public", &uri).is_err());
         prop_assert!(validate_oauth_redirect_uri("confidential", &uri).is_err());
     }

@@ -6,8 +6,8 @@
 
 use super::{TokenForm, consume_token_client_assertion, issue_token_response};
 use super::{native_sso_profile_requested, token_native_sso_exchange};
-use crate::domain::Claims;
 use crate::http::prelude::*;
+use nazo_auth::Claims;
 
 pub(crate) const TOKEN_EXCHANGE_GRANT_TYPE: &str =
     "urn:ietf:params:oauth:grant-type:token-exchange";

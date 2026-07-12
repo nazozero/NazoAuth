@@ -4,7 +4,7 @@
 use hmac::{Hmac, KeyInit, Mac};
 
 use super::prelude::*;
-use crate::domain::OidcClaimRequest;
+use nazo_auth::OidcClaimRequest;
 
 type HmacSha256 = Hmac<Sha256>;
 

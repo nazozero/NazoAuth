@@ -2,11 +2,15 @@ use super::jwt_decoding_key_from_jwk;
 
 use base64::Engine as _;
 use chrono::Utc;
-use serde_json::{Value, json};
+use nazo_auth::{
+    AccessTokenClaimsInput, AuthorizationResponseClaimsInput, BackchannelLogoutClaimsInput, Claims,
+    IdTokenClaimsInput, OidcClaimRequest,
+};
+use serde_json::Value;
 use uuid::Uuid;
 
-use crate::domain::{AppState, Claims, ConfirmationClaims, OidcClaimRequest};
-use crate::support::{sign_local_jwt_input, signing_algorithm_name, sorted_scope_string};
+use crate::domain::AppState;
+use crate::support::{sign_local_jwt_input, signing_algorithm_name};
 
 pub(crate) struct AccessTokenJwtInput<'a> {
     pub(crate) tenant_id: Uuid,
@@ -64,48 +68,27 @@ pub(super) fn access_token_claims(
     now: i64,
     jti: &str,
 ) -> Claims {
-    Claims {
-        iss: issuer.to_owned(),
-        sub: input.subject.to_string(),
-        tenant_id: input.tenant_id.to_string(),
-        user_id: access_token_public_user_id(input.user_id, input.subject),
-        subject_type: input.subject_type.to_string(),
-        aud: token_audience_claim(input.audiences),
-        client_id: input.client_id.to_string(),
-        scope: sorted_scope_string(input.scopes),
-        authorization_details: input.authorization_details.clone(),
-        token_use: "access".into(),
-        jti: jti.to_owned(),
-        iat: now,
-        nbf: now,
-        exp: now + input.ttl,
-        cnf: match (input.dpop_jkt, input.mtls_x5t_s256) {
-            (Some(jkt), None) => Some(ConfirmationClaims {
-                jkt: Some(jkt.to_owned()),
-                x5t_s256: None,
-            }),
-            (None, Some(x5t_s256)) => Some(ConfirmationClaims {
-                jkt: None,
-                x5t_s256: Some(x5t_s256.to_owned()),
-            }),
-            _ => None,
+    nazo_auth::access_token_claims(
+        issuer,
+        AccessTokenClaimsInput {
+            tenant_id: input.tenant_id,
+            subject: input.subject,
+            user_id: input.user_id,
+            subject_type: input.subject_type,
+            client_id: input.client_id,
+            audiences: input.audiences,
+            scopes: input.scopes,
+            authorization_details: input.authorization_details,
+            userinfo_claims: input.userinfo_claims,
+            userinfo_claim_requests: input.userinfo_claim_requests,
+            ttl: input.ttl,
+            dpop_jkt: input.dpop_jkt,
+            mtls_x5t_s256: input.mtls_x5t_s256,
+            actor: input.actor,
         },
-        act: input.actor.cloned(),
-        userinfo_claims: input.userinfo_claims.to_vec(),
-        userinfo_claim_requests: input.userinfo_claim_requests.to_vec(),
-    }
-}
-
-fn access_token_public_user_id(user_id: Option<Uuid>, subject: &str) -> Option<String> {
-    let user_id = user_id?;
-    (subject == user_id.to_string()).then_some(user_id.to_string())
-}
-
-fn token_audience_claim(audiences: &[String]) -> Value {
-    match audiences {
-        [audience] => json!(audience),
-        _ => json!(audiences),
-    }
+        now,
+        jti,
+    )
 }
 
 pub(super) fn access_token_header(alg: jsonwebtoken::Algorithm, kid: &str) -> jsonwebtoken::Header {
@@ -172,52 +155,21 @@ pub(super) fn id_token_claims(
     input: &IdTokenInput<'_>,
     now: i64,
 ) -> serde_json::Map<String, Value> {
-    let mut claims = serde_json::Map::new();
-    claims.insert("iss".to_owned(), json!(issuer));
-    claims.insert("sub".to_owned(), json!(input.subject));
-    claims.insert("aud".to_owned(), json!(input.client_id));
-    claims.insert("iat".to_owned(), json!(now));
-    claims.insert("nbf".to_owned(), json!(now));
-    claims.insert("exp".to_owned(), json!(now + input.ttl));
-    claims.insert("jti".to_owned(), json!(Uuid::now_v7().to_string()));
-    if let Some(nonce) = &input.nonce {
-        claims.insert("nonce".to_owned(), json!(nonce));
-    }
-    if let Some(auth_time) = input.auth_time {
-        claims.insert("auth_time".to_owned(), json!(auth_time));
-    }
-    if !input.amr.is_empty() {
-        claims.insert("amr".to_owned(), json!(input.amr));
-    }
-    if let Some(sid) = input.sid {
-        claims.insert("sid".to_owned(), json!(sid));
-    }
-    if let Some(acr) = input.acr {
-        claims.insert("acr".to_owned(), json!(acr));
-    }
-    if let Some(extra_claims) = input.extra_claims.and_then(Value::as_object) {
-        for (key, value) in extra_claims {
-            if !matches!(
-                key.as_str(),
-                "iss"
-                    | "sub"
-                    | "aud"
-                    | "iat"
-                    | "nbf"
-                    | "exp"
-                    | "jti"
-                    | "nonce"
-                    | "auth_time"
-                    | "azp"
-                    | "amr"
-                    | "sid"
-                    | "acr"
-            ) {
-                claims.insert(key.clone(), value.clone());
-            }
-        }
-    }
-    claims
+    nazo_auth::id_token_claims(
+        issuer,
+        &IdTokenClaimsInput {
+            subject: input.subject,
+            client_id: input.client_id,
+            nonce: input.nonce.as_deref(),
+            auth_time: input.auth_time,
+            amr: input.amr,
+            sid: input.sid,
+            acr: input.acr,
+            extra_claims: input.extra_claims,
+            ttl: input.ttl,
+        },
+        now,
+    )
 }
 
 pub(crate) struct AuthorizationResponseJwtInput<'a> {
@@ -253,24 +205,16 @@ pub(super) fn backchannel_logout_token_claims(
     input: &BackchannelLogoutTokenInput<'_>,
     now: i64,
 ) -> serde_json::Map<String, Value> {
-    let mut claims = serde_json::Map::new();
-    claims.insert("iss".to_owned(), json!(issuer));
-    claims.insert("aud".to_owned(), json!(input.client_id));
-    claims.insert("iat".to_owned(), json!(now));
-    claims.insert("nbf".to_owned(), json!(now));
-    claims.insert("exp".to_owned(), json!(now + input.ttl.max(1)));
-    claims.insert("jti".to_owned(), json!(Uuid::now_v7().to_string()));
-    claims.insert(
-        "events".to_owned(),
-        json!({"http://schemas.openid.net/event/backchannel-logout": {}}),
-    );
-    if let Some(subject) = input.subject {
-        claims.insert("sub".to_owned(), json!(subject));
-    }
-    if let Some(sid) = input.sid {
-        claims.insert("sid".to_owned(), json!(sid));
-    }
-    claims
+    nazo_auth::backchannel_logout_token_claims(
+        issuer,
+        &BackchannelLogoutClaimsInput {
+            client_id: input.client_id,
+            subject: input.subject,
+            sid: input.sid,
+            ttl: input.ttl,
+        },
+        now,
+    )
 }
 
 pub(crate) async fn make_authorization_response_jwt(
@@ -294,23 +238,17 @@ pub(super) fn authorization_response_jwt_claims(
     input: &AuthorizationResponseJwtInput<'_>,
     now: i64,
 ) -> serde_json::Map<String, Value> {
-    let mut claims = serde_json::Map::new();
-    claims.insert("iss".to_owned(), json!(issuer));
-    claims.insert("aud".to_owned(), json!(input.client_id));
-    claims.insert("iat".to_owned(), json!(now));
-    claims.insert("nbf".to_owned(), json!(now));
-    claims.insert("exp".to_owned(), json!(now + input.ttl.max(1)));
-    claims.insert("jti".to_owned(), json!(Uuid::now_v7().to_string()));
-    if let Some(code) = input.code {
-        claims.insert("code".to_owned(), json!(code));
-    }
-    if let Some(error) = input.error {
-        claims.insert("error".to_owned(), json!(error));
-    }
-    if let Some(state_value) = input.state {
-        claims.insert("state".to_owned(), json!(state_value));
-    }
-    claims
+    nazo_auth::authorization_response_jwt_claims(
+        issuer,
+        &AuthorizationResponseClaimsInput {
+            client_id: input.client_id,
+            code: input.code,
+            error: input.error,
+            state: input.state,
+            ttl: input.ttl,
+        },
+        now,
+    )
 }
 
 pub(crate) fn decode_access_claims(state: &AppState, token: &str) -> Option<Claims> {
