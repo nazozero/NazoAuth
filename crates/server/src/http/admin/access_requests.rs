@@ -167,7 +167,7 @@ pub(crate) async fn admin_approve_access_request(
 
     let approval = repository
         .approve(
-            admin.principal.tenant.tenant_id,
+            admin.principal.tenant,
             request_id,
             admin.user_id(),
             &prepared,

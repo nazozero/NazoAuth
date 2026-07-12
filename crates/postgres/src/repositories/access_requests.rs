@@ -131,6 +131,18 @@ impl AccessRequestRepository {
         request: NewAccessRequest,
     ) -> Result<AccessRequest, RepositoryError> {
         let mut connection = self.connection().await?;
+        let user_belongs_to_tenant = users::table
+            .find(request.user_id.as_uuid())
+            .filter(users::tenant_id.eq(request.tenant_id.as_uuid()))
+            .select(users::id)
+            .first::<Uuid>(&mut connection)
+            .await
+            .optional()
+            .map_err(map_error)?
+            .is_some();
+        if !user_belongs_to_tenant {
+            return Err(RepositoryError::NotFound);
+        }
         diesel::insert_into(client_access_requests::table)
             .values((
                 client_access_requests::tenant_id.eq(request.tenant_id.as_uuid()),
@@ -240,36 +252,57 @@ impl AccessRequestRepository {
 
     pub async fn approve(
         &self,
-        tenant_id: TenantId,
+        tenant: nazo_identity::TenantContext,
         request_id: Uuid,
         actor_user_id: UserId,
         client: &PreparedClientRegistration,
     ) -> Result<ApprovedClient, RepositoryError> {
-        if client.tenant_id != tenant_id.as_uuid() {
+        if client.tenant_id != tenant.tenant_id.as_uuid()
+            || client.realm_id != tenant.realm_id.as_uuid()
+            || client.organization_id != tenant.organization_id.as_uuid()
+        {
             return Err(RepositoryError::Consistency(
-                "access request and approved client tenant differ".to_owned(),
+                "access request and approved client context differ".to_owned(),
             ));
         }
         let mut connection = self.connection().await?;
         connection
             .transaction::<ApprovedClient, ApprovalError, _>(async |connection| {
                 let pending = client_access_requests::table
-                    .filter(client_access_requests::tenant_id.eq(tenant_id.as_uuid()))
+                    .filter(client_access_requests::tenant_id.eq(tenant.tenant_id.as_uuid()))
                     .filter(client_access_requests::id.eq(request_id))
                     .filter(client_access_requests::status.eq(AccessRequestStatus::Pending.code()))
-                    .select(client_access_requests::id)
+                    .select(client_access_requests::user_id)
                     .for_update()
                     .first::<Uuid>(connection)
                     .await
                     .optional()
                     .map_err(map_error)?;
-                if pending.is_none() {
+                let Some(request_user_id) = pending else {
                     return Err(ApprovalError::Repository(RepositoryError::AlreadyProcessed));
+                };
+                for user_id in [request_user_id, actor_user_id.as_uuid()] {
+                    let consistent = users::table
+                        .find(user_id)
+                        .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
+                        .filter(users::realm_id.eq(tenant.realm_id.as_uuid()))
+                        .filter(users::organization_id.eq(tenant.organization_id.as_uuid()))
+                        .select(users::id)
+                        .first::<Uuid>(connection)
+                        .await
+                        .optional()
+                        .map_err(map_error)?
+                        .is_some();
+                    if !consistent {
+                        return Err(ApprovalError::Repository(RepositoryError::Consistency(
+                            "access-request user context is inconsistent".to_owned(),
+                        )));
+                    }
                 }
                 let approved = insert_client(connection, client).await?;
                 let updated = diesel::update(
                     client_access_requests::table
-                        .filter(client_access_requests::tenant_id.eq(tenant_id.as_uuid()))
+                        .filter(client_access_requests::tenant_id.eq(tenant.tenant_id.as_uuid()))
                         .filter(client_access_requests::id.eq(request_id))
                         .filter(
                             client_access_requests::status.eq(AccessRequestStatus::Pending.code()),
