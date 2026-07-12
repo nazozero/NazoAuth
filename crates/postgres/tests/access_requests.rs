@@ -329,10 +329,34 @@ async fn duplicate_client_conflict_does_not_report_request_as_processed() {
         .await
         .unwrap();
     let prepared = client(&suffix);
-    repository
+    let approved = repository
         .approve(tenant, first.id, user_id, &prepared, None, None)
         .await
         .unwrap();
+    assert!(
+        repository
+            .approved_delivery_matches(
+                tenant.tenant_id,
+                user_id,
+                first.id,
+                approved.id,
+                &approved.client_id,
+            )
+            .await
+            .unwrap()
+    );
+    assert!(
+        !repository
+            .approved_delivery_matches(
+                tenant.tenant_id,
+                user_id,
+                first.id,
+                approved.id,
+                "wrong-client-id",
+            )
+            .await
+            .unwrap()
+    );
     let second = repository
         .create(new_request(tenant, user_id, &format!("second-{suffix}")))
         .await

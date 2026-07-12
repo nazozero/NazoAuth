@@ -5,7 +5,7 @@ use diesel::prelude::SelectableHelper;
 use diesel::sql_query;
 use diesel::sql_types::{BigInt, Int2, Int4, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
-use fred::interfaces::ClientLike;
+use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
@@ -113,6 +113,20 @@ fn create_client_request() -> CreateClientRequest {
 
 fn query_with_status(value: &str) -> HashMap<String, String> {
     HashMap::from([("status".to_owned(), value.to_owned())])
+}
+
+#[test]
+fn delivery_tokens_are_deterministic_and_request_scoped() {
+    let state = test_state();
+    let user_id = Uuid::now_v7();
+    let request_id = Uuid::now_v7();
+    let first = access_delivery_token(&state, user_id, request_id);
+
+    assert_eq!(first, access_delivery_token(&state, user_id, request_id));
+    assert_ne!(
+        first,
+        access_delivery_token(&state, user_id, Uuid::now_v7())
+    );
 }
 
 fn oauth_error_name(response: &HttpResponse) -> Option<String> {
@@ -246,6 +260,43 @@ impl LiveAdminAccessRequestFixture {
             .init()
             .await
             .expect("restricted Valkey client should connect");
+        client
+    }
+
+    async fn valkey_client_without_delete(
+        &self,
+        username: &str,
+        password: &str,
+    ) -> fred::prelude::Client {
+        self.state
+            .valkey
+            .custom::<(), _>(
+                fred::cmd!("ACL"),
+                vec![
+                    "SETUSER".to_owned(),
+                    username.to_owned(),
+                    "reset".to_owned(),
+                    "on".to_owned(),
+                    format!(">{password}"),
+                    "~oauth:*".to_owned(),
+                    "+@all".to_owned(),
+                    "-del".to_owned(),
+                ],
+            )
+            .await
+            .expect("no-delete Valkey ACL user should be configured");
+        let valkey_url = std::env::var("VALKEY_URL").expect("VALKEY_URL should be set");
+        let restricted_url =
+            valkey_url.replacen("redis://", &format!("redis://{username}:{password}@"), 1);
+        let client = ValkeyBuilder::from_config(
+            ValkeyConfig::from_url(&restricted_url).expect("restricted VALKEY_URL should parse"),
+        )
+        .build()
+        .expect("restricted valkey client should build");
+        client
+            .init()
+            .await
+            .expect("restricted client should connect");
         client
     }
 
@@ -803,6 +854,92 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
     assert_eq!(client.client_type, "confidential");
     assert!(client.client_secret_hash.is_some());
 
+    let delivery_keys: Vec<String> = fixture
+        .state
+        .valkey
+        .custom(
+            fred::cmd!("KEYS"),
+            vec![format!("oauth:client_delivery:{}:*", applicant.id)],
+        )
+        .await
+        .expect("committed delivery key should be discoverable in the test fixture");
+    assert_eq!(delivery_keys.len(), 1);
+    let staged_raw: String = fixture
+        .state
+        .valkey
+        .get(&delivery_keys[0])
+        .await
+        .expect("committed delivery payload should exist");
+    let mut staged: Value = serde_json::from_str(&staged_raw).unwrap();
+    staged["delivery_state"] = json!("staged");
+    staged
+        .as_object_mut()
+        .expect("delivery payload is an object")
+        .remove("approved_client_id");
+    valkey_set_ex(
+        &fixture.state.valkey,
+        &delivery_keys[0],
+        staged.to_string(),
+        fixture.state.settings.client_delivery_ttl_seconds,
+    )
+    .await
+    .unwrap();
+    let recovery_request =
+        fixture.admin_post_request(&sid, &csrf, "/admin/access-requests/request/approve");
+    let recovered = admin_approve_access_request(
+        fixture.state.clone(),
+        recovery_request,
+        actix_web::web::Path::from(request_id),
+        Json(create_client_request()),
+    )
+    .await;
+    assert_eq!(recovered.status(), StatusCode::OK);
+    let recovered_raw: String = fixture
+        .state
+        .valkey
+        .get(&delivery_keys[0])
+        .await
+        .expect("recovered delivery payload should exist");
+    assert_eq!(
+        serde_json::from_str::<Value>(&recovered_raw).unwrap()["delivery_state"],
+        "committed"
+    );
+    let delivery_token = delivery_keys[0]
+        .rsplit(':')
+        .next()
+        .expect("delivery key contains token")
+        .to_owned();
+    let applicant_sid = format!("applicant-{suffix}");
+    fixture.store_session(&applicant, &applicant_sid).await;
+    let delivery_request = fixture.admin_get_request(
+        &applicant_sid,
+        &format!("/profile/access-delivery?token={delivery_token}"),
+    );
+    let delivered = crate::http::profile::access_delivery(
+        fixture.state.clone(),
+        delivery_request,
+        Query(HashMap::from([(
+            "token".to_owned(),
+            delivery_token.clone(),
+        )])),
+    )
+    .await;
+    let (delivery_status, delivery_body) = json_body(delivered).await;
+    assert_eq!(delivery_status, StatusCode::OK);
+    assert!(delivery_body["client_secret"].as_str().is_some());
+
+    let replay_request = fixture.admin_get_request(
+        &applicant_sid,
+        &format!("/profile/access-delivery?token={delivery_token}"),
+    );
+    let replay = crate::http::profile::access_delivery(
+        fixture.state.clone(),
+        replay_request,
+        Query(HashMap::from([("token".to_owned(), delivery_token)])),
+    )
+    .await;
+    assert_eq!(replay.status(), StatusCode::NOT_FOUND);
+
     let duplicate_req =
         fixture.admin_post_request(&sid, &csrf, "/admin/access-requests/request/approve");
     let duplicate = admin_approve_access_request(
@@ -1104,15 +1241,45 @@ async fn approve_access_request_rolls_back_when_status_write_fails_after_client_
     let mut payload = create_client_request();
     payload.token_endpoint_auth_method = "client_secret_post".to_owned();
     payload.jwks = None;
+    let acl_user = format!("access_no_delete_{}", Uuid::now_v7().simple());
+    let acl_password = format!("pw{}", Uuid::now_v7().simple());
+    let no_delete = fixture
+        .valkey_client_without_delete(&acl_user, &acl_password)
+        .await;
 
     let response = admin_approve_access_request(
-        fixture.state.clone(),
+        fixture.state_with_valkey(no_delete),
         req,
         actix_web::web::Path::from(request_id),
         Json(payload),
     )
     .await;
     let state = fixture.access_request_state(request_id).await;
+    let orphan_keys: Vec<String> = fixture
+        .state
+        .valkey
+        .custom(
+            fred::cmd!("KEYS"),
+            vec![format!("oauth:client_delivery:{}:*", applicant.id)],
+        )
+        .await
+        .expect("staged delivery keys should be inspectable");
+    assert_eq!(orphan_keys.len(), 1);
+    let orphan: String = fixture
+        .state
+        .valkey
+        .get(&orphan_keys[0])
+        .await
+        .expect("staged delivery payload should remain after denied cleanup");
+    let orphan: Value = serde_json::from_str(&orphan).expect("staged payload should be JSON");
+    assert_eq!(orphan["delivery_state"], "staged");
+    let _: i64 = fixture
+        .state
+        .valkey
+        .del(orphan_keys)
+        .await
+        .expect("test cleanup should remove staged delivery payload");
+    fixture.delete_acl_user(&acl_user).await;
     fixture.cleanup().await;
     let (status, body) = json_body(response).await;
 

@@ -4,7 +4,7 @@ use crate::support::OAuthJsonErrorFields;
 #[actix_web::test]
 async fn delivery_payload_response_adds_read_once_notice_without_dropping_credentials() {
     let response = delivery_payload_response(
-        r#"{"client_id":"client-1","client_secret":"secret-1","client_name":"Example"}"#,
+        r#"{"delivery_state":"committed","request_id":"00000000-0000-0000-0000-000000000010","user_id":"00000000-0000-0000-0000-000000000011","approved_client_id":"00000000-0000-0000-0000-000000000012","client_id":"client-1","client_secret":"secret-1","client_name":"Example"}"#,
     );
 
     assert_eq!(response.status(), StatusCode::OK);
@@ -15,10 +15,23 @@ async fn delivery_payload_response_adds_read_once_notice_without_dropping_creden
     assert_eq!(body["client_id"], "client-1");
     assert_eq!(body["client_secret"], "secret-1");
     assert_eq!(body["client_name"], "Example");
+    assert!(body.get("delivery_state").is_none());
+    assert!(body.get("approved_client_id").is_none());
     assert_eq!(
         body["read_once_notice"],
         "此凭据链接已完成一次性读取并销毁，请立即保存敏感信息。"
     );
+}
+
+#[test]
+fn delivery_payload_response_rejects_uncommitted_or_orphaned_payloads() {
+    for payload in [
+        r#"{"delivery_state":"staged","client_id":"client-1","client_secret":"secret-1"}"#,
+        r#"{"client_id":"client-1","client_secret":"secret-1"}"#,
+    ] {
+        let response = delivery_payload_response(payload);
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
 }
 
 #[test]

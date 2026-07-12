@@ -102,6 +102,20 @@ pub(crate) async fn admin_approve_access_request(
         .await
     {
         Ok(Some(row)) if row.status == nazo_identity::AccessRequestStatus::Pending => row,
+        Ok(Some(row)) if row.status == nazo_identity::AccessRequestStatus::Approved => {
+            match resume_staged_client_delivery(&state, &row).await {
+                Ok(true) => return json_response(access_request_json(row)),
+                Ok(false) => return access_request_already_approved_response(),
+                Err(error) => {
+                    tracing::warn!(%error, "failed to resume staged client delivery");
+                    return oauth_error(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "server_error",
+                        "客户端凭据交付恢复失败.",
+                    );
+                }
+            }
+        }
         Ok(_) => return access_request_already_approved_response(),
         Err(error) => {
             tracing::warn!(%error, "failed to query pending access request");
@@ -130,11 +144,12 @@ pub(crate) async fn admin_approve_access_request(
         Ok(prepared) => prepared,
         Err(error) => return insert_client_error_response(error),
     };
-    let token = random_urlsafe_token();
+    let token = access_delivery_token(&state, request_user_id, request_id);
     let delivery_key = format!("oauth:client_delivery:{request_user_id}:{token}");
     let expires_at =
         Utc::now() + Duration::seconds(state.settings.client_delivery_ttl_seconds as i64);
     let delivery_payload = json!({
+        "delivery_state": "staged",
         "request_id": request_id,
         "user_id": request_user_id,
         "client_id": &prepared.client_id,
@@ -192,6 +207,24 @@ pub(crate) async fn admin_approve_access_request(
             );
         }
     };
+    let mut committed_delivery_payload = delivery_payload;
+    committed_delivery_payload["delivery_state"] = json!("committed");
+    committed_delivery_payload["approved_client_id"] = json!(client.id);
+    if let Err(error) = valkey_set_ex(
+        &state.valkey,
+        &delivery_key,
+        committed_delivery_payload.to_string(),
+        state.settings.client_delivery_ttl_seconds,
+    )
+    .await
+    {
+        tracing::warn!(%error, "failed to activate client delivery payload");
+        return oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "客户端凭据交付激活失败.",
+        );
+    }
     audit_event(
         "client_created",
         audit_fields(&[
@@ -219,6 +252,46 @@ pub(crate) async fn admin_approve_access_request(
             )
         }
     }
+}
+
+fn access_delivery_token(state: &AppState, user_id: Uuid, request_id: Uuid) -> String {
+    let material = format!(
+        "client-delivery-v1:{}:{user_id}:{request_id}",
+        state.settings.client_secret_pepper
+    );
+    blake3_hex(&material)
+}
+
+async fn resume_staged_client_delivery(
+    state: &AppState,
+    request: &nazo_identity::AccessRequest,
+) -> anyhow::Result<bool> {
+    let Some(approved_client_id) = request.approved_client_id else {
+        return Ok(false);
+    };
+    let user_id = request.user_id.as_uuid();
+    let token = access_delivery_token(state, user_id, request.id);
+    let key = format!("oauth:client_delivery:{user_id}:{token}");
+    let Some(raw) = valkey_get(&state.valkey, &key).await? else {
+        return Ok(false);
+    };
+    let mut payload: Value = serde_json::from_str(&raw)?;
+    if payload["delivery_state"] != "staged"
+        || payload["request_id"] != json!(request.id)
+        || payload["user_id"] != json!(user_id)
+    {
+        return Ok(false);
+    }
+    payload["delivery_state"] = json!("committed");
+    payload["approved_client_id"] = json!(approved_client_id);
+    valkey_set_ex(
+        &state.valkey,
+        key,
+        payload.to_string(),
+        state.settings.client_delivery_ttl_seconds,
+    )
+    .await?;
+    Ok(true)
 }
 
 #[derive(Deserialize)]

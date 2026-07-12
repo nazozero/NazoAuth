@@ -257,6 +257,37 @@ impl AccessRequestRepository {
             .transpose()
     }
 
+    pub async fn approved_delivery_matches(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        request_id: Uuid,
+        approved_client_id: Uuid,
+        client_id: &str,
+    ) -> Result<bool, RepositoryError> {
+        let mut connection = self.connection().await?;
+        client_access_requests::table
+            .inner_join(
+                oauth_clients::table.on(oauth_clients::id
+                    .nullable()
+                    .eq(client_access_requests::approved_client_id)
+                    .and(oauth_clients::tenant_id.eq(client_access_requests::tenant_id))),
+            )
+            .filter(client_access_requests::tenant_id.eq(tenant_id.as_uuid()))
+            .filter(client_access_requests::user_id.eq(user_id.as_uuid()))
+            .filter(client_access_requests::id.eq(request_id))
+            .filter(client_access_requests::status.eq(AccessRequestStatus::Approved.code()))
+            .filter(client_access_requests::approved_client_id.eq(Some(approved_client_id)))
+            .filter(oauth_clients::id.eq(approved_client_id))
+            .filter(oauth_clients::client_id.eq(client_id))
+            .filter(oauth_clients::is_active.eq(true))
+            .select(diesel::dsl::count_star())
+            .first::<i64>(&mut connection)
+            .await
+            .map(|count| count == 1)
+            .map_err(map_error)
+    }
+
     pub async fn approve(
         &self,
         tenant: nazo_identity::TenantContext,

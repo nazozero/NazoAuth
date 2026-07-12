@@ -601,11 +601,13 @@ fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let admin_path = manifest.join("../server/src/http/admin/access_requests.rs");
     let profile_path = manifest.join("../server/src/http/profile/access_requests.rs");
+    let delivery_path = manifest.join("../server/src/http/profile/delivery.rs");
     let support_path = manifest.join("../server/src/support/access_requests.rs");
     let forwarding_repositories_path = manifest.join("../server/src/support/repositories.rs");
     let admin = std::fs::read_to_string(admin_path).expect("admin access handler is readable");
     let profile =
         std::fs::read_to_string(profile_path).expect("profile access handler is readable");
+    let delivery = std::fs::read_to_string(delivery_path).expect("delivery handler is readable");
 
     for source in [&admin, &profile] {
         assert!(!source.contains("diesel::"));
@@ -623,6 +625,19 @@ fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
     assert!(
         admin.find("valkey_set_ex").unwrap() < admin.find(".approve(").unwrap(),
         "delivery must fail closed before the PostgreSQL approval transaction"
+    );
+    assert!(admin.contains("\"delivery_state\": \"staged\""));
+    assert!(
+        admin.find(".approve(").unwrap()
+            < admin
+                .find("committed_delivery_payload")
+                .expect("approval must activate delivery only after commit")
+    );
+    assert!(delivery.contains("approved_delivery_matches"));
+    assert!(
+        delivery.find("approved_delivery_matches").unwrap()
+            < delivery.find("valkey_getdel").unwrap(),
+        "delivery linkage must be validated before one-time consumption"
     );
 }
 
