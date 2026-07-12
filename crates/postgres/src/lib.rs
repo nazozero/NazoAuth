@@ -1,5 +1,17 @@
 #![forbid(unsafe_code)]
 
+//! PostgreSQL repository adapters for NazoAuth.
+//!
+//! Persistence records and Diesel schema are intentionally private:
+//!
+//! ```compile_fail
+//! use nazo_postgres::schema::users;
+//! ```
+//!
+//! ```compile_fail
+//! use nazo_postgres::rows::identity::UserRow;
+//! ```
+
 mod convert;
 mod pool;
 mod repositories;

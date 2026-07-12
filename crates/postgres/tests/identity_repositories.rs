@@ -29,9 +29,14 @@ fn repositories_accept_validated_tenant_and_user_ids() {
 }
 
 async fn database_fixture() -> Option<(nazo_postgres::DbPool, TenantContext, UserId)> {
-    let database_url = std::env::var("NAZO_TEST_DATABASE_URL")
-        .or_else(|_| std::env::var("DATABASE_URL"))
-        .ok()?;
+    let database_url =
+        match std::env::var("NAZO_TEST_DATABASE_URL").or_else(|_| std::env::var("DATABASE_URL")) {
+            Ok(database_url) => database_url,
+            Err(_) if std::env::var_os("CI").is_some() => {
+                panic!("CI requires NAZO_TEST_DATABASE_URL or DATABASE_URL")
+            }
+            Err(_) => return None,
+        };
     let pool = create_pool(database_url, 8).expect("test pool can be built");
     let tenant = TenantContext::default_system();
     let user_id = UserId::new(Uuid::now_v7()).expect("generated ID is non-nil");
@@ -496,16 +501,6 @@ async fn admin_partial_update_validates_final_role_level_before_commit() {
     assert_eq!(level_only.role_name(), "admin");
     assert_eq!(level_only.admin_level(), 7);
     cleanup(&pool, user_id).await;
-}
-
-#[test]
-fn postgres_public_api_does_not_expose_rows_or_schema() {
-    let source = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"))
-        .expect("postgres crate root is readable");
-    assert!(!source.contains("pub mod rows"));
-    assert!(!source.contains("pub mod schema"));
-    assert!(!source.contains("pub use rows"));
-    assert!(!source.contains("Row;"));
 }
 
 #[test]
