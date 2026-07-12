@@ -1,7 +1,7 @@
 use crate::{
     DbPool,
     convert::identity,
-    rows::identity::{ExternalIdentityLinkRow, PublicAccountRow, UserRow},
+    rows::identity::{ExternalIdentityLinkRow, PublicAccountRow},
     schema::{external_identity_links, users},
 };
 use diesel::{
@@ -167,8 +167,8 @@ impl FederationRepository {
                         users::email_verified.eq(true),
                         users::display_name.eq(new_identity.display_name),
                     ))
-                    .returning(UserRow::as_returning())
-                    .get_result::<UserRow>(connection)
+                    .returning(PublicAccountRow::as_returning())
+                    .get_result::<PublicAccountRow>(connection)
                     .await?;
                 diesel::insert_into(external_identity_links::table)
                     .values((

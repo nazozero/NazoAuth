@@ -1,7 +1,7 @@
 use crate::{
     DbPool,
     convert::identity,
-    rows::identity::{AuthenticationIdentityRow, PublicAccountRow, UserRow},
+    rows::identity::{AuthenticationIdentityRow, PrincipalRow, PublicAccountRow, SubjectClaimsRow},
     schema::users,
 };
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper};
@@ -23,11 +23,11 @@ impl UserRepository {
     pub fn new(pool: DbPool) -> Self {
         Self { pool }
     }
-    async fn public_row_by_id(
+    pub async fn principal_by_id(
         &self,
         tenant: TenantContext,
         user_id: UserId,
-    ) -> Result<Option<PublicAccountRow>, RepositoryError> {
+    ) -> Result<Option<Principal>, RepositoryError> {
         let mut connection = self
             .pool
             .get()
@@ -38,22 +38,13 @@ impl UserRepository {
             .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
             .filter(users::realm_id.eq(tenant.realm_id.as_uuid()))
             .filter(users::organization_id.eq(tenant.organization_id.as_uuid()))
-            .select(PublicAccountRow::as_select())
+            .select(PrincipalRow::as_select())
             .first(&mut connection)
             .await
             .optional()
-            .map_err(|error| RepositoryError::Unexpected(error.to_string()))
-    }
-    pub async fn principal_by_id(
-        &self,
-        tenant: TenantContext,
-        user_id: UserId,
-    ) -> Result<Option<Principal>, RepositoryError> {
-        self.public_row_by_id(tenant, user_id)
-            .await?
-            .map(PublicAccount::try_from)
+            .map_err(|error| RepositoryError::Unexpected(error.to_string()))?
+            .map(identity::principal_row)
             .transpose()
-            .map(|account| account.map(|account| account.principal))
             .map_err(|error| RepositoryError::Consistency(error.0))
     }
 
@@ -85,13 +76,25 @@ impl UserRepository {
         tenant_id: TenantId,
         user_id: UserId,
     ) -> Result<Option<Principal>, RepositoryError> {
-        Ok(self
-            .public_account_by_id(tenant_id, user_id)
-            .await?
-            .map(|account| account.principal))
+        let mut connection = self
+            .pool
+            .get()
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
+        users::table
+            .find(user_id.as_uuid())
+            .filter(users::tenant_id.eq(tenant_id.as_uuid()))
+            .select(PrincipalRow::as_select())
+            .first(&mut connection)
+            .await
+            .optional()
+            .map_err(|error| RepositoryError::Unexpected(error.to_string()))?
+            .map(identity::principal_row)
+            .transpose()
+            .map_err(|error| RepositoryError::Consistency(error.0))
     }
 
-    pub async fn subject_claims_by_tenant_id(
+    pub async fn active_subject_claims_by_tenant_id(
         &self,
         tenant_id: TenantId,
         user_id: UserId,
@@ -104,12 +107,13 @@ impl UserRepository {
         users::table
             .find(user_id.as_uuid())
             .filter(users::tenant_id.eq(tenant_id.as_uuid()))
-            .select(PublicAccountRow::as_select())
+            .filter(users::is_active.eq(true))
+            .select(SubjectClaimsRow::as_select())
             .first(&mut connection)
             .await
             .optional()
             .map_err(|error| RepositoryError::Unexpected(error.to_string()))?
-            .map(identity::subject_claims_from_public)
+            .map(identity::active_subject_claims)
             .transpose()
             .map_err(|error| RepositoryError::Consistency(error.0))
     }
@@ -175,7 +179,7 @@ impl UserRepository {
                 users::password_hash.eq(new_user.password_hash.into_persistence_value()),
                 users::email_verified.eq(new_user.email_verified),
             ))
-            .returning(UserRow::as_returning())
+            .returning(PublicAccountRow::as_returning())
             .get_result(&mut connection)
             .await
             .map_err(map_error)?;
@@ -221,7 +225,7 @@ impl UserRepository {
             users::phone_number_verified.eq(profile.phone_number_verified),
             users::updated_at.eq(diesel::dsl::now),
         ))
-        .returning(UserRow::as_returning())
+        .returning(PublicAccountRow::as_returning())
         .get_result(&mut connection)
         .await
         .map_err(map_error)?;
@@ -248,7 +252,7 @@ impl UserRepository {
             users::avatar_url.eq(avatar_url),
             users::updated_at.eq(diesel::dsl::now),
         ))
-        .returning(UserRow::as_returning())
+        .returning(PublicAccountRow::as_returning())
         .get_result(&mut connection)
         .await
         .map_err(map_error)?;
@@ -296,9 +300,9 @@ impl UserRepository {
             async move |connection| {
                 let current = users::table
                     .find(user_id.as_uuid())
-                    .select(UserRow::as_select())
+                    .select(PublicAccountRow::as_select())
                     .for_update()
-                    .first::<UserRow>(connection)
+                    .first::<PublicAccountRow>(connection)
                     .await
                     .optional()?;
                 let Some(current) = current else {
@@ -323,8 +327,8 @@ impl UserRepository {
                         users::is_active.eq(active),
                         users::updated_at.eq(diesel::dsl::now),
                     ))
-                    .returning(UserRow::as_returning())
-                    .get_result::<UserRow>(connection)
+                    .returning(PublicAccountRow::as_returning())
+                    .get_result::<PublicAccountRow>(connection)
                     .await?;
                 let user = PublicAccount::try_from(updated)
                     .map_err(|error| AdminUpdateError::Consistency(error.0))?;
@@ -343,9 +347,23 @@ impl UserRepository {
         tenant: TenantContext,
         user_id: UserId,
     ) -> Result<Option<SubjectClaims>, RepositoryError> {
-        self.public_row_by_id(tenant, user_id)
-            .await?
-            .map(identity::subject_claims_from_public)
+        let mut connection = self
+            .pool
+            .get()
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
+        users::table
+            .find(user_id.as_uuid())
+            .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
+            .filter(users::realm_id.eq(tenant.realm_id.as_uuid()))
+            .filter(users::organization_id.eq(tenant.organization_id.as_uuid()))
+            .filter(users::is_active.eq(true))
+            .select(SubjectClaimsRow::as_select())
+            .first(&mut connection)
+            .await
+            .optional()
+            .map_err(|error| RepositoryError::Unexpected(error.to_string()))?
+            .map(identity::active_subject_claims)
             .transpose()
             .map_err(|error| RepositoryError::Consistency(error.0))
     }

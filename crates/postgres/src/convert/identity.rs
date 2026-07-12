@@ -1,6 +1,6 @@
 use crate::rows::identity::{
-    AuthenticationIdentityRow, ExternalIdentityLinkRow, PasskeyCredentialRow, PublicAccountRow,
-    UserRow,
+    AuthenticationIdentityRow, ExternalIdentityLinkRow, PasskeyCredentialRow, PrincipalRow,
+    PublicAccountRow, SubjectClaimsRow, UserRow,
 };
 use nazo_identity::{
     AccountIdentity, AuthenticationIdentity, IdentityModelError, LoginIdentity, OrganizationId,
@@ -64,6 +64,18 @@ fn principal_parts(
         role,
         active,
     })
+}
+
+pub(crate) fn principal_row(row: PrincipalRow) -> Result<Principal, ConversionError> {
+    principal_parts(
+        row.id,
+        row.tenant_id,
+        row.realm_id,
+        row.organization_id,
+        &row.role,
+        row.admin_level,
+        row.is_active,
+    )
 }
 
 fn account(row: &UserRow) -> AccountIdentity {
@@ -152,32 +164,52 @@ impl TryFrom<PublicAccountRow> for PublicAccount {
     }
 }
 
-pub(crate) fn subject_claims_from_public(
-    row: PublicAccountRow,
+pub(crate) fn active_subject_claims(
+    row: SubjectClaimsRow,
 ) -> Result<SubjectClaims, ConversionError> {
-    let account = PublicAccount::try_from(row)?;
+    let principal = principal_parts(
+        row.id,
+        row.tenant_id,
+        row.realm_id,
+        row.organization_id,
+        &row.role,
+        row.admin_level,
+        row.is_active,
+    )?;
+    if !principal.active {
+        return Err(ConversionError(
+            "inactive account returned from active claims query".to_owned(),
+        ));
+    }
+    let address = PostalAddress {
+        formatted: row.address_formatted,
+        street_address: row.address_street_address,
+        locality: row.address_locality,
+        region: row.address_region,
+        postal_code: row.address_postal_code,
+        country: row.address_country,
+    };
     Ok(SubjectClaims {
-        subject: account.principal.user_id,
-        preferred_username: account.account.username,
-        name: account.profile.display_name,
-        given_name: account.profile.given_name,
-        family_name: account.profile.family_name,
-        middle_name: account.profile.middle_name,
-        nickname: account.profile.nickname,
-        profile: account.profile.profile_url,
-        picture: account.profile.avatar_url,
-        website: account.profile.website_url,
-        gender: account.profile.gender,
-        birthdate: account.profile.birthdate,
-        zoneinfo: account.profile.zoneinfo,
-        locale: account.profile.locale,
-        email: account.account.email,
-        email_verified: account.account.email_verified,
-        address: (account.profile.address != PostalAddress::default())
-            .then_some(account.profile.address),
-        phone_number: account.profile.phone_number,
-        phone_number_verified: account.profile.phone_number_verified,
-        updated_at: account.updated_at.timestamp(),
+        subject: principal.user_id,
+        preferred_username: row.username,
+        name: row.display_name,
+        given_name: row.given_name,
+        family_name: row.family_name,
+        middle_name: row.middle_name,
+        nickname: row.nickname,
+        profile: row.profile_url,
+        picture: row.avatar_url,
+        website: row.website_url,
+        gender: row.gender,
+        birthdate: row.birthdate,
+        zoneinfo: row.zoneinfo,
+        locale: row.locale,
+        email: row.email,
+        email_verified: row.email_verified,
+        address: (address != PostalAddress::default()).then_some(address),
+        phone_number: row.phone_number,
+        phone_number_verified: row.phone_number_verified,
+        updated_at: row.updated_at.timestamp(),
     })
 }
 

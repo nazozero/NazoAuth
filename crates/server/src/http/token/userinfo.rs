@@ -169,22 +169,19 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Byte
         }
     };
     let repository = nazo_postgres::UserRepository::new(state.diesel_db.clone());
-    let principal = repository
-        .principal_by_tenant_id(tenant, identity_user_id)
-        .await;
     let subject_claims = repository
-        .subject_claims_by_tenant_id(tenant, identity_user_id)
+        .active_subject_claims_by_tenant_id(tenant, identity_user_id)
         .await;
-    let subject_claims = match (principal, subject_claims) {
-        (Ok(Some(principal)), Ok(Some(claims))) if principal.active => claims,
-        (Ok(_), Ok(_)) => {
+    let subject_claims = match subject_claims {
+        Ok(Some(claims)) => claims,
+        Ok(None) => {
             return oauth_bearer_error(
                 StatusCode::UNAUTHORIZED,
                 "invalid_token",
                 "访问令牌主体不存在或已停用.",
             );
         }
-        (Err(error), _) | (_, Err(error)) => {
+        Err(error) => {
             tracing::warn!(%error, "failed to load userinfo subject claims");
             return oauth_bearer_error(
                 StatusCode::SERVICE_UNAVAILABLE,

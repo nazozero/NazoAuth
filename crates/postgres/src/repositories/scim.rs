@@ -1,7 +1,7 @@
 use crate::{
     DbPool,
     convert::identity,
-    rows::identity::{PublicAccountRow, UserRow},
+    rows::identity::PublicAccountRow,
     schema::{oauth_tokens, user_client_grants, users},
 };
 use diesel::{
@@ -123,7 +123,7 @@ impl ScimRepository {
                 users::given_name.eq(input.given_name),
                 users::family_name.eq(input.family_name),
             ))
-            .returning(UserRow::as_returning())
+            .returning(PublicAccountRow::as_returning())
             .get_result(&mut connection)
             .await
             .map_err(map_error)?;
@@ -143,7 +143,7 @@ impl ScimRepository {
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let row = connection
-            .transaction::<UserRow, Error, _>(async move |connection| {
+            .transaction::<PublicAccountRow, Error, _>(async move |connection| {
                 let row = diesel::update(
                     users::table
                         .find(user_id.as_uuid())
@@ -159,7 +159,7 @@ impl ScimRepository {
                     users::family_name.eq(replacement.family_name),
                     users::updated_at.eq(now),
                 ))
-                .returning(UserRow::as_returning())
+                .returning(PublicAccountRow::as_returning())
                 .get_result(connection)
                 .await?;
                 if !row.is_active {
@@ -185,13 +185,13 @@ impl ScimRepository {
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let row = connection
-            .transaction::<UserRow, Error, _>(async move |connection| {
+            .transaction::<PublicAccountRow, Error, _>(async move |connection| {
                 let current = users::table
                     .find(user_id.as_uuid())
                     .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
                     .for_update()
-                    .select(UserRow::as_select())
-                    .first::<UserRow>(connection)
+                    .select(PublicAccountRow::as_select())
+                    .first::<PublicAccountRow>(connection)
                     .await?;
                 let row = diesel::update(users::table.find(user_id.as_uuid()))
                     .set((
@@ -204,7 +204,7 @@ impl ScimRepository {
                         users::family_name.eq(patch.family_name.or(current.family_name)),
                         users::updated_at.eq(now),
                     ))
-                    .returning(UserRow::as_returning())
+                    .returning(PublicAccountRow::as_returning())
                     .get_result(connection)
                     .await?;
                 if !row.is_active {

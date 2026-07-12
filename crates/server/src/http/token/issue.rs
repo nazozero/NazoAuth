@@ -260,13 +260,12 @@ pub(crate) async fn issue_token_response(
         let user_id = nazo_identity::UserId::new(user_id)
             .expect("token issue user ID is validated before token issue");
         let repository = nazo_postgres::UserRepository::new(state.diesel_db.clone());
-        let principal = repository.principal_by_tenant_id(tenant_id, user_id).await;
         let loaded_claims = repository
-            .subject_claims_by_tenant_id(tenant_id, user_id)
+            .active_subject_claims_by_tenant_id(tenant_id, user_id)
             .await;
-        let loaded_claims = match (principal, loaded_claims) {
-            (Ok(Some(principal)), Ok(Some(claims))) if principal.active => Some(claims),
-            (Ok(_), Ok(_)) => {
+        let loaded_claims = match loaded_claims {
+            Ok(Some(claims)) => Some(claims),
+            Ok(None) => {
                 mark_failed_authorization_code_if_needed(
                     state,
                     issue.authorization_code_hash.as_deref(),
@@ -280,7 +279,7 @@ pub(crate) async fn issue_token_response(
                     false,
                 );
             }
-            (Err(error), _) | (_, Err(error)) => {
+            Err(error) => {
                 tracing::warn!(%error, "failed to load id_token subject claims");
                 mark_failed_authorization_code_if_needed(
                     state,

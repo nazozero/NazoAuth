@@ -342,6 +342,28 @@ async fn subject_claims_reject_invalid_persisted_role_invariant() {
 }
 
 #[tokio::test]
+async fn inactive_account_has_no_issuable_subject_claims() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        panic!("NAZO_TEST_DATABASE_URL or DATABASE_URL is required");
+    };
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE users SET is_active = false WHERE id = $1")
+        .bind::<SqlUuid, _>(user_id.as_uuid())
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+
+    let claims = UserRepository::new(pool.clone())
+        .active_subject_claims_by_tenant_id(tenant.tenant_id, user_id)
+        .await
+        .unwrap();
+
+    assert!(claims.is_none());
+    cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
 async fn mfa_backup_code_bounds_and_enrollment_conflict_are_explicit() {
     let Some((pool, tenant, user_id)) = database_fixture().await else {
         panic!("NAZO_TEST_DATABASE_URL or DATABASE_URL is required");
@@ -596,4 +618,23 @@ fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
         admin.find("valkey_set_ex").unwrap() < admin.find(".approve(").unwrap(),
         "delivery must fail closed before the PostgreSQL approval transaction"
     );
+}
+
+#[test]
+fn identity_claim_boundaries_use_narrow_single_snapshot_reads() {
+    let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let users = std::fs::read_to_string(manifest.join("src/repositories/users.rs"))
+        .expect("user repository source is readable");
+    let issue = std::fs::read_to_string(manifest.join("../server/src/http/token/issue.rs"))
+        .expect("token issue source is readable");
+    let userinfo = std::fs::read_to_string(manifest.join("../server/src/http/token/userinfo.rs"))
+        .expect("userinfo source is readable");
+
+    assert!(users.contains("select(PrincipalRow::as_select())"));
+    assert!(users.contains("select(SubjectClaimsRow::as_select())"));
+    for source in [&issue, &userinfo] {
+        assert!(source.contains("active_subject_claims_by_tenant_id"));
+        assert!(!source.contains(".principal_by_tenant_id("));
+        assert!(!source.contains(".subject_claims_by_tenant_id("));
+    }
 }
