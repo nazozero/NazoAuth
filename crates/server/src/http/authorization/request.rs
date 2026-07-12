@@ -443,7 +443,7 @@ async fn authorize_request(
     let request_id = Uuid::now_v7().to_string();
     let payload = ConsentPayload {
         request_id: request_id.clone(),
-        user_id: session.user.id,
+        user_id: session.user.id(),
         client_id: client.client_id,
         client_name: client.client_name,
         redirect_uri: redirect_uri.clone(),

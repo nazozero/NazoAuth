@@ -208,7 +208,7 @@ impl LiveAdminClientUpdateFixture {
         .await;
     }
 
-    async fn create_user(&self, suffix: &str, role: &str, admin_level: i32) -> UserRow {
+    async fn create_user(&self, suffix: &str, role: &str, admin_level: i32) -> DatabaseUserFixture {
         let email = format!("admin-client-update-{suffix}@example.com");
         let username = format!("admin-client-update-{suffix}");
         let mut conn = get_conn(&self.state.diesel_db)
@@ -231,12 +231,12 @@ impl LiveAdminClientUpdateFixture {
         .bind::<Text, _>(email)
         .bind::<Text, _>(role.to_owned())
         .bind::<Int4, _>(admin_level)
-        .get_result::<UserRow>(&mut conn)
+        .get_result::<DatabaseUserFixture>(&mut conn)
         .await
         .expect("test user should insert")
     }
 
-    async fn store_session(&self, user: &UserRow, sid: &str) {
+    async fn store_session(&self, user: &DatabaseUserFixture, sid: &str) {
         let payload = SessionPayload {
             user_id: user.id,
             auth_time: Utc::now().timestamp(),

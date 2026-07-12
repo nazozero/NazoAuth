@@ -1,5 +1,6 @@
 use std::{error::Error, fmt};
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::{TenantContext, UserId};
@@ -230,4 +231,89 @@ pub struct SubjectClaims {
     pub phone_number: Option<String>,
     pub phone_number_verified: bool,
     pub updated_at: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct LoginIdentity {
+    pub username: String,
+    pub email: String,
+    pub password_hash: String,
+    pub email_verified: bool,
+    pub mfa_enabled: bool,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct UserProfile {
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
+    pub given_name: Option<String>,
+    pub family_name: Option<String>,
+    pub middle_name: Option<String>,
+    pub nickname: Option<String>,
+    pub profile_url: Option<String>,
+    pub website_url: Option<String>,
+    pub gender: Option<String>,
+    pub birthdate: Option<String>,
+    pub zoneinfo: Option<String>,
+    pub locale: Option<String>,
+    pub address: PostalAddress,
+    pub phone_number: Option<String>,
+    pub phone_number_verified: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct IdentityUser {
+    pub principal: Principal,
+    pub login: LoginIdentity,
+    pub profile: UserProfile,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl IdentityUser {
+    #[must_use]
+    pub const fn id(&self) -> uuid::Uuid {
+        self.principal.user_id.as_uuid()
+    }
+    #[must_use]
+    pub const fn user_id(&self) -> UserId {
+        self.principal.user_id
+    }
+    #[must_use]
+    pub const fn tenant(&self) -> TenantContext {
+        self.principal.tenant
+    }
+    #[must_use]
+    pub const fn tenant_id(&self) -> uuid::Uuid {
+        self.principal.tenant.tenant_id.as_uuid()
+    }
+    #[must_use]
+    pub const fn realm_id(&self) -> uuid::Uuid {
+        self.principal.tenant.realm_id.as_uuid()
+    }
+    #[must_use]
+    pub const fn organization_id(&self) -> uuid::Uuid {
+        self.principal.tenant.organization_id.as_uuid()
+    }
+    #[must_use]
+    pub fn display_name(&self) -> &str {
+        self.profile
+            .display_name
+            .as_deref()
+            .unwrap_or(&self.login.username)
+    }
+    #[must_use]
+    pub const fn role_name(&self) -> &'static str {
+        match self.principal.role {
+            UserRole::User => "user",
+            UserRole::Admin { .. } => "admin",
+        }
+    }
+    #[must_use]
+    pub const fn admin_level(&self) -> u32 {
+        match self.principal.role {
+            UserRole::User => 0,
+            UserRole::Admin { level } => level,
+        }
+    }
 }

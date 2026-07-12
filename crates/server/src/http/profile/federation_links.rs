@@ -10,26 +10,13 @@ pub(crate) async fn my_federation_links(state: Data<AppState>, req: HttpRequest)
         Ok(user) => user,
         Err(response) => return response,
     };
-    let rows = match get_conn(&state.diesel_db).await {
-        Ok(mut conn) => match external_identity_links::table
-            .filter(external_identity_links::user_id.eq(user.id))
-            .select(ExternalIdentityLinkRow::as_select())
-            .order(external_identity_links::created_at.desc())
-            .load::<ExternalIdentityLinkRow>(&mut conn)
-            .await
-        {
-            Ok(rows) => rows,
-            Err(error) => {
-                tracing::warn!(%error, user_id = %user.id, "failed to load federation links");
-                return oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "外部身份绑定查询失败.",
-                );
-            }
-        },
+    let rows = match nazo_postgres::FederationRepository::new(state.diesel_db.clone())
+        .list(user.tenant().tenant_id, user.user_id())
+        .await
+    {
+        Ok(rows) => rows,
         Err(error) => {
-            tracing::warn!(%error, "failed to get database connection for federation links");
+            tracing::warn!(%error, user_id = %user.id(), "failed to load federation links");
             return oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -55,49 +42,20 @@ pub(crate) async fn unlink_my_federation_link(
         Ok(user) => user,
         Err(response) => return response,
     };
-    let link = match get_conn(&state.diesel_db).await {
-        Ok(mut conn) => {
-            // 删除前先按 user_id 查询绑定，确保用户不能通过 UUID 猜测解绑他人账号。
-            let link = match external_identity_links::table
-                .find(link_id)
-                .filter(external_identity_links::user_id.eq(user.id))
-                .select(ExternalIdentityLinkRow::as_select())
-                .first::<ExternalIdentityLinkRow>(&mut conn)
-                .await
-                .optional()
-            {
-                Ok(Some(link)) => link,
-                Ok(None) => {
-                    return oauth_error(
-                        StatusCode::NOT_FOUND,
-                        "invalid_request",
-                        "外部身份绑定不存在.",
-                    );
-                }
-                Err(error) => {
-                    tracing::warn!(%error, user_id = %user.id, %link_id, "failed to load federation link for unlink");
-                    return oauth_error(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "server_error",
-                        "外部身份解绑失败.",
-                    );
-                }
-            };
-            if let Err(error) = diesel::delete(external_identity_links::table.find(link.id))
-                .execute(&mut conn)
-                .await
-            {
-                tracing::warn!(%error, user_id = %user.id, link_id = %link.id, "failed to delete federation link");
-                return oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "外部身份解绑失败.",
-                );
-            }
-            link
+    let link = match nazo_postgres::FederationRepository::new(state.diesel_db.clone())
+        .delete(user.tenant().tenant_id, user.user_id(), link_id)
+        .await
+    {
+        Ok(Some(link)) => link,
+        Ok(None) => {
+            return oauth_error(
+                StatusCode::NOT_FOUND,
+                "invalid_request",
+                "外部身份绑定不存在.",
+            );
         }
         Err(error) => {
-            tracing::warn!(%error, "failed to get database connection for federation unlink");
+            tracing::warn!(%error, user_id = %user.id(), %link_id, "failed to load federation link for unlink");
             return oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -108,7 +66,7 @@ pub(crate) async fn unlink_my_federation_link(
     audit_event(
         "external_identity_unlinked",
         audit_fields(&[
-            ("user_id", json!(user.id)),
+            ("user_id", json!(user.id())),
             ("provider_type", json!(link.provider_type)),
             ("provider_id", json!(link.provider_id)),
             ("link_id", json!(link.id)),
@@ -117,7 +75,7 @@ pub(crate) async fn unlink_my_federation_link(
     empty_response_no_store(StatusCode::NO_CONTENT)
 }
 
-fn federation_link_json(link: ExternalIdentityLinkRow) -> Value {
+fn federation_link_json(link: FederationLink) -> Value {
     // subject 可能是 provider 内稳定标识，但不是本地 secret；claims 可能含上游
     // 扩展字段，列表接口不返回 claims，避免把 provider 原始响应扩散给前端。
     json!({

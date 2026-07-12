@@ -147,7 +147,7 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Byte
         }
     };
     let user = match find_user_by_id(&state.diesel_db, user_id).await {
-        Ok(Some(user)) if user.is_active => user,
+        Ok(Some(user)) if user.principal.active => user,
         Ok(_) => {
             return oauth_bearer_error(
                 StatusCode::UNAUTHORIZED,

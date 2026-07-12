@@ -264,7 +264,7 @@ pub(crate) async fn backchannel_authentication(
         );
     };
     let user = match find_user_by_email(&state.diesel_db, login_hint).await {
-        Ok(Some(user)) if user.is_active => user,
+        Ok(Some(user)) if user.principal.active => user,
         Ok(_) => {
             return oauth_error(
                 StatusCode::BAD_REQUEST,
@@ -300,7 +300,7 @@ pub(crate) async fn backchannel_authentication(
     let expires_at = now.saturating_add(expires_in.min(i64::MAX as u64) as i64);
     let state_payload = CibaRequestState {
         client_id: client.client_id,
-        user_id: user.id,
+        user_id: user.id(),
         scopes,
         audiences: vec![state.settings.default_audience.clone()],
         acr,
@@ -828,7 +828,7 @@ pub(crate) async fn ciba_verification(
         }
         Err(response) => return response,
     };
-    if state_payload.user_id != user.id {
+    if state_payload.user_id != user.id() {
         return oauth_error(
             StatusCode::FORBIDDEN,
             "access_denied",
@@ -942,7 +942,7 @@ pub(crate) async fn ciba_decision(
         &state,
         &auth_req_id,
         decision,
-        Some(user.id),
+        Some(user.id()),
         CibaDecisionSource::User,
         Some(blake3_hex(&client_ip(&req, &state.settings))),
     )
@@ -1338,7 +1338,7 @@ pub(crate) async fn token_ciba(
             Err(failure) => return ciba_poll_failure_response(failure),
         };
     let user = match find_user_by_id(&state.diesel_db, ciba.user_id).await {
-        Ok(Some(user)) if user.is_active => user,
+        Ok(Some(user)) if user.principal.active => user,
         Ok(_) => {
             return oauth_token_error(
                 StatusCode::BAD_REQUEST,
@@ -1369,7 +1369,7 @@ pub(crate) async fn token_ciba(
             );
         }
     };
-    let issue = ciba_token_issue(user.id, subject, ciba, dpop_jkt, mtls_x5t_s256);
+    let issue = ciba_token_issue(user.id(), subject, ciba, dpop_jkt, mtls_x5t_s256);
     issue_token_response(state, client, issue).await
 }
 

@@ -3,7 +3,7 @@ use crate::{
     schema::user_passkey_credentials,
 };
 use diesel::{
-    ExpressionMethods, QueryDsl, SelectableHelper,
+    ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper,
     dsl::now,
     result::{DatabaseErrorKind, Error},
 };
@@ -37,6 +37,7 @@ impl PasskeyRepository {
         user_passkey_credentials::table
             .filter(user_passkey_credentials::tenant_id.eq(tenant_id.as_uuid()))
             .filter(user_passkey_credentials::user_id.eq(user_id.as_uuid()))
+            .order(user_passkey_credentials::created_at.asc())
             .select(PasskeyCredentialRow::as_select())
             .load(&mut connection)
             .await
@@ -44,6 +45,30 @@ impl PasskeyRepository {
             .into_iter()
             .map(identity::passkey)
             .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| RepositoryError::Consistency(error.0))
+    }
+    pub async fn by_credential_id(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        credential_id: &str,
+    ) -> Result<Option<PasskeyCredential>, RepositoryError> {
+        let mut connection = self
+            .pool
+            .get()
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
+        user_passkey_credentials::table
+            .filter(user_passkey_credentials::tenant_id.eq(tenant_id.as_uuid()))
+            .filter(user_passkey_credentials::user_id.eq(user_id.as_uuid()))
+            .filter(user_passkey_credentials::credential_id.eq(credential_id))
+            .select(PasskeyCredentialRow::as_select())
+            .first(&mut connection)
+            .await
+            .optional()
+            .map_err(map_error)?
+            .map(identity::passkey)
+            .transpose()
             .map_err(|error| RepositoryError::Consistency(error.0))
     }
     pub async fn insert(
@@ -81,6 +106,7 @@ impl PasskeyRepository {
         user_id: UserId,
         credential_id: &str,
         sign_count: i64,
+        credential: Value,
     ) -> Result<bool, RepositoryError> {
         let mut connection = self
             .pool
@@ -94,6 +120,7 @@ impl PasskeyRepository {
                 .filter(user_passkey_credentials::credential_id.eq(credential_id)),
         )
         .set((
+            user_passkey_credentials::credential.eq(credential),
             user_passkey_credentials::sign_count.eq(sign_count),
             user_passkey_credentials::last_used_at.eq(now),
             user_passkey_credentials::updated_at.eq(now),

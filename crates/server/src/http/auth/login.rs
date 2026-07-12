@@ -48,10 +48,11 @@ pub(crate) async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) 
             );
         }
     };
-    let authenticatable = user.as_ref().is_some_and(|user| user.is_active);
+    let authenticatable = user.as_ref().is_some_and(|user| user.principal.active);
     let password_hash = if authenticatable {
         user.as_ref()
             .expect("authenticatable users must exist")
+            .login
             .password_hash
             .clone()
     } else {
@@ -103,7 +104,7 @@ pub(crate) async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) 
             ),
         ];
         if let Some(user) = &user {
-            fields.push(("user_id", json!(user.id)));
+            fields.push(("user_id", json!(user.id())));
         }
         audit_event("login_failure", audit_fields(&fields));
         return oauth_error(StatusCode::UNAUTHORIZED, "access_denied", "邮箱或密码错误.");
@@ -114,7 +115,7 @@ pub(crate) async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) 
     let session_id = random_urlsafe_token();
     let csrf_token = random_urlsafe_token();
     let key = format!("oauth:session:{session_id}");
-    let remembered_mfa = if user.mfa_enabled {
+    let remembered_mfa = if user.login.mfa_enabled {
         match remembered_mfa_device_valid(&state, &req, &user).await {
             Ok(value) => value,
             Err(error) => {
@@ -135,10 +136,10 @@ pub(crate) async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) 
         amr.push("mfa".to_owned());
     }
     let session = SessionPayload {
-        user_id: user.id,
+        user_id: user.id(),
         auth_time: Utc::now().timestamp(),
         amr,
-        pending_mfa: user.mfa_enabled && !remembered_mfa,
+        pending_mfa: user.login.mfa_enabled && !remembered_mfa,
         oidc_sid: Some(random_urlsafe_token()),
     };
     let session_body = match serde_json::to_string(&session) {
@@ -171,7 +172,7 @@ pub(crate) async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) 
     audit_event(
         "login_success",
         audit_fields(&[
-            ("user_id", json!(user.id)),
+            ("user_id", json!(user.id())),
             (
                 "source_ip_hash",
                 json!(blake3_hex(&client_ip(&req, &state.settings))),

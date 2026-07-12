@@ -14,7 +14,7 @@ pub(crate) async fn access_delivery(
     let Some(token) = q.get("token") else {
         return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "缺少 token.");
     };
-    let key = format!("oauth:client_delivery:{}:{token}", user.id);
+    let key = format!("oauth:client_delivery:{}:{token}", user.id());
     let raw = match valkey_getdel(&state.valkey, &key).await {
         Ok(value) => value,
         Err(error) => {

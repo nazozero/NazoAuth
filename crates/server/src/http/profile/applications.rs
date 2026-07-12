@@ -12,7 +12,7 @@ pub(crate) async fn my_applications(state: Data<AppState>, req: HttpRequest) -> 
             .inner_join(
                 oauth_clients::table.on(oauth_clients::id.eq(user_client_grants::client_id)),
             )
-            .filter(user_client_grants::user_id.eq(user.id))
+            .filter(user_client_grants::user_id.eq(user.id()))
             .select((
                 oauth_clients::client_id,
                 oauth_clients::client_name,

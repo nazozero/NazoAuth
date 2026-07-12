@@ -71,7 +71,7 @@ fn admin_user_json_omits_password_hash_and_tenant_context() {
     let user = user_row();
     let value = admin_user_json(user.clone());
 
-    assert_eq!(value["id"], json!(user.id));
+    assert_eq!(value["id"], json!(user.id()));
     assert_eq!(value["email"], "user@example.com");
     assert_eq!(value["role"], "admin");
     assert_eq!(value["admin_level"], 10);
@@ -150,9 +150,9 @@ fn json_array_to_strings_drops_non_string_values_for_admin_views() {
     );
 }
 
-fn user_row() -> UserRow {
+fn user_row() -> IdentityUser {
     let now = Utc::now();
-    UserRow {
+    DatabaseUserFixture {
         id: Uuid::now_v7(),
         tenant_id: Uuid::now_v7(),
         realm_id: Uuid::now_v7(),
@@ -188,6 +188,7 @@ fn user_row() -> UserRow {
         created_at: now,
         updated_at: now,
     }
+    .identity()
 }
 
 fn client_row() -> ClientRow {

@@ -5,9 +5,9 @@ use crate::settings::{
 };
 use crate::support::ClientIpHeaderMode;
 
-fn user() -> UserRow {
+fn user() -> IdentityUser {
     let now = Utc::now();
-    UserRow {
+    DatabaseUserFixture {
         id: Uuid::now_v7(),
         tenant_id: DEFAULT_TENANT_ID,
         realm_id: DEFAULT_REALM_ID,
@@ -45,6 +45,7 @@ fn user() -> UserRow {
         created_at: now,
         updated_at: now,
     }
+    .identity()
 }
 
 fn settings() -> Settings {
@@ -237,7 +238,7 @@ fn id_token_user_claims_do_not_expose_email_scope_claims() {
 #[test]
 fn requested_userinfo_claims_allow_explicit_profile_claims_without_profile_scope() {
     let mut user = user();
-    user.display_name = None;
+    user.profile.display_name = None;
     let claims = oidc_user_claims(
         &user,
         &["openid".to_owned()],

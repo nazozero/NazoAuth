@@ -138,9 +138,9 @@ async fn cleanup_scim_user_by_email(state: &AppState, email: &str) {
         .expect("SCIM test user cleanup should succeed");
 }
 
-fn user_row(id: Uuid, email: &str) -> UserRow {
+fn user_row(id: Uuid, email: &str) -> IdentityUser {
     let now = Utc::now();
-    UserRow {
+    DatabaseUserFixture {
         id,
         tenant_id: uuid_fixture(0x11111111111111111111111111111111),
         realm_id: uuid_fixture(0x22222222222222222222222222222222),
@@ -176,6 +176,7 @@ fn user_row(id: Uuid, email: &str) -> UserRow {
         created_at: now,
         updated_at: now,
     }
+    .identity()
 }
 
 fn scim_user_request_fixture() -> ScimUserRequest {
@@ -637,12 +638,12 @@ async fn scim_list_users_response_preserves_pagination_and_hides_internal_user_f
         .as_object()
         .expect("SCIM resource should be an object");
     assert_eq!(resource["schemas"], json!([SCIM_USER_SCHEMA]));
-    assert_eq!(resource["id"], json!(user.id));
+    assert_eq!(resource["id"], json!(user.id()));
     assert_eq!(resource["userName"], "alice@example.test");
     assert_eq!(resource["emails"][0]["value"], "alice@example.test");
     assert_eq!(
         resource["meta"]["location"],
-        format!("/scim/v2/Users/{}", user.id)
+        format!("/scim/v2/Users/{}", user.id())
     );
     for forbidden in [
         "tenant_id",

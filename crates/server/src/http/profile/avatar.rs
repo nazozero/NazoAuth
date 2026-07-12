@@ -185,9 +185,9 @@ pub(crate) async fn upload_avatar(
             );
         };
         let version = Uuid::now_v7().to_string();
-        let user_dir = avatar_user_dir(&state, user.id);
-        let avatar_file_path = avatar_path(&state, user.id);
-        let avatar_meta_file_path = avatar_meta_path(&state, user.id);
+        let user_dir = avatar_user_dir(&state, user.id());
+        let avatar_file_path = avatar_path(&state, user.id());
+        let avatar_meta_file_path = avatar_meta_path(&state, user.id());
         let avatar_tmp_path = user_dir.join(format!("avatar-{version}.tmp"));
         let avatar_meta_tmp_path = user_dir.join(format!("meta-{version}.tmp"));
         if tokio::fs::create_dir_all(&user_dir).await.is_err() {
@@ -212,19 +212,6 @@ pub(crate) async fn upload_avatar(
                 "头像保存失败.",
             );
         }
-        let mut conn = match get_conn(&state.diesel_db).await {
-            Ok(conn) => conn,
-            Err(error) => {
-                tracing::warn!(%error, "failed to get database connection for avatar upload");
-                let _ = tokio::fs::remove_file(&avatar_tmp_path).await;
-                let _ = tokio::fs::remove_file(&avatar_meta_tmp_path).await;
-                return oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "头像保存失败.",
-                );
-            }
-        };
         let promotion = match promote_avatar_files(
             &avatar_tmp_path,
             &avatar_meta_tmp_path,
@@ -244,13 +231,12 @@ pub(crate) async fn upload_avatar(
                 );
             }
         };
-        let user = match diesel::update(users::table.find(user.id))
-            .set((
-                users::avatar_url.eq(Some(format!("/auth/me/avatar?v={version}"))),
-                users::updated_at.eq(diesel_now),
-            ))
-            .returning(UserRow::as_returning())
-            .get_result::<UserRow>(&mut conn)
+        let user = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
+            .update_avatar(
+                user.tenant().tenant_id,
+                user.user_id(),
+                Some(format!("/auth/me/avatar?v={version}")),
+            )
             .await
         {
             Ok(user) => user,
@@ -296,7 +282,7 @@ pub(crate) async fn get_avatar(state: Data<AppState>, req: HttpRequest) -> HttpR
             "跨站请求头像资源被拒绝.",
         );
     };
-    let Some(avatar_url) = user.avatar_url.as_deref() else {
+    let Some(avatar_url) = user.profile.avatar_url.as_deref() else {
         return oauth_error(
             StatusCode::NOT_FOUND,
             "invalid_request",
@@ -311,7 +297,7 @@ pub(crate) async fn get_avatar(state: Data<AppState>, req: HttpRequest) -> HttpR
             "头像读取失败.",
         );
     };
-    let meta = match read_avatar_meta(&state, user.id).await {
+    let meta = match read_avatar_meta(&state, user.id()).await {
         Ok(Some(meta)) => meta,
         Ok(None) => {
             tracing::warn!("avatar metadata file is missing while user avatar_url is set");
@@ -338,7 +324,7 @@ pub(crate) async fn get_avatar(state: Data<AppState>, req: HttpRequest) -> HttpR
             "头像读取失败.",
         );
     }
-    match tokio::fs::read(avatar_path(&state, user.id)).await {
+    match tokio::fs::read(avatar_path(&state, user.id())).await {
         Ok(bytes) => {
             let content_type = match meta.get("content_type").and_then(Value::as_str) {
                 Some("image/png") => "image/png",
@@ -403,25 +389,9 @@ pub(crate) async fn delete_avatar(state: Data<AppState>, req: HttpRequest) -> Ht
         Ok(user) => user,
         Err(response) => return response,
     };
-    let mut conn = match get_conn(&state.diesel_db).await {
-        Ok(conn) => conn,
-        Err(error) => {
-            tracing::warn!(%error, "failed to get database connection for avatar delete");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "头像删除失败.",
-            );
-        }
-    };
-    let user_id = user.id;
-    let user = match diesel::update(users::table.find(user_id))
-        .set((
-            users::avatar_url.eq(Option::<String>::None),
-            users::updated_at.eq(diesel_now),
-        ))
-        .returning(UserRow::as_returning())
-        .get_result::<UserRow>(&mut conn)
+    let user_id = user.id();
+    let user = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
+        .update_avatar(user.tenant().tenant_id, user.user_id(), None)
         .await
     {
         Ok(user) => user,

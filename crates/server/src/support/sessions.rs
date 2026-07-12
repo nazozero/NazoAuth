@@ -34,7 +34,7 @@ pub(crate) struct SessionPayload {
 }
 
 pub(crate) struct CurrentSession {
-    pub(crate) user: UserRow,
+    pub(crate) user: IdentityUser,
     pub(crate) auth_time: i64,
     pub(crate) amr: Vec<String>,
     pub(crate) oidc_sid: String,
@@ -48,7 +48,7 @@ pub(crate) struct SessionRotation {
 pub(crate) async fn current_user(
     state: &AppState,
     req: &HttpRequest,
-) -> anyhow::Result<Option<UserRow>> {
+) -> anyhow::Result<Option<IdentityUser>> {
     Ok(current_session(state, req)
         .await?
         .map(|session| session.user))
@@ -192,7 +192,7 @@ async fn session_from_payload(
 ) -> anyhow::Result<Option<CurrentSession>> {
     let Some(user) = find_user_by_id(&state.diesel_db, payload.user_id)
         .await?
-        .filter(|u| u.is_active)
+        .filter(|u| u.principal.active)
     else {
         let _ = valkey_del(&state.valkey, session_key).await;
         return Ok(None);
@@ -217,16 +217,16 @@ fn valid_session_payload(payload: &SessionPayload, now: i64) -> bool {
 pub(crate) async fn require_admin(
     state: &AppState,
     req: &HttpRequest,
-) -> anyhow::Result<Option<UserRow>> {
+) -> anyhow::Result<Option<IdentityUser>> {
     Ok(current_user(state, req)
         .await?
-        .filter(|u| u.role == "admin" && u.admin_level > 0))
+        .filter(|u| u.admin_level() > 0))
 }
 
 pub(crate) async fn current_user_or_login_required(
     state: &AppState,
     req: &HttpRequest,
-) -> Result<UserRow, HttpResponse> {
+) -> Result<IdentityUser, HttpResponse> {
     match current_user(state, req).await {
         Ok(Some(user)) => Ok(user),
         Ok(None) => Err(login_required_response(state)),
@@ -237,7 +237,7 @@ pub(crate) async fn current_user_or_login_required(
 pub(crate) async fn require_admin_or_forbidden(
     state: &AppState,
     req: &HttpRequest,
-) -> Result<UserRow, HttpResponse> {
+) -> Result<IdentityUser, HttpResponse> {
     match require_admin(state, req).await {
         Ok(Some(user)) => Ok(user),
         Ok(None) => Err(oauth_error(

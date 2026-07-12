@@ -22,9 +22,9 @@ impl Default for TenantContext {
 }
 
 impl TenantContext {
-    pub(crate) fn includes_user(&self, user: &UserRow) -> bool {
+    pub(crate) fn includes_user(&self, user: &IdentityUser) -> bool {
         self.as_identity_context().is_some_and(|context| {
-            context.matches_raw(user.tenant_id, user.realm_id, user.organization_id)
+            context.matches_raw(user.tenant_id(), user.realm_id(), user.organization_id())
         })
     }
 
@@ -41,7 +41,7 @@ impl TenantContext {
         })
     }
 
-    fn as_identity_context(&self) -> Option<nazo_identity::TenantContext> {
+    pub(crate) fn as_identity_context(&self) -> Option<nazo_identity::TenantContext> {
         Some(nazo_identity::TenantContext {
             tenant_id: nazo_identity::TenantId::new(self.tenant_id).ok()?,
             realm_id: nazo_identity::RealmId::new(self.realm_id).ok()?,

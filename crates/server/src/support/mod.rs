@@ -82,15 +82,15 @@ pub(crate) mod prelude {
     pub(crate) use sha2::{Digest, Sha256};
     pub(crate) use uuid::Uuid;
 
-    pub(crate) use crate::domain::{
-        AccessRequestRow, AccessRequestStatus, AppState, ClientRow, PasskeyCredentialRow, UserRow,
-    };
+    pub(crate) use crate::domain::{AccessRequestRow, AccessRequestStatus, AppState, ClientRow};
+    #[cfg(test)]
+    pub(crate) use crate::domain::{DatabasePasskeyFixture, DatabaseUserFixture};
     pub(crate) use crate::schema::{
-        client_access_requests, oauth_clients, user_client_grants, user_mfa_remembered_devices,
-        users,
+        client_access_requests, oauth_clients, user_client_grants, users,
     };
     pub(crate) use crate::settings::Settings;
     pub(crate) use nazo_auth::Claims;
+    pub(crate) use nazo_identity::IdentityUser;
     pub(crate) use nazo_postgres::{DbPool, get_conn};
 
     #[cfg(test)]

@@ -38,7 +38,7 @@ pub(crate) async fn passkey_registration_begin(
     let existing_ids = match passkey_credential_ids(&existing) {
         Ok(ids) => ids,
         Err(error) => {
-            tracing::warn!(%error, user_id = %user.id, "stored passkey credential is malformed");
+            tracing::warn!(%error, user_id = %user.id(), "stored passkey credential is malformed");
             return oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -50,7 +50,7 @@ pub(crate) async fn passkey_registration_begin(
     let user_handle = match passkey_user_handle(&user) {
         Ok(user_handle) => user_handle,
         Err(error) => {
-            tracing::warn!(%error, user_id = %user.id, "stored passkey owner identifiers are invalid");
+            tracing::warn!(%error, user_id = %user.id(), "stored passkey owner identifiers are invalid");
             return oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -60,21 +60,24 @@ pub(crate) async fn passkey_registration_begin(
     };
     let (challenge, registration_state) = webauthn.start_registration(
         &user_handle,
-        &user.email,
-        user.display_name.as_deref().unwrap_or(&user.email),
+        &user.login.email,
+        user.profile
+            .display_name
+            .as_deref()
+            .unwrap_or(&user.login.email),
         &existing_ids,
     );
     let ceremony_id = random_urlsafe_token();
     let stored = StoredPasskeyRegistration {
-        user_id: user.id,
-        tenant_id: user.tenant_id,
+        user_id: user.id(),
+        tenant_id: user.tenant_id(),
         label,
         state: registration_state,
     };
     if let Err(error) =
         store_passkey_ceremony(&state, registration_key(&ceremony_id), &stored).await
     {
-        tracing::warn!(%error, user_id = %user.id, "failed to store passkey registration ceremony");
+        tracing::warn!(%error, user_id = %user.id(), "failed to store passkey registration ceremony");
         return oauth_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "server_error",
@@ -120,11 +123,11 @@ pub(crate) async fn passkey_registration_finish(
         }
         Err(response) => return response,
     };
-    if stored.user_id != user.id || stored.tenant_id != user.tenant_id {
+    if stored.user_id != user.id() || stored.tenant_id != user.tenant_id() {
         audit_event(
             "passkey_registration_rejected",
             audit_fields(&[
-                ("user_id", json!(user.id)),
+                ("user_id", json!(user.id())),
                 ("reason", json!("ceremony_user_mismatch")),
             ]),
         );
@@ -142,7 +145,7 @@ pub(crate) async fn passkey_registration_finish(
             audit_event(
                 "passkey_registration_rejected",
                 audit_fields(&[
-                    ("user_id", json!(user.id)),
+                    ("user_id", json!(user.id())),
                     ("reason", json!(error.to_string())),
                 ]),
             );
@@ -165,44 +168,30 @@ pub(crate) async fn passkey_registration_finish(
             );
         }
     };
-    let mut conn = match get_conn(&state.diesel_db).await {
-        Ok(conn) => conn,
-        Err(error) => {
-            tracing::warn!(%error, "failed to get database connection for passkey insert");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "passkey registration failed.",
-            );
-        }
-    };
-    let inserted = diesel::insert_into(user_passkey_credentials::table)
-        .values((
-            user_passkey_credentials::tenant_id.eq(user.tenant_id),
-            user_passkey_credentials::user_id.eq(user.id),
-            user_passkey_credentials::credential_id.eq(credential_id),
-            user_passkey_credentials::credential.eq(credential_json),
-            user_passkey_credentials::label.eq(stored.label),
-            user_passkey_credentials::sign_count.eq(i64::from(credential.counter)),
-        ))
-        .returning(PasskeyCredentialRow::as_returning())
-        .get_result::<PasskeyCredentialRow>(&mut conn)
+    let inserted = nazo_postgres::PasskeyRepository::new(state.diesel_db.clone())
+        .insert(
+            user.tenant().tenant_id,
+            user.user_id(),
+            credential_id,
+            credential_json,
+            stored.label,
+            i64::from(credential.counter),
+        )
         .await;
     match inserted {
         Ok(row) => {
             audit_event(
                 "passkey_registered",
                 audit_fields(&[
-                    ("user_id", json!(user.id)),
+                    ("user_id", json!(user.id())),
                     ("credential_id", json!(row.id)),
                 ]),
             );
             passkey_created_response(&row)
         }
-        Err(diesel::result::Error::DatabaseError(
-            diesel::result::DatabaseErrorKind::UniqueViolation,
-            _,
-        )) => passkey_already_registered_response(),
+        Err(nazo_identity::ports::RepositoryError::Conflict) => {
+            passkey_already_registered_response()
+        }
         Err(error) => {
             tracing::warn!(%error, "failed to insert passkey credential");
             oauth_error(
@@ -226,13 +215,13 @@ pub(crate) async fn passkey_list(state: Data<AppState>, req: HttpRequest) -> Htt
     passkey_list_response(&rows)
 }
 
-fn passkey_list_response(rows: &[PasskeyCredentialRow]) -> HttpResponse {
+fn passkey_list_response(rows: &[PasskeyCredential]) -> HttpResponse {
     json_response(json!({
         "passkeys": rows.iter().map(passkey_public_json).collect::<Vec<_>>()
     }))
 }
 
-fn passkey_created_response(row: &PasskeyCredentialRow) -> HttpResponse {
+fn passkey_created_response(row: &PasskeyCredential) -> HttpResponse {
     json_response_status(StatusCode::CREATED, passkey_public_json(row))
 }
 
@@ -256,27 +245,11 @@ pub(crate) async fn passkey_delete(
         Ok(user) => user,
         Err(response) => return response,
     };
-    let mut conn = match get_conn(&state.diesel_db).await {
-        Ok(conn) => conn,
-        Err(error) => {
-            tracing::warn!(%error, "failed to get database connection for passkey delete");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "passkey delete failed.",
-            );
-        }
-    };
-    match diesel::delete(
-        user_passkey_credentials::table
-            .find(path.into_inner())
-            .filter(user_passkey_credentials::tenant_id.eq(user.tenant_id))
-            .filter(user_passkey_credentials::user_id.eq(user.id)),
-    )
-    .execute(&mut conn)
-    .await
+    match nazo_postgres::PasskeyRepository::new(state.diesel_db.clone())
+        .delete(user.tenant().tenant_id, user.user_id(), path.into_inner())
+        .await
     {
-        Ok(deleted) => passkey_delete_response(deleted),
+        Ok(deleted) => passkey_delete_response(usize::from(deleted)),
         Err(error) => {
             tracing::warn!(%error, "failed to delete passkey credential");
             oauth_error(
@@ -301,25 +274,13 @@ fn passkey_delete_response(deleted_count: usize) -> HttpResponse {
 
 pub(crate) async fn load_user_passkeys(
     state: &AppState,
-    user: &UserRow,
-) -> Result<Vec<PasskeyCredentialRow>, HttpResponse> {
-    let mut conn = get_conn(&state.diesel_db).await.map_err(|error| {
-        tracing::warn!(%error, "failed to get database connection for passkey lookup");
-        oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "passkey state unavailable.",
-        )
-    })?;
-    user_passkey_credentials::table
-        .filter(user_passkey_credentials::tenant_id.eq(user.tenant_id))
-        .filter(user_passkey_credentials::user_id.eq(user.id))
-        .select(PasskeyCredentialRow::as_select())
-        .order(user_passkey_credentials::created_at.asc())
-        .load::<PasskeyCredentialRow>(&mut conn)
+    user: &IdentityUser,
+) -> Result<Vec<PasskeyCredential>, HttpResponse> {
+    nazo_postgres::PasskeyRepository::new(state.diesel_db.clone())
+        .list(user.tenant().tenant_id, user.user_id())
         .await
         .map_err(|error| {
-            tracing::warn!(%error, user_id = %user.id, "failed to load passkey credentials");
+            tracing::warn!(%error, user_id = %user.id(), "failed to load passkey credentials");
             oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",

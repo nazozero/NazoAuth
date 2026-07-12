@@ -78,29 +78,16 @@ pub(crate) async fn register_after_rate_limit(
     };
     let username = format!("user_{}", Uuid::now_v7());
     let tenant = default_tenant_context();
-    let mut conn = match get_conn(&state.diesel_db).await {
-        Ok(conn) => conn,
-        Err(_) => {
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "数据库连接失败.",
-            );
-        }
-    };
-
-    let row = diesel::insert_into(users::table)
-        .values((
-            users::tenant_id.eq(tenant.tenant_id),
-            users::realm_id.eq(tenant.realm_id),
-            users::organization_id.eq(tenant.organization_id),
-            users::username.eq(username),
-            users::email.eq(&email),
-            users::password_hash.eq(password_hash),
-            users::email_verified.eq(true),
-        ))
-        .returning(UserRow::as_returning())
-        .get_result::<UserRow>(&mut conn)
+    let row = nazo_postgres::UserRepository::new(state.diesel_db.clone())
+        .create(nazo_identity::ports::NewUser {
+            tenant: tenant
+                .as_identity_context()
+                .expect("default tenant identifiers are valid"),
+            username,
+            email: email.clone(),
+            password_hash,
+            email_verified: true,
+        })
         .await;
     match row {
         Ok(user) => {
@@ -115,10 +102,7 @@ pub(crate) async fn register_after_rate_limit(
             let _ = valkey_del(&state.valkey, &key).await;
             register_success_response(user)
         }
-        Err(diesel::result::Error::DatabaseError(
-            diesel::result::DatabaseErrorKind::UniqueViolation,
-            _,
-        )) => {
+        Err(nazo_identity::ports::RepositoryError::Conflict) => {
             let _ = valkey_del(&state.valkey, &key).await;
             oauth_error(StatusCode::CONFLICT, "invalid_request", "该邮箱已注册.")
         }
@@ -137,10 +121,10 @@ fn verification_code_for_lookup(payload: &RegisterRequest) -> String {
     payload.verification_code.trim().to_owned()
 }
 
-fn register_success_response(user: UserRow) -> HttpResponse {
+fn register_success_response(user: IdentityUser) -> HttpResponse {
     json_response_status(
         StatusCode::CREATED,
-        json!({"id": user.id, "email": user.email}),
+        json!({"id": user.id(), "email": user.login.email}),
     )
 }
 

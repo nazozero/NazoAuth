@@ -26,7 +26,7 @@ pub(crate) async fn passkey_login_begin(
     }
     let email = payload.email.trim().to_lowercase();
     let user = match find_user_by_email(&state.diesel_db, &email).await {
-        Ok(Some(user)) if user.is_active => user,
+        Ok(Some(user)) if user.principal.active => user,
         Ok(_) => {
             audit_event(
                 "passkey_login_failure",
@@ -60,7 +60,7 @@ pub(crate) async fn passkey_login_begin(
     {
         Ok(credentials) => credentials,
         Err(error) => {
-            tracing::warn!(%error, user_id = %user.id, "stored passkey credential is malformed");
+            tracing::warn!(%error, user_id = %user.id(), "stored passkey credential is malformed");
             return oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -71,7 +71,7 @@ pub(crate) async fn passkey_login_begin(
     let user_handle = match passkey_user_handle(&user) {
         Ok(user_handle) => user_handle,
         Err(error) => {
-            tracing::warn!(%error, user_id = %user.id, "stored passkey owner identifiers are invalid");
+            tracing::warn!(%error, user_id = %user.id(), "stored passkey owner identifiers are invalid");
             return oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -83,14 +83,14 @@ pub(crate) async fn passkey_login_begin(
         .start_authentication_with_creds_for_user(&user_handle, &credentials);
     let ceremony_id = random_urlsafe_token();
     let stored = StoredPasskeyAuthentication {
-        user_id: user.id,
-        tenant_id: user.tenant_id,
+        user_id: user.id(),
+        tenant_id: user.tenant_id(),
         state: authentication_state,
     };
     if let Err(error) =
         store_passkey_ceremony(&state, authentication_key(&ceremony_id), &stored).await
     {
-        tracing::warn!(%error, user_id = %user.id, "failed to store passkey authentication ceremony");
+        tracing::warn!(%error, user_id = %user.id(), "failed to store passkey authentication ceremony");
         return oauth_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "server_error",
@@ -128,7 +128,7 @@ pub(crate) async fn passkey_login_finish(
         Err(response) => return response,
     };
     let user = match find_user_by_id(&state.diesel_db, stored.user_id).await {
-        Ok(Some(user)) if user.is_active && user.tenant_id == stored.tenant_id => user,
+        Ok(Some(user)) if user.principal.active && user.tenant_id() == stored.tenant_id => user,
         Ok(_) => {
             return passkey_login_failed_response();
         }
@@ -173,7 +173,7 @@ pub(crate) async fn passkey_login_finish(
             audit_event(
                 "passkey_login_failure",
                 audit_fields(&[
-                    ("user_id", json!(user.id)),
+                    ("user_id", json!(user.id())),
                     ("reason", json!(error.to_string())),
                 ]),
             );
@@ -204,25 +204,12 @@ fn passkey_ceremony_expired_response() -> HttpResponse {
 
 async fn load_passkey_by_credential_id(
     state: &AppState,
-    user: &UserRow,
+    user: &IdentityUser,
     credential_id: &str,
-) -> Result<Option<PasskeyCredentialRow>, HttpResponse> {
-    let mut conn = get_conn(&state.diesel_db).await.map_err(|error| {
-        tracing::warn!(%error, "failed to get database connection for passkey credential lookup");
-        oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "passkey state unavailable.",
-        )
-    })?;
-    user_passkey_credentials::table
-        .filter(user_passkey_credentials::tenant_id.eq(user.tenant_id))
-        .filter(user_passkey_credentials::user_id.eq(user.id))
-        .filter(user_passkey_credentials::credential_id.eq(credential_id))
-        .select(PasskeyCredentialRow::as_select())
-        .first::<PasskeyCredentialRow>(&mut conn)
+) -> Result<Option<PasskeyCredential>, HttpResponse> {
+    nazo_postgres::PasskeyRepository::new(state.diesel_db.clone())
+        .by_credential_id(user.tenant().tenant_id, user.user_id(), credential_id)
         .await
-        .optional()
         .map_err(|error| {
             tracing::warn!(%error, "failed to load passkey credential");
             oauth_error(
@@ -235,8 +222,8 @@ async fn load_passkey_by_credential_id(
 
 async fn update_passkey_counter(
     state: &AppState,
-    user: &UserRow,
-    row: &PasskeyCredentialRow,
+    user: &IdentityUser,
+    row: &PasskeyCredential,
     new_counter: u32,
 ) -> Result<(), HttpResponse> {
     let mut credential = passkey_credential_from_row(row).map_err(|error| {
@@ -256,48 +243,35 @@ async fn update_passkey_counter(
             "passkey state unavailable.",
         )
     })?;
-    let mut conn = get_conn(&state.diesel_db).await.map_err(|error| {
-        tracing::warn!(%error, "failed to get database connection for passkey counter update");
-        oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "passkey state unavailable.",
+    nazo_postgres::PasskeyRepository::new(state.diesel_db.clone())
+        .update_counter(
+            user.tenant().tenant_id,
+            user.user_id(),
+            &row.credential_id,
+            i64::from(new_counter),
+            credential_json,
         )
-    })?;
-    diesel::update(
-        user_passkey_credentials::table
-            .find(row.id)
-            .filter(user_passkey_credentials::tenant_id.eq(user.tenant_id))
-            .filter(user_passkey_credentials::user_id.eq(user.id)),
-    )
-    .set((
-        user_passkey_credentials::credential.eq(credential_json),
-        user_passkey_credentials::sign_count.eq(i64::from(new_counter)),
-        user_passkey_credentials::last_used_at.eq(Utc::now()),
-        user_passkey_credentials::updated_at.eq(diesel_now),
-    ))
-    .execute(&mut conn)
-    .await
-    .map_err(|error| {
-        tracing::warn!(%error, "failed to update passkey counter");
-        oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "passkey state unavailable.",
-        )
-    })?;
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, "failed to update passkey counter");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "passkey state unavailable.",
+            )
+        })?;
     Ok(())
 }
 
 async fn create_passkey_session(
     state: &AppState,
     req: &HttpRequest,
-    user: &UserRow,
+    user: &IdentityUser,
 ) -> HttpResponse {
     let session_id = random_urlsafe_token();
     let csrf_token = random_urlsafe_token();
     let key = format!("oauth:session:{session_id}");
-    let remembered_mfa = if user.mfa_enabled {
+    let remembered_mfa = if user.login.mfa_enabled {
         match remembered_mfa_device_valid(state, req, user).await {
             Ok(value) => value,
             Err(error) => {
@@ -318,10 +292,10 @@ async fn create_passkey_session(
         amr.push("mfa".to_owned());
     }
     let session = SessionPayload {
-        user_id: user.id,
+        user_id: user.id(),
         auth_time: Utc::now().timestamp(),
         amr,
-        pending_mfa: user.mfa_enabled && !remembered_mfa,
+        pending_mfa: user.login.mfa_enabled && !remembered_mfa,
         oidc_sid: Some(random_urlsafe_token()),
     };
     let session_body = match serde_json::to_string(&session) {
@@ -353,7 +327,7 @@ async fn create_passkey_session(
     audit_event(
         "passkey_login_success",
         audit_fields(&[
-            ("user_id", json!(user.id)),
+            ("user_id", json!(user.id())),
             (
                 "source_ip_hash",
                 json!(blake3_hex(&client_ip(req, &state.settings))),

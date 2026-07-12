@@ -2,8 +2,10 @@ use crate::{DbPool, convert::identity, rows::identity::UserRow, schema::users};
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper};
 use diesel_async::RunQueryDsl;
 use nazo_identity::{
-    Principal, SubjectClaims, TenantContext, UserId,
-    ports::{RepositoryError, UserRepositoryPort},
+    IdentityUser, Principal, SubjectClaims, TenantContext, TenantId, UserId,
+    ports::{
+        AdminUserUpdate, NewUser, ProfileUpdate, RepositoryError, UserPage, UserRepositoryPort,
+    },
 };
 
 #[derive(Clone)]
@@ -47,6 +49,234 @@ impl UserRepository {
             .transpose()
             .map_err(|error| RepositoryError::Consistency(error.0))
     }
+
+    pub async fn user_by_id(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> Result<Option<IdentityUser>, RepositoryError> {
+        let mut connection = self
+            .pool
+            .get()
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
+        users::table
+            .find(user_id.as_uuid())
+            .filter(users::tenant_id.eq(tenant_id.as_uuid()))
+            .select(UserRow::as_select())
+            .first(&mut connection)
+            .await
+            .optional()
+            .map_err(|error| RepositoryError::Unexpected(error.to_string()))?
+            .map(IdentityUser::try_from)
+            .transpose()
+            .map_err(|error| RepositoryError::Consistency(error.0))
+    }
+
+    pub async fn user_by_email(
+        &self,
+        tenant_id: TenantId,
+        email: &str,
+    ) -> Result<Option<IdentityUser>, RepositoryError> {
+        let mut connection = self
+            .pool
+            .get()
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
+        users::table
+            .filter(users::tenant_id.eq(tenant_id.as_uuid()))
+            .filter(users::email.eq(email.trim()))
+            .select(UserRow::as_select())
+            .first(&mut connection)
+            .await
+            .optional()
+            .map_err(|error| RepositoryError::Unexpected(error.to_string()))?
+            .map(IdentityUser::try_from)
+            .transpose()
+            .map_err(|error| RepositoryError::Consistency(error.0))
+    }
+    pub async fn create(&self, new_user: NewUser) -> Result<IdentityUser, RepositoryError> {
+        let mut connection = self
+            .pool
+            .get()
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
+        let row = diesel::insert_into(users::table)
+            .values((
+                users::tenant_id.eq(new_user.tenant.tenant_id.as_uuid()),
+                users::realm_id.eq(new_user.tenant.realm_id.as_uuid()),
+                users::organization_id.eq(new_user.tenant.organization_id.as_uuid()),
+                users::username.eq(new_user.username),
+                users::email.eq(new_user.email),
+                users::password_hash.eq(new_user.password_hash),
+                users::email_verified.eq(new_user.email_verified),
+            ))
+            .returning(UserRow::as_returning())
+            .get_result(&mut connection)
+            .await
+            .map_err(map_error)?;
+        row.try_into()
+            .map_err(|error: identity::ConversionError| RepositoryError::Consistency(error.0))
+    }
+    pub async fn update_profile(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        update: ProfileUpdate,
+    ) -> Result<IdentityUser, RepositoryError> {
+        let mut connection = self
+            .pool
+            .get()
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
+        let profile = update.profile;
+        let row = diesel::update(
+            users::table
+                .find(user_id.as_uuid())
+                .filter(users::tenant_id.eq(tenant_id.as_uuid())),
+        )
+        .set((
+            users::display_name.eq(profile.display_name),
+            users::given_name.eq(profile.given_name),
+            users::family_name.eq(profile.family_name),
+            users::middle_name.eq(profile.middle_name),
+            users::nickname.eq(profile.nickname),
+            users::profile_url.eq(profile.profile_url),
+            users::website_url.eq(profile.website_url),
+            users::gender.eq(profile.gender),
+            users::birthdate.eq(profile.birthdate),
+            users::zoneinfo.eq(profile.zoneinfo),
+            users::locale.eq(profile.locale),
+            users::address_formatted.eq(profile.address.formatted),
+            users::address_street_address.eq(profile.address.street_address),
+            users::address_locality.eq(profile.address.locality),
+            users::address_region.eq(profile.address.region),
+            users::address_postal_code.eq(profile.address.postal_code),
+            users::address_country.eq(profile.address.country),
+            users::phone_number.eq(profile.phone_number),
+            users::phone_number_verified.eq(profile.phone_number_verified),
+            users::updated_at.eq(diesel::dsl::now),
+        ))
+        .returning(UserRow::as_returning())
+        .get_result(&mut connection)
+        .await
+        .map_err(map_error)?;
+        row.try_into()
+            .map_err(|error: identity::ConversionError| RepositoryError::Consistency(error.0))
+    }
+    pub async fn update_avatar(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        avatar_url: Option<String>,
+    ) -> Result<IdentityUser, RepositoryError> {
+        let mut connection = self
+            .pool
+            .get()
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
+        let row = diesel::update(
+            users::table
+                .find(user_id.as_uuid())
+                .filter(users::tenant_id.eq(tenant_id.as_uuid())),
+        )
+        .set((
+            users::avatar_url.eq(avatar_url),
+            users::updated_at.eq(diesel::dsl::now),
+        ))
+        .returning(UserRow::as_returning())
+        .get_result(&mut connection)
+        .await
+        .map_err(map_error)?;
+        row.try_into()
+            .map_err(|error: identity::ConversionError| RepositoryError::Consistency(error.0))
+    }
+    pub async fn page(&self, limit: i64, offset: i64) -> Result<UserPage, RepositoryError> {
+        let mut connection = self
+            .pool
+            .get()
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
+        let total = users::table
+            .select(diesel::dsl::count_star())
+            .first::<i64>(&mut connection)
+            .await
+            .map_err(map_error)?;
+        let rows = users::table
+            .select(UserRow::as_select())
+            .order(users::created_at.desc())
+            .limit(limit)
+            .offset(offset)
+            .load::<UserRow>(&mut connection)
+            .await
+            .map_err(map_error)?;
+        let users = rows
+            .into_iter()
+            .map(IdentityUser::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| RepositoryError::Consistency(error.0))?;
+        Ok(UserPage { total, users })
+    }
+    pub async fn admin_update(
+        &self,
+        user_id: UserId,
+        update: AdminUserUpdate,
+    ) -> Result<Option<IdentityUser>, RepositoryError> {
+        let mut connection = self
+            .pool
+            .get()
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
+        let row = diesel_async::AsyncConnection::transaction::<_, diesel::result::Error, _>(
+            &mut connection,
+            async move |connection| {
+                if let Some(role) = update.role
+                    && diesel::update(users::table.find(user_id.as_uuid()))
+                        .set((users::role.eq(role), users::updated_at.eq(diesel::dsl::now)))
+                        .execute(connection)
+                        .await?
+                        == 0
+                {
+                    return Ok(None);
+                }
+                if let Some(level) = update.admin_level
+                    && diesel::update(users::table.find(user_id.as_uuid()))
+                        .set((
+                            users::admin_level.eq(level),
+                            users::updated_at.eq(diesel::dsl::now),
+                        ))
+                        .execute(connection)
+                        .await?
+                        == 0
+                {
+                    return Ok(None);
+                }
+                if let Some(active) = update.active
+                    && diesel::update(users::table.find(user_id.as_uuid()))
+                        .set((
+                            users::is_active.eq(active),
+                            users::updated_at.eq(diesel::dsl::now),
+                        ))
+                        .execute(connection)
+                        .await?
+                        == 0
+                {
+                    return Ok(None);
+                }
+                users::table
+                    .find(user_id.as_uuid())
+                    .select(UserRow::as_select())
+                    .first::<UserRow>(connection)
+                    .await
+                    .optional()
+            },
+        )
+        .await
+        .map_err(map_error)?;
+        row.map(IdentityUser::try_from)
+            .transpose()
+            .map_err(|error| RepositoryError::Consistency(error.0))
+    }
     pub async fn subject_claims_by_id(
         &self,
         tenant: TenantContext,
@@ -57,6 +287,15 @@ impl UserRepository {
             .map(identity::subject_claims)
             .transpose()
             .map_err(|error| RepositoryError::Consistency(error.0))
+    }
+}
+fn map_error(error: diesel::result::Error) -> RepositoryError {
+    match error {
+        diesel::result::Error::DatabaseError(
+            diesel::result::DatabaseErrorKind::UniqueViolation,
+            _,
+        ) => RepositoryError::Conflict,
+        other => RepositoryError::Unexpected(other.to_string()),
     }
 }
 impl UserRepositoryPort for UserRepository {

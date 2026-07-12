@@ -76,7 +76,7 @@ impl LiveProfileAccessRequestFixture {
         })
     }
 
-    async fn create_user(&self, suffix: &str) -> UserRow {
+    async fn create_user(&self, suffix: &str) -> DatabaseUserFixture {
         let email = format!("access-request-{suffix}@example.com");
         let username = format!("access-request-{suffix}");
         let mut conn = get_conn(&self.state.diesel_db)
@@ -97,12 +97,12 @@ impl LiveProfileAccessRequestFixture {
         .bind::<SqlUuid, _>(DEFAULT_ORGANIZATION_ID)
         .bind::<Text, _>(username)
         .bind::<Text, _>(email)
-        .get_result::<UserRow>(&mut conn)
+        .get_result::<DatabaseUserFixture>(&mut conn)
         .await
         .expect("test user should insert")
     }
 
-    async fn store_session(&self, user: &UserRow, sid: &str) {
+    async fn store_session(&self, user: &DatabaseUserFixture, sid: &str) {
         let payload = SessionPayload {
             user_id: user.id,
             auth_time: Utc::now().timestamp(),

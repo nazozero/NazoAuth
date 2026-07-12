@@ -1,15 +1,19 @@
 use crate::{
-    DbPool, convert::identity, rows::identity::ExternalIdentityLinkRow,
-    schema::external_identity_links,
+    DbPool,
+    convert::identity,
+    rows::identity::{ExternalIdentityLinkRow, UserRow},
+    schema::{external_identity_links, users},
 };
 use diesel::{
-    ExpressionMethods, QueryDsl, SelectableHelper,
+    ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper,
     result::{DatabaseErrorKind, Error},
 };
-use diesel_async::RunQueryDsl;
+use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_identity::{
-    TenantId, UserId,
-    ports::{FederationLink, NewFederationLink, RepositoryError},
+    IdentityUser, TenantId, UserId,
+    ports::{
+        FederationLink, FederationLogin, NewFederatedIdentity, NewFederationLink, RepositoryError,
+    },
 };
 
 #[derive(Clone)]
@@ -64,6 +68,126 @@ impl FederationRepository {
             .map(identity::federation_link)
             .collect::<Result<Vec<_>, _>>()
             .map_err(|error| RepositoryError::Consistency(error.0))
+    }
+    pub async fn delete(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        link_id: uuid::Uuid,
+    ) -> Result<Option<FederationLink>, RepositoryError> {
+        let mut connection = self
+            .pool
+            .get()
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
+        diesel::delete(
+            external_identity_links::table
+                .find(link_id)
+                .filter(external_identity_links::tenant_id.eq(tenant_id.as_uuid()))
+                .filter(external_identity_links::user_id.eq(user_id.as_uuid())),
+        )
+        .returning(ExternalIdentityLinkRow::as_returning())
+        .get_result(&mut connection)
+        .await
+        .optional()
+        .map_err(map_error)?
+        .map(identity::federation_link)
+        .transpose()
+        .map_err(|error| RepositoryError::Consistency(error.0))
+    }
+    pub async fn resolve_existing(
+        &self,
+        login: FederationLogin,
+    ) -> Result<Option<IdentityUser>, RepositoryError> {
+        let mut connection = self
+            .pool
+            .get()
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
+        connection
+            .transaction::<_, diesel::result::Error, _>(async move |connection| {
+                let link = external_identity_links::table
+                    .filter(external_identity_links::tenant_id.eq(login.tenant.tenant_id.as_uuid()))
+                    .filter(external_identity_links::provider_type.eq(&login.provider_type))
+                    .filter(external_identity_links::provider_id.eq(&login.provider_id))
+                    .filter(external_identity_links::subject.eq(&login.subject))
+                    .select(ExternalIdentityLinkRow::as_select())
+                    .first::<ExternalIdentityLinkRow>(connection)
+                    .await
+                    .optional()?;
+                let Some(link) = link else {
+                    return Ok(None);
+                };
+                let user = users::table
+                    .find(link.user_id)
+                    .filter(users::tenant_id.eq(login.tenant.tenant_id.as_uuid()))
+                    .filter(users::is_active.eq(true))
+                    .select(UserRow::as_select())
+                    .first::<UserRow>(connection)
+                    .await?;
+                let email = login.email.unwrap_or(link.email);
+                diesel::update(external_identity_links::table.find(link.id))
+                    .set((
+                        external_identity_links::email.eq(email),
+                        external_identity_links::claims.eq(login.claims),
+                        external_identity_links::last_login_at.eq(diesel::dsl::now),
+                        external_identity_links::updated_at.eq(diesel::dsl::now),
+                    ))
+                    .execute(connection)
+                    .await?;
+                Ok(Some(user))
+            })
+            .await
+            .map_err(map_error)?
+            .map(IdentityUser::try_from)
+            .transpose()
+            .map_err(|error| RepositoryError::Consistency(error.0))
+    }
+    pub async fn create_federated(
+        &self,
+        new_identity: NewFederatedIdentity,
+    ) -> Result<IdentityUser, RepositoryError> {
+        let mut connection = self
+            .pool
+            .get()
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
+        let row = connection
+            .transaction::<_, diesel::result::Error, _>(async move |connection| {
+                let tenant = new_identity.login.tenant;
+                let user = diesel::insert_into(users::table)
+                    .values((
+                        users::tenant_id.eq(tenant.tenant_id.as_uuid()),
+                        users::realm_id.eq(tenant.realm_id.as_uuid()),
+                        users::organization_id.eq(tenant.organization_id.as_uuid()),
+                        users::username.eq(&new_identity.email),
+                        users::email.eq(&new_identity.email),
+                        users::password_hash.eq(new_identity.password_hash),
+                        users::email_verified.eq(true),
+                        users::display_name.eq(new_identity.display_name),
+                    ))
+                    .returning(UserRow::as_returning())
+                    .get_result::<UserRow>(connection)
+                    .await?;
+                diesel::insert_into(external_identity_links::table)
+                    .values((
+                        external_identity_links::tenant_id.eq(tenant.tenant_id.as_uuid()),
+                        external_identity_links::user_id.eq(user.id),
+                        external_identity_links::provider_type.eq(new_identity.login.provider_type),
+                        external_identity_links::provider_id.eq(new_identity.login.provider_id),
+                        external_identity_links::subject.eq(new_identity.login.subject),
+                        external_identity_links::email.eq(new_identity.email),
+                        external_identity_links::claims.eq(new_identity.login.claims),
+                        external_identity_links::last_login_at.eq(diesel::dsl::now),
+                    ))
+                    .execute(connection)
+                    .await?;
+                Ok(user)
+            })
+            .await
+            .map_err(map_error)?;
+        row.try_into()
+            .map_err(|error: identity::ConversionError| RepositoryError::Consistency(error.0))
     }
 }
 fn map_error(error: Error) -> RepositoryError {

@@ -1,10 +1,17 @@
 //! 领域类型聚合模块。
 // 每个子模块只描述一种领域概念，本模块只负责向 crate 内部 re-export。
+#[cfg(test)]
+#[path = "../../tests/in_source/src/domain/database_user_fixture.rs"]
+mod database_user_fixture;
 mod oauth;
 mod rows;
 mod state;
 mod status;
 
+#[cfg(test)]
+pub(crate) use database_user_fixture::{
+    DatabaseExternalIdentityFixture, DatabasePasskeyFixture, DatabaseUserFixture,
+};
 pub(crate) use nazo_key_management::KeySnapshot;
 pub(crate) use oauth::*;
 pub(crate) use rows::*;

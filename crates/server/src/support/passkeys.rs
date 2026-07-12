@@ -33,10 +33,10 @@ pub(crate) fn passkey_webauthn(settings: &Settings) -> Webauthn {
     .strict_base64(settings.passkey.strict_base64)
 }
 
-pub(crate) fn passkey_user_handle(user: &UserRow) -> anyhow::Result<Vec<u8>> {
-    let tenant_id = nazo_identity::TenantId::new(user.tenant_id)
+pub(crate) fn passkey_user_handle(user: &IdentityUser) -> anyhow::Result<Vec<u8>> {
+    let tenant_id = nazo_identity::TenantId::new(user.tenant_id())
         .map_err(|error| anyhow::anyhow!("invalid persisted passkey tenant ID: {error}"))?;
-    let user_id = nazo_identity::UserId::new(user.id)
+    let user_id = nazo_identity::UserId::new(user.id())
         .map_err(|error| anyhow::anyhow!("invalid persisted passkey user ID: {error}"))?;
     Ok(nazo_identity::passkey::passkey_user_handle(
         tenant_id, user_id,
@@ -54,7 +54,7 @@ pub(crate) fn normalize_passkey_label(value: Option<String>) -> Result<String, H
 }
 
 pub(crate) fn passkey_credential_from_row(
-    row: &PasskeyCredentialRow,
+    row: &nazo_identity::ports::PasskeyCredential,
 ) -> anyhow::Result<PasskeyCredential> {
     Ok(serde_json::from_value::<PasskeyCredential>(
         row.credential.clone(),
@@ -66,14 +66,14 @@ pub(crate) fn passkey_credential_id(credential: &PasskeyCredential) -> String {
 }
 
 pub(crate) fn passkey_credential_ids(
-    rows: &[PasskeyCredentialRow],
+    rows: &[nazo_identity::ports::PasskeyCredential],
 ) -> anyhow::Result<Vec<CredentialId>> {
     rows.iter()
         .map(|row| passkey_credential_from_row(row).map(|credential| credential.id))
         .collect()
 }
 
-pub(crate) fn passkey_public_json(row: &PasskeyCredentialRow) -> Value {
+pub(crate) fn passkey_public_json(row: &nazo_identity::ports::PasskeyCredential) -> Value {
     json!({
         "id": row.id,
         "label": row.label,

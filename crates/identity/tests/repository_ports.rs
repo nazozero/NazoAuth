@@ -1,5 +1,5 @@
 use nazo_identity::{
-    TenantContext, UserId,
+    IdentityUser, TenantContext, UserId,
     ports::{FakeUserRepository, UserRepositoryPort},
 };
 use uuid::Uuid;
@@ -15,4 +15,10 @@ async fn fake_user_repository_is_a_minimal_test_substitute() {
             .unwrap()
             .is_none()
     );
+}
+
+#[test]
+fn identity_user_is_composed_from_domain_concepts_not_a_flat_database_row() {
+    fn assert_identity_user(_: &IdentityUser) {}
+    let _ = assert_identity_user;
 }

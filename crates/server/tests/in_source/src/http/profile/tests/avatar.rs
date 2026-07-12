@@ -169,7 +169,7 @@ impl LiveAvatarFixture {
         })
     }
 
-    async fn create_user(&self, suffix: &str, avatar_url: Option<&str>) -> UserRow {
+    async fn create_user(&self, suffix: &str, avatar_url: Option<&str>) -> DatabaseUserFixture {
         let email = format!("avatar-{suffix}@example.com");
         let username = format!("avatar-{suffix}");
         let mut conn = get_conn(&self.state.diesel_db)
@@ -192,12 +192,12 @@ impl LiveAvatarFixture {
         .bind::<Text, _>(email)
         .bind::<Bool, _>(true)
         .bind::<Nullable<Text>, _>(avatar_url.map(str::to_owned))
-        .get_result::<UserRow>(&mut conn)
+        .get_result::<DatabaseUserFixture>(&mut conn)
         .await
         .expect("test user should insert")
     }
 
-    async fn store_session(&self, user: &UserRow, sid: &str) {
+    async fn store_session(&self, user: &DatabaseUserFixture, sid: &str) {
         let payload = SessionPayload {
             user_id: user.id,
             auth_time: Utc::now().timestamp(),
@@ -219,7 +219,7 @@ impl LiveAvatarFixture {
         request_with_session_and_csrf(&self.state, sid, csrf)
     }
 
-    async fn set_avatar_url(&self, user: &UserRow, avatar_url: Option<&str>) {
+    async fn set_avatar_url(&self, user: &DatabaseUserFixture, avatar_url: Option<&str>) {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
@@ -230,14 +230,14 @@ impl LiveAvatarFixture {
             .expect("avatar url should update");
     }
 
-    async fn fresh_user(&self, user_id: Uuid) -> UserRow {
+    async fn fresh_user(&self, user_id: Uuid) -> DatabaseUserFixture {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
         users::table
             .find(user_id)
-            .select(UserRow::as_select())
-            .first::<UserRow>(&mut conn)
+            .select(DatabaseUserFixture::as_select())
+            .first::<DatabaseUserFixture>(&mut conn)
             .await
             .expect("user should reload")
     }

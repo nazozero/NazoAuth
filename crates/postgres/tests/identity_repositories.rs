@@ -175,7 +175,7 @@ async fn scim_replace_returns_domain_claims_from_one_transaction() {
     let Some((pool, tenant, user_id)) = database_fixture().await else {
         return;
     };
-    let claims = ScimRepository::new(pool.clone())
+    let user = ScimRepository::new(pool.clone())
         .replace(
             tenant,
             user_id,
@@ -190,8 +190,8 @@ async fn scim_replace_returns_domain_claims_from_one_transaction() {
         )
         .await
         .unwrap();
-    assert_eq!(claims.subject, user_id);
-    assert_eq!(claims.preferred_username, "replacement");
+    assert_eq!(user.user_id(), user_id);
+    assert_eq!(user.login.username, "replacement");
     cleanup(&pool, user_id).await;
 }
 
@@ -214,4 +214,47 @@ fn server_mfa_verification_does_not_query_migrated_tables_directly() {
     .expect("server MFA support source is readable");
     assert!(!source.contains("user_totp_credentials"));
     assert!(!source.contains("user_mfa_backup_codes"));
+}
+
+#[test]
+fn server_has_no_identity_rows_or_identity_diesel_queries() {
+    const FORBIDDEN: &[&str] = &[
+        "UserRow",
+        "PasskeyCredentialRow",
+        "ExternalIdentityLinkRow",
+        "users::",
+        "user_totp_credentials::",
+        "user_mfa_backup_codes::",
+        "user_mfa_remembered_devices::",
+        "user_passkey_credentials::",
+        "external_identity_links::",
+    ];
+
+    fn visit(path: &std::path::Path, violations: &mut Vec<String>) {
+        for entry in std::fs::read_dir(path).expect("server source directory is readable") {
+            let entry = entry.expect("server source entry is readable");
+            let path = entry.path();
+            if path.is_dir() {
+                visit(&path, violations);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                let source = std::fs::read_to_string(&path).expect("server source is UTF-8");
+                for forbidden in FORBIDDEN {
+                    if source.contains(forbidden) {
+                        violations.push(format!("{} contains {forbidden}", path.display()));
+                    }
+                }
+            }
+        }
+    }
+
+    let mut violations = Vec::new();
+    visit(
+        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src"),
+        &mut violations,
+    );
+    assert!(
+        violations.is_empty(),
+        "server identity persistence leaked outside nazo-postgres:\n{}",
+        violations.join("\n")
+    );
 }

@@ -14,9 +14,9 @@ use std::time::Duration as StdDuration;
 use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
 
-fn user_row() -> UserRow {
+fn user_row() -> IdentityUser {
     let now = Utc::now();
-    UserRow {
+    DatabaseUserFixture {
         id: Uuid::now_v7(),
         tenant_id: Uuid::now_v7(),
         realm_id: Uuid::now_v7(),
@@ -52,6 +52,7 @@ fn user_row() -> UserRow {
         created_at: now,
         updated_at: now,
     }
+    .identity()
 }
 
 fn unavailable_valkey_client() -> fred::prelude::Client {
@@ -137,7 +138,7 @@ impl LiveAdminUsersFixture {
         })
     }
 
-    async fn create_user(&self, suffix: &str, role: &str, admin_level: i32) -> UserRow {
+    async fn create_user(&self, suffix: &str, role: &str, admin_level: i32) -> DatabaseUserFixture {
         let email = format!("admin-users-{suffix}@example.com");
         let username = format!("admin-users-{suffix}");
         let mut conn = get_conn(&self.state.diesel_db)
@@ -160,12 +161,12 @@ impl LiveAdminUsersFixture {
         .bind::<Text, _>(email)
         .bind::<Text, _>(role.to_owned())
         .bind::<Int4, _>(admin_level)
-        .get_result::<UserRow>(&mut conn)
+        .get_result::<DatabaseUserFixture>(&mut conn)
         .await
         .expect("test user should insert")
     }
 
-    async fn store_session(&self, user: &UserRow, sid: &str) {
+    async fn store_session(&self, user: &DatabaseUserFixture, sid: &str) {
         let payload = SessionPayload {
             user_id: user.id,
             auth_time: Utc::now().timestamp(),
@@ -208,14 +209,14 @@ impl LiveAdminUsersFixture {
             .to_http_request()
     }
 
-    async fn load_user(&self, user_id: Uuid) -> UserRow {
+    async fn load_user(&self, user_id: Uuid) -> DatabaseUserFixture {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
         users::table
             .find(user_id)
-            .select(UserRow::as_select())
-            .first::<UserRow>(&mut conn)
+            .select(DatabaseUserFixture::as_select())
+            .first::<DatabaseUserFixture>(&mut conn)
             .await
             .expect("user should be readable")
     }

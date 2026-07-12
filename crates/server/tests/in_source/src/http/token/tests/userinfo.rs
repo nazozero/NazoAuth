@@ -433,7 +433,7 @@ fn decode_signed_userinfo(state: &AppState, client_id: &str, token: &str) -> Val
         .claims
 }
 
-async fn insert_userinfo_user(state: &Data<AppState>, active: bool) -> UserRow {
+async fn insert_userinfo_user(state: &Data<AppState>, active: bool) -> DatabaseUserFixture {
     let suffix = Uuid::now_v7();
     let mut conn = get_conn(&state.diesel_db)
         .await
@@ -454,7 +454,7 @@ async fn insert_userinfo_user(state: &Data<AppState>, active: bool) -> UserRow {
     .bind::<Text, _>(format!("userinfo-{suffix}"))
     .bind::<Text, _>(format!("userinfo-{suffix}@example.com"))
     .bind::<Bool, _>(active)
-    .get_result::<UserRow>(&mut conn)
+    .get_result::<DatabaseUserFixture>(&mut conn)
     .await
     .expect("test user insert should succeed")
 }
@@ -529,7 +529,7 @@ async fn userinfo_error_for_token(
 
 async fn userinfo_response_for_active_user(
     state: Data<AppState>,
-    user: &UserRow,
+    user: &DatabaseUserFixture,
     client_id: &str,
 ) -> HttpResponse {
     let token = make_jwt(

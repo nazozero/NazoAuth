@@ -395,7 +395,7 @@ async fn login_json_request_returns_session_payload_for_remembered_mfa_device() 
     let remember_request = actix_web::test::TestRequest::default()
         .insert_header((header::USER_AGENT, "unit-test-agent"))
         .to_http_request();
-    let remember_token = remember_mfa_device(&fixture.state, &remember_request, &user)
+    let remember_token = remember_mfa_device(&fixture.state, &remember_request, &user.identity())
         .await
         .expect("remembered device token should be generated");
     let req = actix_web::test::TestRequest::default()
@@ -693,7 +693,7 @@ impl LiveLoginFixture {
         password: &str,
         is_active: bool,
         mfa_enabled: bool,
-    ) -> UserRow {
+    ) -> DatabaseUserFixture {
         let unique = Uuid::now_v7().simple().to_string();
         let username = format!("login-{suffix}-{unique}");
         let email = unique_test_email(email, &unique);
@@ -720,7 +720,7 @@ impl LiveLoginFixture {
         .bind::<Text, _>(password_hash)
         .bind::<Bool, _>(is_active)
         .bind::<Bool, _>(mfa_enabled)
-        .get_result::<UserRow>(&mut conn)
+        .get_result::<DatabaseUserFixture>(&mut conn)
         .await
         .expect("test user should insert")
     }

@@ -9,7 +9,7 @@ pub(crate) async fn my_access_requests(state: Data<AppState>, req: HttpRequest) 
     };
     let rows = match get_conn(&state.diesel_db).await {
         Ok(mut conn) => match client_access_requests::table
-            .filter(client_access_requests::user_id.eq(user.id))
+            .filter(client_access_requests::user_id.eq(user.id()))
             .select((
                 client_access_requests::id,
                 client_access_requests::site_name,
@@ -104,7 +104,7 @@ pub(crate) async fn create_access_request(
     };
     let row = diesel::insert_into(client_access_requests::table)
         .values((
-            client_access_requests::user_id.eq(user.id),
+            client_access_requests::user_id.eq(user.id()),
             client_access_requests::site_name.eq(payload.site_name),
             client_access_requests::site_url.eq(payload.site_url),
             client_access_requests::request_description.eq(payload.request_description),

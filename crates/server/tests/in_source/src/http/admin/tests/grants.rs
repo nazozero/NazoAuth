@@ -249,7 +249,7 @@ impl LiveAdminGrantFixture {
             .await;
     }
 
-    async fn create_user(&self, suffix: &str, role: &str, admin_level: i32) -> UserRow {
+    async fn create_user(&self, suffix: &str, role: &str, admin_level: i32) -> DatabaseUserFixture {
         let email = format!("admin-grants-{suffix}@example.com");
         let username = format!("admin-grants-{suffix}");
         let mut conn = get_conn(&self.state.diesel_db)
@@ -272,12 +272,12 @@ impl LiveAdminGrantFixture {
         .bind::<Text, _>(email)
         .bind::<Text, _>(role.to_owned())
         .bind::<Int4, _>(admin_level)
-        .get_result::<UserRow>(&mut conn)
+        .get_result::<DatabaseUserFixture>(&mut conn)
         .await
         .expect("test user should insert")
     }
 
-    async fn store_session(&self, user: &UserRow, sid: &str) {
+    async fn store_session(&self, user: &DatabaseUserFixture, sid: &str) {
         let payload = SessionPayload {
             user_id: user.id,
             auth_time: Utc::now().timestamp(),
@@ -339,7 +339,7 @@ impl LiveAdminGrantFixture {
             .expect("client should insert")
     }
 
-    async fn insert_grant(&self, user: &UserRow, client: &ClientRow) {
+    async fn insert_grant(&self, user: &DatabaseUserFixture, client: &ClientRow) {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
@@ -360,7 +360,7 @@ impl LiveAdminGrantFixture {
         .expect("user grant should insert");
     }
 
-    async fn insert_refresh_token(&self, user: &UserRow, client: &ClientRow) {
+    async fn insert_refresh_token(&self, user: &DatabaseUserFixture, client: &ClientRow) {
         let family_id = Uuid::now_v7();
         let mut conn = get_conn(&self.state.diesel_db)
             .await
@@ -390,7 +390,7 @@ impl LiveAdminGrantFixture {
         .expect("refresh token row should insert");
     }
 
-    async fn grant_count(&self, user: &UserRow, client: &ClientRow) -> i64 {
+    async fn grant_count(&self, user: &DatabaseUserFixture, client: &ClientRow) -> i64 {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
@@ -405,7 +405,11 @@ impl LiveAdminGrantFixture {
         .count
     }
 
-    async fn revoked_refresh_token_count(&self, user: &UserRow, client: &ClientRow) -> i64 {
+    async fn revoked_refresh_token_count(
+        &self,
+        user: &DatabaseUserFixture,
+        client: &ClientRow,
+    ) -> i64 {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");

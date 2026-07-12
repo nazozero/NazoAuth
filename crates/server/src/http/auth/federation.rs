@@ -482,25 +482,22 @@ async fn resolve_external_identity(
     email: &str,
     display_name: Option<&str>,
     claims: Value,
-) -> Result<UserRow, HttpResponse> {
+) -> Result<IdentityUser, HttpResponse> {
     let tenant = default_tenant_context();
-    let mut conn = get_conn(&state.diesel_db).await.map_err(|error| {
-        tracing::warn!(%error, "failed to get database connection for federation login");
-        oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "federation login failed.",
-        )
-    })?;
-    if let Some(link) = external_identity_links::table
-        .filter(external_identity_links::tenant_id.eq(tenant.tenant_id))
-        .filter(external_identity_links::provider_type.eq(provider_type))
-        .filter(external_identity_links::provider_id.eq(provider_id))
-        .filter(external_identity_links::subject.eq(subject))
-        .select(ExternalIdentityLinkRow::as_select())
-        .first::<ExternalIdentityLinkRow>(&mut conn)
+    let identity_tenant = tenant
+        .as_identity_context()
+        .expect("default tenant IDs are valid");
+    let repository = nazo_postgres::FederationRepository::new(state.diesel_db.clone());
+    if let Some(user) = repository
+        .resolve_existing(nazo_identity::ports::FederationLogin {
+            tenant: identity_tenant,
+            provider_type: provider_type.into(),
+            provider_id: provider_id.into(),
+            subject: subject.into(),
+            email: Some(email.into()),
+            claims: claims.clone(),
+        })
         .await
-        .optional()
         .map_err(|error| {
             tracing::warn!(%error, "failed to query external identity link");
             oauth_error(
@@ -510,30 +507,6 @@ async fn resolve_external_identity(
             )
         })?
     {
-        let user = users::table
-            .find(link.user_id)
-            .filter(users::tenant_id.eq(tenant.tenant_id))
-            .filter(users::is_active.eq(true))
-            .select(UserRow::as_select())
-            .first::<UserRow>(&mut conn)
-            .await
-            .map_err(|error| {
-                tracing::warn!(%error, link_id = %link.id, "linked federation user is unavailable");
-                oauth_error(
-                    StatusCode::UNAUTHORIZED,
-                    "access_denied",
-                    "federation login failed.",
-                )
-            })?;
-        let _ = diesel::update(external_identity_links::table.find(link.id))
-            .set((
-                external_identity_links::email.eq(email),
-                external_identity_links::claims.eq(claims),
-                external_identity_links::last_login_at.eq(Utc::now()),
-                external_identity_links::updated_at.eq(diesel_now),
-            ))
-            .execute(&mut conn)
-            .await;
         return Ok(user);
     }
     let user = match find_user_by_email(&state.diesel_db, email).await {
@@ -555,7 +528,39 @@ async fn resolve_external_identity(
                 "federation login failed.",
             ));
         }
-        Ok(None) => create_federated_user(&mut conn, &tenant, email, display_name).await?,
+        Ok(None) => {
+            let password_hash = hash_password(&random_urlsafe_token()).map_err(|error| {
+                tracing::warn!(%error, "failed to hash federated user bootstrap password");
+                oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "federation login failed.",
+                )
+            })?;
+            repository
+                .create_federated(nazo_identity::ports::NewFederatedIdentity {
+                    login: nazo_identity::ports::FederationLogin {
+                        tenant: identity_tenant,
+                        provider_type: provider_type.into(),
+                        provider_id: provider_id.into(),
+                        subject: subject.into(),
+                        email: Some(email.into()),
+                        claims,
+                    },
+                    email: email.into(),
+                    display_name: display_name.map(str::to_owned),
+                    password_hash,
+                })
+                .await
+                .map_err(|error| {
+                    tracing::warn!(%error, "failed to create federated user and link");
+                    oauth_error(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "server_error",
+                        "federation login failed.",
+                    )
+                })?
+        }
         Err(error) => {
             tracing::warn!(%error, "failed to query federation user by email");
             return Err(oauth_error(
@@ -565,31 +570,10 @@ async fn resolve_external_identity(
             ));
         }
     };
-    diesel::insert_into(external_identity_links::table)
-        .values((
-            external_identity_links::tenant_id.eq(user.tenant_id),
-            external_identity_links::user_id.eq(user.id),
-            external_identity_links::provider_type.eq(provider_type),
-            external_identity_links::provider_id.eq(provider_id),
-            external_identity_links::subject.eq(subject),
-            external_identity_links::email.eq(email),
-            external_identity_links::claims.eq(claims),
-            external_identity_links::last_login_at.eq(Utc::now()),
-        ))
-        .execute(&mut conn)
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, user_id = %user.id, "failed to insert external identity link");
-            oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "federation login failed.",
-            )
-        })?;
     audit_event(
         "external_identity_linked",
         audit_fields(&[
-            ("user_id", json!(user.id)),
+            ("user_id", json!(user.id())),
             ("provider_type", json!(provider_type)),
             ("provider_id", json!(provider_id)),
         ]),
@@ -603,94 +587,24 @@ async fn resolve_existing_external_identity(
     provider_id: &str,
     subject: &str,
     claims: Value,
-) -> Result<Option<UserRow>, HttpResponse> {
+) -> Result<Option<IdentityUser>, HttpResponse> {
     // QQ/微信这类 social provider 可能不返回 email。此时只能使用已有
     // external_identity_links 绑定登录，不能创建新用户或按 email 自动关联。
     let tenant = default_tenant_context();
-    let mut conn = get_conn(&state.diesel_db).await.map_err(|error| {
-        tracing::warn!(%error, "failed to get database connection for existing federation link");
-        oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "federation login failed.",
-        )
-    })?;
-    let Some(link) = external_identity_links::table
-        .filter(external_identity_links::tenant_id.eq(tenant.tenant_id))
-        .filter(external_identity_links::provider_type.eq(provider_type))
-        .filter(external_identity_links::provider_id.eq(provider_id))
-        .filter(external_identity_links::subject.eq(subject))
-        .select(ExternalIdentityLinkRow::as_select())
-        .first::<ExternalIdentityLinkRow>(&mut conn)
+    nazo_postgres::FederationRepository::new(state.diesel_db.clone())
+        .resolve_existing(nazo_identity::ports::FederationLogin {
+            tenant: tenant
+                .as_identity_context()
+                .expect("default tenant IDs are valid"),
+            provider_type: provider_type.into(),
+            provider_id: provider_id.into(),
+            subject: subject.into(),
+            email: None,
+            claims,
+        })
         .await
-        .optional()
         .map_err(|error| {
             tracing::warn!(%error, "failed to query existing external identity link");
-            oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "federation login failed.",
-            )
-        })?
-    else {
-        return Ok(None);
-    };
-    let user = users::table
-        .find(link.user_id)
-        .filter(users::tenant_id.eq(tenant.tenant_id))
-        .filter(users::is_active.eq(true))
-        .select(UserRow::as_select())
-        .first::<UserRow>(&mut conn)
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, link_id = %link.id, "linked social federation user is unavailable");
-            oauth_error(
-                StatusCode::UNAUTHORIZED,
-                "access_denied",
-                "federation login failed.",
-            )
-        })?;
-    let _ = diesel::update(external_identity_links::table.find(link.id))
-        .set((
-            external_identity_links::claims.eq(claims),
-            external_identity_links::last_login_at.eq(Utc::now()),
-            external_identity_links::updated_at.eq(diesel_now),
-        ))
-        .execute(&mut conn)
-        .await;
-    Ok(Some(user))
-}
-
-async fn create_federated_user(
-    conn: &mut nazo_postgres::DbConnection,
-    tenant: &TenantContext,
-    email: &str,
-    display_name: Option<&str>,
-) -> Result<UserRow, HttpResponse> {
-    let password_hash = hash_password(&random_urlsafe_token()).map_err(|error| {
-        tracing::warn!(%error, "failed to hash federated user bootstrap password");
-        oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "federation login failed.",
-        )
-    })?;
-    diesel::insert_into(users::table)
-        .values((
-            users::tenant_id.eq(tenant.tenant_id),
-            users::realm_id.eq(tenant.realm_id),
-            users::organization_id.eq(tenant.organization_id),
-            users::username.eq(email),
-            users::email.eq(email),
-            users::password_hash.eq(password_hash),
-            users::email_verified.eq(true),
-            users::display_name.eq(display_name),
-        ))
-        .returning(UserRow::as_returning())
-        .get_result::<UserRow>(conn)
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to create federated user");
             oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -706,13 +620,13 @@ fn normalize_federation_token(value: &str) -> Option<String> {
 async fn create_federated_session(
     state: &AppState,
     req: &HttpRequest,
-    user: &UserRow,
+    user: &IdentityUser,
     method: &str,
 ) -> HttpResponse {
     let session_id = random_urlsafe_token();
     let csrf_token = random_urlsafe_token();
     let session = SessionPayload {
-        user_id: user.id,
+        user_id: user.id(),
         auth_time: Utc::now().timestamp(),
         amr: vec![method.to_owned(), "federated".to_owned()],
         pending_mfa: false,
@@ -747,7 +661,7 @@ async fn create_federated_session(
     audit_event(
         "federation_login_success",
         audit_fields(&[
-            ("user_id", json!(user.id)),
+            ("user_id", json!(user.id())),
             ("method", json!(method)),
             (
                 "source_ip_hash",

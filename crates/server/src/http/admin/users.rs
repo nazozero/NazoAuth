@@ -1,7 +1,6 @@
 //! 管理端用户账户接口。
 // 只处理用户列表与用户状态更新，不包含客户端或授权关系逻辑。
 use crate::http::prelude::*;
-use diesel_async::AsyncConnection;
 
 pub(crate) async fn admin_users(
     state: Data<AppState>,
@@ -12,43 +11,11 @@ pub(crate) async fn admin_users(
         return response;
     }
     let (page, page_size, offset) = pagination(&q);
-    let (total, user_rows) = match get_conn(&state.diesel_db).await {
-        Ok(mut conn) => {
-            let total = match users::table
-                .select(count_star())
-                .first::<i64>(&mut conn)
-                .await
-            {
-                Ok(total) => total,
-                Err(error) => {
-                    tracing::warn!(%error, "failed to count users");
-                    return oauth_error(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "server_error",
-                        "用户列表查询失败.",
-                    );
-                }
-            };
-            let rows = match users::table
-                .select(UserRow::as_select())
-                .order(users::created_at.desc())
-                .limit(page_size as i64)
-                .offset(offset as i64)
-                .load::<UserRow>(&mut conn)
-                .await
-            {
-                Ok(rows) => rows,
-                Err(error) => {
-                    tracing::warn!(%error, "failed to load users");
-                    return oauth_error(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "server_error",
-                        "用户列表查询失败.",
-                    );
-                }
-            };
-            (total, rows)
-        }
+    let (total, user_rows) = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
+        .page(page_size as i64, offset as i64)
+        .await
+    {
+        Ok(page) => (page.total, page.users),
         Err(error) => {
             tracing::warn!(%error, "failed to get database connection for user list");
             return oauth_error(
@@ -65,7 +32,7 @@ fn admin_users_list_response(
     page: i32,
     page_size: i32,
     total: i64,
-    user_rows: Vec<UserRow>,
+    user_rows: Vec<IdentityUser>,
 ) -> HttpResponse {
     let items: Vec<Value> = user_rows.into_iter().map(admin_user_json).collect();
     json_response(json!({"total": total, "page": page, "page_size": page_size, "items": items}))
@@ -94,59 +61,15 @@ pub(crate) async fn admin_patch_user(
     if let Some(response) = patch_user_validation_error(&payload) {
         return response;
     }
-    let mut conn = match get_conn(&state.diesel_db).await {
-        Ok(conn) => conn,
-        Err(error) => {
-            tracing::warn!(%error, "failed to get database connection for user update");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "用户更新失败.",
-            );
-        }
-    };
-    let updated = match conn
-        .transaction::<Option<UserRow>, diesel::result::Error, _>(async |conn| {
-            if let Some(role) = payload.role.as_deref()
-                && diesel::update(users::table.find(user_id))
-                    .set((users::role.eq(role), users::updated_at.eq(diesel_now)))
-                    .execute(conn)
-                    .await?
-                    == 0
-            {
-                return Ok(None);
-            }
-            if let Some(admin_level) = payload.admin_level
-                && diesel::update(users::table.find(user_id))
-                    .set((
-                        users::admin_level.eq(admin_level),
-                        users::updated_at.eq(diesel_now),
-                    ))
-                    .execute(conn)
-                    .await?
-                    == 0
-            {
-                return Ok(None);
-            }
-            if let Some(is_active) = payload.is_active
-                && diesel::update(users::table.find(user_id))
-                    .set((
-                        users::is_active.eq(is_active),
-                        users::updated_at.eq(diesel_now),
-                    ))
-                    .execute(conn)
-                    .await?
-                    == 0
-            {
-                return Ok(None);
-            }
-            users::table
-                .find(user_id)
-                .select(UserRow::as_select())
-                .first::<UserRow>(conn)
-                .await
-                .optional()
-        })
+    let updated = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
+        .admin_update(
+            nazo_identity::UserId::new(user_id).expect("path UUID is non-nil"),
+            nazo_identity::ports::AdminUserUpdate {
+                role: payload.role,
+                admin_level: payload.admin_level,
+                active: payload.is_active,
+            },
+        )
         .await
     {
         Ok(updated) => updated,
@@ -164,7 +87,7 @@ pub(crate) async fn admin_patch_user(
             audit_event(
                 "admin_user_updated",
                 audit_fields(&[
-                    ("user_id", json!(user.id)),
+                    ("user_id", json!(user.id())),
                     (
                         "source_ip_hash",
                         json!(blake3_hex(&client_ip(&req, &state.settings))),

@@ -8,7 +8,7 @@ use super::tenancy::DEFAULT_TENANT_ID;
 pub(crate) async fn find_user_by_email(
     db: &DbPool,
     email: &str,
-) -> anyhow::Result<Option<UserRow>> {
+) -> anyhow::Result<Option<nazo_identity::IdentityUser>> {
     find_user_by_email_in_tenant(db, DEFAULT_TENANT_ID, email).await
 }
 
@@ -16,18 +16,18 @@ pub(crate) async fn find_user_by_email_in_tenant(
     db: &DbPool,
     tenant_id: Uuid,
     email: &str,
-) -> anyhow::Result<Option<UserRow>> {
-    let mut conn = db.get().await?;
-    Ok(users::table
-        .filter(users::tenant_id.eq(tenant_id))
-        .filter(users::email.eq(email.trim()))
-        .select(UserRow::as_select())
-        .first::<UserRow>(&mut conn)
+) -> anyhow::Result<Option<nazo_identity::IdentityUser>> {
+    let tenant_id = nazo_identity::TenantId::new(tenant_id)?;
+    nazo_postgres::UserRepository::new(db.clone())
+        .user_by_email(tenant_id, email)
         .await
-        .optional()?)
+        .map_err(|error| anyhow::anyhow!("failed to load user by email: {error:?}"))
 }
 
-pub(crate) async fn find_user_by_id(db: &DbPool, id: Uuid) -> anyhow::Result<Option<UserRow>> {
+pub(crate) async fn find_user_by_id(
+    db: &DbPool,
+    id: Uuid,
+) -> anyhow::Result<Option<nazo_identity::IdentityUser>> {
     find_user_by_id_in_tenant(db, DEFAULT_TENANT_ID, id).await
 }
 
@@ -35,15 +35,13 @@ pub(crate) async fn find_user_by_id_in_tenant(
     db: &DbPool,
     tenant_id: Uuid,
     id: Uuid,
-) -> anyhow::Result<Option<UserRow>> {
-    let mut conn = db.get().await?;
-    Ok(users::table
-        .find(id)
-        .filter(users::tenant_id.eq(tenant_id))
-        .select(UserRow::as_select())
-        .first::<UserRow>(&mut conn)
+) -> anyhow::Result<Option<nazo_identity::IdentityUser>> {
+    let tenant_id = nazo_identity::TenantId::new(tenant_id)?;
+    let user_id = nazo_identity::UserId::new(id)?;
+    nazo_postgres::UserRepository::new(db.clone())
+        .user_by_id(tenant_id, user_id)
         .await
-        .optional()?)
+        .map_err(|error| anyhow::anyhow!("failed to load user by ID: {error:?}"))
 }
 
 pub(crate) async fn find_client(db: &DbPool, client_id: &str) -> anyhow::Result<Option<ClientRow>> {

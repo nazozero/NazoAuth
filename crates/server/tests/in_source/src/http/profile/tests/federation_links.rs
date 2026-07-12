@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn federation_link_json_excludes_raw_provider_claims() {
-    let link = ExternalIdentityLinkRow {
+    let link = DatabaseExternalIdentityFixture {
         id: Uuid::now_v7(),
         tenant_id: DEFAULT_TENANT_ID,
         user_id: Uuid::now_v7(),
@@ -20,7 +20,7 @@ fn federation_link_json_excludes_raw_provider_claims() {
     };
 
     // 列表视图只返回绑定索引和展示字段；原始 claims 不进入前端响应。
-    let value = federation_link_json(link);
+    let value = federation_link_json(link.federation_link());
     assert_eq!(value["provider_id"], "google");
     assert_eq!(value["subject"], "provider-subject");
     assert!(value.get("claims").is_none());
