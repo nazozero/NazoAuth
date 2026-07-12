@@ -106,7 +106,12 @@ async fn form_login_without_trusted_origin_is_rejected_before_backend_access() {
 }
 
 fn test_login_password() -> String {
-    ["correct", "horse", "battery", "staple"].join(" ")
+    format!("test-login-{}", uuid::Uuid::now_v7())
+}
+
+#[test]
+fn generated_test_login_passwords_are_unique() {
+    assert_ne!(test_login_password(), test_login_password());
 }
 
 fn form_encoded_test_login_password() -> String {
@@ -452,6 +457,7 @@ async fn login_rejects_wrong_password_as_access_denied() {
         return;
     };
     let password = test_login_password();
+    let wrong_password = test_login_password();
     let user = fixture
         .create_user(
             "wrong-password",
@@ -466,7 +472,7 @@ async fn login_rejects_wrong_password_as_access_denied() {
         .to_http_request();
     let body = Bytes::from(format!(
         r#"{{"email":"{}","password":"{}"}}"#,
-        user.email, "wrong"
+        user.email, wrong_password
     ));
 
     let response = login(fixture.state.clone(), req, body).await;
@@ -485,6 +491,7 @@ async fn login_throttles_repeated_failures_for_same_email_and_source() {
         return;
     };
     let password = test_login_password();
+    let wrong_password = test_login_password();
     let user = fixture
         .create_user(
             "failure-throttle",
@@ -496,11 +503,11 @@ async fn login_throttles_repeated_failures_for_same_email_and_source() {
         .await;
 
     for _ in 0..2 {
-        let response = fixture.login_json(&user.email, "wrong").await;
+        let response = fixture.login_json(&user.email, &wrong_password).await;
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
-    let response = fixture.login_json(&user.email, "wrong").await;
+    let response = fixture.login_json(&user.email, &wrong_password).await;
     assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(
         response
@@ -522,6 +529,7 @@ async fn successful_login_clears_previous_failure_throttle_state() {
         return;
     };
     let password = test_login_password();
+    let wrong_password = test_login_password();
     let user = fixture
         .create_user(
             "failure-clear",
@@ -532,16 +540,16 @@ async fn successful_login_clears_previous_failure_throttle_state() {
         )
         .await;
 
-    let response = fixture.login_json(&user.email, "wrong").await;
+    let response = fixture.login_json(&user.email, &wrong_password).await;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     let response = fixture.login_json(&user.email, &password).await;
     assert_eq!(response.status(), StatusCode::OK);
 
     for _ in 0..2 {
-        let response = fixture.login_json(&user.email, "wrong").await;
+        let response = fixture.login_json(&user.email, &wrong_password).await;
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
-    let response = fixture.login_json(&user.email, "wrong").await;
+    let response = fixture.login_json(&user.email, &wrong_password).await;
     assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
 }
 
