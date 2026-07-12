@@ -1,6 +1,42 @@
 use super::*;
 
 #[test]
+fn signing_adapters_do_not_define_or_call_claim_forwarders() {
+    let server_tokens =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/support/security/tokens.rs");
+    let source = std::fs::read_to_string(&server_tokens)
+        .expect("server token adapter source must exist relative to its manifest");
+
+    for forbidden in [
+        "pub(super) fn access_token_claims(",
+        "pub(super) fn id_token_claims(",
+        "pub(super) fn backchannel_logout_token_claims(",
+        "pub(super) fn authorization_response_jwt_claims(",
+        "let claims = access_token_claims(",
+        "let claims = id_token_claims(",
+        "let claims = backchannel_logout_token_claims(",
+        "let claims = authorization_response_jwt_claims(",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "server claim forwarding boundary remains: {forbidden}"
+        );
+    }
+
+    for required in [
+        "nazo_auth::access_token_claims(",
+        "nazo_auth::id_token_claims(",
+        "nazo_auth::backchannel_logout_token_claims(",
+        "nazo_auth::authorization_response_jwt_claims(",
+    ] {
+        assert!(
+            source.contains(required),
+            "signing adapter must call public auth builder directly: {required}"
+        );
+    }
+}
+
+#[test]
 fn access_token_header_uses_active_alg_kid_and_at_jwt_type() {
     let header = access_token_header(jsonwebtoken::Algorithm::PS256, "active-kid");
 
