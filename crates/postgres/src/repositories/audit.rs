@@ -147,29 +147,44 @@ impl AuditRepository {
     pub async fn complete_backchannel_logout(
         &self,
         delivery_id: Uuid,
+        expected_attempts: i32,
     ) -> Result<(), RepositoryError> {
         let mut connection = self.connection().await?;
-        diesel::update(backchannel_logout_deliveries::table.find(delivery_id))
-            .set((
-                backchannel_logout_deliveries::delivered_at.eq(diesel::dsl::now),
-                backchannel_logout_deliveries::locked_at.eq::<Option<DateTime<Utc>>>(None),
-                backchannel_logout_deliveries::updated_at.eq(diesel::dsl::now),
-            ))
-            .execute(&mut connection)
-            .await
-            .map_err(map_error)?;
-        Ok(())
+        let updated = diesel::update(
+            backchannel_logout_deliveries::table
+                .find(delivery_id)
+                .filter(backchannel_logout_deliveries::attempts.eq(expected_attempts))
+                .filter(backchannel_logout_deliveries::locked_at.is_not_null())
+                .filter(backchannel_logout_deliveries::delivered_at.is_null())
+                .filter(backchannel_logout_deliveries::failed_at.is_null()),
+        )
+        .set((
+            backchannel_logout_deliveries::delivered_at.eq(diesel::dsl::now),
+            backchannel_logout_deliveries::locked_at.eq::<Option<DateTime<Utc>>>(None),
+            backchannel_logout_deliveries::updated_at.eq(diesel::dsl::now),
+        ))
+        .execute(&mut connection)
+        .await
+        .map_err(map_error)?;
+        require_current_logout_claim(updated)
     }
 
     pub async fn fail_backchannel_logout(
         &self,
         delivery_id: Uuid,
+        expected_attempts: i32,
         next_attempt_at: Option<DateTime<Utc>>,
         last_error: &str,
     ) -> Result<(), RepositoryError> {
         let mut connection = self.connection().await?;
-        if let Some(next_attempt_at) = next_attempt_at {
-            diesel::update(backchannel_logout_deliveries::table.find(delivery_id))
+        let target = backchannel_logout_deliveries::table
+            .find(delivery_id)
+            .filter(backchannel_logout_deliveries::attempts.eq(expected_attempts))
+            .filter(backchannel_logout_deliveries::locked_at.is_not_null())
+            .filter(backchannel_logout_deliveries::delivered_at.is_null())
+            .filter(backchannel_logout_deliveries::failed_at.is_null());
+        let updated = if let Some(next_attempt_at) = next_attempt_at {
+            diesel::update(target)
                 .set((
                     backchannel_logout_deliveries::next_attempt_at.eq(next_attempt_at),
                     backchannel_logout_deliveries::locked_at.eq::<Option<DateTime<Utc>>>(None),
@@ -178,9 +193,9 @@ impl AuditRepository {
                 ))
                 .execute(&mut connection)
                 .await
-                .map_err(map_error)?;
+                .map_err(map_error)?
         } else {
-            diesel::update(backchannel_logout_deliveries::table.find(delivery_id))
+            diesel::update(target)
                 .set((
                     backchannel_logout_deliveries::failed_at.eq(diesel::dsl::now),
                     backchannel_logout_deliveries::locked_at.eq::<Option<DateTime<Utc>>>(None),
@@ -189,9 +204,9 @@ impl AuditRepository {
                 ))
                 .execute(&mut connection)
                 .await
-                .map_err(map_error)?;
-        }
-        Ok(())
+                .map_err(map_error)?
+        };
+        require_current_logout_claim(updated)
     }
 
     async fn connection(&self) -> Result<crate::DbConnection, RepositoryError> {
@@ -199,6 +214,16 @@ impl AuditRepository {
             .get()
             .await
             .map_err(|_| RepositoryError::Unavailable)
+    }
+}
+
+fn require_current_logout_claim(updated: usize) -> Result<(), RepositoryError> {
+    if updated == 1 {
+        Ok(())
+    } else {
+        Err(RepositoryError::Consistency(
+            "backchannel logout claim is stale or already terminal".to_owned(),
+        ))
     }
 }
 

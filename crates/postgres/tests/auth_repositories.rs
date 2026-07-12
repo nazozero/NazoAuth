@@ -305,7 +305,7 @@ async fn audit_repository_records_scim_use_and_drives_logout_outbox() {
         .expect("backchannel delivery should claim");
     assert_eq!(claimed.len(), 1);
     repository
-        .complete_backchannel_logout(claimed[0].id)
+        .complete_backchannel_logout(claimed[0].id, claimed[0].attempts)
         .await
         .expect("backchannel delivery should complete");
     assert!(
@@ -363,3 +363,92 @@ fn server_auth_callers_do_not_query_diesel_or_auth_tables() {
         "server production schema must not define persistence tables"
     );
 }
+#[tokio::test]
+async fn stale_logout_worker_cannot_complete_or_fail_a_reclaimed_delivery() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let repository = AuditRepository::new(create_pool(&database_url, 4).unwrap());
+    let logout_token = format!("logout-reclaim-token-{}", Uuid::now_v7());
+    repository
+        .enqueue_backchannel_logout(
+            tenant_id,
+            fixture.client_id,
+            &format!("logout-reclaim-{}", Uuid::now_v7()),
+            "https://client.example/backchannel-logout",
+            &logout_token,
+            chrono::Utc::now() + chrono::Duration::minutes(2),
+        )
+        .await
+        .expect("delivery should enqueue");
+    let first = repository
+        .claim_due_backchannel_logout(100, 300)
+        .await
+        .expect("first worker should claim")
+        .into_iter()
+        .find(|delivery| delivery.logout_token == logout_token)
+        .expect("delivery should be due");
+    assert_eq!(first.attempts, 1);
+
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    sql_query(
+        "UPDATE backchannel_logout_deliveries SET locked_at = CURRENT_TIMESTAMP - INTERVAL '10 minutes' WHERE id = $1",
+    )
+    .bind::<SqlUuid, _>(first.id)
+    .execute(&mut connection)
+    .await
+    .expect("test should expire first claim");
+    let second = repository
+        .claim_due_backchannel_logout(100, 300)
+        .await
+        .expect("second worker should reclaim")
+        .into_iter()
+        .find(|delivery| delivery.id == first.id)
+        .expect("expired delivery should reclaim");
+    assert_eq!(second.id, first.id);
+    assert_eq!(second.attempts, 2);
+
+    let stale_complete = repository
+        .complete_backchannel_logout(first.id, first.attempts)
+        .await;
+    assert!(
+        matches!(
+            stale_complete,
+            Err(nazo_identity::ports::RepositoryError::Consistency(_))
+        ),
+        "first worker completion must be rejected after reclaim"
+    );
+    let stale_fail = repository
+        .fail_backchannel_logout(
+            first.id,
+            first.attempts,
+            Some(chrono::Utc::now() + chrono::Duration::seconds(5)),
+            "stale failure",
+        )
+        .await;
+    assert!(
+        matches!(
+            stale_fail,
+            Err(nazo_identity::ports::RepositoryError::Consistency(_))
+        ),
+        "first worker failure must be rejected after reclaim"
+    );
+
+    repository
+        .complete_backchannel_logout(second.id, second.attempts)
+        .await
+        .expect("current worker should complete");
+    let stale_after_terminal = repository
+        .fail_backchannel_logout(first.id, first.attempts, None, "late stale failure")
+        .await;
+    assert!(
+        matches!(
+            stale_after_terminal,
+            Err(nazo_identity::ports::RepositoryError::Consistency(_))
+        ),
+        "stale worker must not overwrite terminal state"
+    );
+}
+

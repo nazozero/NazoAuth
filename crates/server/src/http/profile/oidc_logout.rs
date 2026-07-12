@@ -784,10 +784,10 @@ async fn claim_due_backchannel_logout_deliveries(
 
 async fn mark_backchannel_logout_delivery_success(
     state: &AppState,
-    delivery_id: Uuid,
+    delivery: &BackchannelLogoutDelivery,
 ) -> anyhow::Result<()> {
     nazo_postgres::AuditRepository::new(state.diesel_db.clone())
-        .complete_backchannel_logout(delivery_id)
+        .complete_backchannel_logout(delivery.id, delivery.attempts)
         .await
         .map_err(|error| anyhow::anyhow!("failed to complete backchannel logout: {error}"))
 }
@@ -802,7 +802,7 @@ async fn mark_backchannel_logout_delivery_failure(
     let next_attempt_at =
         backchannel_logout_next_retry_at(delivery.attempts - 1, now, delivery.expires_at);
     nazo_postgres::AuditRepository::new(state.diesel_db.clone())
-        .fail_backchannel_logout(delivery.id, next_attempt_at, &last_error)
+        .fail_backchannel_logout(delivery.id, delivery.attempts, next_attempt_at, &last_error)
         .await
         .map_err(|error| anyhow::anyhow!("failed to update backchannel logout: {error}"))
 }
@@ -823,7 +823,7 @@ pub(crate) async fn process_backchannel_logout_delivery_batch(
     let processed = deliveries.len();
     for delivery in deliveries {
         match post_backchannel_logout(&delivery.logout_uri, &delivery.logout_token).await {
-            Ok(()) => mark_backchannel_logout_delivery_success(state, delivery.id).await?,
+            Ok(()) => mark_backchannel_logout_delivery_success(state, &delivery).await?,
             Err(error) => {
                 let error_message = error.to_string();
                 tracing::warn!(
