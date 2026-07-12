@@ -9,8 +9,8 @@ mod transition;
 pub use model::{DesiredMode, ModuleEventType, ModuleId, ModuleState};
 pub use policy::{DisablePolicy, ModuleCatalogError, ModuleSpec, validate_module_specs};
 pub use repository::{
-    CasOutcome, DesiredStateChange, DesiredStateRecord, InstanceStateChange, InstanceStateRecord,
-    ModuleEventRecord, ModuleEventState, ModuleStateRepository,
+    CasOutcome, DesiredStateChange, DesiredStateRecord, InstanceStateChange, InstanceStateMutation,
+    InstanceStateRecord, ModuleEventRecord, ModuleEventState, ModuleStateRepository,
 };
 pub use snapshot::{ActiveModuleSnapshot, SnapshotStore};
 pub use transition::{ModuleRevision, StaleTransition, TransitionGuard};

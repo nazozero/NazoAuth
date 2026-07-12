@@ -43,6 +43,17 @@ pub struct InstanceStateChange {
     pub next: InstanceStateRecord,
 }
 
+/// Revision-bound actual-state mutation and its mutually exclusive audit records.
+///
+/// Repositories must commit the state write and `applied_event` atomically. If the
+/// revision is stale, they must leave state unchanged and append only `stale_event`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InstanceStateMutation {
+    pub change: InstanceStateChange,
+    pub applied_event: ModuleEventRecord,
+    pub stale_event: ModuleEventRecord,
+}
+
 /// Typed before/after value for module audit events.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ModuleEventState {
@@ -101,15 +112,8 @@ pub trait ModuleStateRepository: Send + Sync {
 
     fn compare_and_set_instance(
         &self,
-        change: InstanceStateChange,
+        mutation: InstanceStateMutation,
     ) -> impl Future<Output = Result<CasOutcome<InstanceStateRecord>, Self::Error>> + Send;
-
-    /// Appends transition, drain, or stale-transition audit events.
-    /// Desired-state events are committed by [`Self::compare_and_set_desired`].
-    fn append_event(
-        &self,
-        event: ModuleEventRecord,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     /// Validates the bound revision against durable desired state.
     fn validate_revision(
