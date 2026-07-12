@@ -9,8 +9,10 @@ use uuid::Uuid;
 
 use crate::{
     DbPool,
-    schema::{oauth_clients, user_client_grants, users},
+    schema::{oauth_clients, oauth_tokens, user_client_grants, users},
 };
+
+use super::tokens::lock_refresh_family;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GrantProjection {
@@ -224,13 +226,24 @@ impl GrantRepository {
         let mut connection = self.connection().await?;
         connection
             .transaction::<GrantRevocation, diesel::result::Error, _>(async |connection| {
+                let family_ids = oauth_tokens::table
+                    .filter(oauth_tokens::user_id.eq(user_id))
+                    .filter(oauth_tokens::client_id.eq(client_id))
+                    .select(oauth_tokens::token_family_id)
+                    .distinct()
+                    .order(oauth_tokens::token_family_id.asc())
+                    .load::<Uuid>(connection)
+                    .await?;
+                for family_id in family_ids {
+                    lock_refresh_family(connection, family_id).await?;
+                }
                 let revoked_refresh_tokens = diesel::update(
-                    crate::schema::oauth_tokens::table
-                        .filter(crate::schema::oauth_tokens::user_id.eq(user_id))
-                        .filter(crate::schema::oauth_tokens::client_id.eq(client_id))
-                        .filter(crate::schema::oauth_tokens::revoked_at.is_null()),
+                    oauth_tokens::table
+                        .filter(oauth_tokens::user_id.eq(user_id))
+                        .filter(oauth_tokens::client_id.eq(client_id))
+                        .filter(oauth_tokens::revoked_at.is_null()),
                 )
-                .set(crate::schema::oauth_tokens::revoked_at.eq(diesel::dsl::now))
+                .set(oauth_tokens::revoked_at.eq(diesel::dsl::now))
                 .execute(connection)
                 .await?;
                 let removed_grants = diesel::delete(

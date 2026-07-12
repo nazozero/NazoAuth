@@ -9,6 +9,8 @@ use crate::{
     schema::{access_token_revocations, oauth_tokens},
 };
 
+use super::tokens::lock_refresh_family;
+
 #[derive(Clone)]
 pub struct AuthorizationRepository {
     pool: DbPool,
@@ -35,6 +37,9 @@ impl AuthorizationRepository {
             .map_err(|_| RepositoryError::Unavailable)?;
         connection
             .transaction::<(), diesel::result::Error, _>(async |connection| {
+                if let Some(family_id) = refresh_token_family_id {
+                    lock_refresh_family(connection, family_id).await?;
+                }
                 if let Some(access_token_expires_at) = access_token_expires_at {
                     diesel::insert_into(access_token_revocations::table)
                         .values((

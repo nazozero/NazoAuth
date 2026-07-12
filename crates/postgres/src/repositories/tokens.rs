@@ -52,7 +52,7 @@ impl TokenRepository {
         connection
             .transaction::<RefreshTokenPersistResult, diesel::result::Error, _>(
                 async |connection| {
-                    lock_family(connection, token.family_id).await?;
+                    lock_refresh_family(connection, token.family_id).await?;
                     if let Some(rotated_from_id) = token.rotated_from_id {
                         if let Some(retry) = token.lost_response_retry {
                             let original = load_family_token(
@@ -114,7 +114,7 @@ impl TokenRepository {
         let mut connection = self.connection().await?;
         let row = connection
             .transaction::<Option<RefreshTokenRow>, diesel::result::Error, _>(async |connection| {
-                lock_family(connection, token.token_family_id).await?;
+                lock_refresh_family(connection, token.token_family_id).await?;
                 let original = load_family_token(
                     connection,
                     token.tenant_id,
@@ -287,7 +287,7 @@ async fn load_family_token(
         .optional()
 }
 
-async fn lock_family(
+pub(super) async fn lock_refresh_family(
     connection: &mut AsyncPgConnection,
     family_id: Uuid,
 ) -> diesel::QueryResult<()> {
