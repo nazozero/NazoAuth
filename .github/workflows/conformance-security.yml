@@ -140,6 +140,8 @@ jobs:
         run: cargo run --locked --bin nazo-oauth-migrate
       - name: Test
         run: cargo test --locked --workspace --all-features --lib
+      - name: Test nazo-postgres integration and privacy contracts
+        run: cargo test -p nazo-postgres --all-features --locked
 
   supply-chain-gate:
     runs-on: ubuntu-latest

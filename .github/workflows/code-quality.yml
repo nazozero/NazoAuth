@@ -129,6 +129,9 @@ jobs:
       - name: Test with PostgreSQL and Valkey
         run: cargo test --locked --workspace --all-features --lib
 
+      - name: Test nazo-postgres integration and privacy contracts
+        run: cargo test -p nazo-postgres --all-features --locked
+
   python-quality:
     name: Python script syntax gate
     runs-on: ubuntu-latest
