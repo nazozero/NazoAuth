@@ -1,4 +1,4 @@
-use crate::db::db_pool_metrics;
+use nazo_postgres::db_pool_metrics;
 
 use super::prelude::*;
 

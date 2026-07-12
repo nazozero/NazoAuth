@@ -12,7 +12,7 @@ use fred::prelude::{
 };
 
 use crate::config::ConfigSource;
-use crate::db::create_pool;
+use nazo_postgres::create_pool;
 
 use crate::schema::{user_mfa_backup_codes, user_mfa_remembered_devices};
 

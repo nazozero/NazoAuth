@@ -2,7 +2,7 @@ use super::*;
 use std::sync::Arc;
 
 use crate::config::ConfigSource;
-use crate::db::{create_pool, get_conn};
+use nazo_postgres::{create_pool, get_conn};
 
 use crate::support::client_signing_fixture;
 use diesel::sql_query;

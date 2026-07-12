@@ -1,6 +1,6 @@
 use super::*;
 use crate::config::ConfigSource;
-use crate::db::create_pool;
+use nazo_postgres::create_pool;
 
 use crate::support::{ClientSigningFixture, client_signing_fixture};
 use std::io::{self, Write};

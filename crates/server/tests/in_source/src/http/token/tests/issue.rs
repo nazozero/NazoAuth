@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
-use crate::db::create_pool;
+use nazo_postgres::create_pool;
 
 use crate::support::client_signing_fixture;
 use fred::prelude::{Builder as ValkeyBuilder, ConnectionConfig, PerformanceConfig};

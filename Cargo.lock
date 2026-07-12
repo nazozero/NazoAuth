@@ -2184,6 +2184,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha1",
+ "tokio",
  "urlencoding",
  "uuid",
 ]
@@ -2234,6 +2235,7 @@ dependencies = [
  "nazo-http-signatures",
  "nazo-identity",
  "nazo-key-management",
+ "nazo-postgres",
  "nazo-resource-server",
  "openssl",
  "opentelemetry",
@@ -2256,6 +2258,23 @@ dependencies = [
  "urlencoding",
  "uuid",
  "yaml_serde",
+]
+
+[[package]]
+name = "nazo-postgres"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "argon2",
+ "chrono",
+ "diesel",
+ "diesel-async",
+ "diesel_migrations",
+ "nazo-identity",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

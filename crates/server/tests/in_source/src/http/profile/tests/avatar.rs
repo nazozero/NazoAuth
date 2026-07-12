@@ -16,7 +16,7 @@ use fred::prelude::{
 use futures_util::stream;
 
 use crate::config::ConfigSource;
-use crate::db::create_pool;
+use nazo_postgres::create_pool;
 
 fn build_test_state(settings: Settings) -> AppState {
     AppState {

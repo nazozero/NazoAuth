@@ -5,7 +5,7 @@ use diesel_async::RunQueryDsl;
 use std::sync::Arc;
 
 use crate::config::ConfigSource;
-use crate::db::{create_pool, get_conn};
+use nazo_postgres::{create_pool, get_conn};
 
 fn uuid_fixture(value: u128) -> Uuid {
     Uuid::from_u128(value)

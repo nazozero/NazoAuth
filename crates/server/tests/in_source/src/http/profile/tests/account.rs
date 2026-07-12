@@ -11,7 +11,7 @@ use fred::prelude::{
 };
 
 use crate::config::ConfigSource;
-use crate::db::create_pool;
+use nazo_postgres::create_pool;
 
 use crate::support::OAuthJsonErrorFields;
 

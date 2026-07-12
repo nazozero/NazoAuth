@@ -45,7 +45,6 @@ pub(crate) mod prelude {
     pub(crate) use serde_json::{Value, json};
     pub(crate) use uuid::Uuid;
 
-    pub(crate) use crate::db::get_conn;
     pub(crate) use crate::domain::{
         AccessRequestStatus, AppState, AuthorizationCodeState, ClientRow, CodePayload,
         ConsentPayload, ConsumedAuthorizationCode, ExternalIdentityLinkRow, GrantRow,
@@ -65,4 +64,5 @@ pub(crate) mod prelude {
         high_risk_authorization_details, is_valid_dpop_jkt, normalize_authorization_details,
         parse_authorization_details,
     };
+    pub(crate) use nazo_postgres::get_conn;
 }

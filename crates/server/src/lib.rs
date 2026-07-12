@@ -2,7 +2,6 @@
 
 pub mod bootstrap;
 pub mod config;
-mod db;
 mod domain;
 mod http;
 pub mod keyctl;

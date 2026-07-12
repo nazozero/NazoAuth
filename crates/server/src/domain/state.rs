@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use fred::prelude::Client as ValkeyClient;
 
-use crate::db::DbPool;
 use crate::settings::Settings;
+use nazo_postgres::DbPool;
 
 /// 每个 HTTP worker 共享的后端资源句柄。
 #[derive(Clone)]

@@ -3,7 +3,7 @@ use crate::support::{OAuthJsonErrorFields, valkey_del, valkey_eval_string, valke
 use std::sync::Arc;
 
 use crate::config::ConfigSource;
-use crate::db::create_pool;
+use nazo_postgres::create_pool;
 
 use actix_web::test::TestRequest;
 use fred::interfaces::ClientLike;

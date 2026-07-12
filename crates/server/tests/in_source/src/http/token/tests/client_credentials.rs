@@ -2,7 +2,7 @@ use super::*;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::db::create_pool;
+use nazo_postgres::create_pool;
 
 use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, PasskeySettings,

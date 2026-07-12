@@ -2,7 +2,7 @@ use super::*;
 use std::{sync::Arc, time::Duration as StdDuration};
 
 use crate::config::ConfigSource;
-use crate::db::create_pool;
+use nazo_postgres::create_pool;
 
 use diesel::sql_query;
 use diesel::sql_types::{Text, Uuid as SqlUuid};

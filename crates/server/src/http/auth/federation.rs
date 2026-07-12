@@ -662,7 +662,7 @@ async fn resolve_existing_external_identity(
 }
 
 async fn create_federated_user(
-    conn: &mut crate::db::DbConnection,
+    conn: &mut nazo_postgres::DbConnection,
     tenant: &TenantContext,
     email: &str,
     display_name: Option<&str>,
