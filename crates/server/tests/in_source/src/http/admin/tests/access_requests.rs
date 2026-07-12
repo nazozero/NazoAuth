@@ -1273,12 +1273,31 @@ async fn approve_access_request_rolls_back_when_status_write_fails_after_client_
         .expect("staged delivery payload should remain after denied cleanup");
     let orphan: Value = serde_json::from_str(&orphan).expect("staged payload should be JSON");
     assert_eq!(orphan["delivery_state"], "staged");
-    let _: i64 = fixture
+    let delivery_token = orphan_keys[0]
+        .rsplit(':')
+        .next()
+        .expect("delivery key contains token")
+        .to_owned();
+    let applicant_sid = format!("applicant-write-{}", Uuid::now_v7().simple());
+    fixture.store_session(&applicant, &applicant_sid).await;
+    let delivery_request = fixture.admin_get_request(
+        &applicant_sid,
+        &format!("/profile/access-delivery?token={delivery_token}"),
+    );
+    let delivery = crate::http::profile::access_delivery(
+        fixture.state.clone(),
+        delivery_request,
+        Query(HashMap::from([("token".to_owned(), delivery_token)])),
+    )
+    .await;
+    assert_eq!(delivery.status(), StatusCode::NOT_FOUND);
+    let removed: Option<String> = fixture
         .state
         .valkey
-        .del(orphan_keys)
+        .get(&orphan_keys[0])
         .await
-        .expect("test cleanup should remove staged delivery payload");
+        .expect("staged delivery cleanup read should succeed");
+    assert!(removed.is_none());
     fixture.delete_acl_user(&acl_user).await;
     fixture.cleanup().await;
     let (status, body) = json_body(response).await;
