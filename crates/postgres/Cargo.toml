@@ -18,6 +18,7 @@ nazo-auth = { version = "0.1.0", path = "../auth" }
 nazo-runtime-modules = { version = "0.1.0", path = "../runtime-modules" }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
+tokio = { version = "1.52.3", features = ["rt"] }
 uuid = { version = "1.23.4", features = ["v7", "serde"] }
 
 [dev-dependencies]
