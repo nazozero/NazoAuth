@@ -639,6 +639,12 @@ fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
             < delivery.find("valkey_getdel").unwrap(),
         "delivery linkage must be validated before one-time consumption"
     );
+    assert!(profile.contains(".mget(keys)"));
+    assert!(!profile.contains("KEYS"));
+    assert!(!profile.contains("SCAN"));
+    assert!(profile.contains("delivery_payload_matches"));
+    assert!(profile.contains("delivery_token"));
+    assert!(!admin.contains("\"delivery_token\""));
 }
 
 #[test]

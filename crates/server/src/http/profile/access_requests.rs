@@ -1,6 +1,7 @@
 //! 当前用户客户端接入申请接口。
 // 只处理用户侧申请列表和新建申请。
 use crate::http::prelude::*;
+use fred::interfaces::KeysInterface;
 
 pub(crate) async fn my_access_requests(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
     let user = match current_user_or_login_required(&state, &req).await {
@@ -21,11 +22,73 @@ pub(crate) async fn my_access_requests(state: Data<AppState>, req: HttpRequest) 
             );
         }
     };
-    my_access_requests_response(rows)
+    match my_access_requests_response_with_delivery(&state, rows).await {
+        Ok(response) => response,
+        Err(error) => {
+            tracing::warn!(%error, "failed to resolve access-request delivery link");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "接入申请交付状态查询失败.",
+            )
+        }
+    }
 }
 
+async fn my_access_requests_response_with_delivery(
+    state: &AppState,
+    rows: Vec<nazo_identity::AccessRequest>,
+) -> anyhow::Result<HttpResponse> {
+    const DELIVERY_LOOKUP_BATCH_SIZE: usize = 128;
+    let candidates = rows
+        .iter()
+        .filter_map(|row| delivery_candidate(state, row))
+        .collect::<Vec<_>>();
+    let mut deliveries = HashMap::with_capacity(candidates.len());
+    for batch in candidates.chunks(DELIVERY_LOOKUP_BATCH_SIZE) {
+        let keys = batch
+            .iter()
+            .map(|candidate| candidate.key.as_str())
+            .collect::<Vec<_>>();
+        let payloads: Vec<Option<String>> = state.valkey.mget(keys).await?;
+        for (candidate, raw) in batch.iter().zip(payloads) {
+            if let Some(raw) = raw
+                && delivery_payload_matches(candidate, &raw)
+            {
+                deliveries.insert(
+                    candidate.request_id,
+                    AvailableDelivery {
+                        token: candidate.token.clone(),
+                        url: format!(
+                            "{}/delivery?token={}",
+                            state.settings.frontend_base_url.trim_end_matches('/'),
+                            candidate.token
+                        ),
+                    },
+                );
+            }
+        }
+    }
+    let items = rows
+        .into_iter()
+        .map(|row| {
+            let delivery = deliveries.remove(&row.id);
+            user_access_request_json(row, delivery)
+        })
+        .collect();
+    Ok(access_request_items_response(items))
+}
+
+#[cfg(test)]
 fn my_access_requests_response(rows: Vec<nazo_identity::AccessRequest>) -> HttpResponse {
-    let items: Vec<Value> = rows.into_iter().map(user_access_request_json).collect();
+    let items: Vec<Value> = rows
+        .into_iter()
+        .map(|row| user_access_request_json(row, None))
+        .collect();
+    access_request_items_response(items)
+}
+
+fn access_request_items_response(items: Vec<Value>) -> HttpResponse {
     let pending_count = items
         .iter()
         .filter(|item| {
@@ -36,8 +99,60 @@ fn my_access_requests_response(rows: Vec<nazo_identity::AccessRequest>) -> HttpR
     json_response(json!({"total": items.len(), "pending_count": pending_count, "items": items}))
 }
 
-fn user_access_request_json(row: nazo_identity::AccessRequest) -> Value {
-    json!({
+struct AvailableDelivery {
+    token: String,
+    url: String,
+}
+
+struct DeliveryCandidate {
+    request_id: Uuid,
+    user_id: Uuid,
+    approved_client_id: Uuid,
+    token: String,
+    key: String,
+}
+
+fn delivery_candidate(
+    state: &AppState,
+    row: &nazo_identity::AccessRequest,
+) -> Option<DeliveryCandidate> {
+    let Some(approved_client_id) = row.approved_client_id else {
+        return None;
+    };
+    if row.status != nazo_identity::AccessRequestStatus::Approved {
+        return None;
+    }
+    let user_id = row.user_id.as_uuid();
+    let token = access_delivery_token(&state.settings.client_secret_pepper, user_id, row.id);
+    let key = format!("oauth:client_delivery:{user_id}:{token}");
+    Some(DeliveryCandidate {
+        request_id: row.id,
+        user_id,
+        approved_client_id,
+        token,
+        key,
+    })
+}
+
+fn delivery_payload_matches(candidate: &DeliveryCandidate, raw: &str) -> bool {
+    let Ok(payload) = serde_json::from_str::<Value>(raw) else {
+        return false;
+    };
+    if payload["delivery_state"] != "committed"
+        || payload["request_id"] != json!(candidate.request_id)
+        || payload["user_id"] != json!(candidate.user_id)
+        || payload["approved_client_id"] != json!(candidate.approved_client_id)
+    {
+        return false;
+    }
+    true
+}
+
+fn user_access_request_json(
+    row: nazo_identity::AccessRequest,
+    delivery: Option<AvailableDelivery>,
+) -> Value {
+    let mut value = json!({
         "id": row.id,
         "site_name": row.site_name,
         "site_url": row.site_url,
@@ -46,8 +161,13 @@ fn user_access_request_json(row: nazo_identity::AccessRequest) -> Value {
         "admin_note": row.admin_note,
         "approved_client_id": row.approved_client_id,
         "created_at": row.created_at,
-        "resolved_at": row.resolved_at
-    })
+        "resolved_at": row.resolved_at,
+    });
+    if let Some(delivery) = delivery {
+        value["delivery_token"] = json!(delivery.token);
+        value["delivery_url"] = json!(delivery.url);
+    }
+    value
 }
 
 #[derive(Deserialize)]
@@ -95,7 +215,7 @@ pub(crate) async fn create_access_request(
 }
 
 fn create_access_request_response(row: nazo_identity::AccessRequest) -> HttpResponse {
-    json_response_status(StatusCode::CREATED, user_access_request_json(row))
+    json_response_status(StatusCode::CREATED, user_access_request_json(row, None))
 }
 
 #[cfg(test)]

@@ -174,7 +174,7 @@ fn access_request_row(status: AccessRequestStatus) -> nazo_identity::AccessReque
 #[test]
 fn user_access_request_json_omits_request_owner_and_client_secret_material() {
     let row = access_request_row(AccessRequestStatus::Approved);
-    let value = user_access_request_json(row);
+    let value = user_access_request_json(row, None);
 
     assert_eq!(value["site_name"], "Client App");
     assert_eq!(value["site_url"], "https://client.example");

@@ -144,7 +144,11 @@ pub(crate) async fn admin_approve_access_request(
         Ok(prepared) => prepared,
         Err(error) => return insert_client_error_response(error),
     };
-    let token = access_delivery_token(&state, request_user_id, request_id);
+    let token = access_delivery_token(
+        &state.settings.client_secret_pepper,
+        request_user_id,
+        request_id,
+    );
     let delivery_key = format!("oauth:client_delivery:{request_user_id}:{token}");
     let expires_at =
         Utc::now() + Duration::seconds(state.settings.client_delivery_ttl_seconds as i64);
@@ -254,14 +258,6 @@ pub(crate) async fn admin_approve_access_request(
     }
 }
 
-fn access_delivery_token(state: &AppState, user_id: Uuid, request_id: Uuid) -> String {
-    let material = format!(
-        "client-delivery-v1:{}:{user_id}:{request_id}",
-        state.settings.client_secret_pepper
-    );
-    blake3_hex(&material)
-}
-
 async fn resume_staged_client_delivery(
     state: &AppState,
     request: &nazo_identity::AccessRequest,
@@ -270,7 +266,7 @@ async fn resume_staged_client_delivery(
         return Ok(false);
     };
     let user_id = request.user_id.as_uuid();
-    let token = access_delivery_token(state, user_id, request.id);
+    let token = access_delivery_token(&state.settings.client_secret_pepper, user_id, request.id);
     let key = format!("oauth:client_delivery:{user_id}:{token}");
     let Some(raw) = valkey_get(&state.valkey, &key).await? else {
         return Ok(false);
