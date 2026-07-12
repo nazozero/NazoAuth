@@ -2,7 +2,47 @@
 // confidential 客户端只在创建响应中返回一次明文 secret。
 use crate::http::prelude::*;
 use diesel_async::AsyncPgConnection;
-use nazo_auth::PreparedClientRegistration;
+use nazo_auth::ValidatedClientRegistration;
+
+pub(crate) struct PreparedClientRegistration {
+    pub(crate) tenant: nazo_identity::TenantContext,
+    pub(crate) registration: ValidatedClientRegistration,
+    pub(crate) issued_secret: Option<String>,
+    pub(crate) client_secret_hash: Option<String>,
+    pub(crate) registration_access_token_blake3: Option<String>,
+}
+
+impl std::fmt::Debug for PreparedClientRegistration {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("PreparedClientRegistration")
+            .field("tenant", &self.tenant)
+            .field("registration", &self.registration)
+            .field(
+                "issued_secret",
+                &self.issued_secret.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "client_secret_hash",
+                &self.client_secret_hash.as_ref().map(|_| "[REDACTED]"),
+            )
+            .finish_non_exhaustive()
+    }
+}
+
+impl std::ops::Deref for PreparedClientRegistration {
+    type Target = ValidatedClientRegistration;
+
+    fn deref(&self) -> &Self::Target {
+        &self.registration
+    }
+}
+
+impl std::ops::DerefMut for PreparedClientRegistration {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.registration
+    }
+}
 
 #[derive(Deserialize)]
 pub(crate) struct CreateClientRequest {
@@ -162,9 +202,9 @@ pub(crate) async fn insert_prepared_client_row(
     let client = insert_prepared_client(&mut conn, prepared)
         .await
         .map_err(|error| InsertClientError::Server(format!("客户端写入失败: {error}")))?;
-    if client.tenant_id != prepared.tenant_id
-        || client.realm_id != prepared.realm_id
-        || client.organization_id != prepared.organization_id
+    if client.tenant_id != prepared.tenant.tenant_id.as_uuid()
+        || client.realm_id != prepared.tenant.realm_id.as_uuid()
+        || client.organization_id != prepared.tenant.organization_id.as_uuid()
     {
         return Err(InsertClientError::Server(
             "客户端写入后租户边界不匹配".to_owned(),
@@ -200,59 +240,62 @@ pub(crate) async fn prepare_client_insert_with_secret_pepper(
     .await?;
 
     Ok(PreparedClientRegistration {
-        tenant_id: DEFAULT_TENANT_ID,
-        realm_id: DEFAULT_REALM_ID,
-        organization_id: DEFAULT_ORGANIZATION_ID,
-        client_id: format!("client-{}", Uuid::now_v7()),
-        client_name: payload.client_name,
-        client_type: payload.client_type,
-        redirect_uris,
-        post_logout_redirect_uris: trim_string_vec(payload.post_logout_redirect_uris),
-        scopes: payload.scopes,
-        allowed_audiences: payload.allowed_audiences,
-        grant_types: payload.grant_types,
-        token_endpoint_auth_method: payload.token_endpoint_auth_method,
-        subject_type,
-        sector_identifier_uri,
-        sector_identifier_host,
-        require_dpop_bound_tokens: payload.require_dpop_bound_tokens,
-        allow_client_assertion_audience_array: payload.allow_client_assertion_audience_array,
-        allow_client_assertion_endpoint_audience: payload.allow_client_assertion_endpoint_audience,
-        require_par_request_object: payload.require_par_request_object,
-        allow_authorization_code_without_pkce: payload.allow_authorization_code_without_pkce,
-        backchannel_logout_uri: trim_optional_string(payload.backchannel_logout_uri),
-        backchannel_logout_session_required: payload.backchannel_logout_session_required,
-        frontchannel_logout_uri: trim_optional_string(payload.frontchannel_logout_uri),
-        frontchannel_logout_session_required: payload.frontchannel_logout_session_required,
-        tls_client_auth_subject_dn: trim_optional_string(payload.tls_client_auth_subject_dn),
-        tls_client_auth_cert_sha256: trim_optional_string(payload.tls_client_auth_cert_sha256),
-        tls_client_auth_san_dns: trim_string_vec(payload.tls_client_auth_san_dns),
-        tls_client_auth_san_uri: trim_string_vec(payload.tls_client_auth_san_uri),
-        tls_client_auth_san_ip: trim_string_vec(payload.tls_client_auth_san_ip),
-        tls_client_auth_san_email: trim_string_vec(payload.tls_client_auth_san_email),
-        jwks: payload.jwks,
-        introspection_encrypted_response_alg: trim_optional_string(
-            payload.introspection_encrypted_response_alg,
-        ),
-        introspection_encrypted_response_enc: trim_optional_string(
-            payload.introspection_encrypted_response_enc,
-        ),
-        userinfo_signed_response_alg: trim_optional_string(payload.userinfo_signed_response_alg),
-        userinfo_encrypted_response_alg: trim_optional_string(
-            payload.userinfo_encrypted_response_alg,
-        ),
-        userinfo_encrypted_response_enc: trim_optional_string(
-            payload.userinfo_encrypted_response_enc,
-        ),
-        authorization_signed_response_alg: trim_optional_string(
-            payload.authorization_signed_response_alg,
-        ),
-        authorization_encrypted_response_alg: trim_optional_string(
-            payload.authorization_encrypted_response_alg,
-        ),
-        authorization_encrypted_response_enc: trim_optional_string(
-            payload.authorization_encrypted_response_enc,
-        ),
+        tenant: nazo_identity::TenantContext::default_system(),
+        registration: ValidatedClientRegistration {
+            client_id: format!("client-{}", Uuid::now_v7()),
+            client_name: payload.client_name,
+            client_type: payload.client_type,
+            redirect_uris,
+            post_logout_redirect_uris: trim_string_vec(payload.post_logout_redirect_uris),
+            scopes: payload.scopes,
+            allowed_audiences: payload.allowed_audiences,
+            grant_types: payload.grant_types,
+            token_endpoint_auth_method: payload.token_endpoint_auth_method,
+            subject_type,
+            sector_identifier_uri,
+            sector_identifier_host,
+            require_dpop_bound_tokens: payload.require_dpop_bound_tokens,
+            allow_client_assertion_audience_array: payload.allow_client_assertion_audience_array,
+            allow_client_assertion_endpoint_audience: payload
+                .allow_client_assertion_endpoint_audience,
+            require_par_request_object: payload.require_par_request_object,
+            allow_authorization_code_without_pkce: payload.allow_authorization_code_without_pkce,
+            backchannel_logout_uri: trim_optional_string(payload.backchannel_logout_uri),
+            backchannel_logout_session_required: payload.backchannel_logout_session_required,
+            frontchannel_logout_uri: trim_optional_string(payload.frontchannel_logout_uri),
+            frontchannel_logout_session_required: payload.frontchannel_logout_session_required,
+            tls_client_auth_subject_dn: trim_optional_string(payload.tls_client_auth_subject_dn),
+            tls_client_auth_cert_sha256: trim_optional_string(payload.tls_client_auth_cert_sha256),
+            tls_client_auth_san_dns: trim_string_vec(payload.tls_client_auth_san_dns),
+            tls_client_auth_san_uri: trim_string_vec(payload.tls_client_auth_san_uri),
+            tls_client_auth_san_ip: trim_string_vec(payload.tls_client_auth_san_ip),
+            tls_client_auth_san_email: trim_string_vec(payload.tls_client_auth_san_email),
+            jwks: payload.jwks,
+            introspection_encrypted_response_alg: trim_optional_string(
+                payload.introspection_encrypted_response_alg,
+            ),
+            introspection_encrypted_response_enc: trim_optional_string(
+                payload.introspection_encrypted_response_enc,
+            ),
+            userinfo_signed_response_alg: trim_optional_string(
+                payload.userinfo_signed_response_alg,
+            ),
+            userinfo_encrypted_response_alg: trim_optional_string(
+                payload.userinfo_encrypted_response_alg,
+            ),
+            userinfo_encrypted_response_enc: trim_optional_string(
+                payload.userinfo_encrypted_response_enc,
+            ),
+            authorization_signed_response_alg: trim_optional_string(
+                payload.authorization_signed_response_alg,
+            ),
+            authorization_encrypted_response_alg: trim_optional_string(
+                payload.authorization_encrypted_response_alg,
+            ),
+            authorization_encrypted_response_enc: trim_optional_string(
+                payload.authorization_encrypted_response_enc,
+            ),
+        },
         issued_secret,
         client_secret_hash: secret_hash,
         registration_access_token_blake3: None,
@@ -284,9 +327,9 @@ pub(crate) async fn insert_prepared_client(
 ) -> diesel::QueryResult<ClientRow> {
     diesel::insert_into(oauth_clients::table)
         .values((
-            oauth_clients::tenant_id.eq(prepared.tenant_id),
-            oauth_clients::realm_id.eq(prepared.realm_id),
-            oauth_clients::organization_id.eq(prepared.organization_id),
+            oauth_clients::tenant_id.eq(prepared.tenant.tenant_id.as_uuid()),
+            oauth_clients::realm_id.eq(prepared.tenant.realm_id.as_uuid()),
+            oauth_clients::organization_id.eq(prepared.tenant.organization_id.as_uuid()),
             oauth_clients::client_id.eq(&prepared.client_id),
             oauth_clients::client_name.eq(&prepared.client_name),
             oauth_clients::client_type.eq(&prepared.client_type),

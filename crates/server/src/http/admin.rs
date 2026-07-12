@@ -10,6 +10,4 @@ pub(crate) use access_requests::*;
 pub(crate) use clients::*;
 pub(crate) use federation::*;
 pub(crate) use grants::*;
-#[cfg(test)]
-pub(crate) use nazo_auth::PreparedClientRegistration;
 pub(crate) use users::*;

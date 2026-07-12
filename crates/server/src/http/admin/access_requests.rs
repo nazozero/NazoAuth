@@ -170,7 +170,9 @@ pub(crate) async fn admin_approve_access_request(
             admin.principal.tenant,
             request_id,
             admin.user_id(),
-            &prepared,
+            &prepared.registration,
+            prepared.client_secret_hash.as_deref(),
+            prepared.registration_access_token_blake3.as_deref(),
         )
         .await;
     let client = match approval {

@@ -1,14 +1,12 @@
 use serde_json::Value;
 use uuid::Uuid;
 
-/// Validated OAuth client registration ready for persistence.
+/// Validated protocol metadata for an OAuth client registration.
 ///
-/// Secret material is retained only because PostgreSQL must atomically create
-/// the client during access-request approval. It is never serializable.
-pub struct PreparedClientRegistration {
-    pub tenant_id: Uuid,
-    pub realm_id: Uuid,
-    pub organization_id: Uuid,
+/// Tenant placement, credential digests, issued plaintext credentials, and
+/// database command shape belong to the coordinating service and adapters.
+#[derive(Clone, Debug)]
+pub struct ValidatedClientRegistration {
     pub client_id: String,
     pub client_name: String,
     pub client_type: String,
@@ -45,27 +43,6 @@ pub struct PreparedClientRegistration {
     pub authorization_signed_response_alg: Option<String>,
     pub authorization_encrypted_response_alg: Option<String>,
     pub authorization_encrypted_response_enc: Option<String>,
-    pub issued_secret: Option<String>,
-    pub client_secret_hash: Option<String>,
-    pub registration_access_token_blake3: Option<String>,
-}
-
-impl std::fmt::Debug for PreparedClientRegistration {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("PreparedClientRegistration")
-            .field("client_id", &self.client_id)
-            .field("client_name", &self.client_name)
-            .field(
-                "issued_secret",
-                &self.issued_secret.as_ref().map(|_| "[REDACTED]"),
-            )
-            .field(
-                "client_secret_hash",
-                &self.client_secret_hash.as_ref().map(|_| "[REDACTED]"),
-            )
-            .finish_non_exhaustive()
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

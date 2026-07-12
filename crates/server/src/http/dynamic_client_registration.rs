@@ -1,11 +1,11 @@
 //! RFC 7591 dynamic client registration endpoint.
 
+use crate::http::admin::PreparedClientRegistration;
 use crate::http::{
     admin::{CreateClientRequest, InsertClientError},
     prelude::*,
 };
 use diesel_async::AsyncConnection;
-use nazo_auth::PreparedClientRegistration;
 use url::Url;
 
 #[derive(Debug, Default, Deserialize)]
