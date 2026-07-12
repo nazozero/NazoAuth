@@ -1,4 +1,4 @@
-use nazo_fapi_http_signatures::{
+use nazo_http_signatures::{
     RequestInput, RequestPolicy, SignatureFields, VerificationPolicy, VerifyError,
     parse_request_for_verification, prepare_request,
 };
@@ -55,7 +55,7 @@ fn fixture() -> (Vec<u8>, SignatureFields) {
     (base, prepared.finish(&[0xde, 0xad, 0xbe, 0xef]))
 }
 
-fn parse(fields: SignatureFields) -> Result<nazo_fapi_http_signatures::VerifiedInput, VerifyError> {
+fn parse(fields: SignatureFields) -> Result<nazo_http_signatures::VerifiedInput, VerifyError> {
     let headers = headers();
     parse_request_for_verification(
         request("POST", "https://api.example/fapi/resource", &headers, BODY),

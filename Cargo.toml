@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "crates/server",
-    "crates/fapi-http-signatures",
+    "crates/http-signatures",
     "crates/runtime-modules",
     "crates/resource-server",
 ]

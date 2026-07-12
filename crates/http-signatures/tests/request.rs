@@ -1,4 +1,4 @@
-use nazo_fapi_http_signatures::{
+use nazo_http_signatures::{
     RequestInput, RequestPolicy, content_digest, content_digest_field_matches, prepare_request,
 };
 use proptest::prelude::*;
@@ -137,7 +137,7 @@ fn prepare<'a>(
     body: &'a [u8],
     keyid: &'a str,
     algorithm: &'a str,
-) -> Result<nazo_fapi_http_signatures::PreparedSignature, nazo_fapi_http_signatures::RequestError> {
+) -> Result<nazo_http_signatures::PreparedSignature, nazo_http_signatures::RequestError> {
     prepare_request(
         RequestInput {
             method,

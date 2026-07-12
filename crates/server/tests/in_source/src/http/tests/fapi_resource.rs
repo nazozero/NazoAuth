@@ -25,7 +25,7 @@ use diesel_async::RunQueryDsl;
 use ed25519_dalek::{Signer, SigningKey};
 use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{Builder as ValkeyBuilder, Config as ValkeyConfig};
-use nazo_fapi_http_signatures::{
+use nazo_http_signatures::{
     OriginalRequest, RequestInput, RequestPolicy, ResponseInput, SignatureFields,
     VerificationPolicy, parse_response_for_verification, prepare_request,
 };
@@ -504,7 +504,7 @@ async fn signed_resource_request_for_authorization(
             local_signing_key: None,
         }],
     };
-    let digest = (!body.is_empty()).then(|| nazo_fapi_http_signatures::content_digest(body));
+    let digest = (!body.is_empty()).then(|| nazo_http_signatures::content_digest(body));
     let mut headers = vec![("authorization", authorization)];
     if let Some(digest) = digest.as_deref() {
         headers.push(("content-digest", digest));
@@ -570,7 +570,7 @@ async fn signed_resource_request_with_received_digest(
             local_signing_key: None,
         }],
     };
-    let canonical = nazo_fapi_http_signatures::content_digest(body);
+    let canonical = nazo_http_signatures::content_digest(body);
     let headers = [("authorization", authorization)];
     let prepared = prepare_request(
         RequestInput {
@@ -1275,7 +1275,7 @@ async fn fapi_resource_http_signature_logs_do_not_expose_request_or_response_sec
     let _guard = tracing::subscriber::set_default(subscriber);
     let state = Data::new(fapi_test_state());
     let request_body = Bytes::from_static(b"request-body-secret");
-    let digest = nazo_fapi_http_signatures::content_digest(&request_body);
+    let digest = nazo_http_signatures::content_digest(&request_body);
     let request_signature_input = "sig1=(\"@method\");created=1";
     let request_signature = "sig1=:cmF3LXNpZ25hdHVyZS1zZWNyZXQ=:";
     let req = actix_web::test::TestRequest::post()
@@ -1762,7 +1762,7 @@ async fn fapi_resource_http_signature_post_preserves_semantic_received_digest_bi
     let body = Bytes::from_static(br#"{"semantic":true}"#);
     let received_digest = format!(
         "\t sha-512=:AA==:, {} \t",
-        nazo_fapi_http_signatures::content_digest(&body)
+        nazo_http_signatures::content_digest(&body)
     );
     let (client, req, request_fields) =
         signed_resource_request_with_received_digest(&body, &authorization, &received_digest).await;
@@ -1913,7 +1913,7 @@ async fn fapi_resource_http_signature_errors_preserve_unique_received_signature_
     let request_body = Bytes::from_static(br#"{"digest":"mismatch"}"#);
     let (_keyset, client, _req, fields) =
         signed_resource_request_for_authorization(&request_body, &authorization).await;
-    let wrong_digest = nazo_fapi_http_signatures::content_digest(b"different body");
+    let wrong_digest = nazo_http_signatures::content_digest(b"different body");
     let req = actix_web::test::TestRequest::post()
         .uri("/fapi/resource")
         .insert_header((header::AUTHORIZATION, authorization))

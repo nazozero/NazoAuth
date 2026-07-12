@@ -2147,7 +2147,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "nazo-fapi-http-signatures"
+name = "nazo-http-signatures"
 version = "0.1.0"
 dependencies = [
  "httpsig",
@@ -2180,7 +2180,7 @@ dependencies = [
  "hmac 0.13.0",
  "jsonwebtoken",
  "lettre",
- "nazo-fapi-http-signatures",
+ "nazo-http-signatures",
  "nazo-resource-server",
  "openssl",
  "opentelemetry",
