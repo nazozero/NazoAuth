@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
-use crate::db::create_pool;
+use nazo_postgres::create_pool;
 
 use crate::support::{ClientSigningFixture, client_signing_fixture};
 

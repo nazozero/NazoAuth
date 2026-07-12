@@ -1,0 +1,10 @@
+mod federation;
+mod mfa;
+mod passkeys;
+mod scim;
+mod users;
+pub use federation::FederationRepository;
+pub use mfa::MfaRepository;
+pub use passkeys::PasskeyRepository;
+pub use scim::ScimRepository;
+pub use users::UserRepository;

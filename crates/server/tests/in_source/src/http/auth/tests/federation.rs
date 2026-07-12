@@ -2,7 +2,7 @@ use super::*;
 use std::{sync::Arc, time::Duration};
 
 use crate::config::ConfigSource;
-use crate::db::create_pool;
+use nazo_postgres::create_pool;
 
 use crate::settings::{OidcFederationSettings, SamlGatewaySettings};
 use crate::support::{ClientSigningFixture, client_signing_fixture, random_urlsafe_token};

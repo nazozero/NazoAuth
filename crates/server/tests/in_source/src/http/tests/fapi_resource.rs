@@ -11,7 +11,7 @@ use std::{
 };
 
 use crate::config::ConfigSource;
-use crate::db::{create_pool, get_conn};
+use nazo_postgres::{create_pool, get_conn};
 
 use crate::settings::DpopNoncePolicy;
 use crate::support::{ClientSigningFixture, client_signing_fixture};

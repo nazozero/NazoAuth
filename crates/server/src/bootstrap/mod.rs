@@ -23,7 +23,6 @@ use fred::{
 };
 
 use crate::config::{ConfigSource, database_max_connections, database_url};
-use crate::db::create_pool;
 use crate::domain::AppState;
 use crate::http::spawn_backchannel_logout_delivery_worker;
 use crate::settings::Settings;
@@ -31,6 +30,7 @@ use crate::support::{
     configure_password_hash_limits, default_password_hash_max_concurrency,
     default_password_hash_queue_timeout_ms, initialize_dummy_password_hash,
 };
+use nazo_postgres::create_pool;
 use tracing::Instrument;
 
 pub async fn run() -> anyhow::Result<()> {

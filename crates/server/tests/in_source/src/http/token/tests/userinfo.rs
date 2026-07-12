@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
-use crate::db::{create_pool, get_conn};
+use nazo_postgres::{create_pool, get_conn};
 
 use crate::support::{IpCidr, client_signing_fixture};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};

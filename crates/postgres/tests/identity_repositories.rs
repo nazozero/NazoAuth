@@ -1,0 +1,217 @@
+use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
+use diesel::{
+    sql_query,
+    sql_types::{Text, Uuid as SqlUuid},
+};
+use diesel_async::RunQueryDsl;
+use nazo_identity::{
+    TenantContext, TenantId, UserId,
+    ports::{NewFederationLink, RepositoryError},
+    scim::NormalizedScimUser,
+};
+use nazo_postgres::{
+    FederationRepository, MfaRepository, PasskeyRepository, ScimRepository, UserRepository,
+    create_pool, get_conn,
+};
+use serde_json::json;
+use uuid::Uuid;
+
+#[test]
+fn repositories_accept_validated_tenant_and_user_ids() {
+    fn assert_user_repository(_: &UserRepository) {}
+    fn assert_mfa_repository(_: &MfaRepository) {}
+
+    let _tenant = TenantContext::default_system();
+    let _user = UserId::new(Uuid::now_v7()).expect("generated ID is non-nil");
+    let _ = (assert_user_repository, assert_mfa_repository);
+}
+
+async fn database_fixture() -> Option<(nazo_postgres::DbPool, TenantContext, UserId)> {
+    let database_url = std::env::var("NAZO_TEST_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .ok()?;
+    let pool = create_pool(database_url, 8).expect("test pool can be built");
+    let tenant = TenantContext::default_system();
+    let user_id = UserId::new(Uuid::now_v7()).expect("generated ID is non-nil");
+    let token = Uuid::now_v7().simple().to_string();
+    let mut connection = get_conn(&pool).await.expect("test database is reachable");
+    sql_query("INSERT INTO users (id, tenant_id, realm_id, organization_id, username, email, password_hash) VALUES ($1,$2,$3,$4,$5,$6,'test')")
+        .bind::<SqlUuid, _>(user_id.as_uuid()).bind::<SqlUuid, _>(tenant.tenant_id.as_uuid())
+        .bind::<SqlUuid, _>(tenant.realm_id.as_uuid()).bind::<SqlUuid, _>(tenant.organization_id.as_uuid())
+        .bind::<Text, _>(format!("postgres-{token}")).bind::<Text, _>(format!("postgres-{token}@example.test"))
+        .execute(&mut connection).await.expect("fixture user can be inserted");
+    drop(connection);
+    Some((pool, tenant, user_id))
+}
+
+async fn cleanup(pool: &nazo_postgres::DbPool, user_id: UserId) {
+    if let Ok(mut connection) = get_conn(pool).await {
+        let _ = sql_query("DELETE FROM users WHERE id = $1")
+            .bind::<SqlUuid, _>(user_id.as_uuid())
+            .execute(&mut connection)
+            .await;
+    }
+}
+
+#[tokio::test]
+async fn user_lookup_is_tenant_scoped() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        return;
+    };
+    let repository = UserRepository::new(pool.clone());
+    assert!(
+        repository
+            .principal_by_id(tenant, user_id)
+            .await
+            .expect("lookup succeeds")
+            .is_some()
+    );
+    let other_tenant = TenantContext {
+        tenant_id: TenantId::new(Uuid::now_v7()).unwrap(),
+        ..tenant
+    };
+    assert!(
+        repository
+            .principal_by_id(other_tenant, user_id)
+            .await
+            .expect("lookup succeeds")
+            .is_none()
+    );
+    cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
+async fn totp_last_step_compare_and_set_has_one_concurrent_winner() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        return;
+    };
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("INSERT INTO user_totp_credentials (tenant_id,user_id,secret_base32,label,confirmed_at) VALUES ($1,$2,'JBSWY3DPEHPK3PXP','test',CURRENT_TIMESTAMP)").bind::<SqlUuid,_>(tenant.tenant_id.as_uuid()).bind::<SqlUuid,_>(user_id.as_uuid()).execute(&mut connection).await.unwrap();
+    drop(connection);
+    let repository = MfaRepository::new(pool.clone());
+    let (left, right) = tokio::join!(
+        repository.compare_and_set_totp_step(tenant.tenant_id, user_id, 42),
+        repository.compare_and_set_totp_step(tenant.tenant_id, user_id, 42)
+    );
+    assert_ne!(left.unwrap(), right.unwrap());
+    cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
+async fn backup_code_is_consumed_once_atomically() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        return;
+    };
+    let code = "ABCD-EFGH";
+    let salt = SaltString::encode_b64(b"0123456789abcdef").unwrap();
+    let hash = Argon2::default()
+        .hash_password(code.as_bytes(), &salt)
+        .unwrap()
+        .to_string();
+    let repository = MfaRepository::new(pool.clone());
+    repository
+        .replace_backup_code_hashes(tenant.tenant_id, user_id, vec![hash])
+        .await
+        .unwrap();
+    let (left, right) = tokio::join!(
+        repository.consume_backup_code(tenant.tenant_id, user_id, code),
+        repository.consume_backup_code(tenant.tenant_id, user_id, code)
+    );
+    assert_ne!(left.unwrap(), right.unwrap());
+    cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
+async fn passkey_and_federation_uniqueness_are_typed_conflicts() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        return;
+    };
+    let passkeys = PasskeyRepository::new(pool.clone());
+    passkeys
+        .insert(
+            tenant.tenant_id,
+            user_id,
+            "credential".into(),
+            json!({}),
+            "test".into(),
+            0,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        passkeys
+            .insert(
+                tenant.tenant_id,
+                user_id,
+                "credential".into(),
+                json!({}),
+                "test".into(),
+                0
+            )
+            .await
+            .unwrap_err(),
+        RepositoryError::Conflict
+    );
+    let federation = FederationRepository::new(pool.clone());
+    let new_link = NewFederationLink {
+        tenant_id: tenant.tenant_id,
+        user_id,
+        provider_type: "oidc".into(),
+        provider_id: "provider".into(),
+        subject: "subject".into(),
+        email: "a@example.test".into(),
+        claims: json!({}),
+    };
+    federation.insert(new_link.clone()).await.unwrap();
+    assert_eq!(
+        federation.insert(new_link).await.unwrap_err(),
+        RepositoryError::Conflict
+    );
+    cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
+async fn scim_replace_returns_domain_claims_from_one_transaction() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        return;
+    };
+    let claims = ScimRepository::new(pool.clone())
+        .replace(
+            tenant,
+            user_id,
+            NormalizedScimUser {
+                user_name: "replacement".into(),
+                email: "replacement@example.test".into(),
+                active: false,
+                display_name: Some("Replacement".into()),
+                given_name: None,
+                family_name: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(claims.subject, user_id);
+    assert_eq!(claims.preferred_username, "replacement");
+    cleanup(&pool, user_id).await;
+}
+
+#[test]
+fn postgres_public_api_does_not_expose_rows_or_schema() {
+    let source = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"))
+        .expect("postgres crate root is readable");
+    assert!(!source.contains("pub mod rows"));
+    assert!(!source.contains("pub mod schema"));
+    assert!(!source.contains("pub use rows"));
+    assert!(!source.contains("Row;"));
+}
+
+#[test]
+fn server_mfa_verification_does_not_query_migrated_tables_directly() {
+    let source = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../server/src/support/mfa.rs"
+    ))
+    .expect("server MFA support source is readable");
+    assert!(!source.contains("user_totp_credentials"));
+    assert!(!source.contains("user_mfa_backup_codes"));
+}

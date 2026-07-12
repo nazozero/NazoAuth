@@ -5,7 +5,7 @@ use chrono::Duration;
 use diesel::dsl::now as diesel_now;
 
 use super::prelude::*;
-use super::{blake3_hex, hash_password, random_urlsafe_token, verify_password};
+use super::{blake3_hex, hash_password, random_urlsafe_token};
 
 pub(crate) const MFA_REMEMBERED_COOKIE_NAME: &str = "nazo_oauth_mfa_remembered";
 pub(crate) const MFA_REMEMBERED_TTL_SECONDS: u64 = 2_592_000;
@@ -85,73 +85,36 @@ pub(crate) async fn verify_user_mfa_code(
     code: &str,
 ) -> anyhow::Result<Option<MfaVerificationMethod>> {
     let now = Utc::now();
-    let mut conn = get_conn(db).await?;
-    let totp_credential = user_totp_credentials::table
-        .filter(user_totp_credentials::tenant_id.eq(user.tenant_id))
-        .filter(user_totp_credentials::user_id.eq(user.id))
-        .filter(user_totp_credentials::confirmed_at.is_not_null())
-        .select((
-            user_totp_credentials::id,
-            user_totp_credentials::secret_base32,
-            user_totp_credentials::last_used_step,
-        ))
-        .first::<(Uuid, String, Option<i64>)>(&mut conn)
+    let tenant_id = nazo_identity::TenantId::new(user.tenant_id)?;
+    let user_id = nazo_identity::UserId::new(user.id)?;
+    let repository = nazo_postgres::MfaRepository::new(db.clone());
+    let totp_credential = repository
+        .totp_credential(tenant_id, user_id)
         .await
-        .optional()?;
-    if let Some((id, secret_base32, last_used_step)) = totp_credential
+        .map_err(|error| anyhow::anyhow!("failed to load TOTP credential: {error:?}"))?;
+    if let Some(credential) = totp_credential
         && let Some(step) = nazo_identity::mfa::verified_totp_step(
-            &secret_base32,
+            &credential.secret_base32,
             code,
             now.timestamp(),
-            last_used_step,
+            credential.last_used_step,
         )
+        && repository
+            .compare_and_set_totp_step(tenant_id, user_id, step)
+            .await
+            .map_err(|error| anyhow::anyhow!("failed to consume TOTP step: {error:?}"))?
     {
-        let updated = diesel::update(
-            user_totp_credentials::table.find(id).filter(
-                user_totp_credentials::last_used_step
-                    .is_null()
-                    .or(user_totp_credentials::last_used_step.lt(step)),
-            ),
-        )
-        .set((
-            user_totp_credentials::last_used_step.eq(step),
-            user_totp_credentials::updated_at.eq(diesel_now),
-        ))
-        .execute(&mut conn)
-        .await?;
-        if updated == 1 {
-            return Ok(Some(MfaVerificationMethod::Totp));
-        }
+        return Ok(Some(MfaVerificationMethod::Totp));
     }
 
     let Some(normalized) = nazo_identity::mfa::normalize_backup_code(code) else {
         return Ok(None);
     };
-    let candidates = user_mfa_backup_codes::table
-        .filter(user_mfa_backup_codes::tenant_id.eq(user.tenant_id))
-        .filter(user_mfa_backup_codes::user_id.eq(user.id))
-        .filter(user_mfa_backup_codes::used_at.is_null())
-        .select((user_mfa_backup_codes::id, user_mfa_backup_codes::code_hash))
-        .limit(25)
-        .load::<(Uuid, String)>(&mut conn)
-        .await?;
-    for (id, code_hash) in candidates {
-        if verify_password(&normalized, &code_hash) {
-            let updated = diesel::update(
-                user_mfa_backup_codes::table
-                    .find(id)
-                    .filter(user_mfa_backup_codes::used_at.is_null()),
-            )
-            .set(user_mfa_backup_codes::used_at.eq(diesel_now))
-            .execute(&mut conn)
-            .await?;
-            if updated == 1 {
-                return Ok(Some(MfaVerificationMethod::BackupCode));
-            }
-            return Ok(None);
-        }
-    }
-    Ok(None)
+    repository
+        .consume_backup_code(tenant_id, user_id, &normalized)
+        .await
+        .map(|consumed| consumed.then_some(MfaVerificationMethod::BackupCode))
+        .map_err(|error| anyhow::anyhow!("failed to consume backup code: {error:?}"))
 }
 
 pub(crate) async fn replace_backup_codes(
@@ -169,62 +132,22 @@ pub(crate) async fn replace_backup_codes(
         hashes.push(hash);
         codes.push(code);
     }
-    let mut conn = get_conn(db).await?;
-    diesel::delete(
-        user_mfa_backup_codes::table
-            .filter(user_mfa_backup_codes::tenant_id.eq(user.tenant_id))
-            .filter(user_mfa_backup_codes::user_id.eq(user.id)),
-    )
-    .execute(&mut conn)
-    .await?;
-    for hash in hashes {
-        diesel::insert_into(user_mfa_backup_codes::table)
-            .values((
-                user_mfa_backup_codes::tenant_id.eq(user.tenant_id),
-                user_mfa_backup_codes::user_id.eq(user.id),
-                user_mfa_backup_codes::code_hash.eq(hash),
-            ))
-            .execute(&mut conn)
-            .await?;
-    }
+    let tenant_id = nazo_identity::TenantId::new(user.tenant_id)?;
+    let user_id = nazo_identity::UserId::new(user.id)?;
+    nazo_postgres::MfaRepository::new(db.clone())
+        .replace_backup_code_hashes(tenant_id, user_id, hashes)
+        .await
+        .map_err(|error| anyhow::anyhow!("failed to replace backup codes: {error:?}"))?;
     Ok(codes)
 }
 
 pub(crate) async fn clear_user_mfa_state(db: &DbPool, user: &UserRow) -> anyhow::Result<()> {
-    let mut conn = get_conn(db).await?;
-    diesel::delete(
-        user_mfa_backup_codes::table
-            .filter(user_mfa_backup_codes::tenant_id.eq(user.tenant_id))
-            .filter(user_mfa_backup_codes::user_id.eq(user.id)),
-    )
-    .execute(&mut conn)
-    .await?;
-    diesel::delete(
-        user_mfa_remembered_devices::table
-            .filter(user_mfa_remembered_devices::tenant_id.eq(user.tenant_id))
-            .filter(user_mfa_remembered_devices::user_id.eq(user.id)),
-    )
-    .execute(&mut conn)
-    .await?;
-    diesel::delete(
-        user_totp_credentials::table
-            .filter(user_totp_credentials::tenant_id.eq(user.tenant_id))
-            .filter(user_totp_credentials::user_id.eq(user.id)),
-    )
-    .execute(&mut conn)
-    .await?;
-    diesel::update(
-        users::table
-            .find(user.id)
-            .filter(users::tenant_id.eq(user.tenant_id)),
-    )
-    .set((
-        users::mfa_enabled.eq(false),
-        users::updated_at.eq(diesel_now),
-    ))
-    .execute(&mut conn)
-    .await?;
-    Ok(())
+    let tenant_id = nazo_identity::TenantId::new(user.tenant_id)?;
+    let user_id = nazo_identity::UserId::new(user.id)?;
+    nazo_postgres::MfaRepository::new(db.clone())
+        .clear_mfa_state(tenant_id, user_id)
+        .await
+        .map_err(|error| anyhow::anyhow!("failed to clear MFA state: {error:?}"))
 }
 
 fn request_user_agent_hash(req: &HttpRequest) -> Option<String> {

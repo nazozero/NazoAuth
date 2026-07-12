@@ -2,7 +2,7 @@ use super::*;
 use std::sync::Arc;
 
 use crate::config::ConfigSource;
-use crate::db::create_pool;
+use nazo_postgres::create_pool;
 
 use crate::support::{ClientSigningFixture, IpCidr, client_signing_fixture, hash_client_secret};
 use actix_web::test::TestRequest;

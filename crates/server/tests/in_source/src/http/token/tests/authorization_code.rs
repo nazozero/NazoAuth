@@ -11,9 +11,9 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
-use crate::db::{create_pool, get_conn};
 use crate::domain::UserRow;
 use crate::support::oidc_subject;
+use nazo_postgres::{create_pool, get_conn};
 
 fn unavailable_valkey_client() -> fred::prelude::Client {
     let mut builder = ValkeyBuilder::from_config(

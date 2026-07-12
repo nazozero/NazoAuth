@@ -1,6 +1,6 @@
 use super::*;
 use crate::config::ConfigSource;
-use crate::db::create_pool;
+use nazo_postgres::create_pool;
 
 use std::sync::Arc;
 

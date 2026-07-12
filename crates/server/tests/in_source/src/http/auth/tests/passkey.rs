@@ -20,7 +20,7 @@ use passkey_auth::{AuthenticationResponse, PasskeyCredential, RegistrationRespon
 use sha2::{Digest, Sha256};
 
 use crate::config::ConfigSource;
-use crate::db::create_pool;
+use nazo_postgres::create_pool;
 
 fn settings() -> Settings {
     let mut settings =

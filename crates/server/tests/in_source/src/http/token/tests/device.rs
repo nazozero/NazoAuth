@@ -1,7 +1,8 @@
 use super::*;
+use crate::config::ConfigSource;
 use crate::http::TokenForm;
-use crate::{config::ConfigSource, db::create_pool};
 use actix_web::test::TestRequest;
+use nazo_postgres::create_pool;
 use std::collections::HashMap;
 use std::sync::Arc;
 

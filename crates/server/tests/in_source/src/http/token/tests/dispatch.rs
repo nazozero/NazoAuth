@@ -16,7 +16,7 @@ use fred::prelude::{
 };
 
 use crate::config::ConfigSource;
-use crate::db::{create_pool, get_conn};
+use nazo_postgres::{create_pool, get_conn};
 
 use crate::http::{revoke, userinfo};
 use crate::settings::{

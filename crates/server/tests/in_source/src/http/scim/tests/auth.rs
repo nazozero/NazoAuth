@@ -2,7 +2,7 @@ use super::*;
 use std::sync::Arc;
 
 use crate::config::ConfigSource;
-use crate::db::create_pool;
+use nazo_postgres::create_pool;
 
 use crate::support::DEFAULT_TENANT_ID;
 use chrono::Utc;

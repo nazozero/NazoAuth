@@ -17,10 +17,10 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
-use crate::db::{create_pool, get_conn};
 use crate::domain::{ConsentPayload, PushedAuthorizationRequest};
 use crate::settings::AuthorizationServerProfile;
 use crate::support::jwt_decoding_key_from_jwk;
+use nazo_postgres::{create_pool, get_conn};
 
 fn unavailable_valkey_client() -> fred::prelude::Client {
     let mut builder = ValkeyBuilder::from_config(

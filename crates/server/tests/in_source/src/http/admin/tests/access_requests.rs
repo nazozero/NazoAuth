@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
-use crate::db::{create_pool, get_conn};
+use nazo_postgres::{create_pool, get_conn};
 
 #[derive(QueryableByName)]
 struct IdRow {

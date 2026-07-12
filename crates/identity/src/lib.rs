@@ -5,6 +5,7 @@ pub mod federation;
 pub mod mfa;
 mod model;
 pub mod passkey;
+pub mod ports;
 pub mod scim;
 pub mod session;
 pub mod tenancy;

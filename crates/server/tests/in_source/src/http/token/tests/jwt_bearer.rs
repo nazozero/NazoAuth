@@ -1,11 +1,12 @@
 use super::*;
-use crate::{config::ConfigSource, db::create_pool};
+use crate::config::ConfigSource;
 use actix_web::test::TestRequest;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use fred::{
     interfaces::ClientLike,
     prelude::{Builder as ValkeyBuilder, Config as ValkeyConfig},
 };
+use nazo_postgres::create_pool;
 use std::sync::Arc;
 
 fn jwt_bearer_client(client_id: &str, kid: &str, fixture: &ClientSigningFixture) -> ClientRow {

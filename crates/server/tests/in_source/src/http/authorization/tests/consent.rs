@@ -12,9 +12,9 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
-use crate::db::{create_pool, get_conn};
 use crate::domain::UserRow;
 use crate::support::SessionPayload;
+use nazo_postgres::{create_pool, get_conn};
 
 fn query(values: &[(&str, &str)]) -> std::collections::HashMap<String, String> {
     values
