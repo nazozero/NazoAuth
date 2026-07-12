@@ -280,6 +280,13 @@ Production requirements:
 - migration rollback planning
 - monitoring for replication lag or storage saturation
 
+Migration `20260712000050_social_federation_provider_type` expands the external
+identity provider constraint without changing existing OIDC or SAML links. Its
+down migration intentionally fails while `oauth2_social` links exist; operators
+must migrate or explicitly remove those links before rollback so rollback cannot
+silently discard federated identities. The `20260712000100` timestamp remains
+reserved for the runtime desired-state migration.
+
 `nazo_oauth_migrate` runs `nazo_oauth_cleanup_expired_security_state()` after
 pending migrations. The cleanup removes expired access-token revocation markers,
 expired refresh-token rows from leaf tokens upward, and SCIM audit events older
