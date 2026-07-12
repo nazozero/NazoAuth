@@ -262,6 +262,7 @@ async fn scim_list_users_authorized(
     let tenant = default_tenant_context();
     let (limit, offset) = match &pagination {
         ScimPagination::Index { start_index, count } => (*count, start_index.saturating_sub(1)),
+        ScimPagination::Cursor { count: 0, .. } => (0, 0),
         ScimPagination::Cursor { count, .. } => (count.saturating_add(1), 0),
     };
     let page = match nazo_postgres::ScimRepository::new(state.diesel_db.clone())

@@ -121,7 +121,6 @@ impl FederationRepository {
                 let user = users::table
                     .find(link.user_id)
                     .filter(users::tenant_id.eq(login.tenant.tenant_id.as_uuid()))
-                    .filter(users::is_active.eq(true))
                     .select(UserRow::as_select())
                     .first::<UserRow>(connection)
                     .await?;

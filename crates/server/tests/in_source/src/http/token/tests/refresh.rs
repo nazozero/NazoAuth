@@ -570,112 +570,6 @@ fn refresh_token_policy_uses_configured_authorization_server_profile() {
 }
 
 #[test]
-fn lost_refresh_retry_allows_only_short_post_rotation_window() {
-    let now = Utc::now();
-
-    assert!(within_lost_refresh_token_retry_window(
-        now - Duration::seconds(1),
-        now
-    ));
-    assert!(within_lost_refresh_token_retry_window(
-        now - Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS),
-        now
-    ));
-    assert!(!within_lost_refresh_token_retry_window(
-        now - Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS + 1),
-        now
-    ));
-}
-
-#[test]
-fn lost_refresh_retry_rejects_future_revocation_times() {
-    let now = Utc::now();
-
-    assert!(!within_lost_refresh_token_retry_window(
-        now + Duration::seconds(1),
-        now
-    ));
-}
-
-#[actix_web::test]
-async fn lost_refresh_token_successor_returns_none_for_non_retriable_states() {
-    let Some(state) = live_refresh_state(AuthorizationServerProfile::Oauth2Baseline) else {
-        return;
-    };
-    let mut client = client_row();
-    client.require_dpop_bound_tokens = false;
-    insert_refresh_client(&state, &client).await;
-
-    let mut active = token_row();
-    active.client_id = client.id;
-    active.user_id = None;
-    active.subject = client.client_id.clone();
-    active.scopes = json!(["accounts", "offline_access"]);
-    active.dpop_jkt = None;
-    assert!(
-        lost_refresh_token_successor(&state, &active, client.id)
-            .await
-            .expect("active token should inspect")
-            .is_none()
-    );
-
-    let mut old_revoked = token_row();
-    old_revoked.client_id = client.id;
-    old_revoked.user_id = None;
-    old_revoked.subject = client.client_id.clone();
-    old_revoked.scopes = json!(["accounts", "offline_access"]);
-    old_revoked.dpop_jkt = None;
-    old_revoked.revoked_at = Some(Utc::now() - Duration::seconds(61));
-    assert!(
-        lost_refresh_token_successor(&state, &old_revoked, client.id)
-            .await
-            .expect("old revoked token should inspect")
-            .is_none()
-    );
-
-    let mut reused = token_row();
-    reused.client_id = client.id;
-    reused.user_id = None;
-    reused.subject = client.client_id.clone();
-    reused.scopes = json!(["accounts", "offline_access"]);
-    reused.dpop_jkt = None;
-    reused.token_family_id = Uuid::now_v7();
-    reused.revoked_at = Some(Utc::now() - Duration::seconds(10));
-    let reused_raw = format!("refresh-token-reused-{}", Uuid::now_v7());
-    insert_refresh_token_row(
-        &state,
-        &reused_raw,
-        &reused,
-        None,
-        Some(Utc::now() - Duration::seconds(5)),
-    )
-    .await;
-    assert!(
-        lost_refresh_token_successor(&state, &reused, client.id)
-            .await
-            .expect("reuse-marked family should inspect")
-            .is_none()
-    );
-
-    let mut revoked_without_successor = token_row();
-    revoked_without_successor.client_id = client.id;
-    revoked_without_successor.user_id = None;
-    revoked_without_successor.subject = client.client_id.clone();
-    revoked_without_successor.scopes = json!(["accounts", "offline_access"]);
-    revoked_without_successor.dpop_jkt = None;
-    revoked_without_successor.token_family_id = Uuid::now_v7();
-    revoked_without_successor.revoked_at = Some(Utc::now() - Duration::seconds(10));
-    let revoked_raw = format!("refresh-token-no-successor-{}", Uuid::now_v7());
-    insert_refresh_token_row(&state, &revoked_raw, &revoked_without_successor, None, None).await;
-    assert!(
-        lost_refresh_token_successor(&state, &revoked_without_successor, client.id)
-            .await
-            .expect("revoked token without successor should inspect")
-            .is_none()
-    );
-}
-
-#[test]
 fn refresh_token_scope_request_defaults_to_original_authorization() {
     let original = vec![
         "openid".to_owned(),
@@ -760,17 +654,6 @@ fn refresh_token_audience_request_rejects_expansion() {
     form.audiences = vec!["https://api.example/two".to_owned()];
 
     assert!(refresh_token_audiences(&settings, &token, &form).is_err());
-}
-
-#[test]
-fn lost_refresh_retry_allows_exact_rotation_timestamp_only_until_window_expires() {
-    let now = Utc::now();
-
-    assert!(within_lost_refresh_token_retry_window(now, now));
-    assert!(!within_lost_refresh_token_retry_window(
-        now - Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS + 1),
-        now
-    ));
 }
 
 #[actix_web::test]
@@ -932,7 +815,7 @@ async fn refresh_grant_marks_family_reuse_and_revokes_active_family_tokens() {
     reused.subject = client.client_id.clone();
     reused.user_id = None;
     reused.dpop_jkt = None;
-    reused.revoked_at = Some(Utc::now() - Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS + 5));
+    reused.revoked_at = Some(Utc::now() - Duration::seconds(65));
     let reused_raw = "refresh-token-reused";
     insert_refresh_token_row(&state, reused_raw, &reused, None, None).await;
 
@@ -997,7 +880,7 @@ async fn refresh_grant_fails_closed_when_reuse_marker_cannot_be_persisted() {
     reused.subject = client.client_id.clone();
     reused.user_id = None;
     reused.dpop_jkt = None;
-    reused.revoked_at = Some(Utc::now() - Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS + 5));
+    reused.revoked_at = Some(Utc::now() - Duration::seconds(65));
     let reused_raw = "refresh-token-reuse-marker-failure";
     insert_refresh_token_row(&state, reused_raw, &reused, None, None).await;
 
@@ -1047,7 +930,7 @@ async fn refresh_grant_fails_closed_when_reuse_marker_cannot_be_persisted() {
 }
 
 #[actix_web::test]
-async fn refresh_grant_rotates_unbound_successor_for_lost_response_retries() {
+async fn refresh_grant_rejects_revoked_token_even_when_active_successor_exists() {
     let Some(state) = live_refresh_state(AuthorizationServerProfile::Fapi2Security) else {
         return;
     };
@@ -1088,21 +971,60 @@ async fn refresh_grant_rotates_unbound_successor_for_lost_response_retries() {
 
     assert_eq!(
         status,
-        StatusCode::OK,
-        "unexpected refresh response: {body}"
+        StatusCode::BAD_REQUEST,
+        "unexpected response: {body}"
     );
-    assert_eq!(body["token_type"], "Bearer");
-    assert!(
-        body["access_token"]
-            .as_str()
-            .is_some_and(|value| !value.is_empty())
+    assert_eq!(body["error"], "invalid_grant");
+    assert!(body.get("access_token").is_none());
+    assert!(body.get("refresh_token").is_none());
+
+    let family = load_family_rows(&state, family_id).await;
+    assert!(family.iter().all(|row| row.reuse_detected_at.is_some()));
+    assert!(family.iter().all(|row| row.revoked_at.is_some()));
+}
+
+#[actix_web::test]
+async fn concurrent_refresh_replay_yields_one_success_and_one_invalid_grant() {
+    let Some(state) = live_refresh_state(AuthorizationServerProfile::Oauth2Baseline) else {
+        panic!("DATABASE_URL is required for the refresh replay regression test");
+    };
+    let req = actix_web::test::TestRequest::post()
+        .uri("/oauth/token")
+        .to_http_request();
+    let mut client = client_row();
+    client.require_dpop_bound_tokens = false;
+    insert_refresh_client(&state, &client).await;
+
+    let family_id = Uuid::now_v7();
+    let raw = format!("refresh-concurrent-replay-{}", Uuid::now_v7());
+    let mut token = token_row();
+    token.client_id = client.id;
+    token.token_family_id = family_id;
+    token.scopes = json!(["accounts", "offline_access"]);
+    token.subject = client.client_id.clone();
+    token.user_id = None;
+    token.dpop_jkt = None;
+    insert_refresh_token_row(&state, &raw, &token, None, None).await;
+
+    let mut form = refresh_form_without_token();
+    form.refresh_token = Some(raw);
+    let (first, second) = tokio::join!(
+        token_refresh(&state, &req, &client, &form, None),
+        token_refresh(&state, &req, &client, &form, None)
     );
-    assert!(
-        body["refresh_token"]
-            .as_str()
-            .is_some_and(|value| !value.is_empty()),
-        "unbound refresh-token families must continue rotating during lost-response retries"
-    );
+    let (first, second) = tokio::join!(response_json(first), response_json(second));
+    let mut outcomes = [
+        (first.0, first.1["error"].clone()),
+        (second.0, second.1["error"].clone()),
+    ];
+    outcomes.sort_by_key(|outcome| outcome.0.as_u16());
+
+    assert_eq!(outcomes[0].0, StatusCode::OK);
+    assert_eq!(outcomes[1].0, StatusCode::BAD_REQUEST);
+    assert_eq!(outcomes[1].1, "invalid_grant");
+    let family = load_family_rows(&state, family_id).await;
+    assert!(family.iter().all(|row| row.reuse_detected_at.is_some()));
+    assert!(family.iter().all(|row| row.revoked_at.is_some()));
 }
 
 #[actix_web::test]
