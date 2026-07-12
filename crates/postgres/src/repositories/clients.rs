@@ -245,25 +245,81 @@ impl OAuthClientRepository {
         &self,
         client: &OAuthClient,
         client_secret_hash: Option<&str>,
-    ) -> Result<OAuthClient, RepositoryError> {
-        if let Some(existing) = self
-            .by_client_id(client.tenant_id, &client.client_id)
-            .await?
-        {
-            let updated = OAuthClient {
-                id: existing.id,
-                tenant_id: client.tenant_id,
-                realm_id: client.realm_id,
-                organization_id: client.organization_id,
-                registration: client.registration.clone(),
-                require_mtls_bound_tokens: client.require_mtls_bound_tokens,
-                is_active: true,
-            };
-            self.replace(&updated, Some((client_secret_hash, None)))
-                .await
-        } else {
-            self.insert(client, client_secret_hash, None).await
-        }
+    ) -> Result<(), RepositoryError> {
+        let mut connection = self.connection().await?;
+        let redirect_uris = serde_json::json!(&client.redirect_uris);
+        let post_logout_redirect_uris = serde_json::json!(&client.post_logout_redirect_uris);
+        let scopes = serde_json::json!(&client.scopes);
+        let allowed_audiences = serde_json::json!(&client.allowed_audiences);
+        let grant_types = serde_json::json!(&client.grant_types);
+        diesel::sql_query(
+            r#"
+            INSERT INTO oauth_clients (
+                tenant_id, realm_id, organization_id, client_id, client_name, client_type,
+                client_secret_hash, redirect_uris, post_logout_redirect_uris, scopes,
+                allowed_audiences, grant_types, token_endpoint_auth_method,
+                require_dpop_bound_tokens, require_mtls_bound_tokens,
+                tls_client_auth_subject_dn, tls_client_auth_cert_sha256,
+                allow_client_assertion_audience_array,
+                allow_client_assertion_endpoint_audience, require_par_request_object,
+                allow_authorization_code_without_pkce, frontchannel_logout_uri,
+                frontchannel_logout_session_required, jwks, is_active
+            ) VALUES (
+                $1, $2, $3, $4, $5, 'confidential', $6, $7, $8, $9, $10, $11, $12,
+                $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, TRUE
+            )
+            ON CONFLICT (tenant_id, client_id) DO UPDATE SET
+                client_name = EXCLUDED.client_name,
+                client_type = EXCLUDED.client_type,
+                client_secret_hash = EXCLUDED.client_secret_hash,
+                redirect_uris = EXCLUDED.redirect_uris,
+                post_logout_redirect_uris = EXCLUDED.post_logout_redirect_uris,
+                scopes = EXCLUDED.scopes,
+                allowed_audiences = EXCLUDED.allowed_audiences,
+                grant_types = EXCLUDED.grant_types,
+                token_endpoint_auth_method = EXCLUDED.token_endpoint_auth_method,
+                require_dpop_bound_tokens = EXCLUDED.require_dpop_bound_tokens,
+                require_mtls_bound_tokens = EXCLUDED.require_mtls_bound_tokens,
+                tls_client_auth_subject_dn = EXCLUDED.tls_client_auth_subject_dn,
+                tls_client_auth_cert_sha256 = EXCLUDED.tls_client_auth_cert_sha256,
+                allow_client_assertion_audience_array = EXCLUDED.allow_client_assertion_audience_array,
+                allow_client_assertion_endpoint_audience = EXCLUDED.allow_client_assertion_endpoint_audience,
+                require_par_request_object = EXCLUDED.require_par_request_object,
+                allow_authorization_code_without_pkce = EXCLUDED.allow_authorization_code_without_pkce,
+                frontchannel_logout_uri = EXCLUDED.frontchannel_logout_uri,
+                frontchannel_logout_session_required = EXCLUDED.frontchannel_logout_session_required,
+                jwks = EXCLUDED.jwks,
+                is_active = TRUE,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+            .bind::<diesel::sql_types::Uuid, _>(client.tenant_id)
+            .bind::<diesel::sql_types::Uuid, _>(client.realm_id)
+            .bind::<diesel::sql_types::Uuid, _>(client.organization_id)
+            .bind::<diesel::sql_types::VarChar, _>(&client.client_id)
+            .bind::<diesel::sql_types::VarChar, _>(&client.client_name)
+            .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(client_secret_hash)
+            .bind::<diesel::sql_types::Jsonb, _>(&redirect_uris)
+            .bind::<diesel::sql_types::Jsonb, _>(&post_logout_redirect_uris)
+            .bind::<diesel::sql_types::Jsonb, _>(&scopes)
+            .bind::<diesel::sql_types::Jsonb, _>(&allowed_audiences)
+            .bind::<diesel::sql_types::Jsonb, _>(&grant_types)
+            .bind::<diesel::sql_types::VarChar, _>(&client.token_endpoint_auth_method)
+            .bind::<diesel::sql_types::Bool, _>(client.require_dpop_bound_tokens)
+            .bind::<diesel::sql_types::Bool, _>(client.require_mtls_bound_tokens)
+            .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(&client.tls_client_auth_subject_dn)
+            .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(&client.tls_client_auth_cert_sha256)
+            .bind::<diesel::sql_types::Bool, _>(client.allow_client_assertion_audience_array)
+            .bind::<diesel::sql_types::Bool, _>(client.allow_client_assertion_endpoint_audience)
+            .bind::<diesel::sql_types::Bool, _>(client.require_par_request_object)
+            .bind::<diesel::sql_types::Bool, _>(client.allow_authorization_code_without_pkce)
+            .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(&client.frontchannel_logout_uri)
+            .bind::<diesel::sql_types::Bool, _>(client.frontchannel_logout_session_required)
+            .bind::<diesel::sql_types::Nullable<diesel::sql_types::Jsonb>, _>(&client.jwks)
+            .execute(&mut connection)
+            .await
+            .map_err(map_error)?;
+        Ok(())
     }
 
     pub async fn update_metadata(

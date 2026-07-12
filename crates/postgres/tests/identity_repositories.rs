@@ -1,9 +1,10 @@
 use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
 use diesel::{
     sql_query,
-    sql_types::{Text, Uuid as SqlUuid},
+    sql_types::{Jsonb, Text, Uuid as SqlUuid},
 };
 use diesel_async::RunQueryDsl;
+use nazo_auth::{OAuthClient, ValidatedClientRegistration};
 use nazo_identity::{
     TenantContext, TenantId, UserId,
     ports::{
@@ -12,8 +13,8 @@ use nazo_identity::{
     scim::NormalizedScimUser,
 };
 use nazo_postgres::{
-    FederationRepository, MfaRepository, PasskeyRepository, ScimRepository, UserRepository,
-    create_pool, get_conn,
+    FederationRepository, MfaRepository, OAuthClientRepository, PasskeyRepository, ScimRepository,
+    UserRepository, create_pool, get_conn,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -58,6 +59,244 @@ async fn cleanup(pool: &nazo_postgres::DbPool, user_id: UserId) {
             .execute(&mut connection)
             .await;
     }
+}
+
+fn oauth_client(tenant: TenantContext, client_id: String) -> OAuthClient {
+    OAuthClient {
+        id: Uuid::now_v7(),
+        tenant_id: tenant.tenant_id.as_uuid(),
+        realm_id: tenant.realm_id.as_uuid(),
+        organization_id: tenant.organization_id.as_uuid(),
+        registration: ValidatedClientRegistration {
+            client_id,
+            client_name: "Original client".to_owned(),
+            client_type: "confidential".to_owned(),
+            redirect_uris: vec!["https://client.example/callback".to_owned()],
+            post_logout_redirect_uris: vec![],
+            scopes: vec!["openid".to_owned()],
+            allowed_audiences: vec!["resource://original".to_owned()],
+            grant_types: vec!["authorization_code".to_owned()],
+            token_endpoint_auth_method: "client_secret_basic".to_owned(),
+            subject_type: "pairwise".to_owned(),
+            sector_identifier_uri: Some("https://sector.example/redirects.json".to_owned()),
+            sector_identifier_host: Some("sector.example".to_owned()),
+            require_dpop_bound_tokens: false,
+            allow_client_assertion_audience_array: false,
+            allow_client_assertion_endpoint_audience: false,
+            require_par_request_object: false,
+            allow_authorization_code_without_pkce: false,
+            backchannel_logout_uri: Some("https://client.example/backchannel".to_owned()),
+            backchannel_logout_session_required: false,
+            frontchannel_logout_uri: None,
+            frontchannel_logout_session_required: true,
+            tls_client_auth_subject_dn: None,
+            tls_client_auth_cert_sha256: None,
+            tls_client_auth_san_dns: vec!["mtls.example".to_owned()],
+            tls_client_auth_san_uri: vec![],
+            tls_client_auth_san_ip: vec![],
+            tls_client_auth_san_email: vec![],
+            jwks: None,
+            introspection_encrypted_response_alg: Some("RSA-OAEP".to_owned()),
+            introspection_encrypted_response_enc: Some("A256GCM".to_owned()),
+            userinfo_signed_response_alg: Some("ES256".to_owned()),
+            userinfo_encrypted_response_alg: None,
+            userinfo_encrypted_response_enc: None,
+            authorization_signed_response_alg: None,
+            authorization_encrypted_response_alg: None,
+            authorization_encrypted_response_enc: None,
+        },
+        require_mtls_bound_tokens: false,
+        is_active: true,
+    }
+}
+
+async fn cleanup_oauth_client(pool: &nazo_postgres::DbPool, id: Uuid) {
+    if let Ok(mut connection) = get_conn(pool).await {
+        let _ = sql_query("DELETE FROM oauth_clients WHERE id = $1")
+            .bind::<SqlUuid, _>(id)
+            .execute(&mut connection)
+            .await;
+    }
+}
+
+#[tokio::test]
+async fn seed_upsert_is_atomic_and_preserves_unmanaged_client_state() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        panic!("NAZO_TEST_DATABASE_URL or DATABASE_URL is required");
+    };
+    let repository = OAuthClientRepository::new(pool.clone());
+    let original = oauth_client(tenant, format!("seed-{}", Uuid::now_v7()));
+    repository
+        .insert(
+            &original,
+            Some("old-secret"),
+            Some("keep-registration-token"),
+        )
+        .await
+        .unwrap();
+    let mut managed_update = original.clone();
+    managed_update.id = Uuid::now_v7();
+    managed_update.client_name = "Managed update".to_owned();
+    managed_update.redirect_uris = vec!["https://updated.example/callback".to_owned()];
+    managed_update.scopes = vec!["openid".to_owned(), "profile".to_owned()];
+    managed_update.subject_type = "public".to_owned();
+    managed_update.sector_identifier_uri = None;
+    managed_update.sector_identifier_host = None;
+    managed_update.tls_client_auth_san_dns.clear();
+    managed_update.backchannel_logout_uri = None;
+    managed_update.introspection_encrypted_response_alg = None;
+    managed_update.introspection_encrypted_response_enc = None;
+    managed_update.userinfo_signed_response_alg = None;
+
+    let (left, right) = tokio::join!(
+        repository.upsert(&managed_update, Some("new-secret")),
+        repository.upsert(&managed_update, Some("new-secret")),
+    );
+    left.unwrap();
+    right.unwrap();
+    let stored = repository
+        .by_client_id(original.tenant_id, &original.client_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        stored.id, original.id,
+        "conflict update must retain the row identity"
+    );
+    assert_eq!(stored.client_name, "Managed update");
+    assert_eq!(stored.redirect_uris, managed_update.redirect_uris);
+    assert_eq!(stored.scopes, managed_update.scopes);
+    assert_eq!(stored.subject_type, original.subject_type);
+    assert_eq!(stored.sector_identifier_uri, original.sector_identifier_uri);
+    assert_eq!(
+        stored.tls_client_auth_san_dns,
+        original.tls_client_auth_san_dns
+    );
+    assert_eq!(
+        stored.backchannel_logout_uri,
+        original.backchannel_logout_uri
+    );
+    assert_eq!(
+        stored.introspection_encrypted_response_alg,
+        original.introspection_encrypted_response_alg
+    );
+    let mut connection = get_conn(&pool).await.unwrap();
+    #[derive(diesel::QueryableByName)]
+    struct RegistrationToken {
+        #[diesel(sql_type = diesel::sql_types::Nullable<Text>)]
+        value: Option<String>,
+    }
+    let token = sql_query(
+        "SELECT registration_access_token_blake3 AS value FROM oauth_clients WHERE id = $1",
+    )
+    .bind::<SqlUuid, _>(original.id)
+    .get_result::<RegistrationToken>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(token.value.as_deref(), Some("keep-registration-token"));
+
+    let concurrent = oauth_client(tenant, format!("seed-concurrent-{}", Uuid::now_v7()));
+    let (left, right) = tokio::join!(
+        repository.upsert(&concurrent, None),
+        repository.upsert(&concurrent, None),
+    );
+    left.expect("first concurrent seed upsert succeeds");
+    right.expect("second concurrent seed upsert succeeds");
+    assert!(
+        repository
+            .by_client_id(concurrent.tenant_id, &concurrent.client_id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+
+    cleanup_oauth_client(&pool, original.id).await;
+    let concurrent_id = repository
+        .by_client_id(concurrent.tenant_id, &concurrent.client_id)
+        .await
+        .unwrap()
+        .unwrap()
+        .id;
+    cleanup_oauth_client(&pool, concurrent_id).await;
+    cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
+async fn application_projection_filters_mixed_scope_elements() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        panic!("NAZO_TEST_DATABASE_URL or DATABASE_URL is required");
+    };
+    let repository = OAuthClientRepository::new(pool.clone());
+    let client = oauth_client(tenant, format!("mixed-scopes-{}", Uuid::now_v7()));
+    repository.insert(&client, None, None).await.unwrap();
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("INSERT INTO user_client_grants (tenant_id, user_id, client_id, first_authorized_at, last_authorized_at, last_scopes, last_resource_indicators, last_authorization_details, authorization_count) VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $4, '[]'::jsonb, '[]'::jsonb, 1)")
+        .bind::<SqlUuid, _>(tenant.tenant_id.as_uuid())
+        .bind::<SqlUuid, _>(user_id.as_uuid())
+        .bind::<SqlUuid, _>(client.id)
+        .bind::<Jsonb, _>(json!(["openid", 42, null, "profile", {"scope": "admin"}]))
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+
+    let applications = repository
+        .applications_for_user(user_id.as_uuid())
+        .await
+        .unwrap();
+    assert_eq!(applications.len(), 1);
+    let valid_scopes = applications[0]
+        .last_scopes
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .collect::<Vec<_>>();
+    assert_eq!(valid_scopes, vec!["openid", "profile"]);
+
+    cleanup_oauth_client(&pool, client.id).await;
+    cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
+async fn client_secret_comparison_returns_only_salt_and_database_equality() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        panic!("NAZO_TEST_DATABASE_URL or DATABASE_URL is required");
+    };
+    let repository = OAuthClientRepository::new(pool.clone());
+    let client = oauth_client(tenant, format!("secret-equality-{}", Uuid::now_v7()));
+    let stored = "client-secret-v1:c2FsdA:6lJn3EOo_fxJByZR75cMn9RtlGGznqcVi4V4OkrfNCw";
+    repository
+        .insert(&client, Some(stored), None)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        repository
+            .client_secret_salt(client.id)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("c2FsdA")
+    );
+    assert!(
+        repository
+            .client_secret_digest_matches(client.id, stored)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !repository
+            .client_secret_digest_matches(
+                client.id,
+                "client-secret-v1:c2FsdA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            )
+            .await
+            .unwrap()
+    );
+
+    cleanup_oauth_client(&pool, client.id).await;
+    cleanup(&pool, user_id).await;
 }
 
 #[tokio::test]
