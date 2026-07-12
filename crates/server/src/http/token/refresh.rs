@@ -5,6 +5,9 @@ use super::{
 };
 use crate::http::prelude::*;
 use crate::settings::AuthorizationServerProfile;
+use diesel_async::AsyncConnection;
+
+use super::refresh_family::{lock_token_family, mark_token_family_reuse as mark_family_reuse};
 
 fn refresh_token_policy_for_authorization_server_profile(
     profile: AuthorizationServerProfile,
@@ -81,22 +84,10 @@ async fn mark_token_family_reuse(
     token_family_id: Uuid,
 ) -> anyhow::Result<()> {
     let mut conn = get_conn(&state.diesel_db).await?;
-    diesel::update(
-        oauth_tokens::table
-            .filter(oauth_tokens::tenant_id.eq(tenant_id))
-            .filter(oauth_tokens::token_family_id.eq(token_family_id)),
-    )
-    .set(oauth_tokens::reuse_detected_at.eq(diesel_now))
-    .execute(&mut conn)
-    .await?;
-    diesel::update(
-        oauth_tokens::table
-            .filter(oauth_tokens::tenant_id.eq(tenant_id))
-            .filter(oauth_tokens::token_family_id.eq(token_family_id))
-            .filter(oauth_tokens::revoked_at.is_null()),
-    )
-    .set(oauth_tokens::revoked_at.eq(diesel_now))
-    .execute(&mut conn)
+    conn.transaction::<(), diesel::result::Error, _>(async move |conn| {
+        lock_token_family(conn, token_family_id).await?;
+        mark_family_reuse(conn, tenant_id, token_family_id).await
+    })
     .await?;
     Ok(())
 }

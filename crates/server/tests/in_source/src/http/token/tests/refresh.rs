@@ -853,7 +853,7 @@ async fn refresh_grant_marks_family_reuse_and_revokes_active_family_tokens() {
 }
 
 #[actix_web::test]
-async fn refresh_grant_fails_closed_when_reuse_marker_cannot_be_persisted() {
+async fn refresh_grant_rolls_back_reuse_marker_when_family_revoke_fails() {
     let schema = format!("refresh_reuse_marker_failure_{}", Uuid::now_v7().simple());
     let Some(database_url) = database_url_with_search_path(&schema) else {
         return;
@@ -883,17 +883,32 @@ async fn refresh_grant_fails_closed_when_reuse_marker_cannot_be_persisted() {
     reused.revoked_at = Some(Utc::now() - Duration::seconds(65));
     let reused_raw = "refresh-token-reuse-marker-failure";
     insert_refresh_token_row(&state, reused_raw, &reused, None, None).await;
+    let mut active_sibling = token_row();
+    active_sibling.client_id = client.id;
+    active_sibling.token_family_id = family_id;
+    active_sibling.scopes = json!(["accounts", "offline_access"]);
+    active_sibling.subject = client.client_id.clone();
+    active_sibling.user_id = None;
+    active_sibling.dpop_jkt = None;
+    insert_refresh_token_row(
+        &state,
+        "refresh-token-active-marker-failure-sibling",
+        &active_sibling,
+        Some(reused.id),
+        None,
+    )
+    .await;
 
     exec_sql(
         &state,
         &format!(
             r#"
-            CREATE OR REPLACE FUNCTION "{}".reject_refresh_reuse_marker()
+            CREATE OR REPLACE FUNCTION "{}".reject_refresh_family_revoke()
             RETURNS trigger
             LANGUAGE plpgsql
             AS $$
             BEGIN
-                RAISE EXCEPTION 'reject refresh reuse marker in coverage test';
+                RAISE EXCEPTION 'reject refresh family revoke in coverage test';
             END;
             $$;
             "#,
@@ -905,11 +920,11 @@ async fn refresh_grant_fails_closed_when_reuse_marker_cannot_be_persisted() {
         &state,
         &format!(
             r#"
-            CREATE TRIGGER reject_refresh_reuse_marker
-            BEFORE UPDATE OF reuse_detected_at ON "{}".oauth_tokens
+            CREATE TRIGGER reject_refresh_family_revoke
+            BEFORE UPDATE OF revoked_at ON "{}".oauth_tokens
             FOR EACH ROW
-            WHEN (NEW.reuse_detected_at IS NOT NULL)
-            EXECUTE FUNCTION "{}".reject_refresh_reuse_marker();
+            WHEN (OLD.revoked_at IS NULL AND NEW.revoked_at IS NOT NULL)
+            EXECUTE FUNCTION "{}".reject_refresh_family_revoke();
             "#,
             schema, schema
         ),
@@ -926,6 +941,11 @@ async fn refresh_grant_fails_closed_when_reuse_marker_cannot_be_persisted() {
     assert!(body.get("access_token").is_none());
     assert!(body.get("refresh_token").is_none());
     assert!(body.get("id_token").is_none());
+    let family = load_family_rows(&state, family_id).await;
+    assert!(
+        family.iter().all(|row| row.reuse_detected_at.is_none()),
+        "the first family UPDATE must roll back when the second UPDATE fails"
+    );
     drop_schema(&state, &schema).await;
 }
 
@@ -1013,18 +1033,25 @@ async fn concurrent_refresh_replay_yields_one_success_and_one_invalid_grant() {
         token_refresh(&state, &req, &client, &form, None)
     );
     let (first, second) = tokio::join!(response_json(first), response_json(second));
-    let mut outcomes = [
-        (first.0, first.1["error"].clone()),
-        (second.0, second.1["error"].clone()),
-    ];
+    let mut outcomes = [first, second];
     outcomes.sort_by_key(|outcome| outcome.0.as_u16());
 
     assert_eq!(outcomes[0].0, StatusCode::OK);
     assert_eq!(outcomes[1].0, StatusCode::BAD_REQUEST);
-    assert_eq!(outcomes[1].1, "invalid_grant");
+    assert_eq!(outcomes[1].1["error"], "invalid_grant");
+    assert!(
+        outcomes[0].1["refresh_token"].as_str().is_some(),
+        "the HTTP winner still returns its already-issued response"
+    );
     let family = load_family_rows(&state, family_id).await;
-    assert!(family.iter().all(|row| row.reuse_detected_at.is_some()));
-    assert!(family.iter().all(|row| row.revoked_at.is_some()));
+    assert!(
+        family.iter().all(|row| row.reuse_detected_at.is_some()),
+        "replay compromises every family member"
+    );
+    assert!(
+        family.iter().all(|row| row.revoked_at.is_some()),
+        "HTTP 200 does not guarantee its refresh token remains active after family compromise"
+    );
 }
 
 #[actix_web::test]
