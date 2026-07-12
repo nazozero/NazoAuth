@@ -705,6 +705,7 @@ fn server_auth_callers_do_not_query_diesel_or_auth_tables() {
     );
 }
 
+
 #[tokio::test]
 async fn stale_logout_worker_cannot_complete_or_fail_a_reclaimed_delivery() {
     let Some(database_url) = database_url() else {
@@ -777,7 +778,6 @@ async fn stale_logout_worker_cannot_complete_or_fail_a_reclaimed_delivery() {
         ),
         "first worker failure must be rejected after reclaim"
     );
-
     repository
         .complete_backchannel_logout(second.id, second.attempts)
         .await
