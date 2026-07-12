@@ -1,341 +1,663 @@
 # NazoAuth Modular Workspace Architecture Design
 
 **Date:** 2026-07-12  
-**Status:** Approved for implementation planning  
-**Branch:** `codex/modular-workspace-architecture`
+**Status:** Revised after final architecture review  
+**Backend branch:** `codex/modular-workspace-architecture`  
+**Frontend branch:** `codex/runtime-module-admin`  
+**Baseline:** `413e18f`
 
 ## 1. Objective
 
-Rebuild NazoAuth as a Cargo Workspace modular monolith that can extend OAuth,
-OpenID Connect, FAPI, CIBA, and future standards without coupling protocol
-policy to Actix, Diesel, Fred, database rows, or deployment configuration.
+Rebuild NazoAuth as a Cargo Workspace modular monolith with compiler-enforced
+domain, infrastructure, security, and failure boundaries while keeping the
+normal request path short and directly auditable.
 
-The change is one architectural cutover in one branch and one pull request.
-There will be no long-lived compatibility facade, duplicate old/new runtime,
-or staged production release. Internally, the work will use logically scoped
-commits and verification gates so failures remain attributable.
+The result must support continued OAuth, OpenID Connect, FAPI, CIBA, and RFC
+work without introducing dynamic libraries, RPC, a message bus, a command bus,
+or forwarding-only facade, manager, controller, bridge, or orchestrator layers.
+Non-core protocol capabilities are compiled into the one server binary and may
+be activated or drained at runtime when their state semantics permit.
 
-The project has not been formally released. Existing Rust crate and module APIs
-may therefore change. Runtime and data compatibility remain mandatory.
+The architecture changes in one coordinated backend/frontend cutover using one
+branch and Draft PR per repository. Internal commits remain small enough to
+verify and review. No old/new compatibility facade or duplicate production
+runtime remains in the final trees.
 
-## 2. Verified Baseline
+The project has not been formally released, so internal Rust APIs may change.
+Runtime protocol and data compatibility remain mandatory except for deliberate,
+tested, documented additions such as runtime module control.
 
-The design is based on commit `413e18f` on `main`.
+## 2. Verified Baseline and Review Decisions
 
-- The repository is already a Cargo Workspace, but the root package still owns
-  nearly all runtime, protocol, identity, persistence, and HTTP dependencies.
-- The only separate protocol-related package is
-  `nazo-fapi-http-signatures`, which is organized around one feature rather
-  than a stable domain boundary.
-- `support::prelude` re-exports Actix, Diesel, Fred, database rows, settings,
-  schema modules, cryptography, serialization, and helper functions.
-- `AppState` exposes the complete PostgreSQL pool, Fred client, full settings
-  object, and key store to handlers.
-- `Settings` contains roughly sixty fields spanning unrelated capabilities.
-- Protocol decisions, persistence operations, and HTTP response construction
-  coexist in large endpoint modules; several production modules exceed one
-  thousand lines.
-- The existing resource-server API contains Actix, Tower, and Tonic adapters
-  in the same module as framework-independent verification.
-- CI path filters omit `crates/**` in several workflows, allowing workspace
-  package changes to bypass intended checks.
-- CI and container builds pin Rust 1.96 while the verified current stable
-  toolchain is Rust 1.97.0.
-- `cargo audit` reports no known vulnerability. `cargo deny` passes but emits
-  duplicate-version warnings.
-- On Rust stable 1.97.0, `cargo fmt --check`, workspace check, Clippy with
-  warnings denied, and 1,977 tests pass on the baseline. Windows produces an
-  environment-specific MSVC linker-message warning that is not a Rust source
-  warning.
+- The root package currently owns almost all protocol, identity, Actix,
+  PostgreSQL, Valkey, key-management, and deployment dependencies.
+- `support::prelude` re-exports Actix, Diesel, Fred, rows, schema, settings,
+  cryptography, and helpers through a single global namespace.
+- `AppState` exposes the full database pool, Fred client, complete settings, and
+  key store to ordinary handlers. `Settings` spans roughly sixty unrelated
+  values.
+- Protocol decisions, persistence, and HTTP presentation coexist in endpoint
+  files, several of which exceed one thousand lines.
+- Resource-server core already has its own token and confirmation wire types.
+  Its Actix/Tower/Tonic adapter module is the only framework coupling. Tower and
+  Tonic are otherwise used only by adapter tests, so those historical adapters
+  and direct dependencies can be deleted.
+- `nazo-fapi-http-signatures` depends only on framework-neutral
+  `httpsig`, `sfv`, `sha2`, `subtle`, `thiserror`, and `url`. It is a real,
+  independently testable HTTP protocol primitive and will be retained under
+  the neutral name `nazo-http-signatures`; FAPI policy remains in auth.
+- Key generation, lifecycle, prepublication, activation, rotation, JWKS,
+  external-command signing, file persistence, and the lifecycle background task
+  already form a real key-security boundary and will move to a dedicated crate.
+- Existing feature flags are scattered between configuration, metadata,
+  routes, and handlers. There is no persisted desired-state or actual-state
+  model for runtime activation.
+- Several CI path filters omit `crates/**`.
+- CI and the builder container pin Rust 1.96 while the locally verified current
+  stable toolchain is Rust 1.97.0.
+- On stable 1.97.0 the baseline passes format, workspace check, Clippy with
+  warnings denied, and 1,977 tests. `cargo audit` reports no known
+  vulnerability. `cargo deny` passes with duplicate-version warnings.
 
-## 3. Invariants
+## 3. Design Rule
 
-The refactor must not unintentionally change any of the following:
+Every new crate, trait, registry, service, DTO, or adapter must satisfy at least
+one current, demonstrable need:
 
-- HTTP methods, routes, endpoint URLs, or route enablement conditions;
+1. isolate an external technology dependency;
+2. establish a domain, security, or failure boundary;
+3. prevent an invalid dependency;
+4. provide actual reuse or independent testability;
+5. support necessary runtime capability selection.
+
+It must also avoid an unnecessary hop on the normal request path. Field-for-
+field duplicate DTOs, one-implementation traits without an isolation purpose,
+workspace-wide preludes, and `common`, `shared`, or `utils` dumping grounds are
+forbidden. A small explicit wire-type duplicate is preferable to coupling an
+independent crate to an authorization-server domain.
+
+## 4. Compatibility Invariants
+
+The refactor must not unintentionally change:
+
+- HTTP methods, routes, endpoint URLs, or initial route/capability conditions;
 - configuration keys, environment variables, defaults, precedence, validation,
-  or rejection of unknown configuration;
-- PostgreSQL schema, migration ordering, migration history, stored values, or
-  data compatibility;
-- Valkey key strings, serialized values, expiry behavior, Lua atomicity, or
-  fail-closed behavior;
-- access-token, ID-token, logout-token, JARM, introspection, and other claims;
-- OAuth/OIDC error codes, HTTP status codes, headers, JSON bodies, redirects,
-  or browser responses;
-- discovery, authorization-server, protected-resource, and JWKS metadata;
-- OIDC, FAPI, CIBA, device, DCR, SCIM, identity, session, and administrative
-  behavior.
+  or unknown-key rejection;
+- PostgreSQL schema content, stored formats, existing migration files, or
+  migration order;
+- Valkey keys, payloads, TTLs, Lua behavior, atomicity, or fail-closed behavior;
+- access-token, ID-token, logout-token, JARM, introspection, or other claims;
+- OAuth/OIDC error codes, status codes, headers, JSON, redirects, or browser
+  responses;
+- discovery, authorization-server, protected-resource, or JWKS metadata;
+- OIDC, FAPI, CIBA, Device, DCR, SCIM, identity, session, or admin behavior.
 
-Tests must capture these contracts before their implementation moves. A public
-behavior change is permitted only when the same change includes compatibility
-handling where applicable, migrations, documentation, and tests.
+Existing migration files are immutable. New additive migrations may support an
+explicit new requirement only when code, rollback, upgrade, documentation, and
+tests ship together. Runtime module control is such an explicit addition.
 
-## 4. Target Workspace
+Contract tests must capture the existing observable behavior before the owning
+implementation moves.
+
+## 5. Target Workspace
 
 ```text
 Cargo.toml
+Cargo.lock
+rust-toolchain.toml
 crates/
   auth/
   identity/
   resource-server/
+  http-signatures/
+  key-management/
   postgres/
   valkey/
   http-actix/
   server/
 migrations/
 tests/
+docs/
 ```
 
-The root manifest becomes a virtual workspace using resolver version 3. Shared
-package metadata, dependency versions, lint policy, and release profiles live
-at workspace scope. `crates/server` is the default member so existing operator
-commands remain straightforward. The primary binary remains
-`nazo-oauth-server`; migration, key-control, and OIDF seed tools remain separate
-binaries in the server package.
+The root manifest becomes a virtual workspace using resolver 3. Workspace
+package metadata, dependencies, lints, and release profiles are centralized.
+`nazo-server` is the default member. The primary deployed binary remains
+`nazo-oauth-server`.
 
-No crate may exist solely to make the directory tree look symmetrical. A crate
-must own a domain, dependency boundary, or security/failure boundary and must
-contain production behavior and tests when introduced.
+Migration, keyctl, and OIDF seed binaries remain in the server package unless
+dependency measurements prove that one materially pollutes the service build.
+No separate tools crate is planned.
 
-## 5. Crate Responsibilities
+No target crate is created empty. Each appears in the commit that moves or adds
+its production responsibility and tests.
 
-### 5.1 `nazo-auth`
+## 6. Crate Responsibilities
 
-Owns protocol-domain and application policy for OAuth, OIDC, FAPI, CIBA, and
-closely related extensions. It contains typed requests, outcomes, errors,
-claims, client policy, grant processing, authorization details, sender
-constraints, metadata construction, security profiles, and signing policy.
+### 6.1 `nazo-identity`
 
-The current FAPI HTTP Message Signatures implementation moves into
-`auth::http_signatures`. The old `nazo-fapi-http-signatures` package is removed.
+Owns users, tenants, organizations, login, sessions, MFA, passkeys, email
+verification, federation, external identity links, subject claims,
+authentication context, and SCIM identity application logic.
 
-This crate must not depend on Actix, Diesel, diesel-async, diesel-migrations,
-Fred, PostgreSQL schema modules, or persistence row structs. It may depend on
-framework-neutral data, serialization, URL, cryptographic, and time libraries.
-It defines storage and external-service ports in terms of domain types.
+It has no dependency on `nazo-auth`, Actix, Diesel, Fred, or database rows. It
+defines only the infrastructure ports needed to isolate identity persistence,
+session storage, email delivery, and external federation providers. Protocol
+callers receive minimal principal, subject-claim, and authentication-context
+types rather than complete user records.
 
-### 5.2 `nazo-identity`
+### 6.2 `nazo-auth`
 
-Owns users, tenants, organizations, sessions, login policy, email verification,
-MFA, passkeys, external identity links, and federation-domain behavior. It
-defines identity repository, session store, email delivery, and federation
-ports without depending on Actix, Diesel, or Fred.
+Owns OAuth 2.x, OAuth 2.1-aligned behavior, OIDC, FAPI 2.0, FAPI-CIBA,
+authorization, token issuance, grants, client policy, claims, metadata,
+authorization details, sender constraints, security profiles, protocol errors,
+and application policy.
 
-Identity types do not reuse database rows. Protocol code receives the minimum
-principal and authentication-context values it needs instead of an identity
-record or persistence model.
+It directly depends on the minimal public API of `nazo-identity`. The dependency
+is one-way: `nazo-auth -> nazo-identity`. Auth services may directly call an
+identity service where the protocol flow needs it; no application, bridge,
+facade, or orchestrator crate is inserted.
 
-### 5.3 `nazo-resource-server`
+It must not depend on Actix, Diesel, diesel-async, Fred, PostgreSQL schema or
+rows, server configuration loading, `HttpRequest`, or `HttpResponse`.
 
-Owns framework-independent access-token, audience, scope, confirmation claim,
-DPoP, and sender-constraint verification. It consumes framework-neutral request
-evidence and returns typed authorization results or errors.
+Auth also owns the concrete runtime RFC module registry because module
+dependencies, draining rules, and metadata capabilities are protocol policy.
+The server constructs it; HTTP reads its immutable snapshots.
 
-Actix adapters move to `nazo-http-actix`. Unused Tower and Tonic convenience
-adapters are deleted unless repository usage proves that they are required by
-an executable or test. The generic `http` crate may be used only if it improves
-interoperability without importing a runtime or web framework.
+### 6.3 `nazo-resource-server`
 
-### 5.4 `nazo-postgres`
+Owns framework-independent JWT access-token verification, issuer, audience,
+scope, confirmation claims, DPoP, sender constraints, authorization results,
+and resource-server errors.
 
-Owns Diesel schema declarations, database row projections, pool management,
-migrations, SQL queries, repository implementations, and PostgreSQL transaction
-boundaries. Row structs never leave this crate. Explicit conversions map rows
-to auth or identity domain types.
+It depends on neither `nazo-auth` nor `nazo-identity` and on no web framework.
+Its small wire types remain local even when structurally similar to auth token
+types. Actix integration moves to `nazo-http-actix`.
 
-The existing `migrations/` directory and every migration file remain in place.
-The migration binary invokes this crate. Multi-write domain operations use one
-database transaction where atomicity is required.
+The historical Tower/Axum and Tonic adapters, tests, documentation, exports,
+and direct `tower`/`tonic` dependencies are deleted. No compatibility feature
+flag is retained.
 
-### 5.5 `nazo-valkey`
+### 6.4 `nazo-http-signatures`
 
-Owns Fred, Valkey connection management, key construction, serialized storage
-records, Lua scripts, replay protection, sessions, short-lived protocol state,
-rate-limit counters, and atomic compare/set/delete operations.
+Owns reusable, framework-neutral HTTP Message Signatures, Structured Fields,
+Content-Digest, canonicalization, signing-base construction, and verification
+primitives. It is the renamed existing package, not a new abstraction.
 
-Existing key formats, payload formats, TTL calculations, and script semantics
-are locked by contract tests. The crate implements auth and identity store ports
-and converts infrastructure failures into typed availability or consistency
-errors; it does not construct HTTP responses.
+It contains no Authorization Server/FAPI profile policy. `nazo-auth` selects
+when and how the primitive is required. `nazo-key-management` supplies the
+actual signing implementation where a message signature uses managed keys.
 
-### 5.6 `nazo-http-actix`
+### 6.5 `nazo-key-management`
 
-Owns Actix routes, request extraction, form/query/header parsing, cookies, CORS,
-proxy-derived request context, HTTP response presentation, and endpoint-specific
-dependency bundles. It contains no Diesel query, Fred command, token-claim
-construction, protocol policy, or identity persistence logic.
+Owns key generation, lifecycle states, prepublish/active/grace/retired
+transitions, rotation, JWKS material, local signing and verification, external-
+command signing, future KMS/HSM adapters, key persistence/loading, and lifecycle
+background tasks.
 
-Instead of one `AppState`, endpoints receive focused immutable services such as
-`AuthorizationEndpoint`, `TokenEndpoint`, `MetadataEndpoint`,
-`IdentityEndpoints`, `AdminEndpoints`, and `ResourceEndpoint`. Each service
-exposes only the ports and configuration required by that capability.
+`nazo-auth` defines the minimal signing contract and purpose-specific signing
+requests it needs. `nazo-key-management` implements that contract and therefore
+depends on auth. ID tokens, access tokens, JARM, logout tokens, and HTTP message
+signatures use explicit signing purposes; a generic unscoped key handle may not
+silently authorize every use.
 
-### 5.7 `nazo-server`
+### 6.6 `nazo-postgres`
 
-Is the composition root. It owns configuration loading, grouped runtime
-settings, observability, process lifecycle, dependency construction, background
-tasks, and binaries. It is the only package allowed to depend on every concrete
-adapter package.
+Owns Diesel schema, pool, rows, SQL, repository implementations, migrations,
+transactions, and explicit row-to-domain conversion. Database rows never leave
+this crate.
 
-The current configuration namespace remains unchanged. `ConfigSource` parses
-the same keys and constructs focused immutable settings values for auth,
-identity, HTTP, PostgreSQL, Valkey, key management, email, federation, rate
-limits, and observability. No consumer receives the complete configuration.
+Required multi-write atomicity uses one PostgreSQL transaction. Existing
+migrations remain byte-for-byte unchanged. The runtime-module desired-state
+addition receives a new migration rather than editing history.
 
-## 6. Dependency Direction
+### 6.7 `nazo-valkey`
 
-Cargo dependency edges are exact and point from consumer to dependency:
+Owns Fred, connection management, key construction, serialization records,
+TTLs, Lua, replay/session/short-lived-state storage, rate-limit counters, and
+atomic compare/set/delete mechanisms. It implements auth and identity store
+ports and never constructs an OAuth error or HTTP response.
+
+Business policy remains outside this crate: thresholds, rejection decisions,
+nonce consumption timing, session rotation permission, and RFC activation are
+owned by auth or identity. Valkey executes storage operations requested by
+those policies.
+
+### 6.8 `nazo-http-actix`
+
+Owns routes, extractors, form/query/header/cookie parsing, CORS, middleware,
+proxy-derived context, domain/application-error presentation, Actix resource-
+server integration, and the existing protocol-level response when a capability
+is disabled or draining.
+
+It contains no Diesel query, Fred command, token-claim construction, protocol
+policy, identity persistence, or key lifecycle logic. A normal handler is:
 
 ```text
-nazo-resource-server -> nazo-auth
+parse request
+-> load one immutable active-module snapshot or focused service
+-> call AuthService or IdentityService directly
+-> map the result
+```
+
+It does not depend directly on Diesel or Fred.
+
+### 6.9 `nazo-server`
+
+Is only the composition root: configuration loading/validation, focused
+settings construction, concrete adapter initialization, identity/auth/resource
+service construction, runtime registry construction, background tasks,
+observability, HTTP startup, and operational binaries.
+
+One top-level composition aggregate is allowed here:
+
+```rust
+struct AppModules {
+    auth: AuthServices,
+    identity: IdentityServices,
+    runtime_modules: RuntimeModuleRegistry,
+}
+```
+
+The aggregate, full configuration, PostgreSQL pool, and Fred client are never
+injected into an ordinary handler or domain service. Handlers receive only a
+focused service and, when required, the runtime snapshot handle.
+
+## 7. Exact Cargo Dependency Direction
+
+```text
+nazo-auth            -> nazo-identity, nazo-http-signatures
 nazo-postgres        -> nazo-auth, nazo-identity
 nazo-valkey          -> nazo-auth, nazo-identity
+nazo-key-management  -> nazo-auth
 nazo-http-actix      -> nazo-auth, nazo-identity, nazo-resource-server
-nazo-server          -> nazo-auth, nazo-identity, nazo-resource-server,
-                        nazo-postgres, nazo-valkey, nazo-http-actix
+nazo-server          -> all concrete crates required for composition
 ```
 
-`nazo-auth` and `nazo-identity` do not depend on each other. They exchange only
-minimal values at the composition/application boundary so identity storage
-models cannot become protocol models. Domain crates do not depend on
-infrastructure or HTTP crates. Adapters depend on the domain ports they
-implement. HTTP depends on domain/application services, not concrete storage
-clients. Server constructs concrete adapters and injects them into services.
-Circular Cargo dependencies, cross-crate glob re-exports, and workspace-wide
-preludes are forbidden.
+`nazo-http-signatures` is used only by crates that need its primitive. The
+resource-server has no auth or identity edge.
 
-## 7. Stable Extension Points
+Forbidden edges include identity to auth, resource-server to auth/identity,
+auth to Actix/PostgreSQL/Valkey, and http-actix to Diesel/Fred. Circular
+dependencies, cross-crate glob re-exports, and workspace-wide preludes are
+forbidden.
 
-`nazo-auth` provides immutable registries built during startup:
+## 8. Shortest Request and Error Flow
 
-- `GrantHandler`: validates and executes one token grant without parsing Actix
-  requests or issuing an HTTP response;
-- `ClientAuthenticator`: evaluates normalized credentials and produces an
-  authenticated client context;
-- `AuthorizationDetailsHandler`: validates, normalizes, canonicalizes, and
-  evaluates one authorization-details type;
-- `SenderConstraint`: validates proof material and produces confirmation claims
-  and token-binding requirements;
-- `MetadataContributor`: contributes typed metadata from enabled capabilities;
-- `SecurityProfile`: selects allowed grants, client authentication, sender
-  constraints, PAR/JAR/JARM requirements, algorithms, TTL bounds, and metadata.
-
-Registry construction rejects duplicate identifiers. Metadata construction
-rejects conflicting contributions instead of using last-write-wins behavior.
-Registries are frozen before the HTTP server starts. Built-in implementations
-use the same interfaces as future extensions, preventing extension-specific
-branches from accumulating in token and authorization handlers.
-
-Asynchronous ports return explicit futures or use stable async trait syntax
-where object safety is unnecessary. Dynamic dispatch is introduced only for
-registries that require runtime selection; static services otherwise use
-generics or concrete aggregates to preserve clarity and performance.
-
-## 8. Request and Error Flow
-
-The canonical call chain is:
+The standard path is:
 
 ```text
-Actix route
-  -> strict transport parsing
-  -> normalized protocol/identity request
-  -> application service and security profile
-  -> repository/store/external-service ports
-  -> typed outcome or typed domain/infrastructure error
-  -> Actix presenter
-  -> existing HTTP response contract
+Actix handler
+-> AuthService or IdentityService
+-> Repository, Store, or Signer
+-> typed result
+-> Actix presenter
 ```
 
-Transport errors, OAuth protocol errors, identity policy errors, storage
+A combined authentication/authorization flow may call directly:
+
+```text
+Actix handler
+-> AuthService
+-> IdentityService
+-> IdentityRepository
+-> AuthService result
+-> Actix presenter
+```
+
+No Controller, Facade, Manager, UseCase wrapper, application orchestrator,
+command bus, event bus, or repository service is added.
+
+Transport errors, OAuth/OIDC protocol errors, identity policy errors, storage
 availability errors, consistency conflicts, and internal defects remain
-distinct. The Actix presenter owns exact response mapping. Domain and adapter
-crates never return `HttpResponse`.
+distinct. Core and adapter crates never return `HttpResponse`. The Actix
+presenter preserves the exact public status, error code, headers, JSON,
+redirect, and browser response. Internal errors retain sources for redacted
+logs and tracing.
 
-Errors retain sources internally for logs and tracing while public responses
-remain non-sensitive. Authentication, replay, sender-constraint, and backend
-failures preserve existing fail-closed behavior.
+## 9. Trait, Dispatch, and Capability Rules
 
-## 9. Transactions, Concurrency, and Failure Semantics
+Traits are limited to real dependency inversion: repositories, Valkey stores,
+signers, email delivery, external federation providers, clocks, and test
+substitutes. A trait must isolate infrastructure, cross a required dependency
+direction, have multiple real implementations, or be replaceable in tests.
 
-PostgreSQL atomic operations remain PostgreSQL transactions. Valkey atomic
-operations remain single commands or reviewed Lua scripts. The architecture
-does not pretend these systems share a distributed transaction.
+Protocol design defaults to static, auditable forms:
 
-Cross-system workflows must make their ordering and compensation explicit.
-Existing authorization-code, refresh-token, session-rotation, replay, logout
-outbox, and issuance invariants receive targeted concurrency and failure tests
-before being moved. A newly found partial-success window must be fixed in the
-same change with a reproducing test rather than documented as debt.
+- grants use a typed enum and exhaustive match;
+- security profiles use enums and static policy;
+- built-in client authentication uses a fixed ordered chain;
+- authorization details use a registry keyed by the actual `type` extension
+  point because multiple independently validated types already exist;
+- metadata is built from one typed capability snapshot, not contributor traits
+  mutating shared JSON;
+- sender constraints use an explicit static policy composition;
+- concrete structs and static dispatch are preferred over `Arc<dyn Trait>`.
 
-Shared registries and configuration are immutable after startup. Mutable key
-state uses a narrowly scoped concurrency-safe store. Blocking password hashing,
-filesystem access, and external signing remain outside async executor threads
-or use bounded blocking execution.
+Future RFC work may extend these enums or the authorization-details registry.
+No general plugin framework is created in advance. A new registry is permitted
+only when a second real runtime-selected implementation proves the need.
 
-## 10. Compatibility Verification
+## 10. Runtime RFC Module Activation
 
-Before moving implementations, tests will record:
+“Hot activation” means compiled into the same binary and activated, drained, or
+disabled at runtime. It never means loading or unloading a Rust dynamic library.
 
-- the complete method-and-route inventory and conditional route registration;
-- the canonical configuration key set, defaults, parsing, and invalid-input
-  behavior;
-- migration filenames, ordering, and schema results on empty and upgraded
-  databases;
-- every Valkey key builder and representative serialized state;
-- token and authorization response claim fixtures;
-- OAuth/OIDC error status, code, header, body, and redirect fixtures;
+### 10.1 Core and Optional Capabilities
+
+Core services are never hot-disabled: the Authorization Server and Token
+Endpoint frameworks, client-authentication mechanism, identity/session base,
+key resolution/signing base, metadata construction, PostgreSQL, Valkey, and the
+Actix server.
+
+The first concrete `ModuleId` enum covers existing optional behavior and
+independently controllable grants:
+
+```text
+DeviceAuthorization
+TokenExchange
+JwtBearerGrant
+Ciba
+DynamicClientRegistration
+RequestObjects
+Jarm
+AuthorizationDetails
+HttpMessageSignatures
+Scim
+NativeSso
+FrontchannelLogout
+SessionManagement
+```
+
+PAR remains a core endpoint because current FAPI and authorization behavior
+already relies on it broadly. Legacy audience compatibility is policy, not a
+module. Authorization-server FAPI profiles remain startup security policy in
+this cutover: hot-downgrading a profile could invalidate in-flight authorization
+and client policy. Optional capabilities required by a profile cannot be
+disabled while that profile is active.
+
+### 10.2 Concrete Registry, Not a Plugin Platform
+
+`nazo-auth` contains one concrete `RuntimeModuleRegistry` with:
+
+```text
+ModuleId
+ModuleState: Disabled | Starting | Enabled | Draining | Failed
+ModuleDependencies
+ActiveModuleSnapshot
+```
+
+It uses explicit enum matches. Stateless modules use an atomic capability bit
+and service handle; they do not implement a lifecycle trait. Only a module with
+an owned background task or resource lifecycle may gain a small lifecycle
+implementation. There is no plugin manager, capability manager, module facade,
+event bus, or command bus.
+
+An `ArcSwap`-style immutable snapshot lets requests load one snapshot without a
+long-held lock. A started request safely retains its old snapshot; new requests
+observe the newly published state.
+
+### 10.3 Desired State, Actual State, and Management API
+
+Desired state is durable PostgreSQL data. A new additive migration creates:
+
+- `runtime_module_desired_states`, keyed by `module_id`, with desired enabled
+  state, optimistic revision, actor, reason, and update time;
+- `runtime_module_state_events`, an append-only audit trail containing actor,
+  reason, previous state, requested state, revision, and timestamp.
+
+When no persisted override exists, existing configuration flags determine the
+desired state, preserving current startup behavior. An override wins until an
+administrator explicitly resets it to configuration default.
+
+The existing same-origin management frontend controls modules through these
+new backend routes:
+
+```text
+GET   /admin/runtime-modules
+GET   /admin/runtime-modules/events
+PATCH /admin/runtime-modules/{module_id}
+POST  /auth/me/mfa/step-up
+```
+
+Read routes require an active administrator with `admin_level >= 2`. The PATCH
+route additionally requires the existing CSRF protection and a session whose
+`amr` contains `mfa` with `auth_time` no more than five minutes old. The step-up
+route verifies the administrator's configured TOTP or backup code through the
+identity service, atomically rotates the session/CSRF token, and updates
+`auth_time`/`amr`; it never receives or returns module state.
+
+The PATCH body is explicit and concurrency safe:
+
+```json
+{
+  "desired_state": "enabled",
+  "expected_revision": 7,
+  "reason": "Enable CIBA after production readiness validation",
+  "cascade": false
+}
+```
+
+The authenticated user identity supplies the audit actor; the client cannot
+choose it. Reason is required and bounded. The auth service validates module
+identity, dependency/cascade rules, and transition legality, then the
+PostgreSQL adapter applies desired state and the audit event in one compare-
+and-swap transaction. Repeating the same desired state is idempotent; a stale
+revision returns a typed conflict mapped to HTTP 409.
+
+The list response exposes only operational state needed by the UI: module id,
+description, desired source/state, actual state, revision, dependencies,
+dependents, allowed actions, transition time, drain deadline, and redacted
+failure status. The events response is paginated and contains actor identity,
+reason, before/after state, revision, and timestamp, never secrets or raw
+configuration.
+
+Existing administrator-level mutation is hardened with an explicit hierarchy:
+an administrator cannot grant a level at or above their own, alter an
+administrator at or above their own level, or lower/disable their own account.
+Without this rule a level-1 administrator could self-elevate and bypass the
+module-control boundary. The behavior change is security-motivated and receives
+negative authorization tests and documentation.
+
+Each server instance periodically reconciles desired state in dependency order
+and records its actual in-memory state and revision in metrics/logs. The current
+deployment is single-instance. In a future multi-instance deployment, rollout
+verification must wait until every instance reports the same desired revision;
+within each instance, metadata and behavior switch atomically.
+
+### 10.4 Enable and Disable Semantics
+
+Enable flow:
+
+```text
+Disabled
+-> validate configuration and dependencies
+-> validate schema/storage readiness
+-> initialize owned resources
+-> start owned background task, if any
+-> health check
+-> atomically publish service handle and metadata capability
+-> Enabled
+```
+
+Support is never advertised before the service is ready.
+
+Disable flow:
+
+```text
+Enabled
+-> atomically remove metadata and admission of new work
+-> Draining
+-> allow defined existing work to complete or expire
+-> stop owned background task/resource
+-> Disabled
+```
+
+Static Actix routes remain registered. A handler loads the snapshot and returns
+the same protocol-level disabled response captured from the current feature-
+flag behavior. The router is never rebuilt at runtime.
+
+Stateful rules are explicit:
+
+- CIBA and Device stop new authorization requests while existing identifiers
+  may be verified/polled until their recorded TTL expires;
+- DCR stops new registrations while management of already issued registration
+  access tokens drains according to their existing validity;
+- JARM and authorization details stop new authorization transactions while
+  stored in-flight transactions complete with the policy recorded at creation;
+- SCIM, Token Exchange, JWT Bearer, Native SSO, session management, and HTTP
+  signatures allow already executing requests to finish but reject new work;
+- cleanup needed by legacy state remains active until that state expires.
+
+Enabling fails if a dependency is unavailable. Disabling a module required by
+an enabled module or active security profile fails unless an explicit,
+dependency-checked cascade is requested. No unknown dependency is implicitly
+enabled.
+
+### 10.5 NazoAuthWeb Management Experience
+
+`D:\self\NazoAuthWeb` is part of this delivery. Work starts from the latest
+`origin/main`, which already contains the merged Device, CIBA, and browser-
+credential-boundary work. It receives its own branch and coordinated Draft PR,
+cross-linked to the NazoAuth PR.
+
+The existing `/admin` console gains a Runtime Modules section visible only to
+`admin_level >= 2`. It calls the backend routes directly through the existing
+same-origin `apiFetch`, cookie, and CSRF mechanism. It does not persist session,
+MFA, desired-state, or audit material in browser storage.
+
+The page displays desired versus actual state, revision, dependencies,
+dependents, transition/drain status, and redacted failures. Every change
+requires a reason, dependency impact preview, explicit confirmation, and current
+revision. The UI never reports success optimistically; it reloads authoritative
+state. HTTP 409 triggers a visible refresh/conflict flow. A step-up-required
+response opens an MFA dialog, calls the step-up endpoint, then requires a fresh
+confirmation rather than replaying the mutation automatically.
+
+While a module is Starting or Draining the panel polls with bounded backoff and
+stops when stable or when the page is hidden. Failed state is visible without
+leaking configuration or stack traces. Cascade is default-off and requires a
+second explicit dependency summary.
+
+The current `src/pages/Admin.tsx` exceeds 2,500 lines. Adding another inline
+tab would deepen an existing maintainability problem, so it is split by real UI
+responsibility into focused admin panels (users, clients, access requests,
+grants, and runtime modules) with shared layout primitives only where existing
+duplication proves them. Panels call `apiFetch` directly; no frontend service,
+manager, command bus, or field-for-field duplicate model layer is added.
+
+## 11. Metadata Consistency
+
+Discovery and metadata are pure functions of one typed
+`ActiveModuleSnapshot` plus immutable server/profile configuration:
+
+```text
+RuntimeModuleRegistry snapshot
+-> ActiveCapabilities
+-> typed MetadataDocument
+-> serialized HTTP response
+```
+
+Modules never mutate shared JSON. Grant types, endpoints, authorization-details
+types, algorithms, CIBA, Device, DCR, and profile capabilities change in the
+same atomic snapshot as request admission. Conflicting capability construction
+is a startup/reconciliation error, not last-write-wins behavior.
+
+## 12. Transactions, Concurrency, and Failure Semantics
+
+PostgreSQL atomicity remains PostgreSQL transactions. Valkey atomicity remains
+single commands or reviewed Lua. The design does not claim a distributed
+transaction.
+
+Every cross-system operation documents and tests ordering, partial-success
+windows, compensation, retry/idempotency, and fail-closed behavior. Existing
+authorization-code, refresh-token, MFA session rotation, replay, logout outbox,
+DPoP, CIBA/Device, and signing invariants receive targeted concurrent and fault
+tests before and after their move.
+
+Newly found concurrency, transaction, or partial-success defects are reproduced
+and fixed in this branch. Blocking password hashing, filesystem access, and
+external signing remain off async executor threads or use bounded blocking
+execution. Configuration and module snapshots are immutable; mutable key state
+has one narrowly scoped concurrency-safe owner.
+
+## 13. Compatibility Contract Tests
+
+Before moving an implementation, tests record:
+
+- the complete method/route inventory and initial conditional behavior;
+- the canonical configuration key set, values, defaults, precedence, and
+  invalid-input behavior;
+- migration filenames, checksums/order, fresh schema, and upgrade results;
+- every Valkey key builder, representative payload, TTL, and Lua transition;
+- token, authorization response, logout, and introspection claim fixtures;
+- OAuth/OIDC error status, code, headers, body, and redirect fixtures;
 - discovery, authorization-server, protected-resource, and JWKS metadata;
-- CIBA, device, PAR, DPoP, mTLS, introspection, userinfo, logout, DCR, and SCIM
-  behavior exercised by existing integration and conformance tooling.
+- CIBA, Device, PAR/JAR/JARM, DPoP, mTLS, userinfo, introspection, DCR, SCIM,
+  session, identity, and admin behavior;
+- runtime module transition, dependency, metadata atomicity, drain, audit,
+  restart, idempotency, and concurrent-update behavior.
 
-Tests compare externally observable values, not internal module paths. Existing
-test coverage is moved to the owning crate rather than discarded or weakened.
+Tests compare observable values rather than internal paths. Existing coverage
+moves to the owning crate and is not weakened or discarded.
 
-## 11. One-Cutover Implementation Strategy
+## 14. One-Cutover Implementation and Push Strategy
 
-All work lands in one branch and one PR. There is no intermediate production
-deployment and no final old/new compatibility layer.
+One branch and Draft PR per repository, multiple logical commits, and one final
+coordinated production cutover are used. Draft PRs are created early rather
+than after the entire rewrite, allowing CI feedback throughout.
 
-Internal commit sequence:
+Commit/migration sequence:
 
-1. add compatibility-contract tests and workspace lint/toolchain policy;
-2. create non-empty auth and resource-server boundaries and move pure behavior;
-3. add extension registries and migrate authorization/token/metadata policy;
-4. extract identity services and domain types;
-5. extract PostgreSQL rows, repositories, migrations, and transactions;
-6. extract Valkey keys, scripts, state, and failure mapping;
-7. rebuild Actix handlers as transport adapters with focused endpoint services;
-8. move configuration/bootstrap/binaries to the server composition root;
-9. delete old root modules, preludes, glob re-exports, duplicate helpers, unused
-   adapters, dead code, and obsolete tests;
-10. update dependencies, CI, containers, deployment files, and documentation;
-11. run all local verification and create the Draft PR;
-12. deploy the completed architecture and execute both OIDF matrices and PR
-    checks before marking the PR ready for review.
+1. add compatibility contracts, workspace lint policy, CI path coverage, and
+   exact Rust toolchain pin;
+2. extract the framework-independent resource-server and delete Tower/Tonic;
+3. rename and verify the independent HTTP Signatures crate;
+4. extract key-management and purpose-scoped signing;
+5. extract identity domain/services and SCIM identity logic;
+6. establish auth with the direct identity dependency and move protocol policy;
+7. extract PostgreSQL rows/repositories/transactions and add the new runtime-
+   module desired-state migration;
+8. extract Valkey mechanisms and remove business policy from its boundary;
+9. reduce Actix handlers to parsing, direct calls, and presentation;
+10. replace giant settings/state with focused configuration/services and build
+    the server composition root;
+11. implement concrete runtime module snapshots, persistence, privileged Admin
+    API, MFA step-up, dependency validation, drains, and metadata atomicity;
+12. branch NazoAuthWeb from latest `origin/main`, split the giant admin page by
+    real responsibility, and implement the module status/audit/control UI;
+13. delete the old Rust root monolith, prelude, glob re-exports, duplicate
+    helpers, dead code, unused dependencies, and obsolete tests;
+14. update both repositories' CI, containers, deployment, configuration,
+    architecture, frontend, security, and operations documentation;
+15. run all local gates for both repositories and complete coordinated
+    production/conformance acceptance.
 
-Each commit must compile or be paired with the immediately following migration
-commit when a Cargo graph cutover cannot be represented independently. No
-commit is pushed until the complete local verification gate passes.
+After the first compiling boundary and targeted fmt/check/clippy/test pass, push
+the NazoAuth branch and open its Draft PR. Create and push the NazoAuthWeb Draft
+PR as soon as its first tested management slice exists. Cross-link both PRs,
+push each subsequent complete locally tested phase, and inspect CI. The final
+production deployment uses the exact pair of commits that passed their complete
+local gates.
 
-## 12. Dependency and Toolchain Policy
+## 15. Toolchain, Dependency, and Supply-Chain Policy
 
-Rust is pinned through `rust-toolchain.toml` to the current stable release used
-by CI and containers. Workspace dependencies use one canonical version and
-feature declaration. Direct dependencies are scoped to the crates that use
-them; the server package must not become another dependency dump.
+`rust-toolchain.toml`, CI, and `Containerfile` pin exact Rust 1.97.0, the current
+verified stable baseline, rather than a floating `stable` tag. An automated
+update PR must change all three together and run the complete workspace gate.
 
-Compatible stable dependency upgrades are applied with their changelogs and
-official documentation checked for behavioral changes. `Cargo.lock` remains
-committed. Dependabot includes Cargo, GitHub Actions, containers, and Python
-locks. CI runs `cargo audit`, `cargo deny`, dependency review, CodeQL, SBOM,
-container vulnerability scanning, and all workspace quality gates. Workflow
-path filters include `crates/**` and workspace configuration.
+Workspace dependencies have one canonical version/feature declaration and are
+used only by crates that need them. Compatible latest stable upgrades require
+official changelog/migration review, `Cargo.lock` update, and the full test
+suite. Duplicate versions are reduced where upstream compatibility permits;
+remaining duplicates are understood and governed.
 
-Duplicate dependency versions are reduced where upstream compatibility permits;
-unavoidable duplicates are understood and explicitly governed rather than
-silently ignored.
+Dependabot covers Cargo, GitHub Actions, containers, and Python locks. CI covers
+`crates/**` and runs dependency review, `cargo audit`, `cargo deny`, CodeQL,
+SBOM generation, container vulnerability scanning, and workspace quality gates.
 
-## 13. Required Verification and Release Flow
+## 16. Verification and Release Flow
 
 Local completion requires fresh successful runs of:
 
@@ -346,42 +668,83 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-features --locked
 ```
 
-The repository's executable unit, integration, real HTTP E2E, database
-migration, security, concurrency/load, fault-injection, container-build, and
-local-consistency suites also run. Failures are root-caused, fixed, and rerun.
+All locally executable unit, integration, real HTTP E2E, migration, security,
+concurrency/load, fault-injection, container-build, and local consistency suites
+also run. A failure is root-caused, fixed with a regression test where
+applicable, and rerun.
+
+NazoAuthWeb must freshly pass:
+
+```text
+npm ci
+npm run lint
+npm run build
+npm test
+```
+
+Frontend tests cover privilege visibility, state rendering, reason and
+confirmation requirements, MFA step-up without automatic mutation replay,
+revision conflicts, dependency/cascade display, polling termination, redacted
+failures, and the browser credential-persistence policy.
 
 After local verification:
 
-1. push the branch and open a Draft PR;
-2. inspect the current `hostinger` deployment and retain a verified rollback
-   image/version;
-3. run required migrations and deploy the completed service;
-4. verify process state, logs, PostgreSQL, Valkey, TLS, health, discovery, JWKS,
-   authorization, token, PAR, CIBA, userinfo, and introspection;
-5. on deployment failure, repair or roll back before any conformance run;
-6. run the host-local complete OIDF matrix and resolve every unexpected
-   failure, warning, condition failure, or skip;
-7. run the official complete OIDF matrix against
-   `https://auth.nazo.run` and apply the same acceptance rules;
-8. monitor and repair every PR check;
-9. update the Draft PR description with evidence from actual runs;
-10. mark Ready for Review only when every required gate passes; do not merge.
+1. identify the exact NazoAuth and NazoAuthWeb Draft PR head commits;
+2. inspect `hostinger` and retain a verified rollback version;
+3. deploy those exact backend/frontend heads to `auth.nazo.run`, including
+   additive migrations and the same-origin management UI;
+4. verify both running commit SHAs, process, logs, PostgreSQL, Valkey, TLS,
+   health, management authorization/step-up, discovery, JWKS, authorization,
+   token, PAR, CIBA, userinfo, and introspection;
+5. repair or roll back a failed deployment before conformance testing;
+6. run the host-local complete OIDF matrix;
+7. run the official complete OIDF matrix against `https://auth.nazo.run`;
+8. repair all checks on both PRs and update both descriptions with actual
+   evidence and their paired commit;
+9. mark both Ready for Review only when all gates pass; never merge
+   automatically.
 
-## 14. Acceptance Criteria
+OIDF acceptance requires zero failed modules, condition failures, or unexpected
+warnings, REVIEW states, or skips. Existing expected REVIEW/SKIPPED outcomes
+must be in a version-controlled allowlist bound to an exact suite version,
+plan/profile/module, and reason. The allowlist may not expand to mask a
+regression and may not exceed baseline counts. Evidence binds deployed commit,
+host-local run, official plan IDs, and PR-check commit.
 
-The architecture is complete only when:
+## 17. Acceptance Criteria
 
-- all target crates have their declared responsibility and enforced dependency
-  direction;
-- auth core has no Actix, Diesel, Fred, or database-row dependency;
-- the old root monolith, large prelude, glob re-exports, giant state/settings,
-  and miscellaneous support layer are gone;
-- extension registries are active in real protocol paths, not decorative traits;
-- obsolete and duplicate code is deleted;
-- runtime and data compatibility tests pass;
-- all local quality, integration, security, failure, migration, and container
-  gates pass;
-- the public deployment is stable and its critical endpoints pass;
-- host-local and official OIDF full matrices meet the repository's established
-  acceptance standard;
-- all PR checks pass and the PR description matches observed evidence.
+Completion requires all of the following:
+
+- crate responsibilities and exact dependency directions match this design;
+- auth has no Actix, Diesel, Fred, or database-row dependency and directly uses
+  only identity's minimal public API;
+- identity has no auth dependency;
+- resource-server has no auth, identity, or Web-framework dependency;
+- Tower/Axum/Tonic adapters, dependencies, tests, docs, and exports are gone;
+- HTTP Signatures remains an independently tested neutral primitive;
+- key-management is a purpose-scoped security boundary;
+- PostgreSQL rows do not leave `nazo-postgres`;
+- Valkey owns mechanisms, not business policy;
+- the giant prelude, glob re-exports, giant AppState/Settings, and miscellaneous
+  support layer are gone;
+- normal requests have no forwarding-only abstraction layers;
+- traits, registries, and dynamic dispatch satisfy the rules in this design;
+- optional runtime modules activate/drain atomically without metadata drift;
+- desired state persists and all module changes are authorized, audited,
+  idempotent, dependency-checked, and concurrency-safe;
+- the NazoAuthWeb administrator UI enforces visibility, reason, confirmation,
+  MFA step-up, conflict handling, dependency display, and no credential/state
+  persistence in browser storage;
+- the oversized frontend Admin page is split into focused responsibility-based
+  panels without adding a forwarding service layer;
+- all compatibility contracts and local quality/integration/security/migration/
+  concurrency/fault/container gates pass;
+- `hostinger` runs the final paired backend/frontend PR heads and public
+  critical endpoints plus management controls pass;
+- host-local and official OIDF full matrices meet the stated acceptance rule;
+- checks on both PRs pass and both descriptions match observed evidence.
+
+The governing rule is: split every real boundary, keep direct calls and static
+types on the core path, compile optional RFCs into the one binary with atomic
+runtime activation, and delete every abstraction that does not prevent a
+demonstrable dependency, security, failure, or reuse problem.
