@@ -700,13 +700,7 @@ async fn create_federated_user(
 }
 
 fn normalize_federation_token(value: &str) -> Option<String> {
-    let value = value.trim();
-    (value.len() >= 32
-        && value.len() <= 256
-        && value
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'))
-    .then_some(value.to_owned())
+    nazo_identity::federation::normalize_federation_token(value)
 }
 
 async fn create_federated_session(

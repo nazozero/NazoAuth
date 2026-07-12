@@ -1,14 +1,9 @@
 use crate::http::prelude::*;
 
-pub(super) const SCIM_USER_SCHEMA: &str = "urn:ietf:params:scim:schemas:core:2.0:User";
-pub(super) const SCIM_ERROR_SCHEMA: &str = "urn:ietf:params:scim:api:messages:2.0:Error";
-pub(super) const SCIM_LIST_SCHEMA: &str = "urn:ietf:params:scim:api:messages:2.0:ListResponse";
-pub(super) const SCIM_PATCH_SCHEMA: &str = "urn:ietf:params:scim:api:messages:2.0:PatchOp";
-pub(super) const SCIM_SERVICE_PROVIDER_CONFIG_SCHEMA: &str =
-    "urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig";
-pub(super) const SCIM_SCHEMA_SCHEMA: &str = "urn:ietf:params:scim:schemas:core:2.0:Schema";
-pub(super) const SCIM_RESOURCE_TYPE_SCHEMA: &str =
-    "urn:ietf:params:scim:schemas:core:2.0:ResourceType";
+pub(super) use nazo_identity::scim::{
+    SCIM_ERROR_SCHEMA, SCIM_LIST_SCHEMA, SCIM_PATCH_SCHEMA, SCIM_RESOURCE_TYPE_SCHEMA,
+    SCIM_SCHEMA_SCHEMA, SCIM_SERVICE_PROVIDER_CONFIG_SCHEMA, SCIM_USER_SCHEMA,
+};
 
 pub(super) fn scim_user_json(user: UserRow) -> Value {
     scim_base(json!({

@@ -7,6 +7,7 @@ use super::{
     login_required_response, oauth_error, prelude::*, random_urlsafe_token, valkey_del,
     valkey_eval_string,
 };
+use nazo_identity::session::add_amr;
 
 const ROTATE_SESSION_SCRIPT: &str = r#"
 local current = redis.call('GET', KEYS[1])
@@ -204,20 +205,13 @@ async fn session_from_payload(
     }))
 }
 
-fn add_amr(amr: &mut Vec<String>, value: &str) {
-    if !amr.iter().any(|method| method == value) {
-        amr.push(value.to_owned());
-    }
-}
-
 fn valid_session_payload(payload: &SessionPayload, now: i64) -> bool {
-    payload.auth_time > 0
-        && payload.auth_time <= now.saturating_add(30)
-        && !payload.amr.is_empty()
-        && payload
-            .oidc_sid
-            .as_deref()
-            .is_some_and(|sid| !sid.trim().is_empty())
+    nazo_identity::session::valid_authentication_metadata(
+        payload.auth_time,
+        &payload.amr,
+        payload.oidc_sid.as_deref(),
+        now,
+    )
 }
 
 pub(crate) async fn require_admin(

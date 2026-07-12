@@ -34,25 +34,21 @@ pub(crate) fn passkey_webauthn(settings: &Settings) -> Webauthn {
 }
 
 pub(crate) fn passkey_user_handle(user: &UserRow) -> Vec<u8> {
-    let mut handle = Vec::with_capacity(32);
-    handle.extend_from_slice(user.tenant_id.as_bytes());
-    handle.extend_from_slice(user.id.as_bytes());
-    handle
+    let tenant_id = nazo_identity::TenantId::new(user.tenant_id)
+        .expect("persisted passkey tenant ID must not be nil");
+    let user_id =
+        nazo_identity::UserId::new(user.id).expect("persisted passkey user ID must not be nil");
+    nazo_identity::passkey::passkey_user_handle(tenant_id, user_id)
 }
 
 pub(crate) fn normalize_passkey_label(value: Option<String>) -> Result<String, HttpResponse> {
-    let label = value
-        .map(|value| value.trim().to_owned())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "Passkey".to_owned());
-    if label.len() > 120 {
-        return Err(oauth_error(
+    nazo_identity::passkey::normalize_passkey_label(value.as_deref()).map_err(|_| {
+        oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "passkey label is too long.",
-        ));
-    }
-    Ok(label)
+        )
+    })
 }
 
 pub(crate) fn passkey_credential_from_row(
@@ -137,30 +133,25 @@ where
 }
 
 pub(crate) fn normalize_ceremony_id(value: &str) -> Result<String, HttpResponse> {
-    let value = value.trim();
-    if value.len() < 32
-        || value.len() > 256
-        || !value
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-    {
-        return Err(oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "invalid ceremony id.",
-        ));
-    }
-    Ok(value.to_owned())
-}
-
-pub(crate) fn credential_id_from_response(id: &str) -> Result<CredentialId, HttpResponse> {
-    CredentialId::from_b64url(id).map_err(|_| {
+    nazo_identity::passkey::normalize_ceremony_id(value).map_err(|_| {
         oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
-            "invalid passkey credential id.",
+            "invalid ceremony id.",
         )
     })
+}
+
+pub(crate) fn credential_id_from_response(id: &str) -> Result<CredentialId, HttpResponse> {
+    nazo_identity::passkey::credential_id_from_response(id)
+        .map(CredentialId)
+        .map_err(|_| {
+            oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "invalid passkey credential id.",
+            )
+        })
 }
 
 #[cfg(test)]

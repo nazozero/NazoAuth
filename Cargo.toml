@@ -2,6 +2,7 @@
 members = [
     "crates/server",
     "crates/http-signatures",
+    "crates/identity",
     "crates/runtime-modules",
     "crates/resource-server",
 ]

@@ -23,19 +23,30 @@ impl Default for TenantContext {
 
 impl TenantContext {
     pub(crate) fn includes_user(&self, user: &UserRow) -> bool {
-        user.tenant_id == self.tenant_id
-            && user.realm_id == self.realm_id
-            && user.organization_id == self.organization_id
+        self.as_identity_context().is_some_and(|context| {
+            context.matches_raw(user.tenant_id, user.realm_id, user.organization_id)
+        })
     }
 
     pub(crate) fn includes_client(&self, client: &ClientRow) -> bool {
-        client.tenant_id == self.tenant_id
-            && client.realm_id == self.realm_id
-            && client.organization_id == self.organization_id
+        self.as_identity_context().is_some_and(|context| {
+            context.matches_raw(client.tenant_id, client.realm_id, client.organization_id)
+        })
     }
 
     pub(crate) fn same_tenant(&self, tenant_id: Uuid) -> bool {
-        tenant_id == self.tenant_id
+        self.as_identity_context().is_some_and(|context| {
+            nazo_identity::TenantId::new(tenant_id)
+                .is_ok_and(|tenant_id| context.same_tenant(tenant_id))
+        })
+    }
+
+    fn as_identity_context(&self) -> Option<nazo_identity::TenantContext> {
+        Some(nazo_identity::TenantContext {
+            tenant_id: nazo_identity::TenantId::new(self.tenant_id).ok()?,
+            realm_id: nazo_identity::RealmId::new(self.realm_id).ok()?,
+            organization_id: nazo_identity::OrganizationId::new(self.organization_id).ok()?,
+        })
     }
 }
 
