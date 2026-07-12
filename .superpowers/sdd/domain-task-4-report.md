@@ -318,3 +318,86 @@ did not fail compilation or tests.
 - No known functional remediation concern remains within Domain Task 4. The
   separately owned DPoP lost-response failure and refresh implementation were
   intentionally untouched.
+
+## Remediation B re-review completion (2026-07-13)
+
+The three Important and one Minor findings in
+`domain-task-4-remediation-b-rereview.md` were remediated without modifying the
+refresh lost-response work, pushing, deploying, or changing PR state.
+
+### Commits
+
+- `bee6a60` — perform password candidate verification inside the identity
+  domain; ordinary authentication callers receive only a boolean and cannot
+  borrow or copy the encoded verifier.
+- `7856d9a` — generate one live form-login password and reuse it for both the
+  persisted fixture and encoded request.
+- `985d380` — expose a still-live committed delivery capability only through
+  the applicant's owner-scoped access-request response and prove production
+  list-to-claim-to-replay behavior.
+- `2638548` — replace server OAuth client query forwarding functions with the
+  focused `OAuthClientRepository` and direct calls at each consumer.
+- `62b649e` — satisfy the strict delivery-path Clippy gate.
+- Sibling frontend, isolated worktree
+  `D:\self\NazoAuthWeb-modular-workspace-architecture`, commit `0d69544` — show
+  the applicant's one-time delivery action, correct the admin's false "sent"
+  message and delivery page's false email instruction, and add an executable
+  delivery-route test.
+
+### TDD evidence
+
+- Password RED failed with `E0599` because `PasswordHash::verify_password` did
+  not exist. GREEN parses and verifies Argon2 inside `nazo-identity`; the
+  former `expose_for_verification` API is absent and a compile-fail doctest
+  locks that boundary.
+- Live login RED used real PostgreSQL and Valkey and returned HTTP 401 instead
+  of the expected 303 because setup and form encoding generated different
+  passwords. GREEN reuses the same per-test value and the exact live test
+  passes.
+- Delivery RED used the production owner list and failed because the approved
+  item had no `delivery_token`. GREEN derives a request/user-scoped HMAC token,
+  looks up only exact approved-request keys in bounded 128-key `MGET` batches,
+  returns a token/URL only for a present committed payload with matching
+  request, user, and approved-client linkage, and fails the owner response with
+  503 on Valkey errors. It never uses `KEYS` or `SCAN`. The real end-to-end test
+  obtains the token from `GET /auth/me/access-requests`, claims it as the
+  applicant, observes 404 on replay, and observes the token disappear after
+  consumption. The admin response contains no token; another logged-in user
+  sees no token and cannot claim it even when given the value.
+- Frontend RED failed with `ERR_MODULE_NOT_FOUND` for the requested delivery
+  path helper. GREEN has one Node test proving approved-only display and safe
+  token encoding, followed by ESLint, TypeScript, and Vite build.
+- Repository-boundary RED named all four forwarding definitions in
+  `support/oauth.rs`. GREEN deletes them, calls `OAuthClientRepository`
+  directly from the actual consumers, forbids those definitions recursively,
+  forbids OAuth-client queries in every server support module, and requires
+  direct focused-repository calls so moving the facade does not pass.
+
+### Fresh verification
+
+- `rtk cargo fmt --all -- --check` and `rtk git diff --check` — exit 0.
+- `rtk cargo check --workspace --all-targets --all-features --locked` — exit 0.
+- `rtk cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
+  — exit 0, no issues.
+- Real PostgreSQL `rtk cargo test -p nazo-postgres --all-features --locked -- --nocapture`
+  — exit 0: 4 unit, 6 access-request, 18 identity/architecture, 1 migration,
+  and 2 compile-fail privacy tests passed.
+- Real PostgreSQL/Valkey server access-request slice — 31/31 passed. The
+  production owner response supplied the token, applicant claim returned 200,
+  replay returned 404, and post-claim owner response omitted the capability.
+- Real PostgreSQL/Valkey
+  `login_form_request_creates_session_and_redirects_to_safe_next` — 1/1 passed
+  with HTTP 303.
+- `rtk cargo test -p nazo-identity --doc --all-features --locked` — 5/5 passed,
+  including non-serialization and non-extraction compile-fail contracts.
+- `rtk cargo doc -p nazo-identity -p nazo-postgres --no-deps --all-features --locked`
+  — exit 0.
+- `rtk cargo test --workspace --all-features --locked` with the live mandatory
+  PostgreSQL URL and optional server live-service variables unset — exit 0
+  across all workspace suites and doctests; server lib reported 1,658 passed.
+- Sibling frontend `rtk npm test` — exit 0: Node delivery-path test 1/1,
+  ESLint, TypeScript, and Vite production build all passed.
+
+The existing localized MSVC linker-stdout warning was emitted during Rust test
+linking and did not fail any gate. No external CI/CodeQL check was rerun
+locally.
