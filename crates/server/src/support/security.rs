@@ -23,10 +23,13 @@ use argon2::PasswordVerifier;
 use argon2::password_hash::SaltString;
 use argon2::password_hash::rand_core::OsRng;
 use base64::Engine;
-use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::Utc;
 use hmac::{Hmac, KeyInit, Mac};
-use nazo_auth::Claims;
+use nazo_auth::{
+    Claims, ClientAssertionVerificationInput, unverified_client_assertion_client_id,
+    verify_private_key_jwt,
+};
 use serde_json::{Value, json};
 use sha2::Digest;
 use sha2::Sha256;
@@ -282,11 +285,7 @@ pub(crate) fn pkce_s256(verifier: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
 }
 
-pub(crate) const CLIENT_ASSERTION_TYPE_JWT_BEARER: &str =
-    "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
-const CLIENT_ASSERTION_MAX_TTL_SECONDS: i64 = 300;
-const CLIENT_ASSERTION_CLOCK_SKEW_SECONDS: i64 = 30;
-const MAX_CLIENT_ASSERTION_JTI_BYTES: usize = 128;
+pub(crate) use nazo_auth::{CLIENT_ASSERTION_TYPE_JWT_BEARER, ValidatedClientAssertion};
 #[cfg(test)]
 pub(crate) const SUPPORTED_CLIENT_JWT_SIGNING_ALGS: &[&str] = &["EdDSA", "RS256", "ES256", "PS256"];
 pub(crate) const SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS: &[&str] = &["RSA-OAEP-256"];
@@ -340,92 +339,37 @@ pub(crate) fn extract_client_credentials_with_trusted_proxies(
     form_assertion_type: Option<&str>,
     form_assertion: Option<&str>,
 ) -> ClientCredentials {
-    let headers = req.headers();
-    if form_assertion_type.is_some() || form_assertion.is_some() {
-        let client_id = form_assertion
-            .filter(|_| form_assertion_type == Some(CLIENT_ASSERTION_TYPE_JWT_BEARER))
-            .and_then(unverified_client_assertion_client_id);
-        return ClientCredentials {
-            client_id,
-            client_secret: None,
-            client_assertion: form_assertion.map(ToOwned::to_owned),
-            method: "private_key_jwt".to_owned(),
-        };
-    }
-    if let Some((id, secret)) = basic_authorization_credentials(headers)
-        .and_then(|raw| STANDARD.decode(raw).ok())
-        .and_then(|decoded| String::from_utf8(decoded).ok())
-        .and_then(|text| {
-            let (id, secret) = text.split_once(':')?;
-            Some((id.to_string(), secret.to_string()))
-        })
+    let facts = nazo_http_actix::token_client_auth_transport_facts(
+        req,
+        nazo_http_actix::TokenClientAuthForm {
+            client_id: form_client_id,
+            client_secret: form_secret,
+            client_assertion_type: form_assertion_type,
+            client_assertion: form_assertion,
+        },
+    );
+    let assertion_client_id = facts
+        .client_assertion()
+        .filter(|_| facts.client_assertion_type() == Some(CLIENT_ASSERTION_TYPE_JWT_BEARER))
+        .and_then(unverified_client_assertion_client_id);
+    let presentation = facts.presentation();
+    let mtls_client_id = if !presentation.http_basic
+        && !presentation.client_assertion_type
+        && !presentation.client_assertion
+        && form_secret.is_none()
     {
-        return ClientCredentials {
-            client_id: Some(id),
-            client_secret: Some(secret),
-            client_assertion: None,
-            method: "client_secret_basic".to_owned(),
-        };
-    }
-    match form_client_id {
-        Some(id) if form_secret.is_some() => ClientCredentials {
-            client_id: Some(id.to_string()),
-            client_secret: form_secret.map(ToOwned::to_owned),
-            client_assertion: None,
-            method: "client_secret_post".to_owned(),
-        },
-        Some(id)
-            if crate::support::client_ip::request_from_trusted_proxy_cidrs(
-                req,
-                trusted_proxy_cidrs,
-            ) && request_mtls_client_certificate_from_headers(req.headers()).is_some() =>
-        {
-            ClientCredentials {
-                client_id: Some(id.to_string()),
-                client_secret: None,
-                client_assertion: None,
-                method: "tls_client_auth".to_owned(),
-            }
-        }
-        Some(id) => ClientCredentials {
-            client_id: Some(id.to_string()),
-            client_secret: None,
-            client_assertion: None,
-            method: "none".to_owned(),
-        },
-        None => ClientCredentials {
-            client_id: None,
-            client_secret: None,
-            client_assertion: None,
-            method: "none".to_owned(),
-        },
-    }
-}
-
-fn basic_authorization_credentials(headers: &HeaderMap) -> Option<&str> {
-    let raw = headers
-        .get(header::AUTHORIZATION)?
-        .to_str()
-        .ok()?
-        .trim_start();
-    let mut parts = raw.splitn(2, char::is_whitespace);
-    let scheme = parts.next()?;
-    let credentials = parts.next()?.trim();
-    (scheme.eq_ignore_ascii_case("Basic")
-        && !credentials.is_empty()
-        && credentials.split_whitespace().count() == 1)
-        .then_some(credentials)
-}
-
-#[derive(serde::Deserialize)]
-struct ClientAssertionClaims {
-    iss: String,
-    sub: String,
-    aud: Value,
-    exp: i64,
-    nbf: Option<i64>,
-    iat: Option<i64>,
-    jti: String,
+        form_client_id
+            .filter(|_| {
+                crate::support::client_ip::request_from_trusted_proxy_cidrs(
+                    req,
+                    trusted_proxy_cidrs,
+                ) && request_mtls_client_certificate_from_headers(req.headers()).is_some()
+            })
+            .map(str::to_owned)
+    } else {
+        None
+    };
+    facts.presented_credentials(assertion_client_id, mtls_client_id)
 }
 
 #[derive(Debug)]
@@ -433,13 +377,6 @@ pub(crate) enum ClientAssertionError {
     Invalid,
     ReplayDetected,
     StoreUnavailable,
-}
-
-pub(crate) struct ValidatedClientAssertion {
-    jti: String,
-    exp: i64,
-    kid: Option<String>,
-    alg: jsonwebtoken::Algorithm,
 }
 
 pub(crate) fn verify_private_key_jwt_claims_for_issuer(
@@ -467,57 +404,16 @@ fn verify_private_key_jwt_claims_with_issuer(
     client: &ClientRow,
     assertion: &str,
 ) -> Result<ValidatedClientAssertion, ClientAssertionError> {
-    let header = jsonwebtoken::decode_header(assertion).map_err(|_| {
-        log_client_assertion_rejection(req, client, "decode_header");
-        ClientAssertionError::Invalid
-    })?;
-    let (kid, decoding_key) = client_assertion_decoding_key(
+    verify_private_key_jwt(ClientAssertionVerificationInput {
+        issuer,
+        endpoint_path: req.uri().path(),
         client,
-        header.kid.as_deref().filter(|kid| !kid.trim().is_empty()),
-        header.alg,
-    )
-    .ok_or_else(|| {
-        log_client_assertion_rejection(req, client, "key_not_found");
+        assertion,
+        now: Utc::now().timestamp(),
+    })
+    .map_err(|error| {
+        log_client_assertion_rejection(req, client, error.audit_reason());
         ClientAssertionError::Invalid
-    })?;
-
-    let mut validation = jsonwebtoken::Validation::new(header.alg);
-    validation.validate_aud = false;
-    validation.set_issuer(&[client.client_id.as_str()]);
-    let token_data =
-        jsonwebtoken::decode::<ClientAssertionClaims>(assertion, &decoding_key, &validation)
-            .map_err(|error| {
-                log_client_assertion_rejection(req, client, client_assertion_decode_reason(&error));
-                ClientAssertionError::Invalid
-            })?;
-    let claims = token_data.claims;
-    let now = Utc::now().timestamp();
-    if claims.iss != client.client_id || claims.sub != client.client_id {
-        log_client_assertion_rejection(req, client, "issuer_subject");
-        return Err(ClientAssertionError::Invalid);
-    }
-    if !audience_matches(
-        &claims.aud,
-        &client_assertion_audiences(issuer, req, client),
-        client.allow_client_assertion_audience_array,
-    ) {
-        log_client_assertion_rejection(req, client, "audience");
-        return Err(ClientAssertionError::Invalid);
-    }
-    if !valid_client_assertion_times(&claims, now) {
-        log_client_assertion_rejection(req, client, "time");
-        return Err(ClientAssertionError::Invalid);
-    }
-    if !valid_client_assertion_jti(&claims.jti) {
-        log_client_assertion_rejection(req, client, "jti");
-        return Err(ClientAssertionError::Invalid);
-    }
-
-    Ok(ValidatedClientAssertion {
-        jti: claims.jti,
-        exp: claims.exp,
-        kid,
-        alg: header.alg,
     })
 }
 
@@ -529,19 +425,6 @@ fn log_client_assertion_rejection(req: &HttpRequest, client: &ClientRow, reason:
         req.uri().path(),
         blake3_hex(&client.client_id)
     );
-}
-
-fn client_assertion_decode_reason(error: &jsonwebtoken::errors::Error) -> &'static str {
-    use jsonwebtoken::errors::ErrorKind;
-
-    match error.kind() {
-        ErrorKind::ExpiredSignature => "decode_expired",
-        ErrorKind::ImmatureSignature => "decode_immature",
-        ErrorKind::InvalidIssuer => "decode_issuer",
-        ErrorKind::InvalidSignature => "decode_signature",
-        ErrorKind::InvalidAlgorithm => "decode_algorithm",
-        _ => "decode",
-    }
 }
 
 #[cfg(test)]
@@ -567,7 +450,7 @@ pub(crate) async fn consume_private_key_jwt_with_store(
     let now = Utc::now().timestamp();
     let ttl_seconds = assertion.replay_ttl_seconds(now);
     match replay
-        .consume_private_key_jwt(&client.client_id, &assertion.jti, ttl_seconds)
+        .consume_private_key_jwt(&client.client_id, assertion.jti(), ttl_seconds)
         .await
     {
         Ok(true) => Ok(()),
@@ -576,8 +459,8 @@ pub(crate) async fn consume_private_key_jwt_with_store(
                 "client_assertion_replay_detected",
                 audit_fields(&[
                     ("client_id", json!(client.client_id)),
-                    ("jti_hash", json!(blake3_hex(&assertion.jti))),
-                    ("kid", json!(assertion.kid.as_deref())),
+                    ("jti_hash", json!(blake3_hex(assertion.jti()))),
+                    ("kid", json!(assertion.kid())),
                 ]),
             );
             Err(ClientAssertionError::ReplayDetected)
@@ -597,7 +480,7 @@ pub(crate) async fn consume_private_key_jwt_with_authorization_service(
     let now = Utc::now().timestamp();
     let ttl_seconds = assertion.replay_ttl_seconds(now);
     match service
-        .consume_private_key_jwt(&client.client_id, &assertion.jti, ttl_seconds)
+        .consume_private_key_jwt(&client.client_id, assertion.jti(), ttl_seconds)
         .await
     {
         Ok(true) => Ok(()),
@@ -606,8 +489,8 @@ pub(crate) async fn consume_private_key_jwt_with_authorization_service(
                 "client_assertion_replay_detected",
                 audit_fields(&[
                     ("client_id", json!(client.client_id)),
-                    ("jti_hash", json!(blake3_hex(&assertion.jti))),
-                    ("kid", json!(assertion.kid.as_deref())),
+                    ("jti_hash", json!(blake3_hex(assertion.jti()))),
+                    ("kid", json!(assertion.kid())),
                 ]),
             );
             Err(ClientAssertionError::ReplayDetected)
@@ -619,18 +502,6 @@ pub(crate) async fn consume_private_key_jwt_with_authorization_service(
     }
 }
 
-impl ValidatedClientAssertion {
-    pub(crate) fn alg(&self) -> jsonwebtoken::Algorithm {
-        self.alg
-    }
-
-    fn replay_ttl_seconds(&self, now: i64) -> u64 {
-        self.exp
-            .saturating_sub(now)
-            .clamp(1, CLIENT_ASSERTION_MAX_TTL_SECONDS) as u64
-    }
-}
-
 #[cfg(test)]
 fn client_assertion_replay_key(client_id: &str, jti: &str) -> String {
     format!(
@@ -638,13 +509,6 @@ fn client_assertion_replay_key(client_id: &str, jti: &str) -> String {
         blake3_hex(client_id),
         blake3_hex(jti)
     )
-}
-
-fn unverified_client_assertion_client_id(assertion: &str) -> Option<String> {
-    let claims = jsonwebtoken::dangerous::insecure_decode::<ClientAssertionClaims>(assertion)
-        .ok()?
-        .claims;
-    (claims.iss == claims.sub && !claims.sub.trim().is_empty()).then_some(claims.sub)
 }
 
 pub(crate) fn supported_client_jwt_algorithm_name(
@@ -680,34 +544,6 @@ pub(crate) fn client_jwt_decoding_key(
         .iter()
         .find(|key| key.get("kid").and_then(Value::as_str) == Some(kid))?;
     jwt_decoding_key_from_jwk(key, alg)
-}
-
-fn client_assertion_decoding_key(
-    client: &ClientRow,
-    kid: Option<&str>,
-    alg: jsonwebtoken::Algorithm,
-) -> Option<(Option<String>, jsonwebtoken::DecodingKey)> {
-    if let Some(kid) = kid {
-        return client_jwt_decoding_key(client, kid, alg)
-            .map(|decoding_key| (Some(kid.to_owned()), decoding_key));
-    }
-
-    let keys = client.jwks.as_ref()?.get("keys")?.as_array()?;
-    let mut matching = keys.iter().filter_map(|key| {
-        let registered_kid = key
-            .get("kid")
-            .and_then(Value::as_str)
-            .filter(|registered_kid| !registered_kid.trim().is_empty());
-        if registered_kid.is_some() {
-            return None;
-        }
-        jwt_decoding_key_from_jwk(key, alg).map(|decoding_key| (None, decoding_key))
-    });
-    let selected = matching.next()?;
-    if matching.next().is_some() {
-        return None;
-    }
-    Some(selected)
 }
 
 pub(crate) fn jwt_decoding_key_from_jwk(
@@ -783,70 +619,6 @@ fn supported_client_jwt_algorithm(
         jsonwebtoken::Algorithm::PS256 => Some(("PS256", SupportedClientJwtAlgorithm::Rsa)),
         _ => None,
     }
-}
-
-fn client_assertion_audiences(issuer: &str, req: &HttpRequest, client: &ClientRow) -> Vec<String> {
-    client_assertion_audience_candidates(
-        issuer,
-        req.uri().path(),
-        client.allow_client_assertion_endpoint_audience,
-    )
-}
-
-fn client_assertion_audience_candidates(
-    issuer: &str,
-    path: &str,
-    allow_endpoint_audience: bool,
-) -> Vec<String> {
-    if path == "/par" {
-        return vec![
-            issuer.to_owned(),
-            format!("{issuer}/par"),
-            format!("{issuer}/token"),
-        ];
-    }
-    if path == "/bc-authorize" && allow_endpoint_audience {
-        return vec![
-            issuer.to_owned(),
-            format!("{issuer}/bc-authorize"),
-            format!("{issuer}/token"),
-        ];
-    }
-    vec![issuer.to_owned(), format!("{issuer}{path}")]
-}
-
-fn audience_matches(aud: &Value, expected: &[String], allow_array: bool) -> bool {
-    match aud {
-        Value::String(value) => expected.iter().any(|candidate| candidate == value),
-        Value::Array(values) if allow_array => values
-            .iter()
-            .any(|value| audience_matches(value, expected, allow_array)),
-        _ => false,
-    }
-}
-
-fn valid_client_assertion_times(claims: &ClientAssertionClaims, now: i64) -> bool {
-    if claims.exp <= now || claims.exp > now.saturating_add(CLIENT_ASSERTION_MAX_TTL_SECONDS) {
-        return false;
-    }
-    if claims
-        .nbf
-        .is_some_and(|nbf| nbf > now.saturating_add(CLIENT_ASSERTION_CLOCK_SKEW_SECONDS))
-    {
-        return false;
-    }
-    if claims.iat.is_some_and(|iat| {
-        iat > now.saturating_add(CLIENT_ASSERTION_CLOCK_SKEW_SECONDS)
-            || now.saturating_sub(iat) > CLIENT_ASSERTION_MAX_TTL_SECONDS
-    }) {
-        return false;
-    }
-    true
-}
-
-fn valid_client_assertion_jti(jti: &str) -> bool {
-    let trimmed = jti.trim();
-    !trimmed.is_empty() && trimmed.len() <= MAX_CLIENT_ASSERTION_JTI_BYTES
 }
 
 #[cfg(test)]

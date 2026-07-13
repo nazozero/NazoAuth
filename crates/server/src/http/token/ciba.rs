@@ -860,7 +860,7 @@ fn ciba_invalid_request(description: &str) -> HttpResponse {
 }
 
 fn ciba_client_assertion_algorithm_supported(assertion: Option<&ValidatedClientAssertion>) -> bool {
-    assertion.is_none_or(|assertion| ciba_jwt_signing_algorithm_supported(assertion.alg()))
+    assertion.is_none_or(|assertion| ciba_jwt_signing_algorithm_supported(assertion.algorithm()))
 }
 
 fn ciba_jwt_signing_algorithm_supported(alg: jsonwebtoken::Algorithm) -> bool {
