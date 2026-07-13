@@ -13,8 +13,8 @@ use crate::support::blake3_hex;
 use crate::support::jwt_decoding_key_from_jwk;
 use crate::support::{
     DpopError, DpopErrorContext, ValidatedClientAssertion, dpop_error_response, is_subset,
-    json_array_to_strings, parse_scope, random_urlsafe_token,
-    request_mtls_thumbprint_from_trusted_proxy, validate_dpop_proof_with_authorization_service,
+    parse_scope, random_urlsafe_token, request_mtls_thumbprint_from_trusted_proxy,
+    validate_dpop_proof_with_authorization_service,
 };
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse};
@@ -54,9 +54,7 @@ pub(crate) fn native_sso_requested(scopes: &[String]) -> bool {
 }
 
 pub(crate) fn native_sso_client_authorized(client: &ClientRow) -> bool {
-    json_array_to_strings(&client.scopes)
-        .iter()
-        .any(|scope| scope == DEVICE_SSO_SCOPE)
+    client.scopes.iter().any(|scope| scope == DEVICE_SSO_SCOPE)
 }
 
 pub(crate) fn native_sso_device_secret_hash(device_secret: &str) -> String {
@@ -186,11 +184,10 @@ fn native_sso_requested_scopes(
     client: &ClientRow,
     requested_scope: Option<&str>,
 ) -> Result<Vec<String>, HttpResponse> {
-    let client_scopes = json_array_to_strings(&client.scopes);
     let requested = parse_scope(requested_scope.unwrap_or("openid offline_access device_sso"));
     if !requested.iter().any(|scope| scope == "openid")
         || !requested.iter().any(|scope| scope == DEVICE_SSO_SCOPE)
-        || !is_subset(&requested, &client_scopes)
+        || !is_subset(&requested, &client.scopes)
     {
         return Err(oauth_token_error(
             StatusCode::BAD_REQUEST,
@@ -207,20 +204,15 @@ fn native_sso_subject_for_client(
     user_id: Uuid,
     client: &ClientRow,
 ) -> anyhow::Result<String> {
-    let redirect_uris = json_array_to_strings(&client.redirect_uris);
-    let redirect_uri = redirect_uris
-        .as_slice()
-        .first()
-        .map(String::as_str)
-        .unwrap_or("");
-    nazo_auth::oidc_subject_for_client(
+    let redirect_uri = client.redirect_uris.first().map_or("", String::as_str);
+    Ok(nazo_auth::oidc_subject_for_client(
         config.issuer(),
         config.pairwise_subject_secret(),
         user_id,
         client.subject_type.as_str(),
         client.sector_identifier_host.as_deref(),
         redirect_uri,
-    )
+    )?)
 }
 
 async fn native_sso_issue_binding(

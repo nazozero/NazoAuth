@@ -31,24 +31,20 @@ fn ensure_public_client_jwk(jwk: &serde_json::Map<String, Value>) -> anyhow::Res
 }
 
 pub(crate) fn client_supports_grant(client: &ClientRow, grant_type: &str) -> bool {
-    json_array_to_strings(&client.grant_types)
-        .iter()
-        .any(|grant| grant == grant_type)
+    client.grant_types.iter().any(|grant| grant == grant_type)
 }
 
 pub(crate) fn audiences_allowed(client: &ClientRow, audiences: &[String]) -> bool {
-    let allowed = json_array_to_strings(&client.allowed_audiences);
-    !audiences.is_empty() && nazo_auth::is_subset(audiences, &allowed)
+    !audiences.is_empty() && nazo_auth::is_subset(audiences, &client.allowed_audiences)
 }
 
 pub(crate) fn registered_redirect_uri(
     client: &ClientRow,
     requested_redirect_uri: Option<&str>,
 ) -> Result<String, RedirectUriError> {
-    let registered = json_array_to_strings(&client.redirect_uris);
     nazo_auth::resolve_registered_redirect_uri(
         &client.client_type,
-        &registered,
+        &client.redirect_uris,
         requested_redirect_uri,
     )
 }

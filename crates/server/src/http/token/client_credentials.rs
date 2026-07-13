@@ -8,7 +8,7 @@ use crate::settings::Settings;
 use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
 use crate::support::{
     DpopError, DpopErrorContext, ValidatedClientAssertion, audiences_allowed, dpop_error_response,
-    is_subset, json_array_to_strings, parse_scope, request_mtls_thumbprint_from_trusted_proxy,
+    is_subset, parse_scope, request_mtls_thumbprint_from_trusted_proxy,
     validate_dpop_proof_with_authorization_service,
 };
 use actix_web::http::StatusCode;
@@ -51,8 +51,7 @@ pub(super) fn client_credentials_issue_request_with_default_audience(
     form: &TokenForm,
 ) -> Result<ClientCredentialsIssue, HttpResponse> {
     let requested = parse_scope(form.scope.as_deref().unwrap_or(""));
-    let allowed = json_array_to_strings(&client.scopes);
-    if !requested.is_empty() && !is_subset(&requested, &allowed) {
+    if !requested.is_empty() && !is_subset(&requested, &client.scopes) {
         return Err(oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_scope",

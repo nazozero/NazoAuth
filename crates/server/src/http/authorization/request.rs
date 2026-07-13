@@ -25,7 +25,7 @@ use chrono::{Duration, Utc};
 use nazo_auth::OidcClaimRequest;
 use nazo_auth::{
     is_subset, is_valid_dpop_jkt, parse_authorization_details, parse_resource_indicator_parameter,
-    parse_scope, string_array_values,
+    parse_scope,
 };
 use nazo_http_actix::{
     OAuthJsonErrorFields, authorization_error_response, oauth_error, redirect_found,
@@ -445,7 +445,7 @@ async fn authorize_request_with_context(
     }
 
     let requested_scopes = parse_scope(q.get("scope").map(String::as_str).unwrap_or(""));
-    if !is_subset(&requested_scopes, &string_array_values(&client.scopes)) {
+    if !is_subset(&requested_scopes, &client.scopes) {
         return authorization_oauth_error_redirect(context, &redirect_uri, "invalid_scope", q)
             .await;
     }

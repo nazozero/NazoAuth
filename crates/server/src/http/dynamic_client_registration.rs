@@ -20,7 +20,7 @@ use actix_web::{FromRequest, HttpRequest, HttpResponse};
 use chrono::{DateTime, Utc};
 use nazo_auth::{
     AdminClientCryptoPort, AdminClientError, AdminClientPolicy, CreateClientRequest,
-    PreparedClientRegistration, parse_scope, string_array_values,
+    PreparedClientRegistration, parse_scope,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -629,8 +629,8 @@ fn insert_error_to_management_response(error: AdminClientError) -> HttpResponse 
 }
 
 fn response_types_from_client(client: &ClientRow) -> Vec<String> {
-    let grant_types = string_array_values(&client.grant_types);
-    if grant_types
+    if client
+        .grant_types
         .iter()
         .any(|grant| grant == "authorization_code")
     {
@@ -682,10 +682,7 @@ fn dynamic_client_audit_fields(
     audit_fields(&[
         ("client_id", json!(client.client_id)),
         ("client_type", json!(client.client_type)),
-        (
-            "grant_types",
-            json!(string_array_values(&client.grant_types)),
-        ),
+        ("grant_types", json!(client.grant_types)),
         (
             "token_endpoint_auth_method",
             json!(client.token_endpoint_auth_method),
@@ -1067,13 +1064,13 @@ fn dynamic_registration_response(
         "client_name": client.client_name,
         "registration_access_token": registration_access_token,
         "registration_client_uri": registration_client_uri(issuer, &client.client_id),
-        "redirect_uris": string_array_values(&client.redirect_uris),
-        "grant_types": string_array_values(&client.grant_types),
+        "redirect_uris": client.redirect_uris,
+        "grant_types": client.grant_types,
         "response_types": response_types,
-        "scope": string_array_values(&client.scopes).join(" "),
+        "scope": client.scopes.join(" "),
         "token_endpoint_auth_method": client.token_endpoint_auth_method,
         "subject_type": client.subject_type,
-        "post_logout_redirect_uris": string_array_values(&client.post_logout_redirect_uris),
+        "post_logout_redirect_uris": client.post_logout_redirect_uris,
         "backchannel_logout_session_required": client.backchannel_logout_session_required,
         "frontchannel_logout_session_required": client.frontchannel_logout_session_required,
     });

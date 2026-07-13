@@ -27,6 +27,7 @@ use serde_json::Value;
 use serde_json::json;
 use uuid::Uuid;
 // 只处理 refresh token 校验、复用检测和轮换前置约束。
+#[cfg(test)]
 use super::issue::TokenIssuanceConfig;
 use super::{
     ServerTokenService, TokenForm, consume_token_client_assertion_with_authorization_service,

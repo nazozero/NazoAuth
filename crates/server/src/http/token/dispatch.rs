@@ -12,8 +12,7 @@ use crate::support::{
 use crate::support::{
     ClientCredentials, client_ip_with_context, client_mtls_certificate_matches, dpop_proof_present,
     extract_client_credentials_with_trusted_proxies, has_basic_authorization_scheme,
-    json_array_to_strings, rate_limited_response,
-    request_mtls_client_certificate_from_trusted_proxy,
+    rate_limited_response, request_mtls_client_certificate_from_trusted_proxy,
 };
 use actix_web::http::StatusCode;
 #[cfg(test)]
@@ -601,11 +600,7 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
 }
 
 fn validate_token_client_enabled(client: &ClientRow, grant_type: &str) -> Result<(), HttpResponse> {
-    if !client.is_active
-        || !json_array_to_strings(&client.grant_types)
-            .iter()
-            .any(|grant| grant == grant_type)
-    {
+    if !client.is_active || !client.grant_types.iter().any(|grant| grant == grant_type) {
         return Err(oauth_token_error(
             StatusCode::BAD_REQUEST,
             "unauthorized_client",

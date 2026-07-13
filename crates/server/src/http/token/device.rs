@@ -3,8 +3,7 @@ use crate::domain::ClientRow;
 use crate::support::{
     ClientCredentials, TokenManagementRequestLimiter, audit_event, audit_fields, blake3_hex,
     client_ip_with_context, client_supports_grant, extract_client_credentials_with_trusted_proxies,
-    has_basic_authorization_scheme, json_array_to_strings, parse_resource_indicators, parse_scope,
-    random_urlsafe_token,
+    has_basic_authorization_scheme, parse_resource_indicators, parse_scope, random_urlsafe_token,
 };
 use actix_web::http::StatusCode;
 use actix_web::http::header;
@@ -312,8 +311,6 @@ pub(crate) fn device_authorization_request_payload(
     enabled: bool,
 ) -> Result<DeviceAuthorizationPayload, DeviceAuthorizationRequestError> {
     let requested_scopes = parse_scope(form.scope.as_deref().unwrap_or(""));
-    let allowed_scopes = json_array_to_strings(&client.scopes);
-    let allowed_resources = json_array_to_strings(&client.allowed_audiences);
     nazo_auth::device_authorization_request_payload(DeviceAuthorizationRequestPolicy {
         enabled,
         client_active: client.is_active,
@@ -321,9 +318,9 @@ pub(crate) fn device_authorization_request_payload(
         client_id: &client.client_id,
         client_name: &client.client_name,
         requested_scopes,
-        allowed_scopes: &allowed_scopes,
+        allowed_scopes: &client.scopes,
         requested_resources: form.resources.clone(),
-        allowed_resources: &allowed_resources,
+        allowed_resources: &client.allowed_audiences,
         default_resource: &config.default_audience,
         interval_seconds: config.poll_interval_seconds,
         ttl_seconds: config.ttl_seconds,

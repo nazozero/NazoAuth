@@ -15,7 +15,7 @@ use crate::support::{
     audit_fields, blake3_hex, client_ip, client_ip_with_context, client_jwt_decoding_key,
     client_supports_grant, constant_time_eq, current_user_or_login_required, dpop_error_response,
     extract_client_credentials_with_trusted_proxies, has_basic_authorization_scheme,
-    has_valid_csrf_token, is_subset, json_array_to_strings, parse_scope, random_urlsafe_token,
+    has_valid_csrf_token, is_subset, parse_scope, random_urlsafe_token,
     request_mtls_thumbprint_from_trusted_proxy, validate_dpop_proof_with_authorization_service,
 };
 use actix_web::http::StatusCode;
@@ -318,9 +318,7 @@ pub(crate) async fn backchannel_authentication(
         return response;
     }
     let scopes = parse_scope(form.scope.as_deref().unwrap_or(""));
-    if !scopes.iter().any(|scope| scope == "openid")
-        || !is_subset(&scopes, &json_array_to_strings(&client.scopes))
-    {
+    if !scopes.iter().any(|scope| scope == "openid") || !is_subset(&scopes, &client.scopes) {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_scope",
@@ -1506,18 +1504,15 @@ fn ciba_subject_for_client(
     user_id: Uuid,
     client: &ClientRow,
 ) -> anyhow::Result<String> {
-    let redirect_uri = json_array_to_strings(&client.redirect_uris)
-        .into_iter()
-        .next()
-        .unwrap_or_default();
-    nazo_auth::oidc_subject_for_client(
+    let redirect_uri = client.redirect_uris.first().map_or("", String::as_str);
+    Ok(nazo_auth::oidc_subject_for_client(
         config.issuer(),
         config.pairwise_subject_secret(),
         user_id,
         &client.subject_type,
         client.sector_identifier_host.as_deref(),
-        &redirect_uri,
-    )
+        redirect_uri,
+    )?)
 }
 
 async fn load_ciba_request_payload(
