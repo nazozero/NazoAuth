@@ -1,9 +1,16 @@
 //! OIDC 标准 claims 构造。
 //! 只从已授权 scope、显式授权的 claims 请求和本地用户事实源生成声明，不为缺失字段写入 null。
 
+use crate::settings::Settings;
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+#[cfg(test)]
+use chrono::Utc;
 use hmac::{Hmac, KeyInit, Mac};
+use serde_json::{Value, json};
+use sha2::Sha256;
+use uuid::Uuid;
 
-use super::prelude::*;
 use nazo_auth::OidcClaimRequest;
 
 type HmacSha256 = Hmac<Sha256>;

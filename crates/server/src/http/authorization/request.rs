@@ -1,10 +1,41 @@
 //! 授权请求入口端点。
+use crate::domain::{AppState, ClientRow, ConsentPayload};
+#[cfg(test)]
+use crate::domain::{AuthorizationCodeState, DatabaseUserFixture, PushedAuthorizationRequest};
+#[cfg(test)]
+use crate::settings::Settings;
+use crate::support::{
+    AuthorizationResponseJwtInput, DEFAULT_TENANT_ID, JwePayloadKind, OAuthJsonErrorFields,
+    RedirectUriError, append_query, audiences_allowed, authorization_error_response, blake3_hex,
+    client_jwe_key, client_supports_grant, current_session, encrypt_compact_jwe, is_subset,
+    json_array_to_strings, make_authorization_response_jwt, oauth_error, parse_scope,
+    random_urlsafe_token, redirect_found, registered_redirect_uri,
+    resource_indicators_from_parameter_value, signing_algorithm_from_name,
+};
+#[cfg(test)]
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, SessionPayload, authorization_code_key, pkce_s256,
+    valkey_get, valkey_set_ex,
+};
+use actix_web::http::StatusCode;
+#[cfg(test)]
+use actix_web::http::header;
+use actix_web::web::{Bytes, Data};
+use actix_web::{HttpRequest, HttpResponse};
+use chrono::{Duration, Utc};
+#[cfg(test)]
+use nazo_auth::OidcClaimRequest;
+use nazo_auth::{is_valid_dpop_jkt, parse_authorization_details};
+use serde_json::Value;
+#[cfg(test)]
+use serde_json::json;
+use std::collections::HashMap;
+use uuid::Uuid;
 // 该端点只创建 consent 临时状态，不签发授权码。
 use super::{
     apply_request_object, is_pushed_authorization_request_uri,
     unverified_signed_request_object_client_id,
 };
-use crate::http::prelude::*;
 use crate::http::profile::issue_oidc_session_state;
 
 mod form;

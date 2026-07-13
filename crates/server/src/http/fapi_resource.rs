@@ -1,8 +1,32 @@
 //! FAPI-style protected resource endpoint.
 //! Enforces RFC 6750 access-token transport rules plus sender-constrained token binding.
+use crate::domain::{AppState, ClientRow};
+use crate::settings::Settings;
+use crate::support::{
+    AccessTokenAuthScheme, DpopError, DpopErrorContext, ResourceAccessToken,
+    access_token_tenant_id, constant_time_eq, decode_access_claims, dpop_error_response,
+    json_response_no_store, oauth_bearer_error, request_mtls_thumbprint, resource_access_token,
+    token_audience_contains, validate_dpop_proof, verify_client_http_message,
+};
+#[cfg(test)]
+use crate::support::{
+    AccessTokenJwtInput, ClientIpHeaderMode, DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID,
+    DEFAULT_TENANT_ID, IssuedAccessToken, OAuthJsonErrorFields, blake3_hex, make_jwt,
+    parse_trusted_proxy_cidrs,
+};
+use actix_web::http::StatusCode;
+use actix_web::http::header;
+#[cfg(test)]
+use actix_web::http::header::HeaderValue;
+use actix_web::web::{Bytes, Data};
+use actix_web::{HttpRequest, HttpResponse};
+#[cfg(test)]
+use chrono::Duration;
+use chrono::Utc;
+use serde_json::{Value, json};
 use std::{future::Future, pin::Pin};
+use uuid::Uuid;
 
-use crate::http::prelude::*;
 use nazo_auth::Claims;
 use nazo_http_signatures::{
     OriginalRequest, RequestInput, ResponseInput, ResponsePolicy, SignatureFields,

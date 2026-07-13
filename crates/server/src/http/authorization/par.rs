@@ -4,7 +4,31 @@ use super::{
     apply_request_object, request_object_uses_unsigned_algorithm,
     unverified_signed_request_object_client_id,
 };
-use crate::http::prelude::*;
+use crate::domain::{AppState, ClientRow, PushedAuthorizationRequest};
+use crate::settings::Settings;
+#[cfg(test)]
+use crate::support::blake3_hex;
+#[cfg(test)]
+use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, valkey_get};
+use crate::support::{
+    DEFAULT_TENANT_ID, DpopError, DpopErrorContext, OAuthJsonErrorFields, RateLimitPolicy,
+    RedirectUriError, audiences_allowed, dpop_error_response, encoded_resource_indicators,
+    enforce_rate_limit, extract_client_credentials, json_response_status, oauth_error,
+    random_urlsafe_token, registered_redirect_uri, request_mtls_thumbprint,
+    resource_indicators_from_parameter_value, validate_dpop_proof,
+};
+use actix_web::http::StatusCode;
+use actix_web::http::header;
+use actix_web::web::{Bytes, Data};
+use actix_web::{HttpRequest, HttpResponse};
+use chrono::{Duration, Utc};
+use nazo_auth::is_valid_dpop_jkt;
+#[cfg(test)]
+use serde_json::Value;
+use serde_json::json;
+use std::collections::HashMap;
+#[cfg(test)]
+use uuid::Uuid;
 
 pub(crate) const PUSHED_AUTHORIZATION_REQUEST_URI_PREFIX: &str =
     "urn:ietf:params:oauth:request_uri:";

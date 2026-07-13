@@ -1,7 +1,24 @@
 //! client_credentials grant 处理。
+use crate::domain::{AppState, ClientRow, RefreshTokenPolicy, TokenIssue};
+use crate::settings::Settings;
+#[cfg(test)]
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, OAuthJsonErrorFields,
+};
+use crate::support::{
+    DpopError, DpopErrorContext, ValidatedClientAssertion, audiences_allowed, dpop_error_response,
+    is_subset, json_array_to_strings, oauth_token_error, parse_scope, request_mtls_thumbprint,
+    validate_dpop_proof,
+};
+use actix_web::http::StatusCode;
+#[cfg(test)]
+use actix_web::web::Data;
+use actix_web::{HttpRequest, HttpResponse};
+use serde_json::json;
+#[cfg(test)]
+use uuid::Uuid;
 // 只为机密客户端签发无用户主体的访问令牌。
 use super::{TokenForm, consume_token_client_assertion, issue_token_response};
-use crate::http::prelude::*;
 
 #[derive(Debug)]
 pub(super) struct ClientCredentialsIssue {

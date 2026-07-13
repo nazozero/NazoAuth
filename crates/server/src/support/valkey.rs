@@ -1,8 +1,13 @@
 //! Valkey 缓存命令封装。
+#[cfg(test)]
+use nazo_valkey::test_support::{
+    Client as TestValkeyConnection, Error as ValkeyError, Expiration, KeysInterface, LuaInterface,
+};
+use serde::Deserialize;
+#[cfg(test)]
+use uuid::Uuid;
 // 这里保留最小 Redis 协议操作，业务 key 仍由调用方决定。
 
-use super::prelude::*;
-use nazo_valkey::test_support::LuaInterface;
 use std::fmt;
 
 const VALKEY_SNAPSHOT_SCRIPT: &str = r#"

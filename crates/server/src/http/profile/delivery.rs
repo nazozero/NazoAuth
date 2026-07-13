@@ -1,6 +1,13 @@
 //! 一次性客户端凭据领取接口。
+use crate::domain::AppState;
+use crate::support::{current_user_or_login_required, json_response, oauth_error};
+use actix_web::http::StatusCode;
+use actix_web::web::{Data, Query};
+use actix_web::{HttpRequest, HttpResponse};
+use serde_json::{Value, json};
+use std::collections::HashMap;
+use uuid::Uuid;
 // 只处理审批后临时凭据的只读领取。
-use crate::http::prelude::*;
 
 pub(crate) async fn access_delivery(
     state: Data<AppState>,

@@ -1,11 +1,42 @@
 //! token revoke 端点。
+use crate::domain::AppState;
+#[cfg(test)]
+use crate::domain::ClientRow;
+#[cfg(test)]
+use crate::schema::{access_token_revocations, oauth_tokens};
+#[cfg(test)]
+use crate::settings::Settings;
+#[cfg(test)]
+use crate::support::{
+    AccessTokenJwtInput, DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, IssuedAccessToken,
+    OAuthJsonErrorFields, make_jwt,
+};
+use crate::support::{
+    DEFAULT_TENANT_ID, RateLimitPolicy, audit_event, audit_fields, blake3_hex, client_ip,
+    decode_access_claims, empty_response_no_store, enforce_rate_limit, extract_client_credentials,
+    has_basic_authorization_scheme,
+};
+use actix_web::http::StatusCode;
+#[cfg(test)]
+use actix_web::http::header;
+#[cfg(test)]
+use actix_web::http::header::HeaderValue;
+use actix_web::web::{Bytes, Data};
+use actix_web::{HttpRequest, HttpResponse};
+use chrono::{DateTime, Utc};
+#[cfg(test)]
+use diesel::prelude::*;
+#[cfg(test)]
+use serde_json::Value;
+use serde_json::json;
+#[cfg(test)]
+use uuid::Uuid;
 // 只处理 refresh token 撤销和 access token jti 黑名单写入。
 use super::{
     TokenManagementClientAuthError, authenticate_revocation_client, parse_token_management_form,
     token_management_client_auth_error, token_management_form_error,
     token_management_has_conflicting_client_auth, token_management_oauth_error,
 };
-use crate::http::prelude::*;
 
 pub(crate) async fn revoke(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
     if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await

@@ -1,6 +1,46 @@
 //! MFA enrollment, challenge, and step-up endpoints.
-use crate::http::prelude::*;
 
+use crate::domain::AppState;
+#[cfg(test)]
+use crate::domain::DatabaseUserFixture;
+#[cfg(test)]
+use crate::schema::{user_totp_credentials, users};
+#[cfg(test)]
+use crate::settings::Settings;
+#[cfg(test)]
+use crate::support::MFA_BACKUP_CODE_COUNT;
+#[cfg(test)]
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload,
+    remembered_mfa_device_valid, valkey_get, valkey_set_ex,
+};
+use crate::support::{
+    MFA_REMEMBERED_COOKIE_NAME, MFA_REMEMBERED_TTL_SECONDS, MFA_TOTP_DIGITS,
+    MFA_TOTP_PERIOD_SECONDS, MfaVerificationMethod, RateLimitPolicy, SessionRotation, audit_event,
+    audit_fields, clear_cookie, clear_user_mfa_state, complete_mfa_session, csrf_error,
+    current_pending_mfa_session, current_user_or_login_required, enforce_rate_limit,
+    generate_backup_codes_and_hashes, has_valid_csrf_token, json_response, make_cookie,
+    oauth_error, remember_mfa_device, replace_backup_codes, step_up_current_session,
+    verify_user_mfa_code, with_cookie_headers,
+};
+use actix_web::http::StatusCode;
+use actix_web::web::{Data, Json};
+use actix_web::{HttpRequest, HttpResponse};
+#[cfg(test)]
+use chrono::DateTime;
+use chrono::Utc;
+#[cfg(test)]
+use diesel::prelude::*;
+#[cfg(test)]
+use diesel_async::RunQueryDsl;
+#[cfg(test)]
+use nazo_postgres::get_conn;
+use serde::Deserialize;
+#[cfg(test)]
+use serde_json::Value;
+use serde_json::json;
+#[cfg(test)]
+use uuid::Uuid;
 #[derive(Deserialize)]
 pub(crate) struct ConfirmTotpRequest {
     code: String,

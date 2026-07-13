@@ -1,9 +1,45 @@
 //! WebAuthn/passkey login endpoints.
 
+use crate::domain::AppState;
+#[cfg(test)]
+use crate::domain::{DatabasePasskeyFixture, DatabaseUserFixture};
+#[cfg(test)]
+use crate::schema::{user_passkey_credentials, users};
+use crate::settings::Settings;
+#[cfg(test)]
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, MFA_REMEMBERED_COOKIE_NAME, passkey_credential_id,
+    remember_mfa_device, valkey_get,
+};
+use crate::support::{
+    DEFAULT_TENANT_ID, RateLimitPolicy, SessionPayload, StoredPasskeyAuthentication, audit_event,
+    audit_fields, authentication_key, blake3_hex, client_ip, credential_id_from_response,
+    enforce_rate_limit, json_response, make_cookie, normalize_ceremony_id, oauth_error,
+    passkey_credential_from_row, passkey_user_handle, passkey_webauthn, random_urlsafe_token,
+    remembered_mfa_device_valid, require_active_session_principal, store_passkey_ceremony,
+    store_session, take_passkey_ceremony, with_cookie_headers,
+};
+use actix_web::http::StatusCode;
+use actix_web::web::{Data, Json};
+use actix_web::{HttpRequest, HttpResponse};
+use chrono::Utc;
+#[cfg(test)]
+use diesel::prelude::*;
+#[cfg(test)]
+use diesel_async::RunQueryDsl;
+use nazo_identity::PublicAccount;
+use nazo_identity::ports::PasskeyCredential;
+#[cfg(test)]
+use nazo_postgres::get_conn;
 use passkey_auth::AuthenticationResponse;
+use serde::Deserialize;
+#[cfg(test)]
+use serde_json::Value;
+use serde_json::json;
+#[cfg(test)]
+use uuid::Uuid;
 
 use crate::http::load_user_passkeys;
-use crate::http::prelude::*;
 
 #[derive(Deserialize)]
 pub(crate) struct PasskeyLoginBeginRequest {

@@ -1,7 +1,30 @@
 //! token 管理端点复用的客户端认证。
 
-use crate::http::prelude::*;
+use crate::domain::{AppState, ClientRow};
+#[cfg(test)]
+use crate::settings::Settings;
+use crate::support::{
+    ClientAssertionError, ClientCredentials, ValidatedClientAssertion, blake3_hex,
+    client_mtls_certificate_matches, client_secret_digest, consume_private_key_jwt, oauth_error,
+    oauth_token_error, request_mtls_client_certificate, verify_private_key_jwt_claims,
+};
+#[cfg(test)]
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, OAuthJsonErrorFields,
+};
+use actix_web::http::StatusCode;
+#[cfg(test)]
+use actix_web::http::header;
+#[cfg(test)]
+use actix_web::http::header::HeaderValue;
+use actix_web::{HttpRequest, HttpResponse};
+#[cfg(test)]
+use chrono::Utc;
 use nazo_identity::ports::RepositoryError;
+#[cfg(test)]
+use serde_json::json;
+#[cfg(test)]
+use uuid::Uuid;
 
 pub(crate) enum TokenManagementClientAuthError {
     InvalidClient,

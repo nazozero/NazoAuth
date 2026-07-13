@@ -1,8 +1,20 @@
+use crate::domain::{AppState, AuthorizationCodeState, CodePayload, ConsentPayload};
 use crate::http::authorization::request::{
     AuthorizationResponseRedirect, PushedAuthorizationRequestConsumeError,
     authorization_response_redirect, consume_pushed_authorization_request,
 };
-use crate::http::prelude::*;
+use crate::support::{
+    audit_event, audit_fields, blake3_hex, client_ip, is_subset, json_array_to_strings,
+    oauth_error, random_urlsafe_token,
+};
+use actix_web::http::StatusCode;
+use actix_web::{HttpRequest, HttpResponse};
+use chrono::{Duration, Utc};
+use nazo_auth::{
+    authorization_details_empty, canonical_authorization_details, high_risk_authorization_details,
+};
+use serde_json::{Value, json};
+use uuid::Uuid;
 
 pub(super) async fn user_grant_covers_requested_scopes(
     state: &AppState,

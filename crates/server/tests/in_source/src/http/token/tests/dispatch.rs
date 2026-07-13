@@ -3,10 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
-use base64::{
-    Engine as _,
-    engine::general_purpose::{STANDARD as B64, URL_SAFE_NO_PAD},
-};
+use base64::engine::general_purpose::{STANDARD as B64, URL_SAFE_NO_PAD};
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Jsonb, Nullable, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;

@@ -1,6 +1,32 @@
 //! 邮箱验证码发送端点。
-use crate::http::prelude::*;
 
+use crate::domain::AppState;
+#[cfg(test)]
+use crate::domain::DatabaseUserFixture;
+#[cfg(test)]
+use crate::settings::Settings;
+#[cfg(test)]
+use crate::support::blake3_hex;
+use crate::support::{
+    DEFAULT_TENANT_ID, RateLimitPolicy, email_delivery_configured, enforce_rate_limit,
+    hash_password, json_response, oauth_error, parse_email_recipient, random_numeric_code,
+    send_verification_email,
+};
+#[cfg(test)]
+use crate::support::{default_tenant_context, normalize_email_address, valkey_get, valkey_set_ex};
+use actix_web::http::StatusCode;
+use actix_web::web::{Data, Json};
+use actix_web::{HttpRequest, HttpResponse};
+#[cfg(test)]
+use diesel_async::RunQueryDsl;
+#[cfg(test)]
+use nazo_postgres::get_conn;
+use serde::Deserialize;
+#[cfg(test)]
+use serde_json::Value;
+use serde_json::json;
+#[cfg(test)]
+use uuid::Uuid;
 #[derive(Deserialize)]
 pub(crate) struct SendCodeRequest {
     email: String,

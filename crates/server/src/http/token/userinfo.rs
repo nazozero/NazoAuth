@@ -1,9 +1,38 @@
 //! OIDC userinfo 端点。
+#[cfg(test)]
+use crate::domain::DatabaseUserFixture;
+use crate::domain::{AppState, ClientRow};
+#[cfg(test)]
+use crate::schema::oauth_clients;
+use crate::settings::Settings;
+use crate::support::{
+    AccessTokenAuthScheme, DpopError, DpopErrorContext, JwePayloadKind, access_token_tenant_id,
+    authorization_access_token, blake3_hex, client_jwe_key, constant_time_eq, decode_access_claims,
+    dpop_error_response, encrypt_compact_jwe, issue_dpop_nonce, json_response_no_store,
+    oauth_bearer_error, oidc_user_claims, parse_scope, request_mtls_thumbprint,
+    request_uses_form_urlencoded, sign_response_jwt, signing_algorithm_from_name,
+    token_audience_contains, validate_dpop_proof,
+};
+#[cfg(test)]
+use crate::support::{
+    AccessTokenJwtInput, DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID,
+    IssuedAccessToken, OAuthJsonErrorFields, jwt_decoding_key_from_jwk, make_jwt,
+};
+use actix_web::http::StatusCode;
+use actix_web::http::header;
+use actix_web::http::header::HeaderValue;
+use actix_web::web::{Bytes, Data};
+use actix_web::{HttpRequest, HttpResponse};
+#[cfg(test)]
+use chrono::{Duration, Utc};
+#[cfg(test)]
+use diesel::prelude::*;
+use nazo_auth::Claims;
+use serde_json::{Value, json};
+use uuid::Uuid;
 // 根据 Bearer/DPoP access token 返回用户声明；DPoP-bound token 必须携带有效 proof。
 #[cfg(test)]
 use super::access_token_subject_key;
-use crate::http::prelude::*;
-use crate::support::prelude::Claims;
 
 pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
     let (scheme, token) = match resource_access_token(&req, &body, false) {

@@ -1,6 +1,13 @@
+#[cfg(test)]
+use crate::support::blake3_hex;
+use crate::support::{jwt_decoding_key_from_jwk, pkce_s256};
+use chrono::Utc;
+use serde::Deserialize;
 use serde::Serialize;
+use serde_json::Value;
+#[cfg(test)]
+use serde_json::json;
 
-use crate::http::prelude::*;
 use crate::settings::OidcFederationSettings;
 
 pub(super) const FEDERATION_STATE_TTL_SECONDS: u64 = 300;

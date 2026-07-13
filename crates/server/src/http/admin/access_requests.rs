@@ -1,9 +1,40 @@
 //! 管理端客户端接入申请接口。
+use crate::domain::AppState;
+#[cfg(test)]
+use crate::domain::ClientRow;
+#[cfg(test)]
+use crate::domain::DatabaseUserFixture;
+#[cfg(test)]
+use crate::schema::oauth_clients;
+#[cfg(test)]
+use crate::settings::Settings;
+#[cfg(test)]
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, OAuthJsonErrorFields,
+    SessionPayload, valkey_set_ex,
+};
+use crate::support::{
+    access_delivery_token, audit_event, audit_fields, blake3_hex, client_ip, csrf_error,
+    has_valid_csrf_token, json_response, oauth_error, pagination, require_admin_or_forbidden,
+};
+use actix_web::http::StatusCode;
+use actix_web::http::header;
+use actix_web::http::header::HeaderValue;
+use actix_web::web::{Data, Json, Query};
+use actix_web::{HttpRequest, HttpResponse};
+use chrono::{Duration, Utc};
+#[cfg(test)]
+use diesel::prelude::*;
+#[cfg(test)]
+use nazo_identity::AccessRequestStatus;
+use serde::Deserialize;
+use serde_json::{Value, json};
+use std::collections::HashMap;
+use uuid::Uuid;
 // 申请审批会创建客户端，因此显式依赖 clients 模块的创建逻辑。
 use super::clients::{
     CreateClientRequest, insert_client_error_response, prepare_client_insert_with_secret_pepper,
 };
-use crate::http::prelude::*;
 
 pub(crate) async fn admin_access_requests(
     state: Data<AppState>,

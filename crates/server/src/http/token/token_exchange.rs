@@ -6,8 +6,21 @@
 
 use super::{TokenForm, consume_token_client_assertion, issue_token_response};
 use super::{native_sso_profile_requested, token_native_sso_exchange};
-use crate::http::prelude::*;
+use crate::domain::{AppState, ClientRow, RefreshTokenPolicy, TokenIssue};
+#[cfg(test)]
+use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
+use crate::support::{
+    DpopError, DpopErrorContext, ValidatedClientAssertion, access_token_tenant_id,
+    audiences_allowed, constant_time_eq, decode_access_claims, dpop_error_response, is_subset,
+    json_array_to_strings, oauth_token_error, parse_scope, request_mtls_thumbprint,
+    validate_dpop_proof,
+};
+use actix_web::http::StatusCode;
+use actix_web::{HttpRequest, HttpResponse};
+use chrono::Utc;
 use nazo_auth::Claims;
+use serde_json::{Value, json};
+use uuid::Uuid;
 
 pub(crate) const TOKEN_EXCHANGE_GRANT_TYPE: &str =
     "urn:ietf:params:oauth:grant-type:token-exchange";

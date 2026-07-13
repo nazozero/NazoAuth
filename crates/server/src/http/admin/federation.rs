@@ -1,8 +1,12 @@
 //! 管理端第三方登录 provider 配置视图。
 //! 这里只暴露启停状态、展示信息和回调地址，不返回 secret 或第三方 token。
 
-use crate::http::prelude::*;
+use crate::domain::AppState;
 use crate::settings::ExternalLoginProviderAdapter;
+use crate::support::{json_response_no_store, require_admin_or_forbidden};
+use actix_web::web::Data;
+use actix_web::{HttpRequest, HttpResponse};
+use serde_json::{Value, json};
 
 pub(crate) async fn admin_federation_providers(
     state: Data<AppState>,

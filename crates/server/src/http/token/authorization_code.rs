@@ -1,10 +1,48 @@
 //! authorization_code grant 处理。
+use crate::domain::{
+    AppState, AuthorizationCodeState, ClientRow, CodePayload, ConsumedAuthorizationCode,
+    RefreshTokenPolicy, TokenIssue,
+};
+#[cfg(test)]
+use crate::schema::{access_token_revocations, oauth_tokens};
+use crate::settings::Settings;
+#[cfg(test)]
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, OAuthJsonErrorFields,
+    authorization_code_key, valkey_get, valkey_set_ex,
+};
+use crate::support::{
+    DpopError, DpopErrorContext, ValidatedClientAssertion, audiences_allowed, blake3_hex,
+    compute_subject_for_client, constant_time_eq, dpop_error_response, is_subset,
+    is_valid_pkce_value, oauth_token_error, pkce_s256, request_mtls_thumbprint,
+    validate_dpop_proof,
+};
+use actix_web::http::StatusCode;
+#[cfg(test)]
+use actix_web::http::header;
+#[cfg(test)]
+use actix_web::http::header::HeaderValue;
+#[cfg(test)]
+use actix_web::web::Data;
+use actix_web::{HttpRequest, HttpResponse};
+#[cfg(test)]
+use base64::Engine;
+use chrono::Utc;
+#[cfg(test)]
+use chrono::{DateTime, Duration};
+#[cfg(test)]
+use diesel::prelude::*;
+#[cfg(test)]
+use nazo_auth::OidcClaimRequest;
+#[cfg(test)]
+use serde_json::{Value, json};
+#[cfg(test)]
+use uuid::Uuid;
 // 只消费授权码并转入统一令牌签发逻辑。
 use super::{
     TokenForm, consume_token_client_assertion, issue_token_response, native_sso_requested,
     new_native_sso_token_binding, revoke_issued_authorization_code_tokens,
 };
-use crate::http::prelude::*;
 
 enum AuthorizationCodeConsumption {
     Consuming(Box<CodePayload>),

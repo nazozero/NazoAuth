@@ -1,6 +1,31 @@
 //! 用户注册端点。
+use crate::domain::AppState;
+#[cfg(test)]
+use crate::domain::DatabaseUserFixture;
+#[cfg(test)]
+use crate::settings::Settings;
+use crate::support::{
+    DEFAULT_TENANT_ID, RateLimitPolicy, default_tenant_context, enforce_rate_limit, hash_password,
+    json_response_status, normalize_email_address, oauth_error, verify_password,
+};
+#[cfg(test)]
+use crate::support::{valkey_get, valkey_set_ex};
+use actix_web::http::StatusCode;
+use actix_web::web::{Data, Json};
+use actix_web::{HttpRequest, HttpResponse};
+#[cfg(test)]
+use chrono::Utc;
+#[cfg(test)]
+use diesel_async::RunQueryDsl;
+use nazo_identity::PublicAccount;
+#[cfg(test)]
+use nazo_postgres::get_conn;
+use serde::Deserialize;
+#[cfg(test)]
+use serde_json::Value;
+use serde_json::json;
+use uuid::Uuid;
 // 注册只接受已验证邮箱，密码进入数据库前必须完成 Argon2 哈希。
-use crate::http::prelude::*;
 
 #[derive(Deserialize)]
 pub(crate) struct RegisterRequest {

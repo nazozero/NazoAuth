@@ -1,5 +1,5 @@
 //! 跨 HTTP handler 复用的领域支撑模块。
-// 子模块按职责拆分；外部仍通过 crate::support::* 使用稳定入口。
+// 子模块按职责拆分；调用方显式导入所需能力。
 mod audit;
 mod avatars;
 mod client_ip;
@@ -49,47 +49,3 @@ pub(crate) use tenancy::*;
 #[cfg(test)]
 pub(crate) use valkey::*;
 pub(crate) use views::*;
-
-pub(crate) mod prelude {
-    pub(crate) use std::{collections::HashMap, path::PathBuf};
-
-    pub(crate) use actix_web::cookie::{Cookie, SameSite, time::Duration as CookieDuration};
-    pub(crate) use actix_web::http::{
-        StatusCode,
-        header::{self, HeaderMap, HeaderValue},
-    };
-    pub(crate) use actix_web::{HttpRequest, HttpResponse};
-    pub(crate) use argon2::{
-        Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
-        password_hash::{SaltString, rand_core::OsRng},
-    };
-    pub(crate) use base64::{
-        Engine,
-        engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
-    };
-    pub(crate) use chrono::Utc;
-    #[cfg(test)]
-    pub(crate) use nazo_valkey::test_support::{
-        Client as TestValkeyConnection, Error as ValkeyError, Expiration, KeysInterface,
-    };
-    pub(crate) use serde::{Deserialize, Serialize};
-    pub(crate) use serde_json::{Value, json};
-    pub(crate) use sha2::{Digest, Sha256};
-    pub(crate) use uuid::Uuid;
-
-    pub(crate) use crate::domain::{AppState, ClientRow};
-    #[cfg(test)]
-    pub(crate) use crate::domain::{DatabasePasskeyFixture, DatabaseUserFixture};
-    pub(crate) use crate::settings::Settings;
-    pub(crate) use nazo_auth::Claims;
-    pub(crate) use nazo_identity::PublicAccount;
-    pub(crate) use nazo_postgres::DbPool;
-
-    #[cfg(test)]
-    pub(crate) use super::valkey_get;
-    #[cfg(test)]
-    pub(crate) use super::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
-    pub(crate) use super::{
-        clear_cookie, constant_time_eq, cookie_value, json_array_to_strings, with_cookie_headers,
-    };
-}

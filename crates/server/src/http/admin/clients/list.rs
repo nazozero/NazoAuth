@@ -1,6 +1,27 @@
 //! 管理端客户端列表端点。
+#[cfg(test)]
+use crate::domain::DatabaseUserFixture;
+use crate::domain::{AppState, ClientRow};
+#[cfg(test)]
+use crate::settings::Settings;
+#[cfg(test)]
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, OAuthJsonErrorFields,
+    SessionPayload, valkey_set_ex,
+};
+use crate::support::{
+    client_json, json_response, oauth_error, pagination, require_admin_or_forbidden,
+};
+use actix_web::http::StatusCode;
+use actix_web::web::{Data, Query};
+use actix_web::{HttpRequest, HttpResponse};
+#[cfg(test)]
+use chrono::Utc;
+use serde_json::{Value, json};
+use std::collections::HashMap;
+#[cfg(test)]
+use uuid::Uuid;
 // 只负责分页读取和响应组装，不处理创建或更新逻辑。
-use crate::http::prelude::*;
 
 /// 返回 OAuth 客户端分页列表。
 pub(crate) async fn admin_clients(

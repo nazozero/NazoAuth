@@ -1,6 +1,29 @@
 //! 管理端用户授权关系接口。
+use crate::domain::AppState;
+#[cfg(test)]
+use crate::domain::ClientRow;
+#[cfg(test)]
+use crate::domain::DatabaseUserFixture;
+#[cfg(test)]
+use crate::settings::Settings;
+#[cfg(test)]
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, OAuthJsonErrorFields, SessionPayload, valkey_set_ex,
+};
+use crate::support::{
+    DEFAULT_TENANT_ID, csrf_error, has_valid_csrf_token, json_array_to_strings, json_response,
+    oauth_error, pagination, require_admin_or_forbidden,
+};
+use actix_web::http::StatusCode;
+use actix_web::web::{Data, Json, Query};
+use actix_web::{HttpRequest, HttpResponse};
+#[cfg(test)]
+use chrono::Utc;
+use serde::Deserialize;
+use serde_json::{Value, json};
+use std::collections::HashMap;
+use uuid::Uuid;
 // 授权列表与撤销逻辑只依赖授权表和 refresh token 撤销。
-use crate::http::prelude::*;
 
 pub(crate) async fn admin_grants(
     state: Data<AppState>,

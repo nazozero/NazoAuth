@@ -1,11 +1,38 @@
 //! /token grant_type 分发入口。
+#[cfg(test)]
+use crate::domain::CodePayload;
+use crate::domain::{AppState, AuthorizationCodeState, ClientRow};
+use crate::settings::Settings;
+#[cfg(test)]
+use crate::support::{
+    CLIENT_ASSERTION_TYPE_JWT_BEARER, DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID,
+    OAuthJsonErrorFields, authorization_code_key, blake3_hex,
+};
+use crate::support::{
+    ClientCredentials, DEFAULT_TENANT_ID, RateLimitPolicy, client_mtls_certificate_matches,
+    client_secret_digest, dpop_proof_present, enforce_rate_limit, extract_client_credentials,
+    has_basic_authorization_scheme, json_array_to_strings, oauth_token_error,
+    request_mtls_client_certificate, verify_private_key_jwt_claims,
+};
+use actix_web::http::StatusCode;
+#[cfg(test)]
+use actix_web::http::header;
+use actix_web::web::{Bytes, Data};
+use actix_web::{HttpRequest, HttpResponse};
+#[cfg(test)]
+use base64::Engine;
+#[cfg(test)]
+use chrono::{Duration, Utc};
+#[cfg(test)]
+use serde_json::{Value, json};
+#[cfg(test)]
+use uuid::Uuid;
 // 只负责客户端认证与 grant_type 分派，不直接签发令牌。
 use super::{
     CIBA_GRANT_TYPE, DEVICE_CODE_GRANT_TYPE, JWT_BEARER_GRANT_TYPE, TOKEN_EXCHANGE_GRANT_TYPE,
     TokenForm, TokenFormError, parse_token_form, token_authorization_code, token_ciba,
     token_client_credentials, token_device_code, token_exchange, token_jwt_bearer, token_refresh,
 };
-use crate::http::prelude::*;
 use nazo_auth::{
     ClientProfile, ProtocolErrorCode, SecurityProfile, SenderConstraintPolicy,
     validate_token_request_profile as validate_auth_token_request_profile,

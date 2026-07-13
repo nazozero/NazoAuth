@@ -1,6 +1,28 @@
 //! 令牌签发响应构造。
+use crate::domain::{AppState, ClientRow, RefreshTokenPolicy, TokenIssue};
+use crate::settings::Settings;
+use crate::support::{
+    AccessTokenJwtInput, DpopErrorContext, IdTokenInput, audit_event, audit_fields, blake3_hex,
+    dpop_error_response, issue_dpop_nonce, json_response_no_store, make_id_token, make_jwt,
+    oauth_token_error, oidc_id_token_user_claims, random_urlsafe_token,
+};
+#[cfg(test)]
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, OAuthJsonErrorFields,
+};
+use actix_web::HttpResponse;
+use actix_web::http::StatusCode;
+use actix_web::http::header;
+use actix_web::http::header::HeaderValue;
+use chrono::{Duration, Utc};
+#[cfg(test)]
+use nazo_auth::OidcClaimRequest;
+use nazo_auth::normalize_authorization_details;
+#[cfg(test)]
+use serde_json::Value;
+use serde_json::json;
+use uuid::Uuid;
 // 统一 access_token、refresh_token 和 id_token 的响应形状。
-use crate::http::prelude::*;
 
 mod authorization_code_state;
 mod refresh_persistence;

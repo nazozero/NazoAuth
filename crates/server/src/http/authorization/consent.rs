@@ -1,6 +1,21 @@
 //! 授权确认页数据端点。
+use crate::domain::{AppState, ConsentPayload};
+#[cfg(test)]
+use crate::settings::Settings;
+#[cfg(test)]
+use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, valkey_set_ex};
+use crate::support::{cookie_value, current_user, json_response, oauth_error};
+use actix_web::http::StatusCode;
+use actix_web::web::{Data, Query};
+use actix_web::{HttpRequest, HttpResponse};
+#[cfg(test)]
+use chrono::{Duration, Utc};
+#[cfg(test)]
+use serde_json::Value;
+use serde_json::json;
+use std::collections::HashMap;
+use uuid::Uuid;
 // 前端通过 request_id 读取待确认内容，服务端再次校验该请求属于当前用户。
-use crate::http::prelude::*;
 
 #[cfg(test)]
 fn parse_consent_payload(raw: Option<String>) -> Option<ConsentPayload> {

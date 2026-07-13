@@ -2,9 +2,37 @@
 //! The endpoint clears the OP browser session locally and persists
 //! Back-Channel Logout notifications in an outbox before returning.
 
-use crate::http::prelude::*;
+#[cfg(test)]
+use crate::domain::DatabaseUserFixture;
+use crate::domain::{AppState, ClientRow};
+use crate::settings::Settings;
+use crate::support::{
+    BackchannelLogoutTokenInput, CurrentSession, DEFAULT_TENANT_ID, audit_event, audit_fields,
+    blake3_hex, clear_cookie, compute_subject_for_client, cookie_value, current_session,
+    has_valid_csrf_token, json_array_to_strings, json_response_no_store, jwt_decoding_key_from_jwk,
+    make_backchannel_logout_token, oauth_error, redirect_found, request_uses_form_urlencoded,
+    signing_algorithm_name, with_cookie_headers,
+};
+#[cfg(test)]
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, OAuthJsonErrorFields, SessionPayload, valkey_get,
+    valkey_set_ex,
+};
+use actix_web::http::StatusCode;
+use actix_web::http::header;
 use actix_web::web::Payload;
+use actix_web::web::{Bytes, Data};
+use actix_web::{HttpRequest, HttpResponse};
+use chrono::{DateTime, Duration, Utc};
+#[cfg(test)]
+use diesel_async::RunQueryDsl;
+use futures_util::StreamExt;
+#[cfg(test)]
+use nazo_postgres::get_conn;
+use serde::Deserialize;
+use serde_json::{Value, json};
 use std::time::Duration as StdDuration;
+use uuid::Uuid;
 
 const BACKCHANNEL_LOGOUT_TOKEN_TTL_SECONDS: i64 = 120;
 const BACKCHANNEL_LOGOUT_DELIVERY_BATCH_SIZE: i64 = 20;

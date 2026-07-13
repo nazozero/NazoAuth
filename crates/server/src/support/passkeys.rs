@@ -1,9 +1,20 @@
 //! WebAuthn/passkey shared helpers.
 
+use crate::domain::AppState;
+#[cfg(test)]
+use crate::domain::{DatabasePasskeyFixture, DatabaseUserFixture};
+use crate::settings::Settings;
+use actix_web::HttpResponse;
+use actix_web::http::StatusCode;
+#[cfg(test)]
+use chrono::Utc;
+use nazo_identity::PublicAccount;
 use passkey_auth::{CredentialId, PasskeyCredential, Webauthn};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use uuid::Uuid;
 
 use super::oauth_error;
-use super::prelude::*;
 
 pub(crate) const PASSKEY_CEREMONY_TTL_SECONDS: u64 = 300;
 

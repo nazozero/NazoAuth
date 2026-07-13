@@ -1,7 +1,8 @@
 //! Client-bound compact JWE construction for encrypted OAuth and OIDC responses.
 
-use super::prelude::*;
 use super::{SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS};
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use openssl::{
     bn::BigNum,
     encrypt::Encrypter,
@@ -10,6 +11,7 @@ use openssl::{
     rsa::{Padding, Rsa},
     symm::{Cipher, encrypt_aead},
 };
+use serde_json::{Value, json};
 
 pub(crate) struct ClientJweKey<'a> {
     pub(crate) kid: &'a str,

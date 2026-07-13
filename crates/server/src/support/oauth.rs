@@ -1,4 +1,18 @@
 //! OAuth 作用域、audience 与授权关系工具。
+#[cfg(test)]
+use super::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
+use crate::domain::ClientRow;
+use base64::Engine;
+#[cfg(test)]
+use base64::engine::general_purpose::STANDARD;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+#[cfg(test)]
+use chrono::Utc;
+use serde_json::Value;
+#[cfg(test)]
+use serde_json::json;
+#[cfg(test)]
+use uuid::Uuid;
 // 只处理 OAuth 语义中的集合判断和授权记录 upsert。
 
 pub(crate) use nazo_auth::{ResourceIndicatorError, parse_resource_indicators};
@@ -10,7 +24,6 @@ use nazo_auth::{
 use super::security::blake3_hex;
 use super::{
     mtls::certificate_x5c_thumbprint,
-    prelude::*,
     security::{
         SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
         SUPPORTED_CLIENT_JWT_SIGNING_ALGS, client_jwt_algorithm_from_name,

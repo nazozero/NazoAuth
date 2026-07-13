@@ -1,6 +1,38 @@
 //! 当前用户资料接口。
+use crate::domain::AppState;
+#[cfg(test)]
+use crate::domain::DatabaseUserFixture;
+#[cfg(test)]
+use crate::schema::users;
+#[cfg(test)]
+use crate::settings::Settings;
+#[cfg(test)]
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_set_ex,
+};
+use crate::support::{
+    auth_me_json, cookie_value, csrf_error, current_pending_mfa_session, current_session,
+    current_user_or_login_required, has_valid_csrf_token, json_response, login_required_response,
+    oauth_error,
+};
+use actix_web::http::StatusCode;
+use actix_web::web::{Data, Json};
+use actix_web::{HttpRequest, HttpResponse};
+#[cfg(test)]
+use chrono::Utc;
+#[cfg(test)]
+use diesel::prelude::*;
+#[cfg(test)]
+use diesel_async::RunQueryDsl;
+#[cfg(test)]
+use nazo_postgres::get_conn;
+use serde::Deserialize;
+#[cfg(test)]
+use serde_json::Value;
+use serde_json::json;
+#[cfg(test)]
+use uuid::Uuid;
 // 只处理 /auth/me 的读取和基础资料更新。
-use crate::http::prelude::*;
 
 pub(crate) async fn me(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
     let session = match current_session(&state, &req).await {

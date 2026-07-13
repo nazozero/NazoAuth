@@ -4,7 +4,26 @@ use super::{
     TokenForm, client_credentials_issue_request, consume_token_client_assertion,
     issue_token_response,
 };
-use crate::http::prelude::*;
+use crate::domain::{AppState, ClientRow, RefreshTokenPolicy, TokenIssue};
+use crate::settings::Settings;
+#[cfg(test)]
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, OAuthJsonErrorFields,
+};
+use crate::support::{
+    DpopError, DpopErrorContext, ValidatedClientAssertion, client_jwt_decoding_key,
+    dpop_error_response, oauth_token_error, request_mtls_thumbprint, validate_dpop_proof,
+};
+#[cfg(test)]
+use crate::test_support::{ClientSigningFixture, client_signing_fixture};
+use actix_web::http::StatusCode;
+use actix_web::{HttpRequest, HttpResponse};
+#[cfg(test)]
+use base64::Engine;
+use chrono::Utc;
+use serde_json::{Value, json};
+#[cfg(test)]
+use uuid::Uuid;
 
 pub(crate) const JWT_BEARER_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:jwt-bearer";
 

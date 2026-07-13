@@ -1,4 +1,19 @@
-use crate::http::{prelude::*, scim::schema::scim_error};
+use crate::domain::AppState;
+use crate::http::scim::schema::scim_error;
+#[cfg(test)]
+use crate::settings::Settings;
+use crate::support::{
+    audit_event, audit_fields, blake3_hex, client_ip, constant_time_eq, default_tenant_context,
+};
+use actix_web::http::StatusCode;
+use actix_web::http::header;
+use actix_web::{HttpRequest, HttpResponse};
+#[cfg(test)]
+use nazo_postgres::get_conn;
+#[cfg(test)]
+use serde_json::Value;
+use serde_json::json;
+use uuid::Uuid;
 
 pub(super) const SCIM_SCOPE_READ: &str = "scim:read";
 pub(super) const SCIM_SCOPE_WRITE: &str = "scim:write";

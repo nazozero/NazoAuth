@@ -1,9 +1,9 @@
 //! 可信反向代理下的客户端 IP 解析。
 //! 默认只使用连接 peer 地址；转发头仅在 peer 命中可信代理 CIDR 后生效。
 
+use crate::settings::Settings;
+use actix_web::HttpRequest;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-
-use super::prelude::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ClientIpHeaderMode {

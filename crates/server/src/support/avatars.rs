@@ -1,7 +1,9 @@
 //! 头像文件存储辅助函数。
+use crate::domain::AppState;
+use serde_json::Value;
+use std::path::PathBuf;
+use uuid::Uuid;
 // 只处理头像路径、类型识别和元数据读取。
-
-use super::prelude::*;
 
 pub(crate) fn avatar_path(state: &AppState, user_id: Uuid) -> PathBuf {
     avatar_user_dir(state, user_id).join("avatar.bin")

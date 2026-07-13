@@ -1,8 +1,40 @@
 //! Current-user WebAuthn/passkey registration and management.
 
+use crate::domain::AppState;
+#[cfg(test)]
+use crate::domain::{DatabasePasskeyFixture, DatabaseUserFixture};
+#[cfg(test)]
+use crate::settings::Settings;
+#[cfg(test)]
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, PASSKEY_CEREMONY_TTL_SECONDS,
+    SessionPayload, valkey_set_ex,
+};
+use crate::support::{
+    StoredPasskeyRegistration, audit_event, audit_fields, csrf_error,
+    current_user_or_login_required, empty_response, has_valid_csrf_token, json_response,
+    json_response_status, normalize_ceremony_id, normalize_passkey_label, oauth_error,
+    passkey_credential_id, passkey_credential_ids, passkey_public_json, passkey_user_handle,
+    passkey_webauthn, random_urlsafe_token, registration_key, store_passkey_ceremony,
+    take_passkey_ceremony,
+};
+use actix_web::http::StatusCode;
+use actix_web::web::{Data, Json};
+use actix_web::{HttpRequest, HttpResponse};
+#[cfg(test)]
+use chrono::Utc;
+#[cfg(test)]
+use diesel_async::RunQueryDsl;
+use nazo_identity::PublicAccount;
+use nazo_identity::ports::PasskeyCredential;
+#[cfg(test)]
+use nazo_postgres::get_conn;
 use passkey_auth::RegistrationResponse;
-
-use crate::http::prelude::*;
+use serde::Deserialize;
+#[cfg(test)]
+use serde_json::Value;
+use serde_json::json;
+use uuid::Uuid;
 
 #[derive(Deserialize)]
 pub(crate) struct PasskeyBeginRequest {
