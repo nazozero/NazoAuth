@@ -134,6 +134,7 @@ export ENABLE_REQUEST_URI_PARAMETER='true'
 export ENABLE_PAR_REQUEST_OBJECT='true'
 export ENABLE_AUTHORIZATION_DETAILS='true'
 export ENABLE_LEGACY_AUDIENCE_PARAM='true'
+export NAZO_RUNTIME_INSTANCE_ID='codecov-primary'
 export SCIM_BEARER_TOKEN='codecov-scim-secret'
 # 覆盖率 E2E 使用与服务端相同的 provider registry，不再维护单 provider 配置入口。
 export FEDERATION_PROVIDER_CONFIGS='[{"provider_id":"codecov-oidc","enabled":true,"display_name":"Codecov OIDC","adapter_type":"oidc","issuer":"https://issuer.example","authorization_endpoint":"https://issuer.example/authorize","token_endpoint":"https://issuer.example/token","jwks_url":"https://issuer.example/jwks","client_id":"codecov-oidc-client","client_secret":"codecov-oidc-secret","redirect_uri":"http://127.0.0.1:18000/auth/federation/codecov-oidc/callback","scopes":"openid email profile"}]'
@@ -262,6 +263,7 @@ LLVM_PROFILE_FILE="$(profile_path 'migrate-%p.profraw')" "$BIN_DIR/nazo-oauth-mi
 LLVM_PROFILE_FILE="$(profile_path 'server-%p.profraw')" "$BIN_DIR/nazo-oauth-server" &
 SERVER_PID=$!
 ENABLE_FAPI_HTTP_SIGNATURES='true' \
+  NAZO_RUNTIME_INSTANCE_ID='codecov-signed' \
   BIND='127.0.0.1:18001' \
   LLVM_PROFILE_FILE="$(profile_path 'signed-server-%p.profraw')" \
   "$BIN_DIR/nazo-oauth-server" &
