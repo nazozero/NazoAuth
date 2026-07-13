@@ -4,6 +4,7 @@ mod access_request;
 mod admin;
 mod audit;
 pub mod authentication;
+mod avatar;
 pub mod email;
 pub mod federation;
 pub mod mfa;
@@ -27,6 +28,10 @@ pub use audit::{
 pub use authentication::{
     AuthenticatePasswordError, AuthenticatePasswordInput, AuthenticationService,
     AuthenticationServiceConfig, LoginSuccess, RememberedMfaProof,
+};
+pub use avatar::{
+    AvatarContentType, AvatarObject, AvatarService, DeleteAvatarError, ReadAvatarError,
+    UploadAvatarError,
 };
 pub use federation::{
     FederationAuditEvent, FederationError, FederationService, FederationServiceConfig,

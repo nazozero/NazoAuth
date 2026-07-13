@@ -1,183 +1,33 @@
-//! 当前用户头像接口。
-use crate::domain::AppState;
-#[cfg(test)]
-use crate::domain::DatabaseUserFixture;
-#[cfg(test)]
-use crate::settings::Settings;
-#[cfg(test)]
-use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_set_ex,
-};
-use crate::support::{
-    auth_me_json, avatar_meta_path, avatar_path, avatar_user_dir, current_user_or_login_required,
-    detect_avatar_content_type, has_valid_csrf_token, is_cross_site_fetch, read_avatar_meta,
-};
+//! Current-user avatar HTTP transport.
+use crate::support::auth_me_json_with_count;
+use crate::support::{is_cross_site_fetch, sessions::SessionProfileHandles};
 use actix_multipart::Multipart;
-use actix_web::http::StatusCode;
-use actix_web::http::header;
 use actix_web::http::header::HeaderValue;
-#[cfg(test)]
-use actix_web::web::Bytes;
-use actix_web::web::Data;
-use actix_web::{HttpRequest, HttpResponse};
-#[cfg(test)]
-use chrono::Utc;
-use futures_util::StreamExt;
-use nazo_http_actix::csrf_error;
-use nazo_http_actix::{bytes_response, json_response, oauth_error};
-use serde_json::{Value, json};
-use uuid::Uuid;
-// 只处理头像上传、读取和删除的 HTTP 细节。
-use std::{
-    io,
-    path::{Path, PathBuf},
+use actix_web::{
+    HttpRequest, HttpResponse,
+    http::{StatusCode, header},
+    web::Data,
 };
-
-struct AvatarPromotion {
-    avatar_file_path: PathBuf,
-    avatar_meta_file_path: PathBuf,
-    avatar_backup_path: PathBuf,
-    avatar_meta_backup_path: PathBuf,
-    avatar_backup_exists: bool,
-    avatar_meta_backup_exists: bool,
-}
-
-async fn remove_avatar_file_if_exists(path: PathBuf) -> io::Result<()> {
-    match tokio::fs::remove_file(path).await {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error),
-    }
-}
-
-async fn rename_avatar_file_if_exists(source: &Path, target: &Path) -> io::Result<bool> {
-    match tokio::fs::rename(source, target).await {
-        Ok(()) => Ok(true),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(error),
-    }
-}
-
-async fn cleanup_avatar_temps(avatar_tmp_path: &Path, avatar_meta_tmp_path: &Path) {
-    let _ = tokio::fs::remove_file(avatar_tmp_path).await;
-    let _ = tokio::fs::remove_file(avatar_meta_tmp_path).await;
-}
-
-async fn restore_avatar_backup(backup_path: &Path, final_path: &Path, backup_exists: bool) {
-    if backup_exists
-        && let Err(error) = tokio::fs::rename(backup_path, final_path).await
-        && error.kind() != io::ErrorKind::NotFound
-    {
-        tracing::warn!(%error, "failed to restore previous avatar file");
-    }
-}
-
-async fn rollback_avatar_promotion(promotion: &AvatarPromotion) {
-    let _ = tokio::fs::remove_file(&promotion.avatar_file_path).await;
-    let _ = tokio::fs::remove_file(&promotion.avatar_meta_file_path).await;
-    restore_avatar_backup(
-        &promotion.avatar_backup_path,
-        &promotion.avatar_file_path,
-        promotion.avatar_backup_exists,
-    )
-    .await;
-    restore_avatar_backup(
-        &promotion.avatar_meta_backup_path,
-        &promotion.avatar_meta_file_path,
-        promotion.avatar_meta_backup_exists,
-    )
-    .await;
-}
-
-async fn finish_avatar_promotion(promotion: &AvatarPromotion) {
-    let _ = tokio::fs::remove_file(&promotion.avatar_backup_path).await;
-    let _ = tokio::fs::remove_file(&promotion.avatar_meta_backup_path).await;
-}
-
-async fn rollback_avatar_promotion_attempt(
-    avatar_tmp_path: &Path,
-    avatar_meta_tmp_path: &Path,
-    promotion: &AvatarPromotion,
-) {
-    cleanup_avatar_temps(avatar_tmp_path, avatar_meta_tmp_path).await;
-    rollback_avatar_promotion(promotion).await;
-}
-
-async fn promote_avatar_files(
-    avatar_tmp_path: &Path,
-    avatar_meta_tmp_path: &Path,
-    avatar_file_path: PathBuf,
-    avatar_meta_file_path: PathBuf,
-    version: &str,
-) -> io::Result<AvatarPromotion> {
-    let avatar_backup_path = avatar_file_path.with_file_name(format!("avatar-{version}.bak"));
-    let avatar_meta_backup_path =
-        avatar_meta_file_path.with_file_name(format!("meta-{version}.bak"));
-    let avatar_backup_exists =
-        rename_avatar_file_if_exists(&avatar_file_path, &avatar_backup_path).await?;
-    let avatar_meta_backup_exists = match rename_avatar_file_if_exists(
-        &avatar_meta_file_path,
-        &avatar_meta_backup_path,
-    )
-    .await
-    {
-        Ok(value) => value,
-        Err(error) => {
-            restore_avatar_backup(&avatar_backup_path, &avatar_file_path, avatar_backup_exists)
-                .await;
-            cleanup_avatar_temps(avatar_tmp_path, avatar_meta_tmp_path).await;
-            return Err(error);
-        }
-    };
-    let promotion = AvatarPromotion {
-        avatar_file_path,
-        avatar_meta_file_path,
-        avatar_backup_path,
-        avatar_meta_backup_path,
-        avatar_backup_exists,
-        avatar_meta_backup_exists,
-    };
-    if let Err(error) = tokio::fs::rename(avatar_tmp_path, &promotion.avatar_file_path).await {
-        rollback_avatar_promotion_attempt(avatar_tmp_path, avatar_meta_tmp_path, &promotion).await;
-        return Err(error);
-    }
-    if let Err(error) =
-        tokio::fs::rename(avatar_meta_tmp_path, &promotion.avatar_meta_file_path).await
-    {
-        rollback_avatar_promotion_attempt(avatar_tmp_path, avatar_meta_tmp_path, &promotion).await;
-        return Err(error);
-    }
-    Ok(promotion)
-}
-
-fn avatar_url_version(avatar_url: &str) -> Option<&str> {
-    avatar_url
-        .strip_prefix("/auth/me/avatar?v=")
-        .filter(|version| !version.is_empty())
-}
+use futures_util::StreamExt as _;
+use nazo_http_actix::{bytes_response, csrf_error, json_response, oauth_error};
 
 pub(crate) async fn upload_avatar(
-    state: Data<AppState>,
+    sessions: Data<SessionProfileHandles>,
+    avatars: Data<crate::bootstrap::AvatarProfileService>,
     req: HttpRequest,
     mut multipart: Multipart,
 ) -> HttpResponse {
-    if !has_valid_csrf_token(&state, &req, None) {
+    if !sessions.has_valid_csrf_token(&req, None) {
         return csrf_error();
     }
-    let user = match current_user_or_login_required(&state, &req).await {
+    let user = match sessions.current_user_or_login_required(&req).await {
         Ok(user) => user,
         Err(response) => return response,
     };
     while let Some(field) = multipart.next().await {
         let mut field = match field {
             Ok(field) => field,
-            Err(_) => {
-                return oauth_error(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_request",
-                    "头像文件读取失败.",
-                );
-            }
+            Err(_) => return invalid_avatar_read_response(),
         };
         if field.name() != Some("avatar") {
             continue;
@@ -186,105 +36,56 @@ pub(crate) async fn upload_avatar(
         while let Some(chunk) = field.next().await {
             let chunk = match chunk {
                 Ok(chunk) => chunk,
-                Err(_) => {
-                    return oauth_error(
-                        StatusCode::BAD_REQUEST,
-                        "invalid_request",
-                        "头像文件读取失败.",
-                    );
-                }
+                Err(_) => return invalid_avatar_read_response(),
             };
-            bytes.extend_from_slice(&chunk);
-            if bytes.len() > state.settings.storage.avatar_max_bytes {
+            if chunk.len() > avatars.max_bytes().saturating_sub(bytes.len()) {
                 return oauth_error(
                     StatusCode::PAYLOAD_TOO_LARGE,
                     "invalid_request",
                     "头像文件过大.",
                 );
             }
+            bytes.extend_from_slice(&chunk);
         }
-        let Some(content_type) = detect_avatar_content_type(&bytes) else {
-            return oauth_error(
+        return match avatars.upload(&user, bytes).await {
+            Ok(overview) => json_response(auth_me_json_with_count(
+                &overview.account,
+                overview.authorized_application_count,
+            )),
+            Err(nazo_identity::UploadAvatarError::TooLarge) => oauth_error(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "invalid_request",
+                "头像文件过大.",
+            ),
+            Err(nazo_identity::UploadAvatarError::UnsupportedContent) => oauth_error(
                 StatusCode::BAD_REQUEST,
                 "invalid_request",
                 "头像仅支持 PNG、JPEG、WEBP 格式.",
-            );
-        };
-        let version = Uuid::now_v7().to_string();
-        let user_dir = avatar_user_dir(&state, user.id());
-        let avatar_file_path = avatar_path(&state, user.id());
-        let avatar_meta_file_path = avatar_meta_path(&state, user.id());
-        let avatar_tmp_path = user_dir.join(format!("avatar-{version}.tmp"));
-        let avatar_meta_tmp_path = user_dir.join(format!("meta-{version}.tmp"));
-        if tokio::fs::create_dir_all(&user_dir).await.is_err() {
-            return oauth_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "server_error",
-                "头像保存失败.",
-            );
-        }
-        if tokio::fs::write(&avatar_tmp_path, &bytes).await.is_err()
-            || tokio::fs::write(
-                &avatar_meta_tmp_path,
-                json!({"content_type": content_type, "version": version}).to_string(),
-            )
-            .await
-            .is_err()
-        {
-            cleanup_avatar_temps(&avatar_tmp_path, &avatar_meta_tmp_path).await;
-            return oauth_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "server_error",
-                "头像保存失败.",
-            );
-        }
-        let promotion = match promote_avatar_files(
-            &avatar_tmp_path,
-            &avatar_meta_tmp_path,
-            avatar_file_path,
-            avatar_meta_file_path,
-            &version,
-        )
-        .await
-        {
-            Ok(promotion) => promotion,
-            Err(error) => {
-                tracing::warn!(%error, "failed to promote uploaded avatar files");
-                return oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
+            ),
+            Err(nazo_identity::UploadAvatarError::Storage(
+                nazo_identity::ports::AvatarStorageError::PreparationFailed(error),
+            )) => {
+                tracing::warn!(%error, "failed to prepare avatar storage");
+                oauth_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
                     "server_error",
                     "头像保存失败.",
-                );
+                )
             }
-        };
-        let user = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
-            .update_avatar(
-                user.tenant().tenant_id,
-                user.user_id(),
-                Some(format!("/auth/me/avatar?v={version}")),
-            )
-            .await
-        {
-            Ok(user) => user,
-            Err(error) => {
-                tracing::warn!(%error, "failed to persist avatar metadata");
-                rollback_avatar_promotion(&promotion).await;
-                return oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "头像保存失败.",
-                );
-            }
-        };
-        finish_avatar_promotion(&promotion).await;
-        return match auth_me_json(&state, &user).await {
-            Ok(body) => json_response(body),
-            Err(error) => {
+            Err(nazo_identity::UploadAvatarError::Overview(error)) => {
                 tracing::warn!(%error, "failed to build auth me response after avatar upload");
                 oauth_error(
                     StatusCode::SERVICE_UNAVAILABLE,
                     "server_error",
                     "当前用户资料查询失败.",
+                )
+            }
+            Err(error) => {
+                tracing::warn!(?error, "failed to save avatar");
+                oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "头像保存失败.",
                 )
             }
         };
@@ -296,8 +97,20 @@ pub(crate) async fn upload_avatar(
     )
 }
 
-pub(crate) async fn get_avatar(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
-    let user = match current_user_or_login_required(&state, &req).await {
+fn invalid_avatar_read_response() -> HttpResponse {
+    oauth_error(
+        StatusCode::BAD_REQUEST,
+        "invalid_request",
+        "头像文件读取失败.",
+    )
+}
+
+pub(crate) async fn get_avatar(
+    sessions: Data<SessionProfileHandles>,
+    avatars: Data<crate::bootstrap::AvatarProfileService>,
+    req: HttpRequest,
+) -> HttpResponse {
+    let user = match sessions.current_user_or_login_required(&req).await {
         Ok(user) => user,
         Err(response) => return response,
     };
@@ -307,97 +120,56 @@ pub(crate) async fn get_avatar(state: Data<AppState>, req: HttpRequest) -> HttpR
             "access_denied",
             "跨站请求头像资源被拒绝.",
         );
-    };
-    let Some(avatar_url) = user.profile.avatar_url.as_deref() else {
-        return oauth_error(
-            StatusCode::NOT_FOUND,
-            "invalid_request",
-            "当前用户尚未上传头像.",
-        );
-    };
-    let Some(expected_version) = avatar_url_version(avatar_url) else {
-        tracing::warn!("stored avatar_url has invalid shape");
-        return oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "头像读取失败.",
-        );
-    };
-    let meta = match read_avatar_meta(&state, user.id()).await {
-        Ok(Some(meta)) => meta,
-        Ok(None) => {
-            tracing::warn!("avatar metadata file is missing while user avatar_url is set");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "头像读取失败.",
-            );
-        }
-        Err(error) => {
-            tracing::warn!(%error, "failed to read avatar metadata");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "头像读取失败.",
-            );
-        }
-    };
-    if meta.get("version").and_then(Value::as_str) != Some(expected_version) {
-        tracing::warn!("avatar metadata version does not match user avatar_url");
-        return oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "头像读取失败.",
-        );
     }
-    match tokio::fs::read(avatar_path(&state, user.id())).await {
-        Ok(bytes) => {
-            let content_type = match meta.get("content_type").and_then(Value::as_str) {
-                Some("image/png") => "image/png",
-                Some("image/jpeg") => "image/jpeg",
-                Some("image/webp") => "image/webp",
-                _ => match detect_avatar_content_type(&bytes) {
-                    Some(content_type) => content_type,
-                    None => {
-                        tracing::warn!("avatar file has unsupported content type");
-                        return oauth_error(
-                            StatusCode::SERVICE_UNAVAILABLE,
-                            "server_error",
-                            "头像读取失败.",
-                        );
-                    }
-                },
+    let avatar = avatars.read(&user).await;
+    let avatar = match avatar {
+        Err(nazo_identity::ReadAvatarError::Storage(
+            nazo_identity::ports::AvatarStorageError::Conflict
+            | nazo_identity::ports::AvatarStorageError::InvalidState
+            | nazo_identity::ports::AvatarStorageError::Missing,
+        )) => {
+            // A request may have loaded the account immediately before an upload/delete
+            // commits. The storage mutation is serialized, so refresh the projection once
+            // after it completes rather than exposing a transient mixed version.
+            let refreshed = match sessions.current_user_or_login_required(&req).await {
+                Ok(user) => user,
+                Err(response) => return response,
             };
-            let mut resp = bytes_response(bytes);
-            if let Ok(value) = HeaderValue::from_str(content_type) {
-                resp.headers_mut().insert(header::CONTENT_TYPE, value);
-            }
-            resp.headers_mut().insert(
+            avatars.read(&refreshed).await
+        }
+        result => result,
+    };
+    match avatar {
+        Ok(avatar) => {
+            let mut response = bytes_response(avatar.bytes);
+            response.headers_mut().insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static(avatar.content_type.as_str()),
+            );
+            response.headers_mut().insert(
                 header::CACHE_CONTROL,
                 HeaderValue::from_static("private, no-store, no-cache, must-revalidate"),
             );
-            resp.headers_mut()
+            response
+                .headers_mut()
                 .insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
-            resp.headers_mut().insert(
+            response.headers_mut().insert(
                 header::X_CONTENT_TYPE_OPTIONS,
                 HeaderValue::from_static("nosniff"),
             );
-            resp.headers_mut().insert(
+            response.headers_mut().insert(
                 header::CONTENT_SECURITY_POLICY,
                 HeaderValue::from_static("default-src 'none'"),
             );
-            resp
+            response
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            tracing::warn!("avatar file is missing while user avatar_url is set");
-            oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "头像读取失败.",
-            )
-        }
+        Err(nazo_identity::ReadAvatarError::NotUploaded) => oauth_error(
+            StatusCode::NOT_FOUND,
+            "invalid_request",
+            "当前用户尚未上传头像.",
+        ),
         Err(error) => {
-            tracing::warn!(%error, "failed to read avatar file");
+            tracing::warn!(?error, "failed to read avatar");
             oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -407,58 +179,37 @@ pub(crate) async fn get_avatar(state: Data<AppState>, req: HttpRequest) -> HttpR
     }
 }
 
-pub(crate) async fn delete_avatar(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
-    if !has_valid_csrf_token(&state, &req, None) {
+pub(crate) async fn delete_avatar(
+    sessions: Data<SessionProfileHandles>,
+    avatars: Data<crate::bootstrap::AvatarProfileService>,
+    req: HttpRequest,
+) -> HttpResponse {
+    if !sessions.has_valid_csrf_token(&req, None) {
         return csrf_error();
     }
-    let user = match current_user_or_login_required(&state, &req).await {
+    let user = match sessions.current_user_or_login_required(&req).await {
         Ok(user) => user,
         Err(response) => return response,
     };
-    let user_id = user.id();
-    let user = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
-        .update_avatar(user.tenant().tenant_id, user.user_id(), None)
-        .await
-    {
-        Ok(user) => user,
-        Err(error) => {
-            tracing::warn!(%error, "failed to clear avatar metadata");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "头像删除失败.",
-            );
-        }
-    };
-    if let Err(error) = remove_avatar_file_if_exists(avatar_path(&state, user_id)).await {
-        tracing::warn!(%error, "failed to remove avatar file");
-        return oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "头像删除失败.",
-        );
-    }
-    if let Err(error) = remove_avatar_file_if_exists(avatar_meta_path(&state, user_id)).await {
-        tracing::warn!(%error, "failed to remove avatar metadata file");
-        return oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "头像删除失败.",
-        );
-    }
-    if let Err(error) = tokio::fs::remove_dir(avatar_user_dir(&state, user_id)).await
-        && error.kind() != std::io::ErrorKind::NotFound
-    {
-        tracing::warn!(%error, "failed to remove avatar user directory");
-    }
-    match auth_me_json(&state, &user).await {
-        Ok(body) => json_response(body),
-        Err(error) => {
+    match avatars.delete(&user).await {
+        Ok(overview) => json_response(auth_me_json_with_count(
+            &overview.account,
+            overview.authorized_application_count,
+        )),
+        Err(nazo_identity::DeleteAvatarError::Overview(error)) => {
             tracing::warn!(%error, "failed to build auth me response after avatar delete");
             oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
                 "当前用户资料查询失败.",
+            )
+        }
+        Err(error) => {
+            tracing::warn!(?error, "failed to delete avatar");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "头像删除失败.",
             )
         }
     }

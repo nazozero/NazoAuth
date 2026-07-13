@@ -1,7 +1,6 @@
 //! 跨 HTTP handler 复用的领域支撑模块。
 // 子模块按职责拆分；调用方显式导入所需能力。
 mod audit;
-mod avatars;
 pub(crate) mod client_ip;
 pub(crate) mod dpop;
 mod email;
@@ -24,9 +23,6 @@ mod views;
 #[cfg(test)]
 pub(crate) use crate::test_support::{ClientSigningFixture, client_signing_fixture};
 pub(crate) use audit::{audit_event, audit_fields};
-pub(crate) use avatars::{
-    avatar_meta_path, avatar_path, avatar_user_dir, detect_avatar_content_type, read_avatar_meta,
-};
 pub(crate) use client_ip::{
     ClientIpConfig, ClientIpHeaderMode, IpCidr, client_ip, client_ip_with_config,
     client_ip_with_context, parse_trusted_proxy_cidrs,
