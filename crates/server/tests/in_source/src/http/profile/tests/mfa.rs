@@ -613,7 +613,8 @@ async fn concurrent_mfa_step_up_consumes_backup_code_exactly_once() {
     statuses.sort_unstable();
     assert_eq!(
         statuses,
-        [StatusCode::OK.as_u16(), StatusCode::BAD_REQUEST.as_u16()]
+        [StatusCode::OK.as_u16(), StatusCode::BAD_REQUEST.as_u16()],
+        "unexpected concurrent confirmation responses: a={body_a}, b={body_b}"
     );
     let bodies = [body_a, body_b];
     assert_eq!(
@@ -746,6 +747,54 @@ async fn mfa_totp_confirm_rotates_session_and_csrf_after_valid_code() {
     assert_eq!(
         backup_code_count(&fixture, &user).await,
         MFA_BACKUP_CODE_COUNT as i64
+    );
+}
+
+#[actix_web::test]
+async fn rejected_enrollment_discards_unpublished_rotation_and_clears_cookies() {
+    let Some(fixture) = LiveMfaFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let user = fixture.create_user(&suffix, false).await;
+    let session_id = format!("unpublished-mfa-rotation-{suffix}");
+    fixture.store_session(&user, &session_id, false).await;
+    let handles = mfa_handles(&fixture.state);
+
+    let rotation = SessionRotation {
+        session_id: session_id.clone(),
+        csrf_token: "never-published".to_owned(),
+    };
+    let response = no_store(
+        discard_failed_enrollment_rotation(
+            &handles,
+            &rotation,
+            oauth_error(StatusCode::BAD_REQUEST, "invalid_grant", "MFA 验证码无效."),
+        )
+        .await,
+    );
+
+    assert_eq!(
+        set_cookie_value(
+            &response,
+            &fixture.state.settings.session.session_cookie_name
+        )
+        .as_deref(),
+        Some("")
+    );
+    assert_eq!(
+        set_cookie_value(&response, &fixture.state.settings.session.csrf_cookie_name).as_deref(),
+        Some("")
+    );
+    let (status, body, _) = response_json(response).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_grant");
+
+    assert!(
+        fixture
+            .optional_session_payload(&session_id)
+            .await
+            .is_none()
     );
 }
 

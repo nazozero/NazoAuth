@@ -170,7 +170,19 @@ impl MfaRepository {
                     .await
                     .optional()?;
                 let Some(secret) = credential else {
-                    return Err(MfaAuditError::Repository(RepositoryError::Conflict));
+                    insert_identity_security_event(
+                        connection,
+                        &mfa_event(
+                            tenant_id,
+                            user_id,
+                            IdentitySecurityEventType::MfaTotpAttempt,
+                            IdentitySecurityOutcome::Replay,
+                            IdentitySecurityReason::TotpReplay,
+                        ),
+                    )
+                    .await
+                    .map_err(MfaAuditError::Repository)?;
+                    return Ok(TotpVerificationOutcome::Replay);
                 };
                 let Some(step) = verified_totp_step(&secret, code, timestamp, None) else {
                     insert_identity_security_event(
@@ -709,7 +721,7 @@ impl From<diesel::result::Error> for MfaAuditError {
 impl MfaAuditError {
     fn into_repository(self) -> RepositoryError {
         match self {
-            Self::Diesel(error) => RepositoryError::Unexpected(error.to_string()),
+            Self::Diesel(error) => map_mfa_error(error),
             Self::Repository(error) => error,
         }
     }

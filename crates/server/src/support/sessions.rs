@@ -341,6 +341,11 @@ impl SessionProfileHandles {
         .await
     }
 
+    pub(crate) async fn discard_rotation(&self, rotation: &SessionRotation) -> anyhow::Result<()> {
+        self.sessions.delete(&rotation.session_id).await?;
+        Ok(())
+    }
+
     #[cfg(not(test))]
     pub(crate) fn permits_existing_session_management_transaction(&self) -> bool {
         nazo_auth::module_admissible(

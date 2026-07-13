@@ -244,15 +244,24 @@ async fn mfa_totp_confirm_inner(
             nazo_identity::ports::TotpVerificationOutcome::Invalid
             | nazo_identity::ports::TotpVerificationOutcome::Replay,
         ) => {
-            return with_rotated_session_cookies(
+            return discard_failed_enrollment_rotation(
                 &handles,
                 &rotation,
                 oauth_error(StatusCode::BAD_REQUEST, "invalid_grant", "MFA 验证码无效."),
-            );
+            )
+            .await;
+        }
+        Err(nazo_identity::ports::RepositoryError::Conflict) => {
+            return discard_failed_enrollment_rotation(
+                &handles,
+                &rotation,
+                oauth_error(StatusCode::BAD_REQUEST, "invalid_grant", "MFA 验证码无效."),
+            )
+            .await;
         }
         Err(error) => {
             tracing::warn!(%error, "failed to confirm TOTP credential");
-            return with_rotated_session_cookies(
+            return discard_failed_enrollment_rotation(
                 &handles,
                 &rotation,
                 oauth_error(
@@ -260,7 +269,8 @@ async fn mfa_totp_confirm_inner(
                     "server_error",
                     "MFA 启用失败.",
                 ),
-            );
+            )
+            .await;
         }
     };
     audit_event(
@@ -598,6 +608,30 @@ fn with_rotated_session_cookies(
     response: HttpResponse,
 ) -> HttpResponse {
     with_cookie_headers(response, &rotated_session_cookies(handles, rotation))
+}
+
+async fn discard_failed_enrollment_rotation(
+    handles: &MfaProfileHandles,
+    rotation: &SessionRotation,
+    response: HttpResponse,
+) -> HttpResponse {
+    if let Err(error) = handles.sessions.discard_rotation(rotation).await {
+        tracing::error!(%error, "failed to discard unpublished MFA enrollment session rotation");
+    }
+    let session_http = handles.sessions.http_config();
+    with_cookie_headers(
+        response,
+        &[
+            clear_cookie(
+                session_http.session_cookie_name(),
+                session_http.cookie_secure(),
+            ),
+            clear_cookie(
+                session_http.csrf_cookie_name(),
+                session_http.cookie_secure(),
+            ),
+        ],
+    )
 }
 
 pub(crate) async fn mfa_disable(
