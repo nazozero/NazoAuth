@@ -9,9 +9,7 @@ use actix_web::{
 
 #[cfg(test)]
 use super::{authorization_duplicate_parameters, oauth_json_error};
-#[cfg(test)]
-use crate::support::resource_indicators_from_parameter_value;
-use crate::support::{encoded_resource_indicators, has_duplicate_oauth_parameter};
+use nazo_auth::{encode_resource_indicators, has_duplicate_oauth_parameter};
 
 pub(super) fn parse_authorization_post_form(
     req: &HttpRequest,
@@ -81,7 +79,7 @@ fn parse_authorization_form_encoded(
         }
         q.insert(key, value);
     }
-    if let Some(encoded) = encoded_resource_indicators(&resource_values) {
+    if let Some(encoded) = encode_resource_indicators(&resource_values) {
         q.insert("resource".to_owned(), encoded);
     }
     Ok(q)

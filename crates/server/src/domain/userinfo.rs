@@ -1,11 +1,11 @@
 use actix_web::HttpRequest;
+use nazo_auth::token_audience_contains;
 use nazo_key_management::KeyManager;
 use serde_json::Value;
 
 use crate::settings::{DpopNoncePolicy, Settings};
 use crate::support::{
-    DpopError, IpCidr, request_mtls_thumbprint_from_trusted_proxy, token_audience_contains,
-    validate_dpop_proof_with_store,
+    DpopError, IpCidr, request_mtls_thumbprint_from_trusted_proxy, validate_dpop_proof_with_store,
 };
 
 #[derive(Clone)]

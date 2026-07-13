@@ -13,14 +13,12 @@ use crate::settings::RequestObjectJtiPolicy;
 use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
-use crate::support::{
-    client_jwt_decoding_key, resource_indicators_from_parameter_value,
-    supported_client_jwt_algorithm_name,
-};
+use crate::support::{client_jwt_decoding_key, supported_client_jwt_algorithm_name};
 use actix_web::HttpResponse;
 use actix_web::http::StatusCode;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
+use nazo_auth::parse_resource_indicator_parameter;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -374,8 +372,8 @@ fn outer_authorization_params_conflict(
             (outer.get(*key), request_params.get(*key))
         {
             if *key == "resource" {
-                if resource_indicators_from_parameter_value(Some(outer_value)).ok()
-                    != resource_indicators_from_parameter_value(Some(request_value)).ok()
+                if parse_resource_indicator_parameter(Some(outer_value)).ok()
+                    != parse_resource_indicator_parameter(Some(request_value)).ok()
                 {
                     return true;
                 }

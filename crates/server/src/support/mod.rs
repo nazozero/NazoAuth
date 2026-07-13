@@ -59,11 +59,10 @@ pub(crate) use nazo_key_management::{signing_algorithm_from_name, signing_algori
 pub(crate) use oauth::authorization_code_key;
 pub(crate) use oauth::{
     RedirectUriError, audiences_allowed, client_jwks_contains_signing_key,
-    client_jwks_matching_encryption_key_count, client_supports_grant, encoded_resource_indicators,
-    has_duplicate_oauth_parameter, is_subset, is_valid_pkce_value, json_array_to_strings,
-    parse_resource_indicators, parse_scope, registered_redirect_uri,
-    resource_indicators_from_parameter_value, token_audience_contains,
-    validate_client_jwks_with_missing_kid_policy, validate_self_signed_mtls_jwks,
+    client_jwks_matching_encryption_key_count, client_supports_grant, is_subset,
+    is_valid_pkce_value, json_array_to_strings, parse_resource_indicators, parse_scope,
+    registered_redirect_uri, validate_client_jwks_with_missing_kid_policy,
+    validate_self_signed_mtls_jwks,
 };
 #[cfg(test)]
 pub(crate) use oidc_claims::oidc_subject;

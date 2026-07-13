@@ -9,7 +9,7 @@ use crate::http::admin::clients::ServerSectorIdentifierResolver;
 use crate::support::{
     DEFAULT_TENANT_ID, RateLimitPolicy, audit_event, audit_fields, blake3_hex,
     client_ip_with_context, client_secret_digest, constant_time_eq, enforce_rate_limit_with_store,
-    hash_client_secret, json_array_to_strings, parse_scope, random_urlsafe_token,
+    hash_client_secret, random_urlsafe_token,
 };
 use actix_web::http::StatusCode;
 use actix_web::http::header;
@@ -20,7 +20,7 @@ use actix_web::{FromRequest, HttpRequest, HttpResponse};
 use chrono::{DateTime, Utc};
 use nazo_auth::{
     AdminClientCryptoPort, AdminClientError, AdminClientPolicy, CreateClientRequest,
-    PreparedClientRegistration,
+    PreparedClientRegistration, parse_scope, string_array_values,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -629,7 +629,7 @@ fn insert_error_to_management_response(error: AdminClientError) -> HttpResponse 
 }
 
 fn response_types_from_client(client: &ClientRow) -> Vec<String> {
-    let grant_types = json_array_to_strings(&client.grant_types);
+    let grant_types = string_array_values(&client.grant_types);
     if grant_types
         .iter()
         .any(|grant| grant == "authorization_code")
@@ -684,7 +684,7 @@ fn dynamic_client_audit_fields(
         ("client_type", json!(client.client_type)),
         (
             "grant_types",
-            json!(json_array_to_strings(&client.grant_types)),
+            json!(string_array_values(&client.grant_types)),
         ),
         (
             "token_endpoint_auth_method",
@@ -1067,13 +1067,13 @@ fn dynamic_registration_response(
         "client_name": client.client_name,
         "registration_access_token": registration_access_token,
         "registration_client_uri": registration_client_uri(issuer, &client.client_id),
-        "redirect_uris": json_array_to_strings(&client.redirect_uris),
-        "grant_types": json_array_to_strings(&client.grant_types),
+        "redirect_uris": string_array_values(&client.redirect_uris),
+        "grant_types": string_array_values(&client.grant_types),
         "response_types": response_types,
-        "scope": json_array_to_strings(&client.scopes).join(" "),
+        "scope": string_array_values(&client.scopes).join(" "),
         "token_endpoint_auth_method": client.token_endpoint_auth_method,
         "subject_type": client.subject_type,
-        "post_logout_redirect_uris": json_array_to_strings(&client.post_logout_redirect_uris),
+        "post_logout_redirect_uris": string_array_values(&client.post_logout_redirect_uris),
         "backchannel_logout_session_required": client.backchannel_logout_session_required,
         "frontchannel_logout_session_required": client.frontchannel_logout_session_required,
     });

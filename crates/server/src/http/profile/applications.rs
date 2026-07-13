@@ -1,11 +1,11 @@
 //! 当前用户已授权应用接口。
-use crate::support::json_array_to_strings;
 use crate::support::sessions::SessionProfileHandles;
 use actix_web::http::StatusCode;
 use actix_web::web::Data;
 use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
 use chrono::Utc;
+use nazo_auth::string_array_values;
 use nazo_http_actix::{json_response, oauth_error};
 use serde_json::{Value, json};
 // 只读取当前用户的 OAuth 授权关系。
@@ -38,7 +38,7 @@ fn my_application_json(row: nazo_identity::ports::AuthorizedApplication) -> Valu
     json!({
         "client_id": row.client_id,
         "client_name": row.client_name,
-        "last_scopes": json_array_to_strings(&row.last_scopes),
+        "last_scopes": string_array_values(&row.last_scopes),
         "last_authorized_at": row.last_authorized_at,
         "authorization_count": row.authorization_count
     })

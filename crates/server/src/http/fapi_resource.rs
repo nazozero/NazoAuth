@@ -6,7 +6,7 @@ use crate::support::mtls::request_mtls_thumbprint_from_trusted_proxy;
 use crate::support::security::tokens::decode_access_claims_with;
 use crate::support::{
     AccessTokenAuthScheme, DpopError, DpopErrorContext, access_token_tenant_id, constant_time_eq,
-    dpop_error_response, token_audience_contains, verify_client_http_message,
+    dpop_error_response, verify_client_http_message,
 };
 #[cfg(test)]
 use crate::support::{
@@ -24,6 +24,7 @@ use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
 use chrono::Duration;
 use chrono::Utc;
+use nazo_auth::token_audience_contains;
 #[cfg(test)]
 use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_http_actix::{

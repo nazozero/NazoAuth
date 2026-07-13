@@ -1,5 +1,6 @@
 use super::*;
 use actix_web::test::TestRequest;
+use nazo_auth::parse_resource_indicator_parameter;
 
 fn authorization_post_request(content_type: &str, query: &str) -> HttpRequest {
     TestRequest::post()
@@ -110,8 +111,7 @@ fn authorization_query_preserves_multiple_resource_indicators() {
     .unwrap();
 
     assert_eq!(
-        resource_indicators_from_parameter_value(parsed.get("resource").map(String::as_str))
-            .unwrap(),
+        parse_resource_indicator_parameter(parsed.get("resource").map(String::as_str)).unwrap(),
         vec![
             "https://api.example/one".to_owned(),
             "https://api.example/two".to_owned(),
@@ -133,8 +133,7 @@ fn authorization_post_form_preserves_multiple_resource_indicators() {
     .unwrap();
 
     assert_eq!(
-        resource_indicators_from_parameter_value(parsed.get("resource").map(String::as_str))
-            .unwrap(),
+        parse_resource_indicator_parameter(parsed.get("resource").map(String::as_str)).unwrap(),
         vec![
             "https://api.example/one".to_owned(),
             "https://api.example/two".to_owned(),

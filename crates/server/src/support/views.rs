@@ -1,5 +1,4 @@
 //! JSON view 组装函数。
-use super::json_array_to_strings;
 use crate::domain::ClientRow;
 #[cfg(test)]
 use crate::domain::DatabaseUserFixture;
@@ -10,6 +9,7 @@ use actix_web::http::header::HeaderMap;
 use actix_web::http::header::HeaderValue;
 #[cfg(test)]
 use chrono::Utc;
+use nazo_auth::string_array_values;
 use nazo_identity::PublicAccount;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -92,11 +92,11 @@ pub(crate) fn client_json(client: ClientRow) -> Value {
         "client_id": client.client_id,
         "client_name": client.client_name,
         "client_type": client.client_type,
-        "redirect_uris": json_array_to_strings(&client.redirect_uris),
-        "post_logout_redirect_uris": json_array_to_strings(&client.post_logout_redirect_uris),
-        "scopes": json_array_to_strings(&client.scopes),
-        "allowed_audiences": json_array_to_strings(&client.allowed_audiences),
-        "grant_types": json_array_to_strings(&client.grant_types),
+        "redirect_uris": string_array_values(&client.redirect_uris),
+        "post_logout_redirect_uris": string_array_values(&client.post_logout_redirect_uris),
+        "scopes": string_array_values(&client.scopes),
+        "allowed_audiences": string_array_values(&client.allowed_audiences),
+        "grant_types": string_array_values(&client.grant_types),
         "token_endpoint_auth_method": client.token_endpoint_auth_method,
         "require_dpop_bound_tokens": client.require_dpop_bound_tokens,
         "subject_type": client.subject_type,
@@ -105,10 +105,10 @@ pub(crate) fn client_json(client: ClientRow) -> Value {
         "require_mtls_bound_tokens": client.require_mtls_bound_tokens,
         "tls_client_auth_subject_dn": client.tls_client_auth_subject_dn,
         "tls_client_auth_cert_sha256": client.tls_client_auth_cert_sha256,
-        "tls_client_auth_san_dns": json_array_to_strings(&client.tls_client_auth_san_dns),
-        "tls_client_auth_san_uri": json_array_to_strings(&client.tls_client_auth_san_uri),
-        "tls_client_auth_san_ip": json_array_to_strings(&client.tls_client_auth_san_ip),
-        "tls_client_auth_san_email": json_array_to_strings(&client.tls_client_auth_san_email),
+        "tls_client_auth_san_dns": string_array_values(&client.tls_client_auth_san_dns),
+        "tls_client_auth_san_uri": string_array_values(&client.tls_client_auth_san_uri),
+        "tls_client_auth_san_ip": string_array_values(&client.tls_client_auth_san_ip),
+        "tls_client_auth_san_email": string_array_values(&client.tls_client_auth_san_email),
         "allow_client_assertion_audience_array": client.allow_client_assertion_audience_array,
         "allow_client_assertion_endpoint_audience": client.allow_client_assertion_endpoint_audience,
         "require_par_request_object": client.require_par_request_object,

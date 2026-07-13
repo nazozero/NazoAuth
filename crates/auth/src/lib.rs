@@ -15,6 +15,7 @@ mod device;
 mod error;
 mod grant;
 mod metadata;
+mod oauth_parameters;
 mod oidc_logout;
 mod profile;
 mod resource_indicator;
@@ -78,6 +79,10 @@ pub use device::{
 pub use error::{ProtocolError, ProtocolErrorCode};
 pub use grant::GrantType;
 pub use metadata::{CapabilityAdmission, MetadataCapabilities, module_admissible};
+pub use oauth_parameters::{
+    has_duplicate_oauth_parameter, is_subset, parse_scope, string_array_values,
+    token_audience_contains, token_audience_values,
+};
 pub use oidc_logout::{
     IdTokenHintClaims, LogoutClient, LogoutPolicyError, audience_contains, frontchannel_logout_url,
     id_token_hint_matches_session, logout_subjects_for_client, oidc_subject_for_client,
@@ -85,7 +90,10 @@ pub use oidc_logout::{
     validate_post_logout_redirect,
 };
 pub use profile::SecurityProfile;
-pub use resource_indicator::{ResourceIndicatorError, parse_resource_indicators};
+pub use resource_indicator::{
+    ResourceIndicatorError, encode_resource_indicators, parse_resource_indicator_parameter,
+    parse_resource_indicators,
+};
 pub use sender_constraint::{
     SenderConstraintPolicy, is_valid_dpop_jkt, normalize_sha256_thumbprint,
 };
@@ -106,7 +114,7 @@ pub use transaction::{
     PushedAuthorizationRequest,
 };
 pub use uri_policy::{
-    is_loopback_http_url, oauth_redirect_uri_matches, validate_cors_origin,
-    validate_frontend_base_url, validate_issuer_url, validate_oauth_redirect_uri,
-    validate_protected_resource_identifier,
+    RedirectUriError, is_loopback_http_url, is_valid_pkce_value, oauth_redirect_uri_matches,
+    resolve_registered_redirect_uri, validate_cors_origin, validate_frontend_base_url,
+    validate_issuer_url, validate_oauth_redirect_uri, validate_protected_resource_identifier,
 };

@@ -1,9 +1,8 @@
-//! OAuth 作用域、audience 与授权关系工具。
+//! Database-row and client-key adapters for framework-independent OAuth policy.
 use crate::domain::ClientRow;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde_json::Value;
-// 只处理 OAuth 语义中的集合判断和授权记录 upsert。
 
 use super::{
     mtls::certificate_x5c_thumbprint,
@@ -13,8 +12,10 @@ use super::{
         supported_client_jwt_algorithm_name,
     },
 };
-use nazo_auth::oauth_redirect_uri_matches;
-pub(crate) use nazo_auth::{ResourceIndicatorError, parse_resource_indicators};
+pub(crate) use nazo_auth::{
+    RedirectUriError, is_subset, is_valid_pkce_value, parse_resource_indicators, parse_scope,
+    string_array_values as json_array_to_strings,
+};
 
 fn ensure_public_client_jwk(jwk: &serde_json::Map<String, Value>) -> anyhow::Result<()> {
     const PRIVATE_MEMBERS: &[&str] = &["d", "p", "q", "dp", "dq", "qi", "oth", "k"];
@@ -29,112 +30,15 @@ fn ensure_public_client_jwk(jwk: &serde_json::Map<String, Value>) -> anyhow::Res
     Ok(())
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum RedirectUriError {
-    Missing,
-    Invalid,
-}
-
-pub(crate) trait StringArraySource {
-    fn strings(&self) -> Vec<String>;
-}
-
-impl StringArraySource for Value {
-    fn strings(&self) -> Vec<String> {
-        self.as_array()
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(|value| value.as_str().map(ToOwned::to_owned))
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-}
-
-impl StringArraySource for Vec<String> {
-    fn strings(&self) -> Vec<String> {
-        self.clone()
-    }
-}
-
-pub(crate) fn json_array_to_strings(value: &impl StringArraySource) -> Vec<String> {
-    value.strings()
-}
-
-pub(crate) fn parse_scope(raw: &str) -> Vec<String> {
-    raw.split_whitespace()
-        .map(ToOwned::to_owned)
-        .filter(|v| !v.is_empty())
-        .collect()
-}
-
-pub(crate) fn resource_indicators_from_parameter_value(
-    value: Option<&str>,
-) -> Result<Vec<String>, ResourceIndicatorError> {
-    let Some(value) = value else {
-        return Ok(Vec::new());
-    };
-    if let Ok(values) = serde_json::from_str::<Vec<String>>(value) {
-        return parse_resource_indicators(&values);
-    }
-    parse_resource_indicators(&[value.to_owned()])
-}
-
-pub(crate) fn encoded_resource_indicators(values: &[String]) -> Option<String> {
-    (!values.is_empty()).then(|| {
-        serde_json::to_string(values).expect("resource indicator serialization must be infallible")
-    })
-}
-
-pub(crate) fn is_subset(requested: &[String], allowed: &[String]) -> bool {
-    requested.iter().all(|s| allowed.contains(s))
-}
-
 pub(crate) fn client_supports_grant(client: &ClientRow, grant_type: &str) -> bool {
     json_array_to_strings(&client.grant_types)
         .iter()
         .any(|grant| grant == grant_type)
 }
 
-pub(crate) fn audience_allowed(client: &ClientRow, audience: &str) -> bool {
-    json_array_to_strings(&client.allowed_audiences)
-        .iter()
-        .any(|allowed| allowed == audience)
-}
-
 pub(crate) fn audiences_allowed(client: &ClientRow, audiences: &[String]) -> bool {
-    !audiences.is_empty()
-        && audiences
-            .iter()
-            .all(|audience| audience_allowed(client, audience))
-}
-
-pub(crate) fn token_audience_values(audience: &Value) -> Vec<String> {
-    match audience {
-        Value::String(value) => vec![value.clone()],
-        Value::Array(values) => values
-            .iter()
-            .filter_map(|value| value.as_str().map(ToOwned::to_owned))
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
-pub(crate) fn token_audience_contains(audience: &Value, expected: &str) -> bool {
-    token_audience_values(audience)
-        .iter()
-        .any(|audience| audience == expected)
-}
-
-pub(crate) fn has_duplicate_oauth_parameter(raw_query: &str, parameter_names: &[&str]) -> bool {
-    let mut seen = std::collections::HashSet::new();
-    for (key, _) in url::form_urlencoded::parse(raw_query.as_bytes()) {
-        if parameter_names.contains(&key.as_ref()) && !seen.insert(key.into_owned()) {
-            return true;
-        }
-    }
-    false
+    let allowed = json_array_to_strings(&client.allowed_audiences);
+    !audiences.is_empty() && nazo_auth::is_subset(audiences, &allowed)
 }
 
 pub(crate) fn registered_redirect_uri(
@@ -142,25 +46,11 @@ pub(crate) fn registered_redirect_uri(
     requested_redirect_uri: Option<&str>,
 ) -> Result<String, RedirectUriError> {
     let registered = json_array_to_strings(&client.redirect_uris);
-    if let Some(value) = requested_redirect_uri {
-        return registered
-            .iter()
-            .any(|registered| oauth_redirect_uri_matches(&client.client_type, registered, value))
-            .then(|| value.to_owned())
-            .ok_or(RedirectUriError::Invalid);
-    }
-    match registered.as_slice() {
-        [only] => Ok(only.clone()),
-        _ => Err(RedirectUriError::Missing),
-    }
-}
-
-pub(crate) fn is_valid_pkce_value(value: &str) -> bool {
-    let len = value.len();
-    (43..=128).contains(&len)
-        && value
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~'))
+    nazo_auth::resolve_registered_redirect_uri(
+        &client.client_type,
+        &registered,
+        requested_redirect_uri,
+    )
 }
 
 pub(crate) fn client_jwks_matching_encryption_key_count(jwks: &Value, alg: &str) -> usize {
@@ -329,7 +219,3 @@ pub(crate) fn authorization_code_key(code: &str) -> String {
 #[cfg(test)]
 #[path = "../../tests/in_source/src/support/tests/oauth_client_jwks.rs"]
 mod oauth_client_jwks_tests;
-
-#[cfg(test)]
-#[path = "../../tests/in_source/src/support/tests/oauth_redirect_pkce.rs"]
-mod oauth_redirect_pkce_tests;

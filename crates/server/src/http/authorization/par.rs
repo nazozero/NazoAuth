@@ -19,17 +19,18 @@ use crate::support::sessions::AdminSessionHandles;
 use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, valkey_get};
 use crate::support::{
     DpopError, DpopErrorContext, RedirectUriError, audiences_allowed, dpop_error_response,
-    encoded_resource_indicators, extract_client_credentials_with_trusted_proxies,
-    has_basic_authorization_scheme, random_urlsafe_token, rate_limited_response,
-    registered_redirect_uri, request_mtls_thumbprint_from_trusted_proxy,
-    resource_indicators_from_parameter_value,
+    extract_client_credentials_with_trusted_proxies, has_basic_authorization_scheme,
+    random_urlsafe_token, rate_limited_response, registered_redirect_uri,
+    request_mtls_thumbprint_from_trusted_proxy,
 };
 use actix_web::http::StatusCode;
 use actix_web::http::header;
 use actix_web::web::{Bytes, Data};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::{Duration, Utc};
-use nazo_auth::is_valid_dpop_jkt;
+use nazo_auth::{
+    encode_resource_indicators, is_valid_dpop_jkt, parse_resource_indicator_parameter,
+};
 #[cfg(test)]
 use serde_json::Value;
 use serde_json::json;
@@ -184,7 +185,7 @@ async fn par_after_rate_limit_inner(
         }
         params.insert(key, value);
     }
-    if let Some(encoded) = encoded_resource_indicators(&resource_values) {
+    if let Some(encoded) = encode_resource_indicators(&resource_values) {
         params.insert("resource".to_owned(), encoded);
     }
     let has_basic = has_basic_authorization_scheme(req.headers());
@@ -512,15 +513,14 @@ fn validate_pushed_authorization_request_resources(
     client: &ClientRow,
     params: &HashMap<String, String>,
 ) -> Result<(), HttpResponse> {
-    let resources =
-        resource_indicators_from_parameter_value(params.get("resource").map(String::as_str))
-            .map_err(|_| {
-                oauth_error(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_target",
-                    "resource must be an absolute URI without a fragment.",
-                )
-            })?;
+    let resources = parse_resource_indicator_parameter(params.get("resource").map(String::as_str))
+        .map_err(|_| {
+            oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_target",
+                "resource must be an absolute URI without a fragment.",
+            )
+        })?;
     if !resources.is_empty() && !audiences_allowed(client, &resources) {
         return Err(oauth_error(
             StatusCode::BAD_REQUEST,

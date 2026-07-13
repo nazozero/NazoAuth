@@ -13,8 +13,7 @@ use crate::support::{
 };
 use crate::support::{
     JwePayloadKind, RedirectUriError, append_query, audiences_allowed, blake3_hex, client_jwe_key,
-    client_supports_grant, encrypt_compact_jwe, is_subset, json_array_to_strings, parse_scope,
-    random_urlsafe_token, registered_redirect_uri, resource_indicators_from_parameter_value,
+    client_supports_grant, encrypt_compact_jwe, random_urlsafe_token, registered_redirect_uri,
 };
 use actix_web::http::StatusCode;
 #[cfg(test)]
@@ -24,7 +23,10 @@ use actix_web::{HttpRequest, HttpResponse};
 use chrono::{Duration, Utc};
 #[cfg(test)]
 use nazo_auth::OidcClaimRequest;
-use nazo_auth::{is_valid_dpop_jkt, parse_authorization_details};
+use nazo_auth::{
+    is_subset, is_valid_dpop_jkt, parse_authorization_details, parse_resource_indicator_parameter,
+    parse_scope, string_array_values,
+};
 use nazo_http_actix::{
     OAuthJsonErrorFields, authorization_error_response, oauth_error, redirect_found,
 };
@@ -443,12 +445,12 @@ async fn authorize_request_with_context(
     }
 
     let requested_scopes = parse_scope(q.get("scope").map(String::as_str).unwrap_or(""));
-    if !is_subset(&requested_scopes, &json_array_to_strings(&client.scopes)) {
+    if !is_subset(&requested_scopes, &string_array_values(&client.scopes)) {
         return authorization_oauth_error_redirect(context, &redirect_uri, "invalid_scope", q)
             .await;
     }
     let resource_indicators =
-        match resource_indicators_from_parameter_value(q.get("resource").map(String::as_str)) {
+        match parse_resource_indicator_parameter(q.get("resource").map(String::as_str)) {
             Ok(resources) => resources,
             Err(_) => {
                 return authorization_oauth_error_redirect(

@@ -1,6 +1,7 @@
 use nazo_auth::{
-    is_loopback_http_url, oauth_redirect_uri_matches, validate_cors_origin,
-    validate_frontend_base_url, validate_issuer_url, validate_oauth_redirect_uri,
+    RedirectUriError, is_loopback_http_url, is_valid_pkce_value, oauth_redirect_uri_matches,
+    resolve_registered_redirect_uri, validate_cors_origin, validate_frontend_base_url,
+    validate_issuer_url, validate_oauth_redirect_uri,
 };
 use proptest::prelude::*;
 
@@ -72,6 +73,47 @@ fn loopback_redirect_matching_ignores_only_port() {
     ));
     assert!(!is_loopback_http_url("http:/callback"));
     assert!(!is_loopback_http_url("http:///callback"));
+}
+
+#[test]
+fn registered_redirect_resolution_is_framework_independent() {
+    let registered = vec!["https://client.example/callback".to_owned()];
+    assert_eq!(
+        resolve_registered_redirect_uri("public", &registered, None).unwrap(),
+        "https://client.example/callback"
+    );
+    assert_eq!(
+        resolve_registered_redirect_uri(
+            "public",
+            &registered,
+            Some("https://client.example/callback/")
+        ),
+        Err(RedirectUriError::Invalid)
+    );
+    assert_eq!(
+        resolve_registered_redirect_uri(
+            "public",
+            &["http://127.0.0.1:3000/callback".to_owned()],
+            Some("http://127.0.0.1:49152/callback")
+        )
+        .unwrap(),
+        "http://127.0.0.1:49152/callback"
+    );
+    assert_eq!(
+        resolve_registered_redirect_uri("public", &[], None),
+        Err(RedirectUriError::Missing)
+    );
+}
+
+#[test]
+fn pkce_values_follow_rfc7636_length_and_charset() {
+    assert!(is_valid_pkce_value(
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"
+    ));
+    assert!(!is_valid_pkce_value("short"));
+    assert!(!is_valid_pkce_value(
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO!"
+    ));
 }
 
 proptest! {

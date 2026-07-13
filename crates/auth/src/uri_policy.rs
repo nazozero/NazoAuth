@@ -3,6 +3,12 @@
 use anyhow::bail;
 use url::Url;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RedirectUriError {
+    Missing,
+    Invalid,
+}
+
 pub fn validate_issuer_url(value: &str) -> anyhow::Result<()> {
     let url = parse_url("issuer", value)?;
     if !url.has_host() {
@@ -99,6 +105,36 @@ pub fn oauth_redirect_uri_matches(client_type: &str, registered: &str, requested
         && registered.path() == requested.path()
         && registered.query() == requested.query()
         && registered.fragment() == requested.fragment()
+}
+
+/// Resolves the redirect URI using OAuth exact-match rules and the native-app
+/// loopback port exception implemented by [`oauth_redirect_uri_matches`].
+pub fn resolve_registered_redirect_uri(
+    client_type: &str,
+    registered: &[String],
+    requested_redirect_uri: Option<&str>,
+) -> Result<String, RedirectUriError> {
+    if let Some(value) = requested_redirect_uri {
+        return registered
+            .iter()
+            .any(|registered| oauth_redirect_uri_matches(client_type, registered, value))
+            .then(|| value.to_owned())
+            .ok_or(RedirectUriError::Invalid);
+    }
+    match registered {
+        [only] => Ok(only.clone()),
+        _ => Err(RedirectUriError::Missing),
+    }
+}
+
+/// Validates an RFC 7636 `code_verifier` or `code_challenge` value.
+#[must_use]
+pub fn is_valid_pkce_value(value: &str) -> bool {
+    let len = value.len();
+    (43..=128).contains(&len)
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~'))
 }
 
 #[must_use]
