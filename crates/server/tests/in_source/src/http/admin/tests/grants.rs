@@ -105,7 +105,11 @@ fn admin_grant_dependencies(
         Data::new(AdminSessionHandles::new(
             nazo_valkey::SessionStore::new(&state.valkey_connection()),
             nazo_postgres::UserRepository::new(state.diesel_db.clone()),
-            SessionHttpConfig::new(session.session_cookie_name, session.csrf_cookie_name),
+            SessionHttpConfig::new(
+                session.session_cookie_name,
+                session.csrf_cookie_name,
+                session.cookie_secure,
+            ),
         )),
         Data::new(GrantRepository::new(state.diesel_db.clone())),
         Data::new(OAuthClientRepository::new(state.diesel_db.clone())),
