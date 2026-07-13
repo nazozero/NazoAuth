@@ -5,6 +5,10 @@ param(
     [string]$BackendCommit,
     [Parameter(Mandatory = $true)]
     [string]$FrontendCommit,
+    [string]$LocalFrontendWorktree = "",
+    [string]$LocalBackendWorktree = ".",
+    [string]$ExpectedFrontendRemote = "nazozero/NazoAuthWeb",
+    [string]$ExpectedFrontendBranch = "",
     [string]$ImageRepository = "localhost/nazo-oauth-server",
     [string]$ImageTag = "",
     [string]$ContainerName = "nazo-oauth-server",
@@ -22,8 +26,12 @@ param(
     [string]$HealthUrl = "https://auth.nazo.run/health",
     [string]$DiscoveryUrl = "https://auth.nazo.run/.well-known/openid-configuration",
     [string]$ExpectedIssuer = "https://auth.nazo.run",
+    [ValidateRange(1, 3600)]
+    [int]$VerificationLeaseSeconds = 120,
     [string]$RenderRemoteScriptPath = "",
+    [string]$RenderRemoteTempDir = "/tmp/nazo-oauth-deploy.render",
     [switch]$SkipBuild,
+    [switch]$SkipFrontendBuild,
     [switch]$SkipMigrate
 )
 
@@ -59,18 +67,158 @@ function ConvertTo-ShellLiteral {
     return $singleQuote + $Value.Replace($singleQuote, $escapedQuote) + $singleQuote
 }
 
+function Assert-CleanGitCommit {
+    param(
+        [Parameter(Mandatory = $true)][string]$Worktree,
+        [Parameter(Mandatory = $true)][string]$ExpectedCommit,
+        [Parameter(Mandatory = $true)][string]$Label
+    )
+    $root = Get-CommandOutput git @("-C", $Worktree, "rev-parse", "--show-toplevel")
+    $actualCommit = Get-CommandOutput git @("-C", $root, "rev-parse", "HEAD")
+    if ($actualCommit -cne $ExpectedCommit) {
+        throw "$Label HEAD $actualCommit does not match requested commit $ExpectedCommit"
+    }
+    $status = & git -C $root status --porcelain=v1 --untracked-files=all
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to inspect $Label worktree: $root"
+    }
+    if ($status) {
+        throw "$Label worktree must be clean (tracked and untracked build inputs): $root"
+    }
+    return [System.IO.Path]::GetFullPath($root)
+}
+
+function Export-GitCommit {
+    param(
+        [Parameter(Mandatory = $true)][string]$Worktree,
+        [Parameter(Mandatory = $true)][string]$Commit,
+        [Parameter(Mandatory = $true)][string]$Label
+    )
+    $identifier = [guid]::NewGuid().ToString("N")
+    $archivePath = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-$Label-$identifier.tar"
+    $exportPath = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-$Label-$identifier"
+    New-Item -ItemType Directory -Path $exportPath | Out-Null
+    try {
+        Invoke-Checked git @("-C", $Worktree, "archive", "--format=tar", "--output=$archivePath", $Commit)
+        Invoke-Checked tar @("-xf", $archivePath, "-C", $exportPath)
+        return $exportPath
+    }
+    catch {
+        Remove-Item -LiteralPath $exportPath -Recurse -Force -ErrorAction SilentlyContinue
+        throw
+    }
+    finally {
+        Remove-Item -LiteralPath $archivePath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Get-FrontendArtifactDigest {
+    param([Parameter(Mandatory = $true)][string]$DistPath)
+    $root = [System.IO.Path]::GetFullPath($DistPath)
+    $reparsePoint = Get-ChildItem -LiteralPath $root -Recurse -Force |
+        Where-Object { ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 } |
+        Select-Object -First 1
+    if ($reparsePoint) {
+        throw "Frontend dist must not contain symlinks or reparse points: $($reparsePoint.FullName)"
+    }
+    $entries = Get-ChildItem -LiteralPath $root -File -Recurse -Force |
+        Where-Object { $_.Name -ne ".nazo-build.json" } |
+        Sort-Object FullName |
+        ForEach-Object {
+            $relative = [System.IO.Path]::GetRelativePath($root, $_.FullName).Replace('\', '/')
+            $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$relative`t$hash`n"
+        }
+    $canonical = [string]::Concat([string[]]$entries)
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($canonical)
+    return [Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+}
+
+function Write-FrontendBuildManifest {
+    param(
+        [Parameter(Mandatory = $true)][string]$DistPath,
+        [Parameter(Mandatory = $true)][string]$SourceCommit
+    )
+    $manifestPath = Join-Path $DistPath ".nazo-build.json"
+    $manifest = [ordered]@{
+        schema = 1
+        source_commit = $SourceCommit
+        artifact_sha256 = Get-FrontendArtifactDigest -DistPath $DistPath
+    }
+    $manifest | ConvertTo-Json | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+}
+
 if ($BackendCommit -notmatch '^[0-9a-f]{40}$') {
     throw "BackendCommit must be a full lowercase Git SHA"
 }
 if ($FrontendCommit -notmatch '^[0-9a-f]{40}$') {
     throw "FrontendCommit must be a full lowercase Git SHA"
 }
+$LocalBackendWorktree = Assert-CleanGitCommit -Worktree $LocalBackendWorktree -ExpectedCommit $BackendCommit -Label "Backend"
+$backendBranch = Get-CommandOutput git @("-C", $LocalBackendWorktree, "branch", "--show-current")
+if (-not $backendBranch) {
+    throw "Backend worktree must be on a named branch"
+}
+if (-not $ExpectedFrontendBranch) {
+    $ExpectedFrontendBranch = $backendBranch
+}
+if (-not $LocalFrontendWorktree) {
+    $commonGitDir = Get-CommandOutput git @("-C", $LocalBackendWorktree, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    $backendRepository = Split-Path -Parent $commonGitDir
+    $LocalFrontendWorktree = Join-Path (Split-Path -Parent $backendRepository) "NazoAuthWeb"
+    if (-not (Test-Path -LiteralPath $LocalFrontendWorktree -PathType Container)) {
+        throw "Unable to discover sibling NazoAuthWeb repository; pass LocalFrontendWorktree explicitly"
+    }
+}
+$LocalFrontendWorktree = Assert-CleanGitCommit -Worktree $LocalFrontendWorktree -ExpectedCommit $FrontendCommit -Label "Frontend"
+$frontendBranch = Get-CommandOutput git @("-C", $LocalFrontendWorktree, "branch", "--show-current")
+if ($frontendBranch -cne $ExpectedFrontendBranch) {
+    throw "Frontend branch $frontendBranch does not match expected branch $ExpectedFrontendBranch"
+}
+$frontendRemote = Get-CommandOutput git @("-C", $LocalFrontendWorktree, "remote", "get-url", "origin")
+$remotePattern = "(?:^|[/:])" + [regex]::Escape($ExpectedFrontendRemote) + "(?:\.git)?$"
+if ($frontendRemote -notmatch $remotePattern) {
+    throw "Frontend origin $frontendRemote does not match expected repository $ExpectedFrontendRemote"
+}
+$LocalUiDist = [System.IO.Path]::GetFullPath($LocalUiDist)
+$frontendRootWithSeparator = $LocalFrontendWorktree.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+if (-not $LocalUiDist.StartsWith($frontendRootWithSeparator, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "LocalUiDist must be inside LocalFrontendWorktree"
+}
+if (-not $RenderRemoteScriptPath -and $SkipBuild) {
+    throw "SkipBuild is only allowed when rendering the remote script for tests"
+}
+if (-not $RenderRemoteScriptPath -and $SkipFrontendBuild) {
+    throw "SkipFrontendBuild is only allowed when rendering the remote script for tests"
+}
 if (-not $ImageTag) {
     $ImageTag = "modular-$($BackendCommit.Substring(0, 7))-web-$($FrontendCommit.Substring(0, 7))"
 }
-if (-not (Test-Path -LiteralPath (Join-Path $LocalUiDist "index.html"))) {
+if (-not $SkipFrontendBuild) {
+    $frontendBuildContext = Export-GitCommit -Worktree $LocalFrontendWorktree -Commit $FrontendCommit -Label "frontend-source"
+    try {
+        if (-not (Test-Path -LiteralPath (Join-Path $frontendBuildContext "package-lock.json") -PathType Leaf)) {
+            throw "Frontend deployment build requires package-lock.json"
+        }
+        Invoke-Checked npm @("--prefix", $frontendBuildContext, "ci")
+        Invoke-Checked npm @("--prefix", $frontendBuildContext, "run", "build")
+        $builtUiDist = Join-Path $frontendBuildContext "dist"
+        if (-not (Test-Path -LiteralPath (Join-Path $builtUiDist "index.html") -PathType Leaf)) {
+            throw "Frontend build did not produce dist/index.html"
+        }
+        Remove-Item -LiteralPath $LocalUiDist -Recurse -Force -ErrorAction SilentlyContinue
+        Copy-Item -LiteralPath $builtUiDist -Destination $LocalUiDist -Recurse
+    }
+    finally {
+        Remove-Item -LiteralPath $frontendBuildContext -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    $LocalFrontendWorktree = Assert-CleanGitCommit -Worktree $LocalFrontendWorktree -ExpectedCommit $FrontendCommit -Label "Frontend after build"
+}
+if (-not (Test-Path -LiteralPath (Join-Path $LocalUiDist "index.html") -PathType Leaf)) {
     throw "Missing frontend dist index.html: $LocalUiDist"
 }
+Write-FrontendBuildManifest -DistPath $LocalUiDist -SourceCommit $FrontendCommit
+$frontendArtifactDigest = Get-FrontendArtifactDigest -DistPath $LocalUiDist
 
 $image = "${ImageRepository}:$ImageTag"
 $safeTag = $ImageTag -replace '[^A-Za-z0-9_.-]', '-'
@@ -80,16 +228,26 @@ $localRemoteScript = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-dep
 
 Write-Host "Staging $image ($BackendCommit / $FrontendCommit) on $RemoteHost"
 
+$expectedImageId = "sha256:" + ("0" * 64)
 if ($RenderRemoteScriptPath) {
-    $remoteTempDir = "/tmp/nazo-oauth-deploy.render"
+    $remoteTempDir = $RenderRemoteTempDir
 }
 else {
-    if (-not $SkipBuild) {
+    $backendBuildContext = Export-GitCommit -Worktree $LocalBackendWorktree -Commit $BackendCommit -Label "backend-source"
+    try {
         Invoke-Checked docker @(
-            "build", "-f", "Containerfile",
+            "build", "-f", (Join-Path $backendBuildContext "Containerfile"),
             "--label", "org.opencontainers.image.revision=$BackendCommit",
-            "-t", $image, "."
+            "-t", $image, $backendBuildContext
         )
+    }
+    finally {
+        Remove-Item -LiteralPath $backendBuildContext -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    $LocalBackendWorktree = Assert-CleanGitCommit -Worktree $LocalBackendWorktree -ExpectedCommit $BackendCommit -Label "Backend after build"
+    $expectedImageId = Get-CommandOutput docker @("image", "inspect", $image, "--format", "{{.Id}}")
+    if ($expectedImageId -notmatch '^sha256:[0-9a-f]{64}$') {
+        throw "Docker returned an invalid immutable image ID: $expectedImageId"
     }
     Remove-Item -LiteralPath $archive, $uiArchive -Force -ErrorAction SilentlyContinue
     Invoke-Checked docker @("save", $image, "-o", $archive)
@@ -106,6 +264,7 @@ if (-not $RenderRemoteScriptPath) {
 }
 
 $skipMigrateValue = if ($SkipMigrate) { "1" } else { "0" }
+$deploymentId = [guid]::NewGuid().ToString("N")
 $remoteBody = @"
 #!/usr/bin/env bash
 set -euo pipefail
@@ -113,6 +272,8 @@ set -euo pipefail
 IMAGE=$(ConvertTo-ShellLiteral $image)
 BACKEND_COMMIT=$(ConvertTo-ShellLiteral $BackendCommit)
 FRONTEND_COMMIT=$(ConvertTo-ShellLiteral $FrontendCommit)
+FRONTEND_ARTIFACT_SHA256=$(ConvertTo-ShellLiteral $frontendArtifactDigest)
+DEPLOYMENT_ID=$(ConvertTo-ShellLiteral $deploymentId)
 REMOTE_ARCHIVE=$(ConvertTo-ShellLiteral $remoteArchive)
 REMOTE_UI_ARCHIVE=$(ConvertTo-ShellLiteral $remoteUiArchive)
 REMOTE_SCRIPT=$(ConvertTo-ShellLiteral $remoteScript)
@@ -129,12 +290,21 @@ UI_PATH=$(ConvertTo-ShellLiteral $RemoteUiPath)
 DEPLOYMENT_ROOT=$(ConvertTo-ShellLiteral $RemoteDeploymentRoot)
 PUBLISH_PORT=$(ConvertTo-ShellLiteral $PublishPort)
 EXPECTED_ISSUER=$(ConvertTo-ShellLiteral $ExpectedIssuer)
+EXPECTED_IMAGE_ID=$(ConvertTo-ShellLiteral $expectedImageId)
 SKIP_MIGRATE=$(ConvertTo-ShellLiteral $skipMigrateValue)
+VERIFICATION_LEASE_SECONDS=$(ConvertTo-ShellLiteral $VerificationLeaseSeconds)
 
 UI_RELEASES="`$DEPLOYMENT_ROOT/ui-releases"
 DEPLOYMENTS="`$DEPLOYMENT_ROOT/deployments"
 UI_RELEASE="`$UI_RELEASES/`$FRONTEND_COMMIT"
-RECORD="`$DEPLOYMENTS/`$BACKEND_COMMIT.json"
+RECORD="`$DEPLOYMENTS/`$BACKEND_COMMIT-`$FRONTEND_COMMIT-`$DEPLOYMENT_ID.json"
+CURRENT_LINK_TEMP="`$DEPLOYMENTS/.current-`$DEPLOYMENT_ID"
+ACTIVE_DEPLOYMENT="`$DEPLOYMENTS/active-deployment"
+LEASE_PENDING="`$STATE_FILE.lease-pending"
+LEASE_COMMITTED="`$STATE_FILE.lease-committed"
+LEASE_ROLLBACK="`$STATE_FILE.lease-rollback"
+LEASE_LOCK="`$DEPLOYMENTS/lease.lock"
+WATCHDOG_PID_FILE="`$STATE_FILE.watchdog-pid"
 
 run_server() {
   local selected_image="`$1"
@@ -152,19 +322,24 @@ run_server() {
 write_record() {
   local status="`$1"
   python3 - "`$RECORD" "`$status" "`$BACKEND_COMMIT" "`$FRONTEND_COMMIT" \
-    "`$IMAGE" "`${previous_image:-}" "`${previous_container_id:-}" \
-    "`${previous_ui_target:-}" "`${candidate_container_id:-}" <<'PY'
+    "`$DEPLOYMENT_ID" "`$IMAGE" "`$EXPECTED_IMAGE_ID" "`$FRONTEND_ARTIFACT_SHA256" \
+    "`${previous_image_id:-}" "`${previous_image_name:-}" \
+    "`${previous_container_id:-}" "`${previous_ui_target:-}" "`${candidate_container_id:-}" <<'PY'
 import json, pathlib, sys, time
 path = pathlib.Path(sys.argv[1])
 payload = {
     "status": sys.argv[2],
     "backend_commit": sys.argv[3],
     "frontend_commit": sys.argv[4],
-    "candidate_image": sys.argv[5],
-    "previous_image": sys.argv[6],
-    "previous_container_id": sys.argv[7],
-    "previous_ui_target": sys.argv[8],
-    "candidate_container_id": sys.argv[9],
+    "deployment_id": sys.argv[5],
+    "candidate_image": sys.argv[6],
+    "candidate_image_id": sys.argv[7],
+    "frontend_artifact_sha256": sys.argv[8],
+    "previous_image_id": sys.argv[9],
+    "previous_image_name": sys.argv[10],
+    "previous_container_id": sys.argv[11],
+    "previous_ui_target": sys.argv[12],
+    "candidate_container_id": sys.argv[13],
     "recorded_at_unix": int(time.time()),
 }
 path.parent.mkdir(parents=True, exist_ok=True)
@@ -176,12 +351,16 @@ PY
 
 save_state() {
   cat >"`$STATE_FILE" <<EOF
-previous_image='`${previous_image//\'/\'\\\'\'}'
+previous_image_id='`${previous_image_id//\'/\'\\\'\'}'
+previous_image_name='`${previous_image_name//\'/\'\\\'\'}'
 previous_container_id='`${previous_container_id//\'/\'\\\'\'}'
 previous_ui_kind='`${previous_ui_kind//\'/\'\\\'\'}'
 previous_ui_target='`${previous_ui_target//\'/\'\\\'\'}'
 legacy_ui_release='`${legacy_ui_release//\'/\'\\\'\'}'
 candidate_container_id='`${candidate_container_id//\'/\'\\\'\'}'
+previous_current_target='`${previous_current_target//\'/\'\\\'\'}'
+candidate_started='`${candidate_started//\'/\'\\\'\'}'
+ui_switched='`${ui_switched//\'/\'\\\'\'}'
 EOF
 }
 
@@ -194,13 +373,24 @@ load_state() {
 rollback() {
   set +e
   if [ -f "`$STATE_FILE" ]; then load_state; fi
-  if podman container exists "`$CONTAINER_NAME"; then podman rm -f "`$CONTAINER_NAME" >/dev/null; fi
-  if [ -n "`${previous_image:-}" ]; then run_server "`$previous_image"; fi
-  if [ -L "`$UI_PATH" ]; then rm -f "`$UI_PATH"; fi
-  if [ "`${previous_ui_kind:-missing}" = "symlink" ] && [ -n "`${previous_ui_target:-}" ]; then
-    ln -s "`$previous_ui_target" "`$UI_PATH"
-  elif [ "`${previous_ui_kind:-missing}" = "directory" ] && [ -n "`${legacy_ui_release:-}" ] && [ -d "`$legacy_ui_release" ]; then
-    mv -T "`$legacy_ui_release" "`$UI_PATH"
+  if [ "`${candidate_started:-0}" = "1" ]; then
+    if podman container exists "`$CONTAINER_NAME"; then podman rm -f "`$CONTAINER_NAME" >/dev/null; fi
+    if [ -n "`${previous_image_id:-}" ]; then run_server "`$previous_image_id"; fi
+  fi
+  if [ "`${ui_switched:-0}" = "1" ]; then
+    if [ -L "`$UI_PATH" ]; then rm -f "`$UI_PATH"; fi
+    if [ "`${previous_ui_kind:-missing}" = "symlink" ] && [ -n "`${previous_ui_target:-}" ]; then
+      ln -s "`$previous_ui_target" "`$UI_PATH"
+    elif [ "`${previous_ui_kind:-missing}" = "directory" ] && [ -n "`${legacy_ui_release:-}" ] && [ -d "`$legacy_ui_release" ]; then
+      mv -T "`$legacy_ui_release" "`$UI_PATH"
+    fi
+  fi
+  if [ -L "`$DEPLOYMENTS/current.json" ] && [ "`$(readlink "`$DEPLOYMENTS/current.json")" = "`$RECORD" ]; then
+    rm -f "`$DEPLOYMENTS/current.json"
+    if [ -n "`${previous_current_target:-}" ]; then
+      ln -s "`$previous_current_target" "`$CURRENT_LINK_TEMP"
+      mv -T "`$CURRENT_LINK_TEMP" "`$DEPLOYMENTS/current.json"
+    fi
   fi
   write_record "rolled-back" 2>/dev/null || true
   curl -fsS --max-time 20 "http://`$CONTAINER_IP:8000/health" >/dev/null 2>&1 || true
@@ -208,8 +398,44 @@ rollback() {
 }
 
 cleanup() {
-  rm -f "`$REMOTE_ARCHIVE" "`$REMOTE_UI_ARCHIVE" "`$REMOTE_SCRIPT" "`$STATE_FILE"
+  rm -f "`$REMOTE_ARCHIVE" "`$REMOTE_UI_ARCHIVE" "`$REMOTE_SCRIPT" "`$STATE_FILE" \
+    "`$WATCHDOG_PID_FILE" "`$LEASE_PENDING" "`$LEASE_COMMITTED" "`$LEASE_ROLLBACK" \
+    "`$CURRENT_LINK_TEMP"
+  if [ -f "`$ACTIVE_DEPLOYMENT/owner" ] && [ "`$(cat "`$ACTIVE_DEPLOYMENT/owner")" = "`$DEPLOYMENT_ID" ]; then
+    rm -rf "`$ACTIVE_DEPLOYMENT"
+  fi
   rmdir "`$(dirname "`$REMOTE_SCRIPT")" 2>/dev/null || true
+}
+
+stop_watchdog() {
+  if [ -f "`$WATCHDOG_PID_FILE" ]; then
+    watchdog_pid="`$(cat "`$WATCHDOG_PID_FILE")"
+    if [[ "`$watchdog_pid" =~ ^[0-9]+`$ ]]; then
+      kill "`$watchdog_pid" 2>/dev/null || true
+    fi
+  fi
+}
+
+start_verification_lease() {
+  : >"`$LEASE_PENDING"
+  nohup bash -c 'sleep "`$1"; exec bash "`$2" expire' _ \
+    "`$VERIFICATION_LEASE_SECONDS" "`$REMOTE_SCRIPT" </dev/null >/dev/null 2>&1 &
+  printf '%s\n' "`$!" >"`$WATCHDOG_PID_FILE"
+}
+
+rollback_transaction() {
+  load_state
+  exec 9>"`$LEASE_LOCK"
+  flock -x 9
+  if [ -f "`$LEASE_COMMITTED" ]; then
+    echo "Deployment is already committed; refusing rollback" >&2
+    return 1
+  fi
+  if [ -f "`$LEASE_PENDING" ]; then mv "`$LEASE_PENDING" "`$LEASE_ROLLBACK"; fi
+  rollback
+  stop_watchdog
+  flock -u 9
+  cleanup
 }
 
 deploy() {
@@ -217,22 +443,59 @@ deploy() {
   test -d "`$KEYS_PATH"
   test -d "`$AVATARS_PATH"
   test "`$(df -Pk "`$DEPLOYMENT_ROOT" | awk 'NR==2 {print `$4}')" -gt 1048576
+  command -v flock >/dev/null
   podman network exists "`$NETWORK_NAME"
+  network_inspect="`$(podman network inspect "`$NETWORK_NAME")"
+  if ! python3 - "`$NETWORK_SUBNET" "`$NETWORK_GATEWAY" "`$network_inspect" <<'PY'; then
+import json, sys
+document = json.loads(sys.argv[3])
+expected = (sys.argv[1], sys.argv[2])
+pairs = set()
+def walk(value):
+    if isinstance(value, dict):
+        subnet = value.get("subnet")
+        gateway = value.get("gateway")
+        if isinstance(subnet, str) and isinstance(gateway, str):
+            pairs.add((subnet, gateway))
+        for nested in value.values():
+            walk(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            walk(nested)
+walk(document)
+raise SystemExit(0 if pairs == {expected} else 1)
+PY
+    echo "Existing Podman network `$NETWORK_NAME has unexpected subnet or gateway" >&2
+    return 1
+  fi
   podman run --rm --network "`$NETWORK_NAME" docker.io/library/postgres:18 \
     pg_isready -h 10.101.0.10 -p 5432 >/dev/null
   podman exec nazo-oauth-valkey valkey-cli ping | grep -Fx PONG >/dev/null
 
   mkdir -p "`$UI_RELEASES" "`$DEPLOYMENTS"
+  if ! mkdir "`$ACTIVE_DEPLOYMENT" 2>/dev/null; then
+    echo "Another deployment transaction is active" >&2
+    return 1
+  fi
+  printf '%s\n' "`$DEPLOYMENT_ID" >"`$ACTIVE_DEPLOYMENT/owner"
+  trap 'cleanup' ERR
   rm -rf "`$UI_RELEASE.tmp"
   mkdir -p "`$UI_RELEASE.tmp"
   tar -xzf "`$REMOTE_UI_ARCHIVE" -C "`$UI_RELEASE.tmp"
   test -s "`$UI_RELEASE.tmp/index.html"
-  if [ -e "`$UI_RELEASE" ]; then rm -rf "`$UI_RELEASE.tmp"; else mv "`$UI_RELEASE.tmp" "`$UI_RELEASE"; fi
+  if [ -e "`$UI_RELEASE" ]; then
+    diff -qr "`$UI_RELEASE" "`$UI_RELEASE.tmp" >/dev/null
+    rm -rf "`$UI_RELEASE.tmp"
+  else
+    mv "`$UI_RELEASE.tmp" "`$UI_RELEASE"
+  fi
 
-  previous_image=""
+  previous_image_id=""
+  previous_image_name=""
   previous_container_id=""
   if podman container exists "`$CONTAINER_NAME"; then
-    previous_image="`$(podman inspect "`$CONTAINER_NAME" --format '{{.ImageName}}')"
+    previous_image_id="`$(podman inspect "`$CONTAINER_NAME" --format '{{.Image}}')"
+    previous_image_name="`$(podman inspect "`$CONTAINER_NAME" --format '{{.ImageName}}')"
     previous_container_id="`$(podman inspect "`$CONTAINER_NAME" --format '{{.Id}}')"
   fi
   previous_ui_kind="missing"
@@ -247,14 +510,23 @@ deploy() {
     legacy_ui_release="`$UI_RELEASES/legacy-`$(date +%s)"
   fi
   candidate_container_id=""
+  candidate_started="0"
+  ui_switched="0"
+  previous_current_target=""
+  if [ -L "`$DEPLOYMENTS/current.json" ]; then
+    previous_current_target="`$(readlink "`$DEPLOYMENTS/current.json")"
+  fi
   save_state
   write_record "preflight"
 
-  trap 'rollback' ERR
+  trap 'rollback_transaction' ERR
   podman load -i "`$REMOTE_ARCHIVE" >/dev/null
   podman image exists "`$IMAGE"
+  actual_image_id="`$(podman image inspect "`$IMAGE" --format '{{.Id}}')"
+  test "`$actual_image_id" = "`$EXPECTED_IMAGE_ID"
   actual_revision="`$(podman image inspect "`$IMAGE" --format '{{index .Labels "org.opencontainers.image.revision"}}')"
   test "`$actual_revision" = "`$BACKEND_COMMIT"
+  if [ -n "`$previous_image_id" ]; then podman image exists "`$previous_image_id"; fi
 
   if [ "`$SKIP_MIGRATE" != "1" ]; then
     podman run --rm --name "`$CONTAINER_NAME-migrate-`$(date +%s)" \
@@ -265,6 +537,9 @@ deploy() {
       "`$IMAGE" nazo-oauth-migrate
   fi
 
+  candidate_started="1"
+  save_state
+  start_verification_lease
   if podman container exists "`$CONTAINER_NAME"; then podman rm -f "`$CONTAINER_NAME" >/dev/null; fi
   run_server "`$IMAGE"
   candidate_container_id="`$(podman inspect "`$CONTAINER_NAME" --format '{{.Id}}')"
@@ -275,6 +550,8 @@ deploy() {
   discovery="`$(curl -fsS --max-time 20 "http://`$CONTAINER_IP:8000/.well-known/openid-configuration")"
   python3 -c 'import json,sys; assert json.load(sys.stdin)["issuer"] == sys.argv[1]' "`$EXPECTED_ISSUER" <<<"`$discovery"
 
+  ui_switched="1"
+  save_state
   if [ "`$previous_ui_kind" = "directory" ]; then mv -T "`$UI_PATH" "`$legacy_ui_release"; fi
   temporary_link="`$UI_PATH.next-`$BACKEND_COMMIT"
   rm -f "`$temporary_link"
@@ -286,15 +563,36 @@ deploy() {
 
 commit_deployment() {
   load_state
+  exec 9>"`$LEASE_LOCK"
+  flock -x 9
+  test -f "`$LEASE_PENDING"
   write_record "deployment-success"
-  ln -sfn "`$RECORD" "`$DEPLOYMENTS/current.json"
+  rm -f "`$CURRENT_LINK_TEMP"
+  ln -s "`$RECORD" "`$CURRENT_LINK_TEMP"
+  mv -T "`$CURRENT_LINK_TEMP" "`$DEPLOYMENTS/current.json"
+  mv "`$LEASE_PENDING" "`$LEASE_COMMITTED"
+  stop_watchdog
+  flock -u 9
+  cleanup
+}
+
+expire_lease() {
+  if [ ! -f "`$STATE_FILE" ]; then return 0; fi
+  exec 9>"`$LEASE_LOCK"
+  flock -x 9
+  if [ ! -f "`$LEASE_PENDING" ]; then return 0; fi
+  mv "`$LEASE_PENDING" "`$LEASE_ROLLBACK"
+  load_state
+  rollback
+  flock -u 9
   cleanup
 }
 
 case "`${1:-deploy}" in
   deploy) deploy ;;
-  rollback) load_state; rollback; cleanup ;;
+  rollback) rollback_transaction ;;
   commit) load_state; commit_deployment ;;
+  expire) expire_lease ;;
   *) echo "unknown deployment action" >&2; exit 2 ;;
 esac
 "@
@@ -305,6 +603,8 @@ if ($RenderRemoteScriptPath) {
 }
 Set-Content -LiteralPath $localRemoteScript -Value $remoteBody -Encoding UTF8
 $remoteStarted = $false
+$remoteScriptLiteral = ConvertTo-ShellLiteral $remoteScript
+$rollbackIfPresent = "if [ -f $remoteScriptLiteral ]; then bash $remoteScriptLiteral rollback; fi"
 try {
     Invoke-Checked scp $localRemoteScript "${RemoteHost}:$remoteScript"
     $remoteStarted = $true
@@ -325,7 +625,7 @@ try {
 }
 catch {
     if ($remoteStarted) {
-        & ssh $RemoteHost bash $remoteScript rollback
+        & ssh $RemoteHost bash -lc $rollbackIfPresent
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Automatic rollback command failed; inspect $RemoteHost immediately"
         }
