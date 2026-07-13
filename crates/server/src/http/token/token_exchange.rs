@@ -13,8 +13,8 @@ use crate::domain::{AppState, ClientRow, RefreshTokenPolicy, TokenIssue};
 use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
 use crate::support::{
     DpopError, DpopErrorContext, ValidatedClientAssertion, access_token_tenant_id,
-    audiences_allowed, constant_time_eq, decode_access_claims, dpop_error_response, is_subset,
-    json_array_to_strings, parse_scope, request_mtls_thumbprint, validate_dpop_proof,
+    audiences_allowed, constant_time_eq, dpop_error_response, is_subset, json_array_to_strings,
+    parse_scope, request_mtls_thumbprint, validate_dpop_proof,
 };
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse};
@@ -177,11 +177,19 @@ fn token_exchange_subject_user_id(subject: &Claims) -> Result<Option<Uuid>, Http
 }
 
 async fn validate_exchange_access_token(
-    state: &AppState,
+    token_service: &ServerTokenService,
+    issuer: &str,
     client: &ClientRow,
     raw_token: &str,
 ) -> Result<Claims, TokenExchangeTokenError> {
-    let Some(claims) = decode_access_claims(state, raw_token) else {
+    let Some(claims) = token_service
+        .decode_access_token(issuer, raw_token)
+        .await
+        .map_err(|error| {
+            tracing::warn!(?error, "failed to decode token exchange access token");
+            TokenExchangeTokenError::StoreUnavailable
+        })?
+    else {
         return Err(TokenExchangeTokenError::Invalid);
     };
     if access_token_tenant_id(&claims) != Some(client.tenant_id)
@@ -189,7 +197,7 @@ async fn validate_exchange_access_token(
     {
         return Err(TokenExchangeTokenError::Invalid);
     }
-    let revoked = nazo_postgres::TokenRepository::new(state.diesel_db.clone())
+    let revoked = token_service
         .access_token_revoked(client.tenant_id, &claims.jti)
         .await
         .map_err(|error| {
@@ -324,14 +332,15 @@ fn actor_claim(actor: &Claims) -> Value {
 }
 
 async fn validate_actor_token(
-    state: &AppState,
+    token_service: &ServerTokenService,
+    issuer: &str,
     client: &ClientRow,
     actor_token: Option<&str>,
 ) -> Result<Option<Value>, HttpResponse> {
     let Some(actor_token) = actor_token else {
         return Ok(None);
     };
-    let actor = validate_exchange_access_token(state, client, actor_token)
+    let actor = validate_exchange_access_token(token_service, issuer, client, actor_token)
         .await
         .map_err(exchange_token_error_response)?;
     if actor.client_id != client.client_id {
@@ -400,7 +409,14 @@ pub(crate) async fn token_exchange(
         .subject_token
         .as_deref()
         .expect("validated token exchange form must contain subject_token");
-    let subject = match validate_exchange_access_token(state, client, subject_token).await {
+    let subject = match validate_exchange_access_token(
+        token_service,
+        issuance.config.issuer(),
+        client,
+        subject_token,
+    )
+    .await
+    {
         Ok(claims) => claims,
         Err(error) => return exchange_token_error_response(error),
     };
@@ -422,7 +438,14 @@ pub(crate) async fn token_exchange(
             Ok(binding) => binding,
             Err(response) => return response,
         };
-    let actor = match validate_actor_token(state, client, form.actor_token.as_deref()).await {
+    let actor = match validate_actor_token(
+        token_service,
+        issuance.config.issuer(),
+        client,
+        form.actor_token.as_deref(),
+    )
+    .await
+    {
         Ok(actor) => actor,
         Err(response) => return response,
     };

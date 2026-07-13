@@ -52,6 +52,12 @@ impl From<&Settings> for TokenIssuanceConfig {
     }
 }
 
+impl TokenIssuanceConfig {
+    pub(crate) fn issuer(&self) -> &str {
+        &self.issuer
+    }
+}
+
 pub(crate) struct TokenIssuanceContext<'a> {
     pub(crate) config: &'a TokenIssuanceConfig,
     pub(crate) modules: &'a nazo_runtime_modules::ActiveModuleSnapshot,
