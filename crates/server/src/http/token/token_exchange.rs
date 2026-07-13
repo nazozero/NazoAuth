@@ -14,8 +14,7 @@ use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
 use crate::support::{
     dpop::DpopError, dpop::DpopErrorContext, dpop::dpop_error_response,
     dpop::validate_dpop_proof_with_authorization_service,
-    mtls::request_mtls_thumbprint_from_trusted_proxy, oauth::audiences_allowed, oauth::is_subset,
-    oauth::parse_scope, security::ValidatedClientAssertion, security::access_token_tenant_id,
+    mtls::request_mtls_thumbprint_from_trusted_proxy, security::ValidatedClientAssertion,
     security::constant_time_eq,
 };
 #[cfg(test)]
@@ -25,13 +24,20 @@ use crate::support::{
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::Utc;
-use nazo_auth::Claims;
+#[cfg(test)]
+use nazo_auth::ACCESS_TOKEN_TYPE;
+use nazo_auth::{
+    Claims, PresentedSenderConstraint, TokenExchangeError, TokenExchangePolicy,
+    TokenExchangeRequestInput, TokenExchangeSenderBinding, admit_token_exchange, parse_scope,
+    token_exchange_actor_claim, token_exchange_issuance_binding,
+    validate_token_exchange_access_token, validate_token_exchange_grant_prerequisites,
+    validate_token_exchange_subject,
+};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
 pub(crate) const TOKEN_EXCHANGE_GRANT_TYPE: &str =
     "urn:ietf:params:oauth:grant-type:token-exchange";
-const ACCESS_TOKEN_TYPE: &str = "urn:ietf:params:oauth:token-type:access_token";
 
 #[derive(Debug, PartialEq, Eq)]
 enum TokenExchangeTokenError {
@@ -39,146 +45,139 @@ enum TokenExchangeTokenError {
     StoreUnavailable,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum TokenExchangeTypeError {
-    MissingSubjectToken,
-    MissingSubjectTokenType,
-    UnsupportedSubjectTokenType,
-    ActorTokenTypeWithoutActorToken,
-    MissingActorTokenType,
-    UnsupportedActorTokenType,
-    UnsupportedRequestedTokenType,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-enum SenderBinding {
-    Dpop(String),
-    Mtls(String),
-}
-
-fn validate_token_exchange_type_policy(form: &TokenForm) -> Result<(), TokenExchangeTypeError> {
-    if form.subject_token.is_none() {
-        return Err(TokenExchangeTypeError::MissingSubjectToken);
-    }
-    match form.subject_token_type.as_deref() {
-        Some(ACCESS_TOKEN_TYPE) => {}
-        Some(_) => return Err(TokenExchangeTypeError::UnsupportedSubjectTokenType),
-        None => return Err(TokenExchangeTypeError::MissingSubjectTokenType),
-    }
-    match (form.actor_token.as_ref(), form.actor_token_type.as_deref()) {
-        (None, None) => {}
-        (None, Some(_)) => return Err(TokenExchangeTypeError::ActorTokenTypeWithoutActorToken),
-        (Some(_), Some(ACCESS_TOKEN_TYPE)) => {}
-        (Some(_), Some(_)) => return Err(TokenExchangeTypeError::UnsupportedActorTokenType),
-        (Some(_), None) => return Err(TokenExchangeTypeError::MissingActorTokenType),
-    }
-    if let Some(requested_token_type) = form.requested_token_type.as_deref()
-        && requested_token_type != ACCESS_TOKEN_TYPE
-    {
-        return Err(TokenExchangeTypeError::UnsupportedRequestedTokenType);
-    }
-    Ok(())
-}
-
-fn token_exchange_type_error_response(error: TokenExchangeTypeError) -> HttpResponse {
+fn token_exchange_error_response(error: TokenExchangeError) -> HttpResponse {
     match error {
-        TokenExchangeTypeError::MissingSubjectToken
-        | TokenExchangeTypeError::MissingSubjectTokenType
-        | TokenExchangeTypeError::ActorTokenTypeWithoutActorToken
-        | TokenExchangeTypeError::MissingActorTokenType => oauth_token_error(
+        TokenExchangeError::Disabled => oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_grant_type",
+            "Token exchange is disabled.",
+            false,
+        ),
+        TokenExchangeError::UnauthorizedClient => oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "unauthorized_client",
+            "token exchange requires a confidential client.",
+            false,
+        ),
+        TokenExchangeError::MissingParameter => oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "token exchange request is missing required token parameters.",
             false,
         ),
-        TokenExchangeTypeError::UnsupportedSubjectTokenType
-        | TokenExchangeTypeError::UnsupportedActorTokenType
-        | TokenExchangeTypeError::UnsupportedRequestedTokenType => oauth_token_error(
+        TokenExchangeError::UnsupportedTokenType => oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "unsupported token exchange token type.",
             false,
         ),
-    }
-}
-
-fn token_exchange_requested_scopes(
-    client: &ClientRow,
-    subject: &Claims,
-    requested_scope: Option<&str>,
-) -> Result<Vec<String>, HttpResponse> {
-    let subject_scopes = parse_scope(&subject.scope);
-    let requested = parse_scope(requested_scope.unwrap_or(""));
-    let scopes = if requested.is_empty() {
-        subject_scopes
-            .iter()
-            .filter(|scope| *scope != "openid" && client.scopes.contains(scope))
-            .cloned()
-            .collect::<Vec<_>>()
-    } else {
-        if requested.iter().any(|scope| scope == "openid")
-            || !is_subset(&requested, &subject_scopes)
-            || !is_subset(&requested, &client.scopes)
-        {
-            return Err(oauth_token_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_scope",
-                "token exchange scope must be a subset of the subject token and client scopes.",
-                false,
-            ));
-        }
-        requested
-    };
-    if scopes.is_empty() {
-        return Err(oauth_token_error(
+        TokenExchangeError::InvalidScope => oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_scope",
-            "token exchange cannot issue an access token without non-OIDC scopes.",
+            "token exchange scope must be a subset of the subject token and client scopes.",
             false,
-        ));
-    }
-    Ok(scopes)
-}
-
-fn token_exchange_requested_audiences(
-    client: &ClientRow,
-    form: &TokenForm,
-) -> Result<Vec<String>, HttpResponse> {
-    if form.audiences.is_empty() {
-        return Err(oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_target",
-            "token exchange requires an explicit resource or audience.",
-            false,
-        ));
-    }
-    if !audiences_allowed(client, &form.audiences) {
-        return Err(oauth_token_error(
+        ),
+        TokenExchangeError::InvalidTarget => oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_target",
             "requested token exchange target is not allowed for this client.",
             false,
-        ));
+        ),
+        TokenExchangeError::InvalidGrant => oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "token exchange input token is invalid.",
+            false,
+        ),
     }
-    Ok(form.audiences.clone())
 }
 
-fn token_exchange_client_authorized(client: &ClientRow, subject: &Claims) -> bool {
-    subject.client_id == client.client_id
+fn token_exchange_request(form: &TokenForm) -> TokenExchangeRequestInput {
+    TokenExchangeRequestInput {
+        subject_token: form.subject_token.clone(),
+        subject_token_type: form.subject_token_type.clone(),
+        actor_token: form.actor_token.clone(),
+        actor_token_type: form.actor_token_type.clone(),
+        requested_token_type: form.requested_token_type.clone(),
+        scope: form.scope.clone(),
+        audiences: form.audiences.clone(),
+    }
 }
 
-fn token_exchange_subject_user_id(subject: &Claims) -> Result<Option<Uuid>, HttpResponse> {
-    match subject.user_id.as_deref() {
-        Some(user_id) => user_id.parse::<Uuid>().map(Some).map_err(|_| {
-            oauth_token_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_grant",
-                "subject token contains an invalid user boundary.",
-                false,
-            )
-        }),
-        None => Ok(None),
+fn token_exchange_policy<'a>(
+    issuance: &'a TokenIssuanceContext<'_>,
+    client: &'a ClientRow,
+    now: i64,
+) -> TokenExchangePolicy<'a> {
+    TokenExchangePolicy {
+        enabled: issuance.accepts(nazo_runtime_modules::ModuleId::TokenExchange),
+        client_id: &client.client_id,
+        client_is_confidential: client.client_type == "confidential",
+        client_tenant_id: client.tenant_id,
+        allowed_scopes: &client.scopes,
+        allowed_audiences: &client.allowed_audiences,
+        require_dpop_bound_tokens: client.require_dpop_bound_tokens,
+        require_mtls_bound_tokens: client.require_mtls_bound_tokens,
+        now,
     }
+}
+
+fn token_exchange_admission_error_response(
+    error: TokenExchangeError,
+    form: &TokenForm,
+) -> HttpResponse {
+    if error == TokenExchangeError::InvalidTarget && form.audiences.is_empty() {
+        return oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_target",
+            "token exchange requires an explicit resource or audience.",
+            false,
+        );
+    }
+    token_exchange_error_response(error)
+}
+
+fn token_exchange_subject_error_response(
+    error: TokenExchangeError,
+    client: &ClientRow,
+    form: &TokenForm,
+    claims: &Claims,
+) -> HttpResponse {
+    if error == TokenExchangeError::InvalidScope {
+        let requested = parse_scope(form.scope.as_deref().unwrap_or(""));
+        let subject_scopes = parse_scope(&claims.scope);
+        let safe_default_is_empty = requested.is_empty()
+            && !subject_scopes
+                .iter()
+                .any(|scope| scope != "openid" && client.scopes.contains(scope));
+        let description = if safe_default_is_empty {
+            "token exchange cannot issue an access token without non-OIDC scopes."
+        } else {
+            "token exchange scope must be a subset of the subject token and client scopes."
+        };
+        return oauth_token_error(StatusCode::BAD_REQUEST, "invalid_scope", description, false);
+    }
+    if claims.client_id != client.client_id {
+        return oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "client is not authorized to exchange this subject token.",
+            false,
+        );
+    }
+    if claims
+        .user_id
+        .as_deref()
+        .is_some_and(|user_id| user_id.parse::<Uuid>().is_err())
+    {
+        return oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "subject token contains an invalid user boundary.",
+            false,
+        );
+    }
+    token_exchange_error_response(error)
 }
 
 async fn validate_exchange_access_token(
@@ -186,6 +185,7 @@ async fn validate_exchange_access_token(
     issuer: &str,
     client: &ClientRow,
     raw_token: &str,
+    policy: TokenExchangePolicy<'_>,
 ) -> Result<Claims, TokenExchangeTokenError> {
     let Some(claims) = token_service
         .decode_access_token(issuer, raw_token)
@@ -197,11 +197,8 @@ async fn validate_exchange_access_token(
     else {
         return Err(TokenExchangeTokenError::Invalid);
     };
-    if access_token_tenant_id(&claims) != Some(client.tenant_id)
-        || claims.exp <= Utc::now().timestamp()
-    {
-        return Err(TokenExchangeTokenError::Invalid);
-    }
+    validate_token_exchange_access_token(&claims, policy)
+        .map_err(|_| TokenExchangeTokenError::Invalid)?;
     let revoked = token_service
         .access_token_revoked(client.tenant_id, &claims.jti)
         .await
@@ -237,47 +234,46 @@ async fn validate_subject_sender_binding(
     issuance: &TokenIssuanceContext<'_>,
     req: &HttpRequest,
     subject_token: &str,
-    subject: &Claims,
-) -> Result<Option<SenderBinding>, HttpResponse> {
-    let Some(cnf) = subject.cnf.as_ref() else {
-        return Ok(None);
-    };
-    if let Some(jkt) = cnf.jkt.as_deref() {
-        let proof_jkt = validate_dpop_proof_with_authorization_service(
-            authorization_service,
-            issuance.config.issuer(),
-            issuance.config.mtls_endpoint_base_url(),
-            issuance.config.dpop_nonce_policy(),
-            req,
-            Some(subject_token),
-            Some(jkt),
-        )
-        .await
-        .map_err(|error| dpop_error_response(error, DpopErrorContext::TokenEndpoint))?;
-        return Ok(proof_jkt.map(SenderBinding::Dpop));
-    }
-    if let Some(expected) = cnf.x5t_s256.as_deref() {
-        let Some(actual) =
-            request_mtls_thumbprint_from_trusted_proxy(req, issuance.config.trusted_proxy_cidrs())
-        else {
-            return Err(oauth_token_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_grant",
-                "mTLS-bound subject token requires a verified client certificate.",
-                false,
-            ));
-        };
-        if !constant_time_eq(expected.as_bytes(), actual.as_bytes()) {
-            return Err(oauth_token_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_grant",
-                "mTLS-bound subject token certificate mismatch.",
-                false,
-            ));
+    subject_binding: &TokenExchangeSenderBinding,
+) -> Result<(), HttpResponse> {
+    match subject_binding {
+        TokenExchangeSenderBinding::Dpop(jkt) => {
+            validate_dpop_proof_with_authorization_service(
+                authorization_service,
+                issuance.config.issuer(),
+                issuance.config.mtls_endpoint_base_url(),
+                issuance.config.dpop_nonce_policy(),
+                req,
+                Some(subject_token),
+                Some(jkt),
+            )
+            .await
+            .map_err(|error| dpop_error_response(error, DpopErrorContext::TokenEndpoint))?;
         }
-        return Ok(Some(SenderBinding::Mtls(actual)));
+        TokenExchangeSenderBinding::MutualTls(expected) => {
+            let Some(actual) = request_mtls_thumbprint_from_trusted_proxy(
+                req,
+                issuance.config.trusted_proxy_cidrs(),
+            ) else {
+                return Err(oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    "mTLS-bound subject token requires a verified client certificate.",
+                    false,
+                ));
+            };
+            if !constant_time_eq(expected.as_bytes(), actual.as_bytes()) {
+                return Err(oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    "mTLS-bound subject token certificate mismatch.",
+                    false,
+                ));
+            }
+        }
+        TokenExchangeSenderBinding::Bearer => {}
     }
-    Ok(None)
+    Ok(())
 }
 
 async fn token_exchange_issue_binding(
@@ -285,32 +281,11 @@ async fn token_exchange_issue_binding(
     issuance: &TokenIssuanceContext<'_>,
     req: &HttpRequest,
     client: &ClientRow,
-    subject_binding: Option<SenderBinding>,
-) -> Result<(Option<String>, Option<String>), HttpResponse> {
-    match subject_binding {
-        Some(SenderBinding::Dpop(jkt)) => {
-            if client.require_mtls_bound_tokens {
-                return Err(oauth_token_error(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_grant",
-                    "token exchange cannot convert DPoP subject binding to mTLS.",
-                    false,
-                ));
-            }
-            Ok((Some(jkt), None))
-        }
-        Some(SenderBinding::Mtls(x5t_s256)) => {
-            if client.require_dpop_bound_tokens {
-                return Err(oauth_token_error(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_grant",
-                    "token exchange cannot convert mTLS subject binding to DPoP.",
-                    false,
-                ));
-            }
-            Ok((None, Some(x5t_s256)))
-        }
-        None if client.require_dpop_bound_tokens => {
+    subject_binding: &TokenExchangeSenderBinding,
+    policy: TokenExchangePolicy<'_>,
+) -> Result<TokenExchangeSenderBinding, HttpResponse> {
+    let (presented_dpop, presented_mtls) = match subject_binding {
+        TokenExchangeSenderBinding::Bearer if client.require_dpop_bound_tokens => {
             let dpop_jkt = validate_dpop_proof_with_authorization_service(
                 authorization_service,
                 issuance.config.issuer(),
@@ -328,9 +303,9 @@ async fn token_exchange_issue_binding(
                     DpopErrorContext::TokenEndpoint,
                 ));
             }
-            Ok((dpop_jkt, None))
+            (dpop_jkt, None)
         }
-        None if client.require_mtls_bound_tokens => {
+        TokenExchangeSenderBinding::Bearer if client.require_mtls_bound_tokens => {
             let Some(x5t_s256) = request_mtls_thumbprint_from_trusted_proxy(
                 req,
                 issuance.config.trusted_proxy_cidrs(),
@@ -342,21 +317,47 @@ async fn token_exchange_issue_binding(
                     false,
                 ));
             };
-            Ok((None, Some(x5t_s256)))
+            (None, Some(x5t_s256))
         }
-        None => Ok((None, None)),
-    }
+        _ => (None, None),
+    };
+    token_exchange_issuance_binding(
+        subject_binding,
+        PresentedSenderConstraint {
+            dpop_jkt: presented_dpop.as_deref(),
+            mtls_x5t_s256: presented_mtls.as_deref(),
+        },
+        policy,
+    )
+    .map_err(|_| match subject_binding {
+        TokenExchangeSenderBinding::Dpop(_) if client.require_mtls_bound_tokens => {
+            oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_grant",
+                "token exchange cannot convert DPoP subject binding to mTLS.",
+                false,
+            )
+        }
+        TokenExchangeSenderBinding::MutualTls(_) if client.require_dpop_bound_tokens => {
+            oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_grant",
+                "token exchange cannot convert mTLS subject binding to DPoP.",
+                false,
+            )
+        }
+        _ => token_exchange_error_response(TokenExchangeError::InvalidGrant),
+    })
 }
 
-fn actor_claim(actor: &Claims) -> Value {
-    let mut claim = json!({
-        "sub": actor.sub,
-        "client_id": actor.client_id
-    });
-    if let Some(previous_actor) = actor.act.as_ref() {
-        claim["act"] = previous_actor.clone();
+fn token_exchange_binding_claims(
+    binding: TokenExchangeSenderBinding,
+) -> (Option<String>, Option<String>) {
+    match binding {
+        TokenExchangeSenderBinding::Bearer => (None, None),
+        TokenExchangeSenderBinding::Dpop(jkt) => (Some(jkt), None),
+        TokenExchangeSenderBinding::MutualTls(thumbprint) => (None, Some(thumbprint)),
     }
-    claim
 }
 
 async fn validate_actor_token(
@@ -364,30 +365,29 @@ async fn validate_actor_token(
     issuer: &str,
     client: &ClientRow,
     actor_token: Option<&str>,
+    policy: TokenExchangePolicy<'_>,
 ) -> Result<Option<Value>, HttpResponse> {
     let Some(actor_token) = actor_token else {
         return Ok(None);
     };
-    let actor = validate_exchange_access_token(token_service, issuer, client, actor_token)
+    let actor = validate_exchange_access_token(token_service, issuer, client, actor_token, policy)
         .await
         .map_err(exchange_token_error_response)?;
-    if actor.client_id != client.client_id {
-        return Err(oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_grant",
-            "actor token must be issued to the authenticated client.",
-            false,
-        ));
-    }
-    if actor.cnf.is_some() {
-        return Err(oauth_token_error(
+    match token_exchange_actor_claim(&actor, policy) {
+        Ok(claim) => Ok(Some(claim)),
+        Err(_) if actor.cnf.is_some() => Err(oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
             "sender-constrained actor tokens are not supported for token exchange.",
             false,
-        ));
+        )),
+        Err(_) => Err(oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "actor token must be issued to the authenticated client.",
+            false,
+        )),
     }
-    Ok(Some(actor_claim(&actor)))
 }
 
 pub(crate) async fn token_exchange(
@@ -410,24 +410,10 @@ pub(crate) async fn token_exchange(
         )
         .await;
     }
-    if !issuance.accepts(nazo_runtime_modules::ModuleId::TokenExchange) {
-        return oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "unsupported_grant_type",
-            "Token exchange is disabled.",
-            false,
-        );
-    }
-    if client.client_type != "confidential" {
-        return oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "unauthorized_client",
-            "token exchange requires a confidential client.",
-            false,
-        );
-    }
-    if let Err(error) = validate_token_exchange_type_policy(form) {
-        return token_exchange_type_error_response(error);
+    let request = token_exchange_request(form);
+    let policy = token_exchange_policy(issuance, client, Utc::now().timestamp());
+    if let Err(error) = validate_token_exchange_grant_prerequisites(&request, policy) {
+        return token_exchange_error_response(error);
     }
     if let Err(response) = consume_token_client_assertion_with_authorization_service(
         authorization_service,
@@ -447,77 +433,71 @@ pub(crate) async fn token_exchange(
         issuance.config.issuer(),
         client,
         subject_token,
+        policy,
     )
     .await
     {
         Ok(claims) => claims,
         Err(error) => return exchange_token_error_response(error),
     };
-    if !token_exchange_client_authorized(client, &subject) {
-        return oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_grant",
-            "client is not authorized to exchange this subject token.",
-            false,
-        );
-    }
-    let subject_binding = match validate_subject_sender_binding(
+    let validated_subject =
+        match validate_token_exchange_subject(&subject, form.scope.as_deref(), policy) {
+            Ok(subject) => subject,
+            Err(error) => {
+                return token_exchange_subject_error_response(error, client, form, &subject);
+            }
+        };
+    if let Err(response) = validate_subject_sender_binding(
         authorization_service,
         issuance,
         req,
         subject_token,
-        &subject,
+        &validated_subject.sender_binding,
     )
     .await
     {
-        Ok(binding) => binding,
-        Err(response) => return response,
-    };
-    let (dpop_jkt, mtls_x5t_s256) = match token_exchange_issue_binding(
+        return response;
+    }
+    let issuance_binding = match token_exchange_issue_binding(
         authorization_service,
         issuance,
         req,
         client,
-        subject_binding,
+        &validated_subject.sender_binding,
+        policy,
     )
     .await
     {
         Ok(binding) => binding,
         Err(response) => return response,
     };
+    let (dpop_jkt, mtls_x5t_s256) = token_exchange_binding_claims(issuance_binding);
     let actor = match validate_actor_token(
         token_service,
         issuance.config.issuer(),
         client,
         form.actor_token.as_deref(),
+        policy,
     )
     .await
     {
         Ok(actor) => actor,
         Err(response) => return response,
     };
-    let scopes = match token_exchange_requested_scopes(client, &subject, form.scope.as_deref()) {
-        Ok(scopes) => scopes,
-        Err(response) => return response,
-    };
-    let audiences = match token_exchange_requested_audiences(client, form) {
-        Ok(audiences) => audiences,
-        Err(response) => return response,
-    };
-    let user_id = match token_exchange_subject_user_id(&subject) {
-        Ok(user_id) => user_id,
-        Err(response) => return response,
+    let admission = match admit_token_exchange(&request, policy) {
+        Ok(admission) => admission,
+        Err(error) => return token_exchange_admission_error_response(error, form),
     };
     issue_token_response_with_service(
         issuance,
         token_service,
         client,
         TokenIssue {
-            user_id,
-            subject: subject.sub,
-            scopes,
+            user_id: validated_subject.user_id,
+            subject: validated_subject.subject,
+            scopes: validated_subject.scopes,
             authorization_details: json!([]),
-            audiences,
+            audiences: admission.audiences,
             nonce: None,
             auth_time: None,
             amr: Vec::new(),
@@ -535,7 +515,7 @@ pub(crate) async fn token_exchange(
             refresh_token_mtls_x5t_s256: None,
             authorization_code_hash: None,
             actor,
-            issued_token_type: Some(ACCESS_TOKEN_TYPE.to_owned()),
+            issued_token_type: Some(admission.issued_token_type),
             native_sso: None,
         },
     )

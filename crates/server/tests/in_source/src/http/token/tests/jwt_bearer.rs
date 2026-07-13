@@ -6,7 +6,12 @@ use fred::{
     interfaces::ClientLike,
     prelude::{Builder as ValkeyBuilder, Config as ValkeyConfig},
 };
+use nazo_auth::{
+    JWT_BEARER_ASSERTION_CLOCK_SKEW_SECONDS, JWT_BEARER_ASSERTION_MAX_JTI_BYTES,
+    JWT_BEARER_ASSERTION_MAX_TTL_SECONDS,
+};
 use nazo_postgres::create_pool;
+use serde_json::Value;
 use std::sync::Arc;
 
 fn jwt_bearer_client(client_id: &str, kid: &str, fixture: &ClientSigningFixture) -> ClientRow {
@@ -164,6 +169,19 @@ fn jwt_bearer_claims(now: i64) -> JwtBearerAssertionClaims {
     }
 }
 
+fn assertion_policy(now: i64) -> JwtBearerGrantPolicy<'static> {
+    JwtBearerGrantPolicy {
+        enabled: true,
+        issuer: "https://issuer.example",
+        client_id: "client-a",
+        client_is_confidential: true,
+        allowed_scopes: &[],
+        allowed_audiences: &[],
+        default_audience: "",
+        now,
+    }
+}
+
 #[test]
 fn jwt_bearer_assertion_validation_binds_client_issuer_audience_and_times() {
     let private_key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
@@ -176,7 +194,7 @@ fn jwt_bearer_assertion_validation_binds_client_issuer_audience_and_times() {
         .expect("valid client-bound JWT bearer assertion should validate");
 
     assert_eq!(claims.subject, "client-a");
-    assert!(valid_jwt_bearer_jti(&claims.jti));
+    assert!(!claims.jti.is_empty());
 
     let wrong_audience = signed_jwt_bearer_assertion(
         "client-a",
@@ -208,53 +226,47 @@ fn jwt_bearer_time_jti_and_replay_ttl_boundaries_are_enforced() {
 
     let mut expired = jwt_bearer_claims(now);
     expired.exp = now;
-    assert!(!valid_jwt_bearer_times(&expired, now));
+    assert!(validate_jwt_bearer_assertion_claims(expired, assertion_policy(now)).is_err());
 
     let mut excessive_ttl = jwt_bearer_claims(now);
     excessive_ttl.exp = now + JWT_BEARER_ASSERTION_MAX_TTL_SECONDS + 1;
-    assert!(!valid_jwt_bearer_times(&excessive_ttl, now));
+    assert!(validate_jwt_bearer_assertion_claims(excessive_ttl, assertion_policy(now)).is_err());
 
     let mut future_nbf = jwt_bearer_claims(now);
     future_nbf.nbf = Some(now + JWT_BEARER_ASSERTION_CLOCK_SKEW_SECONDS + 1);
-    assert!(!valid_jwt_bearer_times(&future_nbf, now));
+    assert!(validate_jwt_bearer_assertion_claims(future_nbf, assertion_policy(now)).is_err());
 
     let mut future_iat = jwt_bearer_claims(now);
     future_iat.iat = Some(now + JWT_BEARER_ASSERTION_CLOCK_SKEW_SECONDS + 1);
-    assert!(!valid_jwt_bearer_times(&future_iat, now));
+    assert!(validate_jwt_bearer_assertion_claims(future_iat, assertion_policy(now)).is_err());
 
     let mut stale_iat = jwt_bearer_claims(now);
     stale_iat.iat = Some(now - JWT_BEARER_ASSERTION_MAX_TTL_SECONDS - 1);
-    assert!(!valid_jwt_bearer_times(&stale_iat, now));
+    assert!(validate_jwt_bearer_assertion_claims(stale_iat, assertion_policy(now)).is_err());
 
     let mut boundary = jwt_bearer_claims(now);
     boundary.exp = now + JWT_BEARER_ASSERTION_MAX_TTL_SECONDS;
     boundary.nbf = Some(now + JWT_BEARER_ASSERTION_CLOCK_SKEW_SECONDS);
     boundary.iat = Some(now - JWT_BEARER_ASSERTION_MAX_TTL_SECONDS);
-    assert!(valid_jwt_bearer_times(&boundary, now));
-
-    assert!(!valid_jwt_bearer_jti(""));
-    assert!(!valid_jwt_bearer_jti("   "));
-    assert!(!valid_jwt_bearer_jti(
-        &"a".repeat(JWT_BEARER_ASSERTION_MAX_JTI_BYTES + 1)
-    ));
-    assert!(valid_jwt_bearer_jti(
-        &"a".repeat(JWT_BEARER_ASSERTION_MAX_JTI_BYTES)
-    ));
-
-    let assertion = ValidatedJwtBearerAssertion {
-        subject: "client-a".to_owned(),
-        jti: "jti-1".to_owned(),
-        exp: now + JWT_BEARER_ASSERTION_MAX_TTL_SECONDS + 50,
-    };
+    let assertion = validate_jwt_bearer_assertion_claims(boundary, assertion_policy(now))
+        .expect("boundary values should remain valid");
     assert_eq!(
-        assertion.replay_ttl_seconds(now),
+        assertion.replay_ttl_seconds,
         JWT_BEARER_ASSERTION_MAX_TTL_SECONDS as u64
     );
-    let expired_assertion = ValidatedJwtBearerAssertion {
-        exp: now - 5,
-        ..assertion
-    };
-    assert_eq!(expired_assertion.replay_ttl_seconds(now), 1);
+
+    for invalid_jti in [
+        String::new(),
+        "   ".to_owned(),
+        "a".repeat(JWT_BEARER_ASSERTION_MAX_JTI_BYTES + 1),
+    ] {
+        let mut claims = jwt_bearer_claims(now);
+        claims.jti = invalid_jti;
+        assert!(validate_jwt_bearer_assertion_claims(claims, assertion_policy(now)).is_err());
+    }
+    let mut max_jti = jwt_bearer_claims(now);
+    max_jti.jti = "a".repeat(JWT_BEARER_ASSERTION_MAX_JTI_BYTES);
+    assert!(validate_jwt_bearer_assertion_claims(max_jti, assertion_policy(now)).is_ok());
 }
 
 #[actix_web::test]
@@ -305,7 +317,7 @@ async fn jwt_bearer_assertion_jti_replay_is_rejected() {
     let assertion = ValidatedJwtBearerAssertion {
         subject: "client-a".to_owned(),
         jti: format!("jwt-bearer-replay-{}", Uuid::now_v7()),
-        exp: Utc::now().timestamp() + 120,
+        replay_ttl_seconds: 120,
     };
 
     consume_jwt_bearer_assertion(&state, &client, &assertion)

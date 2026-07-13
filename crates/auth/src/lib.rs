@@ -111,7 +111,9 @@ pub use extension_grants::{
     TokenExchangePolicy, TokenExchangeRequestInput, TokenExchangeSenderBinding,
     ValidatedJwtBearerAssertion, ValidatedTokenExchangeSubject, admit_jwt_bearer_grant,
     admit_token_exchange, token_exchange_actor_claim, token_exchange_issuance_binding,
-    token_exchange_scopes, validate_jwt_bearer_assertion_claims, validate_token_exchange_subject,
+    token_exchange_scopes, validate_jwt_bearer_assertion_claims,
+    validate_jwt_bearer_grant_prerequisites, validate_token_exchange_access_token,
+    validate_token_exchange_grant_prerequisites, validate_token_exchange_subject,
 };
 pub use grant::{GrantType, UnsupportedGrantType};
 pub use metadata::{

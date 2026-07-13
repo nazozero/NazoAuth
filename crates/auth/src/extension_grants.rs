@@ -84,15 +84,8 @@ pub fn admit_jwt_bearer_grant(
     requested_audiences: &[String],
     policy: JwtBearerGrantPolicy<'_>,
 ) -> Result<JwtBearerGrantAdmission, JwtBearerGrantError> {
-    if !policy.enabled {
-        return Err(JwtBearerGrantError::Disabled);
-    }
-    if !policy.client_is_confidential {
-        return Err(JwtBearerGrantError::UnauthorizedClient);
-    }
-    let assertion = assertion
-        .filter(|assertion| !assertion.is_empty())
-        .ok_or(JwtBearerGrantError::MissingAssertion)?;
+    validate_jwt_bearer_grant_prerequisites(assertion, policy)?;
+    let assertion = assertion.expect("validated JWT bearer assertion must be present");
     let requested_scopes = parse_scope(requested_scope.unwrap_or(""));
     if !requested_scopes.is_empty() && !is_subset(&requested_scopes, policy.allowed_scopes) {
         return Err(JwtBearerGrantError::InvalidScope);
@@ -118,6 +111,22 @@ pub fn admit_jwt_bearer_grant(
         scopes,
         audiences,
     })
+}
+
+/// Checks only the grant-level prerequisites that precede transport security
+/// processing. Scope and target policy remains in [`admit_jwt_bearer_grant`].
+pub fn validate_jwt_bearer_grant_prerequisites(
+    assertion: Option<&str>,
+    policy: JwtBearerGrantPolicy<'_>,
+) -> Result<(), JwtBearerGrantError> {
+    if !policy.enabled {
+        return Err(JwtBearerGrantError::Disabled);
+    }
+    if !policy.client_is_confidential {
+        return Err(JwtBearerGrantError::UnauthorizedClient);
+    }
+    assertion.ok_or(JwtBearerGrantError::MissingAssertion)?;
+    Ok(())
 }
 
 pub fn validate_jwt_bearer_assertion_claims(
@@ -234,16 +243,39 @@ pub fn admit_token_exchange(
     request: &TokenExchangeRequestInput,
     policy: TokenExchangePolicy<'_>,
 ) -> Result<TokenExchangeAdmission, TokenExchangeError> {
+    validate_token_exchange_grant_prerequisites(request, policy)?;
+    let subject_token = request
+        .subject_token
+        .as_ref()
+        .expect("validated token exchange request must contain subject_token");
+    validate_token_exchange_requested_scope(policy.allowed_scopes, request.scope.as_deref())?;
+    if request.audiences.is_empty() || !is_subset(&request.audiences, policy.allowed_audiences) {
+        return Err(TokenExchangeError::InvalidTarget);
+    }
+    Ok(TokenExchangeAdmission {
+        subject_token: subject_token.clone(),
+        actor_token: request.actor_token.clone(),
+        requested_scope: request.scope.clone(),
+        audiences: request.audiences.clone(),
+        issued_token_type: ACCESS_TOKEN_TYPE.to_owned(),
+    })
+}
+
+/// Checks module, client, and token-type prerequisites before a transport
+/// adapter consumes a client assertion or reads token state.
+pub fn validate_token_exchange_grant_prerequisites(
+    request: &TokenExchangeRequestInput,
+    policy: TokenExchangePolicy<'_>,
+) -> Result<(), TokenExchangeError> {
     if !policy.enabled {
         return Err(TokenExchangeError::Disabled);
     }
     if !policy.client_is_confidential {
         return Err(TokenExchangeError::UnauthorizedClient);
     }
-    let subject_token = request
+    request
         .subject_token
         .as_ref()
-        .filter(|token| !token.is_empty())
         .ok_or(TokenExchangeError::MissingParameter)?;
     match request.subject_token_type.as_deref() {
         Some(ACCESS_TOKEN_TYPE) => {}
@@ -266,17 +298,7 @@ pub fn admit_token_exchange(
     {
         return Err(TokenExchangeError::UnsupportedTokenType);
     }
-    validate_token_exchange_requested_scope(policy.allowed_scopes, request.scope.as_deref())?;
-    if request.audiences.is_empty() || !is_subset(&request.audiences, policy.allowed_audiences) {
-        return Err(TokenExchangeError::InvalidTarget);
-    }
-    Ok(TokenExchangeAdmission {
-        subject_token: subject_token.clone(),
-        actor_token: request.actor_token.clone(),
-        requested_scope: request.scope.clone(),
-        audiences: request.audiences.clone(),
-        issued_token_type: ACCESS_TOKEN_TYPE.to_owned(),
-    })
+    Ok(())
 }
 
 fn validate_token_exchange_requested_scope(
@@ -337,16 +359,26 @@ pub struct ValidatedTokenExchangeSubject {
     pub sender_binding: TokenExchangeSenderBinding,
 }
 
+pub fn validate_token_exchange_access_token(
+    claims: &Claims,
+    policy: TokenExchangePolicy<'_>,
+) -> Result<(), TokenExchangeError> {
+    if claims.tenant_id.parse::<Uuid>().ok() != Some(policy.client_tenant_id)
+        || claims.token_use != "access"
+        || claims.exp <= policy.now
+    {
+        return Err(TokenExchangeError::InvalidGrant);
+    }
+    Ok(())
+}
+
 pub fn validate_token_exchange_subject(
     claims: &Claims,
     requested_scope: Option<&str>,
     policy: TokenExchangePolicy<'_>,
 ) -> Result<ValidatedTokenExchangeSubject, TokenExchangeError> {
-    if claims.client_id != policy.client_id
-        || claims.tenant_id.parse::<Uuid>().ok() != Some(policy.client_tenant_id)
-        || claims.token_use != "access"
-        || claims.exp <= policy.now
-    {
+    validate_token_exchange_access_token(claims, policy)?;
+    if claims.client_id != policy.client_id {
         return Err(TokenExchangeError::InvalidGrant);
     }
     let user_id = claims
@@ -412,12 +444,8 @@ pub fn token_exchange_actor_claim(
     actor: &Claims,
     policy: TokenExchangePolicy<'_>,
 ) -> Result<Value, TokenExchangeError> {
-    if actor.client_id != policy.client_id
-        || actor.tenant_id.parse::<Uuid>().ok() != Some(policy.client_tenant_id)
-        || actor.token_use != "access"
-        || actor.exp <= policy.now
-        || actor.cnf.is_some()
-    {
+    validate_token_exchange_access_token(actor, policy)?;
+    if actor.client_id != policy.client_id || actor.cnf.is_some() {
         return Err(TokenExchangeError::InvalidGrant);
     }
     let mut claim = json!({
@@ -518,6 +546,33 @@ mod tests {
                 AuthorizationPortError::Unavailable
             ))
         );
+    }
+
+    #[test]
+    fn empty_but_present_grant_tokens_reach_crypto_validation() {
+        let scopes = vec!["read".to_owned()];
+        let audiences = vec!["https://api.example".to_owned()];
+        let jwt = admit_jwt_bearer_grant(
+            Some(""),
+            Some("read"),
+            &audiences,
+            jwt_policy(&scopes, &audiences),
+        )
+        .expect("an empty assertion is present but will fail signature validation");
+        assert!(jwt.assertion.is_empty());
+
+        let tenant_id = Uuid::nil();
+        let exchange = admit_token_exchange(
+            &TokenExchangeRequestInput {
+                subject_token: Some(String::new()),
+                subject_token_type: Some(ACCESS_TOKEN_TYPE.to_owned()),
+                audiences: audiences.clone(),
+                ..TokenExchangeRequestInput::default()
+            },
+            exchange_policy(&scopes, &audiences, tenant_id),
+        )
+        .expect("an empty subject token is present but will fail token validation");
+        assert!(exchange.subject_token.is_empty());
     }
 
     #[test]

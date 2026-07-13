@@ -5,8 +5,7 @@ use nazo_http_actix::oauth_token_error;
 
 use super::issue::{TokenIssuanceContext, issue_token_response_with_service};
 use super::{
-    ServerTokenService, TokenForm, client_credentials_issue_request_with_default_audience,
-    consume_token_client_assertion_with_authorization_service,
+    ServerTokenService, TokenForm, consume_token_client_assertion_with_authorization_service,
 };
 #[cfg(test)]
 use crate::domain::AppState;
@@ -30,38 +29,39 @@ use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
 use base64::Engine;
 use chrono::Utc;
-use serde_json::{Value, json};
+use nazo_auth::{
+    JwtBearerAssertionClaims, JwtBearerGrantError, JwtBearerGrantPolicy,
+    ValidatedJwtBearerAssertion, admit_jwt_bearer_grant, is_subset, parse_scope,
+    validate_jwt_bearer_assertion_claims, validate_jwt_bearer_grant_prerequisites,
+};
+use serde_json::json;
 #[cfg(test)]
 use uuid::Uuid;
 
 pub(crate) const JWT_BEARER_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:jwt-bearer";
-
-const JWT_BEARER_ASSERTION_MAX_TTL_SECONDS: i64 = 300;
-const JWT_BEARER_ASSERTION_CLOCK_SKEW_SECONDS: i64 = 30;
-const JWT_BEARER_ASSERTION_MAX_JTI_BYTES: usize = 128;
-
-#[derive(serde::Deserialize)]
-struct JwtBearerAssertionClaims {
-    iss: String,
-    sub: String,
-    aud: Value,
-    exp: i64,
-    nbf: Option<i64>,
-    iat: Option<i64>,
-    jti: String,
-}
-
-pub(crate) struct ValidatedJwtBearerAssertion {
-    pub(crate) subject: String,
-    pub(crate) jti: String,
-    exp: i64,
-}
 
 #[derive(Debug)]
 pub(crate) enum JwtBearerAssertionError {
     Invalid,
     ReplayDetected,
     StoreUnavailable,
+}
+
+fn jwt_bearer_policy<'a>(
+    issuance: &'a TokenIssuanceContext<'_>,
+    client: &'a ClientRow,
+    now: i64,
+) -> JwtBearerGrantPolicy<'a> {
+    JwtBearerGrantPolicy {
+        enabled: issuance.accepts(nazo_runtime_modules::ModuleId::JwtBearerGrant),
+        issuer: issuance.config.issuer(),
+        client_id: &client.client_id,
+        client_is_confidential: client.client_type == "confidential",
+        allowed_scopes: &client.scopes,
+        allowed_audiences: &client.allowed_audiences,
+        default_audience: issuance.config.default_audience(),
+        now,
+    }
 }
 
 fn validate_jwt_bearer_assertion_with_issuer(
@@ -80,21 +80,21 @@ fn validate_jwt_bearer_assertion_with_issuer(
     let token_data =
         jsonwebtoken::decode::<JwtBearerAssertionClaims>(assertion, &decoding_key, &validation)
             .map_err(|_| JwtBearerAssertionError::Invalid)?;
-    let claims = token_data.claims;
     let now = Utc::now().timestamp();
-    if claims.iss != client.client_id
-        || claims.sub != client.client_id
-        || !jwt_bearer_audience_matches(&claims.aud, issuer)
-        || !valid_jwt_bearer_times(&claims, now)
-        || !valid_jwt_bearer_jti(&claims.jti)
-    {
-        return Err(JwtBearerAssertionError::Invalid);
-    }
-    Ok(ValidatedJwtBearerAssertion {
-        subject: claims.sub,
-        jti: claims.jti,
-        exp: claims.exp,
-    })
+    validate_jwt_bearer_assertion_claims(
+        token_data.claims,
+        JwtBearerGrantPolicy {
+            enabled: true,
+            issuer,
+            client_id: &client.client_id,
+            client_is_confidential: true,
+            allowed_scopes: &[],
+            allowed_audiences: &[],
+            default_audience: "",
+            now,
+        },
+    )
+    .map_err(|_| JwtBearerAssertionError::Invalid)
 }
 
 #[cfg(test)]
@@ -106,53 +106,16 @@ fn validate_jwt_bearer_assertion(
     validate_jwt_bearer_assertion_with_issuer(&settings.endpoint.issuer, client, assertion)
 }
 
-fn jwt_bearer_audience_matches(aud: &Value, issuer: &str) -> bool {
-    matches!(aud, Value::String(value) if value == issuer)
-}
-
-fn valid_jwt_bearer_times(claims: &JwtBearerAssertionClaims, now: i64) -> bool {
-    if claims.exp <= now || claims.exp > now.saturating_add(JWT_BEARER_ASSERTION_MAX_TTL_SECONDS) {
-        return false;
-    }
-    if claims
-        .nbf
-        .is_some_and(|nbf| nbf > now.saturating_add(JWT_BEARER_ASSERTION_CLOCK_SKEW_SECONDS))
-    {
-        return false;
-    }
-    if claims.iat.is_some_and(|iat| {
-        iat > now.saturating_add(JWT_BEARER_ASSERTION_CLOCK_SKEW_SECONDS)
-            || now.saturating_sub(iat) > JWT_BEARER_ASSERTION_MAX_TTL_SECONDS
-    }) {
-        return false;
-    }
-    true
-}
-
-fn valid_jwt_bearer_jti(jti: &str) -> bool {
-    let trimmed = jti.trim();
-    !trimmed.is_empty() && trimmed.len() <= JWT_BEARER_ASSERTION_MAX_JTI_BYTES
-}
-
-impl ValidatedJwtBearerAssertion {
-    fn replay_ttl_seconds(&self, now: i64) -> u64 {
-        self.exp
-            .saturating_sub(now)
-            .clamp(1, JWT_BEARER_ASSERTION_MAX_TTL_SECONDS) as u64
-    }
-}
-
 async fn consume_jwt_bearer_assertion_with_authorization_service(
     authorization_service: &crate::http::authorization::ServerAuthorizationService,
     client: &ClientRow,
     assertion: &ValidatedJwtBearerAssertion,
 ) -> Result<(), JwtBearerAssertionError> {
-    let now = Utc::now().timestamp();
     match authorization_service
         .consume_jwt_bearer(
             &client.client_id,
             &assertion.jti,
-            assertion.replay_ttl_seconds(now),
+            assertion.replay_ttl_seconds,
         )
         .await
     {
@@ -161,6 +124,65 @@ async fn consume_jwt_bearer_assertion_with_authorization_service(
         Err(error) => {
             tracing::warn!(%error, "failed to store JWT bearer grant jti");
             Err(JwtBearerAssertionError::StoreUnavailable)
+        }
+    }
+}
+
+fn jwt_bearer_grant_error_response(
+    error: JwtBearerGrantError,
+    client: &ClientRow,
+    form: &TokenForm,
+) -> HttpResponse {
+    match error {
+        JwtBearerGrantError::Disabled => oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_grant_type",
+            "JWT bearer grant is disabled.",
+            false,
+        ),
+        JwtBearerGrantError::UnauthorizedClient => oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "unauthorized_client",
+            "JWT bearer grant requires a confidential client.",
+            false,
+        ),
+        JwtBearerGrantError::MissingAssertion => oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "JWT bearer grant requires an assertion.",
+            false,
+        ),
+        JwtBearerGrantError::InvalidScope => {
+            let requested = parse_scope(form.scope.as_deref().unwrap_or(""));
+            let description = if !requested.is_empty() && !is_subset(&requested, &client.scopes) {
+                "请求的作用域超出客户端允许范围."
+            } else {
+                "client_credentials 不支持 openid scope."
+            };
+            oauth_token_error(StatusCode::BAD_REQUEST, "invalid_scope", description, false)
+        }
+        JwtBearerGrantError::InvalidTarget => oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_target",
+            "请求的 audience 不在客户端允许范围内.",
+            false,
+        ),
+        JwtBearerGrantError::InvalidAssertion | JwtBearerGrantError::ReplayDetected => {
+            oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_grant",
+                "JWT bearer assertion is invalid.",
+                false,
+            )
+        }
+        JwtBearerGrantError::Dependency(error) => {
+            tracing::warn!(%error, "JWT bearer assertion state is unavailable");
+            oauth_token_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "JWT bearer assertion replay state is unavailable.",
+                false,
+            )
         }
     }
 }
@@ -183,30 +205,14 @@ pub(crate) async fn token_jwt_bearer_with_service(
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
-    if !issuance.accepts(nazo_runtime_modules::ModuleId::JwtBearerGrant) {
-        return oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "unsupported_grant_type",
-            "JWT bearer grant is disabled.",
-            false,
-        );
+    let policy = jwt_bearer_policy(issuance, client, Utc::now().timestamp());
+    if let Err(error) = validate_jwt_bearer_grant_prerequisites(form.assertion.as_deref(), policy) {
+        return jwt_bearer_grant_error_response(error, client, form);
     }
-    if client.client_type != "confidential" {
-        return oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "unauthorized_client",
-            "JWT bearer grant requires a confidential client.",
-            false,
-        );
-    }
-    let Some(assertion) = form.assertion.as_deref() else {
-        return oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "JWT bearer grant requires an assertion.",
-            false,
-        );
-    };
+    let assertion = form
+        .assertion
+        .as_deref()
+        .expect("validated JWT bearer grant must contain assertion");
     let dpop_jkt = match validate_dpop_proof_with_authorization_service(
         issuance.authorization,
         issuance.config.issuer(),
@@ -288,13 +294,14 @@ pub(crate) async fn token_jwt_bearer_with_service(
             }
         };
     }
-    let issue_request = match client_credentials_issue_request_with_default_audience(
-        issuance.config.default_audience(),
-        client,
-        form,
+    let admission = match admit_jwt_bearer_grant(
+        form.assertion.as_deref(),
+        form.scope.as_deref(),
+        &form.audiences,
+        policy,
     ) {
-        Ok(issue_request) => issue_request,
-        Err(response) => return response,
+        Ok(admission) => admission,
+        Err(error) => return jwt_bearer_grant_error_response(error, client, form),
     };
     issue_token_response_with_service(
         issuance,
@@ -303,9 +310,9 @@ pub(crate) async fn token_jwt_bearer_with_service(
         TokenIssue {
             user_id: None,
             subject: assertion.subject,
-            scopes: issue_request.scopes,
+            scopes: admission.scopes,
             authorization_details: json!([]),
-            audiences: issue_request.audiences,
+            audiences: admission.audiences,
             nonce: None,
             auth_time: None,
             amr: Vec::new(),

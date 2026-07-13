@@ -25,9 +25,7 @@ use client_auth::{
     consume_token_client_assertion_with_authorization_service, token_management_auth_error,
     token_management_client_auth_error,
 };
-use client_credentials::{
-    client_credentials_issue_request_with_default_audience, token_client_credentials_with_service,
-};
+use client_credentials::token_client_credentials_with_service;
 use device::DEVICE_CODE_GRANT_TYPE;
 use device_issuance::token_device_code_with_service;
 #[cfg(test)]
