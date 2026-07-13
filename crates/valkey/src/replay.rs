@@ -2,8 +2,9 @@ use crate::{Error, ValkeyConnection, command, keys};
 use chrono::Utc;
 use nazo_auth::{DpopStateFuture, DpopStateStoreError, DpopStateStorePort};
 use nazo_resource_server::{
-    DpopReplayConsumption, DpopReplayConsumptionResult, DpopReplayKey,
-    ProtectedResourceDependencyError, ResourceServerPortFuture,
+    DpopNonceConsumptionResult, DpopNonceStorage, DpopReplayConsumption,
+    DpopReplayConsumptionResult, DpopReplayKey, ProtectedResourceDependencyError,
+    ResourceServerPortFuture,
 };
 
 impl DpopStateStorePort for ReplayStore {
@@ -64,6 +65,42 @@ impl DpopReplayConsumption for ReplayStore {
                     }
                 })
                 .map_err(|_| ProtectedResourceDependencyError::DpopReplayStoreUnavailable)
+        })
+    }
+}
+
+impl DpopNonceStorage for ReplayStore {
+    fn issue_nonce<'a>(
+        &'a self,
+        nonce: &'a str,
+        expires_at: i64,
+    ) -> ResourceServerPortFuture<'a, Result<(), ProtectedResourceDependencyError>> {
+        Box::pin(async move {
+            let ttl_seconds = expires_at.saturating_sub(Utc::now().timestamp()).max(1) as u64;
+            self.issue_dpop_nonce(nonce, ttl_seconds)
+                .await
+                .map_err(|_| ProtectedResourceDependencyError::DpopNonceStoreUnavailable)
+        })
+    }
+
+    fn consume_nonce<'a>(
+        &'a self,
+        nonce: &'a str,
+    ) -> ResourceServerPortFuture<
+        'a,
+        Result<DpopNonceConsumptionResult, ProtectedResourceDependencyError>,
+    > {
+        Box::pin(async move {
+            self.consume_dpop_nonce(nonce)
+                .await
+                .map(|consumed| {
+                    if consumed {
+                        DpopNonceConsumptionResult::Accepted
+                    } else {
+                        DpopNonceConsumptionResult::Unknown
+                    }
+                })
+                .map_err(|_| ProtectedResourceDependencyError::DpopNonceStoreUnavailable)
         })
     }
 }

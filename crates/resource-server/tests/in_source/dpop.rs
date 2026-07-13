@@ -297,6 +297,54 @@ fn dpop_proof_verifier_rejects_wrong_method_and_uri() {
 }
 
 #[test]
+fn dpop_htu_normalizes_both_proof_and_configured_target() {
+    let dpop = dpop_fixture();
+    let access_token = "access-token";
+    let proof_jwt = dpop_proof(
+        &dpop,
+        access_token,
+        "GET",
+        "HTTPS://API.EXAMPLE:443/orders?claim=value#fragment",
+        "proof-jti-normalized-htu",
+        None,
+        None,
+    );
+    let verifier = DpopProofVerifier::new(DpopProofVerifierConfig::default());
+
+    verifier
+        .verify(
+            &proof_jwt,
+            "GET",
+            "https://Api.Example:443/orders?configured=value#ignored",
+            access_token,
+        )
+        .expect("scheme/host case, default ports, query, and fragment are normalized");
+}
+
+#[test]
+fn dpop_htu_rejects_an_invalid_configured_target() {
+    let dpop = dpop_fixture();
+    let access_token = "access-token";
+    let proof_jwt = dpop_proof(
+        &dpop,
+        access_token,
+        "GET",
+        "https://api.example/orders",
+        "proof-jti-invalid-configured-target",
+        None,
+        None,
+    );
+    let verifier = DpopProofVerifier::new(DpopProofVerifierConfig::default());
+
+    assert_eq!(
+        verifier
+            .verify(&proof_jwt, "GET", "not an absolute URI", access_token)
+            .unwrap_err(),
+        DpopProofVerifierError::UriMismatch
+    );
+}
+
+#[test]
 fn dpop_proof_verifier_rejects_empty_jti() {
     let dpop = dpop_fixture();
     let access_token = "access-token";

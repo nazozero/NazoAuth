@@ -1,5 +1,6 @@
 use std::{future::Future, pin::Pin};
 
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
 
 use crate::{
@@ -29,7 +30,11 @@ pub struct ProtectedResourceAuthorizationRequest<'a> {
 #[derive(Clone, Copy, Debug)]
 pub struct ProtectedResourceAuthorizationContext<'a> {
     pub method: &'a str,
-    pub target_uri: &'a str,
+    /// Accepted request targets after the transport has constructed their
+    /// externally visible scheme, authority, and path. A DPoP proof is
+    /// verified once and may match any one target; callers must never retry
+    /// authorization because replay consumption is stateful.
+    pub target_uris: &'a [&'a str],
     pub mtls_x5t_s256: Option<&'a str>,
 }
 
@@ -80,10 +85,42 @@ pub trait DpopReplayConsumption: Send + Sync {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DpopNoncePolicy {
+    Optional,
+    Required,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DpopNonceConsumptionResult {
+    Accepted,
+    Unknown,
+}
+
+/// Atomic one-time nonce state used by protected-resource DPoP validation.
+/// Implementations must publish a nonce until at least `expires_at` and must
+/// consume it with one atomic take operation.
+pub trait DpopNonceStorage: Send + Sync {
+    fn issue_nonce<'a>(
+        &'a self,
+        nonce: &'a str,
+        expires_at: i64,
+    ) -> ResourceServerPortFuture<'a, Result<(), ProtectedResourceDependencyError>>;
+
+    fn consume_nonce<'a>(
+        &'a self,
+        nonce: &'a str,
+    ) -> ResourceServerPortFuture<
+        'a,
+        Result<DpopNonceConsumptionResult, ProtectedResourceDependencyError>,
+    >;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProtectedResourceDependencyError {
     InvalidTenantBoundary,
     RevocationLookupUnavailable,
     DpopReplayStoreUnavailable,
+    DpopNonceStoreUnavailable,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -97,6 +134,7 @@ pub enum ProtectedResourceAuthorizationError {
     DpopBindingMismatch,
     MtlsBindingMismatch,
     ReplayDetected,
+    UseDpopNonce(String),
     DependencyUnavailable(ProtectedResourceDependencyError),
 }
 
@@ -109,12 +147,13 @@ pub struct ProtectedResourceAuthorizationService<R, P> {
     dpop_verifier: DpopProofVerifier,
     revocations: R,
     replay: P,
+    dpop_nonce_policy: DpopNoncePolicy,
 }
 
 impl<R, P> ProtectedResourceAuthorizationService<R, P>
 where
     R: AccessTokenRevocationLookup,
-    P: DpopReplayConsumption,
+    P: DpopReplayConsumption + DpopNonceStorage,
 {
     pub fn new(
         verifier: ResourceServerVerifier,
@@ -127,7 +166,14 @@ where
             dpop_verifier,
             revocations,
             replay,
+            dpop_nonce_policy: DpopNoncePolicy::Optional,
         }
+    }
+
+    #[must_use]
+    pub fn with_dpop_nonce_policy(mut self, policy: DpopNoncePolicy) -> Self {
+        self.dpop_nonce_policy = policy;
+        self
     }
 
     pub async fn authorize(
@@ -171,10 +217,10 @@ where
                     .ok_or(ProtectedResourceAuthorizationError::MissingSenderConstraint)?;
                 let verification = self
                     .dpop_verifier
-                    .verify_without_replay_at(
+                    .verify_without_replay_for_targets_at(
                         proof_jwt,
                         context.method,
-                        context.target_uri,
+                        context.target_uris,
                         request.access_token,
                         now,
                     )
@@ -187,6 +233,8 @@ where
                 if !constant_time_eq(expected_jkt.as_bytes(), actual_jkt.as_bytes()) {
                     return Err(ProtectedResourceAuthorizationError::DpopBindingMismatch);
                 }
+                self.validate_dpop_nonce(verification.nonce.as_deref(), now)
+                    .await?;
                 match self
                     .replay
                     .consume(DpopReplayKey {
@@ -226,6 +274,49 @@ where
             token,
             sender_constraint,
         })
+    }
+
+    async fn validate_dpop_nonce(
+        &self,
+        nonce: Option<&str>,
+        now: i64,
+    ) -> Result<(), ProtectedResourceAuthorizationError> {
+        let Some(nonce) = nonce else {
+            return if self.dpop_nonce_policy == DpopNoncePolicy::Required {
+                Err(ProtectedResourceAuthorizationError::UseDpopNonce(
+                    self.issue_dpop_nonce(now).await?,
+                ))
+            } else {
+                Ok(())
+            };
+        };
+        match self
+            .replay
+            .consume_nonce(nonce)
+            .await
+            .map_err(ProtectedResourceAuthorizationError::DependencyUnavailable)?
+        {
+            DpopNonceConsumptionResult::Accepted => Ok(()),
+            DpopNonceConsumptionResult::Unknown => {
+                Err(ProtectedResourceAuthorizationError::UseDpopNonce(
+                    self.issue_dpop_nonce(now).await?,
+                ))
+            }
+        }
+    }
+
+    async fn issue_dpop_nonce(
+        &self,
+        now: i64,
+    ) -> Result<String, ProtectedResourceAuthorizationError> {
+        const DPOP_NONCE_TTL_SECONDS: i64 = 300;
+
+        let nonce = URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>());
+        self.replay
+            .issue_nonce(&nonce, now.saturating_add(DPOP_NONCE_TTL_SECONDS))
+            .await
+            .map_err(ProtectedResourceAuthorizationError::DependencyUnavailable)?;
+        Ok(nonce)
     }
 }
 

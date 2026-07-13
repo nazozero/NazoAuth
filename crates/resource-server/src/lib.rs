@@ -23,11 +23,12 @@ use presentation::{
 };
 use serde_json::Value;
 pub use service::{
-    AccessTokenRevocationLookup, AccessTokenScheme, DpopReplayConsumption,
-    DpopReplayConsumptionResult, DpopReplayKey, ProtectedResourceAuthorizationContext,
-    ProtectedResourceAuthorizationError, ProtectedResourceAuthorizationRequest,
-    ProtectedResourceAuthorizationResult, ProtectedResourceAuthorizationService,
-    ProtectedResourceDependencyError, ResourceServerPortFuture, RevocationLookupKey,
+    AccessTokenRevocationLookup, AccessTokenScheme, DpopNonceConsumptionResult, DpopNoncePolicy,
+    DpopNonceStorage, DpopReplayConsumption, DpopReplayConsumptionResult, DpopReplayKey,
+    ProtectedResourceAuthorizationContext, ProtectedResourceAuthorizationError,
+    ProtectedResourceAuthorizationRequest, ProtectedResourceAuthorizationResult,
+    ProtectedResourceAuthorizationService, ProtectedResourceDependencyError,
+    ResourceServerPortFuture, RevocationLookupKey,
 };
 
 const DEFAULT_CLOCK_SKEW_SECONDS: i64 = 60;
