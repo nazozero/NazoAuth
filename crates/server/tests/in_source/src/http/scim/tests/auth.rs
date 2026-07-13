@@ -16,6 +16,11 @@ use diesel_async::RunQueryDsl;
 
 type ScimHandles = ScimEndpoint;
 
+struct ScimAuthFixture {
+    state: ScimHandles,
+    pool: nazo_postgres::DbPool,
+}
+
 #[derive(QueryableByName)]
 struct ScimTokenUseRow {
     #[diesel(sql_type = Nullable<Timestamptz>)]
@@ -50,31 +55,28 @@ fn test_state(scim_bearer_token: Option<&str>) -> ScimHandles {
         1,
     )
     .expect("pool construction should not connect");
-    ScimHandles::for_test(test_scim_service(&pool), pool, test_scim_config(&settings))
+    ScimHandles::for_test(test_scim_service(&pool), test_scim_config(&settings))
 }
 
-async fn live_state(scim_bearer_token: Option<&str>) -> Option<ScimHandles> {
+async fn live_state(scim_bearer_token: Option<&str>) -> Option<ScimAuthFixture> {
     let database_url = std::env::var("DATABASE_URL").ok()?;
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.scim_bearer_token = scim_bearer_token.map(ToOwned::to_owned);
     let pool = create_pool(database_url, 4).expect("database pool should build");
-    Some(ScimHandles::for_test(
-        test_scim_service(&pool),
-        pool,
-        test_scim_config(&settings),
-    ))
+    let state = ScimHandles::for_test(test_scim_service(&pool), test_scim_config(&settings));
+    Some(ScimAuthFixture { state, pool })
 }
 
 async fn insert_scim_token(
-    state: &ScimHandles,
+    pool: &nazo_postgres::DbPool,
     raw_token: &str,
     scopes: Value,
     expires_at: Option<chrono::DateTime<Utc>>,
     revoked_at: Option<chrono::DateTime<Utc>>,
 ) -> Uuid {
     let token_id = Uuid::now_v7();
-    let mut conn = get_conn(&state.pool)
+    let mut conn = get_conn(pool)
         .await
         .expect("database connection should be available");
     sql_query(
@@ -316,12 +318,12 @@ async fn authorize_scim_credential_rejects_wrong_tenant_before_recording_use() {
 
 #[actix_web::test]
 async fn require_scim_bearer_accepts_database_token_and_records_use() {
-    let Some(state) = live_state(None).await else {
+    let Some(ScimAuthFixture { state, pool }) = live_state(None).await else {
         return;
     };
     let raw_token = format!("database-scim-token-{}", Uuid::now_v7());
     let token_id = insert_scim_token(
-        &state,
+        &pool,
         &raw_token,
         json!([SCIM_SCOPE_READ, SCIM_SCOPE_WRITE]),
         Some(Utc::now() + chrono::Duration::minutes(5)),
@@ -345,7 +347,7 @@ async fn require_scim_bearer_accepts_database_token_and_records_use() {
         vec![SCIM_SCOPE_READ.to_owned(), SCIM_SCOPE_WRITE.to_owned()]
     );
 
-    let mut conn = get_conn(&state.pool)
+    let mut conn = get_conn(&pool)
         .await
         .expect("database connection should be available");
     let row = sql_query(
@@ -372,12 +374,12 @@ async fn require_scim_bearer_accepts_database_token_and_records_use() {
 
 #[actix_web::test]
 async fn require_scim_bearer_rejects_database_token_without_required_scope() {
-    let Some(state) = live_state(None).await else {
+    let Some(ScimAuthFixture { state, pool }) = live_state(None).await else {
         return;
     };
     let raw_token = format!("database-scim-read-only-{}", Uuid::now_v7());
     let token_id = insert_scim_token(
-        &state,
+        &pool,
         &raw_token,
         json!([SCIM_SCOPE_READ]),
         Some(Utc::now() + chrono::Duration::minutes(5)),
@@ -398,7 +400,7 @@ async fn require_scim_bearer_rejects_database_token_without_required_scope() {
         "SCIM token lacks the required scope",
     )
     .await;
-    let mut conn = get_conn(&state.pool)
+    let mut conn = get_conn(&pool)
         .await
         .expect("database connection should be available");
     let row = sql_query(
@@ -423,13 +425,13 @@ async fn require_scim_bearer_rejects_database_token_without_required_scope() {
 
 #[actix_web::test]
 async fn require_scim_bearer_rejects_revoked_and_expired_database_tokens() {
-    let Some(state) = live_state(Some("legacy-scim-secret")).await else {
+    let Some(ScimAuthFixture { state, pool }) = live_state(Some("legacy-scim-secret")).await else {
         return;
     };
     let revoked = format!("database-scim-revoked-{}", Uuid::now_v7());
     let expired = format!("database-scim-expired-{}", Uuid::now_v7());
     insert_scim_token(
-        &state,
+        &pool,
         &revoked,
         json!([SCIM_SCOPE_READ, SCIM_SCOPE_WRITE]),
         Some(Utc::now() + chrono::Duration::minutes(5)),
@@ -437,7 +439,7 @@ async fn require_scim_bearer_rejects_revoked_and_expired_database_tokens() {
     )
     .await;
     insert_scim_token(
-        &state,
+        &pool,
         &expired,
         json!([SCIM_SCOPE_READ, SCIM_SCOPE_WRITE]),
         Some(Utc::now() - chrono::Duration::minutes(5)),

@@ -78,8 +78,6 @@ pub(crate) struct ScimEndpoint {
     service: nazo_identity::scim::ScimService,
     config: ScimConfig,
     admission: ScimRuntimeAdmission,
-    #[cfg(test)]
-    pool: nazo_postgres::DbPool,
 }
 
 #[derive(Clone)]
@@ -95,28 +93,20 @@ impl ScimEndpoint {
         service: nazo_identity::scim::ScimService,
         config: ScimConfig,
         admission: ScimRuntimeAdmission,
-        #[cfg(test)] pool: nazo_postgres::DbPool,
     ) -> Self {
         Self {
             service,
             config,
             admission,
-            #[cfg(test)]
-            pool,
         }
     }
 
     #[cfg(test)]
-    fn for_test(
-        service: nazo_identity::scim::ScimService,
-        pool: nazo_postgres::DbPool,
-        config: ScimConfig,
-    ) -> Self {
+    fn for_test(service: nazo_identity::scim::ScimService, config: ScimConfig) -> Self {
         Self {
             service,
             config,
             admission: ScimRuntimeAdmission { enabled: true },
-            pool,
         }
     }
 }
