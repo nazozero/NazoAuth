@@ -5,6 +5,7 @@ use chrono::Utc;
 use nazo_auth::{AccessTokenClaimsInput, OidcClaimRequest};
 use nazo_auth::{BackchannelLogoutClaimsInput, Claims};
 use serde_json::Value;
+#[cfg(test)]
 use uuid::Uuid;
 
 use crate::domain::AppState;

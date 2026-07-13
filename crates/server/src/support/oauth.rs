@@ -160,12 +160,6 @@ pub(crate) fn token_audience_contains(audience: &Value, expected: &str) -> bool 
         .any(|audience| audience == expected)
 }
 
-pub(crate) fn token_audience_allowed(client: &ClientRow, audience: &Value) -> bool {
-    token_audience_values(audience)
-        .iter()
-        .any(|audience| audience_allowed(client, audience))
-}
-
 pub(crate) fn has_duplicate_oauth_parameter(raw_query: &str, parameter_names: &[&str]) -> bool {
     let mut seen = std::collections::HashSet::new();
     for (key, _) in url::form_urlencoded::parse(raw_query.as_bytes()) {

@@ -63,8 +63,7 @@ pub(crate) use oauth::{
     ClientMetadata, ClientMtlsMetadata, RedirectUriError, audiences_allowed, client_supports_grant,
     encoded_resource_indicators, has_duplicate_oauth_parameter, is_subset, is_valid_pkce_value,
     json_array_to_strings, parse_resource_indicators, parse_scope, registered_redirect_uri,
-    resource_indicators_from_parameter_value, token_audience_allowed, token_audience_contains,
-    validate_client_metadata,
+    resource_indicators_from_parameter_value, token_audience_contains, validate_client_metadata,
 };
 #[cfg(test)]
 pub(crate) use oidc_claims::oidc_subject;

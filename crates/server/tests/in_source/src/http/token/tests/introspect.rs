@@ -526,7 +526,7 @@ async fn sign_access_token(
             user_id: None,
             subject_type: "client",
             client_id,
-            audiences: &json_array_to_strings(&audience),
+            audiences: &crate::support::json_array_to_strings(&audience),
             scopes: &["openid".to_owned()],
             authorization_details: &json!([]),
             userinfo_claims: &[],

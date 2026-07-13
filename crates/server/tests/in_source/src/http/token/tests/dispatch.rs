@@ -14,11 +14,28 @@ use fred::prelude::{
 use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
 
-use crate::http::token::{revoke::revoke, userinfo::userinfo};
+use crate::http::authorization::{AuthorizationHttpConfig, ServerAuthorizationService};
+use crate::http::token::{revoke::revoke as revoke_with_dependencies, userinfo::userinfo};
 use crate::settings::AuthorizationServerProfile;
 use crate::support::{
     IpCidr, SessionPayload, current_session, hash_client_secret, valkey_del, valkey_set_ex,
 };
+
+async fn revoke(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
+    let connection = state.valkey_connection();
+    let token_service = Data::new(ServerTokenService::new(
+        nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
+        nazo_valkey::TokenIssuanceStateAdapter::new(&connection),
+        state.keyset.clone(),
+    ));
+    let authorization_service = Data::new(ServerAuthorizationService::new(
+        nazo_postgres::AuthorizationFlowRepository::new(state.diesel_db.clone(), DEFAULT_TENANT_ID),
+        nazo_valkey::AuthorizationStateAdapter::new(&connection),
+        state.keyset.clone(),
+    ));
+    let config = Data::new(AuthorizationHttpConfig::from(state.settings.as_ref()));
+    revoke_with_dependencies(token_service, authorization_service, config, req, body).await
+}
 
 fn code_payload(dpop_jkt: Option<&str>) -> CodePayload {
     CodePayload {
