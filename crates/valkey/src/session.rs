@@ -17,6 +17,17 @@ redis.call('DEL', KEYS[1])
 return 'ok'
 "#;
 
+const CREATE_REPLACING_SESSION_SCRIPT: &str = r#"
+if redis.call('EXISTS', KEYS[1]) == 1 then
+  return 'collision'
+end
+redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+if #KEYS == 2 and KEYS[1] ~= KEYS[2] then
+  redis.call('DEL', KEYS[2])
+end
+return 'created'
+"#;
+
 #[derive(Deserialize, Serialize)]
 struct SessionWireRecord {
     user_id: Uuid,
@@ -187,6 +198,41 @@ impl nazo_identity::ports::LoginSessionPort for SessionStore {
                 }
             })
             .map_err(crate::identity_repository_error)
+        })
+    }
+
+    fn create_replacing<'a>(
+        &'a self,
+        previous_session_id: Option<&'a str>,
+        session_id: &'a str,
+        record: &'a SessionRecord,
+        ttl_seconds: u64,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, nazo_identity::ports::LoginSessionCreate> {
+        Box::pin(async move {
+            let raw = serde_json::to_string(&SessionWireRecord::from(record)).map_err(|error| {
+                nazo_identity::ports::RepositoryError::Unexpected(format!(
+                    "failed to serialize session record: {error}"
+                ))
+            })?;
+            let mut keys = vec![keys::session(session_id)];
+            if let Some(previous_session_id) = previous_session_id {
+                keys.push(keys::session(previous_session_id));
+            }
+            let reply = command::eval_string(
+                &self.connection,
+                CREATE_REPLACING_SESSION_SCRIPT,
+                keys,
+                vec![raw, ttl_seconds.to_string()],
+            )
+            .await
+            .map_err(crate::identity_repository_error)?;
+            match reply.as_str() {
+                "created" => Ok(nazo_identity::ports::LoginSessionCreate::Created),
+                "collision" => Ok(nazo_identity::ports::LoginSessionCreate::Collision),
+                other => Err(nazo_identity::ports::RepositoryError::Unexpected(format!(
+                    "unexpected login session create reply {other:?}"
+                ))),
+            }
         })
     }
 }

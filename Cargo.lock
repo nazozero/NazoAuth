@@ -2221,6 +2221,7 @@ version = "0.1.0"
 dependencies = [
  "actix-cors",
  "actix-web",
+ "blake3",
  "chrono",
  "nazo-auth",
  "nazo-http-signatures",

@@ -44,6 +44,7 @@ impl TenantContext {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn same_tenant(&self, tenant_id: Uuid) -> bool {
         self.as_identity_context().is_some_and(|context| {
             nazo_identity::TenantId::new(tenant_id)

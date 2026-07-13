@@ -32,7 +32,7 @@ use crate::config::{ConfigSource, database_max_connections, database_url};
 use crate::domain::{
     DynamicRegistrationConfig, MetadataConfig, MfaProfileConfig, MfaProfileHandles,
     OidcLogoutConfig, OidcLogoutHandles, ResourceServerConfig, ServerAuthenticationRateLimit,
-    ServerLocalRegistrationOperations, ServerMetadataSnapshotSource,
+    ServerLocalRegistrationOperations, ServerMetadataSnapshotSource, ServerPasswordLoginOperations,
     ServerProfileAccountOperations, UserinfoConfig, UserinfoHandles,
 };
 #[cfg(test)]
@@ -54,7 +54,6 @@ use crate::http::auth::csrf::CsrfHttpConfig;
 use crate::http::auth::federation::{
     FEDERATION_STATE_TTL_SECONDS, FederationHttpConfig, SAML_REPLAY_TTL_SECONDS,
 };
-use crate::http::auth::login::LoginHttpConfig;
 use crate::http::auth::passkey::PasskeyHttpConfig;
 use crate::http::authorization::{
     AuthorizationEndpoint, AuthorizationHttpConfig, ServerAuthorizationService,
@@ -72,6 +71,7 @@ use crate::runtime_modules::{RuntimeModules, ServerRuntimeModuleRegistry};
 use crate::settings::Settings;
 use crate::support::client_ip::ClientIpConfig;
 use crate::support::email::{SmtpVerificationEmailDelivery, email_delivery_configured};
+use crate::support::mfa::MFA_REMEMBERED_COOKIE_NAME;
 use crate::support::rate_limit::{AuthRequestLimiter, TokenManagementRequestLimiter};
 use crate::support::security::{
     configure_password_hash_limits, default_password_hash_max_concurrency,
@@ -82,8 +82,8 @@ use crate::support::tenancy::{DEFAULT_TENANT_ID, default_tenant_context};
 #[cfg(test)]
 use actix_web::http::header;
 use nazo_http_actix::{
-    LocalRegistrationEndpoint, ProfileAccountEndpoint, RuntimeModuleAdminEndpoint,
-    SessionCookieConfig, SessionLogoutEndpoint, security_headers,
+    LocalRegistrationEndpoint, PasswordLoginConfig, PasswordLoginEndpoint, ProfileAccountEndpoint,
+    RuntimeModuleAdminEndpoint, SessionCookieConfig, SessionLogoutEndpoint, security_headers,
 };
 use nazo_postgres::create_pool;
 use tracing::Instrument;
@@ -487,17 +487,18 @@ pub async fn run() -> anyhow::Result<()> {
             code_ttl_seconds: identity.email.code_ttl_seconds,
         },
     );
+    let authentication_rate_limit = Arc::new(ServerAuthenticationRateLimit::new(
+        nazo_valkey::RateLimitStore::new(&valkey_connection),
+        identity.rate_limit.window_seconds,
+        identity.rate_limit.auth_max_requests,
+    ));
     let local_registration_endpoint = web::Data::new(LocalRegistrationEndpoint::new(
         Arc::new(ServerLocalRegistrationOperations::new(registration)),
-        Arc::new(ServerAuthenticationRateLimit::new(
-            nazo_valkey::RateLimitStore::new(&valkey_connection),
-            identity.rate_limit.window_seconds,
-            identity.rate_limit.auth_max_requests,
-        )),
+        authentication_rate_limit.clone(),
         client_ip_config.get_ref().clone(),
         identity.email_code_dev_response_enabled,
     ));
-    let authentication = web::Data::new(LocalAuthenticationService::new(
+    let authentication = LocalAuthenticationService::new(
         nazo_postgres::UserRepository::new(diesel_db.clone()),
         nazo_valkey::RateLimitStore::new(&valkey_connection),
         LoginPasswordVerifier,
@@ -513,14 +514,20 @@ pub async fn run() -> anyhow::Result<()> {
             failure_ip_email_max_attempts: identity.rate_limit.login_failure_ip_email_max_attempts,
             session_ttl_seconds: session.session_ttl_seconds,
         },
-    ));
-    let login_http_config = web::Data::new(LoginHttpConfig::new(
-        settings.endpoint.issuer.as_str(),
-        settings.endpoint.frontend_base_url.as_str(),
-        session.session_cookie_name.as_str(),
-        session.csrf_cookie_name.as_str(),
-        session.session_ttl_seconds,
-        session.cookie_secure,
+    );
+    let password_login_endpoint = web::Data::new(PasswordLoginEndpoint::new(
+        Arc::new(ServerPasswordLoginOperations::new(authentication)),
+        authentication_rate_limit,
+        client_ip_config.get_ref().clone(),
+        PasswordLoginConfig::new(
+            settings.endpoint.issuer.as_str(),
+            settings.endpoint.frontend_base_url.as_str(),
+            session.session_cookie_name.as_str(),
+            session.csrf_cookie_name.as_str(),
+            MFA_REMEMBERED_COOKIE_NAME,
+            session.session_ttl_seconds,
+            session.cookie_secure,
+        ),
     ));
     let passkey = &identity.passkey;
     let passkeys = web::Data::new(LocalPasskeyService::new(
@@ -659,8 +666,7 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(auth_request_limiter.clone())
             .app_data(token_management_limiter.clone())
             .app_data(local_registration_endpoint.clone())
-            .app_data(authentication.clone())
-            .app_data(login_http_config.clone())
+            .app_data(password_login_endpoint.clone())
             .app_data(passkeys.clone())
             .app_data(passkey_http_config.clone())
             .app_data(federation.clone())

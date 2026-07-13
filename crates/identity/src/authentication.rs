@@ -33,6 +33,7 @@ pub struct AuthenticatePasswordInput {
     pub password: String,
     pub source_ip: String,
     pub remembered_mfa: Option<RememberedMfaProof>,
+    pub previous_session_id: Option<String>,
     pub now: DateTime<Utc>,
 }
 
@@ -41,6 +42,24 @@ pub struct LoginSuccess {
     pub session_id: String,
     pub csrf_token: String,
     pub session: SessionRecord,
+}
+
+/// Minimal password-login projection exposed to the HTTP transport.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PasswordLoginResult {
+    pub session_id: String,
+    pub csrf_token: String,
+    pub mfa_required: bool,
+}
+
+impl From<LoginSuccess> for PasswordLoginResult {
+    fn from(success: LoginSuccess) -> Self {
+        Self {
+            session_id: success.session_id,
+            csrf_token: success.csrf_token,
+            mfa_required: success.session.pending_mfa(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -203,7 +222,12 @@ where
         let csrf_token = random_urlsafe_token();
         match self
             .sessions
-            .create(&session_id, &session, self.config.session_ttl_seconds)
+            .create_replacing(
+                input.previous_session_id.as_deref(),
+                &session_id,
+                &session,
+                self.config.session_ttl_seconds,
+            )
             .await
             .map_err(AuthenticatePasswordError::Session)?
         {

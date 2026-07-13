@@ -9,6 +9,7 @@ mod metadata;
 mod mfa;
 mod oauth;
 mod oidc_logout;
+mod password_login;
 mod profile_account;
 mod resource_server;
 mod rows;
@@ -41,6 +42,7 @@ pub(crate) use oauth::{
     NativeSsoTokenBinding, PushedAuthorizationRequest, RefreshTokenPolicy, TokenIssue,
 };
 pub(crate) use oidc_logout::{OidcLogoutConfig, OidcLogoutHandles};
+pub(crate) use password_login::ServerPasswordLoginOperations;
 pub(crate) use profile_account::ServerProfileAccountOperations;
 pub(crate) use resource_server::ResourceServerConfig;
 #[cfg(test)]

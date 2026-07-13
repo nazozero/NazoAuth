@@ -93,49 +93,6 @@ pub(crate) mod test_support {
         ))
     }
 
-    pub(crate) fn authentication_service(
-        state: &crate::domain::AppState,
-    ) -> actix_web::web::Data<crate::bootstrap::LocalAuthenticationService> {
-        let identity = &state.settings.identity;
-        let session = &state.settings.session;
-        actix_web::web::Data::new(crate::bootstrap::LocalAuthenticationService::new(
-            nazo_postgres::UserRepository::new(state.diesel_db.clone()),
-            nazo_valkey::RateLimitStore::new(&state.valkey_connection()),
-            crate::bootstrap::LoginPasswordVerifier,
-            nazo_postgres::MfaRepository::new(state.diesel_db.clone()),
-            nazo_valkey::SessionStore::new(&state.valkey_connection()),
-            crate::bootstrap::TracingAuthenticationAudit,
-            nazo_identity::AuthenticationServiceConfig {
-                tenant_id: nazo_identity::TenantId::new(crate::support::tenancy::DEFAULT_TENANT_ID)
-                    .unwrap(),
-                dummy_password_hash: nazo_identity::PasswordHash::new(
-                    crate::support::security::dummy_password_hash().unwrap(),
-                )
-                .unwrap(),
-                failure_window_seconds: identity.rate_limit.login_failure_window_seconds,
-                failure_email_max_attempts: identity.rate_limit.login_failure_email_max_attempts,
-                failure_ip_email_max_attempts: identity
-                    .rate_limit
-                    .login_failure_ip_email_max_attempts,
-                session_ttl_seconds: session.session_ttl_seconds,
-            },
-        ))
-    }
-
-    pub(crate) fn login_http_config(
-        state: &crate::domain::AppState,
-    ) -> actix_web::web::Data<crate::http::auth::login::LoginHttpConfig> {
-        let session = &state.settings.session;
-        actix_web::web::Data::new(crate::http::auth::login::LoginHttpConfig::new(
-            state.settings.endpoint.issuer.as_str(),
-            state.settings.endpoint.frontend_base_url.as_str(),
-            session.session_cookie_name.as_str(),
-            session.csrf_cookie_name.as_str(),
-            session.session_ttl_seconds,
-            session.cookie_secure,
-        ))
-    }
-
     pub(crate) fn passkey_service(
         state: &crate::domain::AppState,
     ) -> actix_web::web::Data<crate::bootstrap::LocalPasskeyService> {

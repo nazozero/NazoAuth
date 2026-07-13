@@ -641,6 +641,20 @@ pub trait LoginSessionPort: Send + Sync {
         record: &'a crate::session::SessionRecord,
         ttl_seconds: u64,
     ) -> RepositoryFuture<'a, LoginSessionCreate>;
+
+    /// Creates a new login session and, when supplied, invalidates the
+    /// previously presented session in the same storage transaction.
+    ///
+    /// Implementations must perform creation and invalidation atomically. This
+    /// method intentionally has no fallback implementation: silently degrading
+    /// to `create` would leave the previously authenticated session active.
+    fn create_replacing<'a>(
+        &'a self,
+        previous_session_id: Option<&'a str>,
+        session_id: &'a str,
+        record: &'a crate::session::SessionRecord,
+        ttl_seconds: u64,
+    ) -> RepositoryFuture<'a, LoginSessionCreate>;
 }
 
 /// Reads the minimum account projection required to resolve an authenticated session.

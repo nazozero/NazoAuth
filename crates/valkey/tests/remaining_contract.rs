@@ -214,6 +214,93 @@ async fn login_session_create_is_atomic_and_never_overwrites_a_collision() {
 }
 
 #[tokio::test]
+async fn login_session_replacement_atomically_invalidates_the_previous_session() {
+    let Some((connection, inspector)) = setup().await else {
+        return;
+    };
+    let sessions = nazo_valkey::SessionStore::new(&connection);
+    let previous_id = format!("login-previous-{}", uuid::Uuid::now_v7());
+    let collision_id = format!("login-collision-{}", uuid::Uuid::now_v7());
+    let replacement_id = format!("login-replacement-{}", uuid::Uuid::now_v7());
+    let previous = SessionRecord::new(
+        nazo_identity::UserId::new(uuid::Uuid::now_v7()).unwrap(),
+        1,
+        vec!["password".to_owned()],
+        false,
+        Some("previous-oidc-sid".to_owned()),
+    );
+    let replacement = SessionRecord::new(
+        nazo_identity::UserId::new(uuid::Uuid::now_v7()).unwrap(),
+        2,
+        vec!["password".to_owned()],
+        true,
+        Some("replacement-oidc-sid".to_owned()),
+    );
+    assert_eq!(
+        LoginSessionPort::create(&sessions, &previous_id, &previous, 120)
+            .await
+            .unwrap(),
+        LoginSessionCreate::Created
+    );
+    assert_eq!(
+        LoginSessionPort::create(&sessions, &collision_id, &replacement, 120)
+            .await
+            .unwrap(),
+        LoginSessionCreate::Created
+    );
+    assert_eq!(
+        LoginSessionPort::create_replacing(
+            &sessions,
+            Some(&previous_id),
+            &collision_id,
+            &previous,
+            60,
+        )
+        .await
+        .unwrap(),
+        LoginSessionCreate::Collision
+    );
+    assert_eq!(
+        sessions.load(&previous_id).await.unwrap().unwrap().value(),
+        &previous
+    );
+    assert_eq!(
+        sessions.load(&collision_id).await.unwrap().unwrap().value(),
+        &replacement
+    );
+    assert_eq!(
+        LoginSessionPort::create_replacing(
+            &sessions,
+            Some(&previous_id),
+            &replacement_id,
+            &replacement,
+            60,
+        )
+        .await
+        .unwrap(),
+        LoginSessionCreate::Created
+    );
+    assert!(sessions.load(&previous_id).await.unwrap().is_none());
+    assert_eq!(
+        sessions
+            .load(&replacement_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .value(),
+        &replacement
+    );
+    assert!(
+        (1..=60).contains(
+            &inspector
+                .ttl::<i64, _>(format!("oauth:session:{replacement_id}"))
+                .await
+                .unwrap()
+        )
+    );
+}
+
+#[tokio::test]
 async fn concurrent_rate_counters_are_atomic_and_preserve_first_window_ttl() {
     let Some((connection, inspector)) = setup().await else {
         return;

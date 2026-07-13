@@ -12,6 +12,7 @@ mod fapi_resource;
 mod local_registration;
 mod metadata;
 mod middleware;
+mod password_login;
 mod presenter;
 mod profile_account;
 mod request_context;
@@ -57,6 +58,9 @@ pub use metadata::{
     jwks, oauth_authorization_server_metadata, oauth_protected_resource_metadata,
 };
 pub use middleware::{apply_security_headers, security_headers};
+pub use password_login::{
+    PasswordLoginConfig, PasswordLoginEndpoint, PasswordLoginFuture, PasswordLoginOperations, login,
+};
 pub use presenter::{
     OAuthJsonErrorFields, authorization_error_response, bearer_challenge, bytes_response,
     empty_response, empty_response_no_store, is_oauth_error_description_byte, json_response,

@@ -4,7 +4,7 @@
 use actix_web::{HttpResponse, dev::Service, http::header, web};
 use nazo_http_actix::{
     admin_patch_runtime_module, admin_runtime_module_events, admin_runtime_modules, discovery,
-    jwks, mfa_json_config, mfa_method_not_allowed, mfa_options,
+    jwks, login, mfa_json_config, mfa_method_not_allowed, mfa_options,
     oauth_authorization_server_metadata, oauth_protected_resource_metadata, profile_applications,
     profile_logout, profile_me, profile_update, register, send_code,
 };
@@ -33,7 +33,6 @@ use crate::http::auth::{
         federation_provider_callback, federation_provider_list, federation_provider_start,
         federation_saml_acs,
     },
-    login::login,
     passkey::{passkey_login_begin, passkey_login_finish},
 };
 use crate::http::authorization::{
