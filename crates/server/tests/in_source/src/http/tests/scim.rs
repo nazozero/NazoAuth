@@ -1,4 +1,6 @@
 use super::*;
+use std::sync::Arc;
+
 use crate::config::ConfigSource;
 use crate::settings::Settings;
 use crate::support::client_ip::ClientIpConfig;
@@ -6,6 +8,8 @@ use diesel::sql_query;
 use diesel::sql_types::{BigInt, Jsonb, Nullable, Text, Timestamptz, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
 use nazo_postgres::{create_pool, get_conn};
+
+type ScimHandles = ScimEndpoint;
 
 fn uuid_fixture(value: u128) -> Uuid {
     Uuid::from_u128(value)
@@ -21,6 +25,13 @@ fn test_scim_config(settings: &Settings) -> ScimConfig {
     .expect("test SCIM settings should be valid")
 }
 
+fn test_scim_service(pool: &nazo_postgres::DbPool) -> nazo_identity::scim::ScimService {
+    nazo_identity::scim::ScimService::new(
+        Arc::new(nazo_postgres::ScimRepository::new(pool.clone())),
+        Arc::new(nazo_postgres::AuditRepository::new(pool.clone())),
+    )
+}
+
 fn test_state_with_scim_bearer_token(scim_bearer_token: Option<&str>) -> ScimHandles {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
@@ -30,7 +41,7 @@ fn test_state_with_scim_bearer_token(scim_bearer_token: Option<&str>) -> ScimHan
         1,
     )
     .expect("pool construction should not connect");
-    ScimHandles::for_test(pool, test_scim_config(&settings))
+    ScimHandles::for_test(test_scim_service(&pool), pool, test_scim_config(&settings))
 }
 
 fn test_state() -> ScimHandles {
@@ -76,6 +87,7 @@ async fn live_state_for_database_url(
     settings.scim_bearer_token = Some(scim_bearer_token.to_owned());
     let pool = create_pool(database_url, 4).expect("database pool should build");
     Some(Data::new(ScimHandles::for_test(
+        test_scim_service(&pool),
         pool,
         test_scim_config(&settings),
     )))
@@ -280,13 +292,17 @@ fn scim_routes_are_static_and_handlers_do_not_depend_on_app_state() {
     let handlers = include_str!("../../../../../src/http/scim.rs");
     let auth = include_str!("../../../../../src/http/scim/auth.rs");
     assert!(!handlers.contains("Data<AppState>"));
+    assert!(!handlers.contains("ScimRepository"));
+    assert!(!handlers.contains("AuditRepository"));
+    assert!(!handlers.contains("ScimHandles"));
     assert!(!auth.contains("AppState"));
+    assert!(!auth.contains("nazo_postgres"));
 }
 
 #[actix_web::test]
 async fn disabled_scim_contract_is_consistent_across_registered_methods() {
     let mut handles = test_state_with_scim_bearer_token(Some("legacy-scim-secret"));
-    handles.enabled = false;
+    handles.admission.enabled = false;
     let handles = Data::new(handles);
     let request = bearer_request("legacy-scim-secret");
     let user_id = Uuid::now_v7();

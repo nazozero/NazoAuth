@@ -2,7 +2,9 @@ use chrono::{DateTime, Utc};
 use diesel::{BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_auth::BackchannelLogoutDelivery;
-use nazo_identity::ports::RepositoryError;
+use nazo_identity::ports::{
+    RepositoryError, RepositoryFuture, ScimCredentialAuditPort, ScimCredentialUse,
+};
 use nazo_identity::scim::ScimTokenCredential;
 use nazo_identity::{
     IdentitySecurityEvent, IdentitySecurityEventType, IdentitySecurityOutcome,
@@ -219,6 +221,29 @@ impl AuditRepository {
             .get()
             .await
             .map_err(|_| RepositoryError::Unavailable)
+    }
+}
+
+impl ScimCredentialAuditPort for AuditRepository {
+    fn active_credential<'a>(
+        &'a self,
+        token_hash: &'a str,
+    ) -> RepositoryFuture<'a, Option<ScimTokenCredential>> {
+        Box::pin(async move { Self::active_scim_credential(self, token_hash).await })
+    }
+
+    fn record_use<'a>(&'a self, usage: ScimCredentialUse) -> RepositoryFuture<'a, ()> {
+        Box::pin(async move {
+            Self::record_scim_token_use(
+                self,
+                usage.token_id,
+                usage.tenant_id,
+                &usage.scopes,
+                usage.ip_hash,
+                usage.user_agent_hash,
+            )
+            .await
+        })
     }
 }
 

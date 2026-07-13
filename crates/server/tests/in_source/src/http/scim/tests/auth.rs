@@ -1,9 +1,11 @@
 use super::*;
+use std::sync::Arc;
+
 use crate::config::ConfigSource;
-use crate::http::scim::{ScimConfig, ScimHandles};
+use crate::http::scim::{ScimConfig, ScimEndpoint};
 use crate::settings::Settings;
 use crate::support::client_ip::ClientIpConfig;
-use nazo_postgres::create_pool;
+use nazo_postgres::{create_pool, get_conn};
 
 use crate::support::DEFAULT_TENANT_ID;
 use chrono::Utc;
@@ -11,6 +13,8 @@ use diesel::QueryableByName;
 use diesel::sql_query;
 use diesel::sql_types::{Jsonb, Nullable, Text, Timestamptz, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
+
+type ScimHandles = ScimEndpoint;
 
 #[derive(QueryableByName)]
 struct ScimTokenUseRow {
@@ -30,6 +34,13 @@ fn test_scim_config(settings: &Settings) -> ScimConfig {
     .expect("test SCIM settings should be valid")
 }
 
+fn test_scim_service(pool: &nazo_postgres::DbPool) -> nazo_identity::scim::ScimService {
+    nazo_identity::scim::ScimService::new(
+        Arc::new(nazo_postgres::ScimRepository::new(pool.clone())),
+        Arc::new(nazo_postgres::AuditRepository::new(pool.clone())),
+    )
+}
+
 fn test_state(scim_bearer_token: Option<&str>) -> ScimHandles {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
@@ -39,7 +50,7 @@ fn test_state(scim_bearer_token: Option<&str>) -> ScimHandles {
         1,
     )
     .expect("pool construction should not connect");
-    ScimHandles::for_test(pool, test_scim_config(&settings))
+    ScimHandles::for_test(test_scim_service(&pool), pool, test_scim_config(&settings))
 }
 
 async fn live_state(scim_bearer_token: Option<&str>) -> Option<ScimHandles> {
@@ -48,7 +59,11 @@ async fn live_state(scim_bearer_token: Option<&str>) -> Option<ScimHandles> {
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.scim_bearer_token = scim_bearer_token.map(ToOwned::to_owned);
     let pool = create_pool(database_url, 4).expect("database pool should build");
-    Some(ScimHandles::for_test(pool, test_scim_config(&settings)))
+    Some(ScimHandles::for_test(
+        test_scim_service(&pool),
+        pool,
+        test_scim_config(&settings),
+    ))
 }
 
 async fn insert_scim_token(

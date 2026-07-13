@@ -1,4 +1,4 @@
-use super::ScimHandles;
+use super::ScimEndpoint;
 use crate::http::scim::schema::scim_error;
 use crate::support::client_ip::client_ip_with_config;
 use crate::support::{
@@ -7,8 +7,7 @@ use crate::support::{
 use actix_web::http::StatusCode;
 use actix_web::http::header;
 use actix_web::{HttpRequest, HttpResponse};
-#[cfg(test)]
-use nazo_postgres::get_conn;
+use nazo_identity::ports::ScimCredentialUse;
 #[cfg(test)]
 use serde_json::Value;
 use serde_json::json;
@@ -42,11 +41,11 @@ impl ScimRequiredScope {
 }
 
 pub(super) async fn require_scim_bearer(
-    handles: &ScimHandles,
+    endpoint: &ScimEndpoint,
     req: &HttpRequest,
     required_scope: ScimRequiredScope,
 ) -> Result<ScimCredential, HttpResponse> {
-    if !handles.accepts_new_requests() {
+    if !endpoint.admission.accepts_new_requests() {
         return Err(scim_error(
             StatusCode::NOT_FOUND,
             "not_found",
@@ -54,7 +53,7 @@ pub(super) async fn require_scim_bearer(
         ));
     }
     let Some(actual) = bearer_token(req) else {
-        audit_scim_token_denied(handles, req, required_scope, "missing_bearer", None);
+        audit_scim_token_denied(endpoint, req, required_scope, "missing_bearer", None);
         return Err(scim_error(
             StatusCode::UNAUTHORIZED,
             "unauthorized",
@@ -62,22 +61,22 @@ pub(super) async fn require_scim_bearer(
         ));
     };
     let token_hash = blake3_hex(actual);
-    match load_scim_credential(handles, &token_hash).await {
+    match load_scim_credential(endpoint, &token_hash).await {
         Ok(Some(credential)) => {
-            return authorize_scim_credential(handles, req, required_scope, credential).await;
+            return authorize_scim_credential(endpoint, req, required_scope, credential).await;
         }
         Ok(None) => {}
         Err(response) => {
-            if let Some(credential) = legacy_scim_credential(handles, actual) {
-                return authorize_scim_credential(handles, req, required_scope, credential).await;
+            if let Some(credential) = legacy_scim_credential(endpoint, actual) {
+                return authorize_scim_credential(endpoint, req, required_scope, credential).await;
             }
             return Err(response);
         }
     }
-    if let Some(credential) = legacy_scim_credential(handles, actual) {
-        return authorize_scim_credential(handles, req, required_scope, credential).await;
+    if let Some(credential) = legacy_scim_credential(endpoint, actual) {
+        return authorize_scim_credential(endpoint, req, required_scope, credential).await;
     }
-    audit_scim_token_denied(handles, req, required_scope, "invalid_token", None);
+    audit_scim_token_denied(endpoint, req, required_scope, "invalid_token", None);
     Err(scim_error(
         StatusCode::UNAUTHORIZED,
         "unauthorized",
@@ -86,10 +85,10 @@ pub(super) async fn require_scim_bearer(
 }
 
 async fn load_scim_credential(
-    handles: &ScimHandles,
+    endpoint: &ScimEndpoint,
     token_hash: &str,
 ) -> Result<Option<ScimCredential>, HttpResponse> {
-    match handles.active_credential(token_hash).await {
+    match endpoint.service.active_credential(token_hash).await {
         Ok(Some(credential)) => Ok(Some(ScimCredential {
             token_id: Some(credential.id),
             tenant_id: credential.tenant_id,
@@ -108,8 +107,8 @@ async fn load_scim_credential(
     }
 }
 
-fn legacy_scim_credential(handles: &ScimHandles, actual: &str) -> Option<ScimCredential> {
-    let expected = handles.legacy_bearer_token()?;
+fn legacy_scim_credential(endpoint: &ScimEndpoint, actual: &str) -> Option<ScimCredential> {
+    let expected = endpoint.config.legacy_bearer_token.as_deref()?;
     constant_time_eq(expected.as_bytes(), actual.as_bytes()).then(|| {
         let tenant = default_tenant_context();
         ScimCredential {
@@ -122,14 +121,14 @@ fn legacy_scim_credential(handles: &ScimHandles, actual: &str) -> Option<ScimCre
 }
 
 async fn authorize_scim_credential(
-    handles: &ScimHandles,
+    endpoint: &ScimEndpoint,
     req: &HttpRequest,
     required_scope: ScimRequiredScope,
     credential: ScimCredential,
 ) -> Result<ScimCredential, HttpResponse> {
     if !scim_credential_allows(&credential, required_scope) {
         audit_scim_token_denied(
-            handles,
+            endpoint,
             req,
             required_scope,
             "insufficient_scope",
@@ -143,7 +142,7 @@ async fn authorize_scim_credential(
     }
     if !scim_credential_targets_served_tenant(&credential) {
         audit_scim_token_denied(
-            handles,
+            endpoint,
             req,
             required_scope,
             "tenant_mismatch",
@@ -155,7 +154,7 @@ async fn authorize_scim_credential(
             "SCIM token is not valid for this tenant",
         ));
     }
-    record_scim_token_use(handles, req, required_scope, &credential).await;
+    record_scim_token_use(endpoint, req, required_scope, &credential).await;
     audit_event(
         "scim_token_used",
         audit_fields(&[
@@ -167,7 +166,7 @@ async fn authorize_scim_credential(
                 "ip_hash",
                 json!(blake3_hex(&client_ip_with_config(
                     req,
-                    handles.client_ip_config()
+                    &endpoint.config.client_ip
                 ))),
             ),
         ]),
@@ -202,7 +201,7 @@ pub(super) fn scim_scope_values(value: &Value) -> Vec<String> {
 }
 
 async fn record_scim_token_use(
-    handles: &ScimHandles,
+    endpoint: &ScimEndpoint,
     req: &HttpRequest,
     required_scope: ScimRequiredScope,
     credential: &ScimCredential,
@@ -215,17 +214,18 @@ async fn record_scim_token_use(
         .get(header::USER_AGENT)
         .and_then(|value| value.to_str().ok())
         .map(blake3_hex);
-    if let Err(error) = handles
-        .record_credential_use(
+    if let Err(error) = endpoint
+        .service
+        .record_credential_use(ScimCredentialUse {
             token_id,
-            credential.tenant_id,
-            &[required_scope.as_str().to_owned()],
-            Some(blake3_hex(&client_ip_with_config(
+            tenant_id: credential.tenant_id,
+            scopes: vec![required_scope.as_str().to_owned()],
+            ip_hash: Some(blake3_hex(&client_ip_with_config(
                 req,
-                handles.client_ip_config(),
+                &endpoint.config.client_ip,
             ))),
             user_agent_hash,
-        )
+        })
         .await
     {
         tracing::warn!(%error, token_id = %token_id, "failed to insert SCIM token audit event");
@@ -233,7 +233,7 @@ async fn record_scim_token_use(
 }
 
 fn audit_scim_token_denied(
-    handles: &ScimHandles,
+    endpoint: &ScimEndpoint,
     req: &HttpRequest,
     required_scope: ScimRequiredScope,
     reason: &str,
@@ -249,7 +249,7 @@ fn audit_scim_token_denied(
                 "ip_hash",
                 json!(blake3_hex(&client_ip_with_config(
                     req,
-                    handles.client_ip_config()
+                    &endpoint.config.client_ip
                 ))),
             ),
         ]),

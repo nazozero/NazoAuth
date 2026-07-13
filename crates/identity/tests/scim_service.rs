@@ -1,10 +1,12 @@
 use std::sync::{Arc, Mutex};
 
 use nazo_identity::ports::{
-    NewScimUser, RepositoryError, RepositoryFuture, ScimListQuery, ScimRepositoryPort, UserPage,
+    NewScimUser, RepositoryError, RepositoryFuture, ScimCredentialAuditPort, ScimCredentialUse,
+    ScimListQuery, ScimRepositoryPort, UserPage,
 };
-use nazo_identity::scim::{NormalizedScimUser, ScimPatch, ScimService};
+use nazo_identity::scim::{NormalizedScimUser, ScimPatch, ScimService, ScimTokenCredential};
 use nazo_identity::{PublicAccount, TenantContext, UserId};
+use uuid::Uuid;
 
 #[derive(Clone, Default)]
 struct RecordingScimRepository {
@@ -61,6 +63,28 @@ impl ScimRepositoryPort for RecordingScimRepository {
     }
 }
 
+#[derive(Default)]
+struct RecordingCredentialAudit {
+    credential: Option<ScimTokenCredential>,
+    usage: Mutex<Option<ScimCredentialUse>>,
+}
+
+impl ScimCredentialAuditPort for RecordingCredentialAudit {
+    fn active_credential<'a>(
+        &'a self,
+        _token_hash: &'a str,
+    ) -> RepositoryFuture<'a, Option<ScimTokenCredential>> {
+        Box::pin(async move { Ok(self.credential.clone()) })
+    }
+
+    fn record_use<'a>(&'a self, usage: ScimCredentialUse) -> RepositoryFuture<'a, ()> {
+        Box::pin(async move {
+            *self.usage.lock().expect("usage recorder poisoned") = Some(usage);
+            Ok(())
+        })
+    }
+}
+
 fn unsupported<'a, T>() -> RepositoryFuture<'a, T> {
     Box::pin(async {
         Err(RepositoryError::Unexpected(
@@ -72,7 +96,10 @@ fn unsupported<'a, T>() -> RepositoryFuture<'a, T> {
 #[tokio::test]
 async fn list_users_builds_a_tenant_scoped_repository_query() {
     let repository = RecordingScimRepository::default();
-    let service = ScimService::new(repository.clone());
+    let service = ScimService::new(
+        Arc::new(repository.clone()),
+        Arc::new(RecordingCredentialAudit::default()),
+    );
     let tenant = TenantContext::default_system();
 
     let page = service
@@ -92,4 +119,42 @@ async fn list_users_builds_a_tenant_scoped_repository_query() {
     assert_eq!(query.after, None);
     assert_eq!(query.limit, 51);
     assert_eq!(query.offset, 7);
+}
+
+#[tokio::test]
+async fn credential_lookup_and_usage_are_delegated_to_the_audit_port() {
+    let credential = ScimTokenCredential {
+        id: Uuid::from_u128(11),
+        tenant_id: Uuid::from_u128(12),
+        scopes: vec!["scim:read".to_owned()],
+    };
+    let audit = Arc::new(RecordingCredentialAudit {
+        credential: Some(credential.clone()),
+        usage: Mutex::new(None),
+    });
+    let service = ScimService::new(Arc::new(RecordingScimRepository::default()), audit.clone());
+
+    assert_eq!(
+        service
+            .active_credential("hashed-token")
+            .await
+            .expect("credential lookup should succeed"),
+        Some(credential.clone())
+    );
+
+    let usage = ScimCredentialUse {
+        token_id: credential.id,
+        tenant_id: credential.tenant_id,
+        scopes: credential.scopes,
+        ip_hash: Some("ip-hash".to_owned()),
+        user_agent_hash: Some("ua-hash".to_owned()),
+    };
+    service
+        .record_credential_use(usage.clone())
+        .await
+        .expect("credential usage should record");
+    assert_eq!(
+        audit.usage.lock().expect("usage recorder poisoned").clone(),
+        Some(usage)
+    );
 }

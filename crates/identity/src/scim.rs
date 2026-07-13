@@ -1,4 +1,4 @@
-use std::{error::Error, fmt};
+use std::{error::Error, fmt, sync::Arc};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -7,21 +7,26 @@ use uuid::Uuid;
 
 use crate::email::normalize_email_address;
 use crate::ports::{
-    NewScimUser, PasswordHashInput, RepositoryError, ScimListQuery, ScimRepositoryPort, UserPage,
+    NewScimUser, PasswordHashInput, RepositoryError, ScimCredentialAuditPort, ScimCredentialUse,
+    ScimListQuery, ScimRepositoryPort, UserPage,
 };
 use crate::{PublicAccount, TenantContext, UserId};
 
 #[derive(Clone)]
-pub struct ScimService<R> {
-    repository: R,
+pub struct ScimService {
+    repository: Arc<dyn ScimRepositoryPort>,
+    credentials: Arc<dyn ScimCredentialAuditPort>,
 }
 
-impl<R> ScimService<R>
-where
-    R: ScimRepositoryPort,
-{
-    pub fn new(repository: R) -> Self {
-        Self { repository }
+impl ScimService {
+    pub fn new(
+        repository: Arc<dyn ScimRepositoryPort>,
+        credentials: Arc<dyn ScimCredentialAuditPort>,
+    ) -> Self {
+        Self {
+            repository,
+            credentials,
+        }
     }
 
     pub async fn list_users(
@@ -90,6 +95,20 @@ where
         user_id: UserId,
     ) -> Result<bool, RepositoryError> {
         self.repository.deactivate(tenant, user_id).await
+    }
+
+    pub async fn active_credential(
+        &self,
+        token_hash: &str,
+    ) -> Result<Option<ScimTokenCredential>, RepositoryError> {
+        self.credentials.active_credential(token_hash).await
+    }
+
+    pub async fn record_credential_use(
+        &self,
+        usage: ScimCredentialUse,
+    ) -> Result<(), RepositoryError> {
+        self.credentials.record_use(usage).await
     }
 }
 
