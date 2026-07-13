@@ -23,7 +23,7 @@ use crate::support::{
     IpCidr, SessionPayload, current_session, hash_client_secret, valkey_del, valkey_set_ex,
 };
 
-fn authorization_service(state: &Data<AppState>) -> Data<ServerAuthorizationService> {
+fn authorization_service(state: &AppState) -> Data<ServerAuthorizationService> {
     let connection = state.valkey_connection();
     Data::new(ServerAuthorizationService::new(
         nazo_postgres::AuthorizationFlowRepository::new(state.diesel_db.clone(), DEFAULT_TENANT_ID),

@@ -628,9 +628,10 @@ async fn concurrent_mfa_step_up_consumes_backup_code_exactly_once() {
         1
     );
     assert!(
-        !verify_user_mfa_code(&fixture.state.diesel_db, &user.identity(), &code)
+        verify_user_mfa_code(&fixture.state.diesel_db, &user.identity(), &code)
             .await
-            .expect("consumed backup code lookup should succeed"),
+            .expect("consumed backup code lookup should succeed")
+            .is_none(),
         "a backup code accepted by one concurrent step-up must be unusable afterwards"
     );
 }

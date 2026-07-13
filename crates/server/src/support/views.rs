@@ -1,8 +1,8 @@
 //! JSON view 组装函数。
 use super::json_array_to_strings;
+use crate::domain::ClientRow;
 #[cfg(test)]
 use crate::domain::DatabaseUserFixture;
-use crate::domain::{AppState, ClientRow};
 #[cfg(test)]
 use actix_web::http::header;
 use actix_web::http::header::HeaderMap;
@@ -16,14 +16,6 @@ use std::collections::HashMap;
 #[cfg(test)]
 use uuid::Uuid;
 // 将数据库行转换为前端和管理端直接消费的 JSON 形状。
-
-pub(crate) async fn auth_me_json(state: &AppState, user: &PublicAccount) -> anyhow::Result<Value> {
-    let count = nazo_postgres::GrantRepository::new(state.diesel_db.clone())
-        .authorized_client_count(user.id())
-        .await
-        .map_err(|error| anyhow::anyhow!("failed to count authorized clients: {error}"))?;
-    Ok(auth_me_json_with_count(user, count))
-}
 
 pub(crate) fn auth_me_json_with_count(user: &PublicAccount, count: i64) -> Value {
     json!({
