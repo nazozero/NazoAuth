@@ -12,6 +12,13 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
+use crate::domain::{AppState, ClientRow, DatabaseUserFixture};
+use crate::settings::Settings;
+use crate::support::sessions::SessionHttpConfig;
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, OAuthJsonErrorFields, SessionPayload, valkey_set_ex,
+};
+use chrono::Utc;
 use nazo_postgres::{create_pool, get_conn};
 
 use crate::http::admin::clients::create::{
@@ -84,6 +91,43 @@ fn test_state() -> AppState {
         ),
         keyset: crate::test_support::test_key_manager(),
     }
+}
+
+fn admin_grant_dependencies(
+    state: &Data<AppState>,
+) -> (
+    Data<AdminSessionHandles>,
+    Data<GrantRepository>,
+    Data<OAuthClientRepository>,
+) {
+    let session = state.settings.session();
+    (
+        Data::new(AdminSessionHandles::new(
+            nazo_valkey::SessionStore::new(&state.valkey_connection()),
+            nazo_postgres::UserRepository::new(state.diesel_db.clone()),
+            SessionHttpConfig::new(session.session_cookie_name, session.csrf_cookie_name),
+        )),
+        Data::new(GrantRepository::new(state.diesel_db.clone())),
+        Data::new(OAuthClientRepository::new(state.diesel_db.clone())),
+    )
+}
+
+async fn invoke_admin_grants(
+    state: Data<AppState>,
+    req: HttpRequest,
+    query: Query<HashMap<String, String>>,
+) -> HttpResponse {
+    let (admin_sessions, grants, _) = admin_grant_dependencies(&state);
+    admin_grants(admin_sessions, grants, req, query).await
+}
+
+async fn invoke_admin_revoke_grant(
+    state: Data<AppState>,
+    req: HttpRequest,
+    payload: Json<GrantRevokeRequest>,
+) -> HttpResponse {
+    let (admin_sessions, grants, clients) = admin_grant_dependencies(&state);
+    admin_revoke_grant(admin_sessions, grants, clients, req, payload).await
 }
 
 fn create_client_request(client_name: &str) -> CreateClientRequest {
@@ -483,7 +527,7 @@ async fn admin_grants_requires_admin_before_database_lookup() {
         .uri("/admin/grants")
         .to_http_request();
 
-    let response = admin_grants(state, req, Query(HashMap::new())).await;
+    let response = invoke_admin_grants(state, req, Query(HashMap::new())).await;
 
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     assert_eq!(
@@ -503,7 +547,7 @@ async fn admin_revoke_grant_rejects_missing_csrf_before_auth_or_lookup() {
         ))
         .to_http_request();
 
-    let response = admin_revoke_grant(
+    let response = invoke_admin_revoke_grant(
         state,
         req,
         Json(GrantRevokeRequest {
@@ -539,7 +583,7 @@ async fn admin_revoke_grant_requires_admin_even_with_valid_csrf() {
     let csrf = format!("csrf-{suffix}");
     fixture.store_session(&non_admin, &sid).await;
 
-    let response = admin_revoke_grant(
+    let response = invoke_admin_revoke_grant(
         fixture.state.clone(),
         fixture.admin_post_request(&sid, &csrf, "/admin/grants/revoke"),
         Json(GrantRevokeRequest {
@@ -575,7 +619,7 @@ async fn admin_grants_list_returns_admin_view_without_token_material() {
     let sid = format!("sid-{suffix}");
     fixture.store_session(&admin, &sid).await;
 
-    let response = admin_grants(
+    let response = invoke_admin_grants(
         fixture.state.clone(),
         fixture.admin_get_request(&sid, "/admin/grants?page=1&page_size=20"),
         Query(HashMap::from([
@@ -626,7 +670,7 @@ async fn admin_revoke_grant_validates_input_and_removes_live_grants() {
     let csrf = format!("csrf-{suffix}");
     fixture.store_session(&admin, &sid).await;
 
-    let invalid_user_response = admin_revoke_grant(
+    let invalid_user_response = invoke_admin_revoke_grant(
         fixture.state.clone(),
         fixture.admin_post_request(&sid, &csrf, "/admin/grants/revoke"),
         Json(GrantRevokeRequest {
@@ -641,7 +685,7 @@ async fn admin_revoke_grant_validates_input_and_removes_live_grants() {
         Some("invalid_request")
     );
 
-    let missing_client_response = admin_revoke_grant(
+    let missing_client_response = invoke_admin_revoke_grant(
         fixture.state.clone(),
         fixture.admin_post_request(&sid, &csrf, "/admin/grants/revoke"),
         Json(GrantRevokeRequest {
@@ -656,7 +700,7 @@ async fn admin_revoke_grant_validates_input_and_removes_live_grants() {
         Some("invalid_request")
     );
 
-    let response = admin_revoke_grant(
+    let response = invoke_admin_revoke_grant(
         fixture.state.clone(),
         fixture.admin_post_request(&sid, &csrf, "/admin/grants/revoke"),
         Json(GrantRevokeRequest {
@@ -699,7 +743,7 @@ async fn admin_grants_list_surfaces_backend_failure_when_projection_breaks() {
         )
         .await;
 
-    let response = admin_grants(
+    let response = invoke_admin_grants(
         fixture.state.clone(),
         fixture.admin_get_request(sid, "/admin/grants"),
         Query(HashMap::new()),
@@ -732,7 +776,7 @@ async fn admin_revoke_grant_surfaces_client_lookup_failure_after_admin_authentic
         .rename_column("oauth_clients", "client_id", "client_id_unavailable")
         .await;
 
-    let response = admin_revoke_grant(
+    let response = invoke_admin_revoke_grant(
         fixture.state.clone(),
         fixture.admin_post_request(&sid, &csrf, "/admin/grants/revoke"),
         Json(GrantRevokeRequest {
@@ -770,7 +814,7 @@ async fn admin_revoke_grant_surfaces_transaction_failure_without_partial_revocat
         .rename_column("oauth_tokens", "revoked_at", "revoked_at_unavailable")
         .await;
 
-    let response = admin_revoke_grant(
+    let response = invoke_admin_revoke_grant(
         fixture.state.clone(),
         fixture.admin_post_request(&sid, &csrf, "/admin/grants/revoke"),
         Json(GrantRevokeRequest {
