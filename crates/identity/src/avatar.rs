@@ -245,10 +245,7 @@ where
 fn avatar_url_version(avatar_url: &str) -> Result<&str, ()> {
     avatar_url
         .strip_prefix(AVATAR_URL_PREFIX)
-        .filter(|version| {
-            !version.is_empty()
-                && !version.contains(|character| matches!(character, '&' | '#' | '/' | '?'))
-        })
+        .filter(|version| !version.is_empty() && !version.contains(['&', '#', '/', '?']))
         .ok_or(())
 }
 

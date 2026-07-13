@@ -364,7 +364,6 @@ mod tests {
             client_secret: Some("secret".to_owned()),
             client_assertion: Some("assertion".to_owned()),
             method: "client_secret_basic".to_owned(),
-            ..Default::default()
         };
         assert_eq!(
             client_authentication_requirement(

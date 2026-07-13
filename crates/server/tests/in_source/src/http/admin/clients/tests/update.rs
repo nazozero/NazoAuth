@@ -459,8 +459,7 @@ async fn patch_rejects_redirect_uri_with_surrounding_whitespace() {
         crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
-    .err()
-    .expect("redirect_uri metadata must be an exact registered value");
+    .expect_err("redirect_uri metadata must be an exact registered value");
 
     assert!(
         error.to_string().contains("redirect_uri"),
@@ -481,8 +480,7 @@ async fn patch_rejects_post_logout_redirect_uri_with_surrounding_whitespace() {
         crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
-    .err()
-    .expect("post_logout_redirect_uri metadata must not be silently normalized");
+    .expect_err("post_logout_redirect_uri metadata must not be silently normalized");
 
     assert!(
         error.to_string().contains("post_logout_redirect_uri"),
@@ -503,8 +501,7 @@ async fn patch_rejects_pairwise_when_secret_is_not_configured() {
         crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
-    .err()
-    .expect("pairwise subject update requires a configured server secret");
+    .expect_err("pairwise subject update requires a configured server secret");
 
     assert!(
         error.to_string().contains("PAIRWISE_SUBJECT_SECRET"),
@@ -556,8 +553,7 @@ async fn patch_rejects_pairwise_redirects_with_multiple_hosts_without_sector_uri
         crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
-    .err()
-    .expect("multi-host pairwise redirect set requires a sector_identifier_uri");
+    .expect_err("multi-host pairwise redirect set requires a sector_identifier_uri");
 
     assert!(
         error.to_string().contains("sector_identifier_uri"),
@@ -583,8 +579,7 @@ async fn patch_reports_sector_identifier_fetch_failure_for_new_pairwise_uri() {
         crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
-    .err()
-    .expect("unresolvable sector_identifier_uri must fail patch validation");
+    .expect_err("unresolvable sector_identifier_uri must fail patch validation");
 
     assert!(
         error.to_string().contains("sector_identifier_uri 获取失败"),
@@ -631,8 +626,7 @@ async fn patch_rejects_modifying_existing_sector_identifier_uri() {
         crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
-    .err()
-    .expect("existing sector_identifier_uri must be immutable");
+    .expect_err("existing sector_identifier_uri must be immutable");
 
     assert!(
         error.to_string().contains("不可修改"),

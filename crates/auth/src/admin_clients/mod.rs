@@ -457,7 +457,7 @@ where
     )
     .await?;
     Ok(PreparedClientRegistration {
-        tenant: policy.tenant.clone(),
+        tenant: policy.tenant,
         registration: ValidatedClientRegistration {
             client_id: format!("client-{}", Uuid::now_v7()),
             client_name: request.client_name,
