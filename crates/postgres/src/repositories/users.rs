@@ -613,3 +613,25 @@ impl nazo_identity::ports::LoginAccountRepositoryPort for UserRepository {
         )
     }
 }
+
+impl nazo_identity::ports::PasskeyAccountRepositoryPort for UserRepository {
+    fn by_email<'a>(
+        &'a self,
+        tenant_id: nazo_identity::TenantId,
+        email: &'a str,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, Option<nazo_identity::PublicAccount>> {
+        Box::pin(
+            async move { UserRepository::public_account_by_email(self, tenant_id, email).await },
+        )
+    }
+
+    fn by_id(
+        &self,
+        tenant_id: nazo_identity::TenantId,
+        user_id: nazo_identity::UserId,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, Option<nazo_identity::PublicAccount>> {
+        Box::pin(
+            async move { UserRepository::public_account_by_id(self, tenant_id, user_id).await },
+        )
+    }
+}

@@ -1,40 +1,130 @@
 use super::*;
 use std::sync::Arc;
-
-use crate::schema::{user_passkey_credentials, users};
-use diesel::prelude::*;
-use diesel_async::RunQueryDsl;
-use nazo_postgres::get_conn;
-
-fn passkey_user_handle(user: &DatabaseUserFixture) -> Vec<u8> {
-    crate::support::passkey_user_handle(&user.identity()).expect("test user IDs must be valid")
-}
 use std::time::Duration as StdDuration;
 
+use crate::domain::{AppState, DatabasePasskeyFixture, DatabaseUserFixture};
+use crate::schema::{user_passkey_credentials, users};
+use crate::settings::Settings;
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, MFA_REMEMBERED_COOKIE_NAME,
+    SessionPayload, remember_mfa_device, valkey_get,
+};
 use actix_web::http::header;
+use actix_web::web::{Data, Json};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64URL;
+use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Text, Uuid as SqlUuid};
+use diesel_async::RunQueryDsl;
 use ed25519_dalek::{Signer, SigningKey};
 use fred::interfaces::ClientLike;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
-use passkey_auth::{AuthenticationResponse, PasskeyCredential, RegistrationResponse};
+use nazo_identity::PublicAccount;
+use nazo_postgres::get_conn;
+use passkey_auth::{AuthenticationResponse, PasskeyCredential, RegistrationResponse, Webauthn};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
+use uuid::Uuid;
 
 use crate::config::ConfigSource;
 use nazo_postgres::create_pool;
 
-fn settings() -> Settings {
-    let mut settings =
-        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.session.session_cookie_name = "nazo_session".to_owned();
-    settings.session.csrf_cookie_name = "nazo_csrf".to_owned();
-    settings.session.session_ttl_seconds = 900;
-    settings.session.cookie_secure = true;
-    settings
+#[test]
+fn passkey_login_transport_has_no_identity_or_storage_orchestration() {
+    let source = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/http/auth/passkey.rs"
+    ));
+    for forbidden in [
+        "AppState",
+        "nazo_postgres",
+        "nazo_valkey",
+        "PasskeyRepository",
+        "AuthenticationStore",
+        "passkey_webauthn",
+        "update_counter(",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "passkey login transport must not depend on {forbidden}"
+        );
+    }
+}
+
+async fn passkey_login_begin(
+    state: Data<AppState>,
+    req: HttpRequest,
+    payload: Json<PasskeyLoginBeginRequest>,
+) -> HttpResponse {
+    super::passkey_login_begin(
+        crate::test_support::auth_request_limiter(&state),
+        crate::test_support::passkey_service(&state),
+        req,
+        payload,
+    )
+    .await
+}
+
+async fn passkey_login_finish(
+    state: Data<AppState>,
+    req: HttpRequest,
+    payload: Json<PasskeyLoginFinishRequest>,
+) -> HttpResponse {
+    super::passkey_login_finish(
+        crate::test_support::auth_request_limiter(&state),
+        crate::test_support::client_ip_config(&state),
+        crate::test_support::passkey_service(&state),
+        crate::test_support::passkey_http_config(&state),
+        req,
+        payload,
+    )
+    .await
+}
+
+fn passkey_login_failed_response() -> HttpResponse {
+    super::passkey_login_error(PasskeyError::LoginFailed)
+}
+
+fn passkey_ceremony_expired_response() -> HttpResponse {
+    super::passkey_login_error(PasskeyError::CeremonyExpired)
+}
+
+async fn load_user_passkeys(
+    state: &AppState,
+    user: &PublicAccount,
+) -> Result<Vec<nazo_identity::ports::PasskeyCredential>, HttpResponse> {
+    nazo_postgres::PasskeyRepository::new(state.diesel_db.clone())
+        .list(user.tenant().tenant_id, user.user_id())
+        .await
+        .map_err(|_| {
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "passkey state unavailable.",
+            )
+        })
+}
+
+fn passkey_user_handle(user: &DatabaseUserFixture) -> Vec<u8> {
+    nazo_identity::passkey::passkey_user_handle(
+        nazo_identity::TenantId::new(user.tenant_id).expect("test tenant ID must be valid"),
+        nazo_identity::UserId::new(user.id).expect("test user ID must be valid"),
+    )
+}
+
+fn passkey_credential_id(credential: &PasskeyCredential) -> String {
+    credential.id.to_b64url()
+}
+
+fn passkey_webauthn(settings: &Settings) -> Webauthn {
+    let passkey = &settings.identity.passkey;
+    Webauthn::new(&passkey.rp_id, &passkey.rp_name, &passkey.origin)
+        .require_user_verification(passkey.require_user_verification)
+        .require_user_handle(passkey.require_user_handle)
+        .strict_base64(passkey.strict_base64)
 }
 
 struct LivePasskeyFixture {
@@ -502,8 +592,20 @@ async fn expired_passkey_ceremony_is_invalid_request_without_session_material() 
 
 #[actix_web::test]
 async fn passkey_session_response_sets_bound_cookies_and_minimal_body() {
-    let settings = settings();
-    let response = passkey_session_response(&settings, "session-secret", "csrf-secret", 900, false);
+    let response = passkey_session_response(
+        &PasskeyHttpConfig::new("nazo_session", "nazo_csrf", 900, true),
+        nazo_identity::LoginSuccess {
+            session_id: "session-secret".to_owned(),
+            csrf_token: "csrf-secret".to_owned(),
+            session: nazo_identity::session::SessionRecord::new(
+                nazo_identity::UserId::new(Uuid::from_u128(1)).unwrap(),
+                Utc::now().timestamp(),
+                vec!["passkey".to_owned()],
+                false,
+                Some("oidc-session".to_owned()),
+            ),
+        },
+    );
 
     assert_eq!(response.status(), StatusCode::OK);
     let cookies = response

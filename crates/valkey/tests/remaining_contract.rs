@@ -4,7 +4,7 @@ use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{Builder, Config};
 use nazo_identity::ports::{
     EmailVerificationConsume, EmailVerificationStorePort, LoginSessionCreate, LoginSessionPort,
-    PasswordHashInput,
+    PasskeyCeremonyPort, PasswordHashInput,
 };
 use nazo_identity::session::SessionRecord;
 use nazo_valkey::{
@@ -66,6 +66,43 @@ async fn authentication_short_state_preserves_exact_keys_and_one_time_semantics(
             .await
             .unwrap()
             .is_none()
+    );
+}
+
+#[tokio::test]
+async fn typed_passkey_ceremony_is_atomically_consumed_once_under_concurrency() {
+    let Some((connection, _inspector)) = setup().await else {
+        return;
+    };
+    let store = AuthenticationStore::new(&connection);
+    let suffix = uuid::Uuid::now_v7();
+    let ceremony_id = format!("typed-{suffix}");
+    let stored: nazo_identity::StoredPasskeyRegistration = serde_json::from_value(json!({
+        "tenant_id": nazo_identity::TenantId::new(uuid::Uuid::now_v7()).unwrap(),
+        "user_id": nazo_identity::UserId::new(uuid::Uuid::now_v7()).unwrap(),
+        "label": "Concurrent key",
+        "state": {
+            "challenge": vec![7_u8; 32],
+            "user_id": vec![9_u8; 32],
+            "created_at": 1,
+        },
+    }))
+    .unwrap();
+    PasskeyCeremonyPort::store_registration(&store, &ceremony_id, &stored, 30)
+        .await
+        .unwrap();
+
+    let (left, right) = tokio::join!(
+        PasskeyCeremonyPort::take_registration(&store, &ceremony_id),
+        PasskeyCeremonyPort::take_registration(&store, &ceremony_id)
+    );
+    let consumed = [left.unwrap(), right.unwrap()]
+        .into_iter()
+        .filter(Option::is_some)
+        .count();
+    assert_eq!(
+        consumed, 1,
+        "GETDEL must publish the ceremony to one finisher"
     );
 }
 

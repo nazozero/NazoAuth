@@ -33,6 +33,10 @@ pub use model::{
     LoginIdentity, PasswordHash, PostalAddress, Principal, PublicAccount, SubjectClaims,
     UserProfile, UserRole,
 };
+pub use passkey::{
+    PasskeyAuditEvent, PasskeyError, PasskeyLoginBegin, PasskeyRegistrationBegin, PasskeyService,
+    PasskeyServiceConfig, StoredPasskeyAuthentication, StoredPasskeyRegistration,
+};
 pub use profile::{
     AccessRequestListError, AccessRequestWithDelivery, AccountOverview, AccountProfileService,
     AvailableDelivery, ClientAccessService, DeliveryReadError, FederationLinksService,

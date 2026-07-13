@@ -1,36 +1,20 @@
 //! Current-user WebAuthn/passkey registration and management.
-use nazo_http_actix::{empty_response, json_response, json_response_status, oauth_error};
 
-use crate::domain::AppState;
-#[cfg(test)]
-use crate::domain::{DatabasePasskeyFixture, DatabaseUserFixture};
-#[cfg(test)]
-use crate::settings::Settings;
-#[cfg(test)]
-use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, PASSKEY_CEREMONY_TTL_SECONDS,
-    SessionPayload, valkey_set_ex,
-};
-use crate::support::{
-    StoredPasskeyRegistration, audit_event, audit_fields, current_user_or_login_required,
-    has_valid_csrf_token, normalize_ceremony_id, normalize_passkey_label, passkey_credential_id,
-    passkey_credential_ids, passkey_public_json, passkey_user_handle, passkey_webauthn,
-    random_urlsafe_token, registration_key, store_passkey_ceremony, take_passkey_ceremony,
-};
 use actix_web::http::StatusCode;
-use actix_web::web::{Data, Json};
+use actix_web::web::{Data, Json, Path};
 use actix_web::{HttpRequest, HttpResponse};
-#[cfg(test)]
-use chrono::Utc;
-use nazo_http_actix::csrf_error;
-use nazo_identity::PublicAccount;
+use nazo_http_actix::{
+    csrf_error, empty_response, json_response, json_response_status, oauth_error,
+};
+use nazo_identity::PasskeyError;
 use nazo_identity::ports::PasskeyCredential;
 use passkey_auth::RegistrationResponse;
 use serde::Deserialize;
-#[cfg(test)]
-use serde_json::Value;
-use serde_json::json;
+use serde_json::{Value, json};
 use uuid::Uuid;
+
+use crate::bootstrap::LocalPasskeyService;
+use crate::support::sessions::SessionProfileHandles;
 
 #[derive(Deserialize)]
 pub(crate) struct PasskeyBeginRequest {
@@ -44,248 +28,81 @@ pub(crate) struct PasskeyFinishRequest {
 }
 
 pub(crate) async fn passkey_registration_begin(
-    state: Data<AppState>,
+    sessions: Data<SessionProfileHandles>,
+    passkeys: Data<LocalPasskeyService>,
     req: HttpRequest,
     Json(payload): Json<PasskeyBeginRequest>,
 ) -> HttpResponse {
-    if !has_valid_csrf_token(&state, &req, None) {
+    if !sessions.has_valid_csrf_token(&req, None) {
         return csrf_error();
     }
-    let user = match current_user_or_login_required(&state, &req).await {
-        Ok(user) => user,
+    let account = match sessions.current_user_or_login_required(&req).await {
+        Ok(account) => account,
         Err(response) => return response,
     };
-    let label = match normalize_passkey_label(payload.label) {
-        Ok(label) => label,
-        Err(response) => return response,
-    };
-    let existing = match load_user_passkeys(&state, &user).await {
-        Ok(rows) => rows,
-        Err(response) => return response,
-    };
-    let existing_ids = match passkey_credential_ids(&existing) {
-        Ok(ids) => ids,
-        Err(error) => {
-            tracing::warn!(%error, user_id = %user.id(), "stored passkey credential is malformed");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "passkey state unavailable.",
-            );
-        }
-    };
-    let webauthn = passkey_webauthn(&state.settings);
-    let user_handle = match passkey_user_handle(&user) {
-        Ok(user_handle) => user_handle,
-        Err(error) => {
-            tracing::warn!(%error, user_id = %user.id(), "stored passkey owner identifiers are invalid");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "passkey state unavailable.",
-            );
-        }
-    };
-    let (challenge, registration_state) = webauthn.start_registration(
-        &user_handle,
-        &user.account.email,
-        user.profile
-            .display_name
-            .as_deref()
-            .unwrap_or(&user.account.email),
-        &existing_ids,
-    );
-    let ceremony_id = random_urlsafe_token();
-    let stored = StoredPasskeyRegistration {
-        user_id: user.id(),
-        tenant_id: user.tenant_id(),
-        label,
-        state: registration_state,
-    };
-    if let Err(error) =
-        store_passkey_ceremony(&state, registration_key(&ceremony_id), &stored).await
-    {
-        tracing::warn!(%error, user_id = %user.id(), "failed to store passkey registration ceremony");
-        return oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "passkey state unavailable.",
-        );
+    match passkeys.registration_begin(&account, payload.label).await {
+        Ok(begin) => json_response(json!({
+            "ceremony_id": begin.ceremony_id,
+            "publicKey": begin.challenge,
+        })),
+        Err(error) => registration_begin_error(error),
     }
-
-    json_response(json!({
-        "ceremony_id": ceremony_id,
-        "publicKey": challenge
-    }))
 }
 
 pub(crate) async fn passkey_registration_finish(
-    state: Data<AppState>,
+    sessions: Data<SessionProfileHandles>,
+    passkeys: Data<LocalPasskeyService>,
     req: HttpRequest,
     Json(payload): Json<PasskeyFinishRequest>,
 ) -> HttpResponse {
-    if !has_valid_csrf_token(&state, &req, None) {
+    if !sessions.has_valid_csrf_token(&req, None) {
         return csrf_error();
     }
-    let user = match current_user_or_login_required(&state, &req).await {
-        Ok(user) => user,
+    let account = match sessions.current_user_or_login_required(&req).await {
+        Ok(account) => account,
         Err(response) => return response,
     };
-    let ceremony_id = match normalize_ceremony_id(&payload.ceremony_id) {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    let stored = match take_passkey_ceremony::<StoredPasskeyRegistration>(
-        &state,
-        registration_key(&ceremony_id),
-    )
-    .await
+    match passkeys
+        .registration_finish(&account, &payload.ceremony_id, payload.response)
+        .await
     {
-        Ok(Some(stored)) => stored,
-        Ok(None) => {
-            return oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "passkey ceremony expired.",
-            );
-        }
-        Err(response) => return response,
-    };
-    if stored.user_id != user.id() || stored.tenant_id != user.tenant_id() {
-        audit_event(
-            "passkey_registration_rejected",
-            audit_fields(&[
-                ("user_id", json!(user.id())),
-                ("reason", json!("ceremony_user_mismatch")),
-            ]),
-        );
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "passkey ceremony mismatch.",
-        );
-    }
-    let credential = match passkey_webauthn(&state.settings)
-        .finish_registration(&stored.state, &payload.response)
-    {
-        Ok(credential) => credential,
-        Err(error) => {
-            audit_event(
-                "passkey_registration_rejected",
-                audit_fields(&[
-                    ("user_id", json!(user.id())),
-                    ("reason", json!(error.to_string())),
-                ]),
-            );
-            return oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "passkey registration failed.",
-            );
-        }
-    };
-    let credential_id = passkey_credential_id(&credential);
-    let credential_json = match serde_json::to_value(&credential) {
-        Ok(value) => value,
-        Err(error) => {
-            tracing::warn!(%error, "failed to serialize passkey credential");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "passkey registration failed.",
-            );
-        }
-    };
-    let inserted = nazo_postgres::PasskeyRepository::new(state.diesel_db.clone())
-        .insert(
-            user.tenant().tenant_id,
-            user.user_id(),
-            credential_id,
-            credential_json,
-            stored.label,
-            i64::from(credential.counter),
-        )
-        .await;
-    match inserted {
-        Ok(row) => {
-            audit_event(
-                "passkey_registered",
-                audit_fields(&[
-                    ("user_id", json!(user.id())),
-                    ("credential_id", json!(row.id)),
-                ]),
-            );
-            passkey_created_response(&row)
-        }
-        Err(nazo_identity::ports::RepositoryError::Conflict) => {
-            passkey_already_registered_response()
-        }
-        Err(error) => {
-            tracing::warn!(%error, "failed to insert passkey credential");
-            oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "passkey registration failed.",
-            )
-        }
+        Ok(credential) => passkey_created_response(&credential),
+        Err(error) => registration_error(error),
     }
 }
 
-pub(crate) async fn passkey_list(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
-    let user = match current_user_or_login_required(&state, &req).await {
-        Ok(user) => user,
+pub(crate) async fn passkey_list(
+    sessions: Data<SessionProfileHandles>,
+    passkeys: Data<LocalPasskeyService>,
+    req: HttpRequest,
+) -> HttpResponse {
+    let account = match sessions.current_user_or_login_required(&req).await {
+        Ok(account) => account,
         Err(response) => return response,
     };
-    let rows = match load_user_passkeys(&state, &user).await {
-        Ok(rows) => rows,
-        Err(response) => return response,
-    };
-    passkey_list_response(&rows)
-}
-
-fn passkey_list_response(rows: &[PasskeyCredential]) -> HttpResponse {
-    json_response(json!({
-        "passkeys": rows.iter().map(passkey_public_json).collect::<Vec<_>>()
-    }))
-}
-
-fn passkey_created_response(row: &PasskeyCredential) -> HttpResponse {
-    json_response_status(StatusCode::CREATED, passkey_public_json(row))
-}
-
-fn passkey_already_registered_response() -> HttpResponse {
-    oauth_error(
-        StatusCode::CONFLICT,
-        "invalid_request",
-        "passkey already registered.",
-    )
+    match passkeys.list(&account).await {
+        Ok(credentials) => passkey_list_response(&credentials),
+        Err(error) => passkey_management_error(error, "passkey state unavailable."),
+    }
 }
 
 pub(crate) async fn passkey_delete(
-    state: Data<AppState>,
+    sessions: Data<SessionProfileHandles>,
+    passkeys: Data<LocalPasskeyService>,
     req: HttpRequest,
-    path: actix_web::web::Path<Uuid>,
+    path: Path<Uuid>,
 ) -> HttpResponse {
-    if !has_valid_csrf_token(&state, &req, None) {
+    if !sessions.has_valid_csrf_token(&req, None) {
         return csrf_error();
     }
-    let user = match current_user_or_login_required(&state, &req).await {
-        Ok(user) => user,
+    let account = match sessions.current_user_or_login_required(&req).await {
+        Ok(account) => account,
         Err(response) => return response,
     };
-    match nazo_postgres::PasskeyRepository::new(state.diesel_db.clone())
-        .delete(user.tenant().tenant_id, user.user_id(), path.into_inner())
-        .await
-    {
-        Ok(deleted) => passkey_delete_response(usize::from(deleted)),
-        Err(error) => {
-            tracing::warn!(%error, "failed to delete passkey credential");
-            oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "passkey delete failed.",
-            )
-        }
+    match passkeys.delete(&account, path.into_inner()).await {
+        Ok(()) => passkey_delete_response(1),
+        Err(PasskeyError::NotFound) => passkey_delete_response(0),
+        Err(error) => passkey_management_error(error, "passkey delete failed."),
     }
 }
 
@@ -300,21 +117,82 @@ fn passkey_delete_response(deleted_count: usize) -> HttpResponse {
     empty_response(StatusCode::NO_CONTENT)
 }
 
-pub(crate) async fn load_user_passkeys(
-    state: &AppState,
-    user: &PublicAccount,
-) -> Result<Vec<PasskeyCredential>, HttpResponse> {
-    nazo_postgres::PasskeyRepository::new(state.diesel_db.clone())
-        .list(user.tenant().tenant_id, user.user_id())
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, user_id = %user.id(), "failed to load passkey credentials");
-            oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "passkey state unavailable.",
-            )
-        })
+fn registration_error(error: PasskeyError) -> HttpResponse {
+    match error {
+        PasskeyError::InvalidLabel => oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "passkey label is too long.",
+        ),
+        PasskeyError::InvalidCeremonyId => oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "invalid ceremony id.",
+        ),
+        PasskeyError::CeremonyExpired => oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "passkey ceremony expired.",
+        ),
+        PasskeyError::CeremonyMismatch => oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "passkey ceremony mismatch.",
+        ),
+        PasskeyError::RegistrationFailed => oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "passkey registration failed.",
+        ),
+        PasskeyError::AlreadyRegistered => oauth_error(
+            StatusCode::CONFLICT,
+            "invalid_request",
+            "passkey already registered.",
+        ),
+        PasskeyError::CeremonyState(error) => passkey_management_error(
+            PasskeyError::CeremonyState(error),
+            "passkey state unavailable.",
+        ),
+        error => passkey_management_error(error, "passkey registration failed."),
+    }
+}
+
+fn registration_begin_error(error: PasskeyError) -> HttpResponse {
+    match error {
+        PasskeyError::InvalidLabel => oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "passkey label is too long.",
+        ),
+        error => passkey_management_error(error, "passkey state unavailable."),
+    }
+}
+
+fn passkey_management_error(error: PasskeyError, description: &'static str) -> HttpResponse {
+    tracing::warn!(?error, "passkey operation failed");
+    oauth_error(StatusCode::SERVICE_UNAVAILABLE, "server_error", description)
+}
+
+fn passkey_public_json(row: &PasskeyCredential) -> Value {
+    json!({
+        "id": row.id,
+        "label": row.label,
+        "credential_id": row.credential_id,
+        "sign_count": row.sign_count,
+        "last_used_at": row.last_used_at,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    })
+}
+
+fn passkey_list_response(rows: &[PasskeyCredential]) -> HttpResponse {
+    json_response(json!({
+        "passkeys": rows.iter().map(passkey_public_json).collect::<Vec<_>>()
+    }))
+}
+
+fn passkey_created_response(row: &PasskeyCredential) -> HttpResponse {
+    json_response_status(StatusCode::CREATED, passkey_public_json(row))
 }
 
 #[cfg(test)]

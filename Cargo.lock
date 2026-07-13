@@ -2242,6 +2242,7 @@ dependencies = [
  "chrono",
  "hmac 0.13.0",
  "lettre",
+ "passkey-auth",
  "rand 0.10.2",
  "serde",
  "serde_json",

@@ -2,9 +2,16 @@ use super::*;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
+use crate::bootstrap::PASSKEY_CEREMONY_TTL_SECONDS;
+use crate::domain::{AppState, DatabasePasskeyFixture, DatabaseUserFixture};
+use crate::settings::Settings;
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_set_ex,
+};
 use actix_web::{cookie::Cookie, http::header};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64URL;
+use chrono::Utc;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Jsonb, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
@@ -19,6 +26,127 @@ use sha2::{Digest, Sha256};
 use crate::config::ConfigSource;
 use nazo_postgres::create_pool;
 use nazo_postgres::get_conn;
+
+fn normalize_passkey_label(value: Option<String>) -> Result<String, HttpResponse> {
+    nazo_identity::passkey::normalize_passkey_label(value.as_deref())
+        .map_err(|_| super::registration_begin_error(PasskeyError::InvalidLabel))
+}
+
+fn normalize_ceremony_id(value: &str) -> Result<String, HttpResponse> {
+    nazo_identity::passkey::normalize_ceremony_id(value).map_err(|_| {
+        oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "invalid ceremony id.",
+        )
+    })
+}
+
+fn passkey_credential_id(credential: &passkey_auth::PasskeyCredential) -> String {
+    credential.id.to_b64url()
+}
+
+fn passkey_webauthn(settings: &Settings) -> passkey_auth::Webauthn {
+    let passkey = &settings.identity.passkey;
+    passkey_auth::Webauthn::new(&passkey.rp_id, &passkey.rp_name, &passkey.origin)
+        .require_user_verification(passkey.require_user_verification)
+        .require_user_handle(passkey.require_user_handle)
+        .strict_base64(passkey.strict_base64)
+}
+
+fn registration_key(ceremony_id: &str) -> String {
+    format!("oauth:passkey:registration:{ceremony_id}")
+}
+
+#[test]
+fn passkey_profile_transport_has_no_identity_or_storage_orchestration() {
+    let source = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/http/profile/passkeys.rs"
+    ));
+    for forbidden in [
+        "AppState",
+        "nazo_postgres",
+        "nazo_valkey",
+        "PasskeyRepository",
+        "AuthenticationStore",
+        "passkey_webauthn",
+        "store_passkey",
+        "take_passkey",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "passkey profile transport must not depend on {forbidden}"
+        );
+    }
+}
+
+async fn passkey_registration_begin(
+    state: Data<AppState>,
+    req: HttpRequest,
+    payload: Json<PasskeyBeginRequest>,
+) -> HttpResponse {
+    super::passkey_registration_begin(
+        crate::test_support::profile_sessions(&state),
+        crate::test_support::passkey_service(&state),
+        req,
+        payload,
+    )
+    .await
+}
+
+async fn passkey_registration_finish(
+    state: Data<AppState>,
+    req: HttpRequest,
+    payload: Json<PasskeyFinishRequest>,
+) -> HttpResponse {
+    super::passkey_registration_finish(
+        crate::test_support::profile_sessions(&state),
+        crate::test_support::passkey_service(&state),
+        req,
+        payload,
+    )
+    .await
+}
+
+async fn passkey_list(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
+    super::passkey_list(
+        crate::test_support::profile_sessions(&state),
+        crate::test_support::passkey_service(&state),
+        req,
+    )
+    .await
+}
+
+async fn passkey_delete(state: Data<AppState>, req: HttpRequest, path: Path<Uuid>) -> HttpResponse {
+    super::passkey_delete(
+        crate::test_support::profile_sessions(&state),
+        crate::test_support::passkey_service(&state),
+        req,
+        path,
+    )
+    .await
+}
+
+async fn load_user_passkeys(
+    state: &AppState,
+    user: &nazo_identity::PublicAccount,
+) -> Result<Vec<PasskeyCredential>, HttpResponse> {
+    nazo_postgres::PasskeyRepository::new(state.diesel_db.clone())
+        .list(user.tenant().tenant_id, user.user_id())
+        .await
+        .map_err(|_| {
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "passkey state unavailable.",
+            )
+        })
+}
+
+fn passkey_already_registered_response() -> HttpResponse {
+    super::registration_error(PasskeyError::AlreadyRegistered)
+}
 
 fn test_state() -> AppState {
     AppState {

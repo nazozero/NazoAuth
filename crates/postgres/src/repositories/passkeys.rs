@@ -165,6 +165,82 @@ impl PasskeyRepository {
         .map_err(map_error)
     }
 }
+
+impl nazo_identity::ports::PasskeyRepositoryPort for PasskeyRepository {
+    fn list(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, Vec<PasskeyCredential>> {
+        Box::pin(async move { PasskeyRepository::list(self, tenant_id, user_id).await })
+    }
+
+    fn by_credential_id<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        credential_id: &'a str,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, Option<PasskeyCredential>> {
+        Box::pin(async move {
+            PasskeyRepository::by_credential_id(self, tenant_id, user_id, credential_id).await
+        })
+    }
+
+    fn insert(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        credential_id: String,
+        credential: Value,
+        label: String,
+        sign_count: i64,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, PasskeyCredential> {
+        Box::pin(async move {
+            PasskeyRepository::insert(
+                self,
+                tenant_id,
+                user_id,
+                credential_id,
+                credential,
+                label,
+                sign_count,
+            )
+            .await
+        })
+    }
+
+    fn update_counter<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        credential_id: &'a str,
+        expected_sign_count: i64,
+        new_sign_count: i64,
+        credential: Value,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
+        Box::pin(async move {
+            PasskeyRepository::update_counter(
+                self,
+                tenant_id,
+                user_id,
+                credential_id,
+                expected_sign_count,
+                new_sign_count,
+                credential,
+            )
+            .await
+        })
+    }
+
+    fn delete(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        id: Uuid,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, bool> {
+        Box::pin(async move { PasskeyRepository::delete(self, tenant_id, user_id, id).await })
+    }
+}
 fn map_error(error: Error) -> RepositoryError {
     match error {
         Error::DatabaseError(DatabaseErrorKind::UniqueViolation, _) => RepositoryError::Conflict,

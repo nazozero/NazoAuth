@@ -127,6 +127,44 @@ pub(crate) mod test_support {
         ))
     }
 
+    pub(crate) fn passkey_service(
+        state: &crate::domain::AppState,
+    ) -> actix_web::web::Data<crate::bootstrap::LocalPasskeyService> {
+        let passkey = &state.settings.identity.passkey;
+        let session = &state.settings.session;
+        actix_web::web::Data::new(crate::bootstrap::LocalPasskeyService::new(
+            nazo_postgres::UserRepository::new(state.diesel_db.clone()),
+            nazo_postgres::PasskeyRepository::new(state.diesel_db.clone()),
+            nazo_valkey::AuthenticationStore::new(&state.valkey_connection()),
+            nazo_postgres::MfaRepository::new(state.diesel_db.clone()),
+            nazo_valkey::SessionStore::new(&state.valkey_connection()),
+            crate::bootstrap::TracingPasskeyAudit,
+            nazo_identity::PasskeyServiceConfig {
+                tenant_id: nazo_identity::TenantId::new(crate::support::DEFAULT_TENANT_ID).unwrap(),
+                rp_id: passkey.rp_id.to_owned(),
+                rp_name: passkey.rp_name.to_owned(),
+                origin: passkey.origin.to_owned(),
+                require_user_verification: passkey.require_user_verification,
+                require_user_handle: passkey.require_user_handle,
+                strict_base64: passkey.strict_base64,
+                ceremony_ttl_seconds: crate::bootstrap::PASSKEY_CEREMONY_TTL_SECONDS,
+                session_ttl_seconds: session.session_ttl_seconds,
+            },
+        ))
+    }
+
+    pub(crate) fn passkey_http_config(
+        state: &crate::domain::AppState,
+    ) -> actix_web::web::Data<crate::http::auth::passkey::PasskeyHttpConfig> {
+        let session = &state.settings.session;
+        actix_web::web::Data::new(crate::http::auth::passkey::PasskeyHttpConfig::new(
+            session.session_cookie_name.as_str(),
+            session.csrf_cookie_name.as_str(),
+            session.session_ttl_seconds,
+            session.cookie_secure,
+        ))
+    }
+
     pub(crate) fn auth_request_limiter(
         state: &crate::domain::AppState,
     ) -> actix_web::web::Data<crate::support::AuthRequestLimiter> {

@@ -4,11 +4,15 @@
 mod authentication_services;
 mod cors;
 mod observability;
+mod passkey_services;
 mod profile_services;
 mod registration_services;
 pub(crate) mod routes;
 pub(crate) use authentication_services::{
     LocalAuthenticationService, LoginPasswordVerifier, TracingAuthenticationAudit,
+};
+pub(crate) use passkey_services::{
+    LocalPasskeyService, PASSKEY_CEREMONY_TTL_SECONDS, TracingPasskeyAudit,
 };
 pub(crate) use profile_services::{
     AccountProfileService, ClientAccessProfileService, FederationProfileService,
@@ -29,6 +33,7 @@ use crate::http::admin::access_requests::AdminAccessRequestConfig;
 use crate::http::admin::clients::AdminClientConfig;
 use crate::http::auth::email_code::EmailCodeHttpConfig;
 use crate::http::auth::login::LoginHttpConfig;
+use crate::http::auth::passkey::PasskeyHttpConfig;
 use crate::http::authorization::{AuthorizationHttpConfig, ServerAuthorizationService};
 use crate::http::profile::oidc_logout::spawn_backchannel_logout_delivery_worker;
 use crate::http::scim::{ScimConfig, ScimEndpoint, ScimRuntimeAdmission};
@@ -308,6 +313,33 @@ pub async fn run() -> anyhow::Result<()> {
         session.session_ttl_seconds,
         session.cookie_secure,
     ));
+    let passkey = &identity.passkey;
+    let passkeys = web::Data::new(LocalPasskeyService::new(
+        nazo_postgres::UserRepository::new(state.diesel_db.clone()),
+        nazo_postgres::PasskeyRepository::new(state.diesel_db.clone()),
+        nazo_valkey::AuthenticationStore::new(&state.valkey_connection()),
+        nazo_postgres::MfaRepository::new(state.diesel_db.clone()),
+        nazo_valkey::SessionStore::new(&state.valkey_connection()),
+        TracingPasskeyAudit,
+        nazo_identity::PasskeyServiceConfig {
+            tenant_id: nazo_identity::TenantId::new(crate::support::DEFAULT_TENANT_ID)
+                .expect("default tenant ID is valid"),
+            rp_id: passkey.rp_id.to_owned(),
+            rp_name: passkey.rp_name.to_owned(),
+            origin: passkey.origin.to_owned(),
+            require_user_verification: passkey.require_user_verification,
+            require_user_handle: passkey.require_user_handle,
+            strict_base64: passkey.strict_base64,
+            ceremony_ttl_seconds: PASSKEY_CEREMONY_TTL_SECONDS,
+            session_ttl_seconds: session.session_ttl_seconds,
+        },
+    ));
+    let passkey_http_config = web::Data::new(PasskeyHttpConfig::new(
+        session.session_cookie_name.as_str(),
+        session.csrf_cookie_name.as_str(),
+        session.session_ttl_seconds,
+        session.cookie_secure,
+    ));
     spawn_backchannel_logout_delivery_worker(state.clone());
 
     let bind = config.string("BIND", "0.0.0.0:8000");
@@ -375,6 +407,8 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(registration.clone())
             .app_data(authentication.clone())
             .app_data(login_http_config.clone())
+            .app_data(passkeys.clone())
+            .app_data(passkey_http_config.clone())
             .app_data(dynamic_registration_handles.clone())
             .app_data(scim_endpoint.clone());
         app.configure(|cfg| routes::configure(cfg, &state.settings, perf_metrics_enabled))

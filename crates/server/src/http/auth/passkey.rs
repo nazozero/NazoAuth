@@ -1,38 +1,42 @@
 //! WebAuthn/passkey login endpoints.
-use nazo_http_actix::{json_response, oauth_error};
 
-use crate::domain::AppState;
-#[cfg(test)]
-use crate::domain::{DatabasePasskeyFixture, DatabaseUserFixture};
-use crate::settings::Settings;
-#[cfg(test)]
-use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, MFA_REMEMBERED_COOKIE_NAME, passkey_credential_id,
-    remember_mfa_device, valkey_get,
-};
-use crate::support::{
-    DEFAULT_TENANT_ID, RateLimitPolicy, SessionPayload, StoredPasskeyAuthentication, audit_event,
-    audit_fields, authentication_key, blake3_hex, client_ip, credential_id_from_response,
-    enforce_rate_limit, normalize_ceremony_id, passkey_credential_from_row, passkey_user_handle,
-    passkey_webauthn, random_urlsafe_token, remembered_mfa_device_valid,
-    require_active_session_principal, store_passkey_ceremony, store_session, take_passkey_ceremony,
-};
-use actix_web::http::StatusCode;
+use actix_web::http::{StatusCode, header};
 use actix_web::web::{Data, Json};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::Utc;
-use nazo_http_actix::{make_cookie, with_cookie_headers};
-use nazo_identity::PublicAccount;
-use nazo_identity::ports::PasskeyCredential;
+use nazo_http_actix::{cookie_value, json_response, make_cookie, oauth_error, with_cookie_headers};
+use nazo_identity::{PasskeyError, RememberedMfaProof};
 use passkey_auth::AuthenticationResponse;
 use serde::Deserialize;
-#[cfg(test)]
-use serde_json::Value;
 use serde_json::json;
-#[cfg(test)]
-use uuid::Uuid;
 
-use crate::http::profile::passkeys::load_user_passkeys;
+use crate::bootstrap::LocalPasskeyService;
+use crate::support::client_ip::{ClientIpConfig, client_ip_with_config};
+use crate::support::{AuthRequestLimiter, MFA_REMEMBERED_COOKIE_NAME, blake3_hex};
+
+#[derive(Clone)]
+pub(crate) struct PasskeyHttpConfig {
+    session_cookie_name: String,
+    csrf_cookie_name: String,
+    session_ttl_seconds: u64,
+    cookie_secure: bool,
+}
+
+impl PasskeyHttpConfig {
+    pub(crate) fn new(
+        session_cookie_name: impl Into<String>,
+        csrf_cookie_name: impl Into<String>,
+        session_ttl_seconds: u64,
+        cookie_secure: bool,
+    ) -> Self {
+        Self {
+            session_cookie_name: session_cookie_name.into(),
+            csrf_cookie_name: csrf_cookie_name.into(),
+            session_ttl_seconds,
+            cookie_secure,
+        }
+    }
+}
 
 #[derive(Deserialize)]
 pub(crate) struct PasskeyLoginBeginRequest {
@@ -46,361 +50,156 @@ pub(crate) struct PasskeyLoginFinishRequest {
 }
 
 pub(crate) async fn passkey_login_begin(
-    state: Data<AppState>,
+    rate_limiter: Data<AuthRequestLimiter>,
+    passkeys: Data<LocalPasskeyService>,
     req: HttpRequest,
     Json(payload): Json<PasskeyLoginBeginRequest>,
 ) -> HttpResponse {
-    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
+    if let Err(response) = rate_limiter.enforce(&req).await {
         return response;
     }
-    let email = payload.email.trim().to_lowercase();
-    let user = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
-        .public_account_by_email(
-            nazo_identity::TenantId::new(DEFAULT_TENANT_ID).expect("default tenant ID is non-nil"),
-            &email,
-        )
+    match passkeys
+        .login_begin(payload.email.trim().to_lowercase())
         .await
     {
-        Ok(Some(user)) if user.principal.active => user,
-        Ok(_) => {
-            audit_event(
-                "passkey_login_failure",
-                audit_fields(&[
-                    ("email_hash", json!(blake3_hex(&email))),
-                    ("reason", json!("user_not_found")),
-                ]),
-            );
-            return passkey_login_failed_response();
-        }
-        Err(error) => {
-            tracing::warn!(%error, "failed to query user for passkey login");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "user lookup failed.",
-            );
-        }
-    };
-    let rows = match load_user_passkeys(&state, &user).await {
-        Ok(rows) if !rows.is_empty() => rows,
-        Ok(_) => {
-            return passkey_login_failed_response();
-        }
-        Err(response) => return response,
-    };
-    let credentials = match rows
-        .iter()
-        .map(passkey_credential_from_row)
-        .collect::<anyhow::Result<Vec<_>>>()
-    {
-        Ok(credentials) => credentials,
-        Err(error) => {
-            tracing::warn!(%error, user_id = %user.id(), "stored passkey credential is malformed");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "passkey state unavailable.",
-            );
-        }
-    };
-    let user_handle = match passkey_user_handle(&user) {
-        Ok(user_handle) => user_handle,
-        Err(error) => {
-            tracing::warn!(%error, user_id = %user.id(), "stored passkey owner identifiers are invalid");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "passkey state unavailable.",
-            );
-        }
-    };
-    let (challenge, authentication_state) = passkey_webauthn(&state.settings)
-        .start_authentication_with_creds_for_user(&user_handle, &credentials);
-    let ceremony_id = random_urlsafe_token();
-    let stored = StoredPasskeyAuthentication {
-        user_id: user.id(),
-        tenant_id: user.tenant_id(),
-        state: authentication_state,
-    };
-    if let Err(error) =
-        store_passkey_ceremony(&state, authentication_key(&ceremony_id), &stored).await
-    {
-        tracing::warn!(%error, user_id = %user.id(), "failed to store passkey authentication ceremony");
-        return oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "passkey state unavailable.",
-        );
+        Ok(begin) => json_response(json!({
+            "ceremony_id": begin.ceremony_id,
+            "publicKey": begin.challenge,
+        })),
+        Err(error) => passkey_login_error(error),
     }
-    json_response(json!({
-        "ceremony_id": ceremony_id,
-        "publicKey": challenge
-    }))
 }
 
 pub(crate) async fn passkey_login_finish(
-    state: Data<AppState>,
+    rate_limiter: Data<AuthRequestLimiter>,
+    client_ip_config: Data<ClientIpConfig>,
+    passkeys: Data<LocalPasskeyService>,
+    http_config: Data<PasskeyHttpConfig>,
     req: HttpRequest,
     Json(payload): Json<PasskeyLoginFinishRequest>,
 ) -> HttpResponse {
-    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
+    if let Err(response) = rate_limiter.enforce(&req).await {
         return response;
     }
-    let ceremony_id = match normalize_ceremony_id(&payload.ceremony_id) {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    let stored = match take_passkey_ceremony::<StoredPasskeyAuthentication>(
-        &state,
-        authentication_key(&ceremony_id),
-    )
-    .await
-    {
-        Ok(Some(stored)) => stored,
-        Ok(None) => {
-            return passkey_ceremony_expired_response();
-        }
-        Err(response) => return response,
-    };
-    let user = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
-        .public_account_by_id(
-            nazo_identity::TenantId::new(stored.tenant_id)
-                .expect("stored passkey tenant ID is non-nil"),
-            nazo_identity::UserId::new(stored.user_id).expect("stored passkey user ID is non-nil"),
+    let result = passkeys
+        .login_finish(
+            &payload.ceremony_id,
+            payload.response,
+            client_ip_with_config(&req, client_ip_config.get_ref()),
+            remembered_mfa_proof(&req),
+            Utc::now(),
         )
-        .await
-    {
-        Ok(Some(user)) if user.principal.active && user.tenant_id() == stored.tenant_id => user,
-        Ok(_) => {
-            return passkey_login_failed_response();
-        }
-        Err(error) => {
-            tracing::warn!(%error, "failed to query passkey login user");
-            return oauth_error(
+        .await;
+    match result {
+        Ok(success) => passkey_session_response(http_config.get_ref(), success),
+        Err(error) => passkey_login_error(error),
+    }
+}
+
+fn passkey_login_error(error: PasskeyError) -> HttpResponse {
+    match error {
+        PasskeyError::InvalidCeremonyId => oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "invalid ceremony id.",
+        ),
+        PasskeyError::InvalidCredentialId => oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "invalid passkey credential id.",
+        ),
+        PasskeyError::CeremonyExpired => oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "passkey ceremony expired.",
+        ),
+        PasskeyError::Account(error) => {
+            tracing::warn!(%error, "failed to query user for passkey login");
+            oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
                 "user lookup failed.",
-            );
+            )
         }
-    };
-    let credential_id = match credential_id_from_response(&payload.response.id) {
-        Ok(id) => id.to_b64url(),
-        Err(response) => return response,
-    };
-    let row = match load_passkey_by_credential_id(&state, &user, &credential_id).await {
-        Ok(Some(row)) => row,
-        Ok(None) => {
-            return passkey_login_failed_response();
-        }
-        Err(response) => return response,
-    };
-    let credential = match passkey_credential_from_row(&row) {
-        Ok(credential) => credential,
-        Err(error) => {
-            tracing::warn!(%error, credential_id = %row.id, "stored passkey credential is malformed");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "passkey state unavailable.",
-            );
-        }
-    };
-    let outcome = match passkey_webauthn(&state.settings).finish_authentication(
-        &stored.state,
-        &payload.response,
-        &credential,
-    ) {
-        Ok(outcome) => outcome,
-        Err(error) => {
-            audit_event(
-                "passkey_login_failure",
-                audit_fields(&[
-                    ("user_id", json!(user.id())),
-                    ("reason", json!(error.to_string())),
-                ]),
-            );
-            return passkey_login_failed_response();
-        }
-    };
-    if let Err(response) = update_passkey_counter(&state, &user, &row, outcome.new_counter).await {
-        return response;
-    }
-    create_passkey_session(&state, &req, &user).await
-}
-
-fn passkey_login_failed_response() -> HttpResponse {
-    oauth_error(
-        StatusCode::UNAUTHORIZED,
-        "access_denied",
-        "passkey login failed.",
-    )
-}
-
-fn passkey_ceremony_expired_response() -> HttpResponse {
-    oauth_error(
-        StatusCode::BAD_REQUEST,
-        "invalid_request",
-        "passkey ceremony expired.",
-    )
-}
-
-async fn load_passkey_by_credential_id(
-    state: &AppState,
-    user: &PublicAccount,
-    credential_id: &str,
-) -> Result<Option<PasskeyCredential>, HttpResponse> {
-    nazo_postgres::PasskeyRepository::new(state.diesel_db.clone())
-        .by_credential_id(user.tenant().tenant_id, user.user_id(), credential_id)
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to load passkey credential");
+        PasskeyError::State(error) | PasskeyError::CeremonyState(error) => {
+            tracing::warn!(%error, "passkey login state unavailable");
             oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
                 "passkey state unavailable.",
             )
-        })
-}
-
-async fn update_passkey_counter(
-    state: &AppState,
-    user: &PublicAccount,
-    row: &PasskeyCredential,
-    new_counter: u32,
-) -> Result<(), HttpResponse> {
-    let mut credential = passkey_credential_from_row(row).map_err(|error| {
-        tracing::warn!(%error, credential_id = %row.id, "stored passkey credential is malformed");
-        oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "passkey state unavailable.",
-        )
-    })?;
-    credential.counter = new_counter;
-    let credential_json = serde_json::to_value(&credential).map_err(|error| {
-        tracing::warn!(%error, "failed to serialize updated passkey credential");
-        oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "passkey state unavailable.",
-        )
-    })?;
-    nazo_postgres::PasskeyRepository::new(state.diesel_db.clone())
-        .update_counter(
-            user.tenant().tenant_id,
-            user.user_id(),
-            &row.credential_id,
-            row.sign_count,
-            i64::from(new_counter),
-            credential_json,
-        )
-        .await
-        .map_err(|error| {
-            if error == nazo_identity::ports::RepositoryError::Conflict {
-                return passkey_login_failed_response();
-            }
-            tracing::warn!(%error, "failed to update passkey counter");
+        }
+        PasskeyError::Mfa(error) => {
+            tracing::warn!(%error, "failed to check remembered MFA device for passkey login");
             oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
-                "passkey state unavailable.",
+                "MFA state lookup failed.",
             )
-        })?;
-    Ok(())
-}
-
-async fn create_passkey_session(
-    state: &AppState,
-    req: &HttpRequest,
-    user: &PublicAccount,
-) -> HttpResponse {
-    if let Err(response) = require_active_session_principal(user) {
-        return response;
-    }
-    let session_id = random_urlsafe_token();
-    let csrf_token = random_urlsafe_token();
-    let remembered_mfa = if user.account.mfa_enabled {
-        match remembered_mfa_device_valid(state, req, user).await {
-            Ok(value) => value,
-            Err(error) => {
-                tracing::warn!(%error, "failed to check remembered MFA device for passkey login");
-                return oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "MFA state lookup failed.",
-                );
-            }
         }
-    } else {
-        false
-    };
-    let mut amr = vec!["passkey".to_owned()];
-    if remembered_mfa {
-        amr.push("remembered_mfa".to_owned());
-        amr.push("mfa".to_owned());
-    }
-    let session = SessionPayload {
-        user_id: user.id(),
-        auth_time: Utc::now().timestamp(),
-        amr,
-        pending_mfa: user.account.mfa_enabled && !remembered_mfa,
-        oidc_sid: Some(random_urlsafe_token()),
-    };
-    if store_session(state, &session_id, &session).await.is_err() {
-        return oauth_error(
+        PasskeyError::Session(error) => {
+            tracing::warn!(%error, "failed to store passkey login session");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "session write failed.",
+            )
+        }
+        PasskeyError::SessionCollision => oauth_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "server_error",
             "session write failed.",
-        );
+        ),
+        _ => oauth_error(
+            StatusCode::UNAUTHORIZED,
+            "access_denied",
+            "passkey login failed.",
+        ),
     }
-    audit_event(
-        "passkey_login_success",
-        audit_fields(&[
-            ("user_id", json!(user.id())),
-            (
-                "source_ip_hash",
-                json!(blake3_hex(&client_ip(req, &state.settings))),
-            ),
-        ]),
-    );
-    passkey_session_response(
-        &state.settings,
-        &session_id,
-        &csrf_token,
-        state.settings.session.session_ttl_seconds,
-        session.pending_mfa,
-    )
+}
+
+fn remembered_mfa_proof(req: &HttpRequest) -> Option<RememberedMfaProof> {
+    let token = cookie_value(req, MFA_REMEMBERED_COOKIE_NAME)?;
+    let user_agent_hash = req
+        .headers()
+        .get(header::USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(blake3_hex);
+    Some(RememberedMfaProof {
+        token_hash: blake3_hex(token.trim()),
+        user_agent_hash,
+    })
 }
 
 fn passkey_session_response(
-    settings: &Settings,
-    session_id: &str,
-    csrf_token: &str,
-    expires_in: u64,
-    mfa_required: bool,
+    config: &PasskeyHttpConfig,
+    success: nazo_identity::LoginSuccess,
 ) -> HttpResponse {
+    let cookies = [
+        make_cookie(
+            &config.session_cookie_name,
+            &success.session_id,
+            true,
+            config.session_ttl_seconds,
+            config.cookie_secure,
+        ),
+        make_cookie(
+            &config.csrf_cookie_name,
+            &success.csrf_token,
+            false,
+            config.session_ttl_seconds,
+            config.cookie_secure,
+        ),
+    ];
     with_cookie_headers(
         json_response(json!({
-            "expires_in": expires_in,
-            "csrf_token": csrf_token,
-            "mfa_required": mfa_required
+            "expires_in": config.session_ttl_seconds,
+            "csrf_token": success.csrf_token,
+            "mfa_required": success.session.pending_mfa(),
         })),
-        &[
-            make_cookie(
-                &settings.session.session_cookie_name,
-                session_id,
-                true,
-                expires_in,
-                settings.session.cookie_secure,
-            ),
-            make_cookie(
-                &settings.session.csrf_cookie_name,
-                csrf_token,
-                false,
-                expires_in,
-                settings.session.cookie_secure,
-            ),
-        ],
+        &cookies,
     )
 }
 

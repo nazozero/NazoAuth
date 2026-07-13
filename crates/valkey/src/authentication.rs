@@ -226,3 +226,73 @@ impl nazo_identity::ports::EmailVerificationStorePort for AuthenticationStore {
         })
     }
 }
+
+impl nazo_identity::ports::PasskeyCeremonyPort for AuthenticationStore {
+    fn store_registration<'a>(
+        &'a self,
+        ceremony_id: &'a str,
+        ceremony: &'a nazo_identity::StoredPasskeyRegistration,
+        ttl_seconds: u64,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
+        Box::pin(async move {
+            let value = serde_json::to_value(ceremony).map_err(|error| {
+                nazo_identity::ports::RepositoryError::Unexpected(error.to_string())
+            })?;
+            self.store_passkey_registration(ceremony_id, &value, ttl_seconds)
+                .await
+                .map_err(crate::identity_repository_error)
+        })
+    }
+
+    fn take_registration<'a>(
+        &'a self,
+        ceremony_id: &'a str,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, Option<nazo_identity::StoredPasskeyRegistration>>
+    {
+        Box::pin(async move {
+            self.take_passkey_registration(ceremony_id)
+                .await
+                .map_err(crate::identity_repository_error)?
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|error| {
+                    nazo_identity::ports::RepositoryError::Consistency(error.to_string())
+                })
+        })
+    }
+
+    fn store_authentication<'a>(
+        &'a self,
+        ceremony_id: &'a str,
+        ceremony: &'a nazo_identity::StoredPasskeyAuthentication,
+        ttl_seconds: u64,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
+        Box::pin(async move {
+            let value = serde_json::to_value(ceremony).map_err(|error| {
+                nazo_identity::ports::RepositoryError::Unexpected(error.to_string())
+            })?;
+            self.store_passkey_authentication(ceremony_id, &value, ttl_seconds)
+                .await
+                .map_err(crate::identity_repository_error)
+        })
+    }
+
+    fn take_authentication<'a>(
+        &'a self,
+        ceremony_id: &'a str,
+    ) -> nazo_identity::ports::RepositoryFuture<
+        'a,
+        Option<nazo_identity::StoredPasskeyAuthentication>,
+    > {
+        Box::pin(async move {
+            self.take_passkey_authentication(ceremony_id)
+                .await
+                .map_err(crate::identity_repository_error)?
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|error| {
+                    nazo_identity::ports::RepositoryError::Consistency(error.to_string())
+                })
+        })
+    }
+}

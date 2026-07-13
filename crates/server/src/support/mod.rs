@@ -12,7 +12,6 @@ mod mfa;
 pub(crate) mod mtls;
 mod oauth;
 mod oidc_claims;
-mod passkeys;
 mod rate_limit;
 mod sector_identifier;
 pub(crate) mod security;
@@ -71,15 +70,6 @@ pub(crate) use oauth::{
 pub(crate) use oidc_claims::oidc_subject;
 pub(crate) use oidc_claims::{
     compute_subject_for_client, oidc_id_token_user_claims, oidc_user_claims, supported_user_claim,
-};
-#[cfg(test)]
-pub(crate) use passkeys::PASSKEY_CEREMONY_TTL_SECONDS;
-pub(crate) use passkeys::{
-    StoredPasskeyAuthentication, StoredPasskeyRegistration, authentication_key,
-    credential_id_from_response, normalize_ceremony_id, normalize_passkey_label,
-    passkey_credential_from_row, passkey_credential_id, passkey_credential_ids,
-    passkey_public_json, passkey_user_handle, passkey_webauthn, registration_key,
-    store_passkey_ceremony, take_passkey_ceremony,
 };
 pub(crate) use rate_limit::{
     AuthRequestLimiter, RateLimitPolicy, enforce_rate_limit, enforce_rate_limit_with_store,
