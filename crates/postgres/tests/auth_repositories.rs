@@ -13,7 +13,12 @@ use nazo_postgres::{
     TokenRepository, create_pool,
 };
 use serde_json::json;
+use tokio::sync::Mutex;
 use uuid::Uuid;
+
+// These tests exercise a deliberately global worker claim. Serialize only the
+// claim-based cases so one test worker cannot consume the other's delivery.
+static BACKCHANNEL_CLAIM_TEST_LOCK: Mutex<()> = Mutex::const_new(());
 
 fn database_url() -> Option<String> {
     let url = std::env::var("NAZO_TEST_DATABASE_URL")
@@ -725,6 +730,7 @@ async fn authorization_replay_waits_for_concurrent_refresh_rotation_before_compe
 
 #[tokio::test]
 async fn audit_repository_records_scim_use_and_drives_logout_outbox() {
+    let _claim_guard = BACKCHANNEL_CLAIM_TEST_LOCK.lock().await;
     let Some(database_url) = database_url() else {
         return;
     };
@@ -762,32 +768,37 @@ async fn audit_repository_records_scim_use_and_drives_logout_outbox() {
             .expect("SCIM audit count should load");
     assert_eq!(count.count, 1);
 
+    let logout_token = format!("logout-token-test-{}", Uuid::now_v7());
     repository
         .enqueue_backchannel_logout(
             tenant_id,
             fixture.client_id,
             "audit-repository-client",
             "https://client.example/backchannel-logout",
-            "logout-token-test",
+            &logout_token,
             chrono::Utc::now() + chrono::Duration::minutes(2),
         )
         .await
         .expect("backchannel delivery should enqueue");
     let claimed = repository
-        .claim_due_backchannel_logout(10, 300)
+        .claim_due_backchannel_logout(100, 300)
         .await
         .expect("backchannel delivery should claim");
-    assert_eq!(claimed.len(), 1);
+    let claimed = claimed
+        .into_iter()
+        .find(|delivery| delivery.logout_token == logout_token)
+        .expect("the test delivery should be claimed");
     repository
-        .complete_backchannel_logout(claimed[0].id, claimed[0].attempts)
+        .complete_backchannel_logout(claimed.id, claimed.attempts)
         .await
         .expect("backchannel delivery should complete");
+    let reclaimed = repository
+        .claim_due_backchannel_logout(100, 300)
+        .await
+        .expect("completed delivery should not reclaim");
     assert!(
-        repository
-            .claim_due_backchannel_logout(10, 300)
-            .await
-            .expect("completed delivery should not reclaim")
-            .is_empty()
+        reclaimed.iter().all(|delivery| delivery.id != claimed.id),
+        "the completed delivery must not be reclaimed"
     );
 }
 
@@ -882,6 +893,7 @@ fn server_auth_callers_do_not_query_diesel_or_auth_tables() {
 
 #[tokio::test]
 async fn stale_logout_worker_cannot_complete_or_fail_a_reclaimed_delivery() {
+    let _claim_guard = BACKCHANNEL_CLAIM_TEST_LOCK.lock().await;
     let Some(database_url) = database_url() else {
         return;
     };
