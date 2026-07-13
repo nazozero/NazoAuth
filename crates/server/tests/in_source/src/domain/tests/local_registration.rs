@@ -98,11 +98,12 @@ async fn concurrent_registration_consumes_once_and_keeps_valkey_key_contract() {
         return;
     };
     let email = format!("registration-boundary-{}@example.test", Uuid::now_v7());
+    let password = Uuid::now_v7().to_string();
     fixture.store_code(&email, "123456").await;
     let input = || RegisterLocalAccountInput {
         email: email.clone(),
         verification_code: "123456".to_owned(),
-        password: "correct horse battery staple".to_owned(),
+        password: password.clone(),
     };
     let first = fixture.operations();
     let second = fixture.operations();
