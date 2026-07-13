@@ -35,7 +35,7 @@ Nazo Auth Server 是一个用 Rust 写的自托管 OAuth 2.x / OAuth 2.1-aligned
 
 | 信号 | 证据 |
 | --- | --- |
-| Rust 质量门禁 | `code-quality` 中的 `cargo fmt --check`、`cargo check --workspace --all-targets --all-features --locked`、`cargo clippy -D warnings`、迁移和 library tests。 |
+| Rust 质量门禁 | `code-quality` 中的 `cargo fmt --check`、`cargo check --workspace --all-targets --all-features --locked`、`cargo clippy -D warnings`、迁移和完整 workspace tests。 |
 | 静态安全分析 | CodeQL Rust analysis，启用 `security-extended` 和 `security-and-quality` queries。 |
 | 依赖策略 | GitHub dependency review、`cargo audit`、`cargo deny`，覆盖 advisories、bans、licenses 和 sources。 |
 | 运行时安全行为 | `conformance-security` 中的真实 HTTP E2E、load/race gate、Valkey outage injection。 |

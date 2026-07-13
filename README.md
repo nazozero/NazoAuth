@@ -44,7 +44,7 @@ composite score:
 
 | Signal | Evidence |
 | --- | --- |
-| Rust quality gate | `cargo fmt --check`, `cargo check --workspace --all-targets --all-features --locked`, `cargo clippy -D warnings`, migrations, and library tests in `code-quality`. |
+| Rust quality gate | `cargo fmt --check`, `cargo check --workspace --all-targets --all-features --locked`, `cargo clippy -D warnings`, migrations, and the complete workspace test suite in `code-quality`. |
 | Static security analysis | CodeQL Rust analysis with `security-extended` and `security-and-quality` queries. |
 | Dependency policy | GitHub dependency review, `cargo audit`, and `cargo deny` over advisories, bans, licenses, and sources. |
 | Runtime security behavior | Real HTTP E2E, load/race gate, and Valkey outage injection in `conformance-security`. |

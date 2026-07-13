@@ -110,7 +110,7 @@ docker run -d --name nazo-oauth-server \
 
 ## 在线部署脚本
 
-仓库提供 [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1)。脚本要求后端和前端 worktree 均干净且 HEAD 与指定完整 SHA 一致，并固定核对分支 `codex/modular-workspace-architecture` 以及精确 HTTPS origin `https://github.com/nazozero/NazoAuth[.git]`、`https://github.com/nazozero/NazoAuthWeb[.git]`。它使用前端锁文件执行 `npm ci` 和 `npm run build`，校验 `dist` 摘要，从已验证的后端 worktree 构建镜像，并在远端加载后再次校验不可变 image ID。远端事务状态持久化后立即启动独立于 SSH 会话的 watchdog，因此租约覆盖制品 staging、镜像加载、数据库迁移、容器切换和公网验证；只有公网 health/discovery 验证完成并提交租约后部署才成功。
+仓库提供 [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1)。脚本要求后端和前端 worktree 均干净且 HEAD 与指定完整 SHA 一致，并固定核对分支 `codex/modular-workspace-architecture` 以及精确 HTTPS origin `https://github.com/nazozero/NazoAuth[.git]`、`https://github.com/nazozero/NazoAuthWeb[.git]`。它读取前端已提交的 `packageManager`，要求匹配的 `package-lock.json` 和精确 npm 版本，执行 `npm ci` 及 `package.json` 中实际存在的聚合验证脚本，只接受该门禁生成的 `dist`。随后脚本校验 `dist` 摘要，从已验证的后端 worktree 构建镜像，并在远端加载后再次校验不可变 image ID。远端事务状态持久化后立即启动独立于 SSH 会话的 watchdog，因此租约覆盖制品 staging、镜像加载、数据库迁移、容器切换和公网验证；只有公网 health/discovery 验证完成并提交租约后部署才成功。
 
 默认 live 假设：
 

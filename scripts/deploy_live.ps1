@@ -308,11 +308,36 @@ if (-not $ImageTag) {
 if (-not $SkipFrontendBuild) {
     $frontendBuildContext = Export-GitCommit -Worktree $LocalFrontendWorktree -Commit $FrontendCommit -Label "frontend-source"
     try {
-        if (-not (Test-Path -LiteralPath (Join-Path $frontendBuildContext "package-lock.json") -PathType Leaf)) {
+        $packageJsonPath = Join-Path $frontendBuildContext "package.json"
+        $packageLockPath = Join-Path $frontendBuildContext "package-lock.json"
+        if (-not (Test-Path -LiteralPath $packageJsonPath -PathType Leaf)) {
+            throw "Frontend deployment build requires package.json"
+        }
+        if (-not (Test-Path -LiteralPath $packageLockPath -PathType Leaf)) {
             throw "Frontend deployment build requires package-lock.json"
         }
+        try {
+            $frontendPackage = Get-Content -LiteralPath $packageJsonPath -Raw | ConvertFrom-Json
+        }
+        catch {
+            throw "Frontend package.json is not valid JSON: $($_.Exception.Message)"
+        }
+        $packageManager = [string]$frontendPackage.packageManager
+        $npmPackageManager = [regex]::Match($packageManager, '^npm@(?<version>\d+\.\d+\.\d+)$')
+        if (-not $npmPackageManager.Success) {
+            throw "Frontend packageManager must pin an exact npm version; found '$packageManager'"
+        }
+        $expectedNpmVersion = $npmPackageManager.Groups['version'].Value
+        $actualNpmVersion = Get-CommandOutput npm @("--version")
+        if ($actualNpmVersion -cne $expectedNpmVersion) {
+            throw "Frontend requires npm $expectedNpmVersion but deployment host has npm $actualNpmVersion"
+        }
+        $testScript = $frontendPackage.scripts.PSObject.Properties['test']
+        if ($null -eq $testScript -or [string]::IsNullOrWhiteSpace([string]$testScript.Value)) {
+            throw "Frontend package.json must define the verified aggregate test script"
+        }
         Invoke-Checked npm @("--prefix", $frontendBuildContext, "ci")
-        Invoke-Checked npm @("--prefix", $frontendBuildContext, "run", "build")
+        Invoke-Checked npm @("--prefix", $frontendBuildContext, "run", "test")
         $builtUiDist = Join-Path $frontendBuildContext "dist"
         if (-not (Test-Path -LiteralPath (Join-Path $builtUiDist "index.html") -PathType Leaf)) {
             throw "Frontend build did not produce dist/index.html"

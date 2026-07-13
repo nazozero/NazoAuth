@@ -175,7 +175,39 @@ def check_toolchain_pins() -> None:
     if mismatches:
         raise SystemExit(f"CI Rust toolchain pins differ from {version}: {mismatches}")
 
+    renovate_candidates = [
+        ROOT / "renovate.json",
+        ROOT / "renovate.jsonc",
+        ROOT / "renovate.json5",
+        ROOT / ".github" / "renovate.json",
+        ROOT / ".github" / "renovate.jsonc",
+        ROOT / ".github" / "renovate.json5",
+    ]
+    present_renovate_configs = [path for path in renovate_candidates if path.exists()]
+    if present_renovate_configs != [ROOT / "renovate.json"]:
+        relative = [path.relative_to(ROOT) for path in present_renovate_configs]
+        raise SystemExit(
+            "Renovate must have one authoritative root renovate.json; "
+            f"found: {relative}"
+        )
+
     renovate = json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))
+    enabled_managers = renovate.get("enabledManagers")
+    if enabled_managers is not None:
+        required_managers = {
+            "cargo",
+            "custom.regex",
+            "docker-compose",
+            "dockerfile",
+            "github-actions",
+            "pip_requirements",
+        }
+        missing_managers = required_managers - set(enabled_managers)
+        if missing_managers:
+            raise SystemExit(
+                "Renovate enabledManagers disables required update coverage: "
+                f"{sorted(missing_managers)}"
+            )
     managers = renovate.get("customManagers")
     if not isinstance(managers, list) or not any(
         manager.get("datasourceTemplate") == "rust-version" for manager in managers

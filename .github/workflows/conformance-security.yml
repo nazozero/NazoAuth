@@ -142,10 +142,8 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - name: Run migrations
         run: cargo run --locked --bin nazo-oauth-migrate
-      - name: Test
-        run: cargo test --locked --workspace --all-features --lib
-      - name: Test nazo-postgres integration and privacy contracts
-        run: cargo test -p nazo-postgres --all-features --locked
+      - name: Test workspace
+        run: cargo test --workspace --all-features --locked
 
   supply-chain-gate:
     runs-on: ubuntu-latest
@@ -154,22 +152,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.97.0
       - name: Install native dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev
-      - name: Install Rust supply-chain tools
-        run: |
-          set -euo pipefail
-          install_crate() {
-            local crate="$1"
-            for attempt in 1 2 3; do
-              if cargo install "$crate" --locked; then
-                return 0
-              fi
-              sleep $((attempt * 20))
-            done
-            cargo install "$crate" --locked
-          }
-          install_crate cargo-audit
-          install_crate cargo-deny
-          install_crate cargo-cyclonedx
+      - name: Install pinned Rust supply-chain tools
+        uses: taiki-e/install-action@v2.83.2
+        with:
+          tool: |
+            cargo-audit@0.22.2
+            cargo-deny@0.20.2
+            cargo-cyclonedx@0.5.9
       - name: Audit Rust advisories
         run: cargo audit
       - name: Check dependency policy
@@ -194,7 +183,7 @@ jobs:
           docker save nazo-oauth-supply-chain:${{ github.sha }} -o /tmp/nazo-oauth-supply-chain.tar
           docker run --rm \
             -v /tmp/nazo-oauth-supply-chain.tar:/image.tar:ro \
-            docker.io/aquasec/trivy@sha256:a22415a38938a56c379387a8163fcb0ce38b10ace73e593475d3658d578b2436 image \
+            docker.io/aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f image \
               --format table \
               --exit-code 1 \
               --severity CRITICAL,HIGH \
