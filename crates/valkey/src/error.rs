@@ -28,6 +28,14 @@ impl Error {
         }
     }
 
+    pub(crate) fn protocol(message: impl Into<String>) -> Self {
+        Self {
+            kind: ErrorKind::Protocol,
+            message: message.into(),
+            source: None,
+        }
+    }
+
     pub(crate) fn from_fred(error: fred::error::Error) -> Self {
         use fred::error::ErrorKind as FredErrorKind;
 

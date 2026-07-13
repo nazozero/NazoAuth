@@ -2316,8 +2316,12 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "fred",
+ "nazo-identity",
+ "serde",
+ "serde_json",
  "thiserror",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

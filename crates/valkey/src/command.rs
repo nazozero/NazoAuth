@@ -57,3 +57,48 @@ pub(crate) async fn take(
         .await
         .map_err(Error::from_fred)
 }
+
+pub(crate) async fn set_ex_string(
+    connection: &ValkeyConnection,
+    key: String,
+    value: String,
+    ttl_seconds: u64,
+) -> Result<(), Error> {
+    connection
+        .client
+        .set::<(), _, _>(
+            key,
+            value,
+            Some(Expiration::EX(ttl_seconds.min(i64::MAX as u64) as i64)),
+            None,
+            false,
+        )
+        .await
+        .map_err(Error::from_fred)
+}
+
+pub(crate) async fn get(
+    connection: &ValkeyConnection,
+    key: String,
+) -> Result<Option<String>, Error> {
+    connection.client.get(key).await.map_err(Error::from_fred)
+}
+
+pub(crate) async fn delete(connection: &ValkeyConnection, key: String) -> Result<i64, Error> {
+    connection.client.del(key).await.map_err(Error::from_fred)
+}
+
+pub(crate) async fn eval_string(
+    connection: &ValkeyConnection,
+    script: &'static str,
+    keys: Vec<String>,
+    args: Vec<String>,
+) -> Result<String, Error> {
+    use fred::prelude::LuaInterface;
+
+    connection
+        .client
+        .eval(script, keys, args)
+        .await
+        .map_err(Error::from_fred)
+}
