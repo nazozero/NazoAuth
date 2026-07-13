@@ -81,38 +81,7 @@ pub(crate) struct RuntimeModules {
 impl RuntimeModules {
     pub(crate) async fn initialize(pool: DbPool, settings: &Settings) -> anyhow::Result<Self> {
         let inherited_enabled = inherited_enabled(settings);
-        let protocol = &settings.protocol;
-        let session = &settings.session;
-        let mut catalog = ModuleCatalog::fixed(
-            CatalogDurations {
-                device_authorization: Duration::from_secs(
-                    settings.device.device_authorization_ttl_seconds,
-                ),
-                ciba: Duration::from_secs(settings.ciba.ciba_auth_req_id_ttl_seconds),
-                authorization_code: Duration::from_secs(protocol.auth_code_ttl_seconds),
-                refresh_token: Duration::from_secs(
-                    u64::try_from(protocol.refresh_token_ttl_seconds).map_err(|_| {
-                        anyhow::anyhow!("REFRESH_TOKEN_TTL_SECONDS cannot be negative")
-                    })?,
-                ),
-                session: Duration::from_secs(session.session_ttl_seconds),
-            },
-            inherited_enabled.clone(),
-        )?;
-        let mut runtime_disable_blocked = BTreeSet::new();
-        if protocol
-            .authorization_server_profile
-            .requires_signed_authorization_request()
-        {
-            runtime_disable_blocked.insert(ModuleId::RequestObjects);
-        }
-        if protocol
-            .authorization_server_profile
-            .requires_signed_authorization_response()
-        {
-            runtime_disable_blocked.insert(ModuleId::Jarm);
-        }
-        catalog = catalog.with_runtime_disable_blocked(runtime_disable_blocked);
+        let catalog = module_catalog(settings, inherited_enabled.clone())?;
         let repository = Arc::new(RuntimeModuleRepository::new(pool));
         let lifecycle = Arc::new(ServerModuleLifecycle {
             repository: repository.clone(),
@@ -172,6 +141,68 @@ impl RuntimeModules {
             });
         }
     }
+}
+
+fn module_catalog(
+    settings: &Settings,
+    inherited_enabled: BTreeSet<ModuleId>,
+) -> anyhow::Result<ModuleCatalog> {
+    let protocol = &settings.protocol;
+    let session = &settings.session;
+    let mut catalog = ModuleCatalog::fixed(
+        CatalogDurations {
+            device_authorization: Duration::from_secs(
+                settings.device.device_authorization_ttl_seconds,
+            ),
+            ciba: Duration::from_secs(settings.ciba.ciba_auth_req_id_ttl_seconds),
+            authorization_code: Duration::from_secs(protocol.auth_code_ttl_seconds),
+            refresh_token: Duration::from_secs(
+                u64::try_from(protocol.refresh_token_ttl_seconds)
+                    .map_err(|_| anyhow::anyhow!("REFRESH_TOKEN_TTL_SECONDS cannot be negative"))?,
+            ),
+            session: Duration::from_secs(session.session_ttl_seconds),
+        },
+        inherited_enabled,
+    )?;
+    let mut runtime_disable_blocked = BTreeSet::new();
+    if protocol
+        .authorization_server_profile
+        .requires_signed_authorization_request()
+    {
+        runtime_disable_blocked.insert(ModuleId::RequestObjects);
+    }
+    if protocol
+        .authorization_server_profile
+        .requires_signed_authorization_response()
+    {
+        runtime_disable_blocked.insert(ModuleId::Jarm);
+    }
+    catalog = catalog.with_runtime_disable_blocked(runtime_disable_blocked);
+    Ok(catalog)
+}
+
+#[cfg(test)]
+pub(crate) fn runtime_module_registry_for_test(
+    pool: DbPool,
+    settings: &Settings,
+) -> anyhow::Result<Arc<ServerRuntimeModuleRegistry>> {
+    let inherited_enabled = inherited_enabled(settings);
+    let catalog = module_catalog(settings, inherited_enabled.clone())?;
+    let repository = Arc::new(RuntimeModuleRepository::new(pool));
+    let lifecycle = Arc::new(ServerModuleLifecycle {
+        repository: repository.clone(),
+    });
+    Ok(Arc::new(RuntimeModuleRegistry::new(
+        repository,
+        lifecycle,
+        catalog,
+        "token-test".to_owned(),
+        ActiveModuleSnapshot {
+            revision: ModuleRevision::new(0),
+            accepting: inherited_enabled,
+            draining: BTreeSet::new(),
+        },
+    )))
 }
 
 async fn seed_desired_states(

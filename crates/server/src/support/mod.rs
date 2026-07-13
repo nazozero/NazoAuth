@@ -27,8 +27,6 @@ pub(crate) use client_ip::{
     ClientIpConfig, ClientIpHeaderMode, IpCidr, client_ip, client_ip_with_config,
     client_ip_with_context, parse_trusted_proxy_cidrs,
 };
-#[cfg(test)]
-pub(crate) use dpop::validate_dpop_proof;
 pub(crate) use dpop::{
     AccessTokenAuthScheme, DpopError, DpopErrorContext, dpop_error_response, dpop_proof_present,
     issue_dpop_nonce_with_authorization_service, issue_dpop_nonce_with_store,
@@ -51,12 +49,12 @@ pub(crate) use mfa::{
 pub(crate) use mfa::{
     remember_mfa_device, remembered_mfa_device_valid, replace_backup_codes, verify_user_mfa_code,
 };
+#[cfg(test)]
+pub(crate) use mtls::request_mtls_thumbprint;
 pub(crate) use mtls::{
     client_mtls_certificate_matches, request_mtls_client_certificate_from_headers,
     request_mtls_client_certificate_from_trusted_proxy, request_mtls_thumbprint_from_trusted_proxy,
 };
-#[cfg(test)]
-pub(crate) use mtls::{request_mtls_client_certificate, request_mtls_thumbprint};
 pub(crate) use nazo_key_management::{signing_algorithm_from_name, signing_algorithm_name};
 #[cfg(test)]
 pub(crate) use oauth::authorization_code_key;
@@ -69,11 +67,11 @@ pub(crate) use oauth::{
 };
 #[cfg(test)]
 pub(crate) use oidc_claims::oidc_subject;
-pub(crate) use oidc_claims::{
-    compute_subject_for_client, oidc_id_token_user_claims, oidc_user_claims, supported_user_claim,
-};
+pub(crate) use oidc_claims::{oidc_id_token_user_claims, oidc_user_claims, supported_user_claim};
+#[cfg(test)]
+pub(crate) use rate_limit::enforce_rate_limit;
 pub(crate) use rate_limit::{
-    AuthRequestLimiter, RateLimitPolicy, TokenManagementRequestLimiter, enforce_rate_limit,
+    AuthRequestLimiter, RateLimitPolicy, TokenManagementRequestLimiter,
     enforce_rate_limit_with_store, rate_limited_response,
 };
 pub(crate) use sector_identifier::fetch_sector_identifier_uris;
@@ -97,9 +95,7 @@ pub(crate) use security::{
     verify_private_key_jwt_claims_for_issuer,
 };
 #[cfg(test)]
-pub(crate) use security::{
-    consume_private_key_jwt, decode_access_claims, extract_client_credentials,
-};
+pub(crate) use security::{consume_private_key_jwt, decode_access_claims};
 pub(crate) use sessions::{
     CurrentSession, SessionRotation, current_user_or_login_required, has_valid_csrf_token,
 };

@@ -708,14 +708,14 @@ fn authorization_code_subject(
     let sector_host = client.sector_identifier_host.as_deref();
     let redirect_uri = payload.redirect_uri.as_str();
     let user_id = payload.user_id;
-    nazo_auth::oidc_subject_for_client(
+    Ok(nazo_auth::oidc_subject_for_client(
         config.issuer(),
         config.pairwise_subject_secret(),
         user_id,
         subject_type,
         sector_host,
         redirect_uri,
-    )
+    )?)
 }
 
 #[cfg(test)]

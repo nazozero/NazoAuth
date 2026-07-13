@@ -32,6 +32,14 @@ fn authorization_service(state: &AppState) -> Data<ServerAuthorizationService> {
     ))
 }
 
+fn token_service(state: &AppState) -> Data<ServerTokenService> {
+    Data::new(ServerTokenService::new(
+        nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
+        nazo_valkey::TokenIssuanceStateAdapter::new(&state.valkey_connection()),
+        state.keyset.clone(),
+    ))
+}
+
 async fn revoke(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
     let connection = state.valkey_connection();
     let token_service = Data::new(ServerTokenService::new(
@@ -839,9 +847,14 @@ async fn missing_client_authorization_code_holder_check_fails_closed_when_valkey
     };
 
     let service = authorization_service(&state);
-    let response = missing_client_authorization_code_holder_error(&state, service.get_ref(), &form)
-        .await
-        .expect("authorization code state lookup failures must not be ignored");
+    let token_service = token_service(&state);
+    let response = missing_client_authorization_code_holder_error(
+        token_service.get_ref(),
+        service.get_ref(),
+        &form,
+    )
+    .await
+    .expect("authorization code state lookup failures must not be ignored");
 
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(oauth_error_code(&response), "server_error");
@@ -888,9 +901,14 @@ async fn missing_client_authorization_code_holder_check_fails_closed_when_client
     };
 
     let service = authorization_service(&state);
-    let response = missing_client_authorization_code_holder_error(&state, service.get_ref(), &form)
-        .await
-        .expect("client lookup failures must not degrade to invalid_client");
+    let token_service = token_service(&state);
+    let response = missing_client_authorization_code_holder_error(
+        token_service.get_ref(),
+        service.get_ref(),
+        &form,
+    )
+    .await
+    .expect("client lookup failures must not degrade to invalid_client");
 
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(oauth_error_code(&response), "server_error");
@@ -1376,7 +1394,7 @@ async fn mtls_client_credentials_without_client_id_returns_none_when_client_not_
     assert!(
         mtls_client_credentials_without_client_id(
             authorization_service(&state).get_ref(),
-            &state.settings,
+            &state.settings.endpoint.trusted_proxy_cidrs,
             &req,
         )
         .await
@@ -1416,7 +1434,7 @@ async fn missing_client_authorization_code_holder_error_returns_none_when_code_m
 
     assert!(
         missing_client_authorization_code_holder_error(
-            &state,
+            token_service(&state).get_ref(),
             authorization_service(&state).get_ref(),
             &form,
         )
@@ -1480,7 +1498,7 @@ async fn missing_client_authorization_code_holder_error_returns_none_when_client
 
     assert!(
         missing_client_authorization_code_holder_error(
-            &state,
+            token_service(&state).get_ref(),
             authorization_service(&state).get_ref(),
             &form,
         )

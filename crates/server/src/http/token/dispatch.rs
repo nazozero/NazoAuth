@@ -7,12 +7,13 @@ use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::{
     CLIENT_ASSERTION_TYPE_JWT_BEARER, DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID,
-    authorization_code_key, blake3_hex,
+    authorization_code_key,
 };
 use crate::support::{
-    ClientCredentials, client_ip_with_context, client_mtls_certificate_matches, dpop_proof_present,
-    extract_client_credentials_with_trusted_proxies, has_basic_authorization_scheme,
-    rate_limited_response, request_mtls_client_certificate_from_trusted_proxy,
+    ClientCredentials, blake3_hex, client_ip_with_context, client_mtls_certificate_matches,
+    dpop_proof_present, extract_client_credentials_with_trusted_proxies,
+    has_basic_authorization_scheme, rate_limited_response,
+    request_mtls_client_certificate_from_trusted_proxy,
 };
 use actix_web::http::StatusCode;
 #[cfg(test)]
@@ -583,7 +584,13 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
     let device_service = Data::new(super::device::ServerDeviceGrantService::new(
         nazo_valkey::DeviceStore::new(&connection),
     ));
-    let runtime_modules = Data::from(state.runtime_modules.clone());
+    let runtime_modules = Data::from(
+        crate::runtime_modules::runtime_module_registry_for_test(
+            state.diesel_db.clone(),
+            state.settings.as_ref(),
+        )
+        .expect("test runtime module registry should be valid"),
+    );
     token_with_service(
         service,
         authorization_service,
