@@ -2216,6 +2216,7 @@ dependencies = [
  "actix-cors",
  "actix-web",
  "nazo-auth",
+ "nazo-runtime-modules",
  "proptest",
  "serde",
  "serde_json",
