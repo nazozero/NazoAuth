@@ -1,0 +1,60 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "dependencyDashboard": true,
+  "osvVulnerabilityAlerts": true,
+  "labels": ["dependencies"],
+  "schedule": ["before 6am on monday"],
+  "timezone": "Asia/Shanghai",
+  "rangeStrategy": "bump",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"]
+  },
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["dependencies", "security"],
+    "schedule": ["at any time"]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^rust-toolchain\\.toml$/"],
+      "matchStrings": ["channel\\s*=\\s*\"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""],
+      "depNameTemplate": "rust-lang/rust",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Keep the pinned Rust toolchain and Rust builder image in one review",
+      "matchPackageNames": ["rust-lang/rust", "rust"],
+      "groupName": "Rust stable toolchain",
+      "separateMajorMinor": false
+    },
+    {
+      "description": "Group compatible Cargo patch and minor updates",
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "groupName": "Cargo compatible updates"
+    },
+    {
+      "description": "Group GitHub Actions patch and minor updates",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "GitHub Actions compatible updates"
+    },
+    {
+      "description": "Group locked Python patch and minor updates",
+      "matchManagers": ["pip_requirements"],
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "groupName": "Python compatible updates"
+    },
+    {
+      "description": "Require explicit review for major dependency updates",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    }
+  ]
+}
