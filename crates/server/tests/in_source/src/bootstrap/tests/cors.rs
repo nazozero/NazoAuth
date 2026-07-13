@@ -1,9 +1,96 @@
 use super::*;
 use actix_web::{App, HttpResponse, http::StatusCode, test, web};
+use chrono::{TimeZone, Utc};
+use nazo_http_actix::{
+    ProfileAccountEndpoint, ProfileAccountFuture, ProfileAccountOperations, ProfileMe,
+    SessionCookieConfig,
+};
+use nazo_identity::{
+    AccountProfileView, AuthorizedApplicationView, AuthorizedApplicationsView, ProfilePatch,
+    SessionId,
+};
 use std::sync::Arc;
 
 use crate::bootstrap::routes;
 use crate::domain::{AppState, DynamicRegistrationHandles};
+
+struct ContractProfileOperations;
+
+impl ProfileAccountOperations for ContractProfileOperations {
+    fn me(&self, _session_id: SessionId) -> ProfileAccountFuture<'_, ProfileMe> {
+        Box::pin(async { Ok(ProfileMe::Active(Box::new(contract_profile()))) })
+    }
+
+    fn update(
+        &self,
+        _session_id: SessionId,
+        _patch: ProfilePatch,
+    ) -> ProfileAccountFuture<'_, AccountProfileView> {
+        Box::pin(async { Ok(contract_profile()) })
+    }
+
+    fn applications(
+        &self,
+        _session_id: SessionId,
+    ) -> ProfileAccountFuture<'_, AuthorizedApplicationsView> {
+        Box::pin(async {
+            Ok(AuthorizedApplicationsView {
+                total: 1,
+                items: vec![AuthorizedApplicationView {
+                    client_id: "contract-client".to_owned(),
+                    client_name: "Contract Client".to_owned(),
+                    last_scopes: vec!["openid".to_owned()],
+                    last_authorized_at: Utc.timestamp_opt(1_700_000_000, 0).unwrap(),
+                    authorization_count: 1,
+                }],
+            })
+        })
+    }
+}
+
+fn contract_profile() -> AccountProfileView {
+    AccountProfileView {
+        id: uuid::Uuid::from_u128(1),
+        email: "alice@example.test".to_owned(),
+        display_name: Some("Alice".to_owned()),
+        avatar_url: None,
+        given_name: None,
+        family_name: None,
+        middle_name: None,
+        nickname: None,
+        profile_url: None,
+        website_url: None,
+        gender: None,
+        birthdate: None,
+        zoneinfo: None,
+        locale: None,
+        address_formatted: None,
+        address_street_address: None,
+        address_locality: None,
+        address_region: None,
+        address_postal_code: None,
+        address_country: None,
+        phone_number: None,
+        phone_number_verified: false,
+        mfa_enabled: false,
+        role: "user",
+        admin_level: 0,
+        authorized_app_count: 1,
+    }
+}
+
+fn assert_profile_security_headers(headers: &header::HeaderMap) {
+    assert_eq!(
+        headers.get(header::X_CONTENT_TYPE_OPTIONS).unwrap(),
+        "nosniff"
+    );
+    assert_eq!(headers.get(header::X_FRAME_OPTIONS).unwrap(), "DENY");
+    assert_eq!(headers.get("referrer-policy").unwrap(), "no-referrer");
+    assert_eq!(
+        headers.get("content-security-policy").unwrap(),
+        "frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
+    );
+}
 #[actix_web::test]
 async fn browser_token_management_cors_allows_post_dpop_without_credentials() {
     let settings = test_settings(vec!["https://app.example".to_owned()]);
@@ -397,6 +484,169 @@ async fn cors_auth_api_credentials_are_limited_to_configured_origins_and_csrf_he
             .is_none(),
         "credentialed auth API CORS must not expose cookies to unregistered origins"
     );
+}
+
+#[actix_web::test]
+async fn production_profile_routes_keep_method_cors_cache_and_security_contracts() {
+    let settings = test_settings(vec!["https://app.example".to_owned()]);
+    let endpoint = ProfileAccountEndpoint::new(
+        Arc::new(ContractProfileOperations),
+        SessionCookieConfig::new("session", "csrf", true),
+    );
+    let app = test::init_service(
+        App::new()
+            .wrap(actix_web::middleware::from_fn(
+                nazo_http_actix::security_headers,
+            ))
+            .app_data(web::Data::new(endpoint))
+            .configure(|cfg| routes::configure(cfg, &settings, false)),
+    )
+    .await;
+
+    let get = test::TestRequest::get()
+        .uri("/auth/me")
+        .insert_header((header::ORIGIN, "https://app.example"))
+        .cookie(actix_web::cookie::Cookie::new("session", "sid"))
+        .to_request();
+    let get = test::call_service(&app, get).await;
+    assert_eq!(get.status(), StatusCode::OK);
+    assert_eq!(
+        get.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/json"
+    );
+    assert_eq!(
+        get.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store"
+    );
+    assert_eq!(get.headers().get(header::PRAGMA).unwrap(), "no-cache");
+    assert_eq!(
+        get.headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .unwrap(),
+        "https://app.example"
+    );
+    assert_eq!(
+        get.headers()
+            .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+            .unwrap(),
+        "true"
+    );
+    assert_profile_security_headers(get.headers());
+    let get_body: serde_json::Value = test::read_body_json(get).await;
+    assert_eq!(get_body["email"], "alice@example.test");
+    assert_eq!(get_body["mfa_required"], false);
+    assert!(get_body.get("csrf_token").is_none());
+
+    let patch = test::TestRequest::patch()
+        .uri("/auth/me")
+        .insert_header((header::ORIGIN, "https://app.example"))
+        .insert_header(("x-csrf-token", "csrf-token"))
+        .cookie(actix_web::cookie::Cookie::new("session", "sid"))
+        .cookie(actix_web::cookie::Cookie::new("csrf", "csrf-token"))
+        .set_json(serde_json::json!({"display_name": "Alice"}))
+        .to_request();
+    let patch = test::call_service(&app, patch).await;
+    assert_eq!(patch.status(), StatusCode::OK);
+    assert_eq!(
+        patch.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/json"
+    );
+    assert_eq!(
+        patch.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store"
+    );
+    assert_eq!(patch.headers().get(header::PRAGMA).unwrap(), "no-cache");
+    assert_eq!(
+        patch
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .unwrap(),
+        "https://app.example"
+    );
+    assert_profile_security_headers(patch.headers());
+    let patch_body: serde_json::Value = test::read_body_json(patch).await;
+    assert_eq!(patch_body["display_name"], "Alice");
+    assert!(patch_body.get("mfa_required").is_none());
+
+    let applications = test::TestRequest::get()
+        .uri("/auth/me/applications")
+        .insert_header((header::ORIGIN, "https://app.example"))
+        .cookie(actix_web::cookie::Cookie::new("session", "sid"))
+        .to_request();
+    let applications = test::call_service(&app, applications).await;
+    assert_eq!(applications.status(), StatusCode::OK);
+    assert_eq!(
+        applications.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/json"
+    );
+    assert_eq!(
+        applications.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store"
+    );
+    assert_eq!(
+        applications
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .unwrap(),
+        "https://app.example"
+    );
+    assert_profile_security_headers(applications.headers());
+    let applications_body: serde_json::Value = test::read_body_json(applications).await;
+    assert_eq!(applications_body["total"], 1);
+    assert_eq!(
+        applications_body["items"][0]["client_id"],
+        "contract-client"
+    );
+
+    let post = test::TestRequest::post()
+        .uri("/auth/me")
+        .insert_header((header::ORIGIN, "https://app.example"))
+        .to_request();
+    let post = test::call_service(&app, post).await;
+    assert_eq!(post.status(), StatusCode::NOT_FOUND);
+    assert!(post.headers().get(header::CONTENT_TYPE).is_none());
+    assert!(post.headers().get(header::CACHE_CONTROL).is_none());
+    assert_eq!(
+        post.headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .unwrap(),
+        "https://app.example"
+    );
+    assert_profile_security_headers(post.headers());
+    assert!(test::read_body(post).await.is_empty());
+
+    for method in ["GET", "PATCH"] {
+        let options = test::TestRequest::default()
+            .method(actix_web::http::Method::OPTIONS)
+            .uri("/auth/me")
+            .insert_header((header::ORIGIN, "https://app.example"))
+            .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, method))
+            .insert_header((
+                header::ACCESS_CONTROL_REQUEST_HEADERS,
+                "x-csrf-token, content-type",
+            ))
+            .to_request();
+        let options = test::call_service(&app, options).await;
+        assert_eq!(options.status(), StatusCode::OK, "method={method}");
+        assert!(options.headers().get(header::CONTENT_TYPE).is_none());
+        assert!(options.headers().get(header::CACHE_CONTROL).is_none());
+        assert_eq!(
+            options
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .unwrap(),
+            "https://app.example"
+        );
+        assert_eq!(
+            options
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+                .unwrap(),
+            "true"
+        );
+        assert_profile_security_headers(options.headers());
+        assert!(test::read_body(options).await.is_empty());
+    }
 }
 
 #[actix_web::test]

@@ -49,8 +49,9 @@ pub use passkey::{
 };
 pub use profile::{
     AccessRequestListError, AccessRequestWithDelivery, AccountOverview, AccountProfileService,
-    AvailableDelivery, ClientAccessService, DeliveryReadError, FederationLinksService,
-    NewAccessRequestInput, ProfilePatch, ProfileValidationError, UpdateProfileError,
+    AccountProfileView, AuthorizedApplicationView, AuthorizedApplicationsView, AvailableDelivery,
+    ClientAccessService, DeliveryReadError, FederationLinksService, NewAccessRequestInput,
+    PendingMfaProfileView, ProfilePatch, ProfileValidationError, UpdateProfileError,
     access_delivery_token,
 };
 pub use registration::{

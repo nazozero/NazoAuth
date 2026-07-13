@@ -1,11 +1,19 @@
-use super::*;
-use crate::domain::AppState;
+use crate::domain::{AppState, DatabaseUserFixture, ServerProfileAccountOperations};
 use crate::schema::users;
-use crate::test_support::{account_profiles, profile_sessions};
-use nazo_http_actix::OAuthJsonErrorFields;
-use serde_json::Value;
+use crate::settings::Settings;
+use crate::support::{
+    sessions::SessionPayload,
+    tenancy::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID},
+    valkey::valkey_set_ex,
+};
+use crate::test_support::account_profiles;
+use actix_web::{HttpRequest, HttpResponse, http::StatusCode, web::Data, web::Json};
+use chrono::Utc;
+use nazo_http_actix::{ProfileAccountEndpoint, SessionCookieConfig, UpdateProfileRequest};
+use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
+use uuid::Uuid;
 
 use actix_web::cookie::Cookie;
 use diesel::prelude::*;
@@ -21,7 +29,7 @@ use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
 
 async fn me_from_state(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
-    me(profile_sessions(&state), account_profiles(&state), req).await
+    nazo_http_actix::profile_me(profile_account_endpoint(&state), req).await
 }
 
 async fn update_me_from_state(
@@ -29,44 +37,28 @@ async fn update_me_from_state(
     req: HttpRequest,
     payload: Json<UpdateProfileRequest>,
 ) -> HttpResponse {
-    update_me(
-        profile_sessions(&state),
-        account_profiles(&state),
-        req,
-        payload,
-    )
-    .await
+    nazo_http_actix::profile_update(profile_account_endpoint(&state), req, payload).await
 }
 
-#[test]
-fn profile_validation_presenter_preserves_length_error_contract() {
-    let response = profile_validation_response(
-        nazo_identity::ProfileValidationError::FieldTooLong("display_name"),
-    );
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    assert_oauth_error(&response, "invalid_request");
-}
-
-#[test]
-fn profile_validation_presenter_preserves_url_error_contracts() {
-    for error in [
-        nazo_identity::ProfileValidationError::InvalidAbsoluteUrl("profile_url"),
-        nazo_identity::ProfileValidationError::InvalidHttpUrl("profile_url"),
-    ] {
-        let response = profile_validation_response(error);
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        assert_oauth_error(&response, "invalid_request");
-    }
-}
-
-fn assert_oauth_error(response: &HttpResponse, expected: &str) {
-    assert_eq!(
-        response
-            .extensions()
-            .get::<OAuthJsonErrorFields>()
-            .map(|fields| fields.error.as_str()),
-        Some(expected)
-    );
+fn profile_account_endpoint(state: &Data<AppState>) -> Data<ProfileAccountEndpoint> {
+    let connection = state.valkey_connection();
+    let session = &state.settings.session;
+    Data::new(ProfileAccountEndpoint::new(
+        Arc::new(ServerProfileAccountOperations::new(
+            nazo_identity::SessionService::new(
+                Arc::new(nazo_valkey::SessionStore::new(&connection)),
+                Arc::new(nazo_postgres::UserRepository::new(state.diesel_db.clone())),
+                nazo_identity::TenantId::new(DEFAULT_TENANT_ID)
+                    .expect("default tenant id is valid"),
+            ),
+            account_profiles(state).get_ref().clone(),
+        )),
+        SessionCookieConfig::new(
+            &session.session_cookie_name,
+            &session.csrf_cookie_name,
+            session.cookie_secure,
+        ),
+    ))
 }
 
 fn test_state() -> AppState {
