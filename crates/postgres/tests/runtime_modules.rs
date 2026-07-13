@@ -6,11 +6,11 @@ use diesel::{QueryableByName, sql_query, sql_types::BigInt};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_postgres::{RuntimeModuleRepository, create_pool};
 use nazo_runtime_modules::{
-    ActiveModuleSnapshot, CasOutcome, CatalogDurations, DesiredMode, DesiredStateChange,
-    DesiredStateRecord, InstanceStateChange, InstanceStateMutation, InstanceStateRecord,
-    ModuleCatalog, ModuleEventRecord, ModuleEventState, ModuleEventType, ModuleId, ModuleRevision,
-    ModuleState, ModuleStateRepository, NoopModuleLifecycle, ReconcileOutcome,
-    RuntimeModuleRegistry,
+    ActiveModuleSnapshot, CasOutcome, CatalogDurations, DesiredMode, DesiredRevisionGuard,
+    DesiredStateChange, DesiredStateRecord, InstanceStateChange, InstanceStateMutation,
+    InstanceStateRecord, ModuleCatalog, ModuleEventRecord, ModuleEventState, ModuleEventType,
+    ModuleId, ModuleRevision, ModuleState, ModuleStateRepository, NoopModuleLifecycle,
+    ReconcileOutcome, RuntimeModuleRegistry,
 };
 use uuid::Uuid;
 
@@ -161,6 +161,187 @@ async fn clear_module(database_url: &str, module_id: &str) {
             .await
             .expect("runtime module fixture should clear");
     }
+}
+
+#[tokio::test]
+async fn bulk_management_reads_return_domain_records_and_isolate_instances() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .expect("migrations should apply");
+    let repository = RuntimeModuleRepository::new(create_pool(&database_url, 4).unwrap());
+    let instance_id = format!("runtime-bulk-{}", Uuid::now_v7());
+    let other_instance_id = format!("runtime-bulk-other-{}", Uuid::now_v7());
+    let fixtures = [
+        (ModuleId::RequestObjects, DesiredMode::Enabled),
+        (ModuleId::Jarm, DesiredMode::Disabled),
+    ];
+
+    for (module_id, mode) in fixtures {
+        let current = repository.read_desired(module_id).await.unwrap();
+        let revision = current.as_ref().map_or(ModuleRevision::new(1), |record| {
+            ModuleRevision::new(record.revision.get() + 1)
+        });
+        let applied = repository
+            .compare_and_set_desired(DesiredStateChange {
+                expected_revision: current.map(|record| record.revision),
+                next: desired(module_id, mode, revision.get()),
+            })
+            .await
+            .unwrap();
+        let CasOutcome::Applied(applied) = applied else {
+            panic!("single-threaded bulk fixture desired update must apply");
+        };
+        let revision = applied.revision;
+        let state = instance(
+            &instance_id,
+            module_id,
+            ModuleState::Enabled,
+            revision.get(),
+        );
+        repository
+            .compare_and_set_instance(
+                revision,
+                instance_mutation(
+                    InstanceStateChange {
+                        expected_revision: None,
+                        next: state,
+                    },
+                    ModuleEventType::TransitionCompleted,
+                    Uuid::now_v7(),
+                ),
+            )
+            .await
+            .unwrap();
+    }
+
+    let other_module = ModuleId::RequestObjects;
+    let desired = repository
+        .read_desired(other_module)
+        .await
+        .unwrap()
+        .unwrap();
+    repository
+        .compare_and_set_instance(
+            desired.revision,
+            instance_mutation(
+                InstanceStateChange {
+                    expected_revision: None,
+                    next: instance(
+                        &other_instance_id,
+                        other_module,
+                        ModuleState::Enabled,
+                        desired.revision.get(),
+                    ),
+                },
+                ModuleEventType::TransitionCompleted,
+                Uuid::now_v7(),
+            ),
+        )
+        .await
+        .unwrap();
+
+    let desired_records = repository.read_all_desired().await.unwrap();
+    for (module_id, mode) in fixtures {
+        assert!(
+            desired_records
+                .iter()
+                .any(|record| record.module_id == module_id && record.mode == mode)
+        );
+    }
+    let instances = repository.read_all_instances(&instance_id).await.unwrap();
+    assert_eq!(instances.len(), fixtures.len());
+    assert!(
+        instances
+            .iter()
+            .all(|record| record.instance_id == instance_id)
+    );
+}
+
+#[tokio::test]
+async fn guarded_desired_changes_are_serialized_across_database_connections() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .expect("migrations should apply");
+    clear_module(&database_url, "http_message_signatures").await;
+    clear_module(&database_url, "frontchannel_logout").await;
+    let repository = Arc::new(RuntimeModuleRepository::new(
+        create_pool(&database_url, 4).unwrap(),
+    ));
+    let first = ModuleId::HttpMessageSignatures;
+    let second = ModuleId::FrontchannelLogout;
+    for module_id in [first, second] {
+        repository
+            .compare_and_set_desired(DesiredStateChange {
+                expected_revision: None,
+                next: desired(module_id, DesiredMode::Enabled, 1),
+            })
+            .await
+            .unwrap();
+    }
+
+    let first_change = repository.compare_and_set_desired_guarded(
+        DesiredStateChange {
+            expected_revision: Some(ModuleRevision::new(1)),
+            next: desired(first, DesiredMode::Disabled, 2),
+        },
+        vec![DesiredRevisionGuard {
+            module_id: second,
+            expected_revision: Some(ModuleRevision::new(1)),
+        }],
+    );
+    let second_change = repository.compare_and_set_desired_guarded(
+        DesiredStateChange {
+            expected_revision: Some(ModuleRevision::new(1)),
+            next: desired(second, DesiredMode::Disabled, 2),
+        },
+        vec![DesiredRevisionGuard {
+            module_id: first,
+            expected_revision: Some(ModuleRevision::new(1)),
+        }],
+    );
+    let (first_outcome, second_outcome) = tokio::join!(first_change, second_change);
+    let outcomes = [first_outcome.unwrap(), second_outcome.unwrap()];
+    assert_eq!(
+        outcomes
+            .iter()
+            .filter(|outcome| matches!(outcome, CasOutcome::Applied(_)))
+            .count(),
+        1
+    );
+    assert_eq!(
+        outcomes
+            .iter()
+            .filter(|outcome| matches!(outcome, CasOutcome::Stale { .. }))
+            .count(),
+        1
+    );
+    let revisions = [
+        repository
+            .read_desired(first)
+            .await
+            .unwrap()
+            .unwrap()
+            .revision,
+        repository
+            .read_desired(second)
+            .await
+            .unwrap()
+            .unwrap()
+            .revision,
+    ];
+    assert_eq!(
+        revisions
+            .iter()
+            .filter(|revision| **revision == ModuleRevision::new(2))
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]

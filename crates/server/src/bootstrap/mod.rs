@@ -81,7 +81,9 @@ use crate::support::sessions::{AdminSessionHandles, SessionHttpConfig, SessionPr
 use crate::support::tenancy::{DEFAULT_TENANT_ID, default_tenant_context};
 #[cfg(test)]
 use actix_web::http::header;
-use nazo_http_actix::{SessionCookieConfig, SessionLogoutEndpoint, security_headers};
+use nazo_http_actix::{
+    RuntimeModuleAdminEndpoint, SessionCookieConfig, SessionLogoutEndpoint, security_headers,
+};
 use nazo_postgres::create_pool;
 use tracing::Instrument;
 
@@ -315,18 +317,25 @@ pub async fn run() -> anyhow::Result<()> {
         &session.csrf_cookie_name,
         session.cookie_secure,
     );
+    let session_cookie_config = SessionCookieConfig::new(
+        &session.session_cookie_name,
+        &session.csrf_cookie_name,
+        session.cookie_secure,
+    );
+    let identity_session_service = nazo_identity::SessionService::new(
+        Arc::new(nazo_valkey::SessionStore::new(&valkey_connection)),
+        Arc::new(nazo_postgres::UserRepository::new(diesel_db.clone())),
+        nazo_identity::TenantId::new(DEFAULT_TENANT_ID).expect("default tenant ID is valid"),
+    );
     let profile_logout_endpoint = web::Data::new(SessionLogoutEndpoint::new(
-        nazo_identity::SessionService::new(
-            Arc::new(nazo_valkey::SessionStore::new(&valkey_connection)),
-            Arc::new(nazo_postgres::UserRepository::new(diesel_db.clone())),
-            nazo_identity::TenantId::new(DEFAULT_TENANT_ID).expect("default tenant ID is valid"),
-        ),
-        SessionCookieConfig::new(
-            &session.session_cookie_name,
-            &session.csrf_cookie_name,
-            session.cookie_secure,
-        ),
+        identity_session_service.clone(),
+        session_cookie_config.clone(),
         |error| tracing::warn!(%error, "failed to delete session during logout"),
+    ));
+    let runtime_module_admin_endpoint = web::Data::new(RuntimeModuleAdminEndpoint::new(
+        identity_session_service,
+        session_cookie_config,
+        runtime_modules.administration(),
     ));
     let admin_sessions = web::Data::new(AdminSessionHandles::new(
         nazo_valkey::SessionStore::new(&valkey_connection),
@@ -585,7 +594,7 @@ pub async fn run() -> anyhow::Result<()> {
                 .instrument(span)
             })
             .wrap(from_fn(security_headers))
-            .app_data(runtime_modules.clone())
+            .app_data(runtime_module_admin_endpoint.clone())
             .app_data(authorization_endpoint.clone())
             .app_data(authorization_service.clone())
             .app_data(token_service.clone());

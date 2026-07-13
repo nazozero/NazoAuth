@@ -4,10 +4,10 @@ use std::time::{Duration, SystemTime};
 use uuid::Uuid;
 
 use crate::{
-    ActiveModuleSnapshot, CasOutcome, DesiredMode, DesiredStateChange, DesiredStateRecord,
-    DisablePolicy, InstanceStateChange, InstanceStateMutation, InstanceStateRecord,
-    LifecycleFailure, ModuleCatalog, ModuleEventRecord, ModuleEventState, ModuleEventType,
-    ModuleId, ModuleLifecycle, ModuleRevision, ModuleState, ModuleStateRepository,
+    ActiveModuleSnapshot, CasOutcome, DesiredMode, DesiredRevisionGuard, DesiredStateChange,
+    DesiredStateRecord, DisablePolicy, InstanceStateChange, InstanceStateMutation,
+    InstanceStateRecord, LifecycleFailure, ModuleCatalog, ModuleEventRecord, ModuleEventState,
+    ModuleEventType, ModuleId, ModuleLifecycle, ModuleRevision, ModuleState, ModuleStateRepository,
     ReconcileOutcome, RegistryError, RequestLease, RequestLeaseTracker, SnapshotStore,
 };
 
@@ -18,6 +18,7 @@ pub struct RuntimeModuleRegistry<R, L> {
     instance_id: String,
     snapshots: Arc<SnapshotStore>,
     leases: RequestLeaseTracker,
+    desired_policy_lock: futures_util::lock::Mutex<()>,
     transition_locks: BTreeMap<ModuleId, Arc<futures_util::lock::Mutex<()>>>,
 }
 
@@ -41,6 +42,7 @@ where
             instance_id,
             snapshots: Arc::new(SnapshotStore::new(initial_snapshot)),
             leases: RequestLeaseTracker::default(),
+            desired_policy_lock: futures_util::lock::Mutex::new(()),
             transition_locks: ModuleId::ALL
                 .into_iter()
                 .map(|module_id| (module_id, Arc::new(futures_util::lock::Mutex::new(()))))
@@ -67,54 +69,103 @@ where
         reason: Option<String>,
         changed_at: SystemTime,
     ) -> Result<CasOutcome<DesiredStateRecord>, RegistryError<R::Error>> {
+        let _policy_guard = self.desired_policy_lock.lock().await;
         let spec = self
             .catalog
             .spec(module_id)
             .ok_or(RegistryError::MissingCatalogSpec(module_id))?;
+        let disable_policy = self
+            .catalog
+            .effective_disable_policy(module_id)
+            .ok_or(RegistryError::MissingCatalogSpec(module_id))?;
         let enabling = mode.resolve(self.catalog.inherited_enabled(module_id));
         let snapshot = self.snapshot();
+        let mut required_revisions = Vec::new();
         if enabling {
             for dependency in &spec.dependencies {
-                if !snapshot.admits(*dependency) {
+                let dependency_desired = self
+                    .repository
+                    .read_desired(*dependency)
+                    .await
+                    .map_err(RegistryError::Repository)?
+                    .ok_or(RegistryError::MissingDesiredState(*dependency))?;
+                if !dependency_desired
+                    .mode
+                    .resolve(self.catalog.inherited_enabled(*dependency))
+                    || !snapshot.admits(*dependency)
+                {
                     return Err(RegistryError::DependencyUnavailable {
                         module_id,
                         dependency: *dependency,
                     });
                 }
+                required_revisions.push(DesiredRevisionGuard {
+                    module_id: *dependency,
+                    expected_revision: Some(dependency_desired.revision),
+                });
             }
         } else {
-            if matches!(spec.disable_policy, DisablePolicy::NotRuntimeDisableable)
-                || self.catalog.runtime_disable_blocked(module_id)
-            {
+            if matches!(disable_policy, DisablePolicy::NotRuntimeDisableable) {
                 return Err(RegistryError::RuntimeDisableBlocked(module_id));
             }
-            if let Some(dependent) = self
+            for dependent in self
                 .catalog
-                .active_dependents(module_id, &snapshot.accepting)
-                .into_iter()
-                .next()
+                .specs()
+                .values()
+                .filter(|candidate| candidate.dependencies.contains(&module_id))
             {
-                return Err(RegistryError::ActiveDependent {
-                    module_id,
-                    dependent,
+                let dependent_desired = self
+                    .repository
+                    .read_desired(dependent.id)
+                    .await
+                    .map_err(RegistryError::Repository)?
+                    .ok_or(RegistryError::MissingDesiredState(dependent.id))?;
+                if dependent_desired
+                    .mode
+                    .resolve(self.catalog.inherited_enabled(dependent.id))
+                    || snapshot.admits(dependent.id)
+                {
+                    return Err(RegistryError::ActiveDependent {
+                        module_id,
+                        dependent: dependent.id,
+                    });
+                }
+                required_revisions.push(DesiredRevisionGuard {
+                    module_id: dependent.id,
+                    expected_revision: Some(dependent_desired.revision),
                 });
             }
         }
-        let next_revision = ModuleRevision::new(
-            expected_revision.map_or(1, |revision| revision.get().saturating_add(1)),
-        );
+        let current = self
+            .repository
+            .read_desired(module_id)
+            .await
+            .map_err(RegistryError::Repository)?;
+        if current.as_ref().map(|record| record.revision) != expected_revision {
+            return Ok(CasOutcome::Stale { current });
+        }
+        let next_revision = ModuleRevision::new(match expected_revision {
+            None => 1,
+            Some(revision) => revision
+                .get()
+                .checked_add(1)
+                .ok_or(RegistryError::RevisionExhausted(module_id))?,
+        });
         self.repository
-            .compare_and_set_desired(DesiredStateChange {
-                expected_revision,
-                next: DesiredStateRecord {
-                    module_id,
-                    mode,
-                    revision: next_revision,
-                    actor_id,
-                    reason,
-                    updated_at: changed_at,
+            .compare_and_set_desired_guarded(
+                DesiredStateChange {
+                    expected_revision,
+                    next: DesiredStateRecord {
+                        module_id,
+                        mode,
+                        revision: next_revision,
+                        actor_id,
+                        reason,
+                        updated_at: changed_at,
+                    },
                 },
-            })
+                required_revisions,
+            )
             .await
             .map_err(RegistryError::Repository)
     }
@@ -149,6 +200,27 @@ where
             .read_instance(&self.instance_id, module_id)
             .await
             .map_err(RegistryError::Repository)?;
+        if enabled {
+            if let Some(dependency) = self.first_unavailable_dependency(module_id).await? {
+                if self.snapshot().admits(module_id) {
+                    self.publish(module_id, false, false)?;
+                }
+                if let Some(current) = current.as_ref()
+                    && current.transition_revision == desired.revision
+                {
+                    return self.fail_dependency_loss(current, true).await;
+                }
+                return Err(RegistryError::DependencyUnavailable {
+                    module_id,
+                    dependency,
+                });
+            }
+        } else if let Some(dependent) = self.first_enabled_dependent(module_id).await? {
+            return Err(RegistryError::ActiveDependent {
+                module_id,
+                dependent,
+            });
+        }
         if current.as_ref().is_some_and(|instance| {
             instance.applied_revision == Some(desired.revision)
                 && ((enabled && instance.state == ModuleState::Enabled)
@@ -186,6 +258,13 @@ where
         let CasOutcome::Applied(starting) = starting else {
             return Ok(ReconcileOutcome::StaleDiscarded);
         };
+        if self
+            .first_unavailable_dependency(module_id)
+            .await?
+            .is_some()
+        {
+            return self.fail_dependency_loss(&starting, false).await;
+        }
         if let Err(failure) = self.lifecycle.initialize(module_id).await {
             return Ok(if self.persist_failure(&starting, failure).await? {
                 ReconcileOutcome::Failed
@@ -193,13 +272,28 @@ where
                 ReconcileOutcome::StaleDiscarded
             });
         }
+        if self
+            .first_unavailable_dependency(module_id)
+            .await?
+            .is_some()
+        {
+            return self.fail_dependency_loss(&starting, true).await;
+        }
         if !self.revision_is_current(module_id, revision).await? {
             self.discard_stale(starting).await?;
             return Ok(ReconcileOutcome::StaleDiscarded);
         }
-        self.publish(module_id, true, false);
+        self.publish(module_id, true, false)?;
+        if self
+            .first_unavailable_dependency(module_id)
+            .await?
+            .is_some()
+        {
+            self.publish(module_id, false, false)?;
+            return self.fail_dependency_loss(&starting, true).await;
+        }
         if !self.revision_is_current(module_id, revision).await? {
-            self.publish(module_id, false, false);
+            self.publish(module_id, false, false)?;
             self.discard_stale(starting).await?;
             return Ok(ReconcileOutcome::StaleDiscarded);
         }
@@ -223,7 +317,7 @@ where
                 // check but before the repository CAS. The per-module guard
                 // ensures this rollback cannot erase a newer reconciler's
                 // publication.
-                self.publish(module_id, false, false);
+                self.publish(module_id, false, false)?;
                 ReconcileOutcome::StaleDiscarded
             }
         })
@@ -235,9 +329,9 @@ where
         revision: ModuleRevision,
         current: Option<InstanceStateRecord>,
     ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
-        let spec = self
+        let disable_policy = self
             .catalog
-            .spec(module_id)
+            .effective_disable_policy(module_id)
             .ok_or(RegistryError::MissingCatalogSpec(module_id))?;
         if current
             .as_ref()
@@ -264,7 +358,7 @@ where
                     if !self.revision_is_current(module_id, revision).await? {
                         Ok(ReconcileOutcome::StaleDiscarded)
                     } else {
-                        self.publish(module_id, false, false);
+                        self.publish(module_id, false, false)?;
                         Ok(ReconcileOutcome::Disabled)
                     }
                 }
@@ -272,7 +366,7 @@ where
             };
         }
         let prior_generation = self.snapshot().revision;
-        let drain_deadline = match spec.disable_policy {
+        let drain_deadline = match disable_policy {
             DisablePolicy::DrainStoredTransactions { max_duration } => current
                 .as_ref()
                 .filter(|instance| {
@@ -299,18 +393,33 @@ where
         let CasOutcome::Applied(draining) = draining else {
             return Ok(ReconcileOutcome::StaleDiscarded);
         };
+        if self.first_enabled_dependent(module_id).await?.is_some() {
+            let failed = self
+                .persist_failure(
+                    &draining,
+                    LifecycleFailure {
+                        code: "active_dependent",
+                    },
+                )
+                .await?;
+            return Ok(if failed {
+                ReconcileOutcome::Failed
+            } else {
+                ReconcileOutcome::StaleDiscarded
+            });
+        }
         if !self.revision_is_current(module_id, revision).await? {
             self.discard_stale(draining).await?;
             return Ok(ReconcileOutcome::StaleDiscarded);
         }
-        self.publish(module_id, false, true);
+        self.publish(module_id, false, true)?;
         if !self.revision_is_current(module_id, revision).await? {
             self.discard_stale(draining).await?;
             self.restore_admission_after_stale_disable(module_id)
                 .await?;
             return Ok(ReconcileOutcome::StaleDiscarded);
         }
-        if !matches!(spec.disable_policy, DisablePolicy::Immediate) {
+        if !matches!(disable_policy, DisablePolicy::Immediate) {
             if !matches!(
                 self.persist_state(
                     module_id,
@@ -334,7 +443,7 @@ where
                 .wait_until_zero(module_id, prior_generation)
                 .await;
             if matches!(
-                spec.disable_policy,
+                disable_policy,
                 DisablePolicy::DrainStoredTransactions { .. }
             ) {
                 let remaining_duration = drain_deadline
@@ -428,7 +537,7 @@ where
             // `stop` already ran, so admission cannot be restored safely.
             // Remove the obsolete draining marker; the newer revision will
             // initialize and republish the module if it resolves to enabled.
-            self.publish(module_id, false, false);
+            self.publish(module_id, false, false)?;
             return Ok(ReconcileOutcome::StaleDiscarded);
         }
         let completed = self
@@ -447,14 +556,14 @@ where
         match completed {
             CasOutcome::Applied(_) => {
                 if !self.revision_is_current(module_id, revision).await? {
-                    self.publish(module_id, false, false);
+                    self.publish(module_id, false, false)?;
                     return Ok(ReconcileOutcome::StaleDiscarded);
                 }
-                self.publish(module_id, false, false);
+                self.publish(module_id, false, false)?;
                 Ok(ReconcileOutcome::Disabled)
             }
             CasOutcome::Stale { .. } => {
-                self.publish(module_id, false, false);
+                self.publish(module_id, false, false)?;
                 Ok(ReconcileOutcome::StaleDiscarded)
             }
         }
@@ -478,7 +587,7 @@ where
             let accepting = desired
                 .mode
                 .resolve(self.catalog.inherited_enabled(module_id));
-            self.publish(module_id, accepting, !accepting);
+            self.publish(module_id, accepting, !accepting)?;
             if self
                 .revision_is_current(module_id, desired.revision)
                 .await?
@@ -486,6 +595,90 @@ where
                 return Ok(());
             }
         }
+    }
+
+    async fn first_unavailable_dependency(
+        &self,
+        module_id: ModuleId,
+    ) -> Result<Option<ModuleId>, RegistryError<R::Error>> {
+        let spec = self
+            .catalog
+            .spec(module_id)
+            .ok_or(RegistryError::MissingCatalogSpec(module_id))?;
+        let snapshot = self.snapshot();
+        for dependency in &spec.dependencies {
+            let desired = self
+                .repository
+                .read_desired(*dependency)
+                .await
+                .map_err(RegistryError::Repository)?
+                .ok_or(RegistryError::MissingDesiredState(*dependency))?;
+            if !desired
+                .mode
+                .resolve(self.catalog.inherited_enabled(*dependency))
+                || !snapshot.admits(*dependency)
+            {
+                return Ok(Some(*dependency));
+            }
+        }
+        Ok(None)
+    }
+
+    async fn first_enabled_dependent(
+        &self,
+        module_id: ModuleId,
+    ) -> Result<Option<ModuleId>, RegistryError<R::Error>> {
+        let snapshot = self.snapshot();
+        for dependent in self
+            .catalog
+            .specs()
+            .values()
+            .filter(|candidate| candidate.dependencies.contains(&module_id))
+        {
+            let desired = self
+                .repository
+                .read_desired(dependent.id)
+                .await
+                .map_err(RegistryError::Repository)?
+                .ok_or(RegistryError::MissingDesiredState(dependent.id))?;
+            if desired
+                .mode
+                .resolve(self.catalog.inherited_enabled(dependent.id))
+                || snapshot.admits(dependent.id)
+            {
+                return Ok(Some(dependent.id));
+            }
+        }
+        Ok(None)
+    }
+
+    async fn fail_dependency_loss(
+        &self,
+        current: &InstanceStateRecord,
+        initialized: bool,
+    ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
+        if self.snapshot().admits(current.module_id) {
+            self.publish(current.module_id, false, false)?;
+        }
+        let failure = if initialized {
+            self.lifecycle
+                .stop(current.module_id)
+                .await
+                .err()
+                .unwrap_or(LifecycleFailure {
+                    code: "dependency_unavailable",
+                })
+        } else {
+            LifecycleFailure {
+                code: "dependency_unavailable",
+            }
+        };
+        let failed = self.persist_failure(current, failure).await?;
+        Ok(if failed {
+            ReconcileOutcome::Failed
+        } else {
+            ReconcileOutcome::StaleDiscarded
+        })
     }
 
     async fn revision_is_current(
@@ -499,15 +692,25 @@ where
             .map_err(RegistryError::Repository)
     }
 
-    fn publish(&self, module_id: ModuleId, accepting: bool, draining: bool) {
+    fn publish(
+        &self,
+        module_id: ModuleId,
+        accepting: bool,
+        draining: bool,
+    ) -> Result<(), RegistryError<R::Error>> {
         loop {
             let current = self.snapshots.load_full();
             let mut accepting_set = current.accepting.clone();
             let mut draining_set = current.draining.clone();
             set_membership(&mut accepting_set, module_id, accepting);
             set_membership(&mut draining_set, module_id, draining);
+            let next_revision = current
+                .revision
+                .get()
+                .checked_add(1)
+                .ok_or(RegistryError::SnapshotRevisionExhausted)?;
             let next = ActiveModuleSnapshot {
-                revision: ModuleRevision::new(current.revision.get().saturating_add(1)),
+                revision: ModuleRevision::new(next_revision),
                 accepting: accepting_set,
                 draining: draining_set,
             };
@@ -516,7 +719,7 @@ where
                 .compare_and_publish(current.revision, next)
                 .is_ok()
             {
-                return;
+                return Ok(());
             }
         }
     }

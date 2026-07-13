@@ -73,4 +73,6 @@ pub enum RegistryError<E> {
         module_id: ModuleId,
         dependency: ModuleId,
     },
+    RevisionExhausted(ModuleId),
+    SnapshotRevisionExhausted,
 }

@@ -3,11 +3,16 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use actix_web::web;
+use nazo_http_actix::{
+    RuntimeModuleAdminError, RuntimeModuleAdminFuture, RuntimeModuleAdministration,
+};
 use nazo_postgres::{DbPool, RuntimeModuleRepository};
 use nazo_runtime_modules::{
-    ActiveModuleSnapshot, CasOutcome, CatalogDurations, DesiredMode, ModuleCatalog, ModuleId,
-    ModuleLifecycle, ModuleRevision, ModuleState, ModuleStateRepository, ReconcileOutcome,
-    RuntimeModuleRegistry,
+    ActiveModuleSnapshot, CasOutcome, CatalogDurations, DesiredMode, DesiredStateUpdate,
+    DesiredStateUpdateOutcome, ModuleCatalog, ModuleEventPage, ModuleId, ModuleLifecycle,
+    ModuleRevision, ModuleState, ModuleStateRepository, ReconcileOutcome, RegistryError,
+    RuntimeModuleManagement, RuntimeModuleManagementError, RuntimeModuleRegistry,
+    RuntimeModuleView,
 };
 
 use crate::settings::Settings;
@@ -120,6 +125,17 @@ impl RuntimeModules {
         Ok(modules)
     }
 
+    pub(crate) fn administration(&self) -> Arc<dyn RuntimeModuleAdministration> {
+        Arc::new(ServerRuntimeModuleAdministration {
+            management: RuntimeModuleManagement::new(
+                self.repository.clone(),
+                self.registry.clone(),
+                self.catalog.clone(),
+                self.instance_id.clone(),
+            ),
+        })
+    }
+
     pub(crate) fn spawn_reconciler(modules: web::Data<Self>) {
         for module_id in ModuleId::ALL {
             let modules = modules.clone();
@@ -139,6 +155,64 @@ impl RuntimeModules {
                     }
                 }
             });
+        }
+    }
+}
+
+struct ServerRuntimeModuleAdministration {
+    management: RuntimeModuleManagement<RuntimeModuleRepository, ServerModuleLifecycle>,
+}
+
+impl RuntimeModuleAdministration for ServerRuntimeModuleAdministration {
+    fn list(&self) -> RuntimeModuleAdminFuture<'_, Vec<RuntimeModuleView>> {
+        Box::pin(async { self.management.list().await.map_err(map_management_error) })
+    }
+
+    fn events(&self, offset: i64, limit: i64) -> RuntimeModuleAdminFuture<'_, ModuleEventPage> {
+        Box::pin(async move {
+            self.management
+                .events(offset, limit)
+                .await
+                .map_err(map_management_error)
+        })
+    }
+
+    fn update_desired(
+        &self,
+        update: DesiredStateUpdate,
+    ) -> RuntimeModuleAdminFuture<'_, DesiredStateUpdateOutcome> {
+        Box::pin(async move {
+            self.management
+                .update_desired(update)
+                .await
+                .map_err(map_management_error)
+        })
+    }
+}
+
+fn map_management_error(
+    error: RuntimeModuleManagementError<nazo_identity::ports::RepositoryError>,
+) -> RuntimeModuleAdminError {
+    match error {
+        RuntimeModuleManagementError::Repository(error)
+        | RuntimeModuleManagementError::Registry(RegistryError::Repository(error)) => {
+            tracing::warn!(%error, "runtime module administration repository failed");
+            RuntimeModuleAdminError::Unavailable
+        }
+        RuntimeModuleManagementError::Registry(
+            RegistryError::RuntimeDisableBlocked(_)
+            | RegistryError::ActiveDependent { .. }
+            | RegistryError::DependencyUnavailable { .. },
+        ) => RuntimeModuleAdminError::PolicyConflict,
+        RuntimeModuleManagementError::Registry(
+            RegistryError::MissingDesiredState(_) | RegistryError::MissingCatalogSpec(_),
+        )
+        | RuntimeModuleManagementError::Registry(
+            RegistryError::RevisionExhausted(_) | RegistryError::SnapshotRevisionExhausted,
+        )
+        | RuntimeModuleManagementError::MissingCatalogSpec(_) => {
+            tracing::error!(?error, "runtime module catalog is inconsistent");
+            RuntimeModuleAdminError::CatalogInconsistent
         }
     }
 }

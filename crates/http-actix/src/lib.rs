@@ -13,6 +13,7 @@ mod metadata;
 mod middleware;
 mod presenter;
 mod request_context;
+mod runtime_modules;
 mod scim;
 mod session;
 mod token_forms;
@@ -56,6 +57,11 @@ pub use presenter::{
     oauth_bearer_error, oauth_error, oauth_error_description, oauth_token_error, redirect_found,
 };
 pub use request_context::RequestContext;
+pub use runtime_modules::{
+    RuntimeModuleAdminEndpoint, RuntimeModuleAdminError, RuntimeModuleAdminFuture,
+    RuntimeModuleAdministration, RuntimeModuleEventPageQuery, RuntimeModulePatch,
+    admin_patch_runtime_module, admin_runtime_module_events, admin_runtime_modules,
+};
 pub use scim::{
     ScimAuthorizationError, ScimAuthorizedRequest, ScimBootstrapPasswordProvider,
     ScimCursorProtector, ScimDependencyError, ScimEndpoint, ScimFuture, ScimRequestAuthorizer,

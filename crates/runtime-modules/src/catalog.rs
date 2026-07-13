@@ -72,6 +72,20 @@ impl ModuleCatalog {
         self
     }
 
+    pub fn with_dependencies(
+        mut self,
+        module_id: ModuleId,
+        dependencies: impl IntoIterator<Item = ModuleId>,
+    ) -> Result<Self, ModuleCatalogError> {
+        self.specs
+            .get_mut(&module_id)
+            .expect("the fixed catalog contains every closed module ID")
+            .dependencies = dependencies.into_iter().collect();
+        let specs = self.specs.values().cloned().collect::<Vec<_>>();
+        validate_module_specs(&specs)?;
+        Ok(self)
+    }
+
     #[must_use]
     pub fn specs(&self) -> &BTreeMap<ModuleId, ModuleSpec> {
         &self.specs
@@ -92,6 +106,15 @@ impl ModuleCatalog {
         self.runtime_disable_blocked.contains(&module_id)
     }
 
+    #[must_use]
+    pub fn effective_disable_policy(&self, module_id: ModuleId) -> Option<DisablePolicy> {
+        if self.runtime_disable_blocked(module_id) {
+            Some(DisablePolicy::NotRuntimeDisableable)
+        } else {
+            self.spec(module_id).map(|spec| spec.disable_policy)
+        }
+    }
+
     pub fn active_dependents(
         &self,
         module_id: ModuleId,
@@ -102,5 +125,40 @@ impl ModuleCatalog {
             .filter(|spec| active.contains(&spec.id) && spec.dependencies.contains(&module_id))
             .map(|spec| spec.id)
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn security_profile_block_is_reflected_only_in_effective_policy() {
+        let durations = CatalogDurations {
+            device_authorization: Duration::from_secs(1),
+            ciba: Duration::from_secs(2),
+            authorization_code: Duration::from_secs(3),
+            refresh_token: Duration::from_secs(4),
+            session: Duration::from_secs(5),
+        };
+        let base = ModuleCatalog::fixed(durations, BTreeSet::new()).unwrap();
+        assert_eq!(
+            base.effective_disable_policy(ModuleId::Jarm),
+            Some(DisablePolicy::DrainStoredTransactions {
+                max_duration: Duration::from_secs(3)
+            })
+        );
+
+        let profiled = base.clone().with_runtime_disable_blocked([ModuleId::Jarm]);
+        assert_eq!(
+            profiled.spec(ModuleId::Jarm).unwrap().disable_policy,
+            DisablePolicy::DrainStoredTransactions {
+                max_duration: Duration::from_secs(3)
+            }
+        );
+        assert_eq!(
+            profiled.effective_disable_policy(ModuleId::Jarm),
+            Some(DisablePolicy::NotRuntimeDisableable)
+        );
     }
 }

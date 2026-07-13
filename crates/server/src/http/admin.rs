@@ -4,5 +4,4 @@ pub(crate) mod access_requests;
 pub(crate) mod clients;
 pub(crate) mod federation;
 pub(crate) mod grants;
-pub(crate) mod runtime_modules;
 pub(crate) mod users;

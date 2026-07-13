@@ -3,9 +3,10 @@ use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_identity::ports::RepositoryError;
 use nazo_runtime_modules::{
-    CasOutcome, DesiredMode, DesiredStateChange, DesiredStateRecord, InstanceStateMutation,
-    InstanceStateRecord, ModuleEventRecord, ModuleEventState, ModuleEventType, ModuleId,
-    ModuleRevision, ModuleState, ModuleStateRepository,
+    CasOutcome, DesiredMode, DesiredRevisionGuard, DesiredStateChange, DesiredStateRecord,
+    InstanceStateMutation, InstanceStateRecord, ModuleEventPage, ModuleEventRecord,
+    ModuleEventState, ModuleEventType, ModuleId, ModuleRevision, ModuleState,
+    ModuleStateRepository,
 };
 use uuid::Uuid;
 
@@ -20,11 +21,7 @@ use crate::{
     },
 };
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RuntimeModuleEventPage {
-    pub total: i64,
-    pub events: Vec<ModuleEventRecord>,
-}
+pub type RuntimeModuleEventPage = ModuleEventPage;
 
 #[derive(Clone)]
 pub struct RuntimeModuleRepository {
@@ -49,6 +46,14 @@ impl RuntimeModuleRepository {
         offset: i64,
         limit: i64,
     ) -> Result<RuntimeModuleEventPage, RepositoryError> {
+        self.page_events_inner(offset, limit).await
+    }
+
+    async fn page_events_inner(
+        &self,
+        offset: i64,
+        limit: i64,
+    ) -> Result<ModuleEventPage, RepositoryError> {
         if offset < 0 || !(1..=100).contains(&limit) {
             return Err(RepositoryError::Consistency(
                 "runtime event pagination is out of bounds".to_owned(),
@@ -75,7 +80,7 @@ impl RuntimeModuleRepository {
             .into_iter()
             .map(event_from_row)
             .collect::<Result<_, _>>()?;
-        Ok(RuntimeModuleEventPage { total, events })
+        Ok(ModuleEventPage { total, events })
     }
 }
 
@@ -98,15 +103,46 @@ impl ModuleStateRepository for RuntimeModuleRepository {
             .transpose()
     }
 
+    async fn read_all_desired(&self) -> Result<Vec<DesiredStateRecord>, Self::Error> {
+        let mut connection = self.connection().await?;
+        runtime_module_desired_states::table
+            .select(DesiredStateRow::as_select())
+            .load::<DesiredStateRow>(&mut connection)
+            .await
+            .map_err(map_error)?
+            .into_iter()
+            .map(desired_from_row)
+            .collect()
+    }
+
     async fn compare_and_set_desired(
         &self,
         change: DesiredStateChange,
     ) -> Result<CasOutcome<DesiredStateRecord>, Self::Error> {
+        self.compare_and_set_desired_guarded(change, Vec::new())
+            .await
+    }
+
+    async fn compare_and_set_desired_guarded(
+        &self,
+        change: DesiredStateChange,
+        required_revisions: Vec<DesiredRevisionGuard>,
+    ) -> Result<CasOutcome<DesiredStateRecord>, Self::Error> {
+        let expected_next = next_desired_revision(change.expected_revision)?;
+        let mut locked_modules = required_revisions
+            .iter()
+            .map(|guard| guard.module_id)
+            .collect::<Vec<_>>();
+        locked_modules.push(change.next.module_id);
+        locked_modules.sort_unstable();
+        locked_modules.dedup();
         let mut connection = self.connection().await?;
         connection
             .transaction::<CasOutcome<DesiredStateRecord>, RuntimeTransactionError, _>(
                 async |connection| {
-                    lock_key(connection, module_id(change.next.module_id)).await?;
+                    for locked_module in &locked_modules {
+                        lock_key(connection, module_id(*locked_module)).await?;
+                    }
                     let current = runtime_module_desired_states::table
                         .find(module_id(change.next.module_id))
                         .select(DesiredStateRow::as_select())
@@ -119,6 +155,20 @@ impl ModuleStateRepository for RuntimeModuleRepository {
                         .map_err(RuntimeTransactionError::Repository)?;
                     if current.as_ref().map(|record| record.revision) != change.expected_revision {
                         return Ok(CasOutcome::Stale { current });
+                    }
+                    for guard in &required_revisions {
+                        let guarded_revision = runtime_module_desired_states::table
+                            .find(module_id(guard.module_id))
+                            .select(runtime_module_desired_states::revision)
+                            .first::<i64>(connection)
+                            .await
+                            .optional()?
+                            .map(parse_revision)
+                            .transpose()
+                            .map_err(RuntimeTransactionError::Repository)?;
+                        if guarded_revision != guard.expected_revision {
+                            return Ok(CasOutcome::Stale { current });
+                        }
                     }
 
                     if let Some(current) = current.as_ref()
@@ -136,9 +186,6 @@ impl ModuleStateRepository for RuntimeModuleRepository {
                         return Ok(CasOutcome::Applied(current.clone()));
                     }
 
-                    let expected_next = change
-                        .expected_revision
-                        .map_or(1, |value| value.get().saturating_add(1));
                     if change.next.revision.get() != expected_next {
                         return Err(RuntimeTransactionError::Repository(
                             RepositoryError::Consistency(format!(
@@ -216,6 +263,26 @@ impl ModuleStateRepository for RuntimeModuleRepository {
             .map_err(map_error)?
             .map(instance_from_row)
             .transpose()
+    }
+
+    async fn read_all_instances(
+        &self,
+        requested_instance_id: &str,
+    ) -> Result<Vec<InstanceStateRecord>, Self::Error> {
+        let mut connection = self.connection().await?;
+        runtime_module_instance_states::table
+            .filter(runtime_module_instance_states::instance_id.eq(requested_instance_id))
+            .select(InstanceStateRow::as_select())
+            .load::<InstanceStateRow>(&mut connection)
+            .await
+            .map_err(map_error)?
+            .into_iter()
+            .map(instance_from_row)
+            .collect()
+    }
+
+    async fn page_events(&self, offset: i64, limit: i64) -> Result<ModuleEventPage, Self::Error> {
+        self.page_events_inner(offset, limit).await
     }
 
     async fn compare_and_set_instance(
@@ -555,6 +622,36 @@ fn parse_revision(value: i64) -> Result<ModuleRevision, RepositoryError> {
     u64::try_from(value)
         .map(ModuleRevision::new)
         .map_err(|_| RepositoryError::Consistency("negative runtime revision".to_owned()))
+}
+
+fn next_desired_revision(
+    expected_revision: Option<ModuleRevision>,
+) -> Result<u64, RepositoryError> {
+    match expected_revision {
+        None => Ok(1),
+        Some(revision) => revision.get().checked_add(1).ok_or_else(|| {
+            RepositoryError::Consistency("desired revision space is exhausted".to_owned())
+        }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn desired_revision_exhaustion_is_rejected_without_saturation() {
+        assert_eq!(next_desired_revision(None).unwrap(), 1);
+        assert_eq!(
+            next_desired_revision(Some(ModuleRevision::new(41))).unwrap(),
+            42
+        );
+        assert!(matches!(
+            next_desired_revision(Some(ModuleRevision::new(u64::MAX))),
+            Err(RepositoryError::Consistency(message))
+                if message == "desired revision space is exhausted"
+        ));
+    }
 }
 
 fn parse_desired_mode(value: &str) -> Result<DesiredMode, RepositoryError> {

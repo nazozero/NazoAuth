@@ -22,6 +22,17 @@ pub struct DesiredStateChange {
     pub next: DesiredStateRecord,
 }
 
+/// A related desired-state revision that must still match when a change commits.
+///
+/// Repositories use these guards only as a transaction mechanism. The registry
+/// remains responsible for deciding which dependency or dependent revisions
+/// protect a policy decision.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DesiredRevisionGuard {
+    pub module_id: ModuleId,
+    pub expected_revision: Option<ModuleRevision>,
+}
+
 /// Durable actual state for one module on one process instance.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InstanceStateRecord {
@@ -77,6 +88,12 @@ pub struct ModuleEventRecord {
     pub occurred_at: SystemTime,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModuleEventPage {
+    pub total: i64,
+    pub events: Vec<ModuleEventRecord>,
+}
+
 /// Result of a durable compare-and-set, including the state that won a race.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CasOutcome<T> {
@@ -96,6 +113,10 @@ pub trait ModuleStateRepository: Send + Sync {
         module_id: ModuleId,
     ) -> impl Future<Output = Result<Option<DesiredStateRecord>, Self::Error>> + Send;
 
+    fn read_all_desired(
+        &self,
+    ) -> impl Future<Output = Result<Vec<DesiredStateRecord>, Self::Error>> + Send;
+
     /// Compares and sets desired state and appends the matching
     /// [`ModuleEventType::DesiredStateChanged`] event in one atomic commit.
     /// A stale outcome must mutate neither desired state nor the event stream.
@@ -104,11 +125,31 @@ pub trait ModuleStateRepository: Send + Sync {
         change: DesiredStateChange,
     ) -> impl Future<Output = Result<CasOutcome<DesiredStateRecord>, Self::Error>> + Send;
 
+    /// Atomically validates related desired-state revisions and applies the
+    /// target compare-and-set. A guard mismatch returns [`CasOutcome::Stale`]
+    /// with the current target record and must not mutate state or audit events.
+    fn compare_and_set_desired_guarded(
+        &self,
+        change: DesiredStateChange,
+        required_revisions: Vec<DesiredRevisionGuard>,
+    ) -> impl Future<Output = Result<CasOutcome<DesiredStateRecord>, Self::Error>> + Send;
+
     fn read_instance(
         &self,
         instance_id: &str,
         module_id: ModuleId,
     ) -> impl Future<Output = Result<Option<InstanceStateRecord>, Self::Error>> + Send;
+
+    fn read_all_instances(
+        &self,
+        instance_id: &str,
+    ) -> impl Future<Output = Result<Vec<InstanceStateRecord>, Self::Error>> + Send;
+
+    fn page_events(
+        &self,
+        offset: i64,
+        limit: i64,
+    ) -> impl Future<Output = Result<ModuleEventPage, Self::Error>> + Send;
 
     fn compare_and_set_instance(
         &self,

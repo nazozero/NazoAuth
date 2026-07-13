@@ -8,11 +8,11 @@ use std::task::{Context, Poll, Waker};
 use std::time::{Duration, SystemTime};
 
 use nazo_runtime_modules::{
-    ActiveModuleSnapshot, CasOutcome, CatalogDurations, DesiredMode, DesiredStateChange,
-    DesiredStateRecord, InstanceStateMutation, InstanceStateRecord, LifecycleFailure,
-    LifecycleFuture, ModuleCatalog, ModuleEventRecord, ModuleEventType, ModuleId, ModuleLifecycle,
-    ModuleRevision, ModuleState, ModuleStateRepository, NoopModuleLifecycle, ReconcileOutcome,
-    RuntimeModuleRegistry,
+    ActiveModuleSnapshot, CasOutcome, CatalogDurations, DesiredMode, DesiredRevisionGuard,
+    DesiredStateChange, DesiredStateRecord, InstanceStateMutation, InstanceStateRecord,
+    LifecycleFailure, LifecycleFuture, ModuleCatalog, ModuleEventPage, ModuleEventRecord,
+    ModuleEventType, ModuleId, ModuleLifecycle, ModuleRevision, ModuleState, ModuleStateRepository,
+    NoopModuleLifecycle, ReconcileOutcome, RuntimeModuleRegistry,
 };
 
 fn block_on<F: Future>(future: F) -> F::Output {
@@ -114,6 +114,17 @@ impl ModuleStateRepository for Repository {
         Ok(self.state.lock().unwrap().desired.clone())
     }
 
+    async fn read_all_desired(&self) -> Result<Vec<DesiredStateRecord>, Self::Error> {
+        Ok(self
+            .state
+            .lock()
+            .unwrap()
+            .desired
+            .clone()
+            .into_iter()
+            .collect())
+    }
+
     async fn compare_and_set_desired(
         &self,
         change: DesiredStateChange,
@@ -144,12 +155,49 @@ impl ModuleStateRepository for Repository {
         Ok(CasOutcome::Applied(change.next))
     }
 
+    async fn compare_and_set_desired_guarded(
+        &self,
+        change: DesiredStateChange,
+        required_revisions: Vec<DesiredRevisionGuard>,
+    ) -> Result<CasOutcome<DesiredStateRecord>, Self::Error> {
+        assert!(required_revisions.is_empty());
+        self.compare_and_set_desired(change).await
+    }
+
     async fn read_instance(
         &self,
         _instance_id: &str,
         _module_id: ModuleId,
     ) -> Result<Option<InstanceStateRecord>, Self::Error> {
         Ok(self.state.lock().unwrap().instance.clone())
+    }
+
+    async fn read_all_instances(
+        &self,
+        _instance_id: &str,
+    ) -> Result<Vec<InstanceStateRecord>, Self::Error> {
+        Ok(self
+            .state
+            .lock()
+            .unwrap()
+            .instance
+            .clone()
+            .into_iter()
+            .collect())
+    }
+
+    async fn page_events(&self, offset: i64, limit: i64) -> Result<ModuleEventPage, Self::Error> {
+        let state = self.state.lock().unwrap();
+        Ok(ModuleEventPage {
+            total: i64::try_from(state.events.len()).unwrap(),
+            events: state
+                .events
+                .iter()
+                .skip(usize::try_from(offset).unwrap())
+                .take(usize::try_from(limit).unwrap())
+                .cloned()
+                .collect(),
+        })
     }
 
     async fn compare_and_set_instance(

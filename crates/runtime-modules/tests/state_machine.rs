@@ -7,11 +7,11 @@ use std::task::{Context, Poll, Waker};
 use std::time::{Duration, SystemTime};
 
 use nazo_runtime_modules::{
-    ActiveModuleSnapshot, CasOutcome, DesiredMode, DesiredStateChange, DesiredStateRecord,
-    DisablePolicy, InstanceStateChange, InstanceStateMutation, InstanceStateRecord,
-    ModuleEventRecord, ModuleEventState, ModuleEventType, ModuleId, ModuleRevision, ModuleSpec,
-    ModuleState, ModuleStateRepository, SnapshotStore, StaleTransition, TransitionGuard,
-    validate_module_specs,
+    ActiveModuleSnapshot, CasOutcome, DesiredMode, DesiredRevisionGuard, DesiredStateChange,
+    DesiredStateRecord, DisablePolicy, InstanceStateChange, InstanceStateMutation,
+    InstanceStateRecord, ModuleEventPage, ModuleEventRecord, ModuleEventState, ModuleEventType,
+    ModuleId, ModuleRevision, ModuleSpec, ModuleState, ModuleStateRepository, SnapshotStore,
+    StaleTransition, TransitionGuard, validate_module_specs,
 };
 
 fn complete_fixture_catalog() -> Vec<ModuleSpec> {
@@ -327,6 +327,17 @@ impl ModuleStateRepository for InMemoryRepository {
             .cloned())
     }
 
+    async fn read_all_desired(&self) -> Result<Vec<DesiredStateRecord>, Self::Error> {
+        Ok(self
+            .state
+            .lock()
+            .expect("state lock poisoned")
+            .desired
+            .values()
+            .cloned()
+            .collect())
+    }
+
     async fn compare_and_set_desired(
         &self,
         change: DesiredStateChange,
@@ -359,6 +370,15 @@ impl ModuleStateRepository for InMemoryRepository {
         Ok(CasOutcome::Applied(change.next))
     }
 
+    async fn compare_and_set_desired_guarded(
+        &self,
+        change: DesiredStateChange,
+        required_revisions: Vec<DesiredRevisionGuard>,
+    ) -> Result<CasOutcome<DesiredStateRecord>, Self::Error> {
+        assert!(required_revisions.is_empty());
+        self.compare_and_set_desired(change).await
+    }
+
     async fn read_instance(
         &self,
         instance_id: &str,
@@ -371,6 +391,35 @@ impl ModuleStateRepository for InMemoryRepository {
             .instances
             .get(&(instance_id.to_owned(), module_id))
             .cloned())
+    }
+
+    async fn read_all_instances(
+        &self,
+        instance_id: &str,
+    ) -> Result<Vec<InstanceStateRecord>, Self::Error> {
+        Ok(self
+            .state
+            .lock()
+            .expect("state lock poisoned")
+            .instances
+            .iter()
+            .filter(|((candidate, _), _)| candidate == instance_id)
+            .map(|(_, record)| record.clone())
+            .collect())
+    }
+
+    async fn page_events(&self, offset: i64, limit: i64) -> Result<ModuleEventPage, Self::Error> {
+        let state = self.state.lock().expect("state lock poisoned");
+        Ok(ModuleEventPage {
+            total: i64::try_from(state.events.len()).unwrap(),
+            events: state
+                .events
+                .iter()
+                .skip(usize::try_from(offset).unwrap())
+                .take(usize::try_from(limit).unwrap())
+                .cloned()
+                .collect(),
+        })
     }
 
     async fn compare_and_set_instance(

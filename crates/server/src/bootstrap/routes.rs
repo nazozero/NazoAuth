@@ -8,8 +8,9 @@ use nazo_http_actix::{
     dynamic_client_registration, introspect, revoke, userinfo,
 };
 use nazo_http_actix::{
-    discovery, jwks, mfa_json_config, mfa_method_not_allowed, mfa_options,
-    oauth_authorization_server_metadata, oauth_protected_resource_metadata, profile_logout,
+    admin_patch_runtime_module, admin_runtime_module_events, admin_runtime_modules, discovery,
+    jwks, mfa_json_config, mfa_method_not_allowed, mfa_options, oauth_authorization_server_metadata,
+    oauth_protected_resource_metadata, profile_logout,
 };
 use serde_json::json;
 
@@ -23,9 +24,6 @@ use crate::http::admin::{
     },
     federation::admin_federation_providers,
     grants::{admin_grants, admin_revoke_grant},
-    runtime_modules::{
-        admin_patch_runtime_module, admin_runtime_module_events, admin_runtime_modules,
-    },
     users::{admin_patch_user, admin_users},
 };
 use crate::http::auth::{
