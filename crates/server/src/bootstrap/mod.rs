@@ -29,17 +29,18 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 use actix_web::{App, HttpServer, dev::Service, middleware::from_fn, web};
 
 use crate::config::{ConfigSource, database_max_connections, database_url};
-#[cfg(test)]
-use crate::domain::ResourceServerHandles;
 use crate::domain::{
-    DynamicRegistrationConfig, DynamicRegistrationHandles, MetadataConfig, MfaProfileConfig,
-    MfaProfileHandles, OidcLogoutConfig, OidcLogoutHandles, ResourceServerConfig,
-    ServerMetadataSnapshotSource, UserinfoConfig, UserinfoHandles,
+    DynamicRegistrationConfig, MetadataConfig, MfaProfileConfig, MfaProfileHandles,
+    OidcLogoutConfig, OidcLogoutHandles, ResourceServerConfig, ServerMetadataSnapshotSource,
+    UserinfoConfig, UserinfoHandles,
 };
+#[cfg(test)]
+use crate::domain::{DynamicRegistrationHandles, ResourceServerHandles};
 #[cfg(not(test))]
 use crate::domain::{
     ServerFapiHttpMessageSignatures, ServerFapiMtlsResolver, ServerFapiResourceAuthorizer,
     ServerScimBootstrapPasswordProvider, ServerScimCursorProtector, ServerScimRequestAuthorizer,
+    dynamic_registration_endpoint,
 };
 use crate::http::admin::access_requests::AdminAccessRequestConfig;
 use crate::http::admin::clients::{
@@ -181,14 +182,21 @@ pub async fn run() -> anyhow::Result<()> {
     #[cfg(test)]
     let dynamic_registration_rate_limit_connection =
         nazo_valkey::ValkeyConnection::from_existing_client(valkey.clone());
+    let dynamic_registration_config = DynamicRegistrationConfig::from(settings.as_ref());
+    #[cfg(not(test))]
+    let dynamic_registration_handles = web::Data::new(dynamic_registration_endpoint(
+        dynamic_registration_config,
+        nazo_postgres::OAuthClientRepository::new(diesel_db.clone()),
+        nazo_valkey::RateLimitStore::new(&dynamic_registration_rate_limit_connection),
+        keyset.clone(),
+        runtime_modules.registry.clone(),
+    ));
+    #[cfg(test)]
     let dynamic_registration_handles = web::Data::new(DynamicRegistrationHandles {
-        config: DynamicRegistrationConfig::from(settings.as_ref()),
+        config: dynamic_registration_config,
         clients: nazo_postgres::OAuthClientRepository::new(diesel_db.clone()),
         rate_limits: nazo_valkey::RateLimitStore::new(&dynamic_registration_rate_limit_connection),
         keyset: keyset.clone(),
-        #[cfg(not(test))]
-        runtime_modules: runtime_modules.registry.clone(),
-        #[cfg(test)]
         enabled: settings.modules.enable_dynamic_client_registration,
     });
     let admin_client_config = web::Data::new(AdminClientConfig::from_settings(&settings));
