@@ -1491,17 +1491,40 @@ def seed_prerequisites() -> None:
         with conn.cursor() as cur:
             cur.execute(
                 """
+                SELECT module_id, desired_mode, revision
+                FROM runtime_module_desired_states
+                ORDER BY module_id
+                """
+            )
+            desired_states_before_reset = cur.fetchall()
+            if not desired_states_before_reset:
+                fail("runtime module desired states were not seeded before E2E reset")
+            cur.execute(
+                """
                 TRUNCATE TABLE
                     access_token_revocations,
                     oauth_tokens,
                     user_client_grants,
                     client_access_requests,
                     external_identity_links,
-                    oauth_clients,
-                    users
+                    oauth_clients
                 RESTART IDENTITY CASCADE
                 """
             )
+            # DELETE preserves control-plane rows whose audit actor references use
+            # ON DELETE SET NULL. TRUNCATE ... CASCADE would silently erase the
+            # durable runtime-module desired state while the servers are running.
+            cur.execute("DELETE FROM users")
+            cur.execute(
+                """
+                SELECT module_id, desired_mode, revision
+                FROM runtime_module_desired_states
+                ORDER BY module_id
+                """
+            )
+            desired_states_after_reset = cur.fetchall()
+            if desired_states_after_reset != desired_states_before_reset:
+                fail("E2E reset changed durable runtime module desired states")
             cur.execute(
                 """
                 INSERT INTO users (
