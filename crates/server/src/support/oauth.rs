@@ -1,6 +1,7 @@
 //! OAuth 作用域、audience 与授权关系工具。
 // 只处理 OAuth 语义中的集合判断和授权记录 upsert。
 
+pub(crate) use nazo_auth::{ResourceIndicatorError, parse_resource_indicators};
 use nazo_auth::{
     normalize_sha256_thumbprint, oauth_redirect_uri_matches, validate_oauth_redirect_uri,
 };
@@ -86,30 +87,6 @@ pub(crate) fn parse_scope(raw: &str) -> Vec<String> {
         .map(ToOwned::to_owned)
         .filter(|v| !v.is_empty())
         .collect()
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ResourceIndicatorError {
-    Invalid,
-    Duplicate,
-}
-
-pub(crate) fn parse_resource_indicators(
-    values: &[String],
-) -> Result<Vec<String>, ResourceIndicatorError> {
-    let mut seen = std::collections::HashSet::new();
-    let mut resources = Vec::new();
-    for value in values {
-        let parsed = url::Url::parse(value).map_err(|_| ResourceIndicatorError::Invalid)?;
-        if parsed.fragment().is_some() {
-            return Err(ResourceIndicatorError::Invalid);
-        }
-        if !seen.insert(value.clone()) {
-            return Err(ResourceIndicatorError::Duplicate);
-        }
-        resources.push(value.clone());
-    }
-    Ok(resources)
 }
 
 pub(crate) fn resource_indicators_from_parameter_value(

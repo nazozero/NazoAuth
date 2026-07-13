@@ -1,43 +1,49 @@
-//! Token 相关表单模型。
+//! Token endpoint and token-management wire-form parsing.
 // 表单结构在多个 token 子模块之间共享。
-use crate::http::prelude::*;
+use crate::oauth_token_error;
+use actix_web::{
+    HttpRequest, HttpResponse,
+    http::{StatusCode, header},
+    web::Bytes,
+};
+use nazo_auth::parse_resource_indicators;
 use std::collections::HashSet;
 
-pub(crate) struct TokenForm {
-    pub(crate) grant_type: String,
-    pub(crate) code: Option<String>,
-    pub(crate) device_code: Option<String>,
-    pub(crate) auth_req_id: Option<String>,
-    pub(crate) redirect_uri: Option<String>,
-    pub(crate) code_verifier: Option<String>,
-    pub(crate) refresh_token: Option<String>,
-    pub(crate) device_secret: Option<String>,
-    pub(crate) scope: Option<String>,
-    pub(crate) client_id: Option<String>,
-    pub(crate) client_secret: Option<String>,
-    pub(crate) client_assertion_type: Option<String>,
-    pub(crate) client_assertion: Option<String>,
-    pub(crate) assertion: Option<String>,
-    pub(crate) requested_token_type: Option<String>,
-    pub(crate) subject_token: Option<String>,
-    pub(crate) subject_token_type: Option<String>,
-    pub(crate) actor_token: Option<String>,
-    pub(crate) actor_token_type: Option<String>,
-    pub(crate) audiences: Vec<String>,
-    pub(crate) has_audience_param: bool,
+pub struct TokenForm {
+    pub grant_type: String,
+    pub code: Option<String>,
+    pub device_code: Option<String>,
+    pub auth_req_id: Option<String>,
+    pub redirect_uri: Option<String>,
+    pub code_verifier: Option<String>,
+    pub refresh_token: Option<String>,
+    pub device_secret: Option<String>,
+    pub scope: Option<String>,
+    pub client_id: Option<String>,
+    pub client_secret: Option<String>,
+    pub client_assertion_type: Option<String>,
+    pub client_assertion: Option<String>,
+    pub assertion: Option<String>,
+    pub requested_token_type: Option<String>,
+    pub subject_token: Option<String>,
+    pub subject_token_type: Option<String>,
+    pub actor_token: Option<String>,
+    pub actor_token_type: Option<String>,
+    pub audiences: Vec<String>,
+    pub has_audience_param: bool,
 }
 
-pub(crate) struct TokenOnlyForm {
-    pub(crate) token: String,
-    pub(crate) token_type_hint: Option<String>,
-    pub(crate) client_id: Option<String>,
-    pub(crate) client_secret: Option<String>,
-    pub(crate) client_assertion_type: Option<String>,
-    pub(crate) client_assertion: Option<String>,
+pub struct TokenOnlyForm {
+    pub token: String,
+    pub token_type_hint: Option<String>,
+    pub client_id: Option<String>,
+    pub client_secret: Option<String>,
+    pub client_assertion_type: Option<String>,
+    pub client_assertion: Option<String>,
 }
 
 #[derive(Debug)]
-pub(crate) enum TokenFormError {
+pub enum TokenFormError {
     InvalidContentType,
     InvalidEncoding,
     DuplicateParameter,
@@ -46,14 +52,14 @@ pub(crate) enum TokenFormError {
 }
 
 #[derive(Debug)]
-pub(crate) enum TokenManagementFormError {
+pub enum TokenManagementFormError {
     InvalidContentType,
     InvalidEncoding,
     DuplicateParameter,
     MissingToken,
 }
 
-pub(crate) fn token_management_oauth_error(
+pub fn token_management_oauth_error(
     status: StatusCode,
     error: &str,
     description: &str,
@@ -61,16 +67,13 @@ pub(crate) fn token_management_oauth_error(
     oauth_token_error(status, error, description, false)
 }
 
-pub(crate) fn token_management_has_conflicting_client_auth(
-    has_basic: bool,
-    form: &TokenOnlyForm,
-) -> bool {
+pub fn token_management_has_conflicting_client_auth(has_basic: bool, form: &TokenOnlyForm) -> bool {
     let has_assertion = form.client_assertion_type.is_some() || form.client_assertion.is_some();
     has_basic && (form.client_id.is_some() || form.client_secret.is_some() || has_assertion)
         || has_assertion && form.client_secret.is_some()
 }
 
-pub(crate) fn token_management_form_error(error: TokenManagementFormError) -> HttpResponse {
+pub fn token_management_form_error(error: TokenManagementFormError) -> HttpResponse {
     match error {
         TokenManagementFormError::InvalidContentType => token_management_oauth_error(
             StatusCode::BAD_REQUEST,
@@ -93,10 +96,7 @@ pub(crate) fn token_management_form_error(error: TokenManagementFormError) -> Ht
     }
 }
 
-pub(crate) fn parse_token_form(
-    req: &HttpRequest,
-    body: &Bytes,
-) -> Result<TokenForm, TokenFormError> {
+pub fn parse_token_form(req: &HttpRequest, body: &Bytes) -> Result<TokenForm, TokenFormError> {
     let content_type = req
         .headers()
         .get(header::CONTENT_TYPE)
@@ -252,7 +252,7 @@ pub(crate) fn parse_token_form(
     Ok(form)
 }
 
-pub(crate) fn parse_token_management_form(
+pub fn parse_token_management_form(
     req: &HttpRequest,
     body: &Bytes,
 ) -> Result<TokenOnlyForm, TokenManagementFormError> {
@@ -343,7 +343,3 @@ fn accept_token_management_parameter_once(
         Err(TokenManagementFormError::DuplicateParameter)
     }
 }
-
-#[cfg(test)]
-#[path = "../../../tests/in_source/src/http/token/tests/forms.rs"]
-mod tests;

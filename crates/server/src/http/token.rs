@@ -6,7 +6,6 @@ mod client_auth;
 mod client_credentials;
 mod device;
 mod dispatch;
-mod forms;
 mod introspect;
 mod issue;
 mod jwt_bearer;
@@ -22,12 +21,36 @@ pub(crate) use client_auth::*;
 pub(crate) use client_credentials::*;
 pub(crate) use device::*;
 pub(crate) use dispatch::*;
-pub(crate) use forms::*;
 pub(crate) use introspect::*;
 pub(crate) use issue::*;
 pub(crate) use jwt_bearer::*;
 pub(crate) use native_sso::*;
+pub(crate) use nazo_http_actix::{
+    TokenForm, TokenFormError, parse_token_form, parse_token_management_form,
+    token_management_form_error, token_management_has_conflicting_client_auth,
+    token_management_oauth_error,
+};
 pub(crate) use refresh::*;
 pub(crate) use revoke::*;
 pub(crate) use token_exchange::*;
 pub(crate) use userinfo::*;
+
+#[cfg(test)]
+use crate::support::CLIENT_ASSERTION_TYPE_JWT_BEARER;
+#[cfg(test)]
+use actix_web::{
+    HttpRequest, HttpResponse,
+    http::{
+        StatusCode,
+        header::{self, HeaderValue},
+    },
+    web::Bytes,
+};
+#[cfg(test)]
+use nazo_http_actix::{TokenManagementFormError, TokenOnlyForm};
+#[cfg(test)]
+use serde_json::Value;
+
+#[cfg(test)]
+#[path = "../../tests/in_source/src/http/token/tests/forms.rs"]
+mod forms_tests;
