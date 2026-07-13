@@ -1,10 +1,12 @@
 //! OIDC 标准 claims 构造。
 //! 只从已授权 scope、显式授权的 claims 请求和本地用户事实源生成声明，不为缺失字段写入 null。
 
+#[cfg(test)]
 use crate::settings::Settings;
 #[cfg(test)]
 use chrono::Utc;
 use serde_json::{Value, json};
+#[cfg(test)]
 use uuid::Uuid;
 
 use nazo_auth::OidcClaimRequest;
@@ -25,6 +27,7 @@ pub(crate) fn oidc_subject(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn compute_subject_for_client(
     settings: &Settings,
     user_id: Uuid,

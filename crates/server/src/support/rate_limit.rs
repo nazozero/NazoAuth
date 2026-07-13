@@ -8,10 +8,8 @@ use super::blake3_hex;
 use super::client_ip;
 use super::client_ip::{ClientIpConfig, client_ip_with_config};
 use super::{ClientIpHeaderMode, IpCidr, client_ip::client_ip_with_context};
-use crate::domain::AppState;
-use crate::settings::RateLimitSettings;
 #[cfg(test)]
-use crate::settings::Settings;
+use crate::{domain::AppState, settings::RateLimitSettings, settings::Settings};
 use actix_web::http::StatusCode;
 use actix_web::http::header;
 use actix_web::http::header::HeaderValue;
@@ -113,6 +111,7 @@ impl AuthRateLimitConfig {
 #[derive(Clone, Copy)]
 pub(crate) enum RateLimitPolicy {
     Auth,
+    #[cfg(test)]
     Token,
     TokenManagement,
 }
@@ -130,11 +129,13 @@ impl RateLimitPolicy {
     fn dimension(self) -> nazo_valkey::RateDimension {
         match self {
             Self::Auth => nazo_valkey::RateDimension::Auth,
+            #[cfg(test)]
             Self::Token => nazo_valkey::RateDimension::Token,
             Self::TokenManagement => nazo_valkey::RateDimension::TokenManagement,
         }
     }
 
+    #[cfg(test)]
     fn max_requests(self, settings: &RateLimitSettings) -> u64 {
         match self {
             Self::Auth => settings.auth_max_requests,
@@ -144,6 +145,7 @@ impl RateLimitPolicy {
     }
 }
 
+#[cfg(test)]
 pub(crate) async fn enforce_rate_limit(
     state: &AppState,
     req: &HttpRequest,

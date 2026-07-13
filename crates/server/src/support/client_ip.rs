@@ -126,6 +126,7 @@ pub(crate) fn client_ip_with_context(
     parsed.unwrap_or(peer_ip).to_string()
 }
 
+#[cfg(test)]
 pub(crate) fn request_from_trusted_proxy(req: &HttpRequest, settings: &Settings) -> bool {
     request_from_trusted_proxy_cidrs(req, &settings.endpoint.trusted_proxy_cidrs)
 }

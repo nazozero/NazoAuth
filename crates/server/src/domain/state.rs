@@ -52,10 +52,6 @@ impl AppState {
         }
     }
 
-    pub(crate) fn accepts_module(&self, module_id: nazo_runtime_modules::ModuleId) -> bool {
-        self.module_admissible(module_id, nazo_auth::CapabilityAdmission::NewRequest)
-    }
-
     pub(crate) fn permits_existing_module_transaction(
         &self,
         module_id: nazo_runtime_modules::ModuleId,

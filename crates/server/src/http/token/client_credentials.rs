@@ -60,7 +60,7 @@ pub(super) fn client_credentials_issue_request_with_default_audience(
         ));
     }
     let scopes = if requested.is_empty() {
-        allowed
+        client.scopes.clone()
     } else {
         requested
     };

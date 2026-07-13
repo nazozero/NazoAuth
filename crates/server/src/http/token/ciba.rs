@@ -879,6 +879,7 @@ fn validate_ciba_security_profile_client_with_config(
     Ok(())
 }
 
+#[cfg(test)]
 fn validate_ciba_security_profile_client(
     settings: &Settings,
     client: &ClientRow,
@@ -940,6 +941,7 @@ fn validate_ciba_request_object_presence_with_config(
     Ok(())
 }
 
+#[cfg(test)]
 fn validate_ciba_request_object_presence(
     settings: &Settings,
     client: &ClientRow,

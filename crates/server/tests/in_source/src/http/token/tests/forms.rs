@@ -19,7 +19,7 @@ fn token_management_form_with_client_auth() -> TokenOnlyForm {
     }
 }
 
-async fn response_json(response: HttpResponse) -> Value {
+async fn response_json(response: HttpResponse) -> serde_json::Value {
     let body = actix_web::body::to_bytes(response.into_body())
         .await
         .expect("response body should collect");
