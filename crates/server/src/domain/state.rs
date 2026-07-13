@@ -59,27 +59,6 @@ impl AppState {
             nazo_auth::CapabilityAdmission::ExistingTransaction,
         )
     }
-
-    pub(crate) fn metadata_capabilities(&self) -> nazo_auth::MetadataCapabilities {
-        #[cfg(not(test))]
-        {
-            nazo_auth::MetadataCapabilities::from_snapshot(&self.runtime_modules.snapshot())
-        }
-        #[cfg(test)]
-        {
-            let accepting = nazo_runtime_modules::ModuleId::ALL
-                .into_iter()
-                .filter(|module_id| static_module_enabled(&self.settings, *module_id))
-                .collect();
-            nazo_auth::MetadataCapabilities::from_snapshot(
-                &nazo_runtime_modules::ActiveModuleSnapshot {
-                    revision: nazo_runtime_modules::ModuleRevision::new(0),
-                    accepting,
-                    draining: std::collections::BTreeSet::new(),
-                },
-            )
-        }
-    }
 }
 
 #[cfg(test)]

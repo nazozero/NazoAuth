@@ -1,16 +1,18 @@
-use crate::domain::AppState;
-use crate::domain::KeySnapshot;
+use actix_web::web::{Data, Json};
+use serde_json::{Value, json};
+
+use crate::domain::{KeySnapshot, MetadataConfig, MetadataHandles};
 use crate::http::authorization::BASELINE_ACR_VALUE;
 #[cfg(test)]
 use crate::http::token::CIBA_GRANT_TYPE;
-use crate::settings::{AuthorizationServerProfile, CibaSecurityProfile, Settings, SubjectType};
-use crate::support::signing_algorithm_name;
+#[cfg(test)]
+use crate::settings::Settings;
+use crate::settings::{AuthorizationServerProfile, CibaSecurityProfile, SubjectType};
 use crate::support::{
     SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
+    signing_algorithm_name,
 };
-use actix_web::web::{Data, Json};
 use nazo_auth::MetadataCapabilities;
-use serde_json::{Value, json};
 
 const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
 const DPOP_SIGNING_ALGS: [&str; 2] = ["EdDSA", "ES256"];
@@ -79,49 +81,46 @@ pub(crate) async fn captcha_config() -> Json<Value> {
     }))
 }
 
-fn authorization_server_metadata_value(state: &AppState) -> Value {
-    let keyset = state.keyset.snapshot();
-    authorization_server_metadata_with_capabilities(
-        &state.settings,
-        &keyset,
-        &state.metadata_capabilities(),
-    )
+fn authorization_server_metadata_value(handles: &MetadataHandles) -> Value {
+    let keyset = handles.keyset.snapshot();
+    let capabilities = MetadataCapabilities::from_snapshot(&handles.runtime_modules.snapshot());
+    authorization_server_metadata_with_capabilities(&handles.config, &keyset, &capabilities)
 }
 
 #[cfg(test)]
 fn authorization_server_metadata(settings: &Settings, keyset: &KeySnapshot) -> Value {
+    let config = MetadataConfig::from(settings);
     authorization_server_metadata_with_capabilities(
-        settings,
+        &config,
         keyset,
         &metadata_capabilities_from_settings(settings),
     )
 }
 
 fn authorization_server_metadata_with_capabilities(
-    settings: &Settings,
+    config: &MetadataConfig,
     keyset: &KeySnapshot,
     capabilities: &MetadataCapabilities,
 ) -> Value {
-    let issuer = settings.issuer.as_str();
-    let mtls_base = settings.mtls_endpoint_base_url.as_str();
+    let issuer = config.issuer.as_str();
+    let mtls_base = config.mtls_endpoint_base_url.as_str();
     let id_token_signing_algs = id_token_signing_alg_values_supported(keyset);
     let response_signing_algs = keyset.response_signing_alg_values_supported();
     let userinfo_signing_algs = response_signing_algs.clone();
     let authorization_signing_algs = response_signing_algs;
     let active_signing_algs = active_signing_alg_values_supported(keyset);
-    let mtls_enabled = !settings.trusted_proxy_cidrs.is_empty();
+    let mtls_enabled = config.mtls_enabled;
     let token_auth_methods = token_endpoint_auth_methods_supported(
-        settings.protocol().authorization_server_profile,
-        settings.protocol().ciba_security_profile,
+        config.authorization_server_profile,
+        config.ciba_security_profile,
         mtls_enabled,
     );
-    let token_auth_signing_algs = token_endpoint_auth_signing_alg_values_supported(settings);
+    let token_auth_signing_algs = token_endpoint_auth_signing_alg_values_supported(config);
     let request_object_signing_algs = request_object_signing_alg_values_supported(
-        settings.protocol().authorization_server_profile,
+        config.authorization_server_profile,
         active_signing_algs.as_slice(),
     );
-    let mut response_modes =
-        response_modes_supported(settings.protocol().authorization_server_profile);
+    let mut response_modes = response_modes_supported(config.authorization_server_profile);
     if !capabilities.jarm {
         response_modes.retain(|mode| *mode != "jwt");
     }
@@ -142,10 +141,10 @@ fn authorization_server_metadata_with_capabilities(
         "jwks_uri": format!("{issuer}/jwks.json"),
         "response_types_supported": ["code"],
         "response_modes_supported": response_modes,
-        "subject_types_supported": match (&settings.pairwise_subject_secret, &settings.protocol().subject_type) {
-            (None, _) => vec!["public"],
-            (Some(_), SubjectType::Pairwise) => vec!["pairwise"],
-            (Some(_), _) => vec!["public", "pairwise"],
+        "subject_types_supported": match (config.pairwise_subject_enabled, config.subject_type) {
+            (false, _) => vec!["public"],
+            (true, SubjectType::Pairwise) => vec!["pairwise"],
+            (true, _) => vec!["public", "pairwise"],
         },
         "id_token_signing_alg_values_supported": id_token_signing_algs,
         "userinfo_signing_alg_values_supported": userinfo_signing_algs,
@@ -165,12 +164,12 @@ fn authorization_server_metadata_with_capabilities(
         "acr_values_supported": [BASELINE_ACR_VALUE],
         "prompt_values_supported": PROMPT_VALUES_SUPPORTED,
         "grant_types_supported": grant_types,
-        "protected_resources": [settings.protocol().protected_resource_identifier],
+        "protected_resources": [config.protected_resource_identifier.as_str()],
         "authorization_response_iss_parameter_supported": true,
         "claims_parameter_supported": true,
         "backchannel_logout_supported": true,
         "backchannel_logout_session_supported": true,
-        "require_pushed_authorization_requests": settings.require_pushed_authorization_requests,
+        "require_pushed_authorization_requests": config.require_pushed_authorization_requests,
         "code_challenge_methods_supported": ["S256"],
         "dpop_signing_alg_values_supported": DPOP_SIGNING_ALGS,
         "request_object_signing_alg_values_supported": request_object_signing_algs
@@ -202,8 +201,7 @@ fn authorization_server_metadata_with_capabilities(
     if capabilities.native_sso {
         metadata["native_sso_supported"] = json!(true);
     }
-    if settings
-        .protocol()
+    if config
         .authorization_server_profile
         .requires_signed_introspection()
     {
@@ -217,7 +215,7 @@ fn authorization_server_metadata_with_capabilities(
     if capabilities.request_objects {
         metadata["request_parameter_supported"] = json!(true);
     }
-    if settings.modules().enable_request_uri_parameter {
+    if config.request_uri_parameter_enabled {
         metadata["request_uri_parameter_supported"] = json!(true);
         metadata["require_request_uri_registration"] = json!(true);
     } else {
@@ -237,23 +235,22 @@ fn authorization_server_metadata_with_capabilities(
 }
 
 #[cfg(test)]
-fn protected_resource_metadata(settings: &Settings, keyset: &KeySnapshot) -> Value {
+fn protected_resource_metadata(settings: &Settings) -> Value {
+    let config = MetadataConfig::from(settings);
     protected_resource_metadata_with_capabilities(
-        settings,
-        keyset,
+        &config,
         &metadata_capabilities_from_settings(settings),
     )
 }
 
 fn protected_resource_metadata_with_capabilities(
-    settings: &Settings,
-    _keyset: &KeySnapshot,
+    config: &MetadataConfig,
     capabilities: &MetadataCapabilities,
 ) -> Value {
-    let mtls_enabled = !settings.trusted_proxy_cidrs.is_empty();
+    let mtls_enabled = config.mtls_enabled;
     let mut metadata = json!({
-        "resource": settings.protocol().protected_resource_identifier,
-        "authorization_servers": [settings.issuer.as_str()],
+        "resource": config.protected_resource_identifier,
+        "authorization_servers": [config.issuer.as_str()],
         "resource_name": "Nazo OAuth Protected Resource",
         "bearer_methods_supported": ["header", "body"],
         "scopes_supported": SCOPES_SUPPORTED,
@@ -288,12 +285,8 @@ fn token_endpoint_auth_methods_supported(
         .collect()
 }
 
-fn token_endpoint_auth_signing_alg_values_supported(settings: &Settings) -> Vec<&'static str> {
-    if settings
-        .protocol()
-        .ciba_security_profile
-        .requires_fapi2_hardening()
-    {
+fn token_endpoint_auth_signing_alg_values_supported(config: &MetadataConfig) -> Vec<&'static str> {
+    if config.ciba_security_profile.requires_fapi2_hardening() {
         return FAPI_CIBA_REQUEST_OBJECT_SIGNING_ALGS.to_vec();
     }
     CLIENT_JWT_SIGNING_ALGS.to_vec()
@@ -333,19 +326,23 @@ fn id_token_signing_alg_values_supported(keyset: &KeySnapshot) -> Vec<&'static s
     values
 }
 
-pub(crate) async fn discovery(state: Data<AppState>) -> Json<Value> {
-    Json(authorization_server_metadata_value(&state))
+pub(crate) async fn discovery(handles: Data<MetadataHandles>) -> Json<Value> {
+    Json(authorization_server_metadata_value(&handles))
 }
 
-pub(crate) async fn oauth_authorization_server_metadata(state: Data<AppState>) -> Json<Value> {
-    Json(authorization_server_metadata_value(&state))
+pub(crate) async fn oauth_authorization_server_metadata(
+    handles: Data<MetadataHandles>,
+) -> Json<Value> {
+    Json(authorization_server_metadata_value(&handles))
 }
 
-pub(crate) async fn oauth_protected_resource_metadata(state: Data<AppState>) -> Json<Value> {
+pub(crate) async fn oauth_protected_resource_metadata(
+    handles: Data<MetadataHandles>,
+) -> Json<Value> {
+    let capabilities = MetadataCapabilities::from_snapshot(&handles.runtime_modules.snapshot());
     Json(protected_resource_metadata_with_capabilities(
-        &state.settings,
-        &state.keyset.snapshot(),
-        &state.metadata_capabilities(),
+        &handles.config,
+        &capabilities,
     ))
 }
 
@@ -387,8 +384,8 @@ fn metadata_capabilities_from_settings(settings: &Settings) -> MetadataCapabilit
     })
 }
 
-pub(crate) async fn jwks(state: Data<AppState>) -> Json<Value> {
-    Json(state.keyset.snapshot().jwks())
+pub(crate) async fn jwks(handles: Data<MetadataHandles>) -> Json<Value> {
+    Json(handles.keyset.snapshot().jwks())
 }
 
 #[cfg(test)]

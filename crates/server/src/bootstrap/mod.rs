@@ -10,7 +10,7 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 use actix_web::{App, HttpServer, dev::Service, middleware::from_fn, web};
 
 use crate::config::{ConfigSource, database_max_connections, database_url};
-use crate::domain::AppState;
+use crate::domain::{AppState, MetadataConfig, MetadataHandles};
 use crate::http::spawn_backchannel_logout_delivery_worker;
 use crate::runtime_modules::RuntimeModules;
 use crate::settings::Settings;
@@ -68,6 +68,11 @@ pub async fn run() -> anyhow::Result<()> {
         .ok();
     let keyset = nazo_key_management::KeyManager::load_or_create(settings.key_settings()).await?;
     tokio::spawn(keyset.clone().run_lifecycle());
+    let metadata_handles = web::Data::new(MetadataHandles {
+        config: MetadataConfig::from(settings.as_ref()),
+        keyset: keyset.clone(),
+        runtime_modules: runtime_modules.registry.clone(),
+    });
 
     let state = web::Data::new(AppState {
         diesel_db,
@@ -117,6 +122,7 @@ pub async fn run() -> anyhow::Result<()> {
             .wrap(from_fn(security_headers))
             .app_data(state.clone())
             .app_data(runtime_modules.clone())
+            .app_data(metadata_handles.clone())
             .configure(|cfg| routes::configure(cfg, &state.settings, perf_metrics_enabled))
     })
     .bind(addr)?

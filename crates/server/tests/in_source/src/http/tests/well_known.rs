@@ -200,7 +200,7 @@ fn metadata_constructors_are_locked_to_complete_reviewed_shapes() {
         ),
         (
             "protected resource",
-            protected_resource_metadata(&settings, &keyset),
+            protected_resource_metadata(&settings),
             json!({
                 "resource": "https://issuer.example/fapi/resource",
                 "authorization_servers": ["https://issuer.example"],
@@ -314,10 +314,10 @@ fn authorization_server_metadata_lists_configured_protected_resource() {
 
 #[test]
 fn protected_resource_metadata_matches_runtime_resource_boundary() {
-    let metadata = protected_resource_metadata(
-        &settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new()),
-        &keyset(jsonwebtoken::Algorithm::RS256),
-    );
+    let metadata = protected_resource_metadata(&settings(
+        AuthorizationServerProfile::Oauth2Baseline,
+        Vec::new(),
+    ));
 
     assert_eq!(
         metadata.get("resource").and_then(Value::as_str),
@@ -391,7 +391,7 @@ fn protected_resource_metadata_reflects_mtls_and_rar_configuration() {
         vec![IpCidr::parse("192.0.2.0/24").unwrap()],
     );
     s.enable_authorization_details = true;
-    let metadata = protected_resource_metadata(&s, &keyset(jsonwebtoken::Algorithm::RS256));
+    let metadata = protected_resource_metadata(&s);
 
     assert_eq!(
         metadata
@@ -1159,6 +1159,7 @@ fn discovery_fapi2_ciba_internal_profile_advertises_only_standard_capabilities()
 #[test]
 fn metadata_is_derived_from_the_typed_runtime_capability_snapshot() {
     let settings = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
+    let config = MetadataConfig::from(&settings);
     let keyset = keyset(jsonwebtoken::Algorithm::RS256);
     let snapshot = nazo_runtime_modules::ActiveModuleSnapshot {
         revision: nazo_runtime_modules::ModuleRevision::new(9),
@@ -1173,8 +1174,7 @@ fn metadata_is_derived_from_the_typed_runtime_capability_snapshot() {
             .collect(),
     };
     let capabilities = MetadataCapabilities::from_snapshot(&snapshot);
-    let metadata =
-        authorization_server_metadata_with_capabilities(&settings, &keyset, &capabilities);
+    let metadata = authorization_server_metadata_with_capabilities(&config, &keyset, &capabilities);
     assert!(
         metadata
             .get("backchannel_authentication_endpoint")
@@ -1197,7 +1197,7 @@ fn metadata_is_derived_from_the_typed_runtime_capability_snapshot() {
         ])
     );
 
-    let resource = protected_resource_metadata_with_capabilities(&settings, &keyset, &capabilities);
+    let resource = protected_resource_metadata_with_capabilities(&config, &capabilities);
     assert!(
         resource
             .get("authorization_details_types_supported")

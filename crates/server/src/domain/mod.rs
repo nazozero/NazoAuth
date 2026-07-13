@@ -3,6 +3,7 @@
 #[cfg(test)]
 #[path = "../../tests/in_source/src/domain/database_user_fixture.rs"]
 mod database_user_fixture;
+mod metadata;
 mod oauth;
 mod rows;
 mod state;
@@ -11,6 +12,7 @@ mod state;
 pub(crate) use database_user_fixture::{
     DatabaseExternalIdentityFixture, DatabasePasskeyFixture, DatabaseUserFixture,
 };
+pub(crate) use metadata::{MetadataConfig, MetadataHandles};
 pub(crate) use nazo_key_management::KeySnapshot;
 pub(crate) use oauth::*;
 pub(crate) use rows::*;
