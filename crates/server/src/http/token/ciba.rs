@@ -1382,6 +1382,11 @@ fn ciba_error_no_store(status: StatusCode, error: &str, description: &str) -> Ht
 }
 
 #[cfg(test)]
+fn ciba_request_key(auth_req_id: &str) -> String {
+    format!("oauth:ciba:{}", blake3_hex(auth_req_id))
+}
+
+#[cfg(test)]
 #[path = "../../../tests/in_source/src/http/token/tests/ciba.rs"]
 mod tests;
 

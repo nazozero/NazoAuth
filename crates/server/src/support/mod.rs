@@ -46,11 +46,12 @@ pub(crate) use mfa::{
     MFA_REMEMBERED_COOKIE_NAME, MFA_REMEMBERED_TTL_SECONDS, MFA_TOTP_DIGITS,
     MFA_TOTP_PERIOD_SECONDS, MfaVerificationMethod, clear_user_mfa_state_with_repository,
     generate_backup_codes_and_hashes, remember_mfa_device_with_repository,
-    remembered_mfa_device_valid, replace_backup_codes_with_repository,
-    verify_user_mfa_code_with_repository,
+    replace_backup_codes_with_repository, verify_user_mfa_code_with_repository,
 };
 #[cfg(test)]
-pub(crate) use mfa::{remember_mfa_device, replace_backup_codes, verify_user_mfa_code};
+pub(crate) use mfa::{
+    remember_mfa_device, remembered_mfa_device_valid, replace_backup_codes, verify_user_mfa_code,
+};
 pub(crate) use mtls::{
     client_mtls_certificate_matches, request_mtls_client_certificate,
     request_mtls_client_certificate_from_headers, request_mtls_thumbprint,

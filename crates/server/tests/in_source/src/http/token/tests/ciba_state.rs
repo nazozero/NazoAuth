@@ -13,10 +13,6 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration as StdDuration;
 
-fn ciba_request_key(auth_req_id: &str) -> String {
-    format!("oauth:ciba:{}", blake3_hex(auth_req_id))
-}
-
 fn pending_state(now: i64) -> CibaRequestState {
     CibaRequestState {
         client_id: "client-1".to_owned(),

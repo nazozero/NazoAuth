@@ -20,6 +20,7 @@ pub(crate) use nazo_identity::mfa::{
     MFA_BACKUP_CODE_COUNT, MFA_TOTP_DIGITS, MFA_TOTP_PERIOD_SECONDS, MfaVerificationMethod,
 };
 
+#[cfg(test)]
 pub(crate) async fn remembered_mfa_device_valid(
     state: &AppState,
     req: &HttpRequest,
@@ -33,6 +34,7 @@ pub(crate) async fn remembered_mfa_device_valid(
     .await
 }
 
+#[cfg(test)]
 pub(crate) async fn remembered_mfa_device_valid_with_repository(
     repository: &MfaRepository,
     req: &HttpRequest,
