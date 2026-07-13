@@ -1252,37 +1252,66 @@ fn admin_user_page_is_tenant_scoped_at_the_query_boundary() {
 
 #[test]
 fn server_mfa_verification_does_not_query_migrated_tables_directly() {
-    let source = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../server/src/support/mfa.rs"
-    ))
-    .expect("server MFA support source is readable");
-    assert!(!source.contains("user_totp_credentials"));
-    assert!(!source.contains("user_mfa_backup_codes"));
+    for path in [
+        "/../server/src/domain/mfa_profile.rs",
+        "/../identity/src/mfa_service.rs",
+    ] {
+        let source = std::fs::read_to_string(format!("{}{}", env!("CARGO_MANIFEST_DIR"), path))
+            .expect("MFA service source is readable");
+        assert!(!source.contains("user_totp_credentials"), "{path}");
+        assert!(!source.contains("user_mfa_backup_codes"), "{path}");
+    }
 }
 
 #[test]
 fn totp_enrollment_orders_cross_store_changes_for_safe_recovery() {
-    let source = std::fs::read_to_string(concat!(
+    let provider_source = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../server/src/http/profile/mfa.rs"
+        "/../server/src/domain/mfa_profile.rs"
     ))
-    .expect("server MFA handler source is readable");
-    let invalid_audit = source
-        .find(".record_invalid_totp_attempt(")
-        .expect("invalid enrollment verification must be durably audited");
-    let session_rotation = source
-        .find(".step_up_current_session(")
+    .expect("server MFA provider source is readable");
+    let confirmation = provider_source
+        .split("fn confirm_totp(")
+        .nth(1)
+        .and_then(|source| source.split("fn verify_challenge(").next())
+        .expect("MFA confirmation operation remains present");
+    let rate_limit = confirmation
+        .find(".enforce_rate_limit(")
+        .expect("rate limiting must fail closed before expensive MFA work");
+    let preparation = confirmation
+        .find(".prepare_totp_confirmation(")
+        .expect("TOTP and backup-code preparation remains explicit");
+    let session_rotation = confirmation
+        .find(".rotate(")
         .expect("session and CSRF must rotate atomically before enabling MFA");
-    let postgres_confirmation = source
-        .find(".verify_and_confirm_totp(")
+    let postgres_confirmation = confirmation
+        .find(".confirm_totp(")
         .expect("PostgreSQL confirmation must reverify under row lock");
-    let failed_rotation_discard = source
-        .find("discard_failed_enrollment_rotation(")
+    let failed_rotation_discard = confirmation
+        .find(".discard_unpublished_rotation(")
         .expect("a rejected PostgreSQL confirmation must discard the unpublished MFA session");
-    assert!(invalid_audit < session_rotation);
+    assert!(rate_limit < preparation);
+    assert!(preparation < session_rotation);
     assert!(session_rotation < postgres_confirmation);
     assert!(postgres_confirmation < failed_rotation_discard);
+
+    let core_source = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../identity/src/mfa_service.rs"
+    ))
+    .expect("identity MFA service source is readable");
+    let preparation = core_source
+        .split("pub async fn prepare_totp_confirmation(")
+        .nth(1)
+        .and_then(|source| source.split("pub async fn confirm_totp(").next())
+        .expect("identity TOTP preparation remains present");
+    let invalid_audit = preparation
+        .find(".record_invalid_totp_attempt(")
+        .expect("invalid enrollment verification must be durably audited");
+    let backup_hashing = preparation
+        .find(".hash_secrets(")
+        .expect("backup-code hashes must use the bounded hash port");
+    assert!(invalid_audit < backup_hashing);
 }
 
 #[test]
