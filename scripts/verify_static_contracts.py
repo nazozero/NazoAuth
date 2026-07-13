@@ -197,6 +197,19 @@ def check_crate_dependency_boundaries() -> None:
             )
 
 
+def check_workspace_package_metadata() -> None:
+    workspace_manifest = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))
+    for member in workspace_manifest["workspace"]["members"]:
+        manifest_path = ROOT / member / "Cargo.toml"
+        package = tomllib.loads(manifest_path.read_text(encoding="utf-8"))["package"]
+        for field in ("edition", "license", "repository"):
+            if package.get(field) != {"workspace": True}:
+                raise SystemExit(
+                    f"{manifest_path.relative_to(ROOT)} must inherit package.{field} "
+                    "from [workspace.package]"
+                )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--write-migrations", action="store_true")
@@ -214,6 +227,7 @@ def main() -> None:
         check_server_import_boundaries()
         check_toolchain_pins()
         check_crate_dependency_boundaries()
+        check_workspace_package_metadata()
 
 
 if __name__ == "__main__":
