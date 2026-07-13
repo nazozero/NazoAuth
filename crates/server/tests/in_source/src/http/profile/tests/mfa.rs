@@ -584,6 +584,7 @@ async fn concurrent_mfa_step_up_consumes_backup_code_exactly_once() {
         .await
         .expect("backup codes should generate");
     let code = backup_codes
+        .as_slice()
         .first()
         .expect("at least one backup code should be generated")
         .clone();

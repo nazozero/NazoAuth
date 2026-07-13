@@ -62,7 +62,8 @@ impl LocalAvatarStorage {
     }
 
     fn lock(&self, user_id: UserId) -> Arc<Mutex<()>> {
-        let bytes = user_id.as_uuid().as_bytes();
+        let raw_user_id = user_id.as_uuid();
+        let bytes = raw_user_id.as_bytes();
         let index = bytes.iter().fold(0usize, |value, byte| {
             value.wrapping_mul(31) ^ usize::from(*byte)
         }) % self.locks.len();
