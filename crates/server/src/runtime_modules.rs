@@ -41,13 +41,13 @@ impl ModuleLifecycle for ServerModuleLifecycle {
         &self,
         module_id: ModuleId,
         revision: ModuleRevision,
-        max_duration: Duration,
+        remaining_duration: Duration,
     ) -> nazo_runtime_modules::LifecycleFuture<
         '_,
         Result<bool, nazo_runtime_modules::LifecycleFailure>,
     > {
         Box::pin(async move {
-            let deadline = tokio::time::Instant::now() + max_duration;
+            let deadline = tokio::time::Instant::now() + remaining_duration;
             loop {
                 if !self
                     .repository

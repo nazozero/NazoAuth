@@ -21,7 +21,7 @@ pub trait ModuleLifecycle: Send + Sync {
         &self,
         module_id: ModuleId,
         revision: ModuleRevision,
-        max_duration: Duration,
+        remaining_duration: Duration,
     ) -> LifecycleFuture<'_, Result<bool, LifecycleFailure>>;
 }
 
@@ -44,7 +44,7 @@ impl ModuleLifecycle for NoopModuleLifecycle {
         &self,
         _module_id: ModuleId,
         _revision: ModuleRevision,
-        _max_duration: Duration,
+        _remaining_duration: Duration,
     ) -> LifecycleFuture<'_, Result<bool, LifecycleFailure>> {
         Box::pin(async { Ok(true) })
     }

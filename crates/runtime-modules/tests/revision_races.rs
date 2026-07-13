@@ -91,6 +91,17 @@ impl Repository {
             updated_at: SystemTime::UNIX_EPOCH,
         });
     }
+
+    fn force_draining_instance(&self, revision: u64, deadline: SystemTime) {
+        self.force_instance(revision, ModuleState::Draining);
+        self.state
+            .lock()
+            .unwrap()
+            .instance
+            .as_mut()
+            .unwrap()
+            .drain_deadline = Some(deadline);
+    }
 }
 
 impl ModuleStateRepository for Repository {
@@ -261,6 +272,69 @@ impl ModuleLifecycle for PausingLifecycle {
     }
 }
 
+#[derive(Default)]
+struct RecordingDrainLifecycle {
+    remaining: Mutex<Option<Duration>>,
+}
+
+impl ModuleLifecycle for RecordingDrainLifecycle {
+    fn initialize(
+        &self,
+        _module_id: ModuleId,
+    ) -> LifecycleFuture<'_, Result<(), LifecycleFailure>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn stop(&self, _module_id: ModuleId) -> LifecycleFuture<'_, Result<(), LifecycleFailure>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn drain_stored_transactions(
+        &self,
+        _module_id: ModuleId,
+        _revision: ModuleRevision,
+        remaining_duration: Duration,
+    ) -> LifecycleFuture<'_, Result<bool, LifecycleFailure>> {
+        *self.remaining.lock().unwrap() = Some(remaining_duration);
+        Box::pin(async { Ok(true) })
+    }
+}
+
+#[test]
+fn resumed_drain_uses_the_persisted_deadline_instead_of_extending_the_ttl() {
+    let repository = Arc::new(Repository::new(usize::MAX));
+    repository.force_desired(7, DesiredMode::Disabled);
+    repository.force_draining_instance(
+        7,
+        SystemTime::now()
+            .checked_add(Duration::from_secs(1))
+            .unwrap(),
+    );
+    let lifecycle = Arc::new(RecordingDrainLifecycle::default());
+    let registry = RuntimeModuleRegistry::new(
+        Arc::clone(&repository),
+        Arc::clone(&lifecycle),
+        catalog(),
+        "instance-a".to_owned(),
+        ActiveModuleSnapshot {
+            revision: ModuleRevision::new(6),
+            accepting: BTreeSet::new(),
+            draining: BTreeSet::from([ModuleId::Ciba]),
+        },
+    );
+
+    assert_eq!(
+        block_on(registry.reconcile_once(ModuleId::Ciba)).unwrap(),
+        ReconcileOutcome::Disabled,
+    );
+    let remaining = lifecycle
+        .remaining
+        .lock()
+        .unwrap()
+        .expect("stored transaction drain should run");
+    assert!(remaining <= Duration::from_secs(1));
+}
+
 #[test]
 fn concurrent_reconciles_for_one_module_execute_one_lifecycle_transition() {
     let repository = Arc::new(Repository::new(usize::MAX));
@@ -400,9 +474,9 @@ fn stale_disable_before_snapshot_publication_preserves_previous_admission() {
 }
 
 #[test]
-fn stale_disable_after_snapshot_publication_keeps_admission_closed() {
+fn stale_disable_after_snapshot_publication_restores_newer_enabled_intent() {
     let (repository, registry) = run_stale_disable(2);
-    assert!(!registry.snapshot().admits(ModuleId::Ciba));
+    assert!(registry.snapshot().admits(ModuleId::Ciba));
     assert_eq!(
         repository.event_types(),
         vec![
@@ -415,7 +489,7 @@ fn stale_disable_after_snapshot_publication_keeps_admission_closed() {
 #[test]
 fn stale_disable_cannot_complete_drain() {
     let (repository, registry) = run_stale_disable(3);
-    assert!(!registry.snapshot().admits(ModuleId::Ciba));
+    assert!(registry.snapshot().admits(ModuleId::Ciba));
     assert_eq!(
         repository.event_types(),
         vec![
@@ -429,7 +503,7 @@ fn stale_disable_cannot_complete_drain() {
 #[test]
 fn stale_disable_cannot_persist_final_state() {
     let (repository, registry) = run_stale_disable(4);
-    assert!(!registry.snapshot().admits(ModuleId::Ciba));
+    assert!(registry.snapshot().admits(ModuleId::Ciba));
     assert_eq!(
         repository.event_types(),
         vec![
@@ -456,6 +530,16 @@ fn successful_enable_and_disable_emit_exhaustive_ordered_audit() {
             ModuleEventType::TransitionStarted,
             ModuleEventType::TransitionCompleted,
         ]
+    );
+    assert!(
+        enabling_repository
+            .state
+            .lock()
+            .unwrap()
+            .events
+            .iter()
+            .all(|event| uuid::Uuid::parse_str(&event.event_id).is_ok()),
+        "durable transition event identifiers must use the PostgreSQL UUID wire format",
     );
     assert_eq!(
         enabling_registry.snapshot().admits(ModuleId::Ciba),

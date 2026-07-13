@@ -2370,6 +2370,7 @@ dependencies = [
  "futures-util",
  "serde",
  "thiserror",
+ "uuid",
 ]
 
 [[package]]

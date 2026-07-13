@@ -10,6 +10,7 @@ arc-swap = "1.7.1"
 futures-util = "0.3.32"
 serde = { version = "1.0.219", features = ["derive"] }
 thiserror = "2.0.12"
+uuid = { version = "1.23.5", features = ["v7"] }
 
 [lints]
 workspace = true
