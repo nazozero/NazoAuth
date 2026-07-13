@@ -18,6 +18,20 @@ pub(crate) struct IpCidr {
     prefix: u8,
 }
 
+pub(crate) struct ClientIpConfig {
+    trusted_proxy_cidrs: Box<[IpCidr]>,
+    header_mode: ClientIpHeaderMode,
+}
+
+impl ClientIpConfig {
+    pub(crate) fn new(trusted_proxy_cidrs: &[IpCidr], header_mode: ClientIpHeaderMode) -> Self {
+        Self {
+            trusted_proxy_cidrs: trusted_proxy_cidrs.into(),
+            header_mode,
+        }
+    }
+}
+
 impl ClientIpHeaderMode {
     pub(crate) fn parse(value: &str) -> anyhow::Result<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
@@ -77,20 +91,36 @@ pub(crate) fn parse_trusted_proxy_cidrs(raw: Option<String>) -> anyhow::Result<V
 
 pub(crate) fn client_ip(req: &HttpRequest, settings: &Settings) -> String {
     let endpoint = settings.endpoint();
+    client_ip_from_parts(
+        req,
+        endpoint.client_ip_header_mode,
+        endpoint.trusted_proxy_cidrs,
+    )
+}
+
+pub(crate) fn client_ip_with_config(req: &HttpRequest, config: &ClientIpConfig) -> String {
+    client_ip_from_parts(req, config.header_mode, &config.trusted_proxy_cidrs)
+}
+
+fn client_ip_from_parts(
+    req: &HttpRequest,
+    header_mode: ClientIpHeaderMode,
+    trusted_proxy_cidrs: &[IpCidr],
+) -> String {
     let Some(peer_ip) = req.peer_addr().map(|addr| addr.ip()) else {
         return "unknown".to_owned();
     };
-    if endpoint.client_ip_header_mode == ClientIpHeaderMode::None
-        || !trusted_proxy_peer_ip(peer_ip, endpoint)
+    if header_mode == ClientIpHeaderMode::None
+        || !trusted_proxy_peer_ip(peer_ip, trusted_proxy_cidrs)
     {
         return peer_ip.to_string();
     }
-    let parsed = match endpoint.client_ip_header_mode {
+    let parsed = match header_mode {
         ClientIpHeaderMode::None => None,
         ClientIpHeaderMode::Forwarded => forwarded_ip_chain(req)
-            .and_then(|chain| nearest_untrusted_hop(chain, peer_ip, endpoint)),
+            .and_then(|chain| nearest_untrusted_hop(chain, peer_ip, trusted_proxy_cidrs)),
         ClientIpHeaderMode::XForwardedFor => x_forwarded_for_ip_chain(req)
-            .and_then(|chain| nearest_untrusted_hop(chain, peer_ip, endpoint)),
+            .and_then(|chain| nearest_untrusted_hop(chain, peer_ip, trusted_proxy_cidrs)),
     };
     parsed.unwrap_or(peer_ip).to_string()
 }
@@ -112,12 +142,8 @@ pub(crate) fn request_from_trusted_proxy_cidrs(
         .unwrap_or(false)
 }
 
-fn trusted_proxy_peer_ip(
-    peer_ip: IpAddr,
-    settings: crate::settings::focused::EndpointRuntimeSettings<'_>,
-) -> bool {
-    settings
-        .trusted_proxy_cidrs
+fn trusted_proxy_peer_ip(peer_ip: IpAddr, trusted_proxy_cidrs: &[IpCidr]) -> bool {
+    trusted_proxy_cidrs
         .iter()
         .any(|cidr| cidr.contains(peer_ip))
 }
@@ -186,13 +212,13 @@ fn x_forwarded_for_ip_chain(req: &HttpRequest) -> Option<Vec<IpAddr>> {
 fn nearest_untrusted_hop(
     chain: Vec<IpAddr>,
     peer_ip: IpAddr,
-    settings: crate::settings::focused::EndpointRuntimeSettings<'_>,
+    trusted_proxy_cidrs: &[IpCidr],
 ) -> Option<IpAddr> {
     chain
         .into_iter()
         .chain(std::iter::once(peer_ip))
         .rev()
-        .find(|ip| !trusted_proxy_peer_ip(*ip, settings))
+        .find(|ip| !trusted_proxy_peer_ip(*ip, trusted_proxy_cidrs))
 }
 
 fn ipv4_prefix_value(ip: Ipv4Addr, prefix: u8) -> u32 {

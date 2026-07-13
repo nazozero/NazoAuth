@@ -12,6 +12,15 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
+use crate::domain::{AppState, DatabaseUserFixture};
+use crate::schema::users;
+use crate::settings::Settings;
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, OAuthJsonErrorFields,
+    SessionHttpConfig, SessionPayload, valkey_set_ex,
+};
+use chrono::Utc;
+use diesel::prelude::*;
 use nazo_postgres::{create_pool, get_conn};
 
 fn user_row() -> PublicAccount {
@@ -86,6 +95,48 @@ fn test_state() -> AppState {
         ),
         keyset: crate::test_support::test_key_manager(),
     }
+}
+
+fn admin_user_dependencies(
+    state: &Data<AppState>,
+) -> (
+    Data<AdminSessionHandles>,
+    Data<UserRepository>,
+    Data<ClientIpConfig>,
+) {
+    let session = state.settings.session();
+    let endpoint = state.settings.endpoint();
+    (
+        Data::new(AdminSessionHandles::new(
+            nazo_valkey::SessionStore::new(&state.valkey_connection()),
+            UserRepository::new(state.diesel_db.clone()),
+            SessionHttpConfig::new(session.session_cookie_name, session.csrf_cookie_name),
+        )),
+        Data::new(UserRepository::new(state.diesel_db.clone())),
+        Data::new(ClientIpConfig::new(
+            endpoint.trusted_proxy_cidrs,
+            endpoint.client_ip_header_mode,
+        )),
+    )
+}
+
+async fn invoke_admin_users(
+    state: Data<AppState>,
+    req: HttpRequest,
+    query: Query<HashMap<String, String>>,
+) -> HttpResponse {
+    let (admin_sessions, users, _) = admin_user_dependencies(&state);
+    admin_users(admin_sessions, users, req, query).await
+}
+
+async fn invoke_admin_patch_user(
+    state: Data<AppState>,
+    req: HttpRequest,
+    path: actix_web::web::Path<Uuid>,
+    payload: Json<PatchUserRequest>,
+) -> HttpResponse {
+    let (admin_sessions, users, client_ip_config) = admin_user_dependencies(&state);
+    admin_patch_user(admin_sessions, users, client_ip_config, req, path, payload).await
 }
 
 fn oauth_error_name(response: &HttpResponse) -> Option<String> {
@@ -310,7 +361,7 @@ async fn admin_users_requires_admin_before_database_lookup() {
         .uri("/admin/users")
         .to_http_request();
 
-    let response = admin_users(state, req, Query(HashMap::new())).await;
+    let response = invoke_admin_users(state, req, Query(HashMap::new())).await;
 
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     assert_eq!(
@@ -330,7 +381,7 @@ async fn admin_patch_user_rejects_missing_csrf_before_auth_or_mutation() {
         ))
         .to_http_request();
 
-    let response = admin_patch_user(
+    let response = invoke_admin_patch_user(
         state,
         req,
         actix_web::web::Path::from(Uuid::now_v7()),
@@ -361,7 +412,7 @@ async fn admin_patch_user_requires_admin_even_with_valid_csrf() {
     let csrf = format!("csrf-{suffix}");
     fixture.store_session(&non_admin, &sid).await;
 
-    let response = admin_patch_user(
+    let response = invoke_admin_patch_user(
         fixture.state.clone(),
         fixture.admin_post_request(&sid, &csrf, "/admin/users/update"),
         actix_web::web::Path::from(target.id),
@@ -425,7 +476,7 @@ async fn admin_patch_user_rejects_peer_self_demotion_and_own_level_grant() {
             },
         ),
     ] {
-        let response = admin_patch_user(
+        let response = invoke_admin_patch_user(
             fixture.state.clone(),
             fixture.admin_post_request(&sid, &csrf, "/admin/users/update"),
             actix_web::web::Path::from(target),
@@ -465,7 +516,7 @@ async fn admin_users_list_returns_admin_view_without_secret_fields() {
     let sid = format!("sid-{suffix}");
     fixture.store_session(&admin, &sid).await;
 
-    let response = admin_users(
+    let response = invoke_admin_users(
         fixture.state.clone(),
         fixture.admin_get_request(&sid, "/admin/users?page=1&page_size=20"),
         Query(HashMap::from([
@@ -510,7 +561,7 @@ async fn admin_patch_user_validates_role_and_admin_level_before_mutation() {
     let csrf = format!("csrf-{suffix}");
     fixture.store_session(&admin, &sid).await;
 
-    let invalid_role = admin_patch_user(
+    let invalid_role = invoke_admin_patch_user(
         fixture.state.clone(),
         fixture.admin_post_request(&sid, &csrf, "/admin/users/update"),
         actix_web::web::Path::from(user.id),
@@ -527,7 +578,7 @@ async fn admin_patch_user_validates_role_and_admin_level_before_mutation() {
         Some("invalid_request")
     );
 
-    let invalid_level = admin_patch_user(
+    let invalid_level = invoke_admin_patch_user(
         fixture.state.clone(),
         fixture.admin_post_request(&sid, &csrf, "/admin/users/update"),
         actix_web::web::Path::from(user.id),
@@ -563,7 +614,7 @@ async fn admin_patch_user_rejects_nil_user_id_without_panicking() {
     let csrf = format!("csrf-{suffix}");
     fixture.store_session(&admin, &sid).await;
 
-    let response = admin_patch_user(
+    let response = invoke_admin_patch_user(
         fixture.state.clone(),
         fixture.admin_post_request(&sid, &csrf, "/admin/users/update"),
         actix_web::web::Path::from(Uuid::nil()),
@@ -595,7 +646,7 @@ async fn admin_patch_user_empty_payload_is_noop_and_preserves_updated_at() {
     let csrf = format!("csrf-{suffix}");
     fixture.store_session(&admin, &sid).await;
 
-    let response = admin_patch_user(
+    let response = invoke_admin_patch_user(
         fixture.state.clone(),
         fixture.admin_post_request(&sid, &csrf, "/admin/users/update"),
         actix_web::web::Path::from(user.id),
@@ -627,7 +678,7 @@ async fn admin_patch_user_rejects_invalid_partial_role_level_without_mutation() 
     let csrf = format!("csrf-{suffix}");
     fixture.store_session(&admin, &sid).await;
 
-    let response = admin_patch_user(
+    let response = invoke_admin_patch_user(
         fixture.state.clone(),
         fixture.admin_post_request(&sid, &csrf, "/admin/users/update"),
         actix_web::web::Path::from(user.id),
@@ -665,7 +716,7 @@ async fn admin_patch_user_updates_role_level_and_active_state_and_reports_missin
     let csrf = format!("csrf-{suffix}");
     fixture.store_session(&admin, &sid).await;
 
-    let response = admin_patch_user(
+    let response = invoke_admin_patch_user(
         fixture.state.clone(),
         fixture.admin_post_request(&sid, &csrf, "/admin/users/update"),
         actix_web::web::Path::from(user.id),
@@ -690,7 +741,7 @@ async fn admin_patch_user_updates_role_level_and_active_state_and_reports_missin
     assert_eq!(body["is_active"], false);
     assert!(body.get("password_hash").is_none());
 
-    let missing = admin_patch_user(
+    let missing = invoke_admin_patch_user(
         fixture.state.clone(),
         fixture.admin_post_request(&sid, &csrf, "/admin/users/update"),
         actix_web::web::Path::from(Uuid::now_v7()),
@@ -736,7 +787,7 @@ async fn admin_patch_user_reports_not_found_for_each_requested_field_update() {
             is_active: Some(false),
         },
     ] {
-        let response = admin_patch_user(
+        let response = invoke_admin_patch_user(
             fixture.state.clone(),
             fixture.admin_post_request(&sid, &csrf, "/admin/users/update"),
             actix_web::web::Path::from(missing_user_id),
