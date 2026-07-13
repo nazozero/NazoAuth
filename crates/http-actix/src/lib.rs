@@ -4,6 +4,7 @@
 //! access remain in their focused crates.
 
 mod cors;
+mod extract;
 mod middleware;
 mod presenter;
 mod request_context;
@@ -12,6 +13,7 @@ pub use cors::{
     cors_admin, cors_auth_api, cors_browser_token_management, cors_browser_userinfo, cors_scim,
     cors_well_known,
 };
+pub use extract::request_uses_form_urlencoded;
 pub use middleware::{apply_security_headers, security_headers};
 pub use presenter::{
     OAuthJsonErrorFields, authorization_error_response, bearer_challenge, bytes_response,
