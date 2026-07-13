@@ -2165,6 +2165,7 @@ dependencies = [
 name = "nazo-http-actix"
 version = "0.1.0"
 dependencies = [
+ "actix-cors",
  "actix-web",
  "serde",
  "serde_json",
