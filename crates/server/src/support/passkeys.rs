@@ -23,14 +23,11 @@ pub(crate) struct StoredPasskeyAuthentication {
 }
 
 pub(crate) fn passkey_webauthn(settings: &Settings) -> Webauthn {
-    Webauthn::new(
-        &settings.passkey.rp_id,
-        &settings.passkey.rp_name,
-        &settings.passkey.origin,
-    )
-    .require_user_verification(settings.passkey.require_user_verification)
-    .require_user_handle(settings.passkey.require_user_handle)
-    .strict_base64(settings.passkey.strict_base64)
+    let settings = settings.identity().passkey;
+    Webauthn::new(&settings.rp_id, &settings.rp_name, &settings.origin)
+        .require_user_verification(settings.require_user_verification)
+        .require_user_handle(settings.require_user_handle)
+        .strict_base64(settings.strict_base64)
 }
 
 pub(crate) fn passkey_user_handle(user: &PublicAccount) -> anyhow::Result<Vec<u8>> {

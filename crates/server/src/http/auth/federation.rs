@@ -361,7 +361,7 @@ pub(crate) async fn federation_saml_acs(
     if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
         return response;
     }
-    let Some(settings) = state.settings.federation.saml_gateway.clone() else {
+    let Some(settings) = state.settings.identity().federation.saml_gateway.clone() else {
         return oauth_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "temporarily_unavailable",
