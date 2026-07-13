@@ -32,7 +32,7 @@ use crate::config::{ConfigSource, database_max_connections, database_url};
 use crate::domain::{
     DynamicRegistrationConfig, MetadataConfig, MfaProfileConfig, MfaProfileHandles,
     OidcLogoutConfig, OidcLogoutHandles, ResourceServerConfig, ServerMetadataSnapshotSource,
-    UserinfoConfig, UserinfoHandles,
+    ServerProfileAccountOperations, UserinfoConfig, UserinfoHandles,
 };
 #[cfg(test)]
 use crate::domain::{DynamicRegistrationHandles, ResourceServerHandles};
@@ -82,7 +82,8 @@ use crate::support::tenancy::{DEFAULT_TENANT_ID, default_tenant_context};
 #[cfg(test)]
 use actix_web::http::header;
 use nazo_http_actix::{
-    RuntimeModuleAdminEndpoint, SessionCookieConfig, SessionLogoutEndpoint, security_headers,
+    ProfileAccountEndpoint, RuntimeModuleAdminEndpoint, SessionCookieConfig, SessionLogoutEndpoint,
+    security_headers,
 };
 use nazo_postgres::create_pool;
 use tracing::Instrument;
@@ -333,8 +334,8 @@ pub async fn run() -> anyhow::Result<()> {
         |error| tracing::warn!(%error, "failed to delete session during logout"),
     ));
     let runtime_module_admin_endpoint = web::Data::new(RuntimeModuleAdminEndpoint::new(
-        identity_session_service,
-        session_cookie_config,
+        identity_session_service.clone(),
+        session_cookie_config.clone(),
         runtime_modules.administration(),
     ));
     let admin_sessions = web::Data::new(AdminSessionHandles::new(
@@ -403,11 +404,19 @@ pub async fn run() -> anyhow::Result<()> {
         mfa: nazo_postgres::MfaRepository::new(diesel_db.clone()),
         rate_limits: nazo_valkey::RateLimitStore::new(&mfa_rate_limit_connection),
     });
-    let account_profiles = web::Data::new(AccountProfileService::new(
+    let account_profile_service = AccountProfileService::new(
         nazo_postgres::UserRepository::new(diesel_db.clone()),
         nazo_postgres::GrantRepository::new(diesel_db.clone()),
         nazo_postgres::OAuthClientRepository::new(diesel_db.clone()),
+    );
+    let profile_account_endpoint = web::Data::new(ProfileAccountEndpoint::new(
+        Arc::new(ServerProfileAccountOperations::new(
+            identity_session_service,
+            account_profile_service.clone(),
+        )),
+        session_cookie_config,
     ));
+    let account_profiles = web::Data::new(account_profile_service);
     let avatar_profiles = web::Data::new(AvatarProfileService::new(
         nazo_postgres::UserRepository::new(diesel_db.clone()),
         nazo_postgres::GrantRepository::new(diesel_db.clone()),
@@ -622,6 +631,7 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(admin_federation.clone())
             .app_data(session_profiles.clone())
             .app_data(profile_logout_endpoint.clone())
+            .app_data(profile_account_endpoint.clone())
             .app_data(oidc_logout.clone())
             .app_data(csrf_http_config.clone())
             .app_data(mfa_profiles.clone())

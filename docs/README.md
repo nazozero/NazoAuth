@@ -74,6 +74,7 @@ set can be scanned from one place.
 
 | Document | Role |
 | --- | --- |
+| [features/account-profile.md](features/account-profile.md) | Authenticated account profile, pending-MFA projection, caching, and update-consistency contract. |
 | [features/ecosystem-onboarding.md](features/ecosystem-onboarding.md) | External client onboarding, DCR/DCRM, Token Exchange, and third-party JWT bearer trust boundaries. |
 | [features/federation.md](features/federation.md) | External identity federation design notes. |
 | [features/mfa.md](features/mfa.md) | MFA and step-up authentication design notes. |

@@ -205,7 +205,8 @@ impl UserRepository {
         let row = diesel::update(
             users::table
                 .find(user_id.as_uuid())
-                .filter(users::tenant_id.eq(tenant_id.as_uuid())),
+                .filter(users::tenant_id.eq(tenant_id.as_uuid()))
+                .filter(users::is_active.eq(true)),
         )
         .set((
             users::display_name.eq(profile.display_name),
@@ -232,7 +233,9 @@ impl UserRepository {
         .returning(PublicAccountRow::as_returning())
         .get_result(&mut connection)
         .await
-        .map_err(map_error)?;
+        .optional()
+        .map_err(map_error)?
+        .ok_or(RepositoryError::NotFound)?;
         row.try_into()
             .map_err(|error: identity::ConversionError| RepositoryError::Consistency(error.0))
     }

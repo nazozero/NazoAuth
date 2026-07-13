@@ -69,6 +69,140 @@ pub struct AccountOverview {
     pub authorized_application_count: i64,
 }
 
+/// Stable profile projection consumed by the browser-facing account endpoints.
+///
+/// Keeping this projection in the identity domain prevents HTTP adapters from
+/// learning the internal shape of [`PublicAccount`] while preserving the
+/// existing JSON field contract.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct AccountProfileView {
+    pub id: uuid::Uuid,
+    pub email: String,
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
+    pub given_name: Option<String>,
+    pub family_name: Option<String>,
+    pub middle_name: Option<String>,
+    pub nickname: Option<String>,
+    pub profile_url: Option<String>,
+    pub website_url: Option<String>,
+    pub gender: Option<String>,
+    pub birthdate: Option<String>,
+    pub zoneinfo: Option<String>,
+    pub locale: Option<String>,
+    pub address_formatted: Option<String>,
+    pub address_street_address: Option<String>,
+    pub address_locality: Option<String>,
+    pub address_region: Option<String>,
+    pub address_postal_code: Option<String>,
+    pub address_country: Option<String>,
+    pub phone_number: Option<String>,
+    pub phone_number_verified: bool,
+    pub mfa_enabled: bool,
+    pub role: &'static str,
+    pub admin_level: u32,
+    pub authorized_app_count: i64,
+}
+
+impl From<AccountOverview> for AccountProfileView {
+    fn from(overview: AccountOverview) -> Self {
+        let account = overview.account;
+        let id = account.id();
+        let role = account.role_name();
+        let admin_level = account.admin_level();
+        Self {
+            id,
+            email: account.account.email,
+            display_name: account.profile.display_name,
+            avatar_url: account.profile.avatar_url,
+            given_name: account.profile.given_name,
+            family_name: account.profile.family_name,
+            middle_name: account.profile.middle_name,
+            nickname: account.profile.nickname,
+            profile_url: account.profile.profile_url,
+            website_url: account.profile.website_url,
+            gender: account.profile.gender,
+            birthdate: account.profile.birthdate,
+            zoneinfo: account.profile.zoneinfo,
+            locale: account.profile.locale,
+            address_formatted: account.profile.address.formatted,
+            address_street_address: account.profile.address.street_address,
+            address_locality: account.profile.address.locality,
+            address_region: account.profile.address.region,
+            address_postal_code: account.profile.address.postal_code,
+            address_country: account.profile.address.country,
+            phone_number: account.profile.phone_number,
+            phone_number_verified: account.profile.phone_number_verified,
+            mfa_enabled: account.account.mfa_enabled,
+            role,
+            admin_level,
+            authorized_app_count: overview.authorized_application_count,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct PendingMfaProfileView {
+    pub id: uuid::Uuid,
+    pub email: String,
+}
+
+impl From<PublicAccount> for PendingMfaProfileView {
+    fn from(account: PublicAccount) -> Self {
+        Self {
+            id: account.id(),
+            email: account.account.email,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct AuthorizedApplicationView {
+    pub client_id: String,
+    pub client_name: String,
+    pub last_scopes: Vec<String>,
+    pub last_authorized_at: chrono::DateTime<chrono::Utc>,
+    pub authorization_count: i32,
+}
+
+impl From<AuthorizedApplication> for AuthorizedApplicationView {
+    fn from(application: AuthorizedApplication) -> Self {
+        Self {
+            client_id: application.client_id,
+            client_name: application.client_name,
+            last_scopes: application
+                .last_scopes
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(serde_json::Value::as_str)
+                .map(str::to_owned)
+                .collect(),
+            last_authorized_at: application.last_authorized_at,
+            authorization_count: application.authorization_count,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct AuthorizedApplicationsView {
+    pub total: usize,
+    pub items: Vec<AuthorizedApplicationView>,
+}
+
+impl From<Vec<AuthorizedApplication>> for AuthorizedApplicationsView {
+    fn from(applications: Vec<AuthorizedApplication>) -> Self {
+        let items = applications
+            .into_iter()
+            .map(AuthorizedApplicationView::from)
+            .collect::<Vec<_>>();
+        Self {
+            total: items.len(),
+            items,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum UpdateProfileError {
     Validation(ProfileValidationError),
@@ -484,7 +618,98 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{ProfileValidationError, normalize_profile_url, profile_text};
+    use std::sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    use chrono::Utc;
+    use uuid::Uuid;
+
+    use crate::{
+        AccountIdentity, Principal, PublicAccount, TenantContext, UserId, UserProfile, UserRole,
+        ports::{
+            AuthorizedApplication, AuthorizedApplicationRepositoryPort, GrantSummaryRepositoryPort,
+            ProfileRepositoryPort, ProfileUpdate, RepositoryError, RepositoryFuture,
+        },
+    };
+
+    use super::{
+        AccountProfileService, ProfilePatch, ProfileValidationError, UpdateProfileError,
+        normalize_profile_url, profile_text,
+    };
+
+    #[derive(Clone)]
+    struct StoredProfileRepository {
+        account: Arc<Mutex<PublicAccount>>,
+        writes: Arc<AtomicUsize>,
+    }
+
+    impl ProfileRepositoryPort for StoredProfileRepository {
+        fn update_profile<'a>(
+            &'a self,
+            _tenant_id: crate::TenantId,
+            _user_id: UserId,
+            update: ProfileUpdate,
+        ) -> RepositoryFuture<'a, PublicAccount> {
+            let mut account = self.account.lock().unwrap();
+            account.profile = update.profile;
+            self.writes.fetch_add(1, Ordering::Relaxed);
+            let account = account.clone();
+            Box::pin(async move { Ok(account) })
+        }
+    }
+
+    #[derive(Clone)]
+    struct FailFirstGrantSummary {
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl GrantSummaryRepositoryPort for FailFirstGrantSummary {
+        fn authorized_client_count(&self, _user_id: Uuid) -> RepositoryFuture<'_, i64> {
+            let call = self.calls.fetch_add(1, Ordering::Relaxed);
+            Box::pin(async move {
+                if call == 0 {
+                    Err(RepositoryError::Unavailable)
+                } else {
+                    Ok(2)
+                }
+            })
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    struct EmptyApplications;
+
+    impl AuthorizedApplicationRepositoryPort for EmptyApplications {
+        fn applications_for_user(
+            &self,
+            _user_id: Uuid,
+        ) -> RepositoryFuture<'_, Vec<AuthorizedApplication>> {
+            Box::pin(async { Ok(Vec::new()) })
+        }
+    }
+
+    fn account() -> PublicAccount {
+        let now = Utc::now();
+        PublicAccount {
+            principal: Principal {
+                user_id: UserId::new(Uuid::from_u128(10)).unwrap(),
+                tenant: TenantContext::default(),
+                role: UserRole::User,
+                active: true,
+            },
+            account: AccountIdentity {
+                username: "alice".to_owned(),
+                email: "alice@example.test".to_owned(),
+                email_verified: true,
+                mfa_enabled: false,
+            },
+            profile: UserProfile::default(),
+            created_at: now,
+            updated_at: now,
+        }
+    }
 
     #[test]
     fn profile_text_trims_blanks_and_enforces_byte_limit() {
@@ -516,5 +741,49 @@ mod tests {
                 })
             );
         }
+    }
+
+    #[tokio::test]
+    async fn retry_is_idempotent_when_profile_write_succeeds_before_overview_failure() {
+        let original = account();
+        let stored = Arc::new(Mutex::new(original.clone()));
+        let writes = Arc::new(AtomicUsize::new(0));
+        let service = AccountProfileService::new(
+            StoredProfileRepository {
+                account: stored.clone(),
+                writes: writes.clone(),
+            },
+            FailFirstGrantSummary {
+                calls: Arc::new(AtomicUsize::new(0)),
+            },
+            EmptyApplications,
+        );
+        let patch = ProfilePatch {
+            display_name: Some(" Alice ".to_owned()),
+            ..ProfilePatch::default()
+        };
+
+        let first = service.update(&original, patch.clone()).await;
+        assert_eq!(
+            first,
+            Err(UpdateProfileError::OverviewRepository(
+                RepositoryError::Unavailable
+            ))
+        );
+        assert_eq!(
+            stored.lock().unwrap().profile.display_name.as_deref(),
+            Some("Alice"),
+            "the profile write is committed before the independent overview read"
+        );
+
+        let retry = service.update(&original, patch).await.unwrap();
+        assert_eq!(retry.account.profile.display_name.as_deref(), Some("Alice"));
+        assert_eq!(retry.authorized_application_count, 2);
+        assert_eq!(writes.load(Ordering::Relaxed), 2);
+        assert_eq!(
+            stored.lock().unwrap().profile.display_name.as_deref(),
+            Some("Alice"),
+            "repeating the same full profile replacement must not compound state"
+        );
     }
 }

@@ -2,15 +2,16 @@
 // 本文件只声明 URL 到 handler 的映射，不承载业务逻辑。
 
 use actix_web::{HttpResponse, dev::Service, http::header, web};
+use nazo_http_actix::{
+    admin_patch_runtime_module, admin_runtime_module_events, admin_runtime_modules, discovery,
+    jwks, mfa_json_config, mfa_method_not_allowed, mfa_options,
+    oauth_authorization_server_metadata, oauth_protected_resource_metadata, profile_applications,
+    profile_logout, profile_me, profile_update,
+};
 #[cfg(not(test))]
 use nazo_http_actix::{
     client_configuration_delete, client_configuration_get, client_configuration_put,
     dynamic_client_registration, introspect, revoke, userinfo,
-};
-use nazo_http_actix::{
-    admin_patch_runtime_module, admin_runtime_module_events, admin_runtime_modules, discovery,
-    jwks, mfa_json_config, mfa_method_not_allowed, mfa_options, oauth_authorization_server_metadata,
-    oauth_protected_resource_metadata, profile_logout,
 };
 use serde_json::json;
 
@@ -53,8 +54,6 @@ use crate::http::fapi_resource::fapi_resource;
 use crate::http::perf_metrics::perf_metrics;
 use crate::http::profile::{
     access_requests::{create_access_request, my_access_requests},
-    account::{me, update_me},
-    applications::my_applications,
     avatar::{delete_avatar, get_avatar, upload_avatar},
     delivery::access_delivery,
     federation_links::{my_federation_links, unlink_my_federation_link},
@@ -242,8 +241,8 @@ pub(crate) fn configure(
                 .service(
                     web::scope("/me")
                         .wrap(cors::cors_auth_api(settings))
-                        .route("", web::get().to(me))
-                        .route("", web::patch().to(update_me))
+                        .route("", web::get().to(profile_me))
+                        .route("", web::patch().to(profile_update))
                         .route("/passkeys", web::get().to(passkey_list))
                         .route(
                             "/passkeys/registration/begin",
@@ -306,7 +305,7 @@ pub(crate) fn configure(
                         .route("/avatar", web::post().to(upload_avatar))
                         .route("/avatar", web::get().to(get_avatar))
                         .route("/avatar", web::delete().to(delete_avatar))
-                        .route("/applications", web::get().to(my_applications))
+                        .route("/applications", web::get().to(profile_applications))
                         .route("/federation/links", web::get().to(my_federation_links))
                         .route(
                             "/federation/links/{link_id}",
