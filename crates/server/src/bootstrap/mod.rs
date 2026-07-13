@@ -19,7 +19,8 @@ pub(crate) use passkey_services::{
     LocalPasskeyService, PASSKEY_CEREMONY_TTL_SECONDS, TracingPasskeyAudit,
 };
 pub(crate) use profile_services::{
-    AccountProfileService, ClientAccessProfileService, FederationProfileService,
+    AccountProfileService, AvatarProfileService, ClientAccessProfileService,
+    FederationProfileService,
 };
 pub(crate) use registration_services::{LocalRegistrationService, RegistrationSecretHasher};
 
@@ -105,9 +106,7 @@ pub async fn run() -> anyhow::Result<()> {
     let runtime_modules =
         web::Data::new(RuntimeModules::initialize(diesel_db.clone(), &settings).await?);
     RuntimeModules::spawn_reconciler(runtime_modules.clone());
-    tokio::fs::create_dir_all(&settings.storage.avatar_storage_dir)
-        .await
-        .ok();
+    tokio::fs::create_dir_all(&settings.storage.avatar_storage_dir).await?;
     let keyset = nazo_key_management::KeyManager::load_or_create(settings.key_settings()).await?;
     tokio::spawn(keyset.clone().run_lifecycle());
     let metadata_handles = web::Data::new(MetadataHandles {
@@ -269,6 +268,14 @@ pub async fn run() -> anyhow::Result<()> {
         nazo_postgres::UserRepository::new(state.diesel_db.clone()),
         nazo_postgres::GrantRepository::new(state.diesel_db.clone()),
         nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone()),
+    ));
+    let avatar_profiles = web::Data::new(AvatarProfileService::new(
+        nazo_postgres::UserRepository::new(state.diesel_db.clone()),
+        nazo_postgres::GrantRepository::new(state.diesel_db.clone()),
+        crate::adapters::avatar_files::LocalAvatarStorage::new(
+            state.settings.storage.avatar_storage_dir.clone(),
+        ),
+        state.settings.storage.avatar_max_bytes,
     ));
     let profile_delivery_store = nazo_valkey::DeliveryStore::new(&state.valkey_connection());
     let profile_access_requests = web::Data::new(ClientAccessProfileService::new(
@@ -458,6 +465,7 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(csrf_http_config.clone())
             .app_data(mfa_profiles.clone())
             .app_data(account_profiles.clone())
+            .app_data(avatar_profiles.clone())
             .app_data(profile_access_requests.clone())
             .app_data(profile_federation.clone())
             .app_data(resource_server_handles.clone())

@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod adapters;
 pub mod bootstrap;
 pub mod config;
 mod domain;
@@ -36,6 +37,19 @@ pub(crate) mod test_support {
             nazo_postgres::UserRepository::new(state.diesel_db.clone()),
             nazo_postgres::GrantRepository::new(state.diesel_db.clone()),
             nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone()),
+        ))
+    }
+
+    pub(crate) fn avatar_profiles(
+        state: &crate::domain::AppState,
+    ) -> actix_web::web::Data<crate::bootstrap::AvatarProfileService> {
+        actix_web::web::Data::new(crate::bootstrap::AvatarProfileService::new(
+            nazo_postgres::UserRepository::new(state.diesel_db.clone()),
+            nazo_postgres::GrantRepository::new(state.diesel_db.clone()),
+            crate::adapters::avatar_files::LocalAvatarStorage::new(
+                state.settings.storage.avatar_storage_dir.clone(),
+            ),
+            state.settings.storage.avatar_max_bytes,
         ))
     }
 

@@ -8,6 +8,7 @@ fn profile_core_handlers_use_focused_dependencies() {
         include_str!("../../../../../../src/http/profile/access_requests.rs"),
         include_str!("../../../../../../src/http/profile/delivery.rs"),
         include_str!("../../../../../../src/http/profile/federation_links.rs"),
+        include_str!("../../../../../../src/http/profile/avatar.rs"),
     ]
     .join("\n");
 
@@ -20,6 +21,9 @@ fn profile_core_handlers_use_focused_dependencies() {
         "fn access_delivery(\n    state: Data<AppState>",
         "fn my_federation_links(state: Data<AppState>",
         "fn unlink_my_federation_link(\n    state: Data<AppState>",
+        "fn upload_avatar(\n    state: Data<AppState>",
+        "fn get_avatar(state: Data<AppState>",
+        "fn delete_avatar(state: Data<AppState>",
     ] {
         assert!(
             !sources.contains(legacy_signature),
@@ -32,6 +36,10 @@ fn profile_core_handlers_use_focused_dependencies() {
             "profile transport depends on infrastructure adapter: {infrastructure_dependency}"
         );
     }
+    assert!(
+        !sources.contains("tokio::fs"),
+        "profile transport performs filesystem IO directly"
+    );
 }
 
 #[test]

@@ -1,14 +1,24 @@
 use super::*;
-use std::sync::Arc;
-use std::time::Duration as StdDuration;
+use std::{io, path::PathBuf, sync::Arc, time::Duration as StdDuration};
 
+use crate::adapters::avatar_files::{
+    AvatarPromotion, cleanup_avatar_temps, finish_avatar_promotion, promote_avatar_files,
+    remove_avatar_file_if_exists, rename_avatar_file_if_exists, rollback_avatar_promotion,
+};
+use crate::domain::{AppState, DatabaseUserFixture};
 use crate::schema::users;
+use crate::settings::Settings;
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_set_ex,
+};
 
 use actix_web::error::PayloadError;
 use actix_web::{
     cookie::Cookie,
     http::{header, header::HeaderMap},
+    web::{Bytes, Data},
 };
+use chrono::Utc;
 use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Nullable, Text, Uuid as SqlUuid};
@@ -18,10 +28,75 @@ use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
 use futures_util::stream;
+use serde_json::Value;
+use uuid::Uuid;
 
 use crate::config::ConfigSource;
 use nazo_postgres::create_pool;
 use nazo_postgres::get_conn;
+
+fn avatar_url_version(avatar_url: &str) -> Option<&str> {
+    avatar_url
+        .strip_prefix("/auth/me/avatar?v=")
+        .filter(|version| !version.is_empty())
+}
+
+fn avatar_user_dir(state: &AppState, user_id: Uuid) -> PathBuf {
+    state
+        .settings
+        .storage
+        .avatar_storage_dir
+        .join(user_id.to_string())
+}
+
+fn avatar_path(state: &AppState, user_id: Uuid) -> PathBuf {
+    avatar_user_dir(state, user_id).join("avatar.bin")
+}
+
+fn avatar_meta_path(state: &AppState, user_id: Uuid) -> PathBuf {
+    avatar_user_dir(state, user_id).join("meta.json")
+}
+
+async fn read_avatar_meta(state: &AppState, user_id: Uuid) -> anyhow::Result<Option<Value>> {
+    let raw = match tokio::fs::read_to_string(avatar_meta_path(state, user_id)).await {
+        Ok(raw) => raw,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    Ok(Some(serde_json::from_str(&raw)?))
+}
+
+async fn upload_avatar(
+    state: Data<AppState>,
+    req: HttpRequest,
+    multipart: Multipart,
+) -> HttpResponse {
+    super::upload_avatar(
+        crate::test_support::profile_sessions(&state),
+        crate::test_support::avatar_profiles(&state),
+        req,
+        multipart,
+    )
+    .await
+}
+
+async fn get_avatar(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
+    super::get_avatar(
+        crate::test_support::profile_sessions(&state),
+        crate::test_support::avatar_profiles(&state),
+        req,
+    )
+    .await
+}
+
+async fn delete_avatar(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
+    super::delete_avatar(
+        crate::test_support::profile_sessions(&state),
+        crate::test_support::avatar_profiles(&state),
+        req,
+    )
+    .await
+}
 
 fn build_test_state(settings: Settings) -> AppState {
     AppState {
@@ -951,6 +1026,45 @@ async fn upload_avatar_rejects_unsupported_content_before_persisting_profile() {
 }
 
 #[actix_web::test]
+async fn upload_avatar_enforces_the_configured_limit_before_extending_the_buffer() {
+    let Some(fixture) = LiveAvatarFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let user = fixture.create_user(&suffix, None).await;
+    let sid = format!("avatar-oversized-{suffix}");
+    let csrf = format!("csrf-{suffix}");
+    fixture.store_session(&user, &sid).await;
+    let mut settings = fixture.state.settings.as_ref().clone();
+    settings.storage.avatar_max_bytes = 8;
+    let limited_state = Data::new(AppState {
+        diesel_db: fixture.state.diesel_db.clone(),
+        valkey: fixture.state.valkey.clone(),
+        settings: Arc::new(settings),
+        keyset: fixture.state.keyset.clone(),
+    });
+
+    let (status, body, _) = response_json(
+        upload_avatar(
+            limited_state,
+            fixture.request(&sid, &csrf),
+            multipart_payload("oversized-avatar-boundary", "avatar", b"\x89PNG\r\n\x1a\nX"),
+        )
+        .await,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(body["error"], "invalid_request");
+    assert!(fixture.fresh_user(user.id).await.avatar_url.is_none());
+    assert!(
+        !tokio::fs::try_exists(avatar_user_dir(&fixture.state, user.id))
+            .await
+            .unwrap()
+    );
+}
+
+#[actix_web::test]
 async fn upload_avatar_persists_versioned_file_and_metadata() {
     let Some(fixture) = LiveAvatarFixture::new().await else {
         return;
@@ -1198,6 +1312,141 @@ async fn get_avatar_uses_detected_content_type_and_sets_security_headers() {
 }
 
 #[actix_web::test]
+async fn get_avatar_rejects_metadata_that_declares_a_different_supported_image_type() {
+    let Some(fixture) = LiveAvatarFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let user = fixture
+        .create_user(&suffix, Some("/auth/me/avatar?v=v1"))
+        .await;
+    let sid = format!("avatar-mime-mismatch-{suffix}");
+    let csrf = format!("csrf-{suffix}");
+    fixture.store_session(&user, &sid).await;
+    let user_dir = avatar_user_dir(&fixture.state, user.id);
+    tokio::fs::create_dir_all(&user_dir).await.unwrap();
+    tokio::fs::write(
+        avatar_meta_path(&fixture.state, user.id),
+        r#"{"content_type":"image/jpeg","version":"v1"}"#,
+    )
+    .await
+    .unwrap();
+    tokio::fs::write(
+        avatar_path(&fixture.state, user.id),
+        b"\x89PNG\r\n\x1a\navatar-bytes",
+    )
+    .await
+    .unwrap();
+
+    let (status, body, _) =
+        response_json(get_avatar(fixture.state.clone(), fixture.request(&sid, &csrf)).await).await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"], "server_error");
+}
+
+#[actix_web::test]
+async fn get_avatar_serves_the_committed_version_while_a_file_replacement_is_in_flight() {
+    let Some(fixture) = LiveAvatarFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let user = fixture
+        .create_user(&suffix, Some("/auth/me/avatar?v=v1"))
+        .await;
+    let sid = format!("avatar-in-flight-{suffix}");
+    let csrf = format!("csrf-{suffix}");
+    fixture.store_session(&user, &sid).await;
+    let user_dir = avatar_user_dir(&fixture.state, user.id);
+    tokio::fs::create_dir_all(&user_dir).await.unwrap();
+    let old_avatar = b"\x89PNG\r\n\x1a\nold-avatar";
+    tokio::fs::write(avatar_path(&fixture.state, user.id), old_avatar)
+        .await
+        .unwrap();
+    tokio::fs::write(
+        avatar_meta_path(&fixture.state, user.id),
+        r#"{"content_type":"image/png","version":"v1"}"#,
+    )
+    .await
+    .unwrap();
+    let avatar_tmp = user_dir.join("avatar-v2.tmp");
+    let metadata_tmp = user_dir.join("meta-v2.tmp");
+    tokio::fs::write(&avatar_tmp, b"\xff\xd8\xffnew-avatar")
+        .await
+        .unwrap();
+    tokio::fs::write(
+        &metadata_tmp,
+        r#"{"content_type":"image/jpeg","version":"v2"}"#,
+    )
+    .await
+    .unwrap();
+    let promotion = promote_avatar_files(
+        &avatar_tmp,
+        &metadata_tmp,
+        avatar_path(&fixture.state, user.id),
+        avatar_meta_path(&fixture.state, user.id),
+        "v2",
+    )
+    .await
+    .unwrap();
+
+    let response = get_avatar(fixture.state.clone(), fixture.request(&sid, &csrf)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        actix_web::body::to_bytes(response.into_body())
+            .await
+            .unwrap(),
+        old_avatar.as_slice()
+    );
+
+    rollback_avatar_promotion(&promotion).await;
+}
+
+#[cfg(unix)]
+#[actix_web::test]
+async fn get_avatar_rejects_a_symlinked_user_directory() {
+    let Some(fixture) = LiveAvatarFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let user = fixture
+        .create_user(&suffix, Some("/auth/me/avatar?v=v1"))
+        .await;
+    let sid = format!("avatar-symlink-{suffix}");
+    let csrf = format!("csrf-{suffix}");
+    fixture.store_session(&user, &sid).await;
+    tokio::fs::create_dir_all(&fixture.avatar_dir)
+        .await
+        .unwrap();
+    let outside = temp_avatar_dir("symlink-outside");
+    tokio::fs::create_dir_all(&outside).await.unwrap();
+    tokio::fs::write(outside.join("avatar.bin"), b"\x89PNG\r\n\x1a\noutside")
+        .await
+        .unwrap();
+    tokio::fs::write(
+        outside.join("meta.json"),
+        r#"{"content_type":"image/png","version":"v1"}"#,
+    )
+    .await
+    .unwrap();
+    let user_dir = avatar_user_dir(&fixture.state, user.id);
+    let source = outside.clone();
+    let target = user_dir.clone();
+    tokio::task::spawn_blocking(move || std::os::unix::fs::symlink(source, target))
+        .await
+        .unwrap()
+        .unwrap();
+
+    let (status, body, _) =
+        response_json(get_avatar(fixture.state.clone(), fixture.request(&sid, &csrf)).await).await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"], "server_error");
+    tokio::fs::remove_file(user_dir).await.unwrap();
+    tokio::fs::remove_dir_all(outside).await.unwrap();
+}
+
+#[actix_web::test]
 async fn get_avatar_rejects_unsupported_missing_and_unreadable_avatar_file_after_metadata_lookup() {
     let Some(fixture) = LiveAvatarFixture::new().await else {
         return;
@@ -1332,12 +1581,14 @@ async fn delete_avatar_removes_avatar_successfully_and_surfaces_file_removal_fai
 
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert!(body["error_description"].is_string());
-    assert!(
+    assert_eq!(
         fixture
             .fresh_user(avatar_error_user.id)
             .await
             .avatar_url
-            .is_none()
+            .as_deref(),
+        Some("/auth/me/avatar?v=v1"),
+        "a filesystem consistency failure must not clear persisted metadata"
     );
 
     let meta_error_suffix = format!("{success_suffix}-meta-error");
@@ -1372,11 +1623,13 @@ async fn delete_avatar_removes_avatar_successfully_and_surfaces_file_removal_fai
 
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert!(body["error_description"].is_string());
-    assert!(
+    assert_eq!(
         fixture
             .fresh_user(meta_error_user.id)
             .await
             .avatar_url
-            .is_none()
+            .as_deref(),
+        Some("/auth/me/avatar?v=v1"),
+        "a filesystem consistency failure must not clear persisted metadata"
     );
 }

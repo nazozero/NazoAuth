@@ -5,7 +5,9 @@ use crate::{
     rows::identity::{AuthenticationIdentityRow, PrincipalRow, PublicAccountRow, SubjectClaimsRow},
     schema::users,
 };
-use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper};
+use diesel::{
+    ExpressionMethods, OptionalExtension, PgExpressionMethods, QueryDsl, SelectableHelper,
+};
 use diesel_async::RunQueryDsl;
 use nazo_identity::{
     AdminPolicyError, AdminUserUpdateOutcome, AuthenticationIdentity, IdentitySecurityEvent,
@@ -234,12 +236,13 @@ impl UserRepository {
         row.try_into()
             .map_err(|error: identity::ConversionError| RepositoryError::Consistency(error.0))
     }
-    pub async fn update_avatar(
+    pub async fn compare_and_set_avatar(
         &self,
         tenant_id: TenantId,
         user_id: UserId,
+        expected_avatar_url: Option<&str>,
         avatar_url: Option<String>,
-    ) -> Result<PublicAccount, RepositoryError> {
+    ) -> Result<Option<PublicAccount>, RepositoryError> {
         let mut connection = self
             .pool
             .get()
@@ -248,7 +251,8 @@ impl UserRepository {
         let row = diesel::update(
             users::table
                 .find(user_id.as_uuid())
-                .filter(users::tenant_id.eq(tenant_id.as_uuid())),
+                .filter(users::tenant_id.eq(tenant_id.as_uuid()))
+                .filter(users::avatar_url.is_not_distinct_from(expected_avatar_url)),
         )
         .set((
             users::avatar_url.eq(avatar_url),
@@ -257,8 +261,10 @@ impl UserRepository {
         .returning(PublicAccountRow::as_returning())
         .get_result(&mut connection)
         .await
+        .optional()
         .map_err(map_error)?;
-        row.try_into()
+        row.map(PublicAccount::try_from)
+            .transpose()
             .map_err(|error: identity::ConversionError| RepositoryError::Consistency(error.0))
     }
     pub async fn page(
@@ -569,6 +575,27 @@ impl nazo_identity::ports::ProfileRepositoryPort for UserRepository {
         Box::pin(
             async move { UserRepository::update_profile(self, tenant_id, user_id, update).await },
         )
+    }
+}
+
+impl nazo_identity::ports::AvatarRepositoryPort for UserRepository {
+    fn compare_and_set_avatar<'a>(
+        &'a self,
+        tenant_id: nazo_identity::TenantId,
+        user_id: nazo_identity::UserId,
+        expected_avatar_url: Option<&'a str>,
+        avatar_url: Option<String>,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, Option<nazo_identity::PublicAccount>> {
+        Box::pin(async move {
+            UserRepository::compare_and_set_avatar(
+                self,
+                tenant_id,
+                user_id,
+                expected_avatar_url,
+                avatar_url,
+            )
+            .await
+        })
     }
 }
 
