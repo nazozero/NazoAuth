@@ -47,19 +47,6 @@ pub(crate) struct ResourceServerHandles {
 }
 
 impl ResourceServerHandles {
-    #[cfg(test)]
-    pub(crate) fn from_app_state(state: &super::AppState) -> Self {
-        let connection = state.valkey_connection();
-        Self {
-            config: ResourceServerConfig::from(state.settings.as_ref()),
-            keyset: state.keyset.clone(),
-            tokens: nazo_postgres::TokenRepository::new(state.diesel_db.clone()),
-            clients: nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone()),
-            replay: nazo_valkey::ReplayStore::new(&connection),
-            http_message_signatures_enabled: state.settings.modules.enable_fapi_http_signatures,
-        }
-    }
-
     #[cfg(not(test))]
     pub(crate) fn accepts_http_message_signatures(&self) -> bool {
         nazo_auth::module_admissible(

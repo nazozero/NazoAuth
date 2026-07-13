@@ -1,6 +1,8 @@
 //! FAPI-style protected resource endpoint.
 //! Enforces RFC 6750 access-token transport rules plus sender-constrained token binding.
 use crate::domain::{ClientRow, ResourceServerConfig, ResourceServerHandles};
+#[cfg(test)]
+use crate::settings::Settings;
 use crate::support::dpop::validate_dpop_proof_with_store;
 use crate::support::mtls::request_mtls_thumbprint_from_trusted_proxy;
 use crate::support::security::tokens::decode_access_claims_with;
@@ -8,7 +10,7 @@ use crate::support::security::tokens::decode_access_claims_with;
 use crate::support::{
     client_ip::ClientIpHeaderMode, client_ip::parse_trusted_proxy_cidrs,
     security::AccessTokenJwtInput, security::IssuedAccessToken, security::blake3_hex,
-    security::make_jwt, tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID,
+    security::make_jwt_with, tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID,
     tenancy::DEFAULT_TENANT_ID,
 };
 use crate::support::{
@@ -16,8 +18,6 @@ use crate::support::{
     dpop::dpop_error_response, fapi_http_signatures::verify_client_http_message,
     security::access_token_tenant_id, security::constant_time_eq,
 };
-#[cfg(test)]
-use crate::{domain::AppState, settings::Settings};
 use actix_web::http::StatusCode;
 use actix_web::http::header;
 #[cfg(test)]

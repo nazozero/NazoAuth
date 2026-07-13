@@ -44,7 +44,7 @@ pub(crate) mod tokens;
 #[cfg(test)]
 pub(crate) use tokens::decode_access_claims;
 #[cfg(test)]
-pub(crate) use tokens::{AccessTokenJwtInput, IssuedAccessToken, make_jwt};
+pub(crate) use tokens::{AccessTokenJwtInput, IssuedAccessToken, make_jwt, make_jwt_with};
 
 type HmacSha256 = Hmac<Sha256>;
 
