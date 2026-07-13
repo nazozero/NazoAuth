@@ -22,6 +22,7 @@ mod request_context;
 mod runtime_modules;
 mod scim;
 mod session;
+mod token_client_auth;
 mod token_forms;
 mod token_management;
 mod userinfo;
@@ -105,6 +106,9 @@ pub use scim::{
 pub use session::{
     SessionCookieConfig, SessionLogoutEndpoint, login_required_response, logout_response,
     profile_logout, session_lookup_error_response,
+};
+pub use token_client_auth::{
+    TokenClientAuthForm, TokenClientAuthTransportFacts, token_client_auth_transport_facts,
 };
 pub use token_forms::{
     TokenForm, TokenFormError, TokenManagementFormError, TokenOnlyForm, parse_token_form,

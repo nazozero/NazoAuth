@@ -11,6 +11,7 @@ mod authorization_service;
 mod ciba;
 mod claims;
 mod client;
+mod client_assertion;
 mod client_authentication;
 mod client_registration;
 mod device;
@@ -89,6 +90,11 @@ pub use claims::{
     id_token_claims, supported_user_claim,
 };
 pub use client::{ClientProfile, validate_token_request_profile};
+pub use client_assertion::{
+    CLIENT_ASSERTION_MAX_TTL_SECONDS, CLIENT_ASSERTION_TYPE_JWT_BEARER,
+    ClientAssertionValidationError, ClientAssertionVerificationInput, ValidatedClientAssertion,
+    unverified_client_assertion_client_id, verify_private_key_jwt,
+};
 pub use client_authentication::{
     ClientAuthenticationContext, ClientAuthenticationMethod, ClientAuthenticationPolicyError,
     ClientAuthenticationRequirement, PresentedClientCredentials, client_authentication_requirement,
