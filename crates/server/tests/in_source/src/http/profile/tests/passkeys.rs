@@ -42,18 +42,6 @@ fn normalize_ceremony_id(value: &str) -> Result<String, HttpResponse> {
     })
 }
 
-fn passkey_credential_id(credential: &passkey_auth::PasskeyCredential) -> String {
-    credential.id.to_b64url()
-}
-
-fn passkey_webauthn(settings: &Settings) -> passkey_auth::Webauthn {
-    let passkey = &settings.identity.passkey;
-    passkey_auth::Webauthn::new(&passkey.rp_id, &passkey.rp_name, &passkey.origin)
-        .require_user_verification(passkey.require_user_verification)
-        .require_user_handle(passkey.require_user_handle)
-        .strict_base64(passkey.strict_base64)
-}
-
 fn registration_key(ceremony_id: &str) -> String {
     format!("oauth:passkey:registration:{ceremony_id}")
 }
