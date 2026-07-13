@@ -1,6 +1,7 @@
 use super::*;
 use crate::domain::AppState;
 use crate::test_support::{access_request_profiles, profile_sessions};
+use uuid::Uuid;
 
 use actix_web::cookie::Cookie;
 use actix_web::test::TestRequest;
