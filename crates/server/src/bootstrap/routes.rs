@@ -7,7 +7,7 @@ use nazo_http_actix::authorize_decision;
 use nazo_http_actix::{
     admin_patch_runtime_module, admin_runtime_module_events, admin_runtime_modules,
     configure_mfa_challenge_route, configure_mfa_profile_routes, discovery, fapi_resource, jwks,
-    login, oauth_authorization_server_metadata, oauth_protected_resource_metadata,
+    login, oauth_authorization_server_metadata, oauth_protected_resource_metadata, oidc_logout,
     profile_applications, profile_logout, profile_me, profile_update, register, send_code,
 };
 #[cfg(not(test))]
@@ -54,7 +54,6 @@ use crate::http::profile::{
     avatar::{delete_avatar, get_avatar, upload_avatar},
     delivery::access_delivery,
     federation_links::{my_federation_links, unlink_my_federation_link},
-    oidc_logout::oidc_logout,
     passkeys::{
         passkey_delete, passkey_list, passkey_registration_begin, passkey_registration_finish,
     },

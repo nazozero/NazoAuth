@@ -31,6 +31,13 @@ use actix_web::{App, HttpServer, dev::Service, middleware::from_fn, web};
 use crate::config::{ConfigSource, database_max_connections, database_url};
 #[cfg(test)]
 use crate::domain::DynamicRegistrationHandles;
+#[cfg(not(test))]
+use crate::domain::{
+    BackchannelLogoutWorker, ServerScimBootstrapPasswordProvider, ServerScimCursorProtector,
+    ServerScimRequestAuthorizer, ServerTokenManagementOperations,
+    ServerTokenManagementRequestGuard, ServerUserinfoOperations, dynamic_registration_endpoint,
+    spawn_backchannel_logout_delivery_worker,
+};
 use crate::domain::{
     DynamicRegistrationConfig, MFA_REMEMBERED_COOKIE_NAME, MFA_REMEMBERED_TTL_SECONDS,
     MetadataConfig, OidcLogoutConfig, OidcLogoutHandles, ResourceServerConfig,
@@ -41,12 +48,6 @@ use crate::domain::{
 };
 use crate::domain::{
     ServerFapiHttpMessageSignatures, ServerFapiMtlsResolver, ServerFapiResourceAuthorizer,
-};
-#[cfg(not(test))]
-use crate::domain::{
-    ServerScimBootstrapPasswordProvider, ServerScimCursorProtector, ServerScimRequestAuthorizer,
-    ServerTokenManagementOperations, ServerTokenManagementRequestGuard, ServerUserinfoOperations,
-    dynamic_registration_endpoint,
 };
 use crate::http::admin::access_requests::AdminAccessRequestConfig;
 use crate::http::admin::clients::{
@@ -62,8 +63,6 @@ use crate::http::auth::passkey::PasskeyHttpConfig;
 use crate::http::authorization::{
     AuthorizationEndpoint, AuthorizationHttpConfig, ServerAuthorizationService,
 };
-#[cfg(not(test))]
-use crate::http::profile::oidc_logout::spawn_backchannel_logout_delivery_worker;
 #[cfg(test)]
 use crate::http::scim::{ScimConfig, ScimEndpoint, ScimRuntimeAdmission};
 use crate::http::token::ciba::{CibaHttpConfig, CibaTokenHandles, ServerCibaService};
@@ -86,8 +85,9 @@ use crate::support::tenancy::{DEFAULT_TENANT_ID, default_tenant_context};
 use actix_web::http::header;
 use nazo_http_actix::{
     AuthorizationDecisionEndpoint, LocalRegistrationEndpoint, MfaProfileConfig, MfaProfileEndpoint,
-    PasswordLoginConfig, PasswordLoginEndpoint, ProfileAccountEndpoint, RuntimeModuleAdminEndpoint,
-    SessionCookieConfig, SessionLogoutEndpoint, security_headers,
+    OidcLogoutConfig as OidcLogoutHttpConfig, OidcLogoutEndpoint, PasswordLoginConfig,
+    PasswordLoginEndpoint, ProfileAccountEndpoint, RuntimeModuleAdminEndpoint, SessionCookieConfig,
+    SessionLogoutEndpoint, security_headers,
 };
 use nazo_postgres::create_pool;
 use tracing::Instrument;
@@ -368,23 +368,32 @@ pub async fn run() -> anyhow::Result<()> {
         device_config.clone(),
         authorization_runtime.clone(),
     ));
+    let logout_deliveries = nazo_postgres::AuditRepository::new(diesel_db.clone());
     #[cfg(not(test))]
-    let oidc_logout = web::Data::new(OidcLogoutHandles::new(
+    let oidc_logout_operations = OidcLogoutHandles::new(
         session_profiles.get_ref().clone(),
         nazo_postgres::OAuthClientRepository::new(diesel_db.clone()),
-        nazo_postgres::AuditRepository::new(diesel_db.clone()),
+        logout_deliveries.clone(),
         keyset.clone(),
         OidcLogoutConfig::from(settings.as_ref()),
         runtime_modules.registry.clone(),
-    ));
+    );
     #[cfg(test)]
-    let oidc_logout = web::Data::new(OidcLogoutHandles::new(
+    let oidc_logout_operations = OidcLogoutHandles::new(
         session_profiles.get_ref().clone(),
         nazo_postgres::OAuthClientRepository::new(diesel_db.clone()),
-        nazo_postgres::AuditRepository::new(diesel_db.clone()),
+        logout_deliveries.clone(),
         keyset.clone(),
         OidcLogoutConfig::from(settings.as_ref()),
         settings.modules.enable_frontchannel_logout,
+    );
+    let oidc_logout = web::Data::new(OidcLogoutEndpoint::new(
+        Arc::new(oidc_logout_operations),
+        OidcLogoutHttpConfig::new(
+            session.session_cookie_name.as_str(),
+            session.csrf_cookie_name.as_str(),
+            session.cookie_secure,
+        ),
     ));
     let csrf_http_config = web::Data::new(CsrfHttpConfig::new(
         session.csrf_cookie_name.as_str(),
@@ -599,7 +608,7 @@ pub async fn run() -> anyhow::Result<()> {
         session.cookie_secure,
     ));
     #[cfg(not(test))]
-    spawn_backchannel_logout_delivery_worker(oidc_logout.clone());
+    spawn_backchannel_logout_delivery_worker(BackchannelLogoutWorker::new(logout_deliveries)?);
 
     let bind = config.string("BIND", "0.0.0.0:8000");
     let addr: SocketAddr = bind.parse()?;

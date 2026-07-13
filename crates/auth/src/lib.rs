@@ -20,6 +20,7 @@ mod dynamic_client_registration;
 mod error;
 mod extension_grants;
 mod grant;
+mod logout_service;
 mod metadata;
 mod oauth_parameters;
 mod oidc_logout;
@@ -138,6 +139,12 @@ pub use extension_grants::{
     validate_token_exchange_grant_prerequisites, validate_token_exchange_subject,
 };
 pub use grant::{GrantType, UnsupportedGrantType};
+pub use logout_service::{
+    BACKCHANNEL_LOGOUT_TOKEN_TTL_SECONDS, BackchannelLogoutOutboxPort,
+    IdempotentBackchannelLogoutDelivery, LogoutClientRepositoryPort, LogoutDependencyError,
+    LogoutExecution, LogoutFuture, LogoutInput, LogoutService, LogoutServiceError, LogoutSession,
+    LogoutTokenSignerPort, RegisteredLogoutClient, RpLogoutRequest, logout_operation_key,
+};
 pub use metadata::{
     AuthorizationServerMetadataInput, CapabilityAdmission, CibaMetadataProfile,
     MetadataAuthorizationServerProfile, MetadataCapabilities, MetadataSigningAlgorithms,

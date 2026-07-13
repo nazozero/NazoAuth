@@ -5,7 +5,8 @@ use diesel::{
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_auth::{
-    AdminClientFuture, AdminClientPortError, AdminClientRepositoryPort, OAuthClient,
+    AdminClientFuture, AdminClientPortError, AdminClientRepositoryPort, LogoutClientRepositoryPort,
+    LogoutDependencyError, LogoutFuture, OAuthClient, RegisteredLogoutClient,
     ValidatedClientRegistration,
 };
 use nazo_identity::ports::RepositoryError;
@@ -632,6 +633,29 @@ impl OAuthClientRepository {
             .collect()
     }
 
+    pub async fn active_for_tenant_user(
+        &self,
+        tenant_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<Vec<OAuthClient>, RepositoryError> {
+        let mut connection = self.connection().await?;
+        user_client_grants::table
+            .inner_join(
+                oauth_clients::table.on(oauth_clients::id.eq(user_client_grants::client_id)),
+            )
+            .filter(user_client_grants::tenant_id.eq(tenant_id))
+            .filter(user_client_grants::user_id.eq(user_id))
+            .filter(oauth_clients::tenant_id.eq(tenant_id))
+            .filter(oauth_clients::is_active.eq(true))
+            .select(OAuthClientRecord::as_select())
+            .load::<OAuthClientRecord>(&mut connection)
+            .await
+            .map_err(map_error)?
+            .into_iter()
+            .map(OAuthClientRecord::into_domain)
+            .collect()
+    }
+
     pub async fn applications_for_user(
         &self,
         user_id: Uuid,
@@ -716,6 +740,63 @@ impl nazo_identity::ports::AuthorizedApplicationRepositoryPort for OAuthClientRe
     ) -> nazo_identity::ports::RepositoryFuture<'_, Vec<nazo_identity::ports::AuthorizedApplication>>
     {
         Box::pin(async move { OAuthClientRepository::applications_for_user(self, user_id).await })
+    }
+}
+
+impl LogoutClientRepositoryPort for OAuthClientRepository {
+    fn by_client_id<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        client_id: &'a str,
+    ) -> LogoutFuture<'a, Option<RegisteredLogoutClient>> {
+        Box::pin(async move {
+            OAuthClientRepository::by_client_id(self, tenant_id, client_id)
+                .await
+                .map(|client| client.map(registered_logout_client))
+                .map_err(|_| LogoutDependencyError::Unavailable)
+        })
+    }
+
+    fn active_for_user(
+        &self,
+        tenant_id: Uuid,
+        user_id: Uuid,
+    ) -> LogoutFuture<'_, Vec<RegisteredLogoutClient>> {
+        Box::pin(async move {
+            OAuthClientRepository::active_for_tenant_user(self, tenant_id, user_id)
+                .await
+                .map(|clients| {
+                    clients
+                        .into_iter()
+                        .filter(|client| client.is_active)
+                        .map(registered_logout_client)
+                        .collect()
+                })
+                .map_err(|_| LogoutDependencyError::Unavailable)
+        })
+    }
+}
+
+fn registered_logout_client(client: OAuthClient) -> RegisteredLogoutClient {
+    let OAuthClient {
+        id,
+        tenant_id,
+        registration,
+        is_active,
+        ..
+    } = client;
+    RegisteredLogoutClient {
+        id,
+        tenant_id,
+        client_id: registration.client_id,
+        active: is_active,
+        redirect_uris: registration.redirect_uris,
+        post_logout_redirect_uris: registration.post_logout_redirect_uris,
+        backchannel_logout_uri: registration.backchannel_logout_uri,
+        frontchannel_logout_uri: registration.frontchannel_logout_uri,
+        frontchannel_logout_session_required: registration.frontchannel_logout_session_required,
+        subject_type: registration.subject_type,
+        sector_identifier_host: registration.sector_identifier_host,
     }
 }
 

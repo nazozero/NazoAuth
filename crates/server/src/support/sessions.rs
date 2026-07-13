@@ -274,27 +274,25 @@ impl SessionProfileHandles {
         &self.issuer
     }
 
-    pub(crate) async fn delete_request_session(
+    pub(crate) async fn delete_session(&self, session_id: &str) -> Result<(), nazo_valkey::Error> {
+        self.sessions.delete(session_id).await.map(|_| ())
+    }
+
+    pub(crate) async fn current_session_by_id(
         &self,
-        req: &HttpRequest,
-    ) -> Result<(), nazo_valkey::Error> {
-        if let Some(session_id) = cookie_value(req, self.http.session_cookie_name()) {
-            self.sessions.delete(&session_id).await?;
-        }
-        Ok(())
+        session_id: &str,
+    ) -> anyhow::Result<Option<CurrentSession>> {
+        current_session_by_id_from_handles(&self.sessions, &self.users, session_id).await
     }
 
     pub(crate) async fn current_session(
         &self,
         req: &HttpRequest,
     ) -> anyhow::Result<Option<CurrentSession>> {
-        current_session_from_handles(
-            &self.sessions,
-            &self.users,
-            self.http.session_cookie_name(),
-            req,
-        )
-        .await
+        let Some(session_id) = cookie_value(req, self.http.session_cookie_name()) else {
+            return Ok(None);
+        };
+        self.current_session_by_id(&session_id).await
     }
 
     #[cfg(not(test))]
@@ -376,11 +374,19 @@ pub(crate) async fn current_session_from_handles(
     let Some(sid) = cookie_value(req, session_cookie_name) else {
         return Ok(None);
     };
-    let stored = match sessions.load(&sid).await {
+    current_session_by_id_from_handles(sessions, users, &sid).await
+}
+
+async fn current_session_by_id_from_handles(
+    sessions: &SessionStore,
+    users: &UserRepository,
+    session_id: &str,
+) -> anyhow::Result<Option<CurrentSession>> {
+    let stored = match sessions.load(session_id).await {
         Ok(stored) => stored,
         Err(error) if error.kind() == nazo_valkey::ErrorKind::CorruptData => {
             tracing::warn!(%error, "session payload is malformed");
-            let _ = sessions.delete(&sid).await;
+            let _ = sessions.delete(session_id).await;
             return Ok(None);
         }
         Err(error) => return Err(error.into()),
@@ -394,13 +400,13 @@ pub(crate) async fn current_session_from_handles(
         payload
     } else {
         tracing::warn!("session payload contains invalid authentication metadata");
-        let _ = sessions.delete(&sid).await;
+        let _ = sessions.delete(session_id).await;
         return Ok(None);
     };
     if payload.pending_mfa {
         return Ok(None);
     }
-    session_from_payload(sessions, users, &sid, payload).await
+    session_from_payload(sessions, users, session_id, payload).await
 }
 
 #[cfg(test)]

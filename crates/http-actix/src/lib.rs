@@ -16,6 +16,7 @@ mod local_registration;
 mod metadata;
 mod mfa_profile;
 mod middleware;
+mod oidc_logout;
 mod password_login;
 mod presenter;
 mod profile_account;
@@ -82,6 +83,10 @@ pub use mfa_profile::{
     mfa_totp_begin, mfa_totp_confirm, mfa_verify,
 };
 pub use middleware::{apply_security_headers, security_headers};
+pub use oidc_logout::{
+    OidcLogoutCommand, OidcLogoutConfig, OidcLogoutEndpoint, OidcLogoutError, OidcLogoutFuture,
+    OidcLogoutOperations, OidcLogoutRequest, OidcLogoutSuccess, oidc_logout,
+};
 pub use password_login::{
     PasswordLoginConfig, PasswordLoginEndpoint, PasswordLoginFuture, PasswordLoginOperations, login,
 };

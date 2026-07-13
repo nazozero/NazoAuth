@@ -1,7 +1,10 @@
 use chrono::{DateTime, Utc};
 use diesel::{BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
-use nazo_auth::{BackchannelLogoutDelivery, PendingBackchannelLogoutDelivery};
+use nazo_auth::{
+    BackchannelLogoutDelivery, BackchannelLogoutOutboxPort, IdempotentBackchannelLogoutDelivery,
+    LogoutDependencyError, LogoutFuture, PendingBackchannelLogoutDelivery,
+};
 use nazo_identity::ports::{
     RepositoryError, RepositoryFuture, ScimCredentialAuditPort, ScimCredentialUse,
 };
@@ -147,6 +150,44 @@ impl AuditRepository {
             .map_err(map_error)
     }
 
+    /// Idempotently persists one complete logout fan-out.
+    ///
+    /// The partial unique index on `(tenant_id, operation_key, client_id)` makes
+    /// retrying after a Valkey session-deletion failure safe without weakening
+    /// the all-or-nothing transaction for newly generated deliveries.
+    pub async fn enqueue_idempotent_backchannel_logout_batch(
+        &self,
+        deliveries: &[IdempotentBackchannelLogoutDelivery],
+    ) -> Result<(), RepositoryError> {
+        if deliveries.is_empty() {
+            return Ok(());
+        }
+        let mut connection = self.connection().await?;
+        connection
+            .transaction::<(), diesel::result::Error, _>(async |connection| {
+                for delivery in deliveries {
+                    diesel::insert_into(backchannel_logout_deliveries::table)
+                        .values((
+                            backchannel_logout_deliveries::tenant_id.eq(delivery.tenant_id),
+                            backchannel_logout_deliveries::client_id.eq(delivery.client_id),
+                            backchannel_logout_deliveries::client_public_id
+                                .eq(&delivery.client_public_id),
+                            backchannel_logout_deliveries::logout_uri.eq(&delivery.logout_uri),
+                            backchannel_logout_deliveries::logout_token.eq(&delivery.logout_token),
+                            backchannel_logout_deliveries::operation_key
+                                .eq(Some(&delivery.operation_key)),
+                            backchannel_logout_deliveries::expires_at.eq(delivery.expires_at),
+                        ))
+                        .on_conflict_do_nothing()
+                        .execute(connection)
+                        .await?;
+                }
+                Ok(())
+            })
+            .await
+            .map_err(map_error)
+    }
+
     pub async fn claim_due_backchannel_logout(
         &self,
         limit: i64,
@@ -248,6 +289,24 @@ impl AuditRepository {
             .get()
             .await
             .map_err(|_| RepositoryError::Unavailable)
+    }
+}
+
+impl BackchannelLogoutOutboxPort for AuditRepository {
+    fn enqueue_idempotent_batch<'a>(
+        &'a self,
+        deliveries: &'a [IdempotentBackchannelLogoutDelivery],
+    ) -> LogoutFuture<'a, ()> {
+        Box::pin(async move {
+            self.enqueue_idempotent_backchannel_logout_batch(deliveries)
+                .await
+                .map_err(|error| match error {
+                    RepositoryError::Consistency(_) | RepositoryError::Conflict => {
+                        LogoutDependencyError::Consistency
+                    }
+                    _ => LogoutDependencyError::Unavailable,
+                })
+        })
     }
 }
 

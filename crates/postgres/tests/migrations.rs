@@ -18,6 +18,10 @@ const IDENTITY_SECURITY_TOTP_INVALID_UP: &str =
     include_str!("../../../migrations/20260713000200_identity_security_totp_invalid/up.sql");
 const IDENTITY_SECURITY_TOTP_INVALID_DOWN: &str =
     include_str!("../../../migrations/20260713000200_identity_security_totp_invalid/down.sql");
+const OIDC_LOGOUT_IDEMPOTENCY_UP: &str =
+    include_str!("../../../migrations/20260714000100_oidc_logout_idempotency/up.sql");
+const OIDC_LOGOUT_IDEMPOTENCY_DOWN: &str =
+    include_str!("../../../migrations/20260714000100_oidc_logout_idempotency/down.sql");
 
 #[derive(QueryableByName)]
 struct ProviderType {
@@ -415,6 +419,89 @@ async fn totp_invalid_audit_migration_extends_and_restores_the_closed_catalog() 
         .await
         .expect("reapplied extension should accept the typed outcome");
 
+    connection
+        .batch_execute(&format!(
+            "SET search_path TO public; DROP SCHEMA \"{schema}\" CASCADE;"
+        ))
+        .await
+        .expect("test schema should drop");
+}
+
+#[tokio::test]
+async fn oidc_logout_idempotency_migration_is_additive_partial_and_reversible() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let schema = format!("oidc_logout_idempotency_{}", Uuid::now_v7().simple());
+    let mut connection = AsyncPgConnection::establish(&database_url)
+        .await
+        .expect("test database should connect");
+    connection
+        .batch_execute(&format!(
+            r#"
+            CREATE SCHEMA "{schema}";
+            SET search_path TO "{schema}";
+            CREATE TABLE backchannel_logout_deliveries (
+                tenant_id UUID NOT NULL,
+                client_id UUID NOT NULL
+            );
+            "#
+        ))
+        .await
+        .expect("logout outbox baseline should create");
+    connection
+        .batch_execute(OIDC_LOGOUT_IDEMPOTENCY_UP)
+        .await
+        .expect("logout idempotency migration should apply");
+
+    let tenant_id = Uuid::now_v7();
+    let client_id = Uuid::now_v7();
+    sql_query(
+        "INSERT INTO backchannel_logout_deliveries (tenant_id, client_id, operation_key) \
+         VALUES ($1, $2, 'operation-a')",
+    )
+    .bind::<diesel::sql_types::Uuid, _>(tenant_id)
+    .bind::<diesel::sql_types::Uuid, _>(client_id)
+    .execute(&mut connection)
+    .await
+    .expect("first operation/client pair should insert");
+    assert!(
+        sql_query(
+            "INSERT INTO backchannel_logout_deliveries (tenant_id, client_id, operation_key) \
+             VALUES ($1, $2, 'operation-a')",
+        )
+        .bind::<diesel::sql_types::Uuid, _>(tenant_id)
+        .bind::<diesel::sql_types::Uuid, _>(client_id)
+        .execute(&mut connection)
+        .await
+        .is_err(),
+        "the same operation/client pair must be unique"
+    );
+    sql_query(
+        "INSERT INTO backchannel_logout_deliveries (tenant_id, client_id, operation_key) \
+         VALUES ($1, $2, NULL), ($1, $2, NULL)",
+    )
+    .bind::<diesel::sql_types::Uuid, _>(tenant_id)
+    .bind::<diesel::sql_types::Uuid, _>(client_id)
+    .execute(&mut connection)
+    .await
+    .expect("legacy NULL operation rows must remain compatible");
+
+    connection
+        .batch_execute(OIDC_LOGOUT_IDEMPOTENCY_DOWN)
+        .await
+        .expect("logout idempotency migration should roll back");
+    assert!(
+        sql_query("SELECT operation_key FROM backchannel_logout_deliveries")
+            .execute(&mut connection)
+            .await
+            .is_err(),
+        "down migration must remove only the additive operation key"
+    );
+    connection
+        .batch_execute(OIDC_LOGOUT_IDEMPOTENCY_UP)
+        .await
+        .expect("logout idempotency migration should reapply");
     connection
         .batch_execute(&format!(
             "SET search_path TO public; DROP SCHEMA \"{schema}\" CASCADE;"

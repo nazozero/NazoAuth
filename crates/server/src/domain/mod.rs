@@ -1,6 +1,7 @@
 //! 领域类型聚合模块。
 // 每个子模块只描述一种领域概念，本模块只负责向 crate 内部 re-export。
 mod authorization_decision;
+mod backchannel_logout_worker;
 #[cfg(test)]
 #[path = "../../tests/in_source/src/domain/database_user_fixture.rs"]
 mod database_user_fixture;
@@ -23,6 +24,10 @@ mod token_management;
 mod userinfo;
 
 pub(crate) use authorization_decision::ServerAuthorizationDecisionOperations;
+#[cfg(not(test))]
+pub(crate) use backchannel_logout_worker::{
+    BackchannelLogoutWorker, spawn_backchannel_logout_delivery_worker,
+};
 #[cfg(test)]
 pub(crate) use database_user_fixture::{
     DatabaseExternalIdentityFixture, DatabasePasskeyFixture, DatabaseUserFixture,

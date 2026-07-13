@@ -1,21 +1,23 @@
-#[cfg(not(test))]
-use std::sync::Arc;
+use std::{future::Future, sync::Arc};
 
-use actix_web::HttpRequest;
 use chrono::{DateTime, Utc};
 use nazo_auth::{
-    BackchannelLogoutClaimsInput, BackchannelLogoutDelivery, OAuthClient,
-    PendingBackchannelLogoutDelivery,
+    BackchannelLogoutClaimsInput, LogoutDependencyError, LogoutInput, LogoutService,
+    LogoutServiceError, LogoutSession, LogoutTokenSignerPort, RpLogoutRequest,
+};
+use nazo_http_actix::{
+    OidcLogoutCommand, OidcLogoutError, OidcLogoutFuture, OidcLogoutOperations, OidcLogoutSuccess,
 };
 use nazo_key_management::KeyManager;
 use nazo_postgres::{AuditRepository, OAuthClientRepository};
-use uuid::Uuid;
+use serde::Deserialize;
+use serde_json::Value;
 
 #[cfg(not(test))]
 use crate::runtime_modules::ServerRuntimeModuleRegistry;
 use crate::settings::Settings;
 use crate::support::security::jwt_decoding_key_from_jwk;
-use crate::support::sessions::{CurrentSession, SessionHttpConfig, SessionProfileHandles};
+use crate::support::sessions::SessionProfileHandles;
 use nazo_key_management::signing_algorithm_name;
 
 #[derive(Clone)]
@@ -44,8 +46,7 @@ impl From<&Settings> for OidcLogoutConfig {
 #[derive(Clone)]
 pub(crate) struct OidcLogoutHandles {
     sessions: SessionProfileHandles,
-    clients: OAuthClientRepository,
-    deliveries: AuditRepository,
+    service: LogoutService,
     keys: KeyManager,
     config: OidcLogoutConfig,
     #[cfg(not(test))]
@@ -64,10 +65,19 @@ impl OidcLogoutHandles {
         config: OidcLogoutConfig,
         runtime_modules: Arc<ServerRuntimeModuleRegistry>,
     ) -> Self {
+        let service = LogoutService::new(
+            Arc::new(clients.clone()),
+            Arc::new(deliveries.clone()),
+            Arc::new(ServerLogoutTokenSigner {
+                keys: keys.clone(),
+                issuer: config.issuer.clone(),
+            }),
+            config.issuer.clone(),
+            config.pairwise_subject_secret.clone(),
+        );
         Self {
             sessions,
-            clients,
-            deliveries,
+            service,
             keys,
             config,
             runtime_modules,
@@ -83,56 +93,27 @@ impl OidcLogoutHandles {
         config: OidcLogoutConfig,
         frontchannel_logout_enabled: bool,
     ) -> Self {
+        let service = LogoutService::new(
+            Arc::new(clients.clone()),
+            Arc::new(deliveries.clone()),
+            Arc::new(ServerLogoutTokenSigner {
+                keys: keys.clone(),
+                issuer: config.issuer.clone(),
+            }),
+            config.issuer.clone(),
+            config.pairwise_subject_secret.clone(),
+        );
         Self {
             sessions,
-            clients,
-            deliveries,
+            service,
             keys,
             config,
             frontchannel_logout_enabled,
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn from_test_state(state: &super::AppState) -> Self {
-        Self::new(
-            SessionProfileHandles::from_test_state(state),
-            OAuthClientRepository::new(state.diesel_db.clone()),
-            AuditRepository::new(state.diesel_db.clone()),
-            state.keyset.clone(),
-            OidcLogoutConfig::from(state.settings.as_ref()),
-            state.settings.modules.enable_frontchannel_logout,
-        )
-    }
-
-    pub(crate) fn http_config(&self) -> &SessionHttpConfig {
-        self.sessions.http_config()
-    }
-
     pub(crate) fn issuer(&self) -> &str {
         &self.config.issuer
-    }
-
-    pub(crate) fn pairwise_subject_secret(&self) -> Option<&str> {
-        self.config.pairwise_subject_secret.as_deref()
-    }
-
-    pub(crate) fn has_valid_csrf_token(&self, req: &HttpRequest) -> bool {
-        self.sessions.has_valid_csrf_token(req, None)
-    }
-
-    pub(crate) async fn current_session(
-        &self,
-        req: &HttpRequest,
-    ) -> anyhow::Result<Option<CurrentSession>> {
-        self.sessions.current_session(req).await
-    }
-
-    pub(crate) async fn delete_request_session(
-        &self,
-        req: &HttpRequest,
-    ) -> Result<(), nazo_valkey::Error> {
-        self.sessions.delete_request_session(req).await
     }
 
     #[cfg(not(test))]
@@ -149,7 +130,11 @@ impl OidcLogoutHandles {
         self.frontchannel_logout_enabled
     }
 
-    pub(crate) fn decode_id_token_hint(&self, token: &str) -> Option<nazo_auth::IdTokenHintClaims> {
+    fn decode_id_token_hint_with_expiry(
+        &self,
+        token: &str,
+        now: DateTime<Utc>,
+    ) -> Option<DecodedIdTokenHint> {
         let header = jsonwebtoken::decode_header(token).ok()?;
         if header.typ.as_deref().is_some_and(|typ| typ != "JWT")
             || signing_algorithm_name(header.alg).is_none()
@@ -161,93 +146,279 @@ impl OidcLogoutHandles {
         let decoding_key = jwt_decoding_key_from_jwk(&verification_key.public_jwk, header.alg)?;
         let mut validation = jsonwebtoken::Validation::new(header.alg);
         validation.validate_aud = false;
+        // RP-Initiated Logout 1.0 §2 recommends accepting an expired ID Token
+        // when it remains bound to the current or a recent OP session. The auth
+        // service below enforces that session binding before accepting it.
+        validation.validate_exp = false;
         validation.set_issuer(&[self.issuer()]);
-        jsonwebtoken::decode::<nazo_auth::IdTokenHintClaims>(token, &decoding_key, &validation)
+        jsonwebtoken::decode::<DecodedIdTokenHintClaims>(token, &decoding_key, &validation)
             .ok()
-            .map(|data| data.claims)
+            .map(|data| DecodedIdTokenHint {
+                expired: id_token_hint_expired(data.claims.exp, now),
+                claims: nazo_auth::IdTokenHintClaims {
+                    sub: data.claims.sub,
+                    aud: data.claims.aud,
+                    sid: data.claims.sid,
+                },
+            })
+    }
+}
+
+struct DecodedIdTokenHint {
+    claims: nazo_auth::IdTokenHintClaims,
+    expired: bool,
+}
+
+#[derive(Deserialize)]
+struct DecodedIdTokenHintClaims {
+    sub: String,
+    aud: Value,
+    #[serde(default)]
+    sid: Option<String>,
+    exp: i64,
+}
+
+#[derive(Clone)]
+struct ServerLogoutTokenSigner {
+    keys: KeyManager,
+    issuer: Box<str>,
+}
+
+impl LogoutTokenSignerPort for ServerLogoutTokenSigner {
+    fn sign_logout_token<'a>(
+        &'a self,
+        client_id: &'a str,
+        subject: Option<&'a str>,
+        sid: &'a str,
+        issued_at: DateTime<Utc>,
+        ttl_seconds: i64,
+    ) -> nazo_auth::LogoutFuture<'a, String> {
+        Box::pin(async move {
+            let claims = nazo_auth::backchannel_logout_token_claims(
+                &self.issuer,
+                &BackchannelLogoutClaimsInput {
+                    client_id,
+                    subject,
+                    sid: Some(sid),
+                    ttl: ttl_seconds,
+                },
+                issued_at.timestamp(),
+            );
+            let snapshot = self.keys.snapshot();
+            let mut header = jsonwebtoken::Header::new(snapshot.active_alg);
+            header.typ = Some("logout+jwt".to_owned());
+            header.kid = Some(snapshot.active_kid.clone());
+            self.keys
+                .encode_jwt(
+                    nazo_auth::SigningPurpose::LogoutToken,
+                    &header,
+                    &serde_json::Value::Object(claims),
+                )
+                .await
+                .map_err(|_| LogoutDependencyError::Unavailable)
+        })
+    }
+}
+
+impl OidcLogoutOperations for OidcLogoutHandles {
+    fn logout(&self, command: OidcLogoutCommand) -> OidcLogoutFuture<'_> {
+        Box::pin(async move {
+            let now = Utc::now();
+            let current_session = match command.session_id.as_deref() {
+                Some(session_id) => self
+                    .sessions
+                    .current_session_by_id(session_id)
+                    .await
+                    .map_err(|error| {
+                        tracing::warn!(%error, "failed to resolve session for oidc logout");
+                        OidcLogoutError::SessionLookupUnavailable
+                    })?,
+                None => None,
+            };
+            let decoded_id_token_hint = command
+                .request
+                .id_token_hint
+                .as_deref()
+                .and_then(|token| self.decode_id_token_hint_with_expiry(token, now));
+            let subject_hash = current_session.as_ref().map(|session| {
+                blake3::hash(session.user.id().as_bytes())
+                    .to_hex()
+                    .to_string()
+            });
+            let execution = self
+                .service
+                .execute(LogoutInput {
+                    tenant_id: crate::support::tenancy::DEFAULT_TENANT_ID,
+                    request: RpLogoutRequest {
+                        id_token_hint_present: command.request.id_token_hint.is_some(),
+                        client_id: command.request.client_id,
+                        post_logout_redirect_uri: command.request.post_logout_redirect_uri,
+                        state: command.request.state,
+                    },
+                    id_token_hint: decoded_id_token_hint
+                        .as_ref()
+                        .map(|decoded| decoded.claims.clone()),
+                    id_token_hint_expired: decoded_id_token_hint
+                        .as_ref()
+                        .is_some_and(|decoded| decoded.expired),
+                    session: current_session.as_ref().map(|session| LogoutSession {
+                        user_id: session.user.id(),
+                        oidc_sid: session.oidc_sid.clone(),
+                    }),
+                    csrf_authorized: command.csrf_authorized,
+                    frontchannel_enabled: self.permits_existing_frontchannel_transaction(),
+                    now,
+                })
+                .await;
+
+            let operation_key = execution
+                .as_ref()
+                .ok()
+                .and_then(|execution| execution.operation_key.clone());
+            let success = finalize_logout_execution(execution, command.session_id, |session_id| {
+                let sessions = self.sessions.clone();
+                async move {
+                    sessions.delete_session(&session_id).await.map_err(|error| {
+                        tracing::warn!(%error, "failed to delete session after oidc logout");
+                    })
+                }
+            })
+            .await?;
+
+            tracing::info!(
+                event = "oidc_logout",
+                subject_hash = ?subject_hash,
+                operation_key = ?operation_key,
+                "oidc logout completed"
+            );
+            Ok(success)
+        })
+    }
+}
+
+fn id_token_hint_expired(exp: i64, now: DateTime<Utc>) -> bool {
+    exp <= now.timestamp()
+}
+
+async fn finalize_logout_execution<F, Fut>(
+    execution: Result<nazo_auth::LogoutExecution, LogoutServiceError>,
+    session_id: Option<String>,
+    delete_session: F,
+) -> Result<OidcLogoutSuccess, OidcLogoutError>
+where
+    F: FnOnce(String) -> Fut,
+    Fut: Future<Output = Result<(), ()>>,
+{
+    let execution = execution.map_err(map_logout_service_error)?;
+    if let Some(session_id) = session_id {
+        delete_session(session_id)
+            .await
+            .map_err(|()| OidcLogoutError::SessionDeleteUnavailable)?;
+    }
+    Ok(OidcLogoutSuccess {
+        redirect_uri: execution.redirect_uri,
+        frontchannel_logout_urls: execution.frontchannel_logout_urls,
+    })
+}
+
+fn map_logout_service_error(error: LogoutServiceError) -> OidcLogoutError {
+    match error {
+        LogoutServiceError::Policy(policy) => match policy {
+            nazo_auth::LogoutPolicyError::ClientAudienceMismatch => {
+                OidcLogoutError::ClientAudienceMismatch
+            }
+            nazo_auth::LogoutPolicyError::AmbiguousAudience => OidcLogoutError::AmbiguousAudience,
+            nazo_auth::LogoutPolicyError::ClientRequiredForRedirect => {
+                OidcLogoutError::ClientRequiredForRedirect
+            }
+            nazo_auth::LogoutPolicyError::RegisteredClientRequired => {
+                OidcLogoutError::RegisteredClientRequired
+            }
+            nazo_auth::LogoutPolicyError::UnregisteredRedirect => {
+                OidcLogoutError::UnregisteredRedirect
+            }
+            nazo_auth::LogoutPolicyError::InvalidRedirect
+            | nazo_auth::LogoutPolicyError::PairwiseSecretMissing
+            | nazo_auth::LogoutPolicyError::UnsupportedSubjectType => {
+                OidcLogoutError::InvalidRedirect
+            }
+        },
+        LogoutServiceError::InvalidIdTokenHint => OidcLogoutError::InvalidIdTokenHint,
+        LogoutServiceError::UnauthorizedSession => OidcLogoutError::UnauthorizedSession,
+        LogoutServiceError::ClientNotFound => OidcLogoutError::ClientNotFound,
+        LogoutServiceError::ClientUnavailable => OidcLogoutError::ClientLookupUnavailable,
+        LogoutServiceError::SigningUnavailable => OidcLogoutError::SigningUnavailable,
+        LogoutServiceError::OutboxUnavailable => OidcLogoutError::OutboxUnavailable,
+    }
+}
+
+#[cfg(test)]
+mod orchestration_tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    use chrono::TimeZone as _;
+
+    use super::*;
+
+    fn committed_execution(operation_key: &str) -> nazo_auth::LogoutExecution {
+        nazo_auth::LogoutExecution {
+            redirect_uri: None,
+            frontchannel_logout_urls: Vec::new(),
+            operation_key: Some(operation_key.to_owned()),
+        }
     }
 
-    pub(crate) async fn logout_client(
-        &self,
-        client_id: &str,
-        tenant_id: Uuid,
-    ) -> Result<Option<OAuthClient>, nazo_identity::ports::RepositoryError> {
-        self.clients.by_client_id(tenant_id, client_id).await
+    #[test]
+    fn id_token_hint_expires_at_the_exact_exp_boundary() {
+        let now = Utc.timestamp_opt(2_000_000_000, 0).unwrap();
+        assert!(!id_token_hint_expired(2_000_000_001, now));
+        assert!(id_token_hint_expired(2_000_000_000, now));
+        assert!(id_token_hint_expired(1_999_999_999, now));
     }
 
-    pub(crate) async fn active_clients_for_user(
-        &self,
-        user_id: Uuid,
-    ) -> Result<Vec<OAuthClient>, nazo_identity::ports::RepositoryError> {
-        self.clients.active_for_user(user_id).await
-    }
-
-    pub(crate) async fn sign_backchannel_logout_token(
-        &self,
-        client_id: &str,
-        subject: Option<&str>,
-        sid: Option<&str>,
-        ttl: i64,
-    ) -> jsonwebtoken::errors::Result<String> {
-        let claims = nazo_auth::backchannel_logout_token_claims(
-            self.issuer(),
-            &BackchannelLogoutClaimsInput {
-                client_id,
-                subject,
-                sid,
-                ttl,
+    #[tokio::test]
+    async fn postgres_outbox_failure_never_deletes_the_valkey_session() {
+        let delete_calls = Arc::new(AtomicUsize::new(0));
+        let observed = delete_calls.clone();
+        let result = finalize_logout_execution(
+            Err(LogoutServiceError::OutboxUnavailable),
+            Some("session-cookie".to_owned()),
+            move |_| {
+                observed.fetch_add(1, Ordering::SeqCst);
+                async { Ok(()) }
             },
-            Utc::now().timestamp(),
+        )
+        .await;
+        assert_eq!(result, Err(OidcLogoutError::OutboxUnavailable));
+        assert_eq!(delete_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn valkey_failure_keeps_the_committed_operation_retryable() {
+        let operation_key = "same-user-and-oidc-session";
+        let first = finalize_logout_execution(
+            Ok(committed_execution(operation_key)),
+            Some("session-cookie".to_owned()),
+            |_| async { Err(()) },
+        )
+        .await;
+        assert_eq!(first, Err(OidcLogoutError::SessionDeleteUnavailable));
+
+        let second = finalize_logout_execution(
+            Ok(committed_execution(operation_key)),
+            Some("session-cookie".to_owned()),
+            |_| async { Ok(()) },
+        )
+        .await;
+        assert_eq!(
+            second,
+            Ok(OidcLogoutSuccess {
+                redirect_uri: None,
+                frontchannel_logout_urls: Vec::new(),
+            })
         );
-        let snapshot = self.keys.snapshot();
-        let mut header = jsonwebtoken::Header::new(snapshot.active_alg);
-        header.typ = Some("logout+jwt".to_owned());
-        header.kid = Some(snapshot.active_kid.clone());
-        self.keys
-            .encode_jwt(
-                nazo_auth::SigningPurpose::LogoutToken,
-                &header,
-                &serde_json::Value::Object(claims),
-            )
-            .await
-    }
-
-    pub(crate) async fn enqueue_backchannel_logout_batch(
-        &self,
-        deliveries: &[PendingBackchannelLogoutDelivery],
-    ) -> Result<(), nazo_identity::ports::RepositoryError> {
-        self.deliveries
-            .enqueue_backchannel_logout_batch(deliveries)
-            .await
-    }
-
-    pub(crate) async fn claim_due_backchannel_logout(
-        &self,
-        limit: i64,
-        lock_timeout_seconds: i32,
-    ) -> Result<Vec<BackchannelLogoutDelivery>, nazo_identity::ports::RepositoryError> {
-        self.deliveries
-            .claim_due_backchannel_logout(limit, lock_timeout_seconds)
-            .await
-    }
-
-    pub(crate) async fn complete_backchannel_logout(
-        &self,
-        delivery: &BackchannelLogoutDelivery,
-    ) -> Result<(), nazo_identity::ports::RepositoryError> {
-        self.deliveries
-            .complete_backchannel_logout(delivery.id, delivery.attempts)
-            .await
-    }
-
-    pub(crate) async fn fail_backchannel_logout(
-        &self,
-        delivery: &BackchannelLogoutDelivery,
-        next_attempt_at: Option<DateTime<Utc>>,
-        last_error: &str,
-    ) -> Result<(), nazo_identity::ports::RepositoryError> {
-        self.deliveries
-            .fail_backchannel_logout(delivery.id, delivery.attempts, next_attempt_at, last_error)
-            .await
     }
 }

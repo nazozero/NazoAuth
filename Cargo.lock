@@ -2225,6 +2225,7 @@ dependencies = [
  "base64",
  "blake3",
  "chrono",
+ "futures-util",
  "nazo-auth",
  "nazo-http-signatures",
  "nazo-identity",

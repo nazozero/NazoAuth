@@ -114,7 +114,7 @@ diesel::table! {
 diesel::table! {
     backchannel_logout_deliveries (id) {
         id -> Uuid, tenant_id -> Uuid, client_id -> Uuid, client_public_id -> Varchar,
-        logout_uri -> Text, logout_token -> Text, attempts -> Int4, next_attempt_at -> Timestamptz,
+        logout_uri -> Text, logout_token -> Text, operation_key -> Nullable<Varchar>, attempts -> Int4, next_attempt_at -> Timestamptz,
         locked_at -> Nullable<Timestamptz>, delivered_at -> Nullable<Timestamptz>,
         failed_at -> Nullable<Timestamptz>, last_error -> Nullable<Text>, expires_at -> Timestamptz,
         created_at -> Timestamptz, updated_at -> Timestamptz,
