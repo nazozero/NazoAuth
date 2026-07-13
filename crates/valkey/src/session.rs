@@ -190,3 +190,81 @@ impl nazo_identity::ports::LoginSessionPort for SessionStore {
         })
     }
 }
+
+impl nazo_identity::ports::SessionStorePort for SessionStore {
+    fn load<'a>(
+        &'a self,
+        session_id: &'a nazo_identity::SessionId,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, Option<nazo_identity::SessionSnapshot>> {
+        Box::pin(async move {
+            SessionStore::load(self, session_id.as_str())
+                .await
+                .map(|stored| {
+                    stored.map(|stored| {
+                        nazo_identity::SessionSnapshot::new(
+                            stored.value,
+                            nazo_identity::SessionVersion::from_storage(
+                                stored.raw.into_bytes().into_boxed_slice(),
+                            ),
+                        )
+                    })
+                })
+                .map_err(crate::identity_repository_error)
+        })
+    }
+
+    fn delete<'a>(
+        &'a self,
+        session_id: &'a nazo_identity::SessionId,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, bool> {
+        Box::pin(async move {
+            SessionStore::delete(self, session_id.as_str())
+                .await
+                .map(|deleted| deleted > 0)
+                .map_err(crate::identity_repository_error)
+        })
+    }
+
+    fn rotate<'a>(
+        &'a self,
+        old_session_id: &'a nazo_identity::SessionId,
+        expected: &'a nazo_identity::SessionSnapshot,
+        new_session_id: &'a nazo_identity::SessionId,
+        replacement: &'a SessionRecord,
+        ttl_seconds: u64,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, nazo_identity::SessionRotationOutcome> {
+        Box::pin(async move {
+            let replacement = serde_json::to_string(&SessionWireRecord::from(replacement))
+                .map_err(|error| {
+                    nazo_identity::ports::RepositoryError::Unexpected(format!(
+                        "failed to serialize replacement session: {error}"
+                    ))
+                })?;
+            let expected =
+                std::str::from_utf8(expected.version().storage_bytes()).map_err(|error| {
+                    nazo_identity::ports::RepositoryError::Unexpected(format!(
+                        "session storage revision is not valid UTF-8: {error}"
+                    ))
+                })?;
+            let reply = command::eval_string(
+                &self.connection,
+                ROTATE_SESSION_SCRIPT,
+                vec![
+                    keys::session(old_session_id.as_str()),
+                    keys::session(new_session_id.as_str()),
+                ],
+                vec![expected.to_owned(), replacement, ttl_seconds.to_string()],
+            )
+            .await
+            .map_err(crate::identity_repository_error)?;
+            match reply.as_str() {
+                "ok" => Ok(nazo_identity::SessionRotationOutcome::Applied),
+                "conflict" => Ok(nazo_identity::SessionRotationOutcome::Conflict),
+                "collision" => Ok(nazo_identity::SessionRotationOutcome::Collision),
+                other => Err(nazo_identity::ports::RepositoryError::Unexpected(format!(
+                    "unexpected session rotation reply {other:?}"
+                ))),
+            }
+        })
+    }
+}

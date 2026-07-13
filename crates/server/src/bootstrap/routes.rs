@@ -9,7 +9,7 @@ use nazo_http_actix::{
 };
 use nazo_http_actix::{
     discovery, jwks, mfa_json_config, mfa_method_not_allowed, mfa_options,
-    oauth_authorization_server_metadata, oauth_protected_resource_metadata,
+    oauth_authorization_server_metadata, oauth_protected_resource_metadata, profile_logout,
 };
 use serde_json::json;
 
@@ -68,7 +68,6 @@ use crate::http::profile::{
     passkeys::{
         passkey_delete, passkey_list, passkey_registration_begin, passkey_registration_finish,
     },
-    session::logout,
     session_management::{check_session_iframe, check_session_status},
 };
 #[cfg(test)]
@@ -366,7 +365,7 @@ pub(crate) fn configure(
                     }
                 })
                 .route("/ciba/{auth_req_id}", web::post().to(ciba_decision))
-                .route("/logout", web::post().to(logout)),
+                .route("/logout", web::post().to(profile_logout)),
         )
         // CORS: cors_admin — /admin/*
         .service(

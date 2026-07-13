@@ -14,6 +14,7 @@ mod middleware;
 mod presenter;
 mod request_context;
 mod scim;
+mod session;
 mod token_forms;
 mod token_management;
 
@@ -56,6 +57,10 @@ pub use scim::{
     ScimCursorProtector, ScimDependencyError, ScimEndpoint, ScimFuture, ScimRequestAuthorizer,
     scim_create_user, scim_delete_user, scim_get_user, scim_list_users, scim_patch_user,
     scim_replace_user, scim_resource_types, scim_schemas, scim_service_provider_config,
+};
+pub use session::{
+    SessionCookieConfig, SessionLogoutEndpoint, login_required_response, logout_response,
+    profile_logout, session_lookup_error_response,
 };
 pub use token_forms::{
     TokenForm, TokenFormError, TokenManagementFormError, TokenOnlyForm, parse_token_form,

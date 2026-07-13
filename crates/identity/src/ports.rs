@@ -643,6 +643,41 @@ pub trait LoginSessionPort: Send + Sync {
     ) -> RepositoryFuture<'a, LoginSessionCreate>;
 }
 
+/// Reads the minimum account projection required to resolve an authenticated session.
+pub trait SessionAccountPort: Send + Sync {
+    fn public_account_by_id(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> RepositoryFuture<'_, Option<PublicAccount>>;
+}
+
+/// Persistence boundary for session lookup, deletion, and atomic rotation.
+///
+/// Implementations must treat `expected` as an opaque compare-and-swap snapshot.
+/// A successful rotation must create the replacement and delete the old session
+/// atomically; it must never expose both or neither as a partial success.
+pub trait SessionStorePort: Send + Sync {
+    fn load<'a>(
+        &'a self,
+        session_id: &'a crate::session::SessionId,
+    ) -> RepositoryFuture<'a, Option<crate::session::SessionSnapshot>>;
+
+    fn delete<'a>(
+        &'a self,
+        session_id: &'a crate::session::SessionId,
+    ) -> RepositoryFuture<'a, bool>;
+
+    fn rotate<'a>(
+        &'a self,
+        old_session_id: &'a crate::session::SessionId,
+        expected: &'a crate::session::SessionSnapshot,
+        new_session_id: &'a crate::session::SessionId,
+        replacement: &'a crate::session::SessionRecord,
+        ttl_seconds: u64,
+    ) -> RepositoryFuture<'a, crate::session::SessionRotationOutcome>;
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AuthenticationAuditEvent {
     Failure {

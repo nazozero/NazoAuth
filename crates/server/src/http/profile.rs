@@ -9,5 +9,4 @@ pub(crate) mod federation_links;
 pub(crate) mod mfa;
 pub(crate) mod oidc_logout;
 pub(crate) mod passkeys;
-pub(crate) mod session;
 pub(crate) mod session_management;

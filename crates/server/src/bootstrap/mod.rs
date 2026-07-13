@@ -81,7 +81,7 @@ use crate::support::sessions::{AdminSessionHandles, SessionHttpConfig, SessionPr
 use crate::support::tenancy::{DEFAULT_TENANT_ID, default_tenant_context};
 #[cfg(test)]
 use actix_web::http::header;
-use nazo_http_actix::security_headers;
+use nazo_http_actix::{SessionCookieConfig, SessionLogoutEndpoint, security_headers};
 use nazo_postgres::create_pool;
 use tracing::Instrument;
 
@@ -309,6 +309,19 @@ pub async fn run() -> anyhow::Result<()> {
         &session.csrf_cookie_name,
         session.cookie_secure,
     );
+    let profile_logout_endpoint = web::Data::new(SessionLogoutEndpoint::new(
+        nazo_identity::SessionService::new(
+            Arc::new(nazo_valkey::SessionStore::new(&valkey_connection)),
+            Arc::new(nazo_postgres::UserRepository::new(diesel_db.clone())),
+            nazo_identity::TenantId::new(DEFAULT_TENANT_ID).expect("default tenant ID is valid"),
+        ),
+        SessionCookieConfig::new(
+            &session.session_cookie_name,
+            &session.csrf_cookie_name,
+            session.cookie_secure,
+        ),
+        |error| tracing::warn!(%error, "failed to delete session during logout"),
+    ));
     let admin_sessions = web::Data::new(AdminSessionHandles::new(
         nazo_valkey::SessionStore::new(&valkey_connection),
         nazo_postgres::UserRepository::new(diesel_db.clone()),
@@ -589,6 +602,7 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(admin_sessions.clone())
             .app_data(admin_federation.clone())
             .app_data(session_profiles.clone())
+            .app_data(profile_logout_endpoint.clone())
             .app_data(oidc_logout.clone())
             .app_data(csrf_http_config.clone())
             .app_data(mfa_profiles.clone())
