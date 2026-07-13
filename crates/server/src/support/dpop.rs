@@ -1,4 +1,5 @@
 use serde::Deserialize;
+pub(crate) use nazo_http_actix::{AccessTokenAuthScheme, authorization_access_token};
 
 #[cfg(test)]
 use nazo_auth::is_valid_dpop_jkt;
@@ -13,12 +14,6 @@ use crate::settings::DpopNoncePolicy;
 const DPOP_TTL_SECONDS: i64 = 300;
 const DPOP_CLOCK_SKEW_SECONDS: i64 = 30;
 const MAX_DPOP_JTI_BYTES: usize = 128;
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum AccessTokenAuthScheme {
-    Bearer,
-    DPoP,
-}
 
 #[derive(Debug)]
 pub(crate) enum DpopError {
@@ -103,25 +98,6 @@ pub(crate) fn dpop_error_response(error: DpopError, context: DpopErrorContext) -
             .unwrap_or_else(|_| HeaderValue::from_static("DPoP")),
     );
     response
-}
-
-pub(crate) fn authorization_access_token(
-    headers: &HeaderMap,
-) -> Option<(AccessTokenAuthScheme, String)> {
-    let raw = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
-    let mut parts = raw.splitn(2, char::is_whitespace);
-    let scheme = parts.next()?.trim();
-    let token = parts.next()?.trim();
-    if token.is_empty() || token.split_whitespace().count() != 1 {
-        return None;
-    }
-    if scheme.eq_ignore_ascii_case("DPoP") {
-        return Some((AccessTokenAuthScheme::DPoP, token.to_owned()));
-    }
-    if scheme.eq_ignore_ascii_case("Bearer") {
-        return Some((AccessTokenAuthScheme::Bearer, token.to_owned()));
-    }
-    None
 }
 
 pub(crate) fn dpop_proof_present(req: &HttpRequest) -> bool {

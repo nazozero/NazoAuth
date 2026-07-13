@@ -628,66 +628,6 @@ fn fapi_resource_audience_allowed(settings: &Settings, audience: &Value) -> bool
         || token_audience_contains(audience, &settings.protected_resource_identifier)
 }
 
-enum ResourceAccessToken {
-    Present(AccessTokenAuthScheme, String),
-    Missing,
-    InvalidRequest,
-}
-
-fn resource_access_token(
-    req: &HttpRequest,
-    body: &Bytes,
-    http_signatures_enabled: bool,
-) -> ResourceAccessToken {
-    let header_token = authorization_access_token(req.headers());
-    let body_token = resource_form_body_access_token(req, body);
-
-    if http_signatures_enabled && !matches!(&body_token, ResourceFormBodyAccessToken::Missing) {
-        return ResourceAccessToken::InvalidRequest;
-    }
-
-    match (header_token, body_token) {
-        (Some(_), ResourceFormBodyAccessToken::Present(_)) => ResourceAccessToken::InvalidRequest,
-        (Some((scheme, token)), _) => ResourceAccessToken::Present(scheme, token),
-        (None, ResourceFormBodyAccessToken::Present(token)) => {
-            ResourceAccessToken::Present(AccessTokenAuthScheme::Bearer, token)
-        }
-        (None, ResourceFormBodyAccessToken::Missing) => ResourceAccessToken::Missing,
-        (None, ResourceFormBodyAccessToken::InvalidRequest) => ResourceAccessToken::InvalidRequest,
-    }
-}
-
-enum ResourceFormBodyAccessToken {
-    Present(String),
-    Missing,
-    InvalidRequest,
-}
-
-fn resource_form_body_access_token(req: &HttpRequest, body: &Bytes) -> ResourceFormBodyAccessToken {
-    if req.method() != actix_web::http::Method::POST
-        || body.is_empty()
-        || !request_uses_form_urlencoded(req)
-    {
-        return ResourceFormBodyAccessToken::Missing;
-    }
-    let mut access_token = None;
-    for (key, value) in url::form_urlencoded::parse(body) {
-        if key == "access_token" {
-            if access_token.is_some() {
-                return ResourceFormBodyAccessToken::InvalidRequest;
-            }
-            let token = value.into_owned();
-            if token.trim().is_empty() {
-                return ResourceFormBodyAccessToken::Missing;
-            }
-            access_token = Some(token);
-        }
-    }
-    access_token
-        .map(ResourceFormBodyAccessToken::Present)
-        .unwrap_or(ResourceFormBodyAccessToken::Missing)
-}
-
 #[cfg(test)]
 #[path = "../../tests/in_source/src/http/tests/fapi_resource.rs"]
 mod tests;

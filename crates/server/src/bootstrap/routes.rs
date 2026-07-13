@@ -1,7 +1,9 @@
 //! HTTP 路由表。
 // 本文件只声明 URL 到 handler 的映射，不承载业务逻辑。
 
-use actix_web::web;
+use actix_web::{HttpResponse, dev::Service, http::header, web};
+use nazo_http_actix::{mfa_json_config, mfa_method_not_allowed, mfa_options};
+use serde_json::json;
 
 use crate::http::*;
 use crate::settings::Settings;
@@ -139,7 +141,13 @@ pub(crate) fn configure(
                 )
                 .route("/passkey/begin", web::post().to(passkey_login_begin))
                 .route("/passkey/finish", web::post().to(passkey_login_finish))
-                .route("/mfa/verify", web::post().to(mfa_verify))
+                .service(
+                    web::resource("/mfa/verify")
+                        .app_data(mfa_json_config())
+                        .route(web::post().to(mfa_verify))
+                        .route(web::method(actix_web::http::Method::OPTIONS).to(mfa_options))
+                        .default_service(web::to(mfa_method_not_allowed)),
+                )
                 .route("/csrf", web::get().to(csrf))
                 // CORS: cors_auth_api — /auth/me/*
                 .service(
@@ -157,13 +165,46 @@ pub(crate) fn configure(
                             web::post().to(passkey_registration_finish),
                         )
                         .route("/passkeys/{passkey_id}", web::delete().to(passkey_delete))
-                        .route("/mfa/totp/begin", web::post().to(mfa_totp_begin))
-                        .route("/mfa/totp/confirm", web::post().to(mfa_totp_confirm))
-                        .route(
-                            "/mfa/backup-codes/regenerate",
-                            web::post().to(mfa_backup_codes_regenerate),
+                        .service(
+                            web::scope("/mfa")
+                                .app_data(mfa_json_config())
+                                .service(
+                                    web::resource("/totp/begin")
+                                        .route(web::post().to(mfa_totp_begin))
+                                        .route(
+                                            web::method(actix_web::http::Method::OPTIONS)
+                                                .to(mfa_options),
+                                        )
+                                        .default_service(web::to(mfa_method_not_allowed)),
+                                )
+                                .service(
+                                    web::resource("/totp/confirm")
+                                        .route(web::post().to(mfa_totp_confirm))
+                                        .route(
+                                            web::method(actix_web::http::Method::OPTIONS)
+                                                .to(mfa_options),
+                                        )
+                                        .default_service(web::to(mfa_method_not_allowed)),
+                                )
+                                .service(
+                                    web::resource("/backup-codes/regenerate")
+                                        .route(web::post().to(mfa_backup_codes_regenerate))
+                                        .route(
+                                            web::method(actix_web::http::Method::OPTIONS)
+                                                .to(mfa_options),
+                                        )
+                                        .default_service(web::to(mfa_method_not_allowed)),
+                                )
+                                .service(
+                                    web::resource("/disable")
+                                        .route(web::post().to(mfa_disable))
+                                        .route(
+                                            web::method(actix_web::http::Method::OPTIONS)
+                                                .to(mfa_options),
+                                        )
+                                        .default_service(web::to(mfa_method_not_allowed)),
+                                ),
                         )
-                        .route("/mfa/disable", web::post().to(mfa_disable))
                         .route("/avatar", web::post().to(upload_avatar))
                         .route("/avatar", web::get().to(get_avatar))
                         .route("/avatar", web::delete().to(delete_avatar))
@@ -188,6 +229,42 @@ pub(crate) fn configure(
                 .route("/ciba/automated", web::get().to(ciba_automated_decision))
                 .route("/ciba/automated", web::post().to(ciba_automated_decision))
                 .route("/ciba/{auth_req_id}", web::get().to(ciba_verification))
+                .wrap_fn(|req, service| {
+                    let is_mfa =
+                        req.path() == "/auth/mfa/verify" || req.path().starts_with("/auth/me/mfa/");
+                    let method = req.method().clone();
+                    let future = service.call(req);
+                    async move {
+                        let mut response = future.await?.map_into_boxed_body();
+                        if !is_mfa {
+                            return Ok(response);
+                        }
+                        response.headers_mut().insert(
+                            header::CACHE_CONTROL,
+                            header::HeaderValue::from_static("no-store"),
+                        );
+                        response
+                            .headers_mut()
+                            .insert(header::PRAGMA, header::HeaderValue::from_static("no-cache"));
+                        if method == actix_web::http::Method::OPTIONS
+                            && !response.headers().contains_key(header::CONTENT_TYPE)
+                        {
+                            let status = response.status();
+                            let headers = response.headers().clone();
+                            let (request, _) = response.into_parts();
+                            let mut replacement = HttpResponse::build(status);
+                            for (name, value) in &headers {
+                                replacement.insert_header((name.clone(), value.clone()));
+                            }
+                            response = actix_web::dev::ServiceResponse::new(
+                                request,
+                                replacement.json(json!({"status": "ok"})),
+                            )
+                            .map_into_boxed_body();
+                        }
+                        Ok(response)
+                    }
+                })
                 .route("/ciba/{auth_req_id}", web::post().to(ciba_decision))
                 .route("/logout", web::post().to(logout)),
         )
