@@ -2320,6 +2320,7 @@ name = "nazo-runtime-modules"
 version = "0.1.0"
 dependencies = [
  "arc-swap",
+ "futures-util",
  "serde",
  "thiserror",
 ]

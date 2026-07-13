@@ -1,15 +1,18 @@
 use std::collections::BTreeSet;
 use std::convert::Infallible;
 use std::future::Future;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc;
 use std::sync::{Arc, Barrier, Mutex};
 use std::task::{Context, Poll, Waker};
 use std::time::{Duration, SystemTime};
 
 use nazo_runtime_modules::{
     ActiveModuleSnapshot, CasOutcome, CatalogDurations, DesiredMode, DesiredStateChange,
-    DesiredStateRecord, InstanceStateMutation, InstanceStateRecord, ModuleCatalog,
-    ModuleEventRecord, ModuleEventType, ModuleId, ModuleRevision, ModuleState,
-    ModuleStateRepository, NoopModuleLifecycle, ReconcileOutcome, RuntimeModuleRegistry,
+    DesiredStateRecord, InstanceStateMutation, InstanceStateRecord, LifecycleFailure,
+    LifecycleFuture, ModuleCatalog, ModuleEventRecord, ModuleEventType, ModuleId, ModuleLifecycle,
+    ModuleRevision, ModuleState, ModuleStateRepository, NoopModuleLifecycle, ReconcileOutcome,
+    RuntimeModuleRegistry,
 };
 
 fn block_on<F: Future>(future: F) -> F::Output {
@@ -223,6 +226,85 @@ fn registry(
     )
 }
 
+struct PausingLifecycle {
+    calls: AtomicUsize,
+    entered: mpsc::Sender<usize>,
+    release_first: Barrier,
+}
+
+impl ModuleLifecycle for PausingLifecycle {
+    fn initialize(
+        &self,
+        _module_id: ModuleId,
+    ) -> LifecycleFuture<'_, Result<(), LifecycleFailure>> {
+        Box::pin(async move {
+            let call = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
+            self.entered.send(call).unwrap();
+            if call == 1 {
+                self.release_first.wait();
+            }
+            Ok(())
+        })
+    }
+
+    fn stop(&self, _module_id: ModuleId) -> LifecycleFuture<'_, Result<(), LifecycleFailure>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn drain_stored_transactions(
+        &self,
+        _module_id: ModuleId,
+        _max_duration: Duration,
+    ) -> LifecycleFuture<'_, Result<bool, LifecycleFailure>> {
+        Box::pin(async { Ok(true) })
+    }
+}
+
+#[test]
+fn concurrent_reconciles_for_one_module_execute_one_lifecycle_transition() {
+    let repository = Arc::new(Repository::new(usize::MAX));
+    repository.force_desired(7, DesiredMode::Enabled);
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let lifecycle = Arc::new(PausingLifecycle {
+        calls: AtomicUsize::new(0),
+        entered: entered_tx,
+        release_first: Barrier::new(2),
+    });
+    let registry = Arc::new(RuntimeModuleRegistry::new(
+        Arc::clone(&repository),
+        Arc::clone(&lifecycle),
+        catalog(),
+        "instance-a".to_owned(),
+        ActiveModuleSnapshot {
+            revision: ModuleRevision::new(6),
+            accepting: BTreeSet::new(),
+            draining: BTreeSet::new(),
+        },
+    ));
+
+    let first = {
+        let registry = Arc::clone(&registry);
+        std::thread::spawn(move || block_on(registry.reconcile_once(ModuleId::Ciba)))
+    };
+    assert_eq!(entered_rx.recv().unwrap(), 1);
+    let second_started = Arc::new(Barrier::new(2));
+    let second = {
+        let registry = Arc::clone(&registry);
+        let second_started = Arc::clone(&second_started);
+        std::thread::spawn(move || {
+            second_started.wait();
+            block_on(registry.reconcile_once(ModuleId::Ciba))
+        })
+    };
+    second_started.wait();
+    assert!(entered_rx.recv_timeout(Duration::from_millis(25)).is_err());
+    lifecycle.release_first.wait();
+
+    assert_eq!(first.join().unwrap().unwrap(), ReconcileOutcome::Enabled);
+    assert_eq!(second.join().unwrap().unwrap(), ReconcileOutcome::NoChange);
+    assert_eq!(lifecycle.calls.load(Ordering::SeqCst), 1);
+}
+
 #[test]
 fn stale_enable_is_discarded_before_snapshot_publication() {
     let repository = Arc::new(Repository::new(1));
@@ -304,8 +386,34 @@ fn run_stale_disable(
 }
 
 #[test]
-fn stale_disable_cannot_complete_drain() {
+fn stale_disable_before_snapshot_publication_preserves_previous_admission() {
     let (repository, registry) = run_stale_disable(1);
+    assert!(registry.snapshot().admits(ModuleId::Ciba));
+    assert_eq!(
+        repository.event_types(),
+        vec![
+            ModuleEventType::TransitionStarted,
+            ModuleEventType::StaleTransitionDiscarded,
+        ]
+    );
+}
+
+#[test]
+fn stale_disable_after_snapshot_publication_keeps_admission_closed() {
+    let (repository, registry) = run_stale_disable(2);
+    assert!(!registry.snapshot().admits(ModuleId::Ciba));
+    assert_eq!(
+        repository.event_types(),
+        vec![
+            ModuleEventType::TransitionStarted,
+            ModuleEventType::StaleTransitionDiscarded,
+        ]
+    );
+}
+
+#[test]
+fn stale_disable_cannot_complete_drain() {
+    let (repository, registry) = run_stale_disable(3);
     assert!(!registry.snapshot().admits(ModuleId::Ciba));
     assert_eq!(
         repository.event_types(),
@@ -319,7 +427,7 @@ fn stale_disable_cannot_complete_drain() {
 
 #[test]
 fn stale_disable_cannot_persist_final_state() {
-    let (repository, registry) = run_stale_disable(2);
+    let (repository, registry) = run_stale_disable(4);
     assert!(!registry.snapshot().admits(ModuleId::Ciba));
     assert_eq!(
         repository.event_types(),

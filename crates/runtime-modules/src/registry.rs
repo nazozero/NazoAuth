@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
@@ -18,6 +18,7 @@ pub struct RuntimeModuleRegistry<R, L> {
     instance_id: String,
     snapshots: Arc<SnapshotStore>,
     leases: RequestLeaseTracker,
+    transition_locks: BTreeMap<ModuleId, Arc<futures_util::lock::Mutex<()>>>,
     event_sequence: AtomicU64,
 }
 
@@ -41,6 +42,10 @@ where
             instance_id,
             snapshots: Arc::new(SnapshotStore::new(initial_snapshot)),
             leases: RequestLeaseTracker::default(),
+            transition_locks: ModuleId::ALL
+                .into_iter()
+                .map(|module_id| (module_id, Arc::new(futures_util::lock::Mutex::new(()))))
+                .collect(),
             event_sequence: AtomicU64::new(1),
         }
     }
@@ -117,6 +122,18 @@ where
     }
 
     pub async fn reconcile_once(
+        &self,
+        module_id: ModuleId,
+    ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
+        let transition_lock = self
+            .transition_locks
+            .get(&module_id)
+            .expect("the closed module catalog must have a transition lock");
+        let _transition_guard = transition_lock.lock().await;
+        self.reconcile_once_serialized(module_id).await
+    }
+
+    async fn reconcile_once_serialized(
         &self,
         module_id: ModuleId,
     ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
@@ -201,10 +218,16 @@ where
                 None,
             )
             .await?;
-        Ok(if matches!(completed, CasOutcome::Applied(_)) {
-            ReconcileOutcome::Enabled
-        } else {
-            ReconcileOutcome::StaleDiscarded
+        Ok(match completed {
+            CasOutcome::Applied(_) => ReconcileOutcome::Enabled,
+            CasOutcome::Stale { .. } => {
+                // A desired-state revision can change after the last explicit
+                // check but before the repository CAS. The per-module guard
+                // ensures this rollback cannot erase a newer reconciler's
+                // publication.
+                self.publish(module_id, false, false);
+                ReconcileOutcome::StaleDiscarded
+            }
         })
     }
 
@@ -241,7 +264,15 @@ where
         let CasOutcome::Applied(draining) = draining else {
             return Ok(ReconcileOutcome::StaleDiscarded);
         };
+        if !self.revision_is_current(module_id, revision).await? {
+            self.discard_stale(draining).await?;
+            return Ok(ReconcileOutcome::StaleDiscarded);
+        }
         self.publish(module_id, false, true);
+        if !self.revision_is_current(module_id, revision).await? {
+            self.discard_stale(draining).await?;
+            return Ok(ReconcileOutcome::StaleDiscarded);
+        }
         if !matches!(
             self.persist_state(
                 module_id,
@@ -325,6 +356,10 @@ where
                 ReconcileOutcome::StaleDiscarded
             });
         }
+        if !self.revision_is_current(module_id, revision).await? {
+            self.discard_stale(draining).await?;
+            return Ok(ReconcileOutcome::StaleDiscarded);
+        }
         let completed = self
             .persist_state(
                 module_id,
@@ -338,12 +373,16 @@ where
                 None,
             )
             .await?;
-        self.publish(module_id, false, false);
-        Ok(if matches!(completed, CasOutcome::Applied(_)) {
-            ReconcileOutcome::Disabled
-        } else {
-            ReconcileOutcome::StaleDiscarded
-        })
+        match completed {
+            CasOutcome::Applied(_) => {
+                if !self.revision_is_current(module_id, revision).await? {
+                    return Ok(ReconcileOutcome::StaleDiscarded);
+                }
+                self.publish(module_id, false, false);
+                Ok(ReconcileOutcome::Disabled)
+            }
+            CasOutcome::Stale { .. } => Ok(ReconcileOutcome::StaleDiscarded),
+        }
     }
 
     async fn revision_is_current(
