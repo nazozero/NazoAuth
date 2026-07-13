@@ -13,6 +13,7 @@ mod claims;
 mod client;
 mod client_authentication;
 mod client_registration;
+mod dynamic_client_registration;
 mod device;
 mod error;
 mod extension_grants;
@@ -96,6 +97,11 @@ pub use device::{
     DeviceGrantWrite, DevicePollCommit, DevicePollFailure, DevicePollTransition, DeviceStateFuture,
     DeviceStatePortError, DeviceStateStorePort, StoredDeviceAuthorization,
     device_authorization_payload, device_authorization_request_payload, evaluate_device_poll,
+};
+pub use dynamic_client_registration::{
+    DynamicClientRegistrationRequest, DynamicRegistrationError, DynamicRegistrationPolicy,
+    PreparedDynamicClientRegistration, parse_client_configuration_update,
+    prepare_dynamic_client_registration, response_types_from_client,
 };
 pub use error::{ProtocolError, ProtocolErrorCode};
 pub use extension_grants::{
