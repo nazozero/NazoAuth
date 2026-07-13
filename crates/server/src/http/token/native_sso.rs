@@ -229,7 +229,8 @@ pub(crate) async fn persist_native_sso_device_secret(
     let Some(user_id) = issue.user_id else {
         return Ok(());
     };
-    let expires_at = Utc::now() + Duration::seconds(state.settings.refresh_token_ttl_seconds);
+    let expires_at =
+        Utc::now() + Duration::seconds(state.settings.protocol().refresh_token_ttl_seconds);
     let payload = NativeSsoDeviceSecretState {
         tenant_id: client.tenant_id,
         user_id,
@@ -243,7 +244,7 @@ pub(crate) async fn persist_native_sso_device_secret(
         .store_native_sso(
             &binding.device_secret,
             &serde_json::to_value(payload)?,
-            state.settings.refresh_token_ttl_seconds.max(1) as u64,
+            state.settings.protocol().refresh_token_ttl_seconds.max(1) as u64,
         )
         .await?;
     Ok(())
@@ -383,7 +384,7 @@ pub(crate) async fn token_native_sso_exchange(
             subject,
             scopes,
             authorization_details: json!([]),
-            audiences: vec![state.settings.default_audience.clone()],
+            audiences: vec![state.settings.protocol().default_audience.to_owned()],
             nonce: None,
             auth_time: None,
             amr: vec!["native_sso".to_owned()],

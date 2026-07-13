@@ -148,7 +148,7 @@ pub(crate) async fn dynamic_client_registration(
     let prepared = match prepare_dynamic_client_registration(
         payload,
         DynamicRegistrationDefaults {
-            default_audience: &state.settings.default_audience,
+            default_audience: state.settings.protocol().default_audience,
         },
     ) {
         Ok(prepared) => prepared,
@@ -162,8 +162,8 @@ pub(crate) async fn dynamic_client_registration(
         .response_signing_alg_values_supported();
     match prepare_dynamic_client_insert_with_secret_pepper(
         prepared,
-        state.settings.pairwise_subject_secret.as_deref(),
-        &state.settings.client_secret_pepper,
+        state.settings.protocol().pairwise_subject_secret,
+        state.settings.protocol().client_secret_pepper,
         &state.settings.issuer,
         &registration_access_token,
         &response_signing_algorithms,
@@ -233,7 +233,7 @@ pub(crate) async fn client_configuration_get(
     let (issued_secret, secret_hash) = crate::http::admin::issue_client_secret(
         &current.client_type,
         &current.token_endpoint_auth_method,
-        &state.settings.client_secret_pepper,
+        state.settings.protocol().client_secret_pepper,
     );
     let client = match rotate_client_management_credentials(
         &state,
@@ -291,8 +291,11 @@ pub(crate) async fn client_configuration_put(
     let secret_matches = if let Some(secret) = submitted_secret {
         let candidate_match = match repository.client_secret_salt(current.id).await {
             Ok(Some(salt)) => {
-                let candidate_digest =
-                    client_secret_digest(secret, &state.settings.client_secret_pepper, &salt);
+                let candidate_digest = client_secret_digest(
+                    secret,
+                    state.settings.protocol().client_secret_pepper,
+                    &salt,
+                );
                 repository
                     .client_secret_digest_matches(current.id, &candidate_digest)
                     .await
@@ -322,7 +325,7 @@ pub(crate) async fn client_configuration_put(
     let registration = match prepare_dynamic_client_registration(
         payload,
         DynamicRegistrationDefaults {
-            default_audience: &state.settings.default_audience,
+            default_audience: state.settings.protocol().default_audience,
         },
     ) {
         Ok(registration) => registration,
@@ -336,8 +339,8 @@ pub(crate) async fn client_configuration_put(
         .response_signing_alg_values_supported();
     let prepared = match prepare_dynamic_client_insert_with_secret_pepper(
         registration,
-        state.settings.pairwise_subject_secret.as_deref(),
-        &state.settings.client_secret_pepper,
+        state.settings.protocol().pairwise_subject_secret,
+        state.settings.protocol().client_secret_pepper,
         &state.settings.issuer,
         &registration_access_token,
         &response_signing_algorithms,

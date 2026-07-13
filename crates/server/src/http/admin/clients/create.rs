@@ -173,15 +173,15 @@ pub(crate) async fn insert_client_row(
     state: &AppState,
     payload: CreateClientRequest,
 ) -> Result<(ClientRow, Option<String>), InsertClientError> {
-    let pairwise_subject_secret = state.settings.pairwise_subject_secret.clone();
+    let pairwise_subject_secret = state.settings.protocol().pairwise_subject_secret;
     let response_signing_algorithms = state
         .keyset
         .snapshot()
         .response_signing_alg_values_supported();
     let prepared = prepare_client_insert_with_secret_pepper(
         payload,
-        pairwise_subject_secret.as_deref(),
-        &state.settings.client_secret_pepper,
+        pairwise_subject_secret,
+        state.settings.protocol().client_secret_pepper,
         &state.settings.issuer,
         &response_signing_algorithms,
     )

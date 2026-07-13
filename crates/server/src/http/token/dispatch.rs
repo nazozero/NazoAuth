@@ -362,7 +362,7 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
                     Ok(Some(salt)) => {
                         let candidate_digest = client_secret_digest(
                             secret,
-                            &state.settings.client_secret_pepper,
+                            state.settings.protocol().client_secret_pepper,
                             &salt,
                         );
                         repository

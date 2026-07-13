@@ -221,7 +221,11 @@ async fn validate_request_object_claims_and_apply(
         || !request_object_party_claims_valid(&claims, client, mode)
         || !request_object_audience_valid(&claims, state, mode)
         || !request_object_times_valid(&claims, now, mode)
-        || !request_object_jti_valid(&claims, mode, state.settings.request_object_jti_policy)
+        || !request_object_jti_valid(
+            &claims,
+            mode,
+            state.settings.protocol().request_object_jti_policy,
+        )
     {
         return Err(oauth_error(
             StatusCode::BAD_REQUEST,

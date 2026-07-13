@@ -114,7 +114,11 @@ async fn authorize_request(
                 }
             }
         }
-    } else if state.settings.require_pushed_authorization_requests {
+    } else if state
+        .settings
+        .protocol()
+        .require_pushed_authorization_requests
+    {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -456,7 +460,7 @@ async fn authorize_request(
         mtls_x5t_s256,
         pushed_request_uri: pending_pushed_request_uri,
         issued_at: now,
-        expires_at: now + Duration::seconds(state.settings.auth_code_ttl_seconds as i64),
+        expires_at: now + Duration::seconds(state.settings.protocol().auth_code_ttl_seconds as i64),
     };
     if prompt.none {
         match user_grant_covers_requested_scopes(
@@ -486,7 +490,11 @@ async fn authorize_request(
     }
     let store = nazo_valkey::AuthorizationStore::new(&state.valkey_connection());
     if let Err(error) = store
-        .store_consent(&request_id, &payload, state.settings.auth_code_ttl_seconds)
+        .store_consent(
+            &request_id,
+            &payload,
+            state.settings.protocol().auth_code_ttl_seconds,
+        )
         .await
     {
         tracing::warn!(%error, "failed to persist consent request");
@@ -669,7 +677,7 @@ async fn protected_authorization_response_jwt(
             code: input.code,
             error: input.error,
             state: input.state,
-            ttl: state.settings.auth_code_ttl_seconds as i64,
+            ttl: state.settings.protocol().auth_code_ttl_seconds as i64,
         },
         signing_alg,
     )

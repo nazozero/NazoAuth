@@ -120,7 +120,7 @@ pub(crate) async fn admin_patch_client(
     let prepared = match prepare_client_patch(
         &current,
         payload,
-        state.settings.pairwise_subject_secret.as_deref(),
+        state.settings.protocol().pairwise_subject_secret,
         &state.settings.issuer,
         &response_signing_algorithms,
     )

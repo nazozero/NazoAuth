@@ -31,7 +31,7 @@ fn refresh_token_policy_for_profile(
     token: &TokenRow,
 ) -> RefreshTokenPolicy {
     refresh_token_policy_for_authorization_server_profile(
-        settings.authorization_server_profile,
+        settings.protocol().authorization_server_profile,
         client,
         token,
     )

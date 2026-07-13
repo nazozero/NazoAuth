@@ -196,7 +196,7 @@ pub(crate) async fn authorize_decision(
         dpop_jkt: payload.dpop_jkt,
         mtls_x5t_s256: payload.mtls_x5t_s256,
         issued_at: now,
-        expires_at: now + Duration::seconds(state.settings.auth_code_ttl_seconds as i64),
+        expires_at: now + Duration::seconds(state.settings.protocol().auth_code_ttl_seconds as i64),
     };
     let code_hash = blake3_hex(&code);
     if let Err(error) = store
@@ -205,7 +205,7 @@ pub(crate) async fn authorize_decision(
             &AuthorizationCodeState::Pending {
                 payload: code_payload,
             },
-            state.settings.auth_code_ttl_seconds,
+            state.settings.protocol().auth_code_ttl_seconds,
         )
         .await
     {

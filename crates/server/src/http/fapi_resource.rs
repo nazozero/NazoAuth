@@ -236,7 +236,10 @@ async fn fapi_resource_inner(
             FapiResourceSignaturePolicy {
                 tenant_id,
                 client_id: &claims.client_id,
-                max_age_seconds: state.settings.fapi_http_signature_max_age_seconds,
+                max_age_seconds: state
+                    .settings
+                    .protocol()
+                    .fapi_http_signature_max_age_seconds,
             },
         ) {
             Ok(verified) => verified,
@@ -251,7 +254,10 @@ async fn fapi_resource_inner(
         match store
             .consume_replay(
                 verified.replay_fingerprint(),
-                state.settings.fapi_http_signature_max_age_seconds,
+                state
+                    .settings
+                    .protocol()
+                    .fapi_http_signature_max_age_seconds,
             )
             .await
         {
@@ -625,7 +631,7 @@ async fn validate_access_token_binding(
 
 fn fapi_resource_audience_allowed(settings: &Settings, audience: &Value) -> bool {
     token_audience_contains(audience, &settings.default_audience)
-        || token_audience_contains(audience, &settings.protected_resource_identifier)
+        || token_audience_contains(audience, settings.protocol().protected_resource_identifier)
 }
 
 #[cfg(test)]

@@ -59,8 +59,11 @@ pub(crate) async fn verify_confidential_client(
             let repository = nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone());
             let secret_match = match repository.client_secret_salt(client.id).await {
                 Ok(Some(salt)) => {
-                    let candidate_digest =
-                        client_secret_digest(secret, &state.settings.client_secret_pepper, &salt);
+                    let candidate_digest = client_secret_digest(
+                        secret,
+                        state.settings.protocol().client_secret_pepper,
+                        &salt,
+                    );
                     repository
                         .client_secret_digest_matches(client.id, &candidate_digest)
                         .await

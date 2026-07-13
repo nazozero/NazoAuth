@@ -133,7 +133,7 @@ pub(super) async fn issue_authorization_code_without_interaction(
         dpop_jkt: payload.dpop_jkt,
         mtls_x5t_s256: payload.mtls_x5t_s256,
         issued_at: now,
-        expires_at: now + Duration::seconds(state.settings.auth_code_ttl_seconds as i64),
+        expires_at: now + Duration::seconds(state.settings.protocol().auth_code_ttl_seconds as i64),
     };
     if let Err(error) = nazo_valkey::AuthorizationStore::new(&state.valkey_connection())
         .store_authorization_code_hash(
@@ -141,7 +141,7 @@ pub(super) async fn issue_authorization_code_without_interaction(
             &AuthorizationCodeState::Pending {
                 payload: code_payload,
             },
-            state.settings.auth_code_ttl_seconds,
+            state.settings.protocol().auth_code_ttl_seconds,
         )
         .await
     {

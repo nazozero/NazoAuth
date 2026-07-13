@@ -122,7 +122,7 @@ fn delivery_candidate(
     }
     let user_id = row.user_id;
     let token = access_delivery_token(
-        &state.settings.client_secret_pepper,
+        state.settings.protocol().client_secret_pepper,
         user_id.as_uuid(),
         row.id,
     );

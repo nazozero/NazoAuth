@@ -1,6 +1,10 @@
 use std::path::Path;
 
-use super::{EmailSettings, FederationSettings, PasskeySettings, RateLimitSettings, Settings};
+use super::{
+    AuthorizationServerProfile, CibaSecurityProfile, DpopNoncePolicy, EmailSettings,
+    FederationSettings, PasskeySettings, RateLimitSettings, RequestObjectJtiPolicy, Settings,
+    SubjectType,
+};
 use crate::support::{ClientIpHeaderMode, IpCidr};
 
 #[derive(Clone, Copy)]
@@ -16,9 +20,23 @@ pub(crate) struct SessionRuntimeSettings {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct ProtocolRuntimeSettings {
+pub(crate) struct ProtocolRuntimeSettings<'a> {
+    pub(crate) default_audience: &'a str,
+    pub(crate) protected_resource_identifier: &'a str,
+    pub(crate) authorization_server_profile: AuthorizationServerProfile,
+    pub(crate) ciba_security_profile: CibaSecurityProfile,
+    pub(crate) dpop_nonce_policy: DpopNoncePolicy,
+    pub(crate) request_object_jti_policy: RequestObjectJtiPolicy,
+    pub(crate) auth_code_ttl_seconds: u64,
     pub(crate) access_token_ttl_seconds: i64,
     pub(crate) id_token_ttl_seconds: i64,
+    pub(crate) refresh_token_ttl_seconds: i64,
+    pub(crate) client_secret_pepper: &'a str,
+    pub(crate) subject_type: SubjectType,
+    pub(crate) pairwise_subject_secret: Option<&'a str>,
+    pub(crate) par_ttl_seconds: u64,
+    pub(crate) require_pushed_authorization_requests: bool,
+    pub(crate) fapi_http_signature_max_age_seconds: i64,
 }
 
 #[derive(Clone, Copy)]
@@ -53,10 +71,24 @@ impl Settings {
         }
     }
 
-    pub(crate) fn protocol(&self) -> ProtocolRuntimeSettings {
+    pub(crate) fn protocol(&self) -> ProtocolRuntimeSettings<'_> {
         ProtocolRuntimeSettings {
+            default_audience: &self.default_audience,
+            protected_resource_identifier: &self.protected_resource_identifier,
+            authorization_server_profile: self.authorization_server_profile,
+            ciba_security_profile: self.ciba_security_profile,
+            dpop_nonce_policy: self.dpop_nonce_policy,
+            request_object_jti_policy: self.request_object_jti_policy,
+            auth_code_ttl_seconds: self.auth_code_ttl_seconds,
             access_token_ttl_seconds: self.access_token_ttl_seconds,
             id_token_ttl_seconds: self.id_token_ttl_seconds,
+            refresh_token_ttl_seconds: self.refresh_token_ttl_seconds,
+            client_secret_pepper: &self.client_secret_pepper,
+            subject_type: self.subject_type,
+            pairwise_subject_secret: self.pairwise_subject_secret.as_deref(),
+            par_ttl_seconds: self.par_ttl_seconds,
+            require_pushed_authorization_requests: self.require_pushed_authorization_requests,
+            fapi_http_signature_max_age_seconds: self.fapi_http_signature_max_age_seconds,
         }
     }
 

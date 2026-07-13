@@ -135,8 +135,8 @@ pub(crate) async fn admin_approve_access_request(
         .response_signing_alg_values_supported();
     let prepared = match prepare_client_insert_with_secret_pepper(
         payload,
-        state.settings.pairwise_subject_secret.as_deref(),
-        &state.settings.client_secret_pepper,
+        state.settings.protocol().pairwise_subject_secret,
+        state.settings.protocol().client_secret_pepper,
         &state.settings.issuer,
         &response_signing_algorithms,
     )
@@ -146,7 +146,7 @@ pub(crate) async fn admin_approve_access_request(
         Err(error) => return insert_client_error_response(error),
     };
     let token = access_delivery_token(
-        &state.settings.client_secret_pepper,
+        state.settings.protocol().client_secret_pepper,
         request_user_id,
         request_id,
     );
@@ -270,7 +270,11 @@ async fn resume_staged_client_delivery(
     };
     let user = request.user_id;
     let user_id = user.as_uuid();
-    let token = access_delivery_token(&state.settings.client_secret_pepper, user_id, request.id);
+    let token = access_delivery_token(
+        state.settings.protocol().client_secret_pepper,
+        user_id,
+        request.id,
+    );
     let store = nazo_valkey::DeliveryStore::new(&state.valkey_connection());
     let Some(stored) = nazo_valkey::DeliveryStore::load(&store, user, &token).await? else {
         return Ok(false);

@@ -45,8 +45,8 @@ pub(super) async fn persist_consumed_authorization_code(
         consumed_at: Utc::now(),
     };
     let ttl_seconds = consumed_authorization_code_ttl_seconds(
-        state.settings.access_token_ttl_seconds,
-        state.settings.refresh_token_ttl_seconds,
+        state.settings.protocol().access_token_ttl_seconds,
+        state.settings.protocol().refresh_token_ttl_seconds,
         refresh_token_family_id,
     );
     let result = nazo_valkey::AuthorizationStore::new(&state.valkey_connection())
@@ -71,7 +71,7 @@ pub(crate) async fn mark_failed_authorization_code(
                 failed_at: Utc::now(),
                 error: error_code.to_owned(),
             },
-            state.settings.auth_code_ttl_seconds.max(1),
+            state.settings.protocol().auth_code_ttl_seconds.max(1),
         )
         .await?;
     failed_authorization_code_transition_result(authorization_transition_name(result))

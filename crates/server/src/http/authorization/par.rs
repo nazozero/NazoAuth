@@ -286,14 +286,14 @@ async fn par_after_rate_limit_inner(
         dpop_jkt,
         mtls_x5t_s256,
         issued_at: now,
-        expires_at: now + Duration::seconds(state.settings.par_ttl_seconds as i64),
+        expires_at: now + Duration::seconds(state.settings.protocol().par_ttl_seconds as i64),
     };
     let store = nazo_valkey::AuthorizationStore::new(&state.valkey_connection());
     if let Err(error) = store
         .store_par(
             &request_uri,
             &payload,
-            state.settings.par_ttl_seconds.max(1),
+            state.settings.protocol().par_ttl_seconds.max(1),
         )
         .await
     {
@@ -308,7 +308,7 @@ async fn par_after_rate_limit_inner(
         StatusCode::CREATED,
         json!({
             "request_uri": request_uri,
-            "expires_in": state.settings.par_ttl_seconds
+            "expires_in": state.settings.protocol().par_ttl_seconds
         }),
     )
 }

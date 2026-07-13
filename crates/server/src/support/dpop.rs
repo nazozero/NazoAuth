@@ -167,7 +167,7 @@ pub(crate) async fn validate_dpop_proof(
 
 async fn validate_dpop_nonce(state: &AppState, nonce: Option<&str>) -> Result<(), DpopError> {
     let Some(nonce) = nonce else {
-        if !dpop_nonce_required(state.settings.dpop_nonce_policy) {
+        if !dpop_nonce_required(state.settings.protocol().dpop_nonce_policy) {
             return Ok(());
         }
         return Err(DpopError::UseNonce(issue_dpop_nonce(state).await?));

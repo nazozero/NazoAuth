@@ -311,7 +311,7 @@ pub(crate) async fn backchannel_authentication(
         client_id: client.client_id.clone(),
         user_id: user.id(),
         scopes,
-        audiences: vec![state.settings.default_audience.clone()],
+        audiences: vec![state.settings.protocol().default_audience.to_owned()],
         acr,
         binding_message: form.binding_message,
         issued_at: now,
@@ -736,7 +736,11 @@ fn validate_ciba_security_profile_client(
     client: &ClientRow,
     auth_method: &str,
 ) -> Result<(), HttpResponse> {
-    if !settings.ciba_security_profile.requires_fapi2_hardening() {
+    if !settings
+        .protocol()
+        .ciba_security_profile
+        .requires_fapi2_hardening()
+    {
         return Ok(());
     }
     if client.client_type != "confidential" {
@@ -786,7 +790,10 @@ fn validate_ciba_request_object_presence(
     form: &BackchannelAuthenticationForm,
 ) -> Result<(), HttpResponse> {
     if (client.require_par_request_object
-        || settings.ciba_security_profile.requires_fapi2_hardening())
+        || settings
+            .protocol()
+            .ciba_security_profile
+            .requires_fapi2_hardening())
         && form.request.is_none()
     {
         return Err(ciba_invalid_request("CIBA request object is required."));

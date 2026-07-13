@@ -91,16 +91,16 @@ fn authorization_server_metadata(settings: &Settings, keyset: &KeySnapshot) -> V
     let active_signing_algs = active_signing_alg_values_supported(keyset);
     let mtls_enabled = !settings.trusted_proxy_cidrs.is_empty();
     let token_auth_methods = token_endpoint_auth_methods_supported(
-        settings.authorization_server_profile,
-        settings.ciba_security_profile,
+        settings.protocol().authorization_server_profile,
+        settings.protocol().ciba_security_profile,
         mtls_enabled,
     );
     let token_auth_signing_algs = token_endpoint_auth_signing_alg_values_supported(settings);
     let request_object_signing_algs = request_object_signing_alg_values_supported(
-        settings.authorization_server_profile,
+        settings.protocol().authorization_server_profile,
         active_signing_algs.as_slice(),
     );
-    let response_modes = response_modes_supported(settings.authorization_server_profile);
+    let response_modes = response_modes_supported(settings.protocol().authorization_server_profile);
     let mut grant_types = vec![
         "authorization_code",
         "refresh_token",
@@ -130,7 +130,7 @@ fn authorization_server_metadata(settings: &Settings, keyset: &KeySnapshot) -> V
         "jwks_uri": format!("{issuer}/jwks.json"),
         "response_types_supported": ["code"],
         "response_modes_supported": response_modes,
-        "subject_types_supported": match (&settings.pairwise_subject_secret, &settings.subject_type) {
+        "subject_types_supported": match (&settings.pairwise_subject_secret, &settings.protocol().subject_type) {
             (None, _) => vec!["public"],
             (Some(_), SubjectType::Pairwise) => vec!["pairwise"],
             (Some(_), _) => vec!["public", "pairwise"],
@@ -153,7 +153,7 @@ fn authorization_server_metadata(settings: &Settings, keyset: &KeySnapshot) -> V
         "acr_values_supported": [BASELINE_ACR_VALUE],
         "prompt_values_supported": PROMPT_VALUES_SUPPORTED,
         "grant_types_supported": grant_types,
-        "protected_resources": [settings.protected_resource_identifier.as_str()],
+        "protected_resources": [settings.protocol().protected_resource_identifier],
         "authorization_response_iss_parameter_supported": true,
         "claims_parameter_supported": true,
         "backchannel_logout_supported": true,
@@ -226,7 +226,7 @@ fn authorization_server_metadata(settings: &Settings, keyset: &KeySnapshot) -> V
 fn protected_resource_metadata(settings: &Settings, _keyset: &KeySnapshot) -> Value {
     let mtls_enabled = !settings.trusted_proxy_cidrs.is_empty();
     let mut metadata = json!({
-        "resource": settings.protected_resource_identifier.as_str(),
+        "resource": settings.protocol().protected_resource_identifier,
         "authorization_servers": [settings.issuer.as_str()],
         "resource_name": "Nazo OAuth Protected Resource",
         "bearer_methods_supported": ["header", "body"],
@@ -263,7 +263,11 @@ fn token_endpoint_auth_methods_supported(
 }
 
 fn token_endpoint_auth_signing_alg_values_supported(settings: &Settings) -> Vec<&'static str> {
-    if settings.ciba_security_profile.requires_fapi2_hardening() {
+    if settings
+        .protocol()
+        .ciba_security_profile
+        .requires_fapi2_hardening()
+    {
         return FAPI_CIBA_REQUEST_OBJECT_SIGNING_ALGS.to_vec();
     }
     CLIENT_JWT_SIGNING_ALGS.to_vec()
