@@ -88,6 +88,7 @@ pub(crate) fn is_blocked_ip(ip: IpAddr) -> bool {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn sector_identifier_hostname(uri: &str) -> Result<String, SectorIdentifierError> {
     let parsed = url::Url::parse(uri).map_err(|_| SectorIdentifierError::InvalidUri)?;
     parsed

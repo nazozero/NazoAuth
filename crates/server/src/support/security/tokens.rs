@@ -1,9 +1,9 @@
 use super::jwt_decoding_key_from_jwk;
 
 use chrono::Utc;
+use nazo_auth::Claims;
 #[cfg(test)]
 use nazo_auth::{AccessTokenClaimsInput, OidcClaimRequest};
-use nazo_auth::{BackchannelLogoutClaimsInput, Claims};
 use serde_json::Value;
 #[cfg(test)]
 use uuid::Uuid;
@@ -106,42 +106,6 @@ pub(crate) async fn sign_response_jwt(
     let mut header = jsonwebtoken::Header::new(alg);
     header.typ = Some(typ.to_owned());
     state.keyset.encode_jwt(purpose, &header, claims).await
-}
-
-pub(crate) struct BackchannelLogoutTokenInput<'a> {
-    pub(crate) client_id: &'a str,
-    pub(crate) subject: Option<&'a str>,
-    pub(crate) sid: Option<&'a str>,
-    pub(crate) ttl: i64,
-}
-
-pub(crate) async fn make_backchannel_logout_token(
-    state: &AppState,
-    input: BackchannelLogoutTokenInput<'_>,
-) -> jsonwebtoken::errors::Result<String> {
-    let now = Utc::now().timestamp();
-    let claims = nazo_auth::backchannel_logout_token_claims(
-        &state.settings.endpoint.issuer,
-        &BackchannelLogoutClaimsInput {
-            client_id: input.client_id,
-            subject: input.subject,
-            sid: input.sid,
-            ttl: input.ttl,
-        },
-        now,
-    );
-    let keyset = state.keyset.snapshot();
-    let mut header = jsonwebtoken::Header::new(keyset.active_alg);
-    header.typ = Some("logout+jwt".to_string());
-    header.kid = Some(keyset.active_kid.clone());
-    state
-        .keyset
-        .encode_jwt(
-            nazo_auth::SigningPurpose::LogoutToken,
-            &header,
-            &Value::Object(claims),
-        )
-        .await
 }
 
 pub(crate) fn decode_access_claims(state: &AppState, token: &str) -> Option<Claims> {

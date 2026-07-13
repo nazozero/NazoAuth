@@ -395,35 +395,6 @@ impl SessionPayload {
     }
 }
 
-#[cfg(test)]
-pub(crate) async fn store_session(
-    state: &AppState,
-    session_id: &str,
-    payload: &SessionPayload,
-) -> anyhow::Result<()> {
-    let session = &state.settings.session;
-    nazo_valkey::SessionStore::new(&state.valkey_connection())
-        .store(
-            session_id,
-            &payload.to_record()?,
-            session.session_ttl_seconds,
-        )
-        .await?;
-    Ok(())
-}
-
-#[cfg(test)]
-pub(crate) fn require_active_session_principal(user: &PublicAccount) -> Result<(), HttpResponse> {
-    if user.principal.active {
-        return Ok(());
-    }
-    Err(oauth_error(
-        StatusCode::UNAUTHORIZED,
-        "access_denied",
-        "当前账号已停用.",
-    ))
-}
-
 pub(crate) async fn current_user(
     state: &AppState,
     req: &HttpRequest,

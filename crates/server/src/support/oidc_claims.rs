@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 use nazo_auth::OidcClaimRequest;
 
+#[cfg(test)]
 pub(crate) fn oidc_subject(
     pairwise_subject_secret: &[u8],
     issuer: &str,
