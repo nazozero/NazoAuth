@@ -43,6 +43,32 @@ impl Write for FapiLogWriter {
     }
 }
 
+async fn call_fapi_resource(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
+    fapi_resource(
+        Data::new(ResourceServerHandles::from_app_state(state.get_ref())),
+        req,
+        body,
+    )
+    .await
+}
+
+async fn validate_test_access_token_binding(
+    state: &AppState,
+    req: &HttpRequest,
+    token: &str,
+    scheme: AccessTokenAuthScheme,
+    claims: &Claims,
+) -> Result<(), HttpResponse> {
+    validate_access_token_binding(
+        &ResourceServerHandles::from_app_state(state),
+        req,
+        token,
+        scheme,
+        claims,
+    )
+    .await
+}
+
 fn fapi_test_state() -> AppState {
     fapi_test_state_with_settings(
         Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
@@ -867,7 +893,7 @@ async fn fapi_resource_rejects_missing_or_conflicting_access_token_transport() {
         .uri("/fapi/resource")
         .to_http_request();
 
-    let missing = fapi_resource(state.clone(), missing_req, Bytes::new()).await;
+    let missing = call_fapi_resource(state.clone(), missing_req, Bytes::new()).await;
     assert_eq!(missing.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(oauth_error_code(&missing).as_deref(), Some("invalid_token"));
     assert!(!missing.headers().contains_key("signature-input"));
@@ -878,7 +904,7 @@ async fn fapi_resource_rejects_missing_or_conflicting_access_token_transport() {
         .insert_header((header::AUTHORIZATION, "Bearer header-token"))
         .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
         .to_http_request();
-    let duplicate = fapi_resource(
+    let duplicate = call_fapi_resource(
         state,
         duplicate_req,
         Bytes::from_static(b"access_token=body-token"),
@@ -985,7 +1011,7 @@ async fn fapi_resource_http_signature_response_is_request_linked_and_verifiable(
     );
     let original = captured_fapi_request(&req, &Bytes::new());
 
-    let signed = sign_fapi_resource_response(&state, &original, response).await;
+    let signed = sign_fapi_resource_response(&state.keyset, &original, response).await;
 
     assert_eq!(signed.status(), StatusCode::OK);
     let response_digest = signed
@@ -1138,7 +1164,7 @@ async fn fapi_resource_http_signature_signer_failure_returns_empty_503() {
     let protected = json_response_no_store(json!({"secret": "must-not-leak"}));
     let original = captured_fapi_request(&req, &Bytes::new());
 
-    let response = sign_fapi_resource_response(&state, &original, protected).await;
+    let response = sign_fapi_resource_response(&state.keyset, &original, protected).await;
 
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert!(
@@ -1176,7 +1202,7 @@ async fn fapi_resource_http_signature_logs_do_not_expose_request_or_response_sec
     let protected = json_response_no_store(json!({"value": "protected-body-secret"}));
     let original = captured_fapi_request(&req, &request_body);
 
-    let response = sign_fapi_resource_response(&state, &original, protected).await;
+    let response = sign_fapi_resource_response(&state.keyset, &original, protected).await;
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     drop(_guard);
     let logs = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
@@ -1209,7 +1235,7 @@ async fn fapi_response_signing_log_redacts_external_signer_stderr() {
     let original = captured_fapi_request(&req, &Bytes::new());
 
     let response = sign_fapi_resource_response(
-        &state,
+        &state.keyset,
         &original,
         json_response_no_store(json!({"value": "protected"})),
     )
@@ -1245,7 +1271,7 @@ async fn fapi_resource_http_signature_signs_success_errors_and_nonce_challenges(
 
     for response in responses {
         let status = response.status();
-        let signed = sign_fapi_resource_response(&state, &original, response).await;
+        let signed = sign_fapi_resource_response(&state.keyset, &original, response).await;
         assert_eq!(signed.status(), status);
         assert!(signed.headers().contains_key("content-digest"));
         assert!(signed.headers().contains_key("signature-input"));
@@ -1280,7 +1306,7 @@ async fn fapi_resource_http_signature_preserves_multi_value_response_headers() {
         .append_header((header::VARY, "Accept-Encoding"))
         .json(json!({"error": "use_dpop_nonce"}));
 
-    let signed = sign_fapi_resource_response(&state, &original, response).await;
+    let signed = sign_fapi_resource_response(&state.keyset, &original, response).await;
 
     assert_eq!(
         signed.headers().get_all(header::WWW_AUTHENTICATE).count(),
@@ -1310,7 +1336,7 @@ async fn fapi_resource_http_signature_malformed_headers_return_signed_error_with
         .append_header(("signature", "sig1=:dHdv:"))
         .to_http_request();
 
-    let response = fapi_resource(state.clone(), duplicate_digest, Bytes::new()).await;
+    let response = call_fapi_resource(state.clone(), duplicate_digest, Bytes::new()).await;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert!(response.headers().contains_key("signature-input"));
     assert!(response.headers().contains_key("signature"));
@@ -1330,7 +1356,7 @@ async fn fapi_resource_http_signature_malformed_headers_return_signed_error_with
         .uri("/fapi/resource")
         .insert_header((header::AUTHORIZATION, invalid_authorization))
         .to_http_request();
-    let response = fapi_resource(state, invalid_utf8, Bytes::new()).await;
+    let response = call_fapi_resource(state, invalid_utf8, Bytes::new()).await;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert!(response.headers().contains_key("signature-input"));
     assert!(response.headers().contains_key("signature"));
@@ -1344,7 +1370,7 @@ async fn fapi_resource_http_signature_malformed_headers_return_signed_error_with
         .insert_header(("signature", "sig1=:b25l:"))
         .insert_header(("content-digest", invalid_digest))
         .to_http_request();
-    let response = fapi_resource(
+    let response = call_fapi_resource(
         fapi_enabled_signing_state_with_invalid_db(),
         invalid_signature_request,
         Bytes::new(),
@@ -1363,7 +1389,7 @@ async fn fapi_resource_http_signature_enabled_endpoint_covers_get_post_and_repla
     let get_req = with_fapi_store(get_req, store.clone());
     let replay_req = get_req.clone();
 
-    let response = fapi_resource(state.clone(), get_req, get_body.clone()).await;
+    let response = call_fapi_resource(state.clone(), get_req, get_body.clone()).await;
     assert_eq!(
         response.status(),
         StatusCode::OK,
@@ -1373,7 +1399,7 @@ async fn fapi_resource_http_signature_enabled_endpoint_covers_get_post_and_repla
     assert!(response.headers().contains_key("signature-input"));
     assert_eq!(store.calls(), (1, 1, 1, 1));
 
-    let replay = fapi_resource(state.clone(), replay_req, get_body).await;
+    let replay = call_fapi_resource(state.clone(), replay_req, get_body).await;
     assert_eq!(replay.status(), StatusCode::UNAUTHORIZED);
     assert!(replay.headers().contains_key("signature"));
     assert_eq!(store.calls(), (2, 2, 2, 1));
@@ -1381,7 +1407,7 @@ async fn fapi_resource_http_signature_enabled_endpoint_covers_get_post_and_repla
     let (post_req, post_body, post_client) =
         enabled_endpoint_request(&state, "client-1", 300, br#"{"amount":10}"#).await;
     let post_store = FakeFapiResourceStore::accepting(post_client);
-    let post = fapi_resource(state, with_fapi_store(post_req, post_store), post_body).await;
+    let post = call_fapi_resource(state, with_fapi_store(post_req, post_store), post_body).await;
     assert_eq!(post.status(), StatusCode::OK);
     assert!(post.headers().contains_key("content-digest"));
 }
@@ -1392,7 +1418,8 @@ async fn fapi_resource_enabled_endpoint_interoperates_with_safe_signed_extra_hea
     let (req, client, request_fields, authorization) =
         enabled_request_with_signed_extras(&state, ExtraHeaderMode::Exact).await;
     let store = FakeFapiResourceStore::accepting(client);
-    let response = fapi_resource(state.clone(), with_fapi_store(req, store), Bytes::new()).await;
+    let response =
+        call_fapi_resource(state.clone(), with_fapi_store(req, store), Bytes::new()).await;
     assert_eq!(response.status(), StatusCode::OK);
     let digest = response
         .headers()
@@ -1491,7 +1518,7 @@ async fn fapi_resource_enabled_endpoint_interoperates_with_safe_signed_extra_hea
         ExtraHeaderMode::NonUtf8,
     ] {
         let (req, client, _, _) = enabled_request_with_signed_extras(&state, mode).await;
-        let response = fapi_resource(
+        let response = call_fapi_resource(
             state.clone(),
             with_fapi_store(req, FakeFapiResourceStore::accepting(client)),
             Bytes::new(),
@@ -1508,7 +1535,7 @@ async fn fapi_resource_http_signature_revoked_and_expired_stop_before_client_and
         enabled_endpoint_request(&state, "client-1", 300, b"").await;
     let mut revoked_store = FakeFapiResourceStore::accepting(client);
     Arc::get_mut(&mut revoked_store).unwrap().revoked = true;
-    let revoked = fapi_resource(
+    let revoked = call_fapi_resource(
         state.clone(),
         with_fapi_store(revoked_req, revoked_store.clone()),
         revoked_body,
@@ -1520,7 +1547,7 @@ async fn fapi_resource_http_signature_revoked_and_expired_stop_before_client_and
     let (expired_req, expired_body, client) =
         enabled_endpoint_request(&state, "client-1", -1, b"").await;
     let expired_store = FakeFapiResourceStore::accepting(client);
-    let expired = fapi_resource(
+    let expired = call_fapi_resource(
         state,
         with_fapi_store(expired_req, expired_store.clone()),
         expired_body,
@@ -1542,7 +1569,7 @@ async fn fapi_resource_http_signature_endpoint_signs_store_failures_and_hides_si
     Arc::get_mut(&mut revocation_store)
         .unwrap()
         .revocation_error = true;
-    let response = fapi_resource(
+    let response = call_fapi_resource(
         state.clone(),
         with_fapi_store(req, revocation_store.clone()),
         body,
@@ -1552,7 +1579,7 @@ async fn fapi_resource_http_signature_endpoint_signs_store_failures_and_hides_si
     assert!(response.headers().contains_key("signature"));
     assert_eq!(revocation_store.calls(), (1, 0, 0, 0));
     let retry_store = FakeFapiResourceStore::accepting(retry_client);
-    let retry = fapi_resource(
+    let retry = call_fapi_resource(
         state.clone(),
         with_fapi_store(retry_req, retry_store.clone()),
         retry_body,
@@ -1564,7 +1591,7 @@ async fn fapi_resource_http_signature_endpoint_signs_store_failures_and_hides_si
     let (req, body, client) = enabled_endpoint_request(&state, "client-1", 300, b"").await;
     let mut client_store = FakeFapiResourceStore::accepting(client);
     Arc::get_mut(&mut client_store).unwrap().client_error = true;
-    let response = fapi_resource(
+    let response = call_fapi_resource(
         state.clone(),
         with_fapi_store(req, client_store.clone()),
         body,
@@ -1577,7 +1604,7 @@ async fn fapi_resource_http_signature_endpoint_signs_store_failures_and_hides_si
     let (req, body, client) = enabled_endpoint_request(&state, "client-1", 300, b"").await;
     let mut replay_store = FakeFapiResourceStore::accepting(client);
     Arc::get_mut(&mut replay_store).unwrap().replay_mode = FakeReplayMode::DependencyFailure;
-    let response = fapi_resource(
+    let response = call_fapi_resource(
         state.clone(),
         with_fapi_store(req, replay_store.clone()),
         body,
@@ -1612,7 +1639,8 @@ async fn fapi_resource_http_signature_endpoint_signs_dpop_nonce_challenge() {
         .to_http_request();
     let store = FakeFapiResourceStore::accepting(fapi_http_signature_client(jwk));
 
-    let response = fapi_resource(state, with_fapi_store(req, store.clone()), Bytes::new()).await;
+    let response =
+        call_fapi_resource(state, with_fapi_store(req, store.clone()), Bytes::new()).await;
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert!(response.headers().contains_key("dpop-nonce"));
@@ -1638,7 +1666,8 @@ async fn fapi_resource_http_signature_post_preserves_semantic_received_digest_bi
         signed_resource_request_with_received_digest(&body, &authorization, &received_digest).await;
     let store = FakeFapiResourceStore::accepting(client);
 
-    let response = fapi_resource(state.clone(), with_fapi_store(req, store), body.clone()).await;
+    let response =
+        call_fapi_resource(state.clone(), with_fapi_store(req, store), body.clone()).await;
 
     assert_eq!(response.status(), StatusCode::OK);
     let response_digest = response
@@ -1769,7 +1798,7 @@ async fn fapi_resource_http_signature_errors_preserve_unique_received_signature_
             .insert_header(("signature", fields.signature.clone()))
             .to_http_request();
         let store = FakeFapiResourceStore::accepting(client.clone());
-        let response = fapi_resource(
+        let response = call_fapi_resource(
             state.clone(),
             with_fapi_store(req, store.clone()),
             Bytes::new(),
@@ -1792,7 +1821,7 @@ async fn fapi_resource_http_signature_errors_preserve_unique_received_signature_
         .insert_header(("signature", fields.signature.clone()))
         .to_http_request();
     let store = FakeFapiResourceStore::accepting(client);
-    let response = fapi_resource(
+    let response = call_fapi_resource(
         state.clone(),
         with_fapi_store(req, store.clone()),
         request_body,
@@ -1872,7 +1901,7 @@ async fn fapi_resource_rejects_unverifiable_access_token_before_revocation_looku
         .insert_header((header::AUTHORIZATION, "Bearer not-a-jwt"))
         .to_http_request();
 
-    let response = fapi_resource(state, req, Bytes::new()).await;
+    let response = call_fapi_resource(state, req, Bytes::new()).await;
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(
@@ -1896,7 +1925,7 @@ async fn fapi_resource_rejects_signed_token_with_wrong_resource_audience_before_
         .insert_header((header::AUTHORIZATION, format!("Bearer {}", token.token)))
         .to_http_request();
 
-    let response = fapi_resource(state, req, Bytes::new()).await;
+    let response = call_fapi_resource(state, req, Bytes::new()).await;
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(
@@ -1918,7 +1947,7 @@ async fn fapi_resource_rejects_signed_token_with_invalid_tenant_boundary_before_
         .insert_header((header::AUTHORIZATION, format!("Bearer {token}")))
         .to_http_request();
 
-    let response = fapi_resource(state, req, Bytes::new()).await;
+    let response = call_fapi_resource(state, req, Bytes::new()).await;
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(
@@ -1945,7 +1974,7 @@ async fn fapi_resource_rejects_revoked_access_token() {
         .insert_header((header::AUTHORIZATION, format!("Bearer {}", token.token)))
         .to_http_request();
 
-    let response = fapi_resource(state, req, Bytes::new()).await;
+    let response = call_fapi_resource(state, req, Bytes::new()).await;
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(
@@ -1971,7 +2000,7 @@ async fn fapi_resource_rejects_expired_access_token_after_revocation_lookup() {
         .insert_header((header::AUTHORIZATION, format!("Bearer {}", token.token)))
         .to_http_request();
 
-    let response = fapi_resource(state, req, Bytes::new()).await;
+    let response = call_fapi_resource(state, req, Bytes::new()).await;
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(
@@ -1995,7 +2024,7 @@ async fn fapi_resource_returns_server_error_when_revocation_lookup_cannot_connec
         .insert_header((header::AUTHORIZATION, format!("Bearer {}", token.token)))
         .to_http_request();
 
-    let response = fapi_resource(state, req, Bytes::new()).await;
+    let response = call_fapi_resource(state, req, Bytes::new()).await;
 
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(oauth_error_code(&response).as_deref(), Some("server_error"));
@@ -2031,7 +2060,7 @@ async fn fapi_resource_returns_server_error_when_revocation_query_fails_after_to
         .insert_header((header::AUTHORIZATION, format!("Bearer {}", token.token)))
         .to_http_request();
 
-    let response = fapi_resource(state.clone(), req, Bytes::new()).await;
+    let response = call_fapi_resource(state.clone(), req, Bytes::new()).await;
 
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(oauth_error_code(&response).as_deref(), Some("server_error"));
@@ -2127,34 +2156,35 @@ fn fapi_resource_accepts_only_bound_resource_audiences() {
     settings.issuer = "https://issuer.example".to_owned();
     settings.default_audience = "resource://default".to_owned();
     settings.protected_resource_identifier = "https://issuer.example/fapi/resource".to_owned();
+    let mut config = ResourceServerConfig::from(&settings);
 
     assert!(fapi_resource_audience_allowed(
-        &settings,
+        &config,
         &json!("resource://default")
     ));
     assert!(fapi_resource_audience_allowed(
-        &settings,
+        &config,
         &json!("https://issuer.example/fapi/resource")
     ));
     assert!(fapi_resource_audience_allowed(
-        &settings,
+        &config,
         &json!(["resource://other", "https://issuer.example/fapi/resource"])
     ));
-    settings.protected_resource_identifier = "https://api.example/fapi/resource".to_owned();
+    config.protected_resource_identifier = "https://api.example/fapi/resource".to_owned();
     assert!(fapi_resource_audience_allowed(
-        &settings,
+        &config,
         &json!("https://api.example/fapi/resource")
     ));
     assert!(!fapi_resource_audience_allowed(
-        &settings,
+        &config,
         &json!("https://issuer.example/fapi/resource")
     ));
     assert!(!fapi_resource_audience_allowed(
-        &settings,
+        &config,
         &json!("https://issuer.example/userinfo")
     ));
     assert!(!fapi_resource_audience_allowed(
-        &settings,
+        &config,
         &json!(["resource://other", "https://issuer.example/userinfo"])
     ));
 }
@@ -2185,7 +2215,7 @@ async fn sender_constrained_resource_rejects_wrong_transport_without_backend_loo
     let state = fapi_test_state();
     let req = actix_web::test::TestRequest::get().to_http_request();
 
-    let bearer_with_dpop_cnf = validate_access_token_binding(
+    let bearer_with_dpop_cnf = validate_test_access_token_binding(
         &state,
         &req,
         "access-token",
@@ -2203,7 +2233,7 @@ async fn sender_constrained_resource_rejects_wrong_transport_without_backend_loo
         Some("invalid_dpop_proof")
     );
 
-    let dpop_without_cnf = validate_access_token_binding(
+    let dpop_without_cnf = validate_test_access_token_binding(
         &state,
         &req,
         "access-token",
@@ -2224,7 +2254,7 @@ async fn mtls_bound_resource_token_requires_verified_certificate() {
     let state = fapi_test_state();
     let req = actix_web::test::TestRequest::get().to_http_request();
 
-    let response = validate_access_token_binding(
+    let response = validate_test_access_token_binding(
         &state,
         &req,
         "access-token",
@@ -2256,7 +2286,7 @@ async fn mtls_bound_resource_token_rejects_certificate_thumbprint_mismatch() {
         ))
         .to_http_request();
 
-    let response = validate_access_token_binding(
+    let response = validate_test_access_token_binding(
         &state,
         &req,
         "access-token",
@@ -2286,7 +2316,7 @@ async fn mtls_bound_resource_token_accepts_matching_verified_certificate() {
         .insert_header(("x-forwarded-tls-client-cert-sha256", thumbprint))
         .to_http_request();
 
-    validate_access_token_binding(
+    validate_test_access_token_binding(
         &state,
         &req,
         "access-token",

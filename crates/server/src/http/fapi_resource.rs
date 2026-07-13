@@ -1,12 +1,12 @@
 //! FAPI-style protected resource endpoint.
 //! Enforces RFC 6750 access-token transport rules plus sender-constrained token binding.
-use crate::domain::{AppState, ClientRow};
-use crate::settings::Settings;
+use crate::domain::{ClientRow, ResourceServerConfig, ResourceServerHandles};
 use crate::support::{
     AccessTokenAuthScheme, DpopError, DpopErrorContext, ResourceAccessToken,
-    access_token_tenant_id, constant_time_eq, decode_access_claims, dpop_error_response,
-    json_response_no_store, oauth_bearer_error, request_mtls_thumbprint, resource_access_token,
-    token_audience_contains, validate_dpop_proof, verify_client_http_message,
+    access_token_tenant_id, constant_time_eq, decode_access_claims_with, dpop_error_response,
+    json_response_no_store, oauth_bearer_error, request_mtls_thumbprint_from_trusted_proxy,
+    resource_access_token, token_audience_contains, validate_dpop_proof_with_store,
+    verify_client_http_message,
 };
 #[cfg(test)]
 use crate::support::{
@@ -14,6 +14,8 @@ use crate::support::{
     DEFAULT_TENANT_ID, IssuedAccessToken, OAuthJsonErrorFields, blake3_hex, make_jwt,
     parse_trusted_proxy_cidrs,
 };
+#[cfg(test)]
+use crate::{domain::AppState, settings::Settings};
 use actix_web::http::StatusCode;
 use actix_web::http::header;
 #[cfg(test)]
@@ -93,17 +95,13 @@ trait FapiResourceStore: Send + Sync {
     fn protected_work_reached(&self) {}
 }
 
-impl FapiResourceStore for AppState {
+impl FapiResourceStore for ResourceServerHandles {
     fn revoked<'a>(
         &'a self,
         tenant_id: Uuid,
         jti: &'a str,
     ) -> FapiStoreFuture<'a, anyhow::Result<bool>> {
-        Box::pin(async move {
-            Ok(nazo_postgres::TokenRepository::new(self.diesel_db.clone())
-                .access_token_revoked(tenant_id, jti)
-                .await?)
-        })
+        Box::pin(async move { Ok(self.tokens.access_token_revoked(tenant_id, jti).await?) })
     }
 
     fn client<'a>(
@@ -111,9 +109,8 @@ impl FapiResourceStore for AppState {
         tenant_id: Uuid,
         client_id: &'a str,
     ) -> FapiStoreFuture<'a, anyhow::Result<Option<ClientRow>>> {
-        let repository = nazo_postgres::OAuthClientRepository::new(self.diesel_db.clone());
         Box::pin(async move {
-            repository
+            self.clients
                 .by_client_id(tenant_id, client_id)
                 .await
                 .map_err(|error| anyhow::anyhow!("failed to load OAuth client: {error}"))
@@ -126,7 +123,8 @@ impl FapiResourceStore for AppState {
         max_age_seconds: i64,
     ) -> FapiStoreFuture<'a, ReplayConsumption> {
         Box::pin(async move {
-            match nazo_valkey::ReplayStore::new(&self.valkey_connection())
+            match self
+                .replay
                 .consume_fapi_http_signature(fingerprint, max_age_seconds)
                 .await
             {
@@ -143,7 +141,7 @@ impl FapiResourceStore for AppState {
 struct FapiResourceStoreOverride(std::sync::Arc<dyn FapiResourceStore>);
 
 pub(crate) async fn fapi_resource(
-    state: Data<AppState>,
+    handles: Data<ResourceServerHandles>,
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
@@ -152,29 +150,29 @@ pub(crate) async fn fapi_resource(
         use actix_web::HttpMessage;
         let store_override = req.extensions().get::<FapiResourceStoreOverride>().cloned();
         if let Some(store) = store_override {
-            return fapi_resource_with_store(&state, req, body, store.0.as_ref()).await;
+            return fapi_resource_with_store(&handles, req, body, store.0.as_ref()).await;
         }
     }
-    fapi_resource_with_store(&state, req, body, state.get_ref()).await
+    fapi_resource_with_store(&handles, req, body, handles.get_ref()).await
 }
 
 async fn fapi_resource_with_store(
-    state: &Data<AppState>,
+    handles: &Data<ResourceServerHandles>,
     req: HttpRequest,
     body: Bytes,
     store: &dyn FapiResourceStore,
 ) -> HttpResponse {
-    if !state.accepts_module(nazo_runtime_modules::ModuleId::HttpMessageSignatures) {
-        return fapi_resource_inner(state, &req, &body, None, store).await;
+    if !handles.accepts_http_message_signatures() {
+        return fapi_resource_inner(handles, &req, &body, None, store).await;
     }
 
-    let original = FapiOriginalRequest::capture(&state.settings.issuer, &req, &body);
-    let response = fapi_resource_inner(state, &req, &body, Some(&original), store).await;
-    sign_fapi_resource_response(state, &original, response).await
+    let original = FapiOriginalRequest::capture(&handles.config.issuer, &req, &body);
+    let response = fapi_resource_inner(handles, &req, &body, Some(&original), store).await;
+    sign_fapi_resource_response(&handles.keyset, &original, response).await
 }
 
 async fn fapi_resource_inner(
-    state: &Data<AppState>,
+    handles: &Data<ResourceServerHandles>,
     req: &HttpRequest,
     body: &Bytes,
     original: Option<&FapiOriginalRequest>,
@@ -194,18 +192,20 @@ async fn fapi_resource_inner(
             );
         }
     };
-    let Some(claims) = decode_access_claims(state, &token) else {
+    let Some(claims) = decode_access_claims_with(&handles.keyset, &handles.config.issuer, &token)
+    else {
         return oauth_bearer_error(
             StatusCode::UNAUTHORIZED,
             "invalid_token",
             "访问令牌无效或已过期.",
         );
     };
-    if let Err(response) = validate_access_token_binding(state, req, &token, scheme, &claims).await
+    if let Err(response) =
+        validate_access_token_binding(handles, req, &token, scheme, &claims).await
     {
         return response;
     }
-    if !fapi_resource_audience_allowed(&state.settings, &claims.aud) {
+    if !fapi_resource_audience_allowed(&handles.config, &claims.aud) {
         return oauth_bearer_error(
             StatusCode::UNAUTHORIZED,
             "invalid_token",
@@ -260,10 +260,7 @@ async fn fapi_resource_inner(
             FapiResourceSignaturePolicy {
                 tenant_id,
                 client_id: &claims.client_id,
-                max_age_seconds: state
-                    .settings
-                    .protocol()
-                    .fapi_http_signature_max_age_seconds,
+                max_age_seconds: handles.config.fapi_http_signature_max_age_seconds,
             },
         ) {
             Ok(verified) => verified,
@@ -278,10 +275,7 @@ async fn fapi_resource_inner(
         match store
             .consume_replay(
                 verified.replay_fingerprint(),
-                state
-                    .settings
-                    .protocol()
-                    .fapi_http_signature_max_age_seconds,
+                handles.config.fapi_http_signature_max_age_seconds,
             )
             .await
         {
@@ -491,7 +485,7 @@ fn verify_fapi_resource_http_signature(
 }
 
 async fn sign_fapi_resource_response(
-    state: &AppState,
+    keyset: &nazo_key_management::KeyManager,
     original: &FapiOriginalRequest,
     response: HttpResponse,
 ) -> HttpResponse {
@@ -530,7 +524,7 @@ async fn sign_fapi_resource_response(
     let original_body = request_digest
         .map(|_| original.body.as_ref())
         .unwrap_or(b"");
-    let signing_lease = match state.keyset.prepare_http_signing() {
+    let signing_lease = match keyset.prepare_http_signing() {
         Ok(lease) => lease,
         Err(_) => return HttpResponse::ServiceUnavailable().finish(),
     };
@@ -607,7 +601,7 @@ fn fapi_interaction_id(req: &HttpRequest) -> actix_web::http::header::HeaderValu
 }
 
 async fn validate_access_token_binding(
-    state: &AppState,
+    handles: &ResourceServerHandles,
     req: &HttpRequest,
     token: &str,
     scheme: AccessTokenAuthScheme,
@@ -615,9 +609,17 @@ async fn validate_access_token_binding(
 ) -> Result<(), HttpResponse> {
     match (scheme, claims.cnf.as_ref()) {
         (AccessTokenAuthScheme::DPoP, Some(cnf)) if cnf.jkt.is_some() => {
-            validate_dpop_proof(state, req, Some(token), cnf.jkt.as_deref())
-                .await
-                .map_err(|error| dpop_error_response(error, DpopErrorContext::ProtectedResource))?;
+            validate_dpop_proof_with_store(
+                &handles.replay,
+                &handles.config.issuer,
+                &handles.config.mtls_endpoint_base_url,
+                handles.config.dpop_nonce_policy,
+                req,
+                Some(token),
+                cnf.jkt.as_deref(),
+            )
+            .await
+            .map_err(|error| dpop_error_response(error, DpopErrorContext::ProtectedResource))?;
         }
         (AccessTokenAuthScheme::DPoP, _) => {
             return Err(dpop_error_response(
@@ -627,7 +629,10 @@ async fn validate_access_token_binding(
         }
         (AccessTokenAuthScheme::Bearer, Some(cnf)) if cnf.x5t_s256.is_some() => {
             let expected = cnf.x5t_s256.as_deref().unwrap_or_default();
-            let Some(actual) = request_mtls_thumbprint(req, &state.settings) else {
+            let Some(actual) = request_mtls_thumbprint_from_trusted_proxy(
+                req,
+                &handles.config.trusted_proxy_cidrs,
+            ) else {
                 return Err(oauth_bearer_error(
                     StatusCode::UNAUTHORIZED,
                     "invalid_token",
@@ -653,9 +658,9 @@ async fn validate_access_token_binding(
     Ok(())
 }
 
-fn fapi_resource_audience_allowed(settings: &Settings, audience: &Value) -> bool {
-    token_audience_contains(audience, &settings.default_audience)
-        || token_audience_contains(audience, settings.protocol().protected_resource_identifier)
+fn fapi_resource_audience_allowed(config: &ResourceServerConfig, audience: &Value) -> bool {
+    token_audience_contains(audience, &config.default_audience)
+        || token_audience_contains(audience, &config.protected_resource_identifier)
 }
 
 #[cfg(test)]

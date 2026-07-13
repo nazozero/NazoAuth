@@ -5,6 +5,7 @@
 mod database_user_fixture;
 mod metadata;
 mod oauth;
+mod resource_server;
 mod rows;
 mod state;
 
@@ -18,5 +19,6 @@ pub(crate) use oauth::{
     AuthorizationCodeState, CodePayload, ConsentPayload, ConsumedAuthorizationCode,
     NativeSsoTokenBinding, PushedAuthorizationRequest, RefreshTokenPolicy, TokenIssue,
 };
+pub(crate) use resource_server::{ResourceServerConfig, ResourceServerHandles};
 pub(crate) use rows::{ClientRow, TokenRow};
 pub(crate) use state::AppState;

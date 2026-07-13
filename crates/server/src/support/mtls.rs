@@ -5,9 +5,9 @@
 //! `X-SSL-Client-Verify: SUCCESS`.
 
 use super::constant_time_eq;
-use super::request_from_trusted_proxy;
 #[cfg(test)]
 use super::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
+use super::{IpCidr, request_from_trusted_proxy, request_from_trusted_proxy_cidrs};
 use crate::domain::ClientRow;
 use crate::settings::Settings;
 use actix_web::HttpRequest;
@@ -74,6 +74,16 @@ pub(crate) struct MtlsClientCertificate {
 
 pub(crate) fn request_mtls_thumbprint(req: &HttpRequest, settings: &Settings) -> Option<String> {
     request_mtls_client_certificate(req, settings)?.thumbprint
+}
+
+pub(crate) fn request_mtls_thumbprint_from_trusted_proxy(
+    req: &HttpRequest,
+    trusted_proxy_cidrs: &[IpCidr],
+) -> Option<String> {
+    if !request_from_trusted_proxy_cidrs(req, trusted_proxy_cidrs) {
+        return None;
+    }
+    request_mtls_client_certificate_from_headers(req.headers())?.thumbprint
 }
 
 pub(crate) fn request_mtls_client_certificate(

@@ -10,7 +10,9 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 use actix_web::{App, HttpServer, dev::Service, middleware::from_fn, web};
 
 use crate::config::{ConfigSource, database_max_connections, database_url};
-use crate::domain::{AppState, MetadataConfig, MetadataHandles};
+use crate::domain::{
+    AppState, MetadataConfig, MetadataHandles, ResourceServerConfig, ResourceServerHandles,
+};
 use crate::http::profile::oidc_logout::spawn_backchannel_logout_delivery_worker;
 use crate::runtime_modules::RuntimeModules;
 use crate::settings::Settings;
@@ -74,6 +76,22 @@ pub async fn run() -> anyhow::Result<()> {
         keyset: keyset.clone(),
         runtime_modules: runtime_modules.registry.clone(),
     });
+    #[cfg(not(test))]
+    let resource_replay_connection = valkey.clone();
+    #[cfg(test)]
+    let resource_replay_connection =
+        nazo_valkey::ValkeyConnection::from_existing_client(valkey.clone());
+    let resource_server_handles = web::Data::new(ResourceServerHandles {
+        config: ResourceServerConfig::from(settings.as_ref()),
+        keyset: keyset.clone(),
+        tokens: nazo_postgres::TokenRepository::new(diesel_db.clone()),
+        clients: nazo_postgres::OAuthClientRepository::new(diesel_db.clone()),
+        replay: nazo_valkey::ReplayStore::new(&resource_replay_connection),
+        #[cfg(not(test))]
+        runtime_modules: runtime_modules.registry.clone(),
+        #[cfg(test)]
+        http_message_signatures_enabled: settings.modules().enable_fapi_http_signatures,
+    });
 
     let state = web::Data::new(AppState {
         diesel_db,
@@ -131,6 +149,7 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(runtime_modules.clone())
             .app_data(metadata_handles.clone())
             .app_data(admin_sessions.clone())
+            .app_data(resource_server_handles.clone())
             .configure(|cfg| routes::configure(cfg, &state.settings, perf_metrics_enabled))
     })
     .bind(addr)?

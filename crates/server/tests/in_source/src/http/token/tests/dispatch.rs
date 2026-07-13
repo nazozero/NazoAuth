@@ -432,7 +432,7 @@ async fn set_client_mtls_thumbprint(state: &Data<AppState>, client_id: &str, thu
         "UPDATE oauth_clients SET tls_client_auth_cert_sha256 = $1, tls_client_auth_subject_dn = $2 WHERE tenant_id = $3 AND client_id = $4",
     )
     .bind::<Text, _>(thumbprint)
-    .bind::<Text, _>("CN=dispatch-mtls")
+    .bind::<Text, _>(format!("CN={client_id}"))
     .bind::<diesel::sql_types::Uuid, _>(DEFAULT_TENANT_ID)
     .bind::<Text, _>(client_id)
     .execute(&mut conn)
@@ -1379,7 +1379,7 @@ async fn token_endpoint_identifies_mtls_client_from_verified_certificate_without
         ))
         .insert_header((
             header::HeaderName::from_static("x-ssl-client-subject-dn"),
-            "CN=dispatch-mtls",
+            format!("CN={client_id}"),
         ))
         .to_http_request();
     let body = Bytes::from_static(b"grant_type=urn%3Aexample%3Aunsupported");

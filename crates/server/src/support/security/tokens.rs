@@ -220,16 +220,24 @@ pub(crate) async fn make_authorization_response_jwt(
 }
 
 pub(crate) fn decode_access_claims(state: &AppState, token: &str) -> Option<Claims> {
+    decode_access_claims_with(&state.keyset, &state.settings.issuer, token)
+}
+
+pub(crate) fn decode_access_claims_with(
+    keyset: &nazo_key_management::KeyManager,
+    issuer: &str,
+    token: &str,
+) -> Option<Claims> {
     let header = jsonwebtoken::decode_header(token).ok()?;
     if header.typ.as_deref() != Some("at+jwt") || signing_algorithm_name(header.alg).is_none() {
         return None;
     }
-    let keyset = state.keyset.snapshot();
-    let verification_key = keyset.verification_key(header.kid.as_deref()?)?;
+    let key_snapshot = keyset.snapshot();
+    let verification_key = key_snapshot.verification_key(header.kid.as_deref()?)?;
     let decoding_key = jwt_decoding_key_from_jwk(&verification_key.public_jwk, header.alg)?;
     let mut validation = jsonwebtoken::Validation::new(header.alg);
     validation.validate_aud = false;
-    validation.set_issuer(&[state.settings.issuer.as_str()]);
+    validation.set_issuer(&[issuer]);
     let token_data = jsonwebtoken::decode::<Claims>(token, &decoding_key, &validation).ok()?;
     if token_data.claims.token_use != "access" {
         return None;

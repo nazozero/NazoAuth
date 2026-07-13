@@ -96,9 +96,19 @@ pub(crate) fn client_ip(req: &HttpRequest, settings: &Settings) -> String {
 }
 
 pub(crate) fn request_from_trusted_proxy(req: &HttpRequest, settings: &Settings) -> bool {
-    let endpoint = settings.endpoint();
+    request_from_trusted_proxy_cidrs(req, settings.endpoint().trusted_proxy_cidrs)
+}
+
+pub(crate) fn request_from_trusted_proxy_cidrs(
+    req: &HttpRequest,
+    trusted_proxy_cidrs: &[IpCidr],
+) -> bool {
     req.peer_addr()
-        .map(|addr| trusted_proxy_peer_ip(addr.ip(), endpoint))
+        .map(|addr| {
+            trusted_proxy_cidrs
+                .iter()
+                .any(|cidr| cidr.contains(addr.ip()))
+        })
         .unwrap_or(false)
 }
 
