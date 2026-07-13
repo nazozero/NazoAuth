@@ -1,18 +1,15 @@
 //! 当前用户资料接口。
-use crate::domain::AppState;
 #[cfg(test)]
 use crate::domain::DatabaseUserFixture;
 #[cfg(test)]
 use crate::schema::users;
 #[cfg(test)]
 use crate::settings::Settings;
+use crate::support::auth_me_json_with_grants;
+use crate::support::sessions::SessionProfileHandles;
 #[cfg(test)]
 use crate::support::{
     DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_set_ex,
-};
-use crate::support::{
-    auth_me_json, current_pending_mfa_session, current_session, current_user_or_login_required,
-    has_valid_csrf_token, login_required_response,
 };
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json};
@@ -28,26 +25,62 @@ use nazo_http_actix::{json_response, oauth_error};
 #[cfg(test)]
 use nazo_postgres::get_conn;
 use serde::Deserialize;
-#[cfg(test)]
 use serde_json::Value;
 use serde_json::json;
 #[cfg(test)]
 use uuid::Uuid;
 // 只处理 /auth/me 的读取和基础资料更新。
 
-pub(crate) async fn me(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
-    let session = match current_session(&state, &req).await {
+#[derive(Clone)]
+pub(crate) struct AccountProfileService {
+    users: nazo_postgres::UserRepository,
+    grants: nazo_postgres::GrantRepository,
+}
+
+impl AccountProfileService {
+    pub(crate) fn new(
+        users: nazo_postgres::UserRepository,
+        grants: nazo_postgres::GrantRepository,
+    ) -> Self {
+        Self { users, grants }
+    }
+
+    async fn profile_json(&self, user: &nazo_identity::PublicAccount) -> anyhow::Result<Value> {
+        auth_me_json_with_grants(&self.grants, user).await
+    }
+
+    async fn update_profile(
+        &self,
+        user: &nazo_identity::PublicAccount,
+        profile: nazo_identity::UserProfile,
+    ) -> Result<nazo_identity::PublicAccount, nazo_identity::ports::RepositoryError> {
+        self.users
+            .update_profile(
+                user.tenant().tenant_id,
+                user.user_id(),
+                nazo_identity::ports::ProfileUpdate { profile },
+            )
+            .await
+    }
+}
+
+pub(crate) async fn me(
+    sessions: Data<SessionProfileHandles>,
+    profiles: Data<AccountProfileService>,
+    req: HttpRequest,
+) -> HttpResponse {
+    let session = match sessions.current_session(&req).await {
         Ok(Some(session)) => session,
-        Ok(None) => match current_pending_mfa_session(&state, &req).await {
+        Ok(None) => match sessions.current_pending_mfa_session(&req).await {
             Ok(Some(session)) => {
                 return json_response(json!({
                     "mfa_required": true,
                     "id": session.user.id(),
                     "email": session.user.account.email,
-                    "csrf_token": cookie_value(&req, state.settings.session().csrf_cookie_name)
+                    "csrf_token": cookie_value(&req, sessions.http_config().csrf_cookie_name())
                 }));
             }
-            Ok(None) => return login_required_response(&state),
+            Ok(None) => return sessions.login_required_response(),
             Err(error) => {
                 tracing::warn!(%error, "failed to resolve pending MFA session");
                 return oauth_error(
@@ -66,7 +99,7 @@ pub(crate) async fn me(state: Data<AppState>, req: HttpRequest) -> HttpResponse 
             );
         }
     };
-    match auth_me_json(&state, &session.user).await {
+    match profiles.profile_json(&session.user).await {
         Ok(mut body) => {
             if let Some(object) = body.as_object_mut() {
                 object.insert("mfa_required".to_owned(), json!(false));
@@ -107,14 +140,15 @@ pub(crate) struct UpdateProfileRequest {
 }
 
 pub(crate) async fn update_me(
-    state: Data<AppState>,
+    sessions: Data<SessionProfileHandles>,
+    profiles: Data<AccountProfileService>,
     req: HttpRequest,
     Json(payload): Json<UpdateProfileRequest>,
 ) -> HttpResponse {
-    if !has_valid_csrf_token(&state, &req, None) {
+    if !sessions.has_valid_csrf_token(&req, None) {
         return csrf_error();
     }
-    let user = match current_user_or_login_required(&state, &req).await {
+    let user = match sessions.current_user_or_login_required(&req).await {
         Ok(user) => user,
         Err(response) => return response,
     };
@@ -198,40 +232,37 @@ pub(crate) async fn update_me(
     };
     let phone_number_verified =
         user.profile.phone_number_verified && user.profile.phone_number == phone_number;
-    let updated = nazo_postgres::UserRepository::new(state.diesel_db.clone())
+    let updated = profiles
         .update_profile(
-            user.tenant().tenant_id,
-            user.user_id(),
-            nazo_identity::ports::ProfileUpdate {
-                profile: nazo_identity::UserProfile {
-                    display_name,
-                    avatar_url: user.profile.avatar_url.clone(),
-                    given_name,
-                    family_name,
-                    middle_name,
-                    nickname,
-                    profile_url,
-                    website_url,
-                    gender,
-                    birthdate,
-                    zoneinfo,
-                    locale,
-                    address: nazo_identity::PostalAddress {
-                        formatted: address_formatted,
-                        street_address: address_street_address,
-                        locality: address_locality,
-                        region: address_region,
-                        postal_code: address_postal_code,
-                        country: address_country,
-                    },
-                    phone_number,
-                    phone_number_verified,
+            &user,
+            nazo_identity::UserProfile {
+                display_name,
+                avatar_url: user.profile.avatar_url.clone(),
+                given_name,
+                family_name,
+                middle_name,
+                nickname,
+                profile_url,
+                website_url,
+                gender,
+                birthdate,
+                zoneinfo,
+                locale,
+                address: nazo_identity::PostalAddress {
+                    formatted: address_formatted,
+                    street_address: address_street_address,
+                    locality: address_locality,
+                    region: address_region,
+                    postal_code: address_postal_code,
+                    country: address_country,
                 },
+                phone_number,
+                phone_number_verified,
             },
         )
         .await;
     match updated {
-        Ok(user) => match auth_me_json(&state, &user).await {
+        Ok(user) => match profiles.profile_json(&user).await {
             Ok(body) => json_response(body),
             Err(error) => {
                 tracing::warn!(%error, "failed to build updated auth me response");

@@ -2,12 +2,12 @@
 //! 用户只能查看和解绑自己的 provider subject 绑定，不能修改 provider 配置。
 use nazo_http_actix::{empty_response_no_store, json_response_no_store, oauth_error};
 
-use crate::domain::AppState;
 #[cfg(test)]
 use crate::domain::DatabaseExternalIdentityFixture;
 #[cfg(test)]
 use crate::support::DEFAULT_TENANT_ID;
-use crate::support::{audit_event, audit_fields, current_user_or_login_required};
+use crate::support::sessions::SessionProfileHandles;
+use crate::support::{audit_event, audit_fields};
 use actix_web::http::StatusCode;
 use actix_web::web::Data;
 use actix_web::web::Path;
@@ -18,15 +18,46 @@ use nazo_identity::ports::FederationLink;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-pub(crate) async fn my_federation_links(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
-    let user = match current_user_or_login_required(&state, &req).await {
+#[derive(Clone)]
+pub(crate) struct FederationProfileService {
+    federation: nazo_postgres::FederationRepository,
+}
+
+impl FederationProfileService {
+    pub(crate) fn new(federation: nazo_postgres::FederationRepository) -> Self {
+        Self { federation }
+    }
+
+    async fn list(
+        &self,
+        user: &nazo_identity::PublicAccount,
+    ) -> Result<Vec<FederationLink>, nazo_identity::ports::RepositoryError> {
+        self.federation
+            .list(user.tenant().tenant_id, user.user_id())
+            .await
+    }
+
+    async fn unlink(
+        &self,
+        user: &nazo_identity::PublicAccount,
+        link_id: Uuid,
+    ) -> Result<Option<FederationLink>, nazo_identity::ports::RepositoryError> {
+        self.federation
+            .delete(user.tenant().tenant_id, user.user_id(), link_id)
+            .await
+    }
+}
+
+pub(crate) async fn my_federation_links(
+    sessions: Data<SessionProfileHandles>,
+    federation: Data<FederationProfileService>,
+    req: HttpRequest,
+) -> HttpResponse {
+    let user = match sessions.current_user_or_login_required(&req).await {
         Ok(user) => user,
         Err(response) => return response,
     };
-    let rows = match nazo_postgres::FederationRepository::new(state.diesel_db.clone())
-        .list(user.tenant().tenant_id, user.user_id())
-        .await
-    {
+    let rows = match federation.list(&user).await {
         Ok(rows) => rows,
         Err(error) => {
             tracing::warn!(%error, user_id = %user.id(), "failed to load federation links");
@@ -45,20 +76,18 @@ pub(crate) async fn my_federation_links(state: Data<AppState>, req: HttpRequest)
 }
 
 pub(crate) async fn unlink_my_federation_link(
-    state: Data<AppState>,
+    sessions: Data<SessionProfileHandles>,
+    federation: Data<FederationProfileService>,
     req: HttpRequest,
     path: Path<Uuid>,
 ) -> HttpResponse {
     // link_id 来自路径参数，但后续删除仍必须叠加当前 user_id 约束。
     let link_id = path.into_inner();
-    let user = match current_user_or_login_required(&state, &req).await {
+    let user = match sessions.current_user_or_login_required(&req).await {
         Ok(user) => user,
         Err(response) => return response,
     };
-    let link = match nazo_postgres::FederationRepository::new(state.diesel_db.clone())
-        .delete(user.tenant().tenant_id, user.user_id(), link_id)
-        .await
-    {
+    let link = match federation.unlink(&user, link_id).await {
         Ok(Some(link)) => link,
         Ok(None) => {
             return oauth_error(

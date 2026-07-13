@@ -1,6 +1,34 @@
 use super::*;
 
 #[test]
+fn profile_core_handlers_use_focused_dependencies() {
+    let sources = [
+        include_str!("../../../../../../src/http/profile/account.rs"),
+        include_str!("../../../../../../src/http/profile/applications.rs"),
+        include_str!("../../../../../../src/http/profile/access_requests.rs"),
+        include_str!("../../../../../../src/http/profile/delivery.rs"),
+        include_str!("../../../../../../src/http/profile/federation_links.rs"),
+    ]
+    .join("\n");
+
+    for legacy_signature in [
+        "fn me(state: Data<AppState>",
+        "fn update_me(\n    state: Data<AppState>",
+        "fn my_applications(state: Data<AppState>",
+        "fn my_access_requests(state: Data<AppState>",
+        "fn create_access_request(\n    state: Data<AppState>",
+        "fn access_delivery(\n    state: Data<AppState>",
+        "fn my_federation_links(state: Data<AppState>",
+        "fn unlink_my_federation_link(\n    state: Data<AppState>",
+    ] {
+        assert!(
+            !sources.contains(legacy_signature),
+            "profile handler regressed to giant AppState: {legacy_signature}"
+        );
+    }
+}
+
+#[test]
 fn my_application_json_preserves_authorization_metadata_and_filters_bad_scope_values() {
     let now = Utc::now();
     let value = my_application_json(nazo_postgres::OAuthClientApplication {

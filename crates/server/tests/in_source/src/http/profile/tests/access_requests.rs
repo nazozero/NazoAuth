@@ -1,4 +1,6 @@
 use super::*;
+use crate::domain::AppState;
+use crate::test_support::{access_request_profiles, profile_sessions};
 
 use actix_web::cookie::Cookie;
 use actix_web::test::TestRequest;
@@ -13,6 +15,29 @@ use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
+
+async fn my_access_requests_from_state(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
+    my_access_requests(
+        profile_sessions(&state),
+        access_request_profiles(&state),
+        req,
+    )
+    .await
+}
+
+async fn create_access_request_from_state(
+    state: Data<AppState>,
+    req: HttpRequest,
+    payload: Json<CreateAccessRequest>,
+) -> HttpResponse {
+    create_access_request(
+        profile_sessions(&state),
+        access_request_profiles(&state),
+        req,
+        payload,
+    )
+    .await
+}
 
 fn test_state() -> AppState {
     AppState {
@@ -231,7 +256,7 @@ async fn create_access_request_response_uses_created_and_public_projection() {
 async fn my_access_requests_rejects_requests_without_login() {
     let state = test_state();
     let request = TestRequest::default().to_http_request();
-    let response = my_access_requests(Data::new(state), request).await;
+    let response = my_access_requests_from_state(Data::new(state), request).await;
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
@@ -240,7 +265,7 @@ async fn my_access_requests_rejects_requests_without_login() {
 async fn create_access_request_rejects_requests_without_csrf() {
     let state = test_state();
     let request = request_with_session_but_no_csrf(&state, "sid-without-csrf");
-    let response = create_access_request(
+    let response = create_access_request_from_state(
         Data::new(state),
         request,
         Json(sample_access_request_payload()),
@@ -282,7 +307,7 @@ async fn my_access_requests_response_with_live_data() {
     .await
     .expect("fixture access requests should insert");
 
-    let response = my_access_requests(
+    let response = my_access_requests_from_state(
         Data::clone(&fixture.state),
         fixture.request(&sid, "csrf-live"),
     )
@@ -315,7 +340,7 @@ async fn create_access_request_handles_duplicate_pending_request_as_conflict() {
     fixture.store_session(&user, &sid).await;
     let payload = sample_access_request_payload();
     let request_payload = fixture.request(&sid, "csrf-dup");
-    let first = create_access_request(
+    let first = create_access_request_from_state(
         Data::clone(&fixture.state),
         fixture.request(&sid, "csrf-dup"),
         Json(sample_access_request_payload()),
@@ -323,8 +348,12 @@ async fn create_access_request_handles_duplicate_pending_request_as_conflict() {
     .await;
     assert_eq!(first.status(), StatusCode::CREATED);
 
-    let second =
-        create_access_request(Data::clone(&fixture.state), request_payload, Json(payload)).await;
+    let second = create_access_request_from_state(
+        Data::clone(&fixture.state),
+        request_payload,
+        Json(payload),
+    )
+    .await;
     assert_eq!(second.status(), StatusCode::CONFLICT);
     let body = actix_web::body::to_bytes(second.into_body())
         .await

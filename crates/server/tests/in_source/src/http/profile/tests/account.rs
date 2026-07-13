@@ -1,4 +1,6 @@
 use super::*;
+use crate::domain::AppState;
+use crate::test_support::{account_profiles, profile_sessions};
 use nazo_http_actix::OAuthJsonErrorFields;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
@@ -13,6 +15,24 @@ use fred::prelude::{
 
 use crate::config::ConfigSource;
 use nazo_postgres::create_pool;
+
+async fn me_from_state(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
+    me(profile_sessions(&state), account_profiles(&state), req).await
+}
+
+async fn update_me_from_state(
+    state: Data<AppState>,
+    req: HttpRequest,
+    payload: Json<UpdateProfileRequest>,
+) -> HttpResponse {
+    update_me(
+        profile_sessions(&state),
+        account_profiles(&state),
+        req,
+        payload,
+    )
+    .await
+}
 
 #[test]
 fn profile_text_trims_blank_values_and_enforces_byte_limit() {
@@ -293,7 +313,7 @@ async fn me_returns_pending_mfa_projection_only() {
     fixture.store_session(&user, &sid, true).await;
 
     let (status, body, has_set_cookie) = response_json(
-        me(
+        me_from_state(
             fixture.state.clone(),
             fixture.request_with_csrf_cookie(&sid, &csrf),
         )
@@ -336,7 +356,8 @@ async fn me_returns_authenticated_profile_with_mfa_required_false() {
     fixture.store_session(&user, &sid, false).await;
 
     let (status, body, has_set_cookie) =
-        response_json(me(fixture.state.clone(), fixture.request(&sid, &csrf)).await).await;
+        response_json(me_from_state(fixture.state.clone(), fixture.request(&sid, &csrf)).await)
+            .await;
 
     assert_eq!(status, StatusCode::OK);
     assert!(!has_set_cookie);
@@ -373,7 +394,7 @@ async fn me_projects_pending_session_lookup_failure_as_server_error() {
         .cookie(Cookie::new(state.settings.session_cookie_name.clone(), sid))
         .to_http_request();
 
-    let (status, body, has_set_cookie) = response_json(me(state, req).await).await;
+    let (status, body, has_set_cookie) = response_json(me_from_state(state, req).await).await;
 
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(body["error"], "server_error");
@@ -412,7 +433,7 @@ async fn me_projects_authenticated_session_lookup_failure_as_server_error() {
         .cookie(Cookie::new(state.settings.session_cookie_name.clone(), sid))
         .to_http_request();
 
-    let (status, body, has_set_cookie) = response_json(me(state, req).await).await;
+    let (status, body, has_set_cookie) = response_json(me_from_state(state, req).await).await;
 
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(body["error"], "server_error");
@@ -426,7 +447,7 @@ async fn update_me_rejects_session_request_without_csrf_before_profile_write() {
     let req = request_with_session_but_no_csrf(&state, "account-update-no-csrf");
 
     assert_account_write_rejects_missing_csrf(
-        update_me(
+        update_me_from_state(
             state,
             req,
             Json(serde_json::from_value(json!({"display_name": "Alice"})).unwrap()),
@@ -442,7 +463,7 @@ async fn update_me_requires_login_before_profile_write() {
     let req = actix_web::test::TestRequest::default().to_http_request();
 
     assert_account_endpoint_requires_login(
-        update_me(
+        update_me_from_state(
             state,
             req,
             Json(serde_json::from_value(json!({"display_name": "Alice"})).unwrap()),
@@ -471,7 +492,7 @@ async fn update_me_rejects_invalid_profile_url_without_changing_user_state() {
     }))
     .expect("payload should parse");
     let (status, body, has_set_cookie) = response_json(
-        update_me(
+        update_me_from_state(
             fixture.state.clone(),
             fixture.request(&sid, &csrf),
             Json(payload),
@@ -508,7 +529,7 @@ async fn update_me_rejects_overlong_display_name_without_changing_user_state() {
     }))
     .expect("payload should parse");
     let (status, body, has_set_cookie) = response_json(
-        update_me(
+        update_me_from_state(
             fixture.state.clone(),
             fixture.request(&sid, &csrf),
             Json(payload),
@@ -566,7 +587,7 @@ async fn update_me_updates_only_whitelisted_profile_fields() {
     .expect("payload should parse");
 
     let (status, body, has_set_cookie) = response_json(
-        update_me(
+        update_me_from_state(
             fixture.state.clone(),
             fixture.request(&sid, &csrf),
             Json(payload),
@@ -625,7 +646,7 @@ async fn update_me_resets_phone_verification_when_phone_number_changes() {
     }))
     .expect("payload should parse");
     let (status, body, has_set_cookie) = response_json(
-        update_me(
+        update_me_from_state(
             fixture.state.clone(),
             fixture.request(&sid, &csrf),
             Json(payload),

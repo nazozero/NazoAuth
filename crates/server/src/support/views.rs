@@ -18,7 +18,18 @@ use uuid::Uuid;
 // 将数据库行转换为前端和管理端直接消费的 JSON 形状。
 
 pub(crate) async fn auth_me_json(state: &AppState, user: &PublicAccount) -> anyhow::Result<Value> {
-    let count = nazo_postgres::GrantRepository::new(state.diesel_db.clone())
+    auth_me_json_with_grants(
+        &nazo_postgres::GrantRepository::new(state.diesel_db.clone()),
+        user,
+    )
+    .await
+}
+
+pub(crate) async fn auth_me_json_with_grants(
+    grants: &nazo_postgres::GrantRepository,
+    user: &PublicAccount,
+) -> anyhow::Result<Value> {
+    let count = grants
         .authorized_client_count(user.id())
         .await
         .map_err(|error| anyhow::anyhow!("failed to count authorized clients: {error}"))?;

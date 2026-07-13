@@ -104,9 +104,9 @@ pub(crate) use security::{
     CLIENT_ASSERTION_TYPE_JWT_BEARER, IssuedAccessToken, SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
 };
 pub(crate) use sessions::{
-    CurrentSession, SessionPayload, SessionRotation, current_pending_mfa_session, current_session,
-    current_user, current_user_or_login_required, has_valid_csrf_token, login_required_response,
-    require_active_session_principal, require_admin_or_forbidden, store_session,
+    CurrentSession, SessionPayload, SessionRotation, current_session, current_user,
+    current_user_or_login_required, has_valid_csrf_token, require_active_session_principal,
+    require_admin_or_forbidden, store_session,
 };
 #[cfg(test)]
 pub(crate) use tenancy::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID};
@@ -116,5 +116,6 @@ pub(crate) use valkey::{
     valkey_atomic_snapshot, valkey_del, valkey_eval_string, valkey_get, valkey_set_ex,
 };
 pub(crate) use views::{
-    admin_user_json, append_query, auth_me_json, client_json, is_cross_site_fetch, pagination,
+    admin_user_json, append_query, auth_me_json, auth_me_json_with_grants, client_json,
+    is_cross_site_fetch, pagination,
 };

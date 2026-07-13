@@ -206,8 +206,62 @@ impl SessionProfileHandles {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn from_test_state(state: &AppState) -> Self {
+        let session = state.settings.session();
+        Self::new(
+            SessionStore::new(&state.valkey_connection()),
+            UserRepository::new(state.diesel_db.clone()),
+            SessionHttpConfig::new(
+                session.session_cookie_name,
+                session.csrf_cookie_name,
+                session.cookie_secure,
+            ),
+            &state.settings.issuer,
+            state.settings.modules().enable_session_management,
+        )
+    }
+
     pub(crate) fn http_config(&self) -> &SessionHttpConfig {
         &self.http
+    }
+
+    pub(crate) fn has_valid_csrf_token(
+        &self,
+        req: &HttpRequest,
+        fallback_token: Option<&str>,
+    ) -> bool {
+        has_valid_csrf_token_for_cookies(
+            req,
+            fallback_token,
+            self.http.session_cookie_name(),
+            self.http.csrf_cookie_name(),
+        )
+    }
+
+    pub(crate) fn login_required_response(&self) -> HttpResponse {
+        with_cookie_headers(
+            oauth_error(
+                StatusCode::UNAUTHORIZED,
+                "login_required",
+                "会话不存在或已过期,请重新登录.",
+            ),
+            &[
+                clear_cookie(self.http.session_cookie_name(), self.http.cookie_secure()),
+                clear_cookie(self.http.csrf_cookie_name(), self.http.cookie_secure()),
+            ],
+        )
+    }
+
+    pub(crate) async fn current_user_or_login_required(
+        &self,
+        req: &HttpRequest,
+    ) -> Result<PublicAccount, HttpResponse> {
+        match self.current_session(req).await {
+            Ok(Some(session)) => Ok(session.user),
+            Ok(None) => Err(self.login_required_response()),
+            Err(error) => Err(session_lookup_error_response(error)),
+        }
     }
 
     pub(crate) fn issuer(&self) -> &str {
@@ -413,6 +467,7 @@ async fn current_session_from_handles(
     session_from_payload(sessions, users, &sid, payload).await
 }
 
+#[cfg(test)]
 pub(crate) async fn current_pending_mfa_session(
     state: &AppState,
     req: &HttpRequest,

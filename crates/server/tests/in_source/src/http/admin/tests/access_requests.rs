@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::{access_request_profiles, delivery_profiles, profile_sessions};
 use actix_web::cookie::Cookie;
 use diesel::QueryableByName;
 use diesel::sql_query;
@@ -24,6 +25,32 @@ use chrono::Utc;
 use diesel::prelude::*;
 use nazo_identity::AccessRequestStatus;
 use nazo_postgres::{create_pool, get_conn};
+
+async fn profile_access_requests_from_state(
+    state: Data<AppState>,
+    req: HttpRequest,
+) -> HttpResponse {
+    crate::http::profile::access_requests::my_access_requests(
+        profile_sessions(&state),
+        access_request_profiles(&state),
+        req,
+    )
+    .await
+}
+
+async fn profile_delivery_from_state(
+    state: Data<AppState>,
+    req: HttpRequest,
+    query: Query<HashMap<String, String>>,
+) -> HttpResponse {
+    crate::http::profile::delivery::access_delivery(
+        profile_sessions(&state),
+        delivery_profiles(&state),
+        req,
+        query,
+    )
+    .await
+}
 
 #[derive(QueryableByName)]
 struct IdRow {
@@ -980,11 +1007,7 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
     let applicant_sid = format!("applicant-{suffix}");
     fixture.store_session(&applicant, &applicant_sid).await;
     let list_request = fixture.admin_get_request(&applicant_sid, "/auth/me/access-requests");
-    let listed = crate::http::profile::access_requests::my_access_requests(
-        fixture.state.clone(),
-        list_request,
-    )
-    .await;
+    let listed = profile_access_requests_from_state(fixture.state.clone(), list_request).await;
     let (list_status, list_body) = json_body(listed).await;
     assert_eq!(list_status, StatusCode::OK);
     let approved_item = list_body["items"]
@@ -1007,7 +1030,7 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
         .await;
     let other_sid = format!("other-applicant-{suffix}");
     fixture.store_session(&other_applicant, &other_sid).await;
-    let other_list = crate::http::profile::access_requests::my_access_requests(
+    let other_list = profile_access_requests_from_state(
         fixture.state.clone(),
         fixture.admin_get_request(&other_sid, "/auth/me/access-requests"),
     )
@@ -1020,7 +1043,7 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
             .iter()
             .all(|item| item.get("delivery_token").is_none())
     );
-    let other_claim = crate::http::profile::delivery::access_delivery(
+    let other_claim = profile_delivery_from_state(
         fixture.state.clone(),
         fixture.admin_get_request(
             &other_sid,
@@ -1078,7 +1101,7 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
         &applicant_sid,
         &format!("/profile/access-delivery?token={delivery_token}"),
     );
-    let delivered = crate::http::profile::delivery::access_delivery(
+    let delivered = profile_delivery_from_state(
         fixture.state.clone(),
         delivery_request,
         Query(HashMap::from([(
@@ -1091,7 +1114,7 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
     assert_eq!(delivery_status, StatusCode::OK);
     assert!(delivery_body["client_secret"].as_str().is_some());
 
-    let after_claim = crate::http::profile::access_requests::my_access_requests(
+    let after_claim = profile_access_requests_from_state(
         fixture.state.clone(),
         fixture.admin_get_request(&applicant_sid, "/auth/me/access-requests"),
     )
@@ -1110,7 +1133,7 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
         &applicant_sid,
         &format!("/profile/access-delivery?token={delivery_token}"),
     );
-    let replay = crate::http::profile::delivery::access_delivery(
+    let replay = profile_delivery_from_state(
         fixture.state.clone(),
         replay_request,
         Query(HashMap::from([("token".to_owned(), delivery_token)])),
@@ -1462,7 +1485,7 @@ async fn approve_access_request_rolls_back_when_status_write_fails_after_client_
         &applicant_sid,
         &format!("/profile/access-delivery?token={delivery_token}"),
     );
-    let delivery = crate::http::profile::delivery::access_delivery(
+    let delivery = profile_delivery_from_state(
         fixture.state.clone(),
         delivery_request,
         Query(HashMap::from([("token".to_owned(), delivery_token)])),
