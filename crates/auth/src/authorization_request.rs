@@ -88,6 +88,13 @@ pub struct NormalizedRequestObject {
 pub enum AuthorizationRequestError {
     InvalidRequest,
     InvalidRequestObject,
+    RequestObjectSigningPolicy,
+    RequestObjectClaims,
+    RequestObjectContainsRequestUri,
+    RequestObjectParameterType,
+    OuterClientIdConflict,
+    SignedRequestObjectMissingRedirectUri,
+    OuterAuthorizationParametersConflict,
     InvalidRequestObjectReplay,
     InvalidTarget,
     UnsupportedResponseType,
@@ -100,10 +107,15 @@ impl AuthorizationRequestError {
     #[must_use]
     pub const fn oauth_error(self) -> &'static str {
         match self {
-            Self::InvalidRequest => "invalid_request",
-            Self::InvalidRequestObject | Self::InvalidRequestObjectReplay => {
-                "invalid_request_object"
-            }
+            Self::InvalidRequest | Self::OuterClientIdConflict => "invalid_request",
+            Self::InvalidRequestObject
+            | Self::RequestObjectSigningPolicy
+            | Self::RequestObjectClaims
+            | Self::RequestObjectContainsRequestUri
+            | Self::RequestObjectParameterType
+            | Self::SignedRequestObjectMissingRedirectUri
+            | Self::OuterAuthorizationParametersConflict
+            | Self::InvalidRequestObjectReplay => "invalid_request_object",
             Self::InvalidTarget => "invalid_target",
             Self::UnsupportedResponseType => "unsupported_response_type",
             Self::UnauthorizedClient => "unauthorized_client",
@@ -121,7 +133,7 @@ pub fn normalize_request_object(
     policy: RequestObjectPolicy<'_>,
 ) -> Result<NormalizedRequestObject, AuthorizationRequestError> {
     if policy.mode == RequestObjectMode::BasicOidc && !policy.unsigned_request_object_allowed {
-        return Err(AuthorizationRequestError::InvalidRequestObject);
+        return Err(AuthorizationRequestError::RequestObjectSigningPolicy);
     }
     if claims.client_id != policy.client_id
         || !request_object_party_claims_valid(claims, policy)
@@ -129,7 +141,7 @@ pub fn normalize_request_object(
         || !request_object_times_valid(claims, policy)
         || !request_object_jti_valid(claims, policy)
     {
-        return Err(AuthorizationRequestError::InvalidRequestObject);
+        return Err(AuthorizationRequestError::RequestObjectClaims);
     }
 
     let mut request_parameters = request_object_parameters(claims)?;
@@ -138,17 +150,17 @@ pub fn normalize_request_object(
         .get("client_id")
         .is_some_and(|outer_client_id| outer_client_id != &claims.client_id)
     {
-        return Err(AuthorizationRequestError::InvalidRequest);
+        return Err(AuthorizationRequestError::OuterClientIdConflict);
     }
     if policy.mode == RequestObjectMode::SignedJar
         && !request_parameters.contains_key("redirect_uri")
     {
-        return Err(AuthorizationRequestError::InvalidRequestObject);
+        return Err(AuthorizationRequestError::SignedRequestObjectMissingRedirectUri);
     }
     if policy.require_integrity_protected_parameters
         && outer_authorization_parameters_conflict(outer, &request_parameters)
     {
-        return Err(AuthorizationRequestError::InvalidRequestObject);
+        return Err(AuthorizationRequestError::OuterAuthorizationParametersConflict);
     }
 
     let replay = request_object_replay(claims, policy)?;
@@ -270,7 +282,7 @@ fn request_object_replay(
         None if policy.mode == RequestObjectMode::BasicOidc => {
             REQUEST_OBJECT_MAX_TTL_SECONDS as u64
         }
-        None => return Err(AuthorizationRequestError::InvalidRequestObject),
+        None => return Err(AuthorizationRequestError::RequestObjectClaims),
     };
     Ok(Some(RequestObjectReplay {
         client_id: claims.client_id.clone(),
@@ -283,7 +295,7 @@ fn request_object_parameters(
     claims: &RequestObjectClaims,
 ) -> Result<HashMap<String, String>, AuthorizationRequestError> {
     if claims.parameters.contains_key("request_uri") {
-        return Err(AuthorizationRequestError::InvalidRequestObject);
+        return Err(AuthorizationRequestError::RequestObjectContainsRequestUri);
     }
     let mut parameters = HashMap::new();
     for key in AUTHORIZATION_REQUEST_PARAMETERS {
@@ -300,7 +312,7 @@ fn request_object_parameters(
             Value::Array(_) if matches!(*key, "authorization_details" | "resource") => {
                 value.to_string()
             }
-            _ => return Err(AuthorizationRequestError::InvalidRequestObject),
+            _ => return Err(AuthorizationRequestError::RequestObjectParameterType),
         };
         parameters.insert((*key).to_owned(), value);
     }
@@ -328,16 +340,20 @@ fn outer_authorization_parameters_conflict(
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct ParAdmissionPolicy<'a> {
-    pub client_type: &'a str,
-    pub redirect_uris: &'a [String],
-    pub allowed_audiences: &'a [String],
+pub struct RawParAdmissionPolicy<'a> {
     pub client_is_confidential: bool,
     pub client_authentication_method: &'a str,
     pub require_dpop_bound_tokens: bool,
     pub require_mtls_bound_tokens: bool,
     pub require_request_object: bool,
     pub fapi2_security: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ExpandedParAdmissionPolicy<'a> {
+    pub client_type: &'a str,
+    pub redirect_uris: &'a [String],
+    pub allowed_audiences: &'a [String],
     pub fapi2_requires_explicit_redirect_uri: bool,
 }
 
@@ -347,40 +363,83 @@ pub struct ParAdmission {
     pub resources: Vec<String>,
 }
 
-/// Validates PAR protocol policy after transport parsing, client lookup and
-/// authentication, but before DPoP verification or state persistence.
-pub fn validate_par_admission(
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ParAdmissionError {
+    RequestUriNotAllowed,
+    UnsupportedResponseType,
+    RequestObjectRequired,
+    ConfidentialClientRequired,
+    StrongClientAuthenticationRequired,
+    SenderConstraintRequired,
+    ExplicitRedirectUriRequired,
+    RedirectUriRequired,
+    RedirectUriNotRegistered,
+    InvalidResource,
+    ResourceNotAllowed,
+}
+
+impl ParAdmissionError {
+    #[must_use]
+    pub const fn oauth_error(self) -> &'static str {
+        match self {
+            Self::RequestUriNotAllowed => "invalid_request_object",
+            Self::UnsupportedResponseType => "unsupported_response_type",
+            Self::ConfidentialClientRequired => "unauthorized_client",
+            Self::StrongClientAuthenticationRequired => "invalid_client",
+            Self::RequestObjectRequired
+            | Self::SenderConstraintRequired
+            | Self::ExplicitRedirectUriRequired
+            | Self::RedirectUriRequired
+            | Self::RedirectUriNotRegistered => "invalid_request",
+            Self::InvalidResource | Self::ResourceNotAllowed => "invalid_target",
+        }
+    }
+}
+
+/// Validates client and raw-form policy after client authentication, before a
+/// signed Request Object is expanded. Authentication parameters remain a
+/// transport concern and are not accepted by this policy function.
+pub fn validate_raw_par_admission(
     parameters: &HashMap<String, String>,
-    policy: ParAdmissionPolicy<'_>,
-) -> Result<ParAdmission, AuthorizationRequestError> {
-    if parameters.contains_key("request_uri") {
-        return Err(AuthorizationRequestError::InvalidRequestObject);
-    }
-    if parameters
-        .get("response_type")
-        .is_some_and(|response_type| response_type != "code")
-    {
-        return Err(AuthorizationRequestError::UnsupportedResponseType);
-    }
-    if policy.require_request_object && !parameters.contains_key("request") {
-        return Err(AuthorizationRequestError::InvalidRequest);
-    }
+    policy: RawParAdmissionPolicy<'_>,
+) -> Result<(), ParAdmissionError> {
     if policy.fapi2_security {
         if !policy.client_is_confidential {
-            return Err(AuthorizationRequestError::UnauthorizedClient);
+            return Err(ParAdmissionError::ConfidentialClientRequired);
         }
         if !matches!(
             policy.client_authentication_method,
             "private_key_jwt" | "tls_client_auth" | "self_signed_tls_client_auth"
         ) {
-            return Err(AuthorizationRequestError::InvalidClient);
+            return Err(ParAdmissionError::StrongClientAuthenticationRequired);
         }
         if !(policy.require_dpop_bound_tokens || policy.require_mtls_bound_tokens) {
-            return Err(AuthorizationRequestError::InvalidRequest);
+            return Err(ParAdmissionError::SenderConstraintRequired);
         }
     }
+    if policy.require_request_object && !parameters.contains_key("request") {
+        return Err(ParAdmissionError::RequestObjectRequired);
+    }
+    Ok(())
+}
+
+/// Validates the authorization parameters after any signed Request Object has
+/// been expanded, but before DPoP verification or PAR state persistence.
+pub fn validate_expanded_par_admission(
+    parameters: &HashMap<String, String>,
+    policy: ExpandedParAdmissionPolicy<'_>,
+) -> Result<ParAdmission, ParAdmissionError> {
+    if parameters.contains_key("request_uri") {
+        return Err(ParAdmissionError::RequestUriNotAllowed);
+    }
+    if parameters
+        .get("response_type")
+        .is_some_and(|response_type| response_type != "code")
+    {
+        return Err(ParAdmissionError::UnsupportedResponseType);
+    }
     if policy.fapi2_requires_explicit_redirect_uri && !parameters.contains_key("redirect_uri") {
-        return Err(AuthorizationRequestError::InvalidRequest);
+        return Err(ParAdmissionError::ExplicitRedirectUriRequired);
     }
     let redirect_uri = resolve_registered_redirect_uri(
         policy.client_type,
@@ -388,15 +447,14 @@ pub fn validate_par_admission(
         parameters.get("redirect_uri").map(String::as_str),
     )
     .map_err(|error| match error {
-        RedirectUriError::Missing | RedirectUriError::Invalid => {
-            AuthorizationRequestError::InvalidRequest
-        }
+        RedirectUriError::Missing => ParAdmissionError::RedirectUriRequired,
+        RedirectUriError::Invalid => ParAdmissionError::RedirectUriNotRegistered,
     })?;
     let resources =
         parse_resource_indicator_parameter(parameters.get("resource").map(String::as_str))
-            .map_err(|_| AuthorizationRequestError::InvalidTarget)?;
+            .map_err(|_| ParAdmissionError::InvalidResource)?;
     if !resources.is_empty() && !is_subset(&resources, policy.allowed_audiences) {
-        return Err(AuthorizationRequestError::InvalidTarget);
+        return Err(ParAdmissionError::ResourceNotAllowed);
     }
     Ok(ParAdmission {
         redirect_uri,
@@ -491,7 +549,7 @@ mod tests {
         ]);
         assert_eq!(
             normalize_request_object(&conflicting, &claims, signed_policy(now)),
-            Err(AuthorizationRequestError::InvalidRequestObject)
+            Err(AuthorizationRequestError::OuterAuthorizationParametersConflict)
         );
         let mut claims = claims;
         claims
@@ -499,7 +557,7 @@ mod tests {
             .insert("request_uri".to_owned(), json!("urn:forbidden"));
         assert_eq!(
             normalize_request_object(&HashMap::new(), &claims, signed_policy(now)),
-            Err(AuthorizationRequestError::InvalidRequestObject)
+            Err(AuthorizationRequestError::RequestObjectContainsRequestUri)
         );
     }
 
@@ -531,38 +589,47 @@ mod tests {
                 "[\"https://api.example\"]".to_owned(),
             ),
         ]);
-        let base = ParAdmissionPolicy {
-            client_type: "confidential",
-            redirect_uris: &redirect_uris,
-            allowed_audiences: &audiences,
+        let raw = RawParAdmissionPolicy {
             client_is_confidential: true,
             client_authentication_method: "private_key_jwt",
             require_dpop_bound_tokens: true,
             require_mtls_bound_tokens: false,
             require_request_object: true,
             fapi2_security: true,
+        };
+        let expanded = ExpandedParAdmissionPolicy {
+            client_type: "confidential",
+            redirect_uris: &redirect_uris,
+            allowed_audiences: &audiences,
             fapi2_requires_explicit_redirect_uri: true,
         };
-        assert!(validate_par_admission(&parameters, base).is_ok());
+        assert!(validate_raw_par_admission(&parameters, raw).is_ok());
+        assert!(validate_expanded_par_admission(&parameters, expanded).is_ok());
         assert_eq!(
-            validate_par_admission(
+            validate_raw_par_admission(
                 &parameters,
-                ParAdmissionPolicy {
+                RawParAdmissionPolicy {
                     client_is_confidential: false,
-                    ..base
+                    ..raw
                 }
             ),
-            Err(AuthorizationRequestError::UnauthorizedClient)
+            Err(ParAdmissionError::ConfidentialClientRequired)
         );
         assert_eq!(
-            validate_par_admission(
+            validate_raw_par_admission(
                 &parameters,
-                ParAdmissionPolicy {
+                RawParAdmissionPolicy {
                     require_dpop_bound_tokens: false,
-                    ..base
+                    ..raw
                 }
             ),
-            Err(AuthorizationRequestError::InvalidRequest)
+            Err(ParAdmissionError::SenderConstraintRequired)
+        );
+        let mut nested = parameters;
+        nested.insert("request_uri".to_owned(), "urn:forbidden".to_owned());
+        assert_eq!(
+            validate_expanded_par_admission(&nested, expanded),
+            Err(ParAdmissionError::RequestUriNotAllowed)
         );
     }
 

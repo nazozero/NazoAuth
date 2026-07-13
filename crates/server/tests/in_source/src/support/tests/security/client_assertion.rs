@@ -2,7 +2,7 @@ use super::*;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
 #[test]
-fn par_client_assertion_accepts_only_issuer_audience() {
+fn par_client_assertion_accepts_rfc9126_audiences_without_client_opt_in() {
     let expected = client_assertion_audience_candidates("https://issuer.example", "/par", false);
 
     assert!(audience_matches(
@@ -10,12 +10,12 @@ fn par_client_assertion_accepts_only_issuer_audience() {
         &expected,
         false
     ));
-    assert!(!audience_matches(
+    assert!(audience_matches(
         &json!("https://issuer.example/par"),
         &expected,
         false
     ));
-    assert!(!audience_matches(
+    assert!(audience_matches(
         &json!("https://issuer.example/token"),
         &expected,
         false
@@ -38,7 +38,7 @@ fn par_client_assertion_accepts_only_issuer_audience() {
 }
 
 #[test]
-fn par_client_assertion_endpoint_audiences_require_client_policy() {
+fn par_client_assertion_endpoint_audiences_remain_accepted_with_legacy_client_opt_in() {
     let expected = client_assertion_audience_candidates("https://issuer.example", "/par", true);
 
     assert!(audience_matches(
@@ -61,6 +61,41 @@ fn par_client_assertion_endpoint_audiences_require_client_policy() {
         &expected,
         false
     ));
+}
+
+#[test]
+fn par_private_key_jwt_accepts_each_rfc9126_audience_without_client_opt_in() {
+    let private_key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let public_jwk = private_key.public_jwk("client-kid");
+    let client = private_key_jwt_client(json!({"keys": [public_jwk]}));
+    assert!(!client.allow_client_assertion_endpoint_audience);
+    let settings = test_settings();
+    let req = TestRequest::post().uri("/par").to_http_request();
+
+    for (audience, jti) in [
+        (settings.endpoint.issuer.clone(), "par-issuer-audience"),
+        (
+            format!("{}/token", settings.endpoint.issuer),
+            "par-token-audience",
+        ),
+        (
+            format!("{}/par", settings.endpoint.issuer),
+            "par-endpoint-audience",
+        ),
+    ] {
+        let assertion = signed_client_assertion(
+            &client.client_id,
+            &audience,
+            "client-kid",
+            &private_key,
+            jti,
+        );
+        assert!(
+            verify_private_key_jwt_claims_with_settings(&settings, &req, &client, &assertion)
+                .is_ok(),
+            "PAR client assertion audience {audience} must be accepted"
+        );
+    }
 }
 
 #[test]

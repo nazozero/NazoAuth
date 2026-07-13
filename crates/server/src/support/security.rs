@@ -774,6 +774,13 @@ fn client_assertion_audience_candidates(
     path: &str,
     allow_endpoint_audience: bool,
 ) -> Vec<String> {
+    if path == "/par" {
+        return vec![
+            issuer.to_owned(),
+            format!("{issuer}/par"),
+            format!("{issuer}/token"),
+        ];
+    }
     if path == "/bc-authorize" && allow_endpoint_audience {
         return vec![
             issuer.to_owned(),
@@ -781,17 +788,7 @@ fn client_assertion_audience_candidates(
             format!("{issuer}/token"),
         ];
     }
-    if path != "/par" {
-        return vec![issuer.to_owned(), format!("{issuer}{path}")];
-    }
-    if allow_endpoint_audience {
-        return vec![
-            issuer.to_owned(),
-            format!("{issuer}/par"),
-            format!("{issuer}/token"),
-        ];
-    }
-    vec![issuer.to_owned()]
+    vec![issuer.to_owned(), format!("{issuer}{path}")]
 }
 
 fn audience_matches(aud: &Value, expected: &[String], allow_array: bool) -> bool {

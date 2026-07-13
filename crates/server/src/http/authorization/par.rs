@@ -5,18 +5,21 @@ use super::jar::{
     apply_request_object_with_context, request_object_uses_unsigned_algorithm,
     unverified_signed_request_object_client_id,
 };
-use crate::domain::{ClientRow, PushedAuthorizationRequest};
-use crate::http::authorization::{
-    AuthorizationEndpoint, AuthorizationHttpConfig, AuthorizationRequestContext,
-};
+#[cfg(test)]
+use crate::domain::ClientRow;
+use crate::domain::PushedAuthorizationRequest;
+#[cfg(test)]
+use crate::http::authorization::AuthorizationHttpConfig;
+use crate::http::authorization::{AuthorizationEndpoint, AuthorizationRequestContext};
 #[cfg(test)]
 use crate::settings::Settings;
+#[cfg(test)]
+use crate::support::oauth::{RedirectUriError, audiences_allowed, registered_redirect_uri};
 #[cfg(test)]
 use crate::support::security::blake3_hex;
 use crate::support::{
     dpop::DpopError, dpop::DpopErrorContext, dpop::dpop_error_response,
-    mtls::request_mtls_thumbprint_from_trusted_proxy, oauth::RedirectUriError,
-    oauth::audiences_allowed, oauth::registered_redirect_uri, rate_limit::rate_limited_response,
+    mtls::request_mtls_thumbprint_from_trusted_proxy, rate_limit::rate_limited_response,
     security::extract_client_credentials_with_trusted_proxies,
     security::has_basic_authorization_scheme, security::random_urlsafe_token,
 };
@@ -30,8 +33,12 @@ use actix_web::http::header;
 use actix_web::web::{Bytes, Data};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::{Duration, Utc};
+#[cfg(test)]
+use nazo_auth::parse_resource_indicator_parameter;
 use nazo_auth::{
-    encode_resource_indicators, is_valid_dpop_jkt, parse_resource_indicator_parameter,
+    ExpandedParAdmissionPolicy, ParAdmissionError, RawParAdmissionPolicy,
+    encode_resource_indicators, is_valid_dpop_jkt, validate_expanded_par_admission,
+    validate_raw_par_admission,
 };
 #[cfg(test)]
 use serde_json::Value;
@@ -307,21 +314,22 @@ async fn par_after_rate_limit_inner(
     params.remove("client_secret");
     params.remove("client_assertion_type");
     params.remove("client_assertion");
-    if let Err(response) = validate_pushed_authorization_request_profile_with_config(
-        context.config,
-        &client,
-        &client.token_endpoint_auth_method,
+    if let Err(error) = validate_raw_par_admission(
+        &params,
+        RawParAdmissionPolicy {
+            client_is_confidential: client.client_type == "confidential",
+            client_authentication_method: &client.token_endpoint_auth_method,
+            require_dpop_bound_tokens: client.require_dpop_bound_tokens,
+            require_mtls_bound_tokens: client.require_mtls_bound_tokens,
+            require_request_object: client.require_par_request_object
+                || context
+                    .config
+                    .profile
+                    .requires_signed_authorization_request(),
+            fapi2_security: context.config.profile.requires_fapi2_security(),
+        },
     ) {
-        return response;
-    }
-    if pushed_authorization_request_requires_request_object_with_config(context.config, &client)
-        && !params.contains_key("request")
-    {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "PAR 请求缺少 request object.",
-        );
+        return par_admission_error(error);
     }
     if let Err(response) = apply_request_object_with_context(context, &mut params, &client).await {
         return response;
@@ -338,24 +346,16 @@ async fn par_after_rate_limit_inner(
         );
     }
     params.remove("request");
-    if pushed_authorization_request_contains_request_uri(&params) {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request_object",
-            "PAR request object 不能包含 request_uri.",
-        );
-    }
-    if let Err(response) = validate_pushed_authorization_request_profile_parameters_with_config(
-        context.config,
+    if let Err(error) = validate_expanded_par_admission(
         &params,
+        ExpandedParAdmissionPolicy {
+            client_type: &client.client_type,
+            redirect_uris: &client.redirect_uris,
+            allowed_audiences: &client.allowed_audiences,
+            fapi2_requires_explicit_redirect_uri: context.config.profile.requires_fapi2_security(),
+        },
     ) {
-        return response;
-    }
-    if let Err(response) = validate_pushed_authorization_request(&client, &params) {
-        return response;
-    }
-    if let Err(response) = validate_pushed_authorization_request_resources(&client, &params) {
-        return response;
+        return par_admission_error(error);
     }
     let request_dpop_jkt = match params.get("dpop_jkt") {
         Some(value) if is_valid_dpop_jkt(value) => Some(value.clone()),
@@ -437,6 +437,53 @@ async fn par_after_rate_limit_inner(
     )
 }
 
+fn par_admission_error(error: ParAdmissionError) -> HttpResponse {
+    let (status, description) = match error {
+        ParAdmissionError::RequestUriNotAllowed => (
+            StatusCode::BAD_REQUEST,
+            "PAR request object 不能包含 request_uri.",
+        ),
+        ParAdmissionError::UnsupportedResponseType => (
+            StatusCode::BAD_REQUEST,
+            "PAR response_type is not supported.",
+        ),
+        ParAdmissionError::RequestObjectRequired => {
+            (StatusCode::BAD_REQUEST, "PAR 请求缺少 request object.")
+        }
+        ParAdmissionError::ConfidentialClientRequired => (
+            StatusCode::BAD_REQUEST,
+            "FAPI2 profiles require confidential clients.",
+        ),
+        ParAdmissionError::StrongClientAuthenticationRequired => (
+            StatusCode::UNAUTHORIZED,
+            "FAPI2 profiles require private_key_jwt or mTLS client authentication.",
+        ),
+        ParAdmissionError::SenderConstraintRequired => (
+            StatusCode::BAD_REQUEST,
+            "FAPI2 profiles require sender-constrained access tokens.",
+        ),
+        ParAdmissionError::ExplicitRedirectUriRequired => (
+            StatusCode::BAD_REQUEST,
+            "FAPI2 PAR 请求必须显式包含 redirect_uri.",
+        ),
+        ParAdmissionError::RedirectUriRequired => {
+            (StatusCode::BAD_REQUEST, "PAR 请求缺少 redirect_uri.")
+        }
+        ParAdmissionError::RedirectUriNotRegistered => {
+            (StatusCode::BAD_REQUEST, "PAR 请求 redirect_uri 未注册.")
+        }
+        ParAdmissionError::InvalidResource => (
+            StatusCode::BAD_REQUEST,
+            "resource must be an absolute URI without a fragment.",
+        ),
+        ParAdmissionError::ResourceNotAllowed => (
+            StatusCode::BAD_REQUEST,
+            "请求的 resource 不在客户端允许范围内.",
+        ),
+    };
+    oauth_error(status, error.oauth_error(), description)
+}
+
 fn log_par_error_response(response: &HttpResponse) {
     let Some((status, oauth_error)) = par_error_log_fields(response) else {
         return;
@@ -471,6 +518,7 @@ pub(crate) fn is_pushed_authorization_request_uri(request_uri: &str) -> bool {
     request_uri.starts_with(PUSHED_AUTHORIZATION_REQUEST_URI_PREFIX)
 }
 
+#[cfg(test)]
 fn validate_pushed_authorization_request(
     client: &ClientRow,
     params: &HashMap<String, String>,
@@ -498,6 +546,7 @@ fn validate_pushed_authorization_request(
         })
 }
 
+#[cfg(test)]
 fn pushed_authorization_request_has_unsupported_response_type(
     params: &HashMap<String, String>,
 ) -> bool {
@@ -506,10 +555,12 @@ fn pushed_authorization_request_has_unsupported_response_type(
         .is_some_and(|response_type| response_type != "code")
 }
 
+#[cfg(test)]
 fn pushed_authorization_request_contains_request_uri(params: &HashMap<String, String>) -> bool {
     params.contains_key("request_uri")
 }
 
+#[cfg(test)]
 fn validate_pushed_authorization_request_resources(
     client: &ClientRow,
     params: &HashMap<String, String>,
@@ -543,6 +594,7 @@ fn pushed_authorization_request_requires_request_object(
     )
 }
 
+#[cfg(test)]
 fn pushed_authorization_request_requires_request_object_with_config(
     config: &AuthorizationHttpConfig,
     client: &ClientRow,
@@ -563,6 +615,7 @@ fn validate_pushed_authorization_request_profile(
     )
 }
 
+#[cfg(test)]
 fn validate_pushed_authorization_request_profile_with_config(
     config: &AuthorizationHttpConfig,
     client: &ClientRow,
@@ -609,6 +662,7 @@ fn validate_pushed_authorization_request_profile_parameters(
     )
 }
 
+#[cfg(test)]
 fn validate_pushed_authorization_request_profile_parameters_with_config(
     config: &AuthorizationHttpConfig,
     params: &HashMap<String, String>,

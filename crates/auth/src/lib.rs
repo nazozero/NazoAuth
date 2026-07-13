@@ -59,10 +59,11 @@ pub use authorization_policy::{
     parse_user_authorization_decision, plan_authorization_response, prompt_none_decision,
 };
 pub use authorization_request::{
-    AuthorizationRequestError, NormalizedRequestObject, ParAdmission, ParAdmissionPolicy,
-    PushedAuthorizationRequestConsumeError, REQUEST_OBJECT_CLOCK_SKEW_SECONDS,
-    REQUEST_OBJECT_MAX_TTL_SECONDS, RequestObjectClaims, RequestObjectJtiPolicy, RequestObjectMode,
-    RequestObjectPolicy, RequestObjectReplay, normalize_request_object, validate_par_admission,
+    AuthorizationRequestError, ExpandedParAdmissionPolicy, NormalizedRequestObject, ParAdmission,
+    ParAdmissionError, PushedAuthorizationRequestConsumeError, REQUEST_OBJECT_CLOCK_SKEW_SECONDS,
+    REQUEST_OBJECT_MAX_TTL_SECONDS, RawParAdmissionPolicy, RequestObjectClaims,
+    RequestObjectJtiPolicy, RequestObjectMode, RequestObjectPolicy, RequestObjectReplay,
+    normalize_request_object, validate_expanded_par_admission, validate_raw_par_admission,
 };
 pub use authorization_service::{
     AuthorizationFuture, AuthorizationPortError, AuthorizationRateDimension,
