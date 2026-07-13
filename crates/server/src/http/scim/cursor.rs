@@ -1,5 +1,4 @@
 use super::auth::ScimCredential;
-use crate::settings::Settings;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, KeyInit, Mac};
@@ -19,6 +18,17 @@ const SCIM_CURSOR_TAG_LEN: usize = 16;
 const SCIM_CURSOR_MAX_ENCODED_LEN: usize = 4096;
 
 type HmacSha256 = Hmac<Sha256>;
+
+#[derive(Clone)]
+pub(super) struct ScimCursorKey([u8; 32]);
+
+impl ScimCursorKey {
+    pub(super) fn from_client_secret_pepper(pepper: &str) -> anyhow::Result<Self> {
+        let mut mac = <HmacSha256 as KeyInit>::new_from_slice(pepper.as_bytes())?;
+        mac.update(SCIM_CURSOR_KEY_LABEL);
+        Ok(Self(mac.finalize().into_bytes().into()))
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ScimCursorPosition {
@@ -56,7 +66,7 @@ struct ScimCursorPayload {
 }
 
 pub(super) fn encode_scim_cursor(
-    settings: &Settings,
+    key: &ScimCursorKey,
     context: &ScimCursorContext<'_>,
     now: DateTime<Utc>,
 ) -> anyhow::Result<String> {
@@ -72,20 +82,19 @@ pub(super) fn encode_scim_cursor(
         issued_at: now.timestamp(),
         expires_at: now.timestamp() + SCIM_CURSOR_TIMEOUT_SECONDS,
     };
-    encrypt_scim_cursor_payload(settings, &payload)
+    encrypt_scim_cursor_payload(key, &payload)
 }
 
 fn encrypt_scim_cursor_payload(
-    settings: &Settings,
+    key: &ScimCursorKey,
     payload: &ScimCursorPayload,
 ) -> anyhow::Result<String> {
     let plaintext = serde_json::to_vec(payload)?;
-    let key = cursor_key(settings)?;
     let nonce = rand::random::<[u8; SCIM_CURSOR_NONCE_LEN]>();
     let mut tag = [0u8; SCIM_CURSOR_TAG_LEN];
     let ciphertext = encrypt_aead(
         Cipher::aes_256_gcm(),
-        &key,
+        &key.0,
         Some(&nonce),
         SCIM_CURSOR_AAD,
         &plaintext,
@@ -99,14 +108,14 @@ fn encrypt_scim_cursor_payload(
 }
 
 pub(super) fn decode_scim_cursor(
-    settings: &Settings,
+    key: &ScimCursorKey,
     encoded: &str,
     credential: &ScimCredential,
     filter: Option<&str>,
     count: i64,
     now: DateTime<Utc>,
 ) -> Result<ScimCursorPosition, ScimCursorError> {
-    let payload = decrypt_scim_cursor(settings, encoded)?;
+    let payload = decrypt_scim_cursor(key, encoded)?;
     if payload.v != SCIM_CURSOR_VERSION
         || payload.sort != SCIM_CURSOR_SORT
         || payload.tenant_id != credential.tenant_id
@@ -132,7 +141,7 @@ pub(super) fn decode_scim_cursor(
 }
 
 fn decrypt_scim_cursor(
-    settings: &Settings,
+    key: &ScimCursorKey,
     encoded: &str,
 ) -> Result<ScimCursorPayload, ScimCursorError> {
     if encoded.is_empty()
@@ -152,10 +161,9 @@ fn decrypt_scim_cursor(
     }
     let (nonce, remainder) = decoded.split_at(SCIM_CURSOR_NONCE_LEN);
     let (ciphertext, tag) = remainder.split_at(remainder.len() - SCIM_CURSOR_TAG_LEN);
-    let key = cursor_key(settings).map_err(|_| ScimCursorError::Invalid)?;
     let plaintext = decrypt_aead(
         Cipher::aes_256_gcm(),
-        &key,
+        &key.0,
         Some(nonce),
         SCIM_CURSOR_AAD,
         ciphertext,
@@ -163,13 +171,6 @@ fn decrypt_scim_cursor(
     )
     .map_err(|_| ScimCursorError::Invalid)?;
     serde_json::from_slice(&plaintext).map_err(|_| ScimCursorError::Invalid)
-}
-
-fn cursor_key(settings: &Settings) -> anyhow::Result<[u8; 32]> {
-    let mut mac =
-        <HmacSha256 as KeyInit>::new_from_slice(settings.client_secret_pepper.as_bytes())?;
-    mac.update(SCIM_CURSOR_KEY_LABEL);
-    Ok(mac.finalize().into_bytes().into())
 }
 
 fn credential_actor(credential: &ScimCredential) -> String {

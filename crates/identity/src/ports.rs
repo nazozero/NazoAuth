@@ -184,6 +184,38 @@ pub struct NewScimUser {
     pub password_hash: PasswordHashInput,
 }
 
+pub trait ScimRepositoryPort: Send + Sync {
+    fn list<'a>(&'a self, query: ScimListQuery) -> RepositoryFuture<'a, UserPage>;
+
+    fn get<'a>(
+        &'a self,
+        tenant: TenantContext,
+        user_id: UserId,
+    ) -> RepositoryFuture<'a, Option<crate::PublicAccount>>;
+
+    fn create<'a>(&'a self, new_user: NewScimUser) -> RepositoryFuture<'a, crate::PublicAccount>;
+
+    fn replace<'a>(
+        &'a self,
+        tenant: TenantContext,
+        user_id: UserId,
+        replacement: crate::scim::NormalizedScimUser,
+    ) -> RepositoryFuture<'a, crate::PublicAccount>;
+
+    fn patch<'a>(
+        &'a self,
+        tenant: TenantContext,
+        user_id: UserId,
+        patch: crate::scim::ScimPatch,
+    ) -> RepositoryFuture<'a, crate::PublicAccount>;
+
+    fn deactivate<'a>(
+        &'a self,
+        tenant: TenantContext,
+        user_id: UserId,
+    ) -> RepositoryFuture<'a, bool>;
+}
+
 pub trait UserRepositoryPort: Send + Sync {
     fn principal_by_id<'a>(
         &'a self,

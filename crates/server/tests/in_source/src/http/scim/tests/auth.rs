@@ -1,7 +1,8 @@
 use super::*;
-use std::sync::Arc;
-
 use crate::config::ConfigSource;
+use crate::http::scim::{ScimConfig, ScimHandles};
+use crate::settings::Settings;
+use crate::support::client_ip::ClientIpConfig;
 use nazo_postgres::create_pool;
 
 use crate::support::DEFAULT_TENANT_ID;
@@ -19,48 +20,46 @@ struct ScimTokenUseRow {
     audit_count: i64,
 }
 
-fn test_state(scim_bearer_token: Option<&str>) -> AppState {
+fn test_scim_config(settings: &Settings) -> ScimConfig {
+    let endpoint = settings.endpoint();
+    ScimConfig::new(
+        settings.storage().scim_bearer_token,
+        settings.protocol().client_secret_pepper,
+        ClientIpConfig::new(endpoint.trusted_proxy_cidrs, endpoint.client_ip_header_mode),
+    )
+    .expect("test SCIM settings should be valid")
+}
+
+fn test_state(scim_bearer_token: Option<&str>) -> ScimHandles {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.scim_bearer_token = scim_bearer_token.map(ToOwned::to_owned);
-    AppState {
-        diesel_db: create_pool(
-            "postgres://nazo_scim_test_invalid:nazo_scim_test_invalid@127.0.0.1:1/nazo".to_owned(),
-            1,
-        )
-        .expect("pool construction should not connect"),
-        valkey: fred::prelude::Builder::default_centralized()
-            .build()
-            .expect("valkey client construction should not connect"),
-        settings: Arc::new(settings),
-        keyset: crate::test_support::test_key_manager(),
-    }
+    let pool = create_pool(
+        "postgres://nazo_scim_test_invalid:nazo_scim_test_invalid@127.0.0.1:1/nazo".to_owned(),
+        1,
+    )
+    .expect("pool construction should not connect");
+    ScimHandles::for_test(pool, test_scim_config(&settings))
 }
 
-async fn live_state(scim_bearer_token: Option<&str>) -> Option<AppState> {
+async fn live_state(scim_bearer_token: Option<&str>) -> Option<ScimHandles> {
     let database_url = std::env::var("DATABASE_URL").ok()?;
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.scim_bearer_token = scim_bearer_token.map(ToOwned::to_owned);
-    Some(AppState {
-        diesel_db: create_pool(database_url, 4).expect("database pool should build"),
-        valkey: fred::prelude::Builder::default_centralized()
-            .build()
-            .expect("valkey client construction should not connect"),
-        settings: Arc::new(settings),
-        keyset: crate::test_support::test_key_manager(),
-    })
+    let pool = create_pool(database_url, 4).expect("database pool should build");
+    Some(ScimHandles::for_test(pool, test_scim_config(&settings)))
 }
 
 async fn insert_scim_token(
-    state: &AppState,
+    state: &ScimHandles,
     raw_token: &str,
     scopes: Value,
     expires_at: Option<chrono::DateTime<Utc>>,
     revoked_at: Option<chrono::DateTime<Utc>>,
 ) -> Uuid {
     let token_id = Uuid::now_v7();
-    let mut conn = get_conn(&state.diesel_db)
+    let mut conn = get_conn(&state.pool)
         .await
         .expect("database connection should be available");
     sql_query(
@@ -331,7 +330,7 @@ async fn require_scim_bearer_accepts_database_token_and_records_use() {
         vec![SCIM_SCOPE_READ.to_owned(), SCIM_SCOPE_WRITE.to_owned()]
     );
 
-    let mut conn = get_conn(&state.diesel_db)
+    let mut conn = get_conn(&state.pool)
         .await
         .expect("database connection should be available");
     let row = sql_query(
@@ -384,7 +383,7 @@ async fn require_scim_bearer_rejects_database_token_without_required_scope() {
         "SCIM token lacks the required scope",
     )
     .await;
-    let mut conn = get_conn(&state.diesel_db)
+    let mut conn = get_conn(&state.pool)
         .await
         .expect("database connection should be available");
     let row = sql_query(

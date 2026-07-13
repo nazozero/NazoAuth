@@ -12,7 +12,9 @@ use diesel::{
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_identity::{
     PublicAccount, TenantContext, UserId,
-    ports::{NewScimUser, RepositoryError, ScimListQuery, UserPage},
+    ports::{
+        NewScimUser, RepositoryError, RepositoryFuture, ScimListQuery, ScimRepositoryPort, UserPage,
+    },
     scim::{NormalizedScimUser, ScimPatch},
 };
 
@@ -245,6 +247,50 @@ impl ScimRepository {
             })
             .await
             .map_err(map_error)
+    }
+}
+
+impl ScimRepositoryPort for ScimRepository {
+    fn list<'a>(&'a self, query: ScimListQuery) -> RepositoryFuture<'a, UserPage> {
+        Box::pin(async move { Self::list(self, query).await })
+    }
+
+    fn get<'a>(
+        &'a self,
+        tenant: TenantContext,
+        user_id: UserId,
+    ) -> RepositoryFuture<'a, Option<PublicAccount>> {
+        Box::pin(async move { Self::get(self, tenant, user_id).await })
+    }
+
+    fn create<'a>(&'a self, new_user: NewScimUser) -> RepositoryFuture<'a, PublicAccount> {
+        Box::pin(async move { Self::create(self, new_user).await })
+    }
+
+    fn replace<'a>(
+        &'a self,
+        tenant: TenantContext,
+        user_id: UserId,
+        replacement: NormalizedScimUser,
+    ) -> RepositoryFuture<'a, PublicAccount> {
+        Box::pin(async move { Self::replace(self, tenant, user_id, replacement).await })
+    }
+
+    fn patch<'a>(
+        &'a self,
+        tenant: TenantContext,
+        user_id: UserId,
+        patch: ScimPatch,
+    ) -> RepositoryFuture<'a, PublicAccount> {
+        Box::pin(async move { Self::patch(self, tenant, user_id, patch).await })
+    }
+
+    fn deactivate<'a>(
+        &'a self,
+        tenant: TenantContext,
+        user_id: UserId,
+    ) -> RepositoryFuture<'a, bool> {
+        Box::pin(async move { Self::deactivate(self, tenant, user_id).await })
     }
 }
 

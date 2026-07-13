@@ -1,35 +1,39 @@
 use super::*;
+use crate::config::ConfigSource;
+use crate::settings::Settings;
+use crate::support::client_ip::ClientIpConfig;
 use diesel::sql_query;
 use diesel::sql_types::{BigInt, Jsonb, Nullable, Text, Timestamptz, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
-use std::sync::Arc;
-
-use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
 
 fn uuid_fixture(value: u128) -> Uuid {
     Uuid::from_u128(value)
 }
 
-fn test_state_with_scim_bearer_token(scim_bearer_token: Option<&str>) -> AppState {
+fn test_scim_config(settings: &Settings) -> ScimConfig {
+    let endpoint = settings.endpoint();
+    ScimConfig::new(
+        settings.storage().scim_bearer_token,
+        settings.protocol().client_secret_pepper,
+        ClientIpConfig::new(endpoint.trusted_proxy_cidrs, endpoint.client_ip_header_mode),
+    )
+    .expect("test SCIM settings should be valid")
+}
+
+fn test_state_with_scim_bearer_token(scim_bearer_token: Option<&str>) -> ScimHandles {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.scim_bearer_token = scim_bearer_token.map(ToOwned::to_owned);
-    AppState {
-        diesel_db: create_pool(
-            "postgres://nazo_scim_test_invalid:nazo_scim_test_invalid@127.0.0.1:1/nazo".to_owned(),
-            1,
-        )
-        .expect("pool construction should not connect"),
-        valkey: fred::prelude::Builder::default_centralized()
-            .build()
-            .expect("valkey client construction should not connect"),
-        settings: Arc::new(settings),
-        keyset: crate::test_support::test_key_manager(),
-    }
+    let pool = create_pool(
+        "postgres://nazo_scim_test_invalid:nazo_scim_test_invalid@127.0.0.1:1/nazo".to_owned(),
+        1,
+    )
+    .expect("pool construction should not connect");
+    ScimHandles::for_test(pool, test_scim_config(&settings))
 }
 
-fn test_state() -> AppState {
+fn test_state() -> ScimHandles {
     test_state_with_scim_bearer_token(None)
 }
 
@@ -47,7 +51,7 @@ fn database_url_with_search_path(schema: &str) -> Option<String> {
     ))
 }
 
-async fn live_state_with_scim_bearer_token(scim_bearer_token: &str) -> Option<Data<AppState>> {
+async fn live_state_with_scim_bearer_token(scim_bearer_token: &str) -> Option<Data<ScimHandles>> {
     let database_url = std::env::var("DATABASE_URL").ok()?;
     live_state_for_database_url(scim_bearer_token, database_url).await
 }
@@ -56,7 +60,7 @@ async fn live_state_with_isolated_scim_bearer_token(
     scim_bearer_token: &str,
     schema: &str,
     tables: &[&str],
-) -> Option<Data<AppState>> {
+) -> Option<Data<ScimHandles>> {
     let database_url = database_url_with_search_path(schema)?;
     let state = live_state_for_database_url(scim_bearer_token, database_url).await?;
     create_isolated_scim_schema(&state, schema, tables).await;
@@ -66,22 +70,19 @@ async fn live_state_with_isolated_scim_bearer_token(
 async fn live_state_for_database_url(
     scim_bearer_token: &str,
     database_url: String,
-) -> Option<Data<AppState>> {
+) -> Option<Data<ScimHandles>> {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.scim_bearer_token = Some(scim_bearer_token.to_owned());
-    Some(Data::new(AppState {
-        diesel_db: create_pool(database_url, 4).expect("database pool should build"),
-        valkey: fred::prelude::Builder::default_centralized()
-            .build()
-            .expect("valkey client construction should not connect"),
-        settings: Arc::new(settings),
-        keyset: crate::test_support::test_key_manager(),
-    }))
+    let pool = create_pool(database_url, 4).expect("database pool should build");
+    Some(Data::new(ScimHandles::for_test(
+        pool,
+        test_scim_config(&settings),
+    )))
 }
 
-async fn exec_scim_schema_sql(state: &AppState, sql: &str) {
-    let mut conn = get_conn(&state.diesel_db)
+async fn exec_scim_schema_sql(state: &ScimHandles, sql: &str) {
+    let mut conn = get_conn(&state.pool)
         .await
         .expect("database connection should be available");
     sql_query(sql)
@@ -90,7 +91,7 @@ async fn exec_scim_schema_sql(state: &AppState, sql: &str) {
         .expect("schema mutation should succeed");
 }
 
-async fn create_isolated_scim_schema(state: &AppState, schema: &str, tables: &[&str]) {
+async fn create_isolated_scim_schema(state: &ScimHandles, schema: &str, tables: &[&str]) {
     exec_scim_schema_sql(
         state,
         &format!(r#"CREATE SCHEMA IF NOT EXISTS "{}""#, schema),
@@ -108,7 +109,7 @@ async fn create_isolated_scim_schema(state: &AppState, schema: &str, tables: &[&
     }
 }
 
-async fn rename_scim_column(state: &AppState, schema: &str, table: &str, from: &str, to: &str) {
+async fn rename_scim_column(state: &ScimHandles, schema: &str, table: &str, from: &str, to: &str) {
     exec_scim_schema_sql(
         state,
         &format!(
@@ -119,7 +120,7 @@ async fn rename_scim_column(state: &AppState, schema: &str, table: &str, from: &
     .await;
 }
 
-async fn cleanup_scim_schema(state: &AppState, schema: &str) {
+async fn cleanup_scim_schema(state: &ScimHandles, schema: &str) {
     exec_scim_schema_sql(
         state,
         &format!(r#"DROP SCHEMA IF EXISTS "{}" CASCADE"#, schema),
@@ -127,8 +128,8 @@ async fn cleanup_scim_schema(state: &AppState, schema: &str) {
     .await;
 }
 
-async fn cleanup_scim_user_by_email(state: &AppState, email: &str) {
-    let mut conn = get_conn(&state.diesel_db)
+async fn cleanup_scim_user_by_email(state: &ScimHandles, email: &str) {
+    let mut conn = get_conn(&state.pool)
         .await
         .expect("database connection should be available");
     sql_query("DELETE FROM users WHERE email = $1")
@@ -241,7 +242,108 @@ async fn response_json(response: HttpResponse) -> (StatusCode, Value) {
     (status, json)
 }
 
-async fn create_scim_user_id(state: Data<AppState>, req: &HttpRequest, email: &str) -> Uuid {
+async fn assert_scim_disabled(response: HttpResponse) {
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/json"
+    );
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("disabled SCIM response body should be readable");
+    let body: Value = serde_json::from_slice(&body).expect("disabled SCIM response should be JSON");
+    assert_eq!(body["schemas"], json!([SCIM_ERROR_SCHEMA]));
+    assert_eq!(body["status"], "404");
+    assert_eq!(body["scimType"], "not_found");
+    assert_eq!(body["detail"], "SCIM is disabled");
+}
+
+#[test]
+fn scim_routes_are_static_and_handlers_do_not_depend_on_app_state() {
+    let routes = include_str!("../../../../../src/bootstrap/routes.rs");
+    for contract in [
+        "web::get().to(scim_service_provider_config)",
+        "web::get().to(scim_schemas)",
+        "web::get().to(scim_resource_types)",
+        "web::get().to(scim_list_users)",
+        "web::post().to(scim_create_user)",
+        "web::get().to(scim_get_user)",
+        "web::put().to(scim_replace_user)",
+        "web::patch().to(scim_patch_user)",
+        "web::delete().to(scim_delete_user)",
+    ] {
+        assert!(
+            routes.contains(contract),
+            "missing static SCIM route: {contract}"
+        );
+    }
+    let handlers = include_str!("../../../../../src/http/scim.rs");
+    let auth = include_str!("../../../../../src/http/scim/auth.rs");
+    assert!(!handlers.contains("Data<AppState>"));
+    assert!(!auth.contains("AppState"));
+}
+
+#[actix_web::test]
+async fn disabled_scim_contract_is_consistent_across_registered_methods() {
+    let mut handles = test_state_with_scim_bearer_token(Some("legacy-scim-secret"));
+    handles.enabled = false;
+    let handles = Data::new(handles);
+    let request = bearer_request("legacy-scim-secret");
+    let user_id = Uuid::now_v7();
+
+    assert_scim_disabled(scim_service_provider_config(handles.clone(), request.clone()).await)
+        .await;
+    assert_scim_disabled(scim_schemas(handles.clone(), request.clone()).await).await;
+    assert_scim_disabled(scim_resource_types(handles.clone(), request.clone()).await).await;
+    assert_scim_disabled(scim_list_users(handles.clone(), request.clone()).await).await;
+    assert_scim_disabled(
+        scim_create_user(
+            handles.clone(),
+            request.clone(),
+            Json(scim_user_request_fixture()),
+        )
+        .await,
+    )
+    .await;
+    assert_scim_disabled(
+        scim_get_user(
+            handles.clone(),
+            request.clone(),
+            actix_web::web::Path::from(user_id),
+        )
+        .await,
+    )
+    .await;
+    assert_scim_disabled(
+        scim_replace_user(
+            handles.clone(),
+            request.clone(),
+            actix_web::web::Path::from(user_id),
+            Json(scim_user_request_fixture()),
+        )
+        .await,
+    )
+    .await;
+    assert_scim_disabled(
+        scim_patch_user(
+            handles.clone(),
+            request.clone(),
+            actix_web::web::Path::from(user_id),
+            Json(ScimPatchRequest {
+                schemas: vec![SCIM_PATCH_SCHEMA.to_owned()],
+                operations: Vec::new(),
+            }),
+        )
+        .await,
+    )
+    .await;
+    assert_scim_disabled(
+        scim_delete_user(handles, request, actix_web::web::Path::from(user_id)).await,
+    )
+    .await;
+}
+
+async fn create_scim_user_id(state: Data<ScimHandles>, req: &HttpRequest, email: &str) -> Uuid {
     let (status, body) = response_json(
         scim_create_user(state, req.clone(), Json(scim_user_request_for_email(email))).await,
     )
@@ -251,8 +353,12 @@ async fn create_scim_user_id(state: Data<AppState>, req: &HttpRequest, email: &s
         .expect("SCIM create response should include a UUID id")
 }
 
-async fn insert_scim_user_oauth_credentials(state: &AppState, user_id: Uuid, suffix: &str) -> Uuid {
-    let mut conn = get_conn(&state.diesel_db)
+async fn insert_scim_user_oauth_credentials(
+    state: &ScimHandles,
+    user_id: Uuid,
+    suffix: &str,
+) -> Uuid {
+    let mut conn = get_conn(&state.pool)
         .await
         .expect("database connection should be available");
     let tenant = default_tenant_context();
@@ -342,8 +448,8 @@ async fn insert_scim_user_oauth_credentials(state: &AppState, user_id: Uuid, suf
     client_id
 }
 
-async fn grant_count_for_user_client(state: &AppState, user_id: Uuid, client_id: Uuid) -> i64 {
-    let mut conn = get_conn(&state.diesel_db)
+async fn grant_count_for_user_client(state: &ScimHandles, user_id: Uuid, client_id: Uuid) -> i64 {
+    let mut conn = get_conn(&state.pool)
         .await
         .expect("database connection should be available");
     sql_query(
@@ -358,11 +464,11 @@ async fn grant_count_for_user_client(state: &AppState, user_id: Uuid, client_id:
 }
 
 async fn active_refresh_token_count_for_user_client(
-    state: &AppState,
+    state: &ScimHandles,
     user_id: Uuid,
     client_id: Uuid,
 ) -> i64 {
-    let mut conn = get_conn(&state.diesel_db)
+    let mut conn = get_conn(&state.pool)
         .await
         .expect("database connection should be available");
     sql_query("SELECT COUNT(*) AS count FROM oauth_tokens WHERE user_id = $1 AND client_id = $2 AND revoked_at IS NULL")
@@ -979,7 +1085,7 @@ async fn scim_cursor_database_traverses_equal_timestamps_exactly_once() {
     }
     expected.sort();
     let fixed_created_at = Utc::now() - Duration::minutes(5);
-    let mut conn = get_conn(&state.diesel_db)
+    let mut conn = get_conn(&state.pool)
         .await
         .expect("database connection should be available");
     for user_id in &expected {
@@ -1072,7 +1178,7 @@ async fn scim_cursor_database_traverses_equal_timestamps_exactly_once() {
 
             let database_token = format!("cursor-database-{}", Uuid::now_v7().simple());
             let database_token_id = Uuid::now_v7();
-            let mut conn = get_conn(&state.diesel_db)
+            let mut conn = get_conn(&state.pool)
                 .await
                 .expect("database connection should be available");
             sql_query(
@@ -1103,7 +1209,7 @@ async fn scim_cursor_database_traverses_equal_timestamps_exactly_once() {
                 "invalid cursor",
             )
             .await;
-            let mut conn = get_conn(&state.diesel_db)
+            let mut conn = get_conn(&state.pool)
                 .await
                 .expect("database connection should be available");
             sql_query("DELETE FROM public.scim_audit_events WHERE scim_token_id = $1")
@@ -1122,7 +1228,7 @@ async fn scim_cursor_database_traverses_equal_timestamps_exactly_once() {
             let inserted_email =
                 format!("cursor-inserted-{}@example.test", Uuid::now_v7().simple());
             let inserted_id = create_scim_user_id(state.clone(), &req, &inserted_email).await;
-            let mut conn = get_conn(&state.diesel_db)
+            let mut conn = get_conn(&state.pool)
                 .await
                 .expect("database connection should be available");
             sql_query("DELETE FROM users WHERE id = $1")

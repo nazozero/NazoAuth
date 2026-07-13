@@ -1,15 +1,11 @@
 use super::*;
-use crate::config::ConfigSource;
 use crate::http::scim::auth::ScimCredential;
-use crate::settings::Settings;
 use chrono::{Duration, Utc};
 use uuid::Uuid;
 
-fn cursor_settings() -> Settings {
-    let mut settings =
-        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.client_secret_pepper = "cursor-test-pepper-32-bytes-minimum-value".to_owned();
-    settings
+fn cursor_key() -> ScimCursorKey {
+    ScimCursorKey::from_client_secret_pepper("cursor-test-pepper-32-bytes-minimum-value")
+        .expect("cursor test key should derive")
 }
 
 fn database_credential() -> ScimCredential {
@@ -23,7 +19,7 @@ fn database_credential() -> ScimCredential {
 
 #[test]
 fn scim_cursor_round_trip_is_opaque_url_safe_and_randomized() {
-    let settings = cursor_settings();
+    let key = cursor_key();
     let credential = database_credential();
     let filter = Some("userName eq \"alice@example.test\"");
     let now = Utc::now();
@@ -37,8 +33,8 @@ fn scim_cursor_round_trip_is_opaque_url_safe_and_randomized() {
         last_id,
     };
 
-    let first = encode_scim_cursor(&settings, &context, now).expect("cursor should encode");
-    let second = encode_scim_cursor(&settings, &context, now).expect("cursor should encode");
+    let first = encode_scim_cursor(&key, &context, now).expect("cursor should encode");
+    let second = encode_scim_cursor(&key, &context, now).expect("cursor should encode");
 
     assert_ne!(first, second);
     assert!(
@@ -52,7 +48,7 @@ fn scim_cursor_round_trip_is_opaque_url_safe_and_randomized() {
     assert!(!first.contains(&credential.token_id.expect("token id").to_string()));
     assert!(!first.contains(&last_id.to_string()));
     assert_eq!(
-        decode_scim_cursor(&settings, &first, &credential, filter, 25, now,),
+        decode_scim_cursor(&key, &first, &credential, filter, 25, now,),
         Ok(ScimCursorPosition {
             last_created_at,
             last_id,
@@ -61,12 +57,12 @@ fn scim_cursor_round_trip_is_opaque_url_safe_and_randomized() {
 }
 
 fn encoded_cursor(
-    settings: &Settings,
+    key: &ScimCursorKey,
     credential: &ScimCredential,
     now: chrono::DateTime<Utc>,
 ) -> String {
     encode_scim_cursor(
-        settings,
+        key,
         &ScimCursorContext {
             credential,
             filter: Some("userName eq \"alice@example.test\""),
@@ -81,14 +77,14 @@ fn encoded_cursor(
 
 #[test]
 fn scim_cursor_rejects_count_filter_actor_and_tenant_changes() {
-    let settings = cursor_settings();
+    let key = cursor_key();
     let credential = database_credential();
     let now = Utc::now();
-    let encoded = encoded_cursor(&settings, &credential, now);
+    let encoded = encoded_cursor(&key, &credential, now);
 
     assert_eq!(
         decode_scim_cursor(
-            &settings,
+            &key,
             &encoded,
             &credential,
             Some("userName eq \"alice@example.test\""),
@@ -98,7 +94,7 @@ fn scim_cursor_rejects_count_filter_actor_and_tenant_changes() {
         Err(ScimCursorError::InvalidCount)
     );
     assert_eq!(
-        decode_scim_cursor(&settings, &encoded, &credential, None, 25, now),
+        decode_scim_cursor(&key, &encoded, &credential, None, 25, now),
         Err(ScimCursorError::Invalid)
     );
 
@@ -106,7 +102,7 @@ fn scim_cursor_rejects_count_filter_actor_and_tenant_changes() {
     other_actor.token_id = Some(Uuid::from_u128(0x44444444444444444444444444444444));
     assert_eq!(
         decode_scim_cursor(
-            &settings,
+            &key,
             &encoded,
             &other_actor,
             Some("userName eq \"alice@example.test\""),
@@ -120,7 +116,7 @@ fn scim_cursor_rejects_count_filter_actor_and_tenant_changes() {
     other_tenant.tenant_id = Uuid::from_u128(0x55555555555555555555555555555555);
     assert_eq!(
         decode_scim_cursor(
-            &settings,
+            &key,
             &encoded,
             &other_tenant,
             Some("userName eq \"alice@example.test\""),
@@ -133,14 +129,14 @@ fn scim_cursor_rejects_count_filter_actor_and_tenant_changes() {
 
 #[test]
 fn scim_cursor_rejects_expired_and_future_issued_payloads() {
-    let settings = cursor_settings();
+    let key = cursor_key();
     let credential = database_credential();
     let now = Utc::now();
-    let encoded = encoded_cursor(&settings, &credential, now);
+    let encoded = encoded_cursor(&key, &credential, now);
 
     assert_eq!(
         decode_scim_cursor(
-            &settings,
+            &key,
             &encoded,
             &credential,
             Some("userName eq \"alice@example.test\""),
@@ -150,10 +146,10 @@ fn scim_cursor_rejects_expired_and_future_issued_payloads() {
         Err(ScimCursorError::Expired)
     );
 
-    let future = encoded_cursor(&settings, &credential, now + Duration::seconds(61));
+    let future = encoded_cursor(&key, &credential, now + Duration::seconds(61));
     assert_eq!(
         decode_scim_cursor(
-            &settings,
+            &key,
             &future,
             &credential,
             Some("userName eq \"alice@example.test\""),
@@ -166,10 +162,10 @@ fn scim_cursor_rejects_expired_and_future_issued_payloads() {
 
 #[test]
 fn scim_cursor_rejects_tampering_padding_truncation_and_oversize_input() {
-    let settings = cursor_settings();
+    let key = cursor_key();
     let credential = database_credential();
     let now = Utc::now();
-    let encoded = encoded_cursor(&settings, &credential, now);
+    let encoded = encoded_cursor(&key, &credential, now);
     let mut tampered = encoded.clone().into_bytes();
     let last = tampered.last_mut().expect("cursor should not be empty");
     *last = if *last == b'A' { b'B' } else { b'A' };
@@ -183,7 +179,7 @@ fn scim_cursor_rejects_tampering_padding_truncation_and_oversize_input() {
     ] {
         assert_eq!(
             decode_scim_cursor(
-                &settings,
+                &key,
                 &invalid,
                 &credential,
                 Some("userName eq \"alice@example.test\""),
@@ -197,7 +193,7 @@ fn scim_cursor_rejects_tampering_padding_truncation_and_oversize_input() {
 
 #[test]
 fn scim_cursor_rejects_authenticated_unknown_version_sort_and_lifetime() {
-    let settings = cursor_settings();
+    let key = cursor_key();
     let credential = database_credential();
     let now = Utc::now();
     let base = ScimCursorPayload {
@@ -231,10 +227,10 @@ fn scim_cursor_rejects_authenticated_unknown_version_sort_and_lifetime() {
             ..base.clone()
         },
     ] {
-        let encoded = encrypt_scim_cursor_payload(&settings, &invalid)
+        let encoded = encrypt_scim_cursor_payload(&key, &invalid)
             .expect("authenticated invalid cursor fixture should encode");
         assert_eq!(
-            decode_scim_cursor(&settings, &encoded, &credential, None, 25, now),
+            decode_scim_cursor(&key, &encoded, &credential, None, 25, now),
             Err(ScimCursorError::Invalid)
         );
     }

@@ -18,6 +18,7 @@ use crate::domain::{
 use crate::http::admin::access_requests::AdminAccessRequestConfig;
 use crate::http::admin::clients::AdminClientConfig;
 use crate::http::profile::oidc_logout::spawn_backchannel_logout_delivery_worker;
+use crate::http::scim::{ScimConfig, ScimHandles};
 use crate::runtime_modules::RuntimeModules;
 use crate::settings::Settings;
 use crate::support::client_ip::ClientIpConfig;
@@ -114,6 +115,21 @@ pub async fn run() -> anyhow::Result<()> {
     });
     let admin_client_config = web::Data::new(AdminClientConfig::from_settings(&settings));
     let admin_client_keyset = web::Data::new(keyset.clone());
+    let scim_endpoint = settings.endpoint();
+    let scim_protocol = settings.protocol();
+    let scim_storage = settings.storage();
+    let scim_handles = web::Data::new(ScimHandles::new(
+        diesel_db.clone(),
+        ScimConfig::new(
+            scim_storage.scim_bearer_token,
+            scim_protocol.client_secret_pepper,
+            ClientIpConfig::new(
+                scim_endpoint.trusted_proxy_cidrs,
+                scim_endpoint.client_ip_header_mode,
+            ),
+        )?,
+        runtime_modules.registry.clone(),
+    ));
 
     let state = web::Data::new(AppState {
         diesel_db,
@@ -237,6 +253,7 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(admin_client_keyset.clone())
             .app_data(client_ip_config.clone())
             .app_data(dynamic_registration_handles.clone())
+            .app_data(scim_handles.clone())
             .configure(|cfg| routes::configure(cfg, &state.settings, perf_metrics_enabled))
     })
     .bind(addr)?

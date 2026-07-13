@@ -1,10 +1,97 @@
 use std::{error::Error, fmt};
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
 use crate::email::normalize_email_address;
+use crate::ports::{
+    NewScimUser, PasswordHashInput, RepositoryError, ScimListQuery, ScimRepositoryPort, UserPage,
+};
+use crate::{PublicAccount, TenantContext, UserId};
+
+#[derive(Clone)]
+pub struct ScimService<R> {
+    repository: R,
+}
+
+impl<R> ScimService<R>
+where
+    R: ScimRepositoryPort,
+{
+    pub fn new(repository: R) -> Self {
+        Self { repository }
+    }
+
+    pub async fn list_users(
+        &self,
+        tenant: TenantContext,
+        email: Option<String>,
+        after: Option<(DateTime<Utc>, Uuid)>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<UserPage, RepositoryError> {
+        self.repository
+            .list(ScimListQuery {
+                tenant_id: tenant.tenant_id,
+                email,
+                after,
+                limit,
+                offset,
+            })
+            .await
+    }
+
+    pub async fn create_user(
+        &self,
+        tenant: TenantContext,
+        input: NormalizedScimUser,
+        password_hash: PasswordHashInput,
+    ) -> Result<PublicAccount, RepositoryError> {
+        self.repository
+            .create(NewScimUser {
+                tenant,
+                input,
+                password_hash,
+            })
+            .await
+    }
+
+    pub async fn user(
+        &self,
+        tenant: TenantContext,
+        user_id: UserId,
+    ) -> Result<Option<PublicAccount>, RepositoryError> {
+        self.repository.get(tenant, user_id).await
+    }
+
+    pub async fn replace_user(
+        &self,
+        tenant: TenantContext,
+        user_id: UserId,
+        replacement: NormalizedScimUser,
+    ) -> Result<PublicAccount, RepositoryError> {
+        self.repository.replace(tenant, user_id, replacement).await
+    }
+
+    pub async fn patch_user(
+        &self,
+        tenant: TenantContext,
+        user_id: UserId,
+        patch: ScimPatch,
+    ) -> Result<PublicAccount, RepositoryError> {
+        self.repository.patch(tenant, user_id, patch).await
+    }
+
+    pub async fn deactivate_user(
+        &self,
+        tenant: TenantContext,
+        user_id: UserId,
+    ) -> Result<bool, RepositoryError> {
+        self.repository.deactivate(tenant, user_id).await
+    }
+}
 
 pub const SCIM_USER_SCHEMA: &str = "urn:ietf:params:scim:schemas:core:2.0:User";
 pub const SCIM_ERROR_SCHEMA: &str = "urn:ietf:params:scim:api:messages:2.0:Error";

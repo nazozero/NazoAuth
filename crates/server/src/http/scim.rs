@@ -1,13 +1,11 @@
 //! SCIM 2.0 user provisioning endpoints.
 use nazo_http_actix::{empty_response, json_response, json_response_status};
 
-use crate::domain::AppState;
 #[cfg(test)]
 use crate::domain::DatabaseUserFixture;
 #[cfg(test)]
-use crate::settings::Settings;
-#[cfg(test)]
 use crate::support::blake3_hex;
+use crate::support::client_ip::ClientIpConfig;
 use crate::support::{default_tenant_context, hash_password, random_urlsafe_token};
 use actix_web::http::StatusCode;
 #[cfg(test)]
@@ -30,10 +28,208 @@ mod cursor;
 mod normalization;
 mod schema;
 
-use auth::*;
-use cursor::*;
-use normalization::*;
-use schema::*;
+#[cfg(test)]
+use auth::{
+    SCIM_SCOPE_ALL, SCIM_SCOPE_READ, SCIM_SCOPE_WRITE, bearer_token, scim_credential_allows,
+    scim_scope_values,
+};
+use auth::{ScimCredential, ScimRequiredScope, require_scim_bearer};
+use cursor::{
+    SCIM_CURSOR_TIMEOUT_SECONDS, ScimCursorContext, ScimCursorError, ScimCursorKey,
+    decode_scim_cursor, encode_scim_cursor,
+};
+#[cfg(test)]
+use normalization::{ScimEmail, ScimName, ScimPatchOperation};
+use normalization::{
+    ScimPatchRequest, ScimUserRequest, normalize_patch, normalize_scim_user_filter,
+    normalize_scim_user_payload,
+};
+#[cfg(test)]
+use schema::{SCIM_ERROR_SCHEMA, SCIM_SCHEMA_SCHEMA};
+use schema::{
+    SCIM_LIST_SCHEMA, SCIM_PATCH_SCHEMA, SCIM_RESOURCE_TYPE_SCHEMA,
+    SCIM_SERVICE_PROVIDER_CONFIG_SCHEMA, SCIM_USER_SCHEMA, scim_base, scim_error, scim_user_json,
+    scim_user_schema,
+};
+
+#[derive(Clone)]
+pub(crate) struct ScimConfig {
+    legacy_bearer_token: Option<Box<str>>,
+    cursor_key: ScimCursorKey,
+    client_ip: ClientIpConfig,
+}
+
+impl ScimConfig {
+    pub(crate) fn new(
+        legacy_bearer_token: Option<&str>,
+        client_secret_pepper: &str,
+        client_ip: ClientIpConfig,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            legacy_bearer_token: legacy_bearer_token.map(Into::into),
+            cursor_key: ScimCursorKey::from_client_secret_pepper(client_secret_pepper)?,
+            client_ip,
+        })
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct ScimHandles {
+    service: nazo_identity::scim::ScimService<nazo_postgres::ScimRepository>,
+    audit: nazo_postgres::AuditRepository,
+    config: ScimConfig,
+    #[cfg(not(test))]
+    runtime_modules: std::sync::Arc<crate::runtime_modules::ServerRuntimeModuleRegistry>,
+    #[cfg(test)]
+    enabled: bool,
+    #[cfg(test)]
+    pool: nazo_postgres::DbPool,
+}
+
+impl ScimHandles {
+    pub(crate) fn new(
+        pool: nazo_postgres::DbPool,
+        config: ScimConfig,
+        runtime_modules: std::sync::Arc<crate::runtime_modules::ServerRuntimeModuleRegistry>,
+    ) -> Self {
+        #[cfg(test)]
+        let _ = &runtime_modules;
+        Self {
+            service: nazo_identity::scim::ScimService::new(nazo_postgres::ScimRepository::new(
+                pool.clone(),
+            )),
+            audit: nazo_postgres::AuditRepository::new(pool.clone()),
+            config,
+            #[cfg(not(test))]
+            runtime_modules,
+            #[cfg(test)]
+            enabled: true,
+            #[cfg(test)]
+            pool,
+        }
+    }
+
+    #[cfg(test)]
+    fn for_test(pool: nazo_postgres::DbPool, config: ScimConfig) -> Self {
+        Self {
+            service: nazo_identity::scim::ScimService::new(nazo_postgres::ScimRepository::new(
+                pool.clone(),
+            )),
+            audit: nazo_postgres::AuditRepository::new(pool.clone()),
+            config,
+            enabled: true,
+            pool,
+        }
+    }
+
+    fn accepts_new_requests(&self) -> bool {
+        #[cfg(not(test))]
+        {
+            nazo_auth::module_admissible(
+                &self.runtime_modules.snapshot(),
+                nazo_runtime_modules::ModuleId::Scim,
+                nazo_auth::CapabilityAdmission::NewRequest,
+            )
+        }
+        #[cfg(test)]
+        {
+            self.enabled
+        }
+    }
+
+    async fn list_users(
+        &self,
+        tenant: nazo_identity::TenantContext,
+        email: Option<String>,
+        after: Option<(chrono::DateTime<Utc>, Uuid)>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<nazo_identity::ports::UserPage, nazo_identity::ports::RepositoryError> {
+        self.service
+            .list_users(tenant, email, after, limit, offset)
+            .await
+    }
+
+    async fn create_user(
+        &self,
+        tenant: nazo_identity::TenantContext,
+        input: nazo_identity::scim::NormalizedScimUser,
+        password_hash: nazo_identity::ports::PasswordHashInput,
+    ) -> Result<PublicAccount, nazo_identity::ports::RepositoryError> {
+        self.service.create_user(tenant, input, password_hash).await
+    }
+
+    async fn user(
+        &self,
+        tenant: nazo_identity::TenantContext,
+        user_id: nazo_identity::UserId,
+    ) -> Result<Option<PublicAccount>, nazo_identity::ports::RepositoryError> {
+        self.service.user(tenant, user_id).await
+    }
+
+    async fn replace_user(
+        &self,
+        tenant: nazo_identity::TenantContext,
+        user_id: nazo_identity::UserId,
+        replacement: nazo_identity::scim::NormalizedScimUser,
+    ) -> Result<PublicAccount, nazo_identity::ports::RepositoryError> {
+        self.service
+            .replace_user(tenant, user_id, replacement)
+            .await
+    }
+
+    async fn patch_user(
+        &self,
+        tenant: nazo_identity::TenantContext,
+        user_id: nazo_identity::UserId,
+        patch: nazo_identity::scim::ScimPatch,
+    ) -> Result<PublicAccount, nazo_identity::ports::RepositoryError> {
+        self.service.patch_user(tenant, user_id, patch).await
+    }
+
+    async fn deactivate_user(
+        &self,
+        tenant: nazo_identity::TenantContext,
+        user_id: nazo_identity::UserId,
+    ) -> Result<bool, nazo_identity::ports::RepositoryError> {
+        self.service.deactivate_user(tenant, user_id).await
+    }
+
+    async fn active_credential(
+        &self,
+        token_hash: &str,
+    ) -> Result<
+        Option<nazo_identity::scim::ScimTokenCredential>,
+        nazo_identity::ports::RepositoryError,
+    > {
+        self.audit.active_scim_credential(token_hash).await
+    }
+
+    async fn record_credential_use(
+        &self,
+        token_id: Uuid,
+        tenant_id: Uuid,
+        scopes: &[String],
+        ip_hash: Option<String>,
+        user_agent_hash: Option<String>,
+    ) -> Result<(), nazo_identity::ports::RepositoryError> {
+        self.audit
+            .record_scim_token_use(token_id, tenant_id, scopes, ip_hash, user_agent_hash)
+            .await
+    }
+
+    fn legacy_bearer_token(&self) -> Option<&str> {
+        self.config.legacy_bearer_token.as_deref()
+    }
+
+    fn client_ip_config(&self) -> &ClientIpConfig {
+        &self.config.client_ip
+    }
+
+    fn cursor_key(&self) -> &ScimCursorKey {
+        &self.config.cursor_key
+    }
+}
 
 const SCIM_DEFAULT_PAGE_SIZE: i64 = 100;
 const SCIM_MAX_PAGE_SIZE: i64 = 200;
@@ -147,10 +343,10 @@ fn select_scim_pagination(query: &ScimListQuery) -> Result<ScimPagination, HttpR
 }
 
 pub(crate) async fn scim_service_provider_config(
-    state: Data<AppState>,
+    handles: Data<ScimHandles>,
     req: HttpRequest,
 ) -> HttpResponse {
-    if let Err(response) = require_scim_bearer(&state, &req, ScimRequiredScope::Read).await {
+    if let Err(response) = require_scim_bearer(&handles, &req, ScimRequiredScope::Read).await {
         return response;
     }
     scim_service_provider_config_response()
@@ -188,8 +384,8 @@ fn scim_service_provider_config_response() -> HttpResponse {
     })))
 }
 
-pub(crate) async fn scim_schemas(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
-    if let Err(response) = require_scim_bearer(&state, &req, ScimRequiredScope::Read).await {
+pub(crate) async fn scim_schemas(handles: Data<ScimHandles>, req: HttpRequest) -> HttpResponse {
+    if let Err(response) = require_scim_bearer(&handles, &req, ScimRequiredScope::Read).await {
         return response;
     }
     scim_schemas_response()
@@ -205,8 +401,11 @@ fn scim_schemas_response() -> HttpResponse {
     })))
 }
 
-pub(crate) async fn scim_resource_types(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
-    if let Err(response) = require_scim_bearer(&state, &req, ScimRequiredScope::Read).await {
+pub(crate) async fn scim_resource_types(
+    handles: Data<ScimHandles>,
+    req: HttpRequest,
+) -> HttpResponse {
+    if let Err(response) = require_scim_bearer(&handles, &req, ScimRequiredScope::Read).await {
         return response;
     }
     scim_resource_types_response()
@@ -228,8 +427,8 @@ fn scim_resource_types_response() -> HttpResponse {
     })))
 }
 
-pub(crate) async fn scim_list_users(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
-    let credential = match require_scim_bearer(&state, &req, ScimRequiredScope::Read).await {
+pub(crate) async fn scim_list_users(handles: Data<ScimHandles>, req: HttpRequest) -> HttpResponse {
+    let credential = match require_scim_bearer(&handles, &req, ScimRequiredScope::Read).await {
         Ok(credential) => credential,
         Err(response) => return response,
     };
@@ -237,24 +436,24 @@ pub(crate) async fn scim_list_users(state: Data<AppState>, req: HttpRequest) -> 
         Ok(query) => query,
         Err(response) => return response,
     };
-    scim_list_users_authorized(state, query, credential).await
+    scim_list_users_authorized(handles, query, credential).await
 }
 
 #[cfg(test)]
 async fn scim_list_users_with_query(
-    state: Data<AppState>,
+    handles: Data<ScimHandles>,
     req: HttpRequest,
     Query(query): Query<ScimListQuery>,
 ) -> HttpResponse {
-    let credential = match require_scim_bearer(&state, &req, ScimRequiredScope::Read).await {
+    let credential = match require_scim_bearer(&handles, &req, ScimRequiredScope::Read).await {
         Ok(credential) => credential,
         Err(response) => return response,
     };
-    scim_list_users_authorized(state, query, credential).await
+    scim_list_users_authorized(handles, query, credential).await
 }
 
 async fn scim_list_users_authorized(
-    state: Data<AppState>,
+    handles: Data<ScimHandles>,
     query: ScimListQuery,
     credential: ScimCredential,
 ) -> HttpResponse {
@@ -271,7 +470,7 @@ async fn scim_list_users_authorized(
             encoded: Some(encoded),
             count,
         } => match decode_scim_cursor(
-            &state.settings,
+            handles.cursor_key(),
             encoded,
             &credential,
             query.filter.as_deref(),
@@ -289,17 +488,16 @@ async fn scim_list_users_authorized(
         ScimPagination::Cursor { count: 0, .. } => (0, 0),
         ScimPagination::Cursor { count, .. } => (count.saturating_add(1), 0),
     };
-    let page = match nazo_postgres::ScimRepository::new(state.diesel_db.clone())
-        .list(nazo_identity::ports::ScimListQuery {
-            tenant_id: tenant
+    let page = match handles
+        .list_users(
+            tenant
                 .as_identity_context()
-                .expect("default tenant IDs are valid")
-                .tenant_id,
-            email: email_filter,
-            after: cursor_position.map(|position| (position.last_created_at, position.last_id)),
+                .expect("default tenant IDs are valid"),
+            email_filter,
+            cursor_position.map(|position| (position.last_created_at, position.last_id)),
             limit,
             offset,
-        })
+        )
         .await
     {
         Ok(page) => page,
@@ -333,7 +531,7 @@ async fn scim_list_users_authorized(
                     );
                 };
                 match encode_scim_cursor(
-                    &state.settings,
+                    handles.cursor_key(),
                     &ScimCursorContext {
                         credential: &credential,
                         filter: query.filter.as_deref(),
@@ -421,11 +619,11 @@ fn scim_uniqueness_conflict_response() -> HttpResponse {
 }
 
 pub(crate) async fn scim_create_user(
-    state: Data<AppState>,
+    handles: Data<ScimHandles>,
     req: HttpRequest,
     Json(payload): Json<ScimUserRequest>,
 ) -> HttpResponse {
-    if let Err(response) = require_scim_bearer(&state, &req, ScimRequiredScope::Write).await {
+    if let Err(response) = require_scim_bearer(&handles, &req, ScimRequiredScope::Write).await {
         return response;
     }
     let input = match normalize_scim_user_payload(payload, true) {
@@ -455,14 +653,14 @@ pub(crate) async fn scim_create_user(
         }
     };
     let tenant = default_tenant_context();
-    let row = nazo_postgres::ScimRepository::new(state.diesel_db.clone())
-        .create(nazo_identity::ports::NewScimUser {
-            tenant: tenant
+    let row = handles
+        .create_user(
+            tenant
                 .as_identity_context()
                 .expect("default tenant IDs are valid"),
             input,
             password_hash,
-        })
+        )
         .await;
     match row {
         Ok(user) => scim_create_user_response(user),
@@ -479,14 +677,14 @@ pub(crate) async fn scim_create_user(
 }
 
 pub(crate) async fn scim_get_user(
-    state: Data<AppState>,
+    handles: Data<ScimHandles>,
     req: HttpRequest,
     path: actix_web::web::Path<Uuid>,
 ) -> HttpResponse {
-    if let Err(response) = require_scim_bearer(&state, &req, ScimRequiredScope::Read).await {
+    if let Err(response) = require_scim_bearer(&handles, &req, ScimRequiredScope::Read).await {
         return response;
     }
-    match load_scim_user(&state, path.into_inner()).await {
+    match load_scim_user(&handles, path.into_inner()).await {
         Ok(Some(user)) => json_response(scim_user_json(user)),
         Ok(None) => scim_user_not_found_response(),
         Err(response) => response,
@@ -494,12 +692,12 @@ pub(crate) async fn scim_get_user(
 }
 
 pub(crate) async fn scim_replace_user(
-    state: Data<AppState>,
+    handles: Data<ScimHandles>,
     req: HttpRequest,
     path: actix_web::web::Path<Uuid>,
     Json(payload): Json<ScimUserRequest>,
 ) -> HttpResponse {
-    if let Err(response) = require_scim_bearer(&state, &req, ScimRequiredScope::Write).await {
+    if let Err(response) = require_scim_bearer(&handles, &req, ScimRequiredScope::Write).await {
         return response;
     }
     let user_id = path.into_inner();
@@ -512,8 +710,8 @@ pub(crate) async fn scim_replace_user(
         Ok(id) => id,
         Err(_) => return scim_user_not_found_response(),
     };
-    let updated = nazo_postgres::ScimRepository::new(state.diesel_db.clone())
-        .replace(
+    let updated = handles
+        .replace_user(
             tenant
                 .as_identity_context()
                 .expect("default tenant IDs are valid"),
@@ -537,12 +735,12 @@ pub(crate) async fn scim_replace_user(
 }
 
 pub(crate) async fn scim_patch_user(
-    state: Data<AppState>,
+    handles: Data<ScimHandles>,
     req: HttpRequest,
     path: actix_web::web::Path<Uuid>,
     Json(payload): Json<ScimPatchRequest>,
 ) -> HttpResponse {
-    if let Err(response) = require_scim_bearer(&state, &req, ScimRequiredScope::Write).await {
+    if let Err(response) = require_scim_bearer(&handles, &req, ScimRequiredScope::Write).await {
         return response;
     }
     if !payload.schemas.is_empty()
@@ -567,8 +765,8 @@ pub(crate) async fn scim_patch_user(
         Ok(id) => id,
         Err(_) => return scim_user_not_found_response(),
     };
-    let updated = nazo_postgres::ScimRepository::new(state.diesel_db.clone())
-        .patch(
+    let updated = handles
+        .patch_user(
             tenant
                 .as_identity_context()
                 .expect("default tenant IDs are valid"),
@@ -592,11 +790,11 @@ pub(crate) async fn scim_patch_user(
 }
 
 pub(crate) async fn scim_delete_user(
-    state: Data<AppState>,
+    handles: Data<ScimHandles>,
     req: HttpRequest,
     path: actix_web::web::Path<Uuid>,
 ) -> HttpResponse {
-    if let Err(response) = require_scim_bearer(&state, &req, ScimRequiredScope::Write).await {
+    if let Err(response) = require_scim_bearer(&handles, &req, ScimRequiredScope::Write).await {
         return response;
     }
     let tenant = default_tenant_context();
@@ -605,8 +803,8 @@ pub(crate) async fn scim_delete_user(
         Ok(id) => id,
         Err(_) => return scim_user_not_found_response(),
     };
-    match nazo_postgres::ScimRepository::new(state.diesel_db.clone())
-        .deactivate(
+    match handles
+        .deactivate_user(
             tenant
                 .as_identity_context()
                 .expect("default tenant IDs are valid"),
@@ -638,7 +836,7 @@ fn scim_delete_user_response(updated_count: usize) -> HttpResponse {
 }
 
 async fn load_scim_user(
-    state: &AppState,
+    handles: &ScimHandles,
     user_id: Uuid,
 ) -> Result<Option<PublicAccount>, HttpResponse> {
     let tenant = default_tenant_context();
@@ -646,8 +844,8 @@ async fn load_scim_user(
         Ok(id) => id,
         Err(_) => return Ok(None),
     };
-    nazo_postgres::ScimRepository::new(state.diesel_db.clone())
-        .get(
+    handles
+        .user(
             tenant
                 .as_identity_context()
                 .expect("default tenant IDs are valid"),

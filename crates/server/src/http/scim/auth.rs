@@ -1,9 +1,8 @@
-use crate::domain::AppState;
+use super::ScimHandles;
 use crate::http::scim::schema::scim_error;
-#[cfg(test)]
-use crate::settings::Settings;
+use crate::support::client_ip::client_ip_with_config;
 use crate::support::{
-    audit_event, audit_fields, blake3_hex, client_ip, constant_time_eq, default_tenant_context,
+    audit_event, audit_fields, blake3_hex, constant_time_eq, default_tenant_context,
 };
 use actix_web::http::StatusCode;
 use actix_web::http::header;
@@ -43,11 +42,11 @@ impl ScimRequiredScope {
 }
 
 pub(super) async fn require_scim_bearer(
-    state: &AppState,
+    handles: &ScimHandles,
     req: &HttpRequest,
     required_scope: ScimRequiredScope,
 ) -> Result<ScimCredential, HttpResponse> {
-    if !state.accepts_module(nazo_runtime_modules::ModuleId::Scim) {
+    if !handles.accepts_new_requests() {
         return Err(scim_error(
             StatusCode::NOT_FOUND,
             "not_found",
@@ -55,7 +54,7 @@ pub(super) async fn require_scim_bearer(
         ));
     }
     let Some(actual) = bearer_token(req) else {
-        audit_scim_token_denied(state, req, required_scope, "missing_bearer", None);
+        audit_scim_token_denied(handles, req, required_scope, "missing_bearer", None);
         return Err(scim_error(
             StatusCode::UNAUTHORIZED,
             "unauthorized",
@@ -63,22 +62,22 @@ pub(super) async fn require_scim_bearer(
         ));
     };
     let token_hash = blake3_hex(actual);
-    match load_scim_credential(state, &token_hash).await {
+    match load_scim_credential(handles, &token_hash).await {
         Ok(Some(credential)) => {
-            return authorize_scim_credential(state, req, required_scope, credential).await;
+            return authorize_scim_credential(handles, req, required_scope, credential).await;
         }
         Ok(None) => {}
         Err(response) => {
-            if let Some(credential) = legacy_scim_credential(state, actual) {
-                return authorize_scim_credential(state, req, required_scope, credential).await;
+            if let Some(credential) = legacy_scim_credential(handles, actual) {
+                return authorize_scim_credential(handles, req, required_scope, credential).await;
             }
             return Err(response);
         }
     }
-    if let Some(credential) = legacy_scim_credential(state, actual) {
-        return authorize_scim_credential(state, req, required_scope, credential).await;
+    if let Some(credential) = legacy_scim_credential(handles, actual) {
+        return authorize_scim_credential(handles, req, required_scope, credential).await;
     }
-    audit_scim_token_denied(state, req, required_scope, "invalid_token", None);
+    audit_scim_token_denied(handles, req, required_scope, "invalid_token", None);
     Err(scim_error(
         StatusCode::UNAUTHORIZED,
         "unauthorized",
@@ -87,13 +86,10 @@ pub(super) async fn require_scim_bearer(
 }
 
 async fn load_scim_credential(
-    state: &AppState,
+    handles: &ScimHandles,
     token_hash: &str,
 ) -> Result<Option<ScimCredential>, HttpResponse> {
-    match nazo_postgres::AuditRepository::new(state.diesel_db.clone())
-        .active_scim_credential(token_hash)
-        .await
-    {
+    match handles.active_credential(token_hash).await {
         Ok(Some(credential)) => Ok(Some(ScimCredential {
             token_id: Some(credential.id),
             tenant_id: credential.tenant_id,
@@ -112,8 +108,8 @@ async fn load_scim_credential(
     }
 }
 
-fn legacy_scim_credential(state: &AppState, actual: &str) -> Option<ScimCredential> {
-    let expected = state.settings.storage().scim_bearer_token?;
+fn legacy_scim_credential(handles: &ScimHandles, actual: &str) -> Option<ScimCredential> {
+    let expected = handles.legacy_bearer_token()?;
     constant_time_eq(expected.as_bytes(), actual.as_bytes()).then(|| {
         let tenant = default_tenant_context();
         ScimCredential {
@@ -126,14 +122,14 @@ fn legacy_scim_credential(state: &AppState, actual: &str) -> Option<ScimCredenti
 }
 
 async fn authorize_scim_credential(
-    state: &AppState,
+    handles: &ScimHandles,
     req: &HttpRequest,
     required_scope: ScimRequiredScope,
     credential: ScimCredential,
 ) -> Result<ScimCredential, HttpResponse> {
     if !scim_credential_allows(&credential, required_scope) {
         audit_scim_token_denied(
-            state,
+            handles,
             req,
             required_scope,
             "insufficient_scope",
@@ -147,7 +143,7 @@ async fn authorize_scim_credential(
     }
     if !scim_credential_targets_served_tenant(&credential) {
         audit_scim_token_denied(
-            state,
+            handles,
             req,
             required_scope,
             "tenant_mismatch",
@@ -159,7 +155,7 @@ async fn authorize_scim_credential(
             "SCIM token is not valid for this tenant",
         ));
     }
-    record_scim_token_use(state, req, required_scope, &credential).await;
+    record_scim_token_use(handles, req, required_scope, &credential).await;
     audit_event(
         "scim_token_used",
         audit_fields(&[
@@ -169,7 +165,10 @@ async fn authorize_scim_credential(
             ("source", json!(credential.source)),
             (
                 "ip_hash",
-                json!(blake3_hex(&client_ip(req, &state.settings))),
+                json!(blake3_hex(&client_ip_with_config(
+                    req,
+                    handles.client_ip_config()
+                ))),
             ),
         ]),
     );
@@ -203,7 +202,7 @@ pub(super) fn scim_scope_values(value: &Value) -> Vec<String> {
 }
 
 async fn record_scim_token_use(
-    state: &AppState,
+    handles: &ScimHandles,
     req: &HttpRequest,
     required_scope: ScimRequiredScope,
     credential: &ScimCredential,
@@ -216,12 +215,15 @@ async fn record_scim_token_use(
         .get(header::USER_AGENT)
         .and_then(|value| value.to_str().ok())
         .map(blake3_hex);
-    if let Err(error) = nazo_postgres::AuditRepository::new(state.diesel_db.clone())
-        .record_scim_token_use(
+    if let Err(error) = handles
+        .record_credential_use(
             token_id,
             credential.tenant_id,
             &[required_scope.as_str().to_owned()],
-            Some(blake3_hex(&client_ip(req, &state.settings))),
+            Some(blake3_hex(&client_ip_with_config(
+                req,
+                handles.client_ip_config(),
+            ))),
             user_agent_hash,
         )
         .await
@@ -231,7 +233,7 @@ async fn record_scim_token_use(
 }
 
 fn audit_scim_token_denied(
-    state: &AppState,
+    handles: &ScimHandles,
     req: &HttpRequest,
     required_scope: ScimRequiredScope,
     reason: &str,
@@ -245,7 +247,10 @@ fn audit_scim_token_denied(
             ("reason", json!(reason)),
             (
                 "ip_hash",
-                json!(blake3_hex(&client_ip(req, &state.settings))),
+                json!(blake3_hex(&client_ip_with_config(
+                    req,
+                    handles.client_ip_config()
+                ))),
             ),
         ]),
     );
