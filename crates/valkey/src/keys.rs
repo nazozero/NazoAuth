@@ -50,3 +50,23 @@ pub(crate) fn session(session_id: &str) -> String {
 pub(crate) fn client_delivery(user_id: nazo_identity::UserId, token: &str) -> String {
     format!("oauth:client_delivery:{}:{token}", user_id.as_uuid())
 }
+
+pub(crate) fn consent(request_id: &str) -> String {
+    format!("oauth:consent:{request_id}")
+}
+
+pub(crate) fn par(request_uri: &str) -> String {
+    format!("oauth:par:{}", blake3_hex(request_uri))
+}
+
+pub(crate) fn authorization_code_hash(code_hash: &str) -> String {
+    format!("oauth:auth_code:{code_hash}")
+}
+
+pub(crate) fn authorization_code(code: &str) -> String {
+    authorization_code_hash(&blake3_hex(code))
+}
+
+pub(crate) fn reauth_nonce(nonce: &str) -> String {
+    format!("oauth:authorization:reauth:{}", blake3_hex(nonce))
+}

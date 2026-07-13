@@ -13,6 +13,7 @@ mod profile;
 mod sender_constraint;
 mod signing;
 mod token;
+mod transaction;
 mod uri_policy;
 
 pub use authorization_details::{
@@ -39,6 +40,10 @@ pub use signing::{SignError, SignRequest, Signature, Signer, SigningPurpose};
 pub use token::{
     BackchannelLogoutDelivery, LostResponseRetry, NewRefreshToken, RefreshToken,
     RefreshTokenPersistResult,
+};
+pub use transaction::{
+    AuthorizationCodeState, CodePayload, ConsentPayload, ConsumedAuthorizationCode,
+    PushedAuthorizationRequest,
 };
 pub use uri_policy::{
     is_loopback_http_url, oauth_redirect_uri_matches, validate_cors_origin,
