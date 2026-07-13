@@ -21,6 +21,34 @@ REMOVED_ADAPTER_CLAIMS = (
 GLOB_REEXPORT = re.compile(r"(?m)^\s*pub(?:\([^)]*\))?\s+use\s+[^;]*::\*\s*;")
 PRELUDE_MODULE = re.compile(r"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+prelude\s*;")
 EXACT_RUST_VERSION = re.compile(r"^\d+\.\d+\.\d+$")
+FORBIDDEN_CRATE_DEPENDENCIES = {
+    "auth": {
+        "actix-web",
+        "diesel",
+        "diesel-async",
+        "fred",
+        "nazo-http-actix",
+        "nazo-postgres",
+        "nazo-valkey",
+    },
+    "identity": {
+        "actix-web",
+        "diesel",
+        "diesel-async",
+        "fred",
+        "nazo-auth",
+        "nazo-http-actix",
+        "nazo-postgres",
+        "nazo-valkey",
+    },
+    "resource-server": {
+        "actix-web",
+        "nazo-auth",
+        "nazo-http-actix",
+        "nazo-identity",
+    },
+    "http-actix": {"diesel", "diesel-async", "fred", "nazo-postgres", "nazo-valkey"},
+}
 
 
 def migration_line(path: Path) -> str:
@@ -143,6 +171,20 @@ def check_toolchain_pins() -> None:
         raise SystemExit("Renovate must update the coordinated Rust stable pins")
 
 
+def check_crate_dependency_boundaries() -> None:
+    for crate, forbidden in FORBIDDEN_CRATE_DEPENDENCIES.items():
+        manifest_path = ROOT / "crates" / crate / "Cargo.toml"
+        manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+        declared = set()
+        for section in ("dependencies", "build-dependencies"):
+            declared.update(manifest.get(section, {}))
+        violations = sorted(declared & forbidden)
+        if violations:
+            raise SystemExit(
+                f"{manifest_path.relative_to(ROOT)} violates dependency boundaries: {violations}"
+            )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--write-migrations", action="store_true")
@@ -159,6 +201,7 @@ def main() -> None:
         check_documentation_boundaries()
         check_server_import_boundaries()
         check_toolchain_pins()
+        check_crate_dependency_boundaries()
 
 
 if __name__ == "__main__":
