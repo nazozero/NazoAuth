@@ -1,5 +1,5 @@
 use super::*;
-use crate::support::OAuthJsonErrorFields;
+use nazo_http_actix::OAuthJsonErrorFields;
 use passkey_auth::{CosePublicKey, CredentialId, PasskeyCredential};
 
 fn passkey_user_fixture() -> DatabaseUserFixture {

@@ -11,9 +11,8 @@ use crate::support::{
     DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_set_ex,
 };
 use crate::support::{
-    auth_me_json, avatar_meta_path, avatar_path, avatar_user_dir, bytes_response, csrf_error,
-    current_user_or_login_required, detect_avatar_content_type, has_valid_csrf_token,
-    is_cross_site_fetch, json_response, oauth_error, read_avatar_meta,
+    auth_me_json, avatar_meta_path, avatar_path, avatar_user_dir, current_user_or_login_required,
+    detect_avatar_content_type, has_valid_csrf_token, is_cross_site_fetch, read_avatar_meta,
 };
 use actix_multipart::Multipart;
 use actix_web::http::StatusCode;
@@ -30,6 +29,8 @@ use diesel::prelude::*;
 #[cfg(test)]
 use diesel_async::RunQueryDsl;
 use futures_util::StreamExt;
+use nazo_http_actix::csrf_error;
+use nazo_http_actix::{bytes_response, json_response, oauth_error};
 #[cfg(test)]
 use nazo_postgres::get_conn;
 use serde_json::{Value, json};

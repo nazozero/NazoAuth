@@ -11,6 +11,7 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::Utc;
 pub(crate) use nazo_http_actix::AccessTokenAuthScheme;
+use nazo_http_actix::oauth_error;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::Digest;
@@ -21,7 +22,7 @@ use nazo_auth::is_valid_dpop_jkt;
 
 use super::{
     audit_event, audit_fields, blake3_hex, client_jwt_algorithm_from_name,
-    jwt_decoding_key_from_jwk, oauth_error, random_urlsafe_token,
+    jwt_decoding_key_from_jwk, random_urlsafe_token,
 };
 use crate::settings::DpopNoncePolicy;
 

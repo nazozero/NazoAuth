@@ -1,12 +1,10 @@
 //! 基于 Valkey 的固定窗口限流。
 //! 限流主体默认取连接来源地址，不信任可伪造的转发头。
+use nazo_http_actix::{authorization_error_response, oauth_error};
 
 #[cfg(test)]
 use super::blake3_hex;
-use super::{
-    ClientIpHeaderMode, IpCidr, authorization_error_response, client_ip,
-    client_ip::client_ip_with_context, oauth_error,
-};
+use super::{ClientIpHeaderMode, IpCidr, client_ip, client_ip::client_ip_with_context};
 use crate::domain::AppState;
 use crate::settings::{RateLimitSettings, Settings};
 use actix_web::http::StatusCode;

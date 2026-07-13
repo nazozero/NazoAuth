@@ -1,3 +1,4 @@
+use nazo_http_actix::oauth_error;
 use std::collections::HashMap;
 
 use actix_web::{
@@ -10,7 +11,7 @@ use actix_web::{
 use super::{authorization_duplicate_parameters, oauth_json_error};
 #[cfg(test)]
 use crate::support::resource_indicators_from_parameter_value;
-use crate::support::{encoded_resource_indicators, has_duplicate_oauth_parameter, oauth_error};
+use crate::support::{encoded_resource_indicators, has_duplicate_oauth_parameter};
 
 pub(super) fn parse_authorization_post_form(
     req: &HttpRequest,

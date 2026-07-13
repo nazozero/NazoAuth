@@ -1,15 +1,13 @@
 //! 当前用户外部身份绑定管理。
 //! 用户只能查看和解绑自己的 provider subject 绑定，不能修改 provider 配置。
+use nazo_http_actix::{empty_response_no_store, json_response_no_store, oauth_error};
 
 use crate::domain::AppState;
 #[cfg(test)]
 use crate::domain::DatabaseExternalIdentityFixture;
 #[cfg(test)]
 use crate::support::DEFAULT_TENANT_ID;
-use crate::support::{
-    audit_event, audit_fields, current_user_or_login_required, empty_response_no_store,
-    json_response_no_store, oauth_error,
-};
+use crate::support::{audit_event, audit_fields, current_user_or_login_required};
 use actix_web::http::StatusCode;
 use actix_web::web::Data;
 use actix_web::web::Path;

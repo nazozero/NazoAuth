@@ -8,14 +8,13 @@ use crate::schema::{access_token_revocations, oauth_tokens};
 use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, OAuthJsonErrorFields,
-    authorization_code_key, valkey_get, valkey_set_ex,
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, authorization_code_key,
+    valkey_get, valkey_set_ex,
 };
 use crate::support::{
     DpopError, DpopErrorContext, ValidatedClientAssertion, audiences_allowed, blake3_hex,
     compute_subject_for_client, constant_time_eq, dpop_error_response, is_subset,
-    is_valid_pkce_value, oauth_token_error, pkce_s256, request_mtls_thumbprint,
-    validate_dpop_proof,
+    is_valid_pkce_value, pkce_s256, request_mtls_thumbprint, validate_dpop_proof,
 };
 use actix_web::http::StatusCode;
 #[cfg(test)]
@@ -34,6 +33,9 @@ use chrono::{DateTime, Duration};
 use diesel::prelude::*;
 #[cfg(test)]
 use nazo_auth::OidcClaimRequest;
+#[cfg(test)]
+use nazo_http_actix::OAuthJsonErrorFields;
+use nazo_http_actix::oauth_token_error;
 #[cfg(test)]
 use serde_json::{Value, json};
 #[cfg(test)]

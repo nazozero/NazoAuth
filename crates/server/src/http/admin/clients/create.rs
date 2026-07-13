@@ -1,18 +1,21 @@
 //! 管理端客户端创建端点。
 use crate::domain::ClientRow;
 use crate::support::client_ip::client_ip_with_config;
-use crate::support::responses::has_valid_csrf_token_for_cookies;
+#[cfg(test)]
+use crate::support::client_secret_digest;
 use crate::support::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
 use crate::support::{
     ClientMetadata, ClientMtlsMetadata, audit_event, audit_fields, blake3_hex, client_json,
-    csrf_error, fetch_sector_identifier_uris, hash_client_secret, json_response_status,
-    oauth_error, random_urlsafe_token, sector_identifier_hostname, validate_client_metadata,
+    fetch_sector_identifier_uris, hash_client_secret, random_urlsafe_token,
+    sector_identifier_hostname, validate_client_metadata,
 };
-#[cfg(test)]
-use crate::support::{OAuthJsonErrorFields, client_secret_digest};
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json};
 use actix_web::{HttpRequest, HttpResponse};
+#[cfg(test)]
+use nazo_http_actix::OAuthJsonErrorFields;
+use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies};
+use nazo_http_actix::{json_response_status, oauth_error};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;

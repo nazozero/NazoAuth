@@ -1,5 +1,5 @@
 use super::*;
-use crate::support::OAuthJsonErrorFields;
+use nazo_http_actix::OAuthJsonErrorFields;
 
 #[actix_web::test]
 async fn delivery_payload_response_adds_read_once_notice_without_dropping_credentials() {

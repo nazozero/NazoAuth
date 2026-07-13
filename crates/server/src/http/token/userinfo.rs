@@ -8,14 +8,13 @@ use crate::settings::Settings;
 use crate::support::{
     AccessTokenAuthScheme, DpopError, DpopErrorContext, JwePayloadKind, access_token_tenant_id,
     blake3_hex, client_jwe_key, constant_time_eq, decode_access_claims, dpop_error_response,
-    encrypt_compact_jwe, issue_dpop_nonce, json_response_no_store, oauth_bearer_error,
-    oidc_user_claims, parse_scope, request_mtls_thumbprint, sign_response_jwt,
-    signing_algorithm_from_name, token_audience_contains, validate_dpop_proof,
+    encrypt_compact_jwe, issue_dpop_nonce, oidc_user_claims, parse_scope, request_mtls_thumbprint,
+    sign_response_jwt, signing_algorithm_from_name, token_audience_contains, validate_dpop_proof,
 };
 #[cfg(test)]
 use crate::support::{
     AccessTokenJwtInput, DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID,
-    IssuedAccessToken, OAuthJsonErrorFields, jwt_decoding_key_from_jwk, make_jwt,
+    IssuedAccessToken, jwt_decoding_key_from_jwk, make_jwt,
 };
 use actix_web::http::StatusCode;
 use actix_web::http::header;
@@ -27,7 +26,10 @@ use chrono::{Duration, Utc};
 #[cfg(test)]
 use diesel::prelude::*;
 use nazo_auth::Claims;
+#[cfg(test)]
+use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_http_actix::{ResourceAccessToken, resource_access_token};
+use nazo_http_actix::{json_response_no_store, oauth_bearer_error};
 use serde_json::{Value, json};
 use uuid::Uuid;
 // 根据 Bearer/DPoP access token 返回用户声明；DPoP-bound token 必须携带有效 proof。

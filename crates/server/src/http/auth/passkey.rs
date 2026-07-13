@@ -1,4 +1,5 @@
 //! WebAuthn/passkey login endpoints.
+use nazo_http_actix::{json_response, oauth_error};
 
 use crate::domain::AppState;
 #[cfg(test)]
@@ -14,10 +15,9 @@ use crate::support::{
 use crate::support::{
     DEFAULT_TENANT_ID, RateLimitPolicy, SessionPayload, StoredPasskeyAuthentication, audit_event,
     audit_fields, authentication_key, blake3_hex, client_ip, credential_id_from_response,
-    enforce_rate_limit, json_response, make_cookie, normalize_ceremony_id, oauth_error,
-    passkey_credential_from_row, passkey_user_handle, passkey_webauthn, random_urlsafe_token,
-    remembered_mfa_device_valid, require_active_session_principal, store_passkey_ceremony,
-    store_session, take_passkey_ceremony, with_cookie_headers,
+    enforce_rate_limit, normalize_ceremony_id, passkey_credential_from_row, passkey_user_handle,
+    passkey_webauthn, random_urlsafe_token, remembered_mfa_device_valid,
+    require_active_session_principal, store_passkey_ceremony, store_session, take_passkey_ceremony,
 };
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json};
@@ -27,6 +27,7 @@ use chrono::Utc;
 use diesel::prelude::*;
 #[cfg(test)]
 use diesel_async::RunQueryDsl;
+use nazo_http_actix::{make_cookie, with_cookie_headers};
 use nazo_identity::PublicAccount;
 use nazo_identity::ports::PasskeyCredential;
 #[cfg(test)]

@@ -1,4 +1,7 @@
 //! External OIDC and trusted SAML-gateway federation.
+#[cfg(test)]
+use nazo_http_actix::OAuthJsonErrorFields;
+use nazo_http_actix::{json_response, json_response_no_store, oauth_error, redirect_found};
 
 use crate::domain::AppState;
 #[cfg(test)]
@@ -12,15 +15,12 @@ use crate::settings::{
 };
 #[cfg(test)]
 use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, OAuthJsonErrorFields, pkce_s256, valkey_get,
-    valkey_set_ex,
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, pkce_s256, valkey_get, valkey_set_ex,
 };
 use crate::support::{
     DEFAULT_TENANT_ID, RateLimitPolicy, SessionPayload, audit_event, audit_fields, blake3_hex,
-    client_ip, default_tenant_context, enforce_rate_limit, hash_password, json_response,
-    json_response_no_store, make_cookie, normalize_email_address, oauth_error,
-    random_urlsafe_token, redirect_found, require_active_session_principal, store_session,
-    with_cookie_headers,
+    client_ip, default_tenant_context, enforce_rate_limit, hash_password, normalize_email_address,
+    random_urlsafe_token, require_active_session_principal, store_session,
 };
 use actix_web::http::StatusCode;
 use actix_web::web::Path;
@@ -31,6 +31,7 @@ use chrono::Utc;
 use diesel::prelude::*;
 #[cfg(test)]
 use diesel_async::RunQueryDsl;
+use nazo_http_actix::{make_cookie, with_cookie_headers};
 use nazo_identity::PublicAccount;
 #[cfg(test)]
 use nazo_postgres::get_conn;

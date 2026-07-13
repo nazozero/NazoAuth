@@ -5,7 +5,7 @@ use crate::http::authorization::request::{
 };
 use crate::support::{
     audit_event, audit_fields, blake3_hex, client_ip, is_subset, json_array_to_strings,
-    oauth_error, random_urlsafe_token,
+    random_urlsafe_token,
 };
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse};
@@ -13,6 +13,7 @@ use chrono::{Duration, Utc};
 use nazo_auth::{
     authorization_details_empty, canonical_authorization_details, high_risk_authorization_details,
 };
+use nazo_http_actix::oauth_error;
 use serde_json::{Value, json};
 use uuid::Uuid;
 

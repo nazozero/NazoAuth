@@ -9,22 +9,22 @@ use crate::domain::DatabaseUserFixture;
 #[cfg(test)]
 use crate::settings::Settings;
 use crate::support::client_ip::client_ip_with_config;
-use crate::support::responses::has_valid_csrf_token_for_cookies;
 use crate::support::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
 use crate::support::{
     ClientMetadata, ClientMtlsMetadata, DEFAULT_TENANT_ID, audit_event, audit_fields, blake3_hex,
-    client_json, csrf_error, fetch_sector_identifier_uris, json_array_to_strings, json_response,
-    oauth_error, validate_client_metadata,
+    client_json, fetch_sector_identifier_uris, json_array_to_strings, validate_client_metadata,
 };
 #[cfg(test)]
-use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, OAuthJsonErrorFields, SessionPayload, valkey_set_ex,
-};
+use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, SessionPayload, valkey_set_ex};
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json};
 use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
 use chrono::Utc;
+#[cfg(test)]
+use nazo_http_actix::OAuthJsonErrorFields;
+use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies};
+use nazo_http_actix::{json_response, oauth_error};
 use nazo_key_management::KeyManager;
 use nazo_postgres::OAuthClientRepository;
 use serde::Deserialize;

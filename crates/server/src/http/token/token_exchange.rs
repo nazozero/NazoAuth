@@ -3,6 +3,7 @@
 //! This implementation intentionally accepts only locally issued access tokens
 //! and issues only locally signed access tokens. External token trust, refresh
 //! token exchange, and ID-token issuance require separate policy models.
+use nazo_http_actix::oauth_token_error;
 
 use super::{TokenForm, consume_token_client_assertion, issue_token_response};
 use super::{native_sso_profile_requested, token_native_sso_exchange};
@@ -12,8 +13,7 @@ use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_I
 use crate::support::{
     DpopError, DpopErrorContext, ValidatedClientAssertion, access_token_tenant_id,
     audiences_allowed, constant_time_eq, decode_access_claims, dpop_error_response, is_subset,
-    json_array_to_strings, oauth_token_error, parse_scope, request_mtls_thumbprint,
-    validate_dpop_proof,
+    json_array_to_strings, parse_scope, request_mtls_thumbprint, validate_dpop_proof,
 };
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse};

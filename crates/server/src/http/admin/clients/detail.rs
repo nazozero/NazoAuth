@@ -8,15 +8,16 @@ use crate::domain::{AppState, DatabaseUserFixture};
 use crate::settings::Settings;
 use crate::support::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
 #[cfg(test)]
-use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, OAuthJsonErrorFields, SessionPayload, valkey_set_ex,
-};
-use crate::support::{DEFAULT_TENANT_ID, client_json, json_response, oauth_error};
+use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, SessionPayload, valkey_set_ex};
+use crate::support::{DEFAULT_TENANT_ID, client_json};
 use actix_web::http::StatusCode;
 use actix_web::web::Data;
 use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
 use chrono::Utc;
+#[cfg(test)]
+use nazo_http_actix::OAuthJsonErrorFields;
+use nazo_http_actix::{json_response, oauth_error};
 use nazo_postgres::OAuthClientRepository;
 #[cfg(test)]
 use serde_json::{Value, json};

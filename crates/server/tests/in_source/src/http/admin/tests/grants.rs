@@ -8,6 +8,7 @@ use fred::interfaces::ClientLike;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
+use nazo_http_actix::OAuthJsonErrorFields;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
@@ -15,9 +16,7 @@ use crate::config::ConfigSource;
 use crate::domain::{AppState, ClientRow, DatabaseUserFixture};
 use crate::settings::Settings;
 use crate::support::sessions::SessionHttpConfig;
-use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, OAuthJsonErrorFields, SessionPayload, valkey_set_ex,
-};
+use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, SessionPayload, valkey_set_ex};
 use chrono::Utc;
 use nazo_postgres::{create_pool, get_conn};
 

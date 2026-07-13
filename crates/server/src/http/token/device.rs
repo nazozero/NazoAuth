@@ -4,20 +4,23 @@ use crate::settings::Settings;
 use crate::support::{
     ClientCredentials, DEFAULT_TENANT_ID, DpopError, DpopErrorContext, RateLimitPolicy,
     ValidatedClientAssertion, audiences_allowed, audit_event, audit_fields, blake3_hex, client_ip,
-    client_supports_grant, compute_subject_for_client, cookie_value, csrf_error,
-    current_user_or_login_required, dpop_error_response, enforce_rate_limit,
-    extract_client_credentials, has_valid_csrf_token, is_subset, json_array_to_strings,
-    json_response_no_store, oauth_error, oauth_token_error, parse_resource_indicators, parse_scope,
-    random_urlsafe_token, request_mtls_thumbprint, validate_dpop_proof,
+    client_supports_grant, compute_subject_for_client, current_user_or_login_required,
+    dpop_error_response, enforce_rate_limit, extract_client_credentials, has_valid_csrf_token,
+    is_subset, json_array_to_strings, parse_resource_indicators, parse_scope, random_urlsafe_token,
+    request_mtls_thumbprint, validate_dpop_proof,
 };
 #[cfg(test)]
-use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, OAuthJsonErrorFields};
+use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID};
 use actix_web::http::StatusCode;
 use actix_web::http::header;
 use actix_web::http::header::HeaderValue;
 use actix_web::web::{Bytes, Data, Form, Query};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::{DateTime, Duration, Utc};
+#[cfg(test)]
+use nazo_http_actix::OAuthJsonErrorFields;
+use nazo_http_actix::{cookie_value, csrf_error};
+use nazo_http_actix::{json_response_no_store, oauth_error, oauth_token_error};
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::json;

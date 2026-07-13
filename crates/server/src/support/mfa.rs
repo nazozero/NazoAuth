@@ -1,12 +1,12 @@
 //! MFA helper functions.
 //! TOTP follows RFC 6238 with SHA-1, 30-second steps, six digits, and one-step clock skew.
 
-use super::cookie_value;
 use crate::domain::AppState;
 use actix_web::HttpRequest;
 use actix_web::http::header;
 use chrono::Duration;
 use chrono::Utc;
+use nazo_http_actix::cookie_value;
 use nazo_identity::PublicAccount;
 #[cfg(test)]
 use nazo_postgres::DbPool;

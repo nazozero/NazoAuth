@@ -1,10 +1,10 @@
 use super::*;
+use nazo_http_actix::OAuthJsonErrorFields;
 use std::sync::Arc;
 
 use crate::config::ConfigSource;
 use nazo_postgres::create_pool;
 
-use crate::support::OAuthJsonErrorFields;
 use actix_web::test::TestRequest;
 use fred::interfaces::ClientLike;
 use fred::prelude::{

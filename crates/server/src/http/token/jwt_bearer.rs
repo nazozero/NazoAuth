@@ -1,4 +1,7 @@
 //! RFC 7523 JWT bearer authorization grant.
+#[cfg(test)]
+use nazo_http_actix::OAuthJsonErrorFields;
+use nazo_http_actix::oauth_token_error;
 
 use super::{
     TokenForm, client_credentials_issue_request, consume_token_client_assertion,
@@ -7,12 +10,10 @@ use super::{
 use crate::domain::{AppState, ClientRow, RefreshTokenPolicy, TokenIssue};
 use crate::settings::Settings;
 #[cfg(test)]
-use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, OAuthJsonErrorFields,
-};
+use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
 use crate::support::{
     DpopError, DpopErrorContext, ValidatedClientAssertion, client_jwt_decoding_key,
-    dpop_error_response, oauth_token_error, request_mtls_thumbprint, validate_dpop_proof,
+    dpop_error_response, request_mtls_thumbprint, validate_dpop_proof,
 };
 #[cfg(test)]
 use crate::test_support::{ClientSigningFixture, client_signing_fixture};

@@ -1,12 +1,11 @@
 //! 管理端用户授权关系接口。
-use crate::support::responses::has_valid_csrf_token_for_cookies;
 use crate::support::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
-use crate::support::{
-    DEFAULT_TENANT_ID, csrf_error, json_array_to_strings, json_response, oauth_error, pagination,
-};
+use crate::support::{DEFAULT_TENANT_ID, json_array_to_strings, pagination};
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json, Query};
 use actix_web::{HttpRequest, HttpResponse};
+use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies};
+use nazo_http_actix::{json_response, oauth_error};
 use nazo_postgres::{GrantRepository, OAuthClientRepository};
 use serde::Deserialize;
 use serde_json::{Value, json};
