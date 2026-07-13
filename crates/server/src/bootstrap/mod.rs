@@ -39,6 +39,7 @@ use crate::domain::{
 #[cfg(not(test))]
 use crate::domain::{
     ServerFapiHttpMessageSignatures, ServerFapiMtlsResolver, ServerFapiResourceAuthorizer,
+    ServerScimBootstrapPasswordProvider, ServerScimCursorProtector, ServerScimRequestAuthorizer,
 };
 use crate::http::admin::access_requests::AdminAccessRequestConfig;
 use crate::http::admin::clients::{
@@ -56,6 +57,7 @@ use crate::http::auth::passkey::PasskeyHttpConfig;
 use crate::http::authorization::{AuthorizationHttpConfig, ServerAuthorizationService};
 #[cfg(not(test))]
 use crate::http::profile::oidc_logout::spawn_backchannel_logout_delivery_worker;
+#[cfg(test)]
 use crate::http::scim::{ScimConfig, ScimEndpoint, ScimRuntimeAdmission};
 use crate::http::token::ciba::{CibaHttpConfig, CibaTokenHandles, ServerCibaService};
 use crate::http::token::device::{DeviceDecisionHandles, ServerDeviceGrantService};
@@ -201,17 +203,33 @@ pub async fn run() -> anyhow::Result<()> {
         Arc::new(nazo_postgres::ScimRepository::new(diesel_db.clone())),
         Arc::new(nazo_postgres::AuditRepository::new(diesel_db.clone())),
     );
+    let scim_client_ip = ClientIpConfig::new(
+        &scim_endpoint.trusted_proxy_cidrs,
+        scim_endpoint.client_ip_header_mode,
+    );
+    #[cfg(test)]
     let scim_endpoint = web::Data::new(ScimEndpoint::new(
         scim_service,
         ScimConfig::new(
             scim_storage.scim_bearer_token.as_deref(),
             &scim_protocol.client_secret_pepper,
-            ClientIpConfig::new(
-                &scim_endpoint.trusted_proxy_cidrs,
-                scim_endpoint.client_ip_header_mode,
-            ),
+            scim_client_ip,
         )?,
         ScimRuntimeAdmission::new(runtime_modules.registry.clone()),
+    ));
+    #[cfg(not(test))]
+    let scim_endpoint = web::Data::new(nazo_http_actix::ScimEndpoint::new(
+        scim_service.clone(),
+        Arc::new(ServerScimRequestAuthorizer::new(
+            scim_service,
+            scim_storage.scim_bearer_token.as_deref(),
+            scim_client_ip,
+            runtime_modules.registry.clone(),
+        )),
+        Arc::new(ServerScimCursorProtector::new(
+            &scim_protocol.client_secret_pepper,
+        )?),
+        Arc::new(ServerScimBootstrapPasswordProvider),
     ));
     #[cfg(not(test))]
     let valkey_connection = valkey.clone();

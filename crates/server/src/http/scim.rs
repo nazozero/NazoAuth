@@ -1,4 +1,9 @@
-//! SCIM 2.0 user provisioning endpoints.
+#![cfg(test)]
+
+//! Legacy SCIM transport contract harness.
+//!
+//! Production handlers live in `nazo-http-actix`; this module remains only
+//! for the existing compatibility fixtures while those tests are migrated.
 use nazo_http_actix::{empty_response, json_response, json_response_status};
 
 #[cfg(test)]

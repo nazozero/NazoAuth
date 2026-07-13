@@ -65,6 +65,7 @@ use crate::http::profile::{
     session::logout,
     session_management::{check_session_iframe, check_session_status},
 };
+#[cfg(test)]
 use crate::http::scim::{
     scim_create_user, scim_delete_user, scim_get_user, scim_list_users, scim_patch_user,
     scim_replace_user, scim_resource_types, scim_schemas, scim_service_provider_config,
@@ -86,6 +87,11 @@ use crate::http::well_known::{captcha_config, health};
 use crate::settings::Settings;
 #[cfg(not(test))]
 use nazo_http_actix::fapi_resource;
+#[cfg(not(test))]
+use nazo_http_actix::{
+    scim_create_user, scim_delete_user, scim_get_user, scim_list_users, scim_patch_user,
+    scim_replace_user, scim_resource_types, scim_schemas, scim_service_provider_config,
+};
 
 use super::cors;
 

@@ -15,6 +15,7 @@ url.workspace = true
 uuid = { workspace = true, features = ["v7"] }
 nazo-auth.workspace = true
 nazo-http-signatures.workspace = true
+nazo-identity.workspace = true
 nazo-resource-server.workspace = true
 nazo-runtime-modules.workspace = true
 

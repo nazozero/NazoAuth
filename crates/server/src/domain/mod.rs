@@ -10,6 +10,8 @@ mod oauth;
 mod oidc_logout;
 mod resource_server;
 mod rows;
+#[cfg(not(test))]
+mod scim;
 #[cfg(test)]
 mod state;
 mod userinfo;
@@ -36,6 +38,10 @@ pub(crate) use resource_server::{
     ServerFapiHttpMessageSignatures, ServerFapiMtlsResolver, ServerFapiResourceAuthorizer,
 };
 pub(crate) use rows::{ClientRow, TokenRow};
+#[cfg(not(test))]
+pub(crate) use scim::{
+    ServerScimBootstrapPasswordProvider, ServerScimCursorProtector, ServerScimRequestAuthorizer,
+};
 #[cfg(test)]
 pub(crate) use state::AppState;
 pub(crate) use userinfo::{UserinfoConfig, UserinfoHandles};

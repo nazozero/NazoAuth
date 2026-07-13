@@ -12,6 +12,7 @@ mod metadata;
 mod middleware;
 mod presenter;
 mod request_context;
+mod scim;
 mod token_forms;
 
 pub use cookies::{clear_cookie, cookie_value, make_cookie, with_cookie_headers};
@@ -41,6 +42,12 @@ pub use presenter::{
     oauth_bearer_error, oauth_error, oauth_error_description, oauth_token_error, redirect_found,
 };
 pub use request_context::RequestContext;
+pub use scim::{
+    ScimAuthorizationError, ScimAuthorizedRequest, ScimBootstrapPasswordProvider,
+    ScimCursorProtector, ScimDependencyError, ScimEndpoint, ScimFuture, ScimRequestAuthorizer,
+    scim_create_user, scim_delete_user, scim_get_user, scim_list_users, scim_patch_user,
+    scim_replace_user, scim_resource_types, scim_schemas, scim_service_provider_config,
+};
 pub use token_forms::{
     TokenForm, TokenFormError, TokenManagementFormError, TokenOnlyForm, parse_token_form,
     parse_token_management_form, token_management_form_error,
