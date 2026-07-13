@@ -1,4 +1,3 @@
-use super::*;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
@@ -11,10 +10,12 @@ use crate::settings::Settings;
 use crate::support::{
     DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_get,
 };
-use actix_web::http::header;
+use actix_web::http::{StatusCode, header};
 use actix_web::web::{Data, Json};
+use actix_web::{HttpRequest, HttpResponse};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64URL;
+use chrono::Utc;
 use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Text, Uuid as SqlUuid};
@@ -24,10 +25,11 @@ use fred::interfaces::ClientLike;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
+use nazo_http_actix::{PasskeyLoginBeginRequest, PasskeyLoginFinishRequest, oauth_error};
 use nazo_identity::PublicAccount;
 use nazo_postgres::get_conn;
 use passkey_auth::{AuthenticationResponse, PasskeyCredential, RegistrationResponse, Webauthn};
-use serde_json::Value;
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
@@ -66,7 +68,7 @@ async fn remember_mfa_device(
 fn passkey_login_transport_has_no_identity_or_storage_orchestration() {
     let source = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/src/http/auth/passkey.rs"
+        "/../http-actix/src/passkey.rs"
     ));
     for forbidden in [
         "AppState",
@@ -89,13 +91,7 @@ async fn passkey_login_begin(
     req: HttpRequest,
     payload: Json<PasskeyLoginBeginRequest>,
 ) -> HttpResponse {
-    super::passkey_login_begin(
-        crate::test_support::auth_request_limiter(&state),
-        crate::test_support::passkey_service(&state),
-        req,
-        payload,
-    )
-    .await
+    nazo_http_actix::passkey_login_begin(super::test_login_endpoint(&state), req, Ok(payload)).await
 }
 
 async fn passkey_login_finish(
@@ -103,23 +99,8 @@ async fn passkey_login_finish(
     req: HttpRequest,
     payload: Json<PasskeyLoginFinishRequest>,
 ) -> HttpResponse {
-    super::passkey_login_finish(
-        crate::test_support::auth_request_limiter(&state),
-        crate::test_support::client_ip_config(&state),
-        crate::test_support::passkey_service(&state),
-        crate::test_support::passkey_http_config(&state),
-        req,
-        payload,
-    )
-    .await
-}
-
-fn passkey_login_failed_response() -> HttpResponse {
-    super::passkey_login_error(PasskeyError::LoginFailed)
-}
-
-fn passkey_ceremony_expired_response() -> HttpResponse {
-    super::passkey_login_error(PasskeyError::CeremonyExpired)
+    nazo_http_actix::passkey_login_finish(super::test_login_endpoint(&state), req, Ok(payload))
+        .await
 }
 
 async fn load_user_passkeys(
@@ -519,6 +500,11 @@ fn client_data(kind: &str, challenge_b64: &str, origin: &str) -> (Vec<u8>, Strin
 }
 
 async fn response_json(response: HttpResponse) -> (StatusCode, Value) {
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store"
+    );
+    assert_eq!(response.headers().get(header::PRAGMA).unwrap(), "no-cache");
     let status = response.status();
     let body = actix_web::body::to_bytes(response.into_body())
         .await
@@ -578,109 +564,6 @@ async fn begin_passkey_login(fixture: &LivePasskeyFixture, email: &str) -> (Stri
 }
 
 #[actix_web::test]
-async fn passkey_login_failure_is_uniform_and_does_not_enumerate_users() {
-    let response = passkey_login_failed_response();
-    assert!(
-        !response
-            .headers()
-            .contains_key(actix_web::http::header::SET_COOKIE)
-    );
-    assert!(
-        !response
-            .headers()
-            .contains_key(actix_web::http::header::WWW_AUTHENTICATE)
-    );
-
-    let (status, body) = response_json(response).await;
-
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-    assert_eq!(body["error"], "access_denied");
-    assert_eq!(body["error_description"], "passkey login failed.");
-    assert!(body.get("user_id").is_none());
-    assert!(body.get("email").is_none());
-    assert!(body.get("credential_id").is_none());
-    assert!(body.get("ceremony_id").is_none());
-}
-
-#[actix_web::test]
-async fn expired_passkey_ceremony_is_invalid_request_without_session_material() {
-    let response = passkey_ceremony_expired_response();
-    assert!(
-        !response
-            .headers()
-            .contains_key(actix_web::http::header::SET_COOKIE)
-    );
-
-    let (status, body) = response_json(response).await;
-
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(body["error"], "invalid_request");
-    assert_eq!(body["error_description"], "passkey ceremony expired.");
-    assert!(body.get("csrf_token").is_none());
-    assert!(body.get("expires_in").is_none());
-}
-
-#[actix_web::test]
-async fn passkey_session_response_sets_bound_cookies_and_minimal_body() {
-    let response = passkey_session_response(
-        &PasskeyHttpConfig::new("nazo_session", "nazo_csrf", 900, true),
-        nazo_identity::LoginSuccess {
-            session_id: "session-secret".to_owned(),
-            csrf_token: "csrf-secret".to_owned(),
-            session: nazo_identity::session::SessionRecord::new(
-                nazo_identity::UserId::new(Uuid::from_u128(1)).unwrap(),
-                Utc::now().timestamp(),
-                vec!["passkey".to_owned()],
-                false,
-                Some("oidc-session".to_owned()),
-            ),
-        },
-    );
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let cookies = response
-        .headers()
-        .get_all(actix_web::http::header::SET_COOKIE)
-        .filter_map(|value| value.to_str().ok())
-        .collect::<Vec<_>>();
-    assert_eq!(cookies.len(), 2);
-
-    let session_cookie = cookies
-        .iter()
-        .find(|cookie| cookie.starts_with("nazo_session=session-secret"))
-        .expect("passkey login must set the session cookie");
-    assert!(session_cookie.contains("HttpOnly"));
-    assert!(session_cookie.contains("Secure"));
-    assert!(session_cookie.contains("SameSite=Lax"));
-    assert!(session_cookie.contains("Max-Age=900"));
-
-    let csrf_cookie = cookies
-        .iter()
-        .find(|cookie| cookie.starts_with("nazo_csrf=csrf-secret"))
-        .expect("passkey login must set a CSRF cookie");
-    assert!(!csrf_cookie.contains("HttpOnly"));
-    assert!(csrf_cookie.contains("Secure"));
-    assert!(csrf_cookie.contains("SameSite=Lax"));
-    assert!(csrf_cookie.contains("Max-Age=900"));
-
-    let body = actix_web::body::to_bytes(response.into_body())
-        .await
-        .expect("response body should be readable");
-    let body: Value = serde_json::from_slice(&body).expect("response should be json");
-    assert_eq!(
-        body,
-        json!({
-            "expires_in": 900,
-            "csrf_token": "csrf-secret",
-            "mfa_required": false
-        })
-    );
-    assert!(body.get("session_id").is_none());
-    assert!(body.get("credential_id").is_none());
-    assert!(body.get("user_id").is_none());
-}
-
-#[actix_web::test]
 async fn passkey_login_finish_creates_session_updates_counter_and_consumes_ceremony_once() {
     let Some(fixture) = LivePasskeyFixture::new().await else {
         return;
@@ -690,6 +573,22 @@ async fn passkey_login_finish_creates_session_updates_counter_and_consumes_cerem
     let mut authenticator = FakeAuthenticator::new(format!("login-credential-{suffix}").as_bytes());
     let credential = fixture.register_credential(&user, &authenticator);
     let row = fixture.insert_credential(&user, &credential).await;
+    let previous_session_id = Uuid::now_v7().to_string();
+    let previous_session = nazo_identity::session::SessionRecord::new(
+        nazo_identity::UserId::new(user.id).expect("fixture user id is valid"),
+        Utc::now().timestamp(),
+        vec!["pwd".to_owned()],
+        false,
+        Some(Uuid::now_v7().to_string()),
+    );
+    nazo_identity::ports::LoginSessionPort::create(
+        &nazo_valkey::SessionStore::new(&fixture.state.valkey_connection()),
+        &previous_session_id,
+        &previous_session,
+        900,
+    )
+    .await
+    .expect("previous session should be stored");
 
     let begin_response = passkey_login_begin(
         fixture.state.clone(),
@@ -710,7 +609,12 @@ async fn passkey_login_finish_creates_session_updates_counter_and_consumes_cerem
 
     let finish_response = passkey_login_finish(
         fixture.state.clone(),
-        actix_web::test::TestRequest::default().to_http_request(),
+        actix_web::test::TestRequest::default()
+            .cookie(actix_web::cookie::Cookie::new(
+                fixture.state.settings.session.session_cookie_name.clone(),
+                previous_session_id.clone(),
+            ))
+            .to_http_request(),
         Json(PasskeyLoginFinishRequest {
             ceremony_id: ceremony_id.to_owned(),
             response: authenticator.authentication_response(
@@ -732,6 +636,16 @@ async fn passkey_login_finish_creates_session_updates_counter_and_consumes_cerem
     let body: Value = serde_json::from_slice(&body).expect("response should be json");
     assert_eq!(body["mfa_required"], false);
     assert!(body.get("session_id").is_none());
+    assert!(
+        valkey_get(
+            &fixture.state.valkey,
+            format!("oauth:session:{previous_session_id}")
+        )
+        .await
+        .expect("previous session lookup should succeed")
+        .is_none(),
+        "successful passkey login must atomically invalidate the previous session"
+    );
 
     let rows = load_user_passkeys(&fixture.state, &user.identity())
         .await
@@ -969,19 +883,44 @@ async fn passkey_login_finish_rejects_credential_mismatch_uniformly_and_consumes
     );
 }
 
+fn normalized_login_begin(mut body: Value) -> Value {
+    body["ceremony_id"] = json!("<opaque>");
+    body["publicKey"]["challenge"] = json!("<opaque>");
+    for credential in body["publicKey"]["allowCredentials"]
+        .as_array_mut()
+        .expect("allowCredentials must be an array")
+    {
+        credential["id"] = json!("<opaque>");
+    }
+    body
+}
+
 #[actix_web::test]
-async fn passkey_login_begin_rejects_unknown_and_inactive_users_uniformly() {
+async fn passkey_login_begin_does_not_enumerate_account_or_credential_state() {
     let Some(fixture) = LivePasskeyFixture::new().await else {
         return;
     };
     let suffix = Uuid::now_v7().simple().to_string();
+    let registered = fixture
+        .create_user_with_email(&format!("passkey-registered-{suffix}@example.com"), true)
+        .await;
+    let authenticator = FakeAuthenticator::new(format!("registered-{suffix}").as_bytes());
+    let credential = fixture.register_credential(&registered, &authenticator);
+    fixture.insert_credential(&registered, &credential).await;
+    let without_credential = fixture
+        .create_user_with_email(&format!("passkey-empty-{suffix}@example.com"), true)
+        .await;
     let inactive_email = format!("passkey-inactive-{suffix}@example.com");
     fixture.create_user_with_email(&inactive_email, false).await;
 
-    for email in [
-        format!("missing-{suffix}@example.com"),
-        inactive_email.to_uppercase(),
-    ] {
+    let cases = [
+        (registered.email, false),
+        (format!("missing-{suffix}@example.com"), true),
+        (without_credential.email, true),
+        (inactive_email.to_uppercase(), true),
+    ];
+    let mut expected_response = None;
+    for (email, dummy) in cases {
         let response = passkey_login_begin(
             fixture.state.clone(),
             actix_web::test::TestRequest::default().to_http_request(),
@@ -992,46 +931,53 @@ async fn passkey_login_begin_rejects_unknown_and_inactive_users_uniformly() {
         .await;
         assert!(
             !response.headers().contains_key(header::SET_COOKIE),
-            "failed begin responses must not mint session cookies"
+            "begin responses must not mint session cookies"
         );
         let (status, body) = response_json(response).await;
 
-        assert_eq!(status, StatusCode::UNAUTHORIZED);
-        assert_eq!(body["error"], "access_denied");
-        assert_eq!(body["error_description"], "passkey login failed.");
-        assert!(body.get("ceremony_id").is_none());
-        assert!(body.get("publicKey").is_none());
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            body["ceremony_id"]
+                .as_str()
+                .is_some_and(|id| id.len() >= 32)
+        );
+        assert_eq!(body["publicKey"]["rpId"], "example.com");
+        let allowed_credentials = body["publicKey"]["allowCredentials"]
+            .as_array()
+            .expect("allowCredentials must be present");
+        assert_eq!(allowed_credentials.len(), 1);
+        for descriptor in allowed_credentials {
+            assert!(
+                descriptor.get("transports").is_none(),
+                "unauthenticated begin responses must not expose authenticator transport hints"
+            );
+        }
+        let normalized = normalized_login_begin(body.clone());
+        match &expected_response {
+            Some(expected) => assert_eq!(
+                &normalized, expected,
+                "account and credential state must not change the response contract"
+            ),
+            None => expected_response = Some(normalized),
+        }
+
+        if dummy {
+            let finish = passkey_login_finish(
+                fixture.state.clone(),
+                actix_web::test::TestRequest::default().to_http_request(),
+                Json(PasskeyLoginFinishRequest {
+                    ceremony_id: body["ceremony_id"].as_str().unwrap().to_owned(),
+                    response: dummy_authentication_response(),
+                }),
+            )
+            .await;
+            assert!(!finish.headers().contains_key(header::SET_COOKIE));
+            let (finish_status, finish_body) = response_json(finish).await;
+            assert_eq!(finish_status, StatusCode::UNAUTHORIZED);
+            assert_eq!(finish_body["error"], "access_denied");
+            assert_eq!(finish_body["error_description"], "passkey login failed.");
+        }
     }
-}
-
-#[actix_web::test]
-async fn passkey_login_begin_rejects_users_without_registered_credentials() {
-    let Some(fixture) = LivePasskeyFixture::new().await else {
-        return;
-    };
-    let user = fixture
-        .create_user(&Uuid::now_v7().simple().to_string())
-        .await;
-
-    let response = passkey_login_begin(
-        fixture.state.clone(),
-        actix_web::test::TestRequest::default().to_http_request(),
-        Json(PasskeyLoginBeginRequest {
-            email: user.email.clone(),
-        }),
-    )
-    .await;
-    assert!(
-        !response.headers().contains_key(header::SET_COOKIE),
-        "users without passkeys must not receive session cookies"
-    );
-    let (status, body) = response_json(response).await;
-
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-    assert_eq!(body["error"], "access_denied");
-    assert_eq!(body["error_description"], "passkey login failed.");
-    assert!(body.get("ceremony_id").is_none());
-    assert!(body.get("publicKey").is_none());
 }
 
 #[actix_web::test]

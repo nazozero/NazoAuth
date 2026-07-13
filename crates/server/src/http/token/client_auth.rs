@@ -1,9 +1,5 @@
 //! token 管理端点复用的客户端认证。
 #[cfg(test)]
-use nazo_http_actix::OAuthJsonErrorFields;
-use nazo_http_actix::{oauth_error, oauth_token_error};
-
-#[cfg(test)]
 use crate::domain::AppState;
 use crate::domain::ClientRow;
 #[cfg(test)]
@@ -11,7 +7,7 @@ use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::security::consume_private_key_jwt;
 use crate::support::{
-    mtls::client_mtls_certificate_matches, mtls::request_mtls_client_certificate_from_headers,
+    mtls::MtlsClientCertificate, mtls::client_mtls_certificate_matches,
     security::ClientAssertionError, security::ClientCredentials,
     security::ValidatedClientAssertion, security::blake3_hex, security::client_secret_digest,
     security::verify_private_key_jwt_claims_for_issuer,
@@ -20,12 +16,6 @@ use crate::support::{
 use crate::support::{
     tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
 };
-use actix_web::http::StatusCode;
-#[cfg(test)]
-use actix_web::http::header;
-#[cfg(test)]
-use actix_web::http::header::HeaderValue;
-use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
 use chrono::Utc;
 use nazo_auth::{
@@ -43,23 +33,39 @@ pub(crate) enum TokenManagementClientAuthError {
     StoreUnavailable,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct ClientAuthRequestFacts {
+    endpoint_path: String,
+    client_certificate: Option<MtlsClientCertificate>,
+}
+
+impl ClientAuthRequestFacts {
+    pub(crate) fn new(
+        endpoint_path: impl Into<String>,
+        client_certificate: Option<MtlsClientCertificate>,
+    ) -> Self {
+        Self {
+            endpoint_path: endpoint_path.into(),
+            client_certificate,
+        }
+    }
+
+    pub(crate) fn endpoint_path(&self) -> &str {
+        &self.endpoint_path
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct ClientAuthConfig<'a> {
     issuer: &'a str,
     client_secret_pepper: &'a str,
-    trusted_proxy_cidrs: &'a [crate::support::client_ip::IpCidr],
 }
 
 impl<'a> ClientAuthConfig<'a> {
-    pub(crate) fn new(
-        issuer: &'a str,
-        client_secret_pepper: &'a str,
-        trusted_proxy_cidrs: &'a [crate::support::client_ip::IpCidr],
-    ) -> Self {
+    pub(crate) fn new(issuer: &'a str, client_secret_pepper: &'a str) -> Self {
         Self {
             issuer,
             client_secret_pepper,
-            trusted_proxy_cidrs,
         }
     }
 }
@@ -88,17 +94,18 @@ pub(crate) fn perform_dummy_client_secret_verification(
     }
 }
 
+#[cfg(not(test))]
 pub(crate) async fn authenticate_introspection_client_with_dependencies(
     service: &crate::http::authorization::ServerAuthorizationService,
     config: ClientAuthConfig<'_>,
-    req: &HttpRequest,
+    request: &ClientAuthRequestFacts,
     client: &ClientRow,
     credentials: &ClientCredentials,
 ) -> Result<(), TokenManagementClientAuthError> {
     let assertion = authenticate_client_with_dependencies(
         service,
         config,
-        req,
+        request,
         client,
         credentials,
         ClientAuthenticationContext::ConfidentialOnly,
@@ -118,17 +125,18 @@ pub(crate) async fn authenticate_introspection_client_with_dependencies(
     })
 }
 
+#[cfg(not(test))]
 pub(crate) async fn authenticate_revocation_client_with_dependencies(
     service: &crate::http::authorization::ServerAuthorizationService,
     config: ClientAuthConfig<'_>,
-    req: &HttpRequest,
+    request: &ClientAuthRequestFacts,
     client: &ClientRow,
     credentials: &ClientCredentials,
 ) -> Result<(), TokenManagementClientAuthError> {
     let assertion = authenticate_client_with_dependencies(
         service,
         config,
-        req,
+        request,
         client,
         credentials,
         ClientAuthenticationContext::AllowPublicNone,
@@ -145,7 +153,7 @@ pub(crate) async fn authenticate_revocation_client_with_dependencies(
 #[cfg(test)]
 pub(crate) async fn verify_confidential_client(
     state: &AppState,
-    req: &HttpRequest,
+    request: &ClientAuthRequestFacts,
     client: &ClientRow,
     credentials: &ClientCredentials,
 ) -> Result<Option<ValidatedClientAssertion>, TokenManagementClientAuthError> {
@@ -163,9 +171,8 @@ pub(crate) async fn verify_confidential_client(
         ClientAuthConfig::new(
             &state.settings.endpoint.issuer,
             &state.settings.protocol.client_secret_pepper,
-            &state.settings.endpoint.trusted_proxy_cidrs,
         ),
-        req,
+        request,
         client,
         credentials,
         ClientAuthenticationContext::ConfidentialOnly,
@@ -189,14 +196,14 @@ fn revocation_public_client_allows_credentials(credentials: &ClientCredentials) 
 pub(crate) async fn authenticate_client_with_dependencies(
     service: &crate::http::authorization::ServerAuthorizationService,
     config: ClientAuthConfig<'_>,
-    req: &HttpRequest,
+    request: &ClientAuthRequestFacts,
     client: &ClientRow,
     credentials: &ClientCredentials,
     context: ClientAuthenticationContext,
 ) -> Result<Option<ValidatedClientAssertion>, TokenManagementClientAuthError> {
     let requirement =
         client_authentication_requirement(client, credentials, context).map_err(|error| {
-            log_client_auth_rejection(req, client, credentials, "policy");
+            log_client_auth_rejection(request, client, credentials, "policy");
             match error {
                 ClientAuthenticationPolicyError::InvalidClient => {
                     TokenManagementClientAuthError::InvalidClient
@@ -210,17 +217,22 @@ pub(crate) async fn authenticate_client_with_dependencies(
     match requirement {
         ClientAuthenticationRequirement::PublicClient => Ok(None),
         ClientAuthenticationRequirement::PrivateKeyJwt { assertion } => {
-            verify_private_key_jwt_claims_for_issuer(config.issuer, req, client, assertion)
-                .map(Some)
-                .map_err(|error| {
-                    log_client_auth_rejection(
-                        req,
-                        client,
-                        credentials,
-                        client_assertion_error_reason(&error),
-                    );
-                    token_management_client_assertion_error(error)
-                })
+            verify_private_key_jwt_claims_for_issuer(
+                config.issuer,
+                request.endpoint_path(),
+                client,
+                assertion,
+            )
+            .map(Some)
+            .map_err(|error| {
+                log_client_auth_rejection(
+                    request,
+                    client,
+                    credentials,
+                    client_assertion_error_reason(&error),
+                );
+                token_management_client_assertion_error(error)
+            })
         }
         ClientAuthenticationRequirement::ClientSecret { secret, .. } => {
             let secret_match = match service.client_secret_salt(client.id).await {
@@ -243,26 +255,19 @@ pub(crate) async fn authenticate_client_with_dependencies(
             if client_secret_auth_result(secret_match)? {
                 Ok(None)
             } else {
-                log_client_auth_rejection(req, client, credentials, "client_secret");
+                log_client_auth_rejection(request, client, credentials, "client_secret");
                 Err(TokenManagementClientAuthError::InvalidClient)
             }
         }
         ClientAuthenticationRequirement::MutualTls { .. } => {
-            let trusted = crate::support::client_ip::request_from_trusted_proxy_cidrs(
-                req,
-                config.trusted_proxy_cidrs,
-            );
-            let Some(certificate) = trusted
-                .then(|| request_mtls_client_certificate_from_headers(req.headers()))
-                .flatten()
-            else {
-                log_client_auth_rejection(req, client, credentials, "missing_mtls_certificate");
+            let Some(certificate) = request.client_certificate.as_ref() else {
+                log_client_auth_rejection(request, client, credentials, "missing_mtls_certificate");
                 return Err(TokenManagementClientAuthError::InvalidClient);
             };
-            if client_mtls_certificate_matches(client, &certificate) {
+            if client_mtls_certificate_matches(client, certificate) {
                 Ok(None)
             } else {
-                log_client_auth_rejection(req, client, credentials, "mtls_certificate");
+                log_client_auth_rejection(request, client, credentials, "mtls_certificate");
                 Err(TokenManagementClientAuthError::InvalidClient)
             }
         }
@@ -287,7 +292,7 @@ fn client_assertion_error_reason(error: &ClientAssertionError) -> &'static str {
 }
 
 fn log_client_auth_rejection(
-    req: &HttpRequest,
+    request: &ClientAuthRequestFacts,
     client: &ClientRow,
     credentials: &ClientCredentials,
     reason: &'static str,
@@ -296,49 +301,11 @@ fn log_client_auth_rejection(
         target: "client_auth",
         "client_auth_rejected reason={} path={} client_id_hash={} expected_method={} presented_method={}",
         reason,
-        req.uri().path(),
+        request.endpoint_path(),
         blake3_hex(&client.client_id),
         client.token_endpoint_auth_method,
         credentials.method
     );
-}
-
-pub(crate) fn token_management_auth_error(error: TokenManagementClientAuthError) -> HttpResponse {
-    match error {
-        TokenManagementClientAuthError::InvalidClient
-        | TokenManagementClientAuthError::PublicClientCredentialsForbidden => oauth_error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_client",
-            "客户端认证失败.",
-        ),
-        TokenManagementClientAuthError::StoreUnavailable => oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "客户端认证状态存储不可用.",
-        ),
-    }
-}
-
-#[cfg(test)]
-pub(crate) fn token_management_client_auth_error(
-    error: TokenManagementClientAuthError,
-    basic_challenge: bool,
-) -> HttpResponse {
-    match error {
-        TokenManagementClientAuthError::InvalidClient
-        | TokenManagementClientAuthError::PublicClientCredentialsForbidden => oauth_token_error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_client",
-            "客户端认证失败.",
-            basic_challenge,
-        ),
-        TokenManagementClientAuthError::StoreUnavailable => oauth_token_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "客户端认证状态存储不可用.",
-            false,
-        ),
-    }
 }
 
 pub(crate) async fn consume_token_management_client_assertion_with_authorization_service(
@@ -371,7 +338,7 @@ pub(crate) async fn consume_token_client_assertion_with_authorization_service(
     service: &crate::http::authorization::ServerAuthorizationService,
     client: &ClientRow,
     assertion: Option<&ValidatedClientAssertion>,
-) -> Result<(), HttpResponse> {
+) -> Result<(), TokenManagementClientAuthError> {
     let Some(assertion) = assertion else {
         return Ok(());
     };
@@ -379,24 +346,7 @@ pub(crate) async fn consume_token_client_assertion_with_authorization_service(
         service, client, assertion,
     )
     .await
-    .map_err(token_client_assertion_error)
-}
-
-fn token_client_assertion_error(error: ClientAssertionError) -> HttpResponse {
-    match error {
-        ClientAssertionError::StoreUnavailable => oauth_token_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "客户端认证状态存储不可用.",
-            false,
-        ),
-        ClientAssertionError::Invalid | ClientAssertionError::ReplayDetected => oauth_token_error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_client",
-            "客户端认证失败.",
-            false,
-        ),
-    }
+    .map_err(token_management_client_assertion_error)
 }
 
 #[cfg(test)]
@@ -404,13 +354,13 @@ pub(crate) async fn consume_token_client_assertion(
     state: &AppState,
     client: &ClientRow,
     assertion: Option<&ValidatedClientAssertion>,
-) -> Result<(), HttpResponse> {
+) -> Result<(), TokenManagementClientAuthError> {
     let Some(assertion) = assertion else {
         return Ok(());
     };
     consume_private_key_jwt(state, client, assertion)
         .await
-        .map_err(token_client_assertion_error)
+        .map_err(token_management_client_assertion_error)
 }
 
 #[cfg(test)]

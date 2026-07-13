@@ -27,6 +27,7 @@ mod oidc_logout;
 mod profile;
 mod resource_indicator;
 mod sender_constraint;
+mod session_management;
 mod signing;
 mod token;
 mod token_endpoint;
@@ -168,6 +169,9 @@ pub use resource_indicator::{
 };
 pub use sender_constraint::{
     SenderConstraintPolicy, is_valid_dpop_jkt, normalize_sha256_thumbprint,
+};
+pub use session_management::{
+    OidcSessionStatus, check_oidc_session_state, issue_oidc_session_state, oidc_session_state,
 };
 pub use signing::{SignError, SignRequest, Signature, Signer, SigningPurpose};
 pub use token::{

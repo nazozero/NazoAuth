@@ -1,12 +1,14 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
-use actix_web::HttpRequest;
 use chrono::Utc;
-use nazo_auth::{ClientAuthenticationContext, IntrospectionSignInput, OAuthClient};
+use nazo_auth::{
+    CLIENT_ASSERTION_TYPE_JWT_BEARER, ClientAuthenticationContext, IntrospectionSignInput,
+    OAuthClient, unverified_client_assertion_client_id,
+};
 use nazo_http_actix::{
-    TokenIntrospectionRepresentation, TokenManagementError, TokenManagementFuture,
-    TokenManagementOperations, TokenManagementRateLimitError, TokenManagementRequestGuard,
-    TokenOnlyForm,
+    TokenClientAuthTransportFacts, TokenIntrospectionRepresentation, TokenManagementError,
+    TokenManagementFuture, TokenManagementOperations, TokenManagementRateLimitError,
+    TokenManagementRequestFacts, TokenManagementRequestGuard, TokenOnlyForm,
 };
 use serde_json::json;
 
@@ -16,7 +18,7 @@ use crate::{
         token::{
             ServerTokenService,
             client_auth::{
-                ClientAuthConfig, TokenManagementClientAuthError,
+                ClientAuthConfig, ClientAuthRequestFacts, TokenManagementClientAuthError,
                 authenticate_introspection_client_with_dependencies,
                 authenticate_revocation_client_with_dependencies,
                 perform_dummy_client_secret_verification,
@@ -25,12 +27,8 @@ use crate::{
     },
     support::{
         audit::{audit_event, audit_fields},
-        client_ip::client_ip_with_config,
         jwe::{JwePayloadKind, client_jwe_key, encrypt_compact_jwe},
-        security::{
-            blake3_hex, extract_client_credentials_with_trusted_proxies,
-            has_basic_authorization_scheme,
-        },
+        security::blake3_hex,
     },
 };
 
@@ -55,9 +53,9 @@ impl ServerTokenManagementRequestGuard {
 impl TokenManagementRequestGuard for ServerTokenManagementRequestGuard {
     fn enforce<'a>(
         &'a self,
-        request: &'a HttpRequest,
+        request: &'a TokenManagementRequestFacts,
     ) -> Pin<Box<dyn Future<Output = Result<(), TokenManagementRateLimitError>> + Send + 'a>> {
-        let subject = client_ip_with_config(request, &self.config.client_ip);
+        let subject = request.source_ip.clone();
         Box::pin(async move {
             let count = self
                 .token_service
@@ -99,19 +97,30 @@ impl ServerTokenManagementOperations {
 
     async fn authenticate(
         &self,
-        request: &HttpRequest,
+        request: &TokenManagementRequestFacts,
+        client_auth: &TokenClientAuthTransportFacts,
         form: &TokenOnlyForm,
         context: ClientAuthenticationContext,
     ) -> Result<OAuthClient, TokenManagementError> {
-        let has_basic = has_basic_authorization_scheme(request.headers());
-        let credentials = extract_client_credentials_with_trusted_proxies(
-            request,
-            &self.config.trusted_proxy_cidrs,
-            form.client_id.as_deref(),
-            form.client_secret.as_deref(),
-            form.client_assertion_type.as_deref(),
-            form.client_assertion.as_deref(),
-        );
+        let has_basic = client_auth.basic_challenge();
+        let presentation = client_auth.presentation();
+        let assertion_client_id = client_auth
+            .client_assertion()
+            .filter(|_| {
+                client_auth.client_assertion_type() == Some(CLIENT_ASSERTION_TYPE_JWT_BEARER)
+            })
+            .and_then(unverified_client_assertion_client_id);
+        let mtls_client_id = if !presentation.http_basic
+            && !presentation.client_assertion_type
+            && !presentation.client_assertion
+            && !presentation.form_client_secret
+            && request.client_certificate.is_some()
+        {
+            form.client_id.clone()
+        } else {
+            None
+        };
+        let credentials = client_auth.presented_credentials(assertion_client_id, mtls_client_id);
         let Some(client_id) = credentials.client_id.as_deref() else {
             return Err(TokenManagementError::InvalidClient {
                 basic_challenge: has_basic,
@@ -133,17 +142,15 @@ impl ServerTokenManagementOperations {
                 return Err(TokenManagementError::ClientLookupUnavailable);
             }
         };
-        let config = ClientAuthConfig::new(
-            &self.config.issuer,
-            &self.config.client_secret_pepper,
-            &self.config.trusted_proxy_cidrs,
-        );
+        let config = ClientAuthConfig::new(&self.config.issuer, &self.config.client_secret_pepper);
+        let auth_request =
+            ClientAuthRequestFacts::new(&request.endpoint_path, request.client_certificate.clone());
         let result = match context {
             ClientAuthenticationContext::ConfidentialOnly => {
                 authenticate_introspection_client_with_dependencies(
                     &self.authorization_service,
                     config,
-                    request,
+                    &auth_request,
                     &client,
                     &credentials,
                 )
@@ -153,7 +160,7 @@ impl ServerTokenManagementOperations {
                 authenticate_revocation_client_with_dependencies(
                     &self.authorization_service,
                     config,
-                    request,
+                    &auth_request,
                     &client,
                     &credentials,
                 )
@@ -206,14 +213,16 @@ impl ServerTokenManagementOperations {
 impl TokenManagementOperations for ServerTokenManagementOperations {
     fn introspect<'a>(
         &'a self,
-        request: &'a HttpRequest,
+        request: TokenManagementRequestFacts,
+        client_auth: TokenClientAuthTransportFacts,
         form: TokenOnlyForm,
         signed_response_requested: bool,
     ) -> TokenManagementFuture<'a, TokenIntrospectionRepresentation> {
         Box::pin(async move {
             let client = self
                 .authenticate(
-                    request,
+                    &request,
+                    &client_auth,
                     &form,
                     ClientAuthenticationContext::ConfidentialOnly,
                 )
@@ -238,12 +247,18 @@ impl TokenManagementOperations for ServerTokenManagementOperations {
 
     fn revoke<'a>(
         &'a self,
-        request: &'a HttpRequest,
+        request: TokenManagementRequestFacts,
+        client_auth: TokenClientAuthTransportFacts,
         form: TokenOnlyForm,
     ) -> TokenManagementFuture<'a, ()> {
         Box::pin(async move {
             let client = self
-                .authenticate(request, &form, ClientAuthenticationContext::AllowPublicNone)
+                .authenticate(
+                    &request,
+                    &client_auth,
+                    &form,
+                    ClientAuthenticationContext::AllowPublicNone,
+                )
                 .await?;
             let updated = self
                 .token_service
@@ -259,13 +274,7 @@ impl TokenManagementOperations for ServerTokenManagementOperations {
                     ("client_id", json!(client.client_id)),
                     ("token_hash", json!(blake3_hex(&form.token))),
                     ("updated", json!(updated)),
-                    (
-                        "source_ip_hash",
-                        json!(blake3_hex(&client_ip_with_config(
-                            request,
-                            &self.config.client_ip,
-                        ))),
-                    ),
+                    ("source_ip_hash", json!(blake3_hex(&request.source_ip))),
                 ]),
             );
             Ok(())

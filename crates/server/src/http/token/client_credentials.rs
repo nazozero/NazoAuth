@@ -149,14 +149,14 @@ pub(crate) async fn token_client_credentials_with_service(
     } else {
         None
     };
-    if let Err(response) = consume_token_client_assertion_with_authorization_service(
+    if let Err(error) = consume_token_client_assertion_with_authorization_service(
         authorization_service,
         client,
         client_assertion,
     )
     .await
     {
-        return response;
+        return super::token_client_assertion_error(error);
     }
     let issue_request = match client_credentials_issue_request_with_default_audience(
         issuance.config.default_audience(),

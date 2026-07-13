@@ -415,14 +415,14 @@ pub(crate) async fn token_exchange(
     if let Err(error) = validate_token_exchange_grant_prerequisites(&request, policy) {
         return token_exchange_error_response(error);
     }
-    if let Err(response) = consume_token_client_assertion_with_authorization_service(
+    if let Err(error) = consume_token_client_assertion_with_authorization_service(
         authorization_service,
         client,
         client_assertion,
     )
     .await
     {
-        return response;
+        return super::token_client_assertion_error(error);
     }
     let subject_token = form
         .subject_token

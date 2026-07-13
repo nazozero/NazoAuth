@@ -65,16 +65,7 @@ const SAN_EMAIL_HEADERS: &[&str] = &[
     "x-ssl-client-san-email",
 ];
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct MtlsClientCertificate {
-    pub(crate) thumbprint: Option<String>,
-    pub(crate) subject_dn: Option<String>,
-    pub(crate) san_dns: Vec<String>,
-    pub(crate) san_uri: Vec<String>,
-    pub(crate) san_ip: Vec<String>,
-    pub(crate) san_email: Vec<String>,
-    pub(crate) verified_certificate_expiry: bool,
-}
+pub(crate) use nazo_http_actix::ClientCertificateFacts as MtlsClientCertificate;
 
 #[cfg(test)]
 pub(crate) fn request_mtls_thumbprint(req: &HttpRequest, settings: &Settings) -> Option<String> {
@@ -149,7 +140,7 @@ pub(crate) fn request_mtls_client_certificate_from_headers(
         certificate.verified_certificate_expiry |= parsed.verified_certificate_expiry;
     }
 
-    certificate.has_binding_material().then_some(certificate)
+    certificate_has_binding_material(&certificate).then_some(certificate)
 }
 
 pub(crate) fn certificate_pem_identity(value: &str) -> Option<MtlsClientCertificate> {
@@ -274,15 +265,13 @@ pub(crate) fn jwks_contains_current_x5c_thumbprint(jwks: &Value, thumbprint: &st
         })
 }
 
-impl MtlsClientCertificate {
-    fn has_binding_material(&self) -> bool {
-        self.thumbprint.is_some()
-            || self.subject_dn.is_some()
-            || !self.san_dns.is_empty()
-            || !self.san_uri.is_empty()
-            || !self.san_ip.is_empty()
-            || !self.san_email.is_empty()
-    }
+fn certificate_has_binding_material(certificate: &MtlsClientCertificate) -> bool {
+    certificate.thumbprint.is_some()
+        || certificate.subject_dn.is_some()
+        || !certificate.san_dns.is_empty()
+        || !certificate.san_uri.is_empty()
+        || !certificate.san_ip.is_empty()
+        || !certificate.san_email.is_empty()
 }
 
 fn forwarded_values(headers: &HeaderMap, names: &[&str]) -> Vec<String> {

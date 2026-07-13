@@ -8,9 +8,11 @@ use actix_web::{
 use nazo_auth::TokenInspection;
 
 use crate::{
-    TokenOnlyForm, authorization_error_response, empty_response_no_store, json_response_no_store,
-    oauth_token_error, parse_token_management_form, token_management_form_error,
-    token_management_has_conflicting_client_auth, token_management_oauth_error,
+    ClientCertificateFacts, TokenClientAuthForm, TokenClientAuthTransportFacts, TokenOnlyForm,
+    authorization_error_response, empty_response_no_store, json_response_no_store,
+    oauth_token_error, parse_token_management_form, token_client_auth_transport_facts,
+    token_management_form_error, token_management_has_conflicting_client_auth,
+    token_management_oauth_error,
 };
 
 pub const TOKEN_INTROSPECTION_JWT_MEDIA_TYPE: &str = "application/token-introspection+jwt";
@@ -40,40 +42,69 @@ pub enum TokenIntrospectionRepresentation {
     Jwt(String),
 }
 
+/// Deployment-derived request facts shared by rate limiting and token-management operations.
+///
+/// Protocol/application implementations never receive the Actix request or its headers.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TokenManagementRequestFacts {
+    pub source_ip: String,
+    pub endpoint_path: String,
+    pub client_certificate: Option<ClientCertificateFacts>,
+}
+
+pub trait TokenManagementRequestFactsExtractor: Send + Sync {
+    /// Extracts only cheap facts needed before rate limiting.
+    fn extract(&self, request: &HttpRequest) -> TokenManagementRequestFacts;
+
+    /// Resolves a verified certificate after rate limiting and form/auth-source validation.
+    /// Implementations must only return a certificate for a trusted forwarding peer.
+    fn extract_client_certificate(&self, _request: &HttpRequest) -> Option<ClientCertificateFacts> {
+        None
+    }
+}
+
 pub trait TokenManagementRequestGuard: Send + Sync {
     fn enforce<'a>(
         &'a self,
-        request: &'a HttpRequest,
+        request: &'a TokenManagementRequestFacts,
     ) -> Pin<Box<dyn Future<Output = Result<(), TokenManagementRateLimitError>> + Send + 'a>>;
 }
 
 pub trait TokenManagementOperations: Send + Sync {
     fn introspect<'a>(
         &'a self,
-        request: &'a HttpRequest,
+        request: TokenManagementRequestFacts,
+        client_auth: TokenClientAuthTransportFacts,
         form: TokenOnlyForm,
         signed_response_requested: bool,
     ) -> TokenManagementFuture<'a, TokenIntrospectionRepresentation>;
 
     fn revoke<'a>(
         &'a self,
-        request: &'a HttpRequest,
+        request: TokenManagementRequestFacts,
+        client_auth: TokenClientAuthTransportFacts,
         form: TokenOnlyForm,
     ) -> TokenManagementFuture<'a, ()>;
 }
 
 #[derive(Clone)]
 pub struct TokenManagementEndpoint {
+    request_facts: Arc<dyn TokenManagementRequestFactsExtractor>,
     guard: Arc<dyn TokenManagementRequestGuard>,
     operations: Arc<dyn TokenManagementOperations>,
 }
 
 impl TokenManagementEndpoint {
     pub fn new(
+        request_facts: Arc<dyn TokenManagementRequestFactsExtractor>,
         guard: Arc<dyn TokenManagementRequestGuard>,
         operations: Arc<dyn TokenManagementOperations>,
     ) -> Self {
-        Self { guard, operations }
+        Self {
+            request_facts,
+            guard,
+            operations,
+        }
     }
 }
 
@@ -82,14 +113,24 @@ pub async fn introspect(
     request: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
-    if let Err(response) = enforce_rate_limit(&endpoint, &request).await {
+    let mut request_facts = endpoint.request_facts.extract(&request);
+    if let Err(response) = enforce_rate_limit(&endpoint, &request_facts).await {
         return response;
     }
     let form = match parse_token_management_form(&request, &body) {
         Ok(form) => form,
         Err(error) => return token_management_form_error(error),
     };
-    let has_basic = has_basic_authorization_scheme(&request);
+    let client_auth = token_client_auth_transport_facts(
+        &request,
+        TokenClientAuthForm {
+            client_id: form.client_id.as_deref(),
+            client_secret: form.client_secret.as_deref(),
+            client_assertion_type: form.client_assertion_type.as_deref(),
+            client_assertion: form.client_assertion.as_deref(),
+        },
+    );
+    let has_basic = client_auth.basic_challenge();
     if token_management_has_conflicting_client_auth(has_basic, &form) {
         return token_management_oauth_error(
             StatusCode::BAD_REQUEST,
@@ -97,10 +138,11 @@ pub async fn introspect(
             "同一请求不能同时使用多种客户端认证方式.",
         );
     }
+    request_facts.client_certificate = endpoint.request_facts.extract_client_certificate(&request);
     let signed_response_requested = signed_introspection_requested(&request);
     match endpoint
         .operations
-        .introspect(&request, form, signed_response_requested)
+        .introspect(request_facts, client_auth, form, signed_response_requested)
         .await
     {
         Ok(TokenIntrospectionRepresentation::Inspection(inspection)) => {
@@ -126,14 +168,24 @@ pub async fn revoke(
     request: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
-    if let Err(response) = enforce_rate_limit(&endpoint, &request).await {
+    let mut request_facts = endpoint.request_facts.extract(&request);
+    if let Err(response) = enforce_rate_limit(&endpoint, &request_facts).await {
         return response;
     }
     let form = match parse_token_management_form(&request, &body) {
         Ok(form) => form,
         Err(error) => return token_management_form_error(error),
     };
-    let has_basic = has_basic_authorization_scheme(&request);
+    let client_auth = token_client_auth_transport_facts(
+        &request,
+        TokenClientAuthForm {
+            client_id: form.client_id.as_deref(),
+            client_secret: form.client_secret.as_deref(),
+            client_assertion_type: form.client_assertion_type.as_deref(),
+            client_assertion: form.client_assertion.as_deref(),
+        },
+    );
+    let has_basic = client_auth.basic_challenge();
     if token_management_has_conflicting_client_auth(has_basic, &form) {
         return token_management_oauth_error(
             StatusCode::BAD_REQUEST,
@@ -141,30 +193,15 @@ pub async fn revoke(
             "同一请求不能同时使用多种客户端认证方式.",
         );
     }
-    match endpoint.operations.revoke(&request, form).await {
+    request_facts.client_certificate = endpoint.request_facts.extract_client_certificate(&request);
+    match endpoint
+        .operations
+        .revoke(request_facts, client_auth, form)
+        .await
+    {
         Ok(()) => empty_response_no_store(StatusCode::OK),
         Err(error) => token_management_error_response(error),
     }
-}
-
-fn has_basic_authorization_scheme(request: &HttpRequest) -> bool {
-    let Some(raw) = request
-        .headers()
-        .get(header::AUTHORIZATION)
-        .map(header::HeaderValue::as_bytes)
-    else {
-        return false;
-    };
-    let start = raw
-        .iter()
-        .position(|value| !value.is_ascii_whitespace())
-        .unwrap_or(raw.len());
-    let end = raw[start..]
-        .iter()
-        .position(u8::is_ascii_whitespace)
-        .map(|offset| start + offset)
-        .unwrap_or(raw.len());
-    raw[start..end].eq_ignore_ascii_case(b"Basic")
 }
 
 fn signed_introspection_requested(request: &HttpRequest) -> bool {
@@ -183,7 +220,7 @@ fn signed_introspection_requested(request: &HttpRequest) -> bool {
 
 async fn enforce_rate_limit(
     endpoint: &TokenManagementEndpoint,
-    request: &HttpRequest,
+    request: &TokenManagementRequestFacts,
 ) -> Result<(), HttpResponse> {
     match endpoint.guard.enforce(request).await {
         Ok(()) => Ok(()),
@@ -249,9 +286,38 @@ fn token_management_error_response(error: TokenManagementError) -> HttpResponse 
 mod tests {
     use std::sync::Arc;
 
-    use actix_web::{App, http::header, test, web};
+    use actix_web::{App, http::header, middleware::from_fn, test, web};
 
     use super::*;
+
+    #[derive(Clone, Copy)]
+    struct FakeRequestFacts;
+
+    impl TokenManagementRequestFactsExtractor for FakeRequestFacts {
+        fn extract(&self, request: &HttpRequest) -> TokenManagementRequestFacts {
+            TokenManagementRequestFacts {
+                source_ip: "127.0.0.1".to_owned(),
+                endpoint_path: request.path().to_owned(),
+                client_certificate: None,
+            }
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    struct PanicCertificateFacts;
+
+    impl TokenManagementRequestFactsExtractor for PanicCertificateFacts {
+        fn extract(&self, request: &HttpRequest) -> TokenManagementRequestFacts {
+            FakeRequestFacts.extract(request)
+        }
+
+        fn extract_client_certificate(
+            &self,
+            _request: &HttpRequest,
+        ) -> Option<ClientCertificateFacts> {
+            panic!("certificate parsing must not run before cheap request rejection")
+        }
+    }
 
     #[derive(Clone, Copy)]
     struct FakeGuard(Result<(), TokenManagementRateLimitError>);
@@ -259,7 +325,7 @@ mod tests {
     impl TokenManagementRequestGuard for FakeGuard {
         fn enforce<'a>(
             &'a self,
-            _request: &'a HttpRequest,
+            _request: &'a TokenManagementRequestFacts,
         ) -> Pin<Box<dyn Future<Output = Result<(), TokenManagementRateLimitError>> + Send + 'a>>
         {
             let result = self.0;
@@ -276,7 +342,8 @@ mod tests {
     impl TokenManagementOperations for FakeOperations {
         fn introspect<'a>(
             &'a self,
-            _request: &'a HttpRequest,
+            _request: TokenManagementRequestFacts,
+            _client_auth: TokenClientAuthTransportFacts,
             _form: TokenOnlyForm,
             _signed_response_requested: bool,
         ) -> TokenManagementFuture<'a, TokenIntrospectionRepresentation> {
@@ -286,7 +353,8 @@ mod tests {
 
         fn revoke<'a>(
             &'a self,
-            _request: &'a HttpRequest,
+            _request: TokenManagementRequestFacts,
+            _client_auth: TokenClientAuthTransportFacts,
             _form: TokenOnlyForm,
         ) -> TokenManagementFuture<'a, ()> {
             let result = self.revocation;
@@ -299,13 +367,74 @@ mod tests {
         introspection: Result<TokenIntrospectionRepresentation, TokenManagementError>,
         revocation: Result<(), TokenManagementError>,
     ) -> TokenManagementEndpoint {
+        endpoint_with_request_facts(Arc::new(FakeRequestFacts), guard, introspection, revocation)
+    }
+
+    fn endpoint_with_request_facts(
+        request_facts: Arc<dyn TokenManagementRequestFactsExtractor>,
+        guard: Result<(), TokenManagementRateLimitError>,
+        introspection: Result<TokenIntrospectionRepresentation, TokenManagementError>,
+        revocation: Result<(), TokenManagementError>,
+    ) -> TokenManagementEndpoint {
         TokenManagementEndpoint::new(
+            request_facts,
             Arc::new(FakeGuard(guard)),
             Arc::new(FakeOperations {
                 introspection,
                 revocation,
             }),
         )
+    }
+
+    #[actix_web::test]
+    async fn expensive_certificate_parsing_happens_after_rate_and_form_rejection() {
+        let limited = test::init_service(
+            App::new()
+                .app_data(Data::new(endpoint_with_request_facts(
+                    Arc::new(PanicCertificateFacts),
+                    Err(TokenManagementRateLimitError::Limited {
+                        retry_after_seconds: 30,
+                    }),
+                    Ok(TokenIntrospectionRepresentation::Inspection(
+                        TokenInspection::Inactive,
+                    )),
+                    Ok(()),
+                )))
+                .route("/introspect", web::post().to(introspect)),
+        )
+        .await;
+        let response = test::call_service(
+            &limited,
+            test::TestRequest::post()
+                .uri("/introspect")
+                .set_payload("not-a-form")
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+
+        let malformed = test::init_service(
+            App::new()
+                .app_data(Data::new(endpoint_with_request_facts(
+                    Arc::new(PanicCertificateFacts),
+                    Ok(()),
+                    Ok(TokenIntrospectionRepresentation::Inspection(
+                        TokenInspection::Inactive,
+                    )),
+                    Ok(()),
+                )))
+                .route("/introspect", web::post().to(introspect)),
+        )
+        .await;
+        let response = test::call_service(
+            &malformed,
+            test::TestRequest::post()
+                .uri("/introspect")
+                .set_payload("not-a-form")
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     fn form_request(method: &'static str, path: &'static str) -> test::TestRequest {
@@ -317,6 +446,152 @@ mod tests {
             .uri(path)
             .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
             .set_payload("token=opaque&client_id=client")
+    }
+
+    fn assert_security_headers(headers: &header::HeaderMap) {
+        assert_eq!(headers.get(header::X_FRAME_OPTIONS).unwrap(), "DENY");
+        assert_eq!(
+            headers.get(header::X_CONTENT_TYPE_OPTIONS).unwrap(),
+            "nosniff"
+        );
+        assert_eq!(headers.get("referrer-policy").unwrap(), "no-referrer");
+        assert_eq!(
+            headers.get("permissions-policy").unwrap(),
+            "interest-cohort=()"
+        );
+        assert_eq!(
+            headers.get("content-security-policy").unwrap(),
+            "frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
+        );
+    }
+
+    #[actix_web::test]
+    async fn revocation_route_locks_post_get_options_cors_and_security_contracts() {
+        let allowed_origin = "https://client.example";
+        let service = test::init_service(
+            App::new()
+                .wrap(from_fn(crate::middleware::security_headers))
+                .app_data(Data::new(endpoint(
+                    Ok(()),
+                    Ok(TokenIntrospectionRepresentation::Inspection(
+                        TokenInspection::Inactive,
+                    )),
+                    Ok(()),
+                )))
+                .service(
+                    web::resource("/revoke")
+                        .wrap(crate::cors::cors_browser_token_management(&[
+                            allowed_origin.to_owned(),
+                        ]))
+                        .route(web::post().to(revoke)),
+                ),
+        )
+        .await;
+
+        let post = test::call_service(
+            &service,
+            form_request("POST", "/revoke")
+                .insert_header((header::ORIGIN, allowed_origin))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(post.status(), StatusCode::OK);
+        assert_eq!(
+            post.headers().get(header::CACHE_CONTROL).unwrap(),
+            "no-store"
+        );
+        assert_eq!(post.headers().get(header::PRAGMA).unwrap(), "no-cache");
+        assert_eq!(
+            post.headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .unwrap(),
+            allowed_origin
+        );
+        assert!(post.headers().get(header::CONTENT_TYPE).is_none());
+        assert_security_headers(post.headers());
+        assert!(test::read_body(post).await.is_empty());
+
+        let get = test::call_service(
+            &service,
+            test::TestRequest::get().uri("/revoke").to_request(),
+        )
+        .await;
+        assert_eq!(get.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert!(get.headers().get(header::CONTENT_TYPE).is_none());
+        assert_security_headers(get.headers());
+        assert!(test::read_body(get).await.is_empty());
+
+        let options = test::call_service(
+            &service,
+            test::TestRequest::default()
+                .method(actix_web::http::Method::OPTIONS)
+                .uri("/revoke")
+                .insert_header((header::ORIGIN, allowed_origin))
+                .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, "POST"))
+                .insert_header((
+                    header::ACCESS_CONTROL_REQUEST_HEADERS,
+                    "authorization, content-type, dpop",
+                ))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(options.status(), StatusCode::OK);
+        assert_eq!(
+            options
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .unwrap(),
+            allowed_origin
+        );
+        let methods = options
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_METHODS)
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(methods.split(',').any(|method| method.trim() == "POST"));
+        assert!(options.headers().get(header::CONTENT_TYPE).is_none());
+        assert_security_headers(options.headers());
+        assert!(test::read_body(options).await.is_empty());
+    }
+
+    #[actix_web::test]
+    async fn introspection_route_has_no_browser_cors_and_rejects_get_and_options() {
+        let service = test::init_service(
+            App::new()
+                .wrap(from_fn(crate::middleware::security_headers))
+                .app_data(Data::new(endpoint(
+                    Ok(()),
+                    Ok(TokenIntrospectionRepresentation::Inspection(
+                        TokenInspection::Inactive,
+                    )),
+                    Ok(()),
+                )))
+                .route("/introspect", web::post().to(introspect)),
+        )
+        .await;
+
+        for request in [
+            test::TestRequest::get().uri("/introspect").to_request(),
+            test::TestRequest::default()
+                .method(actix_web::http::Method::OPTIONS)
+                .uri("/introspect")
+                .insert_header((header::ORIGIN, "https://client.example"))
+                .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, "POST"))
+                .to_request(),
+        ] {
+            let response = test::call_service(&service, request).await;
+            assert_eq!(response.status(), StatusCode::NOT_FOUND);
+            assert!(
+                response
+                    .headers()
+                    .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                    .is_none()
+            );
+            assert!(response.headers().get(header::CONTENT_TYPE).is_none());
+            assert_security_headers(response.headers());
+            assert!(test::read_body(response).await.is_empty());
+        }
     }
 
     #[actix_web::test]

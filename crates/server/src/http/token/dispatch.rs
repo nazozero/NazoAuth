@@ -40,10 +40,10 @@ use super::client_auth::{
 use super::issue::{TokenIssuanceConfig, TokenIssuanceContext};
 use super::{
     CIBA_GRANT_TYPE, DEVICE_CODE_GRANT_TYPE, JWT_BEARER_GRANT_TYPE, ServerTokenService,
-    TOKEN_EXCHANGE_GRANT_TYPE, TokenForm, TokenFormError, parse_token_form,
-    token_authorization_code_with_service, token_ciba, token_client_credentials_with_service,
-    token_device_code_with_service, token_exchange, token_jwt_bearer_with_service,
-    token_refresh_with_service,
+    TOKEN_EXCHANGE_GRANT_TYPE, TokenForm, TokenFormError, client_auth_request_facts,
+    parse_token_form, token_authorization_code_with_service, token_ciba,
+    token_client_credentials_with_service, token_device_code_with_service, token_exchange,
+    token_jwt_bearer_with_service, token_refresh_with_service,
 };
 use crate::http::authorization::ServerAuthorizationService;
 use crate::runtime_modules::ServerRuntimeModuleRegistry;
@@ -451,14 +451,14 @@ pub(crate) async fn token_with_service(
     if let Err(response) = validate_token_client_enabled(&client, &form.grant_type) {
         return response;
     }
+    let auth_request = client_auth_request_facts(&req, issuance_config.trusted_proxy_cidrs());
     let client_assertion = match authenticate_client_with_dependencies(
         authorization_service,
         ClientAuthConfig::new(
             issuance_config.issuer(),
             issuance_config.client_secret_pepper(),
-            issuance_config.trusted_proxy_cidrs(),
         ),
-        &req,
+        &auth_request,
         &client,
         &credentials,
         ClientAuthenticationContext::AllowPublicNone,

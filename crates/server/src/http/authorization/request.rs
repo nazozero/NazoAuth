@@ -44,7 +44,7 @@ use super::{
     AuthorizationEndpoint, AuthorizationRequestContext, apply_request_object_with_context,
     is_pushed_authorization_request_uri, unverified_signed_request_object_client_id,
 };
-use crate::http::profile::session_management::issue_oidc_session_state;
+use nazo_auth::issue_oidc_session_state;
 
 mod form;
 mod parameters;

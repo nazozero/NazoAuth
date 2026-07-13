@@ -31,12 +31,6 @@ use nazo_identity::session::add_amr;
 use nazo_postgres::UserRepository;
 use nazo_valkey::SessionStore;
 
-#[cfg(not(test))]
-use std::sync::Arc;
-
-#[cfg(not(test))]
-use crate::runtime_modules::ServerRuntimeModuleRegistry;
-
 #[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct SessionPayload {
     pub(crate) user_id: Uuid,
@@ -75,11 +69,6 @@ pub(crate) struct SessionProfileHandles {
     sessions: SessionStore,
     users: UserRepository,
     http: SessionHttpConfig,
-    issuer: Box<str>,
-    #[cfg(not(test))]
-    runtime_modules: Arc<ServerRuntimeModuleRegistry>,
-    #[cfg(test)]
-    session_management_enabled: bool,
 }
 
 #[derive(Clone)]
@@ -178,37 +167,15 @@ pub(crate) fn login_required_response(state: &AppState) -> HttpResponse {
 }
 
 impl SessionProfileHandles {
-    #[cfg(not(test))]
     pub(crate) fn new(
         sessions: SessionStore,
         users: UserRepository,
         http: SessionHttpConfig,
-        issuer: &str,
-        runtime_modules: Arc<ServerRuntimeModuleRegistry>,
     ) -> Self {
         Self {
             sessions,
             users,
             http,
-            issuer: issuer.into(),
-            runtime_modules,
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn new(
-        sessions: SessionStore,
-        users: UserRepository,
-        http: SessionHttpConfig,
-        issuer: &str,
-        session_management_enabled: bool,
-    ) -> Self {
-        Self {
-            sessions,
-            users,
-            http,
-            issuer: issuer.into(),
-            session_management_enabled,
         }
     }
 
@@ -223,8 +190,6 @@ impl SessionProfileHandles {
                 &session.csrf_cookie_name,
                 session.cookie_secure,
             ),
-            &state.settings.endpoint.issuer,
-            state.settings.modules.enable_session_management,
         )
     }
 
@@ -270,10 +235,6 @@ impl SessionProfileHandles {
         }
     }
 
-    pub(crate) fn issuer(&self) -> &str {
-        &self.issuer
-    }
-
     pub(crate) async fn delete_session(&self, session_id: &str) -> Result<(), nazo_valkey::Error> {
         self.sessions.delete(session_id).await.map(|_| ())
     }
@@ -293,20 +254,6 @@ impl SessionProfileHandles {
             return Ok(None);
         };
         self.current_session_by_id(&session_id).await
-    }
-
-    #[cfg(not(test))]
-    pub(crate) fn permits_existing_session_management_transaction(&self) -> bool {
-        nazo_auth::module_admissible(
-            &self.runtime_modules.snapshot(),
-            nazo_runtime_modules::ModuleId::SessionManagement,
-            nazo_auth::CapabilityAdmission::ExistingTransaction,
-        )
-    }
-
-    #[cfg(test)]
-    pub(crate) fn permits_existing_session_management_transaction(&self) -> bool {
-        self.session_management_enabled
     }
 }
 

@@ -77,14 +77,14 @@ pub(crate) async fn token_device_code_with_service(
     } else {
         None
     };
-    if let Err(response) = consume_token_client_assertion_with_authorization_service(
+    if let Err(error) = consume_token_client_assertion_with_authorization_service(
         issuance.authorization,
         client,
         client_assertion,
     )
     .await
     {
-        return response;
+        return super::token_client_assertion_error(error);
     }
 
     match device_service

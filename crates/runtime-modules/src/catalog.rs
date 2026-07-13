@@ -45,6 +45,9 @@ impl ModuleCatalog {
             (ModuleId::Scim, finish),
             (ModuleId::NativeSso, drain(durations.refresh_token)),
             (ModuleId::FrontchannelLogout, finish),
+            // Stop advertising and issuing new session_state values immediately,
+            // while allowing check_session polling for OP browser sessions that
+            // already exist. Their Valkey TTL is the bounded drain deadline.
             (ModuleId::SessionManagement, drain(durations.session)),
         ];
         let specs: Vec<_> = policies

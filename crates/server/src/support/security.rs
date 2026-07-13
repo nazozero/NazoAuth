@@ -381,11 +381,11 @@ pub(crate) enum ClientAssertionError {
 
 pub(crate) fn verify_private_key_jwt_claims_for_issuer(
     issuer: &str,
-    req: &HttpRequest,
+    endpoint_path: &str,
     client: &ClientRow,
     assertion: &str,
 ) -> Result<ValidatedClientAssertion, ClientAssertionError> {
-    verify_private_key_jwt_claims_with_issuer(issuer, req, client, assertion)
+    verify_private_key_jwt_claims_with_issuer(issuer, endpoint_path, client, assertion)
 }
 
 #[cfg(test)]
@@ -395,34 +395,39 @@ fn verify_private_key_jwt_claims_with_settings(
     client: &ClientRow,
     assertion: &str,
 ) -> Result<ValidatedClientAssertion, ClientAssertionError> {
-    verify_private_key_jwt_claims_with_issuer(&settings.endpoint.issuer, req, client, assertion)
+    verify_private_key_jwt_claims_with_issuer(
+        &settings.endpoint.issuer,
+        req.uri().path(),
+        client,
+        assertion,
+    )
 }
 
 fn verify_private_key_jwt_claims_with_issuer(
     issuer: &str,
-    req: &HttpRequest,
+    endpoint_path: &str,
     client: &ClientRow,
     assertion: &str,
 ) -> Result<ValidatedClientAssertion, ClientAssertionError> {
     verify_private_key_jwt(ClientAssertionVerificationInput {
         issuer,
-        endpoint_path: req.uri().path(),
+        endpoint_path,
         client,
         assertion,
         now: Utc::now().timestamp(),
     })
     .map_err(|error| {
-        log_client_assertion_rejection(req, client, error.audit_reason());
+        log_client_assertion_rejection(endpoint_path, client, error.audit_reason());
         ClientAssertionError::Invalid
     })
 }
 
-fn log_client_assertion_rejection(req: &HttpRequest, client: &ClientRow, reason: &'static str) {
+fn log_client_assertion_rejection(endpoint_path: &str, client: &ClientRow, reason: &'static str) {
     tracing::warn!(
         target: "client_assertion",
         "client_assertion_rejected reason={} path={} client_id_hash={}",
         reason,
-        req.uri().path(),
+        endpoint_path,
         blake3_hex(&client.client_id)
     );
 }

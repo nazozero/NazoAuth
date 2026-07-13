@@ -40,11 +40,11 @@ use crate::domain::{
 };
 use crate::domain::{
     DynamicRegistrationConfig, MFA_REMEMBERED_COOKIE_NAME, MFA_REMEMBERED_TTL_SECONDS,
-    MetadataConfig, OidcLogoutConfig, OidcLogoutHandles, ResourceServerConfig,
-    ServerAuthenticationRateLimit, ServerAuthorizationDecisionOperations,
+    MetadataConfig, OidcLogoutConfig, OidcLogoutHandles, PasskeyOperationsProvider,
+    ResourceServerConfig, ServerAuthenticationRateLimit, ServerAuthorizationDecisionOperations,
     ServerLocalRegistrationOperations, ServerMetadataSnapshotSource, ServerMfaProfileOperations,
     ServerMfaSecretHasher, ServerPasswordLoginOperations, ServerProfileAccountOperations,
-    UserinfoConfig, UserinfoHandles,
+    ServerSessionManagementOperations, UserinfoConfig, UserinfoHandles,
 };
 use crate::domain::{
     ServerFapiHttpMessageSignatures, ServerFapiMtlsResolver, ServerFapiResourceAuthorizer,
@@ -59,12 +59,13 @@ use crate::http::auth::csrf::CsrfHttpConfig;
 use crate::http::auth::federation::{
     FEDERATION_STATE_TTL_SECONDS, FederationHttpConfig, SAML_REPLAY_TTL_SECONDS,
 };
-use crate::http::auth::passkey::PasskeyHttpConfig;
 use crate::http::authorization::{
     AuthorizationEndpoint, AuthorizationHttpConfig, ServerAuthorizationService,
 };
 #[cfg(test)]
 use crate::http::scim::{ScimConfig, ScimEndpoint, ScimRuntimeAdmission};
+#[cfg(not(test))]
+use crate::http::token::ServerTokenManagementRequestFactsExtractor;
 use crate::http::token::ciba::{CibaHttpConfig, CibaTokenHandles, ServerCibaService};
 use crate::http::token::device::{DeviceDecisionHandles, ServerDeviceGrantService};
 use crate::http::token::device_config::DeviceHttpConfig;
@@ -85,9 +86,10 @@ use crate::support::tenancy::{DEFAULT_TENANT_ID, default_tenant_context};
 use actix_web::http::header;
 use nazo_http_actix::{
     AuthorizationDecisionEndpoint, LocalRegistrationEndpoint, MfaProfileConfig, MfaProfileEndpoint,
-    OidcLogoutConfig as OidcLogoutHttpConfig, OidcLogoutEndpoint, PasswordLoginConfig,
+    OidcLogoutConfig as OidcLogoutHttpConfig, OidcLogoutEndpoint, PasskeyLoginConfig,
+    PasskeyLoginEndpoint, PasskeyProfileConfig, PasskeyProfileEndpoint, PasswordLoginConfig,
     PasswordLoginEndpoint, ProfileAccountEndpoint, RuntimeModuleAdminEndpoint, SessionCookieConfig,
-    SessionLogoutEndpoint, security_headers,
+    SessionLogoutEndpoint, SessionManagementConfig, SessionManagementEndpoint, security_headers,
 };
 use nazo_postgres::create_pool;
 use tracing::Instrument;
@@ -281,6 +283,9 @@ pub async fn run() -> anyhow::Result<()> {
     let authorization_config = web::Data::new(AuthorizationHttpConfig::from(settings.as_ref()));
     #[cfg(not(test))]
     let token_management_endpoint = web::Data::new(nazo_http_actix::TokenManagementEndpoint::new(
+        Arc::new(ServerTokenManagementRequestFactsExtractor::new(
+            authorization_config.clone().into_inner(),
+        )),
         Arc::new(ServerTokenManagementRequestGuard::new(
             token_service.clone().into_inner(),
             authorization_config.clone().into_inner(),
@@ -349,16 +354,22 @@ pub async fn run() -> anyhow::Result<()> {
         nazo_valkey::SessionStore::new(&valkey_connection),
         nazo_postgres::UserRepository::new(diesel_db.clone()),
         session_http_config,
-        &settings.endpoint.issuer,
-        runtime_modules.registry.clone(),
     ));
     #[cfg(test)]
     let session_profiles = web::Data::new(SessionProfileHandles::new(
         nazo_valkey::SessionStore::new(&valkey_connection),
         nazo_postgres::UserRepository::new(diesel_db.clone()),
         session_http_config,
-        &settings.endpoint.issuer,
-        settings.modules.enable_session_management,
+    ));
+    let session_management_endpoint = web::Data::new(SessionManagementEndpoint::new(
+        Arc::new(ServerSessionManagementOperations::new(
+            session_profiles.get_ref().clone(),
+            runtime_modules.registry.clone(),
+        )),
+        SessionManagementConfig::new(
+            settings.endpoint.issuer.as_str(),
+            session.session_cookie_name.as_str(),
+        ),
     ));
     let device_decision_handles = web::Data::new(DeviceDecisionHandles::new(
         authorization_service.clone(),
@@ -504,7 +515,7 @@ pub async fn run() -> anyhow::Result<()> {
                 Arc::new(nazo_postgres::MfaRepository::new(diesel_db.clone())),
                 Arc::new(ServerMfaSecretHasher),
             ),
-            identity_session_service,
+            identity_session_service.clone(),
             authentication_rate_limit.clone(),
             settings.endpoint.issuer.as_str(),
             session.session_ttl_seconds,
@@ -545,7 +556,7 @@ pub async fn run() -> anyhow::Result<()> {
     );
     let password_login_endpoint = web::Data::new(PasswordLoginEndpoint::new(
         Arc::new(ServerPasswordLoginOperations::new(authentication)),
-        authentication_rate_limit,
+        authentication_rate_limit.clone(),
         client_ip_config.get_ref().clone(),
         PasswordLoginConfig::new(
             settings.endpoint.issuer.as_str(),
@@ -558,31 +569,48 @@ pub async fn run() -> anyhow::Result<()> {
         ),
     ));
     let passkey = &identity.passkey;
-    let passkeys = web::Data::new(LocalPasskeyService::new(
-        nazo_postgres::UserRepository::new(diesel_db.clone()),
-        nazo_postgres::PasskeyRepository::new(diesel_db.clone()),
-        nazo_valkey::AuthenticationStore::new(&valkey_connection),
-        nazo_postgres::MfaRepository::new(diesel_db.clone()),
-        nazo_valkey::SessionStore::new(&valkey_connection),
-        TracingPasskeyAudit,
-        nazo_identity::PasskeyServiceConfig {
-            tenant_id: nazo_identity::TenantId::new(DEFAULT_TENANT_ID)
-                .expect("default tenant ID is valid"),
-            rp_id: passkey.rp_id.to_owned(),
-            rp_name: passkey.rp_name.to_owned(),
-            origin: passkey.origin.to_owned(),
-            require_user_verification: passkey.require_user_verification,
-            require_user_handle: passkey.require_user_handle,
-            strict_base64: passkey.strict_base64,
-            ceremony_ttl_seconds: PASSKEY_CEREMONY_TTL_SECONDS,
-            session_ttl_seconds: session.session_ttl_seconds,
-        },
+    let passkey_operations = Arc::new(PasskeyOperationsProvider::new(
+        LocalPasskeyService::new(
+            nazo_postgres::UserRepository::new(diesel_db.clone()),
+            nazo_postgres::PasskeyRepository::new(diesel_db.clone()),
+            nazo_valkey::AuthenticationStore::new(&valkey_connection),
+            nazo_postgres::MfaRepository::new(diesel_db.clone()),
+            nazo_valkey::SessionStore::new(&valkey_connection),
+            TracingPasskeyAudit,
+            nazo_identity::PasskeyServiceConfig {
+                tenant_id: nazo_identity::TenantId::new(DEFAULT_TENANT_ID)
+                    .expect("default tenant ID is valid"),
+                rp_id: passkey.rp_id.to_owned(),
+                rp_name: passkey.rp_name.to_owned(),
+                origin: passkey.origin.to_owned(),
+                require_user_verification: passkey.require_user_verification,
+                require_user_handle: passkey.require_user_handle,
+                strict_base64: passkey.strict_base64,
+                ceremony_ttl_seconds: PASSKEY_CEREMONY_TTL_SECONDS,
+                session_ttl_seconds: session.session_ttl_seconds,
+            },
+        ),
+        identity_session_service,
     ));
-    let passkey_http_config = web::Data::new(PasskeyHttpConfig::new(
-        session.session_cookie_name.as_str(),
-        session.csrf_cookie_name.as_str(),
-        session.session_ttl_seconds,
-        session.cookie_secure,
+    let passkey_login_endpoint = web::Data::new(PasskeyLoginEndpoint::new(
+        passkey_operations.clone(),
+        authentication_rate_limit,
+        client_ip_config.get_ref().clone(),
+        PasskeyLoginConfig::new(
+            session.session_cookie_name.as_str(),
+            session.csrf_cookie_name.as_str(),
+            MFA_REMEMBERED_COOKIE_NAME,
+            session.session_ttl_seconds,
+            session.cookie_secure,
+        ),
+    ));
+    let passkey_profile_endpoint = web::Data::new(PasskeyProfileEndpoint::new(
+        passkey_operations,
+        PasskeyProfileConfig::new(
+            session.session_cookie_name.as_str(),
+            session.csrf_cookie_name.as_str(),
+            session.cookie_secure,
+        ),
     ));
     let federation = web::Data::new(LocalFederationService::new(
         nazo_postgres::FederationRepository::new(diesel_db.clone()),
@@ -674,6 +702,7 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(admin_sessions.clone())
             .app_data(admin_federation.clone())
             .app_data(session_profiles.clone())
+            .app_data(session_management_endpoint.clone())
             .app_data(profile_logout_endpoint.clone())
             .app_data(profile_account_endpoint.clone())
             .app_data(oidc_logout.clone())
@@ -696,8 +725,8 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(token_management_limiter.clone())
             .app_data(local_registration_endpoint.clone())
             .app_data(password_login_endpoint.clone())
-            .app_data(passkeys.clone())
-            .app_data(passkey_http_config.clone())
+            .app_data(passkey_login_endpoint.clone())
+            .app_data(passkey_profile_endpoint.clone())
             .app_data(federation.clone())
             .app_data(federation_http_config.clone())
             .app_data(dynamic_registration_handles.clone())

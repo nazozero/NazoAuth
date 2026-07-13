@@ -27,8 +27,6 @@ pub(crate) use email::normalize_email_address;
 #[cfg(test)]
 pub(crate) use mtls::request_mtls_thumbprint;
 #[cfg(test)]
-pub(crate) use oauth::json_array_to_strings;
-#[cfg(test)]
 pub(crate) use oidc_claims::oidc_subject;
 #[cfg(test)]
 pub(crate) use rate_limit::TokenManagementRequestLimiter;

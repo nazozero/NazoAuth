@@ -17,6 +17,7 @@ mod metadata;
 mod mfa_profile;
 mod middleware;
 mod oidc_logout;
+mod passkey;
 mod password_login;
 mod presenter;
 mod profile_account;
@@ -24,6 +25,7 @@ mod request_context;
 mod runtime_modules;
 mod scim;
 mod session;
+mod session_management;
 mod token_client_auth;
 mod token_forms;
 mod token_management;
@@ -87,6 +89,15 @@ pub use oidc_logout::{
     OidcLogoutCommand, OidcLogoutConfig, OidcLogoutEndpoint, OidcLogoutError, OidcLogoutFuture,
     OidcLogoutOperations, OidcLogoutRequest, OidcLogoutSuccess, oidc_logout,
 };
+pub use passkey::{
+    PasskeyEndpointError, PasskeyFuture, PasskeyLoginBeginRequest, PasskeyLoginConfig,
+    PasskeyLoginEndpoint, PasskeyLoginFinishCommand, PasskeyLoginFinishRequest,
+    PasskeyLoginOperations, PasskeyProfileConfig, PasskeyProfileContext, PasskeyProfileEndpoint,
+    PasskeyProfileOperations, PasskeyRegistrationBeginRequest, PasskeyRegistrationFinishCommand,
+    PasskeyRegistrationFinishRequest, configure_passkey_login_routes,
+    configure_passkey_profile_routes, passkey_delete, passkey_list, passkey_login_begin,
+    passkey_login_finish, passkey_registration_begin, passkey_registration_finish,
+};
 pub use password_login::{
     PasswordLoginConfig, PasswordLoginEndpoint, PasswordLoginFuture, PasswordLoginOperations, login,
 };
@@ -116,8 +127,14 @@ pub use session::{
     SessionCookieConfig, SessionLogoutEndpoint, login_required_response, logout_response,
     profile_logout, session_lookup_error_response,
 };
+pub use session_management::{
+    CheckSessionStatusQuery, SessionManagementAvailability, SessionManagementConfig,
+    SessionManagementEndpoint, SessionManagementError, SessionManagementFuture,
+    SessionManagementOperations, check_session_iframe, check_session_status,
+};
 pub use token_client_auth::{
-    TokenClientAuthForm, TokenClientAuthTransportFacts, token_client_auth_transport_facts,
+    ClientCertificateFacts, TokenClientAuthForm, TokenClientAuthTransportFacts,
+    token_client_auth_transport_facts,
 };
 pub use token_forms::{
     TokenForm, TokenFormError, TokenManagementFormError, TokenOnlyForm, parse_token_form,
@@ -127,7 +144,8 @@ pub use token_forms::{
 pub use token_management::{
     TOKEN_INTROSPECTION_JWT_MEDIA_TYPE, TokenIntrospectionRepresentation, TokenManagementEndpoint,
     TokenManagementError, TokenManagementFuture, TokenManagementOperations,
-    TokenManagementRateLimitError, TokenManagementRequestGuard, introspect, revoke,
+    TokenManagementRateLimitError, TokenManagementRequestFacts,
+    TokenManagementRequestFactsExtractor, TokenManagementRequestGuard, introspect, revoke,
 };
 pub use userinfo::{
     UserinfoDpopError, UserinfoEndpoint, UserinfoError, UserinfoFuture, UserinfoOperations,

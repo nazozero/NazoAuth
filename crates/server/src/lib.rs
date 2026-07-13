@@ -120,18 +120,6 @@ pub(crate) mod test_support {
         ))
     }
 
-    pub(crate) fn passkey_http_config(
-        state: &crate::domain::AppState,
-    ) -> actix_web::web::Data<crate::http::auth::passkey::PasskeyHttpConfig> {
-        let session = &state.settings.session;
-        actix_web::web::Data::new(crate::http::auth::passkey::PasskeyHttpConfig::new(
-            session.session_cookie_name.as_str(),
-            session.csrf_cookie_name.as_str(),
-            session.session_ttl_seconds,
-            session.cookie_secure,
-        ))
-    }
-
     pub(crate) fn federation_service(
         state: &crate::domain::AppState,
     ) -> actix_web::web::Data<crate::bootstrap::LocalFederationService> {

@@ -11,12 +11,14 @@ mod metadata;
 mod mfa_profile;
 mod oauth;
 mod oidc_logout;
+mod passkey;
 mod password_login;
 mod profile_account;
 mod resource_server;
 mod rows;
 #[cfg(not(test))]
 mod scim;
+mod session_management;
 #[cfg(test)]
 mod state;
 #[cfg(not(test))]
@@ -45,13 +47,12 @@ pub(crate) use mfa_profile::{
     MFA_REMEMBERED_COOKIE_NAME, MFA_REMEMBERED_TTL_SECONDS, ServerMfaProfileOperations,
     ServerMfaSecretHasher,
 };
-#[cfg(test)]
-pub(crate) use nazo_key_management::KeySnapshot;
 pub(crate) use oauth::{
     AuthorizationCodeState, CodePayload, ConsentPayload, ConsumedAuthorizationCode,
     NativeSsoTokenBinding, PushedAuthorizationRequest, RefreshTokenPolicy, TokenIssue,
 };
 pub(crate) use oidc_logout::{OidcLogoutConfig, OidcLogoutHandles};
+pub(crate) use passkey::PasskeyOperationsProvider;
 pub(crate) use password_login::ServerPasswordLoginOperations;
 pub(crate) use profile_account::ServerProfileAccountOperations;
 pub(crate) use resource_server::ResourceServerConfig;
@@ -63,6 +64,7 @@ pub(crate) use rows::{ClientRow, TokenRow};
 pub(crate) use scim::{
     ServerScimBootstrapPasswordProvider, ServerScimCursorProtector, ServerScimRequestAuthorizer,
 };
+pub(crate) use session_management::ServerSessionManagementOperations;
 #[cfg(test)]
 pub(crate) use state::AppState;
 #[cfg(not(test))]

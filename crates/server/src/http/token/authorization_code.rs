@@ -401,14 +401,14 @@ pub(crate) async fn token_authorization_code_with_service(
         }
         (None, _) => None,
     };
-    if let Err(response) = consume_token_client_assertion_with_authorization_service(
+    if let Err(error) = consume_token_client_assertion_with_authorization_service(
         issuance.authorization,
         client,
         client_assertion,
     )
     .await
     {
-        return response;
+        return super::token_client_assertion_error(error);
     }
     let payload =
         match begin_authorization_code_consumption_with_service(token_service, &code_hash).await {

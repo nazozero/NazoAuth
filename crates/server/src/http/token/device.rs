@@ -25,7 +25,9 @@ use super::client_auth::{
     ClientAuthConfig, authenticate_client_with_dependencies,
     consume_token_management_client_assertion_with_authorization_service,
 };
-use super::{device_config::DeviceHttpConfig, token_management_auth_error};
+use super::{
+    client_auth_request_facts, device_config::DeviceHttpConfig, token_management_auth_error,
+};
 use crate::http::authorization::ServerAuthorizationService;
 use crate::runtime_modules::ServerRuntimeModuleRegistry;
 use crate::support::sessions::SessionProfileHandles;
@@ -576,14 +578,11 @@ async fn authenticate_device_authorization_client(
     client: &ClientRow,
     credentials: &ClientCredentials,
 ) -> Result<(), HttpResponse> {
+    let auth_request = client_auth_request_facts(req, &config.trusted_proxy_cidrs);
     let assertion = authenticate_client_with_dependencies(
         authorization_service,
-        ClientAuthConfig::new(
-            &config.issuer,
-            &config.client_secret_pepper,
-            &config.trusted_proxy_cidrs,
-        ),
-        req,
+        ClientAuthConfig::new(&config.issuer, &config.client_secret_pepper),
+        &auth_request,
         client,
         credentials,
         ClientAuthenticationContext::AllowPublicNone,

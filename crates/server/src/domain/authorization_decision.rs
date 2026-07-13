@@ -175,7 +175,7 @@ impl ServerAuthorizationDecisionOperations {
             AuthorizationResponsePlan::Plain(plain) => {
                 let session_state = if plain.issue_session_state {
                     oidc_sid.and_then(|sid| {
-                        crate::http::profile::session_management::issue_oidc_session_state(
+                        nazo_auth::issue_oidc_session_state(
                             &payload.client_id,
                             &payload.redirect_uri,
                             sid,

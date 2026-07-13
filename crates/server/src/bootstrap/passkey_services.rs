@@ -14,14 +14,14 @@ impl nazo_identity::ports::PasskeyAuditPort for TracingPasskeyAudit {
                 "passkey_login_failure",
                 audit_fields(&[
                     ("email_hash", json!(blake3_hex(&email))),
-                    ("reason", json!(reason)),
+                    ("reason", json!(reason.as_str())),
                 ]),
             ),
             nazo_identity::PasskeyAuditEvent::LoginFailureUser { user_id, reason } => audit_event(
                 "passkey_login_failure",
                 audit_fields(&[
                     ("user_id", json!(user_id.as_uuid())),
-                    ("reason", json!(reason)),
+                    ("reason", json!(reason.as_str())),
                 ]),
             ),
             nazo_identity::PasskeyAuditEvent::LoginSuccess { user_id, source_ip } => audit_event(
@@ -36,7 +36,7 @@ impl nazo_identity::ports::PasskeyAuditPort for TracingPasskeyAudit {
                     "passkey_registration_rejected",
                     audit_fields(&[
                         ("user_id", json!(user_id.as_uuid())),
-                        ("reason", json!(reason)),
+                        ("reason", json!(reason.as_str())),
                     ]),
                 );
             }

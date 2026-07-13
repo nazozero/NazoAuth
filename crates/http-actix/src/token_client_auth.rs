@@ -2,7 +2,7 @@ use actix_web::{HttpRequest, http::header};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use nazo_auth::{PresentedClientCredentials, TokenClientAuthPresentation};
 
-#[derive(Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 enum BasicAuthorizationCredentials {
     Absent,
     Malformed,
@@ -27,13 +27,29 @@ pub struct TokenClientAuthForm<'a> {
     pub client_assertion: Option<&'a str>,
 }
 
+/// Verified client-certificate identity extracted by the deployment-specific HTTP adapter.
+///
+/// The token-management core receives these facts after the adapter has established that the
+/// forwarding peer is trusted. Keeping the value framework-neutral prevents `HttpRequest` and
+/// `HeaderMap` from crossing into authentication policy.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ClientCertificateFacts {
+    pub thumbprint: Option<String>,
+    pub subject_dn: Option<String>,
+    pub san_dns: Vec<String>,
+    pub san_uri: Vec<String>,
+    pub san_ip: Vec<String>,
+    pub san_email: Vec<String>,
+    pub verified_certificate_expiry: bool,
+}
+
+#[derive(Clone)]
 pub struct TokenClientAuthTransportFacts {
     basic: BasicAuthorizationCredentials,
     form_client_id: Option<String>,
     form_client_secret: Option<String>,
     client_assertion_type: Option<String>,
     client_assertion: Option<String>,
-    endpoint_path: String,
 }
 
 impl std::fmt::Debug for TokenClientAuthTransportFacts {
@@ -57,7 +73,6 @@ impl std::fmt::Debug for TokenClientAuthTransportFacts {
                 "client_assertion",
                 &self.client_assertion.as_ref().map(|_| "[REDACTED]"),
             )
-            .field("endpoint_path", &self.endpoint_path)
             .finish()
     }
 }
@@ -77,11 +92,6 @@ impl TokenClientAuthTransportFacts {
     #[must_use]
     pub fn basic_challenge(&self) -> bool {
         self.basic.scheme_present()
-    }
-
-    #[must_use]
-    pub fn endpoint_path(&self) -> &str {
-        &self.endpoint_path
     }
 
     #[must_use]
@@ -171,7 +181,6 @@ pub fn token_client_auth_transport_facts(
         form_client_secret: form.client_secret.map(str::to_owned),
         client_assertion_type: form.client_assertion_type.map(str::to_owned),
         client_assertion: form.client_assertion.map(str::to_owned),
-        endpoint_path: request.path().to_owned(),
     }
 }
 

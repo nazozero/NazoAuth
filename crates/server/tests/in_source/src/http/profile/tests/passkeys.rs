@@ -1,4 +1,3 @@
-use super::*;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
@@ -8,7 +7,12 @@ use crate::settings::Settings;
 use crate::support::{
     DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_set_ex,
 };
-use actix_web::{cookie::Cookie, http::header};
+use actix_web::{
+    HttpRequest, HttpResponse,
+    cookie::Cookie,
+    http::{StatusCode, header},
+    web::{Data, Json, Path},
+};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64URL;
 use chrono::Utc;
@@ -20,21 +24,33 @@ use fred::interfaces::ClientLike;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
+use nazo_http_actix::{
+    PasskeyRegistrationBeginRequest as PasskeyBeginRequest,
+    PasskeyRegistrationFinishRequest as PasskeyFinishRequest, authorization_error_response,
+};
+use nazo_identity::ports::PasskeyCredential;
 use passkey_auth::RegistrationResponse;
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use uuid::Uuid;
 
 use crate::config::ConfigSource;
 use nazo_postgres::create_pool;
 use nazo_postgres::get_conn;
 
 fn normalize_passkey_label(value: Option<String>) -> Result<String, HttpResponse> {
-    nazo_identity::passkey::normalize_passkey_label(value.as_deref())
-        .map_err(|_| super::registration_begin_error(PasskeyError::InvalidLabel))
+    nazo_identity::passkey::normalize_passkey_label(value.as_deref()).map_err(|_| {
+        authorization_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "passkey label is too long.",
+        )
+    })
 }
 
 fn normalize_ceremony_id(value: &str) -> Result<String, HttpResponse> {
     nazo_identity::passkey::normalize_ceremony_id(value).map_err(|_| {
-        oauth_error(
+        authorization_error_response(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "invalid ceremony id.",
@@ -50,7 +66,7 @@ fn registration_key(ceremony_id: &str) -> String {
 fn passkey_profile_transport_has_no_identity_or_storage_orchestration() {
     let source = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/src/http/profile/passkeys.rs"
+        "/../http-actix/src/passkey.rs"
     ));
     for forbidden in [
         "AppState",
@@ -74,11 +90,10 @@ async fn passkey_registration_begin(
     req: HttpRequest,
     payload: Json<PasskeyBeginRequest>,
 ) -> HttpResponse {
-    super::passkey_registration_begin(
-        crate::test_support::profile_sessions(&state),
-        crate::test_support::passkey_service(&state),
+    nazo_http_actix::passkey_registration_begin(
+        super::test_profile_endpoint(&state),
         req,
-        payload,
+        Ok(payload),
     )
     .await
 }
@@ -88,32 +103,20 @@ async fn passkey_registration_finish(
     req: HttpRequest,
     payload: Json<PasskeyFinishRequest>,
 ) -> HttpResponse {
-    super::passkey_registration_finish(
-        crate::test_support::profile_sessions(&state),
-        crate::test_support::passkey_service(&state),
+    nazo_http_actix::passkey_registration_finish(
+        super::test_profile_endpoint(&state),
         req,
-        payload,
+        Ok(payload),
     )
     .await
 }
 
 async fn passkey_list(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
-    super::passkey_list(
-        crate::test_support::profile_sessions(&state),
-        crate::test_support::passkey_service(&state),
-        req,
-    )
-    .await
+    nazo_http_actix::passkey_list(super::test_profile_endpoint(&state), req).await
 }
 
 async fn passkey_delete(state: Data<AppState>, req: HttpRequest, path: Path<Uuid>) -> HttpResponse {
-    super::passkey_delete(
-        crate::test_support::profile_sessions(&state),
-        crate::test_support::passkey_service(&state),
-        req,
-        path,
-    )
-    .await
+    nazo_http_actix::passkey_delete(super::test_profile_endpoint(&state), req, path).await
 }
 
 async fn load_user_passkeys(
@@ -124,16 +127,12 @@ async fn load_user_passkeys(
         .list(user.tenant().tenant_id, user.user_id())
         .await
         .map_err(|_| {
-            oauth_error(
+            authorization_error_response(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
                 "passkey state unavailable.",
             )
         })
-}
-
-fn passkey_already_registered_response() -> HttpResponse {
-    super::registration_error(PasskeyError::AlreadyRegistered)
 }
 
 fn test_state() -> AppState {
@@ -160,28 +159,6 @@ fn request_with_session_but_no_csrf(state: &AppState) -> HttpRequest {
             "active-session",
         ))
         .to_http_request()
-}
-
-fn passkey_row(id: Uuid, tenant_id: Uuid, user_id: Uuid, label: &str) -> DatabasePasskeyFixture {
-    let now = Utc::now();
-    DatabasePasskeyFixture {
-        id,
-        tenant_id,
-        user_id,
-        credential_id: "credential-public-id".to_owned(),
-        credential: json!({
-            "id": [1, 2, 3, 4],
-            "public_key_cose": [5, 6, 7],
-            "counter": 9,
-            "transports": ["internal"],
-            "aaguid": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-        }),
-        label: label.to_owned(),
-        sign_count: 9,
-        last_used_at: Some(now),
-        created_at: now,
-        updated_at: now,
-    }
 }
 
 fn uuid_fixture(value: u128) -> Uuid {
@@ -463,6 +440,7 @@ fn invalid_registration_response() -> RegistrationResponse {
 }
 
 async fn response_json(response: HttpResponse) -> (StatusCode, Value) {
+    assert_no_store(response.headers());
     let status = response.status();
     let body = actix_web::body::to_bytes(response.into_body())
         .await
@@ -472,6 +450,7 @@ async fn response_json(response: HttpResponse) -> (StatusCode, Value) {
 }
 
 async fn response_json_with_cookie_state(response: HttpResponse) -> (StatusCode, Value, bool) {
+    assert_no_store(response.headers());
     let status = response.status();
     let has_set_cookie = response.headers().contains_key(header::SET_COOKIE);
     let body = actix_web::body::to_bytes(response.into_body())
@@ -479,6 +458,11 @@ async fn response_json_with_cookie_state(response: HttpResponse) -> (StatusCode,
         .expect("response body should be readable");
     let json = serde_json::from_slice(&body).expect("response should be json");
     (status, json, has_set_cookie)
+}
+
+fn assert_no_store(headers: &header::HeaderMap) {
+    assert_eq!(headers.get(header::CACHE_CONTROL).unwrap(), "no-store");
+    assert_eq!(headers.get(header::PRAGMA).unwrap(), "no-cache");
 }
 
 async fn assert_passkey_write_rejects_missing_csrf(response: HttpResponse) {
@@ -559,103 +543,11 @@ fn passkey_ceremony_id_normalization_accepts_only_bounded_urlsafe_identifiers() 
 }
 
 #[actix_web::test]
-async fn passkey_list_response_exposes_only_public_credential_projection() {
-    let row = passkey_row(
-        uuid_fixture(0x11111111111111111111111111111111),
-        uuid_fixture(0x22222222222222222222222222222222),
-        uuid_fixture(0x33333333333333333333333333333333),
-        "Laptop",
-    );
-
-    let (status, body) = response_json(passkey_list_response(std::slice::from_ref(
-        &row.credential(),
-    )))
-    .await;
-
-    assert_eq!(status, StatusCode::OK);
-    let passkeys = body["passkeys"]
-        .as_array()
-        .expect("passkeys must be an array");
-    assert_eq!(passkeys.len(), 1);
-    let public = passkeys[0]
-        .as_object()
-        .expect("passkey projection must be an object");
-    assert_eq!(public["id"], json!(row.id));
-    assert_eq!(public["label"], "Laptop");
-    assert_eq!(public["credential_id"], "credential-public-id");
-    assert_eq!(public["sign_count"], 9);
-    assert!(public.get("last_used_at").is_some());
-    assert!(public.get("created_at").is_some());
-    assert!(public.get("updated_at").is_some());
-    assert_eq!(public.len(), 7);
-    for forbidden in ["tenant_id", "user_id", "credential"] {
-        assert!(
-            public.get(forbidden).is_none(),
-            "{forbidden} must not be exposed in passkey profile responses"
-        );
-    }
-}
-
-#[actix_web::test]
 async fn passkey_list_requires_login_before_loading_credentials() {
     let state = Data::new(test_state());
     let req = actix_web::test::TestRequest::default().to_http_request();
 
     assert_passkey_endpoint_requires_login(passkey_list(state, req).await).await;
-}
-
-#[actix_web::test]
-async fn passkey_created_response_uses_created_status_and_public_projection_only() {
-    let row = passkey_row(
-        uuid_fixture(0x44444444444444444444444444444444),
-        uuid_fixture(0x55555555555555555555555555555555),
-        uuid_fixture(0x66666666666666666666666666666666),
-        "Security key",
-    );
-
-    let (status, body) = response_json(passkey_created_response(&row.credential())).await;
-
-    assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(body["id"], json!(row.id));
-    assert_eq!(body["label"], "Security key");
-    assert!(body.get("tenant_id").is_none());
-    assert!(body.get("user_id").is_none());
-    assert!(body.get("credential").is_none());
-}
-
-#[actix_web::test]
-async fn duplicate_passkey_registration_returns_conflict_without_credential_data() {
-    let (status, body) = response_json(passkey_already_registered_response()).await;
-
-    assert_eq!(status, StatusCode::CONFLICT);
-    assert_eq!(body["error"], "invalid_request");
-    assert_eq!(body["error_description"], "passkey already registered.");
-    assert!(body.get("credential").is_none());
-    assert!(body.get("credential_id").is_none());
-}
-
-#[actix_web::test]
-async fn delete_missing_passkey_returns_not_found_without_cross_user_context() {
-    let (status, body) = response_json(passkey_delete_response(0)).await;
-
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    assert_eq!(body["error"], "invalid_request");
-    assert_eq!(body["error_description"], "passkey not found.");
-    assert!(body.get("tenant_id").is_none());
-    assert!(body.get("user_id").is_none());
-    assert!(body.get("credential_id").is_none());
-}
-
-#[actix_web::test]
-async fn delete_existing_passkey_returns_empty_no_content_response() {
-    let response = passkey_delete_response(1);
-    let status = response.status();
-    let body = actix_web::body::to_bytes(response.into_body())
-        .await
-        .expect("response body should be readable");
-
-    assert_eq!(status, StatusCode::NO_CONTENT);
-    assert!(body.is_empty());
 }
 
 #[actix_web::test]
@@ -1043,6 +935,7 @@ async fn delete_passkey_removes_authenticated_user_credential() {
         actix_web::web::Path::from(row.id),
     )
     .await;
+    assert_no_store(response.headers());
     let status = response.status();
     let body = actix_web::body::to_bytes(response.into_body())
         .await

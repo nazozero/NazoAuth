@@ -8,14 +8,10 @@ pub(crate) mod device;
 pub(crate) mod device_config;
 pub(crate) mod device_issuance;
 pub(crate) mod dispatch;
-#[cfg(test)]
-pub(crate) mod introspect;
 pub(crate) mod issue;
 pub(crate) mod jwt_bearer;
 pub(crate) mod native_sso;
 pub(crate) mod refresh;
-#[cfg(test)]
-pub(crate) mod revoke;
 pub(crate) mod token_exchange;
 #[cfg(test)]
 pub(crate) mod userinfo;
@@ -23,13 +19,8 @@ pub(crate) mod userinfo;
 use authorization_code::token_authorization_code_with_service;
 use ciba::{CIBA_GRANT_TYPE, token_ciba};
 use client_auth::{
-    TokenManagementClientAuthError, consume_token_client_assertion_with_authorization_service,
-    token_management_auth_error,
-};
-#[cfg(test)]
-use client_auth::{
-    authenticate_introspection_client_with_dependencies,
-    authenticate_revocation_client_with_dependencies, token_management_client_auth_error,
+    ClientAuthRequestFacts, TokenManagementClientAuthError,
+    consume_token_client_assertion_with_authorization_service,
 };
 use client_credentials::token_client_credentials_with_service;
 use device::DEVICE_CODE_GRANT_TYPE;
@@ -51,7 +42,7 @@ pub(crate) use nazo_http_actix::{TokenForm, TokenFormError, parse_token_form};
 #[cfg(test)]
 pub(crate) use nazo_http_actix::{
     parse_token_management_form, token_management_form_error,
-    token_management_has_conflicting_client_auth, token_management_oauth_error,
+    token_management_has_conflicting_client_auth,
 };
 use refresh::token_refresh_with_service;
 use token_exchange::{TOKEN_EXCHANGE_GRANT_TYPE, token_exchange};
@@ -64,23 +55,125 @@ pub(crate) type ServerTokenService = nazo_auth::TokenService<
 
 #[cfg(test)]
 use crate::support::security::CLIENT_ASSERTION_TYPE_JWT_BEARER;
+use actix_web::{HttpRequest, HttpResponse, http::StatusCode};
 #[cfg(test)]
 use actix_web::{
-    HttpRequest, HttpResponse,
-    http::{
-        StatusCode,
-        header::{self, HeaderValue},
-    },
+    http::header::{self, HeaderValue},
     web::Bytes,
 };
 #[cfg(test)]
 use nazo_http_actix::{TokenManagementFormError, TokenOnlyForm};
+use nazo_http_actix::{oauth_error, oauth_token_error};
 #[cfg(test)]
 #[path = "../../tests/in_source/src/http/token/tests/forms.rs"]
 mod forms_tests;
 
+pub(crate) struct ServerTokenManagementRequestFactsExtractor {
+    config: std::sync::Arc<crate::http::authorization::AuthorizationHttpConfig>,
+}
+
+impl ServerTokenManagementRequestFactsExtractor {
+    pub(crate) fn new(
+        config: std::sync::Arc<crate::http::authorization::AuthorizationHttpConfig>,
+    ) -> Self {
+        Self { config }
+    }
+}
+
+impl nazo_http_actix::TokenManagementRequestFactsExtractor
+    for ServerTokenManagementRequestFactsExtractor
+{
+    fn extract(&self, request: &HttpRequest) -> nazo_http_actix::TokenManagementRequestFacts {
+        nazo_http_actix::TokenManagementRequestFacts {
+            source_ip: crate::support::client_ip::client_ip_with_config(
+                request,
+                &self.config.client_ip,
+            ),
+            endpoint_path: request.path().to_owned(),
+            client_certificate: None,
+        }
+    }
+
+    fn extract_client_certificate(
+        &self,
+        request: &HttpRequest,
+    ) -> Option<nazo_http_actix::ClientCertificateFacts> {
+        crate::support::mtls::request_mtls_client_certificate_from_trusted_proxy(
+            request,
+            &self.config.trusted_proxy_cidrs,
+        )
+    }
+}
+
+pub(crate) fn client_auth_request_facts(
+    request: &HttpRequest,
+    trusted_proxy_cidrs: &[crate::support::client_ip::IpCidr],
+) -> ClientAuthRequestFacts {
+    ClientAuthRequestFacts::new(
+        request.path(),
+        crate::support::mtls::request_mtls_client_certificate_from_trusted_proxy(
+            request,
+            trusted_proxy_cidrs,
+        ),
+    )
+}
+
+pub(crate) fn token_management_auth_error(error: TokenManagementClientAuthError) -> HttpResponse {
+    match error {
+        TokenManagementClientAuthError::InvalidClient
+        | TokenManagementClientAuthError::PublicClientCredentialsForbidden => oauth_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_client",
+            "客户端认证失败.",
+        ),
+        TokenManagementClientAuthError::StoreUnavailable => oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "客户端认证状态存储不可用.",
+        ),
+    }
+}
+
+pub(crate) fn token_client_assertion_error(error: TokenManagementClientAuthError) -> HttpResponse {
+    match error {
+        TokenManagementClientAuthError::InvalidClient
+        | TokenManagementClientAuthError::PublicClientCredentialsForbidden => oauth_token_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_client",
+            "客户端认证失败.",
+            false,
+        ),
+        TokenManagementClientAuthError::StoreUnavailable => oauth_token_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "客户端认证状态存储不可用.",
+            false,
+        ),
+    }
+}
+
 #[cfg(test)]
 mod lifecycle_boundary_tests {
+    #[test]
+    fn token_management_request_facts_preserve_the_exact_endpoint_path() {
+        let settings =
+            crate::settings::Settings::from_config(&crate::config::ConfigSource::default())
+                .expect("default settings should load");
+        let extractor =
+            super::ServerTokenManagementRequestFactsExtractor::new(std::sync::Arc::new(
+                crate::http::authorization::AuthorizationHttpConfig::from(&settings),
+            ));
+        let request = actix_web::test::TestRequest::post()
+            .uri("/introspect")
+            .peer_addr("203.0.113.9:443".parse().unwrap())
+            .to_http_request();
+        let facts =
+            nazo_http_actix::TokenManagementRequestFactsExtractor::extract(&extractor, &request);
+        assert_eq!(facts.endpoint_path, "/introspect");
+        assert_eq!(facts.source_ip, "203.0.113.9");
+        assert!(facts.client_certificate.is_none());
+    }
+
     fn function_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
         source
             .split_once(start)
@@ -159,29 +252,6 @@ mod lifecycle_boundary_tests {
     }
 
     #[test]
-    fn token_lifecycle_handlers_use_focused_dependencies() {
-        for (name, source) in [
-            ("introspection", include_str!("token/introspect.rs")),
-            ("revocation", include_str!("token/revoke.rs")),
-        ] {
-            for forbidden in [
-                "AppState",
-                "nazo_postgres",
-                "nazo_valkey",
-                "diesel_db",
-                "decode_access_claims",
-                "TokenRepository::new",
-                "OAuthClientRepository::new",
-            ] {
-                assert!(
-                    !source.contains(forbidden),
-                    "{name} handler reintroduced forbidden dependency {forbidden}"
-                );
-            }
-        }
-    }
-
-    #[test]
     fn userinfo_transport_does_not_construct_storage_adapters() {
         let source = include_str!("token/userinfo.rs");
         assert!(source.contains("handles: Data<UserinfoHandles>"));
@@ -211,8 +281,6 @@ mod lifecycle_boundary_tests {
             ("ciba", include_str!("token/ciba.rs")),
             ("device", include_str!("token/device.rs")),
             ("par", include_str!("authorization/par.rs")),
-            ("introspection", include_str!("token/introspect.rs")),
-            ("revocation", include_str!("token/revoke.rs")),
         ] {
             assert!(
                 !source.contains("OAuthClientRepository::new"),

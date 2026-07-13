@@ -29,6 +29,13 @@ fn token_management_state() -> AppState {
     )
 }
 
+fn request_facts(state: &AppState, request: &actix_web::HttpRequest) -> ClientAuthRequestFacts {
+    crate::http::token::client_auth_request_facts(
+        request,
+        &state.settings.endpoint.trusted_proxy_cidrs,
+    )
+}
+
 fn token_management_state_with_settings(settings: Settings) -> AppState {
     AppState {
         diesel_db: create_pool(
@@ -182,26 +189,6 @@ fn signed_client_assertion_with_alg(
 }
 
 #[test]
-fn token_management_basic_client_auth_failure_has_basic_challenge() {
-    let response =
-        token_management_client_auth_error(TokenManagementClientAuthError::InvalidClient, true);
-
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(
-        response.headers().get(header::WWW_AUTHENTICATE).unwrap(),
-        HeaderValue::from_static(r#"Basic realm="nazo-oauth""#)
-    );
-    assert_eq!(
-        response.headers().get(header::CACHE_CONTROL).unwrap(),
-        HeaderValue::from_static("no-store")
-    );
-    assert_eq!(
-        response.headers().get(header::PRAGMA).unwrap(),
-        HeaderValue::from_static("no-cache")
-    );
-}
-
-#[test]
 fn public_revocation_client_accepts_only_none_without_secret_material() {
     let credentials = client_credentials("none");
     assert!(
@@ -231,108 +218,15 @@ fn public_revocation_client_accepts_only_none_without_secret_material() {
 }
 
 #[test]
-fn token_management_non_basic_client_auth_failure_has_no_basic_challenge() {
-    let response =
-        token_management_client_auth_error(TokenManagementClientAuthError::InvalidClient, false);
-
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert!(response.headers().get(header::WWW_AUTHENTICATE).is_none());
-    assert_eq!(
-        response.headers().get(header::CACHE_CONTROL).unwrap(),
-        HeaderValue::from_static("no-store")
-    );
-}
-
-#[test]
-fn public_client_credential_rejection_preserves_invalid_client_contract() {
-    let response = token_management_client_auth_error(
-        TokenManagementClientAuthError::PublicClientCredentialsForbidden,
-        true,
-    );
-
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(
-        response
-            .extensions()
-            .get::<OAuthJsonErrorFields>()
-            .map(|fields| fields.error.as_str()),
-        Some("invalid_client")
-    );
-    assert_eq!(
-        response.headers().get(header::WWW_AUTHENTICATE).unwrap(),
-        HeaderValue::from_static(r#"Basic realm="nazo-oauth""#)
-    );
-    assert_eq!(
-        response.headers().get(header::CACHE_CONTROL).unwrap(),
-        HeaderValue::from_static("no-store")
-    );
-}
-
-#[test]
-fn token_management_store_failure_has_no_basic_challenge() {
-    let response =
-        token_management_client_auth_error(TokenManagementClientAuthError::StoreUnavailable, true);
-
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    assert!(response.headers().get(header::WWW_AUTHENTICATE).is_none());
-    assert_eq!(
-        response.headers().get(header::CACHE_CONTROL).unwrap(),
-        HeaderValue::from_static("no-store")
-    );
-}
-
-#[test]
-fn token_management_auth_error_maps_store_unavailable_to_server_error() {
-    let response = token_management_auth_error(TokenManagementClientAuthError::StoreUnavailable);
-
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(
-        response
-            .extensions()
-            .get::<OAuthJsonErrorFields>()
-            .map(|fields| fields.error.as_str()),
-        Some("server_error")
-    );
-}
-
-#[test]
-fn client_assertion_replay_maps_to_invalid_client_not_server_error() {
-    let error = token_management_client_assertion_error(ClientAssertionError::ReplayDetected);
-    let response = token_management_client_auth_error(error, false);
-
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert!(response.headers().get(header::WWW_AUTHENTICATE).is_none());
-    assert_eq!(
-        response.headers().get(header::CACHE_CONTROL).unwrap(),
-        HeaderValue::from_static("no-store")
-    );
-    assert_eq!(
-        response
-            .extensions()
-            .get::<OAuthJsonErrorFields>()
-            .map(|fields| fields.error.as_str()),
-        Some("invalid_client")
-    );
-}
-
-#[test]
-fn client_assertion_store_failure_maps_to_server_error_without_challenge() {
-    let error = token_management_client_assertion_error(ClientAssertionError::StoreUnavailable);
-    let response = token_management_client_auth_error(error, true);
-
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    assert!(response.headers().get(header::WWW_AUTHENTICATE).is_none());
-    assert_eq!(
-        response.headers().get(header::CACHE_CONTROL).unwrap(),
-        HeaderValue::from_static("no-store")
-    );
-    assert_eq!(
-        response
-            .extensions()
-            .get::<OAuthJsonErrorFields>()
-            .map(|fields| fields.error.as_str()),
-        Some("server_error")
-    );
+fn client_assertion_failures_keep_typed_security_classification() {
+    assert!(matches!(
+        token_management_client_assertion_error(ClientAssertionError::ReplayDetected),
+        TokenManagementClientAuthError::InvalidClient
+    ));
+    assert!(matches!(
+        token_management_client_assertion_error(ClientAssertionError::StoreUnavailable),
+        TokenManagementClientAuthError::StoreUnavailable
+    ));
 }
 
 #[actix_web::test]
@@ -354,24 +248,26 @@ async fn token_client_assertion_store_failure_fails_token_grant_as_server_error(
     );
     let mut credentials = client_credentials("private_key_jwt");
     credentials.client_assertion = Some(assertion);
-    let assertion = match verify_confidential_client(&state, &req, &client, &credentials).await {
+    let assertion = match verify_confidential_client(
+        &state,
+        &request_facts(&state, &req),
+        &client,
+        &credentials,
+    )
+    .await
+    {
         Ok(Some(assertion)) => assertion,
         Ok(None) => panic!("private_key_jwt verification should return replay material"),
         Err(_) => panic!("signed private_key_jwt assertion should verify"),
     };
 
-    let response = consume_token_client_assertion(&state, &client, Some(&assertion))
+    let error = consume_token_client_assertion(&state, &client, Some(&assertion))
         .await
         .expect_err("unavailable replay store must fail the token grant");
-
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(
-        response
-            .extensions()
-            .get::<OAuthJsonErrorFields>()
-            .map(|fields| fields.error.as_str()),
-        Some("server_error")
-    );
+    assert!(matches!(
+        error,
+        TokenManagementClientAuthError::StoreUnavailable
+    ));
 }
 
 #[test]
@@ -425,7 +321,8 @@ async fn confidential_client_secret_auth_rejects_wrong_method_without_store_acce
     let mut wrong_method = client_credentials("client_secret_post");
     wrong_method.client_secret = Some(correct_secret);
     assert!(matches!(
-        verify_confidential_client(&state, &req, &client, &wrong_method).await,
+        verify_confidential_client(&state, &request_facts(&state, &req), &client, &wrong_method)
+            .await,
         Err(TokenManagementClientAuthError::InvalidClient)
     ));
 }
@@ -441,7 +338,8 @@ async fn confidential_client_auth_rejects_public_or_unknown_auth_method_even_wit
 
     client.client_type = "public".to_owned();
     assert!(matches!(
-        verify_confidential_client(&state, &req, &client, &credentials).await,
+        verify_confidential_client(&state, &request_facts(&state, &req), &client, &credentials)
+            .await,
         Err(TokenManagementClientAuthError::InvalidClient)
     ));
 
@@ -449,7 +347,8 @@ async fn confidential_client_auth_rejects_public_or_unknown_auth_method_even_wit
     client.token_endpoint_auth_method = "unsupported_method".to_owned();
     credentials.method = "unsupported_method".to_owned();
     assert!(matches!(
-        verify_confidential_client(&state, &req, &client, &credentials).await,
+        verify_confidential_client(&state, &request_facts(&state, &req), &client, &credentials)
+            .await,
         Err(TokenManagementClientAuthError::InvalidClient)
     ));
 }
@@ -463,13 +362,25 @@ async fn private_key_jwt_requires_present_and_well_formed_assertion() {
 
     let mut missing_assertion = client_credentials("private_key_jwt");
     assert!(matches!(
-        verify_confidential_client(&state, &req, &client, &missing_assertion).await,
+        verify_confidential_client(
+            &state,
+            &request_facts(&state, &req),
+            &client,
+            &missing_assertion,
+        )
+        .await,
         Err(TokenManagementClientAuthError::InvalidClient)
     ));
 
     missing_assertion.client_assertion = Some("not-a-jwt".to_owned());
     assert!(matches!(
-        verify_confidential_client(&state, &req, &client, &missing_assertion).await,
+        verify_confidential_client(
+            &state,
+            &request_facts(&state, &req),
+            &client,
+            &missing_assertion,
+        )
+        .await,
         Err(TokenManagementClientAuthError::InvalidClient)
     ));
 }
@@ -487,7 +398,8 @@ async fn mtls_client_auth_requires_certificate_from_trusted_request_context() {
     let credentials = client_credentials("tls_client_auth");
 
     assert!(matches!(
-        verify_confidential_client(&state, &req, &client, &credentials).await,
+        verify_confidential_client(&state, &request_facts(&state, &req), &client, &credentials)
+            .await,
         Err(TokenManagementClientAuthError::InvalidClient)
     ));
 }
@@ -507,7 +419,7 @@ async fn mtls_client_auth_accepts_matching_certificate_from_trusted_proxy() {
     let credentials = client_credentials("tls_client_auth");
 
     assert!(
-        verify_confidential_client(&state, &req, &client, &credentials)
+        verify_confidential_client(&state, &request_facts(&state, &req), &client, &credentials)
             .await
             .is_ok(),
         "matching mTLS certificate from trusted proxy should authenticate the client"
@@ -548,10 +460,31 @@ async fn ciba_private_key_jwt_accepts_ps256_endpoint_and_issuer_audiences() {
         ));
 
         assert!(
-            verify_confidential_client(&state, &req, &client, &credentials)
+            verify_confidential_client(&state, &request_facts(&state, &req), &client, &credentials)
                 .await
                 .is_ok(),
             "CIBA private_key_jwt should accept {audience} as client assertion audience"
         );
     }
+
+    let mut wrong_endpoint = client_credentials("private_key_jwt");
+    wrong_endpoint.client_assertion = Some(signed_client_assertion_with_alg(
+        &client.client_id,
+        "https://auth.nazo.run/introspect",
+        "client-kid",
+        &key,
+        "ciba-client-assertion-wrong-endpoint",
+        jsonwebtoken::Algorithm::PS256,
+    ));
+    assert!(
+        verify_confidential_client(
+            &state,
+            &request_facts(&state, &req),
+            &client,
+            &wrong_endpoint,
+        )
+        .await
+        .is_err(),
+        "private_key_jwt audience must use the exact current endpoint path"
+    );
 }

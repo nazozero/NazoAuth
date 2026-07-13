@@ -14,10 +14,8 @@ use fred::prelude::{
 use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
 
-use crate::http::authorization::{AuthorizationHttpConfig, ServerAuthorizationService};
-use crate::http::token::{
-    revoke::revoke as revoke_with_dependencies, userinfo::userinfo as userinfo_with_dependencies,
-};
+use crate::http::authorization::ServerAuthorizationService;
+use crate::http::token::userinfo::userinfo as userinfo_with_dependencies;
 use crate::settings::AuthorizationServerProfile;
 use crate::support::{
     IpCidr, SessionPayload, current_session, hash_client_secret, valkey_del, valkey_set_ex,
@@ -38,18 +36,6 @@ fn token_service(state: &AppState) -> Data<ServerTokenService> {
         nazo_valkey::TokenIssuanceStateAdapter::new(&state.valkey_connection()),
         state.keyset.clone(),
     ))
-}
-
-async fn revoke(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
-    let connection = state.valkey_connection();
-    let token_service = Data::new(ServerTokenService::new(
-        nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
-        nazo_valkey::TokenIssuanceStateAdapter::new(&connection),
-        state.keyset.clone(),
-    ));
-    let authorization_service = authorization_service(&state);
-    let config = Data::new(AuthorizationHttpConfig::from(state.settings.as_ref()));
-    revoke_with_dependencies(token_service, authorization_service, config, req, body).await
 }
 
 async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
@@ -528,17 +514,6 @@ async fn valid_browser_session_cookie_cannot_authenticate_oauth_protocol_endpoin
         false,
     )
     .await;
-
-    let revoke_response = revoke(
-        state.clone(),
-        request("/revoke"),
-        Bytes::from(format!(
-            "token=opaque-token&client_id={unauthenticated_client_id}"
-        )),
-    )
-    .await;
-    assert_eq!(revoke_response.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(oauth_error_code(&revoke_response), "invalid_client");
 
     let userinfo_response = userinfo(state.clone(), request("/userinfo"), Bytes::new()).await;
     assert_eq!(userinfo_response.status(), StatusCode::UNAUTHORIZED);

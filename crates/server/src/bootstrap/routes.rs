@@ -6,14 +6,16 @@ use actix_web::web;
 use nazo_http_actix::authorize_decision;
 use nazo_http_actix::{
     admin_patch_runtime_module, admin_runtime_module_events, admin_runtime_modules,
-    configure_mfa_challenge_route, configure_mfa_profile_routes, discovery, fapi_resource, jwks,
-    login, oauth_authorization_server_metadata, oauth_protected_resource_metadata, oidc_logout,
-    profile_applications, profile_logout, profile_me, profile_update, register, send_code,
+    check_session_iframe, check_session_status, configure_mfa_challenge_route,
+    configure_mfa_profile_routes, configure_passkey_login_routes, configure_passkey_profile_routes,
+    discovery, fapi_resource, introspect, jwks, login, oauth_authorization_server_metadata,
+    oauth_protected_resource_metadata, oidc_logout, profile_applications, profile_logout,
+    profile_me, profile_update, register, revoke, send_code,
 };
 #[cfg(not(test))]
 use nazo_http_actix::{
     client_configuration_delete, client_configuration_get, client_configuration_put,
-    dynamic_client_registration, introspect, revoke, userinfo,
+    dynamic_client_registration, userinfo,
 };
 
 use crate::http::admin::{
@@ -34,7 +36,6 @@ use crate::http::auth::{
         federation_provider_callback, federation_provider_list, federation_provider_start,
         federation_saml_acs,
     },
-    passkey::{passkey_login_begin, passkey_login_finish},
 };
 #[cfg(test)]
 use crate::http::authorization::decision::authorize_decision;
@@ -54,10 +55,6 @@ use crate::http::profile::{
     avatar::{delete_avatar, get_avatar, upload_avatar},
     delivery::access_delivery,
     federation_links::{my_federation_links, unlink_my_federation_link},
-    passkeys::{
-        passkey_delete, passkey_list, passkey_registration_begin, passkey_registration_finish,
-    },
-    session_management::{check_session_iframe, check_session_status},
 };
 #[cfg(test)]
 use crate::http::scim::{
@@ -76,8 +73,6 @@ use crate::http::token::{
     },
     dispatch::token,
 };
-#[cfg(test)]
-use crate::http::token::{introspect::introspect, revoke::revoke};
 use crate::http::well_known::{captcha_config, health};
 use crate::settings::Settings;
 #[cfg(not(test))]
@@ -217,8 +212,7 @@ pub(crate) fn configure(
                     "/federation/{provider_id}/callback",
                     web::get().to(federation_provider_callback),
                 )
-                .route("/passkey/begin", web::post().to(passkey_login_begin))
-                .route("/passkey/finish", web::post().to(passkey_login_finish))
+                .configure(configure_passkey_login_routes)
                 .service(web::scope("/mfa").configure(configure_mfa_challenge_route))
                 .route("/csrf", web::get().to(csrf))
                 // CORS: cors_auth_api — /auth/me/*
@@ -227,16 +221,7 @@ pub(crate) fn configure(
                         .wrap(cors::cors_auth_api(settings))
                         .route("", web::get().to(profile_me))
                         .route("", web::patch().to(profile_update))
-                        .route("/passkeys", web::get().to(passkey_list))
-                        .route(
-                            "/passkeys/registration/begin",
-                            web::post().to(passkey_registration_begin),
-                        )
-                        .route(
-                            "/passkeys/registration/finish",
-                            web::post().to(passkey_registration_finish),
-                        )
-                        .route("/passkeys/{passkey_id}", web::delete().to(passkey_delete))
+                        .configure(configure_passkey_profile_routes)
                         .service(web::scope("/mfa").configure(configure_mfa_profile_routes))
                         .route("/avatar", web::post().to(upload_avatar))
                         .route("/avatar", web::get().to(get_avatar))

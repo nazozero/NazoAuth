@@ -3,7 +3,7 @@ use std::{error::Error, fmt};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use passkey_auth::{
-    AuthenticationChallenge, AuthenticationResponse, AuthenticationState,
+    AuthenticationChallenge, AuthenticationResponse, AuthenticationState, CosePublicKey,
     PasskeyCredential as WebauthnCredential, RegistrationChallenge, RegistrationResponse,
     RegistrationState, Webauthn,
 };
@@ -103,6 +103,8 @@ pub struct StoredPasskeyAuthentication {
     pub user_id: UserId,
     pub tenant_id: TenantId,
     pub state: AuthenticationState,
+    #[serde(default)]
+    pub dummy: bool,
 }
 
 #[derive(Debug)]
@@ -121,11 +123,11 @@ pub struct PasskeyRegistrationBegin {
 pub enum PasskeyAuditEvent {
     LoginFailureEmail {
         email: String,
-        reason: String,
+        reason: PasskeyAuditReason,
     },
     LoginFailureUser {
         user_id: UserId,
-        reason: String,
+        reason: PasskeyAuditReason,
     },
     LoginSuccess {
         user_id: UserId,
@@ -133,12 +135,36 @@ pub enum PasskeyAuditEvent {
     },
     RegistrationRejected {
         user_id: UserId,
-        reason: String,
+        reason: PasskeyAuditReason,
     },
     Registered {
         user_id: UserId,
         credential_id: Uuid,
     },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PasskeyAuditReason {
+    AccountUnavailable,
+    NoCredentials,
+    InvalidAssertion,
+    CounterConflict,
+    CeremonyUserMismatch,
+    InvalidAttestation,
+}
+
+impl PasskeyAuditReason {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AccountUnavailable => "account_unavailable",
+            Self::NoCredentials => "no_credentials",
+            Self::InvalidAssertion => "invalid_assertion",
+            Self::CounterConflict => "counter_conflict",
+            Self::CeremonyUserMismatch => "ceremony_user_mismatch",
+            Self::InvalidAttestation => "invalid_attestation",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -207,21 +233,26 @@ where
     }
 
     pub async fn login_begin(&self, email: String) -> Result<PasskeyLoginBegin, PasskeyError> {
-        let account = match self
+        let account = self
             .accounts
             .by_email(self.config.tenant_id, &email)
             .await
             .map_err(PasskeyError::Account)?
-            .filter(|account| account.principal.active)
-        {
-            Some(account) => account,
-            None => {
-                self.audit.record(PasskeyAuditEvent::LoginFailureEmail {
-                    email,
-                    reason: "user_not_found".to_owned(),
-                });
-                return Err(PasskeyError::LoginFailed);
-            }
+            .filter(|account| account.principal.active);
+        let Some(account) = account else {
+            self.audit.record(PasskeyAuditEvent::LoginFailureEmail {
+                email,
+                reason: PasskeyAuditReason::AccountUnavailable,
+            });
+            // Keep the storage access pattern close to a real username-first ceremony.
+            // The random user cannot match an account, and the resulting ceremony is
+            // explicitly marked as dummy before it is persisted.
+            let dummy_user_id = random_user_id();
+            self.credentials
+                .list(self.config.tenant_id, dummy_user_id)
+                .await
+                .map_err(PasskeyError::State)?;
+            return self.dummy_login_begin(dummy_user_id).await;
         };
         let rows = self
             .credentials
@@ -229,16 +260,21 @@ where
             .await
             .map_err(PasskeyError::State)?;
         if rows.is_empty() {
-            return Err(PasskeyError::LoginFailed);
+            self.audit.record(PasskeyAuditEvent::LoginFailureUser {
+                user_id: account.user_id(),
+                reason: PasskeyAuditReason::NoCredentials,
+            });
+            return self.dummy_login_begin(account.user_id()).await;
         }
         let credentials = rows
             .iter()
             .map(decode_credential)
             .collect::<Result<Vec<_>, _>>()?;
         let user_handle = passkey_user_handle(account.tenant().tenant_id, account.user_id());
-        let (challenge, state) = self
+        let (mut challenge, state) = self
             .webauthn
             .start_authentication_with_creds_for_user(&user_handle, &credentials);
+        remove_authentication_transport_hints(&mut challenge);
         let ceremony_id = random_urlsafe_token();
         self.ceremonies
             .store_authentication(
@@ -247,6 +283,7 @@ where
                     user_id: account.user_id(),
                     tenant_id: account.tenant().tenant_id,
                     state,
+                    dummy: false,
                 },
                 self.config.ceremony_ttl_seconds,
             )
@@ -264,6 +301,7 @@ where
         response: AuthenticationResponse,
         source_ip: String,
         remembered_mfa: Option<crate::RememberedMfaProof>,
+        previous_session_id: Option<String>,
         now: DateTime<Utc>,
     ) -> Result<LoginSuccess, PasskeyError> {
         let ceremony_id =
@@ -274,6 +312,9 @@ where
             .await
             .map_err(ceremony_read_error)?
             .ok_or(PasskeyError::CeremonyExpired)?;
+        if stored.dummy {
+            return Err(PasskeyError::LoginFailed);
+        }
         let account = self
             .accounts
             .by_id(stored.tenant_id, stored.user_id)
@@ -306,9 +347,14 @@ where
             .webauthn
             .finish_authentication(&stored.state, &response, &credential)
             .map_err(|error| {
+                tracing::debug!(
+                    error = ?error,
+                    user_id = %account.user_id().as_uuid(),
+                    "passkey assertion verification failed"
+                );
                 self.audit.record(PasskeyAuditEvent::LoginFailureUser {
                     user_id: account.user_id(),
-                    reason: error.to_string(),
+                    reason: PasskeyAuditReason::InvalidAssertion,
                 });
                 PasskeyError::LoginFailed
             })?;
@@ -332,13 +378,13 @@ where
                 RepositoryError::Conflict => {
                     self.audit.record(PasskeyAuditEvent::LoginFailureUser {
                         user_id: account.user_id(),
-                        reason: "counter_conflict".to_owned(),
+                        reason: PasskeyAuditReason::CounterConflict,
                     });
                     PasskeyError::LoginFailed
                 }
                 error => PasskeyError::State(error),
             })?;
-        self.create_session(account, source_ip, remembered_mfa, now)
+        self.create_session(account, source_ip, remembered_mfa, previous_session_id, now)
             .await
     }
 
@@ -407,7 +453,7 @@ where
         if stored.user_id != account.user_id() || stored.tenant_id != account.tenant().tenant_id {
             self.audit.record(PasskeyAuditEvent::RegistrationRejected {
                 user_id: account.user_id(),
-                reason: "ceremony_user_mismatch".to_owned(),
+                reason: PasskeyAuditReason::CeremonyUserMismatch,
             });
             return Err(PasskeyError::CeremonyMismatch);
         }
@@ -415,9 +461,14 @@ where
             .webauthn
             .finish_registration(&stored.state, &response)
             .map_err(|error| {
+                tracing::debug!(
+                    error = ?error,
+                    user_id = %account.user_id().as_uuid(),
+                    "passkey attestation verification failed"
+                );
                 self.audit.record(PasskeyAuditEvent::RegistrationRejected {
                     user_id: account.user_id(),
-                    reason: error.to_string(),
+                    reason: PasskeyAuditReason::InvalidAttestation,
                 });
                 PasskeyError::RegistrationFailed
             })?;
@@ -478,6 +529,7 @@ where
         account: PublicAccount,
         source_ip: String,
         remembered_mfa: Option<crate::RememberedMfaProof>,
+        previous_session_id: Option<String>,
         now: DateTime<Utc>,
     ) -> Result<LoginSuccess, PasskeyError> {
         let remembered = if account.account.mfa_enabled {
@@ -513,7 +565,12 @@ where
         let csrf_token = random_urlsafe_token();
         match self
             .sessions
-            .create(&session_id, &session, self.config.session_ttl_seconds)
+            .create_replacing(
+                previous_session_id.as_deref(),
+                &session_id,
+                &session,
+                self.config.session_ttl_seconds,
+            )
             .await
             .map_err(PasskeyError::Session)?
         {
@@ -530,6 +587,44 @@ where
             session,
         })
     }
+
+    async fn dummy_login_begin(
+        &self,
+        dummy_user_id: UserId,
+    ) -> Result<PasskeyLoginBegin, PasskeyError> {
+        let user_handle = passkey_user_handle(self.config.tenant_id, dummy_user_id);
+        let dummy_credential_id = rand::random::<[u8; 32]>().to_vec();
+        let dummy_credential = WebauthnCredential {
+            id: passkey_auth::CredentialId(dummy_credential_id),
+            public_key_cose: CosePublicKey(Vec::new()),
+            counter: 0,
+            transports: vec!["internal".to_owned()],
+            aaguid: [0; 16],
+        };
+        let (mut challenge, state) = self
+            .webauthn
+            .start_authentication_with_creds_for_user(&user_handle, &[dummy_credential]);
+        remove_authentication_transport_hints(&mut challenge);
+
+        let ceremony_id = random_urlsafe_token();
+        self.ceremonies
+            .store_authentication(
+                &ceremony_id,
+                &StoredPasskeyAuthentication {
+                    user_id: dummy_user_id,
+                    tenant_id: self.config.tenant_id,
+                    state,
+                    dummy: true,
+                },
+                self.config.ceremony_ttl_seconds,
+            )
+            .await
+            .map_err(PasskeyError::CeremonyState)?;
+        Ok(PasskeyLoginBegin {
+            ceremony_id,
+            challenge,
+        })
+    }
 }
 
 fn decode_credential(row: &PasskeyCredential) -> Result<WebauthnCredential, PasskeyError> {
@@ -540,8 +635,20 @@ fn decode_credential(row: &PasskeyCredential) -> Result<WebauthnCredential, Pass
     })
 }
 
+fn remove_authentication_transport_hints(challenge: &mut AuthenticationChallenge) {
+    // Username-first responses are unauthenticated. Transport hints are optional
+    // and can otherwise disclose account-specific authenticator characteristics.
+    for descriptor in &mut challenge.allow_credentials {
+        descriptor.transports.clear();
+    }
+}
+
 fn random_urlsafe_token() -> String {
     URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>())
+}
+
+fn random_user_id() -> UserId {
+    UserId::new(Uuid::now_v7()).expect("UUIDv7 is never nil")
 }
 
 fn ceremony_read_error(error: RepositoryError) -> PasskeyError {

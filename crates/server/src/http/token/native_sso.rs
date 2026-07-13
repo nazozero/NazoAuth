@@ -312,14 +312,14 @@ pub(crate) async fn token_native_sso_exchange(
             false,
         );
     }
-    if let Err(response) = consume_token_client_assertion_with_authorization_service(
+    if let Err(error) = consume_token_client_assertion_with_authorization_service(
         issuance.authorization,
         client,
         client_assertion,
     )
     .await
     {
-        return response;
+        return super::token_client_assertion_error(error);
     }
     if form.audiences.as_slice() != [issuance.config.issuer()] {
         return oauth_token_error(

@@ -4,11 +4,13 @@ use diesel::{
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_auth::{
-    AdminGrantRepositoryPort, NewRefreshToken, PendingBackchannelLogoutDelivery,
-    RefreshTokenPersistResult,
+    AccessTokenRevocation, AdminGrantRepositoryPort, NewRefreshToken,
+    PendingBackchannelLogoutDelivery, RefreshTokenPersistResult, TokenRepositoryPort,
+    TokenRevocation,
 };
 use nazo_postgres::{
-    AuditRepository, AuthorizationRepository, GrantRepository, TokenRepository, create_pool,
+    AuditRepository, AuthorizationRepository, GrantRepository, TokenIssuanceRepository,
+    TokenRepository, create_pool,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -490,6 +492,127 @@ async fn authorization_code_replay_compensation_revokes_both_token_kinds() {
 }
 
 #[tokio::test]
+async fn token_management_revocation_is_client_scoped_idempotent_and_serializes_family() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let owner = fixture(&database_url).await;
+    let foreign = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let family_id = Uuid::now_v7();
+    let first = format!("revocation-first-{}", Uuid::now_v7());
+    let second = format!("revocation-second-{}", Uuid::now_v7());
+    let first_hash = blake3::hash(first.as_bytes()).to_hex().to_string();
+    let second_hash = blake3::hash(second.as_bytes()).to_hex().to_string();
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    sql_query(format!(
+        r#"
+        INSERT INTO oauth_tokens (
+            refresh_token_blake3, token_family_id, client_id, user_id, scopes,
+            issued_at, expires_at, subject
+        ) VALUES
+            ('{first_hash}', '{family_id}', '{}', '{}', '["openid"]'::jsonb,
+             CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 hour', '{}'),
+            ('{second_hash}', '{family_id}', '{}', '{}', '["openid"]'::jsonb,
+             CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 hour', '{}')
+        "#,
+        owner.client_id,
+        owner.user_id,
+        owner.user_id,
+        owner.client_id,
+        owner.user_id,
+        owner.user_id,
+    ))
+    .execute(&mut connection)
+    .await
+    .expect("refresh family fixture should insert");
+
+    let foreign_repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
+    let foreign_result = foreign_repository
+        .revoke_token(TokenRevocation {
+            tenant_id,
+            client_id: foreign.client_id,
+            raw_token: &first,
+            access_token: None,
+        })
+        .await
+        .expect("foreign revocation must remain non-disclosing");
+    assert_eq!(foreign_result, 0);
+
+    let first_repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
+    let second_repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
+    let (first_result, second_result) = tokio::join!(
+        first_repository.revoke_token(TokenRevocation {
+            tenant_id,
+            client_id: owner.client_id,
+            raw_token: &first,
+            access_token: None,
+        }),
+        second_repository.revoke_token(TokenRevocation {
+            tenant_id,
+            client_id: owner.client_id,
+            raw_token: &second,
+            access_token: None,
+        }),
+    );
+    assert_eq!(
+        first_result.unwrap() + second_result.unwrap(),
+        2,
+        "one serialized revocation must revoke the complete active family"
+    );
+
+    let repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
+    assert_eq!(
+        repository
+            .revoke_token(TokenRevocation {
+                tenant_id,
+                client_id: owner.client_id,
+                raw_token: &first,
+                access_token: None,
+            })
+            .await
+            .expect("repeat family revocation should be idempotent"),
+        0
+    );
+
+    let access_jti = format!("revocation-access-{}", Uuid::now_v7());
+    for _ in 0..2 {
+        repository
+            .revoke_token(TokenRevocation {
+                tenant_id,
+                client_id: owner.client_id,
+                raw_token: "opaque-access-token",
+                access_token: Some(AccessTokenRevocation {
+                    jti: access_jti.clone(),
+                    expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+                }),
+            })
+            .await
+            .expect("access-token revocation should be idempotent");
+    }
+
+    let active_family = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_tokens \
+         WHERE token_family_id = $1 AND revoked_at IS NULL",
+    )
+    .bind::<SqlUuid, _>(family_id)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(active_family.count, 0);
+    let access_revocations = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM access_token_revocations \
+         WHERE tenant_id = $1 AND client_id = $2",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<SqlUuid, _>(owner.client_id)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(access_revocations.count, 1);
+}
+
+#[tokio::test]
 async fn authorization_replay_waits_for_concurrent_refresh_rotation_before_compensation() {
     let Some(database_url) = database_url() else {
         return;
@@ -721,15 +844,11 @@ fn server_auth_callers_do_not_query_diesel_or_auth_tables() {
         "domain/rows.rs",
         "http/admin/grants.rs",
         "http/authorization/request/prompt_none.rs",
-        "http/fapi_resource.rs",
-        "http/profile/oidc_logout.rs",
         "http/scim/auth.rs",
-        "http/token/introspect.rs",
         "http/token/issue/authorization_code_state.rs",
         "http/token/issue/refresh_persistence.rs",
         "http/token/native_sso.rs",
         "http/token/refresh.rs",
-        "http/token/revoke.rs",
         "http/token/token_exchange.rs",
         "http/token/userinfo.rs",
         "support/oauth.rs",

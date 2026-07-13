@@ -52,7 +52,8 @@ use super::issue::{TokenIssuanceContext, issue_token_response_with_service};
 #[cfg(test)]
 use super::validate_token_request_profile;
 use super::{
-    ServerTokenService, TokenForm, TokenManagementClientAuthError, token_management_auth_error,
+    ServerTokenService, TokenForm, TokenManagementClientAuthError, client_auth_request_facts,
+    token_management_auth_error,
 };
 use crate::http::authorization::ServerAuthorizationService;
 use crate::runtime_modules::ServerRuntimeModuleRegistry;
@@ -306,14 +307,11 @@ pub(crate) async fn backchannel_authentication(
             "该客户端未启用 CIBA 授权类型.",
         );
     }
+    let auth_request = client_auth_request_facts(&req, &config.trusted_proxy_cidrs);
     let assertion = match authenticate_client_with_dependencies(
         &authorization_service,
-        ClientAuthConfig::new(
-            &config.issuer,
-            &config.client_secret_pepper,
-            &config.trusted_proxy_cidrs,
-        ),
-        &req,
+        ClientAuthConfig::new(&config.issuer, &config.client_secret_pepper),
+        &auth_request,
         &client,
         &credentials,
         ClientAuthenticationContext::ConfidentialOnly,
@@ -1388,14 +1386,14 @@ pub(crate) async fn token_ciba(
     if let Some(response) = ciba_auth_req_id_client_error(initial.state(), client) {
         return response;
     }
-    if let Err(response) = consume_token_client_assertion_with_authorization_service(
+    if let Err(error) = consume_token_client_assertion_with_authorization_service(
         issuance.authorization,
         client,
         client_assertion,
     )
     .await
     {
-        return response;
+        return super::token_client_assertion_error(error);
     }
     let ciba = match ciba_service
         .poll(auth_req_id, &client.client_id, initial, || {

@@ -6,8 +6,7 @@ use uuid::Uuid;
 
 use nazo_identity::{
     AccountIdentity, OrganizationId, PostalAddress, Principal, PublicAccount, RealmId,
-    TenantContext, TenantId, UserId, UserProfile, UserRole,
-    ports::{FederationLink, PasskeyCredential},
+    TenantContext, TenantId, UserId, UserProfile, UserRole, ports::FederationLink,
 };
 
 #[derive(Debug, Queryable, QueryableByName, Selectable, Serialize, Clone)]
@@ -135,23 +134,6 @@ pub(crate) struct DatabasePasskeyFixture {
     pub(crate) last_used_at: Option<DateTime<Utc>>,
     pub(crate) created_at: DateTime<Utc>,
     pub(crate) updated_at: DateTime<Utc>,
-}
-
-impl DatabasePasskeyFixture {
-    pub(crate) fn credential(&self) -> PasskeyCredential {
-        PasskeyCredential {
-            id: self.id,
-            tenant_id: TenantId::new(self.tenant_id).expect("valid fixture tenant ID"),
-            user_id: UserId::new(self.user_id).expect("valid fixture user ID"),
-            credential_id: self.credential_id.clone(),
-            credential: self.credential.clone(),
-            label: self.label.clone(),
-            sign_count: self.sign_count,
-            last_used_at: self.last_used_at,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-        }
-    }
 }
 
 #[derive(Debug, Queryable, QueryableByName, Selectable, Serialize, Clone)]

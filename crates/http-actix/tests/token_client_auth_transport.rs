@@ -24,7 +24,6 @@ fn basic_credentials_are_parsed_once_and_secrets_are_redacted() {
         TokenClientAuthForm::default(),
     );
     assert!(facts.basic_challenge());
-    assert_eq!(facts.endpoint_path(), "/token");
     let credentials = facts.presented_credentials(None, None);
     assert_eq!(credentials.client_id.as_deref(), Some("client-1"));
     assert_eq!(credentials.client_secret.as_deref(), Some("very-secret"));

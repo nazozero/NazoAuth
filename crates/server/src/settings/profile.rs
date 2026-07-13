@@ -69,6 +69,7 @@ impl AuthorizationServerProfile {
         self == Self::Fapi2MessageSigningJarm
     }
 
+    #[cfg(not(test))]
     pub(crate) fn requires_signed_introspection(self) -> bool {
         self == Self::Fapi2MessageSigningIntrospection
     }

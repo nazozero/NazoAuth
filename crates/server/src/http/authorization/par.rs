@@ -52,8 +52,8 @@ pub(crate) const PUSHED_AUTHORIZATION_REQUEST_URI_PREFIX: &str =
 use crate::http::token::client_auth::{
     authenticate_client_with_dependencies,
     consume_token_management_client_assertion_with_authorization_service,
-    token_management_auth_error,
 };
+use crate::http::token::{client_auth_request_facts, token_management_auth_error};
 
 const PAR_AUTHORIZATION_PARAMETERS: &[&str] = &[
     "response_type",
@@ -294,14 +294,14 @@ async fn par_after_rate_limit_inner(
             );
         }
     };
+    let auth_request = client_auth_request_facts(&req, &context.config.trusted_proxy_cidrs);
     let client_assertion = match authenticate_client_with_dependencies(
         context.service,
         crate::http::token::client_auth::ClientAuthConfig::new(
             &context.config.issuer,
             &context.config.client_secret_pepper,
-            &context.config.trusted_proxy_cidrs,
         ),
-        &req,
+        &auth_request,
         &client,
         &credentials,
         nazo_auth::ClientAuthenticationContext::AllowPublicNone,
