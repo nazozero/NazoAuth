@@ -76,31 +76,36 @@ pub(crate) fn parse_trusted_proxy_cidrs(raw: Option<String>) -> anyhow::Result<V
 }
 
 pub(crate) fn client_ip(req: &HttpRequest, settings: &Settings) -> String {
+    let endpoint = settings.endpoint();
     let Some(peer_ip) = req.peer_addr().map(|addr| addr.ip()) else {
         return "unknown".to_owned();
     };
-    if settings.client_ip_header_mode == ClientIpHeaderMode::None
-        || !trusted_proxy_peer_ip(peer_ip, settings)
+    if endpoint.client_ip_header_mode == ClientIpHeaderMode::None
+        || !trusted_proxy_peer_ip(peer_ip, endpoint)
     {
         return peer_ip.to_string();
     }
-    let parsed = match settings.client_ip_header_mode {
+    let parsed = match endpoint.client_ip_header_mode {
         ClientIpHeaderMode::None => None,
         ClientIpHeaderMode::Forwarded => forwarded_ip_chain(req)
-            .and_then(|chain| nearest_untrusted_hop(chain, peer_ip, settings)),
+            .and_then(|chain| nearest_untrusted_hop(chain, peer_ip, endpoint)),
         ClientIpHeaderMode::XForwardedFor => x_forwarded_for_ip_chain(req)
-            .and_then(|chain| nearest_untrusted_hop(chain, peer_ip, settings)),
+            .and_then(|chain| nearest_untrusted_hop(chain, peer_ip, endpoint)),
     };
     parsed.unwrap_or(peer_ip).to_string()
 }
 
 pub(crate) fn request_from_trusted_proxy(req: &HttpRequest, settings: &Settings) -> bool {
+    let endpoint = settings.endpoint();
     req.peer_addr()
-        .map(|addr| trusted_proxy_peer_ip(addr.ip(), settings))
+        .map(|addr| trusted_proxy_peer_ip(addr.ip(), endpoint))
         .unwrap_or(false)
 }
 
-fn trusted_proxy_peer_ip(peer_ip: IpAddr, settings: &Settings) -> bool {
+fn trusted_proxy_peer_ip(
+    peer_ip: IpAddr,
+    settings: crate::settings::focused::EndpointRuntimeSettings<'_>,
+) -> bool {
     settings
         .trusted_proxy_cidrs
         .iter()
@@ -171,7 +176,7 @@ fn x_forwarded_for_ip_chain(req: &HttpRequest) -> Option<Vec<IpAddr>> {
 fn nearest_untrusted_hop(
     chain: Vec<IpAddr>,
     peer_ip: IpAddr,
-    settings: &Settings,
+    settings: crate::settings::focused::EndpointRuntimeSettings<'_>,
 ) -> Option<IpAddr> {
     chain
         .into_iter()

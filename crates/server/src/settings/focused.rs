@@ -1,10 +1,13 @@
 use std::path::Path;
 
 use super::{EmailSettings, Settings};
+use crate::support::{ClientIpHeaderMode, IpCidr};
 
 #[derive(Clone, Copy)]
 pub(crate) struct EndpointRuntimeSettings<'a> {
     pub(crate) cors_allowed_origins: &'a [String],
+    pub(crate) trusted_proxy_cidrs: &'a [IpCidr],
+    pub(crate) client_ip_header_mode: ClientIpHeaderMode,
 }
 
 #[derive(Clone, Copy)]
@@ -32,6 +35,8 @@ impl Settings {
     pub(crate) fn endpoint(&self) -> EndpointRuntimeSettings<'_> {
         EndpointRuntimeSettings {
             cors_allowed_origins: &self.cors_allowed_origins,
+            trusted_proxy_cidrs: &self.trusted_proxy_cidrs,
+            client_ip_header_mode: self.client_ip_header_mode,
         }
     }
 
