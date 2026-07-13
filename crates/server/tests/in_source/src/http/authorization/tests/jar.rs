@@ -6,10 +6,13 @@ use fred::prelude::{
 };
 use proptest::prelude::*;
 use serde_json::json;
-use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
+use crate::http::authorization::{
+    AuthorizationHttpConfig, AuthorizationTestFixture, ServerAuthorizationService,
+};
+use crate::support::sessions::AdminSessionHandles;
 use nazo_postgres::create_pool;
 
 use crate::support::{ClientSigningFixture, client_signing_fixture};
@@ -83,11 +86,7 @@ fn signed_jar_client(client_id: &str, kid: &str, fixture: &ClientSigningFixture)
     client
 }
 
-fn jar_state(issuer: &str) -> AppState {
-    let mut settings =
-        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.endpoint.issuer = issuer.to_owned();
-
+fn jar_state(issuer: &str) -> AuthorizationTestFixture {
     jar_state_with_valkey(
         issuer,
         fred::prelude::Builder::default_centralized()
@@ -96,24 +95,39 @@ fn jar_state(issuer: &str) -> AppState {
     )
 }
 
-fn jar_state_with_valkey(issuer: &str, valkey: fred::prelude::Client) -> AppState {
+fn jar_state_with_valkey(issuer: &str, valkey: fred::prelude::Client) -> AuthorizationTestFixture {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.endpoint.issuer = issuer.to_owned();
 
-    AppState {
-        diesel_db: create_pool(
-            "postgres://nazo_jar_test_invalid:nazo_jar_test_invalid@127.0.0.1:1/nazo".to_owned(),
-            1,
-        )
-        .expect("pool construction should not connect"),
-        valkey,
-        settings: Arc::new(settings),
-        keyset: crate::test_support::test_key_manager(),
-    }
+    let database = create_pool(
+        "postgres://nazo_jar_test_invalid:nazo_jar_test_invalid@127.0.0.1:1/nazo".to_owned(),
+        1,
+    )
+    .expect("pool construction should not connect");
+    let connection = nazo_valkey::ValkeyConnection::from_existing_client(valkey);
+    let session = &settings.session;
+    AuthorizationTestFixture::new(
+        ServerAuthorizationService::new(
+            nazo_postgres::AuthorizationFlowRepository::new(database.clone(), DEFAULT_TENANT_ID),
+            nazo_valkey::AuthorizationStateAdapter::new(&connection),
+            crate::test_support::test_key_manager(),
+        ),
+        AuthorizationHttpConfig::from(&settings),
+        AdminSessionHandles::new(
+            nazo_valkey::SessionStore::new(&connection),
+            nazo_postgres::UserRepository::new(database),
+            crate::support::sessions::SessionHttpConfig::new(
+                &session.session_cookie_name,
+                &session.csrf_cookie_name,
+                session.cookie_secure,
+            ),
+        ),
+        crate::runtime_modules::inherited_enabled(&settings),
+    )
 }
 
-async fn live_jar_state(issuer: &str) -> Option<AppState> {
+async fn live_jar_state(issuer: &str) -> Option<AuthorizationTestFixture> {
     let valkey_url = std::env::var("VALKEY_URL").ok()?;
     let mut builder =
         ValkeyBuilder::from_config(ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL"));
@@ -130,7 +144,7 @@ async fn live_jar_state(issuer: &str) -> Option<AppState> {
     Some(jar_state_with_valkey(issuer, valkey))
 }
 
-fn unavailable_jar_state(issuer: &str) -> AppState {
+fn unavailable_jar_state(issuer: &str) -> AuthorizationTestFixture {
     let mut builder = ValkeyBuilder::from_config(
         ValkeyConfig::from_url("redis://127.0.0.1:1").expect("unavailable Valkey URL should parse"),
     );
@@ -632,30 +646,30 @@ fn outer_authorization_parameter_conflict_ignores_request_uri_and_client_id() {
 
 #[test]
 fn request_object_audience_accepts_issuer_or_authorization_endpoint() {
-    let state = jar_state("https://issuer.example");
-
     assert!(request_object_audience_matches(
         &json!("https://issuer.example"),
-        &state
+        "https://issuer.example"
     ));
     assert!(request_object_audience_matches(
         &json!("https://issuer.example/authorize"),
-        &state
+        "https://issuer.example"
     ));
     assert!(request_object_audience_matches(
         &json!(["https://other.example", "https://issuer.example/authorize"]),
-        &state
+        "https://issuer.example"
     ));
     assert!(!request_object_audience_matches(
         &json!("https://other.example"),
-        &state
+        "https://issuer.example"
     ));
-    assert!(!request_object_audience_matches(&json!({}), &state));
+    assert!(!request_object_audience_matches(
+        &json!({}),
+        "https://issuer.example"
+    ));
 }
 
 #[test]
 fn request_object_audience_presence_depends_on_request_object_mode() {
-    let state = jar_state("https://issuer.example");
     let mut claims = RequestObjectClaims {
         client_id: "client-a".to_owned(),
         iss: Some("client-a".to_owned()),
@@ -670,19 +684,19 @@ fn request_object_audience_presence_depends_on_request_object_mode() {
 
     assert!(request_object_audience_valid(
         &claims,
-        &state,
+        "https://issuer.example",
         RequestObjectMode::BasicOidc
     ));
     assert!(!request_object_audience_valid(
         &claims,
-        &state,
+        "https://issuer.example",
         RequestObjectMode::SignedJar
     ));
 
     claims.aud = Some(json!("https://issuer.example/authorize"));
     assert!(request_object_audience_valid(
         &claims,
-        &state,
+        "https://issuer.example",
         RequestObjectMode::SignedJar
     ));
 }

@@ -4,10 +4,10 @@ use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_http_actix::oauth_error;
 
 use super::request::AUTHORIZED_REQUEST_PARAMETERS;
-#[cfg(test)]
-use crate::domain::AppState;
 use crate::domain::ClientRow;
 use crate::http::authorization::AuthorizationRequestContext;
+#[cfg(test)]
+use crate::http::authorization::AuthorizationTestFixture;
 use crate::settings::RequestObjectJtiPolicy;
 #[cfg(test)]
 use crate::settings::Settings;
@@ -109,12 +109,11 @@ pub(crate) async fn apply_request_object_with_context(
 
 #[cfg(test)]
 pub(crate) async fn apply_request_object(
-    state: &crate::domain::AppState,
+    fixture: &AuthorizationTestFixture,
     outer: &mut HashMap<String, String>,
     client: &ClientRow,
 ) -> Result<(), HttpResponse> {
-    let dependencies = super::TestAuthorizationDependencies::new(state);
-    apply_request_object_with_context(&dependencies.context(), outer, client).await
+    apply_request_object_with_context(&fixture.context(), outer, client).await
 }
 
 fn signed_request_object_claims(
@@ -352,10 +351,10 @@ fn request_object_audience_valid_with_issuer(
 #[cfg(test)]
 fn request_object_audience_valid(
     claims: &RequestObjectClaims,
-    state: &AppState,
+    issuer: &str,
     mode: RequestObjectMode,
 ) -> bool {
-    request_object_audience_valid_with_issuer(claims, &state.settings.endpoint.issuer, mode)
+    request_object_audience_valid_with_issuer(claims, issuer, mode)
 }
 
 fn outer_client_id_conflicts(outer: &HashMap<String, String>, client_id: &str) -> bool {
@@ -436,21 +435,14 @@ async fn store_request_object_replay_state_with_context(
 
 #[cfg(test)]
 async fn store_request_object_replay_state(
-    state: &AppState,
+    fixture: &AuthorizationTestFixture,
     client: &ClientRow,
     claims: &RequestObjectClaims,
     now: i64,
     mode: RequestObjectMode,
 ) -> Result<(), HttpResponse> {
-    let dependencies = super::TestAuthorizationDependencies::new(state);
-    store_request_object_replay_state_with_context(
-        &dependencies.context(),
-        client,
-        claims,
-        now,
-        mode,
-    )
-    .await
+    store_request_object_replay_state_with_context(&fixture.context(), client, claims, now, mode)
+        .await
 }
 
 pub(crate) fn request_object_uses_unsigned_algorithm(request_object: &str) -> bool {
@@ -538,8 +530,8 @@ fn request_object_audience_matches_with_issuer(aud: &Value, issuer: &str) -> boo
 }
 
 #[cfg(test)]
-fn request_object_audience_matches(aud: &Value, state: &AppState) -> bool {
-    request_object_audience_matches_with_issuer(aud, &state.settings.endpoint.issuer)
+fn request_object_audience_matches(aud: &Value, issuer: &str) -> bool {
+    request_object_audience_matches_with_issuer(aud, issuer)
 }
 
 fn request_object_times_valid(

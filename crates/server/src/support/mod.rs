@@ -37,7 +37,7 @@ pub(crate) use oauth::json_array_to_strings;
 #[cfg(test)]
 pub(crate) use oidc_claims::oidc_subject;
 #[cfg(test)]
-pub(crate) use rate_limit::{RateLimitPolicy, TokenManagementRequestLimiter, enforce_rate_limit};
+pub(crate) use rate_limit::TokenManagementRequestLimiter;
 #[cfg(test)]
 pub(crate) use security::{
     LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER, SUPPORTED_CLIENT_JWT_SIGNING_ALGS, blake3_hex,
