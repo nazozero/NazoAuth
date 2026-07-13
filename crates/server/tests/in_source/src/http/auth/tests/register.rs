@@ -11,7 +11,6 @@ use crate::support::{
 use crate::test_support::registration_service;
 use chrono::Utc;
 use nazo_postgres::create_pool;
-use nazo_postgres::get_conn;
 use serde_json::Value;
 use uuid::Uuid;
 

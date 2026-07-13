@@ -22,7 +22,6 @@ use fred::interfaces::ClientLike;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
-use nazo_postgres::get_conn;
 
 fn send_code_request(email: &str) -> SendCodeRequest {
     SendCodeRequest {

@@ -23,8 +23,7 @@ use actix_web::http::header;
 use actix_web::web::{Data, Form};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::{Duration, Utc};
-use nazo_http_actix::csrf_error;
-use nazo_http_actix::oauth_error;
+use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies, oauth_error};
 use serde::Deserialize;
 #[cfg(test)]
 use serde_json::Value;
@@ -65,7 +64,7 @@ fn parse_consent_payload(raw: Option<String>) -> Option<ConsentPayload> {
 }
 
 async fn consume_pushed_request_uri_if_present(
-    context: &AuthorizationRequestContext,
+    context: &AuthorizationRequestContext<'_>,
     payload: &ConsentPayload,
 ) -> Result<(), HttpResponse> {
     let Some(request_uri) = payload.pushed_request_uri.as_deref() else {
@@ -86,7 +85,7 @@ async fn consume_pushed_request_uri_if_present(
 }
 
 async fn authorization_error_redirect_with_context(
-    context: &AuthorizationRequestContext,
+    context: &AuthorizationRequestContext<'_>,
     payload: &ConsentPayload,
     error: &str,
 ) -> HttpResponse {
@@ -133,7 +132,7 @@ async fn authorize_decision_with_context(
     req: HttpRequest,
     form: DecisionForm,
 ) -> HttpResponse {
-    if !crate::support::responses::has_valid_csrf_token_for_cookies(
+    if !has_valid_csrf_token_for_cookies(
         &req,
         form.csrf_token.as_deref(),
         context.sessions.http_config().session_cookie_name(),

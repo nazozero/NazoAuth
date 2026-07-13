@@ -12,11 +12,9 @@ use crate::support::{
     authorization_code_key, pkce_s256, valkey_get, valkey_set_ex,
 };
 use crate::support::{
-    JwePayloadKind, OAuthJsonErrorFields, RedirectUriError, append_query, audiences_allowed,
-    authorization_error_response, blake3_hex, client_jwe_key, client_supports_grant,
-    encrypt_compact_jwe, is_subset, json_array_to_strings, oauth_error, parse_scope,
-    random_urlsafe_token, redirect_found, registered_redirect_uri,
-    resource_indicators_from_parameter_value,
+    JwePayloadKind, RedirectUriError, append_query, audiences_allowed, blake3_hex, client_jwe_key,
+    client_supports_grant, encrypt_compact_jwe, is_subset, json_array_to_strings, parse_scope,
+    random_urlsafe_token, registered_redirect_uri, resource_indicators_from_parameter_value,
 };
 use actix_web::http::StatusCode;
 #[cfg(test)]
@@ -559,7 +557,7 @@ async fn authorize_request_with_context(
 }
 
 fn runtime_authorization_capability_error(
-    context: &AuthorizationRequestContext,
+    context: &AuthorizationRequestContext<'_>,
     parameters: &HashMap<String, String>,
 ) -> Option<HttpResponse> {
     if !crate::http::authorization::accepts_module(
@@ -623,7 +621,7 @@ pub(crate) enum PushedAuthorizationRequestConsumeError {
 }
 
 pub(crate) async fn consume_pushed_authorization_request_with_context(
-    context: &AuthorizationRequestContext,
+    context: &AuthorizationRequestContext<'_>,
     request_uri: &str,
 ) -> Result<(), PushedAuthorizationRequestConsumeError> {
     match context.service.take_par(request_uri).await {
@@ -650,7 +648,7 @@ pub(crate) async fn consume_pushed_authorization_request(
 }
 
 pub(crate) async fn authorization_oauth_error_redirect(
-    context: &AuthorizationRequestContext,
+    context: &AuthorizationRequestContext<'_>,
     redirect_uri: &str,
     error: &str,
     q: &HashMap<String, String>,
@@ -681,7 +679,7 @@ pub(crate) struct AuthorizationResponseRedirect<'a> {
 }
 
 pub(crate) async fn authorization_response_redirect_with_context(
-    context: &AuthorizationRequestContext,
+    context: &AuthorizationRequestContext<'_>,
     input: AuthorizationResponseRedirect<'_>,
 ) -> HttpResponse {
     let signed_response_required = context
@@ -788,7 +786,7 @@ impl<'a> From<&'a ClientRow> for AuthorizationResponseProtection<'a> {
 }
 
 async fn authorization_response_redirect_with_protection_context(
-    context: &AuthorizationRequestContext,
+    context: &AuthorizationRequestContext<'_>,
     input: AuthorizationResponseRedirect<'_>,
     protection: AuthorizationResponseProtection<'_>,
 ) -> HttpResponse {
@@ -812,7 +810,7 @@ async fn authorization_response_redirect_with_protection(
 }
 
 async fn protected_authorization_response_jwt(
-    context: &AuthorizationRequestContext,
+    context: &AuthorizationRequestContext<'_>,
     input: &AuthorizationResponseRedirect<'_>,
     protection: AuthorizationResponseProtection<'_>,
 ) -> anyhow::Result<String> {
@@ -873,7 +871,7 @@ fn oauth_json_error(response: &HttpResponse) -> Option<String> {
 }
 
 async fn consume_reauth_nonce_with_context(
-    context: &AuthorizationRequestContext,
+    context: &AuthorizationRequestContext<'_>,
     q: &mut HashMap<String, String>,
 ) -> Option<i64> {
     let nonce = q.remove(reauth_nonce_parameter())?;
@@ -894,7 +892,7 @@ async fn consume_reauth_nonce(state: &AppState, q: &mut HashMap<String, String>)
 }
 
 async fn authorization_login_url_with_context(
-    context: &AuthorizationRequestContext,
+    context: &AuthorizationRequestContext<'_>,
     q: &HashMap<String, String>,
     reauthentication_required: bool,
 ) -> Result<String, HttpResponse> {
@@ -921,7 +919,9 @@ async fn authorization_login_url(
         .await
 }
 
-async fn issue_reauth_nonce(context: &AuthorizationRequestContext) -> Result<String, HttpResponse> {
+async fn issue_reauth_nonce(
+    context: &AuthorizationRequestContext<'_>,
+) -> Result<String, HttpResponse> {
     let nonce = random_urlsafe_token();
     let started_at = Utc::now().timestamp();
     context

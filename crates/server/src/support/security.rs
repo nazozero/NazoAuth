@@ -86,6 +86,7 @@ pub(crate) fn hash_password(password: &str) -> argon2::password_hash::Result<Str
         .to_string())
 }
 
+#[cfg(test)]
 pub(crate) fn verify_password(password: &str, password_hash: &str) -> bool {
     let Ok(parsed) = PasswordHash::new(password_hash) else {
         return false;
