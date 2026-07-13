@@ -1,12 +1,13 @@
 //! FAPI-style protected resource endpoint.
 //! Enforces RFC 6750 access-token transport rules plus sender-constrained token binding.
 use crate::domain::{ClientRow, ResourceServerConfig, ResourceServerHandles};
+use crate::support::dpop::validate_dpop_proof_with_store;
+use crate::support::mtls::request_mtls_thumbprint_from_trusted_proxy;
+use crate::support::security::tokens::decode_access_claims_with;
 use crate::support::{
     AccessTokenAuthScheme, DpopError, DpopErrorContext, ResourceAccessToken,
-    access_token_tenant_id, constant_time_eq, decode_access_claims_with, dpop_error_response,
-    json_response_no_store, oauth_bearer_error, request_mtls_thumbprint_from_trusted_proxy,
-    resource_access_token, token_audience_contains, validate_dpop_proof_with_store,
-    verify_client_http_message,
+    access_token_tenant_id, constant_time_eq, dpop_error_response, json_response_no_store,
+    oauth_bearer_error, resource_access_token, token_audience_contains, verify_client_http_message,
 };
 #[cfg(test)]
 use crate::support::{

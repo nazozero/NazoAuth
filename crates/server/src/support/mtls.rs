@@ -4,10 +4,11 @@
 //! peers after the proxy has verified the client certificate and forwarded
 //! `X-SSL-Client-Verify: SUCCESS`.
 
+use super::IpCidr;
+use super::client_ip::{request_from_trusted_proxy, request_from_trusted_proxy_cidrs};
 use super::constant_time_eq;
 #[cfg(test)]
 use super::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
-use super::{IpCidr, request_from_trusted_proxy, request_from_trusted_proxy_cidrs};
 use crate::domain::ClientRow;
 use crate::settings::Settings;
 use actix_web::HttpRequest;
