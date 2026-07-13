@@ -3,6 +3,7 @@
 use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_http_actix::oauth_error;
 
+#[cfg(test)]
 use super::request::AUTHORIZED_REQUEST_PARAMETERS;
 use crate::domain::ClientRow;
 use crate::http::authorization::AuthorizationRequestContext;
@@ -22,39 +23,24 @@ use actix_web::HttpResponse;
 use actix_web::http::StatusCode;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
-use nazo_auth::parse_resource_indicator_parameter;
+use nazo_auth::{
+    AuthorizationRequestError, RequestObjectClaims, RequestObjectMode, RequestObjectPolicy,
+};
+#[cfg(test)]
+use nazo_auth::{
+    REQUEST_OBJECT_CLOCK_SKEW_SECONDS, REQUEST_OBJECT_MAX_TTL_SECONDS,
+    parse_resource_indicator_parameter,
+};
 use serde::Deserialize;
+#[cfg(test)]
 use serde_json::Value;
 use std::collections::HashMap;
 #[cfg(test)]
 use uuid::Uuid;
 
-const REQUEST_OBJECT_MAX_TTL_SECONDS: i64 = 300;
-const REQUEST_OBJECT_CLOCK_SKEW_SECONDS: i64 = 30;
-
-#[derive(Deserialize)]
-struct RequestObjectClaims {
-    client_id: String,
-    iss: Option<String>,
-    sub: Option<String>,
-    aud: Option<Value>,
-    exp: Option<i64>,
-    nbf: Option<i64>,
-    iat: Option<i64>,
-    jti: Option<String>,
-    #[serde(flatten)]
-    params: HashMap<String, Value>,
-}
-
 #[derive(Deserialize)]
 struct RequestObjectHeader {
     alg: String,
-}
-
-#[derive(Clone, Copy, Eq, PartialEq)]
-enum RequestObjectMode {
-    BasicOidc,
-    SignedJar,
 }
 
 pub(crate) async fn apply_request_object_with_context(
@@ -247,53 +233,89 @@ async fn validate_request_object_claims_and_apply(
     mode: RequestObjectMode,
 ) -> Result<(), HttpResponse> {
     let now = Utc::now().timestamp();
-    if claims.client_id != client.client_id
-        || !request_object_party_claims_valid(&claims, client, mode)
-        || !request_object_audience_valid_with_issuer(&claims, &context.config.issuer, mode)
-        || !request_object_times_valid(&claims, now, mode)
-        || !request_object_jti_valid(&claims, mode, context.config.request_object_jti_policy)
-    {
-        return Err(oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request_object",
-            "request object claims 无效.",
-        ));
-    }
-    let mut request_params = request_object_params(&claims)?;
-    request_params.insert("client_id".to_owned(), claims.client_id.clone());
-    if outer_client_id_conflicts(outer, &claims.client_id) {
-        return Err(oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "request object 与外层 client_id 冲突.",
-        ));
-    }
-    if mode == RequestObjectMode::SignedJar && !request_params.contains_key("redirect_uri") {
-        return Err(oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request_object",
-            "signed request object 缺少 redirect_uri.",
-        ));
-    }
     let require_integrity_protected_parameters =
         signed_request_object_requires_integrity_protected_parameters(context, client, mode);
-    if require_integrity_protected_parameters
-        && outer_authorization_params_conflict(outer, &request_params)
-    {
-        return Err(oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request_object",
-            "request object 与外层授权参数冲突.",
-        ));
-    }
-    store_request_object_replay_state_with_context(context, client, &claims, now, mode).await?;
-    if require_integrity_protected_parameters {
-        outer.retain(|key, _| matches!(key.as_str(), "request" | "client_id"));
-    } else {
-        outer.retain(|key, _| key == "request" || !request_params.contains_key(key));
-    }
-    outer.extend(request_params);
+    let normalized = context
+        .service
+        .admit_request_object(
+            outer,
+            &claims,
+            RequestObjectPolicy {
+                issuer: &context.config.issuer,
+                client_id: &client.client_id,
+                mode,
+                jti_policy: match context.config.request_object_jti_policy {
+                    RequestObjectJtiPolicy::Optional => nazo_auth::RequestObjectJtiPolicy::Optional,
+                    RequestObjectJtiPolicy::RequiredForSignedJar => {
+                        nazo_auth::RequestObjectJtiPolicy::RequiredForSignedJar
+                    }
+                },
+                unsigned_request_object_allowed: request_object_mode_allowed(
+                    client,
+                    RequestObjectMode::BasicOidc,
+                    context
+                        .config
+                        .profile
+                        .requires_signed_authorization_request(),
+                ),
+                require_integrity_protected_parameters,
+                now,
+            },
+        )
+        .await
+        .map_err(request_object_policy_error)?;
+    *outer = normalized.parameters;
     Ok(())
+}
+
+fn request_object_policy_error(error: AuthorizationRequestError) -> HttpResponse {
+    let (status, description) = match error {
+        AuthorizationRequestError::RequestObjectSigningPolicy => {
+            (StatusCode::BAD_REQUEST, "request object 签名要求无效.")
+        }
+        AuthorizationRequestError::InvalidRequestObject
+        | AuthorizationRequestError::RequestObjectClaims => {
+            (StatusCode::BAD_REQUEST, "request object claims 无效.")
+        }
+        AuthorizationRequestError::RequestObjectContainsRequestUri => (
+            StatusCode::BAD_REQUEST,
+            "request object 不能包含 request_uri.",
+        ),
+        AuthorizationRequestError::RequestObjectParameterType => {
+            (StatusCode::BAD_REQUEST, "request object 参数类型无效.")
+        }
+        AuthorizationRequestError::InvalidRequest
+        | AuthorizationRequestError::OuterClientIdConflict => (
+            StatusCode::BAD_REQUEST,
+            "request object 与外层 client_id 冲突.",
+        ),
+        AuthorizationRequestError::SignedRequestObjectMissingRedirectUri => (
+            StatusCode::BAD_REQUEST,
+            "signed request object 缺少 redirect_uri.",
+        ),
+        AuthorizationRequestError::OuterAuthorizationParametersConflict => (
+            StatusCode::BAD_REQUEST,
+            "request object 与外层授权参数冲突.",
+        ),
+        AuthorizationRequestError::InvalidRequestObjectReplay => {
+            (StatusCode::BAD_REQUEST, "request object jti 已使用.")
+        }
+        AuthorizationRequestError::Dependency(error) => {
+            tracing::warn!(?error, "failed to store request object jti");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "request object 防重放状态不可用.",
+            );
+        }
+        AuthorizationRequestError::InvalidTarget
+        | AuthorizationRequestError::UnsupportedResponseType
+        | AuthorizationRequestError::UnauthorizedClient
+        | AuthorizationRequestError::InvalidClient => {
+            (StatusCode::BAD_REQUEST, "request object claims 无效.")
+        }
+    };
+    oauth_error(status, error.oauth_error(), description)
 }
 
 fn signed_request_object_requires_integrity_protected_parameters(
@@ -310,6 +332,7 @@ fn signed_request_object_requires_integrity_protected_parameters(
                 .requires_signed_authorization_request())
 }
 
+#[cfg(test)]
 fn request_object_party_claims_valid(
     claims: &RequestObjectClaims,
     client: &ClientRow,
@@ -336,6 +359,7 @@ fn request_object_party_claims_valid(
     }
 }
 
+#[cfg(test)]
 fn request_object_audience_valid_with_issuer(
     claims: &RequestObjectClaims,
     issuer: &str,
@@ -357,12 +381,14 @@ fn request_object_audience_valid(
     request_object_audience_valid_with_issuer(claims, issuer, mode)
 }
 
+#[cfg(test)]
 fn outer_client_id_conflicts(outer: &HashMap<String, String>, client_id: &str) -> bool {
     outer
         .get("client_id")
         .is_some_and(|outer_value| outer_value != client_id)
 }
 
+#[cfg(test)]
 fn outer_authorization_params_conflict(
     outer: &HashMap<String, String>,
     request_params: &HashMap<String, String>,
@@ -388,6 +414,7 @@ fn outer_authorization_params_conflict(
     false
 }
 
+#[cfg(test)]
 async fn store_request_object_replay_state_with_context(
     context: &AuthorizationRequestContext<'_>,
     client: &ClientRow,
@@ -478,10 +505,11 @@ fn unverified_request_object_client_id_from_payload(payload: &str) -> Option<Str
         .then_some(claims.client_id)
 }
 
+#[cfg(test)]
 fn request_object_params(
     claims: &RequestObjectClaims,
 ) -> Result<HashMap<String, String>, HttpResponse> {
-    if claims.params.contains_key("request_uri") {
+    if claims.parameters.contains_key("request_uri") {
         return Err(oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request_object",
@@ -494,7 +522,7 @@ fn request_object_params(
         if matches!(*key, "request" | "request_uri" | "client_id") {
             continue;
         }
-        if let Some(value) = claims.params.get(*key) {
+        if let Some(value) = claims.parameters.get(*key) {
             let value = match value {
                 Value::String(value) => value.clone(),
                 Value::Number(value) => value.to_string(),
@@ -516,6 +544,7 @@ fn request_object_params(
     Ok(params)
 }
 
+#[cfg(test)]
 fn request_object_audience_matches_with_issuer(aud: &Value, issuer: &str) -> bool {
     let authorize_endpoint = format!("{issuer}/authorize");
     match aud {
@@ -534,6 +563,7 @@ fn request_object_audience_matches(aud: &Value, issuer: &str) -> bool {
     request_object_audience_matches_with_issuer(aud, issuer)
 }
 
+#[cfg(test)]
 fn request_object_times_valid(
     claims: &RequestObjectClaims,
     now: i64,
@@ -578,6 +608,7 @@ fn request_object_times_valid(
     true
 }
 
+#[cfg(test)]
 fn request_object_jti_valid(
     claims: &RequestObjectClaims,
     mode: RequestObjectMode,
@@ -594,6 +625,7 @@ fn request_object_jti_valid(
     }
 }
 
+#[cfg(test)]
 fn is_valid_request_object_jti(jti: &str) -> bool {
     let trimmed = jti.trim();
     !trimmed.is_empty() && trimmed.len() <= 128

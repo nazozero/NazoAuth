@@ -200,6 +200,75 @@ fn oauth_error_code(response: &HttpResponse) -> Option<String> {
 }
 
 #[actix_web::test]
+async fn typed_request_object_errors_preserve_http_and_oauth_contract() {
+    for (error, status, code, description) in [
+        (
+            AuthorizationRequestError::RequestObjectClaims,
+            StatusCode::BAD_REQUEST,
+            "invalid_request_object",
+            "request object claims 无效.",
+        ),
+        (
+            AuthorizationRequestError::RequestObjectContainsRequestUri,
+            StatusCode::BAD_REQUEST,
+            "invalid_request_object",
+            "request object 不能包含 request_uri.",
+        ),
+        (
+            AuthorizationRequestError::RequestObjectParameterType,
+            StatusCode::BAD_REQUEST,
+            "invalid_request_object",
+            "request object 参数类型无效.",
+        ),
+        (
+            AuthorizationRequestError::OuterClientIdConflict,
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "request object 与外层 client_id 冲突.",
+        ),
+        (
+            AuthorizationRequestError::SignedRequestObjectMissingRedirectUri,
+            StatusCode::BAD_REQUEST,
+            "invalid_request_object",
+            "signed request object 缺少 redirect_uri.",
+        ),
+        (
+            AuthorizationRequestError::OuterAuthorizationParametersConflict,
+            StatusCode::BAD_REQUEST,
+            "invalid_request_object",
+            "request object 与外层授权参数冲突.",
+        ),
+        (
+            AuthorizationRequestError::InvalidRequestObjectReplay,
+            StatusCode::BAD_REQUEST,
+            "invalid_request_object",
+            "request object jti 已使用.",
+        ),
+        (
+            AuthorizationRequestError::Dependency(nazo_auth::AuthorizationPortError::Unavailable),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "request object 防重放状态不可用.",
+        ),
+    ] {
+        let response = request_object_policy_error(error);
+        assert_eq!(response.status(), status);
+        assert_eq!(oauth_error_code(&response).as_deref(), Some(code));
+        let body = actix_web::body::to_bytes(response.into_body())
+            .await
+            .expect("OAuth error body");
+        let body: Value = serde_json::from_slice(&body).expect("OAuth JSON error");
+        assert_eq!(body["error"], code);
+        let public_description = if description.is_ascii() {
+            description
+        } else {
+            "Request failed."
+        };
+        assert_eq!(body["error_description"], public_description);
+    }
+}
+
+#[actix_web::test]
 async fn apply_request_object_rejects_malformed_compact_or_decoding_before_claims_are_trusted() {
     let state = jar_state("https://issuer.example");
     let client = jar_client("client-a");
@@ -485,7 +554,7 @@ fn basic_request_object_party_claims_are_optional_but_bound_when_present() {
         nbf: None,
         iat: None,
         jti: None,
-        params: HashMap::new(),
+        parameters: HashMap::new(),
     };
 
     assert!(request_object_party_claims_valid(
@@ -525,7 +594,7 @@ fn request_object_jti_is_optional_but_validated_when_present() {
         nbf: None,
         iat: None,
         jti: None,
-        params: HashMap::new(),
+        parameters: HashMap::new(),
     };
     assert!(request_object_jti_valid(
         &basic,
@@ -565,7 +634,7 @@ fn request_object_params_rejects_request_uri_claim() {
         nbf: None,
         iat: None,
         jti: None,
-        params: HashMap::from([
+        parameters: HashMap::from([
             (
                 "redirect_uri".to_owned(),
                 json!("https://client.example/callback"),
@@ -575,7 +644,7 @@ fn request_object_params_rejects_request_uri_claim() {
     };
     assert!(request_object_params(&claims).is_err());
 
-    claims.params.remove("request_uri");
+    claims.parameters.remove("request_uri");
     let params = request_object_params(&claims).expect("valid request object params");
     assert_eq!(
         params.get("redirect_uri").map(String::as_str),
@@ -594,7 +663,7 @@ fn request_object_params_allow_authorization_details_arrays() {
         nbf: None,
         iat: None,
         jti: None,
-        params: HashMap::from([(
+        parameters: HashMap::from([(
             "authorization_details".to_owned(),
             json!([{"type": "account_information", "actions": ["read"]}]),
         )]),
@@ -679,7 +748,7 @@ fn request_object_audience_presence_depends_on_request_object_mode() {
         nbf: None,
         iat: None,
         jti: None,
-        params: HashMap::new(),
+        parameters: HashMap::new(),
     };
 
     assert!(request_object_audience_valid(
@@ -991,7 +1060,7 @@ async fn signed_request_object_replay_state_requires_exp_claim() {
         nbf: Some(Utc::now().timestamp()),
         iat: None,
         jti: Some(format!("jar-jti-{}", Uuid::now_v7())),
-        params: HashMap::new(),
+        parameters: HashMap::new(),
     };
 
     let response = store_request_object_replay_state(
@@ -1065,7 +1134,7 @@ fn time_claims(exp: Option<i64>, nbf: Option<i64>, iat: Option<i64>) -> RequestO
         nbf,
         iat,
         jti: None,
-        params: HashMap::new(),
+        parameters: HashMap::new(),
     }
 }
 
@@ -1138,7 +1207,10 @@ fn signed_request_object_accepts_small_future_nbf_during_decode() {
         RequestObjectMode::SignedJar
     ));
     assert_eq!(
-        claims.params.get("response_type").and_then(Value::as_str),
+        claims
+            .parameters
+            .get("response_type")
+            .and_then(Value::as_str),
         Some("code")
     );
 }
@@ -1273,7 +1345,7 @@ fn signed_request_object_sub_is_optional_but_must_match_when_present() {
         nbf: None,
         iat: None,
         jti: None,
-        params: HashMap::new(),
+        parameters: HashMap::new(),
     };
     let client = jar_client("client-a");
 
@@ -1313,7 +1385,7 @@ proptest! {
             nbf: None,
             iat: None,
             jti: None,
-            params: HashMap::from([
+            parameters: HashMap::from([
                 ("state".to_owned(), json!(state)),
                 ("max_age".to_owned(), json!(max_age)),
                 ("claims".to_owned(), json!({"id_token": {"auth_time": {"essential": true}}})),
@@ -1343,7 +1415,7 @@ proptest! {
             nbf: None,
             iat: None,
             jti: None,
-            params: HashMap::from([
+            parameters: HashMap::from([
                 ("state".to_owned(), json!([state])),
             ]),
         };
