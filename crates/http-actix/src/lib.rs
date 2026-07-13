@@ -7,6 +7,7 @@ mod cookies;
 mod cors;
 mod csrf;
 mod extract;
+mod fapi_resource;
 mod metadata;
 mod middleware;
 mod presenter;
@@ -22,6 +23,11 @@ pub use csrf::{csrf_error, has_valid_csrf_token_for_cookies};
 pub use extract::{
     AccessTokenAuthScheme, ResourceAccessToken, authorization_access_token, mfa_json_config,
     mfa_method_not_allowed, mfa_options, request_uses_form_urlencoded, resource_access_token,
+};
+pub use fapi_resource::{
+    FapiAuthorizationError, FapiFuture, FapiHttpMessageSignatures, FapiMtlsThumbprintResolver,
+    FapiResourceAuthorizer, FapiResourceEndpoint, FapiResponseSignature,
+    FapiSignatureOperationError, FapiSignatureVerificationError, fapi_resource,
 };
 pub use metadata::{
     MetadataEndpointConfig, MetadataHandles, MetadataSnapshot, MetadataSnapshotSource, discovery,

@@ -44,6 +44,7 @@ use crate::http::dynamic_client_registration::{
     client_configuration_delete, client_configuration_get, client_configuration_put,
     dynamic_client_registration,
 };
+#[cfg(test)]
 use crate::http::fapi_resource::fapi_resource;
 use crate::http::perf_metrics::perf_metrics;
 use crate::http::profile::{
@@ -83,6 +84,8 @@ use crate::http::token::{
 };
 use crate::http::well_known::{captcha_config, health};
 use crate::settings::Settings;
+#[cfg(not(test))]
+use nazo_http_actix::fapi_resource;
 
 use super::cors;
 

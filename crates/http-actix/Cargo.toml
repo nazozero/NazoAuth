@@ -8,10 +8,14 @@ repository.workspace = true
 [dependencies]
 actix-web = { workspace = true, features = ["cookies"] }
 actix-cors.workspace = true
+chrono.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 url.workspace = true
+uuid = { workspace = true, features = ["v7"] }
 nazo-auth.workspace = true
+nazo-http-signatures.workspace = true
+nazo-resource-server.workspace = true
 nazo-runtime-modules.workspace = true
 
 [dev-dependencies]

@@ -28,7 +28,13 @@ pub(crate) use oauth::{
     NativeSsoTokenBinding, PushedAuthorizationRequest, RefreshTokenPolicy, TokenIssue,
 };
 pub(crate) use oidc_logout::{OidcLogoutConfig, OidcLogoutHandles};
-pub(crate) use resource_server::{ResourceServerConfig, ResourceServerHandles};
+pub(crate) use resource_server::ResourceServerConfig;
+#[cfg(test)]
+pub(crate) use resource_server::ResourceServerHandles;
+#[cfg(not(test))]
+pub(crate) use resource_server::{
+    ServerFapiHttpMessageSignatures, ServerFapiMtlsResolver, ServerFapiResourceAuthorizer,
+};
 pub(crate) use rows::{ClientRow, TokenRow};
 #[cfg(test)]
 pub(crate) use state::AppState;

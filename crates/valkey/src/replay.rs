@@ -1,10 +1,39 @@
 use crate::{Error, ValkeyConnection, command, keys};
+use chrono::Utc;
+use nazo_resource_server::{
+    DpopReplayConsumption, DpopReplayConsumptionResult, DpopReplayKey,
+    ProtectedResourceDependencyError, ResourceServerPortFuture,
+};
 
 const FAPI_HTTP_SIGNATURE_FUTURE_SKEW_SECONDS: i64 = 5;
 
 #[derive(Clone, Debug)]
 pub struct ReplayStore {
     connection: ValkeyConnection,
+}
+
+impl DpopReplayConsumption for ReplayStore {
+    fn consume<'a>(
+        &'a self,
+        key: DpopReplayKey<'a>,
+    ) -> ResourceServerPortFuture<
+        'a,
+        Result<DpopReplayConsumptionResult, ProtectedResourceDependencyError>,
+    > {
+        Box::pin(async move {
+            let ttl_seconds = key.expires_at.saturating_sub(Utc::now().timestamp()).max(1) as u64;
+            self.consume_dpop(key.jkt, key.jti, ttl_seconds)
+                .await
+                .map(|accepted| {
+                    if accepted {
+                        DpopReplayConsumptionResult::Accepted
+                    } else {
+                        DpopReplayConsumptionResult::Replay
+                    }
+                })
+                .map_err(|_| ProtectedResourceDependencyError::DpopReplayStoreUnavailable)
+        })
+    }
 }
 
 impl ReplayStore {

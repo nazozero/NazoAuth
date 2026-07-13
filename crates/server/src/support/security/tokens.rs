@@ -1,7 +1,9 @@
+#[cfg(test)]
 use super::jwt_decoding_key_from_jwk;
 
 #[cfg(test)]
 use chrono::Utc;
+#[cfg(test)]
 use nazo_auth::Claims;
 #[cfg(test)]
 use nazo_auth::{AccessTokenClaimsInput, OidcClaimRequest};
@@ -10,6 +12,7 @@ use serde_json::Value;
 #[cfg(test)]
 use uuid::Uuid;
 
+#[cfg(test)]
 use nazo_key_management::signing_algorithm_name;
 
 #[cfg(test)]
@@ -110,6 +113,7 @@ pub(crate) async fn sign_response_jwt(
     keyset.encode_jwt(purpose, &header, claims).await
 }
 
+#[cfg(test)]
 pub(crate) fn decode_access_claims_with(
     keyset: &nazo_key_management::KeyManager,
     issuer: &str,

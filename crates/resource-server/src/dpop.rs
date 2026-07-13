@@ -13,6 +13,7 @@ use std::{
 const DEFAULT_DPOP_MAX_AGE_SECONDS: i64 = super::DEFAULT_DPOP_MAX_AGE_SECONDS;
 const DEFAULT_CLOCK_SKEW_SECONDS: i64 = super::DEFAULT_CLOCK_SKEW_SECONDS;
 const DEFAULT_REPLAY_CACHE_MAX_ENTRIES: usize = 100_000;
+const MAX_DPOP_JTI_BYTES: usize = 128;
 
 #[derive(Clone, Debug)]
 pub struct DpopProofVerifier {
@@ -122,7 +123,11 @@ impl DpopProofVerifier {
     ) -> Result<DpopProofVerification, DpopProofVerifierError> {
         let header = jsonwebtoken::decode_header(proof_jwt)
             .map_err(|_| DpopProofVerifierError::MalformedProof)?;
-        if header.typ.as_deref() != Some("dpop+jwt") {
+        if !header
+            .typ
+            .as_deref()
+            .is_some_and(|typ| typ.eq_ignore_ascii_case("dpop+jwt"))
+        {
             return Err(DpopProofVerifierError::WrongType);
         }
         if !self.config.allowed_algs.contains(&header.alg) {
@@ -162,16 +167,20 @@ impl DpopProofVerifier {
         access_token: &str,
         now: i64,
     ) -> Result<(), DpopProofVerifierError> {
-        if claims.htm != method.to_ascii_uppercase() {
+        if !claims.htm.eq_ignore_ascii_case(method) {
             return Err(DpopProofVerifierError::MethodMismatch);
         }
-        if claims.htu != htu {
+        let mut actual_htu =
+            url::Url::parse(&claims.htu).map_err(|_| DpopProofVerifierError::MalformedProof)?;
+        actual_htu.set_query(None);
+        actual_htu.set_fragment(None);
+        if actual_htu.as_str() != htu {
             return Err(DpopProofVerifierError::UriMismatch);
         }
         if claims.ath.as_deref() != Some(access_token_hash(access_token).as_str()) {
             return Err(DpopProofVerifierError::AccessTokenHashMismatch);
         }
-        if claims.jti.trim().is_empty() {
+        if claims.jti.trim().is_empty() || claims.jti.len() > MAX_DPOP_JTI_BYTES {
             return Err(DpopProofVerifierError::MissingJti);
         }
         let skew = self.config.clock_skew_seconds.max(0);

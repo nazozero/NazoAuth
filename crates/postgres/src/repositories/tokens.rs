@@ -5,6 +5,10 @@ use diesel::{
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_auth::{NewRefreshToken, RefreshToken, RefreshTokenPersistResult};
 use nazo_identity::ports::RepositoryError;
+use nazo_resource_server::{
+    AccessTokenRevocationLookup, ProtectedResourceDependencyError, ResourceServerPortFuture,
+    RevocationLookupKey,
+};
 use uuid::Uuid;
 
 use crate::{
@@ -259,6 +263,21 @@ impl TokenRepository {
             .get()
             .await
             .map_err(|_| RepositoryError::Unavailable)
+    }
+}
+
+impl AccessTokenRevocationLookup for TokenRepository {
+    fn is_revoked<'a>(
+        &'a self,
+        key: RevocationLookupKey<'a>,
+    ) -> ResourceServerPortFuture<'a, Result<bool, ProtectedResourceDependencyError>> {
+        Box::pin(async move {
+            let tenant_id = Uuid::parse_str(key.tenant_id)
+                .map_err(|_| ProtectedResourceDependencyError::InvalidTenantBoundary)?;
+            self.access_token_revoked(tenant_id, key.jti)
+                .await
+                .map_err(|_| ProtectedResourceDependencyError::RevocationLookupUnavailable)
+        })
     }
 }
 
