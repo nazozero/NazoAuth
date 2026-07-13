@@ -152,7 +152,7 @@ pub(crate) async fn admin_approve_access_request(
     );
     let delivery_store = nazo_valkey::DeliveryStore::new(&state.valkey_connection());
     let expires_at =
-        Utc::now() + Duration::seconds(state.settings.client_delivery_ttl_seconds as i64);
+        Utc::now() + Duration::seconds(state.settings.storage().client_delivery_ttl_seconds as i64);
     let delivery_payload = json!({
         "delivery_state": "staged",
         "request_id": request_id,
@@ -174,7 +174,7 @@ pub(crate) async fn admin_approve_access_request(
             request_user,
             &token,
             &delivery_payload,
-            state.settings.client_delivery_ttl_seconds,
+            state.settings.storage().client_delivery_ttl_seconds,
         )
         .await
     {
@@ -221,7 +221,7 @@ pub(crate) async fn admin_approve_access_request(
             request_user,
             &token,
             &committed_delivery_payload,
-            state.settings.client_delivery_ttl_seconds,
+            state.settings.storage().client_delivery_ttl_seconds,
         )
         .await
     {
@@ -289,7 +289,7 @@ async fn resume_staged_client_delivery(
             user,
             &token,
             &payload,
-            state.settings.client_delivery_ttl_seconds,
+            state.settings.storage().client_delivery_ttl_seconds,
         )
         .await?;
     Ok(true)

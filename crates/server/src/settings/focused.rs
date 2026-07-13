@@ -23,7 +23,10 @@ pub(crate) struct ProtocolRuntimeSettings {
 
 #[derive(Clone, Copy)]
 pub(crate) struct StorageRuntimeSettings<'a> {
+    pub(crate) avatar_max_bytes: usize,
     pub(crate) avatar_storage_dir: &'a Path,
+    pub(crate) client_delivery_ttl_seconds: u64,
+    pub(crate) scim_bearer_token: Option<&'a str>,
 }
 
 #[derive(Clone, Copy)]
@@ -55,7 +58,10 @@ impl Settings {
 
     pub(crate) fn storage(&self) -> StorageRuntimeSettings<'_> {
         StorageRuntimeSettings {
+            avatar_max_bytes: self.avatar_max_bytes,
             avatar_storage_dir: &self.avatar_storage_dir,
+            client_delivery_ttl_seconds: self.client_delivery_ttl_seconds,
+            scim_bearer_token: self.scim_bearer_token.as_deref(),
         }
     }
 

@@ -12,7 +12,11 @@ pub(crate) fn avatar_meta_path(state: &AppState, user_id: Uuid) -> PathBuf {
 }
 
 pub(crate) fn avatar_user_dir(state: &AppState, user_id: Uuid) -> PathBuf {
-    state.settings.avatar_storage_dir.join(user_id.to_string())
+    state
+        .settings
+        .storage()
+        .avatar_storage_dir
+        .join(user_id.to_string())
 }
 
 pub(crate) fn detect_avatar_content_type(bytes: &[u8]) -> Option<&'static str> {
