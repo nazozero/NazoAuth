@@ -1,12 +1,30 @@
 //! 管理端客户端详情端点。
 use super::ServerAdminClientService;
+#[cfg(test)]
+use super::test_dependencies;
+#[cfg(test)]
+use crate::domain::{AppState, ClientRow, DatabaseUserFixture};
+#[cfg(test)]
+use crate::settings::Settings;
 use crate::support::client_json;
 use crate::support::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
+#[cfg(test)]
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_set_ex,
+};
 use actix_web::http::StatusCode;
 use actix_web::web::Data;
 use actix_web::{HttpRequest, HttpResponse};
+#[cfg(test)]
+use chrono::Utc;
 use nazo_auth::AdminClientError;
+#[cfg(test)]
+use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_http_actix::{json_response, oauth_error};
+#[cfg(test)]
+use serde_json::{Value, json};
+#[cfg(test)]
+use uuid::Uuid;
 
 pub(crate) async fn admin_get_client(
     admin_sessions: Data<AdminSessionHandles>,
@@ -20,9 +38,7 @@ pub(crate) async fn admin_get_client(
     }
     match service.detail(&client_id).await {
         Ok(client) => client_detail_response(client),
-        Err(AdminClientError::NotFound) => {
-            oauth_error(StatusCode::NOT_FOUND, "invalid_request", "未找到该客户端.")
-        }
+        Err(AdminClientError::NotFound) => client_detail_not_found_response(),
         Err(error) => {
             tracing::warn!(%error, "failed to query oauth client detail");
             oauth_error(
@@ -36,6 +52,10 @@ pub(crate) async fn admin_get_client(
 
 fn client_detail_response(client: nazo_auth::OAuthClient) -> HttpResponse {
     json_response(client_json(client))
+}
+
+fn client_detail_not_found_response() -> HttpResponse {
+    oauth_error(StatusCode::NOT_FOUND, "invalid_request", "未找到该客户端.")
 }
 
 #[cfg(test)]

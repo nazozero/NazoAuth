@@ -254,6 +254,20 @@ impl std::fmt::Debug for PreparedClientRegistration {
     }
 }
 
+impl std::ops::Deref for PreparedClientRegistration {
+    type Target = ValidatedClientRegistration;
+
+    fn deref(&self) -> &Self::Target {
+        &self.registration
+    }
+}
+
+impl std::ops::DerefMut for PreparedClientRegistration {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.registration
+    }
+}
+
 #[derive(Clone)]
 pub struct CreatedClient {
     pub client: OAuthClient,

@@ -1,6 +1,8 @@
 //! 管理端客户端创建端点。
 use super::{AdminClientConfig, ServerAdminClientService};
 use crate::support::client_ip::client_ip_with_config;
+#[cfg(test)]
+use crate::support::client_secret_digest;
 use crate::support::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
 use crate::support::{audit_event, audit_fields, blake3_hex, client_json};
 use actix_web::http::StatusCode;

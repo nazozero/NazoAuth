@@ -1,13 +1,31 @@
 //! 管理端客户端列表端点。
 use super::ServerAdminClientService;
+#[cfg(test)]
+use super::test_dependencies;
+#[cfg(test)]
+use crate::domain::{AppState, ClientRow, DatabaseUserFixture};
+#[cfg(test)]
+use crate::settings::Settings;
 use crate::support::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
+#[cfg(test)]
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_set_ex,
+};
 use crate::support::{client_json, pagination};
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Query};
 use actix_web::{HttpRequest, HttpResponse};
+#[cfg(test)]
+use chrono::Utc;
+#[cfg(test)]
+use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_http_actix::{json_response, oauth_error};
+#[cfg(test)]
+use serde_json::Value;
 use serde_json::json;
 use std::collections::HashMap;
+#[cfg(test)]
+use uuid::Uuid;
 
 pub(crate) async fn admin_clients(
     admin_sessions: Data<AdminSessionHandles>,

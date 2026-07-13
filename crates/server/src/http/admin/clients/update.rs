@@ -1,15 +1,33 @@
 //! 管理端客户端更新端点。
+#[cfg(test)]
+use super::test_dependencies;
 use super::{AdminClientConfig, ServerAdminClientService};
+#[cfg(test)]
+use crate::domain::{AppState, ClientRow, DatabaseUserFixture};
+#[cfg(test)]
+use crate::settings::Settings;
 use crate::support::client_ip::client_ip_with_config;
 use crate::support::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
+#[cfg(test)]
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_set_ex,
+};
 use crate::support::{audit_event, audit_fields, blake3_hex, client_json};
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json};
 use actix_web::{HttpRequest, HttpResponse};
+#[cfg(test)]
+use chrono::Utc;
 use nazo_auth::{AdminClientError, PatchClientRequest};
+#[cfg(test)]
+use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies};
 use nazo_http_actix::{json_response, oauth_error};
+#[cfg(test)]
+use serde_json::Value;
 use serde_json::json;
+#[cfg(test)]
+use uuid::Uuid;
 
 pub(crate) async fn admin_patch_client(
     admin_sessions: Data<AdminSessionHandles>,
