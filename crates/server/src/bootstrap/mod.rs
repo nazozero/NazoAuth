@@ -31,6 +31,7 @@ use crate::domain::{
 };
 use crate::http::admin::access_requests::AdminAccessRequestConfig;
 use crate::http::admin::clients::AdminClientConfig;
+use crate::http::auth::csrf::CsrfHttpConfig;
 use crate::http::auth::email_code::EmailCodeHttpConfig;
 use crate::http::auth::login::LoginHttpConfig;
 use crate::http::auth::passkey::PasskeyHttpConfig;
@@ -212,6 +213,11 @@ pub async fn run() -> anyhow::Result<()> {
         state.settings.modules.enable_session_management,
     ));
     let mfa_rate_limit_connection = state.valkey_connection();
+    let csrf_http_config = web::Data::new(CsrfHttpConfig::new(
+        session.csrf_cookie_name.as_str(),
+        session.session_ttl_seconds,
+        session.cookie_secure,
+    ));
     let mfa_profiles = web::Data::new(MfaProfileHandles {
         config: MfaProfileConfig::from(state.settings.as_ref()),
         sessions: session_profiles.get_ref().clone(),
@@ -387,6 +393,7 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(metadata_handles.clone())
             .app_data(admin_sessions.clone())
             .app_data(session_profiles.clone())
+            .app_data(csrf_http_config.clone())
             .app_data(mfa_profiles.clone())
             .app_data(account_profiles.clone())
             .app_data(profile_access_requests.clone())

@@ -1,19 +1,13 @@
 use super::*;
-use crate::config::ConfigSource;
 
-fn settings() -> Settings {
-    let mut settings =
-        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.session.csrf_cookie_name = "nazo_csrf".to_owned();
-    settings.session.session_ttl_seconds = 900;
-    settings.session.cookie_secure = true;
-    settings
+fn config() -> CsrfHttpConfig {
+    CsrfHttpConfig::new("nazo_csrf", 900, true)
 }
 
 #[actix_web::test]
 async fn csrf_response_returns_token_body_and_matching_cookie() {
-    let settings = settings();
-    let response = csrf_response(&settings, "csrf-token-1".to_owned());
+    let config = config();
+    let response = csrf_response(&config, "csrf-token-1".to_owned());
 
     assert_eq!(response.status(), StatusCode::OK);
     let cookie = response
