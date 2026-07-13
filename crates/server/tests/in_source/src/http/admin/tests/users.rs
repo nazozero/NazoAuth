@@ -15,9 +15,10 @@ use crate::config::ConfigSource;
 use crate::domain::{AppState, DatabaseUserFixture};
 use crate::schema::users;
 use crate::settings::Settings;
+use crate::support::sessions::SessionHttpConfig;
 use crate::support::{
     DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, OAuthJsonErrorFields,
-    SessionHttpConfig, SessionPayload, valkey_set_ex,
+    SessionPayload, valkey_set_ex,
 };
 use chrono::Utc;
 use diesel::prelude::*;
