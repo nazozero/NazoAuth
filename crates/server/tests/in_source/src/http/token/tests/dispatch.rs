@@ -14,14 +14,17 @@ use fred::prelude::{
 use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
 
+use crate::adapters::security::hash_client_secret;
 use crate::http::authorization::ServerAuthorizationService;
+use crate::http::client_ip::IpCidr;
+use crate::http::sessions::SessionPayload;
+use crate::http::sessions::current_session;
 use crate::http::token::userinfo::userinfo as userinfo_with_dependencies;
 use crate::settings::AuthorizationServerProfile;
-use crate::support::{
-    IpCidr, SessionPayload, current_session, hash_client_secret, valkey_del, valkey_set_ex,
-};
+use crate::test_support::valkey::valkey_del;
+use crate::test_support::valkey::valkey_set_ex;
 
-fn authorization_service(state: &AppState) -> Data<ServerAuthorizationService> {
+fn authorization_service(state: &TestAppState) -> Data<ServerAuthorizationService> {
     let connection = state.valkey_connection();
     Data::new(ServerAuthorizationService::new(
         nazo_postgres::AuthorizationFlowRepository::new(state.diesel_db.clone(), DEFAULT_TENANT_ID),
@@ -30,7 +33,7 @@ fn authorization_service(state: &AppState) -> Data<ServerAuthorizationService> {
     ))
 }
 
-fn token_service(state: &AppState) -> Data<ServerTokenService> {
+fn token_service(state: &TestAppState) -> Data<ServerTokenService> {
     Data::new(ServerTokenService::new(
         nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
         nazo_valkey::TokenIssuanceStateAdapter::new(&state.valkey_connection()),
@@ -38,7 +41,7 @@ fn token_service(state: &AppState) -> Data<ServerTokenService> {
     ))
 }
 
-async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
+async fn userinfo(state: Data<TestAppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
     let connection = state.valkey_connection();
     let token_service = Data::new(ServerTokenService::new(
         nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
@@ -114,7 +117,7 @@ fn fixture_secret(label: &str) -> String {
     format!("token-dispatch-fixture-secret-{label}")
 }
 
-fn fixture_secret_hash(state: &Data<AppState>, secret: &str) -> String {
+fn fixture_secret_hash(state: &Data<TestAppState>, secret: &str) -> String {
     hash_client_secret(secret, &state.settings.protocol.client_secret_pepper)
 }
 
@@ -140,8 +143,8 @@ fn parseable_invalid_client_assertion(client_id: &str) -> String {
     format!("{header}.{payload}.signature")
 }
 
-fn unavailable_valkey_token_state(profile: AuthorizationServerProfile) -> AppState {
-    AppState {
+fn unavailable_valkey_token_state(profile: AuthorizationServerProfile) -> TestAppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_token_dispatch_invalid:nazo_token_dispatch_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -154,7 +157,7 @@ fn unavailable_valkey_token_state(profile: AuthorizationServerProfile) -> AppSta
     }
 }
 
-async fn live_token_state(profile: AuthorizationServerProfile) -> Option<Data<AppState>> {
+async fn live_token_state(profile: AuthorizationServerProfile) -> Option<Data<TestAppState>> {
     let valkey_url = std::env::var("VALKEY_URL").ok()?;
     let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
         "postgres://nazo_token_dispatch_invalid:nazo_token_dispatch_invalid@127.0.0.1:1/nazo"
@@ -187,7 +190,7 @@ async fn live_token_state(profile: AuthorizationServerProfile) -> Option<Data<Ap
     let valkey = valkey_builder.build().expect("valkey client should build");
     valkey.init().await.expect("valkey should connect");
 
-    Some(Data::new(AppState {
+    Some(Data::new(TestAppState {
         diesel_db: create_pool(database_url, 1).expect("database pool should build"),
         valkey,
         settings: Arc::new(settings),
@@ -197,7 +200,7 @@ async fn live_token_state(profile: AuthorizationServerProfile) -> Option<Data<Ap
 
 async fn live_valkey_invalid_db_token_state(
     profile: AuthorizationServerProfile,
-) -> Option<Data<AppState>> {
+) -> Option<Data<TestAppState>> {
     let valkey_url = std::env::var("VALKEY_URL").ok()?;
     let config = ConfigSource::from_pairs_for_test([
         ("ISSUER", "https://issuer.example"),
@@ -226,7 +229,7 @@ async fn live_valkey_invalid_db_token_state(
     let valkey = valkey_builder.build().expect("valkey client should build");
     valkey.init().await.expect("valkey should connect");
 
-    Some(Data::new(AppState {
+    Some(Data::new(TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_token_dispatch_invalid:nazo_token_dispatch_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -241,12 +244,12 @@ async fn live_valkey_invalid_db_token_state(
 
 async fn live_trusted_proxy_invalid_db_token_state(
     profile: AuthorizationServerProfile,
-) -> Option<Data<AppState>> {
+) -> Option<Data<TestAppState>> {
     let state = live_valkey_invalid_db_token_state(profile).await?;
     let mut updated = (*state.settings).clone();
     updated.endpoint.trusted_proxy_cidrs =
         vec![IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse")];
-    Some(Data::new(AppState {
+    Some(Data::new(TestAppState {
         diesel_db: state.diesel_db.clone(),
         valkey: state.valkey.clone(),
         settings: Arc::new(updated),
@@ -256,12 +259,12 @@ async fn live_trusted_proxy_invalid_db_token_state(
 
 async fn live_trusted_proxy_token_state(
     profile: AuthorizationServerProfile,
-) -> Option<Data<AppState>> {
+) -> Option<Data<TestAppState>> {
     let state = live_token_state(profile).await?;
     let mut updated = (*state.settings).clone();
     updated.endpoint.trusted_proxy_cidrs =
         vec![IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse")];
-    Some(Data::new(AppState {
+    Some(Data::new(TestAppState {
         diesel_db: state.diesel_db.clone(),
         valkey: state.valkey.clone(),
         settings: Arc::new(updated),
@@ -280,7 +283,7 @@ async fn token_json_body(response: HttpResponse) -> (StatusCode, Value) {
 
 #[allow(clippy::too_many_arguments)]
 async fn insert_token_client(
-    state: &Data<AppState>,
+    state: &Data<TestAppState>,
     client_id: &str,
     client_type: &str,
     token_endpoint_auth_method: &str,
@@ -370,7 +373,7 @@ async fn insert_token_client(
     .expect("test client insert should succeed");
 }
 
-async fn set_client_mtls_thumbprint(state: &Data<AppState>, client_id: &str, thumbprint: &str) {
+async fn set_client_mtls_thumbprint(state: &Data<TestAppState>, client_id: &str, thumbprint: &str) {
     let mut conn = get_conn(&state.diesel_db)
         .await
         .expect("database connection should be available");
@@ -387,7 +390,7 @@ async fn set_client_mtls_thumbprint(state: &Data<AppState>, client_id: &str, thu
 }
 
 async fn store_authorization_code_state(
-    state: &Data<AppState>,
+    state: &Data<TestAppState>,
     code: &str,
     code_state: &AuthorizationCodeState,
 ) {
@@ -401,7 +404,7 @@ async fn store_authorization_code_state(
     .expect("authorization code state should store");
 }
 
-async fn store_raw_authorization_code_state(state: &Data<AppState>, code: &str, raw: &str) {
+async fn store_raw_authorization_code_state(state: &Data<TestAppState>, code: &str, raw: &str) {
     valkey_set_ex(
         &state.valkey,
         authorization_code_key(code),
@@ -1557,7 +1560,7 @@ async fn token_endpoint_rejects_client_auth_if_token_rate_limit_is_exceeded() {
     };
     let mut settings = (*state.settings).clone();
     settings.identity.rate_limit.token_max_requests = 0;
-    let state = Data::new(AppState {
+    let state = Data::new(TestAppState {
         diesel_db: state.diesel_db.clone(),
         valkey: state.valkey.clone(),
         settings: Arc::new(settings),

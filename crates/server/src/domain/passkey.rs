@@ -143,7 +143,9 @@ impl PasskeyProfileOperations for PasskeyOperationsProvider {
 }
 
 #[cfg(test)]
-fn test_operations(state: &crate::domain::AppState) -> std::sync::Arc<PasskeyOperationsProvider> {
+fn test_operations(
+    state: &crate::domain::TestAppState,
+) -> std::sync::Arc<PasskeyOperationsProvider> {
     std::sync::Arc::new(PasskeyOperationsProvider::new(
         crate::test_support::passkey_service(state)
             .get_ref()
@@ -151,7 +153,7 @@ fn test_operations(state: &crate::domain::AppState) -> std::sync::Arc<PasskeyOpe
         SessionService::new(
             std::sync::Arc::new(nazo_valkey::SessionStore::new(&state.valkey_connection())),
             std::sync::Arc::new(nazo_postgres::UserRepository::new(state.diesel_db.clone())),
-            nazo_identity::TenantId::new(crate::support::tenancy::DEFAULT_TENANT_ID)
+            nazo_identity::TenantId::new(crate::domain::tenancy::DEFAULT_TENANT_ID)
                 .expect("default tenant ID is valid"),
         ),
     ))
@@ -159,7 +161,7 @@ fn test_operations(state: &crate::domain::AppState) -> std::sync::Arc<PasskeyOpe
 
 #[cfg(test)]
 fn test_login_endpoint(
-    state: &crate::domain::AppState,
+    state: &crate::domain::TestAppState,
 ) -> actix_web::web::Data<nazo_http_actix::PasskeyLoginEndpoint> {
     let identity = &state.settings.identity;
     let session = &state.settings.session;
@@ -187,7 +189,7 @@ fn test_login_endpoint(
 
 #[cfg(test)]
 fn test_profile_endpoint(
-    state: &crate::domain::AppState,
+    state: &crate::domain::TestAppState,
 ) -> actix_web::web::Data<nazo_http_actix::PasskeyProfileEndpoint> {
     let session = &state.settings.session;
     actix_web::web::Data::new(nazo_http_actix::PasskeyProfileEndpoint::new(

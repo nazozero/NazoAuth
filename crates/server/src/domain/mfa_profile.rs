@@ -14,7 +14,7 @@ use nazo_identity::{
     ports::{EncodedSecretHash, MfaHashError, MfaHashFuture, MfaSecretHashPort},
 };
 
-use crate::support::security::{
+use crate::adapters::security::{
     PasswordHashingError, PasswordVerificationError, hash_password_blocking_limited,
     verify_encoded_hashes_blocking_limited,
 };

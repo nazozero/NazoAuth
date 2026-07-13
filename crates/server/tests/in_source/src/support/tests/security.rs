@@ -1,7 +1,8 @@
 use super::tokens::*;
 use super::*;
 use crate::config::ConfigSource;
-use crate::support::{ClientSigningFixture, client_signing_fixture};
+use crate::test_support::ClientSigningFixture;
+use crate::test_support::client_signing_fixture;
 use actix_web::test::TestRequest;
 
 #[path = "security/client_assertion.rs"]

@@ -12,7 +12,7 @@ use nazo_identity::{
 use std::sync::Arc;
 
 use crate::bootstrap::routes;
-use crate::domain::{AppState, DynamicRegistrationHandles};
+use crate::domain::{DynamicRegistrationHandles, TestAppState};
 
 struct ContractProfileOperations;
 
@@ -230,9 +230,9 @@ async fn authorization_endpoint_is_not_cors_enabled() {
 }
 
 #[actix_web::test]
-async fn disabled_dynamic_client_registration_rejects_before_body_parsing() {
+async fn disabled_dynamic_client_registration_keeps_the_static_route_contract() {
     let settings = Arc::new(test_settings(vec!["https://app.example".to_owned()]));
-    let state = web::Data::new(AppState {
+    let state = web::Data::new(TestAppState {
         diesel_db: nazo_postgres::create_pool(
             "postgres://disabled_dcr:disabled_dcr@127.0.0.1:1/nazo".to_owned(),
             1,
@@ -248,24 +248,116 @@ async fn disabled_dynamic_client_registration_rejects_before_body_parsing() {
         web::Data::new(DynamicRegistrationHandles::from_app_state(state.get_ref()));
     let app = test::init_service(
         App::new()
+            .wrap(actix_web::middleware::from_fn(
+                nazo_http_actix::security_headers,
+            ))
             .app_data(state)
             .app_data(dynamic_registration_handles)
             .configure(|cfg| routes::configure(cfg, &settings, false)),
     )
     .await;
 
-    let request = test::TestRequest::post()
-        .uri("/register")
-        .insert_header((header::CONTENT_TYPE, "text/plain"))
-        .set_payload("not json")
-        .to_request();
-    let response = test::call_service(&app, request).await;
+    let requests = [
+        (
+            actix_web::http::Method::POST,
+            "/register",
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            actix_web::http::Method::GET,
+            "/register/client-test",
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            actix_web::http::Method::PUT,
+            "/register/client-test",
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            actix_web::http::Method::DELETE,
+            "/register/client-test",
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            actix_web::http::Method::OPTIONS,
+            "/register",
+            StatusCode::NOT_FOUND,
+        ),
+    ];
 
-    assert_eq!(
-        response.status(),
-        StatusCode::NOT_FOUND,
-        "disabled dynamic registration must reject before parsing an invalid body"
-    );
+    for (method, uri, expected_status) in requests {
+        let response = test::call_service(
+            &app,
+            test::TestRequest::default()
+                .method(method)
+                .uri(uri)
+                .insert_header((header::ORIGIN, "https://browser.example"))
+                .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, "POST"))
+                .insert_header((header::CONTENT_TYPE, "text/plain"))
+                .set_payload("not json")
+                .to_request(),
+        )
+        .await;
+
+        assert_eq!(response.status(), expected_status, "{uri}");
+        assert!(
+            response.headers().get(header::CONTENT_TYPE).is_none(),
+            "{uri}"
+        );
+        assert!(
+            response.headers().get(header::CACHE_CONTROL).is_none(),
+            "{uri}"
+        );
+        assert!(
+            response
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .is_none(),
+            "{uri}"
+        );
+        assert!(
+            response
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+                .is_none(),
+            "{uri}"
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(header::X_CONTENT_TYPE_OPTIONS)
+                .unwrap(),
+            "nosniff",
+            "{uri}"
+        );
+        assert_eq!(
+            response.headers().get(header::X_FRAME_OPTIONS).unwrap(),
+            "DENY",
+            "{uri}"
+        );
+        assert_eq!(
+            response.headers().get("Referrer-Policy").unwrap(),
+            "no-referrer",
+            "{uri}"
+        );
+        assert_eq!(
+            response.headers().get("Permissions-Policy").unwrap(),
+            "interest-cohort=()",
+            "{uri}"
+        );
+        assert!(
+            response
+                .headers()
+                .get("Content-Security-Policy")
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .contains("frame-ancestors 'none'"),
+            "{uri}"
+        );
+        let body = test::read_body(response).await;
+        assert_eq!(body.as_ref(), b"", "{uri}");
+    }
 }
 
 #[actix_web::test]

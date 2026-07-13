@@ -2,12 +2,12 @@
 //! 用户只能查看和解绑自己的 provider subject 绑定，不能修改 provider 配置。
 use nazo_http_actix::{empty_response_no_store, json_response_no_store, oauth_error};
 
+use crate::adapters::audit::{audit_event, audit_fields};
 #[cfg(test)]
 use crate::domain::DatabaseExternalIdentityFixture;
-use crate::support::sessions::SessionProfileHandles;
 #[cfg(test)]
-use crate::support::tenancy::DEFAULT_TENANT_ID;
-use crate::support::{audit::audit_event, audit::audit_fields};
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
+use crate::http::sessions::SessionProfileHandles;
 use actix_web::http::StatusCode;
 use actix_web::web::Data;
 use actix_web::web::Path;

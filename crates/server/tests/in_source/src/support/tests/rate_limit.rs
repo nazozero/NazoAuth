@@ -1,5 +1,7 @@
 use super::*;
-use crate::support::{valkey_del, valkey_eval_string, valkey_set_ex};
+use crate::test_support::valkey::valkey_del;
+use crate::test_support::valkey::valkey_eval_string;
+use crate::test_support::valkey::valkey_set_ex;
 use nazo_http_actix::OAuthJsonErrorFields;
 use std::sync::Arc;
 
@@ -13,7 +15,7 @@ use fred::prelude::{
 };
 use std::time::Duration as StdDuration;
 
-async fn live_rate_limit_state() -> Option<AppState> {
+async fn live_rate_limit_state() -> Option<TestAppState> {
     let valkey_url = std::env::var("VALKEY_URL").ok()?;
     let mut builder =
         ValkeyBuilder::from_config(ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL"));
@@ -28,7 +30,7 @@ async fn live_rate_limit_state() -> Option<AppState> {
     let valkey = builder.build().expect("valkey client should build");
     valkey.init().await.expect("valkey should connect");
 
-    Some(AppState {
+    Some(TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_rate_limit_test_invalid:nazo_rate_limit_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -43,7 +45,7 @@ async fn live_rate_limit_state() -> Option<AppState> {
     })
 }
 
-async fn eval_rate_limit_key_ttl(state: &AppState, key: &str) -> i64 {
+async fn eval_rate_limit_key_ttl(state: &TestAppState, key: &str) -> i64 {
     valkey_eval_string(
         &state.valkey,
         "return tostring(redis.call('TTL', KEYS[1]))",
@@ -56,7 +58,7 @@ async fn eval_rate_limit_key_ttl(state: &AppState, key: &str) -> i64 {
     .expect("rate limit key TTL should be an integer")
 }
 
-async fn set_rate_limit_key_without_ttl(state: &AppState, key: &str, value: &str) {
+async fn set_rate_limit_key_without_ttl(state: &TestAppState, key: &str, value: &str) {
     valkey_eval_string(
         &state.valkey,
         "redis.call('SET', KEYS[1], ARGV[1]); return 'OK'",

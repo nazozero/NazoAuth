@@ -17,12 +17,12 @@ use serde_json::Value;
 use serde_json::json;
 
 use crate::bootstrap::LocalFederationService;
+use crate::http::client_ip::{ClientIpConfig, client_ip_with_config};
 use crate::settings::{
     ExternalLoginProvider, ExternalLoginProviderAdapter, FederationProviderRegistry,
     OidcFederationSettings, SamlGatewaySettings, SocialProviderSettings,
 };
-use crate::support::client_ip::{ClientIpConfig, client_ip_with_config};
-use crate::support::{email::normalize_email_address, rate_limit::AuthRequestLimiter};
+use crate::{adapters::email::normalize_email_address, http::rate_limit::AuthRequestLimiter};
 
 mod oidc;
 mod saml;

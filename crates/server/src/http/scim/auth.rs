@@ -1,10 +1,11 @@
 use super::ScimEndpoint;
+use crate::adapters::audit::audit_event;
+use crate::adapters::audit::audit_fields;
+use crate::adapters::security::blake3_hex;
+use crate::adapters::security::constant_time_eq;
+use crate::domain::tenancy::default_tenant_context;
+use crate::http::client_ip::client_ip_with_config;
 use crate::http::scim::schema::scim_error;
-use crate::support::client_ip::client_ip_with_config;
-use crate::support::{
-    audit::audit_event, audit::audit_fields, security::blake3_hex, security::constant_time_eq,
-    tenancy::default_tenant_context,
-};
 use actix_web::http::StatusCode;
 use actix_web::http::header;
 use actix_web::{HttpRequest, HttpResponse};

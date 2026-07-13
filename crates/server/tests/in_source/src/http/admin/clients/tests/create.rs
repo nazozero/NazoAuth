@@ -1,9 +1,10 @@
 use super::create_error_response;
+use crate::adapters::security::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER;
+use crate::adapters::security::client_secret_digest;
 use crate::http::admin::clients::test_support::{
     CreateClientRequest, InsertClientError, PreparedClientRegistration,
     prepare_client_insert_with_secret_pepper,
 };
-use crate::support::{LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER, client_secret_digest};
 use actix_web::http::StatusCode;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use nazo_http_actix::OAuthJsonErrorFields;
@@ -19,7 +20,7 @@ async fn prepare_client_insert_for_test(
         pairwise_subject_secret,
         LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
         issuer,
-        crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+        crate::adapters::security::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
 }

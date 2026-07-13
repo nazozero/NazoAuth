@@ -54,7 +54,7 @@ pub(crate) type ServerTokenService = nazo_auth::TokenService<
 >;
 
 #[cfg(test)]
-use crate::support::security::CLIENT_ASSERTION_TYPE_JWT_BEARER;
+use crate::adapters::security::CLIENT_ASSERTION_TYPE_JWT_BEARER;
 use actix_web::{HttpRequest, HttpResponse, http::StatusCode};
 #[cfg(test)]
 use actix_web::{
@@ -85,7 +85,7 @@ impl nazo_http_actix::TokenManagementRequestFactsExtractor
 {
     fn extract(&self, request: &HttpRequest) -> nazo_http_actix::TokenManagementRequestFacts {
         nazo_http_actix::TokenManagementRequestFacts {
-            source_ip: crate::support::client_ip::client_ip_with_config(
+            source_ip: crate::http::client_ip::client_ip_with_config(
                 request,
                 &self.config.client_ip,
             ),
@@ -98,7 +98,7 @@ impl nazo_http_actix::TokenManagementRequestFactsExtractor
         &self,
         request: &HttpRequest,
     ) -> Option<nazo_http_actix::ClientCertificateFacts> {
-        crate::support::mtls::request_mtls_client_certificate_from_trusted_proxy(
+        crate::http::mtls::request_mtls_client_certificate_from_trusted_proxy(
             request,
             &self.config.trusted_proxy_cidrs,
         )
@@ -107,11 +107,11 @@ impl nazo_http_actix::TokenManagementRequestFactsExtractor
 
 pub(crate) fn client_auth_request_facts(
     request: &HttpRequest,
-    trusted_proxy_cidrs: &[crate::support::client_ip::IpCidr],
+    trusted_proxy_cidrs: &[crate::http::client_ip::IpCidr],
 ) -> ClientAuthRequestFacts {
     ClientAuthRequestFacts::new(
         request.path(),
-        crate::support::mtls::request_mtls_client_certificate_from_trusted_proxy(
+        crate::http::mtls::request_mtls_client_certificate_from_trusted_proxy(
             request,
             trusted_proxy_cidrs,
         ),
@@ -193,7 +193,7 @@ mod lifecycle_boundary_tests {
             "#[cfg(not(test))]",
         );
         for forbidden in [
-            "Data<AppState>",
+            "Data<TestAppState>",
             "state.settings",
             "state.diesel_db",
             "state.valkey_connection()",
@@ -235,7 +235,7 @@ mod lifecycle_boundary_tests {
         ] {
             let body = function_body(source, start, end);
             for forbidden in [
-                "AppState",
+                "TestAppState",
                 "state.settings",
                 "state.diesel_db",
                 "state.valkey_connection()",
@@ -256,7 +256,7 @@ mod lifecycle_boundary_tests {
         let source = include_str!("token/userinfo.rs");
         assert!(source.contains("handles: Data<UserinfoHandles>"));
         for forbidden in [
-            "Data<AppState>",
+            "Data<TestAppState>",
             "Settings",
             "KeyManager",
             "nazo_postgres",
@@ -317,10 +317,11 @@ mod lifecycle_boundary_tests {
             );
         }
         assert!(!source.contains(
-            "pub(crate) async fn backchannel_authentication(\n    state: Data<AppState>"
+            "pub(crate) async fn backchannel_authentication(\n    state: Data<TestAppState>"
         ));
         assert!(
-            !source.contains("pub(crate) async fn ciba_verification(\n    state: Data<AppState>")
+            !source
+                .contains("pub(crate) async fn ciba_verification(\n    state: Data<TestAppState>")
         );
     }
 
@@ -333,7 +334,7 @@ mod lifecycle_boundary_tests {
             .and_then(|source| source.split("#[cfg(test)]").next())
             .expect("issuance core must precede test-only compatibility code");
         for forbidden in [
-            "AppState",
+            "TestAppState",
             "state.settings",
             "state.diesel_db",
             "state.valkey_connection",
@@ -351,7 +352,7 @@ mod lifecycle_boundary_tests {
     fn device_transport_uses_focused_composition_root_dependencies() {
         let source = include_str!("token/device.rs");
         for forbidden in [
-            "Data<AppState>",
+            "Data<TestAppState>",
             "Settings",
             "DeviceStore::new",
             "AuthorizationFlowRepository::new",
@@ -381,7 +382,7 @@ mod lifecycle_boundary_tests {
     fn ciba_decision_transport_uses_focused_composition_root_dependencies() {
         let source = include_str!("token/ciba.rs");
         for forbidden in [
-            "Data<AppState>",
+            "Data<TestAppState>",
             "state.permits_existing_module_transaction",
             "client_ip(&req, &state.settings)",
             "has_valid_csrf_token(&state",
@@ -415,7 +416,7 @@ mod lifecycle_boundary_tests {
         assert!(source.contains("validate_dpop_proof_with_authorization_service"));
         assert!(source.contains("consume_token_client_assertion_with_authorization_service"));
         for forbidden in [
-            "AppState",
+            "TestAppState",
             "Settings",
             "state.settings",
             "DeviceStore::new",

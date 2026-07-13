@@ -6,23 +6,31 @@ use nazo_http_actix::{
     request_uses_form_urlencoded,
 };
 
+use crate::adapters::audit::audit_event;
+use crate::adapters::audit::audit_fields;
+use crate::adapters::security::ValidatedClientAssertion;
+use crate::adapters::security::blake3_hex;
+use crate::adapters::security::client_jwt_decoding_key;
+use crate::adapters::security::constant_time_eq;
+use crate::adapters::security::extract_client_credentials_with_trusted_proxies;
+use crate::adapters::security::has_basic_authorization_scheme;
+use crate::adapters::security::random_urlsafe_token;
 #[cfg(test)]
-use crate::domain::AppState;
+use crate::domain::TestAppState;
+use crate::domain::client_policy::client_supports_grant;
+use crate::domain::client_policy::is_subset;
+use crate::domain::client_policy::parse_scope;
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
+#[cfg(test)]
+use crate::domain::tenancy::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID};
 use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
+use crate::http::client_ip::client_ip_with_context;
+use crate::http::dpop::DpopError;
+use crate::http::dpop::DpopErrorContext;
+use crate::http::dpop::dpop_error_response;
+use crate::http::dpop::validate_dpop_proof_with_authorization_service;
+use crate::http::mtls::request_mtls_thumbprint_from_trusted_proxy;
 use crate::settings::Settings;
-use crate::support::{
-    audit::audit_event, audit::audit_fields, client_ip::client_ip_with_context, dpop::DpopError,
-    dpop::DpopErrorContext, dpop::dpop_error_response,
-    dpop::validate_dpop_proof_with_authorization_service,
-    mtls::request_mtls_thumbprint_from_trusted_proxy, oauth::client_supports_grant,
-    oauth::is_subset, oauth::parse_scope, security::ValidatedClientAssertion, security::blake3_hex,
-    security::client_jwt_decoding_key, security::constant_time_eq,
-    security::extract_client_credentials_with_trusted_proxies,
-    security::has_basic_authorization_scheme, security::random_urlsafe_token,
-    tenancy::DEFAULT_TENANT_ID,
-};
-#[cfg(test)]
-use crate::support::{tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID};
 use actix_web::http::StatusCode;
 use actix_web::http::header;
 use actix_web::http::header::HeaderValue;
@@ -56,9 +64,9 @@ use super::{
     token_management_auth_error,
 };
 use crate::http::authorization::ServerAuthorizationService;
+use crate::http::client_ip::{ClientIpHeaderMode, IpCidr};
+use crate::http::sessions::AdminSessionHandles;
 use crate::runtime_modules::ServerRuntimeModuleRegistry;
-use crate::support::sessions::AdminSessionHandles;
-use crate::support::{client_ip::ClientIpHeaderMode, client_ip::IpCidr};
 use actix_web::web::Payload;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use nazo_auth::ClientAuthenticationContext;
@@ -643,7 +651,7 @@ fn validate_and_apply_ciba_request_object_claims_with_config(
 
 #[cfg(test)]
 fn validate_and_apply_ciba_request_object_claims(
-    state: &AppState,
+    state: &TestAppState,
     client: &ClientRow,
     form: &mut BackchannelAuthenticationForm,
 ) -> Result<(), HttpResponse> {

@@ -1,13 +1,14 @@
 use super::*;
 use crate::config::ConfigSource;
-use crate::domain::AppState;
+use crate::domain::TestAppState;
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
+use crate::http::client_ip::ClientIpConfig;
+use crate::http::rate_limit::TokenManagementRequestLimiter;
 use crate::http::token::device_issuance::required_device_code;
 use crate::http::token::{TokenForm, device_config::DeviceHttpConfig};
 use crate::settings::Settings;
-use crate::support::client_ip::ClientIpConfig;
-use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, TokenManagementRequestLimiter,
-};
 use actix_web::test::TestRequest;
 use chrono::Duration;
 use nazo_auth::{DeviceAuthorizationState, DevicePollTransition, evaluate_device_poll};
@@ -17,7 +18,7 @@ use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
 
-fn device_authorization_service(state: &Data<AppState>) -> Data<ServerAuthorizationService> {
+fn device_authorization_service(state: &Data<TestAppState>) -> Data<ServerAuthorizationService> {
     let connection = state.valkey_connection();
     Data::new(ServerAuthorizationService::new(
         nazo_postgres::AuthorizationFlowRepository::new(state.diesel_db.clone(), DEFAULT_TENANT_ID),
@@ -26,13 +27,13 @@ fn device_authorization_service(state: &Data<AppState>) -> Data<ServerAuthorizat
     ))
 }
 
-fn device_grant_service(state: &AppState) -> Data<ServerDeviceGrantService> {
+fn device_grant_service(state: &TestAppState) -> Data<ServerDeviceGrantService> {
     Data::new(ServerDeviceGrantService::new(
         nazo_valkey::DeviceStore::new(&state.valkey_connection()),
     ))
 }
 
-fn token_management_limiter(state: &AppState) -> Data<TokenManagementRequestLimiter> {
+fn token_management_limiter(state: &TestAppState) -> Data<TokenManagementRequestLimiter> {
     let rate_limit = &state.settings.identity.rate_limit;
     let endpoint = &state.settings.endpoint;
     Data::new(TokenManagementRequestLimiter::new(
@@ -109,12 +110,12 @@ fn enabled_settings() -> Settings {
     settings
 }
 
-fn disabled_state() -> AppState {
+fn disabled_state() -> TestAppState {
     state_with_settings(Settings::from_config(&ConfigSource::default()).expect("settings"))
 }
 
-fn state_with_settings(settings: Settings) -> AppState {
-    AppState {
+fn state_with_settings(settings: Settings) -> TestAppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_device_test_invalid:nazo_device_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),

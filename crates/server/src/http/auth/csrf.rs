@@ -1,6 +1,6 @@
 //! CSRF token 刷新端点。
-use crate::support::security::random_urlsafe_token;
-use crate::support::sessions::SessionProfileHandles;
+use crate::adapters::security::random_urlsafe_token;
+use crate::http::sessions::SessionProfileHandles;
 #[cfg(test)]
 use actix_web::http::StatusCode;
 use actix_web::web::Data;

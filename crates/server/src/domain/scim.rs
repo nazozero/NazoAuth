@@ -18,14 +18,14 @@ use openssl::symm::{Cipher, decrypt_aead, encrypt_aead};
 use sha2::Sha256;
 
 use crate::{
-    runtime_modules::ServerRuntimeModuleRegistry,
-    support::{
+    adapters::{
         audit::{audit_event, audit_fields},
-        client_ip::{ClientIpConfig, client_ip_with_config},
         security::{
             blake3_hex, constant_time_eq, hash_password_blocking_limited, random_urlsafe_token,
         },
     },
+    http::client_ip::{ClientIpConfig, client_ip_with_config},
+    runtime_modules::ServerRuntimeModuleRegistry,
 };
 
 type HmacSha256 = Hmac<Sha256>;

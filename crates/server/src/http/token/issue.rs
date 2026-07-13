@@ -1,18 +1,23 @@
 //! 令牌签发响应构造。
+use crate::adapters::audit::audit_event;
+use crate::adapters::audit::audit_fields;
+use crate::adapters::security::blake3_hex;
+use crate::adapters::security::random_urlsafe_token;
 #[cfg(test)]
-use crate::domain::AppState;
+use crate::domain::TestAppState;
+use crate::domain::oidc_claims::oidc_id_token_user_claims;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
 use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
+use crate::http::client_ip::{ClientIpHeaderMode, IpCidr};
+use crate::http::dpop::DpopErrorContext;
+use crate::http::dpop::dpop_error_response;
+use crate::http::dpop::issue_dpop_nonce_with_authorization_service;
 use crate::settings::{AuthorizationServerProfile, DpopNoncePolicy, Settings};
-use crate::support::{
-    audit::audit_event, audit::audit_fields, dpop::DpopErrorContext, dpop::dpop_error_response,
-    dpop::issue_dpop_nonce_with_authorization_service, oidc_claims::oidc_id_token_user_claims,
-    security::blake3_hex, security::random_urlsafe_token,
-};
-use crate::support::{client_ip::ClientIpHeaderMode, client_ip::IpCidr};
-#[cfg(test)]
-use crate::support::{
-    tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
-};
 use actix_web::HttpResponse;
 use actix_web::http::StatusCode;
 use actix_web::http::header;
@@ -697,7 +702,7 @@ pub(crate) async fn issue_token_response_with_service(
 
 #[cfg(test)]
 pub(crate) fn test_authorization_service(
-    state: &AppState,
+    state: &TestAppState,
 ) -> crate::http::authorization::ServerAuthorizationService {
     let connection = state.valkey_connection();
     crate::http::authorization::ServerAuthorizationService::new(
@@ -709,7 +714,7 @@ pub(crate) fn test_authorization_service(
 
 #[cfg(test)]
 pub(crate) async fn issue_token_response(
-    state: &AppState,
+    state: &TestAppState,
     client: &ClientRow,
     issue: TokenIssue,
 ) -> HttpResponse {

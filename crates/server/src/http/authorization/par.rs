@@ -6,28 +6,33 @@ use super::jar::{
     unverified_signed_request_object_client_id,
 };
 #[cfg(test)]
+use crate::adapters::security::blake3_hex;
+use crate::adapters::security::extract_client_credentials_with_trusted_proxies;
+use crate::adapters::security::has_basic_authorization_scheme;
+use crate::adapters::security::random_urlsafe_token;
+#[cfg(test)]
 use crate::domain::ClientRow;
 use crate::domain::PushedAuthorizationRequest;
 #[cfg(test)]
+use crate::domain::client_policy::{RedirectUriError, audiences_allowed, registered_redirect_uri};
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
+#[cfg(test)]
 use crate::http::authorization::AuthorizationHttpConfig;
 use crate::http::authorization::{AuthorizationEndpoint, AuthorizationRequestContext};
+use crate::http::dpop::DpopError;
+use crate::http::dpop::DpopErrorContext;
+use crate::http::dpop::dpop_error_response;
+use crate::http::mtls::request_mtls_thumbprint_from_trusted_proxy;
+use crate::http::rate_limit::rate_limited_response;
 #[cfg(test)]
 use crate::settings::Settings;
 #[cfg(test)]
-use crate::support::oauth::{RedirectUriError, audiences_allowed, registered_redirect_uri};
-#[cfg(test)]
-use crate::support::security::blake3_hex;
-use crate::support::{
-    dpop::DpopError, dpop::DpopErrorContext, dpop::dpop_error_response,
-    mtls::request_mtls_thumbprint_from_trusted_proxy, rate_limit::rate_limited_response,
-    security::extract_client_credentials_with_trusted_proxies,
-    security::has_basic_authorization_scheme, security::random_urlsafe_token,
-};
-#[cfg(test)]
-use crate::support::{
-    tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
-    valkey::valkey_get,
-};
+use crate::test_support::valkey::valkey_get;
 use actix_web::http::StatusCode;
 use actix_web::http::header;
 use actix_web::web::{Bytes, Data};
@@ -79,7 +84,7 @@ async fn enforce_par_rate_limit(
     context: &AuthorizationRequestContext<'_>,
     req: &HttpRequest,
 ) -> Result<(), HttpResponse> {
-    let subject = crate::support::client_ip::client_ip_with_context(
+    let subject = crate::http::client_ip::client_ip_with_context(
         req,
         context.config.client_ip_header_mode,
         &context.config.trusted_proxy_cidrs,
@@ -364,21 +369,20 @@ async fn par_after_rate_limit_inner(
         }
         None => None,
     };
-    let header_dpop_jkt =
-        match crate::support::dpop::validate_dpop_proof_with_authorization_service(
-            context.service,
-            &context.config.issuer,
-            &context.config.mtls_endpoint_base_url,
-            context.config.dpop_nonce_policy,
-            &req,
-            None,
-            None,
-        )
-        .await
-        {
-            Ok(value) => value,
-            Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
-        };
+    let header_dpop_jkt = match crate::http::dpop::validate_dpop_proof_with_authorization_service(
+        context.service,
+        &context.config.issuer,
+        &context.config.mtls_endpoint_base_url,
+        context.config.dpop_nonce_policy,
+        &req,
+        None,
+        None,
+    )
+    .await
+    {
+        Ok(value) => value,
+        Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
+    };
     if let (Some(request_dpop_jkt), Some(header_dpop_jkt)) =
         (request_dpop_jkt.as_deref(), header_dpop_jkt.as_deref())
         && request_dpop_jkt != header_dpop_jkt

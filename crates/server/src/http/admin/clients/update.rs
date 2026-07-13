@@ -1,10 +1,11 @@
 //! 管理端客户端更新端点。
 use super::{AdminClientConfig, ServerAdminClientService};
-use crate::support::client_ip::client_ip_with_config;
-use crate::support::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
-use crate::support::{
-    audit::audit_event, audit::audit_fields, security::blake3_hex, views::client_json,
-};
+use crate::adapters::audit::audit_event;
+use crate::adapters::audit::audit_fields;
+use crate::adapters::security::blake3_hex;
+use crate::http::client_ip::client_ip_with_config;
+use crate::http::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
+use crate::http::views::client_json;
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json};
 use actix_web::{HttpRequest, HttpResponse};

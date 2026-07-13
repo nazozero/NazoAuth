@@ -1,20 +1,24 @@
 //! /token grant_type 分发入口。
+use crate::adapters::security::ClientCredentials;
+use crate::adapters::security::blake3_hex;
 #[cfg(test)]
-use crate::domain::{AppState, CodePayload};
+use crate::domain::client_policy::authorization_code_key;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
 use crate::domain::{AuthorizationCodeState, ClientRow};
 #[cfg(test)]
-use crate::settings::Settings;
-use crate::support::{
-    client_ip::client_ip_with_context, dpop::dpop_proof_present,
-    mtls::client_mtls_certificate_matches,
-    mtls::request_mtls_client_certificate_from_trusted_proxy, rate_limit::rate_limited_response,
-    security::ClientCredentials, security::blake3_hex,
-};
+use crate::domain::{CodePayload, TestAppState};
+use crate::http::client_ip::client_ip_with_context;
+use crate::http::dpop::dpop_proof_present;
+use crate::http::mtls::client_mtls_certificate_matches;
+use crate::http::mtls::request_mtls_client_certificate_from_trusted_proxy;
+use crate::http::rate_limit::rate_limited_response;
 #[cfg(test)]
-use crate::support::{
-    oauth::authorization_code_key, tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID,
-    tenancy::DEFAULT_TENANT_ID,
-};
+use crate::settings::Settings;
 use actix_web::http::StatusCode;
 #[cfg(test)]
 use actix_web::http::header;
@@ -73,7 +77,7 @@ fn mtls_client_credentials(client_id: String) -> ClientCredentials {
 
 async fn mtls_client_credentials_without_client_id(
     service: &ServerAuthorizationService,
-    trusted_proxy_cidrs: &[crate::support::client_ip::IpCidr],
+    trusted_proxy_cidrs: &[crate::http::client_ip::IpCidr],
     req: &HttpRequest,
 ) -> Result<Option<ClientCredentials>, HttpResponse> {
     let Some(certificate) =
@@ -602,7 +606,11 @@ pub(crate) async fn token_with_service(
 pub(crate) use token_with_service as token;
 
 #[cfg(test)]
-pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
+pub(crate) async fn token(
+    state: Data<TestAppState>,
+    req: HttpRequest,
+    body: Bytes,
+) -> HttpResponse {
     let service = Data::new(ServerTokenService::new(
         nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
         nazo_valkey::TokenIssuanceStateAdapter::new(&state.valkey_connection()),

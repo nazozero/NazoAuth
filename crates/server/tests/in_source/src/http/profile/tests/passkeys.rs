@@ -2,11 +2,13 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::bootstrap::PASSKEY_CEREMONY_TTL_SECONDS;
-use crate::domain::{AppState, DatabasePasskeyFixture, DatabaseUserFixture};
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
+use crate::domain::{DatabasePasskeyFixture, DatabaseUserFixture, TestAppState};
+use crate::http::sessions::SessionPayload;
 use crate::settings::Settings;
-use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_set_ex,
-};
+use crate::test_support::valkey::valkey_set_ex;
 use actix_web::{
     HttpRequest, HttpResponse,
     cookie::Cookie,
@@ -69,7 +71,7 @@ fn passkey_profile_transport_has_no_identity_or_storage_orchestration() {
         "/../http-actix/src/passkey.rs"
     ));
     for forbidden in [
-        "AppState",
+        "TestAppState",
         "nazo_postgres",
         "nazo_valkey",
         "PasskeyRepository",
@@ -86,7 +88,7 @@ fn passkey_profile_transport_has_no_identity_or_storage_orchestration() {
 }
 
 async fn passkey_registration_begin(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     req: HttpRequest,
     payload: Json<PasskeyBeginRequest>,
 ) -> HttpResponse {
@@ -99,7 +101,7 @@ async fn passkey_registration_begin(
 }
 
 async fn passkey_registration_finish(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     req: HttpRequest,
     payload: Json<PasskeyFinishRequest>,
 ) -> HttpResponse {
@@ -111,16 +113,20 @@ async fn passkey_registration_finish(
     .await
 }
 
-async fn passkey_list(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
+async fn passkey_list(state: Data<TestAppState>, req: HttpRequest) -> HttpResponse {
     nazo_http_actix::passkey_list(super::test_profile_endpoint(&state), req).await
 }
 
-async fn passkey_delete(state: Data<AppState>, req: HttpRequest, path: Path<Uuid>) -> HttpResponse {
+async fn passkey_delete(
+    state: Data<TestAppState>,
+    req: HttpRequest,
+    path: Path<Uuid>,
+) -> HttpResponse {
     nazo_http_actix::passkey_delete(super::test_profile_endpoint(&state), req, path).await
 }
 
 async fn load_user_passkeys(
-    state: &AppState,
+    state: &TestAppState,
     user: &nazo_identity::PublicAccount,
 ) -> Result<Vec<PasskeyCredential>, HttpResponse> {
     nazo_postgres::PasskeyRepository::new(state.diesel_db.clone())
@@ -135,8 +141,8 @@ async fn load_user_passkeys(
         })
 }
 
-fn test_state() -> AppState {
-    AppState {
+fn test_state() -> TestAppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_profile_passkey_test_invalid:nazo_profile_passkey_test_invalid@127.0.0.1:1/nazo".to_owned(),
             1,
@@ -152,7 +158,7 @@ fn test_state() -> AppState {
     }
 }
 
-fn request_with_session_but_no_csrf(state: &AppState) -> HttpRequest {
+fn request_with_session_but_no_csrf(state: &TestAppState) -> HttpRequest {
     actix_web::test::TestRequest::default()
         .cookie(Cookie::new(
             state.settings.session.session_cookie_name.clone(),
@@ -166,7 +172,7 @@ fn uuid_fixture(value: u128) -> Uuid {
 }
 
 struct LivePasskeyFixture {
-    state: Data<AppState>,
+    state: Data<TestAppState>,
 }
 
 struct FakeAuthenticator {
@@ -276,7 +282,7 @@ impl LivePasskeyFixture {
         valkey.init().await.expect("valkey should connect");
 
         Some(Self {
-            state: Data::new(AppState {
+            state: Data::new(TestAppState {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),

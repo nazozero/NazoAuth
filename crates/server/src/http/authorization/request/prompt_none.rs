@@ -1,3 +1,7 @@
+use crate::adapters::audit::audit_event;
+use crate::adapters::audit::audit_fields;
+use crate::adapters::security::blake3_hex;
+use crate::adapters::security::random_urlsafe_token;
 use crate::domain::{AuthorizationCodeState, CodePayload, ConsentPayload};
 use crate::http::authorization::AuthorizationRequestContext;
 use crate::http::authorization::request::{
@@ -5,10 +9,7 @@ use crate::http::authorization::request::{
     authorization_response_redirect_with_context,
     consume_pushed_authorization_request_with_context,
 };
-use crate::support::{
-    audit::audit_event, audit::audit_fields, client_ip::client_ip_with_config,
-    security::blake3_hex, security::random_urlsafe_token,
-};
+use crate::http::client_ip::client_ip_with_config;
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::{Duration, Utc};
@@ -49,7 +50,7 @@ pub(super) async fn user_grant_covers_requested_scopes_with_context(
 
 #[cfg(test)]
 pub(super) async fn user_grant_covers_requested_scopes(
-    state: &crate::domain::AppState,
+    state: &crate::domain::TestAppState,
     user_id: Uuid,
     client_id: Uuid,
     requested_scopes: &[String],
@@ -209,7 +210,7 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
 
 #[cfg(test)]
 pub(super) async fn issue_authorization_code_without_interaction(
-    state: &crate::domain::AppState,
+    state: &crate::domain::TestAppState,
     req: &HttpRequest,
     payload: ConsentPayload,
 ) -> HttpResponse {

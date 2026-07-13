@@ -10,16 +10,14 @@ use nazo_key_management::{KeyManager, signing_algorithm_from_name};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+use crate::adapters::security::{access_token_tenant_id, blake3_hex, constant_time_eq};
+use crate::domain::client_jwe::{JwePayloadKind, client_jwe_key, encrypt_compact_jwe};
+use crate::domain::client_policy::parse_scope;
+use crate::domain::oidc_claims::oidc_user_claims;
+use crate::http::client_ip::IpCidr;
+use crate::http::dpop::{DpopError, validate_dpop_proof_with_store};
+use crate::http::mtls::request_mtls_thumbprint_from_trusted_proxy;
 use crate::settings::{DpopNoncePolicy, Settings};
-use crate::support::{
-    client_ip::IpCidr,
-    dpop::{DpopError, validate_dpop_proof_with_store},
-    jwe::{JwePayloadKind, client_jwe_key, encrypt_compact_jwe},
-    mtls::request_mtls_thumbprint_from_trusted_proxy,
-    oauth::parse_scope,
-    oidc_claims::oidc_user_claims,
-    security::{access_token_tenant_id, blake3_hex, constant_time_eq},
-};
 
 use crate::http::token::ServerTokenService;
 
@@ -326,7 +324,7 @@ impl UserinfoHandles {
     }
 
     #[cfg(test)]
-    pub(crate) fn from_test_state(state: &super::AppState) -> Self {
+    pub(crate) fn from_test_state(state: &super::TestAppState) -> Self {
         Self::new(
             nazo_valkey::ReplayStore::new(&state.valkey_connection()),
             state.keyset.clone(),
@@ -361,7 +359,7 @@ impl UserinfoHandles {
     }
 
     pub(crate) async fn issue_dpop_nonce(&self) -> Result<String, DpopError> {
-        crate::support::dpop::issue_dpop_nonce_with_store(&self.replay).await
+        crate::http::dpop::issue_dpop_nonce_with_store(&self.replay).await
     }
 
     pub(crate) fn request_mtls_thumbprint(&self, req: &HttpRequest) -> Option<String> {

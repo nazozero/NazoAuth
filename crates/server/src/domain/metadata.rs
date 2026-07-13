@@ -123,7 +123,7 @@ mod tests {
 
     use super::*;
     use crate::config::ConfigSource;
-    use crate::support::IpCidr;
+    use crate::http::client_ip::IpCidr;
 
     fn settings() -> Settings {
         Settings::from_config(&ConfigSource::default()).expect("default settings")

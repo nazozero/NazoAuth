@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
 
-use crate::support::client_signing_fixture;
+use crate::test_support::client_signing_fixture;
 use diesel::QueryableByName;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Jsonb, Nullable, Text, Timestamptz, Uuid as SqlUuid};
@@ -24,8 +24,8 @@ struct RefreshFamilyTokenRow {
     reuse_detected_at: Option<DateTime<Utc>>,
 }
 
-fn test_state() -> AppState {
-    AppState {
+fn test_state() -> TestAppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_refresh_test_invalid:nazo_refresh_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -42,14 +42,14 @@ fn test_state() -> AppState {
     }
 }
 
-fn live_refresh_state(profile: AuthorizationServerProfile) -> Option<AppState> {
+fn live_refresh_state(profile: AuthorizationServerProfile) -> Option<TestAppState> {
     live_refresh_state_from_database_url(profile, std::env::var("DATABASE_URL").ok()?)
 }
 
 fn live_refresh_state_from_database_url(
     profile: AuthorizationServerProfile,
     database_url: String,
-) -> Option<AppState> {
+) -> Option<TestAppState> {
     let key_material = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
     let active_kid = "refresh-test-kid".to_owned();
     let _public_jwk = key_material.public_jwk(&active_kid);
@@ -57,7 +57,7 @@ fn live_refresh_state_from_database_url(
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.protocol.authorization_server_profile = profile;
 
-    Some(AppState {
+    Some(TestAppState {
         diesel_db: create_pool(database_url, 4).expect("database pool should build"),
         valkey: fred::prelude::Builder::default_centralized()
             .build()
@@ -75,7 +75,7 @@ fn database_url_with_search_path(schema: &str) -> Option<String> {
     ))
 }
 
-async fn exec_sql(state: &AppState, sql: &str) {
+async fn exec_sql(state: &TestAppState, sql: &str) {
     let mut conn = get_conn(&state.diesel_db)
         .await
         .expect("database connection should be available");
@@ -85,7 +85,7 @@ async fn exec_sql(state: &AppState, sql: &str) {
         .expect("schema mutation should succeed");
 }
 
-async fn create_isolated_schema(state: &AppState, schema: &str, tables: &[&str]) {
+async fn create_isolated_schema(state: &TestAppState, schema: &str, tables: &[&str]) {
     exec_sql(
         state,
         &format!(r#"CREATE SCHEMA IF NOT EXISTS "{}""#, schema),
@@ -103,7 +103,7 @@ async fn create_isolated_schema(state: &AppState, schema: &str, tables: &[&str])
     }
 }
 
-async fn rename_column(state: &AppState, schema: &str, table: &str, from: &str, to: &str) {
+async fn rename_column(state: &TestAppState, schema: &str, table: &str, from: &str, to: &str) {
     exec_sql(
         state,
         &format!(
@@ -114,7 +114,7 @@ async fn rename_column(state: &AppState, schema: &str, table: &str, from: &str, 
     .await;
 }
 
-async fn drop_schema(state: &AppState, schema: &str) {
+async fn drop_schema(state: &TestAppState, schema: &str) {
     exec_sql(
         state,
         &format!(r#"DROP SCHEMA IF EXISTS "{}" CASCADE"#, schema),
@@ -122,18 +122,19 @@ async fn drop_schema(state: &AppState, schema: &str) {
     .await;
 }
 
-fn live_trusted_proxy_refresh_state(profile: AuthorizationServerProfile) -> Option<AppState> {
+fn live_trusted_proxy_refresh_state(profile: AuthorizationServerProfile) -> Option<TestAppState> {
     let mut state = live_refresh_state(profile)?;
     let mut settings = (*state.settings).clone();
     settings.endpoint.trusted_proxy_cidrs = vec![
-        crate::support::IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse"),
+        crate::http::client_ip::IpCidr::parse("127.0.0.1/32")
+            .expect("trusted proxy CIDR should parse"),
     ];
     state.settings = Arc::new(settings);
     Some(state)
 }
 
 async fn insert_refresh_token_row(
-    state: &AppState,
+    state: &TestAppState,
     raw_refresh_token: &str,
     token: &TokenRow,
     rotated_from_id: Option<Uuid>,
@@ -183,7 +184,7 @@ async fn insert_refresh_token_row(
     .expect("refresh token insert should succeed");
 }
 
-async fn insert_refresh_client(state: &AppState, client: &ClientRow) {
+async fn insert_refresh_client(state: &TestAppState, client: &ClientRow) {
     let mut conn = get_conn(&state.diesel_db)
         .await
         .expect("database connection should be available");
@@ -263,7 +264,7 @@ async fn insert_refresh_client(state: &AppState, client: &ClientRow) {
     .expect("refresh test client should insert");
 }
 
-async fn insert_refresh_user(state: &AppState, user_id: Uuid, active: bool) {
+async fn insert_refresh_user(state: &TestAppState, user_id: Uuid, active: bool) {
     let mut conn = get_conn(&state.diesel_db)
         .await
         .expect("database connection should be available");
@@ -295,7 +296,7 @@ async fn insert_refresh_user(state: &AppState, user_id: Uuid, active: bool) {
     .expect("refresh test user should insert");
 }
 
-async fn load_family_rows(state: &AppState, family_id: Uuid) -> Vec<RefreshFamilyTokenRow> {
+async fn load_family_rows(state: &TestAppState, family_id: Uuid) -> Vec<RefreshFamilyTokenRow> {
     let mut conn = get_conn(&state.diesel_db)
         .await
         .expect("database connection should be available");
@@ -1474,7 +1475,8 @@ async fn lost_response_rotation_rolls_back_successor_revoke_when_insert_fails() 
     };
     let mut settings = (*state.settings).clone();
     settings.endpoint.trusted_proxy_cidrs = vec![
-        crate::support::IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse"),
+        crate::http::client_ip::IpCidr::parse("127.0.0.1/32")
+            .expect("trusted proxy CIDR should parse"),
     ];
     state.settings = Arc::new(settings);
     create_isolated_schema(&state, &schema, &["oauth_tokens"]).await;
@@ -2185,7 +2187,7 @@ async fn refresh_grant_binds_access_tokens_to_verified_mtls_certificate_when_req
             "CN=refresh-actual",
         ))
         .to_http_request();
-    let request_thumbprint = crate::support::request_mtls_thumbprint(&req, &state.settings)
+    let request_thumbprint = crate::http::mtls::request_mtls_thumbprint(&req, &state.settings)
         .expect("trusted proxy request should expose verified client certificate thumbprint");
     assert_eq!(request_thumbprint, thumbprint);
     let (status, body) =

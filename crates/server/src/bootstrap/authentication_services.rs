@@ -1,9 +1,10 @@
 use serde_json::json;
 
-use crate::support::{
-    audit::audit_event, audit::audit_fields, security::PasswordVerificationError,
-    security::blake3_hex, security::verify_password_blocking_limited,
-};
+use crate::adapters::audit::audit_event;
+use crate::adapters::audit::audit_fields;
+use crate::adapters::security::PasswordVerificationError;
+use crate::adapters::security::blake3_hex;
+use crate::adapters::security::verify_password_blocking_limited;
 
 #[derive(Clone, Copy)]
 pub(crate) struct LoginPasswordVerifier;

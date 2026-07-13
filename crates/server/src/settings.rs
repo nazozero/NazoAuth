@@ -10,11 +10,11 @@ use nazo_auth::{
 };
 use url::Url;
 
+use crate::adapters::security::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER;
 use crate::config::ConfigSource;
-use crate::support::{
-    client_ip::ClientIpHeaderMode, client_ip::IpCidr, client_ip::parse_trusted_proxy_cidrs,
-    security::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
-};
+use crate::http::client_ip::ClientIpHeaderMode;
+use crate::http::client_ip::IpCidr;
+use crate::http::client_ip::parse_trusted_proxy_cidrs;
 
 mod email;
 mod federation;

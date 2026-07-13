@@ -13,6 +13,11 @@ use nazo_http_actix::{
 use serde_json::json;
 
 use crate::{
+    adapters::{
+        audit::{audit_event, audit_fields},
+        security::blake3_hex,
+    },
+    domain::client_jwe::{JwePayloadKind, client_jwe_key, encrypt_compact_jwe},
     http::{
         authorization::{AuthorizationHttpConfig, ServerAuthorizationService},
         token::{
@@ -24,11 +29,6 @@ use crate::{
                 perform_dummy_client_secret_verification,
             },
         },
-    },
-    support::{
-        audit::{audit_event, audit_fields},
-        jwe::{JwePayloadKind, client_jwe_key, encrypt_compact_jwe},
-        security::blake3_hex,
     },
 };
 

@@ -1,21 +1,26 @@
 use super::*;
 use std::{sync::Arc, time::Duration};
 
+use crate::adapters::security::pkce_s256;
 use crate::config::ConfigSource;
-use crate::domain::{AppState, DatabaseExternalIdentityFixture, DatabaseUserFixture};
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
+use crate::domain::{DatabaseExternalIdentityFixture, DatabaseUserFixture, TestAppState};
+use crate::http::sessions::SessionPayload;
 use crate::schema::external_identity_links;
 use crate::settings::Settings;
-use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, pkce_s256,
-    valkey_get, valkey_set_ex,
-};
+use crate::test_support::valkey::valkey_get;
+use crate::test_support::valkey::valkey_set_ex;
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
 use nazo_postgres::create_pool;
 use nazo_postgres::get_conn;
 
+use crate::adapters::security::random_urlsafe_token;
 use crate::settings::{OidcFederationSettings, SamlGatewaySettings};
-use crate::support::{ClientSigningFixture, client_signing_fixture, random_urlsafe_token};
+use crate::test_support::ClientSigningFixture;
+use crate::test_support::client_signing_fixture;
 use actix_web::http::header;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Text, Uuid as SqlUuid};
@@ -39,7 +44,7 @@ fn federation_transport_has_no_identity_or_storage_orchestration() {
         "/src/http/auth/federation.rs"
     ));
     for forbidden in [
-        "AppState",
+        "TestAppState",
         "nazo_postgres",
         "nazo_valkey",
         "FederationRepository",
@@ -101,12 +106,12 @@ fn normalize_federation_token(value: &str) -> Option<String> {
     nazo_identity::federation::normalize_federation_token(value)
 }
 
-async fn federation_provider_list(state: Data<AppState>) -> HttpResponse {
+async fn federation_provider_list(state: Data<TestAppState>) -> HttpResponse {
     super::federation_provider_list(crate::test_support::federation_http_config(&state)).await
 }
 
 async fn federation_provider_start(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     req: HttpRequest,
     path: Path<String>,
 ) -> HttpResponse {
@@ -121,7 +126,7 @@ async fn federation_provider_start(
 }
 
 async fn federation_provider_callback(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     req: HttpRequest,
     path: Path<String>,
     query: Query<OidcCallbackQuery>,
@@ -139,7 +144,7 @@ async fn federation_provider_callback(
 }
 
 async fn oidc_callback_after_rate_limit_for_provider(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     req: HttpRequest,
     query: OidcCallbackQuery,
     provider: OidcFederationSettings,
@@ -156,7 +161,7 @@ async fn oidc_callback_after_rate_limit_for_provider(
 }
 
 async fn federation_saml_acs(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     req: HttpRequest,
     payload: Json<SamlGatewayAssertion>,
 ) -> HttpResponse {
@@ -172,7 +177,7 @@ async fn federation_saml_acs(
 }
 
 async fn complete_social_callback(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     req: HttpRequest,
     provider_id: String,
     identity: SocialIdentity,
@@ -246,7 +251,7 @@ fn settings_with_oidc_provider(provider: Option<&OidcFederationSettings>) -> Set
     Settings::from_config(&config).expect("federation settings should load")
 }
 
-fn oidc_callback_state() -> AppState {
+fn oidc_callback_state() -> TestAppState {
     let provider = oidc_provider();
     let settings = settings_with_oidc_provider(Some(&provider));
     let mut valkey_builder = fred::prelude::Builder::default_centralized();
@@ -258,7 +263,7 @@ fn oidc_callback_state() -> AppState {
         connection.internal_command_timeout = Duration::from_millis(50);
     });
 
-    AppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_federation_test_invalid:nazo_federation_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -273,7 +278,7 @@ fn oidc_callback_state() -> AppState {
     }
 }
 
-fn provider_list_state() -> AppState {
+fn provider_list_state() -> TestAppState {
     let config = ConfigSource::from_pairs_for_test([(
         "FEDERATION_PROVIDER_CONFIGS",
         r#"[
@@ -309,7 +314,7 @@ fn provider_list_state() -> AppState {
         performance.default_command_timeout = Duration::from_millis(50);
     });
 
-    AppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_federation_test_invalid:nazo_federation_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -327,7 +332,7 @@ fn provider_list_state() -> AppState {
 async fn live_federation_state(
     oidc: Option<OidcFederationSettings>,
     saml_gateway: Option<SamlGatewaySettings>,
-) -> Option<AppState> {
+) -> Option<TestAppState> {
     let valkey_url = std::env::var("VALKEY_URL").ok()?;
     let mut settings = settings_with_oidc_provider(oidc.as_ref());
     settings.identity.federation.saml_gateway = saml_gateway;
@@ -345,7 +350,7 @@ async fn live_federation_state(
     let valkey = valkey_builder.build().expect("valkey client should build");
     valkey.init().await.expect("valkey should connect");
 
-    Some(AppState {
+    Some(TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_federation_test_invalid:nazo_federation_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -359,7 +364,7 @@ async fn live_federation_state(
 }
 
 struct LiveFederationFixture {
-    state: Data<AppState>,
+    state: Data<TestAppState>,
 }
 
 impl LiveFederationFixture {
@@ -391,7 +396,7 @@ impl LiveFederationFixture {
         valkey.init().await.expect("valkey should connect");
 
         Some(Self {
-            state: Data::new(AppState {
+            state: Data::new(TestAppState {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
@@ -524,13 +529,13 @@ async fn response_json(response: HttpResponse) -> (StatusCode, Value) {
     (status, json)
 }
 
-async fn store_oidc_state(state: &AppState, state_token: &str, created_at: i64) {
+async fn store_oidc_state(state: &TestAppState, state_token: &str, created_at: i64) {
     let nonce = random_urlsafe_token();
     store_oidc_state_with_nonce(state, state_token, &nonce, created_at).await;
 }
 
 async fn store_oidc_state_with_nonce(
-    state: &AppState,
+    state: &TestAppState,
     state_token: &str,
     nonce: &str,
     created_at: i64,

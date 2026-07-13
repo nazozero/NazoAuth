@@ -1,24 +1,36 @@
 //! authorization_code grant 处理。
+use crate::adapters::security::ValidatedClientAssertion;
+use crate::adapters::security::blake3_hex;
+use crate::adapters::security::constant_time_eq;
+use crate::adapters::security::pkce_s256;
 #[cfg(test)]
-use crate::domain::AppState;
+use crate::domain::TestAppState;
+use crate::domain::client_policy::audiences_allowed;
+#[cfg(test)]
+use crate::domain::client_policy::authorization_code_key;
+use crate::domain::client_policy::is_subset;
+use crate::domain::client_policy::is_valid_pkce_value;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
 use crate::domain::{
     AuthorizationCodeState, ClientRow, CodePayload, ConsumedAuthorizationCode, RefreshTokenPolicy,
     TokenIssue,
 };
+use crate::http::dpop::DpopError;
+use crate::http::dpop::DpopErrorContext;
+use crate::http::dpop::dpop_error_response;
+use crate::http::dpop::validate_dpop_proof_with_authorization_service;
+use crate::http::mtls::request_mtls_thumbprint_from_trusted_proxy;
 #[cfg(test)]
 use crate::settings::Settings;
-use crate::support::{
-    dpop::DpopError, dpop::DpopErrorContext, dpop::dpop_error_response,
-    dpop::validate_dpop_proof_with_authorization_service,
-    mtls::request_mtls_thumbprint_from_trusted_proxy, oauth::audiences_allowed, oauth::is_subset,
-    oauth::is_valid_pkce_value, security::ValidatedClientAssertion, security::blake3_hex,
-    security::constant_time_eq, security::pkce_s256,
-};
 #[cfg(test)]
-use crate::support::{
-    oauth::authorization_code_key, tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID,
-    tenancy::DEFAULT_TENANT_ID, valkey::valkey_get, valkey::valkey_set_ex,
-};
+use crate::test_support::valkey::valkey_get;
+#[cfg(test)]
+use crate::test_support::valkey::valkey_set_ex;
 use actix_web::http::StatusCode;
 #[cfg(test)]
 use actix_web::http::header;
@@ -636,7 +648,7 @@ pub(crate) async fn token_authorization_code_with_service(
 }
 
 #[cfg(test)]
-fn test_token_service(state: &AppState) -> ServerTokenService {
+fn test_token_service(state: &TestAppState) -> ServerTokenService {
     ServerTokenService::new(
         nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
         nazo_valkey::TokenIssuanceStateAdapter::new(&state.valkey_connection()),
@@ -646,7 +658,7 @@ fn test_token_service(state: &AppState) -> ServerTokenService {
 
 #[cfg(test)]
 async fn load_pending_authorization_code_payload(
-    state: &AppState,
+    state: &TestAppState,
     code_hash: &str,
 ) -> Result<Option<Box<CodePayload>>, HttpResponse> {
     load_pending_authorization_code_payload_with_service(&test_token_service(state), code_hash)
@@ -655,7 +667,7 @@ async fn load_pending_authorization_code_payload(
 
 #[cfg(test)]
 async fn begin_authorization_code_consumption(
-    state: &AppState,
+    state: &TestAppState,
     code_hash: &str,
 ) -> Result<AuthorizationCodeConsumption, HttpResponse> {
     begin_authorization_code_consumption_with_service(&test_token_service(state), code_hash).await
@@ -663,7 +675,7 @@ async fn begin_authorization_code_consumption(
 
 #[cfg(test)]
 pub(crate) async fn token_authorization_code(
-    state: &AppState,
+    state: &TestAppState,
     req: &HttpRequest,
     client: &ClientRow,
     form: &TokenForm,

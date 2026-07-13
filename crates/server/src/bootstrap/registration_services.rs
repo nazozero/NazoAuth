@@ -1,8 +1,8 @@
-use crate::support::{
-    email::SmtpVerificationEmailDelivery, security::PasswordHashingError,
-    security::PasswordVerificationError, security::hash_password_blocking_limited,
-    security::verify_password_blocking_limited,
-};
+use crate::adapters::email::SmtpVerificationEmailDelivery;
+use crate::adapters::security::PasswordHashingError;
+use crate::adapters::security::PasswordVerificationError;
+use crate::adapters::security::hash_password_blocking_limited;
+use crate::adapters::security::verify_password_blocking_limited;
 
 #[derive(Clone, Copy)]
 pub(crate) struct RegistrationSecretHasher;

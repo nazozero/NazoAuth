@@ -2,7 +2,7 @@ use super::*;
 use std::sync::Arc;
 
 use crate::config::ConfigSource;
-use crate::domain::AppState;
+use crate::domain::TestAppState;
 use crate::http::authorization::par::pushed_authorization_request_key;
 use nazo_postgres::create_pool;
 
@@ -11,7 +11,7 @@ use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
 
-async fn authorize_get(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
+async fn authorize_get(state: Data<TestAppState>, req: HttpRequest) -> HttpResponse {
     let query_parameters = authorization_duplicate_parameters();
     let mut q = match parse_authorization_query(req.query_string(), &query_parameters) {
         Ok(q) => q,
@@ -20,7 +20,7 @@ async fn authorize_get(state: Data<AppState>, req: HttpRequest) -> HttpResponse 
     authorize_request(state, req, &mut q).await
 }
 
-async fn authorize_post(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
+async fn authorize_post(state: Data<TestAppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
     let query_parameters = authorization_duplicate_parameters();
     let mut q = match parse_authorization_post_form(&req, &body, &query_parameters) {
         Ok(q) => q,
@@ -30,7 +30,7 @@ async fn authorize_post(state: Data<AppState>, req: HttpRequest, body: Bytes) ->
 }
 
 async fn authorize_request(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     req: HttpRequest,
     q: &mut HashMap<String, String>,
 ) -> HttpResponse {
@@ -120,12 +120,12 @@ fn pkce_policy_client() -> ClientRow {
     }
 }
 
-fn reauth_nonce_state_with_valkey(valkey: fred::prelude::Client) -> AppState {
+fn reauth_nonce_state_with_valkey(valkey: fred::prelude::Client) -> TestAppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.endpoint.frontend_base_url = "https://auth.example".to_owned();
 
-    AppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_reauth_nonce_test_invalid:nazo_reauth_nonce_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -138,7 +138,7 @@ fn reauth_nonce_state_with_valkey(valkey: fred::prelude::Client) -> AppState {
     }
 }
 
-async fn live_reauth_nonce_state() -> Option<AppState> {
+async fn live_reauth_nonce_state() -> Option<TestAppState> {
     let valkey_url = std::env::var("VALKEY_URL").ok()?;
     let mut builder =
         ValkeyBuilder::from_config(ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL"));

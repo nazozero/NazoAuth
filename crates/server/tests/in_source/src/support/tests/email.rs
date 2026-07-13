@@ -57,7 +57,10 @@ fn delivery_adapter_projects_only_focused_smtp_configuration() {
     let disabled = SmtpVerificationEmailDelivery::from_delivery(&EmailDelivery::Disabled);
     assert!(disabled.smtp.is_none());
 
-    let source = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/support/email.rs"));
+    let source = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/adapters/email.rs"
+    ));
     assert!(
         !source.contains("\n    settings: Arc<Settings>"),
         "the delivery adapter must not retain the aggregate Settings object"

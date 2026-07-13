@@ -2,12 +2,12 @@ use super::*;
 use std::sync::Arc;
 
 use crate::config::ConfigSource;
+use crate::http::client_ip::ClientIpConfig;
 use crate::http::scim::{ScimConfig, ScimEndpoint};
 use crate::settings::Settings;
-use crate::support::client_ip::ClientIpConfig;
 use nazo_postgres::{create_pool, get_conn};
 
-use crate::support::DEFAULT_TENANT_ID;
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
 use chrono::Utc;
 use diesel::QueryableByName;
 use diesel::sql_query;

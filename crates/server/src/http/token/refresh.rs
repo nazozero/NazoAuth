@@ -1,22 +1,32 @@
 //! refresh_token grant 处理。
+use crate::adapters::audit::audit_event;
+use crate::adapters::audit::audit_fields;
+use crate::adapters::security::ValidatedClientAssertion;
+use crate::adapters::security::blake3_hex;
+use crate::adapters::security::constant_time_eq;
 #[cfg(test)]
-use crate::domain::AppState;
+use crate::adapters::security::decode_access_claims_with;
+#[cfg(test)]
+use crate::domain::TestAppState;
+use crate::domain::client_policy::audiences_allowed;
+use crate::domain::client_policy::is_subset;
+use crate::domain::client_policy::json_array_to_strings;
+use crate::domain::client_policy::parse_scope;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
 use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue, TokenRow};
+use crate::http::client_ip::client_ip_with_context;
+use crate::http::dpop::DpopErrorContext;
+use crate::http::dpop::dpop_error_response;
+use crate::http::dpop::dpop_proof_present;
+use crate::http::dpop::validate_dpop_proof_with_authorization_service;
+use crate::http::mtls::request_mtls_thumbprint_from_trusted_proxy;
 #[cfg(test)]
 use crate::settings::Settings;
-use crate::support::{
-    audit::audit_event, audit::audit_fields, client_ip::client_ip_with_context,
-    dpop::DpopErrorContext, dpop::dpop_error_response, dpop::dpop_proof_present,
-    dpop::validate_dpop_proof_with_authorization_service,
-    mtls::request_mtls_thumbprint_from_trusted_proxy, oauth::audiences_allowed, oauth::is_subset,
-    oauth::json_array_to_strings, oauth::parse_scope, security::ValidatedClientAssertion,
-    security::blake3_hex, security::constant_time_eq,
-};
-#[cfg(test)]
-use crate::support::{
-    security::decode_access_claims_with, tenancy::DEFAULT_ORGANIZATION_ID,
-    tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
-};
 use actix_web::http::StatusCode;
 #[cfg(test)]
 use actix_web::http::header;
@@ -446,7 +456,7 @@ pub(crate) async fn token_refresh_with_service(
 
 #[cfg(test)]
 pub(crate) async fn token_refresh(
-    state: &AppState,
+    state: &TestAppState,
     req: &HttpRequest,
     client: &ClientRow,
     form: &TokenForm,

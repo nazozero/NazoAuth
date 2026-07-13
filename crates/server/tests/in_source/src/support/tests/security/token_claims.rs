@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn signing_adapters_do_not_define_or_call_claim_forwarders() {
     let server_tokens =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/support/security/tokens.rs");
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/adapters/security/tokens.rs");
     let source = std::fs::read_to_string(&server_tokens)
         .expect("server token adapter source must exist relative to its manifest");
     let oidc_logout =

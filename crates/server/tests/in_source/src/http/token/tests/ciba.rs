@@ -2,7 +2,8 @@ use super::*;
 use crate::config::ConfigSource;
 use nazo_postgres::create_pool;
 
-use crate::support::{ClientSigningFixture, client_signing_fixture};
+use crate::test_support::ClientSigningFixture;
+use crate::test_support::client_signing_fixture;
 use std::io::{self, Write};
 use std::sync::{
     Arc,
@@ -37,12 +38,12 @@ impl Write for FailingAuditWriter {
     }
 }
 
-fn ciba_test_state_with(configure: impl FnOnce(&mut Settings)) -> AppState {
+fn ciba_test_state_with(configure: impl FnOnce(&mut Settings)) -> TestAppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
     configure(&mut settings);
-    AppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_ciba_test_invalid:nazo_ciba_test_invalid@127.0.0.1:1/nazo".to_owned(),
             1,
@@ -56,7 +57,7 @@ fn ciba_test_state_with(configure: impl FnOnce(&mut Settings)) -> AppState {
     }
 }
 
-fn ciba_test_state() -> AppState {
+fn ciba_test_state() -> TestAppState {
     ciba_test_state_with(|_| {})
 }
 

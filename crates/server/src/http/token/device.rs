@@ -1,12 +1,17 @@
 //! RFC 8628 Device Authorization Grant.
+use crate::adapters::audit::audit_event;
+use crate::adapters::audit::audit_fields;
+use crate::adapters::security::ClientCredentials;
+use crate::adapters::security::blake3_hex;
+use crate::adapters::security::extract_client_credentials_with_trusted_proxies;
+use crate::adapters::security::has_basic_authorization_scheme;
+use crate::adapters::security::random_urlsafe_token;
 use crate::domain::ClientRow;
-use crate::support::{
-    audit::audit_event, audit::audit_fields, client_ip::client_ip_with_context,
-    oauth::client_supports_grant, oauth::parse_resource_indicators, oauth::parse_scope,
-    rate_limit::TokenManagementRequestLimiter, security::ClientCredentials, security::blake3_hex,
-    security::extract_client_credentials_with_trusted_proxies,
-    security::has_basic_authorization_scheme, security::random_urlsafe_token,
-};
+use crate::domain::client_policy::client_supports_grant;
+use crate::domain::client_policy::parse_resource_indicators;
+use crate::domain::client_policy::parse_scope;
+use crate::http::client_ip::client_ip_with_context;
+use crate::http::rate_limit::TokenManagementRequestLimiter;
 use actix_web::http::StatusCode;
 use actix_web::http::header;
 use actix_web::http::header::HeaderValue;
@@ -29,8 +34,8 @@ use super::{
     client_auth_request_facts, device_config::DeviceHttpConfig, token_management_auth_error,
 };
 use crate::http::authorization::ServerAuthorizationService;
+use crate::http::sessions::SessionProfileHandles;
 use crate::runtime_modules::ServerRuntimeModuleRegistry;
-use crate::support::sessions::SessionProfileHandles;
 use nazo_auth::{
     CapabilityAdmission, ClientAuthenticationContext, DeviceAuthorizationApproval,
     DeviceAuthorizationPayload, DeviceAuthorizationRequestError, DeviceAuthorizationRequestPolicy,

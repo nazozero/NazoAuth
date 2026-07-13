@@ -13,11 +13,11 @@ use nazo_postgres::{AuditRepository, OAuthClientRepository};
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::adapters::security::jwt_decoding_key_from_jwk;
+use crate::http::sessions::SessionProfileHandles;
 #[cfg(not(test))]
 use crate::runtime_modules::ServerRuntimeModuleRegistry;
 use crate::settings::Settings;
-use crate::support::security::jwt_decoding_key_from_jwk;
-use crate::support::sessions::SessionProfileHandles;
 use nazo_key_management::signing_algorithm_name;
 
 #[derive(Clone)]
@@ -248,7 +248,7 @@ impl OidcLogoutOperations for OidcLogoutHandles {
             let execution = self
                 .service
                 .execute(LogoutInput {
-                    tenant_id: crate::support::tenancy::DEFAULT_TENANT_ID,
+                    tenant_id: crate::domain::tenancy::DEFAULT_TENANT_ID,
                     request: RpLogoutRequest {
                         id_token_hint_present: command.request.id_token_hint.is_some(),
                         client_id: command.request.client_id,

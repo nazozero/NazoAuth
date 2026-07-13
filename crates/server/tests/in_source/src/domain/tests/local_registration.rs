@@ -17,18 +17,21 @@ use uuid::Uuid;
 
 use super::*;
 use crate::{
-    config::ConfigSource,
-    domain::AppState,
-    settings::{EmailDelivery, Settings, SmtpEmailSettings, SmtpTlsMode},
-    support::{
-        blake3_hex, hash_password, normalize_email_address, random_urlsafe_token, valkey_get,
-        valkey_set_ex,
+    adapters::{
+        email::normalize_email_address,
+        security::{blake3_hex, hash_password, random_urlsafe_token},
     },
-    test_support::registration_service,
+    config::ConfigSource,
+    domain::TestAppState,
+    settings::{EmailDelivery, Settings, SmtpEmailSettings, SmtpTlsMode},
+    test_support::{
+        registration_service,
+        valkey::{valkey_get, valkey_set_ex},
+    },
 };
 
 struct LiveFixture {
-    state: Data<AppState>,
+    state: Data<TestAppState>,
 }
 
 impl LiveFixture {
@@ -56,7 +59,7 @@ impl LiveFixture {
         let valkey = builder.build().ok()?;
         valkey.init().await.ok()?;
         Some(Self {
-            state: Data::new(AppState {
+            state: Data::new(TestAppState {
                 diesel_db: nazo_postgres::create_pool(database_url, 4).ok()?,
                 valkey,
                 settings: Arc::new(settings),
@@ -71,7 +74,7 @@ impl LiveFixture {
         nazo_postgres::UserRepository,
         nazo_valkey::AuthenticationStore,
         crate::bootstrap::RegistrationSecretHasher,
-        crate::support::email::SmtpVerificationEmailDelivery,
+        crate::adapters::email::SmtpVerificationEmailDelivery,
     > {
         ServerLocalRegistrationOperations::new(
             registration_service(self.state.get_ref()).get_ref().clone(),

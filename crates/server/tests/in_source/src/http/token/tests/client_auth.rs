@@ -4,7 +4,10 @@ use std::sync::Arc;
 use crate::config::ConfigSource;
 use nazo_postgres::create_pool;
 
-use crate::support::{ClientSigningFixture, IpCidr, client_signing_fixture, hash_client_secret};
+use crate::adapters::security::hash_client_secret;
+use crate::http::client_ip::IpCidr;
+use crate::test_support::ClientSigningFixture;
+use crate::test_support::client_signing_fixture;
 use actix_web::test::TestRequest;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
@@ -23,21 +26,21 @@ fn dummy_client_secret_salt_is_deterministic_but_not_global() {
     );
 }
 
-fn token_management_state() -> AppState {
+fn token_management_state() -> TestAppState {
     token_management_state_with_settings(
         Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
     )
 }
 
-fn request_facts(state: &AppState, request: &actix_web::HttpRequest) -> ClientAuthRequestFacts {
+fn request_facts(state: &TestAppState, request: &actix_web::HttpRequest) -> ClientAuthRequestFacts {
     crate::http::token::client_auth_request_facts(
         request,
         &state.settings.endpoint.trusted_proxy_cidrs,
     )
 }
 
-fn token_management_state_with_settings(settings: Settings) -> AppState {
-    AppState {
+fn token_management_state_with_settings(settings: Settings) -> TestAppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_client_auth_test_invalid:nazo_client_auth_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -52,7 +55,7 @@ fn token_management_state_with_settings(settings: Settings) -> AppState {
     }
 }
 
-fn token_management_state_with_trusted_proxy() -> AppState {
+fn token_management_state_with_trusted_proxy() -> TestAppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.endpoint.trusted_proxy_cidrs =

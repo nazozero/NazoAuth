@@ -6,12 +6,12 @@ fn production_bootstrap_only_publishes_focused_application_data() {
     let source = include_str!("../../../../../src/bootstrap/mod.rs");
 
     assert!(
-        !source.contains("web::Data::new(AppState"),
-        "production bootstrap must not reconstruct the giant AppState"
+        !source.contains("web::Data::new(TestAppState"),
+        "production bootstrap must not reconstruct the giant TestAppState"
     );
     assert!(
         !source.contains(".app_data(state"),
-        "production Actix app must not publish the giant AppState"
+        "production Actix app must not publish the giant TestAppState"
     );
 }
 

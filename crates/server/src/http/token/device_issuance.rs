@@ -5,12 +5,13 @@
 //! [`TokenIssuanceContext`] and [`ServerTokenService`]. Sender constraints and
 //! client-assertion consumption use the focused authorization service carried by
 //! the issuance context.
+use crate::adapters::security::ValidatedClientAssertion;
 use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
-use crate::support::{
-    dpop::DpopError, dpop::DpopErrorContext, dpop::dpop_error_response,
-    dpop::validate_dpop_proof_with_authorization_service,
-    mtls::request_mtls_thumbprint_from_trusted_proxy, security::ValidatedClientAssertion,
-};
+use crate::http::dpop::DpopError;
+use crate::http::dpop::DpopErrorContext;
+use crate::http::dpop::dpop_error_response;
+use crate::http::dpop::validate_dpop_proof_with_authorization_service;
+use crate::http::mtls::request_mtls_thumbprint_from_trusted_proxy;
 use actix_web::{HttpRequest, HttpResponse, http::StatusCode};
 use chrono::Utc;
 use nazo_auth::{DevicePollCommit, DevicePollFailure};

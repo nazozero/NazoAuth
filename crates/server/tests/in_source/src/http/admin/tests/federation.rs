@@ -43,7 +43,7 @@ fn admin_federation_handler_uses_focused_dependencies() {
         "/src/http/admin/federation.rs"
     ));
 
-    assert!(!source.contains("Data<AppState>"));
+    assert!(!source.contains("Data<TestAppState>"));
     assert!(!source.contains("diesel_db"));
     assert!(!source.contains("valkey_connection"));
     assert!(source.contains("Data<AdminSessionHandles>"));

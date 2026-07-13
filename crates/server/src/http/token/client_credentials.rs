@@ -1,19 +1,24 @@
 //! client_credentials grant 处理。
+use crate::adapters::security::ValidatedClientAssertion;
 #[cfg(test)]
-use crate::domain::AppState;
+use crate::domain::TestAppState;
+use crate::domain::client_policy::audiences_allowed;
+use crate::domain::client_policy::is_subset;
+use crate::domain::client_policy::parse_scope;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
 use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
+use crate::http::dpop::DpopError;
+use crate::http::dpop::DpopErrorContext;
+use crate::http::dpop::dpop_error_response;
+use crate::http::dpop::validate_dpop_proof_with_authorization_service;
+use crate::http::mtls::request_mtls_thumbprint_from_trusted_proxy;
 #[cfg(test)]
 use crate::settings::Settings;
-use crate::support::{
-    dpop::DpopError, dpop::DpopErrorContext, dpop::dpop_error_response,
-    dpop::validate_dpop_proof_with_authorization_service,
-    mtls::request_mtls_thumbprint_from_trusted_proxy, oauth::audiences_allowed, oauth::is_subset,
-    oauth::parse_scope, security::ValidatedClientAssertion,
-};
-#[cfg(test)]
-use crate::support::{
-    tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
-};
 use actix_web::http::StatusCode;
 #[cfg(test)]
 use actix_web::web::Data;
@@ -202,7 +207,7 @@ pub(crate) async fn token_client_credentials_with_service(
 
 #[cfg(test)]
 pub(crate) async fn token_client_credentials(
-    state: &AppState,
+    state: &TestAppState,
     req: &HttpRequest,
     client: &ClientRow,
     form: &TokenForm,

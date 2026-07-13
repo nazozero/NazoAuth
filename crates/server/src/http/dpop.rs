@@ -8,7 +8,7 @@ use serde_json::json;
 pub(crate) use nazo_auth::DpopError;
 pub(crate) use nazo_http_actix::{DpopErrorContext, dpop_error_response};
 
-use super::audit::{audit_event, audit_fields};
+use crate::adapters::audit::{audit_event, audit_fields};
 
 pub(crate) fn dpop_proof_present(request: &HttpRequest) -> bool {
     nazo_http_actix::dpop_proof_present(request.headers())

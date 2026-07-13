@@ -3,12 +3,15 @@ use crate::config::ConfigSource;
 use crate::http::authorization::{
     AuthorizationHttpConfig, AuthorizationTestFixture, ServerAuthorizationService,
 };
-use crate::support::sessions::AdminSessionHandles;
+use crate::http::sessions::AdminSessionHandles;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use nazo_postgres::{DbPool, create_pool, get_conn};
 
+use crate::adapters::security::hash_client_secret;
+use crate::http::client_ip::IpCidr;
 use crate::settings::{AuthorizationServerProfile, DpopNoncePolicy};
-use crate::support::{ClientSigningFixture, IpCidr, client_signing_fixture, hash_client_secret};
+use crate::test_support::ClientSigningFixture;
+use crate::test_support::client_signing_fixture;
 use actix_web::test::TestRequest;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Nullable, Text, Uuid as SqlUuid};
@@ -256,7 +259,7 @@ impl ParTestFixture {
             AdminSessionHandles::new(
                 nazo_valkey::SessionStore::new(&connection),
                 nazo_postgres::UserRepository::new(database.clone()),
-                crate::support::sessions::SessionHttpConfig::new(
+                crate::http::sessions::SessionHttpConfig::new(
                     &session.session_cookie_name,
                     &session.csrf_cookie_name,
                     session.cookie_secure,

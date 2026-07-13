@@ -12,12 +12,12 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
-use crate::domain::{AppState, DatabaseUserFixture};
-use crate::support::SessionPayload;
+use crate::domain::{DatabaseUserFixture, TestAppState};
+use crate::http::sessions::SessionPayload;
 use nazo_postgres::{create_pool, get_conn};
 
 async fn authorize_consent(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     req: HttpRequest,
     Query(q): Query<HashMap<String, String>>,
 ) -> HttpResponse {
@@ -79,7 +79,7 @@ fn database_url_with_search_path(schema: &str) -> Option<String> {
 
 #[derive(Clone)]
 struct ConsentLiveFixture {
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     schema: Option<String>,
 }
 
@@ -119,7 +119,7 @@ impl ConsentLiveFixture {
         valkey.init().await.expect("valkey should connect");
 
         Some(Self {
-            state: Data::new(AppState {
+            state: Data::new(TestAppState {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
@@ -166,8 +166,8 @@ impl ConsentLiveFixture {
         valkey
     }
 
-    fn state_with_valkey(&self, valkey: fred::prelude::Client) -> Data<AppState> {
-        Data::new(AppState {
+    fn state_with_valkey(&self, valkey: fred::prelude::Client) -> Data<TestAppState> {
+        Data::new(TestAppState {
             diesel_db: self.state.diesel_db.clone(),
             valkey,
             settings: self.state.settings.clone(),
@@ -464,7 +464,7 @@ async fn consent_page_response_exposes_only_page_safe_fields() {
 
 #[actix_web::test]
 async fn authorize_consent_requires_login() {
-    let state = AppState {
+    let state = TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_consent_test_invalid:nazo_consent_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),

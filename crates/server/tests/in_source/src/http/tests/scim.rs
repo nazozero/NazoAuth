@@ -2,8 +2,8 @@ use super::*;
 use std::sync::Arc;
 
 use crate::config::ConfigSource;
+use crate::http::client_ip::ClientIpConfig;
 use crate::settings::Settings;
-use crate::support::client_ip::ClientIpConfig;
 use diesel::sql_query;
 use diesel::sql_types::{BigInt, Jsonb, Nullable, Text, Timestamptz, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
@@ -305,11 +305,11 @@ fn scim_routes_are_static_and_handlers_do_not_depend_on_app_state() {
     }
     let handlers = include_str!("../../../../../src/http/scim.rs");
     let auth = include_str!("../../../../../src/http/scim/auth.rs");
-    assert!(!handlers.contains("Data<AppState>"));
+    assert!(!handlers.contains("Data<TestAppState>"));
     assert!(!handlers.contains("ScimRepository"));
     assert!(!handlers.contains("AuditRepository"));
     assert!(!handlers.contains("ScimHandles"));
-    assert!(!auth.contains("AppState"));
+    assert!(!auth.contains("TestAppState"));
     assert!(!auth.contains("nazo_postgres"));
 }
 

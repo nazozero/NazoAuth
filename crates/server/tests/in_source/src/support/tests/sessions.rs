@@ -39,8 +39,8 @@ fn unavailable_valkey_client() -> fred::prelude::Client {
         .expect("unavailable valkey client construction should not connect")
 }
 
-fn session_state() -> AppState {
-    AppState {
+fn session_state() -> TestAppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_session_test_invalid:nazo_session_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -55,7 +55,7 @@ fn session_state() -> AppState {
     }
 }
 
-async fn live_session_state() -> Option<AppState> {
+async fn live_session_state() -> Option<TestAppState> {
     let valkey_url = std::env::var("VALKEY_URL").ok()?;
     let mut state = session_state();
     let mut builder =
@@ -74,7 +74,7 @@ async fn live_session_state() -> Option<AppState> {
     Some(state)
 }
 
-fn session_request(state: &AppState, sid: &str) -> HttpRequest {
+fn session_request(state: &TestAppState, sid: &str) -> HttpRequest {
     TestRequest::default()
         .cookie(actix_web::cookie::Cookie::new(
             state.settings.session.session_cookie_name.clone(),
@@ -83,7 +83,7 @@ fn session_request(state: &AppState, sid: &str) -> HttpRequest {
         .to_http_request()
 }
 
-async fn store_raw_session(state: &AppState, sid: &str, raw: &str) {
+async fn store_raw_session(state: &TestAppState, sid: &str, raw: &str) {
     valkey_set_ex(
         &state.valkey,
         format!("oauth:session:{sid}"),

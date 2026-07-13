@@ -2,6 +2,8 @@
 // 每个子模块只描述一种领域概念，本模块只负责向 crate 内部 re-export。
 mod authorization_decision;
 mod backchannel_logout_worker;
+pub(crate) mod client_jwe;
+pub(crate) mod client_policy;
 #[cfg(test)]
 #[path = "../../tests/in_source/src/domain/database_user_fixture.rs"]
 mod database_user_fixture;
@@ -10,6 +12,7 @@ mod local_registration;
 mod metadata;
 mod mfa_profile;
 mod oauth;
+pub(crate) mod oidc_claims;
 mod oidc_logout;
 mod passkey;
 mod password_login;
@@ -18,13 +21,15 @@ mod resource_server;
 mod rows;
 #[cfg(not(test))]
 mod scim;
+pub(crate) mod sector_identifier;
 mod session_management;
-#[cfg(test)]
-mod state;
+pub(crate) mod tenancy;
 #[cfg(not(test))]
 mod token_management;
 mod userinfo;
 
+#[cfg(test)]
+pub(crate) use crate::test_support::TestAppState;
 pub(crate) use authorization_decision::ServerAuthorizationDecisionOperations;
 #[cfg(not(test))]
 pub(crate) use backchannel_logout_worker::{
@@ -65,8 +70,6 @@ pub(crate) use scim::{
     ServerScimBootstrapPasswordProvider, ServerScimCursorProtector, ServerScimRequestAuthorizer,
 };
 pub(crate) use session_management::ServerSessionManagementOperations;
-#[cfg(test)]
-pub(crate) use state::AppState;
 #[cfg(not(test))]
 pub(crate) use token_management::{
     ServerTokenManagementOperations, ServerTokenManagementRequestGuard,

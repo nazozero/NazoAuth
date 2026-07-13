@@ -4,8 +4,8 @@ pub(crate) mod detail;
 pub(crate) mod list;
 pub(crate) mod update;
 
+use crate::domain::sector_identifier::fetch_sector_identifier_uris;
 use crate::settings::Settings;
-use crate::support::sector_identifier::fetch_sector_identifier_uris;
 use nazo_auth::{AdminClientPolicy, SectorIdentifierFuture, SectorIdentifierResolverPort};
 
 pub(crate) use nazo_key_management::ClientRegistrationCrypto as ServerAdminClientCrypto;
@@ -18,20 +18,20 @@ pub(crate) type ServerAdminClientService = nazo_auth::AdminClientService<
 
 #[derive(Clone)]
 pub(crate) struct AdminClientConfig {
-    client_ip: crate::support::client_ip::ClientIpConfig,
+    client_ip: crate::http::client_ip::ClientIpConfig,
 }
 
 impl AdminClientConfig {
     pub(crate) fn from_settings(settings: &Settings) -> Self {
         Self {
-            client_ip: crate::support::client_ip::ClientIpConfig::new(
+            client_ip: crate::http::client_ip::ClientIpConfig::new(
                 &settings.endpoint.trusted_proxy_cidrs,
                 settings.endpoint.client_ip_header_mode,
             ),
         }
     }
 
-    pub(crate) fn client_ip(&self) -> &crate::support::client_ip::ClientIpConfig {
+    pub(crate) fn client_ip(&self) -> &crate::http::client_ip::ClientIpConfig {
         &self.client_ip
     }
 }
@@ -63,12 +63,12 @@ pub(crate) mod test_support {
         AdminClientConfig, ServerAdminClientCrypto, ServerAdminClientService,
         ServerSectorIdentifierResolver, admin_client_policy,
     };
-    use crate::settings::Settings;
-    use crate::support::{
-        oauth::client_jwks_contains_signing_key, oauth::client_jwks_matching_encryption_key_count,
-        oauth::validate_client_jwks_with_missing_kid_policy, oauth::validate_self_signed_mtls_jwks,
-        security::hash_client_secret, security::random_urlsafe_token,
+    use crate::adapters::security::{hash_client_secret, random_urlsafe_token};
+    use crate::domain::client_policy::{
+        client_jwks_contains_signing_key, client_jwks_matching_encryption_key_count,
+        validate_client_jwks_with_missing_kid_policy, validate_self_signed_mtls_jwks,
     };
+    use crate::settings::Settings;
     use nazo_auth::AdminClientCryptoPort;
     use serde_json::Value;
 
@@ -80,12 +80,12 @@ pub(crate) mod test_support {
         database: nazo_postgres::DbPool,
         valkey: nazo_valkey::ValkeyConnection,
         settings: &Settings,
-    ) -> actix_web::web::Data<crate::support::sessions::AdminSessionHandles> {
+    ) -> actix_web::web::Data<crate::http::sessions::AdminSessionHandles> {
         let session = &settings.session;
-        actix_web::web::Data::new(crate::support::sessions::AdminSessionHandles::new(
+        actix_web::web::Data::new(crate::http::sessions::AdminSessionHandles::new(
             nazo_valkey::SessionStore::new(&valkey),
             nazo_postgres::UserRepository::new(database),
-            crate::support::sessions::SessionHttpConfig::new(
+            crate::http::sessions::SessionHttpConfig::new(
                 &session.session_cookie_name,
                 &session.csrf_cookie_name,
                 session.cookie_secure,
@@ -195,7 +195,7 @@ pub(crate) mod test_support {
                 tenant: nazo_identity::TenantContext::default_system(),
                 pairwise_subject_secret: pairwise_subject_secret.map(ToOwned::to_owned),
                 client_secret_pepper:
-                    crate::support::security::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER.to_owned(),
+                    crate::adapters::security::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER.to_owned(),
             },
             &ServerSectorIdentifierResolver,
             &crypto,
@@ -219,7 +219,7 @@ mod boundary_tests {
                 "nazo_postgres",
                 "ClientRow",
                 "KeyManager",
-                "Data<AppState>",
+                "Data<TestAppState>",
                 "test_dependencies",
             ] {
                 assert!(!source.contains(forbidden), "{name} contains {forbidden}");

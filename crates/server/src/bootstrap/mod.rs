@@ -28,9 +28,15 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use actix_web::{App, HttpServer, dev::Service, middleware::from_fn, web};
 
+use crate::adapters::email::{SmtpVerificationEmailDelivery, email_delivery_configured};
+use crate::adapters::security::{
+    configure_password_hash_limits, default_password_hash_max_concurrency,
+    default_password_hash_queue_timeout_ms, dummy_password_hash, initialize_dummy_password_hash,
+};
 use crate::config::{ConfigSource, database_max_connections, database_url};
 #[cfg(test)]
 use crate::domain::DynamicRegistrationHandles;
+use crate::domain::tenancy::{DEFAULT_TENANT_ID, default_tenant_context};
 #[cfg(not(test))]
 use crate::domain::{
     BackchannelLogoutWorker, ServerScimBootstrapPasswordProvider, ServerScimCursorProtector,
@@ -62,8 +68,11 @@ use crate::http::auth::federation::{
 use crate::http::authorization::{
     AuthorizationEndpoint, AuthorizationHttpConfig, ServerAuthorizationService,
 };
+use crate::http::client_ip::ClientIpConfig;
+use crate::http::rate_limit::{AuthRequestLimiter, TokenManagementRequestLimiter};
 #[cfg(test)]
 use crate::http::scim::{ScimConfig, ScimEndpoint, ScimRuntimeAdmission};
+use crate::http::sessions::{AdminSessionHandles, SessionHttpConfig, SessionProfileHandles};
 #[cfg(not(test))]
 use crate::http::token::ServerTokenManagementRequestFactsExtractor;
 use crate::http::token::ciba::{CibaHttpConfig, CibaTokenHandles, ServerCibaService};
@@ -73,15 +82,6 @@ use crate::http::token::dispatch::TokenEndpointHandles;
 use crate::http::token::issue::TokenIssuanceConfig;
 use crate::runtime_modules::{RuntimeModules, ServerRuntimeModuleRegistry};
 use crate::settings::Settings;
-use crate::support::client_ip::ClientIpConfig;
-use crate::support::email::{SmtpVerificationEmailDelivery, email_delivery_configured};
-use crate::support::rate_limit::{AuthRequestLimiter, TokenManagementRequestLimiter};
-use crate::support::security::{
-    configure_password_hash_limits, default_password_hash_max_concurrency,
-    default_password_hash_queue_timeout_ms, dummy_password_hash, initialize_dummy_password_hash,
-};
-use crate::support::sessions::{AdminSessionHandles, SessionHttpConfig, SessionProfileHandles};
-use crate::support::tenancy::{DEFAULT_TENANT_ID, default_tenant_context};
 #[cfg(test)]
 use actix_web::http::header;
 use nazo_http_actix::{

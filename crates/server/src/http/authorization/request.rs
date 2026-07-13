@@ -1,22 +1,36 @@
 //! 授权请求入口端点。
+use crate::adapters::security::blake3_hex;
 #[cfg(test)]
-use crate::domain::AppState;
+use crate::adapters::security::pkce_s256;
+use crate::adapters::security::random_urlsafe_token;
+#[cfg(test)]
+use crate::domain::TestAppState;
+use crate::domain::client_jwe::JwePayloadKind;
+use crate::domain::client_jwe::client_jwe_key;
+use crate::domain::client_jwe::encrypt_compact_jwe;
+use crate::domain::client_policy::RedirectUriError;
+#[cfg(test)]
+use crate::domain::client_policy::authorization_code_key;
+use crate::domain::client_policy::client_supports_grant;
+use crate::domain::client_policy::registered_redirect_uri;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
 #[cfg(test)]
 use crate::domain::{AuthorizationCodeState, DatabaseUserFixture, PushedAuthorizationRequest};
 use crate::domain::{ClientRow, ConsentPayload};
 #[cfg(test)]
-use crate::settings::Settings;
-use crate::support::{
-    jwe::JwePayloadKind, jwe::client_jwe_key, jwe::encrypt_compact_jwe, oauth::RedirectUriError,
-    oauth::client_supports_grant, oauth::registered_redirect_uri, security::blake3_hex,
-    security::random_urlsafe_token, views::append_query,
-};
+use crate::http::sessions::SessionPayload;
+use crate::http::views::append_query;
 #[cfg(test)]
-use crate::support::{
-    oauth::authorization_code_key, security::pkce_s256, sessions::SessionPayload,
-    tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
-    valkey::valkey_get, valkey::valkey_set_ex,
-};
+use crate::settings::Settings;
+#[cfg(test)]
+use crate::test_support::valkey::valkey_get;
+#[cfg(test)]
+use crate::test_support::valkey::valkey_set_ex;
 use actix_web::http::StatusCode;
 #[cfg(test)]
 use actix_web::http::header;
@@ -533,7 +547,7 @@ pub(crate) async fn consume_pushed_authorization_request_with_context(
 
 #[cfg(test)]
 pub(crate) async fn consume_pushed_authorization_request(
-    state: &AppState,
+    state: &TestAppState,
     request_uri: &str,
 ) -> Result<(), PushedAuthorizationRequestConsumeError> {
     let dependencies = super::TestAuthorizationDependencies::new(state);
@@ -672,7 +686,7 @@ pub(crate) async fn authorization_response_redirect_with_context(
 
 #[cfg(test)]
 pub(crate) async fn authorization_response_redirect(
-    state: &AppState,
+    state: &TestAppState,
     input: AuthorizationResponseRedirect<'_>,
 ) -> HttpResponse {
     let dependencies = super::TestAuthorizationDependencies::new(state);
@@ -709,7 +723,7 @@ async fn authorization_response_redirect_with_protection_context(
 
 #[cfg(test)]
 async fn authorization_response_redirect_with_protection(
-    state: &AppState,
+    state: &TestAppState,
     input: AuthorizationResponseRedirect<'_>,
     protection: AuthorizationResponseProtection<'_>,
 ) -> HttpResponse {
@@ -799,7 +813,10 @@ async fn consume_reauth_nonce_with_context(
 }
 
 #[cfg(test)]
-async fn consume_reauth_nonce(state: &AppState, q: &mut HashMap<String, String>) -> Option<i64> {
+async fn consume_reauth_nonce(
+    state: &TestAppState,
+    q: &mut HashMap<String, String>,
+) -> Option<i64> {
     let dependencies = super::TestAuthorizationDependencies::new(state);
     consume_reauth_nonce_with_context(&dependencies.context(), q).await
 }
@@ -823,7 +840,7 @@ async fn authorization_login_url_with_context(
 
 #[cfg(test)]
 async fn authorization_login_url(
-    state: &AppState,
+    state: &TestAppState,
     q: &HashMap<String, String>,
     reauthentication_required: bool,
 ) -> Result<String, HttpResponse> {

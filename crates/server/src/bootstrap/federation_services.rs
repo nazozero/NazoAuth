@@ -1,9 +1,11 @@
 use serde_json::json;
 
-use crate::support::{
-    audit::audit_event, audit::audit_fields, security::PasswordHashingError, security::blake3_hex,
-    security::hash_password_blocking_limited, security::random_urlsafe_token,
-};
+use crate::adapters::audit::audit_event;
+use crate::adapters::audit::audit_fields;
+use crate::adapters::security::PasswordHashingError;
+use crate::adapters::security::blake3_hex;
+use crate::adapters::security::hash_password_blocking_limited;
+use crate::adapters::security::random_urlsafe_token;
 
 #[derive(Clone, Copy)]
 pub(crate) struct FederationBootstrapPasswordHasher;

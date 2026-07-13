@@ -1,5 +1,6 @@
 use super::*;
-use crate::support::{valkey_atomic_snapshot, valkey_eval_string};
+use crate::test_support::valkey::valkey_atomic_snapshot;
+use crate::test_support::valkey::valkey_eval_string;
 use fred::interfaces::ClientLike;
 use fred::prelude::{
     Builder as ValkeyBuilder, Client as ValkeyClient, Config as ValkeyConfig, ConnectionConfig,

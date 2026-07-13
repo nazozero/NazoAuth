@@ -14,23 +14,25 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
-use crate::domain::{AppState, ClientRow, DatabaseUserFixture};
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
+use crate::domain::{ClientRow, DatabaseUserFixture, TestAppState};
 use crate::http::admin::clients::{
     ServerAdminClientCrypto, ServerSectorIdentifierResolver, admin_client_policy,
 };
+use crate::http::sessions::SessionHttpConfig;
+use crate::http::sessions::SessionPayload;
 use crate::schema::oauth_clients;
 use crate::settings::Settings;
-use crate::support::sessions::SessionHttpConfig;
-use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_set_ex,
-};
+use crate::test_support::valkey::valkey_set_ex;
 use chrono::Utc;
 use diesel::prelude::*;
 use nazo_identity::AccessRequestStatus;
 use nazo_postgres::{create_pool, get_conn};
 
 async fn profile_access_requests_from_state(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     req: HttpRequest,
 ) -> HttpResponse {
     crate::http::profile::access_requests::my_access_requests(
@@ -42,7 +44,7 @@ async fn profile_access_requests_from_state(
 }
 
 async fn profile_delivery_from_state(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     req: HttpRequest,
     query: Query<HashMap<String, String>>,
 ) -> HttpResponse {
@@ -94,8 +96,8 @@ fn unavailable_valkey_client() -> fred::prelude::Client {
         .expect("unavailable valkey client construction should not connect")
 }
 
-fn test_state() -> AppState {
-    AppState {
+fn test_state() -> TestAppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_access_request_test_invalid:nazo_access_request_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -120,7 +122,9 @@ struct TestAdminAccessRequestDependencies {
     client_ip_config: Data<ClientIpConfig>,
 }
 
-fn admin_access_request_dependencies(state: &Data<AppState>) -> TestAdminAccessRequestDependencies {
+fn admin_access_request_dependencies(
+    state: &Data<TestAppState>,
+) -> TestAdminAccessRequestDependencies {
     let session = &state.settings.session;
     let protocol = &state.settings.protocol;
     let storage = &state.settings.storage;
@@ -155,7 +159,7 @@ fn admin_access_request_dependencies(state: &Data<AppState>) -> TestAdminAccessR
 }
 
 async fn invoke_admin_access_requests(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     req: HttpRequest,
     query: Query<HashMap<String, String>>,
 ) -> HttpResponse {
@@ -170,7 +174,7 @@ async fn invoke_admin_access_requests(
 }
 
 async fn invoke_admin_approve_access_request(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     req: HttpRequest,
     path: actix_web::web::Path<Uuid>,
     payload: Json<CreateClientRequest>,
@@ -193,7 +197,7 @@ async fn invoke_admin_approve_access_request(
 }
 
 async fn invoke_admin_reject_access_request(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     req: HttpRequest,
     path: actix_web::web::Path<Uuid>,
     payload: Json<RejectAccessRequest>,
@@ -298,7 +302,7 @@ fn database_url_with_search_path(schema: &str) -> Option<String> {
 }
 
 struct LiveAdminAccessRequestFixture {
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     schema: Option<String>,
 }
 
@@ -346,7 +350,7 @@ impl LiveAdminAccessRequestFixture {
         valkey.init().await.expect("valkey should connect");
 
         Some(Self {
-            state: Data::new(AppState {
+            state: Data::new(TestAppState {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
@@ -453,8 +457,8 @@ impl LiveAdminAccessRequestFixture {
         client
     }
 
-    fn state_with_valkey(&self, valkey: fred::prelude::Client) -> Data<AppState> {
-        Data::new(AppState {
+    fn state_with_valkey(&self, valkey: fred::prelude::Client) -> Data<TestAppState> {
+        Data::new(TestAppState {
             diesel_db: self.state.diesel_db.clone(),
             valkey,
             settings: self.state.settings.clone(),

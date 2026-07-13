@@ -20,7 +20,7 @@ mod tests {
 
         for source in [&server_transports, account_transport] {
             for forbidden in [
-                "Data<AppState>",
+                "Data<TestAppState>",
                 "nazo_postgres::",
                 "nazo_valkey::",
                 "diesel::",

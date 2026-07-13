@@ -11,10 +11,13 @@ mod runtime_modules;
 pub use nazo_resource_server as resource_server;
 mod schema;
 mod settings;
-mod support;
 
 #[cfg(test)]
 pub(crate) mod test_support {
+    pub(crate) mod valkey;
+
+    use std::sync::Arc;
+
     use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
     use ed25519_dalek::SigningKey;
     use jsonwebtoken::jwk::Jwk;
@@ -22,16 +25,40 @@ pub(crate) mod test_support {
     use p256::elliptic_curve::{Generate, pkcs8::EncodePrivateKey as _};
     use serde_json::{Value, json};
 
+    /// Legacy all-in-one state retained only for integration-test fixtures.
+    /// Production handlers receive focused endpoint handles instead.
+    #[derive(Clone)]
+    pub(crate) struct TestAppState {
+        pub(crate) diesel_db: nazo_postgres::DbPool,
+        pub(crate) valkey: nazo_valkey::test_support::Client,
+        pub(crate) settings: Arc<crate::settings::Settings>,
+        pub(crate) keyset: nazo_key_management::KeyManager,
+    }
+
+    impl TestAppState {
+        pub(crate) fn active_module_snapshot(&self) -> nazo_runtime_modules::ActiveModuleSnapshot {
+            nazo_runtime_modules::ActiveModuleSnapshot {
+                revision: nazo_runtime_modules::ModuleRevision::new(0),
+                accepting: crate::runtime_modules::inherited_enabled(&self.settings),
+                draining: std::collections::BTreeSet::new(),
+            }
+        }
+
+        pub(crate) fn valkey_connection(&self) -> nazo_valkey::ValkeyConnection {
+            nazo_valkey::ValkeyConnection::from_existing_client(self.valkey.clone())
+        }
+    }
+
     pub(crate) fn profile_sessions(
-        state: &crate::domain::AppState,
-    ) -> actix_web::web::Data<crate::support::sessions::SessionProfileHandles> {
+        state: &crate::domain::TestAppState,
+    ) -> actix_web::web::Data<crate::http::sessions::SessionProfileHandles> {
         actix_web::web::Data::new(
-            crate::support::sessions::SessionProfileHandles::from_test_state(state),
+            crate::http::sessions::SessionProfileHandles::from_test_state(state),
         )
     }
 
     pub(crate) fn avatar_profiles(
-        state: &crate::domain::AppState,
+        state: &crate::domain::TestAppState,
     ) -> actix_web::web::Data<crate::bootstrap::AvatarProfileService> {
         actix_web::web::Data::new(crate::bootstrap::AvatarProfileService::new(
             nazo_postgres::UserRepository::new(state.diesel_db.clone()),
@@ -44,7 +71,7 @@ pub(crate) mod test_support {
     }
 
     pub(crate) fn access_request_profiles(
-        state: &crate::domain::AppState,
+        state: &crate::domain::TestAppState,
     ) -> actix_web::web::Data<crate::bootstrap::ClientAccessProfileService> {
         actix_web::web::Data::new(crate::bootstrap::ClientAccessProfileService::new(
             nazo_postgres::AccessRequestRepository::new(state.diesel_db.clone()),
@@ -55,27 +82,29 @@ pub(crate) mod test_support {
     }
 
     pub(crate) fn delivery_profiles(
-        state: &crate::domain::AppState,
+        state: &crate::domain::TestAppState,
     ) -> actix_web::web::Data<crate::bootstrap::ClientAccessProfileService> {
         access_request_profiles(state)
     }
 
     pub(crate) fn registration_service(
-        state: &crate::domain::AppState,
+        state: &crate::domain::TestAppState,
     ) -> actix_web::web::Data<crate::bootstrap::LocalRegistrationService> {
         let identity = &state.settings.identity;
         actix_web::web::Data::new(crate::bootstrap::LocalRegistrationService::new(
             nazo_postgres::UserRepository::new(state.diesel_db.clone()),
             nazo_valkey::AuthenticationStore::new(&state.valkey_connection()),
             crate::bootstrap::RegistrationSecretHasher,
-            crate::support::email::SmtpVerificationEmailDelivery::from_delivery(
+            crate::adapters::email::SmtpVerificationEmailDelivery::from_delivery(
                 &identity.email.delivery,
             ),
-            crate::support::tenancy::default_tenant_context()
+            crate::domain::tenancy::default_tenant_context()
                 .as_identity_context()
                 .expect("default tenant identifiers are valid"),
             nazo_identity::RegistrationServiceConfig {
-                delivery_enabled: crate::support::email::email_delivery_configured(&state.settings),
+                delivery_enabled: crate::adapters::email::email_delivery_configured(
+                    &state.settings,
+                ),
                 send_peer_cooldown_seconds: identity.email.send_peer_cooldown_seconds,
                 send_cooldown_seconds: identity.email.send_cooldown_seconds,
                 code_ttl_seconds: identity.email.code_ttl_seconds,
@@ -84,7 +113,7 @@ pub(crate) mod test_support {
     }
 
     pub(crate) fn passkey_service(
-        state: &crate::domain::AppState,
+        state: &crate::domain::TestAppState,
     ) -> actix_web::web::Data<crate::bootstrap::LocalPasskeyService> {
         let passkey = &state.settings.identity.passkey;
         let session = &state.settings.session;
@@ -96,7 +125,7 @@ pub(crate) mod test_support {
             nazo_valkey::SessionStore::new(&state.valkey_connection()),
             crate::bootstrap::TracingPasskeyAudit,
             nazo_identity::PasskeyServiceConfig {
-                tenant_id: nazo_identity::TenantId::new(crate::support::tenancy::DEFAULT_TENANT_ID)
+                tenant_id: nazo_identity::TenantId::new(crate::domain::tenancy::DEFAULT_TENANT_ID)
                     .unwrap(),
                 rp_id: passkey.rp_id.to_owned(),
                 rp_name: passkey.rp_name.to_owned(),
@@ -111,7 +140,7 @@ pub(crate) mod test_support {
     }
 
     pub(crate) fn federation_service(
-        state: &crate::domain::AppState,
+        state: &crate::domain::TestAppState,
     ) -> actix_web::web::Data<crate::bootstrap::LocalFederationService> {
         actix_web::web::Data::new(crate::bootstrap::LocalFederationService::new(
             nazo_postgres::FederationRepository::new(state.diesel_db.clone()),
@@ -120,7 +149,7 @@ pub(crate) mod test_support {
             nazo_valkey::SessionStore::new(&state.valkey_connection()),
             crate::bootstrap::TracingFederationAudit,
             nazo_identity::FederationServiceConfig {
-                tenant: crate::support::tenancy::default_tenant_context()
+                tenant: crate::domain::tenancy::default_tenant_context()
                     .as_identity_context()
                     .unwrap(),
                 state_ttl_seconds: crate::http::auth::federation::FEDERATION_STATE_TTL_SECONDS,
@@ -131,7 +160,7 @@ pub(crate) mod test_support {
     }
 
     pub(crate) fn federation_http_config(
-        state: &crate::domain::AppState,
+        state: &crate::domain::TestAppState,
     ) -> actix_web::web::Data<crate::http::auth::federation::FederationHttpConfig> {
         let session = &state.settings.session;
         let federation = &state.settings.identity.federation;
@@ -146,10 +175,10 @@ pub(crate) mod test_support {
     }
 
     pub(crate) fn auth_request_limiter(
-        state: &crate::domain::AppState,
-    ) -> actix_web::web::Data<crate::support::rate_limit::AuthRequestLimiter> {
+        state: &crate::domain::TestAppState,
+    ) -> actix_web::web::Data<crate::http::rate_limit::AuthRequestLimiter> {
         let rate_limit = &state.settings.identity.rate_limit;
-        actix_web::web::Data::new(crate::support::rate_limit::AuthRequestLimiter::new(
+        actix_web::web::Data::new(crate::http::rate_limit::AuthRequestLimiter::new(
             nazo_valkey::RateLimitStore::new(&state.valkey_connection()),
             rate_limit.window_seconds,
             rate_limit.auth_max_requests,
@@ -158,10 +187,10 @@ pub(crate) mod test_support {
     }
 
     pub(crate) fn client_ip_config(
-        state: &crate::domain::AppState,
-    ) -> actix_web::web::Data<crate::support::client_ip::ClientIpConfig> {
+        state: &crate::domain::TestAppState,
+    ) -> actix_web::web::Data<crate::http::client_ip::ClientIpConfig> {
         let endpoint = &state.settings.endpoint;
-        actix_web::web::Data::new(crate::support::client_ip::ClientIpConfig::new(
+        actix_web::web::Data::new(crate::http::client_ip::ClientIpConfig::new(
             &endpoint.trusted_proxy_cidrs,
             endpoint.client_ip_header_mode,
         ))

@@ -1,6 +1,6 @@
-use crate::http::scim::schema::scim_error;
 #[cfg(test)]
-use crate::support::email::normalize_email_address;
+use crate::adapters::email::normalize_email_address;
+use crate::http::scim::schema::scim_error;
 use actix_web::HttpResponse;
 use actix_web::http::StatusCode;
 #[cfg(test)]

@@ -12,13 +12,11 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use super::{ServerTokenService, access_token_subject_key};
-use crate::domain::{DatabaseUserFixture, ServerUserinfoOperations, UserinfoHandles};
-use crate::support::{
-    security::{
-        AccessTokenJwtInput, IssuedAccessToken, blake3_hex, jwt_decoding_key_from_jwk, make_jwt,
-    },
-    tenancy::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID},
+use crate::adapters::security::{
+    AccessTokenJwtInput, IssuedAccessToken, blake3_hex, jwt_decoding_key_from_jwk, make_jwt,
 };
+use crate::domain::tenancy::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
+use crate::domain::{DatabaseUserFixture, ServerUserinfoOperations, UserinfoHandles};
 
 pub(crate) async fn userinfo(
     handles: Data<UserinfoHandles>,

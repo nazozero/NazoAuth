@@ -16,10 +16,10 @@ use openssl::symm::{Cipher, decrypt_aead};
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
+use crate::adapters::security::jwt_decoding_key_from_jwk;
 use crate::config::ConfigSource;
 use crate::domain::{ConsentPayload, PushedAuthorizationRequest};
 use crate::settings::AuthorizationServerProfile;
-use crate::support::jwt_decoding_key_from_jwk;
 use nazo_postgres::{create_pool, get_conn};
 
 fn unavailable_valkey_client() -> fred::prelude::Client {
@@ -39,7 +39,7 @@ fn unavailable_valkey_client() -> fred::prelude::Client {
         .expect("unavailable valkey client construction should not connect")
 }
 
-fn endpoint_state(require_par: bool) -> AppState {
+fn endpoint_state(require_par: bool) -> TestAppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.protocol.require_pushed_authorization_requests = require_par;
@@ -51,7 +51,7 @@ fn endpoint_state(require_par: bool) -> AppState {
     settings.endpoint.frontend_base_url = "https://app.example".to_owned();
     settings.protocol.auth_code_ttl_seconds = 60;
 
-    AppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_authorize_test_invalid:nazo_authorize_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -84,7 +84,7 @@ fn unsigned_request_object(claims: Value) -> String {
 }
 
 struct LiveAuthorizationFixture {
-    state: Data<AppState>,
+    state: Data<TestAppState>,
 }
 
 impl LiveAuthorizationFixture {
@@ -123,7 +123,7 @@ impl LiveAuthorizationFixture {
         valkey.init().await.expect("valkey should connect");
 
         Some(Self {
-            state: Data::new(AppState {
+            state: Data::new(TestAppState {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
@@ -132,10 +132,10 @@ impl LiveAuthorizationFixture {
         })
     }
 
-    fn state_with_request_uri_parameter(&self, enabled: bool) -> Data<AppState> {
+    fn state_with_request_uri_parameter(&self, enabled: bool) -> Data<TestAppState> {
         let mut settings = self.state.settings.as_ref().clone();
         settings.modules.enable_request_uri_parameter = enabled;
-        Data::new(AppState {
+        Data::new(TestAppState {
             diesel_db: self.state.diesel_db.clone(),
             valkey: self.state.valkey.clone(),
             settings: Arc::new(settings),
@@ -146,11 +146,11 @@ impl LiveAuthorizationFixture {
     fn state_with_authorization_server_profile(
         &self,
         profile: AuthorizationServerProfile,
-    ) -> Data<AppState> {
+    ) -> Data<TestAppState> {
         let mut settings = self.state.settings.as_ref().clone();
         settings.protocol.authorization_server_profile = profile;
         settings.protocol.require_pushed_authorization_requests = profile.requires_fapi2_security();
-        Data::new(AppState {
+        Data::new(TestAppState {
             diesel_db: self.state.diesel_db.clone(),
             valkey: self.state.valkey.clone(),
             settings: Arc::new(settings),
@@ -413,7 +413,7 @@ async fn assert_authorization_invalid_request(response: HttpResponse) {
     }
 }
 
-fn decode_jarm_claims(state: &AppState, response_jwt: &str, audience: &str) -> Value {
+fn decode_jarm_claims(state: &TestAppState, response_jwt: &str, audience: &str) -> Value {
     let header =
         jsonwebtoken::decode_header(response_jwt).expect("JARM response header should decode");
     let decoding_key =

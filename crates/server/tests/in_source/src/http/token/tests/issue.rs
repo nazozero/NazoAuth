@@ -5,7 +5,7 @@ use std::time::Duration as StdDuration;
 use crate::config::ConfigSource;
 use nazo_postgres::create_pool;
 
-use crate::support::client_signing_fixture;
+use crate::test_support::client_signing_fixture;
 use fred::prelude::{Builder as ValkeyBuilder, ConnectionConfig, PerformanceConfig};
 
 fn disconnected_valkey_client() -> fred::prelude::Client {
@@ -101,8 +101,8 @@ fn id_token_signing_alg_uses_rs256_default_and_ps256_for_fapi_clients() {
     );
 }
 
-fn issue_state_with_invalid_signing_key() -> AppState {
-    AppState {
+fn issue_state_with_invalid_signing_key() -> TestAppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_issue_test_invalid:nazo_issue_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -117,9 +117,9 @@ fn issue_state_with_invalid_signing_key() -> AppState {
     }
 }
 
-fn issue_state_with_valid_signing_key() -> AppState {
+fn issue_state_with_valid_signing_key() -> TestAppState {
     let _key_material = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
-    AppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_issue_test_invalid:nazo_issue_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -134,10 +134,10 @@ fn issue_state_with_valid_signing_key() -> AppState {
     }
 }
 
-fn issue_state_with_live_database() -> Option<AppState> {
+fn issue_state_with_live_database() -> Option<TestAppState> {
     let database_url = std::env::var("DATABASE_URL").ok()?;
     let _key_material = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
-    Some(AppState {
+    Some(TestAppState {
         diesel_db: create_pool(database_url, 1).expect("database pool should build"),
         valkey: disconnected_valkey_client(),
         settings: Arc::new(

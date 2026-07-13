@@ -1,5 +1,5 @@
 use super::*;
-use crate::support::IpCidr;
+use crate::http::client_ip::IpCidr;
 use actix_web::test::TestRequest;
 use openssl::hash::MessageDigest;
 use openssl::pkey::{PKey, Private};

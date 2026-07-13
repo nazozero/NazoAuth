@@ -1,5 +1,5 @@
+use crate::http::client_ip::IpCidr;
 use crate::settings::{DpopNoncePolicy, Settings};
-use crate::support::client_ip::IpCidr;
 
 #[derive(Clone)]
 pub(crate) struct ResourceServerConfig {
@@ -50,8 +50,8 @@ mod production {
     use nazo_runtime_modules::ModuleId;
 
     use crate::{
+        http::mtls::request_mtls_thumbprint_from_trusted_proxy,
         runtime_modules::ServerRuntimeModuleRegistry, settings::DpopNoncePolicy,
-        support::mtls::request_mtls_thumbprint_from_trusted_proxy,
     };
 
     use super::ResourceServerConfig;
@@ -180,11 +180,11 @@ mod production {
 
     #[derive(Clone)]
     pub(crate) struct ServerFapiMtlsResolver {
-        trusted_proxy_cidrs: Arc<[crate::support::client_ip::IpCidr]>,
+        trusted_proxy_cidrs: Arc<[crate::http::client_ip::IpCidr]>,
     }
 
     impl ServerFapiMtlsResolver {
-        pub(crate) fn new(trusted_proxy_cidrs: Vec<crate::support::client_ip::IpCidr>) -> Self {
+        pub(crate) fn new(trusted_proxy_cidrs: Vec<crate::http::client_ip::IpCidr>) -> Self {
             Self {
                 trusted_proxy_cidrs: trusted_proxy_cidrs.into(),
             }

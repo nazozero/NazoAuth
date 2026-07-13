@@ -18,14 +18,16 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::{
-    http::authorization::{AuthorizationHttpConfig, ServerAuthorizationService},
-    runtime_modules::ServerRuntimeModuleRegistry,
-    support::{
+    adapters::{
         audit::{audit_event, audit_fields},
-        jwe::{JwePayloadKind, client_jwe_key, encrypt_compact_jwe},
         security::{blake3_hex, random_urlsafe_token},
+    },
+    domain::{
+        client_jwe::{JwePayloadKind, client_jwe_key, encrypt_compact_jwe},
         tenancy::default_tenant_context,
     },
+    http::authorization::{AuthorizationHttpConfig, ServerAuthorizationService},
+    runtime_modules::ServerRuntimeModuleRegistry,
 };
 
 #[derive(Clone)]

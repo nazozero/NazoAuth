@@ -13,12 +13,14 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
-use crate::domain::{AppState, ClientRow, DatabaseUserFixture};
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
+use crate::domain::{ClientRow, DatabaseUserFixture, TestAppState};
+use crate::http::sessions::SessionHttpConfig;
+use crate::http::sessions::SessionPayload;
 use crate::settings::Settings;
-use crate::support::sessions::SessionHttpConfig;
-use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_set_ex,
-};
+use crate::test_support::valkey::valkey_set_ex;
 use chrono::Utc;
 use nazo_postgres::{create_pool, get_conn};
 
@@ -35,9 +37,9 @@ async fn prepare_client_insert_for_test(
     prepare_client_insert_with_secret_pepper(
         payload,
         pairwise_subject_secret,
-        crate::support::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
+        crate::adapters::security::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
         issuer,
-        crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+        crate::adapters::security::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
 }
@@ -78,8 +80,8 @@ fn unavailable_valkey_client() -> fred::prelude::Client {
         .expect("unavailable valkey client construction should not connect")
 }
 
-fn test_state() -> AppState {
-    AppState {
+fn test_state() -> TestAppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_admin_grants_test_invalid:nazo_admin_grants_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -95,7 +97,7 @@ fn test_state() -> AppState {
 }
 
 fn admin_grant_dependencies(
-    state: &Data<AppState>,
+    state: &Data<TestAppState>,
 ) -> (
     Data<AdminSessionHandles>,
     Data<dyn AdminGrantRepositoryPort>,
@@ -119,7 +121,7 @@ fn admin_grant_dependencies(
 }
 
 async fn invoke_admin_grants(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     req: HttpRequest,
     query: Query<HashMap<String, String>>,
 ) -> HttpResponse {
@@ -128,7 +130,7 @@ async fn invoke_admin_grants(
 }
 
 async fn invoke_admin_revoke_grant(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     req: HttpRequest,
     payload: Json<GrantRevokeRequest>,
 ) -> HttpResponse {
@@ -192,7 +194,7 @@ fn database_url_with_search_path(schema: &str) -> Option<String> {
 }
 
 struct LiveAdminGrantFixture {
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     schema: Option<String>,
 }
 
@@ -244,7 +246,7 @@ impl LiveAdminGrantFixture {
         valkey.init().await.expect("valkey should connect");
 
         Some(Self {
-            state: Data::new(AppState {
+            state: Data::new(TestAppState {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),

@@ -6,11 +6,11 @@ use nazo_http_actix::{authorization_error_response, oauth_error};
 use super::client_ip::client_ip;
 use super::client_ip::{ClientIpConfig, client_ip_with_config};
 #[cfg(test)]
-use super::security::blake3_hex;
-#[cfg(test)]
 use super::{client_ip::ClientIpHeaderMode, client_ip::IpCidr, client_ip::client_ip_with_context};
 #[cfg(test)]
-use crate::{domain::AppState, settings::RateLimitSettings, settings::Settings};
+use crate::adapters::security::blake3_hex;
+#[cfg(test)]
+use crate::{domain::TestAppState, settings::RateLimitSettings, settings::Settings};
 use actix_web::http::StatusCode;
 use actix_web::http::header;
 use actix_web::http::header::HeaderValue;
@@ -152,7 +152,7 @@ impl RateLimitPolicy {
 
 #[cfg(test)]
 pub(crate) async fn enforce_rate_limit(
-    state: &AppState,
+    state: &TestAppState,
     req: &HttpRequest,
     policy: RateLimitPolicy,
 ) -> Result<(), HttpResponse> {

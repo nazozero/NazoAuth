@@ -1,7 +1,7 @@
+use crate::http::client_ip::{ClientIpConfig, IpCidr};
 use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, RequestObjectJtiPolicy, Settings,
 };
-use crate::support::{client_ip::ClientIpConfig, client_ip::IpCidr};
 
 #[derive(Clone)]
 pub(crate) struct AuthorizationHttpConfig {
@@ -18,7 +18,7 @@ pub(crate) struct AuthorizationHttpConfig {
     pub(crate) client_secret_pepper: Box<str>,
     pub(crate) rate_limit_window_seconds: u64,
     pub(crate) token_management_max_requests: u64,
-    pub(crate) client_ip_header_mode: crate::support::client_ip::ClientIpHeaderMode,
+    pub(crate) client_ip_header_mode: crate::http::client_ip::ClientIpHeaderMode,
     pub(crate) client_ip: ClientIpConfig,
     pub(crate) trusted_proxy_cidrs: Box<[IpCidr]>,
 }

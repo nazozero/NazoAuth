@@ -4,14 +4,19 @@ use nazo_http_actix::{
     oauth_bearer_error, oauth_error,
 };
 
+use crate::adapters::audit::audit_event;
+use crate::adapters::audit::audit_fields;
+use crate::adapters::security::blake3_hex;
+use crate::adapters::security::client_secret_digest;
+use crate::adapters::security::constant_time_eq;
+use crate::adapters::security::hash_client_secret;
+use crate::adapters::security::random_urlsafe_token;
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
 use crate::domain::{ClientRow, DynamicRegistrationHandles};
 use crate::http::admin::clients::ServerSectorIdentifierResolver;
-use crate::support::{
-    audit::audit_event, audit::audit_fields, client_ip::client_ip_with_context,
-    rate_limit::RateLimitPolicy, rate_limit::enforce_rate_limit_with_store, security::blake3_hex,
-    security::client_secret_digest, security::constant_time_eq, security::hash_client_secret,
-    security::random_urlsafe_token, tenancy::DEFAULT_TENANT_ID,
-};
+use crate::http::client_ip::client_ip_with_context;
+use crate::http::rate_limit::RateLimitPolicy;
+use crate::http::rate_limit::enforce_rate_limit_with_store;
 use actix_web::http::StatusCode;
 use actix_web::http::header;
 #[cfg(test)]
@@ -377,20 +382,23 @@ impl AdminClientCryptoPort for DynamicRegistrationCrypto<'_> {
     }
 
     fn validate_jwks(&self, jwks: &Value, allow_missing_kid: bool) -> Result<(), String> {
-        crate::support::oauth::validate_client_jwks_with_missing_kid_policy(jwks, allow_missing_kid)
-            .map_err(|error| error.to_string())
+        crate::domain::client_policy::validate_client_jwks_with_missing_kid_policy(
+            jwks,
+            allow_missing_kid,
+        )
+        .map_err(|error| error.to_string())
     }
 
     fn matching_encryption_key_count(&self, jwks: &Value, algorithm: &str) -> usize {
-        crate::support::oauth::client_jwks_matching_encryption_key_count(jwks, algorithm)
+        crate::domain::client_policy::client_jwks_matching_encryption_key_count(jwks, algorithm)
     }
 
     fn contains_signing_key(&self, jwks: &Value) -> bool {
-        crate::support::oauth::client_jwks_contains_signing_key(jwks)
+        crate::domain::client_policy::client_jwks_contains_signing_key(jwks)
     }
 
     fn valid_self_signed_mtls_jwks(&self, jwks: &Value) -> bool {
-        crate::support::oauth::validate_self_signed_mtls_jwks(jwks)
+        crate::domain::client_policy::validate_self_signed_mtls_jwks(jwks)
     }
 }
 

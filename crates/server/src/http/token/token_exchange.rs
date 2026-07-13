@@ -10,17 +10,20 @@ use super::{
     ServerTokenService, TokenForm, consume_token_client_assertion_with_authorization_service,
 };
 use super::{native_sso_profile_requested, token_native_sso_exchange};
-use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
-use crate::support::{
-    dpop::DpopError, dpop::DpopErrorContext, dpop::dpop_error_response,
-    dpop::validate_dpop_proof_with_authorization_service,
-    mtls::request_mtls_thumbprint_from_trusted_proxy, security::ValidatedClientAssertion,
-    security::constant_time_eq,
-};
+use crate::adapters::security::ValidatedClientAssertion;
+use crate::adapters::security::constant_time_eq;
 #[cfg(test)]
-use crate::support::{
-    tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
-};
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
+use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
+use crate::http::dpop::DpopError;
+use crate::http::dpop::DpopErrorContext;
+use crate::http::dpop::dpop_error_response;
+use crate::http::dpop::validate_dpop_proof_with_authorization_service;
+use crate::http::mtls::request_mtls_thumbprint_from_trusted_proxy;
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::Utc;

@@ -1,5 +1,5 @@
 //! 一次性客户端凭据领取接口。
-use crate::support::sessions::SessionProfileHandles;
+use crate::http::sessions::SessionProfileHandles;
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Query};
 use actix_web::{HttpRequest, HttpResponse};

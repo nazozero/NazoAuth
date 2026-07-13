@@ -1,9 +1,9 @@
 #[cfg(test)]
 use crate::domain::ClientRow;
 #[cfg(test)]
-use crate::http::authorization::BASELINE_ACR_VALUE;
+use crate::domain::oidc_claims::supported_user_claim;
 #[cfg(test)]
-use crate::support::oidc_claims::supported_user_claim;
+use crate::http::authorization::BASELINE_ACR_VALUE;
 use nazo_auth::OidcClaimRequest;
 #[cfg(test)]
 use nazo_auth::is_valid_pkce_value;

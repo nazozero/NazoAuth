@@ -2,13 +2,18 @@
 #[cfg(test)]
 use crate::domain::DatabaseUserFixture;
 #[cfg(test)]
-use crate::settings::Settings;
-use crate::support::sessions::SessionProfileHandles;
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
 #[cfg(test)]
-use crate::support::{
-    sessions::SessionPayload, tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID,
-    tenancy::DEFAULT_TENANT_ID, valkey::valkey_set_ex,
-};
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
+#[cfg(test)]
+use crate::http::sessions::SessionPayload;
+use crate::http::sessions::SessionProfileHandles;
+#[cfg(test)]
+use crate::settings::Settings;
+#[cfg(test)]
+use crate::test_support::valkey::valkey_set_ex;
 use actix_web::http::StatusCode;
 #[cfg(test)]
 use actix_web::http::header;

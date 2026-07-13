@@ -10,16 +10,15 @@ use nazo_http_actix::{
 use serde_json::json;
 
 #[cfg(not(test))]
+use crate::adapters::audit::{audit_event, audit_fields};
+#[cfg(not(test))]
+use crate::adapters::security::{blake3_hex, constant_time_eq, random_urlsafe_token};
+#[cfg(not(test))]
 use crate::http::admin::clients::ServerSectorIdentifierResolver;
+use crate::http::client_ip::{ClientIpHeaderMode, IpCidr};
 #[cfg(not(test))]
 use crate::runtime_modules::ServerRuntimeModuleRegistry;
 use crate::settings::Settings;
-#[cfg(not(test))]
-use crate::support::{
-    audit::{audit_event, audit_fields},
-    security::{blake3_hex, constant_time_eq, random_urlsafe_token},
-};
-use crate::support::{client_ip::ClientIpHeaderMode, client_ip::IpCidr};
 
 #[derive(Clone)]
 pub(crate) struct DynamicRegistrationConfig {
@@ -76,7 +75,7 @@ impl DynamicRegistrationHandles {
         self.enabled
     }
 
-    pub(crate) fn from_app_state(state: &super::AppState) -> Self {
+    pub(crate) fn from_app_state(state: &super::TestAppState) -> Self {
         Self {
             config: DynamicRegistrationConfig::from(state.settings.as_ref()),
             clients: nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone()),

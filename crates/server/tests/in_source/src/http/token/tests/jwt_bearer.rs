@@ -102,8 +102,8 @@ fn jwt_bearer_settings() -> Settings {
     .expect("JWT bearer test settings should load")
 }
 
-fn jwt_bearer_state() -> AppState {
-    AppState {
+fn jwt_bearer_state() -> TestAppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_jwt_bearer_test_invalid:nazo_jwt_bearer_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -118,7 +118,7 @@ fn jwt_bearer_state() -> AppState {
     }
 }
 
-async fn live_jwt_bearer_state() -> Option<AppState> {
+async fn live_jwt_bearer_state() -> Option<TestAppState> {
     let valkey_url = std::env::var("VALKEY_URL").ok()?;
     let valkey = ValkeyBuilder::from_config(
         ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),

@@ -1,13 +1,16 @@
 //! 授权确认页数据端点。
 use crate::domain::ConsentPayload;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
 use crate::http::authorization::{AuthorizationEndpoint, AuthorizationRequestContext};
 #[cfg(test)]
 use crate::settings::Settings;
 #[cfg(test)]
-use crate::support::{
-    tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
-    valkey::valkey_set_ex,
-};
+use crate::test_support::valkey::valkey_set_ex;
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Query};
 use actix_web::{HttpRequest, HttpResponse};

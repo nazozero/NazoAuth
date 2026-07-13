@@ -1,21 +1,24 @@
 //! 授权确认提交端点。
-#[cfg(test)]
-use crate::domain::AppState;
+use crate::adapters::audit::audit_event;
+use crate::adapters::audit::audit_fields;
+use crate::adapters::security::blake3_hex;
+use crate::adapters::security::random_urlsafe_token;
 use crate::domain::ConsentPayload;
 #[cfg(test)]
 use crate::domain::DatabaseUserFixture;
+#[cfg(test)]
+use crate::domain::TestAppState;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
+use crate::domain::tenancy::default_tenant_context;
 use crate::http::authorization::{AuthorizationEndpoint, AuthorizationRequestContext};
+use crate::http::client_ip::client_ip_with_config;
 #[cfg(test)]
 use crate::settings::Settings;
-use crate::support::{
-    audit::audit_event, audit::audit_fields, client_ip::client_ip_with_config,
-    security::blake3_hex, security::random_urlsafe_token, tenancy::default_tenant_context,
-};
 #[cfg(test)]
-use crate::support::{
-    tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
-    valkey::valkey_set_ex,
-};
+use crate::test_support::valkey::valkey_set_ex;
 use actix_web::http::StatusCode;
 #[cfg(test)]
 use actix_web::http::header;
@@ -73,7 +76,7 @@ async fn authorization_error_redirect_with_context(
 
 #[cfg(test)]
 async fn authorization_error_redirect(
-    state: &AppState,
+    state: &TestAppState,
     payload: &ConsentPayload,
     error: &str,
 ) -> HttpResponse {

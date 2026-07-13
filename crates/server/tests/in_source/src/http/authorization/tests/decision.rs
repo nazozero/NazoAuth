@@ -19,7 +19,7 @@ use nazo_postgres::{create_pool, get_conn};
 use crate::http::authorization::par::pushed_authorization_request_key;
 
 async fn authorize_decision(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     req: HttpRequest,
     Form(form): Form<DecisionForm>,
 ) -> HttpResponse {
@@ -27,13 +27,13 @@ async fn authorize_decision(
     authorize_decision_with_context(&dependencies.context(), req, form).await
 }
 
-fn decision_state() -> AppState {
+fn decision_state() -> TestAppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
     settings.protocol.auth_code_ttl_seconds = 60;
 
-    AppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_authorize_test_invalid:nazo_authorize_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -126,7 +126,7 @@ fn database_url_with_search_path(schema: &str) -> Option<String> {
 
 #[derive(Clone)]
 struct DecisionLiveFixture {
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     schema: Option<String>,
 }
 
@@ -168,7 +168,7 @@ impl DecisionLiveFixture {
         valkey.init().await.expect("valkey should connect");
 
         Some(Self {
-            state: Data::new(AppState {
+            state: Data::new(TestAppState {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
@@ -215,8 +215,8 @@ impl DecisionLiveFixture {
         valkey
     }
 
-    fn state_with_valkey(&self, valkey: fred::prelude::Client) -> Data<AppState> {
-        Data::new(AppState {
+    fn state_with_valkey(&self, valkey: fred::prelude::Client) -> Data<TestAppState> {
+        Data::new(TestAppState {
             diesel_db: self.state.diesel_db.clone(),
             valkey,
             settings: self.state.settings.clone(),
@@ -364,7 +364,7 @@ impl DecisionLiveFixture {
     }
 
     async fn store_session(&self, user: &DatabaseUserFixture, sid: &str, auth_time: i64) {
-        let payload = crate::support::SessionPayload {
+        let payload = crate::http::sessions::SessionPayload {
             user_id: user.id,
             auth_time,
             amr: vec!["pwd".to_owned()],

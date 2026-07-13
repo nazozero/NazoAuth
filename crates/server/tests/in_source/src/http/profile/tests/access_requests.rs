@@ -1,5 +1,5 @@
 use super::*;
-use crate::domain::AppState;
+use crate::domain::TestAppState;
 use crate::test_support::{access_request_profiles, profile_sessions};
 use uuid::Uuid;
 
@@ -18,7 +18,10 @@ use std::time::Duration as StdDuration;
 use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
 
-async fn my_access_requests_from_state(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
+async fn my_access_requests_from_state(
+    state: Data<TestAppState>,
+    req: HttpRequest,
+) -> HttpResponse {
     my_access_requests(
         profile_sessions(&state),
         access_request_profiles(&state),
@@ -28,7 +31,7 @@ async fn my_access_requests_from_state(state: Data<AppState>, req: HttpRequest) 
 }
 
 async fn create_access_request_from_state(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     req: HttpRequest,
     payload: Json<CreateAccessRequest>,
 ) -> HttpResponse {
@@ -41,8 +44,8 @@ async fn create_access_request_from_state(
     .await
 }
 
-fn test_state() -> AppState {
-    AppState {
+fn test_state() -> TestAppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_access_request_test_invalid:nazo_access_request_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -60,7 +63,7 @@ fn test_state() -> AppState {
 }
 
 struct LiveProfileAccessRequestFixture {
-    state: Data<AppState>,
+    state: Data<TestAppState>,
 }
 
 impl LiveProfileAccessRequestFixture {
@@ -94,7 +97,7 @@ impl LiveProfileAccessRequestFixture {
         valkey.init().await.expect("valkey should connect");
 
         Some(Self {
-            state: Data::new(AppState {
+            state: Data::new(TestAppState {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
@@ -163,7 +166,7 @@ impl LiveProfileAccessRequestFixture {
     }
 }
 
-fn request_with_session_but_no_csrf(state: &AppState, sid: &str) -> HttpRequest {
+fn request_with_session_but_no_csrf(state: &TestAppState, sid: &str) -> HttpRequest {
     TestRequest::default()
         .cookie(Cookie::new(
             state.settings.session.session_cookie_name.clone(),

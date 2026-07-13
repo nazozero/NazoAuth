@@ -12,8 +12,8 @@ use std::sync::Arc;
 
 use nazo_runtime_modules::{ActiveModuleSnapshot, ModuleId};
 
+use crate::http::sessions::AdminSessionHandles;
 use crate::runtime_modules::ServerRuntimeModuleRegistry;
-use crate::support::sessions::AdminSessionHandles;
 
 pub(crate) use config::AuthorizationHttpConfig;
 
@@ -153,7 +153,7 @@ impl AuthorizationTestFixture {
             ServerAuthorizationService::new(
                 nazo_postgres::AuthorizationFlowRepository::new(
                     database.clone(),
-                    crate::support::tenancy::DEFAULT_TENANT_ID,
+                    crate::domain::tenancy::DEFAULT_TENANT_ID,
                 ),
                 nazo_valkey::AuthorizationStateAdapter::new(connection),
                 keyset,
@@ -176,7 +176,7 @@ pub(crate) struct TestAuthorizationDependencies {
 
 #[cfg(test)]
 impl TestAuthorizationDependencies {
-    pub(crate) fn new(state: &crate::domain::AppState) -> Self {
+    pub(crate) fn new(state: &crate::domain::TestAppState) -> Self {
         let connection = state.valkey_connection();
         let session = &state.settings.session;
         Self {
@@ -184,7 +184,7 @@ impl TestAuthorizationDependencies {
                 ServerAuthorizationService::new(
                     nazo_postgres::AuthorizationFlowRepository::new(
                         state.diesel_db.clone(),
-                        crate::support::tenancy::DEFAULT_TENANT_ID,
+                        crate::domain::tenancy::DEFAULT_TENANT_ID,
                     ),
                     nazo_valkey::AuthorizationStateAdapter::new(&connection),
                     state.keyset.clone(),
@@ -193,7 +193,7 @@ impl TestAuthorizationDependencies {
                 AdminSessionHandles::new(
                     nazo_valkey::SessionStore::new(&connection),
                     nazo_postgres::UserRepository::new(state.diesel_db.clone()),
-                    crate::support::sessions::SessionHttpConfig::new(
+                    crate::http::sessions::SessionHttpConfig::new(
                         &session.session_cookie_name,
                         &session.csrf_cookie_name,
                         session.cookie_secure,
@@ -236,8 +236,8 @@ mod boundary_tests {
             ("prompt_none", include_str!("request/prompt_none.rs")),
         ] {
             assert!(
-                !source.contains("Data<AppState>"),
-                "{name} reintroduced the giant AppState extractor"
+                !source.contains("Data<TestAppState>"),
+                "{name} reintroduced the giant TestAppState extractor"
             );
             assert!(
                 !source.contains("AuthorizationHandles"),
@@ -271,7 +271,8 @@ mod boundary_tests {
             ("jar", include_str!("jar.rs")),
         ] {
             assert!(
-                !source.contains("AppState") && !source.contains("TestAuthorizationDependencies"),
+                !source.contains("TestAppState")
+                    && !source.contains("TestAuthorizationDependencies"),
                 "{name} reintroduced the legacy authorization test state"
             );
         }

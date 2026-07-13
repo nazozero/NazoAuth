@@ -5,12 +5,14 @@ use crate::adapters::avatar_files::{
     AvatarPromotion, cleanup_avatar_temps, finish_avatar_promotion, promote_avatar_files,
     remove_avatar_file_if_exists, rename_avatar_file_if_exists, rollback_avatar_promotion,
 };
-use crate::domain::{AppState, DatabaseUserFixture};
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
+use crate::domain::{DatabaseUserFixture, TestAppState};
+use crate::http::sessions::SessionPayload;
 use crate::schema::users;
 use crate::settings::Settings;
-use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_set_ex,
-};
+use crate::test_support::valkey::valkey_set_ex;
 
 use actix_web::error::PayloadError;
 use actix_web::{
@@ -41,7 +43,7 @@ fn avatar_url_version(avatar_url: &str) -> Option<&str> {
         .filter(|version| !version.is_empty())
 }
 
-fn avatar_user_dir(state: &AppState, user_id: Uuid) -> PathBuf {
+fn avatar_user_dir(state: &TestAppState, user_id: Uuid) -> PathBuf {
     state
         .settings
         .storage
@@ -49,15 +51,15 @@ fn avatar_user_dir(state: &AppState, user_id: Uuid) -> PathBuf {
         .join(user_id.to_string())
 }
 
-fn avatar_path(state: &AppState, user_id: Uuid) -> PathBuf {
+fn avatar_path(state: &TestAppState, user_id: Uuid) -> PathBuf {
     avatar_user_dir(state, user_id).join("avatar.bin")
 }
 
-fn avatar_meta_path(state: &AppState, user_id: Uuid) -> PathBuf {
+fn avatar_meta_path(state: &TestAppState, user_id: Uuid) -> PathBuf {
     avatar_user_dir(state, user_id).join("meta.json")
 }
 
-async fn read_avatar_meta(state: &AppState, user_id: Uuid) -> anyhow::Result<Option<Value>> {
+async fn read_avatar_meta(state: &TestAppState, user_id: Uuid) -> anyhow::Result<Option<Value>> {
     let raw = match tokio::fs::read_to_string(avatar_meta_path(state, user_id)).await {
         Ok(raw) => raw,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -67,7 +69,7 @@ async fn read_avatar_meta(state: &AppState, user_id: Uuid) -> anyhow::Result<Opt
 }
 
 async fn upload_avatar(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     req: HttpRequest,
     multipart: Multipart,
 ) -> HttpResponse {
@@ -80,7 +82,7 @@ async fn upload_avatar(
     .await
 }
 
-async fn get_avatar(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
+async fn get_avatar(state: Data<TestAppState>, req: HttpRequest) -> HttpResponse {
     super::get_avatar(
         crate::test_support::profile_sessions(&state),
         crate::test_support::avatar_profiles(&state),
@@ -89,7 +91,7 @@ async fn get_avatar(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
     .await
 }
 
-async fn delete_avatar(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
+async fn delete_avatar(state: Data<TestAppState>, req: HttpRequest) -> HttpResponse {
     super::delete_avatar(
         crate::test_support::profile_sessions(&state),
         crate::test_support::avatar_profiles(&state),
@@ -98,8 +100,8 @@ async fn delete_avatar(state: Data<AppState>, req: HttpRequest) -> HttpResponse 
     .await
 }
 
-fn build_test_state(settings: Settings) -> AppState {
-    AppState {
+fn build_test_state(settings: Settings) -> TestAppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_avatar_test_invalid:nazo_avatar_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -114,20 +116,20 @@ fn build_test_state(settings: Settings) -> AppState {
     }
 }
 
-fn test_state() -> AppState {
+fn test_state() -> TestAppState {
     build_test_state(
         Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
     )
 }
 
-fn test_state_with_avatar_dir(avatar_storage_dir: PathBuf) -> AppState {
+fn test_state_with_avatar_dir(avatar_storage_dir: PathBuf) -> TestAppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.storage.avatar_storage_dir = avatar_storage_dir;
     build_test_state(settings)
 }
 
-fn request_with_session_but_no_csrf(state: &AppState) -> HttpRequest {
+fn request_with_session_but_no_csrf(state: &TestAppState) -> HttpRequest {
     actix_web::test::TestRequest::default()
         .cookie(Cookie::new(
             state.settings.session.session_cookie_name.clone(),
@@ -136,7 +138,7 @@ fn request_with_session_but_no_csrf(state: &AppState) -> HttpRequest {
         .to_http_request()
 }
 
-fn request_with_session_and_csrf(state: &AppState, sid: &str, csrf: &str) -> HttpRequest {
+fn request_with_session_and_csrf(state: &TestAppState, sid: &str, csrf: &str) -> HttpRequest {
     actix_web::test::TestRequest::default()
         .cookie(Cookie::new(
             state.settings.session.session_cookie_name.clone(),
@@ -203,7 +205,7 @@ fn multipart_payload_with_stream_error(boundary: &str, field_name: &str) -> Mult
 }
 
 struct LiveAvatarFixture {
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     avatar_dir: PathBuf,
 }
 
@@ -239,7 +241,7 @@ impl LiveAvatarFixture {
         valkey.init().await.expect("valkey should connect");
 
         Some(Self {
-            state: Data::new(AppState {
+            state: Data::new(TestAppState {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
@@ -860,7 +862,7 @@ async fn upload_avatar_reports_session_lookup_failure_after_valid_csrf_before_re
     };
     let sid = format!("avatar-session-{}", Uuid::now_v7().simple());
     let csrf = format!("csrf-{}", Uuid::now_v7().simple());
-    let state = Data::new(AppState {
+    let state = Data::new(TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_avatar_session_lookup_invalid:nazo_avatar_session_lookup_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -913,7 +915,7 @@ async fn delete_avatar_reports_session_lookup_failure_after_valid_csrf_before_pr
     };
     let sid = format!("avatar-delete-{}", Uuid::now_v7().simple());
     let csrf = format!("csrf-{}", Uuid::now_v7().simple());
-    let state = Data::new(AppState {
+    let state = Data::new(TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_avatar_delete_lookup_invalid:nazo_avatar_delete_lookup_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -1037,7 +1039,7 @@ async fn upload_avatar_enforces_the_configured_limit_before_extending_the_buffer
     fixture.store_session(&user, &sid).await;
     let mut settings = fixture.state.settings.as_ref().clone();
     settings.storage.avatar_max_bytes = 8;
-    let limited_state = Data::new(AppState {
+    let limited_state = Data::new(TestAppState {
         diesel_db: fixture.state.diesel_db.clone(),
         valkey: fixture.state.valkey.clone(),
         settings: Arc::new(settings),
@@ -1159,7 +1161,7 @@ async fn upload_avatar_fails_closed_when_storage_root_cannot_be_created() {
         .expect("blocked root marker should write");
     let mut settings = fixture.state.settings.as_ref().clone();
     settings.storage.avatar_storage_dir = blocked_root.clone();
-    let blocked_state = Data::new(AppState {
+    let blocked_state = Data::new(TestAppState {
         diesel_db: fixture.state.diesel_db.clone(),
         valkey: fixture.state.valkey.clone(),
         settings: Arc::new(settings),

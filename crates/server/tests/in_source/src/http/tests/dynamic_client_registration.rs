@@ -1,8 +1,9 @@
 use super::*;
+use crate::adapters::security::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER;
+use crate::adapters::security::hash_client_secret;
 use crate::http::admin::clients::test_support::{
     InsertClientError, prepare_client_insert_with_secret_pepper,
 };
-use crate::support::{LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER, hash_client_secret};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::json;
 
@@ -16,7 +17,7 @@ async fn prepare_admin_client_insert_for_test(
         pairwise_subject_secret,
         LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
         issuer,
-        crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+        crate::adapters::security::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
 }
@@ -33,7 +34,7 @@ async fn prepare_dynamic_client_insert_for_test(
         LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
         issuer,
         registration_access_token,
-        crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+        crate::adapters::security::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
 }

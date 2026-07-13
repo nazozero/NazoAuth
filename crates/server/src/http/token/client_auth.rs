@@ -1,21 +1,25 @@
 //! token 管理端点复用的客户端认证。
+use crate::adapters::security::ClientAssertionError;
+use crate::adapters::security::ClientCredentials;
+use crate::adapters::security::ValidatedClientAssertion;
+use crate::adapters::security::blake3_hex;
+use crate::adapters::security::client_secret_digest;
 #[cfg(test)]
-use crate::domain::AppState;
+use crate::adapters::security::consume_private_key_jwt;
+use crate::adapters::security::verify_private_key_jwt_claims_for_issuer;
 use crate::domain::ClientRow;
 #[cfg(test)]
+use crate::domain::TestAppState;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
+use crate::http::mtls::MtlsClientCertificate;
+use crate::http::mtls::client_mtls_certificate_matches;
+#[cfg(test)]
 use crate::settings::Settings;
-#[cfg(test)]
-use crate::support::security::consume_private_key_jwt;
-use crate::support::{
-    mtls::MtlsClientCertificate, mtls::client_mtls_certificate_matches,
-    security::ClientAssertionError, security::ClientCredentials,
-    security::ValidatedClientAssertion, security::blake3_hex, security::client_secret_digest,
-    security::verify_private_key_jwt_claims_for_issuer,
-};
-#[cfg(test)]
-use crate::support::{
-    tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
-};
 #[cfg(test)]
 use chrono::Utc;
 use nazo_auth::{
@@ -152,7 +156,7 @@ pub(crate) async fn authenticate_revocation_client_with_dependencies(
 
 #[cfg(test)]
 pub(crate) async fn verify_confidential_client(
-    state: &AppState,
+    state: &TestAppState,
     request: &ClientAuthRequestFacts,
     client: &ClientRow,
     credentials: &ClientCredentials,
@@ -161,7 +165,7 @@ pub(crate) async fn verify_confidential_client(
     let service = crate::http::authorization::ServerAuthorizationService::new(
         nazo_postgres::AuthorizationFlowRepository::new(
             state.diesel_db.clone(),
-            crate::support::tenancy::DEFAULT_TENANT_ID,
+            crate::domain::tenancy::DEFAULT_TENANT_ID,
         ),
         nazo_valkey::AuthorizationStateAdapter::new(&connection),
         state.keyset.clone(),
@@ -316,7 +320,7 @@ pub(crate) async fn consume_token_management_client_assertion_with_authorization
     let Some(assertion) = assertion else {
         return Ok(());
     };
-    crate::support::security::consume_private_key_jwt_with_authorization_service(
+    crate::adapters::security::consume_private_key_jwt_with_authorization_service(
         service, client, assertion,
     )
     .await
@@ -342,7 +346,7 @@ pub(crate) async fn consume_token_client_assertion_with_authorization_service(
     let Some(assertion) = assertion else {
         return Ok(());
     };
-    crate::support::security::consume_private_key_jwt_with_authorization_service(
+    crate::adapters::security::consume_private_key_jwt_with_authorization_service(
         service, client, assertion,
     )
     .await
@@ -351,7 +355,7 @@ pub(crate) async fn consume_token_client_assertion_with_authorization_service(
 
 #[cfg(test)]
 pub(crate) async fn consume_token_client_assertion(
-    state: &AppState,
+    state: &TestAppState,
     client: &ClientRow,
     assertion: Option<&ValidatedClientAssertion>,
 ) -> Result<(), TokenManagementClientAuthError> {

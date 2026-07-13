@@ -57,7 +57,10 @@ pub(crate) fn validate_self_signed_mtls_jwks(jwks: &Value) -> bool {
 
 #[cfg(test)]
 pub(crate) fn authorization_code_key(code: &str) -> String {
-    format!("oauth:auth_code:{}", super::security::blake3_hex(code))
+    format!(
+        "oauth:auth_code:{}",
+        crate::adapters::security::blake3_hex(code)
+    )
 }
 
 #[cfg(test)]

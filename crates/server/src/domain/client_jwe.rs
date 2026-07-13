@@ -1,8 +1,7 @@
 //! Client-bound compact JWE construction for encrypted OAuth and OIDC responses.
 
-use super::{
-    security::SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
-    security::SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
+use crate::adapters::security::{
+    SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
 };
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;

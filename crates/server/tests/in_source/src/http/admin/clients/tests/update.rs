@@ -1,14 +1,16 @@
 use super::admin_patch_client;
-use crate::domain::{AppState, ClientRow, DatabaseUserFixture};
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
+use crate::domain::{ClientRow, DatabaseUserFixture, TestAppState};
 use crate::http::admin::clients::test_support::{
     CreateClientRequest, InsertClientError, PreparedClientRegistration, admin_client_config,
     admin_client_service, admin_session_handles, insert_prepared_client,
     prepare_client_insert_with_secret_pepper, prepare_client_patch,
 };
+use crate::http::sessions::SessionPayload;
 use crate::settings::Settings;
-use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_set_ex,
-};
+use crate::test_support::valkey::valkey_set_ex;
 use actix_web::cookie::Cookie;
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json};
@@ -39,9 +41,9 @@ async fn prepare_client_insert_for_test(
     prepare_client_insert_with_secret_pepper(
         payload,
         pairwise_subject_secret,
-        crate::support::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
+        crate::adapters::security::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
         issuer,
-        crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+        crate::adapters::security::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
 }
@@ -63,8 +65,8 @@ fn unavailable_valkey_client() -> fred::prelude::Client {
         .expect("unavailable valkey client construction should not connect")
 }
 
-fn test_state() -> AppState {
-    AppState {
+fn test_state() -> TestAppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_admin_client_update_test_invalid:nazo_admin_client_update_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -135,7 +137,7 @@ fn database_url_with_search_path(schema: &str) -> Option<String> {
 }
 
 struct LiveAdminClientUpdateFixture {
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     schema: String,
 }
 
@@ -168,7 +170,7 @@ impl LiveAdminClientUpdateFixture {
         let valkey = valkey_builder.build().expect("valkey client should build");
         valkey.init().await.expect("valkey should connect");
         let fixture = Self {
-            state: Data::new(AppState {
+            state: Data::new(TestAppState {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
@@ -420,7 +422,7 @@ async fn patch_preserves_unsubmitted_security_metadata() {
         patch,
         None,
         "http://localhost:8000",
-        crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+        crate::adapters::security::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
     .expect("renaming a client must not require resubmitting security metadata");
@@ -456,7 +458,7 @@ async fn patch_rejects_redirect_uri_with_surrounding_whitespace() {
         patch,
         None,
         "http://localhost:8000",
-        crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+        crate::adapters::security::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
     .expect_err("redirect_uri metadata must be an exact registered value");
@@ -477,7 +479,7 @@ async fn patch_rejects_post_logout_redirect_uri_with_surrounding_whitespace() {
         patch,
         None,
         "http://localhost:8000",
-        crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+        crate::adapters::security::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
     .expect_err("post_logout_redirect_uri metadata must not be silently normalized");
@@ -498,7 +500,7 @@ async fn patch_rejects_pairwise_when_secret_is_not_configured() {
         patch,
         None,
         "http://localhost:8000",
-        crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+        crate::adapters::security::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
     .expect_err("pairwise subject update requires a configured server secret");
@@ -523,7 +525,7 @@ async fn patch_derives_pairwise_sector_from_updated_single_redirect_host() {
         patch,
         Some("01234567890123456789012345678901"),
         "http://localhost:8000",
-        crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+        crate::adapters::security::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
     .expect("pairwise update with one redirect host should be accepted");
@@ -550,7 +552,7 @@ async fn patch_rejects_pairwise_redirects_with_multiple_hosts_without_sector_uri
         patch,
         Some("01234567890123456789012345678901"),
         "http://localhost:8000",
-        crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+        crate::adapters::security::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
     .expect_err("multi-host pairwise redirect set requires a sector_identifier_uri");
@@ -576,7 +578,7 @@ async fn patch_reports_sector_identifier_fetch_failure_for_new_pairwise_uri() {
         patch,
         Some("01234567890123456789012345678901"),
         "http://localhost:8000",
-        crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+        crate::adapters::security::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
     .expect_err("unresolvable sector_identifier_uri must fail patch validation");
@@ -597,7 +599,7 @@ async fn patch_preserves_existing_pairwise_sector_host_without_refetching_uri() 
         patch,
         Some("01234567890123456789012345678901"),
         "http://localhost:8000",
-        crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+        crate::adapters::security::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
     .expect("unrelated patch should preserve existing pairwise sector metadata");
@@ -623,7 +625,7 @@ async fn patch_rejects_modifying_existing_sector_identifier_uri() {
         patch,
         Some("01234567890123456789012345678901"),
         "http://localhost:8000",
-        crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+        crate::adapters::security::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
     .expect_err("existing sector_identifier_uri must be immutable");
@@ -644,7 +646,7 @@ async fn patch_clears_pairwise_sector_metadata_when_subject_becomes_public() {
         patch,
         Some("01234567890123456789012345678901"),
         "http://localhost:8000",
-        crate::support::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+        crate::adapters::security::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
     )
     .await
     .expect("switching back to public should remove pairwise-only metadata");

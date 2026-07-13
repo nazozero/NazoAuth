@@ -1,6 +1,8 @@
 use super::*;
+use crate::adapters::security::random_urlsafe_token;
 use crate::settings::OidcFederationSettings;
-use crate::support::{ClientSigningFixture, client_signing_fixture, random_urlsafe_token};
+use crate::test_support::ClientSigningFixture;
+use crate::test_support::client_signing_fixture;
 use jsonwebtoken::{Algorithm, Header};
 use std::net::SocketAddr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

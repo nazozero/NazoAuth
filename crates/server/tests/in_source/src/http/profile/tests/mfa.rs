@@ -18,15 +18,17 @@ use fred::prelude::{
 };
 
 use crate::config::ConfigSource;
-use crate::domain::AppState;
-use crate::support::{remember_mfa_device, replace_backup_codes, verify_user_mfa_code};
+use crate::domain::TestAppState;
+use crate::test_support::remember_mfa_device;
+use crate::test_support::replace_backup_codes;
+use crate::test_support::verify_user_mfa_code;
 use nazo_postgres::create_pool;
 use nazo_postgres::get_conn;
 
 use crate::schema::{user_mfa_backup_codes, user_mfa_remembered_devices};
 
-fn test_state() -> AppState {
-    AppState {
+fn test_state() -> TestAppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_mfa_test_invalid:nazo_mfa_test_invalid@127.0.0.1:1/nazo".to_owned(),
             1,
@@ -42,7 +44,7 @@ fn test_state() -> AppState {
     }
 }
 
-fn request_with_session_but_no_csrf(state: &AppState) -> HttpRequest {
+fn request_with_session_but_no_csrf(state: &TestAppState) -> HttpRequest {
     actix_web::test::TestRequest::default()
         .cookie(Cookie::new(
             state.settings.session.session_cookie_name.clone(),
@@ -51,12 +53,12 @@ fn request_with_session_but_no_csrf(state: &AppState) -> HttpRequest {
         .to_http_request()
 }
 
-fn mfa_handles(state: &Data<AppState>) -> Data<MfaProfileHandles> {
+fn mfa_handles(state: &Data<TestAppState>) -> Data<MfaProfileHandles> {
     Data::new(MfaProfileHandles::from_app_state(state))
 }
 
 struct LiveMfaFixture {
-    state: Data<AppState>,
+    state: Data<TestAppState>,
 }
 
 #[derive(QueryableByName)]
@@ -100,7 +102,7 @@ impl LiveMfaFixture {
         valkey.init().await.expect("valkey should connect");
 
         Some(Self {
-            state: Data::new(AppState {
+            state: Data::new(TestAppState {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
@@ -1112,7 +1114,7 @@ async fn mfa_verify_reports_session_lookup_failure_after_rate_limit_for_pending_
     };
     let sid = format!("broken-{}", Uuid::now_v7().simple());
     let csrf = format!("csrf-{}", Uuid::now_v7().simple());
-    let state = Data::new(AppState {
+    let state = Data::new(TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_mfa_session_lookup_invalid:nazo_mfa_session_lookup_invalid@127.0.0.1:1/nazo"
                 .to_owned(),

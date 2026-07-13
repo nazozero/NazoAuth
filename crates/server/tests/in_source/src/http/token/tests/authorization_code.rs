@@ -14,7 +14,7 @@ use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
 use crate::domain::DatabaseUserFixture;
-use crate::support::oidc_subject;
+use crate::domain::oidc_claims::oidc_subject;
 use nazo_postgres::{create_pool, get_conn};
 
 fn unavailable_valkey_client() -> fred::prelude::Client {
@@ -34,8 +34,8 @@ fn unavailable_valkey_client() -> fred::prelude::Client {
         .expect("unavailable valkey client construction should not connect")
 }
 
-fn test_state() -> AppState {
-    AppState {
+fn test_state() -> TestAppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_auth_code_test_invalid:nazo_auth_code_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -131,7 +131,7 @@ fn code_payload(redirect_uri_was_supplied: bool) -> CodePayload {
 }
 
 struct LiveAuthorizationCodeFixture {
-    state: Data<AppState>,
+    state: Data<TestAppState>,
 }
 
 impl LiveAuthorizationCodeFixture {
@@ -155,7 +155,8 @@ impl LiveAuthorizationCodeFixture {
         ]);
         let mut settings = Settings::from_config(&config).expect("test settings should load");
         settings.endpoint.trusted_proxy_cidrs = vec![
-            crate::support::IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse"),
+            crate::http::client_ip::IpCidr::parse("127.0.0.1/32")
+                .expect("trusted proxy CIDR should parse"),
         ];
         settings
     }
@@ -181,7 +182,7 @@ impl LiveAuthorizationCodeFixture {
         valkey.init().await.expect("valkey should connect");
 
         Some(Self {
-            state: Data::new(AppState {
+            state: Data::new(TestAppState {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
@@ -1523,7 +1524,7 @@ async fn token_authorization_code_replay_fails_closed_when_replayed_client_looku
         return;
     };
     let client = live_client(&format!("client-replay-db-error-{}", Uuid::now_v7()));
-    let state = Data::new(AppState {
+    let state = Data::new(TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_auth_code_test_invalid:nazo_auth_code_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),

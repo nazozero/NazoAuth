@@ -3,12 +3,13 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
-use crate::domain::{AppState, UserinfoConfig};
+use crate::domain::{TestAppState, UserinfoConfig};
 use crate::settings::Settings;
 use nazo_postgres::{create_pool, get_conn};
 
+use crate::http::client_ip::IpCidr;
 use crate::schema::oauth_clients;
-use crate::support::{IpCidr, client_signing_fixture};
+use crate::test_support::client_signing_fixture;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use diesel::prelude::*;
 use diesel::sql_query;
@@ -40,13 +41,13 @@ fn disconnected_valkey_client() -> fred::prelude::Client {
         .expect("valkey client construction should not connect")
 }
 
-fn userinfo_test_state() -> AppState {
+fn userinfo_test_state() -> TestAppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
     settings.protocol.default_audience = "resource://default".to_owned();
 
-    AppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_userinfo_test_invalid:nazo_userinfo_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -59,7 +60,7 @@ fn userinfo_test_state() -> AppState {
     }
 }
 
-fn userinfo_token_service(state: &AppState) -> ServerTokenService {
+fn userinfo_token_service(state: &TestAppState) -> ServerTokenService {
     let connection = state.valkey_connection();
     ServerTokenService::new(
         nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
@@ -68,7 +69,7 @@ fn userinfo_token_service(state: &AppState) -> ServerTokenService {
     )
 }
 
-async fn call_userinfo(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
+async fn call_userinfo(state: Data<TestAppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
     let token_service = Data::new(userinfo_token_service(&state));
     super::userinfo(
         Data::new(UserinfoHandles::from_test_state(state.get_ref())),
@@ -83,12 +84,12 @@ fn userinfo_audience_allowed(settings: &Settings, audience: &Value) -> bool {
     UserinfoConfig::from(settings).audience_allowed(audience)
 }
 
-async fn live_userinfo_state() -> Option<Data<AppState>> {
+async fn live_userinfo_state() -> Option<Data<TestAppState>> {
     let database_url = std::env::var("DATABASE_URL").ok()?;
     live_userinfo_state_from_database_url(database_url).await
 }
 
-async fn live_userinfo_state_from_database_url(database_url: String) -> Option<Data<AppState>> {
+async fn live_userinfo_state_from_database_url(database_url: String) -> Option<Data<TestAppState>> {
     let valkey_url = std::env::var("VALKEY_URL").ok()?;
     let mut valkey_builder = ValkeyBuilder::from_config(
         ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),
@@ -110,7 +111,7 @@ async fn live_userinfo_state_from_database_url(database_url: String) -> Option<D
     settings.endpoint.issuer = "https://issuer.example".to_owned();
     settings.protocol.default_audience = "resource://default".to_owned();
 
-    Some(Data::new(AppState {
+    Some(Data::new(TestAppState {
         diesel_db: create_pool(database_url, 1).expect("database pool should build"),
         valkey,
         settings: Arc::new(settings),
@@ -126,7 +127,7 @@ fn database_url_with_search_path(schema: &str) -> Option<String> {
     ))
 }
 
-async fn create_isolated_schema(state: &Data<AppState>, schema: &str, tables: &[&str]) {
+async fn create_isolated_schema(state: &Data<TestAppState>, schema: &str, tables: &[&str]) {
     exec_sql(
         state,
         &format!(r#"CREATE SCHEMA IF NOT EXISTS "{}""#, schema),
@@ -144,7 +145,7 @@ async fn create_isolated_schema(state: &Data<AppState>, schema: &str, tables: &[
     }
 }
 
-async fn exec_sql(state: &Data<AppState>, sql: &str) {
+async fn exec_sql(state: &Data<TestAppState>, sql: &str) {
     let mut conn = get_conn(&state.diesel_db)
         .await
         .expect("database connection should be available");
@@ -154,7 +155,13 @@ async fn exec_sql(state: &Data<AppState>, sql: &str) {
         .expect("schema mutation should succeed");
 }
 
-async fn rename_column(state: &Data<AppState>, schema: &str, table: &str, from: &str, to: &str) {
+async fn rename_column(
+    state: &Data<TestAppState>,
+    schema: &str,
+    table: &str,
+    from: &str,
+    to: &str,
+) {
     exec_sql(
         state,
         &format!(
@@ -165,7 +172,7 @@ async fn rename_column(state: &Data<AppState>, schema: &str, table: &str, from: 
     .await;
 }
 
-async fn drop_schema(state: &Data<AppState>, schema: &str) {
+async fn drop_schema(state: &Data<TestAppState>, schema: &str) {
     exec_sql(
         state,
         &format!(r#"DROP SCHEMA IF EXISTS "{}" CASCADE"#, schema),
@@ -173,7 +180,7 @@ async fn drop_schema(state: &Data<AppState>, schema: &str) {
     .await;
 }
 
-fn userinfo_state_with_valid_signing_key_invalid_db() -> Data<AppState> {
+fn userinfo_state_with_valid_signing_key_invalid_db() -> Data<TestAppState> {
     let key_material = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
     let _public_jwk = key_material.public_jwk("userinfo-test-kid");
     let mut settings =
@@ -181,7 +188,7 @@ fn userinfo_state_with_valid_signing_key_invalid_db() -> Data<AppState> {
     settings.endpoint.issuer = "https://issuer.example".to_owned();
     settings.protocol.default_audience = "resource://default".to_owned();
 
-    Data::new(AppState {
+    Data::new(TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_userinfo_test_invalid:nazo_userinfo_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -218,13 +225,13 @@ fn userinfo_access_claims(user_id: Option<String>) -> Claims {
     }
 }
 
-async fn live_userinfo_state_with_trusted_proxy() -> Option<Data<AppState>> {
+async fn live_userinfo_state_with_trusted_proxy() -> Option<Data<TestAppState>> {
     let state = live_userinfo_state().await?;
     let mut settings = (*state.settings).clone();
     settings.endpoint.trusted_proxy_cidrs =
         vec![IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse")];
 
-    Some(Data::new(AppState {
+    Some(Data::new(TestAppState {
         diesel_db: state.diesel_db.clone(),
         valkey: state.valkey.clone(),
         settings: Arc::new(settings),
@@ -286,7 +293,7 @@ async fn access_token_user_id_rejects_unavailable_subject_mapping_store() {
     );
 }
 
-async fn insert_userinfo_client(state: &Data<AppState>, client_id: &str) -> Uuid {
+async fn insert_userinfo_client(state: &Data<TestAppState>, client_id: &str) -> Uuid {
     #[derive(diesel::QueryableByName)]
     struct IdRow {
         #[diesel(sql_type = SqlUuid)]
@@ -351,7 +358,7 @@ async fn insert_userinfo_client(state: &Data<AppState>, client_id: &str) -> Uuid
 }
 
 async fn update_userinfo_crypto_policy(
-    state: &Data<AppState>,
+    state: &Data<TestAppState>,
     client_id: &str,
     signing_alg: Option<&str>,
     encryption_alg: Option<&str>,
@@ -449,7 +456,7 @@ fn decrypt_userinfo_jwe(private_key: &PKey<Private>, compact_jwe: &str) -> (Valu
     )
 }
 
-fn decode_signed_userinfo(state: &AppState, client_id: &str, token: &str) -> Value {
+fn decode_signed_userinfo(state: &TestAppState, client_id: &str, token: &str) -> Value {
     let header = jsonwebtoken::decode_header(token).expect("UserInfo JWS header should decode");
     let decoding_key =
         jwt_decoding_key_from_jwk(&state.keyset.snapshot().jwks()["keys"][0], header.alg)
@@ -464,7 +471,7 @@ fn decode_signed_userinfo(state: &AppState, client_id: &str, token: &str) -> Val
         .claims
 }
 
-async fn insert_userinfo_user(state: &Data<AppState>, active: bool) -> DatabaseUserFixture {
+async fn insert_userinfo_user(state: &Data<TestAppState>, active: bool) -> DatabaseUserFixture {
     let suffix = Uuid::now_v7();
     let mut conn = get_conn(&state.diesel_db)
         .await
@@ -490,7 +497,11 @@ async fn insert_userinfo_user(state: &Data<AppState>, active: bool) -> DatabaseU
     .expect("test user insert should succeed")
 }
 
-async fn revoke_access_token(state: &Data<AppState>, client_row_id: Uuid, access_token_jti: &str) {
+async fn revoke_access_token(
+    state: &Data<TestAppState>,
+    client_row_id: Uuid,
+    access_token_jti: &str,
+) {
     let mut conn = get_conn(&state.diesel_db)
         .await
         .expect("database connection should be available");
@@ -513,7 +524,7 @@ async fn revoke_access_token(state: &Data<AppState>, client_row_id: Uuid, access
 
 #[allow(clippy::too_many_arguments)]
 async fn signed_userinfo_access_token(
-    state: &Data<AppState>,
+    state: &Data<TestAppState>,
     tenant_id: Uuid,
     subject: &str,
     user_id: Option<Uuid>,
@@ -548,7 +559,7 @@ async fn signed_userinfo_access_token(
 }
 
 async fn userinfo_error_for_token(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     scheme: &str,
     token: &str,
 ) -> HttpResponse {
@@ -560,7 +571,7 @@ async fn userinfo_error_for_token(
 }
 
 async fn userinfo_response_for_active_user(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     user: &DatabaseUserFixture,
     client_id: &str,
 ) -> HttpResponse {
@@ -717,7 +728,7 @@ async fn userinfo_returns_server_error_when_subject_mapping_store_is_unavailable
         None,
     )
     .await;
-    let state = Data::new(AppState {
+    let state = Data::new(TestAppState {
         diesel_db: state.diesel_db.clone(),
         valkey: disconnected_valkey_client(),
         settings: state.settings.clone(),

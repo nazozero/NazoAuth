@@ -1,15 +1,17 @@
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
 use crate::domain::{
-    AppState, DatabasePasskeyFixture, DatabaseUserFixture, MFA_REMEMBERED_COOKIE_NAME,
-    MFA_REMEMBERED_TTL_SECONDS, ServerMfaSecretHasher,
+    DatabasePasskeyFixture, DatabaseUserFixture, MFA_REMEMBERED_COOKIE_NAME,
+    MFA_REMEMBERED_TTL_SECONDS, ServerMfaSecretHasher, TestAppState,
 };
+use crate::http::sessions::SessionPayload;
 use crate::schema::{user_passkey_credentials, users};
 use crate::settings::Settings;
-use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_get,
-};
+use crate::test_support::valkey::valkey_get;
 use actix_web::http::{StatusCode, header};
 use actix_web::web::{Data, Json};
 use actix_web::{HttpRequest, HttpResponse};
@@ -37,7 +39,7 @@ use crate::config::ConfigSource;
 use nazo_postgres::create_pool;
 
 async fn remember_mfa_device(
-    state: &AppState,
+    state: &TestAppState,
     request: &HttpRequest,
     user: &PublicAccount,
 ) -> anyhow::Result<String> {
@@ -47,7 +49,7 @@ async fn remember_mfa_device(
         .and_then(|value| value.to_str().ok())
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(crate::support::security::blake3_hex);
+        .map(crate::adapters::security::blake3_hex);
     nazo_identity::MfaService::new(
         Arc::new(nazo_postgres::MfaRepository::new(state.diesel_db.clone())),
         Arc::new(ServerMfaSecretHasher),
@@ -71,7 +73,7 @@ fn passkey_login_transport_has_no_identity_or_storage_orchestration() {
         "/../http-actix/src/passkey.rs"
     ));
     for forbidden in [
-        "AppState",
+        "TestAppState",
         "nazo_postgres",
         "nazo_valkey",
         "PasskeyRepository",
@@ -87,7 +89,7 @@ fn passkey_login_transport_has_no_identity_or_storage_orchestration() {
 }
 
 async fn passkey_login_begin(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     req: HttpRequest,
     payload: Json<PasskeyLoginBeginRequest>,
 ) -> HttpResponse {
@@ -95,7 +97,7 @@ async fn passkey_login_begin(
 }
 
 async fn passkey_login_finish(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     req: HttpRequest,
     payload: Json<PasskeyLoginFinishRequest>,
 ) -> HttpResponse {
@@ -104,7 +106,7 @@ async fn passkey_login_finish(
 }
 
 async fn load_user_passkeys(
-    state: &AppState,
+    state: &TestAppState,
     user: &PublicAccount,
 ) -> Result<Vec<nazo_identity::ports::PasskeyCredential>, HttpResponse> {
     nazo_postgres::PasskeyRepository::new(state.diesel_db.clone())
@@ -139,7 +141,7 @@ fn passkey_webauthn(settings: &Settings) -> Webauthn {
 }
 
 struct LivePasskeyFixture {
-    state: Data<AppState>,
+    state: Data<TestAppState>,
 }
 
 struct FakeAuthenticator {
@@ -291,7 +293,7 @@ impl LivePasskeyFixture {
         valkey.init().await.expect("valkey should connect");
 
         Some(Self {
-            state: Data::new(AppState {
+            state: Data::new(TestAppState {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),
@@ -985,7 +987,7 @@ async fn passkey_login_begin_reports_user_lookup_failure_before_challenge_issue(
     let Some(fixture) = LivePasskeyFixture::new().await else {
         return;
     };
-    let state = Data::new(AppState {
+    let state = Data::new(TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_passkey_begin_lookup_invalid:nazo_passkey_begin_lookup_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -1308,7 +1310,7 @@ async fn passkey_login_finish_reports_user_lookup_failure_after_consuming_ceremo
     let credential = fixture.register_credential(&user, &authenticator);
     fixture.insert_credential(&user, &credential).await;
     let (ceremony_id, challenge) = begin_passkey_login(&fixture, &user.email).await;
-    let state = Data::new(AppState {
+    let state = Data::new(TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_passkey_finish_lookup_invalid:nazo_passkey_finish_lookup_invalid@127.0.0.1:1/nazo"
                 .to_owned(),

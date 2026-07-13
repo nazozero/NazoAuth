@@ -13,13 +13,15 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
-use crate::domain::{AppState, DatabaseUserFixture};
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
+use crate::domain::{DatabaseUserFixture, TestAppState};
+use crate::http::sessions::SessionHttpConfig;
+use crate::http::sessions::SessionPayload;
 use crate::schema::users;
 use crate::settings::Settings;
-use crate::support::sessions::SessionHttpConfig;
-use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_set_ex,
-};
+use crate::test_support::valkey::valkey_set_ex;
 use chrono::Utc;
 use diesel::prelude::*;
 use nazo_identity::ports::AdminUserRepositoryPort;
@@ -83,8 +85,8 @@ fn unavailable_valkey_client() -> fred::prelude::Client {
         .expect("unavailable valkey client construction should not connect")
 }
 
-fn test_state() -> AppState {
-    AppState {
+fn test_state() -> TestAppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_admin_users_test_invalid:nazo_admin_users_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -100,7 +102,7 @@ fn test_state() -> AppState {
 }
 
 fn admin_user_dependencies(
-    state: &Data<AppState>,
+    state: &Data<TestAppState>,
 ) -> (
     Data<AdminSessionHandles>,
     Data<dyn AdminUserRepositoryPort>,
@@ -128,7 +130,7 @@ fn admin_user_dependencies(
 }
 
 async fn invoke_admin_users(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     req: HttpRequest,
     query: Query<HashMap<String, String>>,
 ) -> HttpResponse {
@@ -137,7 +139,7 @@ async fn invoke_admin_users(
 }
 
 async fn invoke_admin_patch_user(
-    state: Data<AppState>,
+    state: Data<TestAppState>,
     req: HttpRequest,
     path: actix_web::web::Path<Uuid>,
     payload: Json<PatchUserRequest>,
@@ -154,7 +156,7 @@ fn oauth_error_name(response: &HttpResponse) -> Option<String> {
 }
 
 struct LiveAdminUsersFixture {
-    state: Data<AppState>,
+    state: Data<TestAppState>,
 }
 
 impl LiveAdminUsersFixture {
@@ -187,7 +189,7 @@ impl LiveAdminUsersFixture {
         valkey.init().await.expect("valkey should connect");
 
         Some(Self {
-            state: Data::new(AppState {
+            state: Data::new(TestAppState {
                 diesel_db: create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
                 settings: Arc::new(settings),

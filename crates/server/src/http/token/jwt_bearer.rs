@@ -7,21 +7,24 @@ use super::issue::{TokenIssuanceContext, issue_token_response_with_service};
 use super::{
     ServerTokenService, TokenForm, consume_token_client_assertion_with_authorization_service,
 };
+use crate::adapters::security::ValidatedClientAssertion;
+use crate::adapters::security::client_jwt_decoding_key;
 #[cfg(test)]
-use crate::domain::AppState;
+use crate::domain::TestAppState;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+#[cfg(test)]
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
 use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
+use crate::http::dpop::DpopError;
+use crate::http::dpop::DpopErrorContext;
+use crate::http::dpop::dpop_error_response;
+use crate::http::dpop::validate_dpop_proof_with_authorization_service;
+use crate::http::mtls::request_mtls_thumbprint_from_trusted_proxy;
 #[cfg(test)]
 use crate::settings::Settings;
-use crate::support::{
-    dpop::DpopError, dpop::DpopErrorContext, dpop::dpop_error_response,
-    dpop::validate_dpop_proof_with_authorization_service,
-    mtls::request_mtls_thumbprint_from_trusted_proxy, security::ValidatedClientAssertion,
-    security::client_jwt_decoding_key,
-};
-#[cfg(test)]
-use crate::support::{
-    tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
-};
 #[cfg(test)]
 use crate::test_support::{ClientSigningFixture, client_signing_fixture};
 use actix_web::http::StatusCode;
@@ -189,7 +192,7 @@ fn jwt_bearer_grant_error_response(
 
 #[cfg(test)]
 async fn consume_jwt_bearer_assertion(
-    state: &AppState,
+    state: &TestAppState,
     client: &ClientRow,
     assertion: &ValidatedJwtBearerAssertion,
 ) -> Result<(), JwtBearerAssertionError> {
@@ -339,7 +342,7 @@ pub(crate) async fn token_jwt_bearer_with_service(
 
 #[cfg(test)]
 pub(crate) async fn token_jwt_bearer(
-    state: &AppState,
+    state: &TestAppState,
     req: &HttpRequest,
     client: &ClientRow,
     form: &TokenForm,

@@ -2,21 +2,24 @@
 use nazo_http_actix::oauth_token_error;
 
 use super::{ServerTokenService, TokenForm};
+use crate::adapters::security::ValidatedClientAssertion;
 #[cfg(test)]
-use crate::domain::AppState;
+use crate::adapters::security::blake3_hex;
+#[cfg(test)]
+use crate::adapters::security::jwt_decoding_key_from_jwk;
+use crate::adapters::security::random_urlsafe_token;
+#[cfg(test)]
+use crate::domain::TestAppState;
+use crate::domain::client_policy::is_subset;
+use crate::domain::client_policy::parse_scope;
 use crate::domain::{ClientRow, NativeSsoTokenBinding, RefreshTokenPolicy, TokenIssue};
+use crate::http::dpop::DpopError;
+use crate::http::dpop::DpopErrorContext;
+use crate::http::dpop::dpop_error_response;
+use crate::http::dpop::validate_dpop_proof_with_authorization_service;
+use crate::http::mtls::request_mtls_thumbprint_from_trusted_proxy;
 use crate::http::token::client_auth::consume_token_client_assertion_with_authorization_service;
 use crate::http::token::issue::{TokenIssuanceContext, issue_token_response_with_service};
-#[cfg(test)]
-use crate::support::security::blake3_hex;
-#[cfg(test)]
-use crate::support::security::jwt_decoding_key_from_jwk;
-use crate::support::{
-    dpop::DpopError, dpop::DpopErrorContext, dpop::dpop_error_response,
-    dpop::validate_dpop_proof_with_authorization_service,
-    mtls::request_mtls_thumbprint_from_trusted_proxy, oauth::is_subset, oauth::parse_scope,
-    security::ValidatedClientAssertion, security::random_urlsafe_token,
-};
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -97,7 +100,7 @@ fn native_sso_id_token_audience_contains(claims: &NativeSsoIdTokenClaims, client
 }
 
 #[cfg(test)]
-fn decode_native_sso_id_token(state: &AppState, token: &str) -> Option<NativeSsoIdTokenClaims> {
+fn decode_native_sso_id_token(state: &TestAppState, token: &str) -> Option<NativeSsoIdTokenClaims> {
     let header = jsonwebtoken::decode_header(token).ok()?;
     let keyset = state.keyset.snapshot();
     let verification_key = keyset.verification_key(header.kid.as_deref()?)?;

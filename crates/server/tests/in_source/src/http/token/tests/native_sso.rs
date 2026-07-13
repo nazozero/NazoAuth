@@ -5,12 +5,12 @@ use nazo_postgres::create_pool;
 
 use std::sync::Arc;
 
-fn native_sso_state_with_signing_key() -> AppState {
+fn native_sso_state_with_signing_key() -> TestAppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
 
-    AppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_native_sso_test_invalid:nazo_native_sso_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -27,7 +27,7 @@ fn native_sso_state_with_signing_key() -> AppState {
     }
 }
 
-async fn signed_native_sso_id_token(state: &AppState, issuer: &str) -> String {
+async fn signed_native_sso_id_token(state: &TestAppState, issuer: &str) -> String {
     let now = Utc::now().timestamp();
     let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::PS256);
     state

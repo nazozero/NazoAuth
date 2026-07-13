@@ -49,13 +49,13 @@ fn prompt_none_payload() -> ConsentPayload {
     }
 }
 
-fn prompt_none_state_with_valkey(valkey: fred::prelude::Client) -> AppState {
+fn prompt_none_state_with_valkey(valkey: fred::prelude::Client) -> TestAppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
     settings.protocol.auth_code_ttl_seconds = 60;
 
-    AppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_prompt_none_test_invalid:nazo_prompt_none_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
@@ -68,7 +68,7 @@ fn prompt_none_state_with_valkey(valkey: fred::prelude::Client) -> AppState {
     }
 }
 
-async fn live_prompt_none_state() -> Option<AppState> {
+async fn live_prompt_none_state() -> Option<TestAppState> {
     let valkey_url = std::env::var("VALKEY_URL").ok()?;
     let mut builder =
         ValkeyBuilder::from_config(ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL"));
@@ -85,7 +85,7 @@ async fn live_prompt_none_state() -> Option<AppState> {
     Some(prompt_none_state_with_valkey(valkey))
 }
 
-fn unavailable_prompt_none_state() -> AppState {
+fn unavailable_prompt_none_state() -> TestAppState {
     let mut builder = ValkeyBuilder::from_config(
         ValkeyConfig::from_url("redis://127.0.0.1:1").expect("unavailable Valkey URL should parse"),
     );
@@ -112,7 +112,7 @@ fn database_url_with_search_path(schema: &str) -> Option<String> {
     ))
 }
 
-fn prompt_none_state_with_database_url(database_url: String) -> AppState {
+fn prompt_none_state_with_database_url(database_url: String) -> TestAppState {
     let valkey = fred::prelude::Builder::default_centralized()
         .build()
         .expect("valkey client construction should not connect");
@@ -121,7 +121,7 @@ fn prompt_none_state_with_database_url(database_url: String) -> AppState {
     settings.endpoint.issuer = "https://issuer.example".to_owned();
     settings.protocol.auth_code_ttl_seconds = 60;
 
-    AppState {
+    TestAppState {
         diesel_db: create_pool(database_url, 1).expect("database pool should build"),
         valkey,
         settings: Arc::new(settings),
@@ -129,7 +129,7 @@ fn prompt_none_state_with_database_url(database_url: String) -> AppState {
     }
 }
 
-async fn exec_sql(state: &AppState, sql: &str) {
+async fn exec_sql(state: &TestAppState, sql: &str) {
     let mut conn = get_conn(&state.diesel_db)
         .await
         .expect("database connection should be available");
@@ -139,7 +139,7 @@ async fn exec_sql(state: &AppState, sql: &str) {
         .expect("schema mutation should succeed");
 }
 
-async fn create_isolated_schema(state: &AppState, schema: &str, tables: &[&str]) {
+async fn create_isolated_schema(state: &TestAppState, schema: &str, tables: &[&str]) {
     exec_sql(
         state,
         &format!(r#"CREATE SCHEMA IF NOT EXISTS "{}""#, schema),
@@ -157,7 +157,7 @@ async fn create_isolated_schema(state: &AppState, schema: &str, tables: &[&str])
     }
 }
 
-async fn rename_column(state: &AppState, schema: &str, table: &str, from: &str, to: &str) {
+async fn rename_column(state: &TestAppState, schema: &str, table: &str, from: &str, to: &str) {
     exec_sql(
         state,
         &format!(
@@ -168,7 +168,7 @@ async fn rename_column(state: &AppState, schema: &str, table: &str, from: &str, 
     .await;
 }
 
-async fn drop_schema(state: &AppState, schema: &str) {
+async fn drop_schema(state: &TestAppState, schema: &str) {
     exec_sql(
         state,
         &format!(r#"DROP SCHEMA IF EXISTS "{}" CASCADE"#, schema),

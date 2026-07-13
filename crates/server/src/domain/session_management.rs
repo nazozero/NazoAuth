@@ -7,8 +7,8 @@ use nazo_http_actix::{
 };
 use nazo_runtime_modules::ModuleId;
 
+use crate::http::sessions::SessionProfileHandles;
 use crate::runtime_modules::ServerRuntimeModuleRegistry;
-use crate::support::sessions::SessionProfileHandles;
 
 /// Minimal composition-root provider for OIDC Session Management.
 ///

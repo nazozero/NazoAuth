@@ -1,6 +1,6 @@
 //! 管理端用户授权关系接口。
-use crate::support::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
-use crate::support::views::pagination;
+use crate::http::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
+use crate::http::views::pagination;
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json, Query};
 use actix_web::{HttpRequest, HttpResponse};

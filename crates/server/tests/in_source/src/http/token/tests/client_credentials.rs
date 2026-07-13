@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use nazo_postgres::create_pool;
 
+use crate::http::client_ip::IpCidr;
 use crate::settings::AuthorizationServerProfile;
-use crate::support::IpCidr;
 use actix_web::test::TestRequest;
 
 fn settings(profile: AuthorizationServerProfile) -> Settings {
@@ -96,8 +96,8 @@ fn oauth_error_code(response: &HttpResponse) -> String {
         .expect("OAuth error response should record its error code")
 }
 
-fn client_credentials_state() -> AppState {
-    AppState {
+fn client_credentials_state() -> TestAppState {
+    TestAppState {
         diesel_db: create_pool(
             "postgres://nazo_client_credentials_test_invalid:nazo_client_credentials_test_invalid@127.0.0.1:1/nazo"
                 .to_owned(),
