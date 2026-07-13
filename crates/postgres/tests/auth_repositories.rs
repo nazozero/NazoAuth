@@ -3,7 +3,7 @@ use diesel::{
     sql_types::{BigInt, Text, Uuid as SqlUuid},
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
-use nazo_auth::{NewRefreshToken, RefreshTokenPersistResult};
+use nazo_auth::{AdminGrantRepositoryPort, NewRefreshToken, RefreshTokenPersistResult};
 use nazo_postgres::{
     AuditRepository, AuthorizationRepository, GrantRepository, TokenRepository, create_pool,
 };
@@ -26,6 +26,8 @@ struct FixtureIds {
     user_id: Uuid,
     #[diesel(sql_type = SqlUuid)]
     client_id: Uuid,
+    #[diesel(sql_type = Text)]
+    client_public_id: String,
 }
 
 #[derive(QueryableByName)]
@@ -177,9 +179,10 @@ async fn fixture(database_url: &str) -> FixtureIds {
                 '["openid", "offline_access"]'::jsonb,
                 '["authorization_code", "refresh_token"]'::jsonb,
                 'client_secret_basic'
-            ) RETURNING id
+            ) RETURNING id, client_id
         )
-        SELECT inserted_user.id AS user_id, inserted_client.id AS client_id
+        SELECT inserted_user.id AS user_id, inserted_client.id AS client_id,
+               inserted_client.client_id AS client_public_id
         FROM inserted_user CROSS JOIN inserted_client
         "#
     ))
@@ -248,7 +251,7 @@ async fn grants_upsert_cover_and_revoke_tokens_atomically() {
     .await
     .expect("active refresh token fixture should insert");
     let revoked = repository
-        .revoke(fixture.user_id, fixture.client_id)
+        .revoke_by_client_id(tenant_id, fixture.user_id, &fixture.client_public_id)
         .await
         .expect("grant revocation should commit");
     assert_eq!(revoked.revoked_refresh_tokens, 1);
@@ -328,8 +331,12 @@ async fn grant_revoke_waits_for_concurrent_refresh_rotation_before_revoking_fami
         create_pool(tagged_database_url(&database_url, &revoke_application), 1).unwrap(),
     );
     let user_id = fixture.user_id;
-    let client_id = fixture.client_id;
-    let revoke = tokio::spawn(async move { revoke_repository.revoke(user_id, client_id).await });
+    let client_public_id = fixture.client_public_id.clone();
+    let revoke = tokio::spawn(async move {
+        revoke_repository
+            .revoke_by_client_id(tenant_id, user_id, &client_public_id)
+            .await
+    });
     wait_for_blocked_query(&mut coordinator, &revoke_application, "%").await;
 
     sql_query("SELECT pg_advisory_unlock($1)")

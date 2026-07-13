@@ -35,10 +35,10 @@ use uuid::Uuid;
 
 pub(crate) mod tokens;
 #[cfg(test)]
-pub(crate) use tokens::IssuedAccessToken;
+pub(crate) use tokens::{AccessTokenJwtInput, IssuedAccessToken, make_jwt};
 pub(crate) use tokens::{
-    AccessTokenJwtInput, BackchannelLogoutTokenInput, IdTokenInput, decode_access_claims,
-    make_backchannel_logout_token, make_id_token, make_jwt, sign_response_jwt,
+    BackchannelLogoutTokenInput, decode_access_claims, make_backchannel_logout_token,
+    sign_response_jwt,
 };
 
 type HmacSha256 = Hmac<Sha256>;

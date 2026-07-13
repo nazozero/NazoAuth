@@ -7,8 +7,7 @@ use crate::support::{
     remember_mfa_device,
 };
 use crate::test_support::{
-    auth_rate_limit_config, auth_rate_limits, authentication_service, client_ip_config,
-    login_http_config,
+    auth_request_limiter, authentication_service, client_ip_config, login_http_config,
 };
 use nazo_postgres::{create_pool, get_conn};
 use serde_json::Value;

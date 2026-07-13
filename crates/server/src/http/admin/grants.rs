@@ -26,7 +26,7 @@ pub(crate) async fn admin_grants(
     let (page, page_size, offset) = pagination(&q);
     let page_result = match grants
         .page(
-            admin.tenant().tenant_id,
+            admin.tenant().tenant_id.as_uuid(),
             i64::from(page_size),
             i64::from(offset),
         )
@@ -101,7 +101,11 @@ pub(crate) async fn admin_revoke_grant(
         );
     };
     let revoked = match grants
-        .revoke_by_client_id(admin.tenant().tenant_id, user_id, &payload.client_id)
+        .revoke_by_client_id(
+            admin.tenant().tenant_id.as_uuid(),
+            user_id,
+            &payload.client_id,
+        )
         .await
     {
         Ok(result) => result,

@@ -1,10 +1,7 @@
 use super::jwt_decoding_key_from_jwk;
 
 use chrono::Utc;
-use nazo_auth::{
-    AccessTokenClaimsInput, BackchannelLogoutClaimsInput, Claims, IdTokenClaimsInput,
-    OidcClaimRequest,
-};
+use nazo_auth::{AccessTokenClaimsInput, BackchannelLogoutClaimsInput, Claims, OidcClaimRequest};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -89,49 +86,6 @@ pub(super) fn access_token_header(alg: jsonwebtoken::Algorithm, kid: &str) -> js
     header.typ = Some("at+jwt".to_string());
     header.kid = Some(kid.to_owned());
     header
-}
-
-pub(crate) struct IdTokenInput<'a> {
-    pub(crate) subject: &'a str,
-    pub(crate) client_id: &'a str,
-    pub(crate) nonce: Option<String>,
-    pub(crate) auth_time: Option<i64>,
-    pub(crate) amr: &'a [String],
-    pub(crate) sid: Option<&'a str>,
-    pub(crate) acr: Option<&'a str>,
-    pub(crate) extra_claims: Option<&'a Value>,
-    pub(crate) ttl: i64,
-    pub(crate) signing_alg: Option<jsonwebtoken::Algorithm>,
-}
-
-pub(crate) async fn make_id_token(
-    state: &AppState,
-    input: IdTokenInput<'_>,
-) -> jsonwebtoken::errors::Result<String> {
-    let now = Utc::now().timestamp();
-    let claims = nazo_auth::id_token_claims(
-        &state.settings.endpoint.issuer,
-        &IdTokenClaimsInput {
-            subject: input.subject,
-            client_id: input.client_id,
-            nonce: input.nonce.as_deref(),
-            auth_time: input.auth_time,
-            amr: input.amr,
-            sid: input.sid,
-            acr: input.acr,
-            extra_claims: input.extra_claims,
-            ttl: input.ttl,
-        },
-        now,
-    );
-    sign_response_jwt(
-        state,
-        nazo_auth::SigningPurpose::IdToken,
-        &Value::Object(claims),
-        "JWT",
-        input.signing_alg,
-    )
-    .await
 }
 
 pub(crate) async fn sign_response_jwt(

@@ -32,8 +32,6 @@ use sha2::Sha256;
 use std::cmp::Ordering;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 #[cfg(test)]
-use std::path::PathBuf;
-#[cfg(test)]
 use uuid::Uuid;
 
 const VERIFY_HEADER: &str = "x-ssl-client-verify";
