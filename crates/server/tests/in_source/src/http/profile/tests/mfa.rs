@@ -1,5 +1,6 @@
 use super::*;
 use nazo_identity::{TenantId, UserId, ports::TotpEnrollment};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
@@ -58,8 +59,18 @@ struct LiveMfaFixture {
     state: Data<AppState>,
 }
 
+#[derive(QueryableByName)]
+struct AuditOutcomeRow {
+    #[diesel(sql_type = Text)]
+    outcome: String,
+}
+
 impl LiveMfaFixture {
     async fn new() -> Option<Self> {
+        Self::new_with_rate_limit(100_000).await
+    }
+
+    async fn new_with_rate_limit(max_requests: u64) -> Option<Self> {
         let database_url = std::env::var("DATABASE_URL").ok()?;
         let valkey_url = std::env::var("VALKEY_URL").ok()?;
         let config = ConfigSource::from_pairs_for_test([
@@ -71,9 +82,9 @@ impl LiveMfaFixture {
             ("COOKIE_SECURE", "true"),
             ("SESSION_COOKIE_NAME", "nazo_session_mfa_test"),
             ("CSRF_COOKIE_NAME", "nazo_csrf_mfa_test"),
-            ("AUTH_RATE_LIMIT_MAX_REQUESTS", "100000"),
         ]);
-        let settings = Settings::from_config(&config).expect("test settings should load");
+        let mut settings = Settings::from_config(&config).expect("test settings should load");
+        settings.identity.rate_limit.auth_max_requests = max_requests;
         let mut valkey_builder = ValkeyBuilder::from_config(
             ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),
         );
@@ -165,7 +176,15 @@ impl LiveMfaFixture {
     }
 
     fn request(&self, sid: &str, csrf: &str) -> HttpRequest {
-        actix_web::test::TestRequest::default()
+        self.request_from(sid, csrf, None)
+    }
+
+    fn request_from(&self, sid: &str, csrf: &str, peer_addr: Option<SocketAddr>) -> HttpRequest {
+        let mut request = actix_web::test::TestRequest::default();
+        if let Some(peer_addr) = peer_addr {
+            request = request.peer_addr(peer_addr);
+        }
+        request
             .cookie(Cookie::new(
                 self.state.settings.session.session_cookie_name.clone(),
                 sid.to_owned(),
@@ -569,6 +588,121 @@ async fn mfa_step_up_atomically_rotates_session_and_rejects_totp_replay() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"], "invalid_grant");
     assert!(!has_set_cookie);
+}
+
+#[actix_web::test]
+async fn mfa_step_up_rate_limit_is_fail_closed_and_preserves_session() {
+    let Some(fixture) = LiveMfaFixture::new_with_rate_limit(1).await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let user = fixture.create_user(&suffix, true).await;
+    fixture
+        .insert_confirmed_totp(&user, &nazo_identity::mfa::generate_totp_secret_base32())
+        .await;
+    let sid = format!("step-up-rate-{suffix}");
+    let csrf = format!("csrf-{suffix}");
+    fixture.store_session(&user, &sid, false).await;
+    let peer = SocketAddr::from(([127, 0, 0, 99], 31_337));
+
+    let first = mfa_step_up(
+        mfa_handles(&fixture.state),
+        fixture.request_from(&sid, &csrf, Some(peer)),
+        Json(MfaProtectedRequest {
+            code: "not-a-valid-factor".to_owned(),
+        }),
+    )
+    .await;
+    let (status, body, has_set_cookie) = response_json(first).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_grant");
+    assert!(!has_set_cookie);
+
+    let second = mfa_step_up(
+        mfa_handles(&fixture.state),
+        fixture.request_from(&sid, &csrf, Some(peer)),
+        Json(MfaProtectedRequest {
+            code: "not-a-valid-factor".to_owned(),
+        }),
+    )
+    .await;
+    assert_eq!(
+        second.headers().get(header::RETRY_AFTER),
+        Some(&header::HeaderValue::from_static("60"))
+    );
+    let (status, body, has_set_cookie) = response_json(second).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(body["error"], "temporarily_unavailable");
+    assert!(!has_set_cookie);
+
+    let session = fixture.session_payload(&sid).await;
+    assert!(!session.amr.iter().any(|method| method == "mfa"));
+    assert!(!session.amr.iter().any(|method| method == "otp"));
+}
+
+#[actix_web::test]
+async fn concurrent_totp_verification_has_exactly_one_winner() {
+    let Some(fixture) = LiveMfaFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let user = fixture.create_user(&suffix, true).await;
+    let secret = nazo_identity::mfa::generate_totp_secret_base32();
+    fixture.insert_confirmed_totp(&user, &secret).await;
+    let secret_bytes =
+        nazo_identity::mfa::base32_decode(&secret).expect("generated TOTP secret should decode");
+    let code = nazo_identity::mfa::totp_for_step(
+        &secret_bytes,
+        Utc::now().timestamp().div_euclid(MFA_TOTP_PERIOD_SECONDS),
+    )
+    .expect("TOTP code should generate");
+    let identity = user.identity();
+
+    let (first, second) = tokio::join!(
+        verify_user_mfa_code(&fixture.state.diesel_db, &identity, &code),
+        verify_user_mfa_code(&fixture.state.diesel_db, &identity, &code),
+    );
+    let outcomes = [
+        first.expect("first verification should complete"),
+        second.expect("second verification should complete"),
+    ];
+    assert_eq!(
+        outcomes
+            .iter()
+            .filter(|outcome| **outcome == Some(MfaVerificationMethod::Totp))
+            .count(),
+        1
+    );
+    assert_eq!(
+        outcomes.iter().filter(|outcome| outcome.is_none()).count(),
+        1
+    );
+    let mut connection = get_conn(&fixture.state.diesel_db)
+        .await
+        .expect("database connection");
+    let audit_outcomes = sql_query(
+        "SELECT outcome FROM identity_security_events \
+         WHERE tenant_id = $1 AND target_user_id = $2 AND event_type = 'mfa_totp_attempt'",
+    )
+    .bind::<SqlUuid, _>(user.tenant_id)
+    .bind::<SqlUuid, _>(user.id)
+    .load::<AuditOutcomeRow>(&mut connection)
+    .await
+    .expect("TOTP audit events should load");
+    assert_eq!(
+        audit_outcomes
+            .iter()
+            .filter(|row| row.outcome == "success")
+            .count(),
+        1
+    );
+    assert_eq!(
+        audit_outcomes
+            .iter()
+            .filter(|row| row.outcome == "replay")
+            .count(),
+        1
+    );
 }
 
 #[actix_web::test]
