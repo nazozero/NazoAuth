@@ -108,7 +108,7 @@ mod tests {
     }
 }
 
-struct ClientMetadata<'a> {
+pub(super) struct ClientMetadata<'a> {
     client_type: &'a str,
     redirect_uris: &'a [String],
     post_logout_redirect_uris: &'a [String],
@@ -141,7 +141,7 @@ struct ClientMtlsMetadata<'a> {
 }
 
 impl<'a> ClientMetadata<'a> {
-    fn from_create(request: &'a CreateClientRequest) -> Self {
+    pub(super) fn from_create(request: &'a CreateClientRequest) -> Self {
         Self {
             client_type: &request.client_type,
             redirect_uris: &request.redirect_uris,
@@ -181,7 +181,7 @@ impl<'a> ClientMetadata<'a> {
         }
     }
 
-    fn from_client(client: &'a OAuthClient) -> Self {
+    pub(super) fn from_client(client: &'a OAuthClient) -> Self {
         Self {
             client_type: &client.client_type,
             redirect_uris: &client.redirect_uris,

@@ -9,7 +9,7 @@ use crate::{OAuthClient, ValidatedClientRegistration};
 
 mod validation;
 
-use validation::{default_true, validate_client_metadata};
+use validation::{ClientMetadata, default_true, validate_client_metadata};
 
 pub type AdminClientFuture<'a, T> =
     Pin<Box<dyn Future<Output = Result<T, AdminClientPortError>> + Send + 'a>>;
