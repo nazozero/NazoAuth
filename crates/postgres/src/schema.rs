@@ -39,6 +39,14 @@ diesel::table! {
 }
 
 diesel::table! {
+    identity_security_events (id) {
+        id -> Uuid, tenant_id -> Uuid, category -> Varchar, event_type -> Varchar,
+        outcome -> Varchar, actor_id -> Nullable<Uuid>, target_user_id -> Nullable<Uuid>,
+        reason_code -> Varchar, occurred_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
     user_passkey_credentials (id) {
         id -> Uuid, tenant_id -> Uuid, user_id -> Uuid, credential_id -> Varchar,
         credential -> Jsonb, label -> Varchar, sign_count -> Int8,
@@ -247,6 +255,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     user_totp_credentials,
     user_mfa_backup_codes,
     user_mfa_remembered_devices,
+    identity_security_events,
     user_passkey_credentials,
     external_identity_links,
     oauth_tokens,

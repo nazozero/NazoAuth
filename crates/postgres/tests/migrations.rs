@@ -10,6 +10,10 @@ const RUNTIME_UP: &str =
     include_str!("../../../migrations/20260712000100_runtime_module_state/up.sql");
 const RUNTIME_DOWN: &str =
     include_str!("../../../migrations/20260712000100_runtime_module_state/down.sql");
+const IDENTITY_SECURITY_UP: &str =
+    include_str!("../../../migrations/20260713000100_identity_security_events/up.sql");
+const IDENTITY_SECURITY_DOWN: &str =
+    include_str!("../../../migrations/20260713000100_identity_security_events/down.sql");
 
 #[derive(QueryableByName)]
 struct ProviderType {
@@ -232,6 +236,106 @@ async fn runtime_module_state_migration_enforces_catalogs_and_round_trips() {
         .batch_execute(RUNTIME_UP)
         .await
         .expect("runtime up migration should reapply after down");
+    connection
+        .batch_execute(&format!(
+            "SET search_path TO public; DROP SCHEMA \"{schema}\" CASCADE;"
+        ))
+        .await
+        .expect("test schema should drop");
+}
+
+#[tokio::test]
+async fn identity_security_event_migration_is_additive_redacted_and_round_trips() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let schema = format!("identity_security_events_{}", Uuid::now_v7().simple());
+    let mut connection = AsyncPgConnection::establish(&database_url)
+        .await
+        .expect("test database should connect");
+    connection
+        .batch_execute(&format!(
+            r#"
+            CREATE SCHEMA "{schema}";
+            SET search_path TO "{schema}";
+            CREATE TABLE tenants (id UUID PRIMARY KEY);
+            CREATE TABLE users (id UUID PRIMARY KEY);
+            INSERT INTO tenants (id) VALUES ('00000000-0000-0000-0000-000000000001');
+            "#
+        ))
+        .await
+        .expect("identity audit migration baseline should create");
+    connection
+        .batch_execute(IDENTITY_SECURITY_UP)
+        .await
+        .expect("identity audit up migration should succeed");
+
+    for invalid in [
+        "INSERT INTO identity_security_events (tenant_id, category, event_type, outcome, reason_code) VALUES ('00000000-0000-0000-0000-000000000001', 'secret', 'admin_user_update', 'success', 'admin_updated')",
+        "INSERT INTO identity_security_events (tenant_id, category, event_type, outcome, reason_code) VALUES ('00000000-0000-0000-0000-000000000001', 'admin', 'mfa_totp_attempt', 'success', 'totp_accepted')",
+        "INSERT INTO identity_security_events (tenant_id, category, event_type, outcome, reason_code) VALUES ('00000000-0000-0000-0000-000000000001', 'admin', 'admin_user_update', 'plaintext_secret', 'admin_updated')",
+        "INSERT INTO identity_security_events (tenant_id, category, event_type, outcome, reason_code) VALUES ('00000000-0000-0000-0000-000000000001', 'admin', 'admin_user_update', 'denied', 'contains sensitive text')",
+        "INSERT INTO identity_security_events (tenant_id, category, event_type, outcome, reason_code) VALUES ('00000000-0000-0000-0000-000000000001', 'admin', 'admin_user_update', 'success', 'totp_accepted')",
+    ] {
+        assert!(
+            sql_query(invalid).execute(&mut connection).await.is_err(),
+            "closed and redacted audit catalog should reject {invalid}"
+        );
+    }
+    for valid in [
+        "INSERT INTO identity_security_events (tenant_id, category, event_type, outcome, reason_code) VALUES ('00000000-0000-0000-0000-000000000001', 'mfa', 'mfa_totp_attempt', 'success', 'totp_accepted')",
+        "INSERT INTO identity_security_events (tenant_id, category, event_type, outcome, reason_code) VALUES ('00000000-0000-0000-0000-000000000001', 'mfa', 'mfa_backup_code_attempt', 'replay', 'backup_code_replay')",
+        "INSERT INTO identity_security_events (tenant_id, category, event_type, outcome, reason_code) VALUES ('00000000-0000-0000-0000-000000000001', 'admin', 'admin_user_update', 'denied', 'cross_tenant')",
+    ] {
+        sql_query(valid)
+            .execute(&mut connection)
+            .await
+            .expect("typed audit event semantics should persist");
+    }
+
+    let columns = sql_query(
+        "SELECT column_name AS table_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'identity_security_events' ORDER BY ordinal_position",
+    )
+    .load::<RuntimeTable>(&mut connection)
+    .await
+    .expect("identity event columns should be readable")
+    .into_iter()
+    .map(|row| row.table_name)
+    .collect::<Vec<_>>();
+    assert_eq!(
+        columns,
+        [
+            "id",
+            "tenant_id",
+            "category",
+            "event_type",
+            "outcome",
+            "actor_id",
+            "target_user_id",
+            "reason_code",
+            "occurred_at",
+        ],
+        "the audit schema must have no free-form payload capable of storing credentials, sessions, CSRF tokens, or IP addresses"
+    );
+
+    connection
+        .batch_execute(IDENTITY_SECURITY_DOWN)
+        .await
+        .expect("identity audit down migration should drop only the additive table");
+    let baseline = sql_query(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name IN ('tenants', 'users') ORDER BY table_name",
+    )
+    .load::<RuntimeTable>(&mut connection)
+    .await
+    .expect("baseline table catalog should remain readable")
+    .into_iter()
+    .map(|row| row.table_name)
+    .collect::<Vec<_>>();
+    assert_eq!(baseline, ["tenants", "users"]);
+    connection
+        .batch_execute(IDENTITY_SECURITY_UP)
+        .await
+        .expect("identity audit up migration should reapply after down");
     connection
         .batch_execute(&format!(
             "SET search_path TO public; DROP SCHEMA \"{schema}\" CASCADE;"

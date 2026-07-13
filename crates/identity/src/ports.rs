@@ -191,6 +191,16 @@ pub trait UserRepositoryPort: Send + Sync {
     ) -> RepositoryFuture<'a, Option<SubjectClaims>>;
 }
 
+pub trait AdminUserRepositoryPort: Send + Sync {
+    fn admin_update_authorized<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        actor_id: UserId,
+        target_id: UserId,
+        update: AdminUserUpdate,
+    ) -> RepositoryFuture<'a, crate::AdminUserUpdateOutcome>;
+}
+
 pub trait MfaRepositoryPort: Send + Sync {
     fn totp_credential<'a>(
         &'a self,
@@ -222,6 +232,13 @@ pub trait MfaRepositoryPort: Send + Sync {
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
+    ) -> RepositoryFuture<'a, ()>;
+}
+
+pub trait IdentitySecurityAuditPort: Send + Sync {
+    fn record_identity_security_event<'a>(
+        &'a self,
+        event: crate::IdentitySecurityEvent,
     ) -> RepositoryFuture<'a, ()>;
 }
 

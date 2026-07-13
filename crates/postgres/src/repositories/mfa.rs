@@ -1,12 +1,14 @@
 use crate::{
     DbPool,
+    repositories::audit::insert_identity_security_event,
     schema::{user_mfa_backup_codes, user_mfa_remembered_devices, user_totp_credentials, users},
 };
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use diesel::{BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl, dsl::now};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_identity::{
-    TenantId, UserId,
+    IdentitySecurityEvent, IdentitySecurityEventType, IdentitySecurityOutcome,
+    IdentitySecurityReason, TenantId, UserId,
     mfa::MFA_BACKUP_CODE_COUNT,
     ports::{MfaRepositoryPort, RepositoryError, RepositoryFuture, TotpCredential, TotpEnrollment},
 };
@@ -209,25 +211,50 @@ impl MfaRepository {
             .get()
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        let changed = diesel::update(
-            user_totp_credentials::table
-                .filter(user_totp_credentials::tenant_id.eq(tenant_id.as_uuid()))
-                .filter(user_totp_credentials::user_id.eq(user_id.as_uuid()))
-                .filter(user_totp_credentials::confirmed_at.is_not_null())
-                .filter(
-                    user_totp_credentials::last_used_step
-                        .is_null()
-                        .or(user_totp_credentials::last_used_step.lt(step)),
-                ),
-        )
-        .set((
-            user_totp_credentials::last_used_step.eq(step),
-            user_totp_credentials::updated_at.eq(now),
-        ))
-        .execute(&mut connection)
-        .await
-        .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
-        Ok(changed == 1)
+        connection
+            .transaction::<bool, MfaAuditError, _>(async |connection| {
+                let changed = diesel::update(
+                    user_totp_credentials::table
+                        .filter(user_totp_credentials::tenant_id.eq(tenant_id.as_uuid()))
+                        .filter(user_totp_credentials::user_id.eq(user_id.as_uuid()))
+                        .filter(user_totp_credentials::confirmed_at.is_not_null())
+                        .filter(
+                            user_totp_credentials::last_used_step
+                                .is_null()
+                                .or(user_totp_credentials::last_used_step.lt(step)),
+                        ),
+                )
+                .set((
+                    user_totp_credentials::last_used_step.eq(step),
+                    user_totp_credentials::updated_at.eq(now),
+                ))
+                .execute(connection)
+                .await?
+                    == 1;
+                insert_identity_security_event(
+                    connection,
+                    &mfa_event(
+                        tenant_id,
+                        user_id,
+                        IdentitySecurityEventType::MfaTotpAttempt,
+                        if changed {
+                            IdentitySecurityOutcome::Success
+                        } else {
+                            IdentitySecurityOutcome::Replay
+                        },
+                        if changed {
+                            IdentitySecurityReason::TotpAccepted
+                        } else {
+                            IdentitySecurityReason::TotpReplay
+                        },
+                    ),
+                )
+                .await
+                .map_err(MfaAuditError::Repository)?;
+                Ok(changed)
+            })
+            .await
+            .map_err(MfaAuditError::into_repository)
     }
     pub async fn consume_backup_code(
         &self,
@@ -254,25 +281,68 @@ impl MfaRepository {
                 "persisted backup-code count exceeds the supported maximum".into(),
             ));
         }
-        let Some((id, _)) = candidates.into_iter().find(|(_, hash)| {
-            PasswordHash::new(hash).ok().is_some_and(|parsed| {
-                Argon2::default()
-                    .verify_password(normalized_code.as_bytes(), &parsed)
-                    .is_ok()
+        let normalized_code = normalized_code.to_owned();
+        let matched_id = tokio::task::spawn_blocking(move || {
+            candidates.into_iter().find_map(|(id, hash)| {
+                PasswordHash::new(&hash).ok().and_then(|parsed| {
+                    Argon2::default()
+                        .verify_password(normalized_code.as_bytes(), &parsed)
+                        .is_ok()
+                        .then_some(id)
+                })
             })
-        }) else {
-            return Ok(false);
-        };
-        let changed = diesel::update(
-            user_mfa_backup_codes::table
-                .find(id)
-                .filter(user_mfa_backup_codes::used_at.is_null()),
-        )
-        .set(user_mfa_backup_codes::used_at.eq(now))
-        .execute(&mut connection)
+        })
         .await
         .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
-        Ok(changed == 1)
+        let Some(id) = matched_id else {
+            insert_identity_security_event(
+                &mut connection,
+                &mfa_event(
+                    tenant_id,
+                    user_id,
+                    IdentitySecurityEventType::MfaBackupCodeAttempt,
+                    IdentitySecurityOutcome::InvalidCredential,
+                    IdentitySecurityReason::BackupCodeInvalid,
+                ),
+            )
+            .await?;
+            return Ok(false);
+        };
+        connection
+            .transaction::<bool, MfaAuditError, _>(async |connection| {
+                let changed = diesel::update(
+                    user_mfa_backup_codes::table
+                        .find(id)
+                        .filter(user_mfa_backup_codes::used_at.is_null()),
+                )
+                .set(user_mfa_backup_codes::used_at.eq(now))
+                .execute(connection)
+                .await?
+                    == 1;
+                insert_identity_security_event(
+                    connection,
+                    &mfa_event(
+                        tenant_id,
+                        user_id,
+                        IdentitySecurityEventType::MfaBackupCodeAttempt,
+                        if changed {
+                            IdentitySecurityOutcome::Success
+                        } else {
+                            IdentitySecurityOutcome::Replay
+                        },
+                        if changed {
+                            IdentitySecurityReason::BackupCodeAccepted
+                        } else {
+                            IdentitySecurityReason::BackupCodeReplay
+                        },
+                    ),
+                )
+                .await
+                .map_err(MfaAuditError::Repository)?;
+                Ok(changed)
+            })
+            .await
+            .map_err(MfaAuditError::into_repository)
     }
     pub async fn replace_backup_code_hashes(
         &self,
@@ -432,6 +502,44 @@ impl MfaRepository {
             })
             .await
             .map_err(|error| RepositoryError::Unexpected(error.to_string()))
+    }
+}
+
+fn mfa_event(
+    tenant_id: TenantId,
+    user_id: UserId,
+    event_type: IdentitySecurityEventType,
+    outcome: IdentitySecurityOutcome,
+    reason: IdentitySecurityReason,
+) -> IdentitySecurityEvent {
+    IdentitySecurityEvent {
+        tenant_id,
+        event_type,
+        outcome,
+        actor_id: Some(user_id),
+        target_user_id: Some(user_id),
+        reason,
+        occurred_at: std::time::SystemTime::now(),
+    }
+}
+
+enum MfaAuditError {
+    Diesel(diesel::result::Error),
+    Repository(RepositoryError),
+}
+
+impl From<diesel::result::Error> for MfaAuditError {
+    fn from(error: diesel::result::Error) -> Self {
+        Self::Diesel(error)
+    }
+}
+
+impl MfaAuditError {
+    fn into_repository(self) -> RepositoryError {
+        match self {
+            Self::Diesel(error) => RepositoryError::Unexpected(error.to_string()),
+            Self::Repository(error) => error,
+        }
     }
 }
 

@@ -55,9 +55,10 @@ pub(crate) async fn admin_patch_user(
     if !has_valid_csrf_token(&state, &req, None) {
         return csrf_error();
     }
-    if let Err(response) = require_admin_or_forbidden(&state, &req).await {
-        return response;
-    }
+    let admin = match require_admin_or_forbidden(&state, &req).await {
+        Ok(admin) => admin,
+        Err(response) => return response,
+    };
     if let Some(response) = patch_user_validation_error(&payload) {
         return response;
     }
@@ -71,8 +72,21 @@ pub(crate) async fn admin_patch_user(
             );
         }
     };
+    let actor_id = match nazo_identity::UserId::new(admin.id()) {
+        Ok(actor_id) => actor_id,
+        Err(error) => {
+            tracing::error!(%error, "authenticated administrator has an invalid user id");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "管理员身份无效.",
+            );
+        }
+    };
     let updated = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
-        .admin_update(
+        .admin_update_authorized(
+            admin.tenant().tenant_id,
+            actor_id,
             user_id,
             nazo_identity::ports::AdminUserUpdate {
                 role: payload.role,
@@ -85,9 +99,9 @@ pub(crate) async fn admin_patch_user(
         Ok(updated) => updated,
         Err(nazo_identity::ports::RepositoryError::Conflict) => {
             return oauth_error(
-                StatusCode::BAD_REQUEST,
+                StatusCode::CONFLICT,
                 "invalid_request",
-                "role 与 admin_level 组合无效.",
+                "用户状态发生并发冲突，请重试.",
             );
         }
         Err(error) => {
@@ -100,7 +114,7 @@ pub(crate) async fn admin_patch_user(
         }
     };
     match updated {
-        Some(user) => {
+        nazo_identity::AdminUserUpdateOutcome::Updated(user) => {
             audit_event(
                 "admin_user_updated",
                 audit_fields(&[
@@ -111,9 +125,21 @@ pub(crate) async fn admin_patch_user(
                     ),
                 ]),
             );
-            json_response(admin_user_json(user))
+            json_response(admin_user_json(*user))
         }
-        None => oauth_error(StatusCode::NOT_FOUND, "invalid_request", "未找到该用户."),
+        nazo_identity::AdminUserUpdateOutcome::TargetNotFound => {
+            oauth_error(StatusCode::NOT_FOUND, "invalid_request", "未找到该用户.")
+        }
+        nazo_identity::AdminUserUpdateOutcome::Denied(
+            nazo_identity::AdminPolicyError::InvalidRoleLevel,
+        ) => oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "role 与 admin_level 组合无效.",
+        ),
+        nazo_identity::AdminUserUpdateOutcome::Denied(_) => {
+            oauth_error(StatusCode::FORBIDDEN, "access_denied", "不允许修改该用户.")
+        }
     }
 }
 

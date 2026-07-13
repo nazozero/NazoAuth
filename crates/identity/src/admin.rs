@@ -19,6 +19,13 @@ pub struct ResolvedAdminUserUpdate {
     pub active: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AdminUserUpdateOutcome {
+    Updated(Box<crate::PublicAccount>),
+    TargetNotFound,
+    Denied(AdminPolicyError),
+}
+
 pub fn authorize_admin_update(
     actor: &Principal,
     target: &Principal,
