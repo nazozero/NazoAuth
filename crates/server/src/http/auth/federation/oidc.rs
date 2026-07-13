@@ -62,6 +62,7 @@ pub(super) fn oidc_authorization_url(
     )
 }
 
+#[cfg(test)]
 pub(super) fn oidc_state_key(state: &str) -> String {
     format!("oauth:federation:oidc:state:{}", blake3_hex(state))
 }

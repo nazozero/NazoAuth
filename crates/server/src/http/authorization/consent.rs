@@ -2,6 +2,7 @@
 // 前端通过 request_id 读取待确认内容，服务端再次校验该请求属于当前用户。
 use crate::http::prelude::*;
 
+#[cfg(test)]
 fn parse_consent_payload(raw: Option<String>) -> Option<ConsentPayload> {
     raw.and_then(|value| serde_json::from_str::<ConsentPayload>(&value).ok())
 }

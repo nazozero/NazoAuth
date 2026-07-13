@@ -54,14 +54,14 @@ pub(crate) async fn send_code_after_rate_limit(
         }
     }
 
-    let peer_cooldown_key = email_code_peer_cooldown_key(&req);
-    match valkey_set_ex_nx(
-        &state.valkey,
-        &peer_cooldown_key,
-        "1",
-        state.settings.email.send_peer_cooldown_seconds,
-    )
-    .await
+    let peer_subject = email_code_peer_subject(&req);
+    let store = nazo_valkey::AuthenticationStore::new(&state.valkey_connection());
+    match store
+        .reserve_email_peer_send(
+            &peer_subject,
+            state.settings.email.send_peer_cooldown_seconds,
+        )
+        .await
     {
         Ok(true) => {}
         Ok(false) => return send_code_success_response(dev_response_enabled, None),
@@ -74,14 +74,9 @@ pub(crate) async fn send_code_after_rate_limit(
         }
     }
 
-    let cooldown_key = format!("oauth:email_verify:send:{email}");
-    match valkey_set_ex_nx(
-        &state.valkey,
-        &cooldown_key,
-        "1",
-        state.settings.email.send_cooldown_seconds,
-    )
-    .await
+    match store
+        .reserve_email_send(&email, state.settings.email.send_cooldown_seconds)
+        .await
     {
         Ok(true) => {}
         Ok(false) => return send_code_success_response(dev_response_enabled, None),
@@ -96,26 +91,21 @@ pub(crate) async fn send_code_after_rate_limit(
 
     let code = random_numeric_code();
     let Ok(code_hash) = hash_password(&code) else {
-        let _ = valkey_del(&state.valkey, &peer_cooldown_key).await;
-        let _ = valkey_del(&state.valkey, &cooldown_key).await;
+        let _ = store.delete_email_peer_send(&peer_subject).await;
+        let _ = store.delete_email_send(&email).await;
         return oauth_error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "server_error",
             "验证码生成失败.",
         );
     };
-    let key = format!("oauth:email_verify:code:{email}");
-    if valkey_set_ex(
-        &state.valkey,
-        &key,
-        code_hash,
-        state.settings.email.code_ttl_seconds,
-    )
-    .await
-    .is_err()
+    if store
+        .store_email_code(&email, &code_hash, state.settings.email.code_ttl_seconds)
+        .await
+        .is_err()
     {
-        let _ = valkey_del(&state.valkey, &peer_cooldown_key).await;
-        let _ = valkey_del(&state.valkey, &cooldown_key).await;
+        let _ = store.delete_email_peer_send(&peer_subject).await;
+        let _ = store.delete_email_send(&email).await;
         return oauth_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "server_error",
@@ -124,9 +114,9 @@ pub(crate) async fn send_code_after_rate_limit(
     }
 
     if let Err(error) = send_verification_email(&state.settings, recipient.mailbox, &code).await {
-        let _ = valkey_del(&state.valkey, &key).await;
-        let _ = valkey_del(&state.valkey, &peer_cooldown_key).await;
-        let _ = valkey_del(&state.valkey, &cooldown_key).await;
+        let _ = store.delete_email_code(&email).await;
+        let _ = store.delete_email_peer_send(&peer_subject).await;
+        let _ = store.delete_email_send(&email).await;
         tracing::warn!(%error, "failed to send verification email");
         return oauth_error(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -138,12 +128,18 @@ pub(crate) async fn send_code_after_rate_limit(
     send_code_success_response(dev_response_enabled, Some(&code))
 }
 
+#[cfg(test)]
 fn email_code_peer_cooldown_key(req: &HttpRequest) -> String {
-    let subject = req
-        .peer_addr()
+    format!(
+        "oauth:email_verify:peer_send:{}",
+        blake3_hex(&email_code_peer_subject(req))
+    )
+}
+
+fn email_code_peer_subject(req: &HttpRequest) -> String {
+    req.peer_addr()
         .map(|addr| addr.ip().to_string())
-        .unwrap_or_else(|| "unknown".to_owned());
-    format!("oauth:email_verify:peer_send:{}", blake3_hex(&subject))
+        .unwrap_or_else(|| "unknown".to_owned())
 }
 
 fn send_code_success_response(dev_response_enabled: bool, code: Option<&str>) -> HttpResponse {

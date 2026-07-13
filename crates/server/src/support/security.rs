@@ -1,7 +1,7 @@
 //! 密码、哈希、客户端认证和客户端 JWT 验证工具。
 
 use super::prelude::*;
-use super::{audit_event, audit_fields, request_mtls_client_certificate, valkey_set_ex_nx};
+use super::{audit_event, audit_fields, request_mtls_client_certificate};
 use anyhow::{anyhow, bail};
 use hmac::{Hmac, KeyInit, Mac};
 use std::sync::{
@@ -446,8 +446,10 @@ pub(crate) async fn consume_private_key_jwt(
 ) -> Result<(), ClientAssertionError> {
     let now = Utc::now().timestamp();
     let ttl_seconds = assertion.replay_ttl_seconds(now);
-    let replay_key = client_assertion_replay_key(&client.client_id, &assertion.jti);
-    match valkey_set_ex_nx(&state.valkey, replay_key, "1", ttl_seconds).await {
+    match nazo_valkey::ReplayStore::new(&state.valkey_connection())
+        .consume_private_key_jwt(&client.client_id, &assertion.jti, ttl_seconds)
+        .await
+    {
         Ok(true) => Ok(()),
         Ok(false) => {
             audit_event(
@@ -479,6 +481,7 @@ impl ValidatedClientAssertion {
     }
 }
 
+#[cfg(test)]
 fn client_assertion_replay_key(client_id: &str, jti: &str) -> String {
     format!(
         "oauth:client_assertion:jti:{}:{}",

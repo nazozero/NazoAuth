@@ -30,8 +30,8 @@ pub(crate) async fn register_after_rate_limit(
         return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "邮箱格式无效.");
     };
     let code = verification_code_for_lookup(&payload);
-    let key = format!("oauth:email_verify:code:{email}");
-    let stored = match valkey_get(&state.valkey, &key).await {
+    let store = nazo_valkey::AuthenticationStore::new(&state.valkey_connection());
+    let stored = match store.load_email_code(&email).await {
         Ok(value) => value,
         Err(_) => {
             return oauth_error(
@@ -116,11 +116,11 @@ pub(crate) async fn register_after_rate_limit(
                     "用户创建失败.",
                 );
             }
-            let _ = valkey_del(&state.valkey, &key).await;
+            let _ = store.delete_email_code(&email).await;
             register_success_response(user)
         }
         Err(nazo_identity::ports::RepositoryError::Conflict) => {
-            let _ = valkey_del(&state.valkey, &key).await;
+            let _ = store.delete_email_code(&email).await;
             oauth_error(StatusCode::CONFLICT, "invalid_request", "该邮箱已注册.")
         }
         Err(error) => {

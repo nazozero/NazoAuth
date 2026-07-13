@@ -1,37 +1,5 @@
 use super::*;
 
-const MARK_CONSUMED_AUTHORIZATION_CODE_SCRIPT: &str = r#"
-local raw = redis.call('GET', KEYS[1])
-if not raw then
-  return 'missing'
-end
-local ok, state = pcall(cjson.decode, raw)
-if not ok or type(state) ~= 'table' or type(state.status) ~= 'string' then
-  return 'malformed'
-end
-if state.status ~= 'consuming' then
-  return state.status
-end
-redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
-return 'ok'
-"#;
-
-const MARK_FAILED_AUTHORIZATION_CODE_SCRIPT: &str = r#"
-local raw = redis.call('GET', KEYS[1])
-if not raw then
-  return 'missing'
-end
-local ok, state = pcall(cjson.decode, raw)
-if not ok or type(state) ~= 'table' or type(state.status) ~= 'string' then
-  return 'malformed'
-end
-if state.status ~= 'consuming' then
-  return state.status
-end
-redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
-return 'ok'
-"#;
-
 pub(super) fn consumed_authorization_code_transition_result(result: &str) -> anyhow::Result<()> {
     if result == "ok" {
         Ok(())

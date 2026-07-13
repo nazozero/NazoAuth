@@ -44,6 +44,7 @@ pub(crate) fn native_sso_device_secret_hash(device_secret: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(device_secret.as_bytes()))
 }
 
+#[cfg(test)]
 pub(crate) fn native_sso_device_secret_key(device_secret: &str) -> String {
     format!(
         "oauth:native_sso:device_secret:{}",
@@ -99,7 +100,8 @@ async fn load_native_sso_device_secret_state(
     state: &AppState,
     device_secret: &str,
 ) -> Result<Option<NativeSsoDeviceSecretState>, HttpResponse> {
-    let raw = valkey_get(&state.valkey, native_sso_device_secret_key(device_secret))
+    let value = nazo_valkey::TokenStateStore::new(&state.valkey_connection())
+        .load_native_sso(device_secret)
         .await
         .map_err(|error| {
             tracing::warn!(%error, "failed to load Native SSO device secret state");
@@ -110,10 +112,10 @@ async fn load_native_sso_device_secret_state(
                 false,
             )
         })?;
-    let Some(raw) = raw else {
+    let Some(value) = value else {
         return Ok(None);
     };
-    serde_json::from_str(&raw).map(Some).map_err(|error| {
+    serde_json::from_value(value).map(Some).map_err(|error| {
         tracing::warn!(%error, "Native SSO device secret state is malformed");
         oauth_token_error(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -237,13 +239,13 @@ pub(crate) async fn persist_native_sso_device_secret(
         refresh_token_family_id,
         expires_at,
     };
-    valkey_set_ex(
-        &state.valkey,
-        native_sso_device_secret_key(&binding.device_secret),
-        serde_json::to_string(&payload)?,
-        state.settings.refresh_token_ttl_seconds.max(1) as u64,
-    )
-    .await?;
+    nazo_valkey::TokenStateStore::new(&state.valkey_connection())
+        .store_native_sso(
+            &binding.device_secret,
+            &serde_json::to_value(payload)?,
+            state.settings.refresh_token_ttl_seconds.max(1) as u64,
+        )
+        .await?;
     Ok(())
 }
 

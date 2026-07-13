@@ -11,6 +11,7 @@ use nazo_auth::{
     validate_token_request_profile as validate_auth_token_request_profile,
 };
 
+#[cfg(test)]
 fn pending_authorization_code_payload(raw: &str) -> Result<Option<CodePayload>, serde_json::Error> {
     match serde_json::from_str::<AuthorizationCodeState>(raw)? {
         AuthorizationCodeState::Pending { payload } => Ok(Some(payload)),

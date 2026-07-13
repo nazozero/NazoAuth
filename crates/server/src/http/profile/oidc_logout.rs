@@ -153,7 +153,9 @@ pub(crate) async fn oidc_logout(
     }
 
     if let Some(session_id) = session_cookie {
-        let _ = valkey_del(&state.valkey, format!("oauth:session:{session_id}")).await;
+        let _ = nazo_valkey::SessionStore::new(&state.valkey_connection())
+            .delete(&session_id)
+            .await;
     }
 
     audit_event(

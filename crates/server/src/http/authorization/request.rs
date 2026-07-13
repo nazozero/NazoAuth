@@ -516,13 +516,15 @@ pub(crate) async fn consume_pushed_authorization_request(
 ) -> Result<(), PushedAuthorizationRequestConsumeError> {
     let store = nazo_valkey::AuthorizationStore::new(&state.valkey_connection());
     match store.take_par(request_uri).await {
-        Ok(Some(_)) => return Ok(()),
-        Ok(None) => {
-            return Err(PushedAuthorizationRequestConsumeError::Missing);
+        Ok(Some(_)) => Ok(()),
+        Ok(None) => Err(PushedAuthorizationRequestConsumeError::Missing),
+        Err(error) if error.kind() == nazo_valkey::ErrorKind::Protocol => {
+            tracing::warn!(%error, "PAR payload is malformed");
+            Err(PushedAuthorizationRequestConsumeError::Malformed)
         }
         Err(error) => {
             tracing::warn!(%error, "failed to consume PAR request_uri");
-            return Err(PushedAuthorizationRequestConsumeError::ReadFailed);
+            Err(PushedAuthorizationRequestConsumeError::ReadFailed)
         }
     }
 }
@@ -719,11 +721,11 @@ async fn consume_reauth_nonce(state: &AppState, q: &mut HashMap<String, String>)
     let nonce = q.remove(reauth_nonce_parameter())?;
     let store = nazo_valkey::AuthorizationStore::new(&state.valkey_connection());
     match store.take_reauth_nonce(&nonce).await {
-        Ok(Some(started_at)) => return (started_at > 0).then_some(started_at),
-        Ok(None) => return None,
+        Ok(Some(started_at)) => (started_at > 0).then_some(started_at),
+        Ok(None) => None,
         Err(error) => {
             tracing::warn!(%error, "failed to consume reauthentication nonce");
-            return None;
+            None
         }
     }
 }
@@ -760,10 +762,6 @@ async fn issue_reauth_nonce(state: &AppState) -> Result<String, HttpResponse> {
             )
         })?;
     Ok(nonce)
-}
-
-fn reauth_nonce_key(nonce: &str) -> String {
-    format!("oauth:authorization:reauth:{}", blake3_hex(nonce))
 }
 
 #[cfg(test)]

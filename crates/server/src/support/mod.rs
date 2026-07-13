@@ -15,12 +15,12 @@ mod oauth;
 mod oidc_claims;
 mod passkeys;
 mod rate_limit;
-mod redis_keys;
 mod responses;
 mod sector_identifier;
 mod security;
 mod sessions;
 mod tenancy;
+#[cfg(test)]
 mod valkey;
 mod views;
 
@@ -41,12 +41,12 @@ pub(crate) use oauth::*;
 pub(crate) use oidc_claims::*;
 pub(crate) use passkeys::*;
 pub(crate) use rate_limit::*;
-pub(crate) use redis_keys::*;
 pub(crate) use responses::*;
 pub(crate) use sector_identifier::*;
 pub(crate) use security::*;
 pub(crate) use sessions::*;
 pub(crate) use tenancy::*;
+#[cfg(test)]
 pub(crate) use valkey::*;
 pub(crate) use views::*;
 
@@ -68,8 +68,9 @@ pub(crate) mod prelude {
         engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
     };
     pub(crate) use chrono::Utc;
+    #[cfg(test)]
     pub(crate) use fred::prelude::{
-        Client as ValkeyClient, Error as ValkeyError, Expiration, KeysInterface, SetOptions,
+        Client as ValkeyClient, Error as ValkeyError, Expiration, KeysInterface,
     };
     pub(crate) use serde::{Deserialize, Serialize};
     pub(crate) use serde_json::{Value, json};
@@ -85,9 +86,10 @@ pub(crate) mod prelude {
     pub(crate) use nazo_postgres::DbPool;
 
     #[cfg(test)]
+    pub(crate) use super::valkey_get;
+    #[cfg(test)]
     pub(crate) use super::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
     pub(crate) use super::{
-        clear_cookie, constant_time_eq, cookie_value, json_array_to_strings, valkey_get,
-        with_cookie_headers,
+        clear_cookie, constant_time_eq, cookie_value, json_array_to_strings, with_cookie_headers,
     };
 }

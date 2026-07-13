@@ -105,8 +105,8 @@ async fn start_oidc_provider(state: &AppState, provider: &OidcFederationSettings
         pkce_verifier: pkce_verifier.clone(),
         created_at: Utc::now().timestamp(),
     };
-    let body = match serde_json::to_string(&stored) {
-        Ok(body) => body,
+    let value = match serde_json::to_value(&stored) {
+        Ok(value) => value,
         Err(error) => {
             tracing::warn!(%error, "failed to serialize OIDC federation state");
             return oauth_error(
@@ -116,14 +116,10 @@ async fn start_oidc_provider(state: &AppState, provider: &OidcFederationSettings
             );
         }
     };
-    if valkey_set_ex(
-        &state.valkey,
-        oidc_state_key(&state_token),
-        body,
-        FEDERATION_STATE_TTL_SECONDS,
-    )
-    .await
-    .is_err()
+    if nazo_valkey::AuthenticationStore::new(&state.valkey_connection())
+        .store_oidc_federation(&state_token, &value, FEDERATION_STATE_TTL_SECONDS)
+        .await
+        .is_err()
     {
         return oauth_error(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -460,7 +456,8 @@ async fn take_oidc_state(
     state: &AppState,
     state_token: &str,
 ) -> Result<Option<OidcFederationState>, HttpResponse> {
-    let raw = valkey_getdel(&state.valkey, oidc_state_key(state_token))
+    let value = nazo_valkey::AuthenticationStore::new(&state.valkey_connection())
+        .take_oidc_federation(state_token)
         .await
         .map_err(|error| {
             tracing::warn!(%error, "failed to load OIDC federation state");
@@ -470,17 +467,18 @@ async fn take_oidc_state(
                 "federation state failed.",
             )
         })?;
-    raw.map(|value| {
-        serde_json::from_str::<OidcFederationState>(&value).map_err(|error| {
-            tracing::warn!(%error, "OIDC federation state is malformed");
-            oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "federation state expired.",
-            )
+    value
+        .map(|value| {
+            serde_json::from_value::<OidcFederationState>(value).map_err(|error| {
+                tracing::warn!(%error, "OIDC federation state is malformed");
+                oauth_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_request",
+                    "federation state expired.",
+                )
+            })
         })
-    })
-    .transpose()
+        .transpose()
 }
 
 async fn resolve_external_identity(
@@ -666,26 +664,7 @@ async fn create_federated_session(
         pending_mfa: false,
         oidc_sid: Some(random_urlsafe_token()),
     };
-    let body = match serde_json::to_string(&session) {
-        Ok(body) => body,
-        Err(error) => {
-            tracing::warn!(%error, "failed to serialize federation session");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "session write failed.",
-            );
-        }
-    };
-    if valkey_set_ex(
-        &state.valkey,
-        format!("oauth:session:{session_id}"),
-        body,
-        state.settings.session_ttl_seconds,
-    )
-    .await
-    .is_err()
-    {
+    if store_session(state, &session_id, &session).await.is_err() {
         return oauth_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "server_error",

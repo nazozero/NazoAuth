@@ -63,6 +63,23 @@ impl DeliveryStore {
             .transpose()
     }
 
+    pub async fn load_many(
+        &self,
+        deliveries: &[(UserId, &str)],
+    ) -> Result<Vec<Option<StoredDelivery>>, Error> {
+        command::get_many(
+            &self.connection,
+            deliveries
+                .iter()
+                .map(|(user_id, token)| keys::client_delivery(*user_id, token))
+                .collect(),
+        )
+        .await?
+        .into_iter()
+        .map(|raw| raw.map(parse_delivery).transpose())
+        .collect()
+    }
+
     pub async fn consume(
         &self,
         user_id: UserId,

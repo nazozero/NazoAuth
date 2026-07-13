@@ -142,36 +142,11 @@ pub(crate) async fn valkey_set_ex(
         .await
 }
 
-pub(crate) async fn valkey_set_ex_nx(
-    valkey: &ValkeyClient,
-    key: impl Into<String>,
-    value: impl Into<String>,
-    ttl_seconds: u64,
-) -> Result<bool, ValkeyError> {
-    let response = valkey
-        .set::<Option<String>, _, _>(
-            key.into(),
-            value.into(),
-            Some(Expiration::EX(ttl_seconds.min(i64::MAX as u64) as i64)),
-            Some(SetOptions::NX),
-            false,
-        )
-        .await?;
-    Ok(response.is_some())
-}
-
 pub(crate) async fn valkey_get(
     valkey: &ValkeyClient,
     key: impl Into<String>,
 ) -> Result<Option<String>, ValkeyError> {
     valkey.get::<Option<String>, _>(key.into()).await
-}
-
-pub(crate) async fn valkey_getdel(
-    valkey: &ValkeyClient,
-    key: impl Into<String>,
-) -> Result<Option<String>, ValkeyError> {
-    valkey.getdel::<Option<String>, _>(key.into()).await
 }
 
 pub(crate) async fn valkey_del(

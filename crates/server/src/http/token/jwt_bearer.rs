@@ -105,28 +105,19 @@ impl ValidatedJwtBearerAssertion {
     }
 }
 
-fn jwt_bearer_replay_key(client_id: &str, jti: &str) -> String {
-    format!(
-        "oauth:jwt_bearer:jti:{}:{}",
-        blake3_hex(client_id),
-        blake3_hex(jti)
-    )
-}
-
 async fn consume_jwt_bearer_assertion(
     state: &AppState,
     client: &ClientRow,
     assertion: &ValidatedJwtBearerAssertion,
 ) -> Result<(), JwtBearerAssertionError> {
     let now = Utc::now().timestamp();
-    let replay_key = jwt_bearer_replay_key(&client.client_id, &assertion.jti);
-    match valkey_set_ex_nx(
-        &state.valkey,
-        replay_key,
-        "1",
-        assertion.replay_ttl_seconds(now),
-    )
-    .await
+    match nazo_valkey::ReplayStore::new(&state.valkey_connection())
+        .consume_jwt_bearer(
+            &client.client_id,
+            &assertion.jti,
+            assertion.replay_ttl_seconds(now),
+        )
+        .await
     {
         Ok(true) => Ok(()),
         Ok(false) => Err(JwtBearerAssertionError::ReplayDetected),

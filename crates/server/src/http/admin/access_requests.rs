@@ -126,7 +126,8 @@ pub(crate) async fn admin_approve_access_request(
             );
         }
     };
-    let request_user_id = pending_request.user_id.as_uuid();
+    let request_user = pending_request.user_id;
+    let request_user_id = request_user.as_uuid();
     let site_name = pending_request.site_name;
     let response_signing_algorithms = state
         .keyset
@@ -149,7 +150,7 @@ pub(crate) async fn admin_approve_access_request(
         request_user_id,
         request_id,
     );
-    let delivery_key = format!("oauth:client_delivery:{request_user_id}:{token}");
+    let delivery_store = nazo_valkey::DeliveryStore::new(&state.valkey_connection());
     let expires_at =
         Utc::now() + Duration::seconds(state.settings.client_delivery_ttl_seconds as i64);
     let delivery_payload = json!({
@@ -168,13 +169,14 @@ pub(crate) async fn admin_approve_access_request(
         "created_at": Utc::now(),
         "expires_at": expires_at
     });
-    if let Err(error) = valkey_set_ex(
-        &state.valkey,
-        &delivery_key,
-        delivery_payload.to_string(),
-        state.settings.client_delivery_ttl_seconds,
-    )
-    .await
+    if let Err(error) = delivery_store
+        .store(
+            request_user,
+            &token,
+            &delivery_payload,
+            state.settings.client_delivery_ttl_seconds,
+        )
+        .await
     {
         tracing::warn!(%error, "failed to persist client delivery payload");
         return oauth_error(
@@ -197,7 +199,7 @@ pub(crate) async fn admin_approve_access_request(
     let client = match approval {
         Ok(client) => client,
         Err(error) => {
-            if let Err(cleanup_error) = valkey_del(&state.valkey, &delivery_key).await {
+            if let Err(cleanup_error) = delivery_store.delete(request_user, &token).await {
                 tracing::warn!(%cleanup_error, "failed to remove client delivery payload");
             }
             if let Some(response) = access_request_approval_error_response(&error) {
@@ -214,13 +216,14 @@ pub(crate) async fn admin_approve_access_request(
     let mut committed_delivery_payload = delivery_payload;
     committed_delivery_payload["delivery_state"] = json!("committed");
     committed_delivery_payload["approved_client_id"] = json!(client.id);
-    if let Err(error) = valkey_set_ex(
-        &state.valkey,
-        &delivery_key,
-        committed_delivery_payload.to_string(),
-        state.settings.client_delivery_ttl_seconds,
-    )
-    .await
+    if let Err(error) = delivery_store
+        .store(
+            request_user,
+            &token,
+            &committed_delivery_payload,
+            state.settings.client_delivery_ttl_seconds,
+        )
+        .await
     {
         tracing::warn!(%error, "failed to activate client delivery payload");
         return oauth_error(
@@ -265,13 +268,14 @@ async fn resume_staged_client_delivery(
     let Some(approved_client_id) = request.approved_client_id else {
         return Ok(false);
     };
-    let user_id = request.user_id.as_uuid();
+    let user = request.user_id;
+    let user_id = user.as_uuid();
     let token = access_delivery_token(&state.settings.client_secret_pepper, user_id, request.id);
-    let key = format!("oauth:client_delivery:{user_id}:{token}");
-    let Some(raw) = valkey_get(&state.valkey, &key).await? else {
+    let store = nazo_valkey::DeliveryStore::new(&state.valkey_connection());
+    let Some(stored) = nazo_valkey::DeliveryStore::load(&store, user, &token).await? else {
         return Ok(false);
     };
-    let mut payload: Value = serde_json::from_str(&raw)?;
+    let mut payload = stored.value().clone();
     if payload["delivery_state"] != "staged"
         || payload["request_id"] != json!(request.id)
         || payload["user_id"] != json!(user_id)
@@ -280,13 +284,14 @@ async fn resume_staged_client_delivery(
     }
     payload["delivery_state"] = json!("committed");
     payload["approved_client_id"] = json!(approved_client_id);
-    valkey_set_ex(
-        &state.valkey,
-        key,
-        payload.to_string(),
-        state.settings.client_delivery_ttl_seconds,
-    )
-    .await?;
+    store
+        .store(
+            user,
+            &token,
+            &payload,
+            state.settings.client_delivery_ttl_seconds,
+        )
+        .await?;
     Ok(true)
 }
 

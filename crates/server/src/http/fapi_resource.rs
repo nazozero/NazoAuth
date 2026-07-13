@@ -11,6 +11,40 @@ use nazo_http_signatures::{
 };
 
 type FapiStoreFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+const FAPI_HTTP_SIGNATURE_FUTURE_SKEW_SECONDS: i64 = 5;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ReplayConsumption {
+    Accepted,
+    Replay,
+    DependencyFailure,
+}
+
+#[cfg(test)]
+fn fapi_http_signature_replay_key(fingerprint: &[u8; 32]) -> String {
+    format!(
+        "fapi_http_signature_replay:{}",
+        blake3::Hash::from_bytes(*fingerprint).to_hex()
+    )
+}
+
+#[cfg(test)]
+async fn consume_fapi_http_signature_replay(
+    client: &fred::prelude::Client,
+    fingerprint: &[u8; 32],
+    max_age_seconds: i64,
+) -> ReplayConsumption {
+    match nazo_valkey::ReplayStore::new(&nazo_valkey::ValkeyConnection::from_existing_client(
+        client.clone(),
+    ))
+    .consume_fapi_http_signature(fingerprint, max_age_seconds)
+    .await
+    {
+        Ok(true) => ReplayConsumption::Accepted,
+        Ok(false) => ReplayConsumption::Replay,
+        Err(_) => ReplayConsumption::DependencyFailure,
+    }
+}
 
 trait FapiResourceStore: Send + Sync {
     fn revoked<'a>(
@@ -68,7 +102,14 @@ impl FapiResourceStore for AppState {
         max_age_seconds: i64,
     ) -> FapiStoreFuture<'a, ReplayConsumption> {
         Box::pin(async move {
-            consume_fapi_http_signature_replay(&self.valkey, fingerprint, max_age_seconds).await
+            match nazo_valkey::ReplayStore::new(&self.valkey_connection())
+                .consume_fapi_http_signature(fingerprint, max_age_seconds)
+                .await
+            {
+                Ok(true) => ReplayConsumption::Accepted,
+                Ok(false) => ReplayConsumption::Replay,
+                Err(_) => ReplayConsumption::DependencyFailure,
+            }
         })
     }
 }

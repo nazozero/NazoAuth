@@ -6,36 +6,6 @@ use super::{
 };
 use crate::http::prelude::*;
 
-const BEGIN_AUTHORIZATION_CODE_CONSUMPTION_SCRIPT: &str = r#"
-local raw = redis.call('GET', KEYS[1])
-if not raw then
-  return 'missing'
-end
-local ok, state = pcall(cjson.decode, raw)
-if not ok or type(state) ~= 'table' or type(state.status) ~= 'string' then
-  return 'malformed'
-end
-if state.status == 'pending' then
-  if type(state.payload) ~= 'table' then
-    return 'malformed'
-  end
-  state.status = 'consuming'
-  state.consuming_at = ARGV[1]
-  redis.call('SET', KEYS[1], cjson.encode(state), 'KEEPTTL')
-  return 'consuming|' .. cjson.encode(state.payload)
-end
-if state.status == 'consuming' then
-  return 'busy'
-end
-if state.status == 'consumed' then
-  return 'consumed|' .. raw
-end
-if state.status == 'failed' then
-  return 'failed'
-end
-return 'malformed'
-"#;
-
 enum AuthorizationCodeConsumption {
     Consuming(Box<CodePayload>),
     Busy,
@@ -45,6 +15,7 @@ enum AuthorizationCodeConsumption {
     Malformed,
 }
 
+#[cfg(test)]
 fn parse_authorization_code_consumption_response(response: &str) -> AuthorizationCodeConsumption {
     if let Some(raw) = response.strip_prefix("consuming|") {
         return match serde_json::from_str::<CodePayload>(raw) {
@@ -256,12 +227,12 @@ async fn begin_authorization_code_consumption(
         }
         Err(error) => {
             tracing::warn!(%error, "failed to atomically consume authorization code");
-            return Err(oauth_token_error(
+            Err(oauth_token_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
                 "授权码校验失败.",
                 false,
-            ));
+            ))
         }
     }
 }

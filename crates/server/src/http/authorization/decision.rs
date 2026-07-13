@@ -26,6 +26,7 @@ fn parse_authorization_decision(value: &str) -> Option<AuthorizationDecision> {
     }
 }
 
+#[cfg(test)]
 fn parse_consent_payload(raw: Option<String>) -> Option<ConsentPayload> {
     raw.and_then(|value| serde_json::from_str::<ConsentPayload>(&value).ok())
 }

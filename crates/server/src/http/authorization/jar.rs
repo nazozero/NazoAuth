@@ -372,12 +372,10 @@ async fn store_request_object_replay_state(
             ));
         }
     };
-    let replay_key = format!(
-        "oauth:jar:jti:{}:{}",
-        blake3_hex(&client.client_id),
-        blake3_hex(jti)
-    );
-    match valkey_set_ex_nx(&state.valkey, replay_key, "1", ttl_seconds).await {
+    match nazo_valkey::ReplayStore::new(&state.valkey_connection())
+        .consume_jar(&client.client_id, jti, ttl_seconds)
+        .await
+    {
         Ok(true) => Ok(()),
         Ok(false) => Err(oauth_error(
             StatusCode::BAD_REQUEST,

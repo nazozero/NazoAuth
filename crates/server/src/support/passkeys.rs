@@ -2,8 +2,8 @@
 
 use passkey_auth::{CredentialId, PasskeyCredential, Webauthn};
 
+use super::oauth_error;
 use super::prelude::*;
-use super::{oauth_error, valkey_getdel, valkey_set_ex};
 
 pub(crate) const PASSKEY_CEREMONY_TTL_SECONDS: u64 = 300;
 
@@ -101,8 +101,19 @@ pub(crate) async fn store_passkey_ceremony<T>(
 where
     T: Serialize,
 {
-    let body = serde_json::to_string(value)?;
-    valkey_set_ex(&state.valkey, key, body, PASSKEY_CEREMONY_TTL_SECONDS).await?;
+    let value = serde_json::to_value(value)?;
+    let store = nazo_valkey::AuthenticationStore::new(&state.valkey_connection());
+    if let Some(id) = key.strip_prefix("oauth:passkey:registration:") {
+        store
+            .store_passkey_registration(id, &value, PASSKEY_CEREMONY_TTL_SECONDS)
+            .await?;
+    } else if let Some(id) = key.strip_prefix("oauth:passkey:authentication:") {
+        store
+            .store_passkey_authentication(id, &value, PASSKEY_CEREMONY_TTL_SECONDS)
+            .await?;
+    } else {
+        anyhow::bail!("unsupported passkey ceremony key")
+    }
     Ok(())
 }
 
@@ -113,7 +124,19 @@ pub(crate) async fn take_passkey_ceremony<T>(
 where
     T: for<'de> Deserialize<'de>,
 {
-    let raw = valkey_getdel(&state.valkey, key).await.map_err(|error| {
+    let store = nazo_valkey::AuthenticationStore::new(&state.valkey_connection());
+    let value = if let Some(id) = key.strip_prefix("oauth:passkey:registration:") {
+        store.take_passkey_registration(id).await
+    } else if let Some(id) = key.strip_prefix("oauth:passkey:authentication:") {
+        store.take_passkey_authentication(id).await
+    } else {
+        return Err(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "invalid passkey ceremony key.",
+        ));
+    }
+    .map_err(|error| {
         tracing::warn!(%error, "failed to take passkey ceremony");
         oauth_error(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -121,17 +144,18 @@ where
             "passkey state unavailable.",
         )
     })?;
-    raw.map(|body| {
-        serde_json::from_str::<T>(&body).map_err(|error| {
-            tracing::warn!(%error, "stored passkey ceremony is malformed");
-            oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "passkey ceremony expired.",
-            )
+    value
+        .map(|value| {
+            serde_json::from_value::<T>(value).map_err(|error| {
+                tracing::warn!(%error, "stored passkey ceremony is malformed");
+                oauth_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_request",
+                    "passkey ceremony expired.",
+                )
+            })
         })
-    })
-    .transpose()
+        .transpose()
 }
 
 pub(crate) fn normalize_ceremony_id(value: &str) -> Result<String, HttpResponse> {

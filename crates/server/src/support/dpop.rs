@@ -6,8 +6,7 @@ use nazo_auth::is_valid_dpop_jkt;
 use super::prelude::*;
 use super::{
     audit_event, audit_fields, blake3_hex, client_jwt_algorithm_from_name,
-    jwt_decoding_key_from_jwk, oauth_error, random_urlsafe_token, valkey_getdel, valkey_set_ex,
-    valkey_set_ex_nx,
+    jwt_decoding_key_from_jwk, oauth_error, random_urlsafe_token,
 };
 use crate::settings::DpopNoncePolicy;
 
@@ -173,8 +172,8 @@ pub(crate) async fn validate_dpop_proof(
     )?;
     validate_dpop_nonce(state, claims.nonce.as_deref()).await?;
 
-    let replay_key = dpop_replay_key(&jkt, &claims.jti);
-    if !valkey_set_ex_nx(&state.valkey, replay_key, "1", DPOP_TTL_SECONDS as u64)
+    if !nazo_valkey::ReplayStore::new(&state.valkey_connection())
+        .consume_dpop(&jkt, &claims.jti, DPOP_TTL_SECONDS as u64)
         .await
         .map_err(|_| DpopError::InvalidProof)?
     {
@@ -197,10 +196,12 @@ async fn validate_dpop_nonce(state: &AppState, nonce: Option<&str>) -> Result<()
         }
         return Err(DpopError::UseNonce(issue_dpop_nonce(state).await?));
     };
-    let key = dpop_nonce_key(nonce);
-    match valkey_getdel(&state.valkey, key).await {
-        Ok(Some(_)) => Ok(()),
-        Ok(None) => Err(DpopError::UseNonce(issue_dpop_nonce(state).await?)),
+    match nazo_valkey::ReplayStore::new(&state.valkey_connection())
+        .consume_dpop_nonce(nonce)
+        .await
+    {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(DpopError::UseNonce(issue_dpop_nonce(state).await?)),
         Err(error) => {
             tracing::warn!(%error, "failed to consume dpop nonce");
             Err(DpopError::NonceStoreUnavailable)
@@ -214,24 +215,17 @@ fn dpop_nonce_required(policy: DpopNoncePolicy) -> bool {
 
 pub(crate) async fn issue_dpop_nonce(state: &AppState) -> Result<String, DpopError> {
     let nonce = random_urlsafe_token();
-    valkey_set_ex(
-        &state.valkey,
-        dpop_nonce_key(&nonce),
-        "1",
-        DPOP_TTL_SECONDS as u64,
-    )
-    .await
-    .map_err(|error| {
-        tracing::warn!(%error, "failed to issue dpop nonce");
-        DpopError::NonceStoreUnavailable
-    })?;
+    nazo_valkey::ReplayStore::new(&state.valkey_connection())
+        .issue_dpop_nonce(&nonce, DPOP_TTL_SECONDS as u64)
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, "failed to issue dpop nonce");
+            DpopError::NonceStoreUnavailable
+        })?;
     Ok(nonce)
 }
 
-fn dpop_nonce_key(nonce: &str) -> String {
-    format!("oauth:dpop:nonce:{}", blake3_hex(nonce))
-}
-
+#[cfg(test)]
 fn dpop_replay_key(jkt: &str, jti: &str) -> String {
     format!("oauth:dpop:jti:{jkt}:{}", blake3_hex(jti))
 }

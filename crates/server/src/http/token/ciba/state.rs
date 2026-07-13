@@ -110,6 +110,7 @@ pub(super) fn ciba_retention_deadline(expires_at: i64) -> i64 {
     expires_at.saturating_add(CIBA_EXPIRED_STATE_RETENTION_SECONDS)
 }
 
+#[cfg(test)]
 pub(super) fn ciba_request_key(auth_req_id: &str) -> String {
     format!("oauth:ciba:{}", crate::support::blake3_hex(auth_req_id))
 }

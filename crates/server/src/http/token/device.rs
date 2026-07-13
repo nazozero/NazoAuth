@@ -892,21 +892,6 @@ fn device_authorization_subject(
     )
 }
 
-fn device_code_key(device_code: &str) -> String {
-    device_code_hash_key(&blake3_hex(device_code))
-}
-
-fn device_code_hash_key(device_code_hash: &str) -> String {
-    format!("oauth:device:code:{device_code_hash}")
-}
-
-fn user_code_key(normalized_user_code: &str) -> String {
-    format!(
-        "oauth:device:user_code:{}",
-        blake3_hex(normalized_user_code)
-    )
-}
-
 fn normalize_user_code(value: &str) -> String {
     value
         .chars()

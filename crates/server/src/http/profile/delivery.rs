@@ -14,8 +14,8 @@ pub(crate) async fn access_delivery(
     let Some(token) = q.get("token") else {
         return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "缺少 token.");
     };
-    let key = format!("oauth:client_delivery:{}:{token}", user.id());
-    let raw = match valkey_get(&state.valkey, &key).await {
+    let store = nazo_valkey::DeliveryStore::new(&state.valkey_connection());
+    let stored = match nazo_valkey::DeliveryStore::load(&store, user.user_id(), token).await {
         Ok(value) => value,
         Err(error) => {
             tracing::warn!(%error, "failed to read client delivery payload");
@@ -26,15 +26,15 @@ pub(crate) async fn access_delivery(
             );
         }
     };
-    let Some(raw) = raw else {
+    let Some(stored) = stored else {
         return oauth_error(
             StatusCode::NOT_FOUND,
             "invalid_request",
             "凭据链接无效、已过期或已被读取.",
         );
     };
-    let Some(claim) = delivery_claim(&raw) else {
-        let _ = valkey_del(&state.valkey, &key).await;
+    let Some(claim) = delivery_claim(stored.value()) else {
+        let _ = store.delete(user.user_id(), token).await;
         return invalid_delivery_link_response();
     };
     let repository = nazo_postgres::AccessRequestRepository::new(state.diesel_db.clone());
@@ -50,7 +50,7 @@ pub(crate) async fn access_delivery(
     match linked {
         Ok(true) => {}
         Ok(false) => {
-            let _ = valkey_del(&state.valkey, &key).await;
+            let _ = store.delete(user.user_id(), token).await;
             return invalid_delivery_link_response();
         }
         Err(error) => {
@@ -62,9 +62,11 @@ pub(crate) async fn access_delivery(
             );
         }
     }
-    let claimed = match valkey_getdel(&state.valkey, &key).await {
-        Ok(Some(claimed)) if claimed == raw => claimed,
-        Ok(_) => return invalid_delivery_link_response(),
+    let claimed = match store.consume(user.user_id(), token, &stored).await {
+        Ok(nazo_valkey::DeliveryConsume::Consumed(claimed)) => claimed,
+        Ok(nazo_valkey::DeliveryConsume::MissingOrChanged) => {
+            return invalid_delivery_link_response();
+        }
         Err(error) => {
             tracing::warn!(%error, "failed to consume client delivery payload");
             return oauth_error(
@@ -74,7 +76,7 @@ pub(crate) async fn access_delivery(
             );
         }
     };
-    delivery_payload_response(&claimed)
+    delivery_value_response(claimed)
 }
 
 struct DeliveryClaim {
@@ -83,8 +85,7 @@ struct DeliveryClaim {
     client_id: String,
 }
 
-fn delivery_claim(raw: &str) -> Option<DeliveryClaim> {
-    let value = serde_json::from_str::<Value>(raw).ok()?;
+fn delivery_claim(value: &Value) -> Option<DeliveryClaim> {
     if value.get("delivery_state")?.as_str()? != "committed" {
         return None;
     }
@@ -104,19 +105,27 @@ fn invalid_delivery_link_response() -> HttpResponse {
     )
 }
 
+fn delivery_value_response(mut value: Value) -> HttpResponse {
+    if delivery_claim(&value).is_some() {
+        value
+            .as_object_mut()
+            .expect("validated delivery payload is an object")
+            .remove("delivery_state");
+        value
+            .as_object_mut()
+            .expect("validated delivery payload is an object")
+            .remove("approved_client_id");
+        value["read_once_notice"] = json!("此凭据链接已完成一次性读取并销毁，请立即保存敏感信息。");
+        json_response(value)
+    } else {
+        invalid_delivery_link_response()
+    }
+}
+
+#[cfg(test)]
 fn delivery_payload_response(raw: &str) -> HttpResponse {
-    match serde_json::from_str::<Value>(raw) {
-        Ok(mut v) if delivery_claim(raw).is_some() => {
-            v.as_object_mut()
-                .expect("validated delivery payload is an object")
-                .remove("delivery_state");
-            v.as_object_mut()
-                .expect("validated delivery payload is an object")
-                .remove("approved_client_id");
-            v["read_once_notice"] = json!("此凭据链接已完成一次性读取并销毁，请立即保存敏感信息。");
-            json_response(v)
-        }
-        Ok(_) => invalid_delivery_link_response(),
+    match serde_json::from_str(raw) {
+        Ok(value) => delivery_value_response(value),
         Err(_) => oauth_error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "server_error",

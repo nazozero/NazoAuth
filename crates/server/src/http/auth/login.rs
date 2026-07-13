@@ -158,7 +158,6 @@ pub(crate) async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) 
 
     let session_id = random_urlsafe_token();
     let csrf_token = random_urlsafe_token();
-    let key = format!("oauth:session:{session_id}");
     let remembered_mfa = if user.account.mfa_enabled {
         match remembered_mfa_device_valid(&state, &req, &user).await {
             Ok(value) => value,
@@ -186,26 +185,7 @@ pub(crate) async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) 
         pending_mfa: user.account.mfa_enabled && !remembered_mfa,
         oidc_sid: Some(random_urlsafe_token()),
     };
-    let session_body = match serde_json::to_string(&session) {
-        Ok(body) => body,
-        Err(error) => {
-            tracing::warn!(%error, "failed to serialize session");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "会话写入失败.",
-            );
-        }
-    };
-    if valkey_set_ex(
-        &state.valkey,
-        key,
-        session_body,
-        state.settings.session_ttl_seconds,
-    )
-    .await
-    .is_err()
-    {
+    if store_session(&state, &session_id, &session).await.is_err() {
         return oauth_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "server_error",

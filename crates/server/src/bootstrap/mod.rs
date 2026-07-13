@@ -15,6 +15,7 @@ use actix_web::{
     middleware::{Next, from_fn},
     web,
 };
+#[cfg(test)]
 use fred::{
     interfaces::ClientLike,
     prelude::{
@@ -62,17 +63,24 @@ pub async fn run() -> anyhow::Result<()> {
 
     // 数据库和 Valkey 客户端在 server factory 外创建，避免每个 worker 重复初始化。
     let diesel_db = create_pool(database_url.clone(), database_max_connections(&config)?)?;
-    let mut valkey_builder = ValkeyBuilder::from_config(ValkeyConfig::from_url(&valkey_url)?);
-    valkey_builder.with_performance_config(|performance: &mut PerformanceConfig| {
-        performance.default_command_timeout = valkey_command_timeout;
-    });
-    valkey_builder.with_connection_config(|connection: &mut ConnectionConfig| {
-        connection.connection_timeout = valkey_command_timeout;
-        connection.internal_command_timeout = valkey_command_timeout;
-        connection.max_command_attempts = 1;
-    });
-    let valkey = valkey_builder.build()?;
-    valkey.init().await?;
+    #[cfg(not(test))]
+    let valkey =
+        nazo_valkey::ValkeyConnection::connect(&valkey_url, valkey_command_timeout).await?;
+    #[cfg(test)]
+    let valkey = {
+        let mut builder = ValkeyBuilder::from_config(ValkeyConfig::from_url(&valkey_url)?);
+        builder.with_performance_config(|config: &mut PerformanceConfig| {
+            config.default_command_timeout = valkey_command_timeout;
+        });
+        builder.with_connection_config(|config: &mut ConnectionConfig| {
+            config.connection_timeout = valkey_command_timeout;
+            config.internal_command_timeout = valkey_command_timeout;
+            config.max_command_attempts = 1;
+        });
+        let client = builder.build()?;
+        client.init().await?;
+        client
+    };
 
     let settings = Arc::new(Settings::from_config(&config)?);
     tokio::fs::create_dir_all(&settings.avatar_storage_dir)

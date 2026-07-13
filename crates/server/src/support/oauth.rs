@@ -5,12 +5,14 @@ use nazo_auth::{
     normalize_sha256_thumbprint, oauth_redirect_uri_matches, validate_oauth_redirect_uri,
 };
 
+#[cfg(test)]
+use super::security::blake3_hex;
 use super::{
     mtls::certificate_x5c_thumbprint,
     prelude::*,
     security::{
         SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
-        SUPPORTED_CLIENT_JWT_SIGNING_ALGS, blake3_hex, client_jwt_algorithm_from_name,
+        SUPPORTED_CLIENT_JWT_SIGNING_ALGS, client_jwt_algorithm_from_name,
         jwt_decoding_key_from_jwk, supported_client_jwt_algorithm_name,
     },
 };
@@ -721,10 +723,12 @@ fn validate_unique_non_empty(name: &str, values: &[String]) -> anyhow::Result<()
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) fn authorization_code_key(code: &str) -> String {
     authorization_code_key_from_hash(&blake3_hex(code))
 }
 
+#[cfg(test)]
 pub(crate) fn authorization_code_key_from_hash(code_hash: &str) -> String {
     format!("oauth:auth_code:{code_hash}")
 }

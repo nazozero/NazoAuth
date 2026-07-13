@@ -70,16 +70,18 @@ async fn persist_access_token_subject_mapping(
     if subject == user_id.to_string() {
         return Ok(());
     }
-    valkey_set_ex(
-        &state.valkey,
-        access_token_subject_key(tenant_id, jti),
-        user_id.to_string(),
-        state.settings.access_token_ttl_seconds.max(1) as u64,
-    )
-    .await?;
+    nazo_valkey::TokenStateStore::new(&state.valkey_connection())
+        .store_access_token_subject(
+            tenant_id,
+            jti,
+            user_id,
+            state.settings.access_token_ttl_seconds.max(1) as u64,
+        )
+        .await?;
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) fn access_token_subject_key(tenant_id: Uuid, jti: &str) -> String {
     format!(
         "oauth:access_token:subject:{}:{}",

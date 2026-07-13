@@ -1,7 +1,6 @@
 //! 当前用户客户端接入申请接口。
 // 只处理用户侧申请列表和新建申请。
 use crate::http::prelude::*;
-use fred::interfaces::KeysInterface;
 
 pub(crate) async fn my_access_requests(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
     let user = match current_user_or_login_required(&state, &req).await {
@@ -46,14 +45,16 @@ async fn my_access_requests_response_with_delivery(
         .collect::<Vec<_>>();
     let mut deliveries = HashMap::with_capacity(candidates.len());
     for batch in candidates.chunks(DELIVERY_LOOKUP_BATCH_SIZE) {
-        let keys = batch
+        let lookups = batch
             .iter()
-            .map(|candidate| candidate.key.as_str())
+            .map(|candidate| (candidate.user_id, candidate.token.as_str()))
             .collect::<Vec<_>>();
-        let payloads: Vec<Option<String>> = state.valkey.mget(keys).await?;
-        for (candidate, raw) in batch.iter().zip(payloads) {
-            if let Some(raw) = raw
-                && delivery_payload_matches(candidate, &raw)
+        let payloads = nazo_valkey::DeliveryStore::new(&state.valkey_connection())
+            .load_many(&lookups)
+            .await?;
+        for (candidate, stored) in batch.iter().zip(payloads) {
+            if let Some(stored) = stored
+                && delivery_payload_matches(candidate, stored.value())
             {
                 deliveries.insert(
                     candidate.request_id,
@@ -106,10 +107,9 @@ struct AvailableDelivery {
 
 struct DeliveryCandidate {
     request_id: Uuid,
-    user_id: Uuid,
+    user_id: nazo_identity::UserId,
     approved_client_id: Uuid,
     token: String,
-    key: String,
 }
 
 fn delivery_candidate(
@@ -120,25 +120,24 @@ fn delivery_candidate(
     if row.status != nazo_identity::AccessRequestStatus::Approved {
         return None;
     }
-    let user_id = row.user_id.as_uuid();
-    let token = access_delivery_token(&state.settings.client_secret_pepper, user_id, row.id);
-    let key = format!("oauth:client_delivery:{user_id}:{token}");
+    let user_id = row.user_id;
+    let token = access_delivery_token(
+        &state.settings.client_secret_pepper,
+        user_id.as_uuid(),
+        row.id,
+    );
     Some(DeliveryCandidate {
         request_id: row.id,
         user_id,
         approved_client_id,
         token,
-        key,
     })
 }
 
-fn delivery_payload_matches(candidate: &DeliveryCandidate, raw: &str) -> bool {
-    let Ok(payload) = serde_json::from_str::<Value>(raw) else {
-        return false;
-    };
+fn delivery_payload_matches(candidate: &DeliveryCandidate, payload: &Value) -> bool {
     if payload["delivery_state"] != "committed"
         || payload["request_id"] != json!(candidate.request_id)
-        || payload["user_id"] != json!(candidate.user_id)
+        || payload["user_id"] != json!(candidate.user_id.as_uuid())
         || payload["approved_client_id"] != json!(candidate.approved_client_id)
     {
         return false;

@@ -338,6 +338,7 @@ fn par_error_log_fields(response: &HttpResponse) -> Option<(u16, Option<String>)
     ))
 }
 
+#[cfg(test)]
 pub(crate) fn pushed_authorization_request_key(request_uri: &str) -> String {
     format!("oauth:par:{}", blake3_hex(request_uri))
 }

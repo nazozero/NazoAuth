@@ -49,8 +49,8 @@ pub(super) async fn start_social_provider(
         pkce_verifier: pkce_verifier.clone(),
         created_at: Utc::now().timestamp(),
     };
-    let body = match serde_json::to_string(&stored) {
-        Ok(body) => body,
+    let value = match serde_json::to_value(&stored) {
+        Ok(value) => value,
         Err(error) => {
             tracing::warn!(%error, "failed to serialize social federation state");
             return oauth_error(
@@ -60,14 +60,10 @@ pub(super) async fn start_social_provider(
             );
         }
     };
-    if valkey_set_ex(
-        &state.valkey,
-        social_state_key(&state_token),
-        body,
-        SOCIAL_STATE_TTL_SECONDS,
-    )
-    .await
-    .is_err()
+    if nazo_valkey::AuthenticationStore::new(&state.valkey_connection())
+        .store_social_federation(&state_token, &value, SOCIAL_STATE_TTL_SECONDS)
+        .await
+        .is_err()
     {
         return oauth_error(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -87,7 +83,8 @@ pub(super) async fn take_social_state(
     state_token: &str,
 ) -> Result<Option<SocialFederationState>, HttpResponse> {
     // GETDEL 是 callback 重放防护的关键边界；读取 state 与消费必须原子完成。
-    let raw = valkey_getdel(&state.valkey, social_state_key(state_token))
+    let value = nazo_valkey::AuthenticationStore::new(&state.valkey_connection())
+        .take_social_federation(state_token)
         .await
         .map_err(|error| {
             tracing::warn!(%error, "failed to load social federation state");
@@ -97,17 +94,18 @@ pub(super) async fn take_social_state(
                 "federation state failed.",
             )
         })?;
-    raw.map(|value| {
-        serde_json::from_str::<SocialFederationState>(&value).map_err(|error| {
-            tracing::warn!(%error, "social federation state is malformed");
-            oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "federation state expired.",
-            )
+    value
+        .map(|value| {
+            serde_json::from_value::<SocialFederationState>(value).map_err(|error| {
+                tracing::warn!(%error, "social federation state is malformed");
+                oauth_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_request",
+                    "federation state expired.",
+                )
+            })
         })
-    })
-    .transpose()
+        .transpose()
 }
 
 pub(super) fn social_authorization_url(
@@ -138,10 +136,6 @@ pub(super) fn social_authorization_url(
         provider.authorization_endpoint,
         serializer.finish()
     )
-}
-
-pub(super) fn social_state_key(state: &str) -> String {
-    format!("oauth:federation:social:state:{}", blake3_hex(state))
 }
 
 pub(super) async fn resolve_social_identity(

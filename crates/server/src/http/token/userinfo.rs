@@ -1,5 +1,6 @@
 //! OIDC userinfo 端点。
 // 根据 Bearer/DPoP access token 返回用户声明；DPoP-bound token 必须携带有效 proof。
+#[cfg(test)]
 use super::access_token_subject_key;
 use crate::http::prelude::*;
 use crate::support::prelude::Claims;
@@ -294,15 +295,11 @@ async fn access_token_user_id(
     {
         return Ok(Some(user_id));
     }
-    match valkey_get(
-        &state.valkey,
-        access_token_subject_key(tenant_id, &claims.jti),
+    Ok(
+        nazo_valkey::TokenStateStore::new(&state.valkey_connection())
+            .load_access_token_subject(tenant_id, &claims.jti)
+            .await?,
     )
-    .await?
-    {
-        Some(user_id) => Ok(Uuid::parse_str(&user_id).ok()),
-        None => Ok(None),
-    }
 }
 
 enum UserInfoAccessToken {

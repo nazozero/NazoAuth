@@ -122,7 +122,9 @@ async fn corrupt_rate_limit_counter_fails_closed_as_server_error() {
     let Some(state) = live_rate_limit_state().await else {
         return;
     };
-    let req = TestRequest::default().to_http_request();
+    let req = TestRequest::default()
+        .peer_addr("127.0.0.10:12345".parse().unwrap())
+        .to_http_request();
     let key = rate_limit_key(
         RateLimitPolicy::Auth,
         &rate_limit_subject(&req, &state.settings),
@@ -181,7 +183,9 @@ async fn rate_limit_counter_without_ttl_is_repaired() {
     let Some(state) = live_rate_limit_state().await else {
         return;
     };
-    let req = TestRequest::default().to_http_request();
+    let req = TestRequest::default()
+        .peer_addr("127.0.0.11:12345".parse().unwrap())
+        .to_http_request();
     let key = rate_limit_key(
         RateLimitPolicy::Token,
         &rate_limit_subject(&req, &state.settings),

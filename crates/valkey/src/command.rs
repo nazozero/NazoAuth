@@ -84,6 +84,13 @@ pub(crate) async fn get(
     connection.client.get(key).await.map_err(Error::from_fred)
 }
 
+pub(crate) async fn get_many(
+    connection: &ValkeyConnection,
+    keys: Vec<String>,
+) -> Result<Vec<Option<String>>, Error> {
+    connection.client.mget(keys).await.map_err(Error::from_fred)
+}
+
 pub(crate) async fn delete(connection: &ValkeyConnection, key: String) -> Result<i64, Error> {
     connection.client.del(key).await.map_err(Error::from_fred)
 }
