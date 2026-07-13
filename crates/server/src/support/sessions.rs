@@ -702,15 +702,15 @@ fn login_required_response_for_cookies(
     csrf_cookie_name: &str,
     cookie_secure: bool,
 ) -> HttpResponse {
-    crate::support::with_cookie_headers(
+    with_cookie_headers(
         oauth_error(
             StatusCode::UNAUTHORIZED,
             "login_required",
             "会话不存在或已过期,请重新登录.",
         ),
         &[
-            crate::support::clear_cookie(session_cookie_name, cookie_secure),
-            crate::support::clear_cookie(csrf_cookie_name, cookie_secure),
+            clear_cookie(session_cookie_name, cookie_secure),
+            clear_cookie(csrf_cookie_name, cookie_secure),
         ],
     )
 }

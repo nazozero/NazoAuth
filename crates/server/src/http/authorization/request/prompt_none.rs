@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 pub(super) async fn user_grant_covers_requested_scopes_with_context(
-    context: &AuthorizationRequestContext,
+    context: &AuthorizationRequestContext<'_>,
     user_id: Uuid,
     client_id: Uuid,
     requested_scopes: &[String],
@@ -88,7 +88,7 @@ pub(super) fn stored_grant_covers_requested_authorization(
 }
 
 pub(super) async fn issue_authorization_code_without_interaction_with_context(
-    context: &AuthorizationRequestContext,
+    context: &AuthorizationRequestContext<'_>,
     req: &HttpRequest,
     payload: ConsentPayload,
 ) -> HttpResponse {

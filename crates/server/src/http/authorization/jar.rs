@@ -56,7 +56,7 @@ enum RequestObjectMode {
 }
 
 pub(crate) async fn apply_request_object_with_context(
-    context: &AuthorizationRequestContext,
+    context: &AuthorizationRequestContext<'_>,
     outer: &mut HashMap<String, String>,
     client: &ClientRow,
 ) -> Result<(), HttpResponse> {
@@ -239,7 +239,7 @@ fn decode_request_object_claims(payload: &str) -> Result<RequestObjectClaims, Ht
 }
 
 async fn validate_request_object_claims_and_apply(
-    context: &AuthorizationRequestContext,
+    context: &AuthorizationRequestContext<'_>,
     outer: &mut HashMap<String, String>,
     client: &ClientRow,
     claims: RequestObjectClaims,
@@ -296,7 +296,7 @@ async fn validate_request_object_claims_and_apply(
 }
 
 fn signed_request_object_requires_integrity_protected_parameters(
-    context: &AuthorizationRequestContext,
+    context: &AuthorizationRequestContext<'_>,
     client: &ClientRow,
     mode: RequestObjectMode,
 ) -> bool {
@@ -388,7 +388,7 @@ fn outer_authorization_params_conflict(
 }
 
 async fn store_request_object_replay_state_with_context(
-    context: &AuthorizationRequestContext,
+    context: &AuthorizationRequestContext<'_>,
     client: &ClientRow,
     claims: &RequestObjectClaims,
     now: i64,

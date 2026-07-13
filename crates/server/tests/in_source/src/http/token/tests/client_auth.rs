@@ -357,8 +357,14 @@ fn confidential_client_secret_auth_accepts_correct_and_rejects_wrong_secret_by_d
         client_secret_digest(&wrong_secret, &settings.client_secret_pepper, salt),
         hash
     );
-    assert!(matches!(client_secret_auth_result(Ok(true)), Ok(true)));
-    assert!(matches!(client_secret_auth_result(Ok(false)), Ok(false)));
+    assert!(matches!(
+        client_secret_auth_result::<nazo_identity::ports::RepositoryError>(Ok(true)),
+        Ok(true)
+    ));
+    assert!(matches!(
+        client_secret_auth_result::<nazo_identity::ports::RepositoryError>(Ok(false)),
+        Ok(false)
+    ));
 }
 
 #[test]

@@ -38,7 +38,7 @@ impl<'a> AuthorizationRequestContext<'a> {
             service,
             config,
             sessions,
-            modules: runtime_modules.snapshot(),
+            modules: runtime_modules.snapshot().as_ref().clone(),
         }
     }
 
