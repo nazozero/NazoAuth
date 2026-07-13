@@ -47,9 +47,7 @@ pub(crate) use security::{
 #[cfg(test)]
 pub(crate) use sessions::{SessionPayload, current_session};
 #[cfg(test)]
-pub(crate) use tenancy::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, default_tenant_context,
-};
+pub(crate) use tenancy::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
 #[cfg(test)]
 pub(crate) use valkey::{
     valkey_atomic_snapshot, valkey_del, valkey_eval_string, valkey_get, valkey_set_ex,

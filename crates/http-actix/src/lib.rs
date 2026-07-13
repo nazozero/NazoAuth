@@ -9,6 +9,7 @@ mod csrf;
 mod dynamic_client_registration;
 mod extract;
 mod fapi_resource;
+mod local_registration;
 mod metadata;
 mod middleware;
 mod presenter;
@@ -45,6 +46,11 @@ pub use fapi_resource::{
     FapiAuthorizationError, FapiFuture, FapiHttpMessageSignatures, FapiMtlsThumbprintResolver,
     FapiResourceAuthorizer, FapiResourceEndpoint, FapiResponseSignature,
     FapiSignatureOperationError, FapiSignatureVerificationError, fapi_resource,
+};
+pub use local_registration::{
+    AuthenticationRateLimit, AuthenticationRateLimitError, LocalRegistrationEndpoint,
+    LocalRegistrationFuture, LocalRegistrationOperations, RegisterRequest, SendCodeRequest,
+    register, send_code,
 };
 pub use metadata::{
     MetadataEndpointConfig, MetadataHandles, MetadataSnapshot, MetadataSnapshotSource, discovery,

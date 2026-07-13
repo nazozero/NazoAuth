@@ -31,7 +31,8 @@ use actix_web::{App, HttpServer, dev::Service, middleware::from_fn, web};
 use crate::config::{ConfigSource, database_max_connections, database_url};
 use crate::domain::{
     DynamicRegistrationConfig, MetadataConfig, MfaProfileConfig, MfaProfileHandles,
-    OidcLogoutConfig, OidcLogoutHandles, ResourceServerConfig, ServerMetadataSnapshotSource,
+    OidcLogoutConfig, OidcLogoutHandles, ResourceServerConfig, ServerAuthenticationRateLimit,
+    ServerLocalRegistrationOperations, ServerMetadataSnapshotSource,
     ServerProfileAccountOperations, UserinfoConfig, UserinfoHandles,
 };
 #[cfg(test)]
@@ -50,7 +51,6 @@ use crate::http::admin::clients::{
 };
 use crate::http::admin::federation::AdminFederationConfig;
 use crate::http::auth::csrf::CsrfHttpConfig;
-use crate::http::auth::email_code::EmailCodeHttpConfig;
 use crate::http::auth::federation::{
     FEDERATION_STATE_TTL_SECONDS, FederationHttpConfig, SAML_REPLAY_TTL_SECONDS,
 };
@@ -82,8 +82,8 @@ use crate::support::tenancy::{DEFAULT_TENANT_ID, default_tenant_context};
 #[cfg(test)]
 use actix_web::http::header;
 use nazo_http_actix::{
-    ProfileAccountEndpoint, RuntimeModuleAdminEndpoint, SessionCookieConfig, SessionLogoutEndpoint,
-    security_headers,
+    LocalRegistrationEndpoint, ProfileAccountEndpoint, RuntimeModuleAdminEndpoint,
+    SessionCookieConfig, SessionLogoutEndpoint, security_headers,
 };
 use nazo_postgres::create_pool;
 use tracing::Instrument;
@@ -471,14 +471,12 @@ pub async fn run() -> anyhow::Result<()> {
         identity.rate_limit.token_management_max_requests,
         client_ip_config.get_ref().clone(),
     ));
-    let email_code_http_config = web::Data::new(EmailCodeHttpConfig::new(
-        identity.email_code_dev_response_enabled,
-    ));
-    let registration = web::Data::new(LocalRegistrationService::new(
+    let email_delivery = SmtpVerificationEmailDelivery::from_delivery(&identity.email.delivery);
+    let registration = LocalRegistrationService::new(
         nazo_postgres::UserRepository::new(diesel_db.clone()),
         nazo_valkey::AuthenticationStore::new(&valkey_connection),
         RegistrationSecretHasher,
-        SmtpVerificationEmailDelivery::new(settings.clone()),
+        email_delivery,
         default_tenant_context()
             .as_identity_context()
             .expect("default tenant identifiers are valid"),
@@ -488,6 +486,16 @@ pub async fn run() -> anyhow::Result<()> {
             send_cooldown_seconds: identity.email.send_cooldown_seconds,
             code_ttl_seconds: identity.email.code_ttl_seconds,
         },
+    );
+    let local_registration_endpoint = web::Data::new(LocalRegistrationEndpoint::new(
+        Arc::new(ServerLocalRegistrationOperations::new(registration)),
+        Arc::new(ServerAuthenticationRateLimit::new(
+            nazo_valkey::RateLimitStore::new(&valkey_connection),
+            identity.rate_limit.window_seconds,
+            identity.rate_limit.auth_max_requests,
+        )),
+        client_ip_config.get_ref().clone(),
+        identity.email_code_dev_response_enabled,
     ));
     let authentication = web::Data::new(LocalAuthenticationService::new(
         nazo_postgres::UserRepository::new(diesel_db.clone()),
@@ -650,8 +658,7 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(client_ip_config.clone())
             .app_data(auth_request_limiter.clone())
             .app_data(token_management_limiter.clone())
-            .app_data(email_code_http_config.clone())
-            .app_data(registration.clone())
+            .app_data(local_registration_endpoint.clone())
             .app_data(authentication.clone())
             .app_data(login_http_config.clone())
             .app_data(passkeys.clone())

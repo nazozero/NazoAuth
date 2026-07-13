@@ -4,6 +4,7 @@
 #[path = "../../tests/in_source/src/domain/database_user_fixture.rs"]
 mod database_user_fixture;
 mod dynamic_registration;
+mod local_registration;
 mod metadata;
 mod mfa;
 mod oauth;
@@ -28,6 +29,9 @@ pub(crate) use dynamic_registration::DynamicRegistrationConfig;
 pub(crate) use dynamic_registration::DynamicRegistrationHandles;
 #[cfg(not(test))]
 pub(crate) use dynamic_registration::dynamic_registration_endpoint;
+pub(crate) use local_registration::{
+    ServerAuthenticationRateLimit, ServerLocalRegistrationOperations,
+};
 pub(crate) use metadata::{MetadataConfig, ServerMetadataSnapshotSource};
 pub(crate) use mfa::{MfaProfileConfig, MfaProfileHandles};
 #[cfg(test)]

@@ -78,7 +78,9 @@ pub(crate) mod test_support {
             nazo_postgres::UserRepository::new(state.diesel_db.clone()),
             nazo_valkey::AuthenticationStore::new(&state.valkey_connection()),
             crate::bootstrap::RegistrationSecretHasher,
-            crate::support::email::SmtpVerificationEmailDelivery::new(state.settings.clone()),
+            crate::support::email::SmtpVerificationEmailDelivery::from_delivery(
+                &identity.email.delivery,
+            ),
             crate::support::tenancy::default_tenant_context()
                 .as_identity_context()
                 .expect("default tenant identifiers are valid"),
@@ -88,14 +90,6 @@ pub(crate) mod test_support {
                 send_cooldown_seconds: identity.email.send_cooldown_seconds,
                 code_ttl_seconds: identity.email.code_ttl_seconds,
             },
-        ))
-    }
-
-    pub(crate) fn email_code_http_config(
-        state: &crate::domain::AppState,
-    ) -> actix_web::web::Data<crate::http::auth::email_code::EmailCodeHttpConfig> {
-        actix_web::web::Data::new(crate::http::auth::email_code::EmailCodeHttpConfig::new(
-            state.settings.identity.email_code_dev_response_enabled,
         ))
     }
 

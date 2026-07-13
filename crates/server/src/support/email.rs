@@ -1,8 +1,8 @@
 //! 邮件投递封装。
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
-use anyhow::{Context, bail};
+use anyhow::Context;
 use lettre::{
     Address, AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
     message::{Mailbox, SinglePart, header::ContentType},
@@ -48,16 +48,11 @@ pub(crate) fn email_delivery_configured(settings: &Settings) -> bool {
 }
 
 async fn send_verification_email_with_ttl(
-    settings: &Settings,
+    smtp: &SmtpEmailSettings,
     recipient: Mailbox,
     code: &str,
     code_ttl_seconds: u64,
 ) -> anyhow::Result<()> {
-    let identity = &settings.identity;
-    let EmailDelivery::Smtp(smtp) = &identity.email.delivery else {
-        bail!("email delivery is disabled");
-    };
-
     let message = Message::builder()
         .from(smtp.from.clone())
         .to(recipient)
@@ -76,12 +71,17 @@ async fn send_verification_email_with_ttl(
 
 #[derive(Clone)]
 pub(crate) struct SmtpVerificationEmailDelivery {
-    settings: Arc<Settings>,
+    smtp: Option<SmtpEmailSettings>,
 }
 
 impl SmtpVerificationEmailDelivery {
-    pub(crate) fn new(settings: Arc<Settings>) -> Self {
-        Self { settings }
+    pub(crate) fn from_delivery(delivery: &EmailDelivery) -> Self {
+        Self {
+            smtp: match delivery {
+                EmailDelivery::Disabled => None,
+                EmailDelivery::Smtp(smtp) => Some(smtp.clone()),
+            },
+        }
     }
 }
 
@@ -93,11 +93,16 @@ impl nazo_identity::ports::VerificationEmailDeliveryPort for SmtpVerificationEma
         code_ttl_seconds: u64,
     ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
         Box::pin(async move {
+            let smtp = self.smtp.as_ref().ok_or_else(|| {
+                nazo_identity::ports::RepositoryError::Unexpected(
+                    "email delivery is disabled".to_owned(),
+                )
+            })?;
             let address = parse_email_address(normalized_email).map_err(|error| {
                 nazo_identity::ports::RepositoryError::Unexpected(error.to_string())
             })?;
             send_verification_email_with_ttl(
-                &self.settings,
+                smtp,
                 Mailbox::new(None, address),
                 code,
                 code_ttl_seconds,

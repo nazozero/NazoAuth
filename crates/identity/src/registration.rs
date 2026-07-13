@@ -40,6 +40,25 @@ pub struct RegisterLocalAccountInput {
     pub password: String,
 }
 
+/// Minimal identity projection returned to the public registration transport.
+///
+/// The transport must not receive the full account, tenant, role, or profile
+/// merely to render the stable `id` and `email` response fields.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RegisteredAccount {
+    pub id: Uuid,
+    pub email: String,
+}
+
+impl From<PublicAccount> for RegisteredAccount {
+    fn from(account: PublicAccount) -> Self {
+        Self {
+            id: account.id(),
+            email: account.account.email,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RegisterLocalAccountError {
     VerificationUnavailable(RepositoryError),
