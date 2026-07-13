@@ -4,14 +4,36 @@
 //! peers after the proxy has verified the client certificate and forwarded
 //! `X-SSL-Client-Verify: SUCCESS`.
 
-use super::prelude::*;
+use super::constant_time_eq;
 use super::request_from_trusted_proxy;
+#[cfg(test)]
+use super::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
+use crate::domain::ClientRow;
+use crate::settings::Settings;
+use actix_web::HttpRequest;
+#[cfg(test)]
+use actix_web::http::header;
+use actix_web::http::header::HeaderMap;
+#[cfg(test)]
+use actix_web::http::header::HeaderValue;
+use base64::Engine;
+use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
+use chrono::Utc;
 use nazo_auth::normalize_sha256_thumbprint;
 use openssl::asn1::Asn1Time;
 use openssl::nid::Nid;
 use openssl::x509::{X509, X509NameRef};
+use serde_json::Value;
+#[cfg(test)]
+use serde_json::json;
+use sha2::Digest;
+use sha2::Sha256;
 use std::cmp::Ordering;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+#[cfg(test)]
+use std::path::PathBuf;
+#[cfg(test)]
+use uuid::Uuid;
 
 const VERIFY_HEADER: &str = "x-ssl-client-verify";
 const DIRECT_THUMBPRINT_HEADERS: &[&str] = &[

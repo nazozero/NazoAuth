@@ -1,6 +1,33 @@
 //! 管理端用户账户接口。
+use crate::domain::AppState;
+#[cfg(test)]
+use crate::domain::DatabaseUserFixture;
+#[cfg(test)]
+use crate::schema::users;
+#[cfg(test)]
+use crate::settings::Settings;
+#[cfg(test)]
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, OAuthJsonErrorFields,
+    SessionPayload, valkey_set_ex,
+};
+use crate::support::{
+    admin_user_json, audit_event, audit_fields, blake3_hex, client_ip, csrf_error,
+    has_valid_csrf_token, json_response, oauth_error, pagination, require_admin_or_forbidden,
+};
+use actix_web::http::StatusCode;
+use actix_web::web::{Data, Json, Query};
+use actix_web::{HttpRequest, HttpResponse};
+#[cfg(test)]
+use chrono::Utc;
+#[cfg(test)]
+use diesel::prelude::*;
+use nazo_identity::PublicAccount;
+use serde::Deserialize;
+use serde_json::{Value, json};
+use std::collections::HashMap;
+use uuid::Uuid;
 // 只处理用户列表与用户状态更新，不包含客户端或授权关系逻辑。
-use crate::http::prelude::*;
 
 pub(crate) async fn admin_users(
     state: Data<AppState>,

@@ -1,10 +1,24 @@
 //! RFC 7591 dynamic client registration endpoint.
 
+use crate::domain::{AppState, ClientRow};
 use crate::http::admin::PreparedClientRegistration;
-use crate::http::{
-    admin::{CreateClientRequest, InsertClientError},
-    prelude::*,
+use crate::http::admin::{CreateClientRequest, InsertClientError};
+use crate::support::{
+    DEFAULT_TENANT_ID, RateLimitPolicy, audit_event, audit_fields, blake3_hex, client_ip,
+    client_secret_digest, constant_time_eq, empty_response, empty_response_no_store,
+    enforce_rate_limit, json_array_to_strings, json_response_no_store,
+    json_response_status_no_store, oauth_bearer_error, oauth_error, parse_scope,
+    random_urlsafe_token,
 };
+use actix_web::http::StatusCode;
+use actix_web::http::header;
+#[cfg(test)]
+use actix_web::http::header::HeaderValue;
+use actix_web::web::{Data, Json};
+use actix_web::{HttpRequest, HttpResponse};
+use chrono::{DateTime, Utc};
+use serde::Deserialize;
+use serde_json::{Value, json};
 use url::Url;
 
 #[derive(Debug, Default, Deserialize)]

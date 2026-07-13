@@ -1,4 +1,10 @@
-use crate::http::{prelude::*, scim::schema::scim_error};
+use crate::http::scim::schema::scim_error;
+#[cfg(test)]
+use crate::support::normalize_email_address;
+use actix_web::HttpResponse;
+use actix_web::http::StatusCode;
+#[cfg(test)]
+use serde_json::{Value, json};
 
 pub(crate) use nazo_identity::scim::{
     NormalizedScimUser, ScimPatch, ScimPatchOperation, ScimPatchRequest, ScimUserRequest,

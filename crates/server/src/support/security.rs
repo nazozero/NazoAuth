@@ -1,15 +1,34 @@
 //! 密码、哈希、客户端认证和客户端 JWT 验证工具。
 
-use super::prelude::*;
+#[cfg(test)]
+use super::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
 use super::{audit_event, audit_fields, request_mtls_client_certificate};
+use crate::domain::{AppState, ClientRow};
+use crate::settings::Settings;
+use actix_web::HttpRequest;
+use actix_web::http::header;
+use actix_web::http::header::{HeaderMap, HeaderValue};
 use anyhow::{anyhow, bail};
+use argon2::PasswordHasher;
+use argon2::PasswordVerifier;
+use argon2::password_hash::SaltString;
+use argon2::password_hash::rand_core::OsRng;
+use argon2::{Argon2, PasswordHash};
+use base64::Engine;
+use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
+use chrono::Utc;
 use hmac::{Hmac, KeyInit, Mac};
+use nazo_auth::Claims;
+use serde_json::{Value, json};
+use sha2::Digest;
+use sha2::Sha256;
 use std::sync::{
     Arc, OnceLock,
     atomic::{AtomicU64, AtomicUsize, Ordering},
 };
 use tokio::sync::Semaphore;
 use tokio::time::{Duration, timeout};
+use uuid::Uuid;
 
 mod tokens;
 pub(crate) use tokens::*;

@@ -1,6 +1,32 @@
 //! SCIM 2.0 user provisioning endpoints.
-use crate::http::prelude::*;
 
+use crate::domain::AppState;
+#[cfg(test)]
+use crate::domain::DatabaseUserFixture;
+#[cfg(test)]
+use crate::settings::Settings;
+#[cfg(test)]
+use crate::support::blake3_hex;
+use crate::support::{
+    default_tenant_context, empty_response, hash_password, json_response, json_response_status,
+    random_urlsafe_token,
+};
+use actix_web::http::StatusCode;
+#[cfg(test)]
+use actix_web::http::header;
+#[cfg(test)]
+use actix_web::web::Query;
+use actix_web::web::{Data, Json};
+use actix_web::{HttpRequest, HttpResponse};
+#[cfg(test)]
+use chrono::Duration;
+use chrono::Utc;
+use nazo_identity::PublicAccount;
+use serde::Deserialize;
+#[cfg(test)]
+use serde_json::Value;
+use serde_json::json;
+use uuid::Uuid;
 mod auth;
 mod cursor;
 mod normalization;

@@ -1,4 +1,7 @@
 use super::*;
+use chrono::DateTime;
+
+use crate::domain::{AuthorizationCodeState, ConsumedAuthorizationCode};
 
 pub(super) fn consumed_authorization_code_transition_result(result: &str) -> anyhow::Result<()> {
     if result == "ok" {

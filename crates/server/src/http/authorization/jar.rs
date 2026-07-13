@@ -1,9 +1,27 @@
 //! JWT-Secured Authorization Request validation.
 
 use super::request::AUTHORIZED_REQUEST_PARAMETERS;
-use crate::http::prelude::*;
+use crate::domain::{AppState, ClientRow};
 use crate::settings::RequestObjectJtiPolicy;
+#[cfg(test)]
+use crate::settings::Settings;
+#[cfg(test)]
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, OAuthJsonErrorFields,
+};
+use crate::support::{
+    client_jwt_decoding_key, oauth_error, resource_indicators_from_parameter_value,
+    supported_client_jwt_algorithm_name,
+};
+use actix_web::HttpResponse;
+use actix_web::http::StatusCode;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use chrono::Utc;
+use serde::Deserialize;
+use serde_json::Value;
+use std::collections::HashMap;
+#[cfg(test)]
+use uuid::Uuid;
 
 const REQUEST_OBJECT_MAX_TTL_SECONDS: i64 = 300;
 const REQUEST_OBJECT_CLOCK_SKEW_SECONDS: i64 = 30;

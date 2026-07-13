@@ -1,9 +1,33 @@
 //! refresh_token grant 处理。
+use crate::domain::{AppState, ClientRow, RefreshTokenPolicy, TokenIssue, TokenRow};
+use crate::settings::Settings;
+#[cfg(test)]
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, decode_access_claims,
+};
+use crate::support::{
+    DpopErrorContext, ValidatedClientAssertion, audiences_allowed, audit_event, audit_fields,
+    blake3_hex, client_ip, constant_time_eq, dpop_error_response, dpop_proof_present, is_subset,
+    json_array_to_strings, oauth_token_error, parse_scope, request_mtls_thumbprint,
+    validate_dpop_proof,
+};
+use actix_web::http::StatusCode;
+#[cfg(test)]
+use actix_web::http::header;
+use actix_web::{HttpRequest, HttpResponse};
+#[cfg(test)]
+use chrono::Duration;
+use chrono::{DateTime, Utc};
+#[cfg(test)]
+use diesel::QueryableByName;
+#[cfg(test)]
+use serde_json::Value;
+use serde_json::json;
+use uuid::Uuid;
 // 只处理 refresh token 校验、复用检测和轮换前置约束。
 use super::{
     TokenForm, consume_token_client_assertion, issue_token_response, should_issue_refresh_token,
 };
-use crate::http::prelude::*;
 use crate::settings::AuthorizationServerProfile;
 
 fn refresh_token_policy_for_authorization_server_profile(

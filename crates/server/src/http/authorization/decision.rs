@@ -1,10 +1,34 @@
 //! 授权确认提交端点。
+#[cfg(test)]
+use crate::domain::DatabaseUserFixture;
+use crate::domain::{AppState, AuthorizationCodeState, CodePayload, ConsentPayload};
+#[cfg(test)]
+use crate::settings::Settings;
+#[cfg(test)]
+use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, valkey_set_ex};
+use crate::support::{
+    DEFAULT_TENANT_ID, audit_event, audit_fields, blake3_hex, client_ip, csrf_error,
+    current_user_or_login_required, default_tenant_context, has_valid_csrf_token, oauth_error,
+    random_urlsafe_token,
+};
+use actix_web::http::StatusCode;
+#[cfg(test)]
+use actix_web::http::header;
+use actix_web::web::{Data, Form};
+use actix_web::{HttpRequest, HttpResponse};
+use chrono::{Duration, Utc};
+#[cfg(test)]
+use diesel::QueryableByName;
+use serde::Deserialize;
+#[cfg(test)]
+use serde_json::Value;
+use serde_json::json;
+use uuid::Uuid;
 // 同意时签发一次性授权码；拒绝时按 OAuth 规范把错误回传 redirect_uri。
 use super::{
     AuthorizationResponseRedirect, PushedAuthorizationRequestConsumeError,
     authorization_response_redirect, consume_pushed_authorization_request,
 };
-use crate::http::prelude::*;
 
 #[derive(Deserialize)]
 pub(crate) struct DecisionForm {

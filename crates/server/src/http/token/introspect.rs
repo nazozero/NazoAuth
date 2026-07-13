@@ -1,11 +1,35 @@
 //! token introspection 端点。
+use crate::domain::{AppState, ClientRow, TokenRow};
+#[cfg(test)]
+use crate::settings::Settings;
+#[cfg(test)]
+use crate::support::{
+    AccessTokenJwtInput, DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, IssuedAccessToken,
+    OAuthJsonErrorFields, blake3_hex, jwt_decoding_key_from_jwk, make_jwt,
+};
+use crate::support::{
+    ClientJweKey, DEFAULT_TENANT_ID, JwePayloadKind, RateLimitPolicy, access_token_tenant_id,
+    client_jwe_key, decode_access_claims, encrypt_compact_jwe, enforce_rate_limit,
+    extract_client_credentials, has_basic_authorization_scheme, json_array_to_strings,
+    json_response_no_store, token_audience_allowed,
+};
+use actix_web::http::StatusCode;
+use actix_web::http::header;
+use actix_web::http::header::HeaderValue;
+use actix_web::web::{Bytes, Data};
+use actix_web::{HttpRequest, HttpResponse};
+use chrono::Utc;
+#[cfg(test)]
+use chrono::{DateTime, Duration};
+use serde_json::{Value, json};
+#[cfg(test)]
+use uuid::Uuid;
 // 只处理 access/refresh token 活跃性查询。
 use super::{
     TokenManagementClientAuthError, authenticate_introspection_client, parse_token_management_form,
     token_management_client_auth_error, token_management_form_error,
     token_management_has_conflicting_client_auth, token_management_oauth_error,
 };
-use crate::http::prelude::*;
 use nazo_auth::Claims;
 
 const TOKEN_INTROSPECTION_JWT_MEDIA_TYPE: &str = "application/token-introspection+jwt";

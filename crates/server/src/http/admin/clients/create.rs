@@ -1,6 +1,20 @@
 //! 管理端客户端创建端点。
+use crate::domain::{AppState, ClientRow};
+use crate::support::{
+    ClientMetadata, ClientMtlsMetadata, audit_event, audit_fields, blake3_hex, client_ip,
+    client_json, csrf_error, fetch_sector_identifier_uris, has_valid_csrf_token,
+    hash_client_secret, json_response_status, oauth_error, random_urlsafe_token,
+    require_admin_or_forbidden, sector_identifier_hostname, validate_client_metadata,
+};
+#[cfg(test)]
+use crate::support::{OAuthJsonErrorFields, client_secret_digest};
+use actix_web::http::StatusCode;
+use actix_web::web::{Data, Json};
+use actix_web::{HttpRequest, HttpResponse};
+use serde::Deserialize;
+use serde_json::{Value, json};
+use uuid::Uuid;
 // confidential 客户端只在创建响应中返回一次明文 secret。
-use crate::http::prelude::*;
 use nazo_auth::ValidatedClientRegistration;
 
 pub(crate) struct PreparedClientRegistration {

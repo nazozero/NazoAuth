@@ -1,7 +1,14 @@
+use crate::domain::AppState;
+use crate::support::{
+    normalize_email_address, oauth_error, pkce_s256, random_urlsafe_token, redirect_found,
+};
+use actix_web::HttpResponse;
+use actix_web::http::StatusCode;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use url::Url;
 
-use crate::http::prelude::*;
 use crate::settings::{SocialProviderKind, SocialProviderSettings};
 
 use super::FEDERATION_STATE_TTL_SECONDS;

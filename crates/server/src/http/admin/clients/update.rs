@@ -1,10 +1,33 @@
 //! 管理端客户端更新端点。
+#[cfg(test)]
+use crate::domain::DatabaseUserFixture;
+use crate::domain::{AppState, ClientRow};
+#[cfg(test)]
+use crate::settings::Settings;
+use crate::support::{
+    ClientMetadata, ClientMtlsMetadata, DEFAULT_TENANT_ID, audit_event, audit_fields, blake3_hex,
+    client_ip, client_json, csrf_error, fetch_sector_identifier_uris, has_valid_csrf_token,
+    json_array_to_strings, json_response, oauth_error, require_admin_or_forbidden,
+    validate_client_metadata,
+};
+#[cfg(test)]
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, OAuthJsonErrorFields, SessionPayload, valkey_set_ex,
+};
+use actix_web::http::StatusCode;
+use actix_web::web::{Data, Json};
+use actix_web::{HttpRequest, HttpResponse};
+#[cfg(test)]
+use chrono::Utc;
+use serde::Deserialize;
+use serde_json::{Value, json};
+#[cfg(test)]
+use uuid::Uuid;
 // PATCH 请求只覆盖显式提交的字段，其余字段保持数据库当前值。
 use super::create::{
     all_same_host, sector_identifier_host_for_redirects, trim_optional_string,
     validate_pkce_compatibility_policy,
 };
-use crate::http::prelude::*;
 
 #[derive(Deserialize)]
 pub(crate) struct PatchClientRequest {
