@@ -78,7 +78,8 @@ mod tests {
 
     #[test]
     fn state_is_bound_to_client_origin_browser_state_and_salt() {
-        let state = oidc_session_state("client-1", "https://client.example", "opbs-1", "salt");
+        let salt = URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>());
+        let state = oidc_session_state("client-1", "https://client.example", "opbs-1", &salt);
         assert_eq!(
             check_oidc_session_state("client-1", "https://client.example", &state, Some("opbs-1")),
             OidcSessionStatus::Unchanged

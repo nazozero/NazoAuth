@@ -301,8 +301,12 @@ mod tests {
 
     #[actix_web::test]
     async fn status_is_unchanged_only_for_the_bound_live_session() {
-        let state =
-            nazo_auth::oidc_session_state("client-1", "https://client.example", "opbs-1", "salt");
+        let state = nazo_auth::issue_oidc_session_state(
+            "client-1",
+            "https://client.example/callback",
+            "opbs-1",
+        )
+        .expect("HTTPS callback has a browser origin");
         let uri = format!(
             "/check_session/status?client_id=client-1&origin=https%3A%2F%2Fclient.example&session_state={state}"
         );
