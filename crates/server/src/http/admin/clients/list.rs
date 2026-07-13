@@ -1,22 +1,24 @@
 //! 管理端客户端列表端点。
 #[cfg(test)]
-use crate::domain::DatabaseUserFixture;
-use crate::domain::{AppState, ClientRow};
+use super::test_dependencies;
+use crate::domain::ClientRow;
+#[cfg(test)]
+use crate::domain::{AppState, DatabaseUserFixture};
 #[cfg(test)]
 use crate::settings::Settings;
+use crate::support::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
 #[cfg(test)]
 use crate::support::{
     DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, OAuthJsonErrorFields,
     SessionPayload, valkey_set_ex,
 };
-use crate::support::{
-    client_json, json_response, oauth_error, pagination, require_admin_or_forbidden,
-};
+use crate::support::{client_json, json_response, oauth_error, pagination};
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Query};
 use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
 use chrono::Utc;
+use nazo_postgres::OAuthClientRepository;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 #[cfg(test)]
@@ -25,19 +27,17 @@ use uuid::Uuid;
 
 /// 返回 OAuth 客户端分页列表。
 pub(crate) async fn admin_clients(
-    state: Data<AppState>,
+    admin_sessions: Data<AdminSessionHandles>,
+    clients: Data<OAuthClientRepository>,
     req: HttpRequest,
     Query(q): Query<HashMap<String, String>>,
 ) -> HttpResponse {
-    if let Err(response) = require_admin_or_forbidden(&state, &req).await {
+    if let Err(response) = require_admin_or_forbidden_with_handles(&admin_sessions, &req).await {
         return response;
     }
 
     let (page, page_size, offset) = pagination(&q);
-    let (clients, total) = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-        .page(offset as i64, page_size as i64)
-        .await
-    {
+    let (clients, total) = match clients.page(offset as i64, page_size as i64).await {
         Ok(page) => page,
         Err(error) => {
             tracing::warn!(%error, "failed to load oauth clients");

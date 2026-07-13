@@ -379,9 +379,12 @@ impl LiveAdminGrantFixture {
             Ok(prepared) => prepared,
             Err(_) => panic!("client creation payload should be valid"),
         };
-        insert_prepared_client(&self.state.diesel_db, &prepared)
-            .await
-            .expect("client should insert")
+        insert_prepared_client(
+            &nazo_postgres::OAuthClientRepository::new(self.state.diesel_db.clone()),
+            &prepared,
+        )
+        .await
+        .expect("client should insert")
     }
 
     async fn insert_grant(&self, user: &DatabaseUserFixture, client: &ClientRow) {
