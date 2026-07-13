@@ -168,6 +168,23 @@ pub struct UserPage {
     pub users: Vec<crate::PublicAccount>,
 }
 
+/// Persistence boundary for administrative account listing and atomic policy updates.
+///
+/// The update operation intentionally remains a single repository call: the
+/// implementation must load the actor and target, evaluate
+/// [`crate::authorize_admin_update`], and persist the result in one transaction.
+pub trait AdminUserRepositoryPort: Send + Sync {
+    fn page(&self, tenant_id: TenantId, limit: i64, offset: i64) -> RepositoryFuture<'_, UserPage>;
+
+    fn update_authorized(
+        &self,
+        tenant_id: TenantId,
+        actor_id: UserId,
+        target_id: UserId,
+        update: AdminUserUpdate,
+    ) -> RepositoryFuture<'_, crate::AdminUserUpdateOutcome>;
+}
+
 #[derive(Clone, Debug)]
 pub struct ScimListQuery {
     pub tenant_id: TenantId,

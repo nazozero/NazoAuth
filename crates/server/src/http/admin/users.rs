@@ -7,8 +7,7 @@ use actix_web::web::{Data, Json, Query};
 use actix_web::{HttpRequest, HttpResponse};
 use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies};
 use nazo_http_actix::{json_response, oauth_error};
-use nazo_identity::PublicAccount;
-use nazo_postgres::UserRepository;
+use nazo_identity::{PublicAccount, ports::AdminUserRepositoryPort};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -17,7 +16,7 @@ use uuid::Uuid;
 
 pub(crate) async fn admin_users(
     admin_sessions: Data<AdminSessionHandles>,
-    users: Data<UserRepository>,
+    users: Data<dyn AdminUserRepositoryPort>,
     req: HttpRequest,
     Query(q): Query<HashMap<String, String>>,
 ) -> HttpResponse {
@@ -62,7 +61,7 @@ pub(crate) struct PatchUserRequest {
 
 pub(crate) async fn admin_patch_user(
     admin_sessions: Data<AdminSessionHandles>,
-    users: Data<UserRepository>,
+    users: Data<dyn AdminUserRepositoryPort>,
     client_ip_config: Data<ClientIpConfig>,
     req: HttpRequest,
     path: actix_web::web::Path<Uuid>,
@@ -107,7 +106,7 @@ pub(crate) async fn admin_patch_user(
         }
     };
     let updated = match users
-        .admin_update_authorized(
+        .update_authorized(
             admin.tenant().tenant_id,
             actor_id,
             user_id,

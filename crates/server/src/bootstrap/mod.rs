@@ -217,7 +217,10 @@ pub async fn run() -> anyhow::Result<()> {
     let profile_federation = web::Data::new(FederationProfileService::new(
         nazo_postgres::FederationRepository::new(state.diesel_db.clone()),
     ));
-    let admin_users = web::Data::new(nazo_postgres::UserRepository::new(state.diesel_db.clone()));
+    let admin_users: web::Data<dyn nazo_identity::ports::AdminUserRepositoryPort> = web::Data::from(
+        Arc::new(nazo_postgres::UserRepository::new(state.diesel_db.clone()))
+            as Arc<dyn nazo_identity::ports::AdminUserRepositoryPort>,
+    );
     let admin_grants = web::Data::new(nazo_postgres::GrantRepository::new(state.diesel_db.clone()));
     let oauth_clients = web::Data::new(nazo_postgres::OAuthClientRepository::new(
         state.diesel_db.clone(),

@@ -535,6 +535,30 @@ impl UserRepositoryPort for UserRepository {
     }
 }
 
+impl nazo_identity::ports::AdminUserRepositoryPort for UserRepository {
+    fn page(
+        &self,
+        tenant_id: nazo_identity::TenantId,
+        limit: i64,
+        offset: i64,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, nazo_identity::ports::UserPage> {
+        Box::pin(async move { UserRepository::page(self, tenant_id, limit, offset).await })
+    }
+
+    fn update_authorized(
+        &self,
+        tenant_id: nazo_identity::TenantId,
+        actor_id: nazo_identity::UserId,
+        target_id: nazo_identity::UserId,
+        update: nazo_identity::ports::AdminUserUpdate,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, nazo_identity::AdminUserUpdateOutcome> {
+        Box::pin(async move {
+            UserRepository::admin_update_authorized(self, tenant_id, actor_id, target_id, update)
+                .await
+        })
+    }
+}
+
 impl nazo_identity::ports::ProfileRepositoryPort for UserRepository {
     fn update_profile<'a>(
         &'a self,

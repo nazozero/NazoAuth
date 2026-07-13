@@ -22,6 +22,7 @@ use crate::support::{
 };
 use chrono::Utc;
 use diesel::prelude::*;
+use nazo_identity::ports::AdminUserRepositoryPort;
 use nazo_postgres::{create_pool, get_conn};
 
 fn user_row() -> PublicAccount {
@@ -102,7 +103,7 @@ fn admin_user_dependencies(
     state: &Data<AppState>,
 ) -> (
     Data<AdminSessionHandles>,
-    Data<UserRepository>,
+    Data<dyn AdminUserRepositoryPort>,
     Data<ClientIpConfig>,
 ) {
     let session = state.settings.session();
@@ -117,7 +118,8 @@ fn admin_user_dependencies(
                 session.cookie_secure,
             ),
         )),
-        Data::new(UserRepository::new(state.diesel_db.clone())),
+        Data::from(Arc::new(UserRepository::new(state.diesel_db.clone()))
+            as Arc<dyn AdminUserRepositoryPort>),
         Data::new(ClientIpConfig::new(
             endpoint.trusted_proxy_cidrs,
             endpoint.client_ip_header_mode,
