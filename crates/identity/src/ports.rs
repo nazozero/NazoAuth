@@ -55,6 +55,13 @@ pub struct TotpEnrollment {
     pub last_used_step: Option<i64>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TotpVerificationOutcome {
+    Accepted,
+    Invalid,
+    Replay,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct PasskeyCredential {
     pub id: Uuid,
@@ -189,16 +196,6 @@ pub trait UserRepositoryPort: Send + Sync {
         tenant: TenantContext,
         user_id: UserId,
     ) -> RepositoryFuture<'a, Option<SubjectClaims>>;
-}
-
-pub trait AdminUserRepositoryPort: Send + Sync {
-    fn admin_update_authorized<'a>(
-        &'a self,
-        tenant_id: TenantId,
-        actor_id: UserId,
-        target_id: UserId,
-        update: AdminUserUpdate,
-    ) -> RepositoryFuture<'a, crate::AdminUserUpdateOutcome>;
 }
 
 pub trait MfaRepositoryPort: Send + Sync {

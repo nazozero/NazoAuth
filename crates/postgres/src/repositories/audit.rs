@@ -295,6 +295,7 @@ const fn security_outcome(outcome: IdentitySecurityOutcome) -> &'static str {
 const fn security_reason(reason: IdentitySecurityReason) -> &'static str {
     match reason {
         IdentitySecurityReason::TotpAccepted => "totp_accepted",
+        IdentitySecurityReason::TotpInvalid => "totp_invalid",
         IdentitySecurityReason::TotpReplay => "totp_replay",
         IdentitySecurityReason::BackupCodeAccepted => "backup_code_accepted",
         IdentitySecurityReason::BackupCodeInvalid => "backup_code_invalid",

@@ -60,37 +60,24 @@ pub(crate) async fn verify_user_mfa_code(
     user: &PublicAccount,
     code: &str,
 ) -> anyhow::Result<Option<MfaVerificationMethod>> {
-    let now = Utc::now();
     let tenant_id = nazo_identity::TenantId::new(user.tenant_id())?;
     let user_id = nazo_identity::UserId::new(user.id())?;
     let repository = nazo_postgres::MfaRepository::new(db.clone());
-    let totp_credential = repository
-        .totp_credential(tenant_id, user_id)
-        .await
-        .map_err(|error| anyhow::anyhow!("failed to load TOTP credential: {error:?}"))?;
-    if let Some(credential) = totp_credential
-        && let Some(step) = nazo_identity::mfa::verified_totp_step(
-            &credential.secret_base32,
-            code,
-            now.timestamp(),
-            credential.last_used_step,
-        )
-        && repository
-            .compare_and_set_totp_step(tenant_id, user_id, step)
+    if let Some(normalized) = nazo_identity::mfa::normalize_backup_code(code) {
+        return repository
+            .consume_backup_code(tenant_id, user_id, &normalized)
             .await
-            .map_err(|error| anyhow::anyhow!("failed to consume TOTP step: {error:?}"))?
-    {
-        return Ok(Some(MfaVerificationMethod::Totp));
+            .map(|consumed| consumed.then_some(MfaVerificationMethod::BackupCode))
+            .map_err(|error| anyhow::anyhow!("failed to consume backup code: {error:?}"));
     }
-
-    let Some(normalized) = nazo_identity::mfa::normalize_backup_code(code) else {
-        return Ok(None);
-    };
     repository
-        .consume_backup_code(tenant_id, user_id, &normalized)
+        .verify_and_consume_totp(tenant_id, user_id, code, Utc::now().timestamp())
         .await
-        .map(|consumed| consumed.then_some(MfaVerificationMethod::BackupCode))
-        .map_err(|error| anyhow::anyhow!("failed to consume backup code: {error:?}"))
+        .map(|outcome| {
+            (outcome == nazo_identity::ports::TotpVerificationOutcome::Accepted)
+                .then_some(MfaVerificationMethod::Totp)
+        })
+        .map_err(|error| anyhow::anyhow!("failed to verify and consume TOTP: {error:?}"))
 }
 
 pub(crate) async fn replace_backup_codes(

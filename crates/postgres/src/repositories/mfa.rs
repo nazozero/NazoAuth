@@ -9,8 +9,11 @@ use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_identity::{
     IdentitySecurityEvent, IdentitySecurityEventType, IdentitySecurityOutcome,
     IdentitySecurityReason, TenantId, UserId,
-    mfa::MFA_BACKUP_CODE_COUNT,
-    ports::{MfaRepositoryPort, RepositoryError, RepositoryFuture, TotpCredential, TotpEnrollment},
+    mfa::{MFA_BACKUP_CODE_COUNT, verified_totp_step},
+    ports::{
+        MfaRepositoryPort, RepositoryError, RepositoryFuture, TotpCredential, TotpEnrollment,
+        TotpVerificationOutcome,
+    },
 };
 
 #[derive(Clone)]
@@ -139,22 +142,52 @@ impl MfaRepository {
             .await
             .map_err(map_mfa_error)
     }
-    pub async fn confirm_totp_and_replace_backup_hashes(
+    pub async fn verify_and_confirm_totp(
         &self,
         tenant_id: TenantId,
         user_id: UserId,
-        step: i64,
+        code: &str,
+        timestamp: i64,
         hashes: Vec<String>,
-    ) -> Result<(), RepositoryError> {
-        validate_backup_hash_count(&hashes)?;
+    ) -> Result<TotpVerificationOutcome, RepositoryError> {
+        if hashes.len() != MFA_BACKUP_CODE_COUNT {
+            return Err(RepositoryError::Conflict);
+        }
         let mut connection = self
             .pool
             .get()
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         connection
-            .transaction::<_, diesel::result::Error, _>(async move |connection| {
-                let changed = diesel::update(
+            .transaction::<TotpVerificationOutcome, MfaAuditError, _>(async move |connection| {
+                let credential = user_totp_credentials::table
+                    .filter(user_totp_credentials::tenant_id.eq(tenant_id.as_uuid()))
+                    .filter(user_totp_credentials::user_id.eq(user_id.as_uuid()))
+                    .filter(user_totp_credentials::confirmed_at.is_null())
+                    .for_update()
+                    .select(user_totp_credentials::secret_base32)
+                    .first::<String>(connection)
+                    .await
+                    .optional()?;
+                let Some(secret) = credential else {
+                    return Err(MfaAuditError::Repository(RepositoryError::Conflict));
+                };
+                let Some(step) = verified_totp_step(&secret, code, timestamp, None) else {
+                    insert_identity_security_event(
+                        connection,
+                        &mfa_event(
+                            tenant_id,
+                            user_id,
+                            IdentitySecurityEventType::MfaTotpAttempt,
+                            IdentitySecurityOutcome::InvalidCredential,
+                            IdentitySecurityReason::TotpInvalid,
+                        ),
+                    )
+                    .await
+                    .map_err(MfaAuditError::Repository)?;
+                    return Ok(TotpVerificationOutcome::Invalid);
+                };
+                diesel::update(
                     user_totp_credentials::table
                         .filter(user_totp_credentials::tenant_id.eq(tenant_id.as_uuid()))
                         .filter(user_totp_credentials::user_id.eq(user_id.as_uuid()))
@@ -167,9 +200,6 @@ impl MfaRepository {
                 ))
                 .execute(connection)
                 .await?;
-                if changed != 1 {
-                    return Err(diesel::result::Error::NotFound);
-                }
                 diesel::update(
                     users::table
                         .find(user_id.as_uuid())
@@ -195,10 +225,109 @@ impl MfaRepository {
                         .execute(connection)
                         .await?;
                 }
-                Ok(())
+                insert_identity_security_event(
+                    connection,
+                    &mfa_event(
+                        tenant_id,
+                        user_id,
+                        IdentitySecurityEventType::MfaTotpAttempt,
+                        IdentitySecurityOutcome::Success,
+                        IdentitySecurityReason::TotpAccepted,
+                    ),
+                )
+                .await
+                .map_err(MfaAuditError::Repository)?;
+                Ok(TotpVerificationOutcome::Accepted)
             })
             .await
-            .map_err(map_mfa_error)
+            .map_err(MfaAuditError::into_repository)
+    }
+    pub async fn verify_and_consume_totp(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        code: &str,
+        timestamp: i64,
+    ) -> Result<TotpVerificationOutcome, RepositoryError> {
+        let mut connection = self
+            .pool
+            .get()
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
+        connection
+            .transaction::<TotpVerificationOutcome, MfaAuditError, _>(async |connection| {
+                let credential = user_totp_credentials::table
+                    .filter(user_totp_credentials::tenant_id.eq(tenant_id.as_uuid()))
+                    .filter(user_totp_credentials::user_id.eq(user_id.as_uuid()))
+                    .filter(user_totp_credentials::confirmed_at.is_not_null())
+                    .for_update()
+                    .select((
+                        user_totp_credentials::secret_base32,
+                        user_totp_credentials::last_used_step,
+                    ))
+                    .first::<(String, Option<i64>)>(connection)
+                    .await
+                    .optional()?;
+                let outcome = match credential {
+                    Some((secret, last_step)) => {
+                        match verified_totp_step(&secret, code, timestamp, None) {
+                            Some(step) if last_step.is_some_and(|last| step <= last) => {
+                                TotpVerificationOutcome::Replay
+                            }
+                            Some(step) => {
+                                diesel::update(
+                                    user_totp_credentials::table
+                                        .filter(
+                                            user_totp_credentials::tenant_id
+                                                .eq(tenant_id.as_uuid()),
+                                        )
+                                        .filter(
+                                            user_totp_credentials::user_id.eq(user_id.as_uuid()),
+                                        ),
+                                )
+                                .set((
+                                    user_totp_credentials::last_used_step.eq(step),
+                                    user_totp_credentials::updated_at.eq(now),
+                                ))
+                                .execute(connection)
+                                .await?;
+                                TotpVerificationOutcome::Accepted
+                            }
+                            None => TotpVerificationOutcome::Invalid,
+                        }
+                    }
+                    None => TotpVerificationOutcome::Invalid,
+                };
+                let (audit_outcome, reason) = match outcome {
+                    TotpVerificationOutcome::Accepted => (
+                        IdentitySecurityOutcome::Success,
+                        IdentitySecurityReason::TotpAccepted,
+                    ),
+                    TotpVerificationOutcome::Invalid => (
+                        IdentitySecurityOutcome::InvalidCredential,
+                        IdentitySecurityReason::TotpInvalid,
+                    ),
+                    TotpVerificationOutcome::Replay => (
+                        IdentitySecurityOutcome::Replay,
+                        IdentitySecurityReason::TotpReplay,
+                    ),
+                };
+                insert_identity_security_event(
+                    connection,
+                    &mfa_event(
+                        tenant_id,
+                        user_id,
+                        IdentitySecurityEventType::MfaTotpAttempt,
+                        audit_outcome,
+                        reason,
+                    ),
+                )
+                .await
+                .map_err(MfaAuditError::Repository)?;
+                Ok(outcome)
+            })
+            .await
+            .map_err(MfaAuditError::into_repository)
     }
     pub async fn compare_and_set_totp_step(
         &self,

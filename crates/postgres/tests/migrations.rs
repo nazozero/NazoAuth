@@ -14,6 +14,10 @@ const IDENTITY_SECURITY_UP: &str =
     include_str!("../../../migrations/20260713000100_identity_security_events/up.sql");
 const IDENTITY_SECURITY_DOWN: &str =
     include_str!("../../../migrations/20260713000100_identity_security_events/down.sql");
+const IDENTITY_SECURITY_TOTP_INVALID_UP: &str =
+    include_str!("../../../migrations/20260713000200_identity_security_totp_invalid/up.sql");
+const IDENTITY_SECURITY_TOTP_INVALID_DOWN: &str =
+    include_str!("../../../migrations/20260713000200_identity_security_totp_invalid/down.sql");
 
 #[derive(QueryableByName)]
 struct ProviderType {
@@ -336,6 +340,81 @@ async fn identity_security_event_migration_is_additive_redacted_and_round_trips(
         .batch_execute(IDENTITY_SECURITY_UP)
         .await
         .expect("identity audit up migration should reapply after down");
+    connection
+        .batch_execute(&format!(
+            "SET search_path TO public; DROP SCHEMA \"{schema}\" CASCADE;"
+        ))
+        .await
+        .expect("test schema should drop");
+}
+
+#[tokio::test]
+async fn totp_invalid_audit_migration_extends_and_restores_the_closed_catalog() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let schema = format!("identity_totp_invalid_{}", Uuid::now_v7().simple());
+    let mut connection = AsyncPgConnection::establish(&database_url)
+        .await
+        .expect("test database should connect");
+    connection
+        .batch_execute(&format!(
+            r#"
+            CREATE SCHEMA "{schema}";
+            SET search_path TO "{schema}";
+            CREATE TABLE tenants (id UUID PRIMARY KEY);
+            CREATE TABLE users (id UUID PRIMARY KEY);
+            INSERT INTO tenants (id) VALUES ('00000000-0000-0000-0000-000000000001');
+            "#
+        ))
+        .await
+        .expect("identity audit baseline should create");
+    connection
+        .batch_execute(IDENTITY_SECURITY_UP)
+        .await
+        .expect("identity audit table should create");
+    connection
+        .batch_execute(IDENTITY_SECURITY_TOTP_INVALID_UP)
+        .await
+        .expect("TOTP invalid catalog extension should apply");
+
+    let invalid_attempt = "INSERT INTO identity_security_events (tenant_id, category, event_type, outcome, reason_code) VALUES ('00000000-0000-0000-0000-000000000001', 'mfa', 'mfa_totp_attempt', 'invalid_credential', 'totp_invalid')";
+    sql_query(invalid_attempt)
+        .execute(&mut connection)
+        .await
+        .expect("redacted invalid TOTP audit outcome should persist");
+    assert!(
+        sql_query("INSERT INTO identity_security_events (tenant_id, category, event_type, outcome, reason_code) VALUES ('00000000-0000-0000-0000-000000000001', 'mfa', 'mfa_totp_attempt', 'invalid_credential', 'contains-code-123456')")
+            .execute(&mut connection)
+            .await
+            .is_err(),
+        "the extended catalog must still reject free-form reason text"
+    );
+
+    sql_query("DELETE FROM identity_security_events")
+        .execute(&mut connection)
+        .await
+        .expect("extension-only rows can be removed before downgrade");
+    connection
+        .batch_execute(IDENTITY_SECURITY_TOTP_INVALID_DOWN)
+        .await
+        .expect("down migration should restore the prior closed catalog");
+    assert!(
+        sql_query(invalid_attempt)
+            .execute(&mut connection)
+            .await
+            .is_err(),
+        "the prior catalog must not silently retain the new reason"
+    );
+    connection
+        .batch_execute(IDENTITY_SECURITY_TOTP_INVALID_UP)
+        .await
+        .expect("extension should reapply after down");
+    sql_query(invalid_attempt)
+        .execute(&mut connection)
+        .await
+        .expect("reapplied extension should accept the typed outcome");
+
     connection
         .batch_execute(&format!(
             "SET search_path TO public; DROP SCHEMA \"{schema}\" CASCADE;"

@@ -22,6 +22,7 @@ pub enum IdentitySecurityOutcome {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IdentitySecurityReason {
     TotpAccepted,
+    TotpInvalid,
     TotpReplay,
     BackupCodeAccepted,
     BackupCodeInvalid,

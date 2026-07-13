@@ -457,21 +457,6 @@ impl UserRepository {
     }
 }
 
-impl nazo_identity::ports::AdminUserRepositoryPort for UserRepository {
-    fn admin_update_authorized<'a>(
-        &'a self,
-        tenant_id: TenantId,
-        actor_id: UserId,
-        target_id: UserId,
-        update: AdminUserUpdate,
-    ) -> nazo_identity::ports::RepositoryFuture<'a, AdminUserUpdateOutcome> {
-        Box::pin(async move {
-            self.admin_update_authorized(tenant_id, actor_id, target_id, update)
-                .await
-        })
-    }
-}
-
 fn admin_event(
     tenant_id: TenantId,
     actor_id: Option<UserId>,

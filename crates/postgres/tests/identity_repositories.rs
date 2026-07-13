@@ -470,6 +470,112 @@ async fn totp_last_step_compare_and_set_has_one_concurrent_winner() {
 }
 
 #[tokio::test]
+async fn totp_verification_classification_and_audit_are_atomic_and_replay_safe() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        return;
+    };
+    const SECRET: &str = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+    const STEP: i64 = 1_234_567;
+    let timestamp = STEP * nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
+    let code = nazo_identity::mfa::totp_for_step(b"12345678901234567890", STEP).unwrap();
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("INSERT INTO user_totp_credentials (tenant_id,user_id,secret_base32,label,confirmed_at) VALUES ($1,$2,$3,'test',CURRENT_TIMESTAMP)")
+        .bind::<SqlUuid, _>(tenant.tenant_id.as_uuid())
+        .bind::<SqlUuid, _>(user_id.as_uuid())
+        .bind::<Text, _>(SECRET)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+    let repository = MfaRepository::new(pool.clone());
+
+    assert_eq!(
+        repository
+            .verify_and_consume_totp(tenant.tenant_id, user_id, "not-a-code", timestamp)
+            .await
+            .unwrap(),
+        nazo_identity::ports::TotpVerificationOutcome::Invalid
+    );
+    assert_eq!(
+        repository
+            .verify_and_consume_totp(tenant.tenant_id, user_id, &code, timestamp)
+            .await
+            .unwrap(),
+        nazo_identity::ports::TotpVerificationOutcome::Accepted
+    );
+    assert_eq!(
+        repository
+            .verify_and_consume_totp(tenant.tenant_id, user_id, &code, timestamp)
+            .await
+            .unwrap(),
+        nazo_identity::ports::TotpVerificationOutcome::Replay
+    );
+
+    let events = identity_security_events(&pool, user_id).await;
+    assert_eq!(events.len(), 3);
+    assert!(events.iter().any(|event| {
+        event.outcome == "invalid_credential" && event.reason_code == "totp_invalid"
+    }));
+    assert!(
+        events
+            .iter()
+            .any(|event| { event.outcome == "success" && event.reason_code == "totp_accepted" })
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| event.outcome == "replay" && event.reason_code == "totp_replay")
+    );
+    cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
+async fn failed_totp_enrollment_confirmation_is_durably_audited_without_state_change() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        return;
+    };
+    let repository = MfaRepository::new(pool.clone());
+    repository
+        .begin_totp_enrollment(
+            tenant.tenant_id,
+            user_id,
+            "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".to_owned(),
+            "test".to_owned(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        repository
+            .verify_and_confirm_totp(
+                tenant.tenant_id,
+                user_id,
+                "invalid",
+                1_234_567 * nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS,
+                (0..nazo_identity::mfa::MFA_BACKUP_CODE_COUNT)
+                    .map(|index| format!("unused-invalid-attempt-hash-{index}"))
+                    .collect(),
+            )
+            .await
+            .unwrap(),
+        nazo_identity::ports::TotpVerificationOutcome::Invalid
+    );
+    let enrollment = repository
+        .totp_enrollment(tenant.tenant_id, user_id)
+        .await
+        .unwrap()
+        .expect("pending enrollment remains available");
+    assert!(!enrollment.confirmed);
+    assert!(enrollment.last_used_step.is_none());
+    let events = identity_security_events(&pool, user_id).await;
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event_type, "mfa_totp_attempt");
+    assert_eq!(events[0].outcome, "invalid_credential");
+    assert_eq!(events[0].reason_code, "totp_invalid");
+    cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
 async fn backup_code_is_consumed_once_atomically() {
     let Some((pool, tenant, user_id)) = database_fixture().await else {
         return;
@@ -1164,7 +1270,10 @@ fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
     );
     assert!(admin.contains("RepositoryError::AlreadyProcessed"));
     assert!(
-        admin.find("valkey_set_ex").unwrap() < admin.find(".approve(").unwrap(),
+        admin
+            .find(".store(")
+            .expect("focused delivery storage must stage the payload")
+            < admin.find(".approve(").unwrap(),
         "delivery must fail closed before the PostgreSQL approval transaction"
     );
     assert!(admin.contains("\"delivery_state\": \"staged\""));
@@ -1177,10 +1286,12 @@ fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
     assert!(delivery.contains("approved_delivery_matches"));
     assert!(
         delivery.find("approved_delivery_matches").unwrap()
-            < delivery.find("valkey_getdel").unwrap(),
+            < delivery
+                .find(".consume(")
+                .expect("focused delivery storage must consume atomically"),
         "delivery linkage must be validated before one-time consumption"
     );
-    assert!(profile.contains(".mget(keys)"));
+    assert!(profile.contains(".load_many(&lookups)"));
     assert!(!profile.contains("KEYS"));
     assert!(!profile.contains("SCAN"));
     assert!(profile.contains("delivery_payload_matches"));

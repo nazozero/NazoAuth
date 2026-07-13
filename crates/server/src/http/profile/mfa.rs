@@ -106,11 +106,11 @@ async fn mfa_totp_confirm_inner(
         return response;
     }
     let repository = nazo_postgres::MfaRepository::new(state.diesel_db.clone());
-    let credential = match repository
+    match repository
         .totp_enrollment(user.tenant().tenant_id, user.user_id())
         .await
     {
-        Ok(Some(credential)) if !credential.confirmed => credential,
+        Ok(Some(credential)) if !credential.confirmed => {}
         Ok(Some(_)) => {
             return oauth_error(StatusCode::CONFLICT, "invalid_request", "TOTP MFA 已启用.");
         }
@@ -130,13 +130,42 @@ async fn mfa_totp_confirm_inner(
             );
         }
     };
-    let Some(step) = nazo_identity::mfa::verified_totp_step(
-        &credential.secret_base32,
-        &payload.code,
-        Utc::now().timestamp(),
-        credential.last_used_step,
-    ) else {
-        return oauth_error(StatusCode::BAD_REQUEST, "invalid_grant", "MFA 验证码无效.");
+    let (backup_codes, hashes) = match generate_backup_codes_and_hashes() {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(%error, "failed to generate backup codes");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "备份码生成失败.",
+            );
+        }
+    };
+    match repository
+        .verify_and_confirm_totp(
+            user.tenant().tenant_id,
+            user.user_id(),
+            &payload.code,
+            Utc::now().timestamp(),
+            hashes,
+        )
+        .await
+    {
+        Ok(nazo_identity::ports::TotpVerificationOutcome::Accepted) => {}
+        Ok(
+            nazo_identity::ports::TotpVerificationOutcome::Invalid
+            | nazo_identity::ports::TotpVerificationOutcome::Replay,
+        ) => {
+            return oauth_error(StatusCode::BAD_REQUEST, "invalid_grant", "MFA 验证码无效.");
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to confirm TOTP credential");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "MFA 启用失败.",
+            );
+        }
     };
     let rotation =
         match step_up_current_session(&state, &req, MfaVerificationMethod::Totp.amr()).await {
@@ -149,7 +178,7 @@ async fn mfa_totp_confirm_inner(
                 );
             }
             Err(error) => {
-                tracing::warn!(%error, "failed to step up current session before TOTP enrollment");
+                tracing::warn!(%error, "failed to step up current session after TOTP enrollment");
                 return oauth_error(
                     StatusCode::SERVICE_UNAVAILABLE,
                     "server_error",
@@ -157,41 +186,6 @@ async fn mfa_totp_confirm_inner(
                 );
             }
         };
-    let (backup_codes, hashes) = match generate_backup_codes_and_hashes() {
-        Ok(value) => value,
-        Err(error) => {
-            tracing::warn!(%error, "failed to generate backup codes");
-            return with_rotated_session_cookies(
-                &state,
-                &rotation,
-                oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "备份码生成失败.",
-                ),
-            );
-        }
-    };
-    if let Err(error) = repository
-        .confirm_totp_and_replace_backup_hashes(
-            user.tenant().tenant_id,
-            user.user_id(),
-            step,
-            hashes,
-        )
-        .await
-    {
-        tracing::warn!(%error, "failed to confirm TOTP credential");
-        return with_rotated_session_cookies(
-            &state,
-            &rotation,
-            oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "MFA 启用失败.",
-            ),
-        );
-    }
     audit_event(
         "mfa_totp_enabled",
         audit_fields(&[("user_id", json!(user.id())), ("method", json!("totp"))]),
