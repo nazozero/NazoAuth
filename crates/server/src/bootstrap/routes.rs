@@ -6,9 +6,9 @@ use actix_web::web;
 use nazo_http_actix::authorize_decision;
 use nazo_http_actix::{
     admin_patch_runtime_module, admin_runtime_module_events, admin_runtime_modules,
-    configure_mfa_challenge_route, configure_mfa_profile_routes, discovery, jwks, login,
-    oauth_authorization_server_metadata, oauth_protected_resource_metadata, profile_applications,
-    profile_logout, profile_me, profile_update, register, send_code,
+    configure_mfa_challenge_route, configure_mfa_profile_routes, discovery, fapi_resource, jwks,
+    login, oauth_authorization_server_metadata, oauth_protected_resource_metadata,
+    profile_applications, profile_logout, profile_me, profile_update, register, send_code,
 };
 #[cfg(not(test))]
 use nazo_http_actix::{
@@ -48,8 +48,6 @@ use crate::http::dynamic_client_registration::{
     client_configuration_delete, client_configuration_get, client_configuration_put,
     dynamic_client_registration,
 };
-#[cfg(test)]
-use crate::http::fapi_resource::fapi_resource;
 use crate::http::perf_metrics::perf_metrics;
 use crate::http::profile::{
     access_requests::{create_access_request, my_access_requests},
@@ -83,8 +81,6 @@ use crate::http::token::{
 use crate::http::token::{introspect::introspect, revoke::revoke};
 use crate::http::well_known::{captcha_config, health};
 use crate::settings::Settings;
-#[cfg(not(test))]
-use nazo_http_actix::fapi_resource;
 #[cfg(not(test))]
 use nazo_http_actix::{
     scim_create_user, scim_delete_user, scim_get_user, scim_list_users, scim_patch_user,
