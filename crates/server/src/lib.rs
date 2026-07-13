@@ -165,6 +165,41 @@ pub(crate) mod test_support {
         ))
     }
 
+    pub(crate) fn federation_service(
+        state: &crate::domain::AppState,
+    ) -> actix_web::web::Data<crate::bootstrap::LocalFederationService> {
+        actix_web::web::Data::new(crate::bootstrap::LocalFederationService::new(
+            nazo_postgres::FederationRepository::new(state.diesel_db.clone()),
+            nazo_valkey::AuthenticationStore::new(&state.valkey_connection()),
+            crate::bootstrap::FederationBootstrapPasswordHasher,
+            nazo_valkey::SessionStore::new(&state.valkey_connection()),
+            crate::bootstrap::TracingFederationAudit,
+            nazo_identity::FederationServiceConfig {
+                tenant: crate::support::default_tenant_context()
+                    .as_identity_context()
+                    .unwrap(),
+                state_ttl_seconds: crate::http::auth::federation::FEDERATION_STATE_TTL_SECONDS,
+                saml_replay_ttl_seconds: crate::http::auth::federation::SAML_REPLAY_TTL_SECONDS,
+                session_ttl_seconds: state.settings.session.session_ttl_seconds,
+            },
+        ))
+    }
+
+    pub(crate) fn federation_http_config(
+        state: &crate::domain::AppState,
+    ) -> actix_web::web::Data<crate::http::auth::federation::FederationHttpConfig> {
+        let session = &state.settings.session;
+        let federation = &state.settings.identity.federation;
+        actix_web::web::Data::new(crate::http::auth::federation::FederationHttpConfig::new(
+            federation.providers.clone(),
+            federation.saml_gateway.clone(),
+            session.session_cookie_name.as_str(),
+            session.csrf_cookie_name.as_str(),
+            session.session_ttl_seconds,
+            session.cookie_secure,
+        ))
+    }
+
     pub(crate) fn auth_request_limiter(
         state: &crate::domain::AppState,
     ) -> actix_web::web::Data<crate::support::AuthRequestLimiter> {

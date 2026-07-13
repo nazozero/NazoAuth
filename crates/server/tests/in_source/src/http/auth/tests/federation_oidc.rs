@@ -306,6 +306,28 @@ fn verify_oidc_id_token_accepts_matching_signed_claims_and_rejects_policy_mismat
     );
     assert!(verify_oidc_id_token(&provider, &jwks, &wrong_audience, &nonce).is_err());
 
+    let multiple_audiences_without_azp = signed_id_token(
+        &provider,
+        "oidc-kid",
+        &key,
+        &nonce,
+        json!({"aud": [provider.client_id, "other-client"]}),
+    );
+    assert!(
+        verify_oidc_id_token(&provider, &jwks, &multiple_audiences_without_azp, &nonce).is_err()
+    );
+    let multiple_audiences_with_azp = signed_id_token(
+        &provider,
+        "oidc-kid",
+        &key,
+        &nonce,
+        json!({
+            "aud": [provider.client_id, "other-client"],
+            "azp": provider.client_id
+        }),
+    );
+    assert!(verify_oidc_id_token(&provider, &jwks, &multiple_audiences_with_azp, &nonce).is_ok());
+
     let future_iat = signed_id_token(
         &provider,
         "oidc-kid",

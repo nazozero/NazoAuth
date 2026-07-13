@@ -28,6 +28,11 @@ pub use authentication::{
     AuthenticatePasswordError, AuthenticatePasswordInput, AuthenticationService,
     AuthenticationServiceConfig, LoginSuccess, RememberedMfaProof,
 };
+pub use federation::{
+    FederationAuditEvent, FederationError, FederationService, FederationServiceConfig,
+    OidcFederationStart, OidcFederationState, SocialFederationStart, SocialFederationState,
+    VerifiedExternalIdentity,
+};
 pub use model::{
     AccountIdentity, AuthMethod, AuthenticationContext, AuthenticationIdentity, IdentityModelError,
     LoginIdentity, PasswordHash, PostalAddress, Principal, PublicAccount, SubjectClaims,

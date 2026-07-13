@@ -364,6 +364,64 @@ pub trait FederationLinkRepositoryPort: Send + Sync {
     ) -> RepositoryFuture<'_, Option<FederationLink>>;
 }
 
+pub trait FederationLoginRepositoryPort: Send + Sync {
+    fn resolve_existing(
+        &self,
+        login: FederationLogin,
+    ) -> RepositoryFuture<'_, Option<PublicAccount>>;
+
+    fn account_by_email<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        email: &'a str,
+    ) -> RepositoryFuture<'a, Option<PublicAccount>>;
+
+    fn create_federated(
+        &self,
+        identity: NewFederatedIdentity,
+    ) -> RepositoryFuture<'_, PublicAccount>;
+}
+
+pub trait FederationStatePort: Send + Sync {
+    fn store_oidc<'a>(
+        &'a self,
+        state: &'a str,
+        value: &'a crate::federation::OidcFederationState,
+        ttl_seconds: u64,
+    ) -> RepositoryFuture<'a, ()>;
+
+    fn take_oidc<'a>(
+        &'a self,
+        state: &'a str,
+    ) -> RepositoryFuture<'a, Option<crate::federation::OidcFederationState>>;
+
+    fn store_social<'a>(
+        &'a self,
+        state: &'a str,
+        value: &'a crate::federation::SocialFederationState,
+        ttl_seconds: u64,
+    ) -> RepositoryFuture<'a, ()>;
+
+    fn take_social<'a>(
+        &'a self,
+        state: &'a str,
+    ) -> RepositoryFuture<'a, Option<crate::federation::SocialFederationState>>;
+
+    fn reserve_saml_replay<'a>(
+        &'a self,
+        assertion_signature: &'a str,
+        ttl_seconds: u64,
+    ) -> RepositoryFuture<'a, bool>;
+}
+
+pub trait FederationPasswordHasherPort: Send + Sync {
+    fn hash_bootstrap_secret(&self) -> RepositoryFuture<'_, PasswordHashInput>;
+}
+
+pub trait FederationAuditPort: Send + Sync {
+    fn record(&self, event: crate::federation::FederationAuditEvent);
+}
+
 pub trait RegistrationAccountRepositoryPort: Send + Sync {
     fn account_by_email<'a>(
         &'a self,

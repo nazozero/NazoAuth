@@ -3,8 +3,8 @@ use std::time::Duration;
 use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{Builder, Config};
 use nazo_identity::ports::{
-    EmailVerificationConsume, EmailVerificationStorePort, LoginSessionCreate, LoginSessionPort,
-    PasskeyCeremonyPort, PasswordHashInput,
+    EmailVerificationConsume, EmailVerificationStorePort, FederationStatePort, LoginSessionCreate,
+    LoginSessionPort, PasskeyCeremonyPort, PasswordHashInput,
 };
 use nazo_identity::session::SessionRecord;
 use nazo_valkey::{
@@ -103,6 +103,24 @@ async fn typed_passkey_ceremony_is_atomically_consumed_once_under_concurrency() 
     assert_eq!(
         consumed, 1,
         "GETDEL must publish the ceremony to one finisher"
+    );
+}
+
+#[tokio::test]
+async fn saml_assertion_replay_reservation_is_atomic() {
+    let Some((connection, _inspector)) = setup().await else {
+        return;
+    };
+    let store = AuthenticationStore::new(&connection);
+    let signature = format!("saml-signature-{}", uuid::Uuid::now_v7());
+    let (left, right) = tokio::join!(
+        FederationStatePort::reserve_saml_replay(&store, &signature, 30),
+        FederationStatePort::reserve_saml_replay(&store, &signature, 30)
+    );
+    assert_eq!(
+        usize::from(left.unwrap()) + usize::from(right.unwrap()),
+        1,
+        "one SAML assertion must be accepted at most once"
     );
 }
 

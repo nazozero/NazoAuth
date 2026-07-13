@@ -219,6 +219,34 @@ impl nazo_identity::ports::FederationLinkRepositoryPort for FederationRepository
         )
     }
 }
+
+impl nazo_identity::ports::FederationLoginRepositoryPort for FederationRepository {
+    fn resolve_existing(
+        &self,
+        login: FederationLogin,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, Option<PublicAccount>> {
+        Box::pin(async move { FederationRepository::resolve_existing(self, login).await })
+    }
+
+    fn account_by_email<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        email: &'a str,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, Option<PublicAccount>> {
+        Box::pin(async move {
+            super::UserRepository::new(self.pool.clone())
+                .public_account_by_email(tenant_id, email)
+                .await
+        })
+    }
+
+    fn create_federated(
+        &self,
+        identity: NewFederatedIdentity,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, PublicAccount> {
+        Box::pin(async move { FederationRepository::create_federated(self, identity).await })
+    }
+}
 fn map_error(error: Error) -> RepositoryError {
     match error {
         Error::DatabaseError(DatabaseErrorKind::UniqueViolation, _) => RepositoryError::Conflict,

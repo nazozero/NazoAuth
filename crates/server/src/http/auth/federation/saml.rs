@@ -8,8 +8,10 @@ use sha2::Sha256;
 use crate::settings::SamlGatewaySettings;
 
 type HmacSha256 = Hmac<Sha256>;
+pub(super) const SAML_ASSERTION_CLOCK_SKEW_SECONDS: i64 = 60;
+pub(super) const SAML_ASSERTION_MAX_TTL_SECONDS: i64 = 300;
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub(crate) struct SamlGatewayAssertion {
     pub(super) issuer: String,
     pub(super) audience: String,
@@ -30,9 +32,9 @@ pub(super) fn valid_saml_gateway_assertion(
     if assertion.issuer != settings.issuer
         || assertion.audience != settings.audience
         || assertion.subject.trim().is_empty()
-        || assertion.iat > now.saturating_add(60)
+        || assertion.iat > now.saturating_add(SAML_ASSERTION_CLOCK_SKEW_SECONDS)
         || assertion.exp <= now
-        || assertion.exp.saturating_sub(assertion.iat) > 300
+        || assertion.exp.saturating_sub(assertion.iat) > SAML_ASSERTION_MAX_TTL_SECONDS
     {
         return false;
     }

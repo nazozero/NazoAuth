@@ -1,26 +1,9 @@
-use crate::domain::AppState;
-use crate::support::{normalize_email_address, pkce_s256, random_urlsafe_token};
-use actix_web::HttpResponse;
-use actix_web::http::StatusCode;
-use chrono::Utc;
-use nazo_http_actix::{oauth_error, redirect_found};
-use serde::{Deserialize, Serialize};
+use crate::support::{normalize_email_address, pkce_s256};
+use serde::Deserialize;
 use serde_json::{Value, json};
 use url::Url;
 
 use crate::settings::{SocialProviderKind, SocialProviderSettings};
-
-use super::FEDERATION_STATE_TTL_SECONDS;
-
-// OAuth2 social 登录复用 OIDC 的短 TTL，确保 state 与 PKCE verifier 不长期存在。
-pub(super) const SOCIAL_STATE_TTL_SECONDS: u64 = FEDERATION_STATE_TTL_SECONDS;
-
-#[derive(Serialize, Deserialize)]
-pub(super) struct SocialFederationState {
-    pub(super) provider_id: String,
-    pub(super) pkce_verifier: String,
-    pub(super) created_at: i64,
-}
 
 #[derive(Debug)]
 pub(super) struct SocialIdentity {
@@ -39,87 +22,6 @@ struct SocialTokenResponse {
     unionid: Option<String>,
     #[serde(default)]
     expires_in: Option<i64>,
-}
-
-pub(super) async fn start_social_provider(
-    state: &AppState,
-    provider_id: &str,
-    provider: &SocialProviderSettings,
-) -> HttpResponse {
-    // OAuth2 social provider 没有 ID Token nonce；这里用 state + PKCE
-    // 绑定本次授权请求，callback 使用 GETDEL 消耗 state 防止重放。
-    let state_token = random_urlsafe_token();
-    let pkce_verifier = random_urlsafe_token();
-    let stored = SocialFederationState {
-        provider_id: provider_id.to_owned(),
-        pkce_verifier: pkce_verifier.clone(),
-        created_at: Utc::now().timestamp(),
-    };
-    let value = match serde_json::to_value(&stored) {
-        Ok(value) => value,
-        Err(error) => {
-            tracing::warn!(%error, "failed to serialize social federation state");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "federation state failed.",
-            );
-        }
-    };
-    if nazo_valkey::AuthenticationStore::new(&state.valkey_connection())
-        .store_social_federation(&state_token, &value, SOCIAL_STATE_TTL_SECONDS)
-        .await
-        .is_err()
-    {
-        return oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "federation state failed.",
-        );
-    }
-    redirect_found(social_authorization_url(
-        provider,
-        &state_token,
-        &pkce_verifier,
-    ))
-}
-
-pub(super) async fn take_social_state(
-    state: &AppState,
-    state_token: &str,
-) -> Result<Option<SocialFederationState>, HttpResponse> {
-    // GETDEL 是 callback 重放防护的关键边界；读取 state 与消费必须原子完成。
-    let value = nazo_valkey::AuthenticationStore::new(&state.valkey_connection())
-        .take_social_federation(state_token)
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to load social federation state");
-            if error.kind() == nazo_valkey::ErrorKind::CorruptData {
-                oauth_error(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_request",
-                    "federation state expired.",
-                )
-            } else {
-                oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "federation state failed.",
-                )
-            }
-        })?;
-    value
-        .map(|value| {
-            serde_json::from_value::<SocialFederationState>(value).map_err(|error| {
-                tracing::warn!(%error, "social federation state is malformed");
-                oauth_error(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_request",
-                    "federation state expired.",
-                )
-            })
-        })
-        .transpose()
 }
 
 pub(super) fn social_authorization_url(
@@ -187,9 +89,8 @@ async fn exchange_social_code(
         )
         .body(body)
         .send()
-        .await?
-        .error_for_status()?;
-    parse_social_token_response(response.text().await?)
+        .await?;
+    parse_social_token_response(super::federation_text_response(response).await?)
 }
 
 async fn fetch_social_openid(
@@ -206,10 +107,8 @@ async fn fetch_social_openid(
             &[("access_token", token.access_token.as_str())],
         )?)
         .send()
-        .await?
-        .error_for_status()?
-        .text()
         .await?;
+    let response = super::federation_text_response(response).await?;
     Ok(Some(parse_json_or_jsonp(&response)?))
 }
 
@@ -250,12 +149,7 @@ async fn fetch_social_userinfo(
             .get(&provider.userinfo_endpoint)
             .bearer_auth(&token.access_token),
     };
-    Ok(request
-        .send()
-        .await?
-        .error_for_status()?
-        .json::<Value>()
-        .await?)
+    super::federation_json_response(request.send().await?).await
 }
 
 fn url_with_query_params(endpoint: &str, params: &[(&str, &str)]) -> anyhow::Result<Url> {

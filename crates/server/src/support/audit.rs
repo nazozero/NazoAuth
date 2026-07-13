@@ -31,6 +31,8 @@ const AUDIT_EVENT_DEFINITIONS: &[(&str, &str)] = &[
     ("external_identity_relink_denied", "identity_lifecycle"),
     ("external_identity_unlinked", "identity_lifecycle"),
     ("federation_login_success", "authentication"),
+    ("federation_provider_mismatch_rejected", "credential_replay"),
+    ("federation_saml_replay_rejected", "credential_replay"),
     ("login_failure", "authentication"),
     ("login_success", "authentication"),
     ("mfa_backup_codes_regenerated", "authentication"),

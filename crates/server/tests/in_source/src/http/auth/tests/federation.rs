@@ -2,7 +2,13 @@ use super::*;
 use std::{sync::Arc, time::Duration};
 
 use crate::config::ConfigSource;
+use crate::domain::{AppState, DatabaseExternalIdentityFixture, DatabaseUserFixture};
 use crate::schema::external_identity_links;
+use crate::settings::Settings;
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, pkce_s256,
+    valkey_get, valkey_set_ex,
+};
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
 use nazo_postgres::create_pool;
@@ -20,8 +26,177 @@ use fred::{
     },
 };
 use jsonwebtoken::{Algorithm, Header};
+use nazo_http_actix::OAuthJsonErrorFields;
+use nazo_identity::OidcFederationState;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
+use uuid::Uuid;
+
+#[test]
+fn federation_transport_has_no_identity_or_storage_orchestration() {
+    let source = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/http/auth/federation.rs"
+    ));
+    for forbidden in [
+        "AppState",
+        "nazo_postgres",
+        "nazo_valkey",
+        "FederationRepository",
+        "UserRepository",
+        "AuthenticationStore",
+        "store_session(",
+        "hash_password(",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "federation transport must not depend on {forbidden}"
+        );
+    }
+    assert!(
+        source.contains("redirect(reqwest::redirect::Policy::none())"),
+        "federation HTTP clients must reject provider-controlled redirects"
+    );
+}
+
+#[actix_web::test]
+async fn federation_provider_response_limit_rejects_oversized_content_length() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("test server should bind");
+    let addr = listener.local_addr().expect("test server address");
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("test request should arrive");
+        let mut request = [0_u8; 1024];
+        let _ = stream
+            .read(&mut request)
+            .await
+            .expect("request should read");
+        stream
+            .write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                    MAX_FEDERATION_PROVIDER_RESPONSE_BYTES + 1
+                )
+                .as_bytes(),
+            )
+            .await
+            .expect("response headers should write");
+    });
+    let response = federation_http_client()
+        .expect("federation HTTP client should build")
+        .get(format!("http://{addr}"))
+        .send()
+        .await
+        .expect("response headers should be accepted");
+
+    let error = federation_response_bytes(response)
+        .await
+        .expect_err("oversized provider response must be rejected before buffering");
+    server.await.expect("test server should finish");
+    assert!(error.to_string().contains("too large"));
+}
+
+fn normalize_federation_token(value: &str) -> Option<String> {
+    nazo_identity::federation::normalize_federation_token(value)
+}
+
+async fn federation_provider_list(state: Data<AppState>) -> HttpResponse {
+    super::federation_provider_list(crate::test_support::federation_http_config(&state)).await
+}
+
+async fn federation_provider_start(
+    state: Data<AppState>,
+    req: HttpRequest,
+    path: Path<String>,
+) -> HttpResponse {
+    super::federation_provider_start(
+        crate::test_support::auth_request_limiter(&state),
+        crate::test_support::federation_service(&state),
+        crate::test_support::federation_http_config(&state),
+        req,
+        path,
+    )
+    .await
+}
+
+async fn federation_provider_callback(
+    state: Data<AppState>,
+    req: HttpRequest,
+    path: Path<String>,
+    query: Query<OidcCallbackQuery>,
+) -> HttpResponse {
+    super::federation_provider_callback(
+        crate::test_support::auth_request_limiter(&state),
+        crate::test_support::client_ip_config(&state),
+        crate::test_support::federation_service(&state),
+        crate::test_support::federation_http_config(&state),
+        req,
+        path,
+        query,
+    )
+    .await
+}
+
+async fn oidc_callback_after_rate_limit_for_provider(
+    state: Data<AppState>,
+    req: HttpRequest,
+    query: OidcCallbackQuery,
+    provider: OidcFederationSettings,
+) -> HttpResponse {
+    super::oidc_callback_after_rate_limit_for_provider(
+        crate::test_support::federation_service(&state),
+        crate::test_support::federation_http_config(&state),
+        crate::test_support::client_ip_config(&state),
+        req,
+        query,
+        provider,
+    )
+    .await
+}
+
+async fn federation_saml_acs(
+    state: Data<AppState>,
+    req: HttpRequest,
+    payload: Json<SamlGatewayAssertion>,
+) -> HttpResponse {
+    super::federation_saml_acs(
+        crate::test_support::auth_request_limiter(&state),
+        crate::test_support::client_ip_config(&state),
+        crate::test_support::federation_service(&state),
+        crate::test_support::federation_http_config(&state),
+        req,
+        payload,
+    )
+    .await
+}
+
+async fn complete_social_callback(
+    state: Data<AppState>,
+    req: HttpRequest,
+    provider_id: String,
+    identity: SocialIdentity,
+) -> HttpResponse {
+    let client_ip = crate::test_support::client_ip_config(&state);
+    let service = crate::test_support::federation_service(&state);
+    let config = crate::test_support::federation_http_config(&state);
+    super::complete_federation(
+        service.get_ref(),
+        config.get_ref(),
+        VerifiedExternalIdentity {
+            provider_type: "oauth2_social".to_owned(),
+            provider_id,
+            subject: identity.subject,
+            email: identity.email,
+            display_name: identity.display_name,
+            claims: identity.claims,
+        },
+        "oauth2_social",
+        client_ip_with_config(&req, client_ip.get_ref()),
+        true,
+    )
+    .await
+}
 
 // 测试使用非默认 provider id，避免把动态 provider 路由误写成固定 OIDC 入口。
 const TEST_OIDC_PROVIDER_ID: &str = "test-oidc";
@@ -361,6 +536,7 @@ async fn store_oidc_state_with_nonce(
     created_at: i64,
 ) {
     let body = serde_json::to_string(&OidcFederationState {
+        provider_id: None,
         nonce: nonce.to_owned(),
         pkce_verifier: "verifier-1".to_owned(),
         created_at,
@@ -747,6 +923,49 @@ async fn oidc_callback_rejects_expired_stored_state_before_token_exchange() {
     };
 
     let response = oidc_callback_after_rate_limit_for_provider(state, req, query, provider).await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_code(&response).as_deref(),
+        Some("invalid_request")
+    );
+}
+
+#[actix_web::test]
+async fn oidc_callback_rejects_state_bound_to_another_provider_before_token_exchange() {
+    let provider = oidc_provider();
+    let Some(state) = live_federation_state(Some(provider.clone()), None).await else {
+        return;
+    };
+    let state_token = random_urlsafe_token();
+    let stored = OidcFederationState {
+        provider_id: Some("another-provider".to_owned()),
+        nonce: random_urlsafe_token(),
+        pkce_verifier: random_urlsafe_token(),
+        created_at: Utc::now().timestamp(),
+    };
+    valkey_set_ex(
+        &state.valkey,
+        oidc_state_key(&state_token),
+        serde_json::to_string(&stored).expect("bound OIDC state should serialize"),
+        FEDERATION_STATE_TTL_SECONDS,
+    )
+    .await
+    .expect("bound OIDC state should be written");
+
+    let response = oidc_callback_after_rate_limit_for_provider(
+        Data::new(state),
+        actix_web::test::TestRequest::get()
+            .uri("/auth/federation/test-oidc/callback?state=mixup&code=code")
+            .to_http_request(),
+        OidcCallbackQuery {
+            code: Some("code-1".to_owned()),
+            state: Some(state_token),
+            error: None,
+        },
+        provider,
+    )
+    .await;
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(
@@ -1217,6 +1436,7 @@ async fn federation_provider_start_persists_oidc_state_nonce_and_pkce_binding() 
         serde_json::from_str(&raw).expect("stored state should deserialize");
     let expected_challenge = pkce_s256(&stored.pkce_verifier);
 
+    assert_eq!(stored.provider_id.as_deref(), Some(TEST_OIDC_PROVIDER_ID));
     assert_eq!(stored.nonce, nonce);
     assert_eq!(
         params
@@ -1783,6 +2003,7 @@ async fn saml_acs_creates_new_federated_user_session_and_external_link() {
     let now = Utc::now().timestamp();
     let mut payload = saml_assertion(&settings, &subject, &email, now, now + 60);
     payload.name = Some("SAML User".to_owned());
+    let replay_payload = payload.clone();
 
     let response = federation_saml_acs(
         fixture.state.clone(),
@@ -1823,4 +2044,19 @@ async fn saml_acs_creates_new_federated_user_session_and_external_link() {
     assert_eq!(link.user_id, user.id());
     assert_eq!(session.user_id, user.id());
     assert_eq!(session.amr, vec!["saml".to_owned(), "federated".to_owned()]);
+
+    let replay = federation_saml_acs(
+        fixture.state.clone(),
+        actix_web::test::TestRequest::post()
+            .uri("/auth/federation/saml/acs")
+            .to_http_request(),
+        Json(replay_payload),
+    )
+    .await;
+    assert_eq!(replay.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(&replay).as_deref(),
+        Some("access_denied"),
+        "a signed SAML assertion must be accepted at most once"
+    );
 }

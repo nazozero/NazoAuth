@@ -3,21 +3,11 @@ use crate::support::blake3_hex;
 use crate::support::{jwt_decoding_key_from_jwk, pkce_s256};
 use chrono::Utc;
 use serde::Deserialize;
-use serde::Serialize;
 use serde_json::Value;
 #[cfg(test)]
 use serde_json::json;
 
 use crate::settings::OidcFederationSettings;
-
-pub(super) const FEDERATION_STATE_TTL_SECONDS: u64 = 300;
-
-#[derive(Serialize, Deserialize)]
-pub(super) struct OidcFederationState {
-    pub(super) nonce: String,
-    pub(super) pkce_verifier: String,
-    pub(super) created_at: i64,
-}
 
 #[derive(Deserialize)]
 pub(crate) struct OidcCallbackQuery {
@@ -36,6 +26,7 @@ pub(super) struct OidcIdTokenClaims {
     pub(super) iss: String,
     pub(super) sub: String,
     pub(super) aud: Value,
+    pub(super) azp: Option<String>,
     pub(super) exp: i64,
     pub(super) iat: Option<i64>,
     pub(super) nonce: Option<String>,
@@ -95,20 +86,14 @@ pub(super) async fn exchange_oidc_code(
         )
         .body(body)
         .send()
-        .await?
-        .error_for_status()?;
-    Ok(response.json::<OidcTokenResponse>().await?)
+        .await?;
+    super::federation_json_response(response).await
 }
 
 pub(super) async fn fetch_oidc_jwks(provider: &OidcFederationSettings) -> anyhow::Result<Value> {
     let client = super::federation_http_client()?;
-    let value = client
-        .get(&provider.jwks_url)
-        .send()
-        .await?
-        .error_for_status()?
-        .json::<Value>()
-        .await?;
+    let response = client.get(&provider.jwks_url).send().await?;
+    let value = super::federation_json_response::<Value>(response).await?;
     if value.get("keys").and_then(Value::as_array).is_none() {
         anyhow::bail!("OIDC JWKS does not contain keys array");
     }
@@ -122,6 +107,15 @@ pub(super) fn verify_oidc_id_token(
     expected_nonce: &str,
 ) -> anyhow::Result<OidcIdTokenClaims> {
     let header = jsonwebtoken::decode_header(token)?;
+    if !matches!(
+        header.alg,
+        jsonwebtoken::Algorithm::RS256
+            | jsonwebtoken::Algorithm::PS256
+            | jsonwebtoken::Algorithm::ES256
+            | jsonwebtoken::Algorithm::EdDSA
+    ) {
+        anyhow::bail!("OIDC ID Token algorithm is not allowed");
+    }
     let kid = header
         .kid
         .as_deref()
@@ -141,8 +135,10 @@ pub(super) fn verify_oidc_id_token(
     validation.set_audience(&[provider.client_id.as_str()]);
     let token = jsonwebtoken::decode::<OidcIdTokenClaims>(token, &decoding_key, &validation)?;
     let claims = token.claims;
+    let audience_count = claims.aud.as_array().map_or(1, Vec::len);
     if claims.nonce.as_deref() != Some(expected_nonce)
         || !audience_contains(&claims.aud, &provider.client_id)
+        || (audience_count > 1 && claims.azp.as_deref() != Some(&provider.client_id))
         || claims.exp <= Utc::now().timestamp()
         || claims
             .iat

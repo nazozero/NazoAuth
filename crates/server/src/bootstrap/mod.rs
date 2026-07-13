@@ -3,6 +3,7 @@
 
 mod authentication_services;
 mod cors;
+mod federation_services;
 mod observability;
 mod passkey_services;
 mod profile_services;
@@ -10,6 +11,9 @@ mod registration_services;
 pub(crate) mod routes;
 pub(crate) use authentication_services::{
     LocalAuthenticationService, LoginPasswordVerifier, TracingAuthenticationAudit,
+};
+pub(crate) use federation_services::{
+    FederationBootstrapPasswordHasher, LocalFederationService, TracingFederationAudit,
 };
 pub(crate) use passkey_services::{
     LocalPasskeyService, PASSKEY_CEREMONY_TTL_SECONDS, TracingPasskeyAudit,
@@ -33,6 +37,9 @@ use crate::http::admin::access_requests::AdminAccessRequestConfig;
 use crate::http::admin::clients::AdminClientConfig;
 use crate::http::auth::csrf::CsrfHttpConfig;
 use crate::http::auth::email_code::EmailCodeHttpConfig;
+use crate::http::auth::federation::{
+    FEDERATION_STATE_TTL_SECONDS, FederationHttpConfig, SAML_REPLAY_TTL_SECONDS,
+};
 use crate::http::auth::login::LoginHttpConfig;
 use crate::http::auth::passkey::PasskeyHttpConfig;
 use crate::http::authorization::{AuthorizationHttpConfig, ServerAuthorizationService};
@@ -346,6 +353,29 @@ pub async fn run() -> anyhow::Result<()> {
         session.session_ttl_seconds,
         session.cookie_secure,
     ));
+    let federation = web::Data::new(LocalFederationService::new(
+        nazo_postgres::FederationRepository::new(state.diesel_db.clone()),
+        nazo_valkey::AuthenticationStore::new(&state.valkey_connection()),
+        FederationBootstrapPasswordHasher,
+        nazo_valkey::SessionStore::new(&state.valkey_connection()),
+        TracingFederationAudit,
+        nazo_identity::FederationServiceConfig {
+            tenant: default_tenant_context()
+                .as_identity_context()
+                .expect("default tenant identifiers are valid"),
+            state_ttl_seconds: FEDERATION_STATE_TTL_SECONDS,
+            saml_replay_ttl_seconds: SAML_REPLAY_TTL_SECONDS,
+            session_ttl_seconds: session.session_ttl_seconds,
+        },
+    ));
+    let federation_http_config = web::Data::new(FederationHttpConfig::new(
+        identity.federation.providers.clone(),
+        identity.federation.saml_gateway.clone(),
+        session.session_cookie_name.as_str(),
+        session.csrf_cookie_name.as_str(),
+        session.session_ttl_seconds,
+        session.cookie_secure,
+    ));
     spawn_backchannel_logout_delivery_worker(state.clone());
 
     let bind = config.string("BIND", "0.0.0.0:8000");
@@ -416,6 +446,8 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(login_http_config.clone())
             .app_data(passkeys.clone())
             .app_data(passkey_http_config.clone())
+            .app_data(federation.clone())
+            .app_data(federation_http_config.clone())
             .app_data(dynamic_registration_handles.clone())
             .app_data(scim_endpoint.clone());
         app.configure(|cfg| routes::configure(cfg, &state.settings, perf_metrics_enabled))

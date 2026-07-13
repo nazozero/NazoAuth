@@ -119,6 +119,9 @@ pub(crate) fn oidc_federation(state: &str) -> String {
 pub(crate) fn social_federation(state: &str) -> String {
     format!("oauth:federation:social:state:{}", blake3_hex(state))
 }
+pub(crate) fn saml_federation_replay(signature: &str) -> String {
+    format!("oauth:federation:saml:replay:{}", blake3_hex(signature))
+}
 pub(crate) fn rate(dimension: &str, subject: &str) -> String {
     format!("oauth:rate:{dimension}:{}", blake3_hex(subject.trim()))
 }

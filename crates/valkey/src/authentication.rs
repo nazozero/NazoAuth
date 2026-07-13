@@ -86,6 +86,19 @@ impl AuthenticationStore {
     pub async fn take_social_federation(&self, state: &str) -> Result<Option<Value>, Error> {
         self.take_value(keys::social_federation(state)).await
     }
+    pub async fn reserve_saml_federation_replay(
+        &self,
+        signature: &str,
+        ttl: u64,
+    ) -> Result<bool, Error> {
+        command::set_ex_nx(
+            &self.connection,
+            keys::saml_federation_replay(signature),
+            "1",
+            ttl,
+        )
+        .await
+    }
     async fn store_value(&self, key: String, value: &Value, ttl: u64) -> Result<(), Error> {
         let raw = serde_json::to_string(value).map_err(|e| {
             Error::protocol(format!("failed to serialize authentication state: {e}"))
@@ -293,6 +306,86 @@ impl nazo_identity::ports::PasskeyCeremonyPort for AuthenticationStore {
                 .map_err(|error| {
                     nazo_identity::ports::RepositoryError::Consistency(error.to_string())
                 })
+        })
+    }
+}
+
+impl nazo_identity::ports::FederationStatePort for AuthenticationStore {
+    fn store_oidc<'a>(
+        &'a self,
+        state: &'a str,
+        value: &'a nazo_identity::OidcFederationState,
+        ttl_seconds: u64,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
+        Box::pin(async move {
+            let value = serde_json::to_value(value).map_err(|error| {
+                nazo_identity::ports::RepositoryError::Unexpected(error.to_string())
+            })?;
+            self.store_oidc_federation(state, &value, ttl_seconds)
+                .await
+                .map_err(crate::identity_repository_error)
+        })
+    }
+
+    fn take_oidc<'a>(
+        &'a self,
+        state: &'a str,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, Option<nazo_identity::OidcFederationState>>
+    {
+        Box::pin(async move {
+            self.take_oidc_federation(state)
+                .await
+                .map_err(crate::identity_repository_error)?
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|error| {
+                    nazo_identity::ports::RepositoryError::Consistency(error.to_string())
+                })
+        })
+    }
+
+    fn store_social<'a>(
+        &'a self,
+        state: &'a str,
+        value: &'a nazo_identity::SocialFederationState,
+        ttl_seconds: u64,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
+        Box::pin(async move {
+            let value = serde_json::to_value(value).map_err(|error| {
+                nazo_identity::ports::RepositoryError::Unexpected(error.to_string())
+            })?;
+            self.store_social_federation(state, &value, ttl_seconds)
+                .await
+                .map_err(crate::identity_repository_error)
+        })
+    }
+
+    fn take_social<'a>(
+        &'a self,
+        state: &'a str,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, Option<nazo_identity::SocialFederationState>>
+    {
+        Box::pin(async move {
+            self.take_social_federation(state)
+                .await
+                .map_err(crate::identity_repository_error)?
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|error| {
+                    nazo_identity::ports::RepositoryError::Consistency(error.to_string())
+                })
+        })
+    }
+
+    fn reserve_saml_replay<'a>(
+        &'a self,
+        assertion_signature: &'a str,
+        ttl_seconds: u64,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, bool> {
+        Box::pin(async move {
+            self.reserve_saml_federation_replay(assertion_signature, ttl_seconds)
+                .await
+                .map_err(crate::identity_repository_error)
         })
     }
 }

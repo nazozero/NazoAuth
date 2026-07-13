@@ -23,8 +23,9 @@ mod rate_limit;
 
 pub(crate) use email::{EmailDelivery, EmailSettings, SmtpEmailSettings, SmtpTlsMode};
 pub(crate) use federation::{
-    ExternalLoginProvider, ExternalLoginProviderAdapter, FederationSettings,
-    OidcFederationSettings, SamlGatewaySettings, SocialProviderKind, SocialProviderSettings,
+    ExternalLoginProvider, ExternalLoginProviderAdapter, FederationProviderRegistry,
+    FederationSettings, OidcFederationSettings, SamlGatewaySettings, SocialProviderKind,
+    SocialProviderSettings,
 };
 pub(crate) use passkey::PasskeySettings;
 pub(crate) use profile::{
