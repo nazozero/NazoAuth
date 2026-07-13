@@ -2199,6 +2199,7 @@ dependencies = [
  "base64",
  "blake3",
  "chrono",
+ "ed25519-dalek 3.0.0",
  "hmac 0.13.0",
  "jsonwebtoken",
  "nazo-identity",
