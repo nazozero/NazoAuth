@@ -151,6 +151,12 @@ pub struct IssuedAuthorizationCodeTokens<'a> {
 pub trait TokenRepositoryPort: Send + Sync {
     fn client_by_id(&self, client_id: Uuid) -> TokenFuture<'_, Option<OAuthClient>>;
 
+    fn client_by_protocol_id<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        client_id: &'a str,
+    ) -> TokenFuture<'a, Option<OAuthClient>>;
+
     fn refresh_token<'a>(
         &'a self,
         tenant_id: Uuid,
@@ -216,6 +222,12 @@ pub trait TokenStateStorePort: Send + Sync {
         ttl_seconds: u64,
     ) -> TokenFuture<'a, ()>;
 
+    fn load_access_token_subject<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        jti: &'a str,
+    ) -> TokenFuture<'a, Option<Uuid>>;
+
     fn increment_token_management_rate<'a>(
         &'a self,
         subject: &'a str,
@@ -276,6 +288,24 @@ where
         client_id: Uuid,
     ) -> Result<Option<OAuthClient>, TokenPortError> {
         self.repository.client_by_id(client_id).await
+    }
+
+    pub async fn client_by_protocol_id(
+        &self,
+        tenant_id: Uuid,
+        client_id: &str,
+    ) -> Result<Option<OAuthClient>, TokenPortError> {
+        self.repository
+            .client_by_protocol_id(tenant_id, client_id)
+            .await
+    }
+
+    pub async fn load_access_token_subject(
+        &self,
+        tenant_id: Uuid,
+        jti: &str,
+    ) -> Result<Option<Uuid>, TokenPortError> {
+        self.state.load_access_token_subject(tenant_id, jti).await
     }
 
     pub async fn recover_lost_refresh_response(

@@ -86,6 +86,19 @@ impl TokenStateStorePort for TokenIssuanceStateAdapter {
         })
     }
 
+    fn load_access_token_subject<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        jti: &'a str,
+    ) -> TokenFuture<'a, Option<Uuid>> {
+        Box::pin(async move {
+            self.tokens
+                .load_access_token_subject(tenant_id, jti)
+                .await
+                .map_err(map_error)
+        })
+    }
+
     fn increment_token_management_rate<'a>(
         &'a self,
         subject: &'a str,
