@@ -3,6 +3,10 @@ use diesel::{
     AggregateExpressionMethods, BoolExpressionMethods, ExpressionMethods, JoinOnDsl, QueryDsl,
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
+use nazo_auth::{
+    AdminGrantPage, AdminGrantRepositoryPort, AdminGrantRevocation, AdminGrantRevokeError,
+    AdminGrantView, AuthorizationPortError,
+};
 use nazo_identity::ports::RepositoryError;
 use serde_json::Value;
 use uuid::Uuid;
@@ -15,35 +19,11 @@ use crate::{
 use super::tokens::lock_refresh_family;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct GrantProjection {
-    pub user_id: Uuid,
-    pub email: String,
-    pub client_id: String,
-    pub client_name: String,
-    pub last_authorized_at: DateTime<Utc>,
-    pub authorization_count: i32,
-    pub last_scopes: Value,
-    pub last_authorization_details: Value,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct GrantPage {
-    pub total: i64,
-    pub grants: Vec<GrantProjection>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
 pub struct GrantAuthorization {
     pub scopes: Value,
     pub resource_indicators: Value,
     pub authorization_details: Value,
     pub authorization_count: i32,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct GrantRevocation {
-    pub revoked_refresh_tokens: usize,
-    pub removed_grants: usize,
 }
 
 #[derive(diesel::Queryable)]
@@ -58,7 +38,7 @@ struct GrantRecord {
     last_authorization_details: Value,
 }
 
-impl From<GrantRecord> for GrantProjection {
+impl From<GrantRecord> for AdminGrantView {
     fn from(record: GrantRecord) -> Self {
         Self {
             user_id: record.user_id,
@@ -67,7 +47,13 @@ impl From<GrantRecord> for GrantProjection {
             client_name: record.client_name,
             last_authorized_at: record.last_authorized_at,
             authorization_count: record.authorization_count,
-            last_scopes: record.last_scopes,
+            last_scopes: record
+                .last_scopes
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|value| value.as_str().map(ToOwned::to_owned))
+                .collect(),
             last_authorization_details: record.last_authorization_details,
         }
     }
@@ -84,17 +70,23 @@ impl GrantRepository {
         Self { pool }
     }
 
-    pub async fn page(&self, limit: i64, offset: i64) -> Result<GrantPage, RepositoryError> {
+    async fn admin_page(
+        &self,
+        tenant_id: Uuid,
+        limit: i64,
+        offset: i64,
+    ) -> Result<AdminGrantPage, AuthorizationPortError> {
         let mut connection = self
             .pool
             .get()
             .await
-            .map_err(|_| RepositoryError::Unavailable)?;
+            .map_err(|_| AuthorizationPortError::Unavailable)?;
         let total = user_client_grants::table
+            .filter(user_client_grants::tenant_id.eq(tenant_id))
             .select(diesel::dsl::count_star())
             .first::<i64>(&mut connection)
             .await
-            .map_err(map_error)?;
+            .map_err(map_authorization_error)?;
         let records = user_client_grants::table
             .inner_join(
                 users::table.on(users::id
@@ -106,6 +98,7 @@ impl GrantRepository {
                     .eq(user_client_grants::client_id)
                     .and(oauth_clients::tenant_id.eq(user_client_grants::tenant_id))),
             )
+            .filter(user_client_grants::tenant_id.eq(tenant_id))
             .select((
                 user_client_grants::user_id,
                 users::email,
@@ -121,8 +114,8 @@ impl GrantRepository {
             .offset(offset)
             .load::<GrantRecord>(&mut connection)
             .await
-            .map_err(map_error)?;
-        Ok(GrantPage {
+            .map_err(map_authorization_error)?;
+        Ok(AdminGrantPage {
             total,
             grants: records.into_iter().map(Into::into).collect(),
         })
@@ -218,48 +211,73 @@ impl GrantRepository {
             .map_err(map_error)
     }
 
-    pub async fn revoke(
+    async fn revoke_admin_grant(
         &self,
+        tenant_id: Uuid,
         user_id: Uuid,
-        client_id: Uuid,
-    ) -> Result<GrantRevocation, RepositoryError> {
-        let mut connection = self.connection().await?;
+        client_id: &str,
+    ) -> Result<AdminGrantRevocation, AdminGrantRevokeError> {
+        let mut connection = self.pool.get().await.map_err(|_| {
+            AdminGrantRevokeError::ClientLookup(AuthorizationPortError::Unavailable)
+        })?;
         connection
-            .transaction::<GrantRevocation, diesel::result::Error, _>(async |connection| {
-                let family_ids = oauth_tokens::table
-                    .filter(oauth_tokens::user_id.eq(user_id))
-                    .filter(oauth_tokens::client_id.eq(client_id))
-                    .select(oauth_tokens::token_family_id)
-                    .distinct()
-                    .order(oauth_tokens::token_family_id.asc())
-                    .load::<Uuid>(connection)
-                    .await?;
-                for family_id in family_ids {
-                    lock_refresh_family(connection, family_id).await?;
-                }
-                let revoked_refresh_tokens = diesel::update(
-                    oauth_tokens::table
+            .transaction::<AdminGrantRevocation, GrantRevokeTransactionError, _>(
+                async |connection| {
+                    use diesel::OptionalExtension;
+
+                    let client_pk = oauth_clients::table
+                        .filter(oauth_clients::tenant_id.eq(tenant_id))
+                        .filter(oauth_clients::client_id.eq(client_id))
+                        .for_update()
+                        .select(oauth_clients::id)
+                        .first::<Uuid>(connection)
+                        .await
+                        .optional()
+                        .map_err(GrantRevokeTransactionError::ClientLookup)?
+                        .ok_or(GrantRevokeTransactionError::ClientNotFound)?;
+                    let family_ids = oauth_tokens::table
+                        .filter(oauth_tokens::tenant_id.eq(tenant_id))
                         .filter(oauth_tokens::user_id.eq(user_id))
-                        .filter(oauth_tokens::client_id.eq(client_id))
-                        .filter(oauth_tokens::revoked_at.is_null()),
-                )
-                .set(oauth_tokens::revoked_at.eq(diesel::dsl::now))
-                .execute(connection)
-                .await?;
-                let removed_grants = diesel::delete(
-                    user_client_grants::table
-                        .filter(user_client_grants::user_id.eq(user_id))
-                        .filter(user_client_grants::client_id.eq(client_id)),
-                )
-                .execute(connection)
-                .await?;
-                Ok(GrantRevocation {
-                    revoked_refresh_tokens,
-                    removed_grants,
-                })
-            })
+                        .filter(oauth_tokens::client_id.eq(client_pk))
+                        .select(oauth_tokens::token_family_id)
+                        .distinct()
+                        .order(oauth_tokens::token_family_id.asc())
+                        .load::<Uuid>(connection)
+                        .await
+                        .map_err(GrantRevokeTransactionError::Revoke)?;
+                    for family_id in family_ids {
+                        lock_refresh_family(connection, family_id)
+                            .await
+                            .map_err(GrantRevokeTransactionError::Revoke)?;
+                    }
+                    let revoked_refresh_tokens = diesel::update(
+                        oauth_tokens::table
+                            .filter(oauth_tokens::tenant_id.eq(tenant_id))
+                            .filter(oauth_tokens::user_id.eq(user_id))
+                            .filter(oauth_tokens::client_id.eq(client_pk))
+                            .filter(oauth_tokens::revoked_at.is_null()),
+                    )
+                    .set(oauth_tokens::revoked_at.eq(diesel::dsl::now))
+                    .execute(connection)
+                    .await
+                    .map_err(GrantRevokeTransactionError::Revoke)?;
+                    let removed_grants = diesel::delete(
+                        user_client_grants::table
+                            .filter(user_client_grants::tenant_id.eq(tenant_id))
+                            .filter(user_client_grants::user_id.eq(user_id))
+                            .filter(user_client_grants::client_id.eq(client_pk)),
+                    )
+                    .execute(connection)
+                    .await
+                    .map_err(GrantRevokeTransactionError::Revoke)?;
+                    Ok(AdminGrantRevocation {
+                        revoked_refresh_tokens,
+                        removed_grants,
+                    })
+                },
+            )
             .await
-            .map_err(map_error)
+            .map_err(Into::into)
     }
 
     async fn connection(&self) -> Result<crate::DbConnection, RepositoryError> {
@@ -267,6 +285,26 @@ impl GrantRepository {
             .get()
             .await
             .map_err(|_| RepositoryError::Unavailable)
+    }
+}
+
+impl AdminGrantRepositoryPort for GrantRepository {
+    fn page(
+        &self,
+        tenant_id: Uuid,
+        limit: i64,
+        offset: i64,
+    ) -> nazo_auth::AdminGrantFuture<'_, AdminGrantPage> {
+        Box::pin(async move { self.admin_page(tenant_id, limit, offset).await })
+    }
+
+    fn revoke_by_client_id<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        user_id: Uuid,
+        client_id: &'a str,
+    ) -> nazo_auth::AdminGrantRevokeFuture<'a> {
+        Box::pin(async move { self.revoke_admin_grant(tenant_id, user_id, client_id).await })
     }
 }
 
@@ -281,4 +319,34 @@ impl nazo_identity::ports::GrantSummaryRepositoryPort for GrantRepository {
 
 fn map_error(error: diesel::result::Error) -> RepositoryError {
     RepositoryError::Unexpected(error.to_string())
+}
+
+fn map_authorization_error(_error: diesel::result::Error) -> AuthorizationPortError {
+    AuthorizationPortError::Unexpected
+}
+
+enum GrantRevokeTransactionError {
+    ClientNotFound,
+    ClientLookup(diesel::result::Error),
+    Revoke(diesel::result::Error),
+}
+
+impl From<diesel::result::Error> for GrantRevokeTransactionError {
+    fn from(error: diesel::result::Error) -> Self {
+        Self::Revoke(error)
+    }
+}
+
+impl From<GrantRevokeTransactionError> for AdminGrantRevokeError {
+    fn from(error: GrantRevokeTransactionError) -> Self {
+        match error {
+            GrantRevokeTransactionError::ClientNotFound => Self::ClientNotFound,
+            GrantRevokeTransactionError::ClientLookup(error) => {
+                Self::ClientLookup(map_authorization_error(error))
+            }
+            GrantRevokeTransactionError::Revoke(error) => {
+                Self::Revoke(map_authorization_error(error))
+            }
+        }
+    }
 }

@@ -16,7 +16,9 @@ use crate::config::ConfigSource;
 use crate::domain::{AppState, ClientRow, DatabaseUserFixture};
 use crate::settings::Settings;
 use crate::support::sessions::SessionHttpConfig;
-use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, SessionPayload, valkey_set_ex};
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_set_ex,
+};
 use chrono::Utc;
 use nazo_postgres::{create_pool, get_conn};
 
@@ -40,15 +42,15 @@ async fn prepare_client_insert_for_test(
     .await
 }
 
-fn grant_row() -> nazo_postgres::GrantProjection {
-    nazo_postgres::GrantProjection {
+fn grant_row() -> nazo_auth::AdminGrantView {
+    nazo_auth::AdminGrantView {
         user_id: Uuid::now_v7(),
         email: "user@example.com".to_owned(),
         client_id: "client-1".to_owned(),
         client_name: "Client One".to_owned(),
         last_authorized_at: Utc::now(),
         authorization_count: 3,
-        last_scopes: json!(["openid", "payments", 42, null]),
+        last_scopes: vec!["openid".to_owned(), "payments".to_owned()],
         last_authorization_details: json!([{"type": "payment_initiation"}]),
     }
 }
@@ -96,8 +98,7 @@ fn admin_grant_dependencies(
     state: &Data<AppState>,
 ) -> (
     Data<AdminSessionHandles>,
-    Data<GrantRepository>,
-    Data<OAuthClientRepository>,
+    Data<dyn AdminGrantRepositoryPort>,
 ) {
     let session = &state.settings.session;
     (
@@ -110,8 +111,10 @@ fn admin_grant_dependencies(
                 session.cookie_secure,
             ),
         )),
-        Data::new(GrantRepository::new(state.diesel_db.clone())),
-        Data::new(OAuthClientRepository::new(state.diesel_db.clone())),
+        Data::from(
+            Arc::new(nazo_postgres::GrantRepository::new(state.diesel_db.clone()))
+                as Arc<dyn AdminGrantRepositoryPort>,
+        ),
     )
 }
 
@@ -120,7 +123,7 @@ async fn invoke_admin_grants(
     req: HttpRequest,
     query: Query<HashMap<String, String>>,
 ) -> HttpResponse {
-    let (admin_sessions, grants, _) = admin_grant_dependencies(&state);
+    let (admin_sessions, grants) = admin_grant_dependencies(&state);
     admin_grants(admin_sessions, grants, req, query).await
 }
 
@@ -129,8 +132,8 @@ async fn invoke_admin_revoke_grant(
     req: HttpRequest,
     payload: Json<GrantRevokeRequest>,
 ) -> HttpResponse {
-    let (admin_sessions, grants, clients) = admin_grant_dependencies(&state);
-    admin_revoke_grant(admin_sessions, grants, clients, req, payload).await
+    let (admin_sessions, grants) = admin_grant_dependencies(&state);
+    admin_revoke_grant(admin_sessions, grants, req, payload).await
 }
 
 fn create_client_request(client_name: &str) -> CreateClientRequest {
@@ -489,6 +492,21 @@ fn grant_json_projects_authorization_record_without_internal_ids() {
     assert!(value.get("client_pk").is_none());
     assert!(value.get("tenant_id").is_none());
     assert!(value.get("refresh_token").is_none());
+}
+
+#[test]
+fn admin_grants_handler_uses_auth_port_instead_of_postgres_types() {
+    let source = include_str!("../../../../../../src/http/admin/grants.rs");
+    let adapter = include_str!("../../../../../../../postgres/src/repositories/grants.rs");
+
+    assert!(source.contains("Data<dyn AdminGrantRepositoryPort>"));
+    assert!(!source.contains("nazo_postgres"));
+    assert!(!source.contains("GrantProjection"));
+    assert!(!source.contains("OAuthClientRepository"));
+    assert!(adapter.contains(".transaction::<AdminGrantRevocation"));
+    assert!(adapter.contains(".filter(oauth_clients::client_id.eq(client_id))"));
+    assert!(adapter.contains(".for_update()"));
+    assert!(adapter.contains(".filter(user_client_grants::tenant_id.eq(tenant_id))"));
 }
 
 #[actix_web::test]

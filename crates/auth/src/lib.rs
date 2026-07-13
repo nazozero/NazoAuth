@@ -2,6 +2,7 @@
 
 //! Runtime- and infrastructure-free authorization-server policy.
 
+mod admin_grants;
 mod authorization_details;
 mod authorization_service;
 mod ciba;
@@ -21,6 +22,10 @@ mod token_service;
 mod transaction;
 mod uri_policy;
 
+pub use admin_grants::{
+    AdminGrantFuture, AdminGrantPage, AdminGrantRepositoryPort, AdminGrantRevocation,
+    AdminGrantRevokeError, AdminGrantRevokeFuture, AdminGrantView,
+};
 pub use authorization_details::{
     AuthorizationDetailsError, SUPPORTED_AUTHORIZATION_DETAILS_TYPES, authorization_details_empty,
     canonical_authorization_details, deserialize_authorization_details,

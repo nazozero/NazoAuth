@@ -1,12 +1,12 @@
 //! 管理端用户授权关系接口。
+use crate::support::pagination;
 use crate::support::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
-use crate::support::{DEFAULT_TENANT_ID, json_array_to_strings, pagination};
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json, Query};
 use actix_web::{HttpRequest, HttpResponse};
+use nazo_auth::{AdminGrantRepositoryPort, AdminGrantRevokeError, AdminGrantView};
 use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies};
 use nazo_http_actix::{json_response, oauth_error};
-use nazo_postgres::{GrantRepository, OAuthClientRepository};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -15,15 +15,23 @@ use uuid::Uuid;
 
 pub(crate) async fn admin_grants(
     admin_sessions: Data<AdminSessionHandles>,
-    grants: Data<GrantRepository>,
+    grants: Data<dyn AdminGrantRepositoryPort>,
     req: HttpRequest,
     Query(q): Query<HashMap<String, String>>,
 ) -> HttpResponse {
-    if let Err(response) = require_admin_or_forbidden_with_handles(&admin_sessions, &req).await {
-        return response;
-    }
+    let admin = match require_admin_or_forbidden_with_handles(&admin_sessions, &req).await {
+        Ok(admin) => admin,
+        Err(response) => return response,
+    };
     let (page, page_size, offset) = pagination(&q);
-    let page_result = match grants.page(i64::from(page_size), i64::from(offset)).await {
+    let page_result = match grants
+        .page(
+            admin.tenant().tenant_id,
+            i64::from(page_size),
+            i64::from(offset),
+        )
+        .await
+    {
         Ok(page) => page,
         Err(error) => {
             tracing::warn!(%error, "failed to load user client grants");
@@ -41,13 +49,13 @@ fn grants_list_response(
     page: i32,
     page_size: i32,
     total: i64,
-    rows: Vec<nazo_postgres::GrantProjection>,
+    rows: Vec<AdminGrantView>,
 ) -> HttpResponse {
     let items: Vec<Value> = rows.into_iter().map(grant_json).collect();
     json_response(json!({"total": total, "page": page, "page_size": page_size, "items": items}))
 }
 
-fn grant_json(row: nazo_postgres::GrantProjection) -> Value {
+fn grant_json(row: AdminGrantView) -> Value {
     json!({
         "user_id": row.user_id,
         "email": row.email,
@@ -55,7 +63,7 @@ fn grant_json(row: nazo_postgres::GrantProjection) -> Value {
         "client_name": row.client_name,
         "last_authorized_at": row.last_authorized_at,
         "authorization_count": row.authorization_count,
-        "last_scopes": json_array_to_strings(&row.last_scopes),
+        "last_scopes": row.last_scopes,
         "last_authorization_details": row.last_authorization_details
     })
 }
@@ -68,8 +76,7 @@ pub(crate) struct GrantRevokeRequest {
 
 pub(crate) async fn admin_revoke_grant(
     admin_sessions: Data<AdminSessionHandles>,
-    grants: Data<GrantRepository>,
-    clients: Data<OAuthClientRepository>,
+    grants: Data<dyn AdminGrantRepositoryPort>,
     req: HttpRequest,
     Json(payload): Json<GrantRevokeRequest>,
 ) -> HttpResponse {
@@ -82,9 +89,10 @@ pub(crate) async fn admin_revoke_grant(
     ) {
         return csrf_error();
     }
-    if let Err(response) = require_admin_or_forbidden_with_handles(&admin_sessions, &req).await {
-        return response;
-    }
+    let admin = match require_admin_or_forbidden_with_handles(&admin_sessions, &req).await {
+        Ok(admin) => admin,
+        Err(response) => return response,
+    };
     let Ok(user_id) = Uuid::parse_str(&payload.user_id) else {
         return oauth_error(
             StatusCode::BAD_REQUEST,
@@ -92,15 +100,15 @@ pub(crate) async fn admin_revoke_grant(
             "user_id 格式无效.",
         );
     };
-    let client = match clients
-        .by_client_id(DEFAULT_TENANT_ID, &payload.client_id)
+    let revoked = match grants
+        .revoke_by_client_id(admin.tenant().tenant_id, user_id, &payload.client_id)
         .await
     {
-        Ok(Some(client)) => client,
-        Ok(None) => {
+        Ok(result) => result,
+        Err(AdminGrantRevokeError::ClientNotFound) => {
             return oauth_error(StatusCode::NOT_FOUND, "invalid_request", "未找到该客户端.");
         }
-        Err(error) => {
+        Err(AdminGrantRevokeError::ClientLookup(error)) => {
             tracing::warn!(%error, "failed to query oauth client for grant revocation");
             return oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -108,10 +116,7 @@ pub(crate) async fn admin_revoke_grant(
                 "客户端查询失败.",
             );
         }
-    };
-    let revoked = match grants.revoke(user_id, client.id).await {
-        Ok(result) => result,
-        Err(error) => {
+        Err(AdminGrantRevokeError::Revoke(error)) => {
             tracing::warn!(%error, "failed to get database connection for grant revocation");
             return oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,

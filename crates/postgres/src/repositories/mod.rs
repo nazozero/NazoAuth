@@ -18,9 +18,7 @@ pub use authorization::AuthorizationRepository;
 pub use authorization_flow::AuthorizationFlowRepository;
 pub use clients::OAuthClientRepository;
 pub use federation::FederationRepository;
-pub use grants::{
-    GrantAuthorization, GrantPage, GrantProjection, GrantRepository, GrantRevocation,
-};
+pub use grants::{GrantAuthorization, GrantRepository};
 pub use mfa::MfaRepository;
 pub use passkeys::PasskeyRepository;
 pub use runtime_modules::{RuntimeModuleEventPage, RuntimeModuleRepository};

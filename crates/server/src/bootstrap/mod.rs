@@ -232,7 +232,10 @@ pub async fn run() -> anyhow::Result<()> {
         Arc::new(nazo_postgres::UserRepository::new(state.diesel_db.clone()))
             as Arc<dyn nazo_identity::ports::AdminUserRepositoryPort>,
     );
-    let admin_grants = web::Data::new(nazo_postgres::GrantRepository::new(state.diesel_db.clone()));
+    let admin_grants: web::Data<dyn nazo_auth::AdminGrantRepositoryPort> = web::Data::from(
+        Arc::new(nazo_postgres::GrantRepository::new(state.diesel_db.clone()))
+            as Arc<dyn nazo_auth::AdminGrantRepositoryPort>,
+    );
     let oauth_clients = web::Data::new(nazo_postgres::OAuthClientRepository::new(
         state.diesel_db.clone(),
     ));
