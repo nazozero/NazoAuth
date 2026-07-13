@@ -4,6 +4,33 @@ use uuid::Uuid;
 
 use crate::authorization_details_empty;
 
+pub const SUPPORTED_USER_CLAIMS: &[&str] = &[
+    "preferred_username",
+    "name",
+    "given_name",
+    "family_name",
+    "middle_name",
+    "nickname",
+    "profile",
+    "picture",
+    "website",
+    "gender",
+    "birthdate",
+    "zoneinfo",
+    "locale",
+    "updated_at",
+    "email",
+    "email_verified",
+    "address",
+    "phone_number",
+    "phone_number_verified",
+];
+
+#[must_use]
+pub fn supported_user_claim(name: &str) -> bool {
+    SUPPORTED_USER_CLAIMS.contains(&name)
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ConfirmationClaims {
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -5,6 +5,7 @@
 mod admin_clients;
 mod admin_grants;
 mod authorization_details;
+mod authorization_policy;
 mod authorization_request;
 mod authorization_service;
 mod ciba;
@@ -44,6 +45,16 @@ pub use authorization_details::{
     empty_authorization_details, high_risk_authorization_details, normalize_authorization_details,
     parse_authorization_details,
 };
+pub use authorization_policy::{
+    AUTHORIZATION_NONCE_MAX_BYTES, AuthorizationCapabilityPolicy, AuthorizationClientPolicy,
+    AuthorizationPolicyError, AuthorizationProfilePolicy, AuthorizationResponsePlan,
+    AuthorizationResponsePolicyError, AuthorizationResponsePolicyInput, AuthorizationSession,
+    AuthorizationSessionDecision, BASELINE_ACR_VALUE, JarmAuthorizationResponse,
+    NormalizedAuthorizationRequest, PlainAuthorizationResponse, PromptDirectives,
+    PromptNoneDecision, RequestedClaims, SignedJarmAuthorizationResponse,
+    UserAuthorizationDecision, authorization_session_decision, normalize_authorization_request,
+    parse_user_authorization_decision, plan_authorization_response, prompt_none_decision,
+};
 pub use authorization_request::{
     AuthorizationRequestError, NormalizedRequestObject, ParAdmission, ParAdmissionPolicy,
     PushedAuthorizationRequestConsumeError, REQUEST_OBJECT_CLOCK_SKEW_SECONDS,
@@ -65,8 +76,9 @@ pub use ciba::{
 };
 pub use claims::{
     AccessTokenClaimsInput, AuthorizationResponseClaimsInput, BackchannelLogoutClaimsInput, Claims,
-    ConfirmationClaims, IdTokenClaimsInput, OidcClaimRequest, access_token_claims,
-    authorization_response_jwt_claims, backchannel_logout_token_claims, id_token_claims,
+    ConfirmationClaims, IdTokenClaimsInput, OidcClaimRequest, SUPPORTED_USER_CLAIMS,
+    access_token_claims, authorization_response_jwt_claims, backchannel_logout_token_claims,
+    id_token_claims, supported_user_claim,
 };
 pub use client::{ClientProfile, validate_token_request_profile};
 pub use client_authentication::{

@@ -4,9 +4,10 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
-    AuthorizationCodeState, AuthorizationRequestError, ConsentPayload, NormalizedRequestObject,
-    OAuthClient, PushedAuthorizationRequest, PushedAuthorizationRequestConsumeError,
-    RequestObjectClaims, RequestObjectPolicy, authorization_details_empty,
+    AuthorizationCodeState, AuthorizationRequestError, AuthorizationResponsePolicyError,
+    ConsentPayload, JarmAuthorizationResponse, NormalizedRequestObject, OAuthClient,
+    PushedAuthorizationRequest, PushedAuthorizationRequestConsumeError, RequestObjectClaims,
+    RequestObjectPolicy, SignedJarmAuthorizationResponse, authorization_details_empty,
     canonical_authorization_details, high_risk_authorization_details, normalize_request_object,
 };
 
@@ -429,6 +430,22 @@ where
         input: AuthorizationResponseSignInput<'_>,
     ) -> Result<String, AuthorizationPortError> {
         self.signer.sign_authorization_response(input).await
+    }
+
+    pub async fn sign_jarm_authorization_response(
+        &self,
+        response: &JarmAuthorizationResponse,
+        signing_algorithm: Option<&str>,
+    ) -> Result<SignedJarmAuthorizationResponse, AuthorizationResponsePolicyError> {
+        let signed = self
+            .signer
+            .sign_authorization_response(response.signing_input(signing_algorithm))
+            .await
+            .map_err(AuthorizationResponsePolicyError::Dependency)?;
+        Ok(SignedJarmAuthorizationResponse {
+            redirect_uri: response.redirect_uri.clone(),
+            response: signed,
+        })
     }
 }
 
