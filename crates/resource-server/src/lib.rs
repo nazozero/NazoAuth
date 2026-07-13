@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 mod dpop;
 mod jwk;
 mod presentation;
+mod service;
 pub use dpop::{DpopProofVerifier, DpopProofVerifierConfig, DpopProofVerifierError};
 #[cfg(test)]
 use dpop::{access_token_hash, dpop_jwk_thumbprint};
@@ -21,6 +22,13 @@ use presentation::{
     validate_presented_sender_constraint,
 };
 use serde_json::Value;
+pub use service::{
+    AccessTokenRevocationLookup, AccessTokenScheme, DpopReplayConsumption,
+    DpopReplayConsumptionResult, DpopReplayKey, ProtectedResourceAuthorizationContext,
+    ProtectedResourceAuthorizationError, ProtectedResourceAuthorizationRequest,
+    ProtectedResourceAuthorizationResult, ProtectedResourceAuthorizationService,
+    ProtectedResourceDependencyError, ResourceServerPortFuture, RevocationLookupKey,
+};
 
 const DEFAULT_CLOCK_SKEW_SECONDS: i64 = 60;
 const DEFAULT_DPOP_MAX_AGE_SECONDS: i64 = 300;
@@ -56,6 +64,7 @@ pub enum ConfirmationPolicy {
 pub struct VerifiedAccessToken {
     pub issuer: String,
     pub subject: String,
+    pub tenant_id: Option<String>,
     pub client_id: String,
     pub audiences: Vec<String>,
     pub scopes: Vec<String>,
@@ -123,6 +132,8 @@ pub enum ResourceServerRequestError {
 struct AccessTokenClaims {
     iss: String,
     sub: String,
+    #[serde(default)]
+    tenant_id: Option<String>,
     aud: Value,
     client_id: String,
     #[serde(default)]
@@ -153,6 +164,14 @@ impl ResourceServerVerifier {
     }
 
     pub fn verify(&self, token: &str) -> Result<VerifiedAccessToken, ResourceServerVerifierError> {
+        self.verify_at(token, Utc::now().timestamp())
+    }
+
+    fn verify_at(
+        &self,
+        token: &str,
+        now: i64,
+    ) -> Result<VerifiedAccessToken, ResourceServerVerifierError> {
         let header = jsonwebtoken::decode_header(token)
             .map_err(|_| ResourceServerVerifierError::InvalidToken)?;
         if header.typ.as_deref() != Some("at+jwt") {
@@ -176,12 +195,13 @@ impl ResourceServerVerifier {
         validation.validate_nbf = false;
         let decoded = jsonwebtoken::decode::<AccessTokenClaims>(token, &decoding_key, &validation)
             .map_err(|_| ResourceServerVerifierError::InvalidToken)?;
-        self.validate_claims(decoded.claims)
+        self.validate_claims(decoded.claims, now)
     }
 
     fn validate_claims(
         &self,
         claims: AccessTokenClaims,
+        now: i64,
     ) -> Result<VerifiedAccessToken, ResourceServerVerifierError> {
         if claims.token_use != "access" {
             return Err(ResourceServerVerifierError::WrongTokenType);
@@ -196,7 +216,6 @@ impl ResourceServerVerifier {
         {
             return Err(ResourceServerVerifierError::AudienceMismatch);
         }
-        let now = Utc::now().timestamp();
         let skew = self.config.clock_skew_seconds.max(0);
         if claims.exp <= now.saturating_sub(skew) {
             return Err(ResourceServerVerifierError::Expired);
@@ -214,6 +233,7 @@ impl ResourceServerVerifier {
         Ok(VerifiedAccessToken {
             issuer: claims.iss,
             subject: claims.sub,
+            tenant_id: claims.tenant_id,
             client_id: claims.client_id,
             audiences,
             scopes,

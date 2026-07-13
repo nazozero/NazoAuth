@@ -1,0 +1,439 @@
+use std::{
+    collections::HashSet,
+    future::Future,
+    sync::{Arc, Mutex},
+    task::{Context, Poll, Waker},
+};
+
+use serde_json::json;
+
+use super::*;
+use crate::DpopProofVerifierConfig;
+use crate::tests::fixtures::{dpop_fixture, dpop_proof, fixture, token};
+
+fn block_on<F: Future>(future: F) -> F::Output {
+    let mut context = Context::from_waker(Waker::noop());
+    let mut future = Box::pin(future);
+    loop {
+        match future.as_mut().poll(&mut context) {
+            Poll::Ready(output) => return output,
+            Poll::Pending => std::thread::yield_now(),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct TestRevocations {
+    result: Arc<Mutex<Result<bool, ProtectedResourceDependencyError>>>,
+}
+
+impl TestRevocations {
+    fn returning(result: Result<bool, ProtectedResourceDependencyError>) -> Self {
+        Self {
+            result: Arc::new(Mutex::new(result)),
+        }
+    }
+}
+
+impl AccessTokenRevocationLookup for TestRevocations {
+    fn is_revoked<'a>(
+        &'a self,
+        _key: RevocationLookupKey<'a>,
+    ) -> ResourceServerPortFuture<'a, Result<bool, ProtectedResourceDependencyError>> {
+        let result = *self.result.lock().expect("revocation result lock");
+        Box::pin(async move { result })
+    }
+}
+
+#[derive(Clone, Default)]
+struct AtomicReplayStore {
+    keys: Arc<Mutex<HashSet<String>>>,
+    failure: Option<ProtectedResourceDependencyError>,
+}
+
+impl AtomicReplayStore {
+    fn unavailable() -> Self {
+        Self {
+            keys: Arc::default(),
+            failure: Some(ProtectedResourceDependencyError::DpopReplayStoreUnavailable),
+        }
+    }
+}
+
+impl DpopReplayConsumption for AtomicReplayStore {
+    fn consume<'a>(
+        &'a self,
+        key: DpopReplayKey<'a>,
+    ) -> ResourceServerPortFuture<
+        'a,
+        Result<DpopReplayConsumptionResult, ProtectedResourceDependencyError>,
+    > {
+        Box::pin(async move {
+            if let Some(error) = self.failure {
+                return Err(error);
+            }
+            let key = format!("{}:{}", key.jkt, key.jti);
+            let mut keys = self.keys.lock().expect("replay store lock");
+            Ok(if keys.insert(key) {
+                DpopReplayConsumptionResult::Accepted
+            } else {
+                DpopReplayConsumptionResult::Replay
+            })
+        })
+    }
+}
+
+fn context<'a>(mtls_x5t_s256: Option<&'a str>) -> ProtectedResourceAuthorizationContext<'a> {
+    ProtectedResourceAuthorizationContext {
+        method: "GET",
+        target_uri: "https://api.example/orders",
+        mtls_x5t_s256,
+    }
+}
+
+fn request<'a>(
+    access_token: &'a str,
+    scheme: AccessTokenScheme,
+    dpop_proof: Option<&'a str>,
+) -> ProtectedResourceAuthorizationRequest<'a> {
+    ProtectedResourceAuthorizationRequest {
+        access_token,
+        scheme,
+        dpop_proof,
+    }
+}
+
+#[test]
+fn bearer_authorization_returns_typed_verified_result() {
+    block_on(bearer_authorization_returns_typed_verified_result_async());
+}
+
+async fn bearer_authorization_returns_typed_verified_result_async() {
+    let fixture = fixture();
+    let access_token = token(&fixture, json!({}), None);
+    let service = ProtectedResourceAuthorizationService::new(
+        fixture.verifier,
+        DpopProofVerifier::new(DpopProofVerifierConfig::default()),
+        TestRevocations::returning(Ok(false)),
+        AtomicReplayStore::default(),
+    );
+
+    let result = service
+        .authorize(
+            request(&access_token, AccessTokenScheme::Bearer, None),
+            context(None),
+        )
+        .await
+        .expect("valid bearer token");
+
+    assert_eq!(result.token.subject, "subject-1");
+    assert_eq!(result.token.client_id, "client-1");
+    assert_eq!(
+        result.token.tenant_id.as_deref(),
+        Some("00000000-0000-0000-0000-000000000001")
+    );
+    assert_eq!(
+        result.sender_constraint,
+        VerifiedSenderConstraintProof::default()
+    );
+}
+
+#[test]
+fn token_issuer_audience_and_use_are_enforced_before_dependencies() {
+    block_on(token_issuer_audience_and_use_are_enforced_before_dependencies_async());
+}
+
+async fn token_issuer_audience_and_use_are_enforced_before_dependencies_async() {
+    let cases = [
+        (
+            json!({"iss": "https://attacker.example"}),
+            ResourceServerVerifierError::IssuerMismatch,
+        ),
+        (
+            json!({"aud": "resource://other"}),
+            ResourceServerVerifierError::AudienceMismatch,
+        ),
+        (
+            json!({"token_use": "id"}),
+            ResourceServerVerifierError::WrongTokenType,
+        ),
+    ];
+
+    for (overrides, expected) in cases {
+        let fixture = fixture();
+        let access_token = token(&fixture, overrides, None);
+        let service = ProtectedResourceAuthorizationService::new(
+            fixture.verifier,
+            DpopProofVerifier::new(DpopProofVerifierConfig::default()),
+            TestRevocations::returning(Err(
+                ProtectedResourceDependencyError::RevocationLookupUnavailable,
+            )),
+            AtomicReplayStore::default(),
+        );
+
+        let error = service
+            .authorize(
+                request(&access_token, AccessTokenScheme::Bearer, None),
+                context(None),
+            )
+            .await
+            .expect_err("invalid token claims must fail locally");
+        assert_eq!(
+            error,
+            ProtectedResourceAuthorizationError::InvalidToken(expected)
+        );
+    }
+}
+
+#[test]
+fn revocation_and_revocation_dependency_failure_are_fail_closed() {
+    block_on(revocation_and_revocation_dependency_failure_are_fail_closed_async());
+}
+
+async fn revocation_and_revocation_dependency_failure_are_fail_closed_async() {
+    for (revocation_result, expected) in [
+        (Ok(true), ProtectedResourceAuthorizationError::Revoked),
+        (
+            Err(ProtectedResourceDependencyError::RevocationLookupUnavailable),
+            ProtectedResourceAuthorizationError::DependencyUnavailable(
+                ProtectedResourceDependencyError::RevocationLookupUnavailable,
+            ),
+        ),
+    ] {
+        let fixture = fixture();
+        let access_token = token(&fixture, json!({}), None);
+        let service = ProtectedResourceAuthorizationService::new(
+            fixture.verifier,
+            DpopProofVerifier::new(DpopProofVerifierConfig::default()),
+            TestRevocations::returning(revocation_result),
+            AtomicReplayStore::default(),
+        );
+
+        let error = service
+            .authorize(
+                request(&access_token, AccessTokenScheme::Bearer, None),
+                context(None),
+            )
+            .await
+            .expect_err("revoked or unknown state must not authorize");
+        assert_eq!(error, expected);
+    }
+}
+
+#[test]
+fn mtls_bound_bearer_requires_the_verified_certificate_thumbprint() {
+    block_on(mtls_bound_bearer_requires_the_verified_certificate_thumbprint_async());
+}
+
+async fn mtls_bound_bearer_requires_the_verified_certificate_thumbprint_async() {
+    let fixture = fixture();
+    let access_token = token(
+        &fixture,
+        json!({"cnf": {"x5t#S256": "certificate-thumbprint"}}),
+        None,
+    );
+    let service = ProtectedResourceAuthorizationService::new(
+        fixture.verifier,
+        DpopProofVerifier::new(DpopProofVerifierConfig::default()),
+        TestRevocations::returning(Ok(false)),
+        AtomicReplayStore::default(),
+    );
+
+    let missing = service
+        .authorize(
+            request(&access_token, AccessTokenScheme::Bearer, None),
+            context(None),
+        )
+        .await
+        .expect_err("missing certificate must fail");
+    assert_eq!(
+        missing,
+        ProtectedResourceAuthorizationError::MissingSenderConstraint
+    );
+
+    let mismatch = service
+        .authorize(
+            request(&access_token, AccessTokenScheme::Bearer, None),
+            context(Some("different-thumbprint")),
+        )
+        .await
+        .expect_err("wrong certificate must fail");
+    assert_eq!(
+        mismatch,
+        ProtectedResourceAuthorizationError::MtlsBindingMismatch
+    );
+
+    let authorized = service
+        .authorize(
+            request(&access_token, AccessTokenScheme::Bearer, None),
+            context(Some("certificate-thumbprint")),
+        )
+        .await
+        .expect("matching certificate must authorize");
+    assert_eq!(
+        authorized.sender_constraint.mtls_x5t_s256.as_deref(),
+        Some("certificate-thumbprint")
+    );
+}
+
+#[test]
+fn dpop_authorization_consumes_replay_marker_atomically() {
+    block_on(dpop_authorization_consumes_replay_marker_atomically_async());
+}
+
+async fn dpop_authorization_consumes_replay_marker_atomically_async() {
+    let fixture = fixture();
+    let dpop = dpop_fixture();
+    let access_token = token(&fixture, json!({"cnf": {"jkt": dpop.jkt}}), None);
+    let proof = dpop_proof(
+        &dpop,
+        &access_token,
+        "GET",
+        "https://api.example/orders",
+        "service-replay",
+        None,
+        None,
+    );
+    let service = ProtectedResourceAuthorizationService::new(
+        fixture.verifier,
+        DpopProofVerifier::new(DpopProofVerifierConfig::default()),
+        TestRevocations::returning(Ok(false)),
+        AtomicReplayStore::default(),
+    );
+
+    service
+        .authorize(
+            request(&access_token, AccessTokenScheme::Dpop, Some(&proof)),
+            context(None),
+        )
+        .await
+        .expect("first proof use must authorize");
+    let replay = service
+        .authorize(
+            request(&access_token, AccessTokenScheme::Dpop, Some(&proof)),
+            context(None),
+        )
+        .await
+        .expect_err("second proof use must be rejected");
+    assert_eq!(replay, ProtectedResourceAuthorizationError::ReplayDetected);
+}
+
+#[test]
+fn concurrent_dpop_replay_has_exactly_one_winner() {
+    let fixture = fixture();
+    let dpop = dpop_fixture();
+    let access_token = token(&fixture, json!({"cnf": {"jkt": dpop.jkt}}), None);
+    let proof = dpop_proof(
+        &dpop,
+        &access_token,
+        "GET",
+        "https://api.example/orders",
+        "concurrent-service-replay",
+        None,
+        None,
+    );
+    let service = ProtectedResourceAuthorizationService::new(
+        fixture.verifier,
+        DpopProofVerifier::new(DpopProofVerifierConfig::default()),
+        TestRevocations::returning(Ok(false)),
+        AtomicReplayStore::default(),
+    );
+    let (left, right) = std::thread::scope(|scope| {
+        let authorize = || {
+            block_on(service.authorize(
+                request(&access_token, AccessTokenScheme::Dpop, Some(&proof)),
+                context(None),
+            ))
+        };
+        let left = scope.spawn(authorize);
+        let right = scope.spawn(authorize);
+        (
+            left.join().expect("left authorization thread"),
+            right.join().expect("right authorization thread"),
+        )
+    });
+    let results = [left, right];
+    assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+    assert_eq!(
+        results
+            .iter()
+            .filter(|result| {
+                matches!(
+                    result,
+                    Err(ProtectedResourceAuthorizationError::ReplayDetected)
+                )
+            })
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn dpop_replay_dependency_failure_is_fail_closed() {
+    block_on(dpop_replay_dependency_failure_is_fail_closed_async());
+}
+
+async fn dpop_replay_dependency_failure_is_fail_closed_async() {
+    let fixture = fixture();
+    let dpop = dpop_fixture();
+    let access_token = token(&fixture, json!({"cnf": {"jkt": dpop.jkt}}), None);
+    let proof = dpop_proof(
+        &dpop,
+        &access_token,
+        "GET",
+        "https://api.example/orders",
+        "unavailable-replay-store",
+        None,
+        None,
+    );
+    let service = ProtectedResourceAuthorizationService::new(
+        fixture.verifier,
+        DpopProofVerifier::new(DpopProofVerifierConfig::default()),
+        TestRevocations::returning(Ok(false)),
+        AtomicReplayStore::unavailable(),
+    );
+
+    let error = service
+        .authorize(
+            request(&access_token, AccessTokenScheme::Dpop, Some(&proof)),
+            context(None),
+        )
+        .await
+        .expect_err("unavailable replay protection must fail closed");
+    assert_eq!(
+        error,
+        ProtectedResourceAuthorizationError::DependencyUnavailable(
+            ProtectedResourceDependencyError::DpopReplayStoreUnavailable
+        )
+    );
+}
+
+#[test]
+fn missing_tenant_boundary_is_rejected_before_revocation_lookup() {
+    block_on(missing_tenant_boundary_is_rejected_before_revocation_lookup_async());
+}
+
+async fn missing_tenant_boundary_is_rejected_before_revocation_lookup_async() {
+    let fixture = fixture();
+    let access_token = token(&fixture, json!({"tenant_id": null}), None);
+    let service = ProtectedResourceAuthorizationService::new(
+        fixture.verifier,
+        DpopProofVerifier::new(DpopProofVerifierConfig::default()),
+        TestRevocations::returning(Err(
+            ProtectedResourceDependencyError::RevocationLookupUnavailable,
+        )),
+        AtomicReplayStore::default(),
+    );
+
+    let error = service
+        .authorize(
+            request(&access_token, AccessTokenScheme::Bearer, None),
+            context(None),
+        )
+        .await
+        .expect_err("tenant-less token must fail locally");
+    assert_eq!(
+        error,
+        ProtectedResourceAuthorizationError::InvalidTenantBoundary
+    );
+}

@@ -1,6 +1,6 @@
 use super::*;
 
 mod dpop;
-mod fixtures;
+pub(crate) mod fixtures;
 mod request_authorization;
 mod verifier;

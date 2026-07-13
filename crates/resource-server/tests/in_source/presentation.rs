@@ -212,6 +212,7 @@ fn verified_token(cnf: Option<ConfirmationClaims>) -> VerifiedAccessToken {
     VerifiedAccessToken {
         issuer: "issuer".to_owned(),
         subject: "subject".to_owned(),
+        tenant_id: Some("00000000-0000-0000-0000-000000000001".to_owned()),
         client_id: "client-1".to_owned(),
         audiences: vec!["audience".to_owned()],
         scopes: Vec::new(),

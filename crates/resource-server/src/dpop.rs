@@ -49,6 +49,12 @@ pub enum DpopProofVerifierError {
     ReplayCacheFull,
 }
 
+pub(crate) struct DpopProofVerification {
+    pub(crate) proof: VerifiedSenderConstraintProof,
+    pub(crate) jti: String,
+    pub(crate) expires_at: i64,
+}
+
 enum SupportedDpopAlgorithm {
     EdDsa,
     Rsa,
@@ -90,6 +96,30 @@ impl DpopProofVerifier {
         htu: &str,
         access_token: &str,
     ) -> Result<VerifiedSenderConstraintProof, DpopProofVerifierError> {
+        let verification = self.verify_without_replay_at(
+            proof_jwt,
+            method,
+            htu,
+            access_token,
+            Utc::now().timestamp(),
+        )?;
+        let jkt = verification
+            .proof
+            .dpop_jkt
+            .as_deref()
+            .ok_or(DpopProofVerifierError::InvalidPublicJwk)?;
+        self.check_replay(jkt, &verification.jti)?;
+        Ok(verification.proof)
+    }
+
+    pub(crate) fn verify_without_replay_at(
+        &self,
+        proof_jwt: &str,
+        method: &str,
+        htu: &str,
+        access_token: &str,
+        now: i64,
+    ) -> Result<DpopProofVerification, DpopProofVerifierError> {
         let header = jsonwebtoken::decode_header(proof_jwt)
             .map_err(|_| DpopProofVerifierError::MalformedProof)?;
         if header.typ.as_deref() != Some("dpop+jwt") {
@@ -107,13 +137,20 @@ impl DpopProofVerifier {
         let decoding_key = dpop_jwk_decoding_key(&public_jwk, header.alg)
             .ok_or(DpopProofVerifierError::InvalidPublicJwk)?;
         let claims = decode_and_verify_dpop_proof(proof_jwt, &decoding_key, header.alg)?;
-        self.validate_claims(&claims, method, htu, access_token)?;
+        self.validate_claims(&claims, method, htu, access_token, now)?;
         let jkt =
             dpop_jwk_thumbprint(&public_jwk).ok_or(DpopProofVerifierError::InvalidPublicJwk)?;
-        self.check_replay(&jkt, &claims.jti)?;
-        Ok(VerifiedSenderConstraintProof {
-            dpop_jkt: Some(jkt),
-            mtls_x5t_s256: None,
+        let expires_at = claims
+            .iat
+            .saturating_add(self.config.max_age_seconds.max(1))
+            .saturating_add(self.config.clock_skew_seconds.max(0));
+        Ok(DpopProofVerification {
+            proof: VerifiedSenderConstraintProof {
+                dpop_jkt: Some(jkt),
+                mtls_x5t_s256: None,
+            },
+            jti: claims.jti,
+            expires_at,
         })
     }
 
@@ -123,6 +160,7 @@ impl DpopProofVerifier {
         method: &str,
         htu: &str,
         access_token: &str,
+        now: i64,
     ) -> Result<(), DpopProofVerifierError> {
         if claims.htm != method.to_ascii_uppercase() {
             return Err(DpopProofVerifierError::MethodMismatch);
@@ -136,7 +174,6 @@ impl DpopProofVerifier {
         if claims.jti.trim().is_empty() {
             return Err(DpopProofVerifierError::MissingJti);
         }
-        let now = Utc::now().timestamp();
         let skew = self.config.clock_skew_seconds.max(0);
         let max_age = self.config.max_age_seconds.max(1);
         if claims.iat < now.saturating_sub(max_age.saturating_add(skew)) {

@@ -6,19 +6,19 @@ use jsonwebtoken::{
 use openssl::rsa::Rsa;
 use serde_json::json;
 
-pub(super) struct Fixture {
-    pub(super) verifier: ResourceServerVerifier,
+pub(crate) struct Fixture {
+    pub(crate) verifier: ResourceServerVerifier,
     pub(super) jwks: Value,
     pub(super) encoding_key: EncodingKey,
 }
 
-pub(super) struct DpopFixture {
-    pub(super) encoding_key: EncodingKey,
-    pub(super) public_jwk: Jwk,
-    pub(super) jkt: String,
+pub(crate) struct DpopFixture {
+    pub(crate) encoding_key: EncodingKey,
+    pub(crate) public_jwk: Jwk,
+    pub(crate) jkt: String,
 }
 
-pub(super) fn fixture() -> Fixture {
+pub(crate) fn fixture() -> Fixture {
     let der = Rsa::generate(2048).unwrap().private_key_to_der().unwrap();
     let encoding_key = EncodingKey::from_rsa_der(&der);
     let mut jwk = Jwk::from_encoding_key(&encoding_key, Algorithm::RS256).unwrap();
@@ -38,7 +38,7 @@ pub(super) fn fixture() -> Fixture {
     }
 }
 
-pub(super) fn dpop_fixture() -> DpopFixture {
+pub(crate) fn dpop_fixture() -> DpopFixture {
     let der = Rsa::generate(2048).unwrap().private_key_to_der().unwrap();
     let encoding_key = EncodingKey::from_rsa_der(&der);
     let mut public_jwk = Jwk::from_encoding_key(&encoding_key, Algorithm::RS256).unwrap();
@@ -53,7 +53,7 @@ pub(super) fn dpop_fixture() -> DpopFixture {
     }
 }
 
-pub(super) fn token(
+pub(crate) fn token(
     fixture: &Fixture,
     claim_overrides: Value,
     header_overrides: Option<Header>,
@@ -62,6 +62,7 @@ pub(super) fn token(
     let mut claims = json!({
         "iss": "https://issuer.example",
         "sub": "subject-1",
+        "tenant_id": "00000000-0000-0000-0000-000000000001",
         "aud": "resource://default",
         "client_id": "client-1",
         "scope": "read write",
@@ -85,7 +86,7 @@ pub(super) fn token(
     jsonwebtoken::encode(&header, &claims, &fixture.encoding_key).unwrap()
 }
 
-pub(super) fn dpop_proof(
+pub(crate) fn dpop_proof(
     fixture: &DpopFixture,
     access_token: &str,
     method: &str,
