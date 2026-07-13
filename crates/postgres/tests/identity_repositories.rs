@@ -576,6 +576,75 @@ async fn failed_totp_enrollment_confirmation_is_durably_audited_without_state_ch
 }
 
 #[tokio::test]
+async fn concurrent_totp_enrollment_confirmation_has_one_audited_winner() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        return;
+    };
+    const SECRET: &str = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+    let repository = MfaRepository::new(pool.clone());
+    repository
+        .begin_totp_enrollment(
+            tenant.tenant_id,
+            user_id,
+            SECRET.to_owned(),
+            "concurrent enrollment".to_owned(),
+        )
+        .await
+        .unwrap();
+    let step = chrono::Utc::now().timestamp() / nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
+    let timestamp = step * nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
+    let code = nazo_identity::mfa::totp_for_step(b"12345678901234567890", step).unwrap();
+    let hashes = |prefix: &str| {
+        (0..nazo_identity::mfa::MFA_BACKUP_CODE_COUNT)
+            .map(|index| format!("{prefix}-backup-hash-{index}"))
+            .collect::<Vec<_>>()
+    };
+
+    let (left, right) = tokio::join!(
+        repository.verify_and_confirm_totp(
+            tenant.tenant_id,
+            user_id,
+            &code,
+            timestamp,
+            hashes("left"),
+        ),
+        repository.verify_and_confirm_totp(
+            tenant.tenant_id,
+            user_id,
+            &code,
+            timestamp,
+            hashes("right"),
+        )
+    );
+    let mut outcomes = [left.unwrap(), right.unwrap()];
+    outcomes.sort_by_key(|outcome| match outcome {
+        nazo_identity::ports::TotpVerificationOutcome::Accepted => 0,
+        nazo_identity::ports::TotpVerificationOutcome::Replay => 1,
+        nazo_identity::ports::TotpVerificationOutcome::Invalid => 2,
+    });
+    assert_eq!(
+        outcomes,
+        [
+            nazo_identity::ports::TotpVerificationOutcome::Accepted,
+            nazo_identity::ports::TotpVerificationOutcome::Replay,
+        ]
+    );
+    let events = identity_security_events(&pool, user_id).await;
+    assert_eq!(events.len(), 2);
+    assert!(
+        events
+            .iter()
+            .any(|event| event.outcome == "success" && event.reason_code == "totp_accepted")
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| event.outcome == "replay" && event.reason_code == "totp_replay")
+    );
+    cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
 async fn backup_code_is_consumed_once_atomically() {
     let Some((pool, tenant, user_id)) = database_fixture().await else {
         return;
@@ -1195,13 +1264,17 @@ fn totp_enrollment_orders_cross_store_changes_for_safe_recovery() {
         .find(".record_invalid_totp_attempt(")
         .expect("invalid enrollment verification must be durably audited");
     let session_rotation = source
-        .find("step_up_current_session(&state")
+        .find(".step_up_current_session(")
         .expect("session and CSRF must rotate atomically before enabling MFA");
     let postgres_confirmation = source
         .find(".verify_and_confirm_totp(")
         .expect("PostgreSQL confirmation must reverify under row lock");
+    let failed_rotation_discard = source
+        .find("discard_failed_enrollment_rotation(")
+        .expect("a rejected PostgreSQL confirmation must discard the unpublished MFA session");
     assert!(invalid_audit < session_rotation);
     assert!(session_rotation < postgres_confirmation);
+    assert!(postgres_confirmation < failed_rotation_discard);
 }
 
 #[test]
@@ -1211,7 +1284,8 @@ fn server_has_no_identity_rows_or_identity_diesel_queries() {
         "PasskeyCredentialRow",
         "ExternalIdentityLinkRow",
         "TotpCredentialRow",
-        "users::",
+        "crate::schema::users::",
+        "nazo_postgres::schema::users::",
         "user_totp_credentials::",
         "user_mfa_backup_codes::",
         "user_mfa_remembered_devices::",
@@ -1238,12 +1312,7 @@ fn server_has_no_identity_rows_or_identity_diesel_queries() {
             } else if path.extension().is_some_and(|extension| extension == "rs") {
                 let source = std::fs::read_to_string(&path).expect("server source is UTF-8");
                 for forbidden in FORBIDDEN {
-                    let module_reexport = *forbidden == "users::"
-                        && source.lines().any(|line| {
-                            line.trim() == "pub(crate) use users::*;"
-                                && source.matches(forbidden).count() == 1
-                        });
-                    if source.contains(forbidden) && !module_reexport {
+                    if source.contains(forbidden) {
                         violations.push(format!("{} contains {forbidden}", path.display()));
                     }
                 }
@@ -1269,12 +1338,15 @@ fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
     let admin_path = manifest.join("../server/src/http/admin/access_requests.rs");
     let profile_path = manifest.join("../server/src/http/profile/access_requests.rs");
     let delivery_path = manifest.join("../server/src/http/profile/delivery.rs");
+    let identity_profile_path = manifest.join("../identity/src/profile.rs");
     let support_path = manifest.join("../server/src/support/access_requests.rs");
     let forwarding_repositories_path = manifest.join("../server/src/support/repositories.rs");
     let admin = std::fs::read_to_string(admin_path).expect("admin access handler is readable");
     let profile =
         std::fs::read_to_string(profile_path).expect("profile access handler is readable");
     let delivery = std::fs::read_to_string(delivery_path).expect("delivery handler is readable");
+    let identity_profile = std::fs::read_to_string(identity_profile_path)
+        .expect("identity profile service is readable");
 
     for source in [&admin, &profile] {
         assert!(!source.contains("diesel::"));
@@ -1303,18 +1375,21 @@ fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
                 .find("committed_delivery_payload")
                 .expect("approval must activate delivery only after commit")
     );
-    assert!(delivery.contains("approved_delivery_matches"));
+    assert!(delivery.contains("service.claim_delivery(&user, token)"));
+    assert!(identity_profile.contains("approved_delivery_matches"));
     assert!(
-        delivery.find("approved_delivery_matches").unwrap()
-            < delivery
+        identity_profile.find("approved_delivery_matches").unwrap()
+            < identity_profile
                 .find(".consume(")
                 .expect("focused delivery storage must consume atomically"),
         "delivery linkage must be validated before one-time consumption"
     );
-    assert!(profile.contains(".load_many(&lookups)"));
-    assert!(!profile.contains("KEYS"));
-    assert!(!profile.contains("SCAN"));
-    assert!(profile.contains("delivery_payload_matches"));
+    assert!(profile.contains("service.list(&user)"));
+    assert!(identity_profile.contains(".load_many(&lookups)"));
+    assert!(!identity_profile.contains("KEYS"));
+    assert!(!identity_profile.contains("SCAN"));
+    assert!(identity_profile.contains("delivery_payload_matches"));
+    assert!(identity_profile.contains("delivery_candidate"));
     assert!(profile.contains("delivery_token"));
     assert!(!admin.contains("\"delivery_token\""));
 }
@@ -1746,7 +1821,8 @@ fn oauth_client_repository_keeps_records_private_and_returns_domain_clients() {
         "server must not reconstruct a duplicate full row from a postgres adapter result"
     );
     assert!(
-        repository.contains("use nazo_auth::{OAuthClient,"),
+        repository.contains("AdminClientRepositoryPort, OAuthClient,")
+            && repository.contains(".map(OAuthClientRecord::into_domain)"),
         "repository lookups must return the auth-owned storage-independent client"
     );
     assert!(
@@ -1844,14 +1920,19 @@ fn identity_claim_boundaries_use_narrow_single_snapshot_reads() {
         .expect("token issue source is readable");
     let userinfo = std::fs::read_to_string(manifest.join("../server/src/http/token/userinfo.rs"))
         .expect("userinfo source is readable");
+    let token_issuance =
+        std::fs::read_to_string(manifest.join("src/repositories/token_issuance.rs"))
+            .expect("token issuance repository source is readable");
 
     assert!(users.contains("select(PrincipalRow::as_select())"));
     assert!(users.contains("select(SubjectClaimsRow::as_select())"));
     for source in [&issue, &userinfo] {
-        assert!(source.contains("active_subject_claims_by_tenant_id"));
+        assert!(source.contains(".active_subject_claims("));
         assert!(!source.contains(".principal_by_tenant_id("));
         assert!(!source.contains(".subject_claims_by_tenant_id("));
+        assert!(!source.contains("UserRepository::new"));
     }
+    assert!(token_issuance.contains(".active_subject_claims_by_tenant_id("));
 }
 
 #[test]
