@@ -6,6 +6,9 @@ use super::{
     issue_token_response, token_management_auth_error, verify_confidential_client,
 };
 use crate::http::prelude::*;
+use nazo_auth::{
+    DeviceAuthorizationApproval, DeviceAuthorizationPayload, DeviceAuthorizationState,
+};
 
 pub(crate) const DEVICE_CODE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 
@@ -46,57 +49,6 @@ pub(crate) enum DeviceAuthorizationRequestError {
     UnauthorizedClient,
     InvalidScope,
     InvalidTarget,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub(crate) struct DeviceAuthorizationPayload {
-    pub(crate) client_id: String,
-    pub(crate) client_name: String,
-    pub(crate) scopes: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) resource_indicators: Vec<String>,
-    #[serde(
-        default = "nazo_auth::empty_authorization_details",
-        deserialize_with = "nazo_auth::deserialize_authorization_details"
-    )]
-    pub(crate) authorization_details: Value,
-    pub(crate) interval_seconds: u64,
-    pub(crate) issued_at: DateTime<Utc>,
-    pub(crate) expires_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub(crate) struct DeviceAuthorizationApproval {
-    pub(crate) user_id: Uuid,
-    pub(crate) subject: String,
-    pub(crate) auth_time: i64,
-    pub(crate) amr: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) oidc_sid: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-#[serde(tag = "status", rename_all = "snake_case")]
-pub(crate) enum DeviceAuthorizationState {
-    Pending {
-        payload: DeviceAuthorizationPayload,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        last_poll_at: Option<DateTime<Utc>>,
-        #[serde(default)]
-        slow_down_count: u32,
-    },
-    Approved {
-        payload: DeviceAuthorizationPayload,
-        approval: DeviceAuthorizationApproval,
-        approved_at: DateTime<Utc>,
-    },
-    Denied {
-        payload: DeviceAuthorizationPayload,
-        denied_at: DateTime<Utc>,
-    },
-    Consumed {
-        consumed_at: DateTime<Utc>,
-    },
 }
 
 #[derive(Debug, PartialEq)]

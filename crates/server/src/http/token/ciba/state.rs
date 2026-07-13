@@ -5,7 +5,7 @@ use crate::support::{
     valkey_compare_delete_at_deadline, valkey_compare_set_at_deadline, valkey_set_nx_at_deadline,
 };
 use fred::prelude::Client as ValkeyClient;
-use serde::{Deserialize, Serialize};
+pub(super) use nazo_auth::{CibaRequestState, CibaStatus};
 use serde_json::{Number, Value};
 use std::fmt;
 use uuid::Uuid;
@@ -13,33 +13,6 @@ use uuid::Uuid;
 pub(super) const CIBA_TRANSITION_MAX_ATTEMPTS: usize = 4;
 const CIBA_EXPIRED_STATE_RETENTION_SECONDS: i64 = 120;
 const CIBA_SLOW_DOWN_INCREMENT_SECONDS: u64 = 5;
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub(super) struct CibaRequestState {
-    pub(super) client_id: String,
-    pub(super) user_id: Uuid,
-    pub(super) scopes: Vec<String>,
-    pub(super) audiences: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(super) acr: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(super) binding_message: Option<String>,
-    #[serde(default)]
-    pub(super) issued_at: i64,
-    pub(super) status: CibaStatus,
-    pub(super) interval_seconds: u64,
-    pub(super) expires_at: i64,
-    pub(super) retention_expires_at: i64,
-    pub(super) last_poll_at: Option<i64>,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum CibaStatus {
-    Pending,
-    Approved,
-    Denied,
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct StoredCibaRequest {

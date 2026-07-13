@@ -3,9 +3,11 @@
 //! Runtime- and infrastructure-free authorization-server policy.
 
 mod authorization_details;
+mod ciba;
 mod claims;
 mod client;
 mod client_registration;
+mod device;
 mod error;
 mod grant;
 mod metadata;
@@ -22,6 +24,7 @@ pub use authorization_details::{
     empty_authorization_details, high_risk_authorization_details, normalize_authorization_details,
     parse_authorization_details,
 };
+pub use ciba::{CibaRequestState, CibaStatus};
 pub use claims::{
     AccessTokenClaimsInput, AuthorizationResponseClaimsInput, BackchannelLogoutClaimsInput, Claims,
     ConfirmationClaims, IdTokenClaimsInput, OidcClaimRequest, access_token_claims,
@@ -29,6 +32,9 @@ pub use claims::{
 };
 pub use client::{ClientProfile, validate_token_request_profile};
 pub use client_registration::{ApprovedClient, OAuthClient, ValidatedClientRegistration};
+pub use device::{
+    DeviceAuthorizationApproval, DeviceAuthorizationPayload, DeviceAuthorizationState,
+};
 pub use error::{ProtocolError, ProtocolErrorCode};
 pub use grant::GrantType;
 pub use metadata::{CapabilityAdmission, MetadataCapabilities, module_admissible};

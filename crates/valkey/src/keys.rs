@@ -70,3 +70,30 @@ pub(crate) fn authorization_code(code: &str) -> String {
 pub(crate) fn reauth_nonce(nonce: &str) -> String {
     format!("oauth:authorization:reauth:{}", blake3_hex(nonce))
 }
+
+pub(crate) fn ciba(auth_req_id: &str) -> String {
+    format!("oauth:ciba:{}", blake3_hex(auth_req_id))
+}
+
+pub(crate) fn device_code(device_code: &str) -> String {
+    device_code_hash(&blake3_hex(device_code))
+}
+
+pub(crate) fn device_code_hash(device_code_hash: &str) -> String {
+    format!("oauth:device:code:{device_code_hash}")
+}
+
+pub(crate) fn normalize_user_code(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_uppercase)
+        .collect()
+}
+
+pub(crate) fn device_user_code(user_code: &str) -> String {
+    format!(
+        "oauth:device:user_code:{}",
+        blake3_hex(&normalize_user_code(user_code))
+    )
+}
