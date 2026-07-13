@@ -106,11 +106,11 @@ async fn mfa_totp_confirm_inner(
         return response;
     }
     let repository = nazo_postgres::MfaRepository::new(state.diesel_db.clone());
-    match repository
+    let credential = match repository
         .totp_enrollment(user.tenant().tenant_id, user.user_id())
         .await
     {
-        Ok(Some(credential)) if !credential.confirmed => {}
+        Ok(Some(credential)) if !credential.confirmed => credential,
         Ok(Some(_)) => {
             return oauth_error(StatusCode::CONFLICT, "invalid_request", "TOTP MFA 已启用.");
         }
@@ -130,6 +130,27 @@ async fn mfa_totp_confirm_inner(
             );
         }
     };
+    if nazo_identity::mfa::verified_totp_step(
+        &credential.secret_base32,
+        &payload.code,
+        Utc::now().timestamp(),
+        credential.last_used_step,
+    )
+    .is_none()
+    {
+        if let Err(error) = repository
+            .record_invalid_totp_attempt(user.tenant().tenant_id, user.user_id())
+            .await
+        {
+            tracing::warn!(%error, "failed to persist invalid TOTP enrollment audit");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "MFA 验证失败.",
+            );
+        }
+        return oauth_error(StatusCode::BAD_REQUEST, "invalid_grant", "MFA 验证码无效.");
+    }
     let (backup_codes, hashes) = match generate_backup_codes_and_hashes() {
         Ok(value) => value,
         Err(error) => {
@@ -141,6 +162,25 @@ async fn mfa_totp_confirm_inner(
             );
         }
     };
+    let rotation =
+        match step_up_current_session(&state, &req, MfaVerificationMethod::Totp.amr()).await {
+            Ok(Some(rotation)) => rotation,
+            Ok(None) => {
+                return oauth_error(
+                    StatusCode::UNAUTHORIZED,
+                    "login_required",
+                    "当前会话已过期.",
+                );
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to step up current session before TOTP enrollment");
+                return oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "会话写入失败.",
+                );
+            }
+        };
     match repository
         .verify_and_confirm_totp(
             user.tenant().tenant_id,
@@ -156,36 +196,25 @@ async fn mfa_totp_confirm_inner(
             nazo_identity::ports::TotpVerificationOutcome::Invalid
             | nazo_identity::ports::TotpVerificationOutcome::Replay,
         ) => {
-            return oauth_error(StatusCode::BAD_REQUEST, "invalid_grant", "MFA 验证码无效.");
+            return with_rotated_session_cookies(
+                &state,
+                &rotation,
+                oauth_error(StatusCode::BAD_REQUEST, "invalid_grant", "MFA 验证码无效."),
+            );
         }
         Err(error) => {
             tracing::warn!(%error, "failed to confirm TOTP credential");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "MFA 启用失败.",
+            return with_rotated_session_cookies(
+                &state,
+                &rotation,
+                oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "MFA 启用失败.",
+                ),
             );
         }
     };
-    let rotation =
-        match step_up_current_session(&state, &req, MfaVerificationMethod::Totp.amr()).await {
-            Ok(Some(rotation)) => rotation,
-            Ok(None) => {
-                return oauth_error(
-                    StatusCode::UNAUTHORIZED,
-                    "login_required",
-                    "当前会话已过期.",
-                );
-            }
-            Err(error) => {
-                tracing::warn!(%error, "failed to step up current session after TOTP enrollment");
-                return oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "会话写入失败.",
-                );
-            }
-        };
     audit_event(
         "mfa_totp_enabled",
         audit_fields(&[("user_id", json!(user.id())), ("method", json!("totp"))]),

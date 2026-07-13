@@ -1185,6 +1185,26 @@ fn server_mfa_verification_does_not_query_migrated_tables_directly() {
 }
 
 #[test]
+fn totp_enrollment_orders_cross_store_changes_for_safe_recovery() {
+    let source = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../server/src/http/profile/mfa.rs"
+    ))
+    .expect("server MFA handler source is readable");
+    let invalid_audit = source
+        .find(".record_invalid_totp_attempt(")
+        .expect("invalid enrollment verification must be durably audited");
+    let session_rotation = source
+        .find("step_up_current_session(&state")
+        .expect("session and CSRF must rotate atomically before enabling MFA");
+    let postgres_confirmation = source
+        .find(".verify_and_confirm_totp(")
+        .expect("PostgreSQL confirmation must reverify under row lock");
+    assert!(invalid_audit < session_rotation);
+    assert!(session_rotation < postgres_confirmation);
+}
+
+#[test]
 fn server_has_no_identity_rows_or_identity_diesel_queries() {
     const FORBIDDEN: &[&str] = &[
         "UserRow",
