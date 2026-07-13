@@ -2,18 +2,12 @@
 //! 只从已授权 scope、显式授权的 claims 请求和本地用户事实源生成声明，不为缺失字段写入 null。
 
 use crate::settings::Settings;
-use base64::Engine;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 #[cfg(test)]
 use chrono::Utc;
-use hmac::{Hmac, KeyInit, Mac};
 use serde_json::{Value, json};
-use sha2::Sha256;
 use uuid::Uuid;
 
 use nazo_auth::OidcClaimRequest;
-
-type HmacSha256 = Hmac<Sha256>;
 
 pub(crate) fn oidc_subject(
     pairwise_subject_secret: &[u8],
@@ -22,21 +16,12 @@ pub(crate) fn oidc_subject(
     user_id: Uuid,
 ) -> String {
     debug_assert!(pairwise_subject_secret.len() >= 32);
-    let mut mac = HmacSha256::new_from_slice(pairwise_subject_secret)
-        .expect("pairwise_subject_secret should be valid");
-    mac.update(issuer.as_bytes());
-    mac.update(b"\x1f");
-    mac.update(sector_identifier_host.as_bytes());
-    mac.update(b"\x1f");
-    mac.update(user_id.to_string().as_bytes());
-    URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
-}
-
-fn sector_host_from_redirect_uri(redirect_uri: &str) -> String {
-    url::Url::parse(redirect_uri)
-        .ok()
-        .and_then(|url| url.host_str().map(ToOwned::to_owned))
-        .unwrap_or_default()
+    nazo_auth::pairwise_subject(
+        pairwise_subject_secret,
+        issuer,
+        sector_identifier_host,
+        user_id,
+    )
 }
 
 pub(crate) fn compute_subject_for_client(
@@ -46,28 +31,15 @@ pub(crate) fn compute_subject_for_client(
     sector_identifier_host: Option<&str>,
     redirect_uri: &str,
 ) -> anyhow::Result<String> {
-    match client_subject_type {
-        "public" => Ok(user_id.to_string()),
-        "pairwise" => {
-            let host = sector_identifier_host
-                .filter(|h| !h.is_empty())
-                .map(ToOwned::to_owned)
-                .unwrap_or_else(|| sector_host_from_redirect_uri(redirect_uri));
-            let secret = settings
-                .protocol
-                .pairwise_subject_secret
-                .as_deref()
-                .filter(|secret| secret.len() >= 32)
-                .ok_or_else(|| anyhow::anyhow!("PAIRWISE_SUBJECT_SECRET is required"))?;
-            Ok(oidc_subject(
-                secret.as_bytes(),
-                &settings.endpoint.issuer,
-                &host,
-                user_id,
-            ))
-        }
-        value => anyhow::bail!("unsupported client subject_type {value}"),
-    }
+    nazo_auth::oidc_subject_for_client(
+        &settings.endpoint.issuer,
+        settings.protocol.pairwise_subject_secret.as_deref(),
+        user_id,
+        client_subject_type,
+        sector_identifier_host,
+        redirect_uri,
+    )
+    .map_err(Into::into)
 }
 
 const PROFILE_CLAIMS: &[&str] = &[

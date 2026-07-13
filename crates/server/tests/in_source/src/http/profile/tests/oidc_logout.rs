@@ -9,6 +9,7 @@ use diesel::sql_types::{Bool, Jsonb, Nullable, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
 use fred::interfaces::ClientLike;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
+use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_postgres::get_conn;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -17,9 +18,94 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::config::ConfigSource;
+use crate::domain::{AppState, DatabaseUserFixture};
+use crate::settings::Settings;
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, SessionPayload, valkey_get, valkey_set_ex,
+};
 use nazo_postgres::create_pool;
 
 use crate::support::client_signing_fixture;
+
+async fn oidc_logout_from_state(
+    state: Data<AppState>,
+    req: HttpRequest,
+    payload: Payload,
+) -> HttpResponse {
+    super::oidc_logout(
+        Data::new(OidcLogoutHandles::from_test_state(state.get_ref())),
+        req,
+        payload,
+    )
+    .await
+}
+
+fn decode_id_token_hint(state: &AppState, token: &str) -> Option<IdTokenHintClaims> {
+    OidcLogoutHandles::from_test_state(state).decode_id_token_hint(token)
+}
+
+async fn lookup_logout_client(
+    state: &AppState,
+    client_id: Option<&str>,
+) -> Result<Option<BackchannelLogoutClient>, HttpResponse> {
+    lookup_logout_client_with_handles(&OidcLogoutHandles::from_test_state(state), client_id).await
+}
+
+async fn process_backchannel_logout_delivery_batch(state: &AppState) -> anyhow::Result<usize> {
+    process_backchannel_logout_delivery_batch_with_handles(&OidcLogoutHandles::from_test_state(
+        state,
+    ))
+    .await
+}
+
+fn id_token_hint_matches_current_session(
+    settings: &Settings,
+    client: Option<&BackchannelLogoutClient>,
+    user_id: Uuid,
+    oidc_sid: &str,
+    hint: &IdTokenHintClaims,
+) -> bool {
+    id_token_hint_matches_current_session_with_policy(
+        &settings.endpoint.issuer,
+        settings.protocol.pairwise_subject_secret.as_deref(),
+        client,
+        user_id,
+        oidc_sid,
+        hint,
+    )
+}
+
+fn unique_logout_subject_for_client(
+    settings: &Settings,
+    user_id: Uuid,
+    client: &BackchannelLogoutClient,
+) -> anyhow::Result<Option<String>> {
+    unique_logout_subject_for_client_with_policy(
+        &settings.endpoint.issuer,
+        settings.protocol.pairwise_subject_secret.as_deref(),
+        user_id,
+        client,
+    )
+}
+
+#[test]
+fn oidc_logout_transport_uses_focused_dependencies() {
+    let source = include_str!("../../../../../../src/http/profile/oidc_logout.rs");
+    assert!(source.contains("handles: Data<OidcLogoutHandles>"));
+    for forbidden in [
+        "Data<AppState>",
+        "nazo_postgres::",
+        "nazo_valkey::",
+        "diesel_db",
+        "valkey_connection",
+        "KeyManager",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "OIDC logout transport retained forbidden dependency {forbidden}"
+        );
+    }
+}
 
 #[derive(QueryableByName)]
 struct IdRow {
@@ -1033,7 +1119,7 @@ async fn rp_initiated_logout_frontchannel_notifies_only_hinted_client() {
     );
     let (req, payload) = fixture.logout_request(&uri, Some(&sid)).await;
 
-    let response = oidc_logout(fixture.state.clone(), req, payload).await;
+    let response = oidc_logout_from_state(fixture.state.clone(), req, payload).await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = actix_web::body::to_bytes(response.into_body())
         .await
@@ -1161,7 +1247,7 @@ async fn oidc_logout_rejects_invalid_id_token_hint_before_client_lookup() {
     )
     .await;
 
-    let response = oidc_logout(state, req, payload).await;
+    let response = oidc_logout_from_state(state, req, payload).await;
     let cookie_headers = response.headers().contains_key(header::SET_COOKIE);
     let (status, body) = oauth_error_json(response).await;
 
@@ -1205,7 +1291,7 @@ async fn oidc_logout_reports_session_lookup_failure_before_clearing_cookies() {
     .expect("session should store");
     let (req, payload) = fixture.logout_request("/oidc/logout", Some(&sid)).await;
 
-    let response = oidc_logout(state, req, payload).await;
+    let response = oidc_logout_from_state(state, req, payload).await;
     let cookie_headers = response.headers().contains_key(header::SET_COOKIE);
     let (status, body) = oauth_error_json(response).await;
 
@@ -1248,7 +1334,7 @@ async fn oidc_logout_clears_session_and_sends_backchannel_logout_token_with_regi
     );
     let (req, payload) = fixture.logout_request(&uri, Some(&sid)).await;
 
-    let response = oidc_logout(fixture.state.clone(), req, payload).await;
+    let response = oidc_logout_from_state(fixture.state.clone(), req, payload).await;
     let status = response.status();
     let location = response
         .headers()
@@ -1347,7 +1433,7 @@ async fn oidc_logout_accepts_current_session_id_token_hint_without_sid() {
     );
     let (req, payload) = fixture.logout_request(&uri, Some(&sid)).await;
 
-    let response = oidc_logout(fixture.state.clone(), req, payload).await;
+    let response = oidc_logout_from_state(fixture.state.clone(), req, payload).await;
     let status = response.status();
     let location = response
         .headers()
@@ -1409,7 +1495,7 @@ async fn oidc_logout_skips_backchannel_client_when_subject_policy_is_invalid() {
         ));
     let (req, payload) = logout_request_with_payload(request).await;
 
-    let response = oidc_logout(fixture.state.clone(), req, payload).await;
+    let response = oidc_logout_from_state(fixture.state.clone(), req, payload).await;
     let status = response.status();
     let location = response
         .headers()

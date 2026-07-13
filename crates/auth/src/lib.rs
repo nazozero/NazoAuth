@@ -14,6 +14,7 @@ mod device;
 mod error;
 mod grant;
 mod metadata;
+mod oidc_logout;
 mod profile;
 mod resource_indicator;
 mod sender_constraint;
@@ -72,6 +73,12 @@ pub use device::{
 pub use error::{ProtocolError, ProtocolErrorCode};
 pub use grant::GrantType;
 pub use metadata::{CapabilityAdmission, MetadataCapabilities, module_admissible};
+pub use oidc_logout::{
+    IdTokenHintClaims, LogoutClient, LogoutPolicyError, audience_contains, frontchannel_logout_url,
+    id_token_hint_matches_session, logout_subjects_for_client, oidc_subject_for_client,
+    pairwise_subject, resolve_logout_client_id, single_audience, unique_logout_subject_for_client,
+    validate_post_logout_redirect,
+};
 pub use profile::SecurityProfile;
 pub use resource_indicator::{ResourceIndicatorError, parse_resource_indicators};
 pub use sender_constraint::{
@@ -79,8 +86,8 @@ pub use sender_constraint::{
 };
 pub use signing::{SignError, SignRequest, Signature, Signer, SigningPurpose};
 pub use token::{
-    BackchannelLogoutDelivery, LostResponseRetry, NewRefreshToken, RefreshToken,
-    RefreshTokenPersistResult,
+    BackchannelLogoutDelivery, LostResponseRetry, NewRefreshToken,
+    PendingBackchannelLogoutDelivery, RefreshToken, RefreshTokenPersistResult,
 };
 pub use token_service::{
     AccessTokenRevocation, AccessTokenSignInput, AuthorizationCodeBeginResult,

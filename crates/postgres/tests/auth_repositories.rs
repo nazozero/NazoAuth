@@ -3,7 +3,10 @@ use diesel::{
     sql_types::{BigInt, Text, Uuid as SqlUuid},
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
-use nazo_auth::{AdminGrantRepositoryPort, NewRefreshToken, RefreshTokenPersistResult};
+use nazo_auth::{
+    AdminGrantRepositoryPort, NewRefreshToken, PendingBackchannelLogoutDelivery,
+    RefreshTokenPersistResult,
+};
 use nazo_postgres::{
     AuditRepository, AuthorizationRepository, GrantRepository, TokenRepository, create_pool,
 };
@@ -663,6 +666,52 @@ async fn audit_repository_records_scim_use_and_drives_logout_outbox() {
             .expect("completed delivery should not reclaim")
             .is_empty()
     );
+}
+
+#[tokio::test]
+async fn backchannel_logout_fanout_rolls_back_when_any_delivery_is_invalid() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let repository = AuditRepository::new(create_pool(&database_url, 4).unwrap());
+    let marker = format!("logout-atomic-{}", Uuid::now_v7());
+    let expires_at = chrono::Utc::now() + chrono::Duration::minutes(2);
+    let result = repository
+        .enqueue_backchannel_logout_batch(&[
+            PendingBackchannelLogoutDelivery {
+                tenant_id,
+                client_id: fixture.client_id,
+                client_public_id: fixture.client_public_id,
+                logout_uri: "https://client.example/backchannel-logout".to_owned(),
+                logout_token: marker.clone(),
+                expires_at,
+            },
+            PendingBackchannelLogoutDelivery {
+                tenant_id,
+                client_id: Uuid::now_v7(),
+                client_public_id: "missing-client".to_owned(),
+                logout_uri: "https://missing.example/backchannel-logout".to_owned(),
+                logout_token: format!("{marker}-invalid"),
+                expires_at,
+            },
+        ])
+        .await;
+    assert!(
+        result.is_err(),
+        "invalid fan-out member must fail the batch"
+    );
+
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let count = sql_query(
+        "SELECT COUNT(*) AS count FROM backchannel_logout_deliveries WHERE logout_token = $1",
+    )
+    .bind::<Text, _>(&marker)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("backchannel rollback count should load");
+    assert_eq!(count.count, 0, "fan-out must commit all deliveries or none");
 }
 
 #[test]

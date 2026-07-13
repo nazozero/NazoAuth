@@ -1,26 +1,12 @@
 //! OIDC RP-Initiated Logout and Back-Channel Logout support.
 //! The endpoint clears the OP browser session locally and persists
 //! Back-Channel Logout notifications in an outbox before returning.
-#[cfg(test)]
-use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_http_actix::{
     json_response_no_store, oauth_error, redirect_found, request_uses_form_urlencoded,
 };
 
-#[cfg(test)]
-use crate::domain::DatabaseUserFixture;
-use crate::domain::{AppState, ClientRow};
-use crate::settings::Settings;
-use crate::support::{
-    BackchannelLogoutTokenInput, CurrentSession, DEFAULT_TENANT_ID, audit_event, audit_fields,
-    blake3_hex, compute_subject_for_client, current_session, has_valid_csrf_token,
-    json_array_to_strings, jwt_decoding_key_from_jwk, make_backchannel_logout_token,
-    signing_algorithm_name,
-};
-#[cfg(test)]
-use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, SessionPayload, valkey_get, valkey_set_ex,
-};
+use crate::domain::{ClientRow, OidcLogoutHandles};
+use crate::support::{CurrentSession, DEFAULT_TENANT_ID, audit_event, audit_fields, blake3_hex};
 use actix_web::http::StatusCode;
 use actix_web::http::header;
 use actix_web::web::Payload;
@@ -28,9 +14,9 @@ use actix_web::web::{Bytes, Data};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::{DateTime, Duration, Utc};
 use futures_util::StreamExt;
-use nazo_http_actix::{clear_cookie, cookie_value, with_cookie_headers};
-use serde::Deserialize;
+use nazo_http_actix::{clear_cookie, with_cookie_headers};
 use serde_json::{Value, json};
+#[cfg(not(test))]
 use std::time::Duration as StdDuration;
 use uuid::Uuid;
 
@@ -71,16 +57,23 @@ struct FrontchannelLogoutClient {
 type BackchannelLogoutDelivery = nazo_auth::BackchannelLogoutDelivery;
 
 pub(crate) async fn oidc_logout(
-    state: Data<AppState>,
+    handles: Data<OidcLogoutHandles>,
     req: HttpRequest,
     mut payload: Payload,
 ) -> HttpResponse {
-    let form = match parse_logout_request(&req, &mut payload).await {
+    oidc_logout_with_handles(handles.get_ref(), req, &mut payload).await
+}
+
+async fn oidc_logout_with_handles(
+    handles: &OidcLogoutHandles,
+    req: HttpRequest,
+    payload: &mut Payload,
+) -> HttpResponse {
+    let form = match parse_logout_request(&req, payload).await {
         Ok(form) => form,
         Err(response) => return response,
     };
-    let session_cookie = cookie_value(&req, &state.settings.session.session_cookie_name);
-    let current_session = match current_session(&state, &req).await {
+    let current_session = match handles.current_session(&req).await {
         Ok(session) => session,
         Err(error) => {
             tracing::warn!(%error, "failed to resolve session for oidc logout");
@@ -94,7 +87,7 @@ pub(crate) async fn oidc_logout(
     let hint = form
         .id_token_hint
         .as_deref()
-        .and_then(|token| decode_id_token_hint(&state, token));
+        .and_then(|token| handles.decode_id_token_hint(token));
     if form.id_token_hint.is_some() && hint.is_none() {
         return oauth_error(
             StatusCode::BAD_REQUEST,
@@ -107,7 +100,7 @@ pub(crate) async fn oidc_logout(
         Ok(client_id) => client_id,
         Err(response) => return response,
     };
-    let client = match lookup_logout_client(&state, client_id.as_deref()).await {
+    let client = match lookup_logout_client_with_handles(handles, client_id.as_deref()).await {
         Ok(client) => client,
         Err(response) => return response,
     };
@@ -117,8 +110,7 @@ pub(crate) async fn oidc_logout(
     };
     if current_session.as_ref().is_some_and(|session| {
         !logout_request_authorizes_session_clear(
-            &state.settings,
-            &state,
+            handles,
             &req,
             session,
             hint.as_ref(),
@@ -132,16 +124,14 @@ pub(crate) async fn oidc_logout(
         );
     }
 
-    let frontchannel_urls = if state
-        .permits_existing_module_transaction(nazo_runtime_modules::ModuleId::FrontchannelLogout)
-    {
+    let frontchannel_urls = if handles.permits_existing_frontchannel_transaction() {
         if let Some(session) = current_session.as_ref() {
             let clients = if let Some(client) = client.as_ref() {
                 frontchannel_logout_client_for_logout_client(client)
                     .into_iter()
                     .collect::<Vec<_>>()
             } else {
-                match frontchannel_logout_clients_for_user(&state, session.user.id()).await {
+                match frontchannel_logout_clients_for_user(handles, session.user.id()).await {
                     Ok(clients) => clients,
                     Err(error) => {
                         tracing::warn!(%error, "failed to query front-channel logout clients");
@@ -152,19 +142,15 @@ pub(crate) async fn oidc_logout(
             clients
                 .into_iter()
                 .filter_map(|client| {
-                    frontchannel_logout_url(
-                        &client,
-                        &state.settings.endpoint.issuer,
-                        &session.oidc_sid,
-                    )
-                    .map_err(|error| {
-                        tracing::warn!(
-                            %error,
-                            client_id = %client.client_id,
-                            "failed to compose front-channel logout URI"
-                        );
-                    })
-                    .ok()
+                    frontchannel_logout_url(&client, handles.issuer(), &session.oidc_sid)
+                        .map_err(|error| {
+                            tracing::warn!(
+                                %error,
+                                client_id = %client.client_id,
+                                "failed to compose front-channel logout URI"
+                            );
+                        })
+                        .ok()
                 })
                 .collect::<Vec<_>>()
         } else {
@@ -176,7 +162,7 @@ pub(crate) async fn oidc_logout(
 
     if let Some(session) = current_session.as_ref()
         && let Err(error) =
-            enqueue_backchannel_logout(&state, session, hint.as_ref(), client.as_ref()).await
+            enqueue_backchannel_logout(handles, session, hint.as_ref(), client.as_ref()).await
     {
         tracing::warn!(%error, "failed to persist back-channel logout deliveries");
         return oauth_error(
@@ -186,11 +172,7 @@ pub(crate) async fn oidc_logout(
         );
     }
 
-    if let Some(session_id) = session_cookie {
-        let _ = nazo_valkey::SessionStore::new(&state.valkey_connection())
-            .delete(&session_id)
-            .await;
-    }
+    let _ = handles.delete_request_session(&req).await;
 
     audit_event(
         "oidc_logout",
@@ -229,12 +211,12 @@ pub(crate) async fn oidc_logout(
         response,
         &[
             clear_cookie(
-                &state.settings.session.session_cookie_name,
-                state.settings.session.cookie_secure,
+                handles.http_config().session_cookie_name(),
+                handles.http_config().cookie_secure(),
             ),
             clear_cookie(
-                &state.settings.session.csrf_cookie_name,
-                state.settings.session.cookie_secure,
+                handles.http_config().csrf_cookie_name(),
+                handles.http_config().cookie_secure(),
             ),
         ],
     )
@@ -245,13 +227,13 @@ fn frontchannel_logout_url(
     issuer: &str,
     oidc_sid: &str,
 ) -> anyhow::Result<String> {
-    let mut url = url::Url::parse(&client.frontchannel_logout_uri)?;
-    if client.frontchannel_logout_session_required {
-        url.query_pairs_mut()
-            .append_pair("iss", issuer)
-            .append_pair("sid", oidc_sid);
-    }
-    Ok(url.to_string())
+    nazo_auth::frontchannel_logout_url(
+        &client.frontchannel_logout_uri,
+        client.frontchannel_logout_session_required,
+        issuer,
+        oidc_sid,
+    )
+    .map_err(Into::into)
 }
 
 fn frontchannel_logout_document(frontchannel_urls: &[String], redirect: Option<&str>) -> String {
@@ -396,17 +378,17 @@ fn set_once(field: &mut Option<String>, value: &str) -> Result<(), HttpResponse>
 }
 
 fn logout_request_authorizes_session_clear(
-    settings: &Settings,
-    state: &AppState,
+    handles: &OidcLogoutHandles,
     req: &HttpRequest,
     session: &CurrentSession,
     hint: Option<&IdTokenHintClaims>,
     client: Option<&BackchannelLogoutClient>,
 ) -> bool {
-    has_valid_csrf_token(state, req, None)
+    handles.has_valid_csrf_token(req)
         || hint.is_some_and(|hint| {
-            id_token_hint_matches_current_session(
-                settings,
+            id_token_hint_matches_current_session_with_policy(
+                handles.issuer(),
+                handles.pairwise_subject_secret(),
                 client,
                 session.user.id(),
                 &session.oidc_sid,
@@ -415,97 +397,39 @@ fn logout_request_authorizes_session_clear(
         })
 }
 
-#[derive(Deserialize)]
-struct IdTokenHintClaims {
-    sub: String,
-    aud: Value,
-    #[serde(default)]
-    sid: Option<String>,
-}
-
-fn decode_id_token_hint(state: &AppState, token: &str) -> Option<IdTokenHintClaims> {
-    let header = jsonwebtoken::decode_header(token).ok()?;
-    if header.typ.as_deref().is_some_and(|typ| typ != "JWT")
-        || signing_algorithm_name(header.alg).is_none()
-    {
-        return None;
-    }
-    let keyset = state.keyset.snapshot();
-    let verification_key = keyset.verification_key(header.kid.as_deref()?)?;
-    let decoding_key = jwt_decoding_key_from_jwk(&verification_key.public_jwk, header.alg)?;
-    let mut validation = jsonwebtoken::Validation::new(header.alg);
-    validation.validate_aud = false;
-    validation.set_issuer(&[state.settings.endpoint.issuer.as_str()]);
-    jsonwebtoken::decode::<IdTokenHintClaims>(token, &decoding_key, &validation)
-        .ok()
-        .map(|data| data.claims)
-}
+type IdTokenHintClaims = nazo_auth::IdTokenHintClaims;
 
 fn identify_logout_client(
     form: &LogoutRequest,
     hint: Option<&IdTokenHintClaims>,
 ) -> Result<Option<String>, HttpResponse> {
-    match (form.client_id.as_deref(), hint) {
-        (Some(client_id), Some(hint)) if !audience_contains(&hint.aud, client_id) => {
-            Err(oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "client_id does not match id_token_hint audience.",
-            ))
-        }
-        (Some(client_id), _) => Ok(Some(client_id.to_owned())),
-        (None, Some(hint)) => single_audience(&hint.aud).map(Some).ok_or_else(|| {
-            oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "client_id is required when id_token_hint has multiple audiences.",
-            )
-        }),
-        (None, None) if form.post_logout_redirect_uri.is_some() => Err(oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "client_id or id_token_hint is required with post_logout_redirect_uri.",
-        )),
-        (None, None) => Ok(None),
-    }
+    nazo_auth::resolve_logout_client_id(
+        form.client_id.as_deref(),
+        form.post_logout_redirect_uri.is_some(),
+        hint,
+    )
+    .map_err(logout_policy_error_response)
 }
 
+#[cfg(test)]
 fn audience_contains(aud: &Value, client_id: &str) -> bool {
-    match aud {
-        Value::String(value) => value == client_id,
-        Value::Array(values) => values.iter().any(|value| value.as_str() == Some(client_id)),
-        _ => false,
-    }
+    nazo_auth::audience_contains(aud, client_id)
 }
 
+#[cfg(test)]
 fn single_audience(aud: &Value) -> Option<String> {
-    match aud {
-        Value::String(value) => Some(value.clone()),
-        Value::Array(values) => {
-            let audiences = values
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .take(2)
-                .collect::<Vec<_>>();
-            match audiences.as_slice() {
-                [audience] => Some(audience.clone()),
-                _ => None,
-            }
-        }
-        _ => None,
-    }
+    nazo_auth::single_audience(aud)
 }
 
-async fn lookup_logout_client(
-    state: &AppState,
+async fn lookup_logout_client_with_handles(
+    handles: &OidcLogoutHandles,
     client_id: Option<&str>,
 ) -> Result<Option<BackchannelLogoutClient>, HttpResponse> {
     let Some(client_id) = client_id else {
         return Ok(None);
     };
-    nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-        .by_client_id(DEFAULT_TENANT_ID, client_id)
+    handles
+        .logout_client(client_id, DEFAULT_TENANT_ID)
         .await
         .map_err(|error| {
             tracing::warn!(%error, "failed to query oidc logout client");
@@ -533,48 +457,49 @@ fn validate_post_logout_redirect(
     form: &LogoutRequest,
     client: Option<&BackchannelLogoutClient>,
 ) -> Result<Option<String>, HttpResponse> {
-    let Some(uri) = form.post_logout_redirect_uri.as_deref() else {
-        return Ok(None);
+    let registered = client.map(|client| json_value_strings(&client.post_logout_redirect_uris));
+    nazo_auth::validate_post_logout_redirect(
+        form.post_logout_redirect_uri.as_deref(),
+        form.state.as_deref(),
+        registered.as_deref(),
+    )
+    .map_err(logout_policy_error_response)
+}
+
+fn logout_policy_error_response(error: nazo_auth::LogoutPolicyError) -> HttpResponse {
+    let description = match error {
+        nazo_auth::LogoutPolicyError::ClientAudienceMismatch => {
+            "client_id does not match id_token_hint audience."
+        }
+        nazo_auth::LogoutPolicyError::AmbiguousAudience => {
+            "client_id is required when id_token_hint has multiple audiences."
+        }
+        nazo_auth::LogoutPolicyError::ClientRequiredForRedirect => {
+            "client_id or id_token_hint is required with post_logout_redirect_uri."
+        }
+        nazo_auth::LogoutPolicyError::RegisteredClientRequired => {
+            "post_logout_redirect_uri requires a registered client."
+        }
+        nazo_auth::LogoutPolicyError::UnregisteredRedirect => {
+            "post_logout_redirect_uri is not registered."
+        }
+        nazo_auth::LogoutPolicyError::InvalidRedirect => "post_logout_redirect_uri is invalid.",
+        nazo_auth::LogoutPolicyError::PairwiseSecretMissing
+        | nazo_auth::LogoutPolicyError::UnsupportedSubjectType => "logout subject policy failed.",
     };
-    let Some(client) = client else {
-        return Err(oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "post_logout_redirect_uri requires a registered client.",
-        ));
-    };
-    if !json_array_to_strings(&client.post_logout_redirect_uris)
-        .iter()
-        .any(|registered| registered == uri)
-    {
-        return Err(oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "post_logout_redirect_uri is not registered.",
-        ));
-    }
-    let mut url = url::Url::parse(uri).map_err(|_| {
-        oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "post_logout_redirect_uri is invalid.",
-        )
-    })?;
-    if let Some(state) = form.state.as_deref().filter(|state| !state.is_empty()) {
-        url.query_pairs_mut().append_pair("state", state);
-    }
-    Ok(Some(url.into()))
+    oauth_error(StatusCode::BAD_REQUEST, "invalid_request", description)
 }
 
 async fn enqueue_backchannel_logout(
-    state: &AppState,
+    handles: &OidcLogoutHandles,
     session: &CurrentSession,
     hint: Option<&IdTokenHintClaims>,
     hinted_client: Option<&BackchannelLogoutClient>,
 ) -> anyhow::Result<()> {
     if let Some(hint) = hint
-        && !id_token_hint_matches_current_session(
-            &state.settings,
+        && !id_token_hint_matches_current_session_with_policy(
+            handles.issuer(),
+            handles.pairwise_subject_secret(),
             hinted_client,
             session.user.id(),
             &session.oidc_sid,
@@ -584,7 +509,7 @@ async fn enqueue_backchannel_logout(
         tracing::warn!("id_token_hint subject or sid did not match the current OP session");
         return Ok(());
     }
-    let clients = match backchannel_logout_clients_for_user(state, session.user.id()).await {
+    let clients = match backchannel_logout_clients_for_user(handles, session.user.id()).await {
         Ok(mut clients) => {
             if let Some(client) = hinted_client
                 && !clients
@@ -597,75 +522,76 @@ async fn enqueue_backchannel_logout(
         }
         Err(error) => return Err(error),
     };
+    let mut deliveries = Vec::new();
     for client in clients {
         let Some(uri) = client.backchannel_logout_uri.clone() else {
             continue;
         };
-        let subject =
-            match unique_logout_subject_for_client(&state.settings, session.user.id(), &client) {
-                Ok(subject) => subject,
-                Err(_) => continue,
-            };
-        let token = match make_backchannel_logout_token(
-            state,
-            BackchannelLogoutTokenInput {
-                client_id: &client.client_id,
-                subject: subject.as_deref(),
-                sid: Some(session.oidc_sid.as_str()),
-                ttl: BACKCHANNEL_LOGOUT_TOKEN_TTL_SECONDS,
-            },
-        )
-        .await
+        let subject = match unique_logout_subject_for_client_with_policy(
+            handles.issuer(),
+            handles.pairwise_subject_secret(),
+            session.user.id(),
+            &client,
+        ) {
+            Ok(subject) => subject,
+            Err(_) => continue,
+        };
+        let token = match handles
+            .sign_backchannel_logout_token(
+                &client.client_id,
+                subject.as_deref(),
+                Some(session.oidc_sid.as_str()),
+                BACKCHANNEL_LOGOUT_TOKEN_TTL_SECONDS,
+            )
+            .await
         {
             Ok(token) => token,
             Err(error) => return Err(error.into()),
         };
-        persist_backchannel_logout_delivery(
-            state,
-            &client,
-            &uri,
-            &token,
-            Utc::now() + Duration::seconds(BACKCHANNEL_LOGOUT_TOKEN_TTL_SECONDS),
-        )
-        .await?;
+        deliveries.push(nazo_auth::PendingBackchannelLogoutDelivery {
+            tenant_id: client.tenant_id,
+            client_id: client.id,
+            client_public_id: client.client_id,
+            logout_uri: uri,
+            logout_token: token,
+            expires_at: Utc::now() + Duration::seconds(BACKCHANNEL_LOGOUT_TOKEN_TTL_SECONDS),
+        });
     }
-    Ok(())
+    handles
+        .enqueue_backchannel_logout_batch(&deliveries)
+        .await
+        .map_err(|error| anyhow::anyhow!("failed to enqueue backchannel logout: {error}"))
 }
 
 async fn backchannel_logout_clients_for_user(
-    state: &AppState,
+    handles: &OidcLogoutHandles,
     user_id: Uuid,
 ) -> anyhow::Result<Vec<BackchannelLogoutClient>> {
-    Ok(
-        nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-            .active_for_user(user_id)
-            .await?
-            .into_iter()
-            .filter(|client| client.backchannel_logout_uri.is_some())
-            .map(logout_client)
-            .collect(),
-    )
+    Ok(handles
+        .active_clients_for_user(user_id)
+        .await?
+        .into_iter()
+        .filter(|client| client.backchannel_logout_uri.is_some())
+        .map(logout_client)
+        .collect())
 }
 
 async fn frontchannel_logout_clients_for_user(
-    state: &AppState,
+    handles: &OidcLogoutHandles,
     user_id: Uuid,
 ) -> anyhow::Result<Vec<FrontchannelLogoutClient>> {
-    Ok(
-        nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-            .active_for_user(user_id)
-            .await?
-            .into_iter()
-            .filter_map(|client| {
-                Some(FrontchannelLogoutClient {
-                    client_id: client.client_id.clone(),
-                    frontchannel_logout_uri: client.frontchannel_logout_uri.clone()?,
-                    frontchannel_logout_session_required: client
-                        .frontchannel_logout_session_required,
-                })
+    Ok(handles
+        .active_clients_for_user(user_id)
+        .await?
+        .into_iter()
+        .filter_map(|client| {
+            Some(FrontchannelLogoutClient {
+                client_id: client.client_id.clone(),
+                frontchannel_logout_uri: client.frontchannel_logout_uri.clone()?,
+                frontchannel_logout_session_required: client.frontchannel_logout_session_required,
             })
-            .collect(),
-    )
+        })
+        .collect())
 }
 
 fn logout_client(client: ClientRow) -> BackchannelLogoutClient {
@@ -696,59 +622,59 @@ fn frontchannel_logout_client_for_logout_client(
         })
 }
 
-fn id_token_hint_matches_current_session(
-    settings: &Settings,
+fn id_token_hint_matches_current_session_with_policy(
+    issuer: &str,
+    pairwise_subject_secret: Option<&str>,
     client: Option<&BackchannelLogoutClient>,
     user_id: Uuid,
     oidc_sid: &str,
     hint: &IdTokenHintClaims,
 ) -> bool {
-    if hint
-        .sid
-        .as_deref()
-        .is_some_and(|hint_sid| hint_sid != oidc_sid)
-    {
-        return false;
-    }
-    client.is_some_and(|client| {
-        logout_subjects_for_client(settings, user_id, client)
-            .is_ok_and(|subjects| subjects.iter().any(|subject| subject == &hint.sub))
-    })
+    let client = client.map(protocol_logout_client);
+    nazo_auth::id_token_hint_matches_session(
+        issuer,
+        pairwise_subject_secret,
+        client.as_ref(),
+        user_id,
+        oidc_sid,
+        hint,
+    )
 }
 
-fn unique_logout_subject_for_client(
-    settings: &Settings,
+fn unique_logout_subject_for_client_with_policy(
+    issuer: &str,
+    pairwise_subject_secret: Option<&str>,
     user_id: Uuid,
     client: &BackchannelLogoutClient,
 ) -> anyhow::Result<Option<String>> {
-    let subjects = logout_subjects_for_client(settings, user_id, client)?;
-    match subjects.as_slice() {
-        [subject] => Ok(Some(subject.clone())),
-        _ => Ok(None),
+    nazo_auth::unique_logout_subject_for_client(
+        issuer,
+        pairwise_subject_secret,
+        user_id,
+        &protocol_logout_client(client),
+    )
+    .map_err(Into::into)
+}
+
+fn protocol_logout_client(client: &BackchannelLogoutClient) -> nazo_auth::LogoutClient {
+    nazo_auth::LogoutClient {
+        redirect_uris: json_value_strings(&client.redirect_uris),
+        subject_type: client.subject_type.clone(),
+        sector_identifier_host: client.sector_identifier_host.clone(),
     }
 }
 
-fn logout_subjects_for_client(
-    settings: &Settings,
-    user_id: Uuid,
-    client: &BackchannelLogoutClient,
-) -> anyhow::Result<Vec<String>> {
-    let mut redirect_uris = json_array_to_strings(&client.redirect_uris);
-    if redirect_uris.is_empty() {
-        redirect_uris.push(String::new());
-    }
-    let sector_host = client.sector_identifier_host.as_deref();
-    let subject_type = client.subject_type.as_str();
-    let mut subjects = Vec::with_capacity(redirect_uris.len());
-    for redirect_uri in redirect_uris {
-        let redirect_uri = redirect_uri.as_str();
-        let subject =
-            compute_subject_for_client(settings, user_id, subject_type, sector_host, redirect_uri)?;
-        subjects.push(subject);
-    }
-    subjects.sort();
-    subjects.dedup();
-    Ok(subjects)
+fn json_value_strings(value: &Value) -> Vec<String> {
+    value
+        .as_array()
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 async fn post_backchannel_logout(uri: &str, token: &str) -> anyhow::Result<()> {
@@ -773,26 +699,6 @@ async fn post_backchannel_logout(uri: &str, token: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn persist_backchannel_logout_delivery(
-    state: &AppState,
-    client: &BackchannelLogoutClient,
-    uri: &str,
-    token: &str,
-    expires_at: DateTime<Utc>,
-) -> anyhow::Result<()> {
-    nazo_postgres::AuditRepository::new(state.diesel_db.clone())
-        .enqueue_backchannel_logout(
-            client.tenant_id,
-            client.id,
-            &client.client_id,
-            uri,
-            token,
-            expires_at,
-        )
-        .await
-        .map_err(|error| anyhow::anyhow!("failed to enqueue backchannel logout: {error}"))
-}
-
 fn backchannel_logout_next_retry_at(
     attempt_index: i32,
     now: DateTime<Utc>,
@@ -809,27 +715,27 @@ fn backchannel_logout_next_retry_at(
 }
 
 async fn claim_due_backchannel_logout_deliveries(
-    state: &AppState,
+    handles: &OidcLogoutHandles,
     limit: i64,
 ) -> anyhow::Result<Vec<BackchannelLogoutDelivery>> {
-    nazo_postgres::AuditRepository::new(state.diesel_db.clone())
+    handles
         .claim_due_backchannel_logout(limit, BACKCHANNEL_LOGOUT_LOCK_TIMEOUT_SECONDS as i32)
         .await
         .map_err(|error| anyhow::anyhow!("failed to claim backchannel logout: {error}"))
 }
 
 async fn mark_backchannel_logout_delivery_success(
-    state: &AppState,
+    handles: &OidcLogoutHandles,
     delivery: &BackchannelLogoutDelivery,
 ) -> anyhow::Result<()> {
-    nazo_postgres::AuditRepository::new(state.diesel_db.clone())
-        .complete_backchannel_logout(delivery.id, delivery.attempts)
+    handles
+        .complete_backchannel_logout(delivery)
         .await
         .map_err(|error| anyhow::anyhow!("failed to complete backchannel logout: {error}"))
 }
 
 async fn mark_backchannel_logout_delivery_failure(
-    state: &AppState,
+    handles: &OidcLogoutHandles,
     delivery: &BackchannelLogoutDelivery,
     error: &str,
 ) -> anyhow::Result<()> {
@@ -837,8 +743,8 @@ async fn mark_backchannel_logout_delivery_failure(
     let last_error = truncate_backchannel_logout_error(error);
     let next_attempt_at =
         backchannel_logout_next_retry_at(delivery.attempts - 1, now, delivery.expires_at);
-    nazo_postgres::AuditRepository::new(state.diesel_db.clone())
-        .fail_backchannel_logout(delivery.id, delivery.attempts, next_attempt_at, &last_error)
+    handles
+        .fail_backchannel_logout(delivery, next_attempt_at, &last_error)
         .await
         .map_err(|error| anyhow::anyhow!("failed to update backchannel logout: {error}"))
 }
@@ -850,16 +756,16 @@ fn truncate_backchannel_logout_error(error: &str) -> String {
         .collect()
 }
 
-pub(crate) async fn process_backchannel_logout_delivery_batch(
-    state: &AppState,
+async fn process_backchannel_logout_delivery_batch_with_handles(
+    handles: &OidcLogoutHandles,
 ) -> anyhow::Result<usize> {
     let deliveries =
-        claim_due_backchannel_logout_deliveries(state, BACKCHANNEL_LOGOUT_DELIVERY_BATCH_SIZE)
+        claim_due_backchannel_logout_deliveries(handles, BACKCHANNEL_LOGOUT_DELIVERY_BATCH_SIZE)
             .await?;
     let processed = deliveries.len();
     for delivery in deliveries {
         match post_backchannel_logout(&delivery.logout_uri, &delivery.logout_token).await {
-            Ok(()) => mark_backchannel_logout_delivery_success(state, &delivery).await?,
+            Ok(()) => mark_backchannel_logout_delivery_success(handles, &delivery).await?,
             Err(error) => {
                 let error_message = error.to_string();
                 tracing::warn!(
@@ -867,17 +773,21 @@ pub(crate) async fn process_backchannel_logout_delivery_batch(
                     backchannel_logout_uri = %delivery.logout_uri,
                     "backchannel logout delivery failed"
                 );
-                mark_backchannel_logout_delivery_failure(state, &delivery, &error_message).await?;
+                mark_backchannel_logout_delivery_failure(handles, &delivery, &error_message)
+                    .await?;
             }
         }
     }
     Ok(processed)
 }
 
-pub(crate) fn spawn_backchannel_logout_delivery_worker(state: Data<AppState>) {
+#[cfg(not(test))]
+pub(crate) fn spawn_backchannel_logout_delivery_worker(handles: Data<OidcLogoutHandles>) {
     tokio::spawn(async move {
         loop {
-            if let Err(error) = process_backchannel_logout_delivery_batch(&state).await {
+            if let Err(error) =
+                process_backchannel_logout_delivery_batch_with_handles(&handles).await
+            {
                 let error_message = error.to_string();
                 tracing::warn!(
                     error = %error_message,

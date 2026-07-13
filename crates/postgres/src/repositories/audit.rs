@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use diesel::{BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
-use nazo_auth::BackchannelLogoutDelivery;
+use nazo_auth::{BackchannelLogoutDelivery, PendingBackchannelLogoutDelivery};
 use nazo_identity::ports::{
     RepositoryError, RepositoryFuture, ScimCredentialAuditPort, ScimCredentialUse,
 };
@@ -104,20 +104,47 @@ impl AuditRepository {
         logout_token: &str,
         expires_at: DateTime<Utc>,
     ) -> Result<(), RepositoryError> {
+        self.enqueue_backchannel_logout_batch(&[PendingBackchannelLogoutDelivery {
+            tenant_id,
+            client_id,
+            client_public_id: client_public_id.to_owned(),
+            logout_uri: logout_uri.to_owned(),
+            logout_token: logout_token.to_owned(),
+            expires_at,
+        }])
+        .await
+    }
+
+    /// Atomically persists every notification produced by one OP logout.
+    /// A client FK or storage failure therefore cannot leave a partially queued fan-out.
+    pub async fn enqueue_backchannel_logout_batch(
+        &self,
+        deliveries: &[PendingBackchannelLogoutDelivery],
+    ) -> Result<(), RepositoryError> {
+        if deliveries.is_empty() {
+            return Ok(());
+        }
         let mut connection = self.connection().await?;
-        diesel::insert_into(backchannel_logout_deliveries::table)
-            .values((
-                backchannel_logout_deliveries::tenant_id.eq(tenant_id),
-                backchannel_logout_deliveries::client_id.eq(client_id),
-                backchannel_logout_deliveries::client_public_id.eq(client_public_id),
-                backchannel_logout_deliveries::logout_uri.eq(logout_uri),
-                backchannel_logout_deliveries::logout_token.eq(logout_token),
-                backchannel_logout_deliveries::expires_at.eq(expires_at),
-            ))
-            .execute(&mut connection)
+        connection
+            .transaction::<(), diesel::result::Error, _>(async |connection| {
+                for delivery in deliveries {
+                    diesel::insert_into(backchannel_logout_deliveries::table)
+                        .values((
+                            backchannel_logout_deliveries::tenant_id.eq(delivery.tenant_id),
+                            backchannel_logout_deliveries::client_id.eq(delivery.client_id),
+                            backchannel_logout_deliveries::client_public_id
+                                .eq(&delivery.client_public_id),
+                            backchannel_logout_deliveries::logout_uri.eq(&delivery.logout_uri),
+                            backchannel_logout_deliveries::logout_token.eq(&delivery.logout_token),
+                            backchannel_logout_deliveries::expires_at.eq(delivery.expires_at),
+                        ))
+                        .execute(connection)
+                        .await?;
+                }
+                Ok(())
+            })
             .await
-            .map_err(map_error)?;
-        Ok(())
+            .map_err(map_error)
     }
 
     pub async fn claim_due_backchannel_logout(

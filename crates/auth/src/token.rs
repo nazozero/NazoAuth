@@ -59,3 +59,13 @@ pub struct BackchannelLogoutDelivery {
     pub attempts: i32,
     pub expires_at: DateTime<Utc>,
 }
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingBackchannelLogoutDelivery {
+    pub tenant_id: Uuid,
+    pub client_id: Uuid,
+    pub client_public_id: String,
+    pub logout_uri: String,
+    pub logout_token: String,
+    pub expires_at: DateTime<Utc>,
+}

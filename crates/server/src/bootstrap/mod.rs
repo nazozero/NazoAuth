@@ -30,8 +30,8 @@ use actix_web::{App, HttpServer, dev::Service, middleware::from_fn, web};
 use crate::config::{ConfigSource, database_max_connections, database_url};
 use crate::domain::{
     AppState, DynamicRegistrationConfig, DynamicRegistrationHandles, MetadataConfig,
-    MetadataHandles, MfaProfileConfig, MfaProfileHandles, ResourceServerConfig,
-    ResourceServerHandles,
+    MetadataHandles, MfaProfileConfig, MfaProfileHandles, OidcLogoutConfig, OidcLogoutHandles,
+    ResourceServerConfig, ResourceServerHandles,
 };
 use crate::http::admin::access_requests::AdminAccessRequestConfig;
 use crate::http::admin::clients::{
@@ -46,6 +46,7 @@ use crate::http::auth::federation::{
 use crate::http::auth::login::LoginHttpConfig;
 use crate::http::auth::passkey::PasskeyHttpConfig;
 use crate::http::authorization::{AuthorizationHttpConfig, ServerAuthorizationService};
+#[cfg(not(test))]
 use crate::http::profile::oidc_logout::spawn_backchannel_logout_delivery_worker;
 use crate::http::scim::{ScimConfig, ScimEndpoint, ScimRuntimeAdmission};
 use crate::runtime_modules::{RuntimeModules, ServerRuntimeModuleRegistry};
@@ -227,6 +228,24 @@ pub async fn run() -> anyhow::Result<()> {
         &state.settings.endpoint.issuer,
         state.settings.modules.enable_session_management,
     ));
+    #[cfg(not(test))]
+    let oidc_logout = web::Data::new(OidcLogoutHandles::new(
+        session_profiles.get_ref().clone(),
+        nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone()),
+        nazo_postgres::AuditRepository::new(state.diesel_db.clone()),
+        state.keyset.clone(),
+        OidcLogoutConfig::from(state.settings.as_ref()),
+        runtime_modules.registry.clone(),
+    ));
+    #[cfg(test)]
+    let oidc_logout = web::Data::new(OidcLogoutHandles::new(
+        session_profiles.get_ref().clone(),
+        nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone()),
+        nazo_postgres::AuditRepository::new(state.diesel_db.clone()),
+        state.keyset.clone(),
+        OidcLogoutConfig::from(state.settings.as_ref()),
+        state.settings.modules.enable_frontchannel_logout,
+    ));
     let mfa_rate_limit_connection = state.valkey_connection();
     let csrf_http_config = web::Data::new(CsrfHttpConfig::new(
         session.csrf_cookie_name.as_str(),
@@ -378,7 +397,8 @@ pub async fn run() -> anyhow::Result<()> {
         session.session_ttl_seconds,
         session.cookie_secure,
     ));
-    spawn_backchannel_logout_delivery_worker(state.clone());
+    #[cfg(not(test))]
+    spawn_backchannel_logout_delivery_worker(oidc_logout.clone());
 
     let bind = config.string("BIND", "0.0.0.0:8000");
     let addr: SocketAddr = bind.parse()?;
@@ -425,6 +445,7 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(metadata_handles.clone())
             .app_data(admin_sessions.clone())
             .app_data(session_profiles.clone())
+            .app_data(oidc_logout.clone())
             .app_data(csrf_http_config.clone())
             .app_data(mfa_profiles.clone())
             .app_data(account_profiles.clone())

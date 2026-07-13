@@ -2198,11 +2198,13 @@ dependencies = [
  "anyhow",
  "base64",
  "chrono",
+ "hmac 0.13.0",
  "nazo-identity",
  "nazo-runtime-modules",
  "proptest",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "url",
  "uuid",
 ]

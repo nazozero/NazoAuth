@@ -7,6 +7,7 @@ mod dynamic_registration;
 mod metadata;
 mod mfa;
 mod oauth;
+mod oidc_logout;
 mod resource_server;
 mod rows;
 mod state;
@@ -23,6 +24,7 @@ pub(crate) use oauth::{
     AuthorizationCodeState, CodePayload, ConsentPayload, ConsumedAuthorizationCode,
     NativeSsoTokenBinding, PushedAuthorizationRequest, RefreshTokenPolicy, TokenIssue,
 };
+pub(crate) use oidc_logout::{OidcLogoutConfig, OidcLogoutHandles};
 pub(crate) use resource_server::{ResourceServerConfig, ResourceServerHandles};
 pub(crate) use rows::{ClientRow, TokenRow};
 pub(crate) use state::AppState;
