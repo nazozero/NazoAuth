@@ -14,12 +14,12 @@ nazo-identity = { version = "0.1.0", path = "../identity" }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 thiserror = "2.0.18"
-uuid = { version = "1.23.4", features = ["serde"] }
+uuid = { version = "1.23.5", features = ["serde"] }
 
 [dev-dependencies]
 futures-util = "0.3.32"
 tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread"] }
-uuid = { version = "1.23.4", features = ["v7", "serde"] }
+uuid = { version = "1.23.5", features = ["v7", "serde"] }
 
 [lints]
 workspace = true

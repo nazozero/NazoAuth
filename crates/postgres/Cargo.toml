@@ -10,7 +10,7 @@ anyhow = "1.0.103"
 argon2 = "0.5.3"
 blake3 = "1.8.2"
 chrono = { version = "0.4.45", features = ["serde"] }
-diesel = { version = "2.3.10", features = ["postgres", "uuid", "chrono", "serde_json", "64-column-tables"] }
+diesel = { version = "2.3.11", features = ["postgres", "uuid", "chrono", "serde_json", "64-column-tables"] }
 diesel-async = { version = "0.9.2", features = ["postgres", "deadpool"] }
 diesel_migrations = "2.3.2"
 nazo-identity = { version = "0.1.0", path = "../identity" }
@@ -19,7 +19,7 @@ nazo-runtime-modules = { version = "0.1.0", path = "../runtime-modules" }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 tokio = { version = "1.52.3", features = ["rt"] }
-uuid = { version = "1.23.4", features = ["v7", "serde"] }
+uuid = { version = "1.23.5", features = ["v7", "serde"] }
 
 [dev-dependencies]
 syn = { version = "2.0.118", features = ["full", "visit"] }
