@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::{
     AuthorizationCodeBegin, AuthorizationStore, AuthorizationTransition, Error, ErrorKind,
-    TokenStateStore, ValkeyConnection,
+    RateDimension, RateLimitStore, TokenStateStore, ValkeyConnection,
 };
 
 /// Valkey mechanisms required by token issuance. Business policy remains in `nazo-auth`.
@@ -15,6 +15,7 @@ use crate::{
 pub struct TokenIssuanceStateAdapter {
     authorization: AuthorizationStore,
     tokens: TokenStateStore,
+    rate_limits: RateLimitStore,
 }
 
 impl TokenIssuanceStateAdapter {
@@ -23,6 +24,7 @@ impl TokenIssuanceStateAdapter {
         Self {
             authorization: AuthorizationStore::new(connection),
             tokens: TokenStateStore::new(connection),
+            rate_limits: RateLimitStore::new(connection),
         }
     }
 }
@@ -79,6 +81,19 @@ impl TokenStateStorePort for TokenIssuanceStateAdapter {
         Box::pin(async move {
             self.tokens
                 .store_access_token_subject(tenant_id, jti, user_id, ttl_seconds)
+                .await
+                .map_err(map_error)
+        })
+    }
+
+    fn increment_token_management_rate<'a>(
+        &'a self,
+        subject: &'a str,
+        window_seconds: u64,
+    ) -> TokenFuture<'a, u64> {
+        Box::pin(async move {
+            self.rate_limits
+                .increment(RateDimension::TokenManagement, subject, window_seconds)
                 .await
                 .map_err(map_error)
         })

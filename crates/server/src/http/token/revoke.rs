@@ -1,17 +1,12 @@
 //! token revoke 端点。
-use crate::domain::AppState;
-#[cfg(test)]
-use crate::domain::ClientRow;
-#[cfg(test)]
-use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::{
     AccessTokenJwtInput, DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, IssuedAccessToken, make_jwt,
 };
 use crate::support::{
-    DEFAULT_TENANT_ID, RateLimitPolicy, audit_event, audit_fields, blake3_hex, client_ip,
-    decode_access_claims, enforce_rate_limit, extract_client_credentials,
-    has_basic_authorization_scheme,
+    audit_event, audit_fields, blake3_hex, client_ip_with_config,
+    extract_client_credentials_with_trusted_proxies, has_basic_authorization_scheme,
+    rate_limited_response,
 };
 use actix_web::http::StatusCode;
 #[cfg(test)]
@@ -20,7 +15,6 @@ use actix_web::http::header;
 use actix_web::http::header::HeaderValue;
 use actix_web::web::{Bytes, Data};
 use actix_web::{HttpRequest, HttpResponse};
-use chrono::{DateTime, Utc};
 #[cfg(test)]
 use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_http_actix::empty_response_no_store;
@@ -31,21 +25,52 @@ use serde_json::json;
 use uuid::Uuid;
 // 只处理 refresh token 撤销和 access token jti 黑名单写入。
 use super::{
-    TokenManagementClientAuthError, authenticate_revocation_client, parse_token_management_form,
+    ServerTokenService, TokenManagementClientAuthError,
+    authenticate_revocation_client_with_dependencies, parse_token_management_form,
     token_management_client_auth_error, token_management_form_error,
     token_management_has_conflicting_client_auth, token_management_oauth_error,
 };
+use crate::http::authorization::{AuthorizationHttpConfig, ServerAuthorizationService};
 
-pub(crate) async fn revoke(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
-    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await
+pub(crate) async fn revoke(
+    token_service: Data<ServerTokenService>,
+    authorization_service: Data<ServerAuthorizationService>,
+    config: Data<AuthorizationHttpConfig>,
+    req: HttpRequest,
+    body: Bytes,
+) -> HttpResponse {
+    let subject = client_ip_with_config(&req, &config.client_ip);
+    match token_service
+        .increment_token_management_rate(&subject, config.rate_limit_window_seconds)
+        .await
     {
-        return response;
+        Ok(count) if count > config.token_management_max_requests => {
+            return rate_limited_response(config.rate_limit_window_seconds);
+        }
+        Ok(_) => {}
+        Err(error) => {
+            tracing::warn!(%error, "token revocation rate limit increment failed");
+            return nazo_http_actix::oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "请求频率校验失败.",
+            );
+        }
     }
-    revoke_after_rate_limit(state, req, body).await
+    revoke_after_rate_limit_with_dependencies(
+        &token_service,
+        &authorization_service,
+        &config,
+        req,
+        body,
+    )
+    .await
 }
 
-pub(crate) async fn revoke_after_rate_limit(
-    state: Data<AppState>,
+async fn revoke_after_rate_limit_with_dependencies(
+    token_service: &ServerTokenService,
+    authorization_service: &ServerAuthorizationService,
+    config: &AuthorizationHttpConfig,
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
@@ -62,9 +87,9 @@ pub(crate) async fn revoke_after_rate_limit(
             "同一请求不能同时使用多种客户端认证方式.",
         );
     }
-    let credentials = extract_client_credentials(
+    let credentials = extract_client_credentials_with_trusted_proxies(
         &req,
-        &state.settings,
+        &config.trusted_proxy_cidrs,
         form.client_id.as_deref(),
         form.client_secret.as_deref(),
         form.client_assertion_type.as_deref(),
@@ -76,10 +101,7 @@ pub(crate) async fn revoke_after_rate_limit(
             has_basic,
         );
     };
-    let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-        .by_client_id(DEFAULT_TENANT_ID, client_id)
-        .await
-    {
+    let client = match authorization_service.client_by_id(client_id).await {
         Ok(Some(client)) => client,
         Ok(None) => {
             return token_management_client_auth_error(
@@ -96,12 +118,21 @@ pub(crate) async fn revoke_after_rate_limit(
             );
         }
     };
-    if let Err(error) = authenticate_revocation_client(&state, &req, &client, &credentials).await {
+    if let Err(error) = authenticate_revocation_client_with_dependencies(
+        authorization_service,
+        &config.issuer,
+        &config.client_secret_pepper,
+        &config.trusted_proxy_cidrs,
+        &req,
+        &client,
+        &credentials,
+    )
+    .await
+    {
         return token_management_client_auth_error(error, has_basic);
     }
-    let token_repository = nazo_postgres::TokenRepository::new(state.diesel_db.clone());
-    let updated = match token_repository
-        .revoke_refresh_token(client.tenant_id, client.id, &form.token)
+    let updated = match token_service
+        .revoke_token(&config.issuer, &form.token, &client)
         .await
     {
         Ok(updated) => updated,
@@ -114,21 +145,6 @@ pub(crate) async fn revoke_after_rate_limit(
             );
         }
     };
-    if updated == 0
-        && let Some(claims) = decode_access_claims(&state, &form.token)
-        && claims.client_id == client.client_id
-        && let Some(expires_at) = DateTime::<Utc>::from_timestamp(claims.exp, 0)
-        && let Err(error) = token_repository
-            .revoke_access_token(client.tenant_id, client.id, &claims.jti, expires_at)
-            .await
-    {
-        tracing::warn!(%error, "failed to revoke access token");
-        return token_management_oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "token 撤销失败.",
-        );
-    }
     audit_event(
         "token_revoked",
         audit_fields(&[
@@ -137,7 +153,7 @@ pub(crate) async fn revoke_after_rate_limit(
             ("updated", json!(updated)),
             (
                 "source_ip_hash",
-                json!(blake3_hex(&client_ip(&req, &state.settings))),
+                json!(blake3_hex(&client_ip_with_config(&req, &config.client_ip))),
             ),
         ]),
     );

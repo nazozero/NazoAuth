@@ -31,14 +31,57 @@ pub(crate) enum TokenManagementClientAuthError {
     StoreUnavailable,
 }
 
-async fn authenticate_confidential_client(
-    state: &AppState,
+pub(crate) async fn authenticate_introspection_client_with_dependencies(
+    service: &crate::http::authorization::ServerAuthorizationService,
+    issuer: &str,
+    client_secret_pepper: &str,
+    trusted_proxy_cidrs: &[crate::support::IpCidr],
     req: &HttpRequest,
     client: &ClientRow,
     credentials: &ClientCredentials,
 ) -> Result<(), TokenManagementClientAuthError> {
-    let assertion = verify_confidential_client(state, req, client, credentials).await?;
-    consume_token_management_client_assertion(state, client, assertion.as_ref()).await
+    let assertion = verify_confidential_client_with_dependencies(
+        service,
+        issuer,
+        client_secret_pepper,
+        trusted_proxy_cidrs,
+        req,
+        client,
+        credentials,
+    )
+    .await?;
+    consume_token_management_client_assertion_with_authorization_service(
+        service,
+        client,
+        assertion.as_ref(),
+    )
+    .await
+}
+
+pub(crate) async fn authenticate_revocation_client_with_dependencies(
+    service: &crate::http::authorization::ServerAuthorizationService,
+    issuer: &str,
+    client_secret_pepper: &str,
+    trusted_proxy_cidrs: &[crate::support::IpCidr],
+    req: &HttpRequest,
+    client: &ClientRow,
+    credentials: &ClientCredentials,
+) -> Result<(), TokenManagementClientAuthError> {
+    if client.client_type != "confidential" {
+        return revocation_public_client_allows_credentials(credentials)
+            .then_some(())
+            .ok_or(TokenManagementClientAuthError::InvalidClient);
+    }
+    authenticate_introspection_client_with_dependencies(
+        service,
+        issuer,
+        client_secret_pepper,
+        trusted_proxy_cidrs,
+        req,
+        client,
+        credentials,
+    )
+    .await
 }
 
 pub(crate) async fn verify_confidential_client(
@@ -186,29 +229,6 @@ fn log_client_auth_rejection(
         client.token_endpoint_auth_method,
         credentials.method
     );
-}
-
-pub(crate) async fn authenticate_introspection_client(
-    state: &AppState,
-    req: &HttpRequest,
-    client: &ClientRow,
-    credentials: &ClientCredentials,
-) -> Result<(), TokenManagementClientAuthError> {
-    authenticate_confidential_client(state, req, client, credentials).await
-}
-
-pub(crate) async fn authenticate_revocation_client(
-    state: &AppState,
-    req: &HttpRequest,
-    client: &ClientRow,
-    credentials: &ClientCredentials,
-) -> Result<(), TokenManagementClientAuthError> {
-    if client.client_type == "confidential" {
-        return authenticate_confidential_client(state, req, client, credentials).await;
-    }
-    revocation_public_client_allows_credentials(credentials)
-        .then_some(())
-        .ok_or(TokenManagementClientAuthError::InvalidClient)
 }
 
 fn revocation_public_client_allows_credentials(credentials: &ClientCredentials) -> bool {

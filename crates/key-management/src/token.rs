@@ -1,8 +1,9 @@
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
 use nazo_auth::{
-    AccessTokenClaimsInput, AccessTokenSignInput, IdTokenClaimsInput, IdTokenSignInput,
-    IssuedAccessToken, SigningPurpose, TokenFuture, TokenPortError, TokenSignerPort,
-    access_token_claims, id_token_claims,
+    AccessTokenClaimsInput, AccessTokenSignInput, Claims, IdTokenClaimsInput, IdTokenSignInput,
+    IntrospectionSignInput, IssuedAccessToken, SigningPurpose, TokenFuture, TokenPortError,
+    TokenSignerPort, access_token_claims, id_token_claims,
 };
 use serde_json::Value;
 use uuid::Uuid;
@@ -84,5 +85,119 @@ impl TokenSignerPort for KeyManager {
                 .await
                 .map_err(|_| TokenPortError::Unavailable)
         })
+    }
+
+    fn decode_access_token<'a>(
+        &'a self,
+        issuer: &'a str,
+        token: &'a str,
+    ) -> TokenFuture<'a, Option<Claims>> {
+        Box::pin(async move {
+            let Some(header) = jsonwebtoken::decode_header(token).ok() else {
+                return Ok(None);
+            };
+            if header.typ.as_deref() != Some("at+jwt")
+                || crate::signing_algorithm_name(header.alg).is_none()
+            {
+                return Ok(None);
+            }
+            let snapshot = self.snapshot();
+            let Some(key) = header
+                .kid
+                .as_deref()
+                .and_then(|kid| snapshot.verification_key(kid))
+            else {
+                return Ok(None);
+            };
+            let Some(decoding_key) = decoding_key(&key.public_jwk, header.alg) else {
+                return Ok(None);
+            };
+            let mut validation = jsonwebtoken::Validation::new(header.alg);
+            validation.validate_aud = false;
+            validation.set_issuer(&[issuer]);
+            let Some(data) = jsonwebtoken::decode::<Claims>(token, &decoding_key, &validation).ok()
+            else {
+                return Ok(None);
+            };
+            Ok((data.claims.token_use == "access").then_some(data.claims))
+        })
+    }
+
+    fn sign_introspection_response<'a>(
+        &'a self,
+        input: IntrospectionSignInput<'a>,
+    ) -> TokenFuture<'a, String> {
+        Box::pin(async move {
+            let snapshot = self.snapshot();
+            let mut header = jsonwebtoken::Header::new(snapshot.active_alg);
+            header.typ = Some("token-introspection+jwt".to_owned());
+            header.kid = Some(snapshot.active_kid.clone());
+            let claims = serde_json::json!({
+                "iss": input.issuer,
+                "aud": input.audience,
+                "iat": Utc::now().timestamp(),
+                "token_introspection": input.body,
+            });
+            self.encode_jwt(SigningPurpose::AccessToken, &header, &claims)
+                .await
+                .map_err(|_| TokenPortError::Unavailable)
+        })
+    }
+}
+
+fn decoding_key(
+    key: &Value,
+    algorithm: jsonwebtoken::Algorithm,
+) -> Option<jsonwebtoken::DecodingKey> {
+    let algorithm_name = crate::signing_algorithm_name(algorithm)?;
+    if key.get("d").is_some()
+        || key
+            .get("alg")
+            .and_then(Value::as_str)
+            .is_some_and(|value| value != algorithm_name)
+        || key
+            .get("use")
+            .and_then(Value::as_str)
+            .is_some_and(|value| value != "sig")
+    {
+        return None;
+    }
+    match algorithm {
+        jsonwebtoken::Algorithm::EdDSA
+            if key.get("kty").and_then(Value::as_str) == Some("OKP")
+                && key.get("crv").and_then(Value::as_str) == Some("Ed25519") =>
+        {
+            let x = key.get("x")?.as_str()?;
+            if URL_SAFE_NO_PAD.decode(x).ok()?.len() != 32 {
+                return None;
+            }
+            jsonwebtoken::DecodingKey::from_ed_components(x).ok()
+        }
+        jsonwebtoken::Algorithm::RS256 | jsonwebtoken::Algorithm::PS256
+            if key.get("kty").and_then(Value::as_str) == Some("RSA") =>
+        {
+            let modulus = key.get("n")?.as_str()?;
+            let exponent = key.get("e")?.as_str()?;
+            if URL_SAFE_NO_PAD.decode(modulus).ok()?.len() < 256
+                || URL_SAFE_NO_PAD.decode(exponent).ok()?.is_empty()
+            {
+                return None;
+            }
+            jsonwebtoken::DecodingKey::from_rsa_components(modulus, exponent).ok()
+        }
+        jsonwebtoken::Algorithm::ES256
+            if key.get("kty").and_then(Value::as_str) == Some("EC")
+                && key.get("crv").and_then(Value::as_str) == Some("P-256") =>
+        {
+            let x = key.get("x")?.as_str()?;
+            let y = key.get("y")?.as_str()?;
+            if URL_SAFE_NO_PAD.decode(x).ok()?.len() != 32
+                || URL_SAFE_NO_PAD.decode(y).ok()?.len() != 32
+            {
+                return None;
+            }
+            jsonwebtoken::DecodingKey::from_ec_components(x, y).ok()
+        }
+        _ => None,
     }
 }

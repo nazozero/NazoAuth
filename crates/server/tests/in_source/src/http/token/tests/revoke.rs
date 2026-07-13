@@ -2,6 +2,10 @@ use super::*;
 use std::sync::Arc;
 
 use crate::config::ConfigSource;
+use crate::domain::{AppState, ClientRow};
+use crate::settings::Settings;
+use crate::support::DEFAULT_TENANT_ID;
+use chrono::{DateTime, Utc};
 use nazo_postgres::{create_pool, get_conn};
 
 use crate::schema::{access_token_revocations, oauth_tokens};
@@ -13,6 +17,42 @@ use diesel::sql_types::{Bool, Jsonb, Nullable, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
 use fred::interfaces::ClientLike;
 use fred::prelude::{Builder as ValkeyBuilder, Config as ValkeyConfig};
+
+fn token_service(state: &AppState) -> ServerTokenService {
+    let connection = state.valkey_connection();
+    ServerTokenService::new(
+        nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
+        nazo_valkey::TokenIssuanceStateAdapter::new(&connection),
+        state.keyset.clone(),
+    )
+}
+
+fn authorization_service(state: &AppState) -> ServerAuthorizationService {
+    let connection = state.valkey_connection();
+    ServerAuthorizationService::new(
+        nazo_postgres::AuthorizationFlowRepository::new(state.diesel_db.clone(), DEFAULT_TENANT_ID),
+        nazo_valkey::AuthorizationStateAdapter::new(&connection),
+        state.keyset.clone(),
+    )
+}
+
+async fn revoke_after_rate_limit(
+    state: Data<AppState>,
+    req: HttpRequest,
+    body: Bytes,
+) -> HttpResponse {
+    let token_service = token_service(&state);
+    let authorization_service = authorization_service(&state);
+    let config = AuthorizationHttpConfig::from(state.settings.as_ref());
+    revoke_after_rate_limit_with_dependencies(
+        &token_service,
+        &authorization_service,
+        &config,
+        req,
+        body,
+    )
+    .await
+}
 
 fn revocation_state() -> Data<AppState> {
     Data::new(AppState {
@@ -279,6 +319,15 @@ async fn insert_refresh_token_for_client(
     client: &ClientRow,
     raw_refresh_token: &str,
 ) {
+    insert_refresh_token_in_family(state, client, raw_refresh_token, Uuid::now_v7()).await;
+}
+
+async fn insert_refresh_token_in_family(
+    state: &Data<AppState>,
+    client: &ClientRow,
+    raw_refresh_token: &str,
+    family_id: Uuid,
+) {
     let mut conn = get_conn(&state.diesel_db)
         .await
         .expect("database connection should be available");
@@ -305,7 +354,7 @@ async fn insert_refresh_token_for_client(
     .bind::<SqlUuid, _>(Uuid::now_v7())
     .bind::<SqlUuid, _>(client.tenant_id)
     .bind::<Text, _>(blake3_hex(raw_refresh_token))
-    .bind::<SqlUuid, _>(Uuid::now_v7())
+    .bind::<SqlUuid, _>(family_id)
     .bind::<SqlUuid, _>(client.id)
     .execute(&mut conn)
     .await
@@ -510,8 +559,10 @@ async fn revocation_rate_limit_short_circuits_before_client_or_token_lookup() {
     let Some(state) = live_rate_limited_revocation_state().await else {
         return;
     };
-    let response = revoke(
-        state,
+    let response = super::revoke(
+        Data::new(token_service(&state)),
+        Data::new(authorization_service(&state)),
+        Data::new(AuthorizationHttpConfig::from(state.settings.as_ref())),
         form_request(),
         Bytes::from_static(
             b"token=refresh-token&client_id=rate-limited-client&client_secret=secret",
@@ -709,6 +760,8 @@ async fn revocation_fails_closed_when_refresh_token_update_query_fails() {
         &fixture_secret("refresh-update-failure"),
     )
     .await;
+    let refresh_token = fixture_token("refresh-update-failure");
+    insert_refresh_token_for_client(&state, &client, &refresh_token).await;
     rename_column(
         &state,
         &schema,
@@ -722,7 +775,7 @@ async fn revocation_fails_closed_when_refresh_token_update_query_fails() {
         state.clone(),
         &client,
         &fixture_secret("refresh-update-failure"),
-        &fixture_token("refresh-update-failure"),
+        &refresh_token,
     )
     .await;
     let (status, body) = json_body(response).await;
@@ -893,4 +946,33 @@ async fn revocation_blacklists_access_token_jti_idempotently() {
         1,
         "access token revocation should be idempotent on repeated requests"
     );
+}
+
+#[actix_web::test]
+async fn concurrent_refresh_revocation_serializes_and_revokes_the_whole_family() {
+    let Some(state) = live_revocation_state() else {
+        return;
+    };
+    let secret = fixture_secret("concurrent-family");
+    let client = insert_revocation_client(
+        &state,
+        &format!("revoke-concurrent-family-{}", Uuid::now_v7()),
+        &secret,
+    )
+    .await;
+    let family_id = Uuid::now_v7();
+    let first = fixture_token("concurrent-family-first");
+    let second = fixture_token("concurrent-family-second");
+    insert_refresh_token_in_family(&state, &client, &first, family_id).await;
+    insert_refresh_token_in_family(&state, &client, &second, family_id).await;
+
+    let (first_response, second_response) = tokio::join!(
+        revoke_with_client(state.clone(), &client, &secret, &first),
+        revoke_with_client(state.clone(), &client, &secret, &second),
+    );
+
+    assert_eq!(first_response.status(), StatusCode::OK);
+    assert_eq!(second_response.status(), StatusCode::OK);
+    assert!(refresh_token_revoked_at(&state, &first).await.is_some());
+    assert!(refresh_token_revoked_at(&state, &second).await.is_some());
 }
