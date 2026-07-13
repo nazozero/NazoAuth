@@ -2,6 +2,7 @@
 
 //! Runtime- and infrastructure-free authorization-server policy.
 
+mod admin_clients;
 mod admin_grants;
 mod authorization_details;
 mod authorization_service;
@@ -22,6 +23,13 @@ mod token_service;
 mod transaction;
 mod uri_policy;
 
+pub use admin_clients::{
+    AdminClientCryptoPort, AdminClientError, AdminClientFuture, AdminClientPolicy,
+    AdminClientPortError, AdminClientRepositoryPort, AdminClientService, CreateClientRequest,
+    CreatedClient, PatchClientRequest, PreparedClientRegistration, SectorIdentifierFuture,
+    SectorIdentifierResolverPort, insert_prepared_client, prepare_client_patch,
+    prepare_client_registration,
+};
 pub use admin_grants::{
     AdminGrantFuture, AdminGrantPage, AdminGrantRepositoryPort, AdminGrantRevocation,
     AdminGrantRevokeError, AdminGrantRevokeFuture, AdminGrantView,

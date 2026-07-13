@@ -15,6 +15,9 @@ use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
 use crate::domain::{AppState, ClientRow, DatabaseUserFixture};
+use crate::http::admin::clients::{
+    ServerAdminClientCrypto, ServerSectorIdentifierResolver, admin_client_policy,
+};
 use crate::schema::oauth_clients;
 use crate::settings::Settings;
 use crate::support::sessions::SessionHttpConfig;
@@ -112,7 +115,7 @@ struct TestAdminAccessRequestDependencies {
     admin_sessions: Data<AdminSessionHandles>,
     repository: Data<AccessRequestRepository>,
     delivery_store: Data<DeliveryStore>,
-    keyset: Data<KeyManager>,
+    client_service: Data<ServerAdminClientService>,
     config: Data<AdminAccessRequestConfig>,
     client_ip_config: Data<ClientIpConfig>,
 }
@@ -134,11 +137,14 @@ fn admin_access_request_dependencies(state: &Data<AppState>) -> TestAdminAccessR
         )),
         repository: Data::new(AccessRequestRepository::new(state.diesel_db.clone())),
         delivery_store: Data::new(DeliveryStore::new(&state.valkey_connection())),
-        keyset: Data::new(state.keyset.clone()),
+        client_service: Data::new(ServerAdminClientService::new(
+            nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone()),
+            ServerSectorIdentifierResolver,
+            ServerAdminClientCrypto::new(state.keyset.clone()),
+            admin_client_policy(&state.settings),
+        )),
         config: Data::new(AdminAccessRequestConfig::new(
-            protocol.pairwise_subject_secret.as_deref(),
             &protocol.client_secret_pepper,
-            &state.settings.endpoint.issuer,
             storage.client_delivery_ttl_seconds,
         )),
         client_ip_config: Data::new(ClientIpConfig::new(
@@ -175,7 +181,7 @@ async fn invoke_admin_approve_access_request(
         (
             dependencies.repository,
             dependencies.delivery_store,
-            dependencies.keyset,
+            dependencies.client_service,
             dependencies.config,
             dependencies.client_ip_config,
         ),

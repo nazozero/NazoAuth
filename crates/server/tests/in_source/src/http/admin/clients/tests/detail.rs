@@ -13,7 +13,7 @@ use std::time::Duration as StdDuration;
 use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
 
-use crate::http::admin::clients::create::{
+use crate::http::admin::clients::test_support::{
     CreateClientRequest, InsertClientError, PreparedClientRegistration, insert_prepared_client,
     prepare_client_insert_with_secret_pepper,
 };
@@ -260,7 +260,7 @@ impl LiveAdminClientDetailFixture {
             .to_http_request()
     }
 
-    async fn insert_client(&self, client_name: &str) -> ClientRow {
+    async fn insert_client(&self, client_name: &str) -> nazo_auth::OAuthClient {
         let prepared = match prepare_client_insert_for_test(
             create_client_request(client_name),
             None,
@@ -325,7 +325,7 @@ async fn admin_get_client_requires_admin_before_lookup() {
 
     let response = admin_get_client(
         dependencies.sessions,
-        dependencies.clients,
+        dependencies.service,
         req,
         actix_web::web::Path::from("client-1".to_owned()),
     )
@@ -353,7 +353,7 @@ async fn admin_get_client_returns_not_found_for_unknown_client_id() {
     let dependencies = test_dependencies(&fixture.state);
     let response = admin_get_client(
         dependencies.sessions,
-        dependencies.clients,
+        dependencies.service,
         fixture.admin_get_request(&sid, "/admin/clients/missing-client"),
         actix_web::web::Path::from("missing-client".to_owned()),
     )
@@ -384,7 +384,7 @@ async fn admin_get_client_returns_sanitized_client_for_admin() {
     let dependencies = test_dependencies(&fixture.state);
     let response = admin_get_client(
         dependencies.sessions,
-        dependencies.clients,
+        dependencies.service,
         fixture.admin_get_request(&sid, &format!("/admin/clients/{}", client.client_id)),
         actix_web::web::Path::from(client.client_id.clone()),
     )

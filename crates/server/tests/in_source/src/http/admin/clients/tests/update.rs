@@ -13,9 +13,9 @@ use std::time::Duration as StdDuration;
 use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
 
-use crate::http::admin::clients::create::{
+use crate::http::admin::clients::test_support::{
     CreateClientRequest, InsertClientError, PreparedClientRegistration, insert_prepared_client,
-    prepare_client_insert_with_secret_pepper,
+    prepare_client_insert_with_secret_pepper, prepare_client_patch,
 };
 
 async fn prepare_client_insert_for_test(
@@ -268,7 +268,7 @@ impl LiveAdminClientUpdateFixture {
             .to_http_request()
     }
 
-    async fn insert_client(&self, client_name: &str) -> ClientRow {
+    async fn insert_client(&self, client_name: &str) -> nazo_auth::OAuthClient {
         let prepared = prepare_client_insert_for_test(
             create_client_request(client_name),
             None,
@@ -415,17 +415,17 @@ async fn patch_preserves_unsubmitted_security_metadata() {
     assert_eq!(prepared.client_name, "Renamed client");
     assert_eq!(
         prepared.redirect_uris,
-        json!(["https://client.example/callback"])
+        vec!["https://client.example/callback".to_owned()]
     );
     assert_eq!(
         prepared.post_logout_redirect_uris,
-        json!(["https://client.example/logout"])
+        vec!["https://client.example/logout".to_owned()]
     );
-    assert_eq!(prepared.scopes, json!(["openid", "payments"]));
-    assert_eq!(prepared.allowed_audiences, json!(["https://api.example"]));
+    assert_eq!(prepared.scopes, vec!["openid", "payments"]);
+    assert_eq!(prepared.allowed_audiences, vec!["https://api.example"]);
     assert_eq!(
         prepared.grant_types,
-        json!(["authorization_code", "refresh_token"])
+        vec!["authorization_code", "refresh_token"]
     );
     assert!(prepared.require_dpop_bound_tokens);
     assert!(prepared.require_par_request_object);
@@ -661,8 +661,7 @@ async fn admin_patch_client_rejects_missing_csrf_before_admin_lookup() {
 
     let response = admin_patch_client(
         dependencies.sessions,
-        dependencies.clients,
-        dependencies.keyset,
+        dependencies.service,
         dependencies.config,
         req,
         actix_web::web::Path::from("client-1".to_owned()),
@@ -690,8 +689,7 @@ async fn admin_patch_client_reports_not_found_for_unknown_client_id() {
 
     let response = admin_patch_client(
         dependencies.sessions,
-        dependencies.clients,
-        dependencies.keyset,
+        dependencies.service,
         dependencies.config,
         req,
         actix_web::web::Path::from("missing-client".to_owned()),
@@ -721,8 +719,7 @@ async fn admin_patch_client_validates_metadata_after_admin_authentication() {
 
     let response = admin_patch_client(
         dependencies.sessions,
-        dependencies.clients,
-        dependencies.keyset,
+        dependencies.service,
         dependencies.config,
         req,
         actix_web::web::Path::from(client.client_id.clone()),
@@ -761,8 +758,7 @@ async fn admin_patch_client_surfaces_client_lookup_failure_after_admin_authentic
 
     let response = admin_patch_client(
         dependencies.sessions,
-        dependencies.clients,
-        dependencies.keyset,
+        dependencies.service,
         dependencies.config,
         req,
         actix_web::web::Path::from(client.client_id.clone()),
@@ -797,8 +793,7 @@ async fn admin_patch_client_surfaces_update_failure_without_mutating_current_cli
 
     let response = admin_patch_client(
         dependencies.sessions,
-        dependencies.clients,
-        dependencies.keyset,
+        dependencies.service,
         dependencies.config,
         req,
         actix_web::web::Path::from(client.client_id.clone()),

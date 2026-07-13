@@ -1,4 +1,5 @@
 //! 管理端客户端接入申请接口。
+use super::clients::ServerAdminClientService;
 use crate::support::client_ip::{ClientIpConfig, client_ip_with_config};
 use crate::support::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
 use crate::support::{access_delivery_token, audit_event, audit_fields, blake3_hex, pagination};
@@ -8,38 +9,25 @@ use actix_web::http::header::HeaderValue;
 use actix_web::web::{Data, Json, Query};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::{Duration, Utc};
+use nazo_auth::{AdminClientError, CreateClientRequest};
 use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies};
 use nazo_http_actix::{json_response, oauth_error};
-use nazo_key_management::KeyManager;
 use nazo_postgres::AccessRequestRepository;
 use nazo_valkey::DeliveryStore;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use uuid::Uuid;
-// 申请审批会创建客户端，因此显式依赖 clients 模块的创建逻辑。
-use super::clients::{
-    CreateClientRequest, insert_client_error_response, prepare_client_insert_with_secret_pepper,
-};
 
 pub(crate) struct AdminAccessRequestConfig {
-    pairwise_subject_secret: Option<Box<str>>,
     client_secret_pepper: Box<str>,
-    issuer: Box<str>,
     delivery_ttl_seconds: u64,
 }
 
 impl AdminAccessRequestConfig {
-    pub(crate) fn new(
-        pairwise_subject_secret: Option<&str>,
-        client_secret_pepper: &str,
-        issuer: &str,
-        delivery_ttl_seconds: u64,
-    ) -> Self {
+    pub(crate) fn new(client_secret_pepper: &str, delivery_ttl_seconds: u64) -> Self {
         Self {
-            pairwise_subject_secret: pairwise_subject_secret.map(Into::into),
             client_secret_pepper: client_secret_pepper.into(),
-            issuer: issuer.into(),
             delivery_ttl_seconds,
         }
     }
@@ -48,7 +36,7 @@ impl AdminAccessRequestConfig {
 type ApprovalDependencies = (
     Data<AccessRequestRepository>,
     Data<DeliveryStore>,
-    Data<KeyManager>,
+    Data<ServerAdminClientService>,
     Data<AdminAccessRequestConfig>,
     Data<ClientIpConfig>,
 );
@@ -118,6 +106,24 @@ fn invalid_access_request_status_response() -> HttpResponse {
     )
 }
 
+fn client_preparation_error_response(error: AdminClientError) -> HttpResponse {
+    match error {
+        AdminClientError::InvalidRequest(message) => oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            &format!("客户端创建失败: {message}"),
+        ),
+        error => {
+            tracing::warn!(%error, "failed to prepare oauth client for access request approval");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "客户端创建失败.",
+            )
+        }
+    }
+}
+
 fn access_requests_response(
     page: i32,
     page_size: i32,
@@ -138,7 +144,7 @@ pub(crate) async fn admin_approve_access_request(
     path: actix_web::web::Path<Uuid>,
     Json(payload): Json<CreateClientRequest>,
 ) -> HttpResponse {
-    let (repository, delivery_store, keyset, config, client_ip_config) = dependencies;
+    let (repository, delivery_store, client_service, config, client_ip_config) = dependencies;
     let request_id = path.into_inner();
     let session_http = admin_sessions.http_config();
     if !has_valid_csrf_token_for_cookies(
@@ -185,18 +191,9 @@ pub(crate) async fn admin_approve_access_request(
     let request_user = pending_request.user_id;
     let request_user_id = request_user.as_uuid();
     let site_name = pending_request.site_name;
-    let response_signing_algorithms = keyset.snapshot().response_signing_alg_values_supported();
-    let prepared = match prepare_client_insert_with_secret_pepper(
-        payload,
-        config.pairwise_subject_secret.as_deref(),
-        &config.client_secret_pepper,
-        &config.issuer,
-        &response_signing_algorithms,
-    )
-    .await
-    {
+    let prepared = match client_service.prepare_registration(payload).await {
         Ok(prepared) => prepared,
-        Err(error) => return insert_client_error_response(error),
+        Err(error) => return client_preparation_error_response(error),
     };
     let token = access_delivery_token(&config.client_secret_pepper, request_user_id, request_id);
     let expires_at = Utc::now() + Duration::seconds(config.delivery_ttl_seconds as i64);

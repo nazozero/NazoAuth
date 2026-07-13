@@ -1,7 +1,6 @@
 use super::*;
-use crate::http::admin::clients::create::{
-    CreateClientRequest, InsertClientError, PreparedClientRegistration,
-    prepare_client_insert_with_secret_pepper,
+use crate::http::admin::clients::test_support::{
+    InsertClientError, prepare_client_insert_with_secret_pepper,
 };
 use crate::support::{LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER, hash_client_secret};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -406,8 +405,8 @@ async fn dynamic_registration_rejects_response_signing_alg_unavailable_to_runtim
     {
         Ok(_) => panic!("unavailable response signing algorithm must be rejected"),
         Err(InsertClientError::InvalidRequest(message)) => message,
-        Err(InsertClientError::Server(message)) => {
-            panic!("capability mismatch must be a client metadata error: {message}")
+        Err(other) => {
+            panic!("capability mismatch must be a client metadata error: {other}")
         }
     };
 

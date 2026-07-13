@@ -13,7 +13,7 @@ use std::time::Duration as StdDuration;
 use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
 
-use crate::http::admin::clients::create::{
+use crate::http::admin::clients::test_support::{
     CreateClientRequest, InsertClientError, PreparedClientRegistration, insert_prepared_client,
     prepare_client_insert_with_secret_pepper,
 };
@@ -260,7 +260,7 @@ impl LiveAdminClientListFixture {
             .to_http_request()
     }
 
-    async fn insert_client(&self, client_name: &str) -> ClientRow {
+    async fn insert_client(&self, client_name: &str) -> nazo_auth::OAuthClient {
         let prepared = match prepare_client_insert_for_test(
             create_client_request(client_name),
             None,
@@ -326,8 +326,10 @@ fn admin_client_handlers_use_focused_dependencies() {
     assert!(!handlers.contains("Data<AppState>"));
     assert!(!handlers.contains("state.diesel_db"));
     assert!(!handlers.contains("state.valkey"));
+    assert!(!handlers.contains("OAuthClientRepository"));
+    assert!(!handlers.contains("KeyManager"));
     assert!(handlers.contains("Data<AdminSessionHandles>"));
-    assert!(handlers.contains("Data<OAuthClientRepository>"));
+    assert!(handlers.contains("Data<ServerAdminClientService>"));
 }
 
 #[actix_web::test]
@@ -340,7 +342,7 @@ async fn admin_clients_requires_admin_before_database_lookup() {
 
     let response = admin_clients(
         dependencies.sessions,
-        dependencies.clients,
+        dependencies.service,
         req,
         Query(HashMap::new()),
     )
@@ -370,7 +372,7 @@ async fn admin_clients_lists_persisted_clients_for_admin_without_secret_hashes()
     let dependencies = test_dependencies(&fixture.state);
     let response = admin_clients(
         dependencies.sessions,
-        dependencies.clients,
+        dependencies.service,
         fixture.admin_get_request(&sid, "/admin/clients?page=1&page_size=100"),
         Query(HashMap::from([
             ("page".to_owned(), "1".to_owned()),

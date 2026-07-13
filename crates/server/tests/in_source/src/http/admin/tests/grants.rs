@@ -22,7 +22,7 @@ use crate::support::{
 use chrono::Utc;
 use nazo_postgres::{create_pool, get_conn};
 
-use crate::http::admin::clients::create::{
+use crate::http::admin::clients::test_support::{
     CreateClientRequest, InsertClientError, PreparedClientRegistration, insert_prepared_client,
     prepare_client_insert_with_secret_pepper,
 };
@@ -370,7 +370,7 @@ impl LiveAdminGrantFixture {
             .to_http_request()
     }
 
-    async fn insert_client(&self, client_name: &str) -> ClientRow {
+    async fn insert_client(&self, client_name: &str) -> nazo_auth::OAuthClient {
         let prepared = match prepare_client_insert_for_test(
             create_client_request(client_name),
             None,
@@ -389,7 +389,7 @@ impl LiveAdminGrantFixture {
         .expect("client should insert")
     }
 
-    async fn insert_grant(&self, user: &DatabaseUserFixture, client: &ClientRow) {
+    async fn insert_grant(&self, user: &DatabaseUserFixture, client: &nazo_auth::OAuthClient) {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");

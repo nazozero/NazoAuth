@@ -15,19 +15,21 @@ use serde_json::json;
 use uuid::Uuid;
 // 只处理 OAuth 语义中的集合判断和授权记录 upsert。
 
+use nazo_auth::oauth_redirect_uri_matches;
 pub(crate) use nazo_auth::{ResourceIndicatorError, parse_resource_indicators};
-use nazo_auth::{
-    normalize_sha256_thumbprint, oauth_redirect_uri_matches, validate_oauth_redirect_uri,
-};
+#[cfg(test)]
+use nazo_auth::{normalize_sha256_thumbprint, validate_oauth_redirect_uri};
 
+#[cfg(test)]
+use super::security::SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS;
 #[cfg(test)]
 use super::security::blake3_hex;
 use super::{
     mtls::certificate_x5c_thumbprint,
     security::{
-        SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
-        SUPPORTED_CLIENT_JWT_SIGNING_ALGS, client_jwt_algorithm_from_name,
-        jwt_decoding_key_from_jwk, supported_client_jwt_algorithm_name,
+        SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS, SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+        client_jwt_algorithm_from_name, jwt_decoding_key_from_jwk,
+        supported_client_jwt_algorithm_name,
     },
 };
 
@@ -44,6 +46,7 @@ fn ensure_public_client_jwk(jwk: &serde_json::Map<String, Value>) -> anyhow::Res
     Ok(())
 }
 
+#[cfg(test)]
 const SUPPORTED_GRANT_TYPES: &[&str] = &[
     "authorization_code",
     "refresh_token",
@@ -53,6 +56,7 @@ const SUPPORTED_GRANT_TYPES: &[&str] = &[
     "urn:ietf:params:oauth:grant-type:device_code",
     "urn:ietf:params:oauth:grant-type:token-exchange",
 ];
+#[cfg(test)]
 const SUPPORTED_TOKEN_AUTH_METHODS: &[&str] = &[
     "none",
     "client_secret_basic",
@@ -196,6 +200,7 @@ pub(crate) fn is_valid_pkce_value(value: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~'))
 }
 
+#[cfg(test)]
 pub(crate) struct ClientMetadata<'a> {
     pub(crate) client_type: &'a str,
     pub(crate) redirect_uris: &'a [String],
@@ -220,6 +225,7 @@ pub(crate) struct ClientMetadata<'a> {
     pub(crate) mtls_binding: Option<&'a ClientMtlsMetadata>,
 }
 
+#[cfg(test)]
 pub(crate) fn validate_client_metadata(metadata: ClientMetadata<'_>) -> anyhow::Result<()> {
     let ClientMetadata {
         client_type,
@@ -365,6 +371,7 @@ pub(crate) fn validate_client_metadata(metadata: ClientMetadata<'_>) -> anyhow::
     Ok(())
 }
 
+#[cfg(test)]
 fn validate_introspection_jwe_metadata(
     alg: Option<&str>,
     enc: Option<&str>,
@@ -407,6 +414,7 @@ fn validate_introspection_jwe_metadata(
     }
 }
 
+#[cfg(test)]
 fn validate_response_crypto_metadata(
     response_name: &str,
     signing_alg: Option<&str>,
@@ -459,7 +467,7 @@ fn validate_response_crypto_metadata(
     }
 }
 
-fn client_jwks_matching_encryption_key_count(jwks: &Value, alg: &str) -> usize {
+pub(crate) fn client_jwks_matching_encryption_key_count(jwks: &Value, alg: &str) -> usize {
     jwks.get("keys")
         .and_then(Value::as_array)
         .map_or(0, |keys| {
@@ -473,7 +481,7 @@ fn client_jwks_matching_encryption_key_count(jwks: &Value, alg: &str) -> usize {
         })
 }
 
-fn client_jwks_contains_signing_key(jwks: &Value) -> bool {
+pub(crate) fn client_jwks_contains_signing_key(jwks: &Value) -> bool {
     jwks.get("keys")
         .and_then(Value::as_array)
         .is_some_and(|keys| {
@@ -492,6 +500,7 @@ fn client_jwks_contains_signing_key(jwks: &Value) -> bool {
         })
 }
 
+#[cfg(test)]
 fn validate_logout_notification_uri(field: &str, uri: &str) -> anyhow::Result<()> {
     let parsed = url::Url::parse(uri)?;
     if parsed.fragment().is_some() {
@@ -510,6 +519,7 @@ fn validate_logout_notification_uri(field: &str, uri: &str) -> anyhow::Result<()
     }
 }
 
+#[cfg(test)]
 fn validate_mtls_metadata(mtls_binding: &ClientMtlsMetadata) -> anyhow::Result<()> {
     if let Some(subject_dn) = mtls_binding.tls_client_auth_subject_dn.as_deref()
         && subject_dn.trim().is_empty()
@@ -545,6 +555,7 @@ fn validate_mtls_metadata(mtls_binding: &ClientMtlsMetadata) -> anyhow::Result<(
     Ok(())
 }
 
+#[cfg(test)]
 #[derive(Debug, Default)]
 pub(crate) struct ClientMtlsMetadata {
     pub(crate) tls_client_auth_subject_dn: Option<String>,
@@ -555,6 +566,7 @@ pub(crate) struct ClientMtlsMetadata {
     pub(crate) tls_client_auth_san_email: Vec<String>,
 }
 
+#[cfg(test)]
 impl ClientMtlsMetadata {
     pub(crate) fn has_binding_material(&self) -> bool {
         self.tls_client_auth_subject_dn
@@ -659,6 +671,13 @@ fn validate_client_jwks_with_policy(
     Ok(())
 }
 
+pub(crate) fn validate_client_jwks_with_missing_kid_policy(
+    jwks: &Value,
+    allow_missing_kid: bool,
+) -> anyhow::Result<()> {
+    validate_client_jwks_with_policy(jwks, ClientJwksValidationPolicy { allow_missing_kid })
+}
+
 fn valid_rsa_jwe_encryption_key(key: &Value) -> bool {
     if key.get("kty").and_then(Value::as_str) != Some("RSA") {
         return false;
@@ -693,6 +712,7 @@ pub(crate) fn validate_self_signed_mtls_jwks(jwks: &Value) -> bool {
         })
 }
 
+#[cfg(test)]
 fn validate_unique_non_empty(name: &str, values: &[String]) -> anyhow::Result<()> {
     let mut seen = std::collections::HashSet::new();
     for value in values {

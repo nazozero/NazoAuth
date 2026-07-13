@@ -34,7 +34,10 @@ use crate::domain::{
     ResourceServerHandles,
 };
 use crate::http::admin::access_requests::AdminAccessRequestConfig;
-use crate::http::admin::clients::AdminClientConfig;
+use crate::http::admin::clients::{
+    AdminClientConfig, ServerAdminClientCrypto, ServerAdminClientService,
+    ServerSectorIdentifierResolver, admin_client_policy,
+};
 use crate::http::auth::csrf::CsrfHttpConfig;
 use crate::http::auth::email_code::EmailCodeHttpConfig;
 use crate::http::auth::federation::{
@@ -142,7 +145,12 @@ pub async fn run() -> anyhow::Result<()> {
         enabled: settings.modules.enable_dynamic_client_registration,
     });
     let admin_client_config = web::Data::new(AdminClientConfig::from_settings(&settings));
-    let admin_client_keyset = web::Data::new(keyset.clone());
+    let admin_client_service = web::Data::new(ServerAdminClientService::new(
+        nazo_postgres::OAuthClientRepository::new(diesel_db.clone()),
+        ServerSectorIdentifierResolver,
+        ServerAdminClientCrypto::new(keyset.clone()),
+        admin_client_policy(&settings),
+    ));
     let scim_endpoint = &settings.endpoint;
     let scim_protocol = &settings.protocol;
     let scim_storage = &settings.storage;
@@ -254,21 +262,15 @@ pub async fn run() -> anyhow::Result<()> {
         Arc::new(nazo_postgres::GrantRepository::new(state.diesel_db.clone()))
             as Arc<dyn nazo_auth::AdminGrantRepositoryPort>,
     );
-    let oauth_clients = web::Data::new(nazo_postgres::OAuthClientRepository::new(
-        state.diesel_db.clone(),
-    ));
     let admin_access_requests = web::Data::new(nazo_postgres::AccessRequestRepository::new(
         state.diesel_db.clone(),
     ));
     let admin_access_delivery =
         web::Data::new(nazo_valkey::DeliveryStore::new(&state.valkey_connection()));
-    let admin_access_keys = web::Data::new(state.keyset.clone());
     let protocol = &state.settings.protocol;
     let storage = &state.settings.storage;
     let admin_access_request_config = web::Data::new(AdminAccessRequestConfig::new(
-        protocol.pairwise_subject_secret.as_deref(),
         &protocol.client_secret_pepper,
-        &state.settings.endpoint.issuer,
         storage.client_delivery_ttl_seconds,
     ));
     let endpoint = &state.settings.endpoint;
@@ -433,11 +435,9 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(admin_grants.clone())
             .app_data(admin_access_requests.clone())
             .app_data(admin_access_delivery.clone())
-            .app_data(admin_access_keys.clone())
             .app_data(admin_access_request_config.clone())
-            .app_data(oauth_clients.clone())
+            .app_data(admin_client_service.clone())
             .app_data(admin_client_config.clone())
-            .app_data(admin_client_keyset.clone())
             .app_data(client_ip_config.clone())
             .app_data(auth_request_limiter.clone())
             .app_data(email_code_http_config.clone())

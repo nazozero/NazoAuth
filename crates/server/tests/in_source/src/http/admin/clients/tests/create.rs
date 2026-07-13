@@ -1,4 +1,7 @@
 use super::*;
+use crate::http::admin::clients::test_support::{
+    InsertClientError, PreparedClientRegistration, prepare_client_insert_with_secret_pepper,
+};
 use crate::support::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 
@@ -55,21 +58,6 @@ fn create_request() -> CreateClientRequest {
         subject_type: None,
         sector_identifier_uri: None,
     }
-}
-
-#[test]
-fn pkce_legacy_exception_is_limited_to_confidential_non_dpop_clients() {
-    assert!(validate_pkce_compatibility_policy(false, "public", true).is_ok());
-    assert!(validate_pkce_compatibility_policy(true, "confidential", false).is_ok());
-
-    let public_err = validate_pkce_compatibility_policy(true, "public", false).unwrap_err();
-    assert_eq!(
-        public_err.to_string(),
-        "PKCE compatibility exceptions are limited to confidential clients"
-    );
-
-    let dpop_err = validate_pkce_compatibility_policy(true, "confidential", true).unwrap_err();
-    assert_eq!(dpop_err.to_string(), "DPoP-bound clients must use PKCE");
 }
 
 #[actix_web::test]
@@ -227,8 +215,8 @@ async fn prepare_client_insert_rejects_empty_array_metadata_before_storage() {
             message.contains("post_logout_redirect_uri"),
             "error should identify the invalid array metadata boundary: {message}"
         ),
-        InsertClientError::Server(message) => {
-            panic!("metadata validation failure must not be reported as server error: {message}")
+        other => {
+            panic!("metadata validation failure must not be reported as server error: {other}")
         }
     }
 }
@@ -248,8 +236,8 @@ async fn prepare_client_insert_rejects_secret_auth_for_public_clients() {
             message.contains("public"),
             "error should identify the invalid public-client metadata boundary: {message}"
         ),
-        InsertClientError::Server(message) => {
-            panic!("metadata validation failure must not be reported as server error: {message}")
+        other => {
+            panic!("metadata validation failure must not be reported as server error: {other}")
         }
     }
 }
@@ -270,8 +258,8 @@ async fn prepare_client_insert_rejects_pairwise_when_secret_is_not_configured() 
             message.contains("PAIRWISE_SUBJECT_SECRET"),
             "error should identify the missing pairwise server secret: {message}"
         ),
-        InsertClientError::Server(message) => {
-            panic!("pairwise metadata validation must not be reported as server error: {message}")
+        other => {
+            panic!("pairwise metadata validation must not be reported as server error: {other}")
         }
     }
 }
@@ -327,8 +315,8 @@ async fn prepare_client_insert_rejects_pairwise_redirects_with_multiple_hosts_wi
             message.contains("sector_identifier_uri"),
             "error should identify the missing sector identifier boundary: {message}"
         ),
-        InsertClientError::Server(message) => {
-            panic!("pairwise metadata validation must not be reported as server error: {message}")
+        other => {
+            panic!("pairwise metadata validation must not be reported as server error: {other}")
         }
     }
 }
@@ -358,8 +346,8 @@ async fn prepare_client_insert_reports_sector_identifier_fetch_failure() {
             message.contains("sector_identifier_uri 获取失败"),
             "error should identify sector identifier retrieval: {message}"
         ),
-        InsertClientError::Server(message) => {
-            panic!("sector identifier validation must not be reported as server error: {message}")
+        other => {
+            panic!("sector identifier validation must not be reported as server error: {other}")
         }
     }
 }
@@ -383,65 +371,8 @@ async fn prepare_client_insert_discards_sector_identifier_for_public_subjects() 
 }
 
 #[test]
-fn sector_identifier_host_for_redirects_accepts_registered_redirects() {
-    let redirect_uris = vec![
-        "https://client.example/callback".to_owned(),
-        "https://client.example/alternate".to_owned(),
-    ];
-    let sector_uris = vec![
-        "https://client.example/callback".to_owned(),
-        "https://client.example/alternate".to_owned(),
-        "https://client.example/unused".to_owned(),
-    ];
-
-    let host = sector_identifier_host_for_redirects(
-        "https://sector.example/client.json",
-        &redirect_uris,
-        &sector_uris,
-    )
-    .expect("all registered redirects are present in sector document");
-
-    assert_eq!(host, "sector.example");
-}
-
-#[test]
-fn sector_identifier_host_for_redirects_rejects_missing_redirect() {
-    let redirect_uris = vec![
-        "https://client.example/callback".to_owned(),
-        "https://other.example/callback".to_owned(),
-    ];
-    let sector_uris = vec!["https://client.example/callback".to_owned()];
-
-    let error = sector_identifier_host_for_redirects(
-        "https://sector.example/client.json",
-        &redirect_uris,
-        &sector_uris,
-    )
-    .expect_err("every redirect must be listed by the sector document");
-
-    assert!(
-        error.to_string().contains("other.example"),
-        "error should identify the missing redirect URI: {error}"
-    );
-}
-
-#[test]
-fn sector_identifier_host_for_redirects_rejects_invalid_sector_uri() {
-    let redirect_uris = vec!["https://client.example/callback".to_owned()];
-    let sector_uris = vec!["https://client.example/callback".to_owned()];
-
-    let error = sector_identifier_host_for_redirects("not-a-uri", &redirect_uris, &sector_uris)
-        .expect_err("sector_identifier_uri itself must have a host");
-
-    assert!(
-        error.to_string().contains("host"),
-        "error should identify the sector host parsing boundary: {error}"
-    );
-}
-
-#[test]
 fn insert_client_error_response_preserves_oauth_error_category() {
-    let invalid = insert_client_error_response(InsertClientError::InvalidRequest(
+    let invalid = create_error_response(InsertClientError::InvalidRequest(
         "redirect_uri is invalid".to_owned(),
     ));
     assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
@@ -453,7 +384,9 @@ fn insert_client_error_response_preserves_oauth_error_category() {
         Some("invalid_request")
     );
 
-    let server = insert_client_error_response(InsertClientError::Server("database".to_owned()));
+    let server = create_error_response(InsertClientError::Repository(
+        nazo_auth::AdminClientPortError::Unavailable,
+    ));
     assert_eq!(server.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(
         server

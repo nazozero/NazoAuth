@@ -5,13 +5,11 @@ use nazo_http_actix::{
 };
 
 use crate::domain::{ClientRow, DynamicRegistrationHandles};
-use crate::http::admin::clients::create::{
-    CreateClientRequest, InsertClientError, PreparedClientRegistration,
-};
+use crate::http::admin::clients::ServerSectorIdentifierResolver;
 use crate::support::{
     DEFAULT_TENANT_ID, RateLimitPolicy, audit_event, audit_fields, blake3_hex,
     client_ip_with_context, client_secret_digest, constant_time_eq, enforce_rate_limit_with_store,
-    json_array_to_strings, parse_scope, random_urlsafe_token,
+    hash_client_secret, json_array_to_strings, parse_scope, random_urlsafe_token,
 };
 use actix_web::http::StatusCode;
 use actix_web::http::header;
@@ -20,6 +18,10 @@ use actix_web::http::header::HeaderValue;
 use actix_web::web::{Data, Json, Payload};
 use actix_web::{FromRequest, HttpRequest, HttpResponse};
 use chrono::{DateTime, Utc};
+use nazo_auth::{
+    AdminClientCryptoPort, AdminClientError, AdminClientPolicy, CreateClientRequest,
+    PreparedClientRegistration,
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use url::Url;
@@ -191,12 +193,7 @@ pub(crate) async fn dynamic_client_registration(
     {
         Ok(prepared_insert) => {
             let issued_secret = prepared_insert.issued_secret.clone();
-            match crate::http::admin::clients::create::insert_prepared_client_row_with_repository(
-                &handles.clients,
-                &prepared_insert,
-            )
-            .await
-            {
+            match nazo_auth::insert_prepared_client(&handles.clients, &prepared_insert).await {
                 Ok(client) => {
                     audit_dynamic_client_event(
                         "dynamic_client_registered",
@@ -213,11 +210,8 @@ pub(crate) async fn dynamic_client_registration(
                         Utc::now(),
                     )
                 }
-                Err(crate::http::admin::clients::create::InsertClientError::InvalidRequest(
-                    message,
-                )) => dynamic_registration_error_response(map_insert_error(message)),
-                Err(crate::http::admin::clients::create::InsertClientError::Server(message)) => {
-                    tracing::warn!(%message, "failed to dynamically register oauth client");
+                Err(error) => {
+                    tracing::warn!(%error, "failed to dynamically register oauth client");
                     oauth_error(
                         StatusCode::SERVICE_UNAVAILABLE,
                         "server_error",
@@ -226,11 +220,11 @@ pub(crate) async fn dynamic_client_registration(
                 }
             }
         }
-        Err(crate::http::admin::clients::create::InsertClientError::InvalidRequest(message)) => {
+        Err(AdminClientError::InvalidRequest(message)) => {
             dynamic_registration_error_response(map_insert_error(message))
         }
-        Err(crate::http::admin::clients::create::InsertClientError::Server(message)) => {
-            tracing::warn!(%message, "failed to dynamically register oauth client");
+        Err(error) => {
+            tracing::warn!(%error, "failed to dynamically register oauth client");
             oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -258,7 +252,7 @@ pub(crate) async fn client_configuration_get(
     };
     let response_types = response_types_from_client(&current);
     let registration_access_token = random_urlsafe_token();
-    let (issued_secret, secret_hash) = crate::http::admin::clients::create::issue_client_secret(
+    let (issued_secret, secret_hash) = issue_client_secret(
         &current.client_type,
         &current.token_endpoint_auth_method,
         &handles.config.client_secret_pepper,
@@ -431,18 +425,79 @@ pub(crate) async fn prepare_dynamic_client_insert_with_secret_pepper(
     issuer: &str,
     registration_access_token: &str,
     response_signing_algorithms: &[&'static str],
-) -> Result<PreparedClientRegistration, InsertClientError> {
-    let mut prepared =
-        crate::http::admin::clients::create::prepare_client_insert_with_secret_pepper(
-            registration.into_create_client_request(),
-            pairwise_subject_secret,
-            client_secret_pepper,
-            issuer,
-            response_signing_algorithms,
-        )
-        .await?;
+) -> Result<PreparedClientRegistration, AdminClientError> {
+    let _ = issuer;
+    let crypto = DynamicRegistrationCrypto {
+        response_signing_algorithms,
+    };
+    let policy = AdminClientPolicy {
+        tenant: nazo_identity::TenantContext::default_system(),
+        pairwise_subject_secret: pairwise_subject_secret.map(ToOwned::to_owned),
+        client_secret_pepper: client_secret_pepper.to_owned(),
+    };
+    let mut prepared = nazo_auth::prepare_client_registration(
+        registration.into_create_client_request(),
+        &policy,
+        &ServerSectorIdentifierResolver,
+        &crypto,
+    )
+    .await?;
     prepared.registration_access_token_blake3 = Some(blake3_hex(registration_access_token));
     Ok(prepared)
+}
+
+fn issue_client_secret(
+    client_type: &str,
+    token_endpoint_auth_method: &str,
+    pepper: &str,
+) -> (Option<String>, Option<String>) {
+    if client_type != "confidential"
+        || !matches!(
+            token_endpoint_auth_method,
+            "client_secret_basic" | "client_secret_post"
+        )
+    {
+        return (None, None);
+    }
+    let secret = random_urlsafe_token();
+    let digest = hash_client_secret(&secret, pepper);
+    (Some(secret), Some(digest))
+}
+
+struct DynamicRegistrationCrypto<'a> {
+    response_signing_algorithms: &'a [&'static str],
+}
+
+impl AdminClientCryptoPort for DynamicRegistrationCrypto<'_> {
+    fn response_signing_algorithms(&self) -> Vec<String> {
+        self.response_signing_algorithms
+            .iter()
+            .map(|value| (*value).to_owned())
+            .collect()
+    }
+
+    fn issue_client_secret(&self, pepper: &str) -> (String, String) {
+        let secret = random_urlsafe_token();
+        let digest = hash_client_secret(&secret, pepper);
+        (secret, digest)
+    }
+
+    fn validate_jwks(&self, jwks: &Value, allow_missing_kid: bool) -> Result<(), String> {
+        crate::support::validate_client_jwks_with_missing_kid_policy(jwks, allow_missing_kid)
+            .map_err(|error| error.to_string())
+    }
+
+    fn matching_encryption_key_count(&self, jwks: &Value, algorithm: &str) -> usize {
+        crate::support::client_jwks_matching_encryption_key_count(jwks, algorithm)
+    }
+
+    fn contains_signing_key(&self, jwks: &Value) -> bool {
+        crate::support::client_jwks_contains_signing_key(jwks)
+    }
+
+    fn valid_self_signed_mtls_jwks(&self, jwks: &Value) -> bool {
+        crate::support::validate_self_signed_mtls_jwks(jwks)
+    }
 }
 
 async fn authenticate_registration_client(
@@ -557,13 +612,13 @@ async fn deactivate_dynamic_client(
     Ok(())
 }
 
-fn insert_error_to_management_response(error: InsertClientError) -> HttpResponse {
+fn insert_error_to_management_response(error: AdminClientError) -> HttpResponse {
     match error {
-        InsertClientError::InvalidRequest(message) => {
+        AdminClientError::InvalidRequest(message) => {
             dynamic_registration_error_response(map_insert_error(message))
         }
-        InsertClientError::Server(message) => {
-            tracing::warn!(%message, "failed to prepare dynamic client management response");
+        error => {
+            tracing::warn!(%error, "failed to prepare dynamic client management response");
             oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
