@@ -96,6 +96,25 @@ fn unknown_yaml_key_is_rejected_with_the_key_name() {
 }
 
 #[test]
+fn removed_oidc_federation_gate_is_accepted_as_a_deprecated_no_op() {
+    let path = temp_config_dir("deprecated_oidc_federation");
+    std::fs::write(
+        path.join(".env.yaml"),
+        "ENABLE_OIDC_FEDERATION: true\nISSUER: https://issuer.example\n",
+    )
+    .unwrap();
+
+    let source = ConfigSource::load_from_dir(&path).unwrap();
+    let _ = std::fs::remove_dir_all(&path);
+
+    assert!(source.get("ENABLE_OIDC_FEDERATION").is_none());
+    assert_eq!(
+        source.required_string("ISSUER").unwrap(),
+        "https://issuer.example"
+    );
+}
+
+#[test]
 fn missing_config_file_can_be_replaced_by_whitelisted_environment() {
     let path = temp_config_dir("env_only");
 
