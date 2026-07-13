@@ -22,16 +22,18 @@ use client_auth::{
     authenticate_revocation_client_with_dependencies, consume_token_client_assertion,
     token_management_auth_error, token_management_client_auth_error,
 };
-use client_credentials::{client_credentials_issue_request, token_client_credentials};
-use device::{DEVICE_CODE_GRANT_TYPE, token_device_code};
+use client_credentials::{client_credentials_issue_request, token_client_credentials_with_service};
+use device::{DEVICE_CODE_GRANT_TYPE, token_device_code_with_service};
 use dispatch::validate_token_request_profile;
 #[cfg(test)]
 use issue::access_token_subject_key;
+#[cfg(test)]
+use issue::issue_token_response;
 use issue::{
-    issue_token_response, mark_failed_authorization_code, revoke_issued_authorization_code_tokens,
+    mark_failed_authorization_code, revoke_issued_authorization_code_tokens,
     should_issue_refresh_token,
 };
-use jwt_bearer::{JWT_BEARER_GRANT_TYPE, token_jwt_bearer};
+use jwt_bearer::{JWT_BEARER_GRANT_TYPE, token_jwt_bearer_with_service};
 use native_sso::{
     native_sso_profile_requested, native_sso_requested, new_native_sso_token_binding,
     persist_native_sso_device_secret, token_native_sso_exchange,
@@ -168,5 +170,28 @@ mod lifecycle_boundary_tests {
         assert!(
             !source.contains("pub(crate) async fn ciba_verification(\n    state: Data<AppState>")
         );
+    }
+
+    #[test]
+    fn shared_issuance_core_uses_typed_context_and_existing_service() {
+        let source = include_str!("token/issue.rs");
+        let core = source
+            .split("pub(crate) async fn issue_token_response_with_service")
+            .nth(1)
+            .and_then(|source| source.split("#[cfg(test)]").next())
+            .expect("issuance core must precede test-only compatibility code");
+        for forbidden in [
+            "AppState",
+            "state.settings",
+            "state.diesel_db",
+            "state.valkey_connection",
+            "TokenIssuanceRepository::new",
+            "TokenIssuanceStateAdapter::new",
+        ] {
+            assert!(
+                !core.contains(forbidden),
+                "shared issuance core reintroduced {forbidden}"
+            );
+        }
     }
 }

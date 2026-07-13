@@ -37,10 +37,12 @@ use serde_json::{Value, json};
 #[cfg(test)]
 use uuid::Uuid;
 // 只消费授权码并转入统一令牌签发逻辑。
+#[cfg(test)]
+use super::issue::TokenIssuanceConfig;
 use super::{
     ServerTokenService, TokenForm, consume_token_client_assertion,
-    issue::issue_token_response_with_service, native_sso_requested, new_native_sso_token_binding,
-    revoke_issued_authorization_code_tokens,
+    issue::{TokenIssuanceContext, issue_token_response_with_service},
+    native_sso_requested, new_native_sso_token_binding, revoke_issued_authorization_code_tokens,
 };
 
 enum AuthorizationCodeConsumption {
@@ -318,6 +320,7 @@ async fn revoke_replayed_authorization_code(
 pub(crate) async fn token_authorization_code_with_service(
     state: &AppState,
     token_service: &ServerTokenService,
+    issuance: &TokenIssuanceContext<'_>,
     req: &HttpRequest,
     client: &ClientRow,
     form: &TokenForm,
@@ -582,7 +585,7 @@ pub(crate) async fn token_authorization_code_with_service(
         }
     };
     issue_token_response_with_service(
-        state,
+        issuance,
         token_service,
         client,
         token_issue_from_authorization_code(AuthorizationCodeIssueInput {
@@ -634,8 +637,21 @@ pub(crate) async fn token_authorization_code(
     client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
     let service = test_token_service(state);
-    token_authorization_code_with_service(state, &service, req, client, form, client_assertion)
-        .await
+    let config = TokenIssuanceConfig::from(state.settings.as_ref());
+    let modules = state.active_module_snapshot();
+    token_authorization_code_with_service(
+        state,
+        &service,
+        &TokenIssuanceContext {
+            config: &config,
+            modules: &modules,
+        },
+        req,
+        client,
+        form,
+        client_assertion,
+    )
+    .await
 }
 
 async fn mark_failed_authorization_code(

@@ -3,9 +3,9 @@
 use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_http_actix::oauth_token_error;
 
+use super::issue::{TokenIssuanceContext, issue_token_response_with_service};
 use super::{
-    TokenForm, client_credentials_issue_request, consume_token_client_assertion,
-    issue_token_response,
+    ServerTokenService, TokenForm, client_credentials_issue_request, consume_token_client_assertion,
 };
 use crate::domain::{AppState, ClientRow, RefreshTokenPolicy, TokenIssue};
 use crate::settings::Settings;
@@ -127,6 +127,8 @@ impl ValidatedJwtBearerAssertion {
 
 async fn consume_jwt_bearer_assertion(
     state: &AppState,
+    token_service: &ServerTokenService,
+    issuance: &TokenIssuanceContext<'_>,
     client: &ClientRow,
     assertion: &ValidatedJwtBearerAssertion,
 ) -> Result<(), JwtBearerAssertionError> {
@@ -148,7 +150,7 @@ async fn consume_jwt_bearer_assertion(
     }
 }
 
-pub(crate) async fn token_jwt_bearer(
+pub(crate) async fn token_jwt_bearer_with_service(
     state: &AppState,
     req: &HttpRequest,
     client: &ClientRow,
@@ -237,8 +239,9 @@ pub(crate) async fn token_jwt_bearer(
         Ok(issue_request) => issue_request,
         Err(response) => return response,
     };
-    issue_token_response(
-        state,
+    issue_token_response_with_service(
+        issuance,
+        token_service,
         client,
         TokenIssue {
             user_id: None,
@@ -266,6 +269,37 @@ pub(crate) async fn token_jwt_bearer(
             issued_token_type: None,
             native_sso: None,
         },
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(crate) async fn token_jwt_bearer(
+    state: &AppState,
+    req: &HttpRequest,
+    client: &ClientRow,
+    form: &TokenForm,
+    client_assertion: Option<&ValidatedClientAssertion>,
+) -> HttpResponse {
+    let connection = state.valkey_connection();
+    let service = ServerTokenService::new(
+        nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
+        nazo_valkey::TokenIssuanceStateAdapter::new(&connection),
+        state.keyset.clone(),
+    );
+    let config = super::issue::TokenIssuanceConfig::from(state.settings.as_ref());
+    let modules = state.active_module_snapshot();
+    token_jwt_bearer_with_service(
+        state,
+        &service,
+        &TokenIssuanceContext {
+            config: &config,
+            modules: &modules,
+        },
+        req,
+        client,
+        form,
+        client_assertion,
     )
     .await
 }

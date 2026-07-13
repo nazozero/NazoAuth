@@ -34,8 +34,9 @@ use super::client_auth::{
     authenticate_client_with_dependencies,
     consume_token_management_client_assertion_with_authorization_service,
 };
+use super::issue::{TokenIssuanceContext, issue_token_response_with_service};
 use super::{
-    TokenForm, consume_token_client_assertion, issue_token_response, token_management_auth_error,
+    ServerTokenService, TokenForm, consume_token_client_assertion, token_management_auth_error,
 };
 use crate::http::authorization::ServerAuthorizationService;
 use nazo_auth::{
@@ -308,8 +309,10 @@ pub(crate) fn device_authorization_request_payload(
     })
 }
 
-pub(crate) async fn token_device_code(
+pub(crate) async fn token_device_code_with_service(
     state: &AppState,
+    token_service: &ServerTokenService,
+    issuance: &TokenIssuanceContext<'_>,
     req: &HttpRequest,
     client: &ClientRow,
     form: &TokenForm,
@@ -394,8 +397,9 @@ pub(crate) async fn token_device_code(
         ),
         Ok(DevicePollCommit::Approved(approved)) => {
             let nazo_auth::ApprovedDeviceAuthorization { payload, approval } = *approved;
-            issue_token_response(
-                state,
+            issue_token_response_with_service(
+                issuance,
+                token_service,
                 client,
                 TokenIssue {
                     user_id: Some(approval.user_id),
@@ -454,6 +458,37 @@ pub(crate) async fn token_device_code(
             false,
         ),
     }
+}
+
+#[cfg(test)]
+pub(crate) async fn token_device_code(
+    state: &AppState,
+    req: &HttpRequest,
+    client: &ClientRow,
+    form: &TokenForm,
+    client_assertion: Option<&ValidatedClientAssertion>,
+) -> HttpResponse {
+    let connection = state.valkey_connection();
+    let service = ServerTokenService::new(
+        nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
+        nazo_valkey::TokenIssuanceStateAdapter::new(&connection),
+        state.keyset.clone(),
+    );
+    let config = super::issue::TokenIssuanceConfig::from(state.settings.as_ref());
+    let modules = state.active_module_snapshot();
+    token_device_code_with_service(
+        state,
+        &service,
+        &TokenIssuanceContext {
+            config: &config,
+            modules: &modules,
+        },
+        req,
+        client,
+        form,
+        client_assertion,
+    )
+    .await
 }
 
 pub(crate) async fn device_verification_page(

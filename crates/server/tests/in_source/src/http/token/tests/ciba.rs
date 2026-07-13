@@ -672,8 +672,20 @@ async fn ciba_token_request_validates_mtls_before_auth_req_id_state() {
     let connection = state.valkey_connection();
     let ciba_service = ServerCibaService::new(CibaStore::new(&connection));
     let users = nazo_postgres::UserRepository::new(state.diesel_db.clone());
+    let token_service = ServerTokenService::new(
+        nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
+        nazo_valkey::TokenIssuanceStateAdapter::new(&connection),
+        state.keyset.clone(),
+    );
+    let issuance_config = TokenIssuanceConfig::from(state.settings.as_ref());
+    let modules = state.active_module_snapshot();
     let response = token_ciba(
         &state,
+        &token_service,
+        &TokenIssuanceContext {
+            config: &issuance_config,
+            modules: &modules,
+        },
         &ciba_service,
         &users,
         &req,

@@ -1,10 +1,10 @@
 //! OpenID Connect Native SSO for Mobile Apps support.
 use nazo_http_actix::oauth_token_error;
 
-use super::TokenForm;
+use super::{ServerTokenService, TokenForm};
 use crate::domain::{AppState, ClientRow, NativeSsoTokenBinding, RefreshTokenPolicy, TokenIssue};
 use crate::http::token::client_auth::consume_token_client_assertion;
-use crate::http::token::issue::issue_token_response;
+use crate::http::token::issue::{TokenIssuanceContext, issue_token_response_with_service};
 use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::blake3_hex;
@@ -268,6 +268,8 @@ pub(crate) async fn persist_native_sso_device_secret(
 
 pub(crate) async fn token_native_sso_exchange(
     state: &AppState,
+    token_service: &ServerTokenService,
+    issuance: &TokenIssuanceContext<'_>,
     req: &HttpRequest,
     client: &ClientRow,
     form: &TokenForm,
@@ -392,8 +394,9 @@ pub(crate) async fn token_native_sso_exchange(
         Ok(binding) => binding,
         Err(response) => return response,
     };
-    issue_token_response(
-        state,
+    issue_token_response_with_service(
+        issuance,
+        token_service,
         client,
         TokenIssue {
             user_id: Some(secret.user_id),

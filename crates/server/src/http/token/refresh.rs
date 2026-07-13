@@ -23,9 +23,12 @@ use serde_json::Value;
 use serde_json::json;
 use uuid::Uuid;
 // 只处理 refresh token 校验、复用检测和轮换前置约束。
+#[cfg(test)]
+use super::issue::TokenIssuanceConfig;
 use super::{
     ServerTokenService, TokenForm, consume_token_client_assertion,
-    issue::issue_token_response_with_service, should_issue_refresh_token,
+    issue::{TokenIssuanceContext, issue_token_response_with_service},
+    should_issue_refresh_token,
 };
 use crate::settings::AuthorizationServerProfile;
 
@@ -113,6 +116,7 @@ async fn lost_response_successor_or_mark_reuse(
 pub(crate) async fn token_refresh_with_service(
     state: &AppState,
     token_service: &ServerTokenService,
+    issuance: &TokenIssuanceContext<'_>,
     req: &HttpRequest,
     client: &ClientRow,
     form: &TokenForm,
@@ -342,7 +346,7 @@ pub(crate) async fn token_refresh_with_service(
         None => refresh_token_policy_for_profile(&state.settings, client, &token),
     };
     issue_token_response_with_service(
-        state,
+        issuance,
         token_service,
         client,
         TokenIssue {
@@ -388,7 +392,21 @@ pub(crate) async fn token_refresh(
         nazo_valkey::TokenIssuanceStateAdapter::new(&state.valkey_connection()),
         state.keyset.clone(),
     );
-    token_refresh_with_service(state, &service, req, client, form, client_assertion).await
+    let config = TokenIssuanceConfig::from(state.settings.as_ref());
+    let modules = state.active_module_snapshot();
+    token_refresh_with_service(
+        state,
+        &service,
+        &TokenIssuanceContext {
+            config: &config,
+            modules: &modules,
+        },
+        req,
+        client,
+        form,
+        client_assertion,
+    )
+    .await
 }
 
 #[cfg(test)]

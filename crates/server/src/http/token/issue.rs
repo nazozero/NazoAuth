@@ -1,6 +1,7 @@
 //! 令牌签发响应构造。
-use crate::domain::{AppState, ClientRow, RefreshTokenPolicy, TokenIssue};
 #[cfg(test)]
+use crate::domain::AppState;
+use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
 use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
@@ -29,6 +30,42 @@ mod authorization_code_state;
 mod refresh_persistence;
 
 use super::{ServerTokenService, persist_native_sso_device_secret};
+
+#[derive(Clone)]
+pub(crate) struct TokenIssuanceConfig {
+    issuer: Box<str>,
+    auth_code_ttl_seconds: u64,
+    access_token_ttl_seconds: i64,
+    id_token_ttl_seconds: i64,
+    refresh_token_ttl_seconds: i64,
+}
+
+impl From<&Settings> for TokenIssuanceConfig {
+    fn from(settings: &Settings) -> Self {
+        Self {
+            issuer: settings.endpoint.issuer.as_str().into(),
+            auth_code_ttl_seconds: settings.protocol.auth_code_ttl_seconds,
+            access_token_ttl_seconds: settings.protocol.access_token_ttl_seconds,
+            id_token_ttl_seconds: settings.protocol.id_token_ttl_seconds,
+            refresh_token_ttl_seconds: settings.protocol.refresh_token_ttl_seconds,
+        }
+    }
+}
+
+pub(crate) struct TokenIssuanceContext<'a> {
+    pub(crate) config: &'a TokenIssuanceConfig,
+    pub(crate) modules: &'a nazo_runtime_modules::ActiveModuleSnapshot,
+}
+
+impl TokenIssuanceContext<'_> {
+    fn permits(&self, module: nazo_runtime_modules::ModuleId) -> bool {
+        nazo_auth::module_admissible(
+            self.modules,
+            module,
+            nazo_auth::CapabilityAdmission::ExistingTransaction,
+        )
+    }
+}
 
 use authorization_code_state::{
     consumed_authorization_code_ttl_seconds, mark_failed_authorization_code_if_needed,
@@ -116,12 +153,12 @@ pub(crate) fn access_token_subject_key(tenant_id: Uuid, jti: &str) -> String {
 }
 
 pub(crate) async fn issue_token_response_with_service(
-    state: &AppState,
+    context: &TokenIssuanceContext<'_>,
     token_service: &ServerTokenService,
     client: &ClientRow,
     mut issue: TokenIssue,
 ) -> HttpResponse {
-    let auth_code_ttl_seconds = state.settings.protocol.auth_code_ttl_seconds.max(1);
+    let auth_code_ttl_seconds = context.config.auth_code_ttl_seconds.max(1);
     issue.authorization_details = match normalize_authorization_details(issue.authorization_details)
     {
         Ok(value) => value,
@@ -157,9 +194,7 @@ pub(crate) async fn issue_token_response_with_service(
             false,
         );
     }
-    if issue.native_sso.is_some()
-        && !state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::NativeSso)
-    {
+    if issue.native_sso.is_some() && !context.permits(nazo_runtime_modules::ModuleId::NativeSso) {
         mark_failed_authorization_code_if_needed(
             token_service,
             issue.authorization_code_hash.as_deref(),
@@ -209,7 +244,7 @@ pub(crate) async fn issue_token_response_with_service(
     };
     let issued_access_token = match token_service
         .sign_access_token(nazo_auth::AccessTokenSignInput {
-            issuer: &state.settings.endpoint.issuer,
+            issuer: &context.config.issuer,
             tenant_id: client.tenant_id,
             subject: &issue.subject,
             user_id: issue.user_id,
@@ -224,7 +259,7 @@ pub(crate) async fn issue_token_response_with_service(
             authorization_details: &issue.authorization_details,
             userinfo_claims: &issue.userinfo_claims,
             userinfo_claim_requests: &issue.userinfo_claim_requests,
-            ttl_seconds: state.settings.protocol.access_token_ttl_seconds,
+            ttl_seconds: context.config.access_token_ttl_seconds,
             dpop_jkt: issue.dpop_jkt.as_deref(),
             mtls_x5t_s256: issue.mtls_x5t_s256.as_deref(),
             actor: issue.actor.as_ref(),
@@ -250,7 +285,7 @@ pub(crate) async fn issue_token_response_with_service(
     };
     if let Err(error) = persist_access_token_subject_mapping(
         token_service,
-        state.settings.protocol.access_token_ttl_seconds,
+        context.config.access_token_ttl_seconds,
         &issued_access_token.jti,
         client.tenant_id,
         issue.user_id,
@@ -281,7 +316,7 @@ pub(crate) async fn issue_token_response_with_service(
     let mut body = json!({
         "access_token": issued_access_token.token,
         "token_type": token_type,
-        "expires_in": state.settings.protocol.access_token_ttl_seconds,
+        "expires_in": context.config.access_token_ttl_seconds,
         "scope": issue.scopes.join(" ")
     });
     if let Some(issued_token_type) = issue.issued_token_type.as_deref() {
@@ -348,7 +383,7 @@ pub(crate) async fn issue_token_response_with_service(
         }
         let id_token = match token_service
             .sign_id_token(nazo_auth::IdTokenSignInput {
-                issuer: &state.settings.endpoint.issuer,
+                issuer: &context.config.issuer,
                 subject: &issue.subject,
                 client_id: &client.client_id,
                 nonce: issue.nonce.as_deref(),
@@ -357,13 +392,11 @@ pub(crate) async fn issue_token_response_with_service(
                 sid: id_token_session_sid(
                     client,
                     &issue,
-                    state.permits_existing_module_transaction(
-                        nazo_runtime_modules::ModuleId::FrontchannelLogout,
-                    ),
+                    context.permits(nazo_runtime_modules::ModuleId::FrontchannelLogout),
                 ),
                 acr: issue.acr.as_deref(),
                 extra_claims: user_claims.as_ref(),
-                ttl_seconds: state.settings.protocol.id_token_ttl_seconds,
+                ttl_seconds: context.config.id_token_ttl_seconds,
                 signing_algorithm: signing_algorithm_name(id_token_signing_alg_for_client(client)),
             })
             .await
@@ -414,8 +447,7 @@ pub(crate) async fn issue_token_response_with_service(
                 rotated_from,
                 lost_response_retry,
                 issued_at: now,
-                expires_at: now
-                    + Duration::seconds(state.settings.protocol.refresh_token_ttl_seconds),
+                expires_at: now + Duration::seconds(context.config.refresh_token_ttl_seconds),
             };
             match persist_refresh_token(token_service, client, &issue, &refresh).await {
                 Ok(RefreshPersistResult::Inserted) => {
@@ -508,8 +540,8 @@ pub(crate) async fn issue_token_response_with_service(
     }
     if let Some(code_hash) = issue.authorization_code_hash.as_deref() {
         let consumed_state_ttl_seconds = consumed_authorization_code_ttl_seconds(
-            state.settings.protocol.access_token_ttl_seconds,
-            state.settings.protocol.refresh_token_ttl_seconds,
+            context.config.access_token_ttl_seconds,
+            context.config.refresh_token_ttl_seconds,
             refresh_token_family_id,
         );
         if let Err(error) = persist_consumed_authorization_code(
@@ -568,6 +600,7 @@ pub(crate) async fn issue_token_response_with_service(
     response
 }
 
+#[cfg(test)]
 pub(crate) async fn issue_token_response(
     state: &AppState,
     client: &ClientRow,
@@ -578,7 +611,18 @@ pub(crate) async fn issue_token_response(
         nazo_valkey::TokenIssuanceStateAdapter::new(&state.valkey_connection()),
         state.keyset.clone(),
     );
-    issue_token_response_with_service(state, &service, client, issue).await
+    let config = TokenIssuanceConfig::from(state.settings.as_ref());
+    let modules = state.active_module_snapshot();
+    issue_token_response_with_service(
+        &TokenIssuanceContext {
+            config: &config,
+            modules: &modules,
+        },
+        &service,
+        client,
+        issue,
+    )
+    .await
 }
 
 #[cfg(test)]

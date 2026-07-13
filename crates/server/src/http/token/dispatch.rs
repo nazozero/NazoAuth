@@ -34,6 +34,7 @@ use super::client_auth::{
     TokenManagementClientAuthError, authenticate_client_with_dependencies,
     perform_dummy_client_secret_verification,
 };
+use super::issue::{TokenIssuanceConfig, TokenIssuanceContext};
 use super::{
     CIBA_GRANT_TYPE, DEVICE_CODE_GRANT_TYPE, JWT_BEARER_GRANT_TYPE, ServerTokenService,
     TOKEN_EXCHANGE_GRANT_TYPE, TokenForm, TokenFormError, parse_token_form,
@@ -204,6 +205,7 @@ pub(crate) async fn token_with_service(
     authorization_service: Data<ServerAuthorizationService>,
     ciba_service: Data<super::ciba::ServerCibaService>,
     ciba_users: Data<nazo_postgres::UserRepository>,
+    issuance_config: Data<TokenIssuanceConfig>,
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
@@ -421,11 +423,17 @@ pub(crate) async fn token_with_service(
     ) {
         return response;
     }
+    let modules = state.active_module_snapshot();
+    let issuance = TokenIssuanceContext {
+        config: &issuance_config,
+        modules: &modules,
+    };
     match form.grant_type.as_str() {
         "authorization_code" => {
             token_authorization_code_with_service(
                 &state,
                 &token_service,
+                &issuance,
                 &req,
                 &client,
                 &form,
@@ -437,6 +445,7 @@ pub(crate) async fn token_with_service(
             token_refresh_with_service(
                 &state,
                 &token_service,
+                &issuance,
                 &req,
                 &client,
                 &form,
@@ -445,17 +454,46 @@ pub(crate) async fn token_with_service(
             .await
         }
         "client_credentials" => {
-            token_client_credentials(&state, &req, &client, &form, client_assertion.as_ref()).await
+            token_client_credentials_with_service(
+                &state,
+                &token_service,
+                &issuance,
+                &req,
+                &client,
+                &form,
+                client_assertion.as_ref(),
+            )
+            .await
         }
         JWT_BEARER_GRANT_TYPE => {
-            token_jwt_bearer(&state, &req, &client, &form, client_assertion.as_ref()).await
+            token_jwt_bearer_with_service(
+                &state,
+                &token_service,
+                &issuance,
+                &req,
+                &client,
+                &form,
+                client_assertion.as_ref(),
+            )
+            .await
         }
         DEVICE_CODE_GRANT_TYPE => {
-            token_device_code(&state, &req, &client, &form, client_assertion.as_ref()).await
+            token_device_code_with_service(
+                &state,
+                &token_service,
+                &issuance,
+                &req,
+                &client,
+                &form,
+                client_assertion.as_ref(),
+            )
+            .await
         }
         CIBA_GRANT_TYPE => {
             token_ciba(
                 &state,
+                &token_service,
+                &issuance,
                 &ciba_service,
                 &ciba_users,
                 &req,
@@ -467,7 +505,16 @@ pub(crate) async fn token_with_service(
             .await
         }
         TOKEN_EXCHANGE_GRANT_TYPE => {
-            token_exchange(&state, &req, &client, &form, client_assertion.as_ref()).await
+            token_exchange(
+                &state,
+                &token_service,
+                &issuance,
+                &req,
+                &client,
+                &form,
+                client_assertion.as_ref(),
+            )
+            .await
         }
         _ => oauth_token_error(
             StatusCode::BAD_REQUEST,
@@ -498,12 +545,14 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
         nazo_valkey::CibaStore::new(&connection),
     ));
     let ciba_users = Data::new(nazo_postgres::UserRepository::new(state.diesel_db.clone()));
+    let issuance_config = Data::new(TokenIssuanceConfig::from(state.settings.as_ref()));
     token_with_service(
         state,
         service,
         authorization_service,
         ciba_service,
         ciba_users,
+        issuance_config,
         req,
         body,
     )
