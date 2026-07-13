@@ -2,7 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
 
-use crate::ModuleId;
+use crate::{ModuleId, ModuleRevision};
 
 pub type LifecycleFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -20,6 +20,7 @@ pub trait ModuleLifecycle: Send + Sync {
     fn drain_stored_transactions(
         &self,
         module_id: ModuleId,
+        revision: ModuleRevision,
         max_duration: Duration,
     ) -> LifecycleFuture<'_, Result<bool, LifecycleFailure>>;
 }
@@ -42,6 +43,7 @@ impl ModuleLifecycle for NoopModuleLifecycle {
     fn drain_stored_transactions(
         &self,
         _module_id: ModuleId,
+        _revision: ModuleRevision,
         _max_duration: Duration,
     ) -> LifecycleFuture<'_, Result<bool, LifecycleFailure>> {
         Box::pin(async { Ok(true) })

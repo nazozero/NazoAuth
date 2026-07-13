@@ -51,6 +51,7 @@ nazo-key-management = { version = "0.1.0", path = "../key-management" }
 nazo-postgres = { version = "0.1.0", path = "../postgres" }
 nazo-valkey = { version = "0.1.0", path = "../valkey" }
 nazo-resource-server = { version = "0.1.0", path = "../resource-server" }
+nazo-runtime-modules = { version = "0.1.0", path = "../runtime-modules" }
 openssl = "0.10.81"
 opentelemetry = "0.32.0"
 opentelemetry-appender-tracing = "0.32.0"

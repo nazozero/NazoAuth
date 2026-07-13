@@ -6,6 +6,7 @@ mod domain;
 mod http;
 pub mod keyctl;
 pub mod oidf_seed;
+mod runtime_modules;
 pub use nazo_resource_server as resource_server;
 mod schema;
 mod settings;

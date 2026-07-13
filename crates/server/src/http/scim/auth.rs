@@ -32,6 +32,13 @@ pub(super) async fn require_scim_bearer(
     req: &HttpRequest,
     required_scope: ScimRequiredScope,
 ) -> Result<ScimCredential, HttpResponse> {
+    if !state.accepts_module(nazo_runtime_modules::ModuleId::Scim) {
+        return Err(scim_error(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "SCIM is disabled",
+        ));
+    }
     let Some(actual) = bearer_token(req) else {
         audit_scim_token_denied(state, req, required_scope, "missing_bearer", None);
         return Err(scim_error(

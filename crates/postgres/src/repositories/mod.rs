@@ -20,7 +20,7 @@ pub use grants::{
 };
 pub use mfa::MfaRepository;
 pub use passkeys::PasskeyRepository;
-pub use runtime_modules::RuntimeModuleRepository;
+pub use runtime_modules::{RuntimeModuleEventPage, RuntimeModuleRepository};
 pub use scim::ScimRepository;
 pub use tokens::TokenRepository;
 pub use users::UserRepository;

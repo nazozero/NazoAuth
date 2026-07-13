@@ -12,6 +12,7 @@ use actix_web::{App, HttpServer, dev::Service, middleware::from_fn, web};
 use crate::config::{ConfigSource, database_max_connections, database_url};
 use crate::domain::AppState;
 use crate::http::spawn_backchannel_logout_delivery_worker;
+use crate::runtime_modules::RuntimeModules;
 use crate::settings::Settings;
 use crate::support::{
     configure_password_hash_limits, default_password_hash_max_concurrency,
@@ -59,6 +60,9 @@ pub async fn run() -> anyhow::Result<()> {
     let valkey = nazo_valkey::test_support::connect(&valkey_url, valkey_command_timeout).await?;
 
     let settings = Arc::new(Settings::from_config(&config)?);
+    let runtime_modules =
+        web::Data::new(RuntimeModules::initialize(diesel_db.clone(), &settings).await?);
+    RuntimeModules::spawn_reconciler(runtime_modules.clone());
     tokio::fs::create_dir_all(settings.storage().avatar_storage_dir)
         .await
         .ok();
@@ -70,6 +74,8 @@ pub async fn run() -> anyhow::Result<()> {
         valkey,
         settings,
         keyset,
+        #[cfg(not(test))]
+        runtime_modules: runtime_modules.registry.clone(),
     });
     spawn_backchannel_logout_delivery_worker(state.clone());
 
@@ -110,6 +116,7 @@ pub async fn run() -> anyhow::Result<()> {
             })
             .wrap(from_fn(security_headers))
             .app_data(state.clone())
+            .app_data(runtime_modules.clone())
             .configure(|cfg| routes::configure(cfg, &state.settings, perf_metrics_enabled))
     })
     .bind(addr)?

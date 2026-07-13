@@ -1,13 +1,13 @@
 use super::prelude::*;
 use crate::domain::KeySnapshot;
 use crate::http::authorization::BASELINE_ACR_VALUE;
-use crate::http::token::{
-    CIBA_GRANT_TYPE, DEVICE_CODE_GRANT_TYPE, JWT_BEARER_GRANT_TYPE, TOKEN_EXCHANGE_GRANT_TYPE,
-};
+#[cfg(test)]
+use crate::http::token::CIBA_GRANT_TYPE;
 use crate::settings::{AuthorizationServerProfile, CibaSecurityProfile, Settings, SubjectType};
 use crate::support::{
     SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
 };
+use nazo_auth::MetadataCapabilities;
 
 const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
 const DPOP_SIGNING_ALGS: [&str; 2] = ["EdDSA", "ES256"];
@@ -78,10 +78,27 @@ pub(crate) async fn captcha_config() -> Json<Value> {
 
 fn authorization_server_metadata_value(state: &AppState) -> Value {
     let keyset = state.keyset.snapshot();
-    authorization_server_metadata(&state.settings, &keyset)
+    authorization_server_metadata_with_capabilities(
+        &state.settings,
+        &keyset,
+        &state.metadata_capabilities(),
+    )
 }
 
+#[cfg(test)]
 fn authorization_server_metadata(settings: &Settings, keyset: &KeySnapshot) -> Value {
+    authorization_server_metadata_with_capabilities(
+        settings,
+        keyset,
+        &metadata_capabilities_from_settings(settings),
+    )
+}
+
+fn authorization_server_metadata_with_capabilities(
+    settings: &Settings,
+    keyset: &KeySnapshot,
+    capabilities: &MetadataCapabilities,
+) -> Value {
     let issuer = settings.issuer.as_str();
     let mtls_base = settings.mtls_endpoint_base_url.as_str();
     let id_token_signing_algs = id_token_signing_alg_values_supported(keyset);
@@ -100,22 +117,14 @@ fn authorization_server_metadata(settings: &Settings, keyset: &KeySnapshot) -> V
         settings.protocol().authorization_server_profile,
         active_signing_algs.as_slice(),
     );
-    let response_modes = response_modes_supported(settings.protocol().authorization_server_profile);
-    let mut grant_types = vec![
-        "authorization_code",
-        "refresh_token",
-        "client_credentials",
-        JWT_BEARER_GRANT_TYPE,
-        TOKEN_EXCHANGE_GRANT_TYPE,
-    ];
-    if settings.modules().enable_device_authorization_grant {
-        grant_types.push(DEVICE_CODE_GRANT_TYPE);
+    let mut response_modes =
+        response_modes_supported(settings.protocol().authorization_server_profile);
+    if !capabilities.jarm {
+        response_modes.retain(|mode| *mode != "jwt");
     }
-    if settings.modules().enable_ciba {
-        grant_types.push(CIBA_GRANT_TYPE);
-    }
+    let grant_types = capabilities.grant_types.clone();
     let mut scopes_supported = SCOPES_SUPPORTED.to_vec();
-    if settings.modules().enable_native_sso {
+    if capabilities.native_sso {
         scopes_supported.push("device_sso");
     }
     let mut metadata = json!({
@@ -163,34 +172,35 @@ fn authorization_server_metadata(settings: &Settings, keyset: &KeySnapshot) -> V
         "dpop_signing_alg_values_supported": DPOP_SIGNING_ALGS,
         "request_object_signing_alg_values_supported": request_object_signing_algs
     });
-    if settings.modules().enable_authorization_details {
+    if capabilities.authorization_details {
         metadata["authorization_details_types_supported"] =
             json!(["account_information", "payment_initiation"]);
     }
-    if settings.modules().enable_device_authorization_grant {
+    if capabilities.device_authorization {
         metadata["device_authorization_endpoint"] = json!(format!("{issuer}/device_authorization"));
     }
-    if settings.modules().enable_dynamic_client_registration {
+    if capabilities.dynamic_client_registration {
         metadata["registration_endpoint"] = json!(format!("{issuer}/register"));
     }
-    if settings.modules().enable_frontchannel_logout {
+    if capabilities.frontchannel_logout {
         metadata["frontchannel_logout_supported"] = json!(true);
         metadata["frontchannel_logout_session_supported"] = json!(true);
     }
-    if settings.modules().enable_session_management {
+    if capabilities.session_management {
         metadata["check_session_iframe"] = json!(format!("{issuer}/check_session"));
     }
-    if settings.modules().enable_ciba {
+    if capabilities.ciba {
         metadata["backchannel_authentication_endpoint"] = json!(format!("{issuer}/bc-authorize"));
         metadata["backchannel_token_delivery_modes_supported"] = json!(["poll"]);
         metadata["backchannel_user_code_parameter_supported"] = json!(false);
         metadata["backchannel_authentication_request_signing_alg_values_supported"] =
             json!(FAPI_CIBA_REQUEST_OBJECT_SIGNING_ALGS);
     }
-    if settings.modules().enable_native_sso {
+    if capabilities.native_sso {
         metadata["native_sso_supported"] = json!(true);
     }
     if settings
+        .protocol()
         .authorization_server_profile
         .requires_signed_introspection()
     {
@@ -201,7 +211,7 @@ fn authorization_server_metadata(settings: &Settings, keyset: &KeySnapshot) -> V
         metadata["introspection_encryption_enc_values_supported"] =
             json!(SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS);
     }
-    if settings.modules().enable_request_object {
+    if capabilities.request_objects {
         metadata["request_parameter_supported"] = json!(true);
     }
     if settings.modules().enable_request_uri_parameter {
@@ -223,7 +233,20 @@ fn authorization_server_metadata(settings: &Settings, keyset: &KeySnapshot) -> V
     metadata
 }
 
-fn protected_resource_metadata(settings: &Settings, _keyset: &KeySnapshot) -> Value {
+#[cfg(test)]
+fn protected_resource_metadata(settings: &Settings, keyset: &KeySnapshot) -> Value {
+    protected_resource_metadata_with_capabilities(
+        settings,
+        keyset,
+        &metadata_capabilities_from_settings(settings),
+    )
+}
+
+fn protected_resource_metadata_with_capabilities(
+    settings: &Settings,
+    _keyset: &KeySnapshot,
+    capabilities: &MetadataCapabilities,
+) -> Value {
     let mtls_enabled = !settings.trusted_proxy_cidrs.is_empty();
     let mut metadata = json!({
         "resource": settings.protocol().protected_resource_identifier,
@@ -236,7 +259,7 @@ fn protected_resource_metadata(settings: &Settings, _keyset: &KeySnapshot) -> Va
     if mtls_enabled {
         metadata["tls_client_certificate_bound_access_tokens"] = json!(true);
     }
-    if settings.modules().enable_authorization_details {
+    if capabilities.authorization_details {
         metadata["authorization_details_types_supported"] =
             json!(["account_information", "payment_initiation"]);
     }
@@ -316,10 +339,49 @@ pub(crate) async fn oauth_authorization_server_metadata(state: Data<AppState>) -
 }
 
 pub(crate) async fn oauth_protected_resource_metadata(state: Data<AppState>) -> Json<Value> {
-    Json(protected_resource_metadata(
+    Json(protected_resource_metadata_with_capabilities(
         &state.settings,
         &state.keyset.snapshot(),
+        &state.metadata_capabilities(),
     ))
+}
+
+#[cfg(test)]
+fn metadata_capabilities_from_settings(settings: &Settings) -> MetadataCapabilities {
+    let settings = settings.modules();
+    let accepting = nazo_runtime_modules::ModuleId::ALL
+        .into_iter()
+        .filter(|module_id| match module_id {
+            nazo_runtime_modules::ModuleId::DeviceAuthorization => {
+                settings.enable_device_authorization_grant
+            }
+            nazo_runtime_modules::ModuleId::TokenExchange
+            | nazo_runtime_modules::ModuleId::JwtBearerGrant
+            | nazo_runtime_modules::ModuleId::Jarm
+            | nazo_runtime_modules::ModuleId::Scim => true,
+            nazo_runtime_modules::ModuleId::Ciba => settings.enable_ciba,
+            nazo_runtime_modules::ModuleId::DynamicClientRegistration => {
+                settings.enable_dynamic_client_registration
+            }
+            nazo_runtime_modules::ModuleId::RequestObjects => settings.enable_request_object,
+            nazo_runtime_modules::ModuleId::AuthorizationDetails => {
+                settings.enable_authorization_details
+            }
+            nazo_runtime_modules::ModuleId::HttpMessageSignatures => {
+                settings.enable_fapi_http_signatures
+            }
+            nazo_runtime_modules::ModuleId::NativeSso => settings.enable_native_sso,
+            nazo_runtime_modules::ModuleId::FrontchannelLogout => {
+                settings.enable_frontchannel_logout
+            }
+            nazo_runtime_modules::ModuleId::SessionManagement => settings.enable_session_management,
+        })
+        .collect();
+    MetadataCapabilities::from_snapshot(&nazo_runtime_modules::ActiveModuleSnapshot {
+        revision: nazo_runtime_modules::ModuleRevision::new(0),
+        accepting,
+        draining: std::collections::BTreeSet::new(),
+    })
 }
 
 pub(crate) async fn jwks(state: Data<AppState>) -> Json<Value> {

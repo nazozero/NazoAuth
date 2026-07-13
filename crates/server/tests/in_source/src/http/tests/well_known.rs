@@ -1156,3 +1156,51 @@ fn discovery_fapi2_ciba_internal_profile_advertises_only_standard_capabilities()
             .is_none()
     );
 }
+#[test]
+fn metadata_is_derived_from_the_typed_runtime_capability_snapshot() {
+    let settings = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
+    let keyset = keyset(jsonwebtoken::Algorithm::RS256);
+    let snapshot = nazo_runtime_modules::ActiveModuleSnapshot {
+        revision: nazo_runtime_modules::ModuleRevision::new(9),
+        accepting: [
+            nazo_runtime_modules::ModuleId::Ciba,
+            nazo_runtime_modules::ModuleId::AuthorizationDetails,
+        ]
+        .into_iter()
+        .collect(),
+        draining: [nazo_runtime_modules::ModuleId::DynamicClientRegistration]
+            .into_iter()
+            .collect(),
+    };
+    let capabilities = MetadataCapabilities::from_snapshot(&snapshot);
+    let metadata =
+        authorization_server_metadata_with_capabilities(&settings, &keyset, &capabilities);
+    assert!(
+        metadata
+            .get("backchannel_authentication_endpoint")
+            .is_some()
+    );
+    assert!(
+        metadata
+            .get("authorization_details_types_supported")
+            .is_some()
+    );
+    assert!(metadata.get("registration_endpoint").is_none());
+    assert!(metadata.get("device_authorization_endpoint").is_none());
+    assert_eq!(
+        metadata["grant_types_supported"],
+        json!([
+            "authorization_code",
+            "refresh_token",
+            "client_credentials",
+            CIBA_GRANT_TYPE
+        ])
+    );
+
+    let resource = protected_resource_metadata_with_capabilities(&settings, &keyset, &capabilities);
+    assert!(
+        resource
+            .get("authorization_details_types_supported")
+            .is_some()
+    );
+}

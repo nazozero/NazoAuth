@@ -4,10 +4,12 @@ mod access_requests;
 mod clients;
 mod federation;
 mod grants;
+mod runtime_modules;
 mod users;
 
 pub(crate) use access_requests::*;
 pub(crate) use clients::*;
 pub(crate) use federation::*;
 pub(crate) use grants::*;
+pub(crate) use runtime_modules::*;
 pub(crate) use users::*;

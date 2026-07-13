@@ -46,21 +46,8 @@ async fn authorize_request(
     req: HttpRequest,
     q: &mut HashMap<String, String>,
 ) -> HttpResponse {
-    if !state.settings.modules().enable_request_object && q.contains_key("request") {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "request 参数未启用.",
-        );
-    }
-    if !state.settings.modules().enable_authorization_details
-        && q.contains_key("authorization_details")
-    {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "authorization_details 参数未启用.",
-        );
+    if let Some(response) = runtime_authorization_capability_error(&state, q) {
+        return response;
     }
 
     let original_authorization_query = q.clone();
@@ -128,14 +115,8 @@ async fn authorize_request(
         );
     }
 
-    if !state.settings.modules().enable_authorization_details
-        && q.contains_key("authorization_details")
-    {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "authorization_details 参数未启用.",
-        );
+    if let Some(response) = runtime_authorization_capability_error(&state, q) {
+        return response;
     }
 
     if !q.contains_key("client_id")
@@ -189,14 +170,8 @@ async fn authorize_request(
         );
     }
     let request_object_error = apply_request_object(&state, q, &client).await.err();
-    if !state.settings.modules().enable_authorization_details
-        && q.contains_key("authorization_details")
-    {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "authorization_details 参数未启用.",
-        );
+    if let Some(response) = runtime_authorization_capability_error(&state, q) {
+        return response;
     }
     let request_dpop_jkt = match q.get("dpop_jkt") {
         Some(value) if is_valid_dpop_jkt(value) => Some(value.clone()),
@@ -517,6 +492,53 @@ async fn authorize_request(
     ))
 }
 
+fn runtime_authorization_capability_error(
+    state: &AppState,
+    parameters: &HashMap<String, String>,
+) -> Option<HttpResponse> {
+    if !state.accepts_module(nazo_runtime_modules::ModuleId::RequestObjects)
+        && parameters.contains_key("request")
+    {
+        return Some(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "request 参数未启用.",
+        ));
+    }
+    if !state.accepts_module(nazo_runtime_modules::ModuleId::AuthorizationDetails)
+        && parameters.contains_key("authorization_details")
+    {
+        return Some(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "authorization_details 参数未启用.",
+        ));
+    }
+    if parameters
+        .get("response_mode")
+        .is_some_and(|mode| mode == "jwt")
+        && !state.accepts_module(nazo_runtime_modules::ModuleId::Jarm)
+    {
+        return Some(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_response_mode",
+            "JWT-secured authorization responses are disabled.",
+        ));
+    }
+    if parameters
+        .get("scope")
+        .is_some_and(|scope| parse_scope(scope).iter().any(|value| value == "device_sso"))
+        && !state.accepts_module(nazo_runtime_modules::ModuleId::NativeSso)
+    {
+        return Some(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_scope",
+            "Native SSO is disabled.",
+        ));
+    }
+    None
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PushedAuthorizationRequestConsumeError {
     Missing,
@@ -582,7 +604,18 @@ pub(crate) async fn authorization_response_redirect(
         .settings
         .authorization_server_profile
         .requires_signed_authorization_response();
-    if input.response_mode == Some("jwt") || signed_response_required {
+    if (input.response_mode == Some("jwt") || signed_response_required)
+        && !state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::Jarm)
+    {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_response_mode",
+            "JWT-secured authorization responses are disabled.",
+        );
+    }
+    if (input.response_mode == Some("jwt") || signed_response_required)
+        && state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::Jarm)
+    {
         if input.client_id.trim().is_empty() {
             tracing::warn!("cannot build signed authorization response without client_id");
             return oauth_error(
@@ -616,7 +649,7 @@ pub(crate) async fn authorization_response_redirect(
         let protection = AuthorizationResponseProtection::from(&client);
         return authorization_response_redirect_with_protection(state, input, protection).await;
     }
-    let session_state = if state.settings.modules().enable_session_management
+    let session_state = if state.accepts_module(nazo_runtime_modules::ModuleId::SessionManagement)
         && input.code.is_some()
         && input.error.is_none()
     {

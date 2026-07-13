@@ -143,7 +143,7 @@ pub(crate) async fn backchannel_authentication(
     req: HttpRequest,
     mut payload: Payload,
 ) -> HttpResponse {
-    if !state.settings.modules().enable_ciba {
+    if !state.accepts_module(nazo_runtime_modules::ModuleId::Ciba) {
         return empty_response(StatusCode::NOT_FOUND);
     }
     let mut form = match parse_backchannel_authentication_form(&req, &mut payload).await {
@@ -809,7 +809,7 @@ pub(crate) async fn ciba_verification_page(
     state: Data<AppState>,
     path: actix_web::web::Path<String>,
 ) -> HttpResponse {
-    if !state.settings.modules().enable_ciba {
+    if !state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::Ciba) {
         return empty_response(StatusCode::NOT_FOUND);
     }
     let location = format!(
@@ -829,7 +829,7 @@ pub(crate) async fn ciba_verification(
     req: HttpRequest,
     path: actix_web::web::Path<String>,
 ) -> HttpResponse {
-    if !state.settings.modules().enable_ciba {
+    if !state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::Ciba) {
         return empty_response(StatusCode::NOT_FOUND);
     }
     let user = match current_user_or_login_required(&state, &req).await {
@@ -877,7 +877,7 @@ pub(crate) async fn ciba_automated_decision(
     req: HttpRequest,
     Query(query): Query<CibaAutomatedDecisionQuery>,
 ) -> HttpResponse {
-    if !state.settings.modules().enable_ciba {
+    if !state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::Ciba) {
         return empty_response(StatusCode::NOT_FOUND);
     }
     let Some(expected_token) = state.settings.ciba_automated_decision_token.as_deref() else {
@@ -935,7 +935,7 @@ pub(crate) async fn ciba_decision(
     path: actix_web::web::Path<String>,
     Json(payload): Json<CibaDecisionRequest>,
 ) -> HttpResponse {
-    if !state.settings.modules().enable_ciba {
+    if !state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::Ciba) {
         return empty_response(StatusCode::NOT_FOUND);
     }
     if !has_valid_csrf_token(&state, &req, payload.csrf_token.as_deref()) {
@@ -1253,7 +1253,7 @@ pub(crate) async fn token_ciba(
     client_assertion: Option<&ValidatedClientAssertion>,
     auth_method: &str,
 ) -> HttpResponse {
-    if !state.settings.modules().enable_ciba {
+    if !state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::Ciba) {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "unsupported_grant_type",

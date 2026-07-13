@@ -254,6 +254,7 @@ impl ModuleLifecycle for PausingLifecycle {
     fn drain_stored_transactions(
         &self,
         _module_id: ModuleId,
+        _revision: ModuleRevision,
         _max_duration: Duration,
     ) -> LifecycleFuture<'_, Result<bool, LifecycleFailure>> {
         Box::pin(async { Ok(true) })

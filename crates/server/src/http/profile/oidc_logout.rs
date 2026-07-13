@@ -104,7 +104,9 @@ pub(crate) async fn oidc_logout(
         );
     }
 
-    let frontchannel_urls = if state.settings.modules().enable_frontchannel_logout {
+    let frontchannel_urls = if state
+        .permits_existing_module_transaction(nazo_runtime_modules::ModuleId::FrontchannelLogout)
+    {
         if let Some(session) = current_session.as_ref() {
             let clients = if let Some(client) = client.as_ref() {
                 frontchannel_logout_client_for_logout_client(client)

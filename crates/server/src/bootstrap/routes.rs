@@ -274,6 +274,15 @@ pub(crate) fn configure(
                 .wrap(cors::cors_admin(settings))
                 .route("/users", web::get().to(admin_users))
                 .route("/users/{user_id}", web::patch().to(admin_patch_user))
+                .route("/runtime-modules", web::get().to(admin_runtime_modules))
+                .route(
+                    "/runtime-modules/events",
+                    web::get().to(admin_runtime_module_events),
+                )
+                .route(
+                    "/runtime-modules/{module_id}",
+                    web::patch().to(admin_patch_runtime_module),
+                )
                 .route("/clients", web::get().to(admin_clients))
                 .route("/clients", web::post().to(admin_create_client))
                 .route("/clients/{client_id}", web::get().to(admin_get_client))
@@ -294,15 +303,13 @@ pub(crate) fn configure(
                     web::post().to(admin_reject_access_request),
                 ),
         );
-    if settings.enable_dynamic_client_registration {
-        cfg.route("/register", web::post().to(dynamic_client_registration))
-            .service(
-                web::resource("/register/{client_id}")
-                    .route(web::get().to(client_configuration_get))
-                    .route(web::put().to(client_configuration_put))
-                    .route(web::delete().to(client_configuration_delete)),
-            );
-    }
+    cfg.route("/register", web::post().to(dynamic_client_registration))
+        .service(
+            web::resource("/register/{client_id}")
+                .route(web::get().to(client_configuration_get))
+                .route(web::put().to(client_configuration_put))
+                .route(web::delete().to(client_configuration_delete)),
+        );
     if perf_metrics_enabled {
         cfg.route("/__perf/metrics", web::get().to(perf_metrics));
     }

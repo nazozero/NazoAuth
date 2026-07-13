@@ -14,9 +14,17 @@ use crate::{
     repositories::audit::{
         actual_state, append_runtime_event, desired_mode, map_error, module_id, revision,
     },
-    rows::runtime::{DesiredStateRow, InstanceStateRow},
-    schema::{runtime_module_desired_states, runtime_module_instance_states},
+    rows::runtime::{DesiredStateRow, InstanceStateRow, ModuleEventRow},
+    schema::{
+        runtime_module_desired_states, runtime_module_instance_states, runtime_module_state_events,
+    },
 };
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeModuleEventPage {
+    pub total: i64,
+    pub events: Vec<ModuleEventRecord>,
+}
 
 #[derive(Clone)]
 pub struct RuntimeModuleRepository {
@@ -34,6 +42,40 @@ impl RuntimeModuleRepository {
             .get()
             .await
             .map_err(|_| RepositoryError::Unavailable)
+    }
+
+    pub async fn page_events(
+        &self,
+        offset: i64,
+        limit: i64,
+    ) -> Result<RuntimeModuleEventPage, RepositoryError> {
+        if offset < 0 || !(1..=100).contains(&limit) {
+            return Err(RepositoryError::Consistency(
+                "runtime event pagination is out of bounds".to_owned(),
+            ));
+        }
+        let mut connection = self.connection().await?;
+        let total = runtime_module_state_events::table
+            .count()
+            .get_result::<i64>(&mut connection)
+            .await
+            .map_err(map_error)?;
+        let rows = runtime_module_state_events::table
+            .order((
+                runtime_module_state_events::occurred_at.desc(),
+                runtime_module_state_events::event_id.desc(),
+            ))
+            .offset(offset)
+            .limit(limit)
+            .select(ModuleEventRow::as_select())
+            .load::<ModuleEventRow>(&mut connection)
+            .await
+            .map_err(map_error)?;
+        let events = rows
+            .into_iter()
+            .map(event_from_row)
+            .collect::<Result<_, _>>()?;
+        Ok(RuntimeModuleEventPage { total, events })
     }
 }
 
@@ -445,6 +487,57 @@ fn instance_from_row(row: InstanceStateRow) -> Result<InstanceStateRecord, Repos
         error_code: row.error_code,
         updated_at: row.updated_at.into(),
     })
+}
+
+fn event_from_row(row: ModuleEventRow) -> Result<ModuleEventRecord, RepositoryError> {
+    let event_type = parse_event_type(&row.event_type)?;
+    Ok(ModuleEventRecord {
+        event_id: row.event_id.to_string(),
+        module_id: parse_module_id(&row.module_id)?,
+        event_type,
+        revision: parse_revision(row.revision)?,
+        instance_id: row.instance_id,
+        actor_id: row.actor_id.map(|value| value.to_string()),
+        reason: row.reason,
+        before: row
+            .before_state
+            .as_deref()
+            .map(|value| parse_event_state(event_type, value))
+            .transpose()?,
+        after: row
+            .after_state
+            .as_deref()
+            .map(|value| parse_event_state(event_type, value))
+            .transpose()?,
+        outcome_code: row.outcome_code,
+        occurred_at: row.occurred_at.into(),
+    })
+}
+
+fn parse_event_type(value: &str) -> Result<ModuleEventType, RepositoryError> {
+    match value {
+        "desired_state_changed" => Ok(ModuleEventType::DesiredStateChanged),
+        "transition_started" => Ok(ModuleEventType::TransitionStarted),
+        "transition_completed" => Ok(ModuleEventType::TransitionCompleted),
+        "transition_failed" => Ok(ModuleEventType::TransitionFailed),
+        "drain_started" => Ok(ModuleEventType::DrainStarted),
+        "drain_completed" => Ok(ModuleEventType::DrainCompleted),
+        "stale_transition_discarded" => Ok(ModuleEventType::StaleTransitionDiscarded),
+        _ => Err(RepositoryError::Consistency(format!(
+            "unknown runtime event type: {value}"
+        ))),
+    }
+}
+
+fn parse_event_state(
+    event_type: ModuleEventType,
+    value: &str,
+) -> Result<ModuleEventState, RepositoryError> {
+    if event_type == ModuleEventType::DesiredStateChanged {
+        parse_desired_mode(value).map(ModuleEventState::Desired)
+    } else {
+        parse_actual_state(value).map(ModuleEventState::Actual)
+    }
 }
 
 fn parse_optional_uuid(

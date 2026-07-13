@@ -16,22 +16,22 @@ use authorization_code_state::{
 pub(crate) use refresh_persistence::should_issue_refresh_token;
 use refresh_persistence::{PendingRefreshToken, RefreshPersistResult, persist_refresh_token};
 
-fn client_session_sid_enabled(settings: &Settings, client: &ClientRow) -> bool {
-    (settings.modules().enable_frontchannel_logout
+fn client_session_sid_enabled(frontchannel_logout: bool, client: &ClientRow) -> bool {
+    (frontchannel_logout
         && client.frontchannel_logout_uri.is_some()
         && client.frontchannel_logout_session_required)
         || (client.backchannel_logout_uri.is_some() && client.backchannel_logout_session_required)
 }
 
 fn id_token_session_sid<'a>(
-    settings: &Settings,
     client: &ClientRow,
     issue: &'a TokenIssue,
+    frontchannel_logout: bool,
 ) -> Option<&'a str> {
     if let Some(native_sso) = issue.native_sso.as_ref() {
         return Some(native_sso.sid.as_str());
     }
-    if client_session_sid_enabled(settings, client) {
+    if client_session_sid_enabled(frontchannel_logout, client) {
         return issue.oidc_sid.as_deref();
     }
     let requested = issue.id_token_claims.iter().any(|claim| claim == "sid")
@@ -128,7 +128,9 @@ pub(crate) async fn issue_token_response(
             false,
         );
     }
-    if issue.native_sso.is_some() && !state.settings.modules().enable_native_sso {
+    if issue.native_sso.is_some()
+        && !state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::NativeSso)
+    {
         mark_failed_authorization_code_if_needed(
             state,
             issue.authorization_code_hash.as_deref(),
@@ -321,7 +323,13 @@ pub(crate) async fn issue_token_response(
                 nonce: issue.nonce.clone(),
                 auth_time: issue.auth_time,
                 amr: &issue.amr,
-                sid: id_token_session_sid(&state.settings, client, &issue),
+                sid: id_token_session_sid(
+                    client,
+                    &issue,
+                    state.permits_existing_module_transaction(
+                        nazo_runtime_modules::ModuleId::FrontchannelLogout,
+                    ),
+                ),
                 acr: issue.acr.as_deref(),
                 extra_claims: user_claims.as_ref(),
                 ttl: state.settings.protocol().id_token_ttl_seconds,

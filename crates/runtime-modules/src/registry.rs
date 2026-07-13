@@ -241,6 +241,38 @@ where
             .catalog
             .spec(module_id)
             .ok_or(RegistryError::MissingCatalogSpec(module_id))?;
+        if current
+            .as_ref()
+            .is_none_or(|instance| instance.state == ModuleState::Disabled)
+        {
+            if !self.revision_is_current(module_id, revision).await? {
+                return Ok(ReconcileOutcome::StaleDiscarded);
+            }
+            let completed = self
+                .persist_state(
+                    module_id,
+                    revision,
+                    current.as_ref().map(|state| state.transition_revision),
+                    ModuleState::Disabled,
+                    Some(revision),
+                    ModuleEventType::TransitionCompleted,
+                    current.as_ref().map(|state| state.state),
+                    None,
+                    None,
+                )
+                .await?;
+            return match completed {
+                CasOutcome::Applied(_) => {
+                    if !self.revision_is_current(module_id, revision).await? {
+                        Ok(ReconcileOutcome::StaleDiscarded)
+                    } else {
+                        self.publish(module_id, false, false);
+                        Ok(ReconcileOutcome::Disabled)
+                    }
+                }
+                CasOutcome::Stale { .. } => Ok(ReconcileOutcome::StaleDiscarded),
+            };
+        }
         let prior_generation = self.snapshot().revision;
         let drain_deadline = match spec.disable_policy {
             DisablePolicy::DrainStoredTransactions { max_duration } => {
@@ -297,7 +329,7 @@ where
             if let DisablePolicy::DrainStoredTransactions { max_duration } = spec.disable_policy {
                 match self
                     .lifecycle
-                    .drain_stored_transactions(module_id, max_duration)
+                    .drain_stored_transactions(module_id, revision, max_duration)
                     .await
                 {
                     Ok(true) => {}

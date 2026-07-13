@@ -160,7 +160,7 @@ fn device_authorization_request_rejects_disabled_or_unregistered_client_grant() 
 
     settings.enable_device_authorization_grant = false;
     assert!(matches!(
-        device_authorization_request_payload(&settings, &client, &form),
+        device_authorization_request_payload(&settings, &client, &form, false),
         Err(DeviceAuthorizationRequestError::Disabled)
     ));
 
@@ -168,7 +168,7 @@ fn device_authorization_request_rejects_disabled_or_unregistered_client_grant() 
     let mut client = client;
     client.grant_types = vec!["authorization_code".to_owned()];
     assert!(matches!(
-        device_authorization_request_payload(&settings, &client, &form),
+        device_authorization_request_payload(&settings, &client, &form, true),
         Err(DeviceAuthorizationRequestError::UnauthorizedClient)
     ));
 }
@@ -186,7 +186,7 @@ fn device_authorization_request_binds_scope_audience_ttl_and_poll_interval() {
         client_assertion: None,
     };
 
-    let payload = device_authorization_request_payload(&settings, &client, &form)
+    let payload = device_authorization_request_payload(&settings, &client, &form, true)
         .expect("device authorization request should be accepted");
 
     assert_eq!(payload.client_id, "device-client");

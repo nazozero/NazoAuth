@@ -221,6 +221,52 @@ async fn desired_state_cas_is_atomic_stale_safe_and_noop_audited() {
 }
 
 #[tokio::test]
+async fn runtime_event_page_returns_typed_newest_first_records() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .expect("migrations should apply");
+    clear_module(&database_url, "session_management").await;
+    let repository = RuntimeModuleRepository::new(create_pool(&database_url, 4).unwrap());
+    for (revision, mode) in [(1, DesiredMode::Enabled), (2, DesiredMode::Disabled)] {
+        let expected_revision = (revision > 1).then(|| ModuleRevision::new(revision - 1));
+        repository
+            .compare_and_set_desired(DesiredStateChange {
+                expected_revision,
+                next: desired(ModuleId::SessionManagement, mode, revision),
+            })
+            .await
+            .expect("desired event should persist");
+    }
+
+    let page = repository
+        .page_events(0, 100)
+        .await
+        .expect("event page should load");
+    let session_events: Vec<_> = page
+        .events
+        .iter()
+        .filter(|event| event.module_id == ModuleId::SessionManagement)
+        .collect();
+    assert_eq!(session_events.len(), 2);
+    assert_eq!(
+        session_events[0].event_type,
+        ModuleEventType::DesiredStateChanged
+    );
+    assert_eq!(
+        session_events[0].after,
+        Some(ModuleEventState::Desired(DesiredMode::Disabled))
+    );
+    assert_eq!(
+        session_events[1].after,
+        Some(ModuleEventState::Desired(DesiredMode::Enabled))
+    );
+    assert!(page.total >= 2);
+}
+
+#[tokio::test]
 async fn instance_completion_cannot_overwrite_a_newer_transition_revision() {
     let Some(database_url) = database_url() else {
         return;

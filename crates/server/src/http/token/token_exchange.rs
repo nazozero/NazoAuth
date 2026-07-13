@@ -349,6 +349,14 @@ pub(crate) async fn token_exchange(
     if native_sso_profile_requested(form) {
         return token_native_sso_exchange(state, req, client, form, client_assertion).await;
     }
+    if !state.accepts_module(nazo_runtime_modules::ModuleId::TokenExchange) {
+        return oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_grant_type",
+            "Token exchange is disabled.",
+            false,
+        );
+    }
     if client.client_type != "confidential" {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,

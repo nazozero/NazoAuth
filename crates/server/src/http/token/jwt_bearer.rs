@@ -135,6 +135,14 @@ pub(crate) async fn token_jwt_bearer(
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
+    if !state.accepts_module(nazo_runtime_modules::ModuleId::JwtBearerGrant) {
+        return oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_grant_type",
+            "JWT bearer grant is disabled.",
+            false,
+        );
+    }
     if client.client_type != "confidential" {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,

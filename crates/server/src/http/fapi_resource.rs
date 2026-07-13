@@ -140,7 +140,7 @@ async fn fapi_resource_with_store(
     body: Bytes,
     store: &dyn FapiResourceStore,
 ) -> HttpResponse {
-    if !state.settings.modules().enable_fapi_http_signatures {
+    if !state.accepts_module(nazo_runtime_modules::ModuleId::HttpMessageSignatures) {
         return fapi_resource_inner(state, &req, &body, None, store).await;
     }
 

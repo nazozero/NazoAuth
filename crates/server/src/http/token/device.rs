@@ -137,7 +137,7 @@ pub(crate) async fn device_authorization(
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
-    if !state.settings.modules().enable_device_authorization_grant {
+    if !state.accepts_module(nazo_runtime_modules::ModuleId::DeviceAuthorization) {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -193,7 +193,12 @@ pub(crate) async fn device_authorization(
     {
         return response;
     }
-    let payload = match device_authorization_request_payload(&state.settings, &client, &form) {
+    let payload = match device_authorization_request_payload(
+        &state.settings,
+        &client,
+        &form,
+        state.accepts_module(nazo_runtime_modules::ModuleId::DeviceAuthorization),
+    ) {
         Ok(payload) => payload,
         Err(error) => return device_authorization_request_error(error),
     };
@@ -235,8 +240,9 @@ pub(crate) fn device_authorization_request_payload(
     settings: &Settings,
     client: &ClientRow,
     form: &DeviceAuthorizationForm,
+    enabled: bool,
 ) -> Result<DeviceAuthorizationPayload, DeviceAuthorizationRequestError> {
-    if !settings.modules().enable_device_authorization_grant {
+    if !enabled {
         return Err(DeviceAuthorizationRequestError::Disabled);
     }
     if !client.is_active || !client_supports_grant(client, DEVICE_CODE_GRANT_TYPE) {
@@ -274,7 +280,9 @@ pub(crate) async fn token_device_code(
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
-    if !state.settings.modules().enable_device_authorization_grant {
+    if !state
+        .permits_existing_module_transaction(nazo_runtime_modules::ModuleId::DeviceAuthorization)
+    {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "unsupported_grant_type",
@@ -496,7 +504,9 @@ pub(crate) async fn device_verification_page(
     state: Data<AppState>,
     Query(query): Query<HashMap<String, String>>,
 ) -> HttpResponse {
-    if !state.settings.modules().enable_device_authorization_grant {
+    if !state
+        .permits_existing_module_transaction(nazo_runtime_modules::ModuleId::DeviceAuthorization)
+    {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -512,7 +522,9 @@ pub(crate) async fn device_verification(
     req: HttpRequest,
     Query(query): Query<HashMap<String, String>>,
 ) -> HttpResponse {
-    if !state.settings.modules().enable_device_authorization_grant {
+    if !state
+        .permits_existing_module_transaction(nazo_runtime_modules::ModuleId::DeviceAuthorization)
+    {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -582,7 +594,9 @@ pub(crate) async fn device_decision(
     req: HttpRequest,
     Form(form): Form<DeviceDecisionForm>,
 ) -> HttpResponse {
-    if !state.settings.modules().enable_device_authorization_grant {
+    if !state
+        .permits_existing_module_transaction(nazo_runtime_modules::ModuleId::DeviceAuthorization)
+    {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",

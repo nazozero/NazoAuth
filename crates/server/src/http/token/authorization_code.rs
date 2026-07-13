@@ -457,7 +457,7 @@ pub(crate) async fn token_authorization_code(
         );
     }
     if native_sso_requested(&payload.scopes) {
-        if !state.settings.modules().enable_native_sso {
+        if !state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::NativeSso) {
             mark_failed_authorization_code(state, &code_hash, "native_sso_disabled").await;
             return oauth_token_error(
                 StatusCode::BAD_REQUEST,
