@@ -1,7 +1,13 @@
+#[cfg(test)]
 use crate::domain::ClientRow;
+#[cfg(test)]
 use crate::http::authorization::BASELINE_ACR_VALUE;
+#[cfg(test)]
 use crate::support::oidc_claims::supported_user_claim;
-use nazo_auth::{OidcClaimRequest, is_valid_pkce_value};
+use nazo_auth::OidcClaimRequest;
+#[cfg(test)]
+use nazo_auth::is_valid_pkce_value;
+#[cfg(test)]
 use serde_json::Value;
 #[cfg(test)]
 use serde_json::json;
@@ -29,6 +35,7 @@ pub(crate) const AUTHORIZED_REQUEST_PARAMETERS: &[&str] = &[
     "request_uri",
     "request",
 ];
+#[cfg(test)]
 pub(super) const AUTHORIZATION_NONCE_MAX_BYTES: usize = 256;
 const REAUTH_NONCE_PARAMETER: &str = "_nazo_reauth_nonce";
 
@@ -46,6 +53,7 @@ pub(super) fn reauth_nonce_parameter() -> &'static str {
     REAUTH_NONCE_PARAMETER
 }
 
+#[cfg(test)]
 pub(super) fn authorization_request_requires_pkce(client: &ClientRow) -> bool {
     client.client_type == "public"
         || client.require_dpop_bound_tokens
@@ -53,6 +61,7 @@ pub(super) fn authorization_request_requires_pkce(client: &ClientRow) -> bool {
         || !client.allow_authorization_code_without_pkce
 }
 
+#[cfg(test)]
 pub(super) fn authorization_pkce(
     q: &HashMap<String, String>,
 ) -> Result<(Option<String>, Option<String>), ()> {
@@ -68,6 +77,7 @@ pub(super) fn authorization_pkce(
     }
 }
 
+#[cfg(test)]
 pub(super) fn authorization_response_mode(
     q: &HashMap<String, String>,
 ) -> Result<Option<String>, ()> {
@@ -78,6 +88,7 @@ pub(super) fn authorization_response_mode(
     }
 }
 
+#[cfg(test)]
 pub(super) fn requested_acr(
     q: &HashMap<String, String>,
     claims_acr: Option<&OidcClaimRequest>,
@@ -114,6 +125,7 @@ pub(super) fn requested_acr(
         .map(str::to_owned))
 }
 
+#[cfg(test)]
 fn acr_value_is_baseline(value: &Value) -> Result<bool, ()> {
     value
         .as_str()
@@ -121,6 +133,7 @@ fn acr_value_is_baseline(value: &Value) -> Result<bool, ()> {
         .ok_or(())
 }
 
+#[cfg(test)]
 #[derive(Debug, PartialEq)]
 pub(super) struct RequestedClaims {
     pub(super) userinfo: Vec<OidcClaimRequest>,
@@ -129,6 +142,7 @@ pub(super) struct RequestedClaims {
     pub(super) auth_time: bool,
 }
 
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct PromptDirectives {
     pub(super) login: bool,
@@ -137,6 +151,7 @@ pub(super) struct PromptDirectives {
     pub(super) none: bool,
 }
 
+#[cfg(test)]
 pub(super) fn requested_prompt(q: &HashMap<String, String>) -> Result<PromptDirectives, ()> {
     let Some(raw) = q.get("prompt") else {
         return Ok(PromptDirectives::default());
@@ -158,6 +173,7 @@ pub(super) fn requested_prompt(q: &HashMap<String, String>) -> Result<PromptDire
     Ok(directives)
 }
 
+#[cfg(test)]
 pub(super) fn requested_claims(q: &HashMap<String, String>) -> Result<RequestedClaims, ()> {
     let Some(raw_claims) = q.get("claims") else {
         return Ok(RequestedClaims {
@@ -180,6 +196,7 @@ pub(super) fn requested_claims(q: &HashMap<String, String>) -> Result<RequestedC
     })
 }
 
+#[cfg(test)]
 fn requested_claim_requests(value: Option<&Value>) -> Result<Vec<OidcClaimRequest>, ()> {
     let Some(value) = value else {
         return Ok(Vec::new());
@@ -205,6 +222,7 @@ fn validate_acr_claim(value: Option<&Value>) -> Result<(), ()> {
     requested_acr_claim(value).map(|_| ())
 }
 
+#[cfg(test)]
 fn requested_acr_claim(value: Option<&Value>) -> Result<Option<OidcClaimRequest>, ()> {
     let Some(value) = value else {
         return Ok(None);
@@ -218,6 +236,7 @@ fn requested_acr_claim(value: Option<&Value>) -> Result<Option<OidcClaimRequest>
         .transpose()
 }
 
+#[cfg(test)]
 fn requested_auth_time_claim(value: Option<&Value>) -> Result<bool, ()> {
     let Some(value) = value else {
         return Ok(false);
@@ -232,14 +251,17 @@ fn requested_auth_time_claim(value: Option<&Value>) -> Result<bool, ()> {
     Ok(true)
 }
 
+#[cfg(test)]
 fn validate_claim_request(value: &Value) -> Result<(), ()> {
     parse_optional_claim_request(None, value).map(|_| ())
 }
 
+#[cfg(test)]
 fn parse_claim_request(name: &str, value: &Value) -> Result<OidcClaimRequest, ()> {
     parse_optional_claim_request(Some(name), value)?.ok_or(())
 }
 
+#[cfg(test)]
 fn parse_optional_claim_request(
     name: Option<&str>,
     value: &Value,
@@ -299,6 +321,7 @@ pub(super) fn preserve_verified_dpop_binding(
     }
 }
 
+#[cfg(test)]
 pub(super) fn session_requires_reauthentication(
     prompt: PromptDirectives,
     max_age: Option<i64>,
@@ -366,6 +389,7 @@ pub(super) fn append_authorization_response_query(
     url.to_string()
 }
 
+#[cfg(test)]
 pub(super) fn authorization_nonce_too_long(q: &HashMap<String, String>) -> bool {
     q.get("nonce")
         .is_some_and(|value| value.len() > AUTHORIZATION_NONCE_MAX_BYTES)

@@ -7,6 +7,8 @@ pub(crate) mod jar;
 pub(crate) mod par;
 pub(crate) mod request;
 
+use std::sync::Arc;
+
 use nazo_runtime_modules::{ActiveModuleSnapshot, ModuleId};
 
 use crate::runtime_modules::ServerRuntimeModuleRegistry;
@@ -20,6 +22,43 @@ pub(crate) type ServerAuthorizationService = nazo_auth::AuthorizationService<
     nazo_key_management::KeyManager,
 >;
 
+/// Focused dependencies for the authorization transport entrypoints.
+///
+/// This is a composition handle, not a forwarding service: handlers borrow the
+/// concrete authorization, identity-session, configuration, and capability
+/// handles directly through a per-request immutable context.
+pub(crate) struct AuthorizationEndpoint {
+    service: Arc<ServerAuthorizationService>,
+    config: Arc<AuthorizationHttpConfig>,
+    sessions: Arc<AdminSessionHandles>,
+    runtime_modules: Arc<ServerRuntimeModuleRegistry>,
+}
+
+impl AuthorizationEndpoint {
+    pub(crate) fn new(
+        service: Arc<ServerAuthorizationService>,
+        config: Arc<AuthorizationHttpConfig>,
+        sessions: Arc<AdminSessionHandles>,
+        runtime_modules: Arc<ServerRuntimeModuleRegistry>,
+    ) -> Self {
+        Self {
+            service,
+            config,
+            sessions,
+            runtime_modules,
+        }
+    }
+
+    pub(crate) fn context(&self) -> AuthorizationRequestContext<'_> {
+        AuthorizationRequestContext {
+            service: &self.service,
+            config: &self.config,
+            sessions: &self.sessions,
+            modules: self.runtime_modules.snapshot().as_ref().clone(),
+        }
+    }
+}
+
 pub(crate) struct AuthorizationRequestContext<'a> {
     pub(crate) service: &'a ServerAuthorizationService,
     pub(crate) config: &'a AuthorizationHttpConfig,
@@ -28,20 +67,6 @@ pub(crate) struct AuthorizationRequestContext<'a> {
 }
 
 impl<'a> AuthorizationRequestContext<'a> {
-    pub(crate) fn new(
-        service: &'a ServerAuthorizationService,
-        config: &'a AuthorizationHttpConfig,
-        sessions: &'a AdminSessionHandles,
-        runtime_modules: &ServerRuntimeModuleRegistry,
-    ) -> Self {
-        Self {
-            service,
-            config,
-            sessions,
-            modules: runtime_modules.snapshot().as_ref().clone(),
-        }
-    }
-
     #[cfg(test)]
     pub(crate) fn for_test(
         service: &'a ServerAuthorizationService,
@@ -183,6 +208,7 @@ impl TestAuthorizationDependencies {
     }
 }
 
+#[cfg(test)]
 pub(crate) const BASELINE_ACR_VALUE: &str = "1";
 
 pub(crate) use jar::{
@@ -217,6 +243,28 @@ mod boundary_tests {
                 !source.contains("AuthorizationHandles"),
                 "{name} reintroduced the authorization forwarding facade"
             );
+        }
+        for (name, source) in [
+            ("request", include_str!("request.rs")),
+            ("par", include_str!("par.rs")),
+            ("consent", include_str!("consent.rs")),
+            ("decision", include_str!("decision.rs")),
+        ] {
+            assert!(
+                source.contains("Data<AuthorizationEndpoint>"),
+                "{name} must extract only the focused authorization endpoint"
+            );
+            for dependency in [
+                "Data<ServerAuthorizationService>",
+                "Data<AuthorizationHttpConfig>",
+                "Data<AdminSessionHandles>",
+                "Data<ServerRuntimeModuleRegistry>",
+            ] {
+                assert!(
+                    !source.contains(dependency),
+                    "{name} directly extracts {dependency}"
+                );
+            }
         }
         for (name, source) in [
             ("par", include_str!("par.rs")),

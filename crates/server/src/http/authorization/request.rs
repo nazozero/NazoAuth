@@ -8,8 +8,8 @@ use crate::domain::{ClientRow, ConsentPayload};
 use crate::settings::Settings;
 use crate::support::{
     jwe::JwePayloadKind, jwe::client_jwe_key, jwe::encrypt_compact_jwe, oauth::RedirectUriError,
-    oauth::audiences_allowed, oauth::client_supports_grant, oauth::registered_redirect_uri,
-    security::blake3_hex, security::random_urlsafe_token, views::append_query,
+    oauth::client_supports_grant, oauth::registered_redirect_uri, security::blake3_hex,
+    security::random_urlsafe_token, views::append_query,
 };
 #[cfg(test)]
 use crate::support::{
@@ -26,8 +26,10 @@ use chrono::{Duration, Utc};
 #[cfg(test)]
 use nazo_auth::OidcClaimRequest;
 use nazo_auth::{
-    is_subset, is_valid_dpop_jkt, parse_authorization_details, parse_resource_indicator_parameter,
-    parse_scope,
+    AuthorizationCapabilityPolicy, AuthorizationClientPolicy, AuthorizationProfilePolicy,
+    AuthorizationResponsePlan, AuthorizationResponsePolicyError, AuthorizationResponsePolicyInput,
+    AuthorizationSession, AuthorizationSessionDecision, is_valid_dpop_jkt,
+    normalize_authorization_request, parse_scope, plan_authorization_response,
 };
 use nazo_http_actix::{
     OAuthJsonErrorFields, authorization_error_response, oauth_error, redirect_found,
@@ -39,13 +41,10 @@ use std::collections::HashMap;
 use uuid::Uuid;
 // 该端点只创建 consent 临时状态，不签发授权码。
 use super::{
-    AuthorizationHttpConfig, AuthorizationRequestContext, ServerAuthorizationService,
-    apply_request_object_with_context, is_pushed_authorization_request_uri,
-    unverified_signed_request_object_client_id,
+    AuthorizationEndpoint, AuthorizationRequestContext, apply_request_object_with_context,
+    is_pushed_authorization_request_uri, unverified_signed_request_object_client_id,
 };
 use crate::http::profile::session_management::issue_oidc_session_state;
-use crate::runtime_modules::ServerRuntimeModuleRegistry;
-use crate::support::sessions::AdminSessionHandles;
 
 mod form;
 mod parameters;
@@ -60,10 +59,7 @@ const REAUTH_NONCE_TTL_SECONDS: u64 = 600;
 
 /// 校验 OAuth authorize 参数并创建待确认授权请求。
 pub(crate) async fn authorize_get(
-    service: Data<ServerAuthorizationService>,
-    config: Data<AuthorizationHttpConfig>,
-    sessions: Data<AdminSessionHandles>,
-    runtime_modules: Data<ServerRuntimeModuleRegistry>,
+    endpoint: Data<AuthorizationEndpoint>,
     req: HttpRequest,
 ) -> HttpResponse {
     let query_parameters = authorization_duplicate_parameters();
@@ -71,15 +67,12 @@ pub(crate) async fn authorize_get(
         Ok(q) => q,
         Err(response) => return response,
     };
-    let context = AuthorizationRequestContext::new(&service, &config, &sessions, &runtime_modules);
+    let context = endpoint.context();
     authorize_request_with_context(&context, req, &mut q).await
 }
 
 pub(crate) async fn authorize_post(
-    service: Data<ServerAuthorizationService>,
-    config: Data<AuthorizationHttpConfig>,
-    sessions: Data<AdminSessionHandles>,
-    runtime_modules: Data<ServerRuntimeModuleRegistry>,
+    endpoint: Data<AuthorizationEndpoint>,
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
@@ -88,7 +81,7 @@ pub(crate) async fn authorize_post(
         Ok(q) => q,
         Err(response) => return response,
     };
-    let context = AuthorizationRequestContext::new(&service, &config, &sessions, &runtime_modules);
+    let context = endpoint.context();
     authorize_request_with_context(&context, req, &mut q).await
 }
 
@@ -264,102 +257,44 @@ async fn authorize_request_with_context(
         }
         return error_response;
     }
-    if (client.require_dpop_bound_tokens || client.require_mtls_bound_tokens)
-        && !used_pushed_authorization_request
-        && !q.contains_key("request")
-    {
-        return authorization_oauth_error_redirect(context, &redirect_uri, "invalid_request", q)
-            .await;
-    }
-    if authorization_nonce_too_long(q) {
-        return authorization_oauth_error_redirect(context, &redirect_uri, "invalid_request", q)
-            .await;
-    }
-
-    if q.get("response_type").map(String::as_str) != Some("code") {
-        return authorization_oauth_error_redirect(
-            context,
-            &redirect_uri,
-            "unsupported_response_type",
-            q,
-        )
-        .await;
-    }
-    let response_mode = match authorization_response_mode(q) {
-        Ok(value) => value,
-        Err(()) => {
-            return authorization_oauth_error_redirect(
-                context,
-                &redirect_uri,
-                "invalid_request",
-                q,
-            )
-            .await;
-        }
-    };
-    let (code_challenge, code_challenge_method) = match authorization_pkce(q) {
-        Ok(value) => value,
-        Err(()) => {
-            return authorization_oauth_error_redirect(
-                context,
-                &redirect_uri,
-                "invalid_request",
-                q,
-            )
-            .await;
-        }
-    };
-    if code_challenge.is_none() && authorization_request_requires_pkce(&client) {
-        return authorization_oauth_error_redirect(context, &redirect_uri, "invalid_request", q)
-            .await;
-    }
-
-    let prompt = match requested_prompt(q) {
-        Ok(prompt) => prompt,
-        Err(()) => {
-            return authorization_oauth_error_redirect(
-                context,
-                &redirect_uri,
-                "invalid_request",
-                q,
-            )
-            .await;
-        }
-    };
-    let max_age = match q.get("max_age") {
-        Some(value) => match value.parse::<i64>() {
-            Ok(value) if value >= 0 => Some(value),
-            _ => {
-                return authorization_oauth_error_redirect(
-                    context,
-                    &redirect_uri,
-                    "invalid_request",
-                    q,
-                )
-                .await;
-            }
+    let normalized = match normalize_authorization_request(
+        q,
+        AuthorizationClientPolicy {
+            client_type: &client.client_type,
+            allowed_scopes: &client.scopes,
+            allowed_audiences: &client.allowed_audiences,
+            require_dpop_bound_tokens: client.require_dpop_bound_tokens,
+            require_mtls_bound_tokens: client.require_mtls_bound_tokens,
+            allow_authorization_code_without_pkce: client.allow_authorization_code_without_pkce,
         },
-        None => None,
-    };
-    let requested_claims = match requested_claims(q) {
-        Ok(value) => value,
-        Err(()) => {
+        AuthorizationCapabilityPolicy {
+            authorization_details: crate::http::authorization::accepts_module(
+                context,
+                nazo_runtime_modules::ModuleId::AuthorizationDetails,
+            ),
+            jarm: crate::http::authorization::accepts_module(
+                context,
+                nazo_runtime_modules::ModuleId::Jarm,
+            ),
+            native_sso: crate::http::authorization::accepts_module(
+                context,
+                nazo_runtime_modules::ModuleId::NativeSso,
+            ),
+        },
+        AuthorizationProfilePolicy {
+            signed_authorization_response_required: context
+                .config
+                .profile
+                .requires_signed_authorization_response(),
+        },
+        used_pushed_authorization_request,
+    ) {
+        Ok(normalized) => normalized,
+        Err(error) => {
             return authorization_oauth_error_redirect(
                 context,
                 &redirect_uri,
-                "invalid_request",
-                q,
-            )
-            .await;
-        }
-    };
-    let acr = match requested_acr(q, requested_claims.acr.as_ref()) {
-        Ok(acr) => acr,
-        Err(()) => {
-            return authorization_oauth_error_redirect(
-                context,
-                &redirect_uri,
-                "invalid_request",
+                error.oauth_error(),
                 q,
             )
             .await;
@@ -377,45 +312,16 @@ async fn authorize_request_with_context(
             );
         }
     };
-    let Some(session) = session else {
-        if prompt.none {
-            return authorization_response_redirect_with_context(
-                context,
-                AuthorizationResponseRedirect {
-                    redirect_uri: &redirect_uri,
-                    client_id: q.get("client_id").map(String::as_str).unwrap_or(""),
-                    response_mode: q.get("response_mode").map(String::as_str),
-                    code: None,
-                    error: Some("login_required"),
-                    state: q.get("state").map(String::as_str),
-                    oidc_sid: None,
-                },
-            )
-            .await;
-        }
-        return match authorization_login_url_with_context(
-            context,
-            &authorization_login_query(
-                q,
-                &original_authorization_query,
-                pending_pushed_request_uri.as_ref(),
-            ),
-            prompt.login || prompt.select_account,
-        )
-        .await
-        {
-            Ok(location) => redirect_found(location),
-            Err(response) => response,
-        };
-    };
-    if session_requires_reauthentication(
-        prompt,
-        max_age,
-        session.auth_time,
+    match nazo_auth::authorization_session_decision(
+        session.as_ref().map(|session| AuthorizationSession {
+            auth_time: session.auth_time,
+        }),
+        normalized.prompt,
+        normalized.max_age,
         reauth_started_at,
         Utc::now().timestamp(),
     ) {
-        if prompt.none {
+        AuthorizationSessionDecision::LoginRequired => {
             return authorization_response_redirect_with_context(
                 context,
                 AuthorizationResponseRedirect {
@@ -430,57 +336,27 @@ async fn authorize_request_with_context(
             )
             .await;
         }
-        return match authorization_login_url_with_context(
-            context,
-            &authorization_login_query(
-                q,
-                &original_authorization_query,
-                pending_pushed_request_uri.as_ref(),
-            ),
-            prompt.login || prompt.select_account,
-        )
-        .await
-        {
-            Ok(location) => redirect_found(location),
-            Err(response) => response,
-        };
-    }
-
-    let requested_scopes = parse_scope(q.get("scope").map(String::as_str).unwrap_or(""));
-    if !is_subset(&requested_scopes, &client.scopes) {
-        return authorization_oauth_error_redirect(context, &redirect_uri, "invalid_scope", q)
-            .await;
-    }
-    let resource_indicators =
-        match parse_resource_indicator_parameter(q.get("resource").map(String::as_str)) {
-            Ok(resources) => resources,
-            Err(_) => {
-                return authorization_oauth_error_redirect(
-                    context,
-                    &redirect_uri,
-                    "invalid_target",
+        AuthorizationSessionDecision::Login {
+            fresh_authentication,
+        } => {
+            return match authorization_login_url_with_context(
+                context,
+                &authorization_login_query(
                     q,
-                )
-                .await;
-            }
-        };
-    if !resource_indicators.is_empty() && !audiences_allowed(&client, &resource_indicators) {
-        return authorization_oauth_error_redirect(context, &redirect_uri, "invalid_target", q)
-            .await;
+                    &original_authorization_query,
+                    pending_pushed_request_uri.as_ref(),
+                ),
+                fresh_authentication,
+            )
+            .await
+            {
+                Ok(location) => redirect_found(location),
+                Err(response) => response,
+            };
+        }
+        AuthorizationSessionDecision::Continue => {}
     }
-    let authorization_details =
-        match parse_authorization_details(q.get("authorization_details").map(String::as_str)) {
-            Ok(value) => value,
-            Err(_) => {
-                return authorization_oauth_error_redirect(
-                    context,
-                    &redirect_uri,
-                    "invalid_request",
-                    q,
-                )
-                .await;
-            }
-        };
+    let session = session.expect("authorization session policy allowed continuation");
     let now = Utc::now();
     let request_id = Uuid::now_v7().to_string();
     let payload = ConsentPayload {
@@ -490,29 +366,29 @@ async fn authorize_request_with_context(
         client_name: client.client_name.clone(),
         redirect_uri: redirect_uri.clone(),
         redirect_uri_was_supplied: q.contains_key("redirect_uri"),
-        scopes: requested_scopes,
-        resource_indicators,
-        authorization_details,
+        scopes: normalized.scopes,
+        resource_indicators: normalized.resources,
+        authorization_details: normalized.authorization_details,
         state: q.get("state").cloned(),
-        response_mode,
+        response_mode: normalized.response_mode,
         nonce: q.get("nonce").cloned(),
         auth_time: session.auth_time,
         amr: session.amr,
         oidc_sid: Some(session.oidc_sid),
-        acr,
-        userinfo_claims: claim_request_names(&requested_claims.userinfo),
-        userinfo_claim_requests: requested_claims.userinfo,
-        id_token_claims: claim_request_names(&requested_claims.id_token),
-        id_token_claim_requests: requested_claims.id_token,
-        code_challenge,
-        code_challenge_method,
+        acr: normalized.acr,
+        userinfo_claims: claim_request_names(&normalized.requested_claims.userinfo),
+        userinfo_claim_requests: normalized.requested_claims.userinfo,
+        id_token_claims: claim_request_names(&normalized.requested_claims.id_token),
+        id_token_claim_requests: normalized.requested_claims.id_token,
+        code_challenge: normalized.code_challenge,
+        code_challenge_method: normalized.code_challenge_method,
         dpop_jkt,
         mtls_x5t_s256,
         pushed_request_uri: pending_pushed_request_uri,
         issued_at: now,
         expires_at: now + Duration::seconds(context.config.auth_code_ttl_seconds as i64),
     };
-    if prompt.none {
+    if normalized.prompt.none {
         match user_grant_covers_requested_scopes_with_context(
             context,
             payload.user_id,
@@ -690,25 +566,36 @@ pub(crate) async fn authorization_response_redirect_with_context(
         .config
         .profile
         .requires_signed_authorization_response();
-    if (input.response_mode == Some("jwt") || signed_response_required)
-        && !crate::http::authorization::permits_existing_module_transaction(
-            context,
-            nazo_runtime_modules::ModuleId::Jarm,
-        )
-    {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "unsupported_response_mode",
-            "JWT-secured authorization responses are disabled.",
-        );
-    }
-    if (input.response_mode == Some("jwt") || signed_response_required)
-        && crate::http::authorization::permits_existing_module_transaction(
-            context,
-            nazo_runtime_modules::ModuleId::Jarm,
-        )
-    {
-        if input.client_id.trim().is_empty() {
+    let jarm_available = crate::http::authorization::permits_existing_module_transaction(
+        context,
+        nazo_runtime_modules::ModuleId::Jarm,
+    );
+    let session_management_available = crate::http::authorization::accepts_module(
+        context,
+        nazo_runtime_modules::ModuleId::SessionManagement,
+    );
+    let plan = match plan_authorization_response(AuthorizationResponsePolicyInput {
+        issuer: context.config.issuer.as_ref(),
+        redirect_uri: input.redirect_uri,
+        client_id: input.client_id,
+        response_mode: input.response_mode,
+        code: input.code,
+        error: input.error,
+        state: input.state,
+        ttl_seconds: context.config.auth_code_ttl_seconds as i64,
+        signed_response_required,
+        jarm_available,
+        session_management_available,
+    }) {
+        Ok(plan) => plan,
+        Err(AuthorizationResponsePolicyError::UnsupportedResponseMode) => {
+            return oauth_error(
+                StatusCode::BAD_REQUEST,
+                "unsupported_response_mode",
+                "JWT-secured authorization responses are disabled.",
+            );
+        }
+        Err(AuthorizationResponsePolicyError::MissingClientId) => {
             tracing::warn!("cannot build signed authorization response without client_id");
             return oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -716,6 +603,17 @@ pub(crate) async fn authorization_response_redirect_with_context(
                 "authorization response signing failed.",
             );
         }
+        Err(AuthorizationResponsePolicyError::Dependency(error)) => {
+            tracing::warn!(?error, "authorization response policy dependency failed");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "authorization response protection failed.",
+            );
+        }
+    };
+    if matches!(plan, AuthorizationResponsePlan::Jarm(_)) {
+        debug_assert!(jarm_available);
         let client = match context.service.client_by_id(input.client_id).await {
             Ok(Some(client)) if client.is_active => client,
             Ok(_) => {
@@ -739,12 +637,10 @@ pub(crate) async fn authorization_response_redirect_with_context(
         return authorization_response_redirect_with_protection_context(context, input, protection)
             .await;
     }
-    let session_state = if crate::http::authorization::accepts_module(
-        context,
-        nazo_runtime_modules::ModuleId::SessionManagement,
-    ) && input.code.is_some()
-        && input.error.is_none()
-    {
+    let AuthorizationResponsePlan::Plain(plain) = plan else {
+        unreachable!("JARM response returned above")
+    };
+    let session_state = if plain.issue_session_state {
         input
             .oidc_sid
             .and_then(|sid| issue_oidc_session_state(input.client_id, input.redirect_uri, sid))

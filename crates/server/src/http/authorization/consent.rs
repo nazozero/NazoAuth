@@ -1,12 +1,8 @@
 //! 授权确认页数据端点。
 use crate::domain::ConsentPayload;
-use crate::http::authorization::{
-    AuthorizationHttpConfig, AuthorizationRequestContext, ServerAuthorizationService,
-};
-use crate::runtime_modules::ServerRuntimeModuleRegistry;
+use crate::http::authorization::{AuthorizationEndpoint, AuthorizationRequestContext};
 #[cfg(test)]
 use crate::settings::Settings;
-use crate::support::sessions::AdminSessionHandles;
 #[cfg(test)]
 use crate::support::{
     tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
@@ -69,14 +65,11 @@ fn consent_page_response(payload: ConsentPayload, csrf_token: Option<String>) ->
 
 /// 返回授权确认页所需的客户端、scope 和 CSRF 信息。
 pub(crate) async fn authorize_consent(
-    service: Data<ServerAuthorizationService>,
-    config: Data<AuthorizationHttpConfig>,
-    sessions: Data<AdminSessionHandles>,
-    runtime_modules: Data<ServerRuntimeModuleRegistry>,
+    endpoint: Data<AuthorizationEndpoint>,
     req: HttpRequest,
     Query(q): Query<HashMap<String, String>>,
 ) -> HttpResponse {
-    let context = AuthorizationRequestContext::new(&service, &config, &sessions, &runtime_modules);
+    let context = endpoint.context();
     authorize_consent_with_context(&context, req, q).await
 }
 

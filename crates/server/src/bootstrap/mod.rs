@@ -54,7 +54,9 @@ use crate::http::auth::federation::{
 };
 use crate::http::auth::login::LoginHttpConfig;
 use crate::http::auth::passkey::PasskeyHttpConfig;
-use crate::http::authorization::{AuthorizationHttpConfig, ServerAuthorizationService};
+use crate::http::authorization::{
+    AuthorizationEndpoint, AuthorizationHttpConfig, ServerAuthorizationService,
+};
 #[cfg(not(test))]
 use crate::http::profile::oidc_logout::spawn_backchannel_logout_delivery_worker;
 #[cfg(test)]
@@ -290,6 +292,12 @@ pub async fn run() -> anyhow::Result<()> {
         nazo_valkey::SessionStore::new(&valkey_connection),
         nazo_postgres::UserRepository::new(diesel_db.clone()),
         session_http_config.clone(),
+    ));
+    let authorization_endpoint = web::Data::new(AuthorizationEndpoint::new(
+        authorization_service.clone().into_inner(),
+        authorization_config.clone().into_inner(),
+        admin_sessions.clone().into_inner(),
+        runtime_modules.registry.clone(),
     ));
     let admin_federation = web::Data::new(AdminFederationConfig::from_settings(&settings));
     #[cfg(not(test))]
@@ -538,6 +546,7 @@ pub async fn run() -> anyhow::Result<()> {
             })
             .wrap(from_fn(security_headers))
             .app_data(runtime_modules.clone())
+            .app_data(authorization_endpoint.clone())
             .app_data(authorization_service.clone())
             .app_data(token_service.clone())
             .app_data(token_endpoint_handles.clone())

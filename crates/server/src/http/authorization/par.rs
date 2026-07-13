@@ -7,14 +7,12 @@ use super::jar::{
 };
 use crate::domain::{ClientRow, PushedAuthorizationRequest};
 use crate::http::authorization::{
-    AuthorizationHttpConfig, AuthorizationRequestContext, ServerAuthorizationService,
+    AuthorizationEndpoint, AuthorizationHttpConfig, AuthorizationRequestContext,
 };
-use crate::runtime_modules::ServerRuntimeModuleRegistry;
 #[cfg(test)]
 use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::security::blake3_hex;
-use crate::support::sessions::AdminSessionHandles;
 use crate::support::{
     dpop::DpopError, dpop::DpopErrorContext, dpop::dpop_error_response,
     mtls::request_mtls_thumbprint_from_trusted_proxy, oauth::RedirectUriError,
@@ -100,14 +98,11 @@ async fn enforce_par_rate_limit(
 }
 
 pub(crate) async fn par(
-    service: Data<ServerAuthorizationService>,
-    config: Data<AuthorizationHttpConfig>,
-    sessions: Data<AdminSessionHandles>,
-    runtime_modules: Data<ServerRuntimeModuleRegistry>,
+    endpoint: Data<AuthorizationEndpoint>,
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
-    let context = AuthorizationRequestContext::new(&service, &config, &sessions, &runtime_modules);
+    let context = endpoint.context();
     if let Err(response) = enforce_par_rate_limit(&context, &req).await {
         return response;
     }

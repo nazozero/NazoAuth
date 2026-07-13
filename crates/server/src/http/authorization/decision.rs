@@ -4,13 +4,9 @@ use crate::domain::AppState;
 #[cfg(test)]
 use crate::domain::DatabaseUserFixture;
 use crate::domain::{AuthorizationCodeState, CodePayload, ConsentPayload};
-use crate::http::authorization::{
-    AuthorizationHttpConfig, AuthorizationRequestContext, ServerAuthorizationService,
-};
-use crate::runtime_modules::ServerRuntimeModuleRegistry;
+use crate::http::authorization::{AuthorizationEndpoint, AuthorizationRequestContext};
 #[cfg(test)]
 use crate::settings::Settings;
-use crate::support::sessions::AdminSessionHandles;
 use crate::support::{
     audit::audit_event, audit::audit_fields, client_ip::client_ip_with_config,
     security::blake3_hex, security::random_urlsafe_token, tenancy::default_tenant_context,
@@ -26,6 +22,10 @@ use actix_web::http::header;
 use actix_web::web::{Data, Form};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::{Duration, Utc};
+use nazo_auth::{
+    UserAuthorizationDecision as AuthorizationDecision,
+    parse_user_authorization_decision as parse_authorization_decision,
+};
 use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies, oauth_error};
 use serde::Deserialize;
 #[cfg(test)]
@@ -46,19 +46,6 @@ pub(crate) struct DecisionForm {
     request_id: String,
     decision: String,
     csrf_token: Option<String>,
-}
-
-enum AuthorizationDecision {
-    Approve,
-    Deny,
-}
-
-fn parse_authorization_decision(value: &str) -> Option<AuthorizationDecision> {
-    match value {
-        "approve" => Some(AuthorizationDecision::Approve),
-        "deny" => Some(AuthorizationDecision::Deny),
-        _ => None,
-    }
 }
 
 #[cfg(test)]
@@ -119,14 +106,11 @@ async fn authorization_error_redirect(
 
 /// 处理用户对授权请求的同意或拒绝。
 pub(crate) async fn authorize_decision(
-    service: Data<ServerAuthorizationService>,
-    config: Data<AuthorizationHttpConfig>,
-    sessions: Data<AdminSessionHandles>,
-    runtime_modules: Data<ServerRuntimeModuleRegistry>,
+    endpoint: Data<AuthorizationEndpoint>,
     req: HttpRequest,
     Form(form): Form<DecisionForm>,
 ) -> HttpResponse {
-    let context = AuthorizationRequestContext::new(&service, &config, &sessions, &runtime_modules);
+    let context = endpoint.context();
     authorize_decision_with_context(&context, req, form).await
 }
 

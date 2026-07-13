@@ -46,6 +46,7 @@ pub(crate) fn compute_subject_for_client(
     .map_err(Into::into)
 }
 
+#[cfg(test)]
 const PROFILE_CLAIMS: &[&str] = &[
     "preferred_username",
     "name",
@@ -63,10 +64,14 @@ const PROFILE_CLAIMS: &[&str] = &[
     "updated_at",
 ];
 
+#[cfg(test)]
 const EMAIL_CLAIMS: &[&str] = &["email", "email_verified"];
+#[cfg(test)]
 const ADDRESS_CLAIMS: &[&str] = &["address"];
+#[cfg(test)]
 const PHONE_CLAIMS: &[&str] = &["phone_number", "phone_number_verified"];
 
+#[cfg(test)]
 pub(crate) fn supported_user_claim(name: &str) -> bool {
     PROFILE_CLAIMS.contains(&name)
         || EMAIL_CLAIMS.contains(&name)
