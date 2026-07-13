@@ -39,12 +39,10 @@ fn signing_adapters_do_not_define_or_call_claim_forwarders() {
         );
     }
 
-    for required in ["nazo_auth::access_token_claims("] {
-        assert!(
-            source.contains(required),
-            "signing adapter must call public auth builder directly: {required}"
-        );
-    }
+    assert!(
+        source.contains("nazo_auth::access_token_claims("),
+        "signing adapter must call the public auth access-token builder directly"
+    );
     assert!(
         oidc_logout_source.contains("nazo_auth::backchannel_logout_token_claims("),
         "OIDC logout domain service must call the public auth claim builder directly"
