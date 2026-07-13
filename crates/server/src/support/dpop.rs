@@ -299,6 +299,17 @@ async fn validate_dpop_nonce_with_replay(
     }
 }
 
+#[cfg(test)]
+async fn validate_dpop_nonce(state: &AppState, nonce: Option<&str>) -> Result<(), DpopError> {
+    let replay_store = nazo_valkey::ReplayStore::new(&state.valkey_connection());
+    validate_dpop_nonce_with_replay(
+        &DpopReplay::Store(&replay_store),
+        state.settings.protocol.dpop_nonce_policy,
+        nonce,
+    )
+    .await
+}
+
 fn dpop_nonce_required(policy: DpopNoncePolicy) -> bool {
     policy == DpopNoncePolicy::Required
 }

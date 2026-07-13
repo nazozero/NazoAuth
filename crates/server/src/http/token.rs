@@ -19,16 +19,12 @@ pub(crate) mod userinfo;
 
 use authorization_code::token_authorization_code_with_service;
 use ciba::{CIBA_GRANT_TYPE, token_ciba};
-#[cfg(test)]
-use client_auth::consume_token_client_assertion;
 use client_auth::{
     TokenManagementClientAuthError, authenticate_introspection_client_with_dependencies,
     authenticate_revocation_client_with_dependencies,
     consume_token_client_assertion_with_authorization_service, token_management_auth_error,
     token_management_client_auth_error,
 };
-#[cfg(test)]
-use client_credentials::client_credentials_issue_request;
 use client_credentials::{
     client_credentials_issue_request_with_default_audience, token_client_credentials_with_service,
 };
@@ -38,8 +34,6 @@ use device_issuance::token_device_code_with_service;
 use dispatch::validate_token_request_profile;
 #[cfg(test)]
 use issue::access_token_subject_key;
-#[cfg(test)]
-use issue::issue_token_response;
 use issue::{
     mark_failed_authorization_code, revoke_issued_authorization_code_tokens,
     should_issue_refresh_token,
@@ -76,9 +70,6 @@ use actix_web::{
 };
 #[cfg(test)]
 use nazo_http_actix::{TokenManagementFormError, TokenOnlyForm};
-#[cfg(test)]
-use serde_json::Value;
-
 #[cfg(test)]
 #[path = "../../tests/in_source/src/http/token/tests/forms.rs"]
 mod forms_tests;
