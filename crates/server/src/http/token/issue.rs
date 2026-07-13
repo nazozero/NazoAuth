@@ -1,5 +1,6 @@
 //! 令牌签发响应构造。
 use crate::domain::{AppState, ClientRow, RefreshTokenPolicy, TokenIssue};
+#[cfg(test)]
 use crate::settings::Settings;
 use crate::support::{
     AccessTokenJwtInput, DpopErrorContext, IdTokenInput, audit_event, audit_fields, blake3_hex,
