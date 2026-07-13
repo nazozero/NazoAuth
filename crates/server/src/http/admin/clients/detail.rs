@@ -1,21 +1,23 @@
 //! 管理端客户端详情端点。
 #[cfg(test)]
-use crate::domain::DatabaseUserFixture;
-use crate::domain::{AppState, ClientRow};
+use super::test_dependencies;
+use crate::domain::ClientRow;
+#[cfg(test)]
+use crate::domain::{AppState, DatabaseUserFixture};
 #[cfg(test)]
 use crate::settings::Settings;
+use crate::support::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
 #[cfg(test)]
 use crate::support::{
     DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, OAuthJsonErrorFields, SessionPayload, valkey_set_ex,
 };
-use crate::support::{
-    DEFAULT_TENANT_ID, client_json, json_response, oauth_error, require_admin_or_forbidden,
-};
+use crate::support::{DEFAULT_TENANT_ID, client_json, json_response, oauth_error};
 use actix_web::http::StatusCode;
 use actix_web::web::Data;
 use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
 use chrono::Utc;
+use nazo_postgres::OAuthClientRepository;
 #[cfg(test)]
 use serde_json::{Value, json};
 #[cfg(test)]
@@ -24,19 +26,17 @@ use uuid::Uuid;
 
 /// 返回单个 OAuth 客户端详情。
 pub(crate) async fn admin_get_client(
-    state: Data<AppState>,
+    admin_sessions: Data<AdminSessionHandles>,
+    clients: Data<OAuthClientRepository>,
     req: HttpRequest,
     path: actix_web::web::Path<String>,
 ) -> HttpResponse {
     let client_id = path.into_inner();
-    if let Err(response) = require_admin_or_forbidden(&state, &req).await {
+    if let Err(response) = require_admin_or_forbidden_with_handles(&admin_sessions, &req).await {
         return response;
     }
 
-    match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-        .by_client_id(DEFAULT_TENANT_ID, &client_id)
-        .await
-    {
+    match clients.by_client_id(DEFAULT_TENANT_ID, &client_id).await {
         Ok(Some(client)) => client_detail_response(client),
         Ok(None) => client_detail_not_found_response(),
         Err(error) => {

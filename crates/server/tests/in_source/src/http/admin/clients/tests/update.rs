@@ -276,9 +276,12 @@ impl LiveAdminClientUpdateFixture {
         )
         .await
         .expect("client creation payload should be valid");
-        insert_prepared_client(&self.state.diesel_db, &prepared)
-            .await
-            .expect("client should insert")
+        insert_prepared_client(
+            &nazo_postgres::OAuthClientRepository::new(self.state.diesel_db.clone()),
+            &prepared,
+        )
+        .await
+        .expect("client should insert")
     }
 
     async fn client_row(&self, client_id: &str) -> ClientRow {
@@ -654,9 +657,13 @@ async fn admin_patch_client_rejects_missing_csrf_before_admin_lookup() {
             "session-id",
         ))
         .to_http_request();
+    let dependencies = test_dependencies(&state);
 
     let response = admin_patch_client(
-        state,
+        dependencies.sessions,
+        dependencies.clients,
+        dependencies.keyset,
+        dependencies.config,
         req,
         actix_web::web::Path::from("client-1".to_owned()),
         Json(empty_patch()),
@@ -679,9 +686,13 @@ async fn admin_patch_client_reports_not_found_for_unknown_client_id() {
     let admin = fixture.create_user("missing", "admin", 10).await;
     fixture.store_session(&admin, "sid-missing").await;
     let req = fixture.admin_patch_request("sid-missing", "csrf-missing", "/admin/clients/missing");
+    let dependencies = test_dependencies(&fixture.state);
 
     let response = admin_patch_client(
-        fixture.state.clone(),
+        dependencies.sessions,
+        dependencies.clients,
+        dependencies.keyset,
+        dependencies.config,
         req,
         actix_web::web::Path::from("missing-client".to_owned()),
         Json(empty_patch()),
@@ -706,9 +717,13 @@ async fn admin_patch_client_validates_metadata_after_admin_authentication() {
     let mut payload = empty_patch();
     payload.redirect_uris = Some(vec![" https://client.example/callback ".to_owned()]);
     let req = fixture.admin_patch_request("sid-invalid", "csrf-invalid", "/admin/clients/update");
+    let dependencies = test_dependencies(&fixture.state);
 
     let response = admin_patch_client(
-        fixture.state.clone(),
+        dependencies.sessions,
+        dependencies.clients,
+        dependencies.keyset,
+        dependencies.config,
         req,
         actix_web::web::Path::from(client.client_id.clone()),
         Json(payload),
@@ -742,9 +757,13 @@ async fn admin_patch_client_surfaces_client_lookup_failure_after_admin_authentic
         .rename_column("oauth_clients", "client_id", "client_id_unavailable")
         .await;
     let req = fixture.admin_patch_request(&sid, &csrf, "/admin/clients/update");
+    let dependencies = test_dependencies(&fixture.state);
 
     let response = admin_patch_client(
-        fixture.state.clone(),
+        dependencies.sessions,
+        dependencies.clients,
+        dependencies.keyset,
+        dependencies.config,
         req,
         actix_web::web::Path::from(client.client_id.clone()),
         Json(empty_patch()),
@@ -774,9 +793,13 @@ async fn admin_patch_client_surfaces_update_failure_without_mutating_current_cli
     let mut payload = empty_patch();
     payload.client_name = Some("Renamed After Failure".to_owned());
     let req = fixture.admin_patch_request(&sid, &csrf, "/admin/clients/update");
+    let dependencies = test_dependencies(&fixture.state);
 
     let response = admin_patch_client(
-        fixture.state.clone(),
+        dependencies.sessions,
+        dependencies.clients,
+        dependencies.keyset,
+        dependencies.config,
         req,
         actix_web::web::Path::from(client.client_id.clone()),
         Json(payload),

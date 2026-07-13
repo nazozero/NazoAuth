@@ -271,9 +271,12 @@ impl LiveAdminClientListFixture {
             Ok(prepared) => prepared,
             Err(_) => panic!("client creation payload should be valid"),
         };
-        insert_prepared_client(&self.state.diesel_db, &prepared)
-            .await
-            .expect("client should insert")
+        insert_prepared_client(
+            &nazo_postgres::OAuthClientRepository::new(self.state.diesel_db.clone()),
+            &prepared,
+        )
+        .await
+        .expect("client should insert")
     }
 }
 
@@ -310,14 +313,38 @@ async fn clients_list_response_preserves_pagination_and_omits_secret_hashes() {
     }
 }
 
+#[test]
+fn admin_client_handlers_use_focused_dependencies() {
+    let handlers = [
+        include_str!("../../../../../../../src/http/admin/clients/list.rs"),
+        include_str!("../../../../../../../src/http/admin/clients/detail.rs"),
+        include_str!("../../../../../../../src/http/admin/clients/create.rs"),
+        include_str!("../../../../../../../src/http/admin/clients/update.rs"),
+    ]
+    .join("\n");
+
+    assert!(!handlers.contains("Data<AppState>"));
+    assert!(!handlers.contains("state.diesel_db"));
+    assert!(!handlers.contains("state.valkey"));
+    assert!(handlers.contains("Data<AdminSessionHandles>"));
+    assert!(handlers.contains("Data<OAuthClientRepository>"));
+}
+
 #[actix_web::test]
 async fn admin_clients_requires_admin_before_database_lookup() {
     let state = Data::new(test_state());
     let req = actix_web::test::TestRequest::get()
         .uri("/admin/clients")
         .to_http_request();
+    let dependencies = test_dependencies(&state);
 
-    let response = admin_clients(state, req, Query(HashMap::new())).await;
+    let response = admin_clients(
+        dependencies.sessions,
+        dependencies.clients,
+        req,
+        Query(HashMap::new()),
+    )
+    .await;
 
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     assert_eq!(
@@ -340,8 +367,10 @@ async fn admin_clients_lists_persisted_clients_for_admin_without_secret_hashes()
     let first = fixture.insert_client(&format!("First {suffix}")).await;
     let second = fixture.insert_client(&format!("Second {suffix}")).await;
 
+    let dependencies = test_dependencies(&fixture.state);
     let response = admin_clients(
-        fixture.state.clone(),
+        dependencies.sessions,
+        dependencies.clients,
         fixture.admin_get_request(&sid, "/admin/clients?page=1&page_size=100"),
         Query(HashMap::from([
             ("page".to_owned(), "1".to_owned()),

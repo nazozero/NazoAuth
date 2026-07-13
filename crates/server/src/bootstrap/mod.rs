@@ -15,6 +15,7 @@ use crate::domain::{
     MetadataHandles, ResourceServerConfig, ResourceServerHandles,
 };
 use crate::http::admin::access_requests::AdminAccessRequestConfig;
+use crate::http::admin::clients::AdminClientConfig;
 use crate::http::profile::oidc_logout::spawn_backchannel_logout_delivery_worker;
 use crate::runtime_modules::RuntimeModules;
 use crate::settings::Settings;
@@ -110,6 +111,8 @@ pub async fn run() -> anyhow::Result<()> {
         #[cfg(test)]
         enabled: settings.modules().enable_dynamic_client_registration,
     });
+    let admin_client_config = web::Data::new(AdminClientConfig::from_settings(&settings));
+    let admin_client_keyset = web::Data::new(keyset.clone());
 
     let state = web::Data::new(AppState {
         diesel_db,
@@ -148,7 +151,7 @@ pub async fn run() -> anyhow::Result<()> {
     ));
     let admin_users = web::Data::new(nazo_postgres::UserRepository::new(state.diesel_db.clone()));
     let admin_grants = web::Data::new(nazo_postgres::GrantRepository::new(state.diesel_db.clone()));
-    let admin_grant_clients = web::Data::new(nazo_postgres::OAuthClientRepository::new(
+    let oauth_clients = web::Data::new(nazo_postgres::OAuthClientRepository::new(
         state.diesel_db.clone(),
     ));
     let admin_access_requests = web::Data::new(nazo_postgres::AccessRequestRepository::new(
@@ -216,11 +219,13 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(resource_server_handles.clone())
             .app_data(admin_users.clone())
             .app_data(admin_grants.clone())
-            .app_data(admin_grant_clients.clone())
             .app_data(admin_access_requests.clone())
             .app_data(admin_access_delivery.clone())
             .app_data(admin_access_keys.clone())
             .app_data(admin_access_request_config.clone())
+            .app_data(oauth_clients.clone())
+            .app_data(admin_client_config.clone())
+            .app_data(admin_client_keyset.clone())
             .app_data(client_ip_config.clone())
             .app_data(dynamic_registration_handles.clone())
             .configure(|cfg| routes::configure(cfg, &state.settings, perf_metrics_enabled))

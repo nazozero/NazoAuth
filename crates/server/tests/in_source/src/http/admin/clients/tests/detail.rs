@@ -271,9 +271,12 @@ impl LiveAdminClientDetailFixture {
             Ok(prepared) => prepared,
             Err(_) => panic!("client creation payload should be valid"),
         };
-        insert_prepared_client(&self.state.diesel_db, &prepared)
-            .await
-            .expect("client should insert")
+        insert_prepared_client(
+            &nazo_postgres::OAuthClientRepository::new(self.state.diesel_db.clone()),
+            &prepared,
+        )
+        .await
+        .expect("client should insert")
     }
 }
 
@@ -318,9 +321,11 @@ async fn admin_get_client_requires_admin_before_lookup() {
     let req = actix_web::test::TestRequest::get()
         .uri("/admin/clients/client-1")
         .to_http_request();
+    let dependencies = test_dependencies(&state);
 
     let response = admin_get_client(
-        state,
+        dependencies.sessions,
+        dependencies.clients,
         req,
         actix_web::web::Path::from("client-1".to_owned()),
     )
@@ -345,8 +350,10 @@ async fn admin_get_client_returns_not_found_for_unknown_client_id() {
     let sid = format!("sid-{suffix}");
     fixture.store_session(&admin, &sid).await;
 
+    let dependencies = test_dependencies(&fixture.state);
     let response = admin_get_client(
-        fixture.state.clone(),
+        dependencies.sessions,
+        dependencies.clients,
         fixture.admin_get_request(&sid, "/admin/clients/missing-client"),
         actix_web::web::Path::from("missing-client".to_owned()),
     )
@@ -374,8 +381,10 @@ async fn admin_get_client_returns_sanitized_client_for_admin() {
         .insert_client(&format!("Detail Client {suffix}"))
         .await;
 
+    let dependencies = test_dependencies(&fixture.state);
     let response = admin_get_client(
-        fixture.state.clone(),
+        dependencies.sessions,
+        dependencies.clients,
         fixture.admin_get_request(&sid, &format!("/admin/clients/{}", client.client_id)),
         actix_web::web::Path::from(client.client_id.clone()),
     )

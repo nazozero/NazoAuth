@@ -18,6 +18,7 @@ pub(crate) struct IpCidr {
     prefix: u8,
 }
 
+#[derive(Clone)]
 pub(crate) struct ClientIpConfig {
     trusted_proxy_cidrs: Box<[IpCidr]>,
     header_mode: ClientIpHeaderMode,

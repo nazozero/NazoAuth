@@ -1,14 +1,20 @@
 //! 管理端客户端更新端点。
 #[cfg(test)]
+use super::test_dependencies;
+#[cfg(test)]
+use crate::domain::AppState;
+use crate::domain::ClientRow;
+#[cfg(test)]
 use crate::domain::DatabaseUserFixture;
-use crate::domain::{AppState, ClientRow};
 #[cfg(test)]
 use crate::settings::Settings;
+use crate::support::client_ip::client_ip_with_config;
+use crate::support::responses::has_valid_csrf_token_for_cookies;
+use crate::support::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
 use crate::support::{
     ClientMetadata, ClientMtlsMetadata, DEFAULT_TENANT_ID, audit_event, audit_fields, blake3_hex,
-    client_ip, client_json, csrf_error, fetch_sector_identifier_uris, has_valid_csrf_token,
-    json_array_to_strings, json_response, oauth_error, require_admin_or_forbidden,
-    validate_client_metadata,
+    client_json, csrf_error, fetch_sector_identifier_uris, json_array_to_strings, json_response,
+    oauth_error, validate_client_metadata,
 };
 #[cfg(test)]
 use crate::support::{
@@ -19,11 +25,14 @@ use actix_web::web::{Data, Json};
 use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
 use chrono::Utc;
+use nazo_key_management::KeyManager;
+use nazo_postgres::OAuthClientRepository;
 use serde::Deserialize;
 use serde_json::{Value, json};
 #[cfg(test)]
 use uuid::Uuid;
 // PATCH 请求只覆盖显式提交的字段，其余字段保持数据库当前值。
+use super::AdminClientConfig;
 use super::create::{
     all_same_host, sector_identifier_host_for_redirects, trim_optional_string,
     validate_pkce_compatibility_policy,
@@ -105,23 +114,29 @@ struct PreparedClientPatch {
 
 /// 局部更新 OAuth 客户端配置。
 pub(crate) async fn admin_patch_client(
-    state: Data<AppState>,
+    admin_sessions: Data<AdminSessionHandles>,
+    clients: Data<OAuthClientRepository>,
+    keyset: Data<KeyManager>,
+    config: Data<AdminClientConfig>,
     req: HttpRequest,
     path: actix_web::web::Path<String>,
     Json(payload): Json<PatchClientRequest>,
 ) -> HttpResponse {
     let client_id = path.into_inner();
-    if !has_valid_csrf_token(&state, &req, None) {
+    let session_http = admin_sessions.http_config();
+    if !has_valid_csrf_token_for_cookies(
+        &req,
+        None,
+        session_http.session_cookie_name(),
+        session_http.csrf_cookie_name(),
+    ) {
         return csrf_error();
     }
-    if let Err(response) = require_admin_or_forbidden(&state, &req).await {
+    if let Err(response) = require_admin_or_forbidden_with_handles(&admin_sessions, &req).await {
         return response;
     }
 
-    let current = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-        .by_client_id(DEFAULT_TENANT_ID, &client_id)
-        .await
-    {
+    let current = match clients.by_client_id(DEFAULT_TENANT_ID, &client_id).await {
         Ok(Some(client)) => client,
         Ok(None) => {
             return oauth_error(StatusCode::NOT_FOUND, "invalid_request", "未找到该客户端.");
@@ -136,15 +151,12 @@ pub(crate) async fn admin_patch_client(
         }
     };
 
-    let response_signing_algorithms = state
-        .keyset
-        .snapshot()
-        .response_signing_alg_values_supported();
+    let response_signing_algorithms = keyset.snapshot().response_signing_alg_values_supported();
     let prepared = match prepare_client_patch(
         &current,
         payload,
-        state.settings.protocol().pairwise_subject_secret,
-        &state.settings.issuer,
+        config.pairwise_subject_secret(),
+        config.issuer(),
         &response_signing_algorithms,
     )
     .await
@@ -194,10 +206,7 @@ pub(crate) async fn admin_patch_client(
     updated.authorization_encrypted_response_alg = prepared.authorization_encrypted_response_alg;
     updated.authorization_encrypted_response_enc = prepared.authorization_encrypted_response_enc;
     updated.is_active = prepared.is_active;
-    let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-        .update_metadata(&updated)
-        .await
-    {
+    let client = match clients.update_metadata(&updated).await {
         Ok(client) => client,
         Err(error) => {
             tracing::warn!(%error, "failed to update oauth client");
@@ -215,7 +224,7 @@ pub(crate) async fn admin_patch_client(
             ("client_id", json!(client.client_id)),
             (
                 "source_ip_hash",
-                json!(blake3_hex(&client_ip(&req, &state.settings))),
+                json!(blake3_hex(&client_ip_with_config(&req, config.client_ip()))),
             ),
         ]),
     );

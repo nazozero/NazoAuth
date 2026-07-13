@@ -1,10 +1,12 @@
 //! 管理端客户端创建端点。
-use crate::domain::{AppState, ClientRow};
+use crate::domain::ClientRow;
+use crate::support::client_ip::client_ip_with_config;
+use crate::support::responses::has_valid_csrf_token_for_cookies;
+use crate::support::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
 use crate::support::{
-    ClientMetadata, ClientMtlsMetadata, audit_event, audit_fields, blake3_hex, client_ip,
-    client_json, csrf_error, fetch_sector_identifier_uris, has_valid_csrf_token,
-    hash_client_secret, json_response_status, oauth_error, random_urlsafe_token,
-    require_admin_or_forbidden, sector_identifier_hostname, validate_client_metadata,
+    ClientMetadata, ClientMtlsMetadata, audit_event, audit_fields, blake3_hex, client_json,
+    csrf_error, fetch_sector_identifier_uris, hash_client_secret, json_response_status,
+    oauth_error, random_urlsafe_token, sector_identifier_hostname, validate_client_metadata,
 };
 #[cfg(test)]
 use crate::support::{OAuthJsonErrorFields, client_secret_digest};
@@ -16,6 +18,10 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 // confidential 客户端只在创建响应中返回一次明文 secret。
 use nazo_auth::ValidatedClientRegistration;
+use nazo_key_management::KeyManager;
+use nazo_postgres::OAuthClientRepository;
+
+use super::AdminClientConfig;
 
 pub(crate) struct PreparedClientRegistration {
     pub(crate) tenant: nazo_identity::TenantContext,
@@ -131,18 +137,27 @@ pub(crate) enum InsertClientError {
 
 /// 创建 OAuth 客户端。
 pub(crate) async fn admin_create_client(
-    state: Data<AppState>,
+    admin_sessions: Data<AdminSessionHandles>,
+    clients: Data<OAuthClientRepository>,
+    keyset: Data<KeyManager>,
+    config: Data<AdminClientConfig>,
     req: HttpRequest,
     Json(payload): Json<CreateClientRequest>,
 ) -> HttpResponse {
-    if !has_valid_csrf_token(&state, &req, None) {
+    let session_http = admin_sessions.http_config();
+    if !has_valid_csrf_token_for_cookies(
+        &req,
+        None,
+        session_http.session_cookie_name(),
+        session_http.csrf_cookie_name(),
+    ) {
         return csrf_error();
     }
-    if let Err(response) = require_admin_or_forbidden(&state, &req).await {
+    if let Err(response) = require_admin_or_forbidden_with_handles(&admin_sessions, &req).await {
         return response;
     }
 
-    match insert_client_row(&state, payload).await {
+    match insert_client_row(&clients, &keyset, &config, payload).await {
         Ok((client, issued_secret)) => {
             audit_event(
                 "client_created",
@@ -150,7 +165,7 @@ pub(crate) async fn admin_create_client(
                     ("client_id", json!(client.client_id)),
                     (
                         "source_ip_hash",
-                        json!(blake3_hex(&client_ip(&req, &state.settings))),
+                        json!(blake3_hex(&client_ip_with_config(&req, config.client_ip()))),
                     ),
                 ]),
             );
@@ -184,36 +199,23 @@ pub(crate) fn insert_client_error_response(error: InsertClientError) -> HttpResp
 
 /// 插入客户端行，并在需要时生成一次性返回的 client_secret。
 pub(crate) async fn insert_client_row(
-    state: &AppState,
+    clients: &OAuthClientRepository,
+    keyset: &KeyManager,
+    config: &AdminClientConfig,
     payload: CreateClientRequest,
 ) -> Result<(ClientRow, Option<String>), InsertClientError> {
-    let pairwise_subject_secret = state.settings.protocol().pairwise_subject_secret;
-    let response_signing_algorithms = state
-        .keyset
-        .snapshot()
-        .response_signing_alg_values_supported();
+    let response_signing_algorithms = keyset.snapshot().response_signing_alg_values_supported();
     let prepared = prepare_client_insert_with_secret_pepper(
         payload,
-        pairwise_subject_secret,
-        state.settings.protocol().client_secret_pepper,
-        &state.settings.issuer,
+        config.pairwise_subject_secret(),
+        config.client_secret_pepper(),
+        config.issuer(),
         &response_signing_algorithms,
     )
     .await?;
     let issued_secret = prepared.issued_secret.clone();
-    let client = insert_prepared_client_row(state, &prepared).await?;
+    let client = insert_prepared_client_row_with_repository(clients, &prepared).await?;
     Ok((client, issued_secret))
-}
-
-pub(crate) async fn insert_prepared_client_row(
-    state: &AppState,
-    prepared: &PreparedClientRegistration,
-) -> Result<ClientRow, InsertClientError> {
-    insert_prepared_client_row_with_repository(
-        &nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone()),
-        prepared,
-    )
-    .await
 }
 
 pub(crate) async fn insert_prepared_client_row_with_repository(
@@ -344,14 +346,10 @@ pub(crate) fn issue_client_secret(
 
 #[cfg(test)]
 pub(crate) async fn insert_prepared_client(
-    pool: &nazo_postgres::DbPool,
+    repository: &OAuthClientRepository,
     prepared: &PreparedClientRegistration,
 ) -> Result<ClientRow, nazo_identity::ports::RepositoryError> {
-    insert_prepared_client_with_repository(
-        &nazo_postgres::OAuthClientRepository::new(pool.clone()),
-        prepared,
-    )
-    .await
+    insert_prepared_client_with_repository(repository, prepared).await
 }
 
 pub(crate) async fn insert_prepared_client_with_repository(
