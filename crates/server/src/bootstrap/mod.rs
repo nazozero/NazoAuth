@@ -14,6 +14,7 @@ use crate::domain::{
     AppState, DynamicRegistrationConfig, DynamicRegistrationHandles, MetadataConfig,
     MetadataHandles, ResourceServerConfig, ResourceServerHandles,
 };
+use crate::http::admin::access_requests::AdminAccessRequestConfig;
 use crate::http::profile::oidc_logout::spawn_backchannel_logout_delivery_worker;
 use crate::runtime_modules::RuntimeModules;
 use crate::settings::Settings;
@@ -150,6 +151,20 @@ pub async fn run() -> anyhow::Result<()> {
     let admin_grant_clients = web::Data::new(nazo_postgres::OAuthClientRepository::new(
         state.diesel_db.clone(),
     ));
+    let admin_access_requests = web::Data::new(nazo_postgres::AccessRequestRepository::new(
+        state.diesel_db.clone(),
+    ));
+    let admin_access_delivery =
+        web::Data::new(nazo_valkey::DeliveryStore::new(&state.valkey_connection()));
+    let admin_access_keys = web::Data::new(state.keyset.clone());
+    let protocol = state.settings.protocol();
+    let storage = state.settings.storage();
+    let admin_access_request_config = web::Data::new(AdminAccessRequestConfig::new(
+        protocol.pairwise_subject_secret,
+        protocol.client_secret_pepper,
+        &state.settings.issuer,
+        storage.client_delivery_ttl_seconds,
+    ));
     let endpoint = state.settings.endpoint();
     let client_ip_config = web::Data::new(ClientIpConfig::new(
         endpoint.trusted_proxy_cidrs,
@@ -202,6 +217,10 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(admin_users.clone())
             .app_data(admin_grants.clone())
             .app_data(admin_grant_clients.clone())
+            .app_data(admin_access_requests.clone())
+            .app_data(admin_access_delivery.clone())
+            .app_data(admin_access_keys.clone())
+            .app_data(admin_access_request_config.clone())
             .app_data(client_ip_config.clone())
             .app_data(dynamic_registration_handles.clone())
             .configure(|cfg| routes::configure(cfg, &state.settings, perf_metrics_enabled))

@@ -1,21 +1,10 @@
 //! 管理端客户端接入申请接口。
-use crate::domain::AppState;
-#[cfg(test)]
-use crate::domain::ClientRow;
-#[cfg(test)]
-use crate::domain::DatabaseUserFixture;
-#[cfg(test)]
-use crate::schema::oauth_clients;
-#[cfg(test)]
-use crate::settings::Settings;
-#[cfg(test)]
+use crate::support::client_ip::{ClientIpConfig, client_ip_with_config};
+use crate::support::responses::has_valid_csrf_token_for_cookies;
+use crate::support::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
 use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, OAuthJsonErrorFields,
-    SessionPayload, valkey_set_ex,
-};
-use crate::support::{
-    access_delivery_token, audit_event, audit_fields, blake3_hex, client_ip, csrf_error,
-    has_valid_csrf_token, json_response, oauth_error, pagination, require_admin_or_forbidden,
+    access_delivery_token, audit_event, audit_fields, blake3_hex, csrf_error, json_response,
+    oauth_error, pagination,
 };
 use actix_web::http::StatusCode;
 use actix_web::http::header;
@@ -23,10 +12,9 @@ use actix_web::http::header::HeaderValue;
 use actix_web::web::{Data, Json, Query};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::{Duration, Utc};
-#[cfg(test)]
-use diesel::prelude::*;
-#[cfg(test)]
-use nazo_identity::AccessRequestStatus;
+use nazo_key_management::KeyManager;
+use nazo_postgres::AccessRequestRepository;
+use nazo_valkey::DeliveryStore;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -36,12 +24,44 @@ use super::clients::{
     CreateClientRequest, insert_client_error_response, prepare_client_insert_with_secret_pepper,
 };
 
+pub(crate) struct AdminAccessRequestConfig {
+    pairwise_subject_secret: Option<Box<str>>,
+    client_secret_pepper: Box<str>,
+    issuer: Box<str>,
+    delivery_ttl_seconds: u64,
+}
+
+impl AdminAccessRequestConfig {
+    pub(crate) fn new(
+        pairwise_subject_secret: Option<&str>,
+        client_secret_pepper: &str,
+        issuer: &str,
+        delivery_ttl_seconds: u64,
+    ) -> Self {
+        Self {
+            pairwise_subject_secret: pairwise_subject_secret.map(Into::into),
+            client_secret_pepper: client_secret_pepper.into(),
+            issuer: issuer.into(),
+            delivery_ttl_seconds,
+        }
+    }
+}
+
+type ApprovalDependencies = (
+    Data<AccessRequestRepository>,
+    Data<DeliveryStore>,
+    Data<KeyManager>,
+    Data<AdminAccessRequestConfig>,
+    Data<ClientIpConfig>,
+);
+
 pub(crate) async fn admin_access_requests(
-    state: Data<AppState>,
+    admin_sessions: Data<AdminSessionHandles>,
+    repository: Data<AccessRequestRepository>,
     req: HttpRequest,
     Query(q): Query<HashMap<String, String>>,
 ) -> HttpResponse {
-    let admin = match require_admin_or_forbidden(&state, &req).await {
+    let admin = match require_admin_or_forbidden_with_handles(&admin_sessions, &req).await {
         Ok(admin) => admin,
         Err(response) => return response,
     };
@@ -51,7 +71,7 @@ pub(crate) async fn admin_access_requests(
         Err(response) => return response,
     };
     let search = q.get("q").map(String::as_str);
-    let result = nazo_postgres::AccessRequestRepository::new(state.diesel_db.clone())
+    let result = repository
         .page(
             admin.principal.tenant.tenant_id,
             i64::from(page_size),
@@ -114,27 +134,34 @@ fn access_requests_response(
 }
 
 pub(crate) async fn admin_approve_access_request(
-    state: Data<AppState>,
+    admin_sessions: Data<AdminSessionHandles>,
+    dependencies: ApprovalDependencies,
     req: HttpRequest,
     path: actix_web::web::Path<Uuid>,
     Json(payload): Json<CreateClientRequest>,
 ) -> HttpResponse {
+    let (repository, delivery_store, keyset, config, client_ip_config) = dependencies;
     let request_id = path.into_inner();
-    if !has_valid_csrf_token(&state, &req, None) {
+    let session_http = admin_sessions.http_config();
+    if !has_valid_csrf_token_for_cookies(
+        &req,
+        None,
+        session_http.session_cookie_name(),
+        session_http.csrf_cookie_name(),
+    ) {
         return csrf_error();
     }
-    let admin = match require_admin_or_forbidden(&state, &req).await {
+    let admin = match require_admin_or_forbidden_with_handles(&admin_sessions, &req).await {
         Ok(admin) => admin,
         Err(response) => return response,
     };
-    let repository = nazo_postgres::AccessRequestRepository::new(state.diesel_db.clone());
     let pending_request = match repository
         .by_id(admin.principal.tenant.tenant_id, request_id)
         .await
     {
         Ok(Some(row)) if row.status == nazo_identity::AccessRequestStatus::Pending => row,
         Ok(Some(row)) if row.status == nazo_identity::AccessRequestStatus::Approved => {
-            match resume_staged_client_delivery(&state, &row).await {
+            match resume_staged_client_delivery(&delivery_store, &config, &row).await {
                 Ok(true) => return json_response(access_request_json(row)),
                 Ok(false) => return access_request_already_approved_response(),
                 Err(error) => {
@@ -160,15 +187,12 @@ pub(crate) async fn admin_approve_access_request(
     let request_user = pending_request.user_id;
     let request_user_id = request_user.as_uuid();
     let site_name = pending_request.site_name;
-    let response_signing_algorithms = state
-        .keyset
-        .snapshot()
-        .response_signing_alg_values_supported();
+    let response_signing_algorithms = keyset.snapshot().response_signing_alg_values_supported();
     let prepared = match prepare_client_insert_with_secret_pepper(
         payload,
-        state.settings.protocol().pairwise_subject_secret,
-        state.settings.protocol().client_secret_pepper,
-        &state.settings.issuer,
+        config.pairwise_subject_secret.as_deref(),
+        &config.client_secret_pepper,
+        &config.issuer,
         &response_signing_algorithms,
     )
     .await
@@ -176,14 +200,8 @@ pub(crate) async fn admin_approve_access_request(
         Ok(prepared) => prepared,
         Err(error) => return insert_client_error_response(error),
     };
-    let token = access_delivery_token(
-        state.settings.protocol().client_secret_pepper,
-        request_user_id,
-        request_id,
-    );
-    let delivery_store = nazo_valkey::DeliveryStore::new(&state.valkey_connection());
-    let expires_at =
-        Utc::now() + Duration::seconds(state.settings.storage().client_delivery_ttl_seconds as i64);
+    let token = access_delivery_token(&config.client_secret_pepper, request_user_id, request_id);
+    let expires_at = Utc::now() + Duration::seconds(config.delivery_ttl_seconds as i64);
     let delivery_payload = json!({
         "delivery_state": "staged",
         "request_id": request_id,
@@ -205,7 +223,7 @@ pub(crate) async fn admin_approve_access_request(
             request_user,
             &token,
             &delivery_payload,
-            state.settings.storage().client_delivery_ttl_seconds,
+            config.delivery_ttl_seconds,
         )
         .await
     {
@@ -252,7 +270,7 @@ pub(crate) async fn admin_approve_access_request(
             request_user,
             &token,
             &committed_delivery_payload,
-            state.settings.storage().client_delivery_ttl_seconds,
+            config.delivery_ttl_seconds,
         )
         .await
     {
@@ -271,7 +289,7 @@ pub(crate) async fn admin_approve_access_request(
             ("admin_user_id", json!(admin.id())),
             (
                 "source_ip_hash",
-                json!(blake3_hex(&client_ip(&req, &state.settings))),
+                json!(blake3_hex(&client_ip_with_config(&req, &client_ip_config))),
             ),
         ]),
     );
@@ -293,7 +311,8 @@ pub(crate) async fn admin_approve_access_request(
 }
 
 async fn resume_staged_client_delivery(
-    state: &AppState,
+    store: &DeliveryStore,
+    config: &AdminAccessRequestConfig,
     request: &nazo_identity::AccessRequest,
 ) -> anyhow::Result<bool> {
     let Some(approved_client_id) = request.approved_client_id else {
@@ -301,13 +320,8 @@ async fn resume_staged_client_delivery(
     };
     let user = request.user_id;
     let user_id = user.as_uuid();
-    let token = access_delivery_token(
-        state.settings.protocol().client_secret_pepper,
-        user_id,
-        request.id,
-    );
-    let store = nazo_valkey::DeliveryStore::new(&state.valkey_connection());
-    let Some(stored) = nazo_valkey::DeliveryStore::load(&store, user, &token).await? else {
+    let token = access_delivery_token(&config.client_secret_pepper, user_id, request.id);
+    let Some(stored) = DeliveryStore::load(store, user, &token).await? else {
         return Ok(false);
     };
     let mut payload = stored.value().clone();
@@ -320,12 +334,7 @@ async fn resume_staged_client_delivery(
     payload["delivery_state"] = json!("committed");
     payload["approved_client_id"] = json!(approved_client_id);
     store
-        .store(
-            user,
-            &token,
-            &payload,
-            state.settings.storage().client_delivery_ttl_seconds,
-        )
+        .store(user, &token, &payload, config.delivery_ttl_seconds)
         .await?;
     Ok(true)
 }
@@ -336,20 +345,26 @@ pub(crate) struct RejectAccessRequest {
 }
 
 pub(crate) async fn admin_reject_access_request(
-    state: Data<AppState>,
+    admin_sessions: Data<AdminSessionHandles>,
+    repository: Data<AccessRequestRepository>,
     req: HttpRequest,
     path: actix_web::web::Path<Uuid>,
     Json(payload): Json<RejectAccessRequest>,
 ) -> HttpResponse {
     let request_id = path.into_inner();
-    if !has_valid_csrf_token(&state, &req, None) {
+    let session_http = admin_sessions.http_config();
+    if !has_valid_csrf_token_for_cookies(
+        &req,
+        None,
+        session_http.session_cookie_name(),
+        session_http.csrf_cookie_name(),
+    ) {
         return csrf_error();
     }
-    let admin = match require_admin_or_forbidden(&state, &req).await {
+    let admin = match require_admin_or_forbidden_with_handles(&admin_sessions, &req).await {
         Ok(admin) => admin,
         Err(response) => return response,
     };
-    let repository = nazo_postgres::AccessRequestRepository::new(state.diesel_db.clone());
     let updated = match repository
         .reject(
             admin.principal.tenant.tenant_id,

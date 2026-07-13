@@ -12,6 +12,17 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
+use crate::domain::{AppState, ClientRow, DatabaseUserFixture};
+use crate::schema::oauth_clients;
+use crate::settings::Settings;
+use crate::support::sessions::SessionHttpConfig;
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, OAuthJsonErrorFields,
+    SessionPayload, valkey_set_ex,
+};
+use chrono::Utc;
+use diesel::prelude::*;
+use nazo_identity::AccessRequestStatus;
 use nazo_postgres::{create_pool, get_conn};
 
 #[derive(QueryableByName)]
@@ -68,6 +79,97 @@ fn test_state() -> AppState {
         ),
         keyset: crate::test_support::test_key_manager(),
     }
+}
+
+struct TestAdminAccessRequestDependencies {
+    admin_sessions: Data<AdminSessionHandles>,
+    repository: Data<AccessRequestRepository>,
+    delivery_store: Data<DeliveryStore>,
+    keyset: Data<KeyManager>,
+    config: Data<AdminAccessRequestConfig>,
+    client_ip_config: Data<ClientIpConfig>,
+}
+
+fn admin_access_request_dependencies(state: &Data<AppState>) -> TestAdminAccessRequestDependencies {
+    let session = state.settings.session();
+    let protocol = state.settings.protocol();
+    let storage = state.settings.storage();
+    let endpoint = state.settings.endpoint();
+    TestAdminAccessRequestDependencies {
+        admin_sessions: Data::new(AdminSessionHandles::new(
+            nazo_valkey::SessionStore::new(&state.valkey_connection()),
+            nazo_postgres::UserRepository::new(state.diesel_db.clone()),
+            SessionHttpConfig::new(session.session_cookie_name, session.csrf_cookie_name),
+        )),
+        repository: Data::new(AccessRequestRepository::new(state.diesel_db.clone())),
+        delivery_store: Data::new(DeliveryStore::new(&state.valkey_connection())),
+        keyset: Data::new(state.keyset.clone()),
+        config: Data::new(AdminAccessRequestConfig::new(
+            protocol.pairwise_subject_secret,
+            protocol.client_secret_pepper,
+            &state.settings.issuer,
+            storage.client_delivery_ttl_seconds,
+        )),
+        client_ip_config: Data::new(ClientIpConfig::new(
+            endpoint.trusted_proxy_cidrs,
+            endpoint.client_ip_header_mode,
+        )),
+    }
+}
+
+async fn invoke_admin_access_requests(
+    state: Data<AppState>,
+    req: HttpRequest,
+    query: Query<HashMap<String, String>>,
+) -> HttpResponse {
+    let dependencies = admin_access_request_dependencies(&state);
+    admin_access_requests(
+        dependencies.admin_sessions,
+        dependencies.repository,
+        req,
+        query,
+    )
+    .await
+}
+
+async fn invoke_admin_approve_access_request(
+    state: Data<AppState>,
+    req: HttpRequest,
+    path: actix_web::web::Path<Uuid>,
+    payload: Json<CreateClientRequest>,
+) -> HttpResponse {
+    let dependencies = admin_access_request_dependencies(&state);
+    admin_approve_access_request(
+        dependencies.admin_sessions,
+        (
+            dependencies.repository,
+            dependencies.delivery_store,
+            dependencies.keyset,
+            dependencies.config,
+            dependencies.client_ip_config,
+        ),
+        req,
+        path,
+        payload,
+    )
+    .await
+}
+
+async fn invoke_admin_reject_access_request(
+    state: Data<AppState>,
+    req: HttpRequest,
+    path: actix_web::web::Path<Uuid>,
+    payload: Json<RejectAccessRequest>,
+) -> HttpResponse {
+    let dependencies = admin_access_request_dependencies(&state);
+    admin_reject_access_request(
+        dependencies.admin_sessions,
+        dependencies.repository,
+        req,
+        path,
+        payload,
+    )
+    .await
 }
 
 fn create_client_request() -> CreateClientRequest {
@@ -620,7 +722,7 @@ async fn access_request_list_requires_admin_before_query_validation_or_database_
         .uri("/admin/access-requests?status=not-a-status")
         .to_http_request();
 
-    let response = admin_access_requests(
+    let response = invoke_admin_access_requests(
         state,
         req,
         Query(HashMap::from([(
@@ -644,7 +746,7 @@ async fn access_request_list_without_status_requires_admin_before_database_looku
         .uri("/admin/access-requests")
         .to_http_request();
 
-    let response = admin_access_requests(state, req, Query(HashMap::new())).await;
+    let response = invoke_admin_access_requests(state, req, Query(HashMap::new())).await;
 
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     assert_eq!(
@@ -677,7 +779,7 @@ async fn admin_access_request_list_validates_status_after_admin_auth_and_returns
 
     let list_uri = format!("/admin/access-requests?status=0&q={pending_site}");
     let list_req = fixture.admin_get_request(&sid, &list_uri);
-    let list_response = admin_access_requests(
+    let list_response = invoke_admin_access_requests(
         fixture.state.clone(),
         list_req,
         Query(HashMap::from([
@@ -695,7 +797,7 @@ async fn admin_access_request_list_validates_status_after_admin_auth_and_returns
     assert!(body["items"][0].get("client_secret").is_none());
 
     let invalid_req = fixture.admin_get_request(&sid, "/admin/access-requests?status=9");
-    let invalid_response = admin_access_requests(
+    let invalid_response = invoke_admin_access_requests(
         fixture.state.clone(),
         invalid_req,
         Query(HashMap::from([("status".to_owned(), "9".to_owned())])),
@@ -740,7 +842,7 @@ async fn approve_access_request_rejects_missing_csrf_before_admin_or_database_lo
         ))
         .to_http_request();
 
-    let response = admin_approve_access_request(
+    let response = invoke_admin_approve_access_request(
         state,
         req,
         actix_web::web::Path::from(Uuid::now_v7()),
@@ -762,7 +864,7 @@ async fn approve_access_request_requires_admin_before_access_request_lookup() {
         .uri("/admin/access-requests/request-id/approve")
         .to_http_request();
 
-    let response = admin_approve_access_request(
+    let response = invoke_admin_approve_access_request(
         state,
         req,
         actix_web::web::Path::from(Uuid::now_v7()),
@@ -801,7 +903,7 @@ async fn approve_access_request_validates_client_request_before_mutation() {
     payload.jwks = None;
     let req = fixture.admin_post_request(&sid, &csrf, "/admin/access-requests/request/approve");
 
-    let response = admin_approve_access_request(
+    let response = invoke_admin_approve_access_request(
         fixture.state.clone(),
         req,
         actix_web::web::Path::from(request_id),
@@ -847,7 +949,7 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
     payload.jwks = None;
     let req = fixture.admin_post_request(&sid, &csrf, "/admin/access-requests/request/approve");
 
-    let response = admin_approve_access_request(
+    let response = invoke_admin_approve_access_request(
         fixture.state.clone(),
         req,
         actix_web::web::Path::from(request_id),
@@ -950,7 +1052,7 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
     .unwrap();
     let recovery_request =
         fixture.admin_post_request(&sid, &csrf, "/admin/access-requests/request/approve");
-    let recovered = admin_approve_access_request(
+    let recovered = invoke_admin_approve_access_request(
         fixture.state.clone(),
         recovery_request,
         actix_web::web::Path::from(request_id),
@@ -1014,7 +1116,7 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
 
     let duplicate_req =
         fixture.admin_post_request(&sid, &csrf, "/admin/access-requests/request/approve");
-    let duplicate = admin_approve_access_request(
+    let duplicate = invoke_admin_approve_access_request(
         fixture.state.clone(),
         duplicate_req,
         actix_web::web::Path::from(request_id),
@@ -1051,7 +1153,7 @@ async fn approve_access_request_rejects_previously_rejected_request_without_crea
         .await;
     let req = fixture.admin_post_request(&sid, &csrf, "/admin/access-requests/request/approve");
 
-    let response = admin_approve_access_request(
+    let response = invoke_admin_approve_access_request(
         fixture.state.clone(),
         req,
         actix_web::web::Path::from(request_id),
@@ -1085,7 +1187,7 @@ async fn reject_access_request_rejects_missing_csrf_before_admin_or_database_loo
         ))
         .to_http_request();
 
-    let response = admin_reject_access_request(
+    let response = invoke_admin_reject_access_request(
         state,
         req,
         actix_web::web::Path::from(Uuid::now_v7()),
@@ -1109,7 +1211,7 @@ async fn reject_access_request_requires_admin_before_access_request_update() {
         .uri("/admin/access-requests/request-id/reject")
         .to_http_request();
 
-    let response = admin_reject_access_request(
+    let response = invoke_admin_reject_access_request(
         state,
         req,
         actix_web::web::Path::from(Uuid::now_v7()),
@@ -1146,7 +1248,7 @@ async fn reject_access_request_marks_request_rejected_once() {
         .await;
     let req = fixture.admin_post_request(&sid, &csrf, "/admin/access-requests/request/reject");
 
-    let response = admin_reject_access_request(
+    let response = invoke_admin_reject_access_request(
         fixture.state.clone(),
         req,
         actix_web::web::Path::from(request_id),
@@ -1163,7 +1265,7 @@ async fn reject_access_request_marks_request_rejected_once() {
 
     let duplicate_req =
         fixture.admin_post_request(&sid, &csrf, "/admin/access-requests/request/reject");
-    let duplicate = admin_reject_access_request(
+    let duplicate = invoke_admin_reject_access_request(
         fixture.state.clone(),
         duplicate_req,
         actix_web::web::Path::from(request_id),
@@ -1206,7 +1308,7 @@ async fn reject_access_request_rejects_previously_approved_request_without_losin
     payload.jwks = None;
     let approve_req =
         fixture.admin_post_request(&sid, &csrf, "/admin/access-requests/request/approve");
-    let approved = admin_approve_access_request(
+    let approved = invoke_admin_approve_access_request(
         fixture.state.clone(),
         approve_req,
         actix_web::web::Path::from(request_id),
@@ -1221,7 +1323,7 @@ async fn reject_access_request_rejects_previously_approved_request_without_losin
 
     let reject_req =
         fixture.admin_post_request(&sid, &csrf, "/admin/access-requests/request/reject");
-    let rejected = admin_reject_access_request(
+    let rejected = invoke_admin_reject_access_request(
         fixture.state.clone(),
         reject_req,
         actix_web::web::Path::from(request_id),
@@ -1270,7 +1372,7 @@ async fn approve_access_request_surfaces_pending_request_lookup_failure_after_ad
         .await;
     let req = fixture.admin_post_request(sid, csrf, "/admin/access-requests/request/approve");
 
-    let response = admin_approve_access_request(
+    let response = invoke_admin_approve_access_request(
         fixture.state.clone(),
         req,
         actix_web::web::Path::from(request_id),
@@ -1319,7 +1421,7 @@ async fn approve_access_request_rolls_back_when_status_write_fails_after_client_
         .valkey_client_without_delete(&acl_user, &acl_password)
         .await;
 
-    let response = admin_approve_access_request(
+    let response = invoke_admin_approve_access_request(
         fixture.state_with_valkey(no_delete),
         req,
         actix_web::web::Path::from(request_id),
@@ -1406,7 +1508,7 @@ async fn approve_access_request_delivery_failure_is_fail_closed_before_database_
         .await;
     let req = fixture.admin_post_request(&sid, &csrf, "/admin/access-requests/request/approve");
 
-    let response = admin_approve_access_request(
+    let response = invoke_admin_approve_access_request(
         fixture.state_with_valkey(restricted),
         req,
         actix_web::web::Path::from(request_id),
@@ -1453,7 +1555,7 @@ async fn reject_access_request_surfaces_update_failure_without_changing_status()
         .await;
     let req = fixture.admin_post_request(sid, csrf, "/admin/access-requests/request/reject");
 
-    let response = admin_reject_access_request(
+    let response = invoke_admin_reject_access_request(
         fixture.state.clone(),
         req,
         actix_web::web::Path::from(request_id),
@@ -1499,7 +1601,7 @@ async fn reject_access_request_surfaces_projection_failure_after_state_transitio
         .await;
     let req = fixture.admin_post_request(sid, csrf, "/admin/access-requests/request/reject");
 
-    let response = admin_reject_access_request(
+    let response = invoke_admin_reject_access_request(
         fixture.state.clone(),
         req,
         actix_web::web::Path::from(request_id),
