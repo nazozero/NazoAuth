@@ -234,8 +234,6 @@ pub async fn run() -> anyhow::Result<()> {
         valkey,
         settings,
         keyset,
-        #[cfg(not(test))]
-        runtime_modules: runtime_modules.registry.clone(),
     });
     let session = &state.settings.session;
     let session_http_config = SessionHttpConfig::new(

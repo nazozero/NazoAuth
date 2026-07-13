@@ -1,6 +1,7 @@
 //! 会话用户与权限解析。
 #[cfg(test)]
 use super::valkey_get;
+#[cfg(test)]
 use crate::domain::AppState;
 #[cfg(test)]
 use crate::settings::Settings;
@@ -157,6 +158,7 @@ impl AdminSessionHandles {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn login_required_response(state: &AppState) -> HttpResponse {
     let session = &state.settings.session;
     with_cookie_headers(
@@ -169,20 +171,6 @@ pub(crate) fn login_required_response(state: &AppState) -> HttpResponse {
             clear_cookie(&session.session_cookie_name, session.cookie_secure),
             clear_cookie(&session.csrf_cookie_name, session.cookie_secure),
         ],
-    )
-}
-
-pub(crate) fn has_valid_csrf_token(
-    state: &AppState,
-    req: &HttpRequest,
-    fallback_token: Option<&str>,
-) -> bool {
-    let session = &state.settings.session;
-    has_valid_csrf_token_for_cookies(
-        req,
-        fallback_token,
-        &session.session_cookie_name,
-        &session.csrf_cookie_name,
     )
 }
 
@@ -395,6 +383,7 @@ impl SessionPayload {
     }
 }
 
+#[cfg(test)]
 pub(crate) async fn current_user(
     state: &AppState,
     req: &HttpRequest,
@@ -404,6 +393,7 @@ pub(crate) async fn current_user(
         .map(|session| session.user))
 }
 
+#[cfg(test)]
 pub(crate) async fn current_session(
     state: &AppState,
     req: &HttpRequest,
@@ -641,6 +631,7 @@ pub(crate) async fn require_admin(
         .filter(|u| u.admin_level() > 0))
 }
 
+#[cfg(test)]
 pub(crate) async fn current_user_or_login_required(
     state: &AppState,
     req: &HttpRequest,

@@ -1,6 +1,7 @@
 //! 可信反向代理下的客户端 IP 解析。
 //! 默认只使用连接 peer 地址；转发头仅在 peer 命中可信代理 CIDR 后生效。
 
+#[cfg(test)]
 use crate::settings::Settings;
 use actix_web::HttpRequest;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -90,6 +91,7 @@ pub(crate) fn parse_trusted_proxy_cidrs(raw: Option<String>) -> anyhow::Result<V
         .collect()
 }
 
+#[cfg(test)]
 pub(crate) fn client_ip(req: &HttpRequest, settings: &Settings) -> String {
     let endpoint = &settings.endpoint;
     client_ip_with_context(

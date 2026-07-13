@@ -24,8 +24,8 @@ mod views;
 pub(crate) use crate::test_support::{ClientSigningFixture, client_signing_fixture};
 pub(crate) use audit::{audit_event, audit_fields};
 pub(crate) use client_ip::{
-    ClientIpConfig, ClientIpHeaderMode, IpCidr, client_ip, client_ip_with_config,
-    client_ip_with_context, parse_trusted_proxy_cidrs,
+    ClientIpConfig, ClientIpHeaderMode, IpCidr, client_ip_with_config, client_ip_with_context,
+    parse_trusted_proxy_cidrs,
 };
 pub(crate) use dpop::{
     AccessTokenAuthScheme, DpopError, DpopErrorContext, dpop_error_response, dpop_proof_present,
@@ -96,9 +96,7 @@ pub(crate) use security::{
 };
 #[cfg(test)]
 pub(crate) use security::{consume_private_key_jwt, decode_access_claims};
-pub(crate) use sessions::{
-    CurrentSession, SessionRotation, current_user_or_login_required, has_valid_csrf_token,
-};
+pub(crate) use sessions::{CurrentSession, SessionRotation};
 #[cfg(test)]
 pub(crate) use sessions::{SessionPayload, current_session};
 #[cfg(test)]
