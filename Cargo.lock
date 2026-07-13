@@ -2317,6 +2317,7 @@ dependencies = [
  "blake3",
  "chrono",
  "fred",
+ "futures-util",
  "nazo-auth",
  "nazo-identity",
  "serde",

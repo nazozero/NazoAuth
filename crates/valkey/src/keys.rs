@@ -97,3 +97,40 @@ pub(crate) fn device_user_code(user_code: &str) -> String {
         blake3_hex(&normalize_user_code(user_code))
     )
 }
+
+pub(crate) fn email_send(email: &str) -> String {
+    format!("oauth:email_verify:send:{email}")
+}
+pub(crate) fn email_peer_send(subject: &str) -> String {
+    format!("oauth:email_verify:peer_send:{}", blake3_hex(subject))
+}
+pub(crate) fn email_code(email: &str) -> String {
+    format!("oauth:email_verify:code:{email}")
+}
+pub(crate) fn passkey_registration(ceremony_id: &str) -> String {
+    format!("oauth:passkey:registration:{ceremony_id}")
+}
+pub(crate) fn passkey_authentication(ceremony_id: &str) -> String {
+    format!("oauth:passkey:authentication:{ceremony_id}")
+}
+pub(crate) fn oidc_federation(state: &str) -> String {
+    format!("oauth:federation:oidc:state:{}", blake3_hex(state))
+}
+pub(crate) fn social_federation(state: &str) -> String {
+    format!("oauth:federation:social:state:{}", blake3_hex(state))
+}
+pub(crate) fn rate(dimension: &str, subject: &str) -> String {
+    format!("oauth:rate:{dimension}:{}", blake3_hex(subject.trim()))
+}
+pub(crate) fn login_failure(dimension: &str, subject: &str) -> String {
+    format!(
+        "oauth:login_failure:{dimension}:{}",
+        blake3_hex(subject.trim())
+    )
+}
+pub(crate) fn access_token_subject(tenant_id: uuid::Uuid, jti: &str) -> String {
+    format!("oauth:access_token:subject:{tenant_id}:{}", blake3_hex(jti))
+}
+pub(crate) fn native_sso(secret: &str) -> String {
+    format!("oauth:native_sso:device_secret:{}", blake3_hex(secret))
+}
