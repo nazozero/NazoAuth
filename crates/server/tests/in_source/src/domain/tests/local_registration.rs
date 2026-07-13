@@ -21,8 +21,8 @@ use crate::{
     domain::AppState,
     settings::{EmailDelivery, Settings, SmtpEmailSettings, SmtpTlsMode},
     support::{
-        blake3_hex, hash_password, normalize_email_address, random_urlsafe_token, valkey_get,
-        valkey_set_ex,
+        blake3_hex, hash_password, normalize_email_address, random_numeric_code,
+        random_urlsafe_token, valkey_get, valkey_set_ex,
     },
     test_support::registration_service,
 };
@@ -101,11 +101,12 @@ async fn concurrent_registration_consumes_once_and_keeps_valkey_key_contract() {
         return;
     };
     let email = format!("registration-boundary-{}@example.test", Uuid::now_v7());
+    let verification_code = random_numeric_code();
     let password = random_urlsafe_token();
-    fixture.store_code(&email, "123456").await;
+    fixture.store_code(&email, &verification_code).await;
     let input = || RegisterLocalAccountInput {
         email: email.clone(),
-        verification_code: "123456".to_owned(),
+        verification_code: verification_code.clone(),
         password: password.clone(),
     };
     let first = fixture.operations();
