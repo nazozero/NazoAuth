@@ -115,7 +115,11 @@ mod tests {
     use std::collections::BTreeSet;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use actix_web::{App, http::StatusCode, test, web};
+    use actix_web::{
+        App,
+        http::{Method, StatusCode},
+        test, web,
+    };
     use nazo_runtime_modules::{ModuleId, ModuleRevision};
     use serde_json::json;
 
@@ -160,25 +164,82 @@ mod tests {
     }
 
     #[actix_web::test]
-    async fn discovery_uses_one_snapshot_and_preserves_json_contract() {
+    async fn focused_metadata_routes_preserve_transport_and_snapshot_contracts() {
         let source = Arc::new(TestSnapshots {
             calls: AtomicUsize::new(0),
         });
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(handles(source.clone())))
-                .route(
-                    "/.well-known/openid-configuration",
-                    web::get().to(discovery),
-                ),
+                .service(
+                    web::scope("/.well-known")
+                        .route("/openid-configuration", web::get().to(discovery))
+                        .route(
+                            "/oauth-authorization-server",
+                            web::get().to(oauth_authorization_server_metadata),
+                        )
+                        .route(
+                            "/oauth-protected-resource",
+                            web::get().to(oauth_protected_resource_metadata),
+                        )
+                        .route(
+                            "/oauth-protected-resource/{tail:.*}",
+                            web::get().to(oauth_protected_resource_metadata),
+                        ),
+                )
+                .service(web::resource("/jwks.json").route(web::get().to(jwks))),
         )
         .await;
 
+        for path in [
+            "/.well-known/openid-configuration",
+            "/.well-known/oauth-authorization-server",
+        ] {
+            let response =
+                test::call_service(&app, test::TestRequest::get().uri(path).to_request()).await;
+            assert_eq!(response.status(), StatusCode::OK, "GET {path}");
+            assert_eq!(
+                response
+                    .headers()
+                    .get("content-type")
+                    .and_then(|value| value.to_str().ok()),
+                Some("application/json"),
+                "GET {path}"
+            );
+            let body: Value = test::read_body_json(response).await;
+            assert_eq!(body["issuer"], "https://issuer.example");
+            assert_eq!(
+                body["grant_types_supported"][3],
+                "urn:openid:params:grant-type:ciba"
+            );
+        }
+
+        for path in [
+            "/.well-known/oauth-protected-resource",
+            "/.well-known/oauth-protected-resource/fapi/resource",
+        ] {
+            let response =
+                test::call_service(&app, test::TestRequest::get().uri(path).to_request()).await;
+            assert_eq!(response.status(), StatusCode::OK, "GET {path}");
+            assert_eq!(
+                response
+                    .headers()
+                    .get("content-type")
+                    .and_then(|value| value.to_str().ok()),
+                Some("application/json"),
+                "GET {path}"
+            );
+            let body: Value = test::read_body_json(response).await;
+            assert_eq!(body["resource"], "https://issuer.example/fapi/resource");
+            assert_eq!(
+                body["authorization_servers"],
+                json!(["https://issuer.example"])
+            );
+        }
+
         let response = test::call_service(
             &app,
-            test::TestRequest::get()
-                .uri("/.well-known/openid-configuration")
-                .to_request(),
+            test::TestRequest::get().uri("/jwks.json").to_request(),
         )
         .await;
         assert_eq!(response.status(), StatusCode::OK);
@@ -190,21 +251,37 @@ mod tests {
             Some("application/json")
         );
         let body: Value = test::read_body_json(response).await;
-        assert_eq!(body["issuer"], "https://issuer.example");
-        assert_eq!(
-            body["grant_types_supported"][3],
-            "urn:openid:params:grant-type:ciba"
-        );
-        assert_eq!(source.calls.load(Ordering::Relaxed), 1);
-    }
+        assert_eq!(body["keys"][0]["kid"], "current");
+        assert_eq!(source.calls.load(Ordering::Relaxed), 5);
 
-    #[actix_web::test]
-    async fn jwks_reads_exactly_one_public_snapshot() {
-        let source = Arc::new(TestSnapshots {
-            calls: AtomicUsize::new(0),
-        });
-        let response = jwks(Data::new(handles(source.clone()))).await;
-        assert_eq!(response.into_inner()["keys"][0]["kid"], "current");
-        assert_eq!(source.calls.load(Ordering::Relaxed), 1);
+        for (path, expected_status) in [
+            ("/.well-known/openid-configuration", StatusCode::NOT_FOUND),
+            (
+                "/.well-known/oauth-authorization-server",
+                StatusCode::NOT_FOUND,
+            ),
+            (
+                "/.well-known/oauth-protected-resource",
+                StatusCode::NOT_FOUND,
+            ),
+            (
+                "/.well-known/oauth-protected-resource/fapi/resource",
+                StatusCode::NOT_FOUND,
+            ),
+            ("/jwks.json", StatusCode::METHOD_NOT_ALLOWED),
+        ] {
+            for method in [Method::POST, Method::OPTIONS] {
+                let response = test::call_service(
+                    &app,
+                    test::TestRequest::default()
+                        .method(method.clone())
+                        .uri(path)
+                        .to_request(),
+                )
+                .await;
+                assert_eq!(response.status(), expected_status, "{method} {path}");
+            }
+        }
+        assert_eq!(source.calls.load(Ordering::Relaxed), 5);
     }
 }
