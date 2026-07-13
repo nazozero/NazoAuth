@@ -12,6 +12,7 @@ mod error;
 mod grant;
 mod metadata;
 mod profile;
+mod resource_indicator;
 mod sender_constraint;
 mod signing;
 mod token;
@@ -39,6 +40,7 @@ pub use error::{ProtocolError, ProtocolErrorCode};
 pub use grant::GrantType;
 pub use metadata::{CapabilityAdmission, MetadataCapabilities, module_admissible};
 pub use profile::SecurityProfile;
+pub use resource_indicator::{ResourceIndicatorError, parse_resource_indicators};
 pub use sender_constraint::{
     SenderConstraintPolicy, is_valid_dpop_jkt, normalize_sha256_thumbprint,
 };

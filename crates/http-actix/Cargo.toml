@@ -11,6 +11,7 @@ actix-cors = "0.7.1"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 url = "2.5.8"
+nazo-auth = { version = "0.1.0", path = "../auth" }
 
 [lints]
 workspace = true
