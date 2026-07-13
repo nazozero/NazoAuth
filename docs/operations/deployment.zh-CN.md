@@ -110,7 +110,7 @@ docker run -d --name nazo-oauth-server \
 
 ## 在线部署脚本
 
-仓库提供 [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1)。脚本要求后端和前端 worktree 均干净且 HEAD 与指定完整 SHA 一致，并固定核对分支 `codex/modular-workspace-architecture` 以及精确 HTTPS origin `https://github.com/nazozero/NazoAuth[.git]`、`https://github.com/nazozero/NazoAuthWeb[.git]`。它读取前端已提交的 `packageManager`，要求匹配的 `package-lock.json` 和精确 npm 版本，执行 `npm ci` 及 `package.json` 中实际存在的聚合验证脚本，只接受该门禁生成的 `dist`。随后脚本校验 `dist` 摘要，从已验证的后端 worktree 构建镜像，并在远端加载后再次校验不可变 image ID。远端事务状态持久化后立即启动独立于 SSH 会话的 watchdog，因此租约覆盖制品 staging、镜像加载、数据库迁移、容器切换和公网验证；只有公网 health/discovery 验证完成并提交租约后部署才成功。
+仓库提供 [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1)。脚本要求后端和前端 worktree 均干净且 HEAD 与指定完整 SHA 一致，并固定核对分支 `codex/modular-workspace-architecture` 以及精确 HTTPS origin `https://github.com/nazozero/NazoAuth[.git]`、`https://github.com/nazozero/NazoAuthWeb[.git]`。它读取前端已提交的 `packageManager`，要求匹配的 `package-lock.json` 和精确 npm 版本，执行 `npm ci` 及 `package.json` 中实际存在的聚合验证脚本，只接受该门禁生成的 `dist`。随后脚本校验 `dist` 摘要，从已验证的后端 worktree 构建镜像，并在远端加载后再次校验不可变 image ID。UI release 发布到 Angie worker 可遍历的独立静态目录，并在切换前后以 worker 身份校验可读性。远端事务状态持久化后立即启动独立于 SSH 会话的 watchdog，因此租约覆盖制品 staging、镜像加载、数据库迁移、容器切换和公网验证；只有公网 health、discovery、`/ui/auth` 及其引用的至少一个 `/ui/assets/...` 制品全部返回非空 HTTP 200 后，部署才会提交租约。
 
 默认 live 假设：
 
@@ -133,6 +133,10 @@ docker run -d --name nazo-oauth-server \
 | Health URL | `https://auth.nazo.run/health` |
 | Discovery URL | `https://auth.nazo.run/.well-known/openid-configuration` |
 | Expected issuer | `https://auth.nazo.run` |
+| UI 路径 | `/usr/local/angie/html/auth` |
+| UI release | `/usr/local/angie/html/auth-releases/<frontend-sha>` |
+| Angie worker | `www` |
+| 公网 UI 探针 | `https://auth.nazo.run/ui/auth` 及其引用的一个 `/ui/assets/...` 制品 |
 | 验证租约 | 默认 120 秒，可通过 `-VerificationLeaseSeconds` 调整 |
 | 部署记录 | `/opt/nazo-oauth/deployments/<backend-sha>-<frontend-sha>-<deployment-id>.json` |
 
