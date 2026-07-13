@@ -71,8 +71,8 @@
     {"path":"/admin/access-requests","methods":["GET"],"condition":"always"},
     {"path":"/admin/access-requests/{request_id}/approve","methods":["POST"],"condition":"always"},
     {"path":"/admin/access-requests/{request_id}/reject","methods":["POST"],"condition":"always"},
-    {"path":"/register","methods":["POST"],"condition":"dynamic_client_registration"},
-    {"path":"/register/{client_id}","methods":["DELETE","GET","PUT"],"condition":"dynamic_client_registration"},
+    {"path":"/register","methods":["POST"],"condition":"always"},
+    {"path":"/register/{client_id}","methods":["DELETE","GET","PUT"],"condition":"always"},
     {"path":"/__perf/metrics","methods":["GET"],"condition":"perf_metrics"}
   ]
 }

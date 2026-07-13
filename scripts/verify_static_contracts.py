@@ -70,7 +70,7 @@ def check_route_fixture() -> None:
         methods = item.get("methods")
         if not methods or methods != sorted(set(methods)):
             raise SystemExit("route methods must be non-empty, unique, and sorted")
-        if item.get("condition") not in {"always", "dynamic_client_registration", "perf_metrics"}:
+        if item.get("condition") not in {"always", "perf_metrics"}:
             raise SystemExit("route condition is invalid")
 
 
