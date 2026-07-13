@@ -6,10 +6,12 @@ use nazo_postgres::create_pool;
 
 use diesel::sql_query;
 use diesel::sql_types::{Text, Uuid as SqlUuid};
+use diesel_async::RunQueryDsl;
 use fred::interfaces::ClientLike;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
+use nazo_postgres::get_conn;
 
 fn invalid_register_state() -> Data<AppState> {
     let settings =

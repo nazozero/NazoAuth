@@ -2,7 +2,11 @@ use super::*;
 use std::{sync::Arc, time::Duration};
 
 use crate::config::ConfigSource;
+use crate::schema::external_identity_links;
+use diesel::prelude::*;
+use diesel_async::RunQueryDsl;
 use nazo_postgres::create_pool;
+use nazo_postgres::get_conn;
 
 use crate::settings::{OidcFederationSettings, SamlGatewaySettings};
 use crate::support::{ClientSigningFixture, client_signing_fixture, random_urlsafe_token};
