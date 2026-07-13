@@ -185,15 +185,15 @@ where
             .await
             .map_err(ceremony_error)?
             .ok_or(FederationError::StateExpired)?;
-        if let Some(actual_provider_id) = &stored.provider_id {
-            if actual_provider_id != expected_provider_id {
-                self.audit
-                    .record(FederationAuditEvent::ProviderMismatchRejected {
-                        expected_provider_id: expected_provider_id.to_owned(),
-                        actual_provider_id: actual_provider_id.clone(),
-                    });
-                return Err(FederationError::ProviderMismatch);
-            }
+        if let Some(actual_provider_id) = &stored.provider_id
+            && actual_provider_id != expected_provider_id
+        {
+            self.audit
+                .record(FederationAuditEvent::ProviderMismatchRejected {
+                    expected_provider_id: expected_provider_id.to_owned(),
+                    actual_provider_id: actual_provider_id.clone(),
+                });
+            return Err(FederationError::ProviderMismatch);
         }
         self.ensure_fresh(stored.created_at, now)?;
         Ok(stored)
