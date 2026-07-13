@@ -2,8 +2,6 @@
 #[cfg(test)]
 use crate::domain::DatabaseUserFixture;
 #[cfg(test)]
-use crate::schema::users;
-#[cfg(test)]
 use crate::settings::Settings;
 use crate::support::auth_me_json_with_count;
 use crate::support::sessions::SessionProfileHandles;
@@ -16,10 +14,6 @@ use actix_web::web::{Data, Json};
 use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
 use chrono::Utc;
-#[cfg(test)]
-use diesel::prelude::*;
-#[cfg(test)]
-use diesel_async::RunQueryDsl;
 use nazo_http_actix::{cookie_value, csrf_error};
 use nazo_http_actix::{json_response, oauth_error};
 use serde::Deserialize;

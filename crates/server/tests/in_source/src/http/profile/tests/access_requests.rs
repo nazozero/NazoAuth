@@ -6,6 +6,7 @@ use actix_web::cookie::Cookie;
 use actix_web::test::TestRequest;
 use diesel::sql_query;
 use diesel::sql_types::{Text, Uuid as SqlUuid};
+use diesel_async::RunQueryDsl;
 use fred::interfaces::ClientLike;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
