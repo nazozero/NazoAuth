@@ -8,8 +8,8 @@ use crate::support::signing_algorithm_name;
 use crate::support::{
     SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
 };
-use nazo_auth::MetadataCapabilities;
 use actix_web::web::{Data, Json};
+use nazo_auth::MetadataCapabilities;
 use serde_json::{Value, json};
 
 const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];

@@ -5,7 +5,7 @@
 use super::blake3_hex;
 use super::{authorization_error_response, client_ip, oauth_error};
 use crate::domain::AppState;
-use crate::settings::RateLimitSettings;
+use crate::settings::{RateLimitSettings, Settings};
 use actix_web::http::StatusCode;
 use actix_web::http::header;
 use actix_web::http::header::HeaderValue;
