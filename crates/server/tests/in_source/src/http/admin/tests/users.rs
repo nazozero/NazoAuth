@@ -23,7 +23,7 @@ use crate::support::{
 use chrono::Utc;
 use diesel::prelude::*;
 use nazo_identity::ports::AdminUserRepositoryPort;
-use nazo_postgres::{create_pool, get_conn};
+use nazo_postgres::{UserRepository, create_pool, get_conn};
 
 fn user_row() -> PublicAccount {
     let now = Utc::now();

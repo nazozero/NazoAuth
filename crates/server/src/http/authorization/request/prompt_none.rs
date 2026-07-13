@@ -34,7 +34,7 @@ pub(super) async fn user_grant_covers_requested_scopes_with_context(
         )
         .await
     {
-        Ok(value) => value,
+        Ok(value) => Ok(value),
         Err(error) => {
             tracing::warn!(%error, "failed to query authorization grant");
             return Err(oauth_error(

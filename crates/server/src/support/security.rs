@@ -9,11 +9,14 @@ use actix_web::HttpRequest;
 use actix_web::http::header;
 use actix_web::http::header::{HeaderMap, HeaderValue};
 use anyhow::{anyhow, bail};
+use argon2::Argon2;
+#[cfg(test)]
+use argon2::PasswordHash;
 use argon2::PasswordHasher;
+#[cfg(test)]
 use argon2::PasswordVerifier;
 use argon2::password_hash::SaltString;
 use argon2::password_hash::rand_core::OsRng;
-use argon2::{Argon2, PasswordHash};
 use base64::Engine;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use chrono::Utc;
