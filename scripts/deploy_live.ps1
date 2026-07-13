@@ -19,7 +19,7 @@ param(
     [string]$RemoteAvatarsPath = "/opt/nazo-oauth/runtime/avatars",
     [string]$RemoteUiPath = "/opt/nazo-oauth/ui",
     [string]$RemoteDeploymentRoot = "/opt/nazo-oauth",
-    [string]$LocalUiDist = "../NazoAuthWeb/dist",
+    [string]$LocalUiDist = "",
     [string]$PublishPort = "",
     [string]$HealthUrl = "https://auth.nazo.run/health",
     [string]$DiscoveryUrl = "https://auth.nazo.run/.well-known/openid-configuration",
@@ -95,18 +95,115 @@ function Assert-CleanGitCommit {
     return [System.IO.Path]::GetFullPath($root)
 }
 
-function Assert-ExactGitOrigin {
+function ConvertTo-GitHubRepositoryIdentity {
+    param([Parameter(Mandatory = $true)][string]$Remote)
+    $trimmed = $Remote.Trim()
+    $patterns = @(
+        '^(?:https?://)github\.com/(?<owner>[^/]+)/(?<repository>[^/]+?)(?:\.git)?/?$',
+        '^git@github\.com:(?<owner>[^/]+)/(?<repository>[^/]+?)(?:\.git)?/?$',
+        '^ssh://git@github\.com/(?<owner>[^/]+)/(?<repository>[^/]+?)(?:\.git)?/?$'
+    )
+    foreach ($pattern in $patterns) {
+        if ($trimmed -match $pattern) {
+            return "$($Matches.owner.ToLowerInvariant())/$($Matches.repository.ToLowerInvariant())"
+        }
+    }
+    throw "Unsupported GitHub remote URL: $Remote"
+}
+
+function Assert-GitOrigin {
     param(
         [Parameter(Mandatory = $true)][string]$Worktree,
         [Parameter(Mandatory = $true)][string]$ExpectedRemote,
         [Parameter(Mandatory = $true)][string]$Label
     )
     $actual = Get-CommandOutput git @("-C", $Worktree, "remote", "get-url", "origin")
-    $normalizedActual = $actual -replace '\.git$', ''
-    $normalizedExpected = $ExpectedRemote -replace '\.git$', ''
-    if ($normalizedActual -cne $normalizedExpected) {
-        throw "$Label origin $actual does not exactly match $ExpectedRemote"
+    try {
+        $normalizedActual = ConvertTo-GitHubRepositoryIdentity -Remote $actual
     }
+    catch {
+        throw "$Label origin $actual is not a supported GitHub SSH or HTTPS remote"
+    }
+    $normalizedExpected = ConvertTo-GitHubRepositoryIdentity -Remote $ExpectedRemote
+    if ($normalizedActual -cne $normalizedExpected) {
+        throw "$Label origin $actual does not identify expected repository $normalizedExpected"
+    }
+}
+
+function Assert-SynchronizedGitUpstream {
+    param(
+        [Parameter(Mandatory = $true)][string]$Worktree,
+        [Parameter(Mandatory = $true)][string]$ExpectedBranch,
+        [Parameter(Mandatory = $true)][string]$Label
+    )
+    $upstream = & git -C $Worktree rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $upstream) {
+        throw "$Label branch $ExpectedBranch must have an upstream"
+    }
+    $upstream = $upstream | Select-Object -First 1
+    $expectedUpstream = "origin/$ExpectedBranch"
+    if ($upstream -cne $expectedUpstream) {
+        throw "$Label upstream $upstream does not match expected upstream $expectedUpstream"
+    }
+    $divergence = Get-CommandOutput git @(
+        "-C", $Worktree, "rev-list", "--left-right", "--count", "HEAD...@{upstream}"
+    )
+    if ($divergence -notmatch '^\s*(?<ahead>\d+)\s+(?<behind>\d+)\s*$') {
+        throw "Unable to parse $Label upstream divergence: $divergence"
+    }
+    if ([int]$Matches.ahead -ne 0 -or [int]$Matches.behind -ne 0) {
+        throw "$Label branch $ExpectedBranch is not synchronized with $upstream (ahead $($Matches.ahead), behind $($Matches.behind))"
+    }
+}
+
+function Assert-FrontendWorktree {
+    param(
+        [Parameter(Mandatory = $true)][string]$Worktree,
+        [Parameter(Mandatory = $true)][string]$ExpectedCommit
+    )
+    $root = Assert-CleanGitCommit -Worktree $Worktree -ExpectedCommit $ExpectedCommit -Label "Frontend"
+    $branch = Get-CommandOutput git @("-C", $root, "branch", "--show-current")
+    if ($branch -cne $ExpectedFrontendBranch) {
+        throw "Frontend branch $branch does not match expected branch $ExpectedFrontendBranch"
+    }
+    Assert-GitOrigin -Worktree $root -ExpectedRemote $ExpectedFrontendRemote -Label "Frontend"
+    Assert-SynchronizedGitUpstream -Worktree $root -ExpectedBranch $ExpectedFrontendBranch -Label "Frontend"
+    return $root
+}
+
+function Find-FrontendWorktree {
+    param(
+        [Parameter(Mandatory = $true)][string]$BackendWorktree,
+        [Parameter(Mandatory = $true)][string]$ExpectedCommit
+    )
+    $commonGitDir = Get-CommandOutput git @(
+        "-C", $BackendWorktree, "rev-parse", "--path-format=absolute", "--git-common-dir"
+    )
+    $backendRepository = Split-Path -Parent $commonGitDir
+    $siblingRoot = Split-Path -Parent $backendRepository
+    $directories = @(
+        Get-ChildItem -LiteralPath $siblingRoot -Directory -Force |
+            Where-Object { $_.Name -eq "NazoAuthWeb" -or $_.Name -like "NazoAuthWeb-*" } |
+            Sort-Object FullName
+    )
+    $qualified = [System.Collections.Generic.List[string]]::new()
+    $rejected = [System.Collections.Generic.List[string]]::new()
+    foreach ($directory in $directories) {
+        try {
+            $qualified.Add((Assert-FrontendWorktree -Worktree $directory.FullName -ExpectedCommit $ExpectedCommit))
+        }
+        catch {
+            $rejected.Add("$($directory.FullName): $($_.Exception.Message)")
+        }
+    }
+    if ($qualified.Count -eq 1) {
+        return $qualified[0]
+    }
+    if ($qualified.Count -gt 1) {
+        throw "Frontend worktree discovery is ambiguous; qualified candidates: $($qualified -join ', '). Pass LocalFrontendWorktree explicitly."
+    }
+    $details = if ($rejected.Count -gt 0) { " Rejected candidates: $($rejected -join '; ')" } else { "" }
+    throw "Unable to discover a unique synchronized sibling NazoAuthWeb worktree under $siblingRoot.$details Pass LocalFrontendWorktree explicitly."
 }
 
 function Export-GitCommit {
@@ -180,21 +277,20 @@ $backendBranch = Get-CommandOutput git @("-C", $LocalBackendWorktree, "branch", 
 if ($backendBranch -cne $ExpectedBackendBranch) {
     throw "Backend branch $backendBranch does not match expected branch $ExpectedBackendBranch"
 }
-Assert-ExactGitOrigin -Worktree $LocalBackendWorktree -ExpectedRemote $ExpectedBackendRemote -Label "Backend"
+Assert-GitOrigin -Worktree $LocalBackendWorktree -ExpectedRemote $ExpectedBackendRemote -Label "Backend"
 if (-not $LocalFrontendWorktree) {
-    $commonGitDir = Get-CommandOutput git @("-C", $LocalBackendWorktree, "rev-parse", "--path-format=absolute", "--git-common-dir")
-    $backendRepository = Split-Path -Parent $commonGitDir
-    $LocalFrontendWorktree = Join-Path (Split-Path -Parent $backendRepository) "NazoAuthWeb"
-    if (-not (Test-Path -LiteralPath $LocalFrontendWorktree -PathType Container)) {
-        throw "Unable to discover sibling NazoAuthWeb repository; pass LocalFrontendWorktree explicitly"
-    }
+    $LocalFrontendWorktree = Find-FrontendWorktree `
+        -BackendWorktree $LocalBackendWorktree `
+        -ExpectedCommit $FrontendCommit
 }
-$LocalFrontendWorktree = Assert-CleanGitCommit -Worktree $LocalFrontendWorktree -ExpectedCommit $FrontendCommit -Label "Frontend"
-$frontendBranch = Get-CommandOutput git @("-C", $LocalFrontendWorktree, "branch", "--show-current")
-if ($frontendBranch -cne $ExpectedFrontendBranch) {
-    throw "Frontend branch $frontendBranch does not match expected branch $ExpectedFrontendBranch"
+else {
+    $LocalFrontendWorktree = Assert-FrontendWorktree `
+        -Worktree $LocalFrontendWorktree `
+        -ExpectedCommit $FrontendCommit
 }
-Assert-ExactGitOrigin -Worktree $LocalFrontendWorktree -ExpectedRemote $ExpectedFrontendRemote -Label "Frontend"
+if (-not $LocalUiDist) {
+    $LocalUiDist = Join-Path $LocalFrontendWorktree "dist"
+}
 $LocalUiDist = [System.IO.Path]::GetFullPath($LocalUiDist)
 $frontendRootWithSeparator = $LocalFrontendWorktree.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
 if (-not $LocalUiDist.StartsWith($frontendRootWithSeparator, [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -227,7 +323,9 @@ if (-not $SkipFrontendBuild) {
     finally {
         Remove-Item -LiteralPath $frontendBuildContext -Recurse -Force -ErrorAction SilentlyContinue
     }
-    $LocalFrontendWorktree = Assert-CleanGitCommit -Worktree $LocalFrontendWorktree -ExpectedCommit $FrontendCommit -Label "Frontend after build"
+    $LocalFrontendWorktree = Assert-FrontendWorktree `
+        -Worktree $LocalFrontendWorktree `
+        -ExpectedCommit $FrontendCommit
 }
 if (-not (Test-Path -LiteralPath (Join-Path $LocalUiDist "index.html") -PathType Leaf)) {
     throw "Missing frontend dist index.html: $LocalUiDist"

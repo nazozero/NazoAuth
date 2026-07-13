@@ -13,7 +13,16 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "deploy_live.ps1"
 
 
-def init_repo(path: Path, files: dict[str, str]) -> str:
+EXPECTED_BRANCH = "codex/modular-workspace-architecture"
+
+
+def init_repo(
+    path: Path,
+    files: dict[str, str],
+    *,
+    branch: str = EXPECTED_BRANCH,
+    remote_url: str | None = None,
+) -> str:
     path.mkdir()
     for name, content in files.items():
         target = path / name
@@ -25,21 +34,35 @@ def init_repo(path: Path, files: dict[str, str]) -> str:
         ["git", "config", "user.name", "Deploy Test"],
         ["git", "add", "."],
         ["git", "commit", "-qm", "fixture"],
-        ["git", "branch", "-M", "codex/modular-workspace-architecture"],
+        ["git", "branch", "-M", branch],
     ):
         subprocess.run(command, cwd=path, check=True, capture_output=True)
-    repository = "NazoAuthWeb" if path.name in {"frontend", "NazoAuthWeb"} else "NazoAuth"
+    repository = (
+        "NazoAuthWeb"
+        if path.name == "frontend" or path.name.startswith("NazoAuthWeb")
+        else "NazoAuth"
+    )
     subprocess.run(
-        ["git", "remote", "add", "origin", f"https://github.com/nazozero/{repository}"],
+        [
+            "git", "remote", "add", "origin",
+            remote_url or f"https://github.com/nazozero/{repository}",
+        ],
         cwd=path, check=True, capture_output=True,
     )
-    return subprocess.run(
+    commit = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=path,
         check=True,
         capture_output=True,
         text=True,
     ).stdout.strip()
+    for command in (
+        ["git", "update-ref", f"refs/remotes/origin/{branch}", commit],
+        ["git", "config", f"branch.{branch}.remote", "origin"],
+        ["git", "config", f"branch.{branch}.merge", f"refs/heads/{branch}"],
+    ):
+        subprocess.run(command, cwd=path, check=True, capture_output=True)
+    return commit
 
 
 def write_frontend_manifest(dist: Path, commit: str) -> None:
@@ -120,6 +143,35 @@ def render_fixture(
     if completed.returncode != 0:
         raise AssertionError(completed.stderr)
     return rendered
+
+
+def run_render_only(
+    root: Path,
+    backend: Path,
+    backend_commit: str,
+    frontend_commit: str,
+    *,
+    frontend: Path | None = None,
+    ui: Path | None = None,
+) -> subprocess.CompletedProcess[str]:
+    rendered = root / "deploy.sh"
+    command = [
+        "pwsh", "-NoLogo", "-NoProfile", "-NonInteractive", "-File", str(SCRIPT),
+        "-RemoteHost", "render-only",
+        "-BackendCommit", backend_commit,
+        "-FrontendCommit", frontend_commit,
+        "-LocalBackendWorktree", str(backend),
+        "-RenderRemoteScriptPath", str(rendered),
+        "-SkipBuild", "-SkipFrontendBuild", "-SkipMigrate",
+    ]
+    if frontend is not None:
+        command.extend(["-LocalFrontendWorktree", str(frontend)])
+    if ui is not None:
+        command.extend(["-LocalUiDist", str(ui)])
+    return subprocess.run(
+        command, cwd=ROOT, capture_output=True, text=True, errors="replace",
+        timeout=20, check=False,
+    )
 
 
 class FakeLifecycle:
@@ -330,9 +382,10 @@ class DeployLiveContractTests(unittest.TestCase):
                 )
 
     def test_source_commits_are_bound_to_clean_worktrees_and_frontend_manifest(self) -> None:
-        self.assertIn("Unable to discover sibling NazoAuthWeb repository", self.source)
+        self.assertIn("Unable to discover a unique synchronized sibling NazoAuthWeb worktree", self.source)
         self.assertIn("remote\", \"get-url\", \"origin", self.source)
         self.assertIn("branch\", \"--show-current", self.source)
+        self.assertIn("HEAD...@{upstream}", self.source)
         self.assertIn("status --porcelain=v1", self.source)
         self.assertIn("Get-FileHash", self.source)
         self.assertIn(".nazo-build.json", self.source)
@@ -345,7 +398,7 @@ class DeployLiveContractTests(unittest.TestCase):
         self.assertIn('ExpectedBackendRemote = "https://github.com/nazozero/NazoAuth"', self.source)
         self.assertIn('ExpectedBackendBranch = "codex/modular-workspace-architecture"', self.source)
         self.assertIn('ExpectedFrontendRemote = "https://github.com/nazozero/NazoAuthWeb"', self.source)
-        self.assertIn("Assert-ExactGitOrigin", self.source)
+        self.assertIn("Assert-GitOrigin", self.source)
 
     def test_ssh_remote_action_is_one_argument_without_bash_lc_boundary_ambiguity(self) -> None:
         self.assertIn('Invoke-Checked ssh $RemoteHost @($deployCommand)', self.source)
@@ -442,33 +495,120 @@ class DeployLiveContractTests(unittest.TestCase):
 
         self.assertEqual(syntax.returncode, 0, syntax.stderr)
 
-    def test_frontend_sibling_is_discovered_and_verified(self) -> None:
+    def test_frontend_sibling_discovery_skips_wrong_default_and_selects_unique_match(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             backend = root / "NazoAuth"
-            frontend = root / "NazoAuthWeb"
             backend_commit = init_repo(backend, {"Containerfile": "FROM scratch\n"})
+            init_repo(
+                root / "NazoAuthWeb",
+                {".gitignore": "dist/\n"},
+                branch="wrong-branch",
+            )
+            frontend = root / "NazoAuthWeb-modular-workspace-architecture"
+            frontend_commit = init_repo(
+                frontend,
+                {".gitignore": "dist/\n"},
+                remote_url="git@github.com:nazozero/NazoAuthWeb.git",
+            )
+            ui = frontend / "dist"
+            ui.mkdir()
+            (ui / "index.html").write_text("ok", encoding="utf-8")
+            completed = run_render_only(
+                root, backend, backend_commit, frontend_commit,
+            )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_frontend_sibling_discovery_fails_closed_on_ambiguity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            backend = root / "NazoAuth"
+            backend_commit = init_repo(backend, {"Containerfile": "FROM scratch\n"})
+            frontend = root / "NazoAuthWeb-one"
             frontend_commit = init_repo(frontend, {".gitignore": "dist/\n"})
             ui = frontend / "dist"
             ui.mkdir()
             (ui / "index.html").write_text("ok", encoding="utf-8")
-            rendered = root / "deploy.sh"
-            completed = subprocess.run(
-                [
-                    "pwsh", "-NoLogo", "-NoProfile", "-NonInteractive", "-File", str(SCRIPT),
-                    "-RemoteHost", "render-only",
-                    "-BackendCommit", backend_commit,
-                    "-FrontendCommit", frontend_commit,
-                    "-LocalBackendWorktree", str(backend),
-                    "-LocalUiDist", str(ui),
-                    "-RenderRemoteScriptPath", str(rendered),
-                    "-SkipBuild", "-SkipFrontendBuild", "-SkipMigrate",
-                ],
-                cwd=ROOT, capture_output=True, text=True, errors="replace",
-                timeout=20, check=False,
+            duplicate = root / "NazoAuthWeb-two"
+            shutil.copytree(frontend, duplicate)
+            completed = run_render_only(
+                root, backend, backend_commit, frontend_commit, ui=ui,
             )
 
-        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertNotEqual(completed.returncode, 0)
+        output = completed.stdout + completed.stderr
+        self.assertIn("Frontend worktree discovery is ambiguous", output)
+        self.assertIn(str(frontend), output)
+        self.assertIn(str(duplicate), output)
+
+    def test_frontend_sibling_discovery_reports_rejected_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            backend = root / "NazoAuth"
+            backend_commit = init_repo(backend, {"Containerfile": "FROM scratch\n"})
+            frontend = root / "NazoAuthWeb"
+            frontend_commit = init_repo(
+                frontend,
+                {".gitignore": "dist/\n"},
+                branch="wrong-branch",
+            )
+            completed = run_render_only(
+                root, backend, backend_commit, frontend_commit,
+            )
+
+        self.assertNotEqual(completed.returncode, 0)
+        output = completed.stdout + completed.stderr
+        self.assertIn("Unable to discover a unique synchronized sibling", output)
+        self.assertIn("Rejected candidates", output)
+        self.assertIn("wrong-branch", output)
+
+    def test_explicit_frontend_path_rejects_invalid_repository_state(self) -> None:
+        cases = ("dirty", "remote", "branch", "upstream")
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                backend = root / "NazoAuth"
+                backend_commit = init_repo(backend, {"Containerfile": "FROM scratch\n"})
+                frontend = root / "NazoAuthWeb-explicit"
+                frontend_commit = init_repo(frontend, {"tracked.txt": "clean\n", ".gitignore": "dist/\n"})
+                ui = frontend / "dist"
+                ui.mkdir()
+                (ui / "index.html").write_text("ok", encoding="utf-8")
+                if case == "dirty":
+                    (frontend / "untracked.txt").write_text("dirty\n", encoding="utf-8")
+                    expected = "worktree must be clean"
+                elif case == "remote":
+                    subprocess.run(
+                        ["git", "remote", "set-url", "origin", "https://github.com/other/NazoAuthWeb"],
+                        cwd=frontend, check=True, capture_output=True,
+                    )
+                    expected = "does not identify expected repository"
+                elif case == "branch":
+                    subprocess.run(
+                        ["git", "branch", "-M", "wrong-branch"],
+                        cwd=frontend, check=True, capture_output=True,
+                    )
+                    expected = "does not match expected branch"
+                else:
+                    (frontend / "tracked.txt").write_text("ahead\n", encoding="utf-8")
+                    for command in (
+                        ["git", "add", "tracked.txt"],
+                        ["git", "commit", "-qm", "ahead"],
+                    ):
+                        subprocess.run(command, cwd=frontend, check=True, capture_output=True)
+                    frontend_commit = subprocess.run(
+                        ["git", "rev-parse", "HEAD"], cwd=frontend, check=True,
+                        capture_output=True, text=True,
+                    ).stdout.strip()
+                    expected = "is not synchronized"
+                completed = run_render_only(
+                    root, backend, backend_commit, frontend_commit,
+                    frontend=frontend, ui=ui,
+                )
+
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn(expected, completed.stdout + completed.stderr)
 
     def test_rendered_network_validation_rejects_additional_fake_subnets(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
