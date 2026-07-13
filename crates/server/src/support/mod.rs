@@ -92,12 +92,11 @@ pub(crate) use security::{
     extract_client_credentials_with_trusted_proxies, has_basic_authorization_scheme,
     hash_client_secret, hash_password, hash_password_blocking_limited,
     initialize_dummy_password_hash, jwt_decoding_key_from_jwk, pkce_s256, random_urlsafe_token,
-    sign_response_jwt, supported_client_jwt_algorithm_name, verify_password_blocking_limited,
-    verify_private_key_jwt_claims, verify_private_key_jwt_claims_for_issuer,
+    supported_client_jwt_algorithm_name, verify_password_blocking_limited,
+    verify_private_key_jwt_claims_for_issuer,
 };
 pub(crate) use sessions::{
     CurrentSession, SessionRotation, current_user_or_login_required, has_valid_csrf_token,
-    require_admin_or_forbidden,
 };
 #[cfg(test)]
 pub(crate) use sessions::{SessionPayload, current_session};

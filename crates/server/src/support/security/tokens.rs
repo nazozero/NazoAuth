@@ -1,5 +1,6 @@
 use super::jwt_decoding_key_from_jwk;
 
+#[cfg(test)]
 use chrono::Utc;
 use nazo_auth::Claims;
 #[cfg(test)]
@@ -94,6 +95,7 @@ pub(super) fn access_token_header(alg: jsonwebtoken::Algorithm, kid: &str) -> js
     header
 }
 
+#[cfg(test)]
 pub(crate) async fn sign_response_jwt(
     state: &AppState,
     purpose: nazo_auth::SigningPurpose,

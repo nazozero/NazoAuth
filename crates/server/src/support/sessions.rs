@@ -631,6 +631,7 @@ fn valid_session_payload(payload: &SessionPayload, now: i64) -> bool {
     )
 }
 
+#[cfg(test)]
 pub(crate) async fn require_admin(
     state: &AppState,
     req: &HttpRequest,
@@ -688,6 +689,7 @@ fn login_required_response_for_cookies(
     )
 }
 
+#[cfg(test)]
 pub(crate) async fn require_admin_or_forbidden(
     state: &AppState,
     req: &HttpRequest,

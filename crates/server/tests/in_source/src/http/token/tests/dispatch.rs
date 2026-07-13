@@ -23,6 +23,15 @@ use crate::support::{
     IpCidr, SessionPayload, current_session, hash_client_secret, valkey_del, valkey_set_ex,
 };
 
+fn authorization_service(state: &Data<AppState>) -> Data<ServerAuthorizationService> {
+    let connection = state.valkey_connection();
+    Data::new(ServerAuthorizationService::new(
+        nazo_postgres::AuthorizationFlowRepository::new(state.diesel_db.clone(), DEFAULT_TENANT_ID),
+        nazo_valkey::AuthorizationStateAdapter::new(&connection),
+        state.keyset.clone(),
+    ))
+}
+
 async fn revoke(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
     let connection = state.valkey_connection();
     let token_service = Data::new(ServerTokenService::new(
@@ -30,11 +39,7 @@ async fn revoke(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpRes
         nazo_valkey::TokenIssuanceStateAdapter::new(&connection),
         state.keyset.clone(),
     ));
-    let authorization_service = Data::new(ServerAuthorizationService::new(
-        nazo_postgres::AuthorizationFlowRepository::new(state.diesel_db.clone(), DEFAULT_TENANT_ID),
-        nazo_valkey::AuthorizationStateAdapter::new(&connection),
-        state.keyset.clone(),
-    ));
+    let authorization_service = authorization_service(&state);
     let config = Data::new(AuthorizationHttpConfig::from(state.settings.as_ref()));
     revoke_with_dependencies(token_service, authorization_service, config, req, body).await
 }
@@ -46,7 +51,10 @@ async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpR
         nazo_valkey::TokenIssuanceStateAdapter::new(&connection),
         state.keyset.clone(),
     ));
-    userinfo_with_dependencies(state, token_service, req, body).await
+    let handles = Data::new(crate::domain::UserinfoHandles::from_test_state(
+        state.get_ref(),
+    ));
+    userinfo_with_dependencies(handles, token_service, req, body).await
 }
 
 fn code_payload(dpop_jkt: Option<&str>) -> CodePayload {
@@ -830,7 +838,8 @@ async fn missing_client_authorization_code_holder_check_fails_closed_when_valkey
         has_audience_param: false,
     };
 
-    let response = missing_client_authorization_code_holder_error(&state, &form)
+    let service = authorization_service(&state);
+    let response = missing_client_authorization_code_holder_error(&state, service.get_ref(), &form)
         .await
         .expect("authorization code state lookup failures must not be ignored");
 
@@ -878,7 +887,8 @@ async fn missing_client_authorization_code_holder_check_fails_closed_when_client
         has_audience_param: false,
     };
 
-    let response = missing_client_authorization_code_holder_error(&state, &form)
+    let service = authorization_service(&state);
+    let response = missing_client_authorization_code_holder_error(&state, service.get_ref(), &form)
         .await
         .expect("client lookup failures must not degrade to invalid_client");
 
@@ -1364,10 +1374,14 @@ async fn mtls_client_credentials_without_client_id_returns_none_when_client_not_
         .to_http_request();
 
     assert!(
-        mtls_client_credentials_without_client_id(&state, &req)
-            .await
-            .expect("query should succeed when client certificate is unknown")
-            .is_none()
+        mtls_client_credentials_without_client_id(
+            authorization_service(&state).get_ref(),
+            &state.settings,
+            &req,
+        )
+        .await
+        .expect("query should succeed when client certificate is unknown")
+        .is_none()
     );
 }
 
@@ -1401,9 +1415,13 @@ async fn missing_client_authorization_code_holder_error_returns_none_when_code_m
     };
 
     assert!(
-        missing_client_authorization_code_holder_error(&state, &form)
-            .await
-            .is_none()
+        missing_client_authorization_code_holder_error(
+            &state,
+            authorization_service(&state).get_ref(),
+            &form,
+        )
+        .await
+        .is_none()
     );
 }
 
@@ -1461,9 +1479,13 @@ async fn missing_client_authorization_code_holder_error_returns_none_when_client
     };
 
     assert!(
-        missing_client_authorization_code_holder_error(&state, &form)
-            .await
-            .is_none()
+        missing_client_authorization_code_holder_error(
+            &state,
+            authorization_service(&state).get_ref(),
+            &form,
+        )
+        .await
+        .is_none()
     );
 }
 

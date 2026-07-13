@@ -11,12 +11,12 @@ use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID};
 use crate::support::{
-    DpopError, DpopErrorContext, ValidatedClientAssertion, audit_event, audit_fields, blake3_hex,
-    client_ip, client_jwt_decoding_key, client_supports_grant, compute_subject_for_client,
-    constant_time_eq, current_user_or_login_required, dpop_error_response,
-    extract_client_credentials, has_basic_authorization_scheme, has_valid_csrf_token, is_subset,
-    json_array_to_strings, parse_scope, random_urlsafe_token, request_mtls_thumbprint,
-    validate_dpop_proof,
+    DEFAULT_TENANT_ID, DpopError, DpopErrorContext, ValidatedClientAssertion, audit_event,
+    audit_fields, blake3_hex, client_ip, client_jwt_decoding_key, client_supports_grant,
+    compute_subject_for_client, constant_time_eq, current_user_or_login_required,
+    dpop_error_response, extract_client_credentials, has_basic_authorization_scheme,
+    has_valid_csrf_token, is_subset, json_array_to_strings, parse_scope, random_urlsafe_token,
+    request_mtls_thumbprint, validate_dpop_proof,
 };
 use actix_web::http::StatusCode;
 use actix_web::http::header;
