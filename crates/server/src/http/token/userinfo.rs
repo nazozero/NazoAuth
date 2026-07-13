@@ -7,11 +7,10 @@ use crate::schema::oauth_clients;
 use crate::settings::Settings;
 use crate::support::{
     AccessTokenAuthScheme, DpopError, DpopErrorContext, JwePayloadKind, access_token_tenant_id,
-    authorization_access_token, blake3_hex, client_jwe_key, constant_time_eq, decode_access_claims,
-    dpop_error_response, encrypt_compact_jwe, issue_dpop_nonce, json_response_no_store,
-    oauth_bearer_error, oidc_user_claims, parse_scope, request_mtls_thumbprint,
-    request_uses_form_urlencoded, sign_response_jwt, signing_algorithm_from_name,
-    token_audience_contains, validate_dpop_proof,
+    blake3_hex, client_jwe_key, constant_time_eq, decode_access_claims, dpop_error_response,
+    encrypt_compact_jwe, issue_dpop_nonce, json_response_no_store, oauth_bearer_error,
+    oidc_user_claims, parse_scope, request_mtls_thumbprint, sign_response_jwt,
+    signing_algorithm_from_name, token_audience_contains, validate_dpop_proof,
 };
 #[cfg(test)]
 use crate::support::{
@@ -28,6 +27,7 @@ use chrono::{Duration, Utc};
 #[cfg(test)]
 use diesel::prelude::*;
 use nazo_auth::Claims;
+use nazo_http_actix::{ResourceAccessToken, resource_access_token};
 use serde_json::{Value, json};
 use uuid::Uuid;
 // 根据 Bearer/DPoP access token 返回用户声明；DPoP-bound token 必须携带有效 proof。
