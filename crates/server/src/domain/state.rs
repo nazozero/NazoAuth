@@ -23,6 +23,13 @@ pub(crate) struct AppState {
 }
 
 impl AppState {
+    pub(crate) fn active_module_snapshot(&self) -> nazo_runtime_modules::ActiveModuleSnapshot {
+        #[cfg(not(test))]
+        return self.runtime_modules.snapshot().as_ref().clone();
+        #[cfg(test)]
+        return self.test_module_snapshot();
+    }
+
     pub(crate) fn valkey_connection(&self) -> nazo_valkey::ValkeyConnection {
         #[cfg(not(test))]
         return self.valkey.clone();
@@ -37,7 +44,7 @@ impl AppState {
     ) -> bool {
         #[cfg(not(test))]
         {
-            nazo_auth::module_admissible(&self.runtime_modules.snapshot(), module_id, admission)
+            nazo_auth::module_admissible(&self.active_module_snapshot(), module_id, admission)
         }
         #[cfg(test)]
         {

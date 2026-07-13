@@ -5,7 +5,8 @@
 //! token exchange, and ID-token issuance require separate policy models.
 use nazo_http_actix::oauth_token_error;
 
-use super::{TokenForm, consume_token_client_assertion, issue_token_response};
+use super::issue::{TokenIssuanceContext, issue_token_response_with_service};
+use super::{ServerTokenService, TokenForm, consume_token_client_assertion};
 use super::{native_sso_profile_requested, token_native_sso_exchange};
 use crate::domain::{AppState, ClientRow, RefreshTokenPolicy, TokenIssue};
 #[cfg(test)]
@@ -354,13 +355,24 @@ async fn validate_actor_token(
 
 pub(crate) async fn token_exchange(
     state: &AppState,
+    token_service: &ServerTokenService,
+    issuance: &TokenIssuanceContext<'_>,
     req: &HttpRequest,
     client: &ClientRow,
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
     if native_sso_profile_requested(form) {
-        return token_native_sso_exchange(state, req, client, form, client_assertion).await;
+        return token_native_sso_exchange(
+            state,
+            token_service,
+            issuance,
+            req,
+            client,
+            form,
+            client_assertion,
+        )
+        .await;
     }
     if !state.accepts_module(nazo_runtime_modules::ModuleId::TokenExchange) {
         return oauth_token_error(
@@ -426,8 +438,9 @@ pub(crate) async fn token_exchange(
         Ok(user_id) => user_id,
         Err(response) => return response,
     };
-    issue_token_response(
-        state,
+    issue_token_response_with_service(
+        issuance,
+        token_service,
         client,
         TokenIssue {
             user_id,

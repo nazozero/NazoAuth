@@ -42,11 +42,12 @@ use super::client_auth::{
     authenticate_client_with_dependencies,
     consume_token_management_client_assertion_with_authorization_service,
 };
+use super::issue::{TokenIssuanceContext, issue_token_response_with_service};
 #[cfg(test)]
 use super::validate_token_request_profile;
 use super::{
-    TokenForm, TokenManagementClientAuthError, consume_token_client_assertion,
-    issue_token_response, token_management_auth_error,
+    ServerTokenService, TokenForm, TokenManagementClientAuthError, consume_token_client_assertion,
+    token_management_auth_error,
 };
 use crate::http::authorization::ServerAuthorizationService;
 use crate::runtime_modules::ServerRuntimeModuleRegistry;
@@ -1260,6 +1261,8 @@ fn ciba_poll_failure_response(failure: CibaPollFailure) -> HttpResponse {
 
 pub(crate) async fn token_ciba(
     state: &AppState,
+    token_service: &ServerTokenService,
+    issuance: &TokenIssuanceContext<'_>,
     ciba_service: &ServerCibaService,
     users: &nazo_postgres::UserRepository,
     req: &HttpRequest,
@@ -1399,7 +1402,7 @@ pub(crate) async fn token_ciba(
         }
     };
     let issue = ciba_token_issue(user.id(), subject, ciba, dpop_jkt, mtls_x5t_s256);
-    issue_token_response(state, client, issue).await
+    issue_token_response_with_service(issuance, token_service, client, issue).await
 }
 
 fn ciba_auth_req_id_client_error(

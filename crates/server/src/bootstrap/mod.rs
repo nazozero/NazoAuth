@@ -52,6 +52,7 @@ use crate::http::authorization::{AuthorizationHttpConfig, ServerAuthorizationSer
 use crate::http::profile::oidc_logout::spawn_backchannel_logout_delivery_worker;
 use crate::http::scim::{ScimConfig, ScimEndpoint, ScimRuntimeAdmission};
 use crate::http::token::ciba::{CibaHttpConfig, ServerCibaService};
+use crate::http::token::issue::TokenIssuanceConfig;
 use crate::runtime_modules::{RuntimeModules, ServerRuntimeModuleRegistry};
 use crate::settings::Settings;
 use crate::support::client_ip::ClientIpConfig;
@@ -195,6 +196,7 @@ pub async fn run() -> anyhow::Result<()> {
     )));
     let ciba_users = web::Data::new(nazo_postgres::UserRepository::new(diesel_db.clone()));
     let ciba_config = web::Data::new(CibaHttpConfig::from(settings.as_ref()));
+    let token_issuance_config = web::Data::new(TokenIssuanceConfig::from(settings.as_ref()));
     let userinfo_handles = web::Data::new(UserinfoHandles::new(
         nazo_valkey::ReplayStore::new(&authorization_state_connection),
         keyset.clone(),
@@ -463,6 +465,7 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(ciba_service.clone())
             .app_data(ciba_users.clone())
             .app_data(ciba_config.clone())
+            .app_data(token_issuance_config.clone())
             .app_data(userinfo_handles.clone())
             .app_data(authorization_config.clone())
             .app_data(authorization_runtime.clone())
