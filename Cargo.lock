@@ -2215,12 +2215,16 @@ version = "0.1.0"
 dependencies = [
  "actix-cors",
  "actix-web",
+ "chrono",
  "nazo-auth",
+ "nazo-http-signatures",
+ "nazo-resource-server",
  "nazo-runtime-modules",
  "proptest",
  "serde",
  "serde_json",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -2344,6 +2348,7 @@ dependencies = [
  "diesel_migrations",
  "nazo-auth",
  "nazo-identity",
+ "nazo-resource-server",
  "nazo-runtime-modules",
  "serde",
  "serde_json",
@@ -2390,6 +2395,7 @@ dependencies = [
  "futures-util",
  "nazo-auth",
  "nazo-identity",
+ "nazo-resource-server",
  "serde",
  "serde_json",
  "thiserror",
