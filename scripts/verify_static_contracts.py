@@ -17,6 +17,8 @@ REMOVED_ADAPTER_CLAIMS = (
     "TowerResourceServerLayer",
     "authorize_tonic_request",
 )
+GLOB_REEXPORT = re.compile(r"(?m)^\s*pub(?:\([^)]*\))?\s+use\s+[^;]*::\*\s*;")
+PRELUDE_MODULE = re.compile(r"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+prelude\s*;")
 
 
 def migration_line(path: Path) -> str:
@@ -98,6 +100,16 @@ def check_documentation_boundaries() -> None:
                 )
 
 
+def check_server_import_boundaries() -> None:
+    for path in sorted((ROOT / "crates" / "server" / "src").rglob("*.rs")):
+        text = path.read_text(encoding="utf-8")
+        relative = path.relative_to(ROOT)
+        if GLOB_REEXPORT.search(text):
+            raise SystemExit(f"server source contains a glob re-export: {relative}")
+        if PRELUDE_MODULE.search(text):
+            raise SystemExit(f"server source declares a prelude module: {relative}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--write-migrations", action="store_true")
@@ -112,6 +124,7 @@ def main() -> None:
         check_migration_checksums()
         check_route_fixture()
         check_documentation_boundaries()
+        check_server_import_boundaries()
 
 
 if __name__ == "__main__":
