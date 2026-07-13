@@ -1,5 +1,19 @@
-use super::*;
+use super::admin_patch_client;
+use crate::domain::{AppState, ClientRow, DatabaseUserFixture};
+use crate::http::admin::clients::test_support::{
+    CreateClientRequest, InsertClientError, PreparedClientRegistration, admin_client_config,
+    admin_client_service, admin_session_handles, insert_prepared_client,
+    prepare_client_insert_with_secret_pepper, prepare_client_patch,
+};
+use crate::settings::Settings;
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_set_ex,
+};
 use actix_web::cookie::Cookie;
+use actix_web::http::StatusCode;
+use actix_web::web::{Data, Json};
+use actix_web::{HttpRequest, HttpResponse};
+use chrono::Utc;
 use diesel::sql_query;
 use diesel::sql_types::{Int4, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
@@ -11,12 +25,11 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
+use nazo_auth::PatchClientRequest;
+use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_postgres::{create_pool, get_conn};
-
-use crate::http::admin::clients::test_support::{
-    CreateClientRequest, InsertClientError, PreparedClientRegistration, insert_prepared_client,
-    prepare_client_insert_with_secret_pepper, prepare_client_patch,
-};
+use serde_json::{Value, json};
+use uuid::Uuid;
 
 async fn prepare_client_insert_for_test(
     payload: CreateClientRequest,
@@ -657,12 +670,22 @@ async fn admin_patch_client_rejects_missing_csrf_before_admin_lookup() {
             "session-id",
         ))
         .to_http_request();
-    let dependencies = test_dependencies(&state);
+    let sessions = admin_session_handles(
+        state.diesel_db.clone(),
+        state.valkey_connection(),
+        &state.settings,
+    );
+    let service = admin_client_service(
+        state.diesel_db.clone(),
+        state.keyset.clone(),
+        &state.settings,
+    );
+    let config = admin_client_config(&state.settings);
 
     let response = admin_patch_client(
-        dependencies.sessions,
-        dependencies.service,
-        dependencies.config,
+        sessions,
+        service,
+        config,
         req,
         actix_web::web::Path::from("client-1".to_owned()),
         Json(empty_patch()),
@@ -685,12 +708,22 @@ async fn admin_patch_client_reports_not_found_for_unknown_client_id() {
     let admin = fixture.create_user("missing", "admin", 10).await;
     fixture.store_session(&admin, "sid-missing").await;
     let req = fixture.admin_patch_request("sid-missing", "csrf-missing", "/admin/clients/missing");
-    let dependencies = test_dependencies(&fixture.state);
+    let sessions = admin_session_handles(
+        fixture.state.diesel_db.clone(),
+        fixture.state.valkey_connection(),
+        &fixture.state.settings,
+    );
+    let service = admin_client_service(
+        fixture.state.diesel_db.clone(),
+        fixture.state.keyset.clone(),
+        &fixture.state.settings,
+    );
+    let config = admin_client_config(&fixture.state.settings);
 
     let response = admin_patch_client(
-        dependencies.sessions,
-        dependencies.service,
-        dependencies.config,
+        sessions,
+        service,
+        config,
         req,
         actix_web::web::Path::from("missing-client".to_owned()),
         Json(empty_patch()),
@@ -715,12 +748,22 @@ async fn admin_patch_client_validates_metadata_after_admin_authentication() {
     let mut payload = empty_patch();
     payload.redirect_uris = Some(vec![" https://client.example/callback ".to_owned()]);
     let req = fixture.admin_patch_request("sid-invalid", "csrf-invalid", "/admin/clients/update");
-    let dependencies = test_dependencies(&fixture.state);
+    let sessions = admin_session_handles(
+        fixture.state.diesel_db.clone(),
+        fixture.state.valkey_connection(),
+        &fixture.state.settings,
+    );
+    let service = admin_client_service(
+        fixture.state.diesel_db.clone(),
+        fixture.state.keyset.clone(),
+        &fixture.state.settings,
+    );
+    let config = admin_client_config(&fixture.state.settings);
 
     let response = admin_patch_client(
-        dependencies.sessions,
-        dependencies.service,
-        dependencies.config,
+        sessions,
+        service,
+        config,
         req,
         actix_web::web::Path::from(client.client_id.clone()),
         Json(payload),
@@ -754,12 +797,22 @@ async fn admin_patch_client_surfaces_client_lookup_failure_after_admin_authentic
         .rename_column("oauth_clients", "client_id", "client_id_unavailable")
         .await;
     let req = fixture.admin_patch_request(&sid, &csrf, "/admin/clients/update");
-    let dependencies = test_dependencies(&fixture.state);
+    let sessions = admin_session_handles(
+        fixture.state.diesel_db.clone(),
+        fixture.state.valkey_connection(),
+        &fixture.state.settings,
+    );
+    let service = admin_client_service(
+        fixture.state.diesel_db.clone(),
+        fixture.state.keyset.clone(),
+        &fixture.state.settings,
+    );
+    let config = admin_client_config(&fixture.state.settings);
 
     let response = admin_patch_client(
-        dependencies.sessions,
-        dependencies.service,
-        dependencies.config,
+        sessions,
+        service,
+        config,
         req,
         actix_web::web::Path::from(client.client_id.clone()),
         Json(empty_patch()),
@@ -789,12 +842,22 @@ async fn admin_patch_client_surfaces_update_failure_without_mutating_current_cli
     let mut payload = empty_patch();
     payload.client_name = Some("Renamed After Failure".to_owned());
     let req = fixture.admin_patch_request(&sid, &csrf, "/admin/clients/update");
-    let dependencies = test_dependencies(&fixture.state);
+    let sessions = admin_session_handles(
+        fixture.state.diesel_db.clone(),
+        fixture.state.valkey_connection(),
+        &fixture.state.settings,
+    );
+    let service = admin_client_service(
+        fixture.state.diesel_db.clone(),
+        fixture.state.keyset.clone(),
+        &fixture.state.settings,
+    );
+    let config = admin_client_config(&fixture.state.settings);
 
     let response = admin_patch_client(
-        dependencies.sessions,
-        dependencies.service,
-        dependencies.config,
+        sessions,
+        service,
+        config,
         req,
         actix_web::web::Path::from(client.client_id.clone()),
         Json(payload),

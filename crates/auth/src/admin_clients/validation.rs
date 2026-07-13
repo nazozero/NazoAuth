@@ -108,6 +108,15 @@ mod tests {
     }
 }
 
+#[cfg(test)]
+#[path = "validation/metadata_tests.rs"]
+mod metadata_tests;
+#[cfg(test)]
+#[path = "validation/mtls_tests.rs"]
+mod mtls_tests;
+#[cfg(test)]
+mod test_support;
+
 pub(super) struct ClientMetadata<'a> {
     client_type: &'a str,
     redirect_uris: &'a [String],

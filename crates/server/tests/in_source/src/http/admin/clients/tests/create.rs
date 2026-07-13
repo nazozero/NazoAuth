@@ -1,9 +1,13 @@
-use super::*;
+use super::create_error_response;
 use crate::http::admin::clients::test_support::{
-    InsertClientError, PreparedClientRegistration, prepare_client_insert_with_secret_pepper,
+    CreateClientRequest, InsertClientError, PreparedClientRegistration,
+    prepare_client_insert_with_secret_pepper,
 };
-use crate::support::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER;
+use crate::support::{LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER, client_secret_digest};
+use actix_web::http::StatusCode;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use nazo_http_actix::OAuthJsonErrorFields;
+use serde_json::json;
 
 async fn prepare_client_insert_for_test(
     payload: CreateClientRequest,
