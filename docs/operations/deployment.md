@@ -125,7 +125,7 @@ the release evidence listed in [docs/operations/release-security.md](release-sec
 
 ## Live Deployment Script
 
-The repository includes [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1), which binds the candidate to exact backend and frontend commits, records the current rollback targets, stages a SHA-named UI release, runs migrations once, replaces the Podman container, and verifies health and discovery. The public UI symlink changes only after the candidate is healthy. Public verification then commits the deployment; any local, remote, or public verification failure restores both the previous image and UI target.
+The repository includes [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1), which builds from clean backend and frontend worktrees at the requested commits. It runs the frontend's locked `npm ci`/`npm run build`, hashes the resulting `dist`, builds the backend image from the verified backend worktree, and checks the immutable image ID again after the archive is loaded remotely. It records the current rollback targets, stages a SHA-named UI release, runs migrations once, replaces the Podman container, and verifies health and discovery. The public UI symlink changes only after the candidate is healthy. A detached verification watchdog restores the previous immutable image ID and UI target unless public verification commits the lease before its deadline.
 
 Default live assumptions:
 
@@ -134,6 +134,8 @@ Default live assumptions:
 | Remote host | Required `-RemoteHost` argument |
 | Backend commit | Required full SHA in `-BackendCommit` |
 | Frontend commit | Required full SHA in `-FrontendCommit` |
+| Backend worktree | `.`; must be clean and at the backend commit |
+| Frontend worktree | Discovered as sibling `NazoAuthWeb`, or set with `-LocalFrontendWorktree`; must be clean and at the frontend commit |
 | Container name | `nazo-oauth-server` |
 | Network | `nazo_oauth_net` |
 | Network subnet | `10.101.0.0/24` |
@@ -147,7 +149,8 @@ Default live assumptions:
 | Discovery URL | `https://auth.nazo.run/.well-known/openid-configuration` |
 | Expected issuer | `https://auth.nazo.run` |
 | UI releases | `/opt/nazo-oauth/ui-releases/<frontend-sha>` |
-| Deployment records | `/opt/nazo-oauth/deployments/<backend-sha>.json` |
+| Verification lease | 120 seconds by default (`-VerificationLeaseSeconds`) |
+| Deployment records | `/opt/nazo-oauth/deployments/<backend-sha>-<frontend-sha>-<deployment-id>.json` |
 
 Example:
 
@@ -155,14 +158,24 @@ Example:
 pwsh scripts/deploy_live.ps1 `
   -RemoteHost <ssh-host> `
   -BackendCommit (git rev-parse HEAD) `
-  -FrontendCommit (git -C ../NazoAuthWeb rev-parse HEAD) `
-  -LocalUiDist ../NazoAuthWeb/dist
+  -FrontendCommit (git -C $frontendWorktree rev-parse HEAD) `
+  -LocalBackendWorktree . `
+  -LocalFrontendWorktree $frontendWorktree `
+  -LocalUiDist (Join-Path $frontendWorktree dist)
 ```
+
+Omit `-LocalFrontendWorktree` to discover the sibling `NazoAuthWeb` repository.
+Whether discovered or explicit, the script verifies its origin, branch, HEAD,
+and clean status. Production deployment
+does not accept `-SkipBuild` or `-SkipFrontendBuild`; those switches exist only
+for rendering the remote script in tests.
 
 Do not delete the previous image or UI release until local OIDF, official OIDF,
 and PR acceptance are complete. Each run writes a preflight record before the
 first destructive container action. A successful run atomically updates
-`deployments/current.json`; a failed run retains a `rolled-back` record.
+`deployments/current.json` through a temporary symlink plus `mv -T`; a failed
+run retains a `rolled-back` record without overwriting an earlier successful
+deployment record. Only one remote deployment transaction may be active.
 
 The script uses the configured SSH target to deploy the `auth.nazo.run`
 environment. Recheck the live listener, reverse-proxy config, container
@@ -173,7 +186,8 @@ host.
 
 The `auth.nazo.run` live path uses Podman's `nazo_oauth_net` bridge network with
 subnet `10.101.0.0/24`, gateway `10.101.0.1`, and application container IP
-`10.101.0.20`. The deployment script requires and validates that network, verifies
+`10.101.0.20`. The deployment script requires that exact subnet/gateway layout
+(additional or different subnets fail closed), verifies
 the started container IP, and probes `http://10.101.0.20:8000/health` and
 discovery from the host.
 

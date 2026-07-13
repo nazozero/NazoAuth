@@ -110,13 +110,17 @@ docker run -d --name nazo-oauth-server \
 
 ## 在线部署脚本
 
-仓库提供 [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1)，用于构建镜像、传输到远端、执行迁移、替换 Podman 容器，并校验 health 与 discovery。
+仓库提供 [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1)。脚本要求后端和前端 worktree 均干净且 HEAD 与指定完整 SHA 一致；它使用前端锁文件执行 `npm ci` 和 `npm run build`，校验 `dist` 摘要，从已验证的后端 worktree 构建镜像，并在远端加载后再次校验不可变 image ID。候选服务启动后，独立于 SSH 会话的验证 watchdog 会一直保留回滚租约；只有公网 health/discovery 验证完成并提交租约后部署才成功，否则自动恢复先前的不可变镜像和 UI target。
 
 默认 live 假设：
 
 | 设置 | 默认值 |
 | --- | --- |
 | 远端主机 | 必填 `-RemoteHost` 参数 |
+| 后端 commit | 必填完整 `-BackendCommit` SHA |
+| 前端 commit | 必填完整 `-FrontendCommit` SHA |
+| 后端 worktree | 默认 `.`，必须干净且位于后端 commit |
+| 前端 worktree | 默认发现 sibling `NazoAuthWeb`，也可用 `-LocalFrontendWorktree` 指定；必须干净且位于前端 commit |
 | 容器名 | `nazo-oauth-server` |
 | 网络 | `nazo_oauth_net` |
 | 网络 subnet | `10.101.0.0/24` |
@@ -129,15 +133,26 @@ docker run -d --name nazo-oauth-server \
 | Health URL | `https://auth.nazo.run/health` |
 | Discovery URL | `https://auth.nazo.run/.well-known/openid-configuration` |
 | Expected issuer | `https://auth.nazo.run` |
+| 验证租约 | 默认 120 秒，可通过 `-VerificationLeaseSeconds` 调整 |
+| 部署记录 | `/opt/nazo-oauth/deployments/<backend-sha>-<frontend-sha>-<deployment-id>.json` |
 
 示例：
 
 ```powershell
 pwsh scripts/deploy_live.ps1 `
   -RemoteHost <ssh-host> `
-  -ImageRepository localhost/nazo-oauth-server `
-  -ImageTag main-$(git rev-parse --short=7 HEAD)
+  -BackendCommit (git rev-parse HEAD) `
+  -FrontendCommit (git -C $frontendWorktree rev-parse HEAD) `
+  -LocalBackendWorktree . `
+  -LocalFrontendWorktree $frontendWorktree `
+  -LocalUiDist (Join-Path $frontendWorktree dist)
 ```
+
+省略 `-LocalFrontendWorktree` 时脚本会发现 sibling `NazoAuthWeb` 仓库；无论自动发现
+还是显式指定，脚本都会核对 origin、branch、HEAD 和工作区状态。生产部署禁止使用 `-SkipBuild` 或
+`-SkipFrontendBuild`，这两个参数只用于测试中渲染远端脚本。每次部署使用
+backend SHA、frontend SHA 和 deployment ID 组成唯一记录文件名，不会覆盖既有成功记录；
+`current.json` 通过临时 symlink 和 `mv -T` 原子切换。
 
 该脚本通过指定的 SSH 目标部署 `auth.nazo.run` 环境。迁移到其他主机前，必须重新检查监听器、反向代理、容器网络、TLS 设置和 expected issuer。
 
@@ -145,7 +160,8 @@ pwsh scripts/deploy_live.ps1 `
 
 `auth.nazo.run` live 路径固定使用 Podman bridge 网络 `nazo_oauth_net`、subnet
 `10.101.0.0/24`、gateway `10.101.0.1`，应用容器固定为
-`10.101.0.20`。部署脚本会创建或校验该网络，启动容器后校验实际 IP，并从宿主机直连
+`10.101.0.20`。部署脚本要求现有网络的 subnet/gateway 精确匹配（存在额外或不同
+subnet 时 fail closed），启动容器后校验实际 IP，并从宿主机直连
 `http://10.101.0.20:8000/health` 和 discovery。
 
 Angie 配置应直接反代到固定容器 IP，不再依赖 `127.0.0.1:8000` 端口发布：
