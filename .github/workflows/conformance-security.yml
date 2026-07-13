@@ -6,6 +6,8 @@ on:
     paths:
       - ".github/workflows/conformance-security.yml"
       - ".github/e2e-runner.Containerfile"
+      - ".github/e2e-requirements.in"
+      - ".github/e2e-requirements.txt"
       - "Cargo.toml"
       - "Cargo.lock"
       - "build.rs"
@@ -32,6 +34,8 @@ on:
     paths:
       - ".github/workflows/conformance-security.yml"
       - ".github/e2e-runner.Containerfile"
+      - ".github/e2e-requirements.in"
+      - ".github/e2e-requirements.txt"
       - "Cargo.toml"
       - "Cargo.lock"
       - "build.rs"

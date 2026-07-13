@@ -12,6 +12,8 @@ on:
       - "deny.toml"
       - "Containerfile"
       - ".github/e2e-runner.Containerfile"
+      - ".github/e2e-requirements.in"
+      - ".github/e2e-requirements.txt"
       - ".github/workflows/*.yml"
   workflow_dispatch:
 
