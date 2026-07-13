@@ -34,6 +34,54 @@ pub(crate) struct AuthRequestLimiter {
     client_ip: ClientIpConfig,
 }
 
+/// Focused rate-limit adapter for token-management endpoints.
+#[derive(Clone)]
+pub(crate) struct TokenManagementRequestLimiter {
+    store: nazo_valkey::RateLimitStore,
+    window_seconds: u64,
+    max_requests: u64,
+    client_ip: ClientIpConfig,
+}
+
+impl TokenManagementRequestLimiter {
+    pub(crate) fn new(
+        store: nazo_valkey::RateLimitStore,
+        window_seconds: u64,
+        max_requests: u64,
+        client_ip: ClientIpConfig,
+    ) -> Self {
+        Self {
+            store,
+            window_seconds,
+            max_requests,
+            client_ip,
+        }
+    }
+
+    pub(crate) async fn enforce(&self, req: &HttpRequest) -> Result<(), HttpResponse> {
+        let count = self
+            .store
+            .increment(
+                nazo_valkey::RateDimension::TokenManagement,
+                &client_ip_with_config(req, &self.client_ip),
+                self.window_seconds,
+            )
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "rate limit increment failed");
+                oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "请求频率校验失败.",
+                )
+            })?;
+        if count > self.max_requests {
+            return Err(rate_limited_response(self.window_seconds));
+        }
+        Ok(())
+    }
+}
+
 impl AuthRequestLimiter {
     pub(crate) fn new(
         store: nazo_valkey::RateLimitStore,

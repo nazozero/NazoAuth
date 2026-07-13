@@ -5,6 +5,8 @@ pub(crate) mod ciba;
 pub(crate) mod client_auth;
 pub(crate) mod client_credentials;
 pub(crate) mod device;
+pub(crate) mod device_config;
+pub(crate) mod device_issuance;
 pub(crate) mod dispatch;
 pub(crate) mod introspect;
 pub(crate) mod issue;
@@ -27,7 +29,8 @@ use client_credentials::client_credentials_issue_request;
 use client_credentials::{
     client_credentials_issue_request_with_default_audience, token_client_credentials_with_service,
 };
-use device::{DEVICE_CODE_GRANT_TYPE, token_device_code_with_service};
+use device::DEVICE_CODE_GRANT_TYPE;
+use device_issuance::token_device_code_with_service;
 use dispatch::validate_token_request_profile;
 #[cfg(test)]
 use issue::access_token_subject_key;
@@ -195,6 +198,63 @@ mod lifecycle_boundary_tests {
             assert!(
                 !core.contains(forbidden),
                 "shared issuance core reintroduced {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn device_transport_uses_focused_composition_root_dependencies() {
+        let source = include_str!("token/device.rs");
+        for forbidden in [
+            "Data<AppState>",
+            "Settings",
+            "DeviceStore::new",
+            "AuthorizationFlowRepository::new",
+            "state.diesel_db",
+            "state.valkey_connection()",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "device transport reintroduced composition dependency {forbidden}"
+            );
+        }
+        for required in [
+            "Data<ServerDeviceGrantService>",
+            "Data<DeviceHttpConfig>",
+            "Data<SessionProfileHandles>",
+            "Data<TokenManagementRequestLimiter>",
+            "Data<ServerRuntimeModuleRegistry>",
+        ] {
+            assert!(
+                source.contains(required),
+                "device transport lost focused dependency {required}"
+            );
+        }
+    }
+
+    #[test]
+    fn device_token_issuance_handoff_uses_focused_context_and_services() {
+        let source = include_str!("token/device_issuance.rs");
+        assert!(source.contains("device_service: &ServerDeviceGrantService"));
+        assert!(source.contains("token_service: &ServerTokenService"));
+        assert!(source.contains("issuance: &TokenIssuanceContext<'_>"));
+        assert!(source.contains("issue_token_response_with_service"));
+        assert!(source.contains("validate_dpop_proof_with_authorization_service"));
+        assert!(source.contains("consume_token_client_assertion_with_authorization_service"));
+        for forbidden in [
+            "AppState",
+            "Settings",
+            "state.settings",
+            "DeviceStore::new",
+            "DeviceGrantService::new",
+            "TokenIssuanceRepository::new",
+            "TokenIssuanceStateAdapter::new",
+            "nazo_postgres",
+            "nazo_valkey",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "device issuance handoff reintroduced direct infrastructure {forbidden}"
             );
         }
     }

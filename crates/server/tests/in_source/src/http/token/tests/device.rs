@@ -1,11 +1,21 @@
 use super::*;
 use crate::config::ConfigSource;
-use crate::http::token::TokenForm;
+use crate::domain::AppState;
+use crate::http::token::device_issuance::required_device_code;
+use crate::http::token::{TokenForm, device_config::DeviceHttpConfig};
+use crate::settings::Settings;
+use crate::support::client_ip::ClientIpConfig;
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, TokenManagementRequestLimiter,
+};
 use actix_web::test::TestRequest;
+use chrono::Duration;
 use nazo_auth::{DeviceAuthorizationState, DevicePollTransition, evaluate_device_poll};
+use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_postgres::create_pool;
-use std::collections::HashMap;
+use serde_json::json;
 use std::sync::Arc;
+use uuid::Uuid;
 
 fn device_authorization_service(state: &Data<AppState>) -> Data<ServerAuthorizationService> {
     let connection = state.valkey_connection();
@@ -13,6 +23,26 @@ fn device_authorization_service(state: &Data<AppState>) -> Data<ServerAuthorizat
         nazo_postgres::AuthorizationFlowRepository::new(state.diesel_db.clone(), DEFAULT_TENANT_ID),
         nazo_valkey::AuthorizationStateAdapter::new(&connection),
         state.keyset.clone(),
+    ))
+}
+
+fn device_grant_service(state: &AppState) -> Data<ServerDeviceGrantService> {
+    Data::new(ServerDeviceGrantService::new(
+        nazo_valkey::DeviceStore::new(&state.valkey_connection()),
+    ))
+}
+
+fn token_management_limiter(state: &AppState) -> Data<TokenManagementRequestLimiter> {
+    let rate_limit = &state.settings.identity.rate_limit;
+    let endpoint = &state.settings.endpoint;
+    Data::new(TokenManagementRequestLimiter::new(
+        nazo_valkey::RateLimitStore::new(&state.valkey_connection()),
+        rate_limit.window_seconds,
+        rate_limit.token_management_max_requests,
+        ClientIpConfig::new(
+            &endpoint.trusted_proxy_cidrs,
+            endpoint.client_ip_header_mode,
+        ),
     ))
 }
 
@@ -81,10 +111,6 @@ fn enabled_settings() -> Settings {
 
 fn disabled_state() -> AppState {
     state_with_settings(Settings::from_config(&ConfigSource::default()).expect("settings"))
-}
-
-fn enabled_state() -> AppState {
-    state_with_settings(enabled_settings())
 }
 
 fn state_with_settings(settings: Settings) -> AppState {
@@ -170,7 +196,12 @@ fn device_authorization_request_rejects_disabled_or_unregistered_client_grant() 
 
     settings.modules.enable_device_authorization_grant = false;
     assert!(matches!(
-        device_authorization_request_payload(&settings, &client, &form, false),
+        device_authorization_request_payload(
+            &DeviceHttpConfig::from(&settings),
+            &client,
+            &form,
+            false,
+        ),
         Err(DeviceAuthorizationRequestError::Disabled)
     ));
 
@@ -178,7 +209,12 @@ fn device_authorization_request_rejects_disabled_or_unregistered_client_grant() 
     let mut client = client;
     client.grant_types = vec!["authorization_code".to_owned()];
     assert!(matches!(
-        device_authorization_request_payload(&settings, &client, &form, true),
+        device_authorization_request_payload(
+            &DeviceHttpConfig::from(&settings),
+            &client,
+            &form,
+            true,
+        ),
         Err(DeviceAuthorizationRequestError::UnauthorizedClient)
     ));
 }
@@ -196,8 +232,13 @@ fn device_authorization_request_binds_scope_audience_ttl_and_poll_interval() {
         client_assertion: None,
     };
 
-    let payload = device_authorization_request_payload(&settings, &client, &form, true)
-        .expect("device authorization request should be accepted");
+    let payload = device_authorization_request_payload(
+        &DeviceHttpConfig::from(&settings),
+        &client,
+        &form,
+        true,
+    )
+    .expect("device authorization request should be accepted");
 
     assert_eq!(payload.client_id, "device-client");
     assert_eq!(payload.scopes, vec!["openid", "profile"]);
@@ -272,23 +313,15 @@ fn device_authorization_verification_uri_targets_frontend_device_page() {
     settings.endpoint.frontend_base_url = "https://auth.example.test/ui/".to_owned();
 
     assert_eq!(
-        device_verification_uri(&settings),
+        device_verification_uri(&DeviceHttpConfig::from(&settings)),
         "https://auth.example.test/ui/device"
     );
 }
 
 #[actix_web::test]
 async fn legacy_device_verification_path_redirects_to_frontend_without_html() {
-    let state = Data::new(enabled_state());
-
-    let response = device_verification_page(
-        state,
-        Query(HashMap::from([(
-            "user_code".to_owned(),
-            "ABCD 1234".to_owned(),
-        )])),
-    )
-    .await;
+    let config = DeviceHttpConfig::from(&enabled_settings());
+    let response = redirect_to_device_verification_ui(&config, "ABCD 1234");
 
     assert_eq!(response.status(), StatusCode::FOUND);
     assert_eq!(
@@ -306,9 +339,12 @@ async fn device_authorization_endpoint_disabled_fails_before_client_lookup() {
     let state = Data::new(disabled_state());
     let req = form_request();
 
-    let response = device_authorization(
-        state.clone(),
+    let response = device_authorization_with_admission(
         device_authorization_service(&state),
+        device_grant_service(&state),
+        token_management_limiter(&state),
+        Data::new(DeviceHttpConfig::from(state.settings.as_ref())),
+        false,
         req,
         Bytes::from_static(b"client_id=device-client&scope=openid"),
     )
@@ -318,14 +354,10 @@ async fn device_authorization_endpoint_disabled_fails_before_client_lookup() {
     assert_eq!(oauth_error_code(&response), "invalid_request");
 }
 
-#[actix_web::test]
-async fn device_code_grant_requires_device_code_before_state_lookup() {
-    let state = enabled_state();
-    let req = TestRequest::post().uri("/token").to_http_request();
-    let client = device_client();
+#[test]
+fn device_code_grant_requires_device_code_before_state_lookup() {
     let form = device_token_form(None);
-
-    let response = token_device_code(&state, &req, &client, &form, None).await;
+    let response = required_device_code(&form).expect_err("missing device_code must fail");
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(oauth_error_code(&response), "invalid_request");

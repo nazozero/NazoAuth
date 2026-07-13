@@ -70,8 +70,8 @@ pub(crate) use oidc_claims::{
     compute_subject_for_client, oidc_id_token_user_claims, oidc_user_claims, supported_user_claim,
 };
 pub(crate) use rate_limit::{
-    AuthRequestLimiter, RateLimitPolicy, enforce_rate_limit, enforce_rate_limit_with_store,
-    rate_limited_response,
+    AuthRequestLimiter, RateLimitPolicy, TokenManagementRequestLimiter, enforce_rate_limit,
+    enforce_rate_limit_with_store, rate_limited_response,
 };
 pub(crate) use sector_identifier::fetch_sector_identifier_uris;
 #[cfg(test)]

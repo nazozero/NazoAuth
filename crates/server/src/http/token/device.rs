@@ -1,29 +1,19 @@
 //! RFC 8628 Device Authorization Grant.
-use crate::domain::{AppState, ClientRow, RefreshTokenPolicy, TokenIssue};
-use crate::settings::Settings;
+use crate::domain::ClientRow;
 use crate::support::{
-    ClientCredentials, DEFAULT_TENANT_ID, DpopError, DpopErrorContext, RateLimitPolicy,
-    ValidatedClientAssertion, audit_event, audit_fields, blake3_hex, client_ip,
-    client_supports_grant, compute_subject_for_client, current_user_or_login_required,
-    dpop_error_response, enforce_rate_limit, extract_client_credentials,
-    has_basic_authorization_scheme, has_valid_csrf_token, json_array_to_strings,
-    parse_resource_indicators, parse_scope, random_urlsafe_token, request_mtls_thumbprint,
-    validate_dpop_proof,
+    ClientCredentials, TokenManagementRequestLimiter, audit_event, audit_fields, blake3_hex,
+    client_ip_with_context, client_supports_grant, extract_client_credentials_with_trusted_proxies,
+    has_basic_authorization_scheme, json_array_to_strings, parse_resource_indicators, parse_scope,
+    random_urlsafe_token,
 };
-#[cfg(test)]
-use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID};
 use actix_web::http::StatusCode;
 use actix_web::http::header;
 use actix_web::http::header::HeaderValue;
 use actix_web::web::{Bytes, Data, Form, Query};
 use actix_web::{HttpRequest, HttpResponse};
-#[cfg(test)]
-use chrono::Duration;
 use chrono::Utc;
-#[cfg(test)]
-use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_http_actix::{cookie_value, csrf_error};
-use nazo_http_actix::{json_response_no_store, oauth_error, oauth_token_error};
+use nazo_http_actix::{json_response_no_store, oauth_error};
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::json;
@@ -34,19 +24,30 @@ use super::client_auth::{
     authenticate_client_with_dependencies,
     consume_token_management_client_assertion_with_authorization_service,
 };
-use super::issue::{TokenIssuanceContext, issue_token_response_with_service};
-use super::{
-    ServerTokenService, TokenForm, consume_token_client_assertion, token_management_auth_error,
-};
+use super::{device_config::DeviceHttpConfig, token_management_auth_error};
 use crate::http::authorization::ServerAuthorizationService;
+use crate::runtime_modules::ServerRuntimeModuleRegistry;
+use crate::support::sessions::SessionProfileHandles;
 use nazo_auth::{
-    ClientAuthenticationContext, DeviceAuthorizationApproval, DeviceAuthorizationPayload,
-    DeviceAuthorizationRequestError, DeviceAuthorizationRequestPolicy, DeviceDecisionFailure,
-    DeviceGrantRepositoryPort, DeviceGrantService, DevicePollCommit, DevicePollFailure,
+    CapabilityAdmission, ClientAuthenticationContext, DeviceAuthorizationApproval,
+    DeviceAuthorizationPayload, DeviceAuthorizationRequestError, DeviceAuthorizationRequestPolicy,
+    DeviceDecisionFailure, DeviceGrantService,
 };
 use nazo_valkey::DeviceStore;
 
 pub(crate) const DEVICE_CODE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
+pub(crate) type ServerDeviceGrantService = DeviceGrantService<DeviceStore>;
+
+fn device_module_admissible(
+    runtime: &ServerRuntimeModuleRegistry,
+    admission: CapabilityAdmission,
+) -> bool {
+    nazo_auth::module_admissible(
+        runtime.snapshot().as_ref(),
+        nazo_runtime_modules::ModuleId::DeviceAuthorization,
+        admission,
+    )
+}
 
 pub(crate) struct DeviceAuthorizationForm {
     pub(crate) client_id: Option<String>,
@@ -144,20 +145,43 @@ pub(crate) fn parse_device_authorization_form(
 }
 
 pub(crate) async fn device_authorization(
-    state: Data<AppState>,
     authorization_service: Data<ServerAuthorizationService>,
+    device_service: Data<ServerDeviceGrantService>,
+    limiter: Data<TokenManagementRequestLimiter>,
+    config: Data<DeviceHttpConfig>,
+    runtime: Data<ServerRuntimeModuleRegistry>,
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
-    if !state.accepts_module(nazo_runtime_modules::ModuleId::DeviceAuthorization) {
+    device_authorization_with_admission(
+        authorization_service,
+        device_service,
+        limiter,
+        config,
+        device_module_admissible(&runtime, CapabilityAdmission::NewRequest),
+        req,
+        body,
+    )
+    .await
+}
+
+async fn device_authorization_with_admission(
+    authorization_service: Data<ServerAuthorizationService>,
+    device_service: Data<ServerDeviceGrantService>,
+    limiter: Data<TokenManagementRequestLimiter>,
+    config: Data<DeviceHttpConfig>,
+    module_admissible: bool,
+    req: HttpRequest,
+    body: Bytes,
+) -> HttpResponse {
+    if !module_admissible {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "Device Authorization Grant is not enabled.",
         );
     }
-    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await
-    {
+    if let Err(response) = limiter.enforce(&req).await {
         return response;
     }
     let form = match parse_device_authorization_form(&req, &body) {
@@ -182,9 +206,9 @@ pub(crate) async fn device_authorization(
             "Device Authorization request cannot mix client authentication methods.",
         );
     }
-    let credentials = extract_client_credentials(
+    let credentials = extract_client_credentials_with_trusted_proxies(
         &req,
-        &state.settings,
+        &config.trusted_proxy_cidrs,
         Some(client_id),
         form.client_secret.as_deref(),
         form.client_assertion_type.as_deref(),
@@ -202,7 +226,7 @@ pub(crate) async fn device_authorization(
         Ok(_) => {
             super::client_auth::perform_dummy_client_secret_verification(
                 &credentials,
-                &state.settings.protocol.client_secret_pepper,
+                &config.client_secret_pepper,
             );
             return oauth_error(
                 StatusCode::UNAUTHORIZED,
@@ -221,7 +245,7 @@ pub(crate) async fn device_authorization(
     };
     if let Err(response) = authenticate_device_authorization_client(
         &authorization_service,
-        &state.settings,
+        &config,
         &req,
         &client,
         &credentials,
@@ -230,21 +254,15 @@ pub(crate) async fn device_authorization(
     {
         return response;
     }
-    let payload = match device_authorization_request_payload(
-        &state.settings,
-        &client,
-        &form,
-        state.accepts_module(nazo_runtime_modules::ModuleId::DeviceAuthorization),
-    ) {
-        Ok(payload) => payload,
-        Err(error) => return device_authorization_request_error(error),
-    };
-    let valkey = state.valkey_connection();
-    let device_service = DeviceGrantService::new(DeviceStore::new(&valkey));
+    let payload =
+        match device_authorization_request_payload(&config, &client, &form, module_admissible) {
+            Ok(payload) => payload,
+            Err(error) => return device_authorization_request_error(error),
+        };
     let (device_code, user_code) = match device_service
         .create_unique(
             &payload,
-            state.settings.device.device_authorization_ttl_seconds,
+            config.ttl_seconds,
             random_urlsafe_token,
             random_device_user_code,
         )
@@ -268,23 +286,27 @@ pub(crate) async fn device_authorization(
             ("audience", json!(payload.resource_indicators)),
             (
                 "source_ip_hash",
-                json!(blake3_hex(&client_ip(&req, &state.settings))),
+                json!(blake3_hex(&client_ip_with_context(
+                    &req,
+                    config.client_ip_header_mode,
+                    &config.trusted_proxy_cidrs,
+                ))),
             ),
         ]),
     );
-    let verification_uri = device_verification_uri(&state.settings);
+    let verification_uri = device_verification_uri(&config);
     json_response_no_store(json!({
         "device_code": device_code,
         "user_code": user_code,
         "verification_uri": verification_uri,
         "verification_uri_complete": format!("{verification_uri}?user_code={}", urlencoding::encode(&user_code)),
-        "expires_in": state.settings.device.device_authorization_ttl_seconds,
-        "interval": state.settings.device.device_authorization_poll_interval_seconds
+        "expires_in": config.ttl_seconds,
+        "interval": config.poll_interval_seconds
     }))
 }
 
 pub(crate) fn device_authorization_request_payload(
-    settings: &Settings,
+    config: &DeviceHttpConfig,
     client: &ClientRow,
     form: &DeviceAuthorizationForm,
     enabled: bool,
@@ -302,204 +324,19 @@ pub(crate) fn device_authorization_request_payload(
         allowed_scopes: &allowed_scopes,
         requested_resources: form.resources.clone(),
         allowed_resources: &allowed_resources,
-        default_resource: &settings.protocol.default_audience,
-        interval_seconds: settings.device.device_authorization_poll_interval_seconds,
-        ttl_seconds: settings.device.device_authorization_ttl_seconds,
+        default_resource: &config.default_audience,
+        interval_seconds: config.poll_interval_seconds,
+        ttl_seconds: config.ttl_seconds,
         now: Utc::now(),
     })
 }
 
-pub(crate) async fn token_device_code_with_service(
-    state: &AppState,
-    token_service: &ServerTokenService,
-    issuance: &TokenIssuanceContext<'_>,
-    req: &HttpRequest,
-    client: &ClientRow,
-    form: &TokenForm,
-    client_assertion: Option<&ValidatedClientAssertion>,
-) -> HttpResponse {
-    if !state
-        .permits_existing_module_transaction(nazo_runtime_modules::ModuleId::DeviceAuthorization)
-    {
-        return oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "unsupported_grant_type",
-            "Device Authorization Grant is not enabled.",
-            false,
-        );
-    }
-    let Some(device_code) = form.device_code.as_deref() else {
-        return oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "缺少 device_code.",
-            false,
-        );
-    };
-    let dpop_jkt = match validate_dpop_proof(state, req, None, None).await {
-        Ok(value) => value,
-        Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
-    };
-    if client.require_dpop_bound_tokens && dpop_jkt.is_none() {
-        return dpop_error_response(DpopError::MissingProof, DpopErrorContext::TokenEndpoint);
-    }
-    let mtls_x5t_s256 = if client.require_mtls_bound_tokens {
-        match request_mtls_thumbprint(req, &state.settings) {
-            Some(value) => Some(value),
-            None => {
-                return oauth_token_error(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_grant",
-                    "device_code requires mTLS sender constraint.",
-                    false,
-                );
-            }
-        }
-    } else {
-        None
-    };
-    if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
-        return response;
-    }
-
-    let valkey = state.valkey_connection();
-    let device_service = DeviceGrantService::new(DeviceStore::new(&valkey));
-    match device_service
-        .poll(device_code, &client.client_id, Utc::now)
-        .await
-    {
-        Ok(DevicePollCommit::AuthorizationPending) => oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "authorization_pending",
-            "授权仍在等待用户确认.",
-            false,
-        ),
-        Ok(DevicePollCommit::SlowDown) => {
-            oauth_token_error(StatusCode::BAD_REQUEST, "slow_down", "设备轮询过快.", false)
-        }
-        Ok(DevicePollCommit::AccessDenied) => oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "access_denied",
-            "用户拒绝设备授权.",
-            false,
-        ),
-        Ok(DevicePollCommit::Expired) => oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "expired_token",
-            "device_code 已过期.",
-            false,
-        ),
-        Ok(DevicePollCommit::Consumed) => oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_grant",
-            "device_code 已使用.",
-            false,
-        ),
-        Ok(DevicePollCommit::Approved(approved)) => {
-            let nazo_auth::ApprovedDeviceAuthorization { payload, approval } = *approved;
-            issue_token_response_with_service(
-                issuance,
-                token_service,
-                client,
-                TokenIssue {
-                    user_id: Some(approval.user_id),
-                    subject: approval.subject,
-                    scopes: payload.scopes,
-                    authorization_details: payload.authorization_details,
-                    audiences: payload.resource_indicators,
-                    nonce: None,
-                    auth_time: Some(approval.auth_time),
-                    amr: approval.amr,
-                    oidc_sid: approval.oidc_sid,
-                    acr: None,
-                    userinfo_claims: Vec::new(),
-                    userinfo_claim_requests: Vec::new(),
-                    id_token_claims: Vec::new(),
-                    id_token_claim_requests: Vec::new(),
-                    include_refresh: true,
-                    refresh_token_policy: RefreshTokenPolicy::IssueNew,
-                    refresh_token_dpop_jkt: dpop_jkt.clone(),
-                    dpop_jkt,
-                    mtls_x5t_s256: mtls_x5t_s256.clone(),
-                    refresh_token_mtls_x5t_s256: mtls_x5t_s256,
-                    authorization_code_hash: None,
-                    actor: None,
-                    issued_token_type: None,
-                    native_sso: None,
-                },
-            )
-            .await
-        }
-        Err(DevicePollFailure::Missing) => oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_grant",
-            "device_code 无效或已过期.",
-            false,
-        ),
-        Err(DevicePollFailure::ClientMismatch) => oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_grant",
-            "device_code 未签发给该客户端.",
-            false,
-        ),
-        Err(DevicePollFailure::Storage(error)) => {
-            tracing::warn!(%error, "failed to update device authorization state");
-            oauth_token_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "设备授权状态读取失败.",
-                false,
-            )
-        }
-        Err(DevicePollFailure::Contended) => oauth_token_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "设备授权状态正忙.",
-            false,
-        ),
-    }
-}
-
-#[cfg(test)]
-pub(crate) async fn token_device_code(
-    state: &AppState,
-    req: &HttpRequest,
-    client: &ClientRow,
-    form: &TokenForm,
-    client_assertion: Option<&ValidatedClientAssertion>,
-) -> HttpResponse {
-    let connection = state.valkey_connection();
-    let service = ServerTokenService::new(
-        nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
-        nazo_valkey::TokenIssuanceStateAdapter::new(&connection),
-        state.keyset.clone(),
-    );
-    let config = super::issue::TokenIssuanceConfig::from(state.settings.as_ref());
-    let modules = state.active_module_snapshot();
-    let authorization = super::issue::test_authorization_service(state);
-    token_device_code_with_service(
-        state,
-        &service,
-        &TokenIssuanceContext {
-            config: &config,
-            modules: &modules,
-            authorization: &authorization,
-        },
-        req,
-        client,
-        form,
-        client_assertion,
-    )
-    .await
-}
-
 pub(crate) async fn device_verification_page(
-    state: Data<AppState>,
+    config: Data<DeviceHttpConfig>,
+    runtime: Data<ServerRuntimeModuleRegistry>,
     Query(query): Query<HashMap<String, String>>,
 ) -> HttpResponse {
-    if !state
-        .permits_existing_module_transaction(nazo_runtime_modules::ModuleId::DeviceAuthorization)
-    {
+    if !device_module_admissible(&runtime, CapabilityAdmission::ExistingTransaction) {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -507,17 +344,17 @@ pub(crate) async fn device_verification_page(
         );
     }
     let user_code = query.get("user_code").cloned().unwrap_or_default();
-    redirect_to_device_verification_ui(&state.settings, &user_code)
+    redirect_to_device_verification_ui(&config, &user_code)
 }
 
 pub(crate) async fn device_verification(
-    state: Data<AppState>,
+    device_service: Data<ServerDeviceGrantService>,
+    sessions: Data<SessionProfileHandles>,
+    runtime: Data<ServerRuntimeModuleRegistry>,
     req: HttpRequest,
     Query(query): Query<HashMap<String, String>>,
 ) -> HttpResponse {
-    if !state
-        .permits_existing_module_transaction(nazo_runtime_modules::ModuleId::DeviceAuthorization)
-    {
+    if !device_module_admissible(&runtime, CapabilityAdmission::ExistingTransaction) {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -529,8 +366,7 @@ pub(crate) async fn device_verification(
     let payload = if normalized_user_code.is_empty() {
         None
     } else {
-        let valkey = state.valkey_connection();
-        match DeviceGrantService::new(DeviceStore::new(&valkey))
+        match device_service
             .pending_request_for_user_code(&normalized_user_code, Utc::now)
             .await
         {
@@ -541,7 +377,7 @@ pub(crate) async fn device_verification(
             }
         }
     };
-    let csrf_token = cookie_value(&req, &state.settings.session.csrf_cookie_name);
+    let csrf_token = cookie_value(&req, sessions.http_config().csrf_cookie_name());
     json_response_no_store(DeviceVerificationView {
         user_code,
         csrf_token,
@@ -549,8 +385,8 @@ pub(crate) async fn device_verification(
     })
 }
 
-fn redirect_to_device_verification_ui(settings: &Settings, user_code: &str) -> HttpResponse {
-    let mut location = device_verification_uri(settings);
+fn redirect_to_device_verification_ui(config: &DeviceHttpConfig, user_code: &str) -> HttpResponse {
+    let mut location = device_verification_uri(config);
     if !user_code.trim().is_empty() {
         location.push_str("?user_code=");
         location.push_str(&urlencoding::encode(user_code));
@@ -562,31 +398,31 @@ fn redirect_to_device_verification_ui(settings: &Settings, user_code: &str) -> H
         .finish()
 }
 
-fn device_verification_uri(settings: &Settings) -> String {
-    format!(
-        "{}/device",
-        settings.endpoint.frontend_base_url.trim_end_matches('/')
-    )
+fn device_verification_uri(config: &DeviceHttpConfig) -> String {
+    format!("{}/device", config.frontend_base_url.trim_end_matches('/'))
 }
 
 pub(crate) async fn device_decision(
-    state: Data<AppState>,
+    authorization_service: Data<ServerAuthorizationService>,
+    device_service: Data<ServerDeviceGrantService>,
+    grant_repository: Data<nazo_postgres::AuthorizationFlowRepository>,
+    sessions: Data<SessionProfileHandles>,
+    config: Data<DeviceHttpConfig>,
+    runtime: Data<ServerRuntimeModuleRegistry>,
     req: HttpRequest,
     Form(form): Form<DeviceDecisionForm>,
 ) -> HttpResponse {
-    if !state
-        .permits_existing_module_transaction(nazo_runtime_modules::ModuleId::DeviceAuthorization)
-    {
+    if !device_module_admissible(&runtime, CapabilityAdmission::ExistingTransaction) {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "Device Authorization Grant is not enabled.",
         );
     }
-    if !has_valid_csrf_token(&state, &req, form.csrf_token.as_deref()) {
+    if !sessions.has_valid_csrf_token(&req, form.csrf_token.as_deref()) {
         return csrf_error();
     }
-    let user = match current_user_or_login_required(&state, &req).await {
+    let user = match sessions.current_user_or_login_required(&req).await {
         Ok(user) => user,
         Err(response) => return response,
     };
@@ -598,8 +434,6 @@ pub(crate) async fn device_decision(
             "用户码无效或已过期.",
         );
     }
-    let valkey = state.valkey_connection();
-    let device_service = DeviceGrantService::new(DeviceStore::new(&valkey));
     let payload = match device_service
         .pending_request_for_user_code(&normalized_user_code, Utc::now)
         .await
@@ -624,11 +458,7 @@ pub(crate) async fn device_decision(
     let result = match form.decision.as_str() {
         "deny" => device_service.deny(&normalized_user_code, Utc::now).await,
         "approve" => {
-            let repository = nazo_postgres::AuthorizationFlowRepository::new(
-                state.diesel_db.clone(),
-                DEFAULT_TENANT_ID,
-            );
-            let client = match repository.client_by_id(&payload.client_id).await {
+            let client = match authorization_service.client_by_id(&payload.client_id).await {
                 Ok(Some(client)) if client.is_active => client,
                 Ok(_) => {
                     return oauth_error(
@@ -646,7 +476,7 @@ pub(crate) async fn device_decision(
                     );
                 }
             };
-            let subject = match device_authorization_subject(&state.settings, user.id(), &client) {
+            let subject = match device_authorization_subject(&config, user.id(), &client) {
                 Ok(subject) => subject,
                 Err(error) => {
                     tracing::warn!(%error, "failed to compute device authorization subject");
@@ -668,7 +498,7 @@ pub(crate) async fn device_decision(
                         oidc_sid: None,
                     },
                     &client,
-                    &repository,
+                    grant_repository.get_ref(),
                     Utc::now,
                 )
                 .await
@@ -712,16 +542,16 @@ pub(crate) async fn device_decision(
 
 async fn authenticate_device_authorization_client(
     authorization_service: &ServerAuthorizationService,
-    settings: &Settings,
+    config: &DeviceHttpConfig,
     req: &HttpRequest,
     client: &ClientRow,
     credentials: &ClientCredentials,
 ) -> Result<(), HttpResponse> {
     let assertion = authenticate_client_with_dependencies(
         authorization_service,
-        &settings.endpoint.issuer,
-        &settings.protocol.client_secret_pepper,
-        &settings.endpoint.trusted_proxy_cidrs,
+        &config.issuer,
+        &config.client_secret_pepper,
+        &config.trusted_proxy_cidrs,
         req,
         client,
         credentials,
@@ -789,7 +619,7 @@ fn device_authorization_request_error(error: DeviceAuthorizationRequestError) ->
 }
 
 fn device_authorization_subject(
-    settings: &Settings,
+    config: &DeviceHttpConfig,
     user_id: Uuid,
     client: &nazo_auth::OAuthClient,
 ) -> anyhow::Result<String> {
@@ -798,14 +628,16 @@ fn device_authorization_subject(
         .iter()
         .next()
         .cloned()
-        .unwrap_or_else(|| settings.endpoint.issuer.clone());
-    compute_subject_for_client(
-        settings,
+        .unwrap_or_else(|| config.issuer.to_string());
+    nazo_auth::oidc_subject_for_client(
+        &config.issuer,
+        config.pairwise_subject_secret.as_deref(),
         user_id,
         client.subject_type.as_str(),
         client.sector_identifier_host.as_deref(),
         &redirect_uri,
     )
+    .map_err(Into::into)
 }
 
 fn normalize_user_code(value: &str) -> String {

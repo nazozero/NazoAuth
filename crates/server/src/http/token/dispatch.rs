@@ -207,6 +207,7 @@ pub(crate) async fn token_with_service(
     ciba_service: Data<super::ciba::ServerCibaService>,
     ciba_users: Data<nazo_postgres::UserRepository>,
     issuance_config: Data<TokenIssuanceConfig>,
+    device_service: Data<super::device::ServerDeviceGrantService>,
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
@@ -480,9 +481,9 @@ pub(crate) async fn token_with_service(
         }
         DEVICE_CODE_GRANT_TYPE => {
             token_device_code_with_service(
-                &state,
                 &token_service,
                 &issuance,
+                &device_service,
                 &req,
                 &client,
                 &form,
@@ -548,6 +549,9 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
     ));
     let ciba_users = Data::new(nazo_postgres::UserRepository::new(state.diesel_db.clone()));
     let issuance_config = Data::new(TokenIssuanceConfig::from(state.settings.as_ref()));
+    let device_service = Data::new(super::device::ServerDeviceGrantService::new(
+        nazo_valkey::DeviceStore::new(&connection),
+    ));
     token_with_service(
         state,
         service,
@@ -555,6 +559,7 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
         ciba_service,
         ciba_users,
         issuance_config,
+        device_service,
         req,
         body,
     )

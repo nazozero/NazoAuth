@@ -52,16 +52,18 @@ use crate::http::authorization::{AuthorizationHttpConfig, ServerAuthorizationSer
 use crate::http::profile::oidc_logout::spawn_backchannel_logout_delivery_worker;
 use crate::http::scim::{ScimConfig, ScimEndpoint, ScimRuntimeAdmission};
 use crate::http::token::ciba::{CibaHttpConfig, ServerCibaService};
+use crate::http::token::device::ServerDeviceGrantService;
+use crate::http::token::device_config::DeviceHttpConfig;
 use crate::http::token::issue::TokenIssuanceConfig;
 use crate::runtime_modules::{RuntimeModules, ServerRuntimeModuleRegistry};
 use crate::settings::Settings;
 use crate::support::client_ip::ClientIpConfig;
 use crate::support::sessions::{AdminSessionHandles, SessionHttpConfig, SessionProfileHandles};
 use crate::support::{
-    AuthRequestLimiter, SmtpVerificationEmailDelivery, configure_password_hash_limits,
-    default_password_hash_max_concurrency, default_password_hash_queue_timeout_ms,
-    default_tenant_context, dummy_password_hash, email_delivery_configured,
-    initialize_dummy_password_hash,
+    AuthRequestLimiter, SmtpVerificationEmailDelivery, TokenManagementRequestLimiter,
+    configure_password_hash_limits, default_password_hash_max_concurrency,
+    default_password_hash_queue_timeout_ms, default_tenant_context, dummy_password_hash,
+    email_delivery_configured, initialize_dummy_password_hash,
 };
 #[cfg(test)]
 use actix_web::http::header;
@@ -197,6 +199,14 @@ pub async fn run() -> anyhow::Result<()> {
     let ciba_users = web::Data::new(nazo_postgres::UserRepository::new(diesel_db.clone()));
     let ciba_config = web::Data::new(CibaHttpConfig::from(settings.as_ref()));
     let token_issuance_config = web::Data::new(TokenIssuanceConfig::from(settings.as_ref()));
+    let device_service = web::Data::new(ServerDeviceGrantService::new(
+        nazo_valkey::DeviceStore::new(&authorization_state_connection),
+    ));
+    let device_grants = web::Data::new(nazo_postgres::AuthorizationFlowRepository::new(
+        diesel_db.clone(),
+        crate::support::DEFAULT_TENANT_ID,
+    ));
+    let device_config = web::Data::new(DeviceHttpConfig::from(settings.as_ref()));
     let userinfo_handles = web::Data::new(UserinfoHandles::new(
         nazo_valkey::ReplayStore::new(&authorization_state_connection),
         keyset.clone(),
@@ -324,6 +334,12 @@ pub async fn run() -> anyhow::Result<()> {
         nazo_valkey::RateLimitStore::new(&state.valkey_connection()),
         identity.rate_limit.window_seconds,
         identity.rate_limit.auth_max_requests,
+        client_ip_config.get_ref().clone(),
+    ));
+    let token_management_limiter = web::Data::new(TokenManagementRequestLimiter::new(
+        nazo_valkey::RateLimitStore::new(&state.valkey_connection()),
+        identity.rate_limit.window_seconds,
+        identity.rate_limit.token_management_max_requests,
         client_ip_config.get_ref().clone(),
     ));
     let email_code_http_config = web::Data::new(EmailCodeHttpConfig::new(
@@ -466,6 +482,9 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(ciba_users.clone())
             .app_data(ciba_config.clone())
             .app_data(token_issuance_config.clone())
+            .app_data(device_service.clone())
+            .app_data(device_grants.clone())
+            .app_data(device_config.clone())
             .app_data(userinfo_handles.clone())
             .app_data(authorization_config.clone())
             .app_data(authorization_runtime.clone())
@@ -490,6 +509,7 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(admin_client_config.clone())
             .app_data(client_ip_config.clone())
             .app_data(auth_request_limiter.clone())
+            .app_data(token_management_limiter.clone())
             .app_data(email_code_http_config.clone())
             .app_data(registration.clone())
             .app_data(authentication.clone())
