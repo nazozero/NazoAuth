@@ -59,7 +59,7 @@ pub async fn run() -> anyhow::Result<()> {
     let valkey = nazo_valkey::test_support::connect(&valkey_url, valkey_command_timeout).await?;
 
     let settings = Arc::new(Settings::from_config(&config)?);
-    tokio::fs::create_dir_all(&settings.avatar_storage_dir)
+    tokio::fs::create_dir_all(settings.storage().avatar_storage_dir)
         .await
         .ok();
     let keyset = nazo_key_management::KeyManager::load_or_create(settings.key_settings()).await?;

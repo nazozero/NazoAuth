@@ -58,11 +58,12 @@ pub(crate) async fn store_session(
     session_id: &str,
     payload: &SessionPayload,
 ) -> anyhow::Result<()> {
+    let session = state.settings.session();
     nazo_valkey::SessionStore::new(&state.valkey_connection())
         .store(
             session_id,
             &payload.to_record()?,
-            state.settings.session_ttl_seconds,
+            session.session_ttl_seconds,
         )
         .await?;
     Ok(())

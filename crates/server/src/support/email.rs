@@ -42,7 +42,7 @@ pub(crate) fn parse_email_recipient(raw: &str) -> anyhow::Result<EmailRecipient>
 }
 
 pub(crate) fn email_delivery_configured(settings: &Settings) -> bool {
-    matches!(&settings.email.delivery, EmailDelivery::Smtp(_))
+    matches!(&settings.identity().email.delivery, EmailDelivery::Smtp(_))
 }
 
 pub(crate) async fn send_verification_email(
@@ -50,7 +50,8 @@ pub(crate) async fn send_verification_email(
     recipient: Mailbox,
     code: &str,
 ) -> anyhow::Result<()> {
-    let EmailDelivery::Smtp(smtp) = &settings.email.delivery else {
+    let identity = settings.identity();
+    let EmailDelivery::Smtp(smtp) = &identity.email.delivery else {
         bail!("email delivery is disabled");
     };
 
@@ -59,7 +60,7 @@ pub(crate) async fn send_verification_email(
         .to(recipient)
         .subject("Nazo OAuth 注册验证码")
         .singlepart(html_part(
-            VerificationEmail::new(code, settings.email.code_ttl_seconds).render_html(),
+            VerificationEmail::new(code, identity.email.code_ttl_seconds).render_html(),
         ))
         .context("failed to build verification email")?;
 

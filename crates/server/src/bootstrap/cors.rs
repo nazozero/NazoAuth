@@ -8,27 +8,27 @@ use actix_web::http::header;
 use crate::settings::Settings;
 
 pub(crate) fn cors_well_known(settings: &Settings) -> Cors {
-    nazo_http_actix::cors_well_known(&settings.cors_allowed_origins)
+    nazo_http_actix::cors_well_known(settings.endpoint().cors_allowed_origins)
 }
 
 pub(crate) fn cors_browser_token_management(settings: &Settings) -> Cors {
-    nazo_http_actix::cors_browser_token_management(&settings.cors_allowed_origins)
+    nazo_http_actix::cors_browser_token_management(settings.endpoint().cors_allowed_origins)
 }
 
 pub(crate) fn cors_browser_userinfo(settings: &Settings) -> Cors {
-    nazo_http_actix::cors_browser_userinfo(&settings.cors_allowed_origins)
+    nazo_http_actix::cors_browser_userinfo(settings.endpoint().cors_allowed_origins)
 }
 
 pub(crate) fn cors_auth_api(settings: &Settings) -> Cors {
-    nazo_http_actix::cors_auth_api(&settings.cors_allowed_origins)
+    nazo_http_actix::cors_auth_api(settings.endpoint().cors_allowed_origins)
 }
 
 pub(crate) fn cors_admin(settings: &Settings) -> Cors {
-    nazo_http_actix::cors_admin(&settings.cors_allowed_origins)
+    nazo_http_actix::cors_admin(settings.endpoint().cors_allowed_origins)
 }
 
 pub(crate) fn cors_scim(settings: &Settings) -> Cors {
-    nazo_http_actix::cors_scim(&settings.cors_allowed_origins)
+    nazo_http_actix::cors_scim(settings.endpoint().cors_allowed_origins)
 }
 
 #[cfg(test)]

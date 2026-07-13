@@ -17,6 +17,7 @@ use crate::support::{
 
 mod email;
 mod federation;
+pub(crate) mod focused;
 mod passkey;
 mod profile;
 mod rate_limit;
@@ -101,6 +102,7 @@ pub(crate) struct Settings {
 
 impl Settings {
     pub(crate) fn key_settings(&self) -> nazo_key_management::KeySettings {
+        let protocol = self.protocol();
         nazo_key_management::KeySettings {
             keys_dir: self.jwk_keys_dir.clone(),
             external_command: self.signing_external_command.clone(),
@@ -110,7 +112,9 @@ impl Settings {
             ),
             prepublish_window: chrono::Duration::seconds(self.signing_key_prepublish_seconds),
             verification_grace: chrono::Duration::seconds(
-                self.access_token_ttl_seconds.max(self.id_token_ttl_seconds),
+                protocol
+                    .access_token_ttl_seconds
+                    .max(protocol.id_token_ttl_seconds),
             ),
         }
     }
