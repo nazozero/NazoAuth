@@ -15,6 +15,7 @@ mod presenter;
 mod request_context;
 mod scim;
 mod token_forms;
+mod token_management;
 
 pub use cookies::{clear_cookie, cookie_value, make_cookie, with_cookie_headers};
 pub use cors::{
@@ -60,4 +61,9 @@ pub use token_forms::{
     TokenForm, TokenFormError, TokenManagementFormError, TokenOnlyForm, parse_token_form,
     parse_token_management_form, token_management_form_error,
     token_management_has_conflicting_client_auth, token_management_oauth_error,
+};
+pub use token_management::{
+    TOKEN_INTROSPECTION_JWT_MEDIA_TYPE, TokenIntrospectionRepresentation, TokenManagementEndpoint,
+    TokenManagementError, TokenManagementFuture, TokenManagementOperations,
+    TokenManagementRateLimitError, TokenManagementRequestGuard, introspect, revoke,
 };

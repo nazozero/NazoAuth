@@ -125,6 +125,54 @@ pub enum TokenInspection {
     },
 }
 
+impl TokenInspection {
+    /// Build the RFC 7662 response document without coupling protocol results to an HTTP stack.
+    #[must_use]
+    pub fn into_document(self) -> serde_json::Value {
+        match self {
+            Self::Inactive => serde_json::json!({"active": false}),
+            Self::ActiveAccess {
+                scope,
+                client_id,
+                token_type,
+                expires_at,
+                issued_at,
+                not_before,
+                subject,
+                audience,
+                issuer,
+                jti,
+            } => serde_json::json!({
+                "active": true,
+                "scope": scope,
+                "client_id": client_id,
+                "token_type": token_type,
+                "exp": expires_at,
+                "iat": issued_at,
+                "nbf": not_before,
+                "sub": subject,
+                "aud": audience,
+                "iss": issuer,
+                "jti": jti,
+            }),
+            Self::ActiveRefresh {
+                scope,
+                client_id,
+                expires_at,
+                issued_at,
+                subject,
+            } => serde_json::json!({
+                "active": true,
+                "scope": scope,
+                "client_id": client_id,
+                "exp": expires_at,
+                "iat": issued_at,
+                "sub": subject,
+            }),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AccessTokenRevocation {
     pub jti: String,
@@ -677,7 +725,7 @@ mod tests {
 
     use crate::{Claims, ConfirmationClaims};
 
-    use super::{TokenPortError, access_token_type, validate_sender_constraint};
+    use super::{TokenInspection, TokenPortError, access_token_type, validate_sender_constraint};
 
     fn access_claims(confirmation: Option<ConfirmationClaims>) -> Claims {
         Claims {
@@ -728,6 +776,32 @@ mod tests {
                 x5t_s256: Some("certificate-thumbprint".to_owned()),
             }))),
             "Bearer"
+        );
+    }
+
+    #[test]
+    fn token_inspection_builds_exact_rfc7662_documents() {
+        assert_eq!(
+            TokenInspection::Inactive.into_document(),
+            json!({"active": false})
+        );
+        assert_eq!(
+            TokenInspection::ActiveRefresh {
+                scope: "openid offline_access".to_owned(),
+                client_id: "client".to_owned(),
+                expires_at: 20,
+                issued_at: 10,
+                subject: "subject".to_owned(),
+            }
+            .into_document(),
+            json!({
+                "active": true,
+                "scope": "openid offline_access",
+                "client_id": "client",
+                "exp": 20,
+                "iat": 10,
+                "sub": "subject",
+            })
         );
     }
 }

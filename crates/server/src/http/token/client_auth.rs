@@ -319,6 +319,7 @@ pub(crate) fn token_management_auth_error(error: TokenManagementClientAuthError)
     }
 }
 
+#[cfg(test)]
 pub(crate) fn token_management_client_auth_error(
     error: TokenManagementClientAuthError,
     basic_challenge: bool,

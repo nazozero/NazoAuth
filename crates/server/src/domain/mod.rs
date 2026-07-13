@@ -14,6 +14,8 @@ mod rows;
 mod scim;
 #[cfg(test)]
 mod state;
+#[cfg(not(test))]
+mod token_management;
 mod userinfo;
 
 #[cfg(test)]
@@ -48,4 +50,8 @@ pub(crate) use scim::{
 };
 #[cfg(test)]
 pub(crate) use state::AppState;
+#[cfg(not(test))]
+pub(crate) use token_management::{
+    ServerTokenManagementOperations, ServerTokenManagementRequestGuard,
+};
 pub(crate) use userinfo::{UserinfoConfig, UserinfoHandles};

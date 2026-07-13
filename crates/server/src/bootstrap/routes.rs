@@ -5,7 +5,7 @@ use actix_web::{HttpResponse, dev::Service, http::header, web};
 #[cfg(not(test))]
 use nazo_http_actix::{
     client_configuration_delete, client_configuration_get, client_configuration_put,
-    dynamic_client_registration,
+    dynamic_client_registration, introspect, revoke,
 };
 use nazo_http_actix::{
     discovery, jwks, mfa_json_config, mfa_method_not_allowed, mfa_options,
@@ -85,10 +85,10 @@ use crate::http::token::{
         device_authorization, device_decision, device_verification, device_verification_page,
     },
     dispatch::token,
-    introspect::introspect,
-    revoke::revoke,
     userinfo::userinfo,
 };
+#[cfg(test)]
+use crate::http::token::{introspect::introspect, revoke::revoke};
 use crate::http::well_known::{captcha_config, health};
 use crate::settings::Settings;
 #[cfg(not(test))]

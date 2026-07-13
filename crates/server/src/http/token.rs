@@ -8,11 +8,13 @@ pub(crate) mod device;
 pub(crate) mod device_config;
 pub(crate) mod device_issuance;
 pub(crate) mod dispatch;
+#[cfg(test)]
 pub(crate) mod introspect;
 pub(crate) mod issue;
 pub(crate) mod jwt_bearer;
 pub(crate) mod native_sso;
 pub(crate) mod refresh;
+#[cfg(test)]
 pub(crate) mod revoke;
 pub(crate) mod token_exchange;
 pub(crate) mod userinfo;
@@ -20,10 +22,13 @@ pub(crate) mod userinfo;
 use authorization_code::token_authorization_code_with_service;
 use ciba::{CIBA_GRANT_TYPE, token_ciba};
 use client_auth::{
-    TokenManagementClientAuthError, authenticate_introspection_client_with_dependencies,
-    authenticate_revocation_client_with_dependencies,
-    consume_token_client_assertion_with_authorization_service, token_management_auth_error,
-    token_management_client_auth_error,
+    TokenManagementClientAuthError, consume_token_client_assertion_with_authorization_service,
+    token_management_auth_error,
+};
+#[cfg(test)]
+use client_auth::{
+    authenticate_introspection_client_with_dependencies,
+    authenticate_revocation_client_with_dependencies, token_management_client_auth_error,
 };
 use client_credentials::token_client_credentials_with_service;
 use device::DEVICE_CODE_GRANT_TYPE;
@@ -41,10 +46,11 @@ use native_sso::{
     native_sso_profile_requested, native_sso_requested, new_native_sso_token_binding,
     persist_native_sso_device_secret, token_native_sso_exchange,
 };
+pub(crate) use nazo_http_actix::{TokenForm, TokenFormError, parse_token_form};
+#[cfg(test)]
 pub(crate) use nazo_http_actix::{
-    TokenForm, TokenFormError, parse_token_form, parse_token_management_form,
-    token_management_form_error, token_management_has_conflicting_client_auth,
-    token_management_oauth_error,
+    parse_token_management_form, token_management_form_error,
+    token_management_has_conflicting_client_auth, token_management_oauth_error,
 };
 use refresh::token_refresh_with_service;
 use token_exchange::{TOKEN_EXCHANGE_GRANT_TYPE, token_exchange};

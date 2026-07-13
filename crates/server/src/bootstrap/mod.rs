@@ -40,6 +40,7 @@ use crate::domain::{DynamicRegistrationHandles, ResourceServerHandles};
 use crate::domain::{
     ServerFapiHttpMessageSignatures, ServerFapiMtlsResolver, ServerFapiResourceAuthorizer,
     ServerScimBootstrapPasswordProvider, ServerScimCursorProtector, ServerScimRequestAuthorizer,
+    ServerTokenManagementOperations, ServerTokenManagementRequestGuard,
     dynamic_registration_endpoint,
 };
 use crate::http::admin::access_requests::AdminAccessRequestConfig;
@@ -275,6 +276,18 @@ pub async fn run() -> anyhow::Result<()> {
         UserinfoConfig::from(settings.as_ref()),
     ));
     let authorization_config = web::Data::new(AuthorizationHttpConfig::from(settings.as_ref()));
+    #[cfg(not(test))]
+    let token_management_endpoint = web::Data::new(nazo_http_actix::TokenManagementEndpoint::new(
+        Arc::new(ServerTokenManagementRequestGuard::new(
+            token_service.clone().into_inner(),
+            authorization_config.clone().into_inner(),
+        )),
+        Arc::new(ServerTokenManagementOperations::new(
+            token_service.clone().into_inner(),
+            authorization_service.clone().into_inner(),
+            authorization_config.clone().into_inner(),
+        )),
+    ));
     let authorization_runtime: web::Data<ServerRuntimeModuleRegistry> =
         web::Data::from(runtime_modules.registry.clone());
     let token_endpoint_handles = web::Data::new(TokenEndpointHandles::new(
@@ -556,7 +569,10 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(runtime_modules.clone())
             .app_data(authorization_endpoint.clone())
             .app_data(authorization_service.clone())
-            .app_data(token_service.clone())
+            .app_data(token_service.clone());
+        #[cfg(not(test))]
+        let app = app.app_data(token_management_endpoint.clone());
+        let app = app
             .app_data(token_endpoint_handles.clone())
             .app_data(ciba_service.clone())
             .app_data(ciba_users.clone())
