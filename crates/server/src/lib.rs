@@ -85,6 +85,74 @@ pub(crate) mod test_support {
         ))
     }
 
+    pub(crate) fn authentication_service(
+        state: &crate::domain::AppState,
+    ) -> actix_web::web::Data<crate::bootstrap::LocalAuthenticationService> {
+        let identity = &state.settings.identity;
+        let session = &state.settings.session;
+        actix_web::web::Data::new(crate::bootstrap::LocalAuthenticationService::new(
+            nazo_postgres::UserRepository::new(state.diesel_db.clone()),
+            nazo_valkey::RateLimitStore::new(&state.valkey_connection()),
+            crate::bootstrap::LoginPasswordVerifier,
+            nazo_postgres::MfaRepository::new(state.diesel_db.clone()),
+            nazo_valkey::SessionStore::new(&state.valkey_connection()),
+            crate::bootstrap::TracingAuthenticationAudit,
+            nazo_identity::AuthenticationServiceConfig {
+                tenant_id: nazo_identity::TenantId::new(crate::support::DEFAULT_TENANT_ID).unwrap(),
+                dummy_password_hash: nazo_identity::PasswordHash::new(
+                    crate::support::dummy_password_hash().unwrap(),
+                )
+                .unwrap(),
+                failure_window_seconds: identity.rate_limit.login_failure_window_seconds,
+                failure_email_max_attempts: identity.rate_limit.login_failure_email_max_attempts,
+                failure_ip_email_max_attempts: identity
+                    .rate_limit
+                    .login_failure_ip_email_max_attempts,
+                session_ttl_seconds: session.session_ttl_seconds,
+            },
+        ))
+    }
+
+    pub(crate) fn login_http_config(
+        state: &crate::domain::AppState,
+    ) -> actix_web::web::Data<crate::http::auth::login::LoginHttpConfig> {
+        let session = &state.settings.session;
+        actix_web::web::Data::new(crate::http::auth::login::LoginHttpConfig::new(
+            state.settings.endpoint.issuer.as_str(),
+            state.settings.endpoint.frontend_base_url.as_str(),
+            session.session_cookie_name.as_str(),
+            session.csrf_cookie_name.as_str(),
+            session.session_ttl_seconds,
+            session.cookie_secure,
+        ))
+    }
+
+    pub(crate) fn auth_rate_limits(
+        state: &crate::domain::AppState,
+    ) -> actix_web::web::Data<nazo_valkey::RateLimitStore> {
+        actix_web::web::Data::new(nazo_valkey::RateLimitStore::new(&state.valkey_connection()))
+    }
+
+    pub(crate) fn auth_rate_limit_config(
+        state: &crate::domain::AppState,
+    ) -> actix_web::web::Data<crate::support::AuthRateLimitConfig> {
+        let rate_limit = &state.settings.identity.rate_limit;
+        actix_web::web::Data::new(crate::support::AuthRateLimitConfig::new(
+            rate_limit.window_seconds,
+            rate_limit.auth_max_requests,
+        ))
+    }
+
+    pub(crate) fn client_ip_config(
+        state: &crate::domain::AppState,
+    ) -> actix_web::web::Data<crate::support::client_ip::ClientIpConfig> {
+        let endpoint = &state.settings.endpoint;
+        actix_web::web::Data::new(crate::support::client_ip::ClientIpConfig::new(
+            &endpoint.trusted_proxy_cidrs,
+            endpoint.client_ip_header_mode,
+        ))
+    }
+
     pub(crate) struct ClientSigningFixture {
         algorithm: jsonwebtoken::Algorithm,
         private_pkcs8_der: Vec<u8>,

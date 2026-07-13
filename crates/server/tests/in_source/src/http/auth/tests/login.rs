@@ -1,6 +1,18 @@
 use super::*;
 use crate::config::ConfigSource;
-use nazo_postgres::create_pool;
+use crate::domain::{AppState, DatabaseUserFixture};
+use crate::settings::Settings;
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, hash_password,
+    remember_mfa_device,
+};
+use crate::test_support::{
+    auth_rate_limit_config, auth_rate_limits, authentication_service, client_ip_config,
+    login_http_config,
+};
+use nazo_postgres::{create_pool, get_conn};
+use serde_json::Value;
+use uuid::Uuid;
 
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
@@ -22,6 +34,53 @@ fn login_request(content_type: &'static str) -> HttpRequest {
     actix_web::test::TestRequest::default()
         .insert_header((header::CONTENT_TYPE, content_type))
         .to_http_request()
+}
+
+#[test]
+fn password_login_handler_has_no_identity_or_storage_orchestration() {
+    let source = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/http/auth/login.rs"
+    ));
+    for forbidden in [
+        "AppState",
+        "UserRepository",
+        "MfaRepository",
+        "SessionStore",
+        "authentication_by_email(",
+        "verify_password_blocking_limited(",
+        "store_session(",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "password-login transport must not depend on {forbidden}"
+        );
+    }
+}
+
+async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
+    super::login(
+        auth_rate_limits(state.get_ref()),
+        auth_rate_limit_config(state.get_ref()),
+        client_ip_config(state.get_ref()),
+        authentication_service(state.get_ref()),
+        login_http_config(state.get_ref()),
+        req,
+        body,
+    )
+    .await
+}
+
+fn login_config(settings: &Settings) -> LoginHttpConfig {
+    let session = &settings.session;
+    LoginHttpConfig::new(
+        settings.endpoint.issuer.as_str(),
+        settings.endpoint.frontend_base_url.as_str(),
+        session.session_cookie_name.as_str(),
+        session.csrf_cookie_name.as_str(),
+        session.session_ttl_seconds,
+        session.cookie_secure,
+    )
 }
 
 fn form_origin_settings() -> Settings {
@@ -47,19 +106,19 @@ fn form_login_requires_exact_issuer_or_frontend_origin() {
         .to_http_request();
 
     assert!(!form_login_origin_is_allowed(
-        &settings,
+        &login_config(&settings),
         &request_without_origin
     ));
     assert!(!form_login_origin_is_allowed(
-        &settings,
+        &login_config(&settings),
         &request_with_attacker_origin
     ));
     assert!(form_login_origin_is_allowed(
-        &settings,
+        &login_config(&settings),
         &request_with_issuer_origin
     ));
     assert!(form_login_origin_is_allowed(
-        &settings,
+        &login_config(&settings),
         &request_with_frontend_origin
     ));
 }
@@ -75,8 +134,14 @@ fn form_login_rejects_null_and_ambiguous_origins() {
         .append_header((header::ORIGIN, "https://app.example"))
         .to_http_request();
 
-    assert!(!form_login_origin_is_allowed(&settings, &null_origin));
-    assert!(!form_login_origin_is_allowed(&settings, &duplicate_origins));
+    assert!(!form_login_origin_is_allowed(
+        &login_config(&settings),
+        &null_origin
+    ));
+    assert!(!form_login_origin_is_allowed(
+        &login_config(&settings),
+        &duplicate_origins
+    ));
 }
 
 #[actix_web::test]
@@ -281,11 +346,15 @@ fn form_login_next_uses_safe_referer_next_or_profile_fallback() {
         .to_http_request();
 
     assert_eq!(
-        safe_form_login_next(&state, &safe_referer, None),
+        safe_form_login_next(&login_config(&state.settings), &safe_referer, None),
         "/authorize?client_id=abc"
     );
     assert_eq!(
-        safe_form_login_next(&state, &unsafe_referer, Some("//evil.example/authorize")),
+        safe_form_login_next(
+            &login_config(&state.settings),
+            &unsafe_referer,
+            Some("//evil.example/authorize")
+        ),
         "https://app.example/base/profile"
     );
 }

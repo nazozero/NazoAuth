@@ -1,11 +1,15 @@
 //! 应用启动入口。
 // 负责组装配置、外部连接、共享状态和 Actix HTTP server。
 
+mod authentication_services;
 mod cors;
 mod observability;
 mod profile_services;
 mod registration_services;
 pub(crate) mod routes;
+pub(crate) use authentication_services::{
+    LocalAuthenticationService, LoginPasswordVerifier, TracingAuthenticationAudit,
+};
 pub(crate) use profile_services::{
     AccountProfileService, ClientAccessProfileService, FederationProfileService,
 };
@@ -24,6 +28,7 @@ use crate::domain::{
 use crate::http::admin::access_requests::AdminAccessRequestConfig;
 use crate::http::admin::clients::AdminClientConfig;
 use crate::http::auth::email_code::EmailCodeHttpConfig;
+use crate::http::auth::login::LoginHttpConfig;
 use crate::http::authorization::{AuthorizationHttpConfig, ServerAuthorizationService};
 use crate::http::profile::oidc_logout::spawn_backchannel_logout_delivery_worker;
 use crate::http::scim::{ScimConfig, ScimEndpoint, ScimRuntimeAdmission};
@@ -34,7 +39,8 @@ use crate::support::sessions::{AdminSessionHandles, SessionHttpConfig, SessionPr
 use crate::support::{
     AuthRateLimitConfig, SmtpVerificationEmailDelivery, configure_password_hash_limits,
     default_password_hash_max_concurrency, default_password_hash_queue_timeout_ms,
-    default_tenant_context, email_delivery_configured, initialize_dummy_password_hash,
+    default_tenant_context, dummy_password_hash, email_delivery_configured,
+    initialize_dummy_password_hash,
 };
 #[cfg(test)]
 use actix_web::http::header;
@@ -269,6 +275,31 @@ pub async fn run() -> anyhow::Result<()> {
             code_ttl_seconds: identity.email.code_ttl_seconds,
         },
     ));
+    let authentication = web::Data::new(LocalAuthenticationService::new(
+        nazo_postgres::UserRepository::new(state.diesel_db.clone()),
+        nazo_valkey::RateLimitStore::new(&state.valkey_connection()),
+        LoginPasswordVerifier,
+        nazo_postgres::MfaRepository::new(state.diesel_db.clone()),
+        nazo_valkey::SessionStore::new(&state.valkey_connection()),
+        TracingAuthenticationAudit,
+        nazo_identity::AuthenticationServiceConfig {
+            tenant_id: nazo_identity::TenantId::new(crate::support::DEFAULT_TENANT_ID)
+                .expect("default tenant ID is valid"),
+            dummy_password_hash: nazo_identity::PasswordHash::new(dummy_password_hash()?)?,
+            failure_window_seconds: identity.rate_limit.login_failure_window_seconds,
+            failure_email_max_attempts: identity.rate_limit.login_failure_email_max_attempts,
+            failure_ip_email_max_attempts: identity.rate_limit.login_failure_ip_email_max_attempts,
+            session_ttl_seconds: session.session_ttl_seconds,
+        },
+    ));
+    let login_http_config = web::Data::new(LoginHttpConfig::new(
+        state.settings.endpoint.issuer.as_str(),
+        state.settings.endpoint.frontend_base_url.as_str(),
+        session.session_cookie_name.as_str(),
+        session.csrf_cookie_name.as_str(),
+        session.session_ttl_seconds,
+        session.cookie_secure,
+    ));
     spawn_backchannel_logout_delivery_worker(state.clone());
 
     let bind = config.string("BIND", "0.0.0.0:8000");
@@ -334,6 +365,8 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(auth_rate_limit_config.clone())
             .app_data(email_code_http_config.clone())
             .app_data(registration.clone())
+            .app_data(authentication.clone())
+            .app_data(login_http_config.clone())
             .app_data(dynamic_registration_handles.clone())
             .app_data(scim_endpoint.clone());
         app.configure(|cfg| routes::configure(cfg, &state.settings, perf_metrics_enabled))

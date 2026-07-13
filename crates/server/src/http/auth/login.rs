@@ -1,34 +1,52 @@
-//! 用户登录端点。
-use crate::domain::AppState;
-#[cfg(test)]
-use crate::domain::DatabaseUserFixture;
-use crate::settings::Settings;
-#[cfg(test)]
-use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, hash_password, remember_mfa_device,
-};
-use crate::support::{
-    DEFAULT_TENANT_ID, PasswordVerificationError, RateLimitPolicy, SessionPayload, audit_event,
-    audit_fields, blake3_hex, clear_login_failures, client_ip, dummy_password_hash,
-    enforce_login_failure_throttle, enforce_rate_limit, random_urlsafe_token, record_login_failure,
-    remembered_mfa_device_valid, require_active_session_principal, store_session,
-    verify_password_blocking_limited,
-};
-use actix_web::http::StatusCode;
-use actix_web::http::header;
-use actix_web::http::header::HeaderValue;
+//! 用户密码登录端点。
+
+use actix_web::http::{StatusCode, header};
 use actix_web::web::{Bytes, Data};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::Utc;
-use nazo_http_actix::{json_response, oauth_error};
-use nazo_http_actix::{make_cookie, with_cookie_headers};
+use nazo_http_actix::{
+    authorization_error_response, cookie_value, json_response, make_cookie, oauth_error,
+    with_cookie_headers,
+};
+use nazo_identity::{AuthenticatePasswordError, AuthenticatePasswordInput, RememberedMfaProof};
 use serde::Deserialize;
-#[cfg(test)]
-use serde_json::Value;
 use serde_json::json;
-#[cfg(test)]
-use uuid::Uuid;
-// 登录成功后同时写入服务端会话和双 cookie，其中 CSRF cookie 允许前端读取。
+
+use crate::bootstrap::LocalAuthenticationService;
+use crate::support::client_ip::{ClientIpConfig, client_ip_with_config};
+use crate::support::{
+    AuthRateLimitConfig, MFA_REMEMBERED_COOKIE_NAME, blake3_hex, enforce_auth_rate_limit,
+};
+
+#[derive(Clone)]
+pub(crate) struct LoginHttpConfig {
+    issuer: String,
+    frontend_base_url: String,
+    session_cookie_name: String,
+    csrf_cookie_name: String,
+    session_ttl_seconds: u64,
+    cookie_secure: bool,
+}
+
+impl LoginHttpConfig {
+    pub(crate) fn new(
+        issuer: impl Into<String>,
+        frontend_base_url: impl Into<String>,
+        session_cookie_name: impl Into<String>,
+        csrf_cookie_name: impl Into<String>,
+        session_ttl_seconds: u64,
+        cookie_secure: bool,
+    ) -> Self {
+        Self {
+            issuer: issuer.into(),
+            frontend_base_url: frontend_base_url.into(),
+            session_cookie_name: session_cookie_name.into(),
+            csrf_cookie_name: csrf_cookie_name.into(),
+            session_ttl_seconds,
+            cookie_secure,
+        }
+    }
+}
 
 #[derive(Deserialize)]
 pub(crate) struct LoginRequest {
@@ -43,228 +61,185 @@ enum LoginResponseMode {
     Form,
 }
 
-/// 校验邮箱密码并创建会话。
-pub(crate) async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
+pub(crate) async fn login(
+    rate_limits: Data<nazo_valkey::RateLimitStore>,
+    rate_limit_config: Data<AuthRateLimitConfig>,
+    client_ip_config: Data<ClientIpConfig>,
+    authentication: Data<LocalAuthenticationService>,
+    http_config: Data<LoginHttpConfig>,
+    req: HttpRequest,
+    body: Bytes,
+) -> HttpResponse {
     let (payload, response_mode) = match parse_login_request(&req, &body) {
         Ok(value) => value,
         Err(response) => return response,
     };
-
     if matches!(response_mode, LoginResponseMode::Form)
-        && !form_login_origin_is_allowed(&state.settings, &req)
+        && !form_login_origin_is_allowed(http_config.get_ref(), &req)
     {
         return oauth_error(StatusCode::FORBIDDEN, "access_denied", "登录来源无效.");
     }
-
-    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
+    if let Err(response) = enforce_auth_rate_limit(
+        rate_limits.get_ref(),
+        &req,
+        *rate_limit_config.get_ref(),
+        client_ip_config.get_ref(),
+    )
+    .await
+    {
         return response;
     }
 
     let email = payload.email.trim().to_lowercase();
-    if let Err(response) = enforce_login_failure_throttle(&state, &req, &email).await {
-        return response;
-    }
-
-    let authentication = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
-        .authentication_by_email(
-            nazo_identity::TenantId::new(DEFAULT_TENANT_ID).expect("default tenant ID is valid"),
-            &email,
-        )
-        .await
-    {
-        Ok(authentication) => authentication,
-        Err(error) => {
-            tracing::warn!(%error, "failed to query user for login");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "用户查询失败.",
-            );
-        }
+    let result = authentication
+        .authenticate_password(AuthenticatePasswordInput {
+            email,
+            password: payload.password,
+            source_ip: client_ip_with_config(&req, client_ip_config.get_ref()),
+            remembered_mfa: remembered_mfa_proof(&req),
+            now: Utc::now(),
+        })
+        .await;
+    let success = match result {
+        Ok(success) => success,
+        Err(error) => return authentication_error_response(error),
     };
-    let authenticatable = authentication
-        .as_ref()
-        .is_some_and(|identity| identity.principal.active);
-    let password_hash = if authenticatable {
-        authentication
-            .as_ref()
-            .expect("authenticatable users must exist")
-            .login
-            .password_hash
-            .clone()
-    } else {
-        match dummy_password_hash() {
-            Ok(hash) => match nazo_identity::PasswordHash::new(hash) {
-                Ok(hash) => hash,
-                Err(error) => {
-                    tracing::error!(%error, "dummy password hash is invalid");
-                    return oauth_error(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "server_error",
-                        "密码校验失败.",
-                    );
-                }
-            },
-            Err(error) => {
-                tracing::error!(%error, "dummy password hash is unavailable");
-                return oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "密码校验失败.",
-                );
-            }
-        }
-    };
-    let password_valid =
-        match verify_password_blocking_limited(payload.password.clone(), password_hash).await {
-            Ok(valid) => valid,
-            Err(PasswordVerificationError::Saturated) => {
-                tracing::warn!("password verification concurrency limit reached");
-                let mut response = oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "temporarily_unavailable",
-                    "登录服务繁忙，请稍后重试.",
-                );
-                response
-                    .headers_mut()
-                    .insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
-                return response;
-            }
-            Err(PasswordVerificationError::WorkerFailed) => {
-                tracing::warn!("password verification worker failed");
-                return oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "密码校验失败.",
-                );
-            }
-        };
-    if !authenticatable || !password_valid {
-        if let Err(response) = record_login_failure(&state, &req, &email).await {
-            return response;
-        }
-        let mut fields = vec![
-            ("email_hash", json!(blake3_hex(&email))),
-            (
-                "source_ip_hash",
-                json!(blake3_hex(&client_ip(&req, &state.settings))),
-            ),
-        ];
-        if let Some(identity) = &authentication {
-            fields.push(("user_id", json!(identity.principal.user_id.as_uuid())));
-        }
-        audit_event("login_failure", audit_fields(&fields));
-        return oauth_error(StatusCode::UNAUTHORIZED, "access_denied", "邮箱或密码错误.");
-    }
-    let authenticated = authentication.expect("successful authentication requires an active user");
-    let user = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
-        .public_account_by_id(
-            authenticated.principal.tenant.tenant_id,
-            authenticated.principal.user_id,
-        )
-        .await
-    {
-        Ok(Some(user)) => user,
-        Ok(None) => {
-            tracing::warn!(user_id = %authenticated.principal.user_id.as_uuid(), "authenticated user disappeared before session composition");
-            return oauth_error(StatusCode::UNAUTHORIZED, "access_denied", "邮箱或密码错误.");
-        }
-        Err(error) => {
-            tracing::warn!(%error, "failed to load authenticated public account");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "用户查询失败.",
-            );
-        }
-    };
-    clear_login_failures(&state, &req, &email).await;
-
-    if let Err(response) = require_active_session_principal(&user) {
-        return response;
-    }
-
-    let session_id = random_urlsafe_token();
-    let csrf_token = random_urlsafe_token();
-    let remembered_mfa = if user.account.mfa_enabled {
-        match remembered_mfa_device_valid(&state, &req, &user).await {
-            Ok(value) => value,
-            Err(error) => {
-                tracing::warn!(%error, "failed to check remembered MFA device");
-                return oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "MFA 状态查询失败.",
-                );
-            }
-        }
-    } else {
-        false
-    };
-    let mut amr = vec!["password".to_owned()];
-    if remembered_mfa {
-        amr.push("remembered_mfa".to_owned());
-        amr.push("mfa".to_owned());
-    }
-    let session = SessionPayload {
-        user_id: user.id(),
-        auth_time: Utc::now().timestamp(),
-        amr,
-        pending_mfa: user.account.mfa_enabled && !remembered_mfa,
-        oidc_sid: Some(random_urlsafe_token()),
-    };
-    if store_session(&state, &session_id, &session).await.is_err() {
-        return oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "会话写入失败.",
-        );
-    }
-
-    audit_event(
-        "login_success",
-        audit_fields(&[
-            ("user_id", json!(user.id())),
-            (
-                "source_ip_hash",
-                json!(blake3_hex(&client_ip(&req, &state.settings))),
-            ),
-            ("amr", json!(session.amr)),
-        ]),
-    );
-
     let cookies = [
         make_cookie(
-            &state.settings.session.session_cookie_name,
-            &session_id,
+            &http_config.session_cookie_name,
+            &success.session_id,
             true,
-            state.settings.session.session_ttl_seconds,
-            state.settings.session.cookie_secure,
+            http_config.session_ttl_seconds,
+            http_config.cookie_secure,
         ),
         make_cookie(
-            &state.settings.session.csrf_cookie_name,
-            &csrf_token,
+            &http_config.csrf_cookie_name,
+            &success.csrf_token,
             false,
-            state.settings.session.session_ttl_seconds,
-            state.settings.session.cookie_secure,
+            http_config.session_ttl_seconds,
+            http_config.cookie_secure,
         ),
     ];
-
     if matches!(response_mode, LoginResponseMode::Form) {
-        let location = safe_form_login_next(&state, &req, payload.next.as_deref());
+        let location = safe_form_login_next(http_config.get_ref(), &req, payload.next.as_deref());
         let mut response = HttpResponse::SeeOther();
-        if let Ok(value) = HeaderValue::from_str(&location) {
+        if let Ok(value) = header::HeaderValue::from_str(&location) {
             response.insert_header((header::LOCATION, value));
         }
         return with_cookie_headers(response.finish(), &cookies);
     }
-
-    let response_body = json!({
-        "expires_in": state.settings.session.session_ttl_seconds,
-        "csrf_token": csrf_token,
-        "mfa_required": session.pending_mfa
+    let response = json!({
+        "expires_in": http_config.session_ttl_seconds,
+        "csrf_token": success.csrf_token,
+        "mfa_required": success.session.pending_mfa(),
     });
-    with_cookie_headers(json_response(response_body), &cookies)
+    with_cookie_headers(json_response(response), &cookies)
+}
+
+fn authentication_error_response(error: AuthenticatePasswordError) -> HttpResponse {
+    match error {
+        AuthenticatePasswordError::ThrottleUnavailable(error) => {
+            tracing::warn!(%error, "login failure throttle lookup failed");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "登录失败次数校验失败.",
+            )
+        }
+        AuthenticatePasswordError::Throttled {
+            retry_after_seconds,
+        } => {
+            let mut response = authorization_error_response(
+                StatusCode::TOO_MANY_REQUESTS,
+                "temporarily_unavailable",
+                "登录失败次数过多，请稍后重试.",
+            );
+            if let Ok(value) = header::HeaderValue::from_str(&retry_after_seconds.to_string()) {
+                response.headers_mut().insert(header::RETRY_AFTER, value);
+            }
+            response
+        }
+        AuthenticatePasswordError::AccountLookup(error) => {
+            tracing::warn!(%error, "failed to query user for login");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "用户查询失败.",
+            )
+        }
+        AuthenticatePasswordError::SecretBusy => {
+            let mut response = oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "temporarily_unavailable",
+                "登录服务繁忙，请稍后重试.",
+            );
+            response
+                .headers_mut()
+                .insert(header::RETRY_AFTER, header::HeaderValue::from_static("1"));
+            response
+        }
+        AuthenticatePasswordError::SecretUnavailable => {
+            tracing::warn!("password verification worker failed");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "密码校验失败.",
+            )
+        }
+        AuthenticatePasswordError::FailureRecord(error) => {
+            tracing::warn!(%error, "login failure throttle increment failed");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "登录失败次数记录失败.",
+            )
+        }
+        AuthenticatePasswordError::InvalidCredentials => {
+            oauth_error(StatusCode::UNAUTHORIZED, "access_denied", "邮箱或密码错误.")
+        }
+        AuthenticatePasswordError::InactiveAccount => {
+            oauth_error(StatusCode::UNAUTHORIZED, "access_denied", "当前账号已停用.")
+        }
+        AuthenticatePasswordError::RememberedMfa(error) => {
+            tracing::warn!(%error, "failed to check remembered MFA device");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "MFA 状态查询失败.",
+            )
+        }
+        AuthenticatePasswordError::Session(error) => {
+            tracing::warn!(%error, "failed to store login session");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "会话写入失败.",
+            )
+        }
+        AuthenticatePasswordError::SessionCollision => {
+            tracing::warn!("generated login session identifier collided");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "会话写入失败.",
+            )
+        }
+    }
+}
+
+fn remembered_mfa_proof(req: &HttpRequest) -> Option<RememberedMfaProof> {
+    let token = cookie_value(req, MFA_REMEMBERED_COOKIE_NAME)?;
+    let user_agent_hash = req
+        .headers()
+        .get(header::USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(blake3_hex);
+    Some(RememberedMfaProof {
+        token_hash: blake3_hex(token.trim()),
+        user_agent_hash,
+    })
 }
 
 fn parse_login_request(
@@ -278,7 +253,6 @@ fn parse_login_request(
         .and_then(|value| value.split(';').next())
         .map(str::trim)
         .unwrap_or_default();
-
     if content_type.eq_ignore_ascii_case("application/json") {
         let payload = serde_json::from_slice::<LoginRequest>(body).map_err(|_| {
             oauth_error(
@@ -289,7 +263,6 @@ fn parse_login_request(
         })?;
         return Ok((payload, LoginResponseMode::Json));
     }
-
     if content_type.eq_ignore_ascii_case("application/x-www-form-urlencoded") {
         let raw = std::str::from_utf8(body).map_err(|_| {
             oauth_error(
@@ -300,7 +273,6 @@ fn parse_login_request(
         })?;
         return parse_login_form(raw).map(|payload| (payload, LoginResponseMode::Form));
     }
-
     Err(oauth_error(
         StatusCode::UNSUPPORTED_MEDIA_TYPE,
         "invalid_request",
@@ -309,10 +281,9 @@ fn parse_login_request(
 }
 
 fn parse_login_form(raw: &str) -> Result<LoginRequest, HttpResponse> {
-    let mut email: Option<String> = None;
-    let mut password: Option<String> = None;
-    let mut next: Option<String> = None;
-
+    let mut email = None;
+    let mut password = None;
+    let mut next = None;
     for (key, value) in url::form_urlencoded::parse(raw.as_bytes()) {
         match key.as_ref() {
             "email" => assign_once(&mut email, value.into_owned())?,
@@ -321,7 +292,6 @@ fn parse_login_form(raw: &str) -> Result<LoginRequest, HttpResponse> {
             _ => {}
         }
     }
-
     let Some(email) = email else {
         return Err(oauth_error(
             StatusCode::BAD_REQUEST,
@@ -336,7 +306,6 @@ fn parse_login_form(raw: &str) -> Result<LoginRequest, HttpResponse> {
             "password is required.",
         ));
     };
-
     Ok(LoginRequest {
         email,
         password,
@@ -356,7 +325,7 @@ fn assign_once(slot: &mut Option<String>, value: String) -> Result<(), HttpRespo
     Ok(())
 }
 
-fn form_login_origin_is_allowed(settings: &Settings, req: &HttpRequest) -> bool {
+fn form_login_origin_is_allowed(config: &LoginHttpConfig, req: &HttpRequest) -> bool {
     let mut origin_headers = req.headers().get_all(header::ORIGIN);
     let Some(origin_header) = origin_headers.next() else {
         return false;
@@ -370,14 +339,10 @@ fn form_login_origin_is_allowed(settings: &Settings, req: &HttpRequest) -> bool 
     let Some(request_origin) = strict_request_origin(origin_header) else {
         return false;
     };
-
-    [
-        &settings.endpoint.issuer,
-        &settings.endpoint.frontend_base_url,
-    ]
-    .into_iter()
-    .filter_map(|trusted_url| normalized_url_origin(trusted_url))
-    .any(|trusted_origin| trusted_origin == request_origin)
+    [&config.issuer, &config.frontend_base_url]
+        .into_iter()
+        .filter_map(|trusted_url| normalized_url_origin(trusted_url))
+        .any(|trusted_origin| trusted_origin == request_origin)
 }
 
 fn strict_request_origin(value: &str) -> Option<String> {
@@ -405,15 +370,12 @@ fn normalized_url_origin(value: &str) -> Option<String> {
     Some(parsed.origin().ascii_serialization())
 }
 
-fn safe_form_login_next(state: &AppState, req: &HttpRequest, submitted: Option<&str>) -> String {
-    let default_next = format!(
-        "{}/profile",
-        state
-            .settings
-            .endpoint
-            .frontend_base_url
-            .trim_end_matches('/')
-    );
+fn safe_form_login_next(
+    config: &LoginHttpConfig,
+    req: &HttpRequest,
+    submitted: Option<&str>,
+) -> String {
+    let default_next = format!("{}/profile", config.frontend_base_url.trim_end_matches('/'));
     submitted
         .and_then(safe_relative_next)
         .or_else(|| referer_login_next(req))
@@ -430,10 +392,11 @@ fn safe_relative_next(value: &str) -> Option<String> {
         .map(|(path, _)| path)
         .unwrap_or(trimmed)
         .trim_end_matches('/');
-    if path != "/authorize" {
-        return None;
+    if path == "/authorize" {
+        Some(trimmed.to_owned())
+    } else {
+        None
     }
-    Some(trimmed.to_owned())
 }
 
 fn referer_login_next(req: &HttpRequest) -> Option<String> {
