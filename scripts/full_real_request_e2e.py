@@ -1631,7 +1631,11 @@ def approve_authorization(
     expect_status(f"authorize_decision_approve_{state}", response, 302)
     query = location_query(response)
     code = query.get("code", [None])[0]
-    check(f"authorize_code_issued_{state}", bool(code))
+    check(
+        f"authorize_code_issued_{state}",
+        bool(code),
+        response.headers.get("Location", ""),
+    )
     check(f"authorize_state_roundtrip_{state}", query.get("state", [None])[0] == state)
     return code, verifier
 
