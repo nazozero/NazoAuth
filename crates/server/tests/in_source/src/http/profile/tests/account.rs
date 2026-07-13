@@ -14,7 +14,7 @@ use fred::prelude::{
 };
 
 use crate::config::ConfigSource;
-use nazo_postgres::create_pool;
+use nazo_postgres::{create_pool, get_conn};
 
 async fn me_from_state(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
     me(profile_sessions(&state), account_profiles(&state), req).await
@@ -35,50 +35,21 @@ async fn update_me_from_state(
 }
 
 #[test]
-fn profile_text_trims_blank_values_and_enforces_byte_limit() {
-    assert_eq!(profile_text(None, 8, "display_name").unwrap(), None);
-    assert_eq!(
-        profile_text(Some("   \t ".to_owned()), 8, "display_name").unwrap(),
-        None
+fn profile_validation_presenter_preserves_length_error_contract() {
+    let response = profile_validation_response(
+        nazo_identity::ProfileValidationError::FieldTooLong("display_name"),
     );
-    assert_eq!(
-        profile_text(Some("  Alice  ".to_owned()), 8, "display_name").unwrap(),
-        Some("Alice".to_owned())
-    );
-
-    let response = profile_text(Some("abcdefghi".to_owned()), 8, "display_name").unwrap_err();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_oauth_error(&response, "invalid_request");
 }
 
 #[test]
-fn normalize_profile_url_accepts_only_absolute_http_urls_without_fallback() {
-    assert_eq!(
-        normalize_profile_url(
-            Some(" https://profile.example/u/alice ".to_owned()),
-            "profile_url"
-        )
-        .unwrap(),
-        Some("https://profile.example/u/alice".to_owned())
-    );
-    assert_eq!(
-        normalize_profile_url(Some("http://localhost/profile".to_owned()), "profile_url").unwrap(),
-        Some("http://localhost/profile".to_owned())
-    );
-    assert_eq!(normalize_profile_url(None, "profile_url").unwrap(), None);
-    assert_eq!(
-        normalize_profile_url(Some("   ".to_owned()), "profile_url").unwrap(),
-        None
-    );
-
-    for invalid in [
-        "client.example/profile",
-        "/relative/profile",
-        "javascript:alert(1)",
-        "mailto:user@example.com",
-        "urn:example:profile",
+fn profile_validation_presenter_preserves_url_error_contracts() {
+    for error in [
+        nazo_identity::ProfileValidationError::InvalidAbsoluteUrl("profile_url"),
+        nazo_identity::ProfileValidationError::InvalidHttpUrl("profile_url"),
     ] {
-        let response = normalize_profile_url(Some(invalid.to_owned()), "profile_url").unwrap_err();
+        let response = profile_validation_response(error);
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         assert_oauth_error(&response, "invalid_request");
     }

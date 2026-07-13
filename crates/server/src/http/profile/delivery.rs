@@ -6,79 +6,11 @@ use actix_web::{HttpRequest, HttpResponse};
 use nazo_http_actix::{json_response, oauth_error};
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use uuid::Uuid;
 // 只处理审批后临时凭据的只读领取。
-
-#[derive(Clone)]
-pub(crate) struct DeliveryProfileService {
-    requests: nazo_postgres::AccessRequestRepository,
-    deliveries: nazo_valkey::DeliveryStore,
-}
-
-impl DeliveryProfileService {
-    pub(crate) fn new(
-        requests: nazo_postgres::AccessRequestRepository,
-        deliveries: nazo_valkey::DeliveryStore,
-    ) -> Self {
-        Self {
-            requests,
-            deliveries,
-        }
-    }
-
-    async fn claim(
-        &self,
-        user: &nazo_identity::PublicAccount,
-        token: &str,
-    ) -> Result<Value, DeliveryReadError> {
-        let stored = self
-            .deliveries
-            .load(user.user_id(), token)
-            .await
-            .map_err(|error| DeliveryReadError::Unavailable(error.into()))?
-            .ok_or(DeliveryReadError::Invalid)?;
-        let Some(claim) = delivery_claim(stored.value()) else {
-            let _ = self.deliveries.delete(user.user_id(), token).await;
-            return Err(DeliveryReadError::Invalid);
-        };
-        match self
-            .requests
-            .approved_delivery_matches(
-                user.tenant().tenant_id,
-                user.user_id(),
-                claim.request_id,
-                claim.approved_client_id,
-                &claim.client_id,
-            )
-            .await
-        {
-            Ok(true) => {}
-            Ok(false) => {
-                let _ = self.deliveries.delete(user.user_id(), token).await;
-                return Err(DeliveryReadError::Invalid);
-            }
-            Err(error) => return Err(DeliveryReadError::Unavailable(error.into())),
-        }
-        match self
-            .deliveries
-            .consume(user.user_id(), token, &stored)
-            .await
-        {
-            Ok(nazo_valkey::DeliveryConsume::Consumed(value)) => Ok(value),
-            Ok(nazo_valkey::DeliveryConsume::MissingOrChanged) => Err(DeliveryReadError::Invalid),
-            Err(error) => Err(DeliveryReadError::Unavailable(error.into())),
-        }
-    }
-}
-
-enum DeliveryReadError {
-    Invalid,
-    Unavailable(anyhow::Error),
-}
 
 pub(crate) async fn access_delivery(
     sessions: Data<SessionProfileHandles>,
-    service: Data<DeliveryProfileService>,
+    service: Data<crate::bootstrap::ClientAccessProfileService>,
     req: HttpRequest,
     Query(q): Query<HashMap<String, String>>,
 ) -> HttpResponse {
@@ -89,10 +21,15 @@ pub(crate) async fn access_delivery(
     let Some(token) = q.get("token") else {
         return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "缺少 token.");
     };
-    let claimed = match service.claim(&user, token).await {
+    let claimed = match service.claim_delivery(&user, token).await {
         Ok(claimed) => claimed,
-        Err(DeliveryReadError::Invalid) => return invalid_delivery_link_response(),
-        Err(DeliveryReadError::Unavailable(error)) => {
+        Err(nazo_identity::DeliveryReadError::Invalid) => {
+            return invalid_delivery_link_response();
+        }
+        Err(
+            nazo_identity::DeliveryReadError::Repository(error)
+            | nazo_identity::DeliveryReadError::DeliveryStore(error),
+        ) => {
             tracing::warn!(%error, "failed to read or consume client delivery payload");
             return oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -104,22 +41,19 @@ pub(crate) async fn access_delivery(
     delivery_value_response(claimed)
 }
 
-struct DeliveryClaim {
-    request_id: Uuid,
-    approved_client_id: Uuid,
-    client_id: String,
-}
-
-fn delivery_claim(value: &Value) -> Option<DeliveryClaim> {
-    if value.get("delivery_state")?.as_str()? != "committed" {
-        return None;
-    }
-    Some(DeliveryClaim {
-        request_id: serde_json::from_value(value.get("request_id")?.clone()).ok()?,
-        approved_client_id: serde_json::from_value(value.get("approved_client_id")?.clone())
-            .ok()?,
-        client_id: value.get("client_id")?.as_str()?.to_owned(),
-    })
+fn is_committed_delivery(value: &Value) -> bool {
+    value.get("delivery_state").and_then(Value::as_str) == Some("committed")
+        && value
+            .get("request_id")
+            .and_then(Value::as_str)
+            .and_then(|value| uuid::Uuid::parse_str(value).ok())
+            .is_some()
+        && value
+            .get("approved_client_id")
+            .and_then(Value::as_str)
+            .and_then(|value| uuid::Uuid::parse_str(value).ok())
+            .is_some()
+        && value.get("client_id").and_then(Value::as_str).is_some()
 }
 
 fn invalid_delivery_link_response() -> HttpResponse {
@@ -131,7 +65,7 @@ fn invalid_delivery_link_response() -> HttpResponse {
 }
 
 fn delivery_value_response(mut value: Value) -> HttpResponse {
-    if delivery_claim(&value).is_some() {
+    if is_committed_delivery(&value) {
         value
             .as_object_mut()
             .expect("validated delivery payload is an object")

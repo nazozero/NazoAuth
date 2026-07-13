@@ -9,6 +9,7 @@ pub mod mfa;
 mod model;
 pub mod passkey;
 pub mod ports;
+pub mod profile;
 pub mod scim;
 pub mod session;
 pub mod tenancy;
@@ -25,5 +26,11 @@ pub use model::{
     AccountIdentity, AuthMethod, AuthenticationContext, AuthenticationIdentity, IdentityModelError,
     LoginIdentity, PasswordHash, PostalAddress, Principal, PublicAccount, SubjectClaims,
     UserProfile, UserRole,
+};
+pub use profile::{
+    AccessRequestListError, AccessRequestWithDelivery, AccountOverview, AccountProfileService,
+    AvailableDelivery, ClientAccessService, DeliveryReadError, FederationLinksService,
+    NewAccessRequestInput, ProfilePatch, ProfileValidationError, UpdateProfileError,
+    access_delivery_token,
 };
 pub use tenancy::{OrganizationId, RealmId, TenantContext, TenantId, UserId};

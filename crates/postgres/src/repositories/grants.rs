@@ -270,6 +270,15 @@ impl GrantRepository {
     }
 }
 
+impl nazo_identity::ports::GrantSummaryRepositoryPort for GrantRepository {
+    fn authorized_client_count(
+        &self,
+        user_id: Uuid,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, i64> {
+        Box::pin(async move { GrantRepository::authorized_client_count(self, user_id).await })
+    }
+}
+
 fn map_error(error: diesel::result::Error) -> RepositoryError {
     RepositoryError::Unexpected(error.to_string())
 }

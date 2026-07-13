@@ -10,35 +10,16 @@ use nazo_http_actix::{json_response, oauth_error};
 use serde_json::{Value, json};
 // 只读取当前用户的 OAuth 授权关系。
 
-#[derive(Clone)]
-pub(crate) struct ApplicationsProfileService {
-    clients: nazo_postgres::OAuthClientRepository,
-}
-
-impl ApplicationsProfileService {
-    pub(crate) fn new(clients: nazo_postgres::OAuthClientRepository) -> Self {
-        Self { clients }
-    }
-
-    async fn for_user(
-        &self,
-        user: &nazo_identity::PublicAccount,
-    ) -> Result<Vec<nazo_postgres::OAuthClientApplication>, nazo_identity::ports::RepositoryError>
-    {
-        self.clients.applications_for_user(user.id()).await
-    }
-}
-
 pub(crate) async fn my_applications(
     sessions: Data<SessionProfileHandles>,
-    applications: Data<ApplicationsProfileService>,
+    applications: Data<crate::bootstrap::AccountProfileService>,
     req: HttpRequest,
 ) -> HttpResponse {
     let user = match sessions.current_user_or_login_required(&req).await {
         Ok(user) => user,
         Err(response) => return response,
     };
-    let rows = match applications.for_user(&user).await {
+    let rows = match applications.applications(&user).await {
         Ok(rows) => rows,
         Err(error) => {
             tracing::warn!(%error, "failed to load user applications");
@@ -53,7 +34,7 @@ pub(crate) async fn my_applications(
     json_response(json!({"total": items.len(), "items": items}))
 }
 
-fn my_application_json(row: nazo_postgres::OAuthClientApplication) -> Value {
+fn my_application_json(row: nazo_identity::ports::AuthorizedApplication) -> Value {
     json!({
         "client_id": row.client_id,
         "client_name": row.client_name,

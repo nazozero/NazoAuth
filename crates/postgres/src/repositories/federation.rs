@@ -198,6 +198,27 @@ impl FederationRepository {
         }
     }
 }
+
+impl nazo_identity::ports::FederationLinkRepositoryPort for FederationRepository {
+    fn list(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, Vec<FederationLink>> {
+        Box::pin(async move { FederationRepository::list(self, tenant_id, user_id).await })
+    }
+
+    fn delete(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        link_id: uuid::Uuid,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, Option<FederationLink>> {
+        Box::pin(
+            async move { FederationRepository::delete(self, tenant_id, user_id, link_id).await },
+        )
+    }
+}
 fn map_error(error: Error) -> RepositoryError {
     match error {
         Error::DatabaseError(DatabaseErrorKind::UniqueViolation, _) => RepositoryError::Conflict,

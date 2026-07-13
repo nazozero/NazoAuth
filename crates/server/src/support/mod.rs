@@ -116,6 +116,6 @@ pub(crate) use valkey::{
     valkey_atomic_snapshot, valkey_del, valkey_eval_string, valkey_get, valkey_set_ex,
 };
 pub(crate) use views::{
-    admin_user_json, append_query, auth_me_json, auth_me_json_with_grants, client_json,
+    admin_user_json, append_query, auth_me_json, auth_me_json_with_count, client_json,
     is_cross_site_fetch, pagination,
 };

@@ -26,12 +26,18 @@ fn profile_core_handlers_use_focused_dependencies() {
             "profile handler regressed to giant AppState: {legacy_signature}"
         );
     }
+    for infrastructure_dependency in ["nazo_postgres::", "nazo_valkey::"] {
+        assert!(
+            !sources.contains(infrastructure_dependency),
+            "profile transport depends on infrastructure adapter: {infrastructure_dependency}"
+        );
+    }
 }
 
 #[test]
 fn my_application_json_preserves_authorization_metadata_and_filters_bad_scope_values() {
     let now = Utc::now();
-    let value = my_application_json(nazo_postgres::OAuthClientApplication {
+    let value = my_application_json(nazo_identity::ports::AuthorizedApplication {
         client_id: "client-1".to_owned(),
         client_name: "Example Client".to_owned(),
         last_scopes: json!(["openid", "profile", 42, null, {"scope": "admin"}]),

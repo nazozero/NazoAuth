@@ -14,15 +14,6 @@ use crate::{
     schema::{oauth_clients, oauth_tokens, user_client_grants},
 };
 
-#[derive(Clone, Debug)]
-pub struct OAuthClientApplication {
-    pub client_id: String,
-    pub client_name: String,
-    pub last_scopes: Value,
-    pub last_authorized_at: DateTime<Utc>,
-    pub authorization_count: i32,
-}
-
 #[derive(Clone, Debug, diesel::Queryable, diesel::Selectable)]
 #[diesel(table_name = crate::schema::oauth_clients)]
 struct OAuthClientRecord {
@@ -641,7 +632,7 @@ impl OAuthClientRepository {
     pub async fn applications_for_user(
         &self,
         user_id: Uuid,
-    ) -> Result<Vec<OAuthClientApplication>, RepositoryError> {
+    ) -> Result<Vec<nazo_identity::ports::AuthorizedApplication>, RepositoryError> {
         let mut connection = self.connection().await?;
         let rows = user_client_grants::table
             .inner_join(
@@ -663,7 +654,7 @@ impl OAuthClientRepository {
             .into_iter()
             .map(
                 |(client_id, client_name, last_scopes, last_authorized_at, authorization_count)| {
-                    OAuthClientApplication {
+                    nazo_identity::ports::AuthorizedApplication {
                         client_id,
                         client_name,
                         last_scopes,
@@ -712,6 +703,16 @@ impl OAuthClientRepository {
             .get()
             .await
             .map_err(|_| RepositoryError::Unavailable)
+    }
+}
+
+impl nazo_identity::ports::AuthorizedApplicationRepositoryPort for OAuthClientRepository {
+    fn applications_for_user(
+        &self,
+        user_id: Uuid,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, Vec<nazo_identity::ports::AuthorizedApplication>>
+    {
+        Box::pin(async move { OAuthClientRepository::applications_for_user(self, user_id).await })
     }
 }
 

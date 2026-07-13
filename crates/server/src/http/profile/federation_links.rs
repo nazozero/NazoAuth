@@ -18,39 +18,9 @@ use nazo_identity::ports::FederationLink;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-#[derive(Clone)]
-pub(crate) struct FederationProfileService {
-    federation: nazo_postgres::FederationRepository,
-}
-
-impl FederationProfileService {
-    pub(crate) fn new(federation: nazo_postgres::FederationRepository) -> Self {
-        Self { federation }
-    }
-
-    async fn list(
-        &self,
-        user: &nazo_identity::PublicAccount,
-    ) -> Result<Vec<FederationLink>, nazo_identity::ports::RepositoryError> {
-        self.federation
-            .list(user.tenant().tenant_id, user.user_id())
-            .await
-    }
-
-    async fn unlink(
-        &self,
-        user: &nazo_identity::PublicAccount,
-        link_id: Uuid,
-    ) -> Result<Option<FederationLink>, nazo_identity::ports::RepositoryError> {
-        self.federation
-            .delete(user.tenant().tenant_id, user.user_id(), link_id)
-            .await
-    }
-}
-
 pub(crate) async fn my_federation_links(
     sessions: Data<SessionProfileHandles>,
-    federation: Data<FederationProfileService>,
+    federation: Data<crate::bootstrap::FederationProfileService>,
     req: HttpRequest,
 ) -> HttpResponse {
     let user = match sessions.current_user_or_login_required(&req).await {
@@ -77,7 +47,7 @@ pub(crate) async fn my_federation_links(
 
 pub(crate) async fn unlink_my_federation_link(
     sessions: Data<SessionProfileHandles>,
-    federation: Data<FederationProfileService>,
+    federation: Data<crate::bootstrap::FederationProfileService>,
     req: HttpRequest,
     path: Path<Uuid>,
 ) -> HttpResponse {

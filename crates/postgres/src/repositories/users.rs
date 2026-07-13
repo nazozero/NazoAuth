@@ -534,3 +534,16 @@ impl UserRepositoryPort for UserRepository {
         Box::pin(async move { self.subject_claims_by_id(tenant, user_id).await })
     }
 }
+
+impl nazo_identity::ports::ProfileRepositoryPort for UserRepository {
+    fn update_profile<'a>(
+        &'a self,
+        tenant_id: nazo_identity::TenantId,
+        user_id: nazo_identity::UserId,
+        update: nazo_identity::ports::ProfileUpdate,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, nazo_identity::PublicAccount> {
+        Box::pin(
+            async move { UserRepository::update_profile(self, tenant_id, user_id, update).await },
+        )
+    }
+}

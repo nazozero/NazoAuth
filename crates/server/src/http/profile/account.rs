@@ -5,7 +5,7 @@ use crate::domain::DatabaseUserFixture;
 use crate::schema::users;
 #[cfg(test)]
 use crate::settings::Settings;
-use crate::support::auth_me_json_with_grants;
+use crate::support::auth_me_json_with_count;
 use crate::support::sessions::SessionProfileHandles;
 #[cfg(test)]
 use crate::support::{
@@ -22,51 +22,15 @@ use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
 use nazo_http_actix::{cookie_value, csrf_error};
 use nazo_http_actix::{json_response, oauth_error};
-#[cfg(test)]
-use nazo_postgres::get_conn;
 use serde::Deserialize;
-use serde_json::Value;
 use serde_json::json;
 #[cfg(test)]
 use uuid::Uuid;
 // 只处理 /auth/me 的读取和基础资料更新。
 
-#[derive(Clone)]
-pub(crate) struct AccountProfileService {
-    users: nazo_postgres::UserRepository,
-    grants: nazo_postgres::GrantRepository,
-}
-
-impl AccountProfileService {
-    pub(crate) fn new(
-        users: nazo_postgres::UserRepository,
-        grants: nazo_postgres::GrantRepository,
-    ) -> Self {
-        Self { users, grants }
-    }
-
-    async fn profile_json(&self, user: &nazo_identity::PublicAccount) -> anyhow::Result<Value> {
-        auth_me_json_with_grants(&self.grants, user).await
-    }
-
-    async fn update_profile(
-        &self,
-        user: &nazo_identity::PublicAccount,
-        profile: nazo_identity::UserProfile,
-    ) -> Result<nazo_identity::PublicAccount, nazo_identity::ports::RepositoryError> {
-        self.users
-            .update_profile(
-                user.tenant().tenant_id,
-                user.user_id(),
-                nazo_identity::ports::ProfileUpdate { profile },
-            )
-            .await
-    }
-}
-
 pub(crate) async fn me(
     sessions: Data<SessionProfileHandles>,
-    profiles: Data<AccountProfileService>,
+    profiles: Data<crate::bootstrap::AccountProfileService>,
     req: HttpRequest,
 ) -> HttpResponse {
     let session = match sessions.current_session(&req).await {
@@ -99,8 +63,10 @@ pub(crate) async fn me(
             );
         }
     };
-    match profiles.profile_json(&session.user).await {
-        Ok(mut body) => {
+    match profiles.overview(session.user).await {
+        Ok(overview) => {
+            let mut body =
+                auth_me_json_with_count(&overview.account, overview.authorized_application_count);
             if let Some(object) = body.as_object_mut() {
                 object.insert("mfa_required".to_owned(), json!(false));
             }
@@ -139,9 +105,34 @@ pub(crate) struct UpdateProfileRequest {
     phone_number: Option<String>,
 }
 
+impl From<UpdateProfileRequest> for nazo_identity::ProfilePatch {
+    fn from(payload: UpdateProfileRequest) -> Self {
+        Self {
+            display_name: payload.display_name,
+            given_name: payload.given_name,
+            family_name: payload.family_name,
+            middle_name: payload.middle_name,
+            nickname: payload.nickname,
+            profile_url: payload.profile_url,
+            website_url: payload.website_url,
+            gender: payload.gender,
+            birthdate: payload.birthdate,
+            zoneinfo: payload.zoneinfo,
+            locale: payload.locale,
+            address_formatted: payload.address_formatted,
+            address_street_address: payload.address_street_address,
+            address_locality: payload.address_locality,
+            address_region: payload.address_region,
+            address_postal_code: payload.address_postal_code,
+            address_country: payload.address_country,
+            phone_number: payload.phone_number,
+        }
+    }
+}
+
 pub(crate) async fn update_me(
     sessions: Data<SessionProfileHandles>,
-    profiles: Data<AccountProfileService>,
+    profiles: Data<crate::bootstrap::AccountProfileService>,
     req: HttpRequest,
     Json(payload): Json<UpdateProfileRequest>,
 ) -> HttpResponse {
@@ -152,128 +143,15 @@ pub(crate) async fn update_me(
         Ok(user) => user,
         Err(response) => return response,
     };
-    let display_name = match profile_text(payload.display_name, 80, "display_name") {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    let given_name = match profile_text(payload.given_name, 80, "given_name") {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    let family_name = match profile_text(payload.family_name, 80, "family_name") {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    let middle_name = match profile_text(payload.middle_name, 80, "middle_name") {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    let nickname = match profile_text(payload.nickname, 80, "nickname") {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    let profile_url = match normalize_profile_url(payload.profile_url, "profile_url") {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    let website_url = match normalize_profile_url(payload.website_url, "website_url") {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    let gender = match profile_text(payload.gender, 40, "gender") {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    let birthdate = match profile_text(payload.birthdate, 10, "birthdate") {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    let zoneinfo = match profile_text(payload.zoneinfo, 64, "zoneinfo") {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    let locale = match profile_text(payload.locale, 35, "locale") {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    let address_formatted = match profile_text(payload.address_formatted, 512, "address_formatted")
-    {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    let address_street_address = match profile_text(
-        payload.address_street_address,
-        256,
-        "address_street_address",
-    ) {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    let address_locality = match profile_text(payload.address_locality, 128, "address_locality") {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    let address_region = match profile_text(payload.address_region, 128, "address_region") {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    let address_postal_code =
-        match profile_text(payload.address_postal_code, 64, "address_postal_code") {
-            Ok(value) => value,
-            Err(response) => return response,
-        };
-    let address_country = match profile_text(payload.address_country, 64, "address_country") {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    let phone_number = match profile_text(payload.phone_number, 32, "phone_number") {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    let phone_number_verified =
-        user.profile.phone_number_verified && user.profile.phone_number == phone_number;
-    let updated = profiles
-        .update_profile(
-            &user,
-            nazo_identity::UserProfile {
-                display_name,
-                avatar_url: user.profile.avatar_url.clone(),
-                given_name,
-                family_name,
-                middle_name,
-                nickname,
-                profile_url,
-                website_url,
-                gender,
-                birthdate,
-                zoneinfo,
-                locale,
-                address: nazo_identity::PostalAddress {
-                    formatted: address_formatted,
-                    street_address: address_street_address,
-                    locality: address_locality,
-                    region: address_region,
-                    postal_code: address_postal_code,
-                    country: address_country,
-                },
-                phone_number,
-                phone_number_verified,
-            },
-        )
-        .await;
-    match updated {
-        Ok(user) => match profiles.profile_json(&user).await {
-            Ok(body) => json_response(body),
-            Err(error) => {
-                tracing::warn!(%error, "failed to build updated auth me response");
-                oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "当前用户资料查询失败.",
-                )
-            }
-        },
-        Err(error) => {
+    match profiles.update(&user, payload.into()).await {
+        Ok(overview) => json_response(auth_me_json_with_count(
+            &overview.account,
+            overview.authorized_application_count,
+        )),
+        Err(nazo_identity::UpdateProfileError::Validation(error)) => {
+            profile_validation_response(error)
+        }
+        Err(nazo_identity::UpdateProfileError::UpdateRepository(error)) => {
             tracing::warn!(%error, "failed to update profile");
             oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -281,52 +159,35 @@ pub(crate) async fn update_me(
                 "资料更新失败.",
             )
         }
+        Err(nazo_identity::UpdateProfileError::OverviewRepository(error)) => {
+            tracing::warn!(%error, "failed to build updated auth me response");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "当前用户资料查询失败.",
+            )
+        }
     }
 }
 
-fn profile_text(
-    value: Option<String>,
-    max_bytes: usize,
-    field: &str,
-) -> Result<Option<String>, HttpResponse> {
-    let Some(value) = value
-        .map(|value| value.trim().to_owned())
-        .filter(|value| !value.is_empty())
-    else {
-        return Ok(None);
-    };
-    if value.len() > max_bytes {
-        return Err(oauth_error(
+fn profile_validation_response(error: nazo_identity::ProfileValidationError) -> HttpResponse {
+    match error {
+        nazo_identity::ProfileValidationError::FieldTooLong(field) => oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             &format!("{field} 超出长度限制."),
-        ));
-    }
-    Ok(Some(value))
-}
-
-fn normalize_profile_url(
-    value: Option<String>,
-    field: &str,
-) -> Result<Option<String>, HttpResponse> {
-    let Some(value) = profile_text(value, 512, field)? else {
-        return Ok(None);
-    };
-    let Ok(url) = url::Url::parse(&value) else {
-        return Err(oauth_error(
+        ),
+        nazo_identity::ProfileValidationError::InvalidAbsoluteUrl(field) => oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             &format!("{field} 必须是绝对 URL."),
-        ));
-    };
-    if !matches!(url.scheme(), "https" | "http") || url.cannot_be_a_base() {
-        return Err(oauth_error(
+        ),
+        nazo_identity::ProfileValidationError::InvalidHttpUrl(field) => oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             &format!("{field} 必须是 http 或 https URL."),
-        ));
+        ),
     }
-    Ok(Some(value))
 }
 
 #[cfg(test)]

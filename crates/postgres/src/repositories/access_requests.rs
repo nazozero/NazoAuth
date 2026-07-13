@@ -431,6 +431,46 @@ impl AccessRequestRepository {
     }
 }
 
+impl nazo_identity::ports::AccessRequestRepositoryPort for AccessRequestRepository {
+    fn list_for_user(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, Vec<AccessRequest>> {
+        Box::pin(
+            async move { AccessRequestRepository::list_for_user(self, tenant_id, user_id).await },
+        )
+    }
+
+    fn create(
+        &self,
+        request: NewAccessRequest,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, AccessRequest> {
+        Box::pin(async move { AccessRequestRepository::create(self, request).await })
+    }
+
+    fn approved_delivery_matches<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        request_id: Uuid,
+        approved_client_id: Uuid,
+        client_id: &'a str,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, bool> {
+        Box::pin(async move {
+            AccessRequestRepository::approved_delivery_matches(
+                self,
+                tenant_id,
+                user_id,
+                request_id,
+                approved_client_id,
+                client_id,
+            )
+            .await
+        })
+    }
+}
+
 async fn insert_client(
     connection: &mut diesel_async::AsyncPgConnection,
     command: ClientInsertCommand<'_>,

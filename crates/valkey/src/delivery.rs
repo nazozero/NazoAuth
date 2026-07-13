@@ -110,3 +110,96 @@ fn parse_delivery(raw: String) -> Result<StoredDelivery, Error> {
         .map_err(|error| Error::protocol(format!("malformed client delivery: {error}")))?;
     Ok(StoredDelivery { value, raw })
 }
+
+fn identity_record(stored: StoredDelivery) -> nazo_identity::ports::DeliveryRecord {
+    nazo_identity::ports::DeliveryRecord {
+        value: stored.value,
+        opaque_version: stored.raw,
+    }
+}
+
+fn repository_error(error: Error) -> nazo_identity::ports::RepositoryError {
+    match error.kind() {
+        crate::ErrorKind::Timeout | crate::ErrorKind::Unavailable => {
+            nazo_identity::ports::RepositoryError::Unavailable
+        }
+        crate::ErrorKind::CorruptData => {
+            nazo_identity::ports::RepositoryError::Consistency(error.to_string())
+        }
+        crate::ErrorKind::Protocol | crate::ErrorKind::UnexpectedResult => {
+            nazo_identity::ports::RepositoryError::Unexpected(error.to_string())
+        }
+    }
+}
+
+impl nazo_identity::ports::DeliveryStorePort for DeliveryStore {
+    fn load<'a>(
+        &'a self,
+        user_id: UserId,
+        token: &'a str,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, Option<nazo_identity::ports::DeliveryRecord>>
+    {
+        Box::pin(async move {
+            DeliveryStore::load(self, user_id, token)
+                .await
+                .map(|stored| stored.map(identity_record))
+                .map_err(repository_error)
+        })
+    }
+
+    fn load_many<'a>(
+        &'a self,
+        lookups: &'a [(UserId, &'a str)],
+    ) -> nazo_identity::ports::RepositoryFuture<'a, Vec<Option<nazo_identity::ports::DeliveryRecord>>>
+    {
+        Box::pin(async move {
+            DeliveryStore::load_many(self, lookups)
+                .await
+                .map(|records| {
+                    records
+                        .into_iter()
+                        .map(|stored| stored.map(identity_record))
+                        .collect()
+                })
+                .map_err(repository_error)
+        })
+    }
+
+    fn delete<'a>(
+        &'a self,
+        user_id: UserId,
+        token: &'a str,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
+        Box::pin(async move {
+            DeliveryStore::delete(self, user_id, token)
+                .await
+                .map(|_| ())
+                .map_err(repository_error)
+        })
+    }
+
+    fn consume<'a>(
+        &'a self,
+        user_id: UserId,
+        token: &'a str,
+        expected: &'a nazo_identity::ports::DeliveryRecord,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, nazo_identity::ports::DeliveryConsume> {
+        Box::pin(async move {
+            let stored = StoredDelivery {
+                value: expected.value.clone(),
+                raw: expected.opaque_version.clone(),
+            };
+            DeliveryStore::consume(self, user_id, token, &stored)
+                .await
+                .map(|outcome| match outcome {
+                    DeliveryConsume::Consumed(value) => {
+                        nazo_identity::ports::DeliveryConsume::Consumed(value)
+                    }
+                    DeliveryConsume::MissingOrChanged => {
+                        nazo_identity::ports::DeliveryConsume::MissingOrChanged
+                    }
+                })
+                .map_err(repository_error)
+        })
+    }
+}

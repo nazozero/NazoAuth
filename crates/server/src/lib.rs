@@ -31,34 +31,29 @@ pub(crate) mod test_support {
 
     pub(crate) fn account_profiles(
         state: &crate::domain::AppState,
-    ) -> actix_web::web::Data<crate::http::profile::account::AccountProfileService> {
-        actix_web::web::Data::new(crate::http::profile::account::AccountProfileService::new(
+    ) -> actix_web::web::Data<crate::bootstrap::AccountProfileService> {
+        actix_web::web::Data::new(crate::bootstrap::AccountProfileService::new(
             nazo_postgres::UserRepository::new(state.diesel_db.clone()),
             nazo_postgres::GrantRepository::new(state.diesel_db.clone()),
+            nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone()),
         ))
     }
 
     pub(crate) fn access_request_profiles(
         state: &crate::domain::AppState,
-    ) -> actix_web::web::Data<crate::http::profile::access_requests::AccessRequestProfileService>
-    {
-        actix_web::web::Data::new(
-            crate::http::profile::access_requests::AccessRequestProfileService::new(
-                nazo_postgres::AccessRequestRepository::new(state.diesel_db.clone()),
-                nazo_valkey::DeliveryStore::new(&state.valkey_connection()),
-                state.settings.protocol().client_secret_pepper,
-                &state.settings.frontend_base_url,
-            ),
-        )
+    ) -> actix_web::web::Data<crate::bootstrap::ClientAccessProfileService> {
+        actix_web::web::Data::new(crate::bootstrap::ClientAccessProfileService::new(
+            nazo_postgres::AccessRequestRepository::new(state.diesel_db.clone()),
+            nazo_valkey::DeliveryStore::new(&state.valkey_connection()),
+            state.settings.protocol().client_secret_pepper,
+            &state.settings.frontend_base_url,
+        ))
     }
 
     pub(crate) fn delivery_profiles(
         state: &crate::domain::AppState,
-    ) -> actix_web::web::Data<crate::http::profile::delivery::DeliveryProfileService> {
-        actix_web::web::Data::new(crate::http::profile::delivery::DeliveryProfileService::new(
-            nazo_postgres::AccessRequestRepository::new(state.diesel_db.clone()),
-            nazo_valkey::DeliveryStore::new(&state.valkey_connection()),
-        ))
+    ) -> actix_web::web::Data<crate::bootstrap::ClientAccessProfileService> {
+        access_request_profiles(state)
     }
 
     pub(crate) struct ClientSigningFixture {
