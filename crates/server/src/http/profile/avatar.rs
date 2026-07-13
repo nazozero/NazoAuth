@@ -169,7 +169,7 @@ pub(crate) async fn upload_avatar(
                 }
             };
             bytes.extend_from_slice(&chunk);
-            if bytes.len() > state.settings.avatar_max_bytes {
+            if bytes.len() > state.settings.storage().avatar_max_bytes {
                 return oauth_error(
                     StatusCode::PAYLOAD_TOO_LARGE,
                     "invalid_request",

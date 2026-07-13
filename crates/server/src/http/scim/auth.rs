@@ -91,7 +91,7 @@ async fn load_scim_credential(
 }
 
 fn legacy_scim_credential(state: &AppState, actual: &str) -> Option<ScimCredential> {
-    let expected = state.settings.scim_bearer_token.as_deref()?;
+    let expected = state.settings.storage().scim_bearer_token?;
     constant_time_eq(expected.as_bytes(), actual.as_bytes()).then(|| {
         let tenant = default_tenant_context();
         ScimCredential {
