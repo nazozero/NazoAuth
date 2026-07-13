@@ -3,6 +3,7 @@ use std::time::Duration;
 use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{Builder, Config};
 use futures_util::future::join_all;
+use nazo_resource_server::{DpopNonceConsumptionResult, DpopNonceStorage};
 use nazo_valkey::{ErrorKind, ReplayStore, ValkeyConnection};
 
 fn explicit_valkey_url() -> Option<String> {
@@ -223,4 +224,84 @@ async fn dpop_nonce_preserves_exact_key_and_is_consumed_once() {
     assert_eq!(inspector.get::<String, _>(&key).await.unwrap(), "1");
     assert!(store.consume_dpop_nonce(&nonce).await.unwrap());
     assert!(!store.consume_dpop_nonce(&nonce).await.unwrap());
+}
+
+#[tokio::test]
+async fn authorization_and_resource_server_share_the_nonce_key_and_ttl_contract() {
+    let Some(url) = explicit_valkey_url() else {
+        return;
+    };
+    let connection = ValkeyConnection::connect(&url, Duration::from_secs(1))
+        .await
+        .expect("an explicitly configured Valkey must be available");
+    let store = ReplayStore::new(&connection);
+    let inspector = inspection_client(&url).await;
+
+    let authorization_nonce = format!("as-{}", uuid::Uuid::now_v7());
+    store
+        .issue_dpop_nonce(&authorization_nonce, 30)
+        .await
+        .unwrap();
+    assert_eq!(
+        DpopNonceStorage::consume_nonce(&store, &authorization_nonce)
+            .await
+            .unwrap(),
+        DpopNonceConsumptionResult::Accepted,
+        "the resource-server endpoint must consume authorization-server nonce state"
+    );
+
+    let resource_nonce = format!("rs-{}", uuid::Uuid::now_v7());
+    let key = format!(
+        "oauth:dpop:nonce:{}",
+        blake3::hash(resource_nonce.as_bytes()).to_hex()
+    );
+    let now = chrono::Utc::now().timestamp();
+    DpopNonceStorage::issue_nonce(&store, &resource_nonce, now + 30)
+        .await
+        .unwrap();
+    assert_eq!(inspector.get::<String, _>(&key).await.unwrap(), "1");
+    let ttl: i64 = inspector.ttl(&key).await.unwrap();
+    assert!(
+        (1..=30).contains(&ttl),
+        "resource-server expiry must map to the existing Valkey nonce TTL: {ttl}"
+    );
+    assert!(
+        store.consume_dpop_nonce(&resource_nonce).await.unwrap(),
+        "the authorization-server endpoint must consume resource-server nonce state"
+    );
+}
+
+#[tokio::test]
+async fn concurrent_resource_server_nonce_consumers_have_exactly_one_winner() {
+    let Some(url) = explicit_valkey_url() else {
+        return;
+    };
+    let connection = ValkeyConnection::connect(&url, Duration::from_secs(1))
+        .await
+        .expect("an explicitly configured Valkey must be available");
+    let store = ReplayStore::new(&connection);
+    let nonce = format!("rs-concurrent-{}", uuid::Uuid::now_v7());
+    DpopNonceStorage::issue_nonce(
+        &store,
+        &nonce,
+        chrono::Utc::now().timestamp().saturating_add(300),
+    )
+    .await
+    .unwrap();
+
+    let attempts = (0..32).map(|_| {
+        let store = store.clone();
+        let nonce = nonce.clone();
+        async move {
+            DpopNonceStorage::consume_nonce(&store, &nonce)
+                .await
+                .unwrap()
+        }
+    });
+    let winners = join_all(attempts)
+        .await
+        .into_iter()
+        .filter(|result| *result == DpopNonceConsumptionResult::Accepted)
+        .count();
+    assert_eq!(winners, 1, "GETDEL must admit exactly one nonce consumer");
 }

@@ -10,6 +10,7 @@ base64.workspace = true
 chrono.workspace = true
 http = "1.4.2"
 jsonwebtoken = { workspace = true, features = ["aws_lc_rs", "use_pem"] }
+rand.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2.workspace = true

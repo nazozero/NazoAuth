@@ -54,6 +54,7 @@ pub(crate) struct DpopProofVerification {
     pub(crate) proof: VerifiedSenderConstraintProof,
     pub(crate) jti: String,
     pub(crate) expires_at: i64,
+    pub(crate) nonce: Option<String>,
 }
 
 enum SupportedDpopAlgorithm {
@@ -121,6 +122,17 @@ impl DpopProofVerifier {
         access_token: &str,
         now: i64,
     ) -> Result<DpopProofVerification, DpopProofVerifierError> {
+        self.verify_without_replay_for_targets_at(proof_jwt, method, &[htu], access_token, now)
+    }
+
+    pub(crate) fn verify_without_replay_for_targets_at(
+        &self,
+        proof_jwt: &str,
+        method: &str,
+        target_uris: &[&str],
+        access_token: &str,
+        now: i64,
+    ) -> Result<DpopProofVerification, DpopProofVerifierError> {
         let header = jsonwebtoken::decode_header(proof_jwt)
             .map_err(|_| DpopProofVerifierError::MalformedProof)?;
         if !header
@@ -142,7 +154,7 @@ impl DpopProofVerifier {
         let decoding_key = dpop_jwk_decoding_key(&public_jwk, header.alg)
             .ok_or(DpopProofVerifierError::InvalidPublicJwk)?;
         let claims = decode_and_verify_dpop_proof(proof_jwt, &decoding_key, header.alg)?;
-        self.validate_claims(&claims, method, htu, access_token, now)?;
+        self.validate_claims(&claims, method, target_uris, access_token, now)?;
         let jkt =
             dpop_jwk_thumbprint(&public_jwk).ok_or(DpopProofVerifierError::InvalidPublicJwk)?;
         let expires_at = claims
@@ -156,6 +168,7 @@ impl DpopProofVerifier {
             },
             jti: claims.jti,
             expires_at,
+            nonce: claims.nonce,
         })
     }
 
@@ -163,18 +176,21 @@ impl DpopProofVerifier {
         &self,
         claims: &DpopProofClaims,
         method: &str,
-        htu: &str,
+        target_uris: &[&str],
         access_token: &str,
         now: i64,
     ) -> Result<(), DpopProofVerifierError> {
         if !claims.htm.eq_ignore_ascii_case(method) {
             return Err(DpopProofVerifierError::MethodMismatch);
         }
-        let mut actual_htu =
-            url::Url::parse(&claims.htu).map_err(|_| DpopProofVerifierError::MalformedProof)?;
-        actual_htu.set_query(None);
-        actual_htu.set_fragment(None);
-        if actual_htu.as_str() != htu {
+        let actual_htu =
+            normalize_dpop_htu(&claims.htu).ok_or(DpopProofVerifierError::MalformedProof)?;
+        let normalized_targets = target_uris
+            .iter()
+            .map(|target_uri| normalize_dpop_htu(target_uri))
+            .collect::<Option<Vec<_>>>()
+            .ok_or(DpopProofVerifierError::UriMismatch)?;
+        if normalized_targets.is_empty() || !normalized_targets.contains(&actual_htu) {
             return Err(DpopProofVerifierError::UriMismatch);
         }
         if claims.ath.as_deref() != Some(access_token_hash(access_token).as_str()) {
@@ -221,6 +237,20 @@ impl DpopProofVerifier {
         cache.insert(replay_key, now.saturating_add(ttl));
         Ok(())
     }
+}
+
+fn normalize_dpop_htu(value: &str) -> Option<String> {
+    let mut url = url::Url::parse(value).ok()?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return None;
+    }
+    url.set_query(None);
+    url.set_fragment(None);
+    Some(url.to_string())
 }
 
 impl Default for DpopProofVerifierConfig {
