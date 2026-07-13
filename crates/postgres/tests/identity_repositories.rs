@@ -7,9 +7,10 @@ use diesel_async::RunQueryDsl;
 use nazo_auth::{OAuthClient, ValidatedClientRegistration};
 use nazo_identity::{
     AdminPolicyError, AdminUserUpdateOutcome, OrganizationId, RealmId, TenantContext, TenantId,
-    UserId,
+    UserId, UserProfile,
     ports::{
-        AdminUserUpdate, FederationLogin, NewFederatedIdentity, NewFederationLink, RepositoryError,
+        AdminUserUpdate, FederationLogin, NewFederatedIdentity, NewFederationLink, ProfileUpdate,
+        RepositoryError,
     },
     scim::NormalizedScimUser,
 };
@@ -364,6 +365,49 @@ async fn application_projection_filters_mixed_scope_elements() {
     assert_eq!(valid_scopes, vec!["openid", "profile"]);
 
     cleanup_oauth_client(&pool, client.id).await;
+    cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
+async fn profile_update_persists_only_the_typed_profile_projection() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        panic!("NAZO_TEST_DATABASE_URL or DATABASE_URL is required");
+    };
+    let repository = UserRepository::new(pool.clone());
+    let before = repository
+        .public_account_by_id(tenant.tenant_id, user_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let profile = UserProfile {
+        display_name: Some("Persisted Profile".to_owned()),
+        phone_number: Some("+15559999999".to_owned()),
+        phone_number_verified: false,
+        ..UserProfile::default()
+    };
+
+    let returned = repository
+        .update_profile(
+            tenant.tenant_id,
+            user_id,
+            ProfileUpdate {
+                profile: profile.clone(),
+            },
+        )
+        .await
+        .unwrap();
+    let reloaded = repository
+        .public_account_by_id(tenant.tenant_id, user_id)
+        .await
+        .unwrap()
+        .unwrap();
+
+    for account in [&returned, &reloaded] {
+        assert_eq!(account.account.email, before.account.email);
+        assert_eq!(account.principal.role, before.principal.role);
+        assert_eq!(account.profile, profile);
+    }
+
     cleanup(&pool, user_id).await;
 }
 

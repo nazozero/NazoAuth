@@ -30,16 +30,6 @@ pub(crate) mod test_support {
         )
     }
 
-    pub(crate) fn account_profiles(
-        state: &crate::domain::AppState,
-    ) -> actix_web::web::Data<crate::bootstrap::AccountProfileService> {
-        actix_web::web::Data::new(crate::bootstrap::AccountProfileService::new(
-            nazo_postgres::UserRepository::new(state.diesel_db.clone()),
-            nazo_postgres::GrantRepository::new(state.diesel_db.clone()),
-            nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone()),
-        ))
-    }
-
     pub(crate) fn avatar_profiles(
         state: &crate::domain::AppState,
     ) -> actix_web::web::Data<crate::bootstrap::AvatarProfileService> {

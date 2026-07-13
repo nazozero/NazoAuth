@@ -156,3 +156,7 @@ where
         Box::pin(async move { Self::applications(self, session_id).await })
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/in_source/src/domain/tests/profile_account.rs"]
+mod tests;

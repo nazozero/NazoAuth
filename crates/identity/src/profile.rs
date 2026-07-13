@@ -786,4 +786,56 @@ mod tests {
             "repeating the same full profile replacement must not compound state"
         );
     }
+
+    #[tokio::test]
+    async fn profile_update_normalizes_only_profile_fields_and_resets_changed_phone_verification() {
+        let mut original = account();
+        original.profile.phone_number = Some("+15550000001".to_owned());
+        original.profile.phone_number_verified = true;
+        let stored = Arc::new(Mutex::new(original.clone()));
+        let service = AccountProfileService::new(
+            StoredProfileRepository {
+                account: stored.clone(),
+                writes: Arc::new(AtomicUsize::new(0)),
+            },
+            FailFirstGrantSummary {
+                calls: Arc::new(AtomicUsize::new(1)),
+            },
+            EmptyApplications,
+        );
+
+        let updated = service
+            .update(
+                &original,
+                ProfilePatch {
+                    display_name: Some("  Alice Example  ".to_owned()),
+                    given_name: Some(" Alice ".to_owned()),
+                    middle_name: Some("   ".to_owned()),
+                    profile_url: Some(" https://profile.example/alice ".to_owned()),
+                    phone_number: Some(" +15559999999 ".to_owned()),
+                    ..ProfilePatch::default()
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(updated.account.account.email, original.account.email);
+        assert_eq!(updated.account.principal.role, original.principal.role);
+        assert_eq!(
+            updated.account.profile.display_name.as_deref(),
+            Some("Alice Example")
+        );
+        assert_eq!(updated.account.profile.given_name.as_deref(), Some("Alice"));
+        assert_eq!(updated.account.profile.middle_name, None);
+        assert_eq!(
+            updated.account.profile.profile_url.as_deref(),
+            Some("https://profile.example/alice")
+        );
+        assert_eq!(
+            updated.account.profile.phone_number.as_deref(),
+            Some("+15559999999")
+        );
+        assert!(!updated.account.profile.phone_number_verified);
+        assert_eq!(stored.lock().unwrap().profile, updated.account.profile);
+    }
 }
