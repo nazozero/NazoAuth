@@ -125,13 +125,15 @@ the release evidence listed in [docs/operations/release-security.md](release-sec
 
 ## Live Deployment Script
 
-The repository includes [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1), which builds an image, transfers it to a remote host, runs migrations, replaces the running Podman container, and verifies health and discovery.
+The repository includes [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1), which binds the candidate to exact backend and frontend commits, records the current rollback targets, stages a SHA-named UI release, runs migrations once, replaces the Podman container, and verifies health and discovery. The public UI symlink changes only after the candidate is healthy. Public verification then commits the deployment; any local, remote, or public verification failure restores both the previous image and UI target.
 
 Default live assumptions:
 
 | Setting | Default |
 | --- | --- |
 | Remote host | Required `-RemoteHost` argument |
+| Backend commit | Required full SHA in `-BackendCommit` |
+| Frontend commit | Required full SHA in `-FrontendCommit` |
 | Container name | `nazo-oauth-server` |
 | Network | `nazo_oauth_net` |
 | Network subnet | `10.101.0.0/24` |
@@ -144,15 +146,23 @@ Default live assumptions:
 | Health URL | `https://auth.nazo.run/health` |
 | Discovery URL | `https://auth.nazo.run/.well-known/openid-configuration` |
 | Expected issuer | `https://auth.nazo.run` |
+| UI releases | `/opt/nazo-oauth/ui-releases/<frontend-sha>` |
+| Deployment records | `/opt/nazo-oauth/deployments/<backend-sha>.json` |
 
 Example:
 
 ```powershell
 pwsh scripts/deploy_live.ps1 `
   -RemoteHost <ssh-host> `
-  -ImageRepository localhost/nazo-oauth-server `
-  -ImageTag main-$(git rev-parse --short=7 HEAD)
+  -BackendCommit (git rev-parse HEAD) `
+  -FrontendCommit (git -C ../NazoAuthWeb rev-parse HEAD) `
+  -LocalUiDist ../NazoAuthWeb/dist
 ```
+
+Do not delete the previous image or UI release until local OIDF, official OIDF,
+and PR acceptance are complete. Each run writes a preflight record before the
+first destructive container action. A successful run atomically updates
+`deployments/current.json`; a failed run retains a `rolled-back` record.
 
 The script uses the configured SSH target to deploy the `auth.nazo.run`
 environment. Recheck the live listener, reverse-proxy config, container
@@ -163,7 +173,7 @@ host.
 
 The `auth.nazo.run` live path uses Podman's `nazo_oauth_net` bridge network with
 subnet `10.101.0.0/24`, gateway `10.101.0.1`, and application container IP
-`10.101.0.20`. The deployment script creates or validates that network, verifies
+`10.101.0.20`. The deployment script requires and validates that network, verifies
 the started container IP, and probes `http://10.101.0.20:8000/health` and
 discovery from the host.
 
@@ -332,7 +342,18 @@ until client JWK rotation, clock monitoring, Valkey replay storage, signing-key
 custody, and evidence retention have named owners. The profile is default-off,
 is not advertised in metadata, and has no dedicated OIDF conformance plan.
 
-The `nazo.run` deployment helper [scripts/verify_live_full_interfaces.py](../../scripts/verify_live_full_interfaces.py) exercises a broader HTTPS path against `https://auth.nazo.run`. It reads host-local secrets and runs only in the intended deployment environment.
+The `nazo.run` deployment helper [scripts/verify_live_full_interfaces.py](../../scripts/verify_live_full_interfaces.py) exercises a broader HTTPS path against `https://auth.nazo.run`. It reads host-local secrets and runs only in the intended deployment environment. The expected SHA is mandatory and is checked against both the successful deployment record and the running container image label:
+
+```sh
+python scripts/verify_live_full_interfaces.py \
+  --base-url https://auth.nazo.run \
+  --secrets-path /opt/nazo-oauth/secrets.json \
+  --expected-backend-sha "$BACKEND_COMMIT"
+```
+
+Its Python environment is installed from `.github/e2e-requirements.txt` with
+hash verification; update the input and regenerate the lock instead of adding
+unversioned `pip install` commands.
 
 ## OIDF Readiness
 
