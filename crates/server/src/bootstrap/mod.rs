@@ -14,10 +14,10 @@ use crate::domain::{AppState, MetadataConfig, MetadataHandles};
 use crate::http::profile::oidc_logout::spawn_backchannel_logout_delivery_worker;
 use crate::runtime_modules::RuntimeModules;
 use crate::settings::Settings;
+use crate::support::sessions::{AdminSessionHandles, SessionHttpConfig};
 use crate::support::{
-    AdminSessionHandles, SessionHttpConfig, configure_password_hash_limits,
-    default_password_hash_max_concurrency, default_password_hash_queue_timeout_ms,
-    initialize_dummy_password_hash,
+    configure_password_hash_limits, default_password_hash_max_concurrency,
+    default_password_hash_queue_timeout_ms, initialize_dummy_password_hash,
 };
 #[cfg(test)]
 use actix_web::http::header;
