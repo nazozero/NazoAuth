@@ -2,8 +2,12 @@ use chrono::{DateTime, Utc};
 use diesel::{BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_auth::BackchannelLogoutDelivery;
-use nazo_identity::ports::RepositoryError;
+use nazo_identity::ports::{IdentitySecurityAuditPort, RepositoryError, RepositoryFuture};
 use nazo_identity::scim::ScimTokenCredential;
+use nazo_identity::{
+    IdentitySecurityEvent, IdentitySecurityEventType, IdentitySecurityOutcome,
+    IdentitySecurityReason,
+};
 use nazo_runtime_modules::{ModuleEventRecord, ModuleEventState, ModuleEventType};
 use uuid::Uuid;
 
@@ -11,7 +15,8 @@ use crate::{
     DbPool,
     rows::auth::BackchannelLogoutDeliveryRow,
     schema::{
-        backchannel_logout_deliveries, runtime_module_state_events, scim_audit_events, scim_tokens,
+        backchannel_logout_deliveries, identity_security_events, runtime_module_state_events,
+        scim_audit_events, scim_tokens, users,
     },
 };
 
@@ -86,6 +91,14 @@ impl AuditRepository {
             })
             .await
             .map_err(map_error)
+    }
+
+    pub async fn record_identity_security_event(
+        &self,
+        event: IdentitySecurityEvent,
+    ) -> Result<(), RepositoryError> {
+        let mut connection = self.connection().await?;
+        insert_identity_security_event(&mut connection, &event).await
     }
 
     pub async fn enqueue_backchannel_logout(
@@ -214,6 +227,102 @@ impl AuditRepository {
             .get()
             .await
             .map_err(|_| RepositoryError::Unavailable)
+    }
+}
+
+impl IdentitySecurityAuditPort for AuditRepository {
+    fn record_identity_security_event<'a>(
+        &'a self,
+        event: IdentitySecurityEvent,
+    ) -> RepositoryFuture<'a, ()> {
+        Box::pin(async move { self.record_identity_security_event(event).await })
+    }
+}
+
+pub(super) async fn insert_identity_security_event(
+    connection: &mut AsyncPgConnection,
+    event: &IdentitySecurityEvent,
+) -> Result<(), RepositoryError> {
+    for (field, user_id) in [("actor", event.actor_id), ("target", event.target_user_id)] {
+        if let Some(user_id) = user_id {
+            let belongs_to_tenant = users::table
+                .find(user_id.as_uuid())
+                .filter(users::tenant_id.eq(event.tenant_id.as_uuid()))
+                .select(diesel::dsl::count_star())
+                .first::<i64>(&mut *connection)
+                .await
+                .map_err(map_error)?
+                == 1;
+            if !belongs_to_tenant {
+                return Err(RepositoryError::Consistency(format!(
+                    "identity security event {field} tenant mismatch"
+                )));
+            }
+        }
+    }
+    diesel::insert_into(identity_security_events::table)
+        .values((
+            identity_security_events::tenant_id.eq(event.tenant_id.as_uuid()),
+            identity_security_events::category.eq(security_category(event.event_type)),
+            identity_security_events::event_type.eq(security_event_type(event.event_type)),
+            identity_security_events::outcome.eq(security_outcome(event.outcome)),
+            identity_security_events::actor_id
+                .eq(event.actor_id.map(nazo_identity::UserId::as_uuid)),
+            identity_security_events::target_user_id
+                .eq(event.target_user_id.map(nazo_identity::UserId::as_uuid)),
+            identity_security_events::reason_code.eq(security_reason(event.reason)),
+            identity_security_events::occurred_at.eq(DateTime::<Utc>::from(event.occurred_at)),
+        ))
+        .execute(connection)
+        .await
+        .map_err(map_error)?;
+    Ok(())
+}
+
+const fn security_category(event_type: IdentitySecurityEventType) -> &'static str {
+    match event_type {
+        IdentitySecurityEventType::MfaTotpAttempt
+        | IdentitySecurityEventType::MfaBackupCodeAttempt => "mfa",
+        IdentitySecurityEventType::AdminUserUpdate => "admin",
+    }
+}
+
+const fn security_event_type(event_type: IdentitySecurityEventType) -> &'static str {
+    match event_type {
+        IdentitySecurityEventType::MfaTotpAttempt => "mfa_totp_attempt",
+        IdentitySecurityEventType::MfaBackupCodeAttempt => "mfa_backup_code_attempt",
+        IdentitySecurityEventType::AdminUserUpdate => "admin_user_update",
+    }
+}
+
+const fn security_outcome(outcome: IdentitySecurityOutcome) -> &'static str {
+    match outcome {
+        IdentitySecurityOutcome::Success => "success",
+        IdentitySecurityOutcome::Denied => "denied",
+        IdentitySecurityOutcome::InvalidCredential => "invalid_credential",
+        IdentitySecurityOutcome::Replay => "replay",
+        IdentitySecurityOutcome::Conflict => "conflict",
+        IdentitySecurityOutcome::DependencyFailure => "dependency_failure",
+    }
+}
+
+const fn security_reason(reason: IdentitySecurityReason) -> &'static str {
+    match reason {
+        IdentitySecurityReason::TotpAccepted => "totp_accepted",
+        IdentitySecurityReason::TotpReplay => "totp_replay",
+        IdentitySecurityReason::BackupCodeAccepted => "backup_code_accepted",
+        IdentitySecurityReason::BackupCodeInvalid => "backup_code_invalid",
+        IdentitySecurityReason::BackupCodeReplay => "backup_code_replay",
+        IdentitySecurityReason::AdminUpdated => "admin_updated",
+        IdentitySecurityReason::TargetNotFound => "target_not_found",
+        IdentitySecurityReason::ActorNotAuthorized => "actor_not_authorized",
+        IdentitySecurityReason::CrossTenant => "cross_tenant",
+        IdentitySecurityReason::SelfElevation => "self_elevation",
+        IdentitySecurityReason::SelfDemotionOrDisable => "self_demotion_or_disable",
+        IdentitySecurityReason::TargetAtOrAboveActor => "target_at_or_above_actor",
+        IdentitySecurityReason::GrantAtOrAboveActor => "grant_at_or_above_actor",
+        IdentitySecurityReason::InvalidRoleLevel => "invalid_role_level",
+        IdentitySecurityReason::DependencyUnavailable => "dependency_unavailable",
     }
 }
 

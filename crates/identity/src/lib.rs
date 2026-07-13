@@ -2,6 +2,7 @@
 
 mod access_request;
 mod admin;
+mod audit;
 pub mod email;
 pub mod federation;
 pub mod mfa;
@@ -13,7 +14,13 @@ pub mod session;
 pub mod tenancy;
 
 pub use access_request::{AccessRequest, AccessRequestPage, AccessRequestStatus, NewAccessRequest};
-pub use admin::{AdminPolicyError, ResolvedAdminUserUpdate, authorize_admin_update};
+pub use admin::{
+    AdminPolicyError, AdminUserUpdateOutcome, ResolvedAdminUserUpdate, authorize_admin_update,
+};
+pub use audit::{
+    IdentitySecurityEvent, IdentitySecurityEventType, IdentitySecurityOutcome,
+    IdentitySecurityReason,
+};
 pub use model::{
     AccountIdentity, AuthMethod, AuthenticationContext, AuthenticationIdentity, IdentityModelError,
     LoginIdentity, PasswordHash, PostalAddress, Principal, PublicAccount, SubjectClaims,

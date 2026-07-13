@@ -1,12 +1,13 @@
 use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
 use diesel::{
-    sql_query,
+    QueryableByName, sql_query,
     sql_types::{Jsonb, Text, Uuid as SqlUuid},
 };
 use diesel_async::RunQueryDsl;
 use nazo_auth::{OAuthClient, ValidatedClientRegistration};
 use nazo_identity::{
-    TenantContext, TenantId, UserId,
+    AdminPolicyError, AdminUserUpdateOutcome, OrganizationId, RealmId, TenantContext, TenantId,
+    UserId,
     ports::{
         AdminUserUpdate, FederationLogin, NewFederatedIdentity, NewFederationLink, RepositoryError,
     },
@@ -18,6 +19,30 @@ use nazo_postgres::{
 };
 use serde_json::json;
 use uuid::Uuid;
+
+#[derive(Debug, QueryableByName)]
+struct IdentitySecurityEventRecord {
+    #[diesel(sql_type = Text)]
+    event_type: String,
+    #[diesel(sql_type = Text)]
+    outcome: String,
+    #[diesel(sql_type = Text)]
+    reason_code: String,
+}
+
+async fn identity_security_events(
+    pool: &nazo_postgres::DbPool,
+    user_id: UserId,
+) -> Vec<IdentitySecurityEventRecord> {
+    let mut connection = get_conn(pool).await.unwrap();
+    sql_query(
+        "SELECT event_type, outcome, reason_code FROM identity_security_events WHERE actor_id = $1 OR target_user_id = $1 ORDER BY occurred_at, id",
+    )
+    .bind::<SqlUuid, _>(user_id.as_uuid())
+    .load::<IdentitySecurityEventRecord>(&mut connection)
+    .await
+    .unwrap()
+}
 
 #[test]
 fn repositories_accept_validated_tenant_and_user_ids() {
@@ -54,11 +79,95 @@ async fn database_fixture() -> Option<(nazo_postgres::DbPool, TenantContext, Use
 
 async fn cleanup(pool: &nazo_postgres::DbPool, user_id: UserId) {
     if let Ok(mut connection) = get_conn(pool).await {
+        let _ = sql_query(
+            "DELETE FROM identity_security_events WHERE actor_id = $1 OR target_user_id = $1",
+        )
+        .bind::<SqlUuid, _>(user_id.as_uuid())
+        .execute(&mut connection)
+        .await;
         let _ = sql_query("DELETE FROM users WHERE id = $1")
             .bind::<SqlUuid, _>(user_id.as_uuid())
             .execute(&mut connection)
             .await;
     }
+}
+
+async fn foreign_tenant_user_fixture(pool: &nazo_postgres::DbPool) -> (TenantContext, UserId) {
+    let tenant_id = Uuid::now_v7();
+    let realm_id = Uuid::now_v7();
+    let organization_id = Uuid::now_v7();
+    let user_id = Uuid::now_v7();
+    let suffix = tenant_id.simple();
+    let mut connection = get_conn(pool).await.unwrap();
+    sql_query("INSERT INTO tenants (id,slug,display_name) VALUES ($1,$2,'Foreign test')")
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<Text, _>(format!("foreign-{suffix}"))
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("INSERT INTO realms (id,tenant_id,slug,display_name) VALUES ($1,$2,'default','Foreign realm')")
+        .bind::<SqlUuid, _>(realm_id)
+        .bind::<SqlUuid, _>(tenant_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("INSERT INTO organizations (id,tenant_id,slug,display_name) VALUES ($1,$2,'default','Foreign organization')")
+        .bind::<SqlUuid, _>(organization_id)
+        .bind::<SqlUuid, _>(tenant_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("INSERT INTO users (id,tenant_id,realm_id,organization_id,username,email,password_hash) VALUES ($1,$2,$3,$4,$5,$6,'test')")
+        .bind::<SqlUuid, _>(user_id)
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<SqlUuid, _>(realm_id)
+        .bind::<SqlUuid, _>(organization_id)
+        .bind::<Text, _>(format!("foreign-{suffix}"))
+        .bind::<Text, _>(format!("foreign-{suffix}@example.test"))
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    (
+        TenantContext {
+            tenant_id: TenantId::new(tenant_id).unwrap(),
+            realm_id: RealmId::new(realm_id).unwrap(),
+            organization_id: OrganizationId::new(organization_id).unwrap(),
+        },
+        UserId::new(user_id).unwrap(),
+    )
+}
+
+async fn cleanup_foreign_tenant(
+    pool: &nazo_postgres::DbPool,
+    tenant: TenantContext,
+    user_id: UserId,
+) {
+    let mut connection = get_conn(pool).await.unwrap();
+    sql_query("DELETE FROM identity_security_events WHERE tenant_id = $1")
+        .bind::<SqlUuid, _>(tenant.tenant_id.as_uuid())
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM users WHERE id = $1")
+        .bind::<SqlUuid, _>(user_id.as_uuid())
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM organizations WHERE id = $1")
+        .bind::<SqlUuid, _>(tenant.organization_id.as_uuid())
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM realms WHERE id = $1")
+        .bind::<SqlUuid, _>(tenant.realm_id.as_uuid())
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM tenants WHERE id = $1")
+        .bind::<SqlUuid, _>(tenant.tenant_id.as_uuid())
+        .execute(&mut connection)
+        .await
+        .unwrap();
 }
 
 fn oauth_client(tenant: TenantContext, client_id: String) -> OAuthClient {
@@ -340,6 +449,23 @@ async fn totp_last_step_compare_and_set_has_one_concurrent_winner() {
         repository.compare_and_set_totp_step(tenant.tenant_id, user_id, 42)
     );
     assert_ne!(left.unwrap(), right.unwrap());
+    let events = identity_security_events(&pool, user_id).await;
+    assert_eq!(events.len(), 2);
+    assert!(
+        events
+            .iter()
+            .all(|event| event.event_type == "mfa_totp_attempt")
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| { event.outcome == "success" && event.reason_code == "totp_accepted" })
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| event.outcome == "replay" && event.reason_code == "totp_replay")
+    );
     cleanup(&pool, user_id).await;
 }
 
@@ -364,6 +490,21 @@ async fn backup_code_is_consumed_once_atomically() {
         repository.consume_backup_code(tenant.tenant_id, user_id, code)
     );
     assert_ne!(left.unwrap(), right.unwrap());
+    let events = identity_security_events(&pool, user_id).await;
+    assert_eq!(events.len(), 2);
+    assert!(
+        events
+            .iter()
+            .all(|event| event.event_type == "mfa_backup_code_attempt")
+    );
+    assert!(events.iter().any(|event| {
+        event.outcome == "success" && event.reason_code == "backup_code_accepted"
+    }));
+    assert!(
+        events.iter().any(|event| {
+            event.outcome == "replay" && event.reason_code == "backup_code_replay"
+        })
+    );
     cleanup(&pool, user_id).await;
 }
 
@@ -706,14 +847,26 @@ async fn scim_replace_returns_domain_claims_from_one_transaction() {
 
 #[tokio::test]
 async fn admin_partial_update_validates_final_role_level_before_commit() {
-    let Some((pool, tenant, user_id)) = database_fixture().await else {
+    let Some((pool, tenant, actor_id)) = database_fixture().await else {
         panic!("NAZO_TEST_DATABASE_URL or DATABASE_URL is required");
     };
+    let Some((_, _, user_id)) = database_fixture().await else {
+        unreachable!("the same database environment was available above");
+    };
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE users SET role = 'admin', admin_level = 10 WHERE id = $1")
+        .bind::<SqlUuid, _>(actor_id.as_uuid())
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
     let repository = UserRepository::new(pool.clone());
 
     assert_eq!(
         repository
-            .admin_update(
+            .admin_update_authorized(
+                tenant.tenant_id,
+                actor_id,
                 user_id,
                 AdminUserUpdate {
                     role: Some("admin".into()),
@@ -722,8 +875,8 @@ async fn admin_partial_update_validates_final_role_level_before_commit() {
                 },
             )
             .await
-            .unwrap_err(),
-        RepositoryError::Conflict
+            .unwrap(),
+        AdminUserUpdateOutcome::Denied(AdminPolicyError::InvalidRoleLevel)
     );
     let unchanged = repository
         .public_account_by_id(tenant.tenant_id, user_id)
@@ -734,7 +887,9 @@ async fn admin_partial_update_validates_final_role_level_before_commit() {
     assert_eq!(unchanged.admin_level(), 0);
 
     let promoted = repository
-        .admin_update(
+        .admin_update_authorized(
+            tenant.tenant_id,
+            actor_id,
             user_id,
             AdminUserUpdate {
                 role: Some("admin".into()),
@@ -743,13 +898,17 @@ async fn admin_partial_update_validates_final_role_level_before_commit() {
             },
         )
         .await
-        .unwrap()
         .unwrap();
+    let AdminUserUpdateOutcome::Updated(promoted) = promoted else {
+        panic!("valid promotion should update");
+    };
     assert_eq!(promoted.role_name(), "admin");
     assert_eq!(promoted.admin_level(), 5);
 
     let level_only = repository
-        .admin_update(
+        .admin_update_authorized(
+            tenant.tenant_id,
+            actor_id,
             user_id,
             AdminUserUpdate {
                 role: None,
@@ -758,11 +917,134 @@ async fn admin_partial_update_validates_final_role_level_before_commit() {
             },
         )
         .await
-        .unwrap()
         .unwrap();
+    let AdminUserUpdateOutcome::Updated(level_only) = level_only else {
+        panic!("valid level update should update");
+    };
     assert_eq!(level_only.role_name(), "admin");
     assert_eq!(level_only.admin_level(), 7);
     cleanup(&pool, user_id).await;
+    cleanup(&pool, actor_id).await;
+}
+
+#[tokio::test]
+async fn authorized_admin_update_serializes_hierarchy_and_audit_in_one_transaction() {
+    let Some((pool, tenant, actor_id)) = database_fixture().await else {
+        panic!("NAZO_TEST_DATABASE_URL or DATABASE_URL is required");
+    };
+    let Some((_, _, target_id)) = database_fixture().await else {
+        unreachable!("the same database environment was available above");
+    };
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE users SET role = 'admin', admin_level = 10 WHERE id = $1")
+        .bind::<SqlUuid, _>(actor_id.as_uuid())
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+
+    let repository = UserRepository::new(pool.clone());
+    let (foreign_tenant, foreign_user_id) = foreign_tenant_user_fixture(&pool).await;
+    let cross_tenant = repository
+        .admin_update_authorized(
+            tenant.tenant_id,
+            actor_id,
+            foreign_user_id,
+            AdminUserUpdate {
+                role: Some("admin".into()),
+                admin_level: Some(1),
+                active: Some(false),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        cross_tenant,
+        AdminUserUpdateOutcome::Denied(AdminPolicyError::CrossTenant)
+    );
+    let foreign = repository
+        .public_account_by_id(foreign_tenant.tenant_id, foreign_user_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(foreign.role_name(), "user");
+    assert!(foreign.principal.active);
+
+    let promoted = repository
+        .admin_update_authorized(
+            tenant.tenant_id,
+            actor_id,
+            target_id,
+            AdminUserUpdate {
+                role: Some("admin".into()),
+                admin_level: Some(5),
+                active: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(matches!(promoted, AdminUserUpdateOutcome::Updated(_)));
+
+    let (higher_actor, lower_actor) = tokio::join!(
+        repository.admin_update_authorized(
+            tenant.tenant_id,
+            actor_id,
+            target_id,
+            AdminUserUpdate {
+                role: None,
+                admin_level: Some(4),
+                active: None,
+            },
+        ),
+        repository.admin_update_authorized(
+            tenant.tenant_id,
+            target_id,
+            actor_id,
+            AdminUserUpdate {
+                role: None,
+                admin_level: None,
+                active: Some(false),
+            },
+        )
+    );
+    assert!(matches!(
+        higher_actor.unwrap(),
+        AdminUserUpdateOutcome::Updated(_)
+    ));
+    assert_eq!(
+        lower_actor.unwrap(),
+        AdminUserUpdateOutcome::Denied(AdminPolicyError::TargetAtOrAboveActor)
+    );
+
+    let target = repository
+        .public_account_by_id(tenant.tenant_id, target_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(target.admin_level(), 4);
+    assert!(target.principal.active);
+    let events = identity_security_events(&pool, target_id).await;
+    assert_eq!(events.len(), 3);
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.outcome == "success" && event.reason_code == "admin_updated")
+            .count(),
+        2
+    );
+    assert!(events.iter().any(|event| {
+        event.outcome == "denied" && event.reason_code == "target_at_or_above_actor"
+    }));
+    let actor_events = identity_security_events(&pool, actor_id).await;
+    assert!(
+        actor_events
+            .iter()
+            .any(|event| event.outcome == "denied" && event.reason_code == "cross_tenant")
+    );
+
+    cleanup_foreign_tenant(&pool, foreign_tenant, foreign_user_id).await;
+    cleanup(&pool, target_id).await;
+    cleanup(&pool, actor_id).await;
 }
 
 #[test]

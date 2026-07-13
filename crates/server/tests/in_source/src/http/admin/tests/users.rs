@@ -381,6 +381,76 @@ async fn admin_patch_user_requires_admin_even_with_valid_csrf() {
 }
 
 #[actix_web::test]
+async fn admin_patch_user_rejects_peer_self_demotion_and_own_level_grant() {
+    let Some(fixture) = LiveAdminUsersFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let actor = fixture
+        .create_user(&format!("{suffix}-actor"), "admin", 5)
+        .await;
+    let peer = fixture
+        .create_user(&format!("{suffix}-peer"), "admin", 5)
+        .await;
+    let user = fixture
+        .create_user(&format!("{suffix}-user"), "user", 0)
+        .await;
+    let sid = format!("sid-{suffix}");
+    let csrf = format!("csrf-{suffix}");
+    fixture.store_session(&actor, &sid).await;
+
+    for (target, payload) in [
+        (
+            peer.id,
+            PatchUserRequest {
+                role: None,
+                admin_level: None,
+                is_active: Some(false),
+            },
+        ),
+        (
+            actor.id,
+            PatchUserRequest {
+                role: None,
+                admin_level: Some(4),
+                is_active: None,
+            },
+        ),
+        (
+            user.id,
+            PatchUserRequest {
+                role: Some("admin".to_owned()),
+                admin_level: Some(5),
+                is_active: None,
+            },
+        ),
+    ] {
+        let response = admin_patch_user(
+            fixture.state.clone(),
+            fixture.admin_post_request(&sid, &csrf, "/admin/users/update"),
+            actix_web::web::Path::from(target),
+            Json(payload),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            oauth_error_name(&response).as_deref(),
+            Some("access_denied")
+        );
+    }
+
+    let actor_after = fixture.load_user(actor.id).await;
+    let peer_after = fixture.load_user(peer.id).await;
+    let user_after = fixture.load_user(user.id).await;
+    assert_eq!(actor_after.admin_level, 5);
+    assert!(actor_after.is_active);
+    assert_eq!(peer_after.admin_level, 5);
+    assert!(peer_after.is_active);
+    assert_eq!(user_after.role, "user");
+    assert_eq!(user_after.admin_level, 0);
+}
+
+#[actix_web::test]
 async fn admin_users_list_returns_admin_view_without_secret_fields() {
     let Some(fixture) = LiveAdminUsersFixture::new().await else {
         return;
