@@ -13,10 +13,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::runtime_modules::RuntimeModules;
-use crate::support::{
-    AdminSessionHandles, csrf_error, has_valid_csrf_token_for_cookies, json_response_no_store,
-    oauth_error,
-};
+use crate::support::responses::has_valid_csrf_token_for_cookies;
+use crate::support::sessions::AdminSessionHandles;
+use crate::support::{csrf_error, json_response_no_store, oauth_error};
 
 const MFA_STEP_UP_MAX_AGE: Duration = Duration::from_secs(5 * 60);
 const MAX_REASON_CHARS: usize = 500;

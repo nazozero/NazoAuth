@@ -15,10 +15,10 @@ mod oauth;
 mod oidc_claims;
 mod passkeys;
 mod rate_limit;
-mod responses;
+pub(crate) mod responses;
 mod sector_identifier;
 mod security;
-mod sessions;
+pub(crate) mod sessions;
 mod tenancy;
 #[cfg(test)]
 mod valkey;
