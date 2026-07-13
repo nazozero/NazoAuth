@@ -4,9 +4,9 @@ use chrono::{TimeZone, Utc};
 use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{Builder, Config};
 use nazo_auth::{
-    CibaRequestState, CibaStatus, DeviceAuthorizationApproval, DeviceAuthorizationPayload,
-    DeviceAuthorizationState, DeviceDecisionFailure, DeviceGrantService, DevicePollCommit,
-    DevicePollFailure,
+    CibaPollCommit, CibaRequestState, CibaService, CibaStatus, DeviceAuthorizationApproval,
+    DeviceAuthorizationPayload, DeviceAuthorizationState, DeviceDecisionFailure,
+    DeviceGrantService, DevicePollCommit, DevicePollFailure,
 };
 use nazo_valkey::{AtomicResult, CibaStore, DeviceCreateResult, DeviceStore, ValkeyConnection};
 use serde_json::json;
@@ -89,6 +89,50 @@ async fn ciba_cas_preserves_exact_key_payload_deadline_and_single_winner() {
             .filter(|r| **r == AtomicResult::Applied)
             .count(),
         1
+    );
+}
+
+#[tokio::test]
+async fn concurrent_approved_ciba_polls_have_exactly_one_token_issuance_winner() {
+    let Some((connection, inspector)) = setup().await else {
+        return;
+    };
+    let auth_req_id = format!("ciba-approved-{}", uuid::Uuid::now_v7());
+    let now = server_time(&inspector).await;
+    let state = CibaRequestState {
+        client_id: "client-a".to_owned(),
+        user_id: uuid::Uuid::from_u128(1),
+        scopes: vec!["openid".to_owned()],
+        audiences: vec!["resource".to_owned()],
+        acr: None,
+        binding_message: None,
+        issued_at: now,
+        status: CibaStatus::Approved,
+        interval_seconds: 5,
+        expires_at: now + 60,
+        retention_expires_at: now + 180,
+        last_poll_at: None,
+    };
+    let store = CibaStore::new(&connection);
+    assert_eq!(
+        store.create(&auth_req_id, &state).await.unwrap(),
+        AtomicResult::Applied
+    );
+    let first = CibaService::new(store.clone());
+    let second = CibaService::new(store);
+    let first_stored = first.load(&auth_req_id).await.unwrap().unwrap();
+    let second_stored = second.load(&auth_req_id).await.unwrap().unwrap();
+    let (first_result, second_result) = tokio::join!(
+        first.poll(&auth_req_id, "client-a", first_stored, || now),
+        second.poll(&auth_req_id, "client-a", second_stored, || now)
+    );
+    assert_eq!(
+        [first_result, second_result]
+            .into_iter()
+            .filter(|result| matches!(result, Ok(CibaPollCommit::Approved(_))))
+            .count(),
+        1,
+        "approved auth_req_id must be consumed once even under concurrent polling"
     );
 }
 

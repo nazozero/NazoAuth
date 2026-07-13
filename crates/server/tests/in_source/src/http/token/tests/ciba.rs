@@ -669,7 +669,20 @@ async fn ciba_token_request_validates_mtls_before_auth_req_id_state() {
         has_audience_param: false,
     };
 
-    let response = token_ciba(&state, &req, &client, &form, None, "private_key_jwt").await;
+    let connection = state.valkey_connection();
+    let ciba_service = ServerCibaService::new(CibaStore::new(&connection));
+    let users = nazo_postgres::UserRepository::new(state.diesel_db.clone());
+    let response = token_ciba(
+        &state,
+        &ciba_service,
+        &users,
+        &req,
+        &client,
+        &form,
+        None,
+        "private_key_jwt",
+    )
+    .await;
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(
