@@ -209,7 +209,18 @@ pub(crate) async fn insert_prepared_client_row(
     state: &AppState,
     prepared: &PreparedClientRegistration,
 ) -> Result<ClientRow, InsertClientError> {
-    let client = insert_prepared_client(&state.diesel_db, prepared)
+    insert_prepared_client_row_with_repository(
+        &nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone()),
+        prepared,
+    )
+    .await
+}
+
+pub(crate) async fn insert_prepared_client_row_with_repository(
+    repository: &nazo_postgres::OAuthClientRepository,
+    prepared: &PreparedClientRegistration,
+) -> Result<ClientRow, InsertClientError> {
+    let client = insert_prepared_client_with_repository(repository, prepared)
         .await
         .map_err(|error| InsertClientError::Server(format!("客户端写入失败: {error}")))?;
     if client.tenant_id != prepared.tenant.tenant_id.as_uuid()
@@ -331,8 +342,20 @@ pub(crate) fn issue_client_secret(
     (Some(secret), Some(secret_hash))
 }
 
+#[cfg(test)]
 pub(crate) async fn insert_prepared_client(
     pool: &nazo_postgres::DbPool,
+    prepared: &PreparedClientRegistration,
+) -> Result<ClientRow, nazo_identity::ports::RepositoryError> {
+    insert_prepared_client_with_repository(
+        &nazo_postgres::OAuthClientRepository::new(pool.clone()),
+        prepared,
+    )
+    .await
+}
+
+pub(crate) async fn insert_prepared_client_with_repository(
+    repository: &nazo_postgres::OAuthClientRepository,
     prepared: &PreparedClientRegistration,
 ) -> Result<ClientRow, nazo_identity::ports::RepositoryError> {
     let client = ClientRow {
@@ -344,7 +367,7 @@ pub(crate) async fn insert_prepared_client(
         require_mtls_bound_tokens: false,
         is_active: true,
     };
-    nazo_postgres::OAuthClientRepository::new(pool.clone())
+    repository
         .insert(
             &client,
             prepared.client_secret_hash.as_deref(),

@@ -30,7 +30,9 @@ pub(crate) use audit::{audit_event, audit_fields};
 pub(crate) use avatars::{
     avatar_meta_path, avatar_path, avatar_user_dir, detect_avatar_content_type, read_avatar_meta,
 };
-pub(crate) use client_ip::{ClientIpHeaderMode, IpCidr, client_ip, parse_trusted_proxy_cidrs};
+pub(crate) use client_ip::{
+    ClientIpHeaderMode, IpCidr, client_ip, client_ip_with_context, parse_trusted_proxy_cidrs,
+};
 pub(crate) use cookies::{clear_cookie, cookie_value, make_cookie, with_cookie_headers};
 pub(crate) use dpop::{
     AccessTokenAuthScheme, DpopError, DpopErrorContext, dpop_error_response, dpop_proof_present,
@@ -79,7 +81,7 @@ pub(crate) use passkeys::{
 };
 pub(crate) use rate_limit::{
     RateLimitPolicy, clear_login_failures, enforce_login_failure_throttle, enforce_rate_limit,
-    record_login_failure,
+    enforce_rate_limit_with_store, record_login_failure,
 };
 pub(crate) use responses::{
     OAuthJsonErrorFields, ResourceAccessToken, authorization_error_response, bytes_response,

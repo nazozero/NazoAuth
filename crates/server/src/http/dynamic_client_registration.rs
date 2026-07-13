@@ -1,15 +1,15 @@
 //! RFC 7591 dynamic client registration endpoint.
 
-use crate::domain::{AppState, ClientRow};
+use crate::domain::{ClientRow, DynamicRegistrationHandles};
 use crate::http::admin::clients::create::{
     CreateClientRequest, InsertClientError, PreparedClientRegistration,
 };
 use crate::support::{
-    DEFAULT_TENANT_ID, RateLimitPolicy, audit_event, audit_fields, blake3_hex, client_ip,
-    client_secret_digest, constant_time_eq, empty_response, empty_response_no_store,
-    enforce_rate_limit, json_array_to_strings, json_response_no_store,
-    json_response_status_no_store, oauth_bearer_error, oauth_error, parse_scope,
-    random_urlsafe_token,
+    DEFAULT_TENANT_ID, RateLimitPolicy, audit_event, audit_fields, blake3_hex,
+    client_ip_with_context, client_secret_digest, constant_time_eq, empty_response,
+    empty_response_no_store, enforce_rate_limit_with_store, json_array_to_strings,
+    json_response_no_store, json_response_status_no_store, oauth_bearer_error, oauth_error,
+    parse_scope, random_urlsafe_token,
 };
 use actix_web::http::StatusCode;
 use actix_web::http::header;
@@ -133,11 +133,11 @@ pub(crate) struct DynamicRegistrationError {
 }
 
 pub(crate) async fn dynamic_client_registration(
-    state: Data<AppState>,
+    handles: Data<DynamicRegistrationHandles>,
     req: HttpRequest,
     body: Payload,
 ) -> HttpResponse {
-    if !state.accepts_module(nazo_runtime_modules::ModuleId::DynamicClientRegistration) {
+    if !handles.accepts_new_requests() {
         return empty_response(StatusCode::NOT_FOUND);
     }
     let mut body = body.into_inner();
@@ -146,18 +146,14 @@ pub(crate) async fn dynamic_client_registration(
             Ok(payload) => payload,
             Err(error) => return error.error_response(),
         };
-    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await
-    {
+    if let Err(response) = enforce_dynamic_registration_rate_limit(&handles, &req).await {
         return response;
     }
     if !initial_access_token_authorized(
         req.headers()
             .get(header::AUTHORIZATION)
             .and_then(|value| value.to_str().ok()),
-        state
-            .settings
-            .modules()
-            .dynamic_client_registration_initial_access_token,
+        handles.config.initial_access_token.as_deref(),
     ) {
         return oauth_bearer_error(
             StatusCode::UNAUTHORIZED,
@@ -169,7 +165,7 @@ pub(crate) async fn dynamic_client_registration(
     let prepared = match prepare_dynamic_client_registration(
         payload,
         DynamicRegistrationDefaults {
-            default_audience: state.settings.protocol().default_audience,
+            default_audience: &handles.config.default_audience,
         },
     ) {
         Ok(prepared) => prepared,
@@ -177,15 +173,15 @@ pub(crate) async fn dynamic_client_registration(
     };
     let response_types = prepared.response_types.clone();
     let registration_access_token = random_urlsafe_token();
-    let response_signing_algorithms = state
+    let response_signing_algorithms = handles
         .keyset
         .snapshot()
         .response_signing_alg_values_supported();
     match prepare_dynamic_client_insert_with_secret_pepper(
         prepared,
-        state.settings.protocol().pairwise_subject_secret,
-        state.settings.protocol().client_secret_pepper,
-        &state.settings.issuer,
+        handles.config.pairwise_subject_secret.as_deref(),
+        &handles.config.client_secret_pepper,
+        &handles.config.issuer,
         &registration_access_token,
         &response_signing_algorithms,
     )
@@ -193,19 +189,24 @@ pub(crate) async fn dynamic_client_registration(
     {
         Ok(prepared_insert) => {
             let issued_secret = prepared_insert.issued_secret.clone();
-            match crate::http::admin::clients::create::insert_prepared_client_row(
-                &state,
+            match crate::http::admin::clients::create::insert_prepared_client_row_with_repository(
+                &handles.clients,
                 &prepared_insert,
             )
             .await
             {
                 Ok(client) => {
-                    audit_dynamic_client_event("dynamic_client_registered", &client, &req, &state);
+                    audit_dynamic_client_event(
+                        "dynamic_client_registered",
+                        &client,
+                        &req,
+                        &handles,
+                    );
                     dynamic_registration_created_response(
                         &client,
                         &response_types,
                         issued_secret,
-                        &state.settings.issuer,
+                        &handles.config.issuer,
                         &registration_access_token,
                         Utc::now(),
                     )
@@ -238,19 +239,18 @@ pub(crate) async fn dynamic_client_registration(
 }
 
 pub(crate) async fn client_configuration_get(
-    state: Data<AppState>,
+    handles: Data<DynamicRegistrationHandles>,
     req: HttpRequest,
     path: actix_web::web::Path<String>,
 ) -> HttpResponse {
-    if !state.accepts_module(nazo_runtime_modules::ModuleId::DynamicClientRegistration) {
+    if !handles.accepts_new_requests() {
         return empty_response(StatusCode::NOT_FOUND);
     }
-    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await
-    {
+    if let Err(response) = enforce_dynamic_registration_rate_limit(&handles, &req).await {
         return response;
     }
 
-    let current = match authenticate_registration_client(&state, &req, &path.into_inner()).await {
+    let current = match authenticate_registration_client(&handles, &req, &path.into_inner()).await {
         Ok(client) => client,
         Err(response) => return response,
     };
@@ -259,10 +259,10 @@ pub(crate) async fn client_configuration_get(
     let (issued_secret, secret_hash) = crate::http::admin::clients::create::issue_client_secret(
         &current.client_type,
         &current.token_endpoint_auth_method,
-        state.settings.protocol().client_secret_pepper,
+        &handles.config.client_secret_pepper,
     );
     let client = match rotate_client_management_credentials(
-        &state,
+        &handles,
         &current,
         blake3_hex(&registration_access_token),
         secret_hash,
@@ -272,24 +272,24 @@ pub(crate) async fn client_configuration_get(
         Ok(client) => client,
         Err(response) => return response,
     };
-    audit_dynamic_client_event("dynamic_client_configuration_read", &client, &req, &state);
+    audit_dynamic_client_event("dynamic_client_configuration_read", &client, &req, &handles);
 
     json_response_no_store(dynamic_registration_response(
         &client,
         &response_types,
         issued_secret,
-        &state.settings.issuer,
+        &handles.config.issuer,
         &registration_access_token,
     ))
 }
 
 pub(crate) async fn client_configuration_put(
-    state: Data<AppState>,
+    handles: Data<DynamicRegistrationHandles>,
     req: HttpRequest,
     path: actix_web::web::Path<String>,
     body: Payload,
 ) -> HttpResponse {
-    if !state.accepts_module(nazo_runtime_modules::ModuleId::DynamicClientRegistration) {
+    if !handles.accepts_new_requests() {
         return empty_response(StatusCode::NOT_FOUND);
     }
     let mut body = body.into_inner();
@@ -297,16 +297,15 @@ pub(crate) async fn client_configuration_put(
         Ok(payload) => payload,
         Err(error) => return error.error_response(),
     };
-    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await
-    {
+    if let Err(response) = enforce_dynamic_registration_rate_limit(&handles, &req).await {
         return response;
     }
 
-    let current = match authenticate_registration_client(&state, &req, &path.into_inner()).await {
+    let current = match authenticate_registration_client(&handles, &req, &path.into_inner()).await {
         Ok(client) => client,
         Err(response) => return response,
     };
-    let repository = nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone());
+    let repository = &handles.clients;
     let submitted_secret = payload.get("client_secret").and_then(Value::as_str);
     let has_secret = match repository.has_client_secret(current.id).await {
         Ok(has_secret) => has_secret,
@@ -322,11 +321,8 @@ pub(crate) async fn client_configuration_put(
     let secret_matches = if let Some(secret) = submitted_secret {
         let candidate_match = match repository.client_secret_salt(current.id).await {
             Ok(Some(salt)) => {
-                let candidate_digest = client_secret_digest(
-                    secret,
-                    state.settings.protocol().client_secret_pepper,
-                    &salt,
-                );
+                let candidate_digest =
+                    client_secret_digest(secret, &handles.config.client_secret_pepper, &salt);
                 repository
                     .client_secret_digest_matches(current.id, &candidate_digest)
                     .await
@@ -356,7 +352,7 @@ pub(crate) async fn client_configuration_put(
     let registration = match prepare_dynamic_client_registration(
         payload,
         DynamicRegistrationDefaults {
-            default_audience: state.settings.protocol().default_audience,
+            default_audience: &handles.config.default_audience,
         },
     ) {
         Ok(registration) => registration,
@@ -364,15 +360,15 @@ pub(crate) async fn client_configuration_put(
     };
     let response_types = registration.response_types.clone();
     let registration_access_token = random_urlsafe_token();
-    let response_signing_algorithms = state
+    let response_signing_algorithms = handles
         .keyset
         .snapshot()
         .response_signing_alg_values_supported();
     let prepared = match prepare_dynamic_client_insert_with_secret_pepper(
         registration,
-        state.settings.protocol().pairwise_subject_secret,
-        state.settings.protocol().client_secret_pepper,
-        &state.settings.issuer,
+        handles.config.pairwise_subject_secret.as_deref(),
+        &handles.config.client_secret_pepper,
+        &handles.config.issuer,
         &registration_access_token,
         &response_signing_algorithms,
     )
@@ -382,7 +378,7 @@ pub(crate) async fn client_configuration_put(
         Err(error) => return insert_error_to_management_response(error),
     };
     let issued_secret = prepared.issued_secret.clone();
-    let client = match replace_client_configuration(&state, &current, &prepared).await {
+    let client = match replace_client_configuration(&handles, &current, &prepared).await {
         Ok(client) => client,
         Err(response) => return response,
     };
@@ -390,39 +386,38 @@ pub(crate) async fn client_configuration_put(
         "dynamic_client_configuration_updated",
         &client,
         &req,
-        &state,
+        &handles,
     );
 
     json_response_no_store(dynamic_registration_response(
         &client,
         &response_types,
         issued_secret,
-        &state.settings.issuer,
+        &handles.config.issuer,
         &registration_access_token,
     ))
 }
 
 pub(crate) async fn client_configuration_delete(
-    state: Data<AppState>,
+    handles: Data<DynamicRegistrationHandles>,
     req: HttpRequest,
     path: actix_web::web::Path<String>,
 ) -> HttpResponse {
-    if !state.accepts_module(nazo_runtime_modules::ModuleId::DynamicClientRegistration) {
+    if !handles.accepts_new_requests() {
         return empty_response(StatusCode::NOT_FOUND);
     }
-    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await
-    {
+    if let Err(response) = enforce_dynamic_registration_rate_limit(&handles, &req).await {
         return response;
     }
 
-    let current = match authenticate_registration_client(&state, &req, &path.into_inner()).await {
+    let current = match authenticate_registration_client(&handles, &req, &path.into_inner()).await {
         Ok(client) => client,
         Err(response) => return response,
     };
-    if let Err(response) = deactivate_dynamic_client(&state, &current).await {
+    if let Err(response) = deactivate_dynamic_client(&handles, &current).await {
         return response;
     }
-    audit_dynamic_client_event("dynamic_client_deleted", &current, &req, &state);
+    audit_dynamic_client_event("dynamic_client_deleted", &current, &req, &handles);
 
     empty_response_no_store(StatusCode::NO_CONTENT)
 }
@@ -449,7 +444,7 @@ pub(crate) async fn prepare_dynamic_client_insert_with_secret_pepper(
 }
 
 async fn authenticate_registration_client(
-    state: &AppState,
+    handles: &DynamicRegistrationHandles,
     req: &HttpRequest,
     client_id: &str,
 ) -> Result<ClientRow, HttpResponse> {
@@ -463,7 +458,8 @@ async fn authenticate_registration_client(
     else {
         return Err(registration_access_denied());
     };
-    let found = nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+    let found = handles
+        .clients
         .by_registration_access_token(DEFAULT_TENANT_ID, client_id, &blake3_hex(token))
         .await
         .map_err(|error| {
@@ -489,13 +485,12 @@ fn registration_access_denied() -> HttpResponse {
 }
 
 async fn rotate_client_management_credentials(
-    state: &AppState,
+    handles: &DynamicRegistrationHandles,
     current: &ClientRow,
     registration_access_token_hash: String,
     client_secret_hash: Option<String>,
 ) -> Result<ClientRow, HttpResponse> {
-    nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-    .rotate_credentials(
+    handles.clients.rotate_credentials(
         current.tenant_id,
         current.id,
         client_secret_hash.as_deref(),
@@ -513,7 +508,7 @@ async fn rotate_client_management_credentials(
 }
 
 async fn replace_client_configuration(
-    state: &AppState,
+    handles: &DynamicRegistrationHandles,
     current: &ClientRow,
     prepared: &PreparedClientRegistration,
 ) -> Result<ClientRow, HttpResponse> {
@@ -526,8 +521,7 @@ async fn replace_client_configuration(
         require_mtls_bound_tokens: current.require_mtls_bound_tokens,
         is_active: current.is_active,
     };
-    nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-    .replace_registration(
+    handles.clients.replace_registration(
         &updated,
         prepared.client_secret_hash.as_deref(),
         prepared.registration_access_token_blake3.as_deref(),
@@ -544,11 +538,10 @@ async fn replace_client_configuration(
 }
 
 async fn deactivate_dynamic_client(
-    state: &AppState,
+    handles: &DynamicRegistrationHandles,
     current: &ClientRow,
 ) -> Result<(), HttpResponse> {
-    nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-    .deactivate(current.tenant_id, current.id)
+    handles.clients.deactivate(current.tenant_id, current.id)
     .await
     .and_then(|changed| changed.then_some(()).ok_or(nazo_identity::ports::RepositoryError::NotFound))
     .map_err(|error| {
@@ -594,12 +587,35 @@ fn audit_dynamic_client_event(
     event: &str,
     client: &ClientRow,
     req: &HttpRequest,
-    state: &AppState,
+    handles: &DynamicRegistrationHandles,
 ) {
     audit_event(
         event,
-        dynamic_client_audit_fields(client, blake3_hex(&client_ip(req, &state.settings))),
+        dynamic_client_audit_fields(
+            client,
+            blake3_hex(&client_ip_with_context(
+                req,
+                handles.config.client_ip_header_mode,
+                &handles.config.trusted_proxy_cidrs,
+            )),
+        ),
     );
+}
+
+async fn enforce_dynamic_registration_rate_limit(
+    handles: &DynamicRegistrationHandles,
+    req: &HttpRequest,
+) -> Result<(), HttpResponse> {
+    enforce_rate_limit_with_store(
+        &handles.rate_limits,
+        req,
+        RateLimitPolicy::TokenManagement,
+        handles.config.rate_limit_window_seconds,
+        handles.config.rate_limit_max_requests,
+        handles.config.client_ip_header_mode,
+        &handles.config.trusted_proxy_cidrs,
+    )
+    .await
 }
 
 fn dynamic_client_audit_fields(

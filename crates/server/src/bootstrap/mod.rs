@@ -11,7 +11,8 @@ use actix_web::{App, HttpServer, dev::Service, middleware::from_fn, web};
 
 use crate::config::{ConfigSource, database_max_connections, database_url};
 use crate::domain::{
-    AppState, MetadataConfig, MetadataHandles, ResourceServerConfig, ResourceServerHandles,
+    AppState, DynamicRegistrationConfig, DynamicRegistrationHandles, MetadataConfig,
+    MetadataHandles, ResourceServerConfig, ResourceServerHandles,
 };
 use crate::http::profile::oidc_logout::spawn_backchannel_logout_delivery_worker;
 use crate::runtime_modules::RuntimeModules;
@@ -92,6 +93,21 @@ pub async fn run() -> anyhow::Result<()> {
         runtime_modules: runtime_modules.registry.clone(),
         #[cfg(test)]
         http_message_signatures_enabled: settings.modules().enable_fapi_http_signatures,
+    });
+    #[cfg(not(test))]
+    let dynamic_registration_rate_limit_connection = valkey.clone();
+    #[cfg(test)]
+    let dynamic_registration_rate_limit_connection =
+        nazo_valkey::ValkeyConnection::from_existing_client(valkey.clone());
+    let dynamic_registration_handles = web::Data::new(DynamicRegistrationHandles {
+        config: DynamicRegistrationConfig::from(settings.as_ref()),
+        clients: nazo_postgres::OAuthClientRepository::new(diesel_db.clone()),
+        rate_limits: nazo_valkey::RateLimitStore::new(&dynamic_registration_rate_limit_connection),
+        keyset: keyset.clone(),
+        #[cfg(not(test))]
+        runtime_modules: runtime_modules.registry.clone(),
+        #[cfg(test)]
+        enabled: settings.modules().enable_dynamic_client_registration,
     });
 
     let state = web::Data::new(AppState {
@@ -187,6 +203,7 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(admin_grants.clone())
             .app_data(admin_grant_clients.clone())
             .app_data(client_ip_config.clone())
+            .app_data(dynamic_registration_handles.clone())
             .configure(|cfg| routes::configure(cfg, &state.settings, perf_metrics_enabled))
     })
     .bind(addr)?

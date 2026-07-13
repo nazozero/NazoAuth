@@ -5,7 +5,7 @@ use actix_web::middleware::from_fn;
 use actix_web::{App, test as actix_test};
 
 use crate::config::ConfigSource;
-use crate::domain::AppState;
+use crate::domain::{AppState, DynamicRegistrationHandles};
 use crate::settings::Settings;
 
 fn disabled_route_state() -> Data<AppState> {
@@ -135,10 +135,14 @@ fn dynamic_registration_routes_are_static_and_handlers_own_disabled_behavior() {
     assert!(routes.contains("cfg.route(\"/register\""));
     assert!(!routes.contains("if settings.enable_dynamic_client_registration"));
     let handler = include_str!("../../../../../../src/http/dynamic_client_registration.rs");
-    assert!(handler.contains(
-        "if !state.accepts_module(nazo_runtime_modules::ModuleId::DynamicClientRegistration)"
-    ));
+    assert!(handler.contains("if !handles.accepts_new_requests()"));
     assert!(handler.contains("return empty_response(StatusCode::NOT_FOUND)"));
+    assert!(!handler.contains("Data<AppState>"));
+    assert_eq!(
+        handler.matches("Data<DynamicRegistrationHandles>").count(),
+        4,
+        "every DCR endpoint must receive only the focused handle set"
+    );
 }
 
 #[actix_web::test]
@@ -146,10 +150,13 @@ async fn disabled_dynamic_registration_static_route_contract_is_stable() {
     let state = disabled_route_state();
     assert!(!state.settings.enable_dynamic_client_registration);
     let settings = state.settings.clone();
+    let dynamic_registration_handles =
+        Data::new(DynamicRegistrationHandles::from_app_state(state.get_ref()));
     let app = actix_test::init_service(
         App::new()
             .wrap(from_fn(nazo_http_actix::security_headers))
             .app_data(state)
+            .app_data(dynamic_registration_handles)
             .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings, false)),
     )
     .await;

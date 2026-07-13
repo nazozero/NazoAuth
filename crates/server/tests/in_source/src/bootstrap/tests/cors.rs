@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::bootstrap::routes;
-use crate::domain::AppState;
+use crate::domain::{AppState, DynamicRegistrationHandles};
 use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, FederationSettings,
     PasskeySettings, RateLimitSettings, RequestObjectJtiPolicy, SubjectType,
@@ -164,9 +164,12 @@ async fn disabled_dynamic_client_registration_rejects_before_body_parsing() {
         settings: settings.clone(),
         keyset: crate::test_support::test_key_manager(),
     });
+    let dynamic_registration_handles =
+        web::Data::new(DynamicRegistrationHandles::from_app_state(state.get_ref()));
     let app = test::init_service(
         App::new()
             .app_data(state)
+            .app_data(dynamic_registration_handles)
             .configure(|cfg| routes::configure(cfg, &settings, false)),
     )
     .await;

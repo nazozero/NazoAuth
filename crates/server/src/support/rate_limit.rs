@@ -3,7 +3,10 @@
 
 #[cfg(test)]
 use super::blake3_hex;
-use super::{authorization_error_response, client_ip, oauth_error};
+use super::{
+    ClientIpHeaderMode, IpCidr, authorization_error_response, client_ip,
+    client_ip::client_ip_with_context, oauth_error,
+};
 use crate::domain::AppState;
 use crate::settings::{RateLimitSettings, Settings};
 use actix_web::http::StatusCode;
@@ -52,12 +55,32 @@ pub(crate) async fn enforce_rate_limit(
 ) -> Result<(), HttpResponse> {
     let identity = state.settings.identity();
     let settings = identity.rate_limit;
-    let window_seconds = settings.window_seconds;
-    let max_requests = policy.max_requests(settings);
-    let count = nazo_valkey::RateLimitStore::new(&state.valkey_connection())
+    let endpoint = state.settings.endpoint();
+    enforce_rate_limit_with_store(
+        &nazo_valkey::RateLimitStore::new(&state.valkey_connection()),
+        req,
+        policy,
+        settings.window_seconds,
+        policy.max_requests(settings),
+        endpoint.client_ip_header_mode,
+        endpoint.trusted_proxy_cidrs,
+    )
+    .await
+}
+
+pub(crate) async fn enforce_rate_limit_with_store(
+    store: &nazo_valkey::RateLimitStore,
+    req: &HttpRequest,
+    policy: RateLimitPolicy,
+    window_seconds: u64,
+    max_requests: u64,
+    client_ip_header_mode: ClientIpHeaderMode,
+    trusted_proxy_cidrs: &[IpCidr],
+) -> Result<(), HttpResponse> {
+    let count = store
         .increment(
             policy.dimension(),
-            &rate_limit_subject(req, &state.settings),
+            &client_ip_with_context(req, client_ip_header_mode, trusted_proxy_cidrs),
             window_seconds,
         )
         .await
@@ -183,6 +206,7 @@ async fn login_failure_count(
         })
 }
 
+#[cfg(test)]
 fn rate_limit_subject(req: &HttpRequest, settings: &Settings) -> String {
     client_ip(req, settings)
 }
