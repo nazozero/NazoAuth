@@ -1,13 +1,16 @@
 use super::*;
 use crate::domain::AppState;
+use crate::schema::users;
 use crate::test_support::{account_profiles, profile_sessions};
 use nazo_http_actix::OAuthJsonErrorFields;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use actix_web::cookie::Cookie;
+use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Nullable, Text, Uuid as SqlUuid};
+use diesel_async::RunQueryDsl;
 use fred::interfaces::ClientLike;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
