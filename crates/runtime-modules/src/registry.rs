@@ -273,81 +273,83 @@ where
             self.discard_stale(draining).await?;
             return Ok(ReconcileOutcome::StaleDiscarded);
         }
-        if !matches!(
-            self.persist_state(
-                module_id,
-                revision,
-                Some(revision),
-                ModuleState::Draining,
-                None,
-                ModuleEventType::DrainStarted,
-                Some(ModuleState::Draining),
-                drain_deadline,
-                None,
-            )
-            .await?,
-            CasOutcome::Applied(_)
-        ) {
-            return Ok(ReconcileOutcome::StaleDiscarded);
-        }
-        self.leases
-            .wait_until_zero(module_id, prior_generation)
-            .await;
-        if let DisablePolicy::DrainStoredTransactions { max_duration } = spec.disable_policy {
-            match self
-                .lifecycle
-                .drain_stored_transactions(module_id, max_duration)
-                .await
-            {
-                Ok(true) => {}
-                Ok(false) => {
-                    let failed = self
-                        .persist_failure(
-                            &draining,
-                            LifecycleFailure {
-                                code: "drain_deadline_elapsed",
-                            },
-                        )
-                        .await?;
-                    return Ok(if failed {
-                        ReconcileOutcome::Failed
-                    } else {
-                        ReconcileOutcome::StaleDiscarded
-                    });
-                }
-                Err(failure) => {
-                    return Ok(if self.persist_failure(&draining, failure).await? {
-                        ReconcileOutcome::Failed
-                    } else {
-                        ReconcileOutcome::StaleDiscarded
-                    });
+        if !matches!(spec.disable_policy, DisablePolicy::Immediate) {
+            if !matches!(
+                self.persist_state(
+                    module_id,
+                    revision,
+                    Some(revision),
+                    ModuleState::Draining,
+                    None,
+                    ModuleEventType::DrainStarted,
+                    Some(ModuleState::Draining),
+                    drain_deadline,
+                    None,
+                )
+                .await?,
+                CasOutcome::Applied(_)
+            ) {
+                return Ok(ReconcileOutcome::StaleDiscarded);
+            }
+            self.leases
+                .wait_until_zero(module_id, prior_generation)
+                .await;
+            if let DisablePolicy::DrainStoredTransactions { max_duration } = spec.disable_policy {
+                match self
+                    .lifecycle
+                    .drain_stored_transactions(module_id, max_duration)
+                    .await
+                {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        let failed = self
+                            .persist_failure(
+                                &draining,
+                                LifecycleFailure {
+                                    code: "drain_deadline_elapsed",
+                                },
+                            )
+                            .await?;
+                        return Ok(if failed {
+                            ReconcileOutcome::Failed
+                        } else {
+                            ReconcileOutcome::StaleDiscarded
+                        });
+                    }
+                    Err(failure) => {
+                        return Ok(if self.persist_failure(&draining, failure).await? {
+                            ReconcileOutcome::Failed
+                        } else {
+                            ReconcileOutcome::StaleDiscarded
+                        });
+                    }
                 }
             }
-        }
-        if !self.revision_is_current(module_id, revision).await? {
-            self.discard_stale(draining).await?;
-            return Ok(ReconcileOutcome::StaleDiscarded);
-        }
-        if !matches!(
-            self.persist_state(
-                module_id,
-                revision,
-                Some(revision),
-                ModuleState::Draining,
-                None,
-                ModuleEventType::DrainCompleted,
-                Some(ModuleState::Draining),
-                drain_deadline,
-                None,
-            )
-            .await?,
-            CasOutcome::Applied(_)
-        ) {
-            return Ok(ReconcileOutcome::StaleDiscarded);
-        }
-        if !self.revision_is_current(module_id, revision).await? {
-            self.discard_stale(draining).await?;
-            return Ok(ReconcileOutcome::StaleDiscarded);
+            if !self.revision_is_current(module_id, revision).await? {
+                self.discard_stale(draining).await?;
+                return Ok(ReconcileOutcome::StaleDiscarded);
+            }
+            if !matches!(
+                self.persist_state(
+                    module_id,
+                    revision,
+                    Some(revision),
+                    ModuleState::Draining,
+                    None,
+                    ModuleEventType::DrainCompleted,
+                    Some(ModuleState::Draining),
+                    drain_deadline,
+                    None,
+                )
+                .await?,
+                CasOutcome::Applied(_)
+            ) {
+                return Ok(ReconcileOutcome::StaleDiscarded);
+            }
+            if !self.revision_is_current(module_id, revision).await? {
+                self.discard_stale(draining).await?;
+                return Ok(ReconcileOutcome::StaleDiscarded);
+            }
         }
         if let Err(failure) = self.lifecycle.stop(module_id).await {
             return Ok(if self.persist_failure(&draining, failure).await? {
