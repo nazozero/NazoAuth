@@ -99,7 +99,11 @@ fn admin_access_request_dependencies(state: &Data<AppState>) -> TestAdminAccessR
         admin_sessions: Data::new(AdminSessionHandles::new(
             nazo_valkey::SessionStore::new(&state.valkey_connection()),
             nazo_postgres::UserRepository::new(state.diesel_db.clone()),
-            SessionHttpConfig::new(session.session_cookie_name, session.csrf_cookie_name),
+            SessionHttpConfig::new(
+                session.session_cookie_name,
+                session.csrf_cookie_name,
+                session.cookie_secure,
+            ),
         )),
         repository: Data::new(AccessRequestRepository::new(state.diesel_db.clone())),
         delivery_store: Data::new(DeliveryStore::new(&state.valkey_connection())),
