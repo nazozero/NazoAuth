@@ -154,7 +154,7 @@ impl LiveAuthorizationCodeFixture {
             ("TOKEN_RATE_LIMIT_MAX_REQUESTS", "100000"),
         ]);
         let mut settings = Settings::from_config(&config).expect("test settings should load");
-        settings.trusted_proxy_cidrs = vec![
+        settings.endpoint.trusted_proxy_cidrs = vec![
             crate::support::IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse"),
         ];
         settings
@@ -289,7 +289,7 @@ impl LiveAuthorizationCodeFixture {
             &self.state.valkey,
             authorization_code_key(code),
             serde_json::to_string(state).expect("authorization code state should serialize"),
-            self.state.settings.auth_code_ttl_seconds,
+            self.state.settings.protocol.auth_code_ttl_seconds,
         )
         .await
         .expect("authorization code state should store");
@@ -300,7 +300,7 @@ impl LiveAuthorizationCodeFixture {
             &self.state.valkey,
             authorization_code_key(code),
             raw.to_owned(),
-            self.state.settings.auth_code_ttl_seconds,
+            self.state.settings.protocol.auth_code_ttl_seconds,
         )
         .await
         .expect("raw authorization code state should store");
@@ -502,7 +502,8 @@ fn jwt_payload(token: &str) -> Value {
 #[actix_web::test]
 async fn token_authorization_code_uses_client_pairwise_subject_sector() {
     let mut settings = LiveAuthorizationCodeFixture::settings();
-    settings.pairwise_subject_secret = Some("0123456789012345678901234567890123456789".to_owned());
+    settings.protocol.pairwise_subject_secret =
+        Some("0123456789012345678901234567890123456789".to_owned());
     let Some(fixture) = LiveAuthorizationCodeFixture::new_with_settings_and_keyset(
         settings,
         valid_keyset("auth-code-pairwise-test-kid"),
@@ -543,7 +544,7 @@ async fn token_authorization_code_uses_client_pairwise_subject_sector() {
             .as_ref()
             .expect("pairwise secret should be configured")
             .as_bytes(),
-        &fixture.state.settings.issuer,
+        &fixture.state.settings.endpoint.issuer,
         "registered-sector.example",
         user.id,
     );

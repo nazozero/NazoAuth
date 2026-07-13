@@ -67,9 +67,9 @@ pub(crate) async fn enforce_rate_limit(
     req: &HttpRequest,
     policy: RateLimitPolicy,
 ) -> Result<(), HttpResponse> {
-    let identity = state.settings.identity();
-    let settings = identity.rate_limit;
-    let endpoint = state.settings.endpoint();
+    let identity = &state.settings.identity;
+    let settings = &identity.rate_limit;
+    let endpoint = &state.settings.endpoint;
     enforce_rate_limit_with_store(
         &nazo_valkey::RateLimitStore::new(&state.valkey_connection()),
         req,
@@ -77,7 +77,7 @@ pub(crate) async fn enforce_rate_limit(
         settings.window_seconds,
         policy.max_requests(settings),
         endpoint.client_ip_header_mode,
-        endpoint.trusted_proxy_cidrs,
+        &endpoint.trusted_proxy_cidrs,
     )
     .await
 }
@@ -145,8 +145,8 @@ pub(crate) async fn enforce_login_failure_throttle(
     req: &HttpRequest,
     normalized_email: &str,
 ) -> Result<(), HttpResponse> {
-    let identity = state.settings.identity();
-    let settings = identity.rate_limit;
+    let identity = &state.settings.identity;
+    let settings = &identity.rate_limit;
     let subjects = login_failure_subjects(req, &state.settings, normalized_email);
     let email_count = login_failure_count(
         state,
@@ -176,8 +176,8 @@ pub(crate) async fn record_login_failure(
     req: &HttpRequest,
     normalized_email: &str,
 ) -> Result<(), HttpResponse> {
-    let identity = state.settings.identity();
-    let settings = identity.rate_limit;
+    let identity = &state.settings.identity;
+    let settings = &identity.rate_limit;
     let subjects = login_failure_subjects(req, &state.settings, normalized_email);
     for (dimension, subject) in [
         (

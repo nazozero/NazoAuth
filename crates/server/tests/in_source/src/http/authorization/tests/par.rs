@@ -1,19 +1,14 @@
 use super::*;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::config::ConfigSource;
 use crate::domain::AppState;
 use nazo_postgres::{create_pool, get_conn};
 
-use crate::settings::{
-    AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, RateLimitSettings,
-    RequestObjectJtiPolicy, SubjectType,
-};
+use crate::settings::{AuthorizationServerProfile, DpopNoncePolicy};
 use crate::support::{
-    ClientIpHeaderMode, ClientSigningFixture, IpCidr, RateLimitPolicy, client_signing_fixture,
-    hash_client_secret,
+    ClientSigningFixture, IpCidr, RateLimitPolicy, client_signing_fixture, hash_client_secret,
 };
 use actix_web::test::TestRequest;
 use diesel::sql_query;
@@ -91,90 +86,20 @@ fn client(require_dpop_bound_tokens: bool) -> ClientRow {
 }
 
 fn baseline_settings() -> Settings {
-    Settings {
-        issuer: "https://issuer.example".to_owned(),
-        mtls_endpoint_base_url: "https://issuer.example".to_owned(),
-        frontend_base_url: "https://app.example".to_owned(),
-        cors_allowed_origins: vec!["https://app.example".to_owned()],
-        default_audience: "resource://default".to_owned(),
-        protected_resource_identifier: "https://issuer.example/fapi/resource".to_owned(),
-        authorization_server_profile: AuthorizationServerProfile::Oauth2Baseline,
-        ciba_security_profile:
-            crate::settings::CibaSecurityProfile::FapiCibaId1PlainPrivateKeyJwtPoll,
-        dpop_nonce_policy: DpopNoncePolicy::Required,
-        request_object_jti_policy: RequestObjectJtiPolicy::Optional,
-        session_cookie_name: "sid".to_owned(),
-        csrf_cookie_name: "csrf".to_owned(),
-        cookie_secure: true,
-        session_ttl_seconds: 3600,
-        auth_code_ttl_seconds: 60,
-        access_token_ttl_seconds: 300,
-        id_token_ttl_seconds: 600,
-        refresh_token_ttl_seconds: 2_592_000,
-        avatar_max_bytes: 2_097_152,
-        client_delivery_ttl_seconds: 86_400,
-        client_secret_pepper: "client-secret-pepper-for-tests-000000000001".to_owned(),
-        rate_limit: RateLimitSettings {
-            window_seconds: 60,
-            auth_max_requests: 30,
-            token_max_requests: 60,
-            token_management_max_requests: 120,
-            login_failure_window_seconds: 900,
-            login_failure_email_max_attempts: 50,
-            login_failure_ip_email_max_attempts: 5,
-        },
-        email: EmailSettings {
-            delivery: EmailDelivery::Disabled,
-            code_ttl_seconds: 900,
-            send_cooldown_seconds: 60,
-            send_peer_cooldown_seconds: 5,
-        },
-        email_code_dev_response_enabled: false,
-        avatar_storage_dir: PathBuf::from("runtime/avatars"),
-        jwk_keys_dir: PathBuf::from("runtime/keys"),
-        signing_external_command: Vec::new(),
-        signing_external_timeout_ms: 2_000,
-        signing_key_rotation_interval_seconds: 7_776_000,
-        signing_key_prepublish_seconds: 86_400,
-        trusted_proxy_cidrs: Vec::<IpCidr>::new(),
-        client_ip_header_mode: ClientIpHeaderMode::None,
-        subject_type: SubjectType::Public,
-        pairwise_subject_secret: None,
-        par_ttl_seconds: 90,
-        require_pushed_authorization_requests: false,
-        scim_bearer_token: None,
-        passkey: crate::settings::PasskeySettings {
-            rp_id: "issuer.example".to_owned(),
-            rp_name: "Nazo OAuth".to_owned(),
-            origin: "https://issuer.example".to_owned(),
-            require_user_verification: true,
-            require_user_handle: true,
-            strict_base64: true,
-        },
-        federation: crate::settings::FederationSettings {
-            providers: crate::settings::FederationProviderRegistry::default(),
-            saml_gateway: None,
-        },
-        enable_request_object: false,
-        enable_request_uri_parameter: false,
-        enable_par_request_object: false,
-        enable_authorization_details: false,
-        enable_legacy_audience_param: false,
-        enable_device_authorization_grant: false,
-        enable_dynamic_client_registration: false,
-        enable_frontchannel_logout: false,
-        enable_session_management: false,
-        enable_ciba: false,
-        enable_native_sso: false,
-        enable_fapi_http_signatures: false,
-        fapi_http_signature_max_age_seconds: 60,
-        dynamic_client_registration_initial_access_token: None,
-        device_authorization_ttl_seconds: 600,
-        device_authorization_poll_interval_seconds: 5,
-        ciba_auth_req_id_ttl_seconds: 600,
-        ciba_poll_interval_seconds: 5,
-        ciba_automated_decision_token: None,
-    }
+    let mut settings =
+        Settings::from_config(&crate::config::ConfigSource::default()).expect("settings");
+    settings.endpoint.issuer = "https://issuer.example".to_owned();
+    settings.endpoint.mtls_endpoint_base_url = "https://issuer.example".to_owned();
+    settings.endpoint.frontend_base_url = "https://frontend.example".to_owned();
+    settings.endpoint.cors_allowed_origins = vec!["https://frontend.example".to_owned()];
+    settings.protocol.protected_resource_identifier =
+        "https://issuer.example/fapi/resource".to_owned();
+    settings.protocol.dpop_nonce_policy = DpopNoncePolicy::Required;
+    settings.protocol.auth_code_ttl_seconds = 300;
+    settings.session.cookie_secure = true;
+    settings.storage.avatar_storage_dir = std::env::temp_dir().join("unused-avatars");
+    settings.keys.jwk_keys_dir = std::env::temp_dir().join("unused-keys");
+    settings
 }
 
 fn oauth_error_code(response: &HttpResponse) -> Option<String> {
@@ -316,7 +241,8 @@ impl LiveParFixture {
 
     async fn new_fapi2_security() -> Option<Self> {
         Self::new_with_settings(|settings| {
-            settings.authorization_server_profile = AuthorizationServerProfile::Fapi2Security;
+            settings.protocol.authorization_server_profile =
+                AuthorizationServerProfile::Fapi2Security;
         })
         .await
     }
@@ -326,10 +252,10 @@ impl LiveParFixture {
         let valkey_url = std::env::var("VALKEY_URL").ok()?;
         let mut settings =
             Settings::from_config(&ConfigSource::default()).expect("test settings should load");
-        settings.issuer = "https://issuer.example".to_owned();
-        settings.par_ttl_seconds = 90;
-        settings.rate_limit.token_management_max_requests = 100_000;
-        settings.trusted_proxy_cidrs =
+        settings.endpoint.issuer = "https://issuer.example".to_owned();
+        settings.protocol.par_ttl_seconds = 90;
+        settings.identity.rate_limit.token_management_max_requests = 100_000;
+        settings.endpoint.trusted_proxy_cidrs =
             vec![IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse")];
         configure(&mut settings);
 
@@ -401,7 +327,8 @@ impl LiveParFixture {
             .execute(&mut conn)
             .await
             .expect("PAR test client cleanup should succeed");
-        let secret_hash = hash_client_secret(secret, &self.state.settings.client_secret_pepper);
+        let secret_hash =
+            hash_client_secret(secret, &self.state.settings.protocol.client_secret_pepper);
         sql_query(
             r#"
             INSERT INTO oauth_clients (
@@ -445,7 +372,7 @@ impl LiveParFixture {
 fn par_state_without_live_services() -> Data<AppState> {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.rate_limit.token_management_max_requests = 100_000;
+    settings.identity.rate_limit.token_management_max_requests = 100_000;
 
     Data::new(AppState {
         diesel_db: create_pool(
@@ -516,11 +443,10 @@ fn par_policy_requires_request_object_when_enabled() {
 
 #[test]
 fn message_signing_profile_requires_request_object_at_par() {
-    let settings = Settings {
-        authorization_server_profile: AuthorizationServerProfile::Fapi2MessageSigningAuthzRequest,
-        require_pushed_authorization_requests: true,
-        ..baseline_settings()
-    };
+    let mut settings = baseline_settings();
+    settings.protocol.authorization_server_profile =
+        AuthorizationServerProfile::Fapi2MessageSigningAuthzRequest;
+    settings.protocol.require_pushed_authorization_requests = true;
 
     assert!(pushed_authorization_request_requires_request_object(
         &settings,
@@ -542,10 +468,8 @@ fn baseline_profile_does_not_reject_legacy_par_client_auth_combinations() {
 
 #[test]
 fn fapi2_profile_requires_confidential_clients() {
-    let settings = Settings {
-        authorization_server_profile: AuthorizationServerProfile::Fapi2Security,
-        ..baseline_settings()
-    };
+    let mut settings = baseline_settings();
+    settings.protocol.authorization_server_profile = AuthorizationServerProfile::Fapi2Security;
     let mut public_client = client(true);
     public_client.client_type = "public".to_owned();
     public_client.token_endpoint_auth_method = "none".to_owned();
@@ -562,10 +486,8 @@ fn fapi2_profile_requires_confidential_clients() {
 
 #[test]
 fn fapi2_profile_requires_private_key_jwt_or_mtls_client_auth() {
-    let settings = Settings {
-        authorization_server_profile: AuthorizationServerProfile::Fapi2Security,
-        ..baseline_settings()
-    };
+    let mut settings = baseline_settings();
+    settings.protocol.authorization_server_profile = AuthorizationServerProfile::Fapi2Security;
     let mut confidential_client = client(true);
     confidential_client.token_endpoint_auth_method = "client_secret_basic".to_owned();
 
@@ -602,10 +524,8 @@ fn fapi2_profile_requires_private_key_jwt_or_mtls_client_auth() {
 
 #[test]
 fn fapi2_profile_requires_sender_constrained_tokens() {
-    let settings = Settings {
-        authorization_server_profile: AuthorizationServerProfile::Fapi2Security,
-        ..baseline_settings()
-    };
+    let mut settings = baseline_settings();
+    settings.protocol.authorization_server_profile = AuthorizationServerProfile::Fapi2Security;
     let bearer_client = client(false);
 
     let response =
@@ -621,10 +541,8 @@ fn fapi2_profile_requires_sender_constrained_tokens() {
 
 #[test]
 fn fapi2_profile_requires_explicit_par_redirect_uri_even_when_unambiguous() {
-    let settings = Settings {
-        authorization_server_profile: AuthorizationServerProfile::Fapi2Security,
-        ..baseline_settings()
-    };
+    let mut settings = baseline_settings();
+    settings.protocol.authorization_server_profile = AuthorizationServerProfile::Fapi2Security;
     let params = HashMap::from([("response_type".to_owned(), "code".to_owned())]);
 
     let response = validate_pushed_authorization_request_profile_parameters(&settings, &params)
@@ -939,7 +857,7 @@ async fn par_rejects_invalid_dpop_jkt_after_client_authentication() {
 #[actix_web::test]
 async fn par_rejects_request_uri_from_request_object_after_client_authentication() {
     let Some(fixture) = LiveParFixture::new_with_settings(|s| {
-        s.enable_par_request_object = true;
+        s.modules.enable_par_request_object = true;
     })
     .await
     else {
@@ -980,7 +898,7 @@ async fn par_rejects_request_uri_from_request_object_after_client_authentication
 #[actix_web::test]
 async fn par_rejects_unsigned_request_object_without_outer_client_id_as_request_object_error() {
     let Some(fixture) = LiveParFixture::new_with_settings(|s| {
-        s.enable_par_request_object = true;
+        s.modules.enable_par_request_object = true;
     })
     .await
     else {
@@ -1009,8 +927,8 @@ async fn par_rejects_unsigned_request_object_without_outer_client_id_as_request_
 #[actix_web::test]
 async fn par_rejects_authorization_details_from_request_object_when_disabled() {
     let Some(fixture) = LiveParFixture::new_with_settings(|settings| {
-        settings.enable_par_request_object = true;
-        settings.enable_authorization_details = false;
+        settings.modules.enable_par_request_object = true;
+        settings.modules.enable_authorization_details = false;
     })
     .await
     else {
@@ -1177,7 +1095,7 @@ async fn par_success_persists_request_uri_without_client_secret_material() {
     assert!(request_uri.starts_with("urn:ietf:params:oauth:request_uri:"));
     assert_eq!(
         value["expires_in"],
-        json!(fixture.state.settings.par_ttl_seconds)
+        json!(fixture.state.settings.protocol.par_ttl_seconds)
     );
 
     let raw = valkey_get(

@@ -33,7 +33,7 @@ pub(crate) struct StoredPasskeyAuthentication {
 }
 
 pub(crate) fn passkey_webauthn(settings: &Settings) -> Webauthn {
-    let settings = settings.identity().passkey;
+    let settings = &settings.identity.passkey;
     Webauthn::new(&settings.rp_id, &settings.rp_name, &settings.origin)
         .require_user_verification(settings.require_user_verification)
         .require_user_handle(settings.require_user_handle)

@@ -348,7 +348,7 @@ pub(crate) async fn oauth_protected_resource_metadata(
 
 #[cfg(test)]
 fn metadata_capabilities_from_settings(settings: &Settings) -> MetadataCapabilities {
-    let settings = settings.modules();
+    let settings = &settings.modules;
     let accepting = nazo_runtime_modules::ModuleId::ALL
         .into_iter()
         .filter(|module_id| match module_id {

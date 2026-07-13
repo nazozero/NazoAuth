@@ -30,10 +30,10 @@ use nazo_postgres::create_pool;
 fn settings() -> Settings {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.session_cookie_name = "nazo_session".to_owned();
-    settings.csrf_cookie_name = "nazo_csrf".to_owned();
-    settings.session_ttl_seconds = 900;
-    settings.cookie_secure = true;
+    settings.session.session_cookie_name = "nazo_session".to_owned();
+    settings.session.csrf_cookie_name = "nazo_csrf".to_owned();
+    settings.session.session_ttl_seconds = 900;
+    settings.session.cookie_secure = true;
     settings
 }
 
@@ -277,7 +277,7 @@ impl LivePasskeyFixture {
                 &state,
                 &authenticator.registration_response(
                     &challenge.challenge,
-                    &self.state.settings.passkey.origin,
+                    &self.state.settings.identity.passkey.origin,
                 ),
             )
             .expect("synthetic registration should succeed")
@@ -583,7 +583,7 @@ async fn passkey_login_finish_creates_session_updates_counter_and_consumes_cerem
             ceremony_id: ceremony_id.to_owned(),
             response: authenticator.authentication_response(
                 challenge,
-                &fixture.state.settings.passkey.origin,
+                &fixture.state.settings.identity.passkey.origin,
                 Some(&passkey_user_handle(&user)),
             ),
         }),
@@ -618,7 +618,7 @@ async fn passkey_login_finish_creates_session_updates_counter_and_consumes_cerem
             ceremony_id: ceremony_id.to_owned(),
             response: authenticator.authentication_response(
                 challenge,
-                &fixture.state.settings.passkey.origin,
+                &fixture.state.settings.identity.passkey.origin,
                 Some(&passkey_user_handle(&user)),
             ),
         }),
@@ -663,7 +663,7 @@ async fn passkey_login_finish_requires_mfa_for_mfa_enabled_user_without_remember
             ceremony_id,
             response: authenticator.authentication_response(
                 &challenge,
-                &fixture.state.settings.passkey.origin,
+                &fixture.state.settings.identity.passkey.origin,
                 Some(&passkey_user_handle(&user)),
             ),
         }),
@@ -672,7 +672,7 @@ async fn passkey_login_finish_requires_mfa_for_mfa_enabled_user_without_remember
     assert_eq!(finish_response.status(), StatusCode::OK);
     let session_id = session_cookie_value(
         &finish_response,
-        &fixture.state.settings.session_cookie_name,
+        &fixture.state.settings.session.session_cookie_name,
     );
     let body = actix_web::body::to_bytes(finish_response.into_body())
         .await
@@ -730,7 +730,7 @@ async fn passkey_login_finish_skips_pending_mfa_for_remembered_device() {
             ceremony_id,
             response: authenticator.authentication_response(
                 &challenge,
-                &fixture.state.settings.passkey.origin,
+                &fixture.state.settings.identity.passkey.origin,
                 Some(&passkey_user_handle(&user)),
             ),
         }),
@@ -739,7 +739,7 @@ async fn passkey_login_finish_skips_pending_mfa_for_remembered_device() {
     assert_eq!(finish_response.status(), StatusCode::OK);
     let session_id = session_cookie_value(
         &finish_response,
-        &fixture.state.settings.session_cookie_name,
+        &fixture.state.settings.session.session_cookie_name,
     );
     let body = actix_web::body::to_bytes(finish_response.into_body())
         .await
@@ -796,7 +796,7 @@ async fn passkey_login_finish_rejects_credential_mismatch_uniformly_and_consumes
             ceremony_id: ceremony_id.to_owned(),
             response: mismatched.authentication_response(
                 challenge,
-                &fixture.state.settings.passkey.origin,
+                &fixture.state.settings.identity.passkey.origin,
                 Some(&passkey_user_handle(&user)),
             ),
         }),
@@ -822,7 +822,7 @@ async fn passkey_login_finish_rejects_credential_mismatch_uniformly_and_consumes
             ceremony_id: ceremony_id.to_owned(),
             response: correct.authentication_response(
                 challenge,
-                &fixture.state.settings.passkey.origin,
+                &fixture.state.settings.identity.passkey.origin,
                 Some(&passkey_user_handle(&user)),
             ),
         }),
@@ -1062,7 +1062,7 @@ async fn passkey_login_finish_rejects_inactive_users_and_consumes_ceremony() {
             ceremony_id: ceremony_id.clone(),
             response: authenticator.authentication_response(
                 &challenge,
-                &fixture.state.settings.passkey.origin,
+                &fixture.state.settings.identity.passkey.origin,
                 Some(&passkey_user_handle(&user)),
             ),
         }),
@@ -1085,7 +1085,7 @@ async fn passkey_login_finish_rejects_inactive_users_and_consumes_ceremony() {
             ceremony_id,
             response: authenticator.authentication_response(
                 &challenge,
-                &fixture.state.settings.passkey.origin,
+                &fixture.state.settings.identity.passkey.origin,
                 Some(&passkey_user_handle(&user)),
             ),
         }),
@@ -1123,7 +1123,7 @@ async fn passkey_login_finish_rejects_malformed_stored_credentials_before_webaut
             ceremony_id: ceremony_id.clone(),
             response: authenticator.authentication_response(
                 &challenge,
-                &fixture.state.settings.passkey.origin,
+                &fixture.state.settings.identity.passkey.origin,
                 Some(&passkey_user_handle(&user)),
             ),
         }),
@@ -1146,7 +1146,7 @@ async fn passkey_login_finish_rejects_malformed_stored_credentials_before_webaut
             ceremony_id,
             response: authenticator.authentication_response(
                 &challenge,
-                &fixture.state.settings.passkey.origin,
+                &fixture.state.settings.identity.passkey.origin,
                 Some(&passkey_user_handle(&user)),
             ),
         }),
@@ -1249,7 +1249,7 @@ async fn passkey_login_finish_reports_user_lookup_failure_after_consuming_ceremo
             ceremony_id: ceremony_id.clone(),
             response: authenticator.authentication_response(
                 &challenge,
-                &fixture.state.settings.passkey.origin,
+                &fixture.state.settings.identity.passkey.origin,
                 Some(&passkey_user_handle(&user)),
             ),
         }),
@@ -1272,7 +1272,7 @@ async fn passkey_login_finish_reports_user_lookup_failure_after_consuming_ceremo
             ceremony_id,
             response: authenticator.authentication_response(
                 &challenge,
-                &fixture.state.settings.passkey.origin,
+                &fixture.state.settings.identity.passkey.origin,
                 Some(&passkey_user_handle(&user)),
             ),
         }),

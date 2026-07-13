@@ -67,7 +67,7 @@ pub(super) fn client_credentials_issue_request(
         ));
     }
     let audiences = if form.audiences.is_empty() {
-        vec![settings.default_audience.clone()]
+        vec![settings.protocol.default_audience.clone()]
     } else {
         form.audiences.clone()
     };

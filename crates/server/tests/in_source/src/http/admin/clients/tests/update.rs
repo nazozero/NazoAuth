@@ -247,7 +247,7 @@ impl LiveAdminClientUpdateFixture {
             &self.state.valkey,
             format!("oauth:session:{sid}"),
             serde_json::to_string(&payload).expect("session should serialize"),
-            self.state.settings.session_ttl_seconds,
+            self.state.settings.session.session_ttl_seconds,
         )
         .await
         .expect("session should store");
@@ -257,11 +257,11 @@ impl LiveAdminClientUpdateFixture {
         actix_web::test::TestRequest::patch()
             .uri(uri)
             .cookie(Cookie::new(
-                self.state.settings.session_cookie_name.clone(),
+                self.state.settings.session.session_cookie_name.clone(),
                 sid.to_owned(),
             ))
             .cookie(Cookie::new(
-                self.state.settings.csrf_cookie_name.clone(),
+                self.state.settings.session.csrf_cookie_name.clone(),
                 csrf.to_owned(),
             ))
             .insert_header(("x-csrf-token", csrf))
@@ -653,7 +653,7 @@ async fn admin_patch_client_rejects_missing_csrf_before_admin_lookup() {
     let req = actix_web::test::TestRequest::patch()
         .uri("/admin/clients/client-1")
         .cookie(Cookie::new(
-            state.settings.session_cookie_name.clone(),
+            state.settings.session.session_cookie_name.clone(),
             "session-id",
         ))
         .to_http_request();

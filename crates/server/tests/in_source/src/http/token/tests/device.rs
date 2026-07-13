@@ -63,9 +63,9 @@ fn device_client() -> ClientRow {
 fn enabled_settings() -> Settings {
     let mut settings =
         Settings::from_config(&crate::config::ConfigSource::default()).expect("settings");
-    settings.enable_device_authorization_grant = true;
-    settings.device_authorization_ttl_seconds = 600;
-    settings.device_authorization_poll_interval_seconds = 5;
+    settings.modules.enable_device_authorization_grant = true;
+    settings.device.device_authorization_ttl_seconds = 600;
+    settings.device.device_authorization_poll_interval_seconds = 5;
     settings
 }
 
@@ -158,13 +158,13 @@ fn device_authorization_request_rejects_disabled_or_unregistered_client_grant() 
     let mut settings = enabled_settings();
     let client = device_client();
 
-    settings.enable_device_authorization_grant = false;
+    settings.modules.enable_device_authorization_grant = false;
     assert!(matches!(
         device_authorization_request_payload(&settings, &client, &form, false),
         Err(DeviceAuthorizationRequestError::Disabled)
     ));
 
-    settings.enable_device_authorization_grant = true;
+    settings.modules.enable_device_authorization_grant = true;
     let mut client = client;
     client.grant_types = vec!["authorization_code".to_owned()];
     assert!(matches!(
@@ -259,7 +259,7 @@ fn device_code_polling_enforces_pending_slow_down_denied_and_expired_results() {
 #[test]
 fn device_authorization_verification_uri_targets_frontend_device_page() {
     let mut settings = enabled_settings();
-    settings.frontend_base_url = "https://auth.example.test/ui/".to_owned();
+    settings.endpoint.frontend_base_url = "https://auth.example.test/ui/".to_owned();
 
     assert_eq!(
         device_verification_uri(&settings),

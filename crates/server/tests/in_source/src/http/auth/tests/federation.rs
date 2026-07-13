@@ -155,8 +155,8 @@ async fn live_federation_state(
 ) -> Option<AppState> {
     let valkey_url = std::env::var("VALKEY_URL").ok()?;
     let mut settings = settings_with_oidc_provider(oidc.as_ref());
-    settings.federation.saml_gateway = saml_gateway;
-    settings.rate_limit.auth_max_requests = 1_000;
+    settings.identity.federation.saml_gateway = saml_gateway;
+    settings.identity.rate_limit.auth_max_requests = 1_000;
 
     let valkey_config = ValkeyConfig::from_url(&valkey_url).ok()?;
     let mut valkey_builder = ValkeyBuilder::from_config(valkey_config);
@@ -195,11 +195,11 @@ impl LiveFederationFixture {
         let database_url = std::env::var("DATABASE_URL").ok()?;
         let valkey_url = std::env::var("VALKEY_URL").ok()?;
         let mut settings = settings_with_oidc_provider(oidc.as_ref());
-        settings.federation.saml_gateway = saml_gateway;
-        settings.rate_limit.auth_max_requests = 1_000;
-        settings.session_cookie_name = "nazo_federation_session".to_owned();
-        settings.csrf_cookie_name = "nazo_federation_csrf".to_owned();
-        settings.cookie_secure = true;
+        settings.identity.federation.saml_gateway = saml_gateway;
+        settings.identity.rate_limit.auth_max_requests = 1_000;
+        settings.session.session_cookie_name = "nazo_federation_session".to_owned();
+        settings.session.csrf_cookie_name = "nazo_federation_csrf".to_owned();
+        settings.session.cookie_secure = true;
 
         let mut valkey_builder = ValkeyBuilder::from_config(
             ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),
@@ -1416,7 +1416,8 @@ async fn oidc_callback_reports_identity_resolution_db_failure_without_session_co
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(oauth_error_code(&response).as_deref(), Some("server_error"));
     assert!(
-        cookie_value_from_response(&response, &state.settings.session_cookie_name).is_none(),
+        cookie_value_from_response(&response, &state.settings.session.session_cookie_name)
+            .is_none(),
         "identity-resolution database failures must not issue a federated session"
     );
     assert!(
@@ -1469,11 +1470,13 @@ async fn oidc_callback_creates_new_federated_user_session_and_external_link() {
         .await
         .expect("JWKS endpoint should receive the fetch request");
 
-    let session_cookie =
-        cookie_value_from_response(&response, &fixture.state.settings.session_cookie_name)
-            .expect("federated login must set a session cookie");
+    let session_cookie = cookie_value_from_response(
+        &response,
+        &fixture.state.settings.session.session_cookie_name,
+    )
+    .expect("federated login must set a session cookie");
     let csrf_cookie =
-        cookie_value_from_response(&response, &fixture.state.settings.csrf_cookie_name)
+        cookie_value_from_response(&response, &fixture.state.settings.session.csrf_cookie_name)
             .expect("federated login must set a CSRF cookie");
     let (status, body) = response_json(response).await;
 
@@ -1482,7 +1485,7 @@ async fn oidc_callback_creates_new_federated_user_session_and_external_link() {
     assert_eq!(body["csrf_token"], csrf_cookie);
     assert_eq!(
         body["expires_in"],
-        fixture.state.settings.session_ttl_seconds
+        fixture.state.settings.session.session_ttl_seconds
     );
     assert!(body.get("session_id").is_none());
 
@@ -1549,8 +1552,10 @@ async fn oidc_callback_rejects_existing_active_email_account_without_explicit_li
         .expect("JWKS endpoint should receive the fetch request");
 
     // 拒绝自动绑定已有 email 账号时，响应不应创建新的登录会话。
-    let session_cookie =
-        cookie_value_from_response(&response, &fixture.state.settings.session_cookie_name);
+    let session_cookie = cookie_value_from_response(
+        &response,
+        &fixture.state.settings.session.session_cookie_name,
+    );
     let (status, body) = response_json(response).await;
     let linked_user = fixture
         .user_by_email(&email)
@@ -1619,8 +1624,11 @@ async fn oidc_callback_rejects_existing_inactive_email_account_without_link_or_s
         Some("access_denied")
     );
     assert!(
-        cookie_value_from_response(&response, &fixture.state.settings.session_cookie_name)
-            .is_none(),
+        cookie_value_from_response(
+            &response,
+            &fixture.state.settings.session.session_cookie_name
+        )
+        .is_none(),
         "inactive existing email accounts must not receive a federated session"
     );
     assert!(
@@ -1694,8 +1702,11 @@ async fn oidc_callback_rejects_inactive_linked_user() {
         Some("access_denied")
     );
     assert!(
-        cookie_value_from_response(&response, &fixture.state.settings.session_cookie_name)
-            .is_none(),
+        cookie_value_from_response(
+            &response,
+            &fixture.state.settings.session.session_cookie_name
+        )
+        .is_none(),
         "inactive linked users must not receive a session cookie"
     );
 }
@@ -1747,8 +1758,11 @@ async fn social_callback_without_email_rejects_inactive_linked_user() {
         Some("access_denied")
     );
     assert!(
-        cookie_value_from_response(&response, &fixture.state.settings.session_cookie_name)
-            .is_none(),
+        cookie_value_from_response(
+            &response,
+            &fixture.state.settings.session.session_cookie_name
+        )
+        .is_none(),
         "inactive linked social users must not receive a session"
     );
 }
@@ -1783,11 +1797,13 @@ async fn saml_acs_creates_new_federated_user_session_and_external_link() {
     )
     .await;
 
-    let session_cookie =
-        cookie_value_from_response(&response, &fixture.state.settings.session_cookie_name)
-            .expect("successful SAML federation must set a session cookie");
+    let session_cookie = cookie_value_from_response(
+        &response,
+        &fixture.state.settings.session.session_cookie_name,
+    )
+    .expect("successful SAML federation must set a session cookie");
     let csrf_cookie =
-        cookie_value_from_response(&response, &fixture.state.settings.csrf_cookie_name)
+        cookie_value_from_response(&response, &fixture.state.settings.session.csrf_cookie_name)
             .expect("successful SAML federation must set a CSRF cookie");
     let (status, body) = response_json(response).await;
     let user = fixture

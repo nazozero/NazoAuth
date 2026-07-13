@@ -125,7 +125,7 @@ fn ciba_backchannel_client_assertion_accepts_token_endpoint_audience_when_allowe
     let req = TestRequest::post().uri("/bc-authorize").to_http_request();
     let assertion = signed_client_assertion(
         &client.client_id,
-        &format!("{}/token", settings.issuer),
+        &format!("{}/token", settings.endpoint.issuer),
         "client-kid",
         &private_key,
         "ciba-token-audience-jti",
@@ -169,14 +169,14 @@ fn private_key_jwt_accepts_current_and_previous_jwks_during_rotation() {
     let req = TestRequest::post().uri("/token").to_http_request();
     let first_assertion = signed_client_assertion(
         &client.client_id,
-        &settings.issuer,
+        &settings.endpoint.issuer,
         "kid-1",
         &first,
         "jti-first",
     );
     let second_assertion = signed_client_assertion(
         &client.client_id,
-        &settings.issuer,
+        &settings.endpoint.issuer,
         "kid-2",
         &second,
         "jti-second",
@@ -205,7 +205,7 @@ fn private_key_jwt_accepts_missing_kid_only_for_one_kidless_matching_key() {
     let req = TestRequest::post().uri("/token").to_http_request();
     let assertion = signed_client_assertion_without_kid(
         &client.client_id,
-        &settings.issuer,
+        &settings.endpoint.issuer,
         &private_key,
         "kidless-single-key-jti",
     );
@@ -234,7 +234,7 @@ fn private_key_jwt_rejects_missing_kid_when_key_selection_is_ambiguous() {
     let req = TestRequest::post().uri("/token").to_http_request();
     let assertion = signed_client_assertion_without_kid(
         &client.client_id,
-        &settings.issuer,
+        &settings.endpoint.issuer,
         &first,
         "kidless-ambiguous-key-jti",
     );
@@ -274,7 +274,7 @@ fn private_key_jwt_rejects_assertions_after_key_retirement() {
     let req = TestRequest::post().uri("/token").to_http_request();
     let retired_assertion = signed_client_assertion(
         &client.client_id,
-        &settings.issuer,
+        &settings.endpoint.issuer,
         "retired-kid",
         &retired,
         "jti-retired",
@@ -396,7 +396,7 @@ fn private_key_jwt_decode_accepts_small_future_nbf_and_iat() {
         &json!({
             "iss": client.client_id,
             "sub": client.client_id,
-            "aud": settings.issuer,
+            "aud": settings.endpoint.issuer,
             "exp": now + 120,
             "nbf": now + 8,
             "iat": now + 8,

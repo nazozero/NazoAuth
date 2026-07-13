@@ -17,7 +17,6 @@ use crate::support::{
 
 mod email;
 mod federation;
-pub(crate) mod focused;
 mod passkey;
 mod profile;
 mod rate_limit;
@@ -40,45 +39,83 @@ pub(crate) use rate_limit::RateLimitSettings;
 /// OAuth service runtime parameters.
 #[derive(Clone)]
 pub(crate) struct Settings {
+    pub(crate) endpoint: EndpointSettings,
+    pub(crate) protocol: ProtocolSettings,
+    pub(crate) session: SessionSettings,
+    pub(crate) storage: StorageSettings,
+    pub(crate) identity: IdentityRuntimeSettings,
+    pub(crate) keys: KeyManagementSettings,
+    pub(crate) modules: ModuleSettings,
+    pub(crate) device: DeviceGrantSettings,
+    pub(crate) ciba: CibaSettings,
+}
+
+#[derive(Clone)]
+pub(crate) struct EndpointSettings {
     pub(crate) issuer: String,
     pub(crate) mtls_endpoint_base_url: String,
     pub(crate) frontend_base_url: String,
     pub(crate) cors_allowed_origins: Vec<String>,
+    pub(crate) trusted_proxy_cidrs: Vec<IpCidr>,
+    pub(crate) client_ip_header_mode: ClientIpHeaderMode,
+}
+
+#[derive(Clone)]
+pub(crate) struct ProtocolSettings {
     pub(crate) default_audience: String,
     pub(crate) protected_resource_identifier: String,
     pub(crate) authorization_server_profile: AuthorizationServerProfile,
     pub(crate) ciba_security_profile: CibaSecurityProfile,
     pub(crate) dpop_nonce_policy: DpopNoncePolicy,
     pub(crate) request_object_jti_policy: RequestObjectJtiPolicy,
-    pub(crate) session_cookie_name: String,
-    pub(crate) csrf_cookie_name: String,
-    pub(crate) cookie_secure: bool,
-    pub(crate) session_ttl_seconds: u64,
     pub(crate) auth_code_ttl_seconds: u64,
     pub(crate) access_token_ttl_seconds: i64,
     pub(crate) id_token_ttl_seconds: i64,
     pub(crate) refresh_token_ttl_seconds: i64,
+    pub(crate) client_secret_pepper: String,
+    pub(crate) subject_type: SubjectType,
+    pub(crate) pairwise_subject_secret: Option<String>,
+    pub(crate) par_ttl_seconds: u64,
+    pub(crate) require_pushed_authorization_requests: bool,
+    pub(crate) fapi_http_signature_max_age_seconds: i64,
+}
+
+#[derive(Clone)]
+pub(crate) struct SessionSettings {
+    pub(crate) session_cookie_name: String,
+    pub(crate) csrf_cookie_name: String,
+    pub(crate) cookie_secure: bool,
+    pub(crate) session_ttl_seconds: u64,
+}
+
+#[derive(Clone)]
+pub(crate) struct StorageSettings {
     pub(crate) avatar_max_bytes: usize,
     pub(crate) client_delivery_ttl_seconds: u64,
-    pub(crate) client_secret_pepper: String,
+    pub(crate) avatar_storage_dir: PathBuf,
+    pub(crate) scim_bearer_token: Option<String>,
+}
+
+#[derive(Clone)]
+pub(crate) struct IdentityRuntimeSettings {
     pub(crate) rate_limit: RateLimitSettings,
     pub(crate) email: EmailSettings,
     pub(crate) email_code_dev_response_enabled: bool,
-    pub(crate) avatar_storage_dir: PathBuf,
+    pub(crate) passkey: PasskeySettings,
+    pub(crate) federation: FederationSettings,
+}
+
+#[derive(Clone)]
+pub(crate) struct KeyManagementSettings {
     pub(crate) jwk_keys_dir: PathBuf,
     pub(crate) signing_external_command: Vec<String>,
     pub(crate) signing_external_timeout_ms: u64,
     pub(crate) signing_key_rotation_interval_seconds: i64,
     pub(crate) signing_key_prepublish_seconds: i64,
-    pub(crate) trusted_proxy_cidrs: Vec<IpCidr>,
-    pub(crate) client_ip_header_mode: ClientIpHeaderMode,
-    pub(crate) subject_type: SubjectType,
-    pub(crate) pairwise_subject_secret: Option<String>,
-    pub(crate) par_ttl_seconds: u64,
-    pub(crate) require_pushed_authorization_requests: bool,
-    pub(crate) scim_bearer_token: Option<String>,
-    pub(crate) passkey: PasskeySettings,
-    pub(crate) federation: FederationSettings,
+}
+
+#[derive(Clone)]
+pub(crate) struct ModuleSettings {
     pub(crate) enable_request_object: bool,
     pub(crate) enable_request_uri_parameter: bool,
     pub(crate) enable_par_request_object: bool,
@@ -91,10 +128,17 @@ pub(crate) struct Settings {
     pub(crate) enable_ciba: bool,
     pub(crate) enable_native_sso: bool,
     pub(crate) enable_fapi_http_signatures: bool,
-    pub(crate) fapi_http_signature_max_age_seconds: i64,
     pub(crate) dynamic_client_registration_initial_access_token: Option<String>,
+}
+
+#[derive(Clone)]
+pub(crate) struct DeviceGrantSettings {
     pub(crate) device_authorization_ttl_seconds: u64,
     pub(crate) device_authorization_poll_interval_seconds: u64,
+}
+
+#[derive(Clone)]
+pub(crate) struct CibaSettings {
     pub(crate) ciba_auth_req_id_ttl_seconds: u64,
     pub(crate) ciba_poll_interval_seconds: u64,
     pub(crate) ciba_automated_decision_token: Option<String>,
@@ -102,19 +146,20 @@ pub(crate) struct Settings {
 
 impl Settings {
     pub(crate) fn key_settings(&self) -> nazo_key_management::KeySettings {
-        let protocol = self.protocol();
         nazo_key_management::KeySettings {
-            keys_dir: self.jwk_keys_dir.clone(),
-            external_command: self.signing_external_command.clone(),
-            external_timeout: std::time::Duration::from_millis(self.signing_external_timeout_ms),
-            rotation_interval: chrono::Duration::seconds(
-                self.signing_key_rotation_interval_seconds,
+            keys_dir: self.keys.jwk_keys_dir.clone(),
+            external_command: self.keys.signing_external_command.clone(),
+            external_timeout: std::time::Duration::from_millis(
+                self.keys.signing_external_timeout_ms,
             ),
-            prepublish_window: chrono::Duration::seconds(self.signing_key_prepublish_seconds),
+            rotation_interval: chrono::Duration::seconds(
+                self.keys.signing_key_rotation_interval_seconds,
+            ),
+            prepublish_window: chrono::Duration::seconds(self.keys.signing_key_prepublish_seconds),
             verification_grace: chrono::Duration::seconds(
-                protocol
+                self.protocol
                     .access_token_ttl_seconds
-                    .max(protocol.id_token_ttl_seconds),
+                    .max(self.protocol.id_token_ttl_seconds),
             ),
         }
     }
@@ -269,95 +314,113 @@ impl Settings {
             .unwrap_or_else(|| data_dir.join("keys"));
 
         Ok(Self {
-            issuer,
-            mtls_endpoint_base_url,
-            frontend_base_url,
-            cors_allowed_origins,
-            default_audience: config.string("DEFAULT_AUDIENCE", "resource://default"),
-            protected_resource_identifier,
-            authorization_server_profile,
-            ciba_security_profile,
-            dpop_nonce_policy,
-            request_object_jti_policy,
-            session_cookie_name: config.string("SESSION_COOKIE_NAME", "nazo_oauth_session"),
-            csrf_cookie_name: config.string("CSRF_COOKIE_NAME", "nazo_oauth_csrf"),
-            cookie_secure,
-            session_ttl_seconds: positive_u64(
-                config,
-                "SESSION_TTL_SECONDS",
-                28_800,
-                "SESSION_TTL_SECONDS",
-            )?,
-            auth_code_ttl_seconds,
-            access_token_ttl_seconds: positive_i64(
-                config,
-                "ACCESS_TOKEN_TTL_SECONDS",
-                300,
-                "ACCESS_TOKEN_TTL_SECONDS",
-            )?,
-            id_token_ttl_seconds: positive_i64(
-                config,
-                "ID_TOKEN_TTL_SECONDS",
-                600,
-                "ID_TOKEN_TTL_SECONDS",
-            )?,
-            refresh_token_ttl_seconds: positive_i64(
-                config,
-                "REFRESH_TOKEN_TTL_SECONDS",
-                2_592_000,
-                "REFRESH_TOKEN_TTL_SECONDS",
-            )?,
-            avatar_max_bytes: config.parse("AVATAR_MAX_BYTES", 2_097_152)?,
-            client_delivery_ttl_seconds: positive_u64(
-                config,
-                "CLIENT_DELIVERY_TTL_SECONDS",
-                86_400,
-                "CLIENT_DELIVERY_TTL_SECONDS",
-            )?,
-            client_secret_pepper,
-            rate_limit: RateLimitSettings::from_config(config)?,
-            email: EmailSettings::from_config(config)?,
-            email_code_dev_response_enabled: config
-                .bool("EMAIL_CODE_DEV_RESPONSE_ENABLED", false)?,
-            avatar_storage_dir,
-            jwk_keys_dir,
-            signing_external_command: parse_signing_external_command(
-                config.optional_string("SIGNING_EXTERNAL_COMMAND"),
-            ),
-            signing_external_timeout_ms: config.parse("SIGNING_EXTERNAL_TIMEOUT_MS", 2_000)?,
-            signing_key_rotation_interval_seconds,
-            signing_key_prepublish_seconds,
-            trusted_proxy_cidrs: parse_trusted_proxy_cidrs(config.get("TRUSTED_PROXY_CIDRS"))?,
-            client_ip_header_mode: ClientIpHeaderMode::parse(
-                &config.string("CLIENT_IP_HEADER_MODE", "none"),
-            )?,
-            subject_type,
-            pairwise_subject_secret,
-            par_ttl_seconds,
-            require_pushed_authorization_requests,
-            scim_bearer_token: config.optional_string("SCIM_BEARER_TOKEN"),
-            passkey,
-            federation,
-            enable_request_object: config.bool("ENABLE_REQUEST_OBJECT", false)?,
-            enable_request_uri_parameter: config.bool("ENABLE_REQUEST_URI_PARAMETER", false)?,
-            enable_par_request_object: config.bool("ENABLE_PAR_REQUEST_OBJECT", false)?,
-            enable_authorization_details: config.bool("ENABLE_AUTHORIZATION_DETAILS", false)?,
-            enable_legacy_audience_param: config.bool("ENABLE_LEGACY_AUDIENCE_PARAM", false)?,
-            enable_device_authorization_grant: config
-                .bool("ENABLE_DEVICE_AUTHORIZATION_GRANT", false)?,
-            enable_frontchannel_logout: config.bool("ENABLE_FRONTCHANNEL_LOGOUT", false)?,
-            enable_session_management: config.bool("ENABLE_SESSION_MANAGEMENT", false)?,
-            enable_ciba: config.bool("ENABLE_CIBA", false)?,
-            enable_native_sso: config.bool("ENABLE_NATIVE_SSO", false)?,
-            enable_fapi_http_signatures: config.bool("ENABLE_FAPI_HTTP_SIGNATURES", false)?,
-            fapi_http_signature_max_age_seconds,
-            enable_dynamic_client_registration,
-            dynamic_client_registration_initial_access_token,
-            device_authorization_ttl_seconds,
-            device_authorization_poll_interval_seconds,
-            ciba_auth_req_id_ttl_seconds,
-            ciba_poll_interval_seconds,
-            ciba_automated_decision_token,
+            endpoint: EndpointSettings {
+                issuer,
+                mtls_endpoint_base_url,
+                frontend_base_url,
+                cors_allowed_origins,
+                trusted_proxy_cidrs: parse_trusted_proxy_cidrs(config.get("TRUSTED_PROXY_CIDRS"))?,
+                client_ip_header_mode: ClientIpHeaderMode::parse(
+                    &config.string("CLIENT_IP_HEADER_MODE", "none"),
+                )?,
+            },
+            protocol: ProtocolSettings {
+                default_audience: config.string("DEFAULT_AUDIENCE", "resource://default"),
+                protected_resource_identifier,
+                authorization_server_profile,
+                ciba_security_profile,
+                dpop_nonce_policy,
+                request_object_jti_policy,
+                auth_code_ttl_seconds,
+                access_token_ttl_seconds: positive_i64(
+                    config,
+                    "ACCESS_TOKEN_TTL_SECONDS",
+                    300,
+                    "ACCESS_TOKEN_TTL_SECONDS",
+                )?,
+                id_token_ttl_seconds: positive_i64(
+                    config,
+                    "ID_TOKEN_TTL_SECONDS",
+                    600,
+                    "ID_TOKEN_TTL_SECONDS",
+                )?,
+                refresh_token_ttl_seconds: positive_i64(
+                    config,
+                    "REFRESH_TOKEN_TTL_SECONDS",
+                    2_592_000,
+                    "REFRESH_TOKEN_TTL_SECONDS",
+                )?,
+                client_secret_pepper,
+                subject_type,
+                pairwise_subject_secret,
+                par_ttl_seconds,
+                require_pushed_authorization_requests,
+                fapi_http_signature_max_age_seconds,
+            },
+            session: SessionSettings {
+                session_cookie_name: config.string("SESSION_COOKIE_NAME", "nazo_oauth_session"),
+                csrf_cookie_name: config.string("CSRF_COOKIE_NAME", "nazo_oauth_csrf"),
+                cookie_secure,
+                session_ttl_seconds: positive_u64(
+                    config,
+                    "SESSION_TTL_SECONDS",
+                    28_800,
+                    "SESSION_TTL_SECONDS",
+                )?,
+            },
+            storage: StorageSettings {
+                avatar_max_bytes: config.parse("AVATAR_MAX_BYTES", 2_097_152)?,
+                client_delivery_ttl_seconds: positive_u64(
+                    config,
+                    "CLIENT_DELIVERY_TTL_SECONDS",
+                    86_400,
+                    "CLIENT_DELIVERY_TTL_SECONDS",
+                )?,
+                avatar_storage_dir,
+                scim_bearer_token: config.optional_string("SCIM_BEARER_TOKEN"),
+            },
+            identity: IdentityRuntimeSettings {
+                rate_limit: RateLimitSettings::from_config(config)?,
+                email: EmailSettings::from_config(config)?,
+                email_code_dev_response_enabled: config
+                    .bool("EMAIL_CODE_DEV_RESPONSE_ENABLED", false)?,
+                passkey,
+                federation,
+            },
+            keys: KeyManagementSettings {
+                jwk_keys_dir,
+                signing_external_command: parse_signing_external_command(
+                    config.optional_string("SIGNING_EXTERNAL_COMMAND"),
+                ),
+                signing_external_timeout_ms: config.parse("SIGNING_EXTERNAL_TIMEOUT_MS", 2_000)?,
+                signing_key_rotation_interval_seconds,
+                signing_key_prepublish_seconds,
+            },
+            modules: ModuleSettings {
+                enable_request_object: config.bool("ENABLE_REQUEST_OBJECT", false)?,
+                enable_request_uri_parameter: config.bool("ENABLE_REQUEST_URI_PARAMETER", false)?,
+                enable_par_request_object: config.bool("ENABLE_PAR_REQUEST_OBJECT", false)?,
+                enable_authorization_details: config.bool("ENABLE_AUTHORIZATION_DETAILS", false)?,
+                enable_legacy_audience_param: config.bool("ENABLE_LEGACY_AUDIENCE_PARAM", false)?,
+                enable_device_authorization_grant: config
+                    .bool("ENABLE_DEVICE_AUTHORIZATION_GRANT", false)?,
+                enable_frontchannel_logout: config.bool("ENABLE_FRONTCHANNEL_LOGOUT", false)?,
+                enable_session_management: config.bool("ENABLE_SESSION_MANAGEMENT", false)?,
+                enable_ciba: config.bool("ENABLE_CIBA", false)?,
+                enable_native_sso: config.bool("ENABLE_NATIVE_SSO", false)?,
+                enable_fapi_http_signatures: config.bool("ENABLE_FAPI_HTTP_SIGNATURES", false)?,
+                enable_dynamic_client_registration,
+                dynamic_client_registration_initial_access_token,
+            },
+            device: DeviceGrantSettings {
+                device_authorization_ttl_seconds,
+                device_authorization_poll_interval_seconds,
+            },
+            ciba: CibaSettings {
+                ciba_auth_req_id_ttl_seconds,
+                ciba_poll_interval_seconds,
+                ciba_automated_decision_token,
+            },
         })
     }
 }

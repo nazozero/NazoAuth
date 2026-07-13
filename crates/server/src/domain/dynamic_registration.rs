@@ -21,17 +21,21 @@ pub(crate) struct DynamicRegistrationConfig {
 
 impl From<&Settings> for DynamicRegistrationConfig {
     fn from(settings: &Settings) -> Self {
-        let endpoint = settings.endpoint();
-        let identity = settings.identity();
-        let modules = settings.modules();
-        let protocol = settings.protocol();
+        let endpoint = &settings.endpoint;
+        let identity = &settings.identity;
+        let modules = &settings.modules;
+        let protocol = &settings.protocol;
         Self {
-            issuer: settings.issuer.clone(),
+            issuer: endpoint.issuer.clone(),
             default_audience: protocol.default_audience.to_owned(),
-            pairwise_subject_secret: protocol.pairwise_subject_secret.map(ToOwned::to_owned),
+            pairwise_subject_secret: protocol
+                .pairwise_subject_secret
+                .as_deref()
+                .map(ToOwned::to_owned),
             client_secret_pepper: protocol.client_secret_pepper.to_owned(),
             initial_access_token: modules
                 .dynamic_client_registration_initial_access_token
+                .as_deref()
                 .map(ToOwned::to_owned),
             rate_limit_window_seconds: identity.rate_limit.window_seconds,
             rate_limit_max_requests: identity.rate_limit.token_management_max_requests,
@@ -75,7 +79,7 @@ impl DynamicRegistrationHandles {
             clients: nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone()),
             rate_limits: nazo_valkey::RateLimitStore::new(&state.valkey_connection()),
             keyset: state.keyset.clone(),
-            enabled: state.settings.modules().enable_dynamic_client_registration,
+            enabled: state.settings.modules.enable_dynamic_client_registration,
         }
     }
 }

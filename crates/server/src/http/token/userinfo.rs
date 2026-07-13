@@ -281,7 +281,7 @@ async fn userinfo_success_response(
         let object = claims
             .as_object_mut()
             .ok_or_else(|| anyhow::anyhow!("UserInfo claims must be a JSON object"))?;
-        object.insert("iss".to_owned(), json!(state.settings.issuer));
+        object.insert("iss".to_owned(), json!(state.settings.endpoint.issuer));
         object.insert("aud".to_owned(), json!(client.client_id));
         let signed = sign_response_jwt(
             state,
@@ -330,8 +330,11 @@ async fn access_token_user_id(
 }
 
 fn userinfo_audience_allowed(settings: &Settings, audience: &Value) -> bool {
-    let userinfo_url = format!("{}/userinfo", settings.issuer.trim_end_matches('/'));
-    token_audience_contains(audience, &settings.default_audience)
+    let userinfo_url = format!(
+        "{}/userinfo",
+        settings.endpoint.issuer.trim_end_matches('/')
+    );
+    token_audience_contains(audience, &settings.protocol.default_audience)
         || token_audience_contains(audience, &userinfo_url)
 }
 

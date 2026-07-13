@@ -6,8 +6,8 @@ use crate::config::ConfigSource;
 fn settings(mode: ClientIpHeaderMode, trusted: &str) -> Settings {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.client_ip_header_mode = mode;
-    settings.trusted_proxy_cidrs =
+    settings.endpoint.client_ip_header_mode = mode;
+    settings.endpoint.trusted_proxy_cidrs =
         parse_trusted_proxy_cidrs(Some(trusted.to_owned())).expect("trusted CIDRs should parse");
     settings
 }

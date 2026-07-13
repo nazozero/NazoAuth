@@ -148,7 +148,7 @@ fn dynamic_registration_routes_are_static_and_handlers_own_disabled_behavior() {
 #[actix_web::test]
 async fn disabled_dynamic_registration_static_route_contract_is_stable() {
     let state = disabled_route_state();
-    assert!(!state.settings.enable_dynamic_client_registration);
+    assert!(!state.settings.modules.enable_dynamic_client_registration);
     let settings = state.settings.clone();
     let dynamic_registration_handles =
         Data::new(DynamicRegistrationHandles::from_app_state(state.get_ref()));

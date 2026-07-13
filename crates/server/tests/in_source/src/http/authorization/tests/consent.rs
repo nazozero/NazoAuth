@@ -99,9 +99,9 @@ impl ConsentLiveFixture {
         let valkey_url = std::env::var("VALKEY_URL").ok()?;
         let mut settings =
             Settings::from_config(&ConfigSource::default()).expect("test settings should load");
-        settings.issuer = "https://issuer.example".to_owned();
-        settings.frontend_base_url = "https://app.example".to_owned();
-        settings.auth_code_ttl_seconds = 60;
+        settings.endpoint.issuer = "https://issuer.example".to_owned();
+        settings.endpoint.frontend_base_url = "https://app.example".to_owned();
+        settings.protocol.auth_code_ttl_seconds = 60;
 
         let mut valkey_builder = ValkeyBuilder::from_config(
             ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),
@@ -276,7 +276,7 @@ impl ConsentLiveFixture {
             &self.state.valkey,
             format!("oauth:session:{sid}"),
             serde_json::to_string(&payload).expect("session should serialize"),
-            self.state.settings.session_ttl_seconds,
+            self.state.settings.session.session_ttl_seconds,
         )
         .await
         .expect("session should store");
@@ -287,7 +287,7 @@ impl ConsentLiveFixture {
             &self.state.valkey,
             format!("oauth:consent:{}", payload.request_id),
             serde_json::to_string(payload).expect("consent payload should serialize"),
-            self.state.settings.auth_code_ttl_seconds,
+            self.state.settings.protocol.auth_code_ttl_seconds,
         )
         .await
         .expect("consent payload should persist");
@@ -298,7 +298,7 @@ impl ConsentLiveFixture {
             &self.state.valkey,
             format!("oauth:consent:{request_id}"),
             raw.to_owned(),
-            self.state.settings.auth_code_ttl_seconds,
+            self.state.settings.protocol.auth_code_ttl_seconds,
         )
         .await
         .expect("malformed consent payload should be written to valkey");
@@ -313,11 +313,11 @@ impl ConsentLiveFixture {
         TestRequest::get()
             .uri(&uri)
             .cookie(Cookie::new(
-                self.state.settings.session_cookie_name.clone(),
+                self.state.settings.session.session_cookie_name.clone(),
                 sid.to_owned(),
             ))
             .cookie(Cookie::new(
-                self.state.settings.csrf_cookie_name.clone(),
+                self.state.settings.session.csrf_cookie_name.clone(),
                 "csrf-token".to_owned(),
             ))
     }

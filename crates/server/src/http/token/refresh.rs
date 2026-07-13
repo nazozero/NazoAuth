@@ -53,7 +53,7 @@ fn refresh_token_policy_for_profile(
     token: &TokenRow,
 ) -> RefreshTokenPolicy {
     refresh_token_policy_for_authorization_server_profile(
-        settings.protocol().authorization_server_profile,
+        settings.protocol.authorization_server_profile,
         client,
         token,
     )
@@ -85,7 +85,7 @@ fn refresh_token_audiences(
 ) -> Result<Vec<String>, ()> {
     let original_audiences = json_array_to_strings(&token.audience);
     let original_audiences = if original_audiences.is_empty() {
-        vec![settings.default_audience.clone()]
+        vec![settings.protocol.default_audience.clone()]
     } else {
         original_audiences
     };

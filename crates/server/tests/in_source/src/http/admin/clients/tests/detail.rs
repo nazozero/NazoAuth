@@ -244,7 +244,7 @@ impl LiveAdminClientDetailFixture {
             &self.state.valkey,
             format!("oauth:session:{sid}"),
             serde_json::to_string(&payload).expect("session should serialize"),
-            self.state.settings.session_ttl_seconds,
+            self.state.settings.session.session_ttl_seconds,
         )
         .await
         .expect("session should store");
@@ -254,7 +254,7 @@ impl LiveAdminClientDetailFixture {
         actix_web::test::TestRequest::get()
             .uri(uri)
             .cookie(Cookie::new(
-                self.state.settings.session_cookie_name.clone(),
+                self.state.settings.session.session_cookie_name.clone(),
                 sid.to_owned(),
             ))
             .to_http_request()

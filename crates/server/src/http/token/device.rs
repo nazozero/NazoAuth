@@ -256,8 +256,8 @@ pub(crate) async fn device_authorization(
         "user_code": user_code,
         "verification_uri": verification_uri,
         "verification_uri_complete": format!("{verification_uri}?user_code={}", urlencoding::encode(&user_code)),
-        "expires_in": state.settings.device_authorization_ttl_seconds,
-        "interval": state.settings.device_authorization_poll_interval_seconds
+        "expires_in": state.settings.device.device_authorization_ttl_seconds,
+        "interval": state.settings.device.device_authorization_poll_interval_seconds
     }))
 }
 
@@ -278,7 +278,7 @@ pub(crate) fn device_authorization_request_payload(
         return Err(DeviceAuthorizationRequestError::InvalidScope);
     }
     let resource_indicators = if form.resources.is_empty() {
-        vec![settings.default_audience.clone()]
+        vec![settings.protocol.default_audience.clone()]
     } else {
         form.resources.clone()
     };
@@ -292,9 +292,10 @@ pub(crate) fn device_authorization_request_payload(
         scopes: requested_scopes,
         resource_indicators,
         authorization_details: json!([]),
-        interval_seconds: settings.device_authorization_poll_interval_seconds,
+        interval_seconds: settings.device.device_authorization_poll_interval_seconds,
         issued_at: now,
-        expires_at: now + Duration::seconds(settings.device_authorization_ttl_seconds as i64),
+        expires_at: now
+            + Duration::seconds(settings.device.device_authorization_ttl_seconds as i64),
     })
 }
 
@@ -558,7 +559,7 @@ pub(crate) async fn device_verification(
     }
     let user_code = query.get("user_code").cloned().unwrap_or_default();
     let payload = read_device_authorization_payload_for_user_code(&state, &user_code).await;
-    let csrf_token = cookie_value(&req, state.settings.session().csrf_cookie_name);
+    let csrf_token = cookie_value(&req, &state.settings.session.csrf_cookie_name);
     json_response_no_store(DeviceVerificationView {
         user_code,
         csrf_token,
@@ -582,7 +583,7 @@ fn redirect_to_device_verification_ui(settings: &Settings, user_code: &str) -> H
 fn device_verification_uri(settings: &Settings) -> String {
     format!(
         "{}/device",
-        settings.frontend_base_url.trim_end_matches('/')
+        settings.endpoint.frontend_base_url.trim_end_matches('/')
     )
 }
 
@@ -861,7 +862,7 @@ async fn persist_new_device_authorization(
                 &device_code,
                 &user_code,
                 &pending,
-                state.settings.device_authorization_ttl_seconds,
+                state.settings.device.device_authorization_ttl_seconds,
             )
             .await?
         {
@@ -921,7 +922,7 @@ fn device_authorization_subject(
     let redirect_uri = json_array_to_strings(&client.redirect_uris)
         .into_iter()
         .next()
-        .unwrap_or_else(|| settings.issuer.clone());
+        .unwrap_or_else(|| settings.endpoint.issuer.clone());
     compute_subject_for_client(
         settings,
         user_id,

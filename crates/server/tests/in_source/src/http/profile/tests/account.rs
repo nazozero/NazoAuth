@@ -90,7 +90,7 @@ fn test_state() -> AppState {
 fn request_with_session_but_no_csrf(state: &AppState, sid: &str) -> HttpRequest {
     actix_web::test::TestRequest::default()
         .cookie(Cookie::new(
-            state.settings.session_cookie_name.clone(),
+            state.settings.session.session_cookie_name.clone(),
             sid.to_owned(),
         ))
         .to_http_request()
@@ -188,7 +188,7 @@ impl LiveAccountFixture {
             &self.state.valkey,
             format!("oauth:session:{sid}"),
             serde_json::to_string(&payload).expect("session should serialize"),
-            self.state.settings.session_ttl_seconds,
+            self.state.settings.session.session_ttl_seconds,
         )
         .await
         .expect("session should store");
@@ -197,11 +197,11 @@ impl LiveAccountFixture {
     fn request(&self, sid: &str, csrf: &str) -> HttpRequest {
         actix_web::test::TestRequest::default()
             .cookie(Cookie::new(
-                self.state.settings.session_cookie_name.clone(),
+                self.state.settings.session.session_cookie_name.clone(),
                 sid.to_owned(),
             ))
             .cookie(Cookie::new(
-                self.state.settings.csrf_cookie_name.clone(),
+                self.state.settings.session.csrf_cookie_name.clone(),
                 csrf.to_owned(),
             ))
             .insert_header(("x-csrf-token", csrf))
@@ -211,11 +211,11 @@ impl LiveAccountFixture {
     fn request_with_csrf_cookie(&self, sid: &str, csrf: &str) -> HttpRequest {
         actix_web::test::TestRequest::default()
             .cookie(Cookie::new(
-                self.state.settings.session_cookie_name.clone(),
+                self.state.settings.session.session_cookie_name.clone(),
                 sid.to_owned(),
             ))
             .cookie(Cookie::new(
-                self.state.settings.csrf_cookie_name.clone(),
+                self.state.settings.session.csrf_cookie_name.clone(),
                 csrf.to_owned(),
             ))
             .to_http_request()
@@ -366,7 +366,10 @@ async fn me_projects_pending_session_lookup_failure_as_server_error() {
         keyset: fixture.state.keyset.clone(),
     });
     let req = actix_web::test::TestRequest::default()
-        .cookie(Cookie::new(state.settings.session_cookie_name.clone(), sid))
+        .cookie(Cookie::new(
+            state.settings.session.session_cookie_name.clone(),
+            sid,
+        ))
         .to_http_request();
 
     let (status, body, has_set_cookie) = response_json(me_from_state(state, req).await).await;
@@ -405,7 +408,10 @@ async fn me_projects_authenticated_session_lookup_failure_as_server_error() {
         keyset: fixture.state.keyset.clone(),
     });
     let req = actix_web::test::TestRequest::default()
-        .cookie(Cookie::new(state.settings.session_cookie_name.clone(), sid))
+        .cookie(Cookie::new(
+            state.settings.session.session_cookie_name.clone(),
+            sid,
+        ))
         .to_http_request();
 
     let (status, body, has_set_cookie) = response_json(me_from_state(state, req).await).await;

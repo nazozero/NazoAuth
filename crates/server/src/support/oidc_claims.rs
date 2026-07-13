@@ -60,7 +60,7 @@ pub(crate) fn compute_subject_for_client(
                 .ok_or_else(|| anyhow::anyhow!("PAIRWISE_SUBJECT_SECRET is required"))?;
             Ok(oidc_subject(
                 secret.as_bytes(),
-                &settings.issuer,
+                &settings.endpoint.issuer,
                 &host,
                 user_id,
             ))

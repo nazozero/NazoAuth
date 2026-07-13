@@ -134,7 +134,7 @@ async fn corrupt_rate_limit_counter_fails_closed_as_server_error() {
         &state.valkey,
         key,
         "not-an-integer".to_owned(),
-        state.settings.rate_limit.window_seconds,
+        state.settings.identity.rate_limit.window_seconds,
     )
     .await
     .expect("corrupt rate limit counter should be staged");
@@ -174,7 +174,7 @@ async fn rate_limit_counter_is_created_with_window_ttl() {
 
     let ttl = eval_rate_limit_key_ttl(&state, &key).await;
     assert!(
-        ttl > 0 && ttl <= state.settings.rate_limit.window_seconds as i64,
+        ttl > 0 && ttl <= state.settings.identity.rate_limit.window_seconds as i64,
         "rate limit counter must have a bounded TTL, got {ttl}"
     );
 }
@@ -203,7 +203,7 @@ async fn rate_limit_counter_without_ttl_is_repaired() {
 
     let ttl = eval_rate_limit_key_ttl(&state, &key).await;
     assert!(
-        ttl > 0 && ttl <= state.settings.rate_limit.window_seconds as i64,
+        ttl > 0 && ttl <= state.settings.identity.rate_limit.window_seconds as i64,
         "legacy rate limit counter must be given a bounded TTL, got {ttl}"
     );
 }

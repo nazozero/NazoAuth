@@ -320,8 +320,8 @@ pub(crate) async fn backchannel_authentication(
     };
     let expires_in = form
         .requested_expiry_seconds
-        .unwrap_or(state.settings.ciba_auth_req_id_ttl_seconds)
-        .min(state.settings.ciba_auth_req_id_ttl_seconds);
+        .unwrap_or(state.settings.ciba.ciba_auth_req_id_ttl_seconds)
+        .min(state.settings.ciba.ciba_auth_req_id_ttl_seconds);
     let acr = match ciba_selected_acr(form.acr_values.as_deref()) {
         Some(acr) => Some(acr),
         None if form.acr_values.is_some() => {
@@ -339,12 +339,12 @@ pub(crate) async fn backchannel_authentication(
         client_id: client.client_id.clone(),
         user_id: user.id(),
         scopes,
-        audiences: vec![state.settings.protocol().default_audience.to_owned()],
+        audiences: vec![state.settings.protocol.default_audience.to_owned()],
         acr,
         binding_message: form.binding_message,
         issued_at: now,
         status: CibaStatus::Pending,
-        interval_seconds: state.settings.ciba_poll_interval_seconds,
+        interval_seconds: state.settings.ciba.ciba_poll_interval_seconds,
         expires_at,
         retention_expires_at: ciba_retention_deadline(expires_at),
         last_poll_at: None,
@@ -377,7 +377,7 @@ pub(crate) async fn backchannel_authentication(
     json_response_no_store(json!({
         "auth_req_id": auth_req_id,
         "expires_in": expires_in,
-        "interval": state.settings.ciba_poll_interval_seconds
+        "interval": state.settings.ciba.ciba_poll_interval_seconds
     }))
 }
 
@@ -613,7 +613,7 @@ fn ciba_request_object_audience_valid(
     let Some(aud) = claims.aud.as_ref() else {
         return false;
     };
-    let issuer = state.settings.issuer.as_str();
+    let issuer = state.settings.endpoint.issuer.as_str();
     let endpoint = format!("{issuer}/bc-authorize");
     match aud {
         Value::String(value) => value == issuer || value == &endpoint,
@@ -765,7 +765,7 @@ fn validate_ciba_security_profile_client(
     auth_method: &str,
 ) -> Result<(), HttpResponse> {
     if !settings
-        .protocol()
+        .protocol
         .ciba_security_profile
         .requires_fapi2_hardening()
     {
@@ -819,7 +819,7 @@ fn validate_ciba_request_object_presence(
 ) -> Result<(), HttpResponse> {
     if (client.require_par_request_object
         || settings
-            .protocol()
+            .protocol
             .ciba_security_profile
             .requires_fapi2_hardening())
         && form.request.is_none()
@@ -842,7 +842,11 @@ pub(crate) async fn ciba_verification_page(
     }
     let location = format!(
         "{}/ciba/{}",
-        state.settings.frontend_base_url.trim_end_matches('/'),
+        state
+            .settings
+            .endpoint
+            .frontend_base_url
+            .trim_end_matches('/'),
         urlencoding::encode(&path.into_inner())
     );
     HttpResponse::Found()
@@ -895,7 +899,7 @@ pub(crate) async fn ciba_verification(
     };
     json_response_no_store(CibaVerificationView {
         auth_req_id,
-        csrf_token: cookie_value(&req, state.settings.session().csrf_cookie_name),
+        csrf_token: cookie_value(&req, &state.settings.session.csrf_cookie_name),
         request,
     })
 }
@@ -908,7 +912,7 @@ pub(crate) async fn ciba_automated_decision(
     if !state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::Ciba) {
         return empty_response(StatusCode::NOT_FOUND);
     }
-    let Some(expected_token) = state.settings.ciba_automated_decision_token.as_deref() else {
+    let Some(expected_token) = state.settings.ciba.ciba_automated_decision_token.as_deref() else {
         return empty_response(StatusCode::NOT_FOUND);
     };
     let Some(actual_token) = query.decision_token.as_deref() else {

@@ -96,7 +96,7 @@ pub(crate) struct TestAuthorizationDependencies {
 impl TestAuthorizationDependencies {
     pub(crate) fn new(state: &crate::domain::AppState) -> Self {
         let connection = state.valkey_connection();
-        let session = state.settings.session();
+        let session = &state.settings.session;
         Self {
             service: ServerAuthorizationService::new(
                 nazo_postgres::AuthorizationFlowRepository::new(

@@ -247,7 +247,7 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
     };
     if form.has_audience_param
         && form.grant_type != TOKEN_EXCHANGE_GRANT_TYPE
-        && !state.settings.modules().enable_legacy_audience_param
+        && !state.settings.modules.enable_legacy_audience_param
     {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
@@ -392,7 +392,7 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
                     Ok(Some(salt)) => {
                         let candidate_digest = client_secret_digest(
                             secret,
-                            state.settings.protocol().client_secret_pepper,
+                            &state.settings.protocol.client_secret_pepper,
                             &salt,
                         );
                         repository

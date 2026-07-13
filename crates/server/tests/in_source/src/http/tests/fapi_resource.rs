@@ -93,9 +93,10 @@ fn fapi_test_state_with_settings(settings: Settings) -> AppState {
 fn fapi_signing_state_with_invalid_db() -> Data<AppState> {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.issuer = "https://issuer.example".to_owned();
-    settings.default_audience = "resource://default".to_owned();
-    settings.protected_resource_identifier = "https://issuer.example/fapi/resource".to_owned();
+    settings.endpoint.issuer = "https://issuer.example".to_owned();
+    settings.protocol.default_audience = "resource://default".to_owned();
+    settings.protocol.protected_resource_identifier =
+        "https://issuer.example/fapi/resource".to_owned();
 
     Data::new(AppState {
         diesel_db: create_pool(
@@ -120,7 +121,7 @@ fn fapi_external_signer_failure_state(stderr_secret: &str) -> Data<AppState> {
 fn fapi_enabled_signing_state_with_invalid_db() -> Data<AppState> {
     let state = fapi_signing_state_with_invalid_db();
     let mut settings = (*state.settings).clone();
-    settings.enable_fapi_http_signatures = true;
+    settings.modules.enable_fapi_http_signatures = true;
     Data::new(AppState {
         diesel_db: state.diesel_db.clone(),
         valkey: state.valkey.clone(),
@@ -137,7 +138,7 @@ async fn fapi_enabled_signing_state_with_live_valkey_nonce() -> Option<Data<AppS
     valkey.init().await.ok()?;
     let state = fapi_enabled_signing_state_with_invalid_db();
     let mut settings = (*state.settings).clone();
-    settings.dpop_nonce_policy = DpopNoncePolicy::Required;
+    settings.protocol.dpop_nonce_policy = DpopNoncePolicy::Required;
     Some(Data::new(AppState {
         diesel_db: state.diesel_db.clone(),
         valkey,
@@ -153,9 +154,10 @@ fn live_fapi_signing_state() -> Option<Data<AppState>> {
 fn live_fapi_signing_state_from_database_url(database_url: String) -> Option<Data<AppState>> {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.issuer = "https://issuer.example".to_owned();
-    settings.default_audience = "resource://default".to_owned();
-    settings.protected_resource_identifier = "https://issuer.example/fapi/resource".to_owned();
+    settings.endpoint.issuer = "https://issuer.example".to_owned();
+    settings.protocol.default_audience = "resource://default".to_owned();
+    settings.protocol.protected_resource_identifier =
+        "https://issuer.example/fapi/resource".to_owned();
 
     Some(Data::new(AppState {
         diesel_db: create_pool(database_url, 1).expect("database pool should build"),
@@ -225,8 +227,8 @@ async fn drop_schema(state: &Data<AppState>, schema: &str) {
 fn fapi_trusted_proxy_state() -> AppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.client_ip_header_mode = ClientIpHeaderMode::None;
-    settings.trusted_proxy_cidrs =
+    settings.endpoint.client_ip_header_mode = ClientIpHeaderMode::None;
+    settings.endpoint.trusted_proxy_cidrs =
         parse_trusted_proxy_cidrs(Some("192.0.2.0/24".to_owned())).unwrap();
     fapi_test_state_with_settings(settings)
 }
@@ -551,7 +553,7 @@ async fn enabled_request_with_signed_extras(
     mode: ExtraHeaderMode,
 ) -> (HttpRequest, ClientRow, SignatureFields, String) {
     let mut claims = access_claims(None);
-    claims.iss = state.settings.issuer.clone();
+    claims.iss = state.settings.endpoint.issuer.clone();
     claims.client_id = "client-1".to_owned();
     let token = signed_fapi_claims(state, claims).await;
     let authorization = format!("Bearer {token}");
@@ -833,7 +835,7 @@ async fn enabled_endpoint_request(
     body: &[u8],
 ) -> (HttpRequest, Bytes, ClientRow) {
     let mut claims = access_claims(None);
-    claims.iss = state.settings.issuer.clone();
+    claims.iss = state.settings.endpoint.issuer.clone();
     claims.client_id = store_client_id.to_owned();
     claims.exp = Utc::now().timestamp() + ttl;
     let token = signed_fapi_claims(state, claims).await;
@@ -1628,7 +1630,7 @@ async fn fapi_resource_http_signature_endpoint_signs_dpop_nonce_challenge() {
         jkt: Some(jkt),
         x5t_s256: None,
     }));
-    claims.iss = state.settings.issuer.clone();
+    claims.iss = state.settings.endpoint.issuer.clone();
     claims.client_id = "client-1".to_owned();
     let token = signed_fapi_claims(&state, claims).await;
     let (proof, _jkt, _jwk) = signed_endpoint_dpop_proof(&signing_key, &token);
@@ -1653,7 +1655,7 @@ async fn fapi_resource_http_signature_endpoint_signs_dpop_nonce_challenge() {
 async fn fapi_resource_http_signature_post_preserves_semantic_received_digest_binding() {
     let state = fapi_enabled_signing_state_with_invalid_db();
     let mut claims = access_claims(None);
-    claims.iss = state.settings.issuer.clone();
+    claims.iss = state.settings.endpoint.issuer.clone();
     claims.client_id = "client-1".to_owned();
     let token = signed_fapi_claims(&state, claims).await;
     let authorization = format!("Bearer {token}");
@@ -1765,7 +1767,7 @@ async fn fapi_resource_http_signature_post_preserves_semantic_received_digest_bi
 async fn fapi_resource_http_signature_errors_preserve_unique_received_signature_bindings() {
     let state = fapi_enabled_signing_state_with_invalid_db();
     let mut claims = access_claims(None);
-    claims.iss = state.settings.issuer.clone();
+    claims.iss = state.settings.endpoint.issuer.clone();
     claims.client_id = "client-1".to_owned();
     let token = signed_fapi_claims(&state, claims).await;
     let authorization = format!("Bearer {token}");
@@ -1938,7 +1940,7 @@ async fn fapi_resource_rejects_signed_token_with_wrong_resource_audience_before_
 async fn fapi_resource_rejects_signed_token_with_invalid_tenant_boundary_before_db_lookup() {
     let state = fapi_signing_state_with_invalid_db();
     let mut claims = access_claims(None);
-    claims.iss = state.settings.issuer.clone();
+    claims.iss = state.settings.endpoint.issuer.clone();
     claims.tenant_id = "not-a-uuid".to_owned();
     claims.aud = json!("resource://default");
     let token = signed_fapi_claims(&state, claims).await;
@@ -2153,9 +2155,10 @@ fn access_token_rejects_multiple_transport_methods() {
 fn fapi_resource_accepts_only_bound_resource_audiences() {
     let mut settings = Settings::from_config(&crate::config::ConfigSource::default())
         .expect("default settings should load");
-    settings.issuer = "https://issuer.example".to_owned();
-    settings.default_audience = "resource://default".to_owned();
-    settings.protected_resource_identifier = "https://issuer.example/fapi/resource".to_owned();
+    settings.endpoint.issuer = "https://issuer.example".to_owned();
+    settings.protocol.default_audience = "resource://default".to_owned();
+    settings.protocol.protected_resource_identifier =
+        "https://issuer.example/fapi/resource".to_owned();
     let mut config = ResourceServerConfig::from(&settings);
 
     assert!(fapi_resource_audience_allowed(

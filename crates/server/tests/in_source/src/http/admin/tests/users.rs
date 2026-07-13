@@ -106,22 +106,22 @@ fn admin_user_dependencies(
     Data<dyn AdminUserRepositoryPort>,
     Data<ClientIpConfig>,
 ) {
-    let session = state.settings.session();
-    let endpoint = state.settings.endpoint();
+    let session = &state.settings.session;
+    let endpoint = &state.settings.endpoint;
     (
         Data::new(AdminSessionHandles::new(
             nazo_valkey::SessionStore::new(&state.valkey_connection()),
             UserRepository::new(state.diesel_db.clone()),
             SessionHttpConfig::new(
-                session.session_cookie_name,
-                session.csrf_cookie_name,
+                &session.session_cookie_name,
+                &session.csrf_cookie_name,
                 session.cookie_secure,
             ),
         )),
         Data::from(Arc::new(UserRepository::new(state.diesel_db.clone()))
             as Arc<dyn AdminUserRepositoryPort>),
         Data::new(ClientIpConfig::new(
-            endpoint.trusted_proxy_cidrs,
+            &endpoint.trusted_proxy_cidrs,
             endpoint.client_ip_header_mode,
         )),
     )
@@ -236,7 +236,7 @@ impl LiveAdminUsersFixture {
             &self.state.valkey,
             format!("oauth:session:{sid}"),
             serde_json::to_string(&payload).expect("session should serialize"),
-            self.state.settings.session_ttl_seconds,
+            self.state.settings.session.session_ttl_seconds,
         )
         .await
         .expect("session should store");
@@ -246,7 +246,7 @@ impl LiveAdminUsersFixture {
         actix_web::test::TestRequest::get()
             .uri(uri)
             .cookie(Cookie::new(
-                self.state.settings.session_cookie_name.clone(),
+                self.state.settings.session.session_cookie_name.clone(),
                 sid.to_owned(),
             ))
             .to_http_request()
@@ -256,11 +256,11 @@ impl LiveAdminUsersFixture {
         actix_web::test::TestRequest::post()
             .uri(uri)
             .cookie(Cookie::new(
-                self.state.settings.session_cookie_name.clone(),
+                self.state.settings.session.session_cookie_name.clone(),
                 sid.to_owned(),
             ))
             .cookie(Cookie::new(
-                self.state.settings.csrf_cookie_name.clone(),
+                self.state.settings.session.csrf_cookie_name.clone(),
                 csrf.to_owned(),
             ))
             .insert_header(("x-csrf-token", csrf))
@@ -383,7 +383,7 @@ async fn admin_patch_user_rejects_missing_csrf_before_auth_or_mutation() {
     let req = actix_web::test::TestRequest::post()
         .uri("/admin/users/user-id")
         .cookie(Cookie::new(
-            state.settings.session_cookie_name.clone(),
+            state.settings.session.session_cookie_name.clone(),
             "session-id",
         ))
         .to_http_request();

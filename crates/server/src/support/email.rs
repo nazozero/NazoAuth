@@ -44,7 +44,7 @@ pub(crate) fn parse_email_recipient(raw: &str) -> anyhow::Result<EmailRecipient>
 }
 
 pub(crate) fn email_delivery_configured(settings: &Settings) -> bool {
-    matches!(&settings.identity().email.delivery, EmailDelivery::Smtp(_))
+    matches!(&settings.identity.email.delivery, EmailDelivery::Smtp(_))
 }
 
 async fn send_verification_email_with_ttl(
@@ -53,7 +53,7 @@ async fn send_verification_email_with_ttl(
     code: &str,
     code_ttl_seconds: u64,
 ) -> anyhow::Result<()> {
-    let identity = settings.identity();
+    let identity = &settings.identity;
     let EmailDelivery::Smtp(smtp) = &identity.email.delivery else {
         bail!("email delivery is disabled");
     };

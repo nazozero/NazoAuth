@@ -79,7 +79,7 @@ pub(crate) async fn oidc_logout(
         Ok(form) => form,
         Err(response) => return response,
     };
-    let session_cookie = cookie_value(&req, state.settings.session().session_cookie_name);
+    let session_cookie = cookie_value(&req, &state.settings.session.session_cookie_name);
     let current_session = match current_session(&state, &req).await {
         Ok(session) => session,
         Err(error) => {
@@ -152,15 +152,19 @@ pub(crate) async fn oidc_logout(
             clients
                 .into_iter()
                 .filter_map(|client| {
-                    frontchannel_logout_url(&client, &state.settings.issuer, &session.oidc_sid)
-                        .map_err(|error| {
-                            tracing::warn!(
-                                %error,
-                                client_id = %client.client_id,
-                                "failed to compose front-channel logout URI"
-                            );
-                        })
-                        .ok()
+                    frontchannel_logout_url(
+                        &client,
+                        &state.settings.endpoint.issuer,
+                        &session.oidc_sid,
+                    )
+                    .map_err(|error| {
+                        tracing::warn!(
+                            %error,
+                            client_id = %client.client_id,
+                            "failed to compose front-channel logout URI"
+                        );
+                    })
+                    .ok()
                 })
                 .collect::<Vec<_>>()
         } else {
@@ -225,12 +229,12 @@ pub(crate) async fn oidc_logout(
         response,
         &[
             clear_cookie(
-                state.settings.session().session_cookie_name,
-                state.settings.session().cookie_secure,
+                &state.settings.session.session_cookie_name,
+                state.settings.session.cookie_secure,
             ),
             clear_cookie(
-                state.settings.session().csrf_cookie_name,
-                state.settings.session().cookie_secure,
+                &state.settings.session.csrf_cookie_name,
+                state.settings.session.cookie_secure,
             ),
         ],
     )
@@ -431,7 +435,7 @@ fn decode_id_token_hint(state: &AppState, token: &str) -> Option<IdTokenHintClai
     let decoding_key = jwt_decoding_key_from_jwk(&verification_key.public_jwk, header.alg)?;
     let mut validation = jsonwebtoken::Validation::new(header.alg);
     validation.validate_aud = false;
-    validation.set_issuer(&[state.settings.issuer.as_str()]);
+    validation.set_issuer(&[state.settings.endpoint.issuer.as_str()]);
     jsonwebtoken::decode::<IdTokenHintClaims>(token, &decoding_key, &validation)
         .ok()
         .map(|data| data.claims)

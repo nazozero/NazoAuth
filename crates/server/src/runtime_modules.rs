@@ -81,14 +81,14 @@ pub(crate) struct RuntimeModules {
 impl RuntimeModules {
     pub(crate) async fn initialize(pool: DbPool, settings: &Settings) -> anyhow::Result<Self> {
         let inherited_enabled = inherited_enabled(settings);
-        let protocol = settings.protocol();
-        let session = settings.session();
+        let protocol = &settings.protocol;
+        let session = &settings.session;
         let mut catalog = ModuleCatalog::fixed(
             CatalogDurations {
                 device_authorization: Duration::from_secs(
-                    protocol.device_authorization_ttl_seconds,
+                    settings.device.device_authorization_ttl_seconds,
                 ),
-                ciba: Duration::from_secs(protocol.ciba_auth_req_id_ttl_seconds),
+                ciba: Duration::from_secs(settings.ciba.ciba_auth_req_id_ttl_seconds),
                 authorization_code: Duration::from_secs(protocol.auth_code_ttl_seconds),
                 refresh_token: Duration::from_secs(
                     u64::try_from(protocol.refresh_token_ttl_seconds).map_err(|_| {
@@ -229,7 +229,7 @@ async fn seed_desired_states(
 }
 
 pub(crate) fn inherited_enabled(settings: &Settings) -> BTreeSet<ModuleId> {
-    let settings = settings.modules();
+    let settings = &settings.modules;
     let mut enabled = BTreeSet::from([
         ModuleId::TokenExchange,
         ModuleId::JwtBearerGrant,
@@ -308,8 +308,8 @@ mod tests {
     fn par_request_objects_enable_the_shared_request_object_capability() {
         let mut settings =
             Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-        settings.enable_request_object = false;
-        settings.enable_par_request_object = true;
+        settings.modules.enable_request_object = false;
+        settings.modules.enable_par_request_object = true;
 
         assert!(inherited_enabled(&settings).contains(&ModuleId::RequestObjects));
     }

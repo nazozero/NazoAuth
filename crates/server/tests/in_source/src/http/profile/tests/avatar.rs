@@ -48,14 +48,14 @@ fn test_state() -> AppState {
 fn test_state_with_avatar_dir(avatar_storage_dir: PathBuf) -> AppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.avatar_storage_dir = avatar_storage_dir;
+    settings.storage.avatar_storage_dir = avatar_storage_dir;
     build_test_state(settings)
 }
 
 fn request_with_session_but_no_csrf(state: &AppState) -> HttpRequest {
     actix_web::test::TestRequest::default()
         .cookie(Cookie::new(
-            state.settings.session_cookie_name.clone(),
+            state.settings.session.session_cookie_name.clone(),
             "active-session",
         ))
         .to_http_request()
@@ -64,11 +64,11 @@ fn request_with_session_but_no_csrf(state: &AppState) -> HttpRequest {
 fn request_with_session_and_csrf(state: &AppState, sid: &str, csrf: &str) -> HttpRequest {
     actix_web::test::TestRequest::default()
         .cookie(Cookie::new(
-            state.settings.session_cookie_name.clone(),
+            state.settings.session.session_cookie_name.clone(),
             sid.to_owned(),
         ))
         .cookie(Cookie::new(
-            state.settings.csrf_cookie_name.clone(),
+            state.settings.session.csrf_cookie_name.clone(),
             csrf.to_owned(),
         ))
         .insert_header(("x-csrf-token", csrf))
@@ -148,7 +148,7 @@ impl LiveAvatarFixture {
         ]);
         let mut settings = Settings::from_config(&config).expect("test settings should load");
         let avatar_dir = temp_avatar_dir("live");
-        settings.avatar_storage_dir = avatar_dir.clone();
+        settings.storage.avatar_storage_dir = avatar_dir.clone();
         let mut valkey_builder = ValkeyBuilder::from_config(
             ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),
         );
@@ -214,7 +214,7 @@ impl LiveAvatarFixture {
             &self.state.valkey,
             format!("oauth:session:{sid}"),
             serde_json::to_string(&payload).expect("session should serialize"),
-            self.state.settings.session_ttl_seconds,
+            self.state.settings.session.session_ttl_seconds,
         )
         .await
         .expect("session should store");
@@ -717,11 +717,11 @@ async fn get_avatar_rejects_cross_site_request_before_metadata_or_file_lookup() 
     fixture.store_session(&user, &sid).await;
     let req = actix_web::test::TestRequest::default()
         .cookie(Cookie::new(
-            fixture.state.settings.session_cookie_name.clone(),
+            fixture.state.settings.session.session_cookie_name.clone(),
             sid,
         ))
         .cookie(Cookie::new(
-            fixture.state.settings.csrf_cookie_name.clone(),
+            fixture.state.settings.session.csrf_cookie_name.clone(),
             csrf.clone(),
         ))
         .insert_header(("x-csrf-token", csrf))
@@ -807,7 +807,7 @@ async fn upload_avatar_reports_session_lookup_failure_after_valid_csrf_before_re
         &state.valkey,
         format!("oauth:session:{sid}"),
         serde_json::to_string(&payload).expect("session should serialize"),
-        state.settings.session_ttl_seconds,
+        state.settings.session.session_ttl_seconds,
     )
     .await
     .expect("session should store");
@@ -860,7 +860,7 @@ async fn delete_avatar_reports_session_lookup_failure_after_valid_csrf_before_pr
         &state.valkey,
         format!("oauth:session:{sid}"),
         serde_json::to_string(&payload).expect("session should serialize"),
-        state.settings.session_ttl_seconds,
+        state.settings.session.session_ttl_seconds,
     )
     .await
     .expect("session should store");
@@ -1044,7 +1044,7 @@ async fn upload_avatar_fails_closed_when_storage_root_cannot_be_created() {
         .await
         .expect("blocked root marker should write");
     let mut settings = fixture.state.settings.as_ref().clone();
-    settings.avatar_storage_dir = blocked_root.clone();
+    settings.storage.avatar_storage_dir = blocked_root.clone();
     let blocked_state = Data::new(AppState {
         diesel_db: fixture.state.diesel_db.clone(),
         valkey: fixture.state.valkey.clone(),

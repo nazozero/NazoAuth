@@ -1,9 +1,5 @@
 use super::*;
-use crate::settings::{
-    AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, RateLimitSettings,
-    RequestObjectJtiPolicy, SubjectType,
-};
-use crate::support::ClientIpHeaderMode;
+use crate::settings::DpopNoncePolicy;
 
 fn user() -> nazo_identity::SubjectClaims {
     nazo_identity::SubjectClaims {
@@ -38,90 +34,18 @@ fn user() -> nazo_identity::SubjectClaims {
 }
 
 fn settings() -> Settings {
-    Settings {
-        issuer: "https://issuer.example".to_owned(),
-        mtls_endpoint_base_url: "https://issuer.example".to_owned(),
-        frontend_base_url: "https://frontend.example".to_owned(),
-        cors_allowed_origins: vec!["https://frontend.example".to_owned()],
-        default_audience: "resource://default".to_owned(),
-        protected_resource_identifier: "https://issuer.example/fapi/resource".to_owned(),
-        authorization_server_profile: AuthorizationServerProfile::Oauth2Baseline,
-        ciba_security_profile:
-            crate::settings::CibaSecurityProfile::FapiCibaId1PlainPrivateKeyJwtPoll,
-        dpop_nonce_policy: DpopNoncePolicy::Required,
-        request_object_jti_policy: RequestObjectJtiPolicy::Optional,
-        session_cookie_name: "session".to_owned(),
-        csrf_cookie_name: "csrf".to_owned(),
-        cookie_secure: true,
-        session_ttl_seconds: 28_800,
-        auth_code_ttl_seconds: 300,
-        access_token_ttl_seconds: 300,
-        id_token_ttl_seconds: 600,
-        refresh_token_ttl_seconds: 2_592_000,
-        avatar_max_bytes: 2_097_152,
-        client_delivery_ttl_seconds: 86_400,
-        client_secret_pepper: "client-secret-pepper-for-tests-000000000001".to_owned(),
-        rate_limit: RateLimitSettings {
-            window_seconds: 60,
-            auth_max_requests: 30,
-            token_max_requests: 60,
-            token_management_max_requests: 120,
-            login_failure_window_seconds: 900,
-            login_failure_email_max_attempts: 50,
-            login_failure_ip_email_max_attempts: 5,
-        },
-        email: EmailSettings {
-            delivery: EmailDelivery::Disabled,
-            code_ttl_seconds: 900,
-            send_cooldown_seconds: 60,
-            send_peer_cooldown_seconds: 5,
-        },
-        email_code_dev_response_enabled: false,
-        avatar_storage_dir: std::env::temp_dir().join("unused-avatars"),
-        jwk_keys_dir: std::env::temp_dir().join("unused-keys"),
-        signing_external_command: Vec::new(),
-        signing_external_timeout_ms: 2_000,
-        signing_key_rotation_interval_seconds: 7_776_000,
-        signing_key_prepublish_seconds: 86_400,
-        trusted_proxy_cidrs: Vec::new(),
-        client_ip_header_mode: ClientIpHeaderMode::None,
-        subject_type: SubjectType::Public,
-        pairwise_subject_secret: None,
-        par_ttl_seconds: 90,
-        require_pushed_authorization_requests: false,
-        scim_bearer_token: None,
-        passkey: crate::settings::PasskeySettings {
-            rp_id: "issuer.example".to_owned(),
-            rp_name: "Nazo OAuth".to_owned(),
-            origin: "https://issuer.example".to_owned(),
-            require_user_verification: true,
-            require_user_handle: true,
-            strict_base64: true,
-        },
-        federation: crate::settings::FederationSettings {
-            providers: crate::settings::FederationProviderRegistry::default(),
-            saml_gateway: None,
-        },
-        enable_request_object: false,
-        enable_request_uri_parameter: false,
-        enable_par_request_object: false,
-        enable_authorization_details: false,
-        enable_legacy_audience_param: false,
-        enable_device_authorization_grant: false,
-        enable_dynamic_client_registration: false,
-        enable_frontchannel_logout: false,
-        enable_session_management: false,
-        enable_ciba: false,
-        enable_native_sso: false,
-        enable_fapi_http_signatures: false,
-        fapi_http_signature_max_age_seconds: 60,
-        dynamic_client_registration_initial_access_token: None,
-        device_authorization_ttl_seconds: 600,
-        device_authorization_poll_interval_seconds: 5,
-        ciba_auth_req_id_ttl_seconds: 600,
-        ciba_poll_interval_seconds: 5,
-        ciba_automated_decision_token: None,
-    }
+    let mut settings =
+        Settings::from_config(&crate::config::ConfigSource::default()).expect("settings");
+    settings.endpoint.issuer = "https://issuer.example".to_owned();
+    settings.endpoint.mtls_endpoint_base_url = "https://issuer.example".to_owned();
+    settings.endpoint.frontend_base_url = "https://frontend.example".to_owned();
+    settings.endpoint.cors_allowed_origins = vec!["https://frontend.example".to_owned()];
+    settings.protocol.protected_resource_identifier =
+        "https://issuer.example/fapi/resource".to_owned();
+    settings.protocol.dpop_nonce_policy = DpopNoncePolicy::Required;
+    settings.storage.avatar_storage_dir = std::env::temp_dir().join("unused-avatars");
+    settings.keys.jwk_keys_dir = std::env::temp_dir().join("unused-keys");
+    settings
 }
 
 #[test]
@@ -353,9 +277,9 @@ fn pairwise_subject_is_stable_within_sector_and_distinct_across_sectors() {
     let settings = settings();
     let secret = b"this-is-a-long-enough-secret-key-for-hmac-sha256!!";
 
-    let first = oidc_subject(secret, &settings.issuer, "client.example", user_id);
-    let second = oidc_subject(secret, &settings.issuer, "client.example", user_id);
-    let third = oidc_subject(secret, &settings.issuer, "other.example", user_id);
+    let first = oidc_subject(secret, &settings.endpoint.issuer, "client.example", user_id);
+    let second = oidc_subject(secret, &settings.endpoint.issuer, "client.example", user_id);
+    let third = oidc_subject(secret, &settings.endpoint.issuer, "other.example", user_id);
 
     assert_eq!(first, second);
     assert_ne!(first, third);
@@ -366,7 +290,7 @@ fn pairwise_subject_is_stable_within_sector_and_distinct_across_sectors() {
 fn compute_subject_for_client_public_returns_uuid() {
     let user_id = Uuid::now_v7();
     let mut settings = settings();
-    settings.pairwise_subject_secret =
+    settings.protocol.pairwise_subject_secret =
         Some("this-is-a-long-enough-secret-key-for-hmac-sha256!!".to_owned());
     let subject = compute_subject_for_client(
         &settings,
@@ -383,7 +307,7 @@ fn compute_subject_for_client_public_returns_uuid() {
 fn compute_subject_for_client_pairwise_uses_sector_host() {
     let user_id = Uuid::now_v7();
     let mut settings = settings();
-    settings.pairwise_subject_secret =
+    settings.protocol.pairwise_subject_secret =
         Some("this-is-a-long-enough-secret-key-for-hmac-sha256!!".to_owned());
     let subject = compute_subject_for_client(
         &settings,
@@ -402,7 +326,7 @@ fn compute_subject_for_client_pairwise_uses_sector_host() {
                 .as_ref()
                 .unwrap()
                 .as_bytes(),
-            &settings.issuer,
+            &settings.endpoint.issuer,
             "pairwise.example",
             user_id
         )
@@ -413,7 +337,7 @@ fn compute_subject_for_client_pairwise_uses_sector_host() {
 fn compute_subject_for_client_pairwise_falls_back_to_redirect_uri_host() {
     let user_id = Uuid::now_v7();
     let mut settings = settings();
-    settings.pairwise_subject_secret =
+    settings.protocol.pairwise_subject_secret =
         Some("this-is-a-long-enough-secret-key-for-hmac-sha256!!".to_owned());
     let subject = compute_subject_for_client(
         &settings,

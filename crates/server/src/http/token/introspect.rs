@@ -270,7 +270,7 @@ async fn signed_introspection_response(
     header.typ = Some("token-introspection+jwt".to_owned());
     header.kid = Some(keyset.active_kid.clone());
     let claims = json!({
-        "iss": state.settings.issuer,
+        "iss": state.settings.endpoint.issuer,
         "aud": resource_server.client_id,
         "iat": Utc::now().timestamp(),
         "token_introspection": body

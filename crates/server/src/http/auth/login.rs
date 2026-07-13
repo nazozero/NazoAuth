@@ -235,18 +235,18 @@ pub(crate) async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) 
 
     let cookies = [
         make_cookie(
-            state.settings.session().session_cookie_name,
+            &state.settings.session.session_cookie_name,
             &session_id,
             true,
-            state.settings.session().session_ttl_seconds,
-            state.settings.session().cookie_secure,
+            state.settings.session.session_ttl_seconds,
+            state.settings.session.cookie_secure,
         ),
         make_cookie(
-            state.settings.session().csrf_cookie_name,
+            &state.settings.session.csrf_cookie_name,
             &csrf_token,
             false,
-            state.settings.session().session_ttl_seconds,
-            state.settings.session().cookie_secure,
+            state.settings.session.session_ttl_seconds,
+            state.settings.session.cookie_secure,
         ),
     ];
 
@@ -260,7 +260,7 @@ pub(crate) async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) 
     }
 
     let response_body = json!({
-        "expires_in": state.settings.session().session_ttl_seconds,
+        "expires_in": state.settings.session.session_ttl_seconds,
         "csrf_token": csrf_token,
         "mfa_required": session.pending_mfa
     });
@@ -371,10 +371,13 @@ fn form_login_origin_is_allowed(settings: &Settings, req: &HttpRequest) -> bool 
         return false;
     };
 
-    [&settings.issuer, &settings.frontend_base_url]
-        .into_iter()
-        .filter_map(|trusted_url| normalized_url_origin(trusted_url))
-        .any(|trusted_origin| trusted_origin == request_origin)
+    [
+        &settings.endpoint.issuer,
+        &settings.endpoint.frontend_base_url,
+    ]
+    .into_iter()
+    .filter_map(|trusted_url| normalized_url_origin(trusted_url))
+    .any(|trusted_origin| trusted_origin == request_origin)
 }
 
 fn strict_request_origin(value: &str) -> Option<String> {
@@ -405,7 +408,11 @@ fn normalized_url_origin(value: &str) -> Option<String> {
 fn safe_form_login_next(state: &AppState, req: &HttpRequest, submitted: Option<&str>) -> String {
     let default_next = format!(
         "{}/profile",
-        state.settings.frontend_base_url.trim_end_matches('/')
+        state
+            .settings
+            .endpoint
+            .frontend_base_url
+            .trim_end_matches('/')
     );
     submitted
         .and_then(safe_relative_next)

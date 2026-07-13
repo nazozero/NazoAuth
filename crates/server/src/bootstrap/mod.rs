@@ -81,7 +81,7 @@ pub async fn run() -> anyhow::Result<()> {
     let runtime_modules =
         web::Data::new(RuntimeModules::initialize(diesel_db.clone(), &settings).await?);
     RuntimeModules::spawn_reconciler(runtime_modules.clone());
-    tokio::fs::create_dir_all(settings.storage().avatar_storage_dir)
+    tokio::fs::create_dir_all(&settings.storage.avatar_storage_dir)
         .await
         .ok();
     let keyset = nazo_key_management::KeyManager::load_or_create(settings.key_settings()).await?;
@@ -105,7 +105,7 @@ pub async fn run() -> anyhow::Result<()> {
         #[cfg(not(test))]
         runtime_modules: runtime_modules.registry.clone(),
         #[cfg(test)]
-        http_message_signatures_enabled: settings.modules().enable_fapi_http_signatures,
+        http_message_signatures_enabled: settings.modules.enable_fapi_http_signatures,
     });
     #[cfg(not(test))]
     let dynamic_registration_rate_limit_connection = valkey.clone();
@@ -120,13 +120,13 @@ pub async fn run() -> anyhow::Result<()> {
         #[cfg(not(test))]
         runtime_modules: runtime_modules.registry.clone(),
         #[cfg(test)]
-        enabled: settings.modules().enable_dynamic_client_registration,
+        enabled: settings.modules.enable_dynamic_client_registration,
     });
     let admin_client_config = web::Data::new(AdminClientConfig::from_settings(&settings));
     let admin_client_keyset = web::Data::new(keyset.clone());
-    let scim_endpoint = settings.endpoint();
-    let scim_protocol = settings.protocol();
-    let scim_storage = settings.storage();
+    let scim_endpoint = &settings.endpoint;
+    let scim_protocol = &settings.protocol;
+    let scim_storage = &settings.storage;
     let scim_service = nazo_identity::scim::ScimService::new(
         Arc::new(nazo_postgres::ScimRepository::new(diesel_db.clone())),
         Arc::new(nazo_postgres::AuditRepository::new(diesel_db.clone())),
@@ -134,10 +134,10 @@ pub async fn run() -> anyhow::Result<()> {
     let scim_endpoint = web::Data::new(ScimEndpoint::new(
         scim_service,
         ScimConfig::new(
-            scim_storage.scim_bearer_token,
-            scim_protocol.client_secret_pepper,
+            scim_storage.scim_bearer_token.as_deref(),
+            &scim_protocol.client_secret_pepper,
             ClientIpConfig::new(
-                scim_endpoint.trusted_proxy_cidrs,
+                &scim_endpoint.trusted_proxy_cidrs,
                 scim_endpoint.client_ip_header_mode,
             ),
         )?,
@@ -168,10 +168,10 @@ pub async fn run() -> anyhow::Result<()> {
         #[cfg(not(test))]
         runtime_modules: runtime_modules.registry.clone(),
     });
-    let session = state.settings.session();
+    let session = &state.settings.session;
     let session_http_config = SessionHttpConfig::new(
-        session.session_cookie_name,
-        session.csrf_cookie_name,
+        &session.session_cookie_name,
+        &session.csrf_cookie_name,
         session.cookie_secure,
     );
     let admin_sessions = web::Data::new(AdminSessionHandles::new(
@@ -184,7 +184,7 @@ pub async fn run() -> anyhow::Result<()> {
         nazo_valkey::SessionStore::new(&state.valkey_connection()),
         nazo_postgres::UserRepository::new(state.diesel_db.clone()),
         session_http_config,
-        &state.settings.issuer,
+        &state.settings.endpoint.issuer,
         runtime_modules.registry.clone(),
     ));
     #[cfg(test)]
@@ -192,8 +192,8 @@ pub async fn run() -> anyhow::Result<()> {
         nazo_valkey::SessionStore::new(&state.valkey_connection()),
         nazo_postgres::UserRepository::new(state.diesel_db.clone()),
         session_http_config,
-        &state.settings.issuer,
-        state.settings.modules().enable_session_management,
+        &state.settings.endpoint.issuer,
+        state.settings.modules.enable_session_management,
     ));
     let mfa_rate_limit_connection = state.valkey_connection();
     let mfa_profiles = web::Data::new(MfaProfileHandles {
@@ -211,8 +211,8 @@ pub async fn run() -> anyhow::Result<()> {
     let profile_access_requests = web::Data::new(ClientAccessProfileService::new(
         nazo_postgres::AccessRequestRepository::new(state.diesel_db.clone()),
         profile_delivery_store,
-        state.settings.protocol().client_secret_pepper,
-        &state.settings.frontend_base_url,
+        &state.settings.protocol.client_secret_pepper,
+        &state.settings.endpoint.frontend_base_url,
     ));
     let profile_federation = web::Data::new(FederationProfileService::new(
         nazo_postgres::FederationRepository::new(state.diesel_db.clone()),
@@ -231,20 +231,20 @@ pub async fn run() -> anyhow::Result<()> {
     let admin_access_delivery =
         web::Data::new(nazo_valkey::DeliveryStore::new(&state.valkey_connection()));
     let admin_access_keys = web::Data::new(state.keyset.clone());
-    let protocol = state.settings.protocol();
-    let storage = state.settings.storage();
+    let protocol = &state.settings.protocol;
+    let storage = &state.settings.storage;
     let admin_access_request_config = web::Data::new(AdminAccessRequestConfig::new(
-        protocol.pairwise_subject_secret,
-        protocol.client_secret_pepper,
-        &state.settings.issuer,
+        protocol.pairwise_subject_secret.as_deref(),
+        &protocol.client_secret_pepper,
+        &state.settings.endpoint.issuer,
         storage.client_delivery_ttl_seconds,
     ));
-    let endpoint = state.settings.endpoint();
+    let endpoint = &state.settings.endpoint;
     let client_ip_config = web::Data::new(ClientIpConfig::new(
-        endpoint.trusted_proxy_cidrs,
+        &endpoint.trusted_proxy_cidrs,
         endpoint.client_ip_header_mode,
     ));
-    let identity = state.settings.identity();
+    let identity = &state.settings.identity;
     let registration_rate_limits =
         web::Data::new(nazo_valkey::RateLimitStore::new(&state.valkey_connection()));
     let auth_rate_limit_config = web::Data::new(AuthRateLimitConfig::new(
