@@ -164,9 +164,7 @@ async fn exchange_social_code(
     code: &str,
     verifier: &str,
 ) -> anyhow::Result<SocialTokenResponse> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()?;
+    let client = super::federation_http_client()?;
     let body = url::form_urlencoded::Serializer::new(String::new())
         .append_pair("grant_type", "authorization_code")
         .append_pair("code", code)
@@ -195,9 +193,7 @@ async fn fetch_social_openid(
     let Some(endpoint) = &provider.openid_endpoint else {
         return Ok(None);
     };
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()?;
+    let client = super::federation_http_client()?;
     let response = client
         .get(url_with_query_params(
             endpoint,
@@ -216,9 +212,7 @@ async fn fetch_social_userinfo(
     token: &SocialTokenResponse,
     openid_claims: Option<&Value>,
 ) -> anyhow::Result<Value> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()?;
+    let client = super::federation_http_client()?;
     let request = match provider.kind {
         SocialProviderKind::Qq => {
             let openid = claim_string(openid_claims, "openid")

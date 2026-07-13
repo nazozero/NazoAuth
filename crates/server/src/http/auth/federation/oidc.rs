@@ -72,9 +72,7 @@ pub(super) async fn exchange_oidc_code(
     code: &str,
     verifier: &str,
 ) -> anyhow::Result<OidcTokenResponse> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()?;
+    let client = super::federation_http_client()?;
     let body = url::form_urlencoded::Serializer::new(String::new())
         .append_pair("grant_type", "authorization_code")
         .append_pair("code", code)
@@ -96,9 +94,7 @@ pub(super) async fn exchange_oidc_code(
 }
 
 pub(super) async fn fetch_oidc_jwks(provider: &OidcFederationSettings) -> anyhow::Result<Value> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()?;
+    let client = super::federation_http_client()?;
     let value = client
         .get(&provider.jwks_url)
         .send()

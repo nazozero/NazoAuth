@@ -14,6 +14,15 @@ use oidc::*;
 use saml::*;
 use social::*;
 
+fn federation_http_client() -> anyhow::Result<reqwest::Client> {
+    let builder = reqwest::Client::builder().timeout(std::time::Duration::from_secs(10));
+    // Local provider fixtures must never inherit a developer workstation's
+    // HTTP proxy. Production keeps the operator-configured proxy behavior.
+    #[cfg(test)]
+    let builder = builder.no_proxy();
+    Ok(builder.build()?)
+}
+
 #[derive(Serialize)]
 struct FederationProviderView {
     provider_id: String,
