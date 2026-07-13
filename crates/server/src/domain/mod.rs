@@ -10,6 +10,7 @@ mod oauth;
 mod oidc_logout;
 mod resource_server;
 mod rows;
+#[cfg(test)]
 mod state;
 mod userinfo;
 
@@ -28,5 +29,6 @@ pub(crate) use oauth::{
 pub(crate) use oidc_logout::{OidcLogoutConfig, OidcLogoutHandles};
 pub(crate) use resource_server::{ResourceServerConfig, ResourceServerHandles};
 pub(crate) use rows::{ClientRow, TokenRow};
+#[cfg(test)]
 pub(crate) use state::AppState;
 pub(crate) use userinfo::{UserinfoConfig, UserinfoHandles};

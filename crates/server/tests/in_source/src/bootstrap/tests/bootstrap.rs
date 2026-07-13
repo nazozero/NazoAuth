@@ -1,6 +1,20 @@
 use super::*;
 use actix_web::{HttpResponse, test as actix_test};
 
+#[test]
+fn production_bootstrap_only_publishes_focused_application_data() {
+    let source = include_str!("../../../../../src/bootstrap/mod.rs");
+
+    assert!(
+        !source.contains("web::Data::new(AppState"),
+        "production bootstrap must not reconstruct the giant AppState"
+    );
+    assert!(
+        !source.contains(".app_data(state"),
+        "production Actix app must not publish the giant AppState"
+    );
+}
+
 #[actix_web::test]
 async fn security_headers_are_added_to_core_responses() {
     let app = actix_test::init_service(App::new().wrap(from_fn(security_headers)).route(

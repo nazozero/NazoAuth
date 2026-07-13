@@ -30,9 +30,9 @@ use actix_web::{App, HttpServer, dev::Service, middleware::from_fn, web};
 
 use crate::config::{ConfigSource, database_max_connections, database_url};
 use crate::domain::{
-    AppState, DynamicRegistrationConfig, DynamicRegistrationHandles, MetadataConfig,
-    MetadataHandles, MfaProfileConfig, MfaProfileHandles, OidcLogoutConfig, OidcLogoutHandles,
-    ResourceServerConfig, ResourceServerHandles, UserinfoConfig, UserinfoHandles,
+    DynamicRegistrationConfig, DynamicRegistrationHandles, MetadataConfig, MetadataHandles,
+    MfaProfileConfig, MfaProfileHandles, OidcLogoutConfig, OidcLogoutHandles, ResourceServerConfig,
+    ResourceServerHandles, UserinfoConfig, UserinfoHandles,
 };
 use crate::http::admin::access_requests::AdminAccessRequestConfig;
 use crate::http::admin::clients::{
@@ -90,7 +90,7 @@ pub async fn run() -> anyhow::Result<()> {
     )?;
     initialize_dummy_password_hash()?;
 
-    // 配置只在启动阶段读取，运行期通过 AppState 共享不可变配置。
+    // 配置只在启动阶段读取；运行期只向 handler 注入其所需的 focused handles。
     let database_url = database_url(&config);
     let valkey_url = config.string("VALKEY_URL", "redis://127.0.0.1:6379/0");
     let valkey_command_timeout_ms = config.parse::<u64>("VALKEY_COMMAND_TIMEOUT_MS", 1_000)?;
@@ -177,31 +177,30 @@ pub async fn run() -> anyhow::Result<()> {
         ScimRuntimeAdmission::new(runtime_modules.registry.clone()),
     ));
     #[cfg(not(test))]
-    let authorization_state_connection = valkey.clone();
+    let valkey_connection = valkey.clone();
     #[cfg(test)]
-    let authorization_state_connection =
-        nazo_valkey::ValkeyConnection::from_existing_client(valkey.clone());
+    let valkey_connection = nazo_valkey::ValkeyConnection::from_existing_client(valkey.clone());
     let authorization_service = web::Data::new(ServerAuthorizationService::new(
         nazo_postgres::AuthorizationFlowRepository::new(
             diesel_db.clone(),
             crate::support::DEFAULT_TENANT_ID,
         ),
-        nazo_valkey::AuthorizationStateAdapter::new(&authorization_state_connection),
+        nazo_valkey::AuthorizationStateAdapter::new(&valkey_connection),
         keyset.clone(),
     ));
     let token_service = web::Data::new(crate::http::token::ServerTokenService::new(
         nazo_postgres::TokenIssuanceRepository::new(diesel_db.clone()),
-        nazo_valkey::TokenIssuanceStateAdapter::new(&authorization_state_connection),
+        nazo_valkey::TokenIssuanceStateAdapter::new(&valkey_connection),
         keyset.clone(),
     ));
     let ciba_service = web::Data::new(ServerCibaService::new(nazo_valkey::CibaStore::new(
-        &authorization_state_connection,
+        &valkey_connection,
     )));
     let ciba_users = web::Data::new(nazo_postgres::UserRepository::new(diesel_db.clone()));
     let ciba_config = web::Data::new(CibaHttpConfig::from(settings.as_ref()));
     let token_issuance_config = web::Data::new(TokenIssuanceConfig::from(settings.as_ref()));
     let device_service = web::Data::new(ServerDeviceGrantService::new(
-        nazo_valkey::DeviceStore::new(&authorization_state_connection),
+        nazo_valkey::DeviceStore::new(&valkey_connection),
     ));
     let device_grants = web::Data::new(nazo_postgres::AuthorizationFlowRepository::new(
         diesel_db.clone(),
@@ -209,7 +208,7 @@ pub async fn run() -> anyhow::Result<()> {
     ));
     let device_config = web::Data::new(DeviceHttpConfig::from(settings.as_ref()));
     let userinfo_handles = web::Data::new(UserinfoHandles::new(
-        nazo_valkey::ReplayStore::new(&authorization_state_connection),
+        nazo_valkey::ReplayStore::new(&valkey_connection),
         keyset.clone(),
         UserinfoConfig::from(settings.as_ref()),
     ));
@@ -229,39 +228,33 @@ pub async fn run() -> anyhow::Result<()> {
         authorization_runtime.clone(),
     ));
 
-    let state = web::Data::new(AppState {
-        diesel_db,
-        valkey,
-        settings,
-        keyset,
-    });
-    let session = &state.settings.session;
+    let session = &settings.session;
     let session_http_config = SessionHttpConfig::new(
         &session.session_cookie_name,
         &session.csrf_cookie_name,
         session.cookie_secure,
     );
     let admin_sessions = web::Data::new(AdminSessionHandles::new(
-        nazo_valkey::SessionStore::new(&state.valkey_connection()),
-        nazo_postgres::UserRepository::new(state.diesel_db.clone()),
+        nazo_valkey::SessionStore::new(&valkey_connection),
+        nazo_postgres::UserRepository::new(diesel_db.clone()),
         session_http_config.clone(),
     ));
-    let admin_federation = web::Data::new(AdminFederationConfig::from_settings(&state.settings));
+    let admin_federation = web::Data::new(AdminFederationConfig::from_settings(&settings));
     #[cfg(not(test))]
     let session_profiles = web::Data::new(SessionProfileHandles::new(
-        nazo_valkey::SessionStore::new(&state.valkey_connection()),
-        nazo_postgres::UserRepository::new(state.diesel_db.clone()),
+        nazo_valkey::SessionStore::new(&valkey_connection),
+        nazo_postgres::UserRepository::new(diesel_db.clone()),
         session_http_config,
-        &state.settings.endpoint.issuer,
+        &settings.endpoint.issuer,
         runtime_modules.registry.clone(),
     ));
     #[cfg(test)]
     let session_profiles = web::Data::new(SessionProfileHandles::new(
-        nazo_valkey::SessionStore::new(&state.valkey_connection()),
-        nazo_postgres::UserRepository::new(state.diesel_db.clone()),
+        nazo_valkey::SessionStore::new(&valkey_connection),
+        nazo_postgres::UserRepository::new(diesel_db.clone()),
         session_http_config,
-        &state.settings.endpoint.issuer,
-        state.settings.modules.enable_session_management,
+        &settings.endpoint.issuer,
+        settings.modules.enable_session_management,
     ));
     let device_decision_handles = web::Data::new(DeviceDecisionHandles::new(
         authorization_service.clone(),
@@ -274,89 +267,88 @@ pub async fn run() -> anyhow::Result<()> {
     #[cfg(not(test))]
     let oidc_logout = web::Data::new(OidcLogoutHandles::new(
         session_profiles.get_ref().clone(),
-        nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone()),
-        nazo_postgres::AuditRepository::new(state.diesel_db.clone()),
-        state.keyset.clone(),
-        OidcLogoutConfig::from(state.settings.as_ref()),
+        nazo_postgres::OAuthClientRepository::new(diesel_db.clone()),
+        nazo_postgres::AuditRepository::new(diesel_db.clone()),
+        keyset.clone(),
+        OidcLogoutConfig::from(settings.as_ref()),
         runtime_modules.registry.clone(),
     ));
     #[cfg(test)]
     let oidc_logout = web::Data::new(OidcLogoutHandles::new(
         session_profiles.get_ref().clone(),
-        nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone()),
-        nazo_postgres::AuditRepository::new(state.diesel_db.clone()),
-        state.keyset.clone(),
-        OidcLogoutConfig::from(state.settings.as_ref()),
-        state.settings.modules.enable_frontchannel_logout,
+        nazo_postgres::OAuthClientRepository::new(diesel_db.clone()),
+        nazo_postgres::AuditRepository::new(diesel_db.clone()),
+        keyset.clone(),
+        OidcLogoutConfig::from(settings.as_ref()),
+        settings.modules.enable_frontchannel_logout,
     ));
-    let mfa_rate_limit_connection = state.valkey_connection();
+    let mfa_rate_limit_connection = valkey_connection.clone();
     let csrf_http_config = web::Data::new(CsrfHttpConfig::new(
         session.csrf_cookie_name.as_str(),
         session.session_ttl_seconds,
         session.cookie_secure,
     ));
     let mfa_profiles = web::Data::new(MfaProfileHandles {
-        config: MfaProfileConfig::from(state.settings.as_ref()),
+        config: MfaProfileConfig::from(settings.as_ref()),
         sessions: session_profiles.get_ref().clone(),
-        mfa: nazo_postgres::MfaRepository::new(state.diesel_db.clone()),
+        mfa: nazo_postgres::MfaRepository::new(diesel_db.clone()),
         rate_limits: nazo_valkey::RateLimitStore::new(&mfa_rate_limit_connection),
     });
     let account_profiles = web::Data::new(AccountProfileService::new(
-        nazo_postgres::UserRepository::new(state.diesel_db.clone()),
-        nazo_postgres::GrantRepository::new(state.diesel_db.clone()),
-        nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone()),
+        nazo_postgres::UserRepository::new(diesel_db.clone()),
+        nazo_postgres::GrantRepository::new(diesel_db.clone()),
+        nazo_postgres::OAuthClientRepository::new(diesel_db.clone()),
     ));
     let avatar_profiles = web::Data::new(AvatarProfileService::new(
-        nazo_postgres::UserRepository::new(state.diesel_db.clone()),
-        nazo_postgres::GrantRepository::new(state.diesel_db.clone()),
+        nazo_postgres::UserRepository::new(diesel_db.clone()),
+        nazo_postgres::GrantRepository::new(diesel_db.clone()),
         crate::adapters::avatar_files::LocalAvatarStorage::new(
-            state.settings.storage.avatar_storage_dir.clone(),
+            settings.storage.avatar_storage_dir.clone(),
         ),
-        state.settings.storage.avatar_max_bytes,
+        settings.storage.avatar_max_bytes,
     ));
-    let profile_delivery_store = nazo_valkey::DeliveryStore::new(&state.valkey_connection());
+    let profile_delivery_store = nazo_valkey::DeliveryStore::new(&valkey_connection);
     let profile_access_requests = web::Data::new(ClientAccessProfileService::new(
-        nazo_postgres::AccessRequestRepository::new(state.diesel_db.clone()),
+        nazo_postgres::AccessRequestRepository::new(diesel_db.clone()),
         profile_delivery_store,
-        &state.settings.protocol.client_secret_pepper,
-        &state.settings.endpoint.frontend_base_url,
+        &settings.protocol.client_secret_pepper,
+        &settings.endpoint.frontend_base_url,
     ));
     let profile_federation = web::Data::new(FederationProfileService::new(
-        nazo_postgres::FederationRepository::new(state.diesel_db.clone()),
+        nazo_postgres::FederationRepository::new(diesel_db.clone()),
     ));
     let admin_users: web::Data<dyn nazo_identity::ports::AdminUserRepositoryPort> = web::Data::from(
-        Arc::new(nazo_postgres::UserRepository::new(state.diesel_db.clone()))
+        Arc::new(nazo_postgres::UserRepository::new(diesel_db.clone()))
             as Arc<dyn nazo_identity::ports::AdminUserRepositoryPort>,
     );
     let admin_grants: web::Data<dyn nazo_auth::AdminGrantRepositoryPort> = web::Data::from(
-        Arc::new(nazo_postgres::GrantRepository::new(state.diesel_db.clone()))
+        Arc::new(nazo_postgres::GrantRepository::new(diesel_db.clone()))
             as Arc<dyn nazo_auth::AdminGrantRepositoryPort>,
     );
     let admin_access_requests = web::Data::new(nazo_postgres::AccessRequestRepository::new(
-        state.diesel_db.clone(),
+        diesel_db.clone(),
     ));
-    let admin_access_delivery =
-        web::Data::new(nazo_valkey::DeliveryStore::new(&state.valkey_connection()));
-    let protocol = &state.settings.protocol;
-    let storage = &state.settings.storage;
+    let admin_access_delivery = web::Data::new(nazo_valkey::DeliveryStore::new(&valkey_connection));
+    let protocol = &settings.protocol;
+    let storage = &settings.storage;
     let admin_access_request_config = web::Data::new(AdminAccessRequestConfig::new(
         &protocol.client_secret_pepper,
         storage.client_delivery_ttl_seconds,
     ));
-    let endpoint = &state.settings.endpoint;
+    let endpoint = &settings.endpoint;
     let client_ip_config = web::Data::new(ClientIpConfig::new(
         &endpoint.trusted_proxy_cidrs,
         endpoint.client_ip_header_mode,
     ));
-    let identity = &state.settings.identity;
+    let identity = &settings.identity;
     let auth_request_limiter = web::Data::new(AuthRequestLimiter::new(
-        nazo_valkey::RateLimitStore::new(&state.valkey_connection()),
+        nazo_valkey::RateLimitStore::new(&valkey_connection),
         identity.rate_limit.window_seconds,
         identity.rate_limit.auth_max_requests,
         client_ip_config.get_ref().clone(),
     ));
     let token_management_limiter = web::Data::new(TokenManagementRequestLimiter::new(
-        nazo_valkey::RateLimitStore::new(&state.valkey_connection()),
+        nazo_valkey::RateLimitStore::new(&valkey_connection),
         identity.rate_limit.window_seconds,
         identity.rate_limit.token_management_max_requests,
         client_ip_config.get_ref().clone(),
@@ -365,26 +357,26 @@ pub async fn run() -> anyhow::Result<()> {
         identity.email_code_dev_response_enabled,
     ));
     let registration = web::Data::new(LocalRegistrationService::new(
-        nazo_postgres::UserRepository::new(state.diesel_db.clone()),
-        nazo_valkey::AuthenticationStore::new(&state.valkey_connection()),
+        nazo_postgres::UserRepository::new(diesel_db.clone()),
+        nazo_valkey::AuthenticationStore::new(&valkey_connection),
         RegistrationSecretHasher,
-        SmtpVerificationEmailDelivery::new(state.settings.clone()),
+        SmtpVerificationEmailDelivery::new(settings.clone()),
         default_tenant_context()
             .as_identity_context()
             .expect("default tenant identifiers are valid"),
         nazo_identity::RegistrationServiceConfig {
-            delivery_enabled: email_delivery_configured(&state.settings),
+            delivery_enabled: email_delivery_configured(&settings),
             send_peer_cooldown_seconds: identity.email.send_peer_cooldown_seconds,
             send_cooldown_seconds: identity.email.send_cooldown_seconds,
             code_ttl_seconds: identity.email.code_ttl_seconds,
         },
     ));
     let authentication = web::Data::new(LocalAuthenticationService::new(
-        nazo_postgres::UserRepository::new(state.diesel_db.clone()),
-        nazo_valkey::RateLimitStore::new(&state.valkey_connection()),
+        nazo_postgres::UserRepository::new(diesel_db.clone()),
+        nazo_valkey::RateLimitStore::new(&valkey_connection),
         LoginPasswordVerifier,
-        nazo_postgres::MfaRepository::new(state.diesel_db.clone()),
-        nazo_valkey::SessionStore::new(&state.valkey_connection()),
+        nazo_postgres::MfaRepository::new(diesel_db.clone()),
+        nazo_valkey::SessionStore::new(&valkey_connection),
         TracingAuthenticationAudit,
         nazo_identity::AuthenticationServiceConfig {
             tenant_id: nazo_identity::TenantId::new(crate::support::DEFAULT_TENANT_ID)
@@ -397,8 +389,8 @@ pub async fn run() -> anyhow::Result<()> {
         },
     ));
     let login_http_config = web::Data::new(LoginHttpConfig::new(
-        state.settings.endpoint.issuer.as_str(),
-        state.settings.endpoint.frontend_base_url.as_str(),
+        settings.endpoint.issuer.as_str(),
+        settings.endpoint.frontend_base_url.as_str(),
         session.session_cookie_name.as_str(),
         session.csrf_cookie_name.as_str(),
         session.session_ttl_seconds,
@@ -406,11 +398,11 @@ pub async fn run() -> anyhow::Result<()> {
     ));
     let passkey = &identity.passkey;
     let passkeys = web::Data::new(LocalPasskeyService::new(
-        nazo_postgres::UserRepository::new(state.diesel_db.clone()),
-        nazo_postgres::PasskeyRepository::new(state.diesel_db.clone()),
-        nazo_valkey::AuthenticationStore::new(&state.valkey_connection()),
-        nazo_postgres::MfaRepository::new(state.diesel_db.clone()),
-        nazo_valkey::SessionStore::new(&state.valkey_connection()),
+        nazo_postgres::UserRepository::new(diesel_db.clone()),
+        nazo_postgres::PasskeyRepository::new(diesel_db.clone()),
+        nazo_valkey::AuthenticationStore::new(&valkey_connection),
+        nazo_postgres::MfaRepository::new(diesel_db.clone()),
+        nazo_valkey::SessionStore::new(&valkey_connection),
         TracingPasskeyAudit,
         nazo_identity::PasskeyServiceConfig {
             tenant_id: nazo_identity::TenantId::new(crate::support::DEFAULT_TENANT_ID)
@@ -432,10 +424,10 @@ pub async fn run() -> anyhow::Result<()> {
         session.cookie_secure,
     ));
     let federation = web::Data::new(LocalFederationService::new(
-        nazo_postgres::FederationRepository::new(state.diesel_db.clone()),
-        nazo_valkey::AuthenticationStore::new(&state.valkey_connection()),
+        nazo_postgres::FederationRepository::new(diesel_db.clone()),
+        nazo_valkey::AuthenticationStore::new(&valkey_connection),
         FederationBootstrapPasswordHasher,
-        nazo_valkey::SessionStore::new(&state.valkey_connection()),
+        nazo_valkey::SessionStore::new(&valkey_connection),
         TracingFederationAudit,
         nazo_identity::FederationServiceConfig {
             tenant: default_tenant_context()
@@ -493,7 +485,6 @@ pub async fn run() -> anyhow::Result<()> {
                 .instrument(span)
             })
             .wrap(from_fn(security_headers))
-            .app_data(state.clone())
             .app_data(runtime_modules.clone())
             .app_data(authorization_service.clone())
             .app_data(token_service.clone())
@@ -541,7 +532,7 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(federation_http_config.clone())
             .app_data(dynamic_registration_handles.clone())
             .app_data(scim_endpoint.clone());
-        app.configure(|cfg| routes::configure(cfg, &state.settings, perf_metrics_enabled))
+        app.configure(|cfg| routes::configure(cfg, &settings, perf_metrics_enabled))
     })
     .bind(addr)?
     .run()
