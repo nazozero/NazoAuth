@@ -52,6 +52,13 @@ impl TokenRepository {
         connection
             .transaction::<RefreshTokenPersistResult, diesel::result::Error, _>(
                 async |connection| {
+                    lock_refresh_grant_scope(
+                        connection,
+                        token.tenant_id,
+                        token.user_id,
+                        token.client_id,
+                    )
+                    .await?;
                     lock_refresh_family(connection, token.family_id).await?;
                     if let Some(rotated_from_id) = token.rotated_from_id {
                         if let Some(retry) = token.lost_response_retry {
@@ -307,6 +314,36 @@ pub(super) async fn lock_refresh_family(
     let low = i64::from_be_bytes(bytes[8..].try_into().expect("UUID has 16 bytes"));
     diesel::sql_query("SELECT pg_advisory_xact_lock($1)")
         .bind::<diesel::sql_types::BigInt, _>(high ^ low)
+        .execute(connection)
+        .await?;
+    Ok(())
+}
+
+pub(super) async fn lock_refresh_grant_scope(
+    connection: &mut AsyncPgConnection,
+    tenant_id: Uuid,
+    user_id: Option<Uuid>,
+    client_id: Uuid,
+) -> diesel::QueryResult<()> {
+    let mut hasher = blake3::Hasher::new_derive_key("nazo.refresh-grant-advisory-lock.v1");
+    hasher.update(tenant_id.as_bytes());
+    match user_id {
+        Some(user_id) => {
+            hasher.update(&[1]);
+            hasher.update(user_id.as_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
+    hasher.update(client_id.as_bytes());
+    let key = i64::from_be_bytes(
+        hasher.finalize().as_bytes()[..8]
+            .try_into()
+            .expect("BLAKE3 output contains eight bytes"),
+    );
+    diesel::sql_query("SELECT pg_advisory_xact_lock($1)")
+        .bind::<diesel::sql_types::BigInt, _>(key)
         .execute(connection)
         .await?;
     Ok(())

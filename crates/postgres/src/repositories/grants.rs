@@ -16,7 +16,7 @@ use crate::{
     schema::{oauth_clients, oauth_tokens, user_client_grants, users},
 };
 
-use super::tokens::lock_refresh_family;
+use super::tokens::{lock_refresh_family, lock_refresh_grant_scope};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GrantAuthorization {
@@ -228,13 +228,15 @@ impl GrantRepository {
                     let client_pk = oauth_clients::table
                         .filter(oauth_clients::tenant_id.eq(tenant_id))
                         .filter(oauth_clients::client_id.eq(client_id))
-                        .for_update()
                         .select(oauth_clients::id)
                         .first::<Uuid>(connection)
                         .await
                         .optional()
                         .map_err(GrantRevokeTransactionError::ClientLookup)?
                         .ok_or(GrantRevokeTransactionError::ClientNotFound)?;
+                    lock_refresh_grant_scope(connection, tenant_id, Some(user_id), client_pk)
+                        .await
+                        .map_err(GrantRevokeTransactionError::Revoke)?;
                     let family_ids = oauth_tokens::table
                         .filter(oauth_tokens::tenant_id.eq(tenant_id))
                         .filter(oauth_tokens::user_id.eq(user_id))
