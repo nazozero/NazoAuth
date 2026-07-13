@@ -1,5 +1,7 @@
 //! client_credentials grant 处理。
-use crate::domain::{AppState, ClientRow, RefreshTokenPolicy, TokenIssue};
+#[cfg(test)]
+use crate::domain::AppState;
+use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
 #[cfg(test)]
 use crate::settings::Settings;
 #[cfg(test)]

@@ -5,10 +5,12 @@ use chrono::Utc;
 use nazo_auth::Claims;
 #[cfg(test)]
 use nazo_auth::{AccessTokenClaimsInput, OidcClaimRequest};
+#[cfg(test)]
 use serde_json::Value;
 #[cfg(test)]
 use uuid::Uuid;
 
+#[cfg(test)]
 use crate::domain::AppState;
 use crate::support::signing_algorithm_name;
 
@@ -110,6 +112,7 @@ pub(crate) async fn sign_response_jwt(
     state.keyset.encode_jwt(purpose, &header, claims).await
 }
 
+#[cfg(test)]
 pub(crate) fn decode_access_claims(state: &AppState, token: &str) -> Option<Claims> {
     decode_access_claims_with(&state.keyset, &state.settings.endpoint.issuer, token)
 }

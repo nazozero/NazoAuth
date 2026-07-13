@@ -10,7 +10,7 @@ use super::{
     ServerTokenService, TokenForm, consume_token_client_assertion_with_authorization_service,
 };
 use super::{native_sso_profile_requested, token_native_sso_exchange};
-use crate::domain::{AppState, ClientRow, RefreshTokenPolicy, TokenIssue};
+use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
 #[cfg(test)]
 use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
 use crate::support::{
@@ -389,7 +389,6 @@ async fn validate_actor_token(
 }
 
 pub(crate) async fn token_exchange(
-    state: &AppState,
     token_service: &ServerTokenService,
     authorization_service: &crate::http::authorization::ServerAuthorizationService,
     issuance: &TokenIssuanceContext<'_>,
@@ -400,7 +399,6 @@ pub(crate) async fn token_exchange(
 ) -> HttpResponse {
     if native_sso_profile_requested(form) {
         return token_native_sso_exchange(
-            state,
             token_service,
             issuance,
             req,

@@ -139,6 +139,20 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
         })
     }
 
+    fn refresh_family_active(
+        &self,
+        tenant_id: Uuid,
+        family_id: Uuid,
+        user_id: Uuid,
+    ) -> TokenFuture<'_, bool> {
+        Box::pin(async move {
+            self.tokens
+                .family_active(tenant_id, family_id, user_id)
+                .await
+                .map_err(map_repository_error)
+        })
+    }
+
     fn revoke_token<'a>(&'a self, input: TokenRevocation<'a>) -> TokenFuture<'a, usize> {
         Box::pin(async move {
             self.tokens

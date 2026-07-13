@@ -192,6 +192,13 @@ pub trait TokenRepositoryPort: Send + Sync {
 
     fn access_token_revoked<'a>(&'a self, tenant_id: Uuid, jti: &'a str) -> TokenFuture<'a, bool>;
 
+    fn refresh_family_active(
+        &self,
+        tenant_id: Uuid,
+        family_id: Uuid,
+        user_id: Uuid,
+    ) -> TokenFuture<'_, bool>;
+
     fn revoke_token<'a>(&'a self, input: TokenRevocation<'a>) -> TokenFuture<'a, usize>;
 }
 
@@ -257,6 +264,12 @@ pub trait TokenSignerPort: Send + Sync {
         issuer: &'a str,
         token: &'a str,
     ) -> TokenFuture<'a, Option<Claims>>;
+
+    fn decode_id_token<'a>(
+        &'a self,
+        issuer: &'a str,
+        token: &'a str,
+    ) -> TokenFuture<'a, Option<Value>>;
 
     fn sign_introspection_response<'a>(
         &'a self,
@@ -358,6 +371,25 @@ where
         self.repository
             .active_subject_claims(tenant_id, user_id)
             .await
+    }
+
+    pub async fn refresh_family_active(
+        &self,
+        tenant_id: Uuid,
+        family_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<bool, TokenPortError> {
+        self.repository
+            .refresh_family_active(tenant_id, family_id, user_id)
+            .await
+    }
+
+    pub async fn decode_id_token(
+        &self,
+        issuer: &str,
+        token: &str,
+    ) -> Result<Option<Value>, TokenPortError> {
+        self.signer.decode_id_token(issuer, token).await
     }
 
     pub async fn revoke_issued_tokens(

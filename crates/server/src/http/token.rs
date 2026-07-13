@@ -19,10 +19,13 @@ pub(crate) mod userinfo;
 
 use authorization_code::token_authorization_code_with_service;
 use ciba::{CIBA_GRANT_TYPE, token_ciba};
+#[cfg(test)]
+use client_auth::consume_token_client_assertion;
 use client_auth::{
     TokenManagementClientAuthError, authenticate_introspection_client_with_dependencies,
-    authenticate_revocation_client_with_dependencies, consume_token_client_assertion,
-    token_management_auth_error, token_management_client_auth_error,
+    authenticate_revocation_client_with_dependencies,
+    consume_token_client_assertion_with_authorization_service, token_management_auth_error,
+    token_management_client_auth_error,
 };
 #[cfg(test)]
 use client_credentials::client_credentials_issue_request;
@@ -31,6 +34,7 @@ use client_credentials::{
 };
 use device::DEVICE_CODE_GRANT_TYPE;
 use device_issuance::token_device_code_with_service;
+#[cfg(test)]
 use dispatch::validate_token_request_profile;
 #[cfg(test)]
 use issue::access_token_subject_key;
@@ -81,6 +85,83 @@ mod forms_tests;
 
 #[cfg(test)]
 mod lifecycle_boundary_tests {
+    fn function_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+        source
+            .split_once(start)
+            .unwrap_or_else(|| panic!("missing boundary start {start}"))
+            .1
+            .split_once(end)
+            .unwrap_or_else(|| panic!("missing boundary end {end}"))
+            .0
+    }
+
+    #[test]
+    fn production_token_dispatch_and_grants_do_not_receive_app_state() {
+        let dispatch = include_str!("token/dispatch.rs");
+        let dispatch = function_body(
+            dispatch,
+            "pub(crate) async fn token_with_service(",
+            "#[cfg(not(test))]",
+        );
+        for forbidden in [
+            "Data<AppState>",
+            "state.settings",
+            "state.diesel_db",
+            "state.valkey_connection()",
+            "TokenIssuanceRepository::new",
+            "AuthorizationStore::new",
+            "ReplayStore::new",
+        ] {
+            assert!(
+                !dispatch.contains(forbidden),
+                "production token dispatch reintroduced {forbidden}"
+            );
+        }
+
+        for (name, source, start, end) in [
+            (
+                "authorization_code",
+                include_str!("token/authorization_code.rs"),
+                "pub(crate) async fn token_authorization_code_with_service(",
+                "#[cfg(test)]\nfn test_token_service",
+            ),
+            (
+                "refresh_token",
+                include_str!("token/refresh.rs"),
+                "pub(crate) async fn token_refresh_with_service(",
+                "#[cfg(test)]\npub(crate) async fn token_refresh",
+            ),
+            (
+                "native_sso",
+                include_str!("token/native_sso.rs"),
+                "pub(crate) async fn token_native_sso_exchange(",
+                "#[cfg(test)]\n#[path =",
+            ),
+            (
+                "ciba",
+                include_str!("token/ciba.rs"),
+                "pub(crate) async fn token_ciba(",
+                "fn ciba_auth_req_id_client_error(",
+            ),
+        ] {
+            let body = function_body(source, start, end);
+            for forbidden in [
+                "AppState",
+                "state.settings",
+                "state.diesel_db",
+                "state.valkey_connection()",
+                "TokenRepository::new",
+                "TokenStateStore::new",
+                "ReplayStore::new",
+            ] {
+                assert!(
+                    !body.contains(forbidden),
+                    "{name} production grant reintroduced {forbidden}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn token_lifecycle_handlers_use_focused_dependencies() {
         for (name, source) in [

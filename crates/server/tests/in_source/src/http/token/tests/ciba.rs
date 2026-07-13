@@ -678,16 +678,17 @@ async fn ciba_token_request_validates_mtls_before_auth_req_id_state() {
         state.keyset.clone(),
     );
     let issuance_config = TokenIssuanceConfig::from(state.settings.as_ref());
+    let ciba_config = CibaHttpConfig::from(state.settings.as_ref());
     let modules = state.active_module_snapshot();
     let authorization = super::super::issue::test_authorization_service(&state);
     let response = token_ciba(
-        &state,
         &token_service,
         &TokenIssuanceContext {
             config: &issuance_config,
             modules: &modules,
             authorization: &authorization,
         },
+        &ciba_config,
         &ciba_service,
         &users,
         &req,

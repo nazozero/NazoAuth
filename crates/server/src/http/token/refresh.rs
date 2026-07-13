@@ -1,5 +1,8 @@
 //! refresh_token grant 处理。
-use crate::domain::{AppState, ClientRow, RefreshTokenPolicy, TokenIssue, TokenRow};
+#[cfg(test)]
+use crate::domain::AppState;
+use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue, TokenRow};
+#[cfg(test)]
 use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::{
@@ -7,8 +10,9 @@ use crate::support::{
 };
 use crate::support::{
     DpopErrorContext, ValidatedClientAssertion, audiences_allowed, audit_event, audit_fields,
-    blake3_hex, client_ip, constant_time_eq, dpop_error_response, dpop_proof_present, is_subset,
-    json_array_to_strings, parse_scope, request_mtls_thumbprint, validate_dpop_proof,
+    blake3_hex, client_ip_with_context, constant_time_eq, dpop_error_response, dpop_proof_present,
+    is_subset, json_array_to_strings, parse_scope, request_mtls_thumbprint_from_trusted_proxy,
+    validate_dpop_proof_with_authorization_service,
 };
 use actix_web::http::StatusCode;
 #[cfg(test)]
@@ -23,10 +27,9 @@ use serde_json::Value;
 use serde_json::json;
 use uuid::Uuid;
 // 只处理 refresh token 校验、复用检测和轮换前置约束。
-#[cfg(test)]
 use super::issue::TokenIssuanceConfig;
 use super::{
-    ServerTokenService, TokenForm, consume_token_client_assertion,
+    ServerTokenService, TokenForm, consume_token_client_assertion_with_authorization_service,
     issue::{TokenIssuanceContext, issue_token_response_with_service},
     should_issue_refresh_token,
 };
@@ -51,6 +54,7 @@ fn refresh_token_has_stable_sender_constraint(token: &TokenRow) -> bool {
     token.dpop_jkt.is_some() || token.mtls_x5t_s256.is_some()
 }
 
+#[cfg(test)]
 fn refresh_token_policy_for_profile(
     settings: &Settings,
     client: &ClientRow,
@@ -61,6 +65,14 @@ fn refresh_token_policy_for_profile(
         client,
         token,
     )
+}
+
+fn refresh_token_policy_for_profile_value(
+    profile: AuthorizationServerProfile,
+    client: &ClientRow,
+    token: &TokenRow,
+) -> RefreshTokenPolicy {
+    refresh_token_policy_for_authorization_server_profile(profile, client, token)
 }
 
 fn refresh_token_scopes(
@@ -82,6 +94,7 @@ fn refresh_token_scopes(
     }
 }
 
+#[cfg(test)]
 fn refresh_token_audiences(
     settings: &Settings,
     token: &TokenRow,
@@ -90,6 +103,25 @@ fn refresh_token_audiences(
     let original_audiences = json_array_to_strings(&token.audience);
     let original_audiences = if original_audiences.is_empty() {
         vec![settings.protocol.default_audience.clone()]
+    } else {
+        original_audiences
+    };
+    if form.audiences.is_empty() {
+        return Ok(original_audiences);
+    }
+    is_subset(&form.audiences, &original_audiences)
+        .then(|| form.audiences.clone())
+        .ok_or(())
+}
+
+fn refresh_token_audiences_with_default(
+    default_audience: &str,
+    token: &TokenRow,
+    form: &TokenForm,
+) -> Result<Vec<String>, ()> {
+    let original_audiences = json_array_to_strings(&token.audience);
+    let original_audiences = if original_audiences.is_empty() {
+        vec![default_audience.to_owned()]
     } else {
         original_audiences
     };
@@ -114,7 +146,6 @@ async fn lost_response_successor_or_mark_reuse(
 }
 
 pub(crate) async fn token_refresh_with_service(
-    state: &AppState,
     token_service: &ServerTokenService,
     issuance: &TokenIssuanceContext<'_>,
     req: &HttpRequest,
@@ -184,7 +215,11 @@ pub(crate) async fn token_refresh_with_service(
                         ("token_family_id", json!(token.token_family_id)),
                         (
                             "source_ip_hash",
-                            json!(blake3_hex(&client_ip(req, &state.settings))),
+                            json!(blake3_hex(&client_ip_with_context(
+                                req,
+                                issuance.config.client_ip_header_mode(),
+                                issuance.config.trusted_proxy_cidrs(),
+                            ))),
                         ),
                     ]),
                 );
@@ -233,7 +268,17 @@ pub(crate) async fn token_refresh_with_service(
         }
     }
     let dpop_jkt = if dpop_proof_present(req) {
-        match validate_dpop_proof(state, req, None, token.dpop_jkt.as_deref()).await {
+        match validate_dpop_proof_with_authorization_service(
+            issuance.authorization,
+            issuance.config.issuer(),
+            issuance.config.mtls_endpoint_base_url(),
+            issuance.config.dpop_nonce_policy(),
+            req,
+            None,
+            token.dpop_jkt.as_deref(),
+        )
+        .await
+        {
             Ok(value) => value.or(token.dpop_jkt.clone()),
             Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
         }
@@ -267,7 +312,8 @@ pub(crate) async fn token_refresh_with_service(
         );
     }
     let mtls_x5t_s256 = if let Some(expected) = token.mtls_x5t_s256.clone() {
-        match request_mtls_thumbprint(req, &state.settings) {
+        match request_mtls_thumbprint_from_trusted_proxy(req, issuance.config.trusted_proxy_cidrs())
+        {
             Some(actual) if constant_time_eq(expected.as_bytes(), actual.as_bytes()) => {
                 Some(expected)
             }
@@ -281,7 +327,8 @@ pub(crate) async fn token_refresh_with_service(
             }
         }
     } else if client.require_mtls_bound_tokens {
-        match request_mtls_thumbprint(req, &state.settings) {
+        match request_mtls_thumbprint_from_trusted_proxy(req, issuance.config.trusted_proxy_cidrs())
+        {
             Some(actual) => Some(actual),
             None => {
                 return oauth_token_error(
@@ -295,7 +342,13 @@ pub(crate) async fn token_refresh_with_service(
     } else {
         None
     };
-    if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
+    if let Err(response) = consume_token_client_assertion_with_authorization_service(
+        issuance.authorization,
+        client,
+        client_assertion,
+    )
+    .await
+    {
         return response;
     }
     if !should_issue_refresh_token(client, &original_scopes) {
@@ -317,7 +370,11 @@ pub(crate) async fn token_refresh_with_service(
             );
         }
     };
-    let audiences = match refresh_token_audiences(&state.settings, &token, form) {
+    let audiences = match refresh_token_audiences_with_default(
+        issuance.config.default_audience(),
+        &token,
+        form,
+    ) {
         Ok(audiences) => audiences,
         Err(()) => {
             return oauth_token_error(
@@ -343,7 +400,11 @@ pub(crate) async fn token_refresh_with_service(
             successor_id: token.id,
             retry_started_at: request_started_at,
         },
-        None => refresh_token_policy_for_profile(&state.settings, client, &token),
+        None => refresh_token_policy_for_profile_value(
+            issuance.config.authorization_server_profile(),
+            client,
+            &token,
+        ),
     };
     issue_token_response_with_service(
         issuance,
@@ -396,7 +457,6 @@ pub(crate) async fn token_refresh(
     let modules = state.active_module_snapshot();
     let authorization = super::issue::test_authorization_service(state);
     token_refresh_with_service(
-        state,
         &service,
         &TokenIssuanceContext {
             config: &config,

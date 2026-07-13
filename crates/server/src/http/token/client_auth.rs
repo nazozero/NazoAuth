@@ -3,12 +3,16 @@
 use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_http_actix::{oauth_error, oauth_token_error};
 
-use crate::domain::{AppState, ClientRow};
+#[cfg(test)]
+use crate::domain::AppState;
+use crate::domain::ClientRow;
 #[cfg(test)]
 use crate::settings::Settings;
+#[cfg(test)]
+use crate::support::consume_private_key_jwt;
 use crate::support::{
     ClientAssertionError, ClientCredentials, ValidatedClientAssertion, blake3_hex,
-    client_mtls_certificate_matches, client_secret_digest, consume_private_key_jwt,
+    client_mtls_certificate_matches, client_secret_digest,
     request_mtls_client_certificate_from_headers, verify_private_key_jwt_claims_for_issuer,
 };
 #[cfg(test)]
@@ -36,6 +40,10 @@ pub(crate) enum TokenManagementClientAuthError {
     StoreUnavailable,
 }
 
+fn dummy_client_secret_salt(client_id: Option<&str>) -> String {
+    blake3_hex(client_id.unwrap_or(""))
+}
+
 /// Equalizes the CPU work for an unknown secret-authenticated client without touching storage.
 /// The result is deliberately consumed so release optimization cannot remove the calculation.
 pub(crate) fn perform_dummy_client_secret_verification(
@@ -47,10 +55,11 @@ pub(crate) fn perform_dummy_client_secret_verification(
         "client_secret_basic" | "client_secret_post"
     ) && let Some(secret) = credentials.client_secret.as_deref()
     {
+        let dummy_salt = dummy_client_secret_salt(credentials.client_id.as_deref());
         drop(std::hint::black_box(client_secret_digest(
             secret,
             client_secret_pepper,
-            "nazo-client-auth-dummy-v1",
+            &dummy_salt,
         )));
     }
 }
@@ -366,6 +375,7 @@ fn token_client_assertion_error(error: ClientAssertionError) -> HttpResponse {
     }
 }
 
+#[cfg(test)]
 pub(crate) async fn consume_token_client_assertion(
     state: &AppState,
     client: &ClientRow,

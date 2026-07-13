@@ -1,7 +1,8 @@
 //! /token grant_type 分发入口。
 #[cfg(test)]
-use crate::domain::CodePayload;
-use crate::domain::{AppState, AuthorizationCodeState, ClientRow};
+use crate::domain::{AppState, CodePayload};
+use crate::domain::{AuthorizationCodeState, ClientRow};
+#[cfg(test)]
 use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::{
@@ -9,9 +10,10 @@ use crate::support::{
     authorization_code_key, blake3_hex,
 };
 use crate::support::{
-    ClientCredentials, RateLimitPolicy, client_mtls_certificate_matches, dpop_proof_present,
-    enforce_rate_limit, extract_client_credentials, has_basic_authorization_scheme,
-    json_array_to_strings, request_mtls_client_certificate,
+    ClientCredentials, client_ip_with_context, client_mtls_certificate_matches, dpop_proof_present,
+    extract_client_credentials_with_trusted_proxies, has_basic_authorization_scheme,
+    json_array_to_strings, rate_limited_response,
+    request_mtls_client_certificate_from_trusted_proxy,
 };
 use actix_web::http::StatusCode;
 #[cfg(test)]
@@ -43,6 +45,7 @@ use super::{
     token_refresh_with_service,
 };
 use crate::http::authorization::ServerAuthorizationService;
+use crate::runtime_modules::ServerRuntimeModuleRegistry;
 use nazo_auth::{
     ClientAuthenticationContext, ClientProfile, ProtocolErrorCode, SecurityProfile,
     SenderConstraintPolicy, validate_token_request_profile as validate_auth_token_request_profile,
@@ -75,10 +78,12 @@ fn mtls_client_credentials(client_id: String) -> ClientCredentials {
 
 async fn mtls_client_credentials_without_client_id(
     service: &ServerAuthorizationService,
-    settings: &Settings,
+    trusted_proxy_cidrs: &[crate::support::IpCidr],
     req: &HttpRequest,
 ) -> Result<Option<ClientCredentials>, HttpResponse> {
-    let Some(certificate) = request_mtls_client_certificate(req, settings) else {
+    let Some(certificate) =
+        request_mtls_client_certificate_from_trusted_proxy(req, trusted_proxy_cidrs)
+    else {
         return Ok(None);
     };
     match service.active_mtls_candidates(1000).await {
@@ -144,7 +149,7 @@ fn client_credentials_holder_missing_client_error(
 }
 
 async fn missing_client_authorization_code_holder_error(
-    state: &AppState,
+    token_service: &ServerTokenService,
     authorization_service: &ServerAuthorizationService,
     form: &TokenForm,
 ) -> Option<HttpResponse> {
@@ -152,8 +157,8 @@ async fn missing_client_authorization_code_holder_error(
         return None;
     }
     let code = form.code.as_deref()?;
-    let stored = match nazo_valkey::AuthorizationStore::new(&state.valkey_connection())
-        .load_authorization_code(code)
+    let stored = match token_service
+        .load_authorization_code(&blake3_hex(code))
         .await
     {
         Ok(Some(value)) => value,
@@ -200,18 +205,49 @@ async fn missing_client_authorization_code_holder_error(
     }
 }
 
+async fn enforce_token_rate_limit(
+    service: &ServerAuthorizationService,
+    config: &TokenIssuanceConfig,
+    req: &HttpRequest,
+) -> Result<(), HttpResponse> {
+    let subject = client_ip_with_context(
+        req,
+        config.client_ip_header_mode(),
+        config.trusted_proxy_cidrs(),
+    );
+    let count = service
+        .increment_token_rate(&subject, config.rate_limit_window_seconds())
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, "token rate limit increment failed");
+            oauth_token_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "请求频率校验失败.",
+                false,
+            )
+        })?;
+    if count > config.token_rate_limit_max_requests() {
+        return Err(rate_limited_response(config.rate_limit_window_seconds()));
+    }
+    Ok(())
+}
+
 pub(crate) async fn token_with_service(
-    state: Data<AppState>,
     token_service: Data<ServerTokenService>,
     authorization_service: Data<ServerAuthorizationService>,
     ciba_service: Data<super::ciba::ServerCibaService>,
     ciba_users: Data<nazo_postgres::UserRepository>,
+    ciba_config: Data<super::ciba::CibaHttpConfig>,
     issuance_config: Data<TokenIssuanceConfig>,
     device_service: Data<super::device::ServerDeviceGrantService>,
+    runtime_modules: Data<ServerRuntimeModuleRegistry>,
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
-    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Token).await {
+    if let Err(response) =
+        enforce_token_rate_limit(&authorization_service, &issuance_config, &req).await
+    {
         return response;
     }
 
@@ -260,7 +296,7 @@ pub(crate) async fn token_with_service(
     };
     if form.has_audience_param
         && form.grant_type != TOKEN_EXCHANGE_GRANT_TYPE
-        && !state.settings.modules.enable_legacy_audience_param
+        && !issuance_config.legacy_audience_param_enabled()
     {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
@@ -270,10 +306,8 @@ pub(crate) async fn token_with_service(
         );
     }
 
-    if state
-        .settings
-        .protocol
-        .authorization_server_profile
+    if issuance_config
+        .authorization_server_profile()
         .requires_fapi2_security()
         && form.grant_type == "password"
     {
@@ -303,9 +337,9 @@ pub(crate) async fn token_with_service(
             false,
         );
     }
-    let mut credentials = extract_client_credentials(
+    let mut credentials = extract_client_credentials_with_trusted_proxies(
         &req,
-        &state.settings,
+        issuance_config.trusted_proxy_cidrs(),
         form.client_id.as_deref(),
         form.client_secret.as_deref(),
         form.client_assertion_type.as_deref(),
@@ -319,7 +353,7 @@ pub(crate) async fn token_with_service(
     {
         match mtls_client_credentials_without_client_id(
             &authorization_service,
-            &state.settings,
+            issuance_config.trusted_proxy_cidrs(),
             &req,
         )
         .await
@@ -337,7 +371,7 @@ pub(crate) async fn token_with_service(
                 return response;
             }
             if let Some(response) = missing_client_authorization_code_holder_error(
-                &state,
+                &token_service,
                 &authorization_service,
                 &form,
             )
@@ -358,7 +392,7 @@ pub(crate) async fn token_with_service(
         Ok(None) => {
             perform_dummy_client_secret_verification(
                 &credentials,
-                &state.settings.protocol.client_secret_pepper,
+                issuance_config.client_secret_pepper(),
             );
             return oauth_token_error(
                 StatusCode::UNAUTHORIZED,
@@ -382,9 +416,9 @@ pub(crate) async fn token_with_service(
     }
     let client_assertion = match authenticate_client_with_dependencies(
         &authorization_service,
-        &state.settings.endpoint.issuer,
-        &state.settings.protocol.client_secret_pepper,
-        &state.settings.endpoint.trusted_proxy_cidrs,
+        issuance_config.issuer(),
+        issuance_config.client_secret_pepper(),
+        issuance_config.trusted_proxy_cidrs(),
         &req,
         &client,
         &credentials,
@@ -418,14 +452,14 @@ pub(crate) async fn token_with_service(
             );
         }
     };
-    if let Err(response) = validate_token_request_profile(
-        &state.settings,
+    if let Err(response) = validate_token_request_profile_with_profile(
+        issuance_config.authorization_server_profile(),
         &client,
         client.token_endpoint_auth_method.as_str(),
     ) {
         return response;
     }
-    let modules = state.active_module_snapshot();
+    let modules = runtime_modules.snapshot();
     let issuance = TokenIssuanceContext {
         config: &issuance_config,
         modules: &modules,
@@ -434,7 +468,6 @@ pub(crate) async fn token_with_service(
     match form.grant_type.as_str() {
         "authorization_code" => {
             token_authorization_code_with_service(
-                &state,
                 &token_service,
                 &issuance,
                 &req,
@@ -446,7 +479,6 @@ pub(crate) async fn token_with_service(
         }
         "refresh_token" => {
             token_refresh_with_service(
-                &state,
                 &token_service,
                 &issuance,
                 &req,
@@ -493,9 +525,9 @@ pub(crate) async fn token_with_service(
         }
         CIBA_GRANT_TYPE => {
             token_ciba(
-                &state,
                 &token_service,
                 &issuance,
+                &ciba_config,
                 &ciba_service,
                 &ciba_users,
                 &req,
@@ -508,7 +540,6 @@ pub(crate) async fn token_with_service(
         }
         TOKEN_EXCHANGE_GRANT_TYPE => {
             token_exchange(
-                &state,
                 &token_service,
                 &authorization_service,
                 &issuance,
@@ -548,18 +579,21 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
         nazo_valkey::CibaStore::new(&connection),
     ));
     let ciba_users = Data::new(nazo_postgres::UserRepository::new(state.diesel_db.clone()));
+    let ciba_config = Data::new(super::ciba::CibaHttpConfig::from(state.settings.as_ref()));
     let issuance_config = Data::new(TokenIssuanceConfig::from(state.settings.as_ref()));
     let device_service = Data::new(super::device::ServerDeviceGrantService::new(
         nazo_valkey::DeviceStore::new(&connection),
     ));
+    let runtime_modules = Data::from(state.runtime_modules.clone());
     token_with_service(
-        state,
         service,
         authorization_service,
         ciba_service,
         ciba_users,
+        ciba_config,
         issuance_config,
         device_service,
+        runtime_modules,
         req,
         body,
     )
@@ -582,16 +616,25 @@ fn validate_token_client_enabled(client: &ClientRow, grant_type: &str) -> Result
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) fn validate_token_request_profile(
     settings: &Settings,
     client: &ClientRow,
     auth_method: &str,
 ) -> Result<(), HttpResponse> {
-    let profile = if settings
-        .protocol
-        .authorization_server_profile
-        .requires_fapi2_security()
-    {
+    validate_token_request_profile_with_profile(
+        settings.protocol.authorization_server_profile,
+        client,
+        auth_method,
+    )
+}
+
+fn validate_token_request_profile_with_profile(
+    server_profile: crate::settings::AuthorizationServerProfile,
+    client: &ClientRow,
+    auth_method: &str,
+) -> Result<(), HttpResponse> {
+    let profile = if server_profile.requires_fapi2_security() {
         SecurityProfile::Fapi2Security
     } else {
         SecurityProfile::Baseline

@@ -1,8 +1,11 @@
 //! authorization_code grant 处理。
+#[cfg(test)]
+use crate::domain::AppState;
 use crate::domain::{
-    AppState, AuthorizationCodeState, ClientRow, CodePayload, ConsumedAuthorizationCode,
-    RefreshTokenPolicy, TokenIssue,
+    AuthorizationCodeState, ClientRow, CodePayload, ConsumedAuthorizationCode, RefreshTokenPolicy,
+    TokenIssue,
 };
+#[cfg(test)]
 use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::{
@@ -11,8 +14,8 @@ use crate::support::{
 };
 use crate::support::{
     DpopError, DpopErrorContext, ValidatedClientAssertion, audiences_allowed, blake3_hex,
-    compute_subject_for_client, constant_time_eq, dpop_error_response, is_subset,
-    is_valid_pkce_value, pkce_s256, request_mtls_thumbprint, validate_dpop_proof,
+    constant_time_eq, dpop_error_response, is_subset, is_valid_pkce_value, pkce_s256,
+    request_mtls_thumbprint_from_trusted_proxy, validate_dpop_proof_with_authorization_service,
 };
 use actix_web::http::StatusCode;
 #[cfg(test)]
@@ -37,10 +40,9 @@ use serde_json::{Value, json};
 #[cfg(test)]
 use uuid::Uuid;
 // 只消费授权码并转入统一令牌签发逻辑。
-#[cfg(test)]
 use super::issue::TokenIssuanceConfig;
 use super::{
-    ServerTokenService, TokenForm, consume_token_client_assertion,
+    ServerTokenService, TokenForm, consume_token_client_assertion_with_authorization_service,
     issue::{TokenIssuanceContext, issue_token_response_with_service},
     native_sso_requested, new_native_sso_token_binding, revoke_issued_authorization_code_tokens,
 };
@@ -209,14 +211,14 @@ fn token_issue_from_authorization_code(input: AuthorizationCodeIssueInput) -> To
     }
 }
 
-fn authorization_code_audiences(
-    settings: &Settings,
+fn authorization_code_audiences_with_default(
+    default_audience: &str,
     payload: &CodePayload,
     form: &TokenForm,
 ) -> Result<Vec<String>, ()> {
     if payload.resource_indicators.is_empty() {
         return Ok(if form.audiences.is_empty() {
-            vec![settings.protocol.default_audience.clone()]
+            vec![default_audience.to_owned()]
         } else {
             form.audiences.clone()
         });
@@ -227,6 +229,15 @@ fn authorization_code_audiences(
     is_subset(&form.audiences, &payload.resource_indicators)
         .then(|| form.audiences.clone())
         .ok_or(())
+}
+
+#[cfg(test)]
+fn authorization_code_audiences(
+    settings: &Settings,
+    payload: &CodePayload,
+    form: &TokenForm,
+) -> Result<Vec<String>, ()> {
+    authorization_code_audiences_with_default(&settings.protocol.default_audience, payload, form)
 }
 
 fn refresh_token_dpop_binding(
@@ -318,7 +329,6 @@ async fn revoke_replayed_authorization_code(
 }
 
 pub(crate) async fn token_authorization_code_with_service(
-    state: &AppState,
     token_service: &ServerTokenService,
     issuance: &TokenIssuanceContext<'_>,
     req: &HttpRequest,
@@ -353,14 +363,25 @@ pub(crate) async fn token_authorization_code_with_service(
     let expected_mtls_x5t_s256 = expected_payload
         .as_ref()
         .and_then(|payload| payload.mtls_x5t_s256.clone());
-    let dpop_jkt = match validate_dpop_proof(state, req, None, expected_dpop_jkt.as_deref()).await {
+    let dpop_jkt = match validate_dpop_proof_with_authorization_service(
+        issuance.authorization,
+        issuance.config.issuer(),
+        issuance.config.mtls_endpoint_base_url(),
+        issuance.config.dpop_nonce_policy(),
+        req,
+        None,
+        expected_dpop_jkt.as_deref(),
+    )
+    .await
+    {
         Ok(value) => value.or(expected_dpop_jkt),
         Err(error) => return authorization_code_dpop_error_response(error),
     };
     if client.require_dpop_bound_tokens && dpop_jkt.is_none() {
         return authorization_code_dpop_error_response(DpopError::MissingProof);
     }
-    let request_mtls_x5t_s256 = request_mtls_thumbprint(req, &state.settings);
+    let request_mtls_x5t_s256 =
+        request_mtls_thumbprint_from_trusted_proxy(req, issuance.config.trusted_proxy_cidrs());
     let mtls_x5t_s256 = match (expected_mtls_x5t_s256, request_mtls_x5t_s256) {
         (Some(expected), Some(actual))
             if constant_time_eq(expected.as_bytes(), actual.as_bytes()) =>
@@ -378,7 +399,13 @@ pub(crate) async fn token_authorization_code_with_service(
         }
         (None, _) => None,
     };
-    if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
+    if let Err(response) = consume_token_client_assertion_with_authorization_service(
+        issuance.authorization,
+        client,
+        client_assertion,
+    )
+    .await
+    {
         return response;
     }
     let payload =
@@ -444,7 +471,7 @@ pub(crate) async fn token_authorization_code_with_service(
     {
         mark_failed_authorization_code(
             token_service,
-            state.settings.protocol.auth_code_ttl_seconds.max(1),
+            issuance.config.auth_code_ttl_seconds(),
             &code_hash,
             "client_or_redirect_uri_mismatch",
         )
@@ -456,7 +483,7 @@ pub(crate) async fn token_authorization_code_with_service(
             let Some(verifier) = &form.code_verifier else {
                 mark_failed_authorization_code(
                     token_service,
-                    state.settings.protocol.auth_code_ttl_seconds.max(1),
+                    issuance.config.auth_code_ttl_seconds(),
                     &code_hash,
                     "missing_code_verifier",
                 )
@@ -471,7 +498,7 @@ pub(crate) async fn token_authorization_code_with_service(
             if !is_valid_pkce_value(verifier) || pkce_s256(verifier) != *code_challenge {
                 mark_failed_authorization_code(
                     token_service,
-                    state.settings.protocol.auth_code_ttl_seconds.max(1),
+                    issuance.config.auth_code_ttl_seconds(),
                     &code_hash,
                     "pkce_failed",
                 )
@@ -488,7 +515,7 @@ pub(crate) async fn token_authorization_code_with_service(
         _ => {
             mark_failed_authorization_code(
                 token_service,
-                state.settings.protocol.auth_code_ttl_seconds.max(1),
+                issuance.config.auth_code_ttl_seconds(),
                 &code_hash,
                 "pkce_state_invalid",
             )
@@ -501,12 +528,16 @@ pub(crate) async fn token_authorization_code_with_service(
             );
         }
     }
-    let audiences = match authorization_code_audiences(&state.settings, &payload, form) {
+    let audiences = match authorization_code_audiences_with_default(
+        issuance.config.default_audience(),
+        &payload,
+        form,
+    ) {
         Ok(audiences) => audiences,
         Err(()) => {
             mark_failed_authorization_code(
                 token_service,
-                state.settings.protocol.auth_code_ttl_seconds.max(1),
+                issuance.config.auth_code_ttl_seconds(),
                 &code_hash,
                 "audience_exceeds_authorization",
             )
@@ -522,7 +553,7 @@ pub(crate) async fn token_authorization_code_with_service(
     if !audiences_allowed(client, &audiences) {
         mark_failed_authorization_code(
             token_service,
-            state.settings.protocol.auth_code_ttl_seconds.max(1),
+            issuance.config.auth_code_ttl_seconds(),
             &code_hash,
             "audience_not_allowed",
         )
@@ -535,10 +566,10 @@ pub(crate) async fn token_authorization_code_with_service(
         );
     }
     if native_sso_requested(&payload.scopes) {
-        if !state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::NativeSso) {
+        if !issuance.permits(nazo_runtime_modules::ModuleId::NativeSso) {
             mark_failed_authorization_code(
                 token_service,
-                state.settings.protocol.auth_code_ttl_seconds.max(1),
+                issuance.config.auth_code_ttl_seconds(),
                 &code_hash,
                 "native_sso_disabled",
             )
@@ -553,7 +584,7 @@ pub(crate) async fn token_authorization_code_with_service(
         if !payload.scopes.iter().any(|scope| scope == "openid") {
             mark_failed_authorization_code(
                 token_service,
-                state.settings.protocol.auth_code_ttl_seconds.max(1),
+                issuance.config.auth_code_ttl_seconds(),
                 &code_hash,
                 "native_sso_without_openid",
             )
@@ -568,12 +599,12 @@ pub(crate) async fn token_authorization_code_with_service(
     }
     let refresh_token_dpop_jkt = refresh_token_dpop_binding(client, &payload, dpop_jkt.clone());
     let refresh_token_mtls_x5t_s256 = mtls_x5t_s256.clone();
-    let subject = match authorization_code_subject(&state.settings, &payload, client) {
+    let subject = match authorization_code_subject(issuance.config, &payload, client) {
         Ok(subject) => subject,
         Err(_) => {
             mark_failed_authorization_code(
                 token_service,
-                state.settings.protocol.auth_code_ttl_seconds.max(1),
+                issuance.config.auth_code_ttl_seconds(),
                 &code_hash,
                 "subject_policy_invalid",
             )
@@ -641,7 +672,6 @@ pub(crate) async fn token_authorization_code(
     let modules = state.active_module_snapshot();
     let authorization = super::issue::test_authorization_service(state);
     token_authorization_code_with_service(
-        state,
         &service,
         &TokenIssuanceContext {
             config: &config,
@@ -670,7 +700,7 @@ async fn mark_failed_authorization_code(
 }
 
 fn authorization_code_subject(
-    settings: &Settings,
+    config: &TokenIssuanceConfig,
     payload: &CodePayload,
     client: &ClientRow,
 ) -> anyhow::Result<String> {
@@ -678,7 +708,14 @@ fn authorization_code_subject(
     let sector_host = client.sector_identifier_host.as_deref();
     let redirect_uri = payload.redirect_uri.as_str();
     let user_id = payload.user_id;
-    compute_subject_for_client(settings, user_id, subject_type, sector_host, redirect_uri)
+    nazo_auth::oidc_subject_for_client(
+        config.issuer(),
+        config.pairwise_subject_secret(),
+        user_id,
+        subject_type,
+        sector_host,
+        redirect_uri,
+    )
 }
 
 #[cfg(test)]
