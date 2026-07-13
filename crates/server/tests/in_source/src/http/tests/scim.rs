@@ -11,6 +11,11 @@ use nazo_postgres::{create_pool, get_conn};
 
 type ScimHandles = ScimEndpoint;
 
+struct ScimTestFixture {
+    state: Data<ScimHandles>,
+    pool: nazo_postgres::DbPool,
+}
+
 fn uuid_fixture(value: u128) -> Uuid {
     Uuid::from_u128(value)
 }
@@ -41,7 +46,7 @@ fn test_state_with_scim_bearer_token(scim_bearer_token: Option<&str>) -> ScimHan
         1,
     )
     .expect("pool construction should not connect");
-    ScimHandles::for_test(test_scim_service(&pool), pool, test_scim_config(&settings))
+    ScimHandles::for_test(test_scim_service(&pool), test_scim_config(&settings))
 }
 
 fn test_state() -> ScimHandles {
@@ -62,7 +67,7 @@ fn database_url_with_search_path(schema: &str) -> Option<String> {
     ))
 }
 
-async fn live_state_with_scim_bearer_token(scim_bearer_token: &str) -> Option<Data<ScimHandles>> {
+async fn live_state_with_scim_bearer_token(scim_bearer_token: &str) -> Option<ScimTestFixture> {
     let database_url = std::env::var("DATABASE_URL").ok()?;
     live_state_for_database_url(scim_bearer_token, database_url).await
 }
@@ -71,30 +76,30 @@ async fn live_state_with_isolated_scim_bearer_token(
     scim_bearer_token: &str,
     schema: &str,
     tables: &[&str],
-) -> Option<Data<ScimHandles>> {
+) -> Option<ScimTestFixture> {
     let database_url = database_url_with_search_path(schema)?;
-    let state = live_state_for_database_url(scim_bearer_token, database_url).await?;
-    create_isolated_scim_schema(&state, schema, tables).await;
-    Some(state)
+    let fixture = live_state_for_database_url(scim_bearer_token, database_url).await?;
+    create_isolated_scim_schema(&fixture.pool, schema, tables).await;
+    Some(fixture)
 }
 
 async fn live_state_for_database_url(
     scim_bearer_token: &str,
     database_url: String,
-) -> Option<Data<ScimHandles>> {
+) -> Option<ScimTestFixture> {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.scim_bearer_token = Some(scim_bearer_token.to_owned());
     let pool = create_pool(database_url, 4).expect("database pool should build");
-    Some(Data::new(ScimHandles::for_test(
+    let state = Data::new(ScimHandles::for_test(
         test_scim_service(&pool),
-        pool,
         test_scim_config(&settings),
-    )))
+    ));
+    Some(ScimTestFixture { state, pool })
 }
 
-async fn exec_scim_schema_sql(state: &ScimHandles, sql: &str) {
-    let mut conn = get_conn(&state.pool)
+async fn exec_scim_schema_sql(pool: &nazo_postgres::DbPool, sql: &str) {
+    let mut conn = get_conn(pool)
         .await
         .expect("database connection should be available");
     sql_query(sql)
@@ -103,15 +108,15 @@ async fn exec_scim_schema_sql(state: &ScimHandles, sql: &str) {
         .expect("schema mutation should succeed");
 }
 
-async fn create_isolated_scim_schema(state: &ScimHandles, schema: &str, tables: &[&str]) {
+async fn create_isolated_scim_schema(pool: &nazo_postgres::DbPool, schema: &str, tables: &[&str]) {
     exec_scim_schema_sql(
-        state,
+        pool,
         &format!(r#"CREATE SCHEMA IF NOT EXISTS "{}""#, schema),
     )
     .await;
     for table in tables {
         exec_scim_schema_sql(
-            state,
+            pool,
             &format!(
                 r#"CREATE TABLE "{}"."{}" (LIKE public."{}" INCLUDING ALL)"#,
                 schema, table, table
@@ -121,9 +126,15 @@ async fn create_isolated_scim_schema(state: &ScimHandles, schema: &str, tables: 
     }
 }
 
-async fn rename_scim_column(state: &ScimHandles, schema: &str, table: &str, from: &str, to: &str) {
+async fn rename_scim_column(
+    pool: &nazo_postgres::DbPool,
+    schema: &str,
+    table: &str,
+    from: &str,
+    to: &str,
+) {
     exec_scim_schema_sql(
-        state,
+        pool,
         &format!(
             r#"ALTER TABLE "{}"."{}" RENAME COLUMN "{}" TO "{}""#,
             schema, table, from, to
@@ -132,16 +143,16 @@ async fn rename_scim_column(state: &ScimHandles, schema: &str, table: &str, from
     .await;
 }
 
-async fn cleanup_scim_schema(state: &ScimHandles, schema: &str) {
+async fn cleanup_scim_schema(pool: &nazo_postgres::DbPool, schema: &str) {
     exec_scim_schema_sql(
-        state,
+        pool,
         &format!(r#"DROP SCHEMA IF EXISTS "{}" CASCADE"#, schema),
     )
     .await;
 }
 
-async fn cleanup_scim_user_by_email(state: &ScimHandles, email: &str) {
-    let mut conn = get_conn(&state.pool)
+async fn cleanup_scim_user_by_email(pool: &nazo_postgres::DbPool, email: &str) {
+    let mut conn = get_conn(pool)
         .await
         .expect("database connection should be available");
     sql_query("DELETE FROM users WHERE email = $1")
@@ -370,11 +381,11 @@ async fn create_scim_user_id(state: Data<ScimHandles>, req: &HttpRequest, email:
 }
 
 async fn insert_scim_user_oauth_credentials(
-    state: &ScimHandles,
+    pool: &nazo_postgres::DbPool,
     user_id: Uuid,
     suffix: &str,
 ) -> Uuid {
-    let mut conn = get_conn(&state.pool)
+    let mut conn = get_conn(pool)
         .await
         .expect("database connection should be available");
     let tenant = default_tenant_context();
@@ -464,8 +475,12 @@ async fn insert_scim_user_oauth_credentials(
     client_id
 }
 
-async fn grant_count_for_user_client(state: &ScimHandles, user_id: Uuid, client_id: Uuid) -> i64 {
-    let mut conn = get_conn(&state.pool)
+async fn grant_count_for_user_client(
+    pool: &nazo_postgres::DbPool,
+    user_id: Uuid,
+    client_id: Uuid,
+) -> i64 {
+    let mut conn = get_conn(pool)
         .await
         .expect("database connection should be available");
     sql_query(
@@ -480,11 +495,11 @@ async fn grant_count_for_user_client(state: &ScimHandles, user_id: Uuid, client_
 }
 
 async fn active_refresh_token_count_for_user_client(
-    state: &ScimHandles,
+    pool: &nazo_postgres::DbPool,
     user_id: Uuid,
     client_id: Uuid,
 ) -> i64 {
-    let mut conn = get_conn(&state.pool)
+    let mut conn = get_conn(pool)
         .await
         .expect("database connection should be available");
     sql_query("SELECT COUNT(*) AS count FROM oauth_tokens WHERE user_id = $1 AND client_id = $2 AND revoked_at IS NULL")
@@ -1089,7 +1104,8 @@ async fn scim_cursor_validation_runs_after_auth_and_before_database_access() {
 async fn scim_cursor_database_traverses_equal_timestamps_exactly_once() {
     let schema = format!("scim_cursor_{}", Uuid::now_v7().simple());
     let token = format!("legacy-scim-cursor-{}", Uuid::now_v7().simple());
-    let Some(state) = live_state_with_isolated_scim_bearer_token(&token, &schema, &["users"]).await
+    let Some(ScimTestFixture { state, pool }) =
+        live_state_with_isolated_scim_bearer_token(&token, &schema, &["users"]).await
     else {
         return;
     };
@@ -1101,7 +1117,7 @@ async fn scim_cursor_database_traverses_equal_timestamps_exactly_once() {
     }
     expected.sort();
     let fixed_created_at = Utc::now() - Duration::minutes(5);
-    let mut conn = get_conn(&state.pool)
+    let mut conn = get_conn(&pool)
         .await
         .expect("database connection should be available");
     for user_id in &expected {
@@ -1194,7 +1210,7 @@ async fn scim_cursor_database_traverses_equal_timestamps_exactly_once() {
 
             let database_token = format!("cursor-database-{}", Uuid::now_v7().simple());
             let database_token_id = Uuid::now_v7();
-            let mut conn = get_conn(&state.pool)
+            let mut conn = get_conn(&pool)
                 .await
                 .expect("database connection should be available");
             sql_query(
@@ -1225,7 +1241,7 @@ async fn scim_cursor_database_traverses_equal_timestamps_exactly_once() {
                 "invalid cursor",
             )
             .await;
-            let mut conn = get_conn(&state.pool)
+            let mut conn = get_conn(&pool)
                 .await
                 .expect("database connection should be available");
             sql_query("DELETE FROM public.scim_audit_events WHERE scim_token_id = $1")
@@ -1244,7 +1260,7 @@ async fn scim_cursor_database_traverses_equal_timestamps_exactly_once() {
             let inserted_email =
                 format!("cursor-inserted-{}@example.test", Uuid::now_v7().simple());
             let inserted_id = create_scim_user_id(state.clone(), &req, &inserted_email).await;
-            let mut conn = get_conn(&state.pool)
+            let mut conn = get_conn(&pool)
                 .await
                 .expect("database connection should be available");
             sql_query("DELETE FROM users WHERE id = $1")
@@ -1265,7 +1281,7 @@ async fn scim_cursor_database_traverses_equal_timestamps_exactly_once() {
         cursor = next.to_owned();
     }
 
-    cleanup_scim_schema(&state, &schema).await;
+    cleanup_scim_schema(&pool, &schema).await;
     assert_eq!(collected, expected);
 }
 
@@ -1455,11 +1471,12 @@ async fn scim_mutating_endpoints_surface_backend_unavailable_after_legacy_auth()
 async fn scim_user_lifecycle_enforces_bearer_scope_identity_uniqueness_and_soft_delete() {
     let suffix = Uuid::now_v7().simple().to_string();
     let token = format!("legacy-scim-{suffix}");
-    let Some(state) = live_state_with_scim_bearer_token(&token).await else {
+    let Some(ScimTestFixture { state, pool }) = live_state_with_scim_bearer_token(&token).await
+    else {
         return;
     };
     let email = format!("scim-lifecycle-{suffix}@example.test");
-    cleanup_scim_user_by_email(&state, &email).await;
+    cleanup_scim_user_by_email(&pool, &email).await;
     let req = bearer_request(&token);
 
     let (create_status, created) = response_json(
@@ -1620,11 +1637,12 @@ async fn scim_user_lifecycle_enforces_bearer_scope_identity_uniqueness_and_soft_
 async fn scim_delete_is_a_soft_delete_and_keeps_resource_visible_as_inactive() {
     let suffix = Uuid::now_v7().simple().to_string();
     let token = format!("legacy-scim-soft-delete-{suffix}");
-    let Some(state) = live_state_with_scim_bearer_token(&token).await else {
+    let Some(ScimTestFixture { state, pool }) = live_state_with_scim_bearer_token(&token).await
+    else {
         return;
     };
     let email = format!("scim-soft-delete-{suffix}@example.test");
-    cleanup_scim_user_by_email(&state, &email).await;
+    cleanup_scim_user_by_email(&pool, &email).await;
     let req = bearer_request(&token);
     let user_id = create_scim_user_id(state.clone(), &req, &email).await;
 
@@ -1675,21 +1693,22 @@ async fn scim_delete_is_a_soft_delete_and_keeps_resource_visible_as_inactive() {
 async fn scim_delete_revokes_refresh_tokens_and_removes_client_grants() {
     let suffix = Uuid::now_v7().simple().to_string();
     let token = format!("legacy-scim-credential-revoke-{suffix}");
-    let Some(state) = live_state_with_scim_bearer_token(&token).await else {
+    let Some(ScimTestFixture { state, pool }) = live_state_with_scim_bearer_token(&token).await
+    else {
         return;
     };
     let email = format!("scim-credential-revoke-{suffix}@example.test");
-    cleanup_scim_user_by_email(&state, &email).await;
+    cleanup_scim_user_by_email(&pool, &email).await;
     let req = bearer_request(&token);
     let user_id = create_scim_user_id(state.clone(), &req, &email).await;
-    let client_id = insert_scim_user_oauth_credentials(&state, user_id, &suffix).await;
+    let client_id = insert_scim_user_oauth_credentials(&pool, user_id, &suffix).await;
 
     assert_eq!(
-        grant_count_for_user_client(&state, user_id, client_id).await,
+        grant_count_for_user_client(&pool, user_id, client_id).await,
         1
     );
     assert_eq!(
-        active_refresh_token_count_for_user_client(&state, user_id, client_id).await,
+        active_refresh_token_count_for_user_client(&pool, user_id, client_id).await,
         1
     );
 
@@ -1702,11 +1721,11 @@ async fn scim_delete_revokes_refresh_tokens_and_removes_client_grants() {
     assert_eq!(delete_response.status(), StatusCode::NO_CONTENT);
 
     assert_eq!(
-        grant_count_for_user_client(&state, user_id, client_id).await,
+        grant_count_for_user_client(&pool, user_id, client_id).await,
         0
     );
     assert_eq!(
-        active_refresh_token_count_for_user_client(&state, user_id, client_id).await,
+        active_refresh_token_count_for_user_client(&pool, user_id, client_id).await,
         0
     );
 }
@@ -1715,14 +1734,15 @@ async fn scim_delete_revokes_refresh_tokens_and_removes_client_grants() {
 async fn scim_replace_deprovision_revokes_refresh_tokens_and_removes_client_grants() {
     let suffix = Uuid::now_v7().simple().to_string();
     let token = format!("legacy-scim-replace-revoke-{suffix}");
-    let Some(state) = live_state_with_scim_bearer_token(&token).await else {
+    let Some(ScimTestFixture { state, pool }) = live_state_with_scim_bearer_token(&token).await
+    else {
         return;
     };
     let email = format!("scim-replace-revoke-{suffix}@example.test");
-    cleanup_scim_user_by_email(&state, &email).await;
+    cleanup_scim_user_by_email(&pool, &email).await;
     let req = bearer_request(&token);
     let user_id = create_scim_user_id(state.clone(), &req, &email).await;
-    let client_id = insert_scim_user_oauth_credentials(&state, user_id, &suffix).await;
+    let client_id = insert_scim_user_oauth_credentials(&pool, user_id, &suffix).await;
 
     let replace_response = scim_replace_user(
         state.clone(),
@@ -1745,11 +1765,11 @@ async fn scim_replace_deprovision_revokes_refresh_tokens_and_removes_client_gran
     .await;
     assert_eq!(replace_response.status(), StatusCode::OK);
     assert_eq!(
-        grant_count_for_user_client(&state, user_id, client_id).await,
+        grant_count_for_user_client(&pool, user_id, client_id).await,
         0
     );
     assert_eq!(
-        active_refresh_token_count_for_user_client(&state, user_id, client_id).await,
+        active_refresh_token_count_for_user_client(&pool, user_id, client_id).await,
         0
     );
 }
@@ -1758,14 +1778,15 @@ async fn scim_replace_deprovision_revokes_refresh_tokens_and_removes_client_gran
 async fn scim_patch_deprovision_revokes_refresh_tokens_and_removes_client_grants() {
     let suffix = Uuid::now_v7().simple().to_string();
     let token = format!("legacy-scim-patch-revoke-{suffix}");
-    let Some(state) = live_state_with_scim_bearer_token(&token).await else {
+    let Some(ScimTestFixture { state, pool }) = live_state_with_scim_bearer_token(&token).await
+    else {
         return;
     };
     let email = format!("scim-patch-revoke-{suffix}@example.test");
-    cleanup_scim_user_by_email(&state, &email).await;
+    cleanup_scim_user_by_email(&pool, &email).await;
     let req = bearer_request(&token);
     let user_id = create_scim_user_id(state.clone(), &req, &email).await;
-    let client_id = insert_scim_user_oauth_credentials(&state, user_id, &suffix).await;
+    let client_id = insert_scim_user_oauth_credentials(&pool, user_id, &suffix).await;
 
     let patch_response = scim_patch_user(
         state.clone(),
@@ -1783,11 +1804,11 @@ async fn scim_patch_deprovision_revokes_refresh_tokens_and_removes_client_grants
     .await;
     assert_eq!(patch_response.status(), StatusCode::OK);
     assert_eq!(
-        grant_count_for_user_client(&state, user_id, client_id).await,
+        grant_count_for_user_client(&pool, user_id, client_id).await,
         0
     );
     assert_eq!(
-        active_refresh_token_count_for_user_client(&state, user_id, client_id).await,
+        active_refresh_token_count_for_user_client(&pool, user_id, client_id).await,
         0
     );
 }
@@ -1796,13 +1817,14 @@ async fn scim_patch_deprovision_revokes_refresh_tokens_and_removes_client_grants
 async fn scim_replace_and_patch_return_uniqueness_conflicts_without_internal_fields() {
     let suffix = Uuid::now_v7().simple().to_string();
     let token = format!("legacy-scim-uniqueness-{suffix}");
-    let Some(state) = live_state_with_scim_bearer_token(&token).await else {
+    let Some(ScimTestFixture { state, pool }) = live_state_with_scim_bearer_token(&token).await
+    else {
         return;
     };
     let first_email = format!("scim-uniqueness-a-{suffix}@example.test");
     let second_email = format!("scim-uniqueness-b-{suffix}@example.test");
-    cleanup_scim_user_by_email(&state, &first_email).await;
-    cleanup_scim_user_by_email(&state, &second_email).await;
+    cleanup_scim_user_by_email(&pool, &first_email).await;
+    cleanup_scim_user_by_email(&pool, &second_email).await;
     let req = bearer_request(&token);
     let first_id = create_scim_user_id(state.clone(), &req, &first_email).await;
     let _second_id = create_scim_user_id(state.clone(), &req, &second_email).await;
@@ -1856,13 +1878,14 @@ async fn scim_replace_and_patch_return_uniqueness_conflicts_without_internal_fie
 async fn scim_patch_bulk_replace_updates_identity_profile_and_filter_projection() {
     let suffix = Uuid::now_v7().simple().to_string();
     let token = format!("legacy-scim-patch-{suffix}");
-    let Some(state) = live_state_with_scim_bearer_token(&token).await else {
+    let Some(ScimTestFixture { state, pool }) = live_state_with_scim_bearer_token(&token).await
+    else {
         return;
     };
     let original_email = format!("scim-patch-a-{suffix}@example.test");
     let updated_email = format!("scim-patch-b-{suffix}@example.test");
-    cleanup_scim_user_by_email(&state, &original_email).await;
-    cleanup_scim_user_by_email(&state, &updated_email).await;
+    cleanup_scim_user_by_email(&pool, &original_email).await;
+    cleanup_scim_user_by_email(&pool, &updated_email).await;
     let req = bearer_request(&token);
     let user_id = create_scim_user_id(state.clone(), &req, &original_email).await;
 
@@ -1928,7 +1951,8 @@ async fn scim_patch_bulk_replace_updates_identity_profile_and_filter_projection(
 async fn scim_patch_reports_not_found_for_missing_user_after_successful_authentication() {
     let suffix = Uuid::now_v7().simple().to_string();
     let token = format!("legacy-scim-missing-patch-{suffix}");
-    let Some(state) = live_state_with_scim_bearer_token(&token).await else {
+    let Some(ScimTestFixture { state, pool: _ }) = live_state_with_scim_bearer_token(&token).await
+    else {
         return;
     };
     let req = bearer_request(&token);
@@ -2031,7 +2055,8 @@ async fn scim_user_endpoints_require_bearer_before_user_state_access() {
 async fn scim_list_users_surfaces_backend_unavailable_when_projection_query_breaks() {
     let schema = format!("scim_projection_{}", Uuid::now_v7().simple());
     let token = "legacy-scim-projection-token";
-    let Some(state) = live_state_with_isolated_scim_bearer_token(token, &schema, &["users"]).await
+    let Some(ScimTestFixture { state, pool }) =
+        live_state_with_isolated_scim_bearer_token(token, &schema, &["users"]).await
     else {
         return;
     };
@@ -2039,7 +2064,7 @@ async fn scim_list_users_surfaces_backend_unavailable_when_projection_query_brea
     let email = format!("projection-{}@example.test", Uuid::now_v7().simple());
     let _ = create_scim_user_id(state.clone(), &req, &email).await;
     rename_scim_column(
-        &state,
+        &pool,
         &schema,
         "users",
         "display_name",
@@ -2058,7 +2083,7 @@ async fn scim_list_users_surfaces_backend_unavailable_when_projection_query_brea
         }),
     )
     .await;
-    cleanup_scim_schema(&state, &schema).await;
+    cleanup_scim_schema(&pool, &schema).await;
 
     assert_scim_error_response(
         response,
@@ -2073,12 +2098,13 @@ async fn scim_list_users_surfaces_backend_unavailable_when_projection_query_brea
 async fn scim_create_user_surfaces_backend_unavailable_when_insert_query_breaks() {
     let schema = format!("scim_create_write_{}", Uuid::now_v7().simple());
     let token = "legacy-scim-create-write-token";
-    let Some(state) = live_state_with_isolated_scim_bearer_token(token, &schema, &["users"]).await
+    let Some(ScimTestFixture { state, pool }) =
+        live_state_with_isolated_scim_bearer_token(token, &schema, &["users"]).await
     else {
         return;
     };
     rename_scim_column(
-        &state,
+        &pool,
         &schema,
         "users",
         "display_name",
@@ -2095,7 +2121,7 @@ async fn scim_create_user_surfaces_backend_unavailable_when_insert_query_breaks(
         ))),
     )
     .await;
-    cleanup_scim_schema(&state, &schema).await;
+    cleanup_scim_schema(&pool, &schema).await;
 
     assert_scim_error_response(
         response,
@@ -2110,7 +2136,8 @@ async fn scim_create_user_surfaces_backend_unavailable_when_insert_query_breaks(
 async fn scim_get_user_surfaces_backend_unavailable_when_projection_query_breaks() {
     let schema = format!("scim_get_projection_{}", Uuid::now_v7().simple());
     let token = "legacy-scim-get-projection-token";
-    let Some(state) = live_state_with_isolated_scim_bearer_token(token, &schema, &["users"]).await
+    let Some(ScimTestFixture { state, pool }) =
+        live_state_with_isolated_scim_bearer_token(token, &schema, &["users"]).await
     else {
         return;
     };
@@ -2118,7 +2145,7 @@ async fn scim_get_user_surfaces_backend_unavailable_when_projection_query_breaks
     let email = format!("get-projection-{}@example.test", Uuid::now_v7().simple());
     let user_id = create_scim_user_id(state.clone(), &req, &email).await;
     rename_scim_column(
-        &state,
+        &pool,
         &schema,
         "users",
         "display_name",
@@ -2127,7 +2154,7 @@ async fn scim_get_user_surfaces_backend_unavailable_when_projection_query_breaks
     .await;
 
     let response = scim_get_user(state.clone(), req, actix_web::web::Path::from(user_id)).await;
-    cleanup_scim_schema(&state, &schema).await;
+    cleanup_scim_schema(&pool, &schema).await;
 
     assert_scim_error_response(
         response,
@@ -2142,7 +2169,8 @@ async fn scim_get_user_surfaces_backend_unavailable_when_projection_query_breaks
 async fn scim_replace_user_surfaces_backend_unavailable_when_update_query_breaks() {
     let schema = format!("scim_replace_write_{}", Uuid::now_v7().simple());
     let token = "legacy-scim-replace-write-token";
-    let Some(state) = live_state_with_isolated_scim_bearer_token(token, &schema, &["users"]).await
+    let Some(ScimTestFixture { state, pool }) =
+        live_state_with_isolated_scim_bearer_token(token, &schema, &["users"]).await
     else {
         return;
     };
@@ -2150,7 +2178,7 @@ async fn scim_replace_user_surfaces_backend_unavailable_when_update_query_breaks
     let email = format!("replace-write-{}@example.test", Uuid::now_v7().simple());
     let user_id = create_scim_user_id(state.clone(), &req, &email).await;
     rename_scim_column(
-        &state,
+        &pool,
         &schema,
         "users",
         "updated_at",
@@ -2168,7 +2196,7 @@ async fn scim_replace_user_surfaces_backend_unavailable_when_update_query_breaks
         ))),
     )
     .await;
-    cleanup_scim_schema(&state, &schema).await;
+    cleanup_scim_schema(&pool, &schema).await;
 
     assert_scim_error_response(
         response,
@@ -2183,7 +2211,8 @@ async fn scim_replace_user_surfaces_backend_unavailable_when_update_query_breaks
 async fn scim_delete_user_surfaces_backend_unavailable_when_soft_delete_query_breaks() {
     let schema = format!("scim_delete_write_{}", Uuid::now_v7().simple());
     let token = "legacy-scim-delete-write-token";
-    let Some(state) = live_state_with_isolated_scim_bearer_token(token, &schema, &["users"]).await
+    let Some(ScimTestFixture { state, pool }) =
+        live_state_with_isolated_scim_bearer_token(token, &schema, &["users"]).await
     else {
         return;
     };
@@ -2191,7 +2220,7 @@ async fn scim_delete_user_surfaces_backend_unavailable_when_soft_delete_query_br
     let email = format!("delete-write-{}@example.test", Uuid::now_v7().simple());
     let user_id = create_scim_user_id(state.clone(), &req, &email).await;
     rename_scim_column(
-        &state,
+        &pool,
         &schema,
         "users",
         "updated_at",
@@ -2200,7 +2229,7 @@ async fn scim_delete_user_surfaces_backend_unavailable_when_soft_delete_query_br
     .await;
 
     let response = scim_delete_user(state.clone(), req, actix_web::web::Path::from(user_id)).await;
-    cleanup_scim_schema(&state, &schema).await;
+    cleanup_scim_schema(&pool, &schema).await;
 
     assert_scim_error_response(
         response,

@@ -137,8 +137,6 @@ pub async fn run() -> anyhow::Result<()> {
             ),
         )?,
         ScimRuntimeAdmission::new(runtime_modules.registry.clone()),
-        #[cfg(test)]
-        diesel_db.clone(),
     ));
 
     let state = web::Data::new(AppState {
