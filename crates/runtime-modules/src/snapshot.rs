@@ -13,6 +13,18 @@ pub struct ActiveModuleSnapshot {
     pub draining: BTreeSet<ModuleId>,
 }
 
+impl ActiveModuleSnapshot {
+    #[must_use]
+    pub fn admits(&self, module_id: ModuleId) -> bool {
+        self.accepting.contains(&module_id)
+    }
+
+    #[must_use]
+    pub fn advertises(&self, module_id: ModuleId) -> bool {
+        self.admits(module_id)
+    }
+}
+
 /// Atomically publishes immutable request-facing module state.
 pub struct SnapshotStore {
     current: ArcSwap<ActiveModuleSnapshot>,

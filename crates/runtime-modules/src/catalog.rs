@@ -1,0 +1,78 @@
+use std::collections::{BTreeMap, BTreeSet};
+use std::time::Duration;
+
+use crate::{DisablePolicy, ModuleCatalogError, ModuleId, ModuleSpec, validate_module_specs};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CatalogDurations {
+    pub device_authorization: Duration,
+    pub ciba: Duration,
+    pub authorization_code: Duration,
+    pub refresh_token: Duration,
+    pub session: Duration,
+}
+
+#[derive(Clone, Debug)]
+pub struct ModuleCatalog {
+    specs: BTreeMap<ModuleId, ModuleSpec>,
+    inherited_enabled: BTreeSet<ModuleId>,
+}
+
+impl ModuleCatalog {
+    pub fn fixed(
+        durations: CatalogDurations,
+        inherited_enabled: BTreeSet<ModuleId>,
+    ) -> Result<Self, ModuleCatalogError> {
+        let finish = DisablePolicy::FinishExecutingRequests;
+        let drain = |max_duration| DisablePolicy::DrainStoredTransactions { max_duration };
+        let policies = [
+            (
+                ModuleId::DeviceAuthorization,
+                drain(durations.device_authorization),
+            ),
+            (ModuleId::TokenExchange, finish),
+            (ModuleId::JwtBearerGrant, finish),
+            (ModuleId::Ciba, drain(durations.ciba)),
+            (ModuleId::DynamicClientRegistration, finish),
+            (ModuleId::RequestObjects, finish),
+            (ModuleId::Jarm, drain(durations.authorization_code)),
+            (
+                ModuleId::AuthorizationDetails,
+                drain(durations.refresh_token),
+            ),
+            (ModuleId::HttpMessageSignatures, finish),
+            (ModuleId::Scim, finish),
+            (ModuleId::NativeSso, drain(durations.refresh_token)),
+            (ModuleId::FrontchannelLogout, finish),
+            (ModuleId::SessionManagement, drain(durations.session)),
+        ];
+        let specs: Vec<_> = policies
+            .into_iter()
+            .map(|(id, disable_policy)| ModuleSpec {
+                id,
+                dependencies: BTreeSet::new(),
+                disable_policy,
+            })
+            .collect();
+        validate_module_specs(&specs)?;
+        Ok(Self {
+            specs: specs.into_iter().map(|spec| (spec.id, spec)).collect(),
+            inherited_enabled,
+        })
+    }
+
+    #[must_use]
+    pub fn specs(&self) -> &BTreeMap<ModuleId, ModuleSpec> {
+        &self.specs
+    }
+
+    #[must_use]
+    pub fn spec(&self, module_id: ModuleId) -> Option<&ModuleSpec> {
+        self.specs.get(&module_id)
+    }
+
+    #[must_use]
+    pub fn inherited_enabled(&self, module_id: ModuleId) -> bool {
+        self.inherited_enabled.contains(&module_id)
+    }
+}
