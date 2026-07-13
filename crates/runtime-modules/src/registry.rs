@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
+use uuid::Uuid;
 
 use crate::{
     ActiveModuleSnapshot, CasOutcome, DesiredMode, DesiredStateChange, DesiredStateRecord,
@@ -19,7 +19,6 @@ pub struct RuntimeModuleRegistry<R, L> {
     snapshots: Arc<SnapshotStore>,
     leases: RequestLeaseTracker,
     transition_locks: BTreeMap<ModuleId, Arc<futures_util::lock::Mutex<()>>>,
-    event_sequence: AtomicU64,
 }
 
 impl<R, L> RuntimeModuleRegistry<R, L>
@@ -46,7 +45,6 @@ where
                 .into_iter()
                 .map(|module_id| (module_id, Arc::new(futures_util::lock::Mutex::new(()))))
                 .collect(),
-            event_sequence: AtomicU64::new(1),
         }
     }
 
@@ -275,9 +273,14 @@ where
         }
         let prior_generation = self.snapshot().revision;
         let drain_deadline = match spec.disable_policy {
-            DisablePolicy::DrainStoredTransactions { max_duration } => {
-                SystemTime::now().checked_add(max_duration)
-            }
+            DisablePolicy::DrainStoredTransactions { max_duration } => current
+                .as_ref()
+                .filter(|instance| {
+                    instance.state == ModuleState::Draining
+                        && instance.transition_revision == revision
+                })
+                .and_then(|instance| instance.drain_deadline)
+                .or_else(|| SystemTime::now().checked_add(max_duration)),
             _ => None,
         };
         let draining = self
@@ -303,6 +306,8 @@ where
         self.publish(module_id, false, true);
         if !self.revision_is_current(module_id, revision).await? {
             self.discard_stale(draining).await?;
+            self.restore_admission_after_stale_disable(module_id)
+                .await?;
             return Ok(ReconcileOutcome::StaleDiscarded);
         }
         if !matches!(spec.disable_policy, DisablePolicy::Immediate) {
@@ -321,15 +326,23 @@ where
                 .await?,
                 CasOutcome::Applied(_)
             ) {
+                self.restore_admission_after_stale_disable(module_id)
+                    .await?;
                 return Ok(ReconcileOutcome::StaleDiscarded);
             }
             self.leases
                 .wait_until_zero(module_id, prior_generation)
                 .await;
-            if let DisablePolicy::DrainStoredTransactions { max_duration } = spec.disable_policy {
+            if matches!(
+                spec.disable_policy,
+                DisablePolicy::DrainStoredTransactions { .. }
+            ) {
+                let remaining_duration = drain_deadline
+                    .and_then(|deadline| deadline.duration_since(SystemTime::now()).ok())
+                    .unwrap_or(Duration::ZERO);
                 match self
                     .lifecycle
-                    .drain_stored_transactions(module_id, revision, max_duration)
+                    .drain_stored_transactions(module_id, revision, remaining_duration)
                     .await
                 {
                     Ok(true) => {}
@@ -342,6 +355,10 @@ where
                                 },
                             )
                             .await?;
+                        if !failed {
+                            self.restore_admission_after_stale_disable(module_id)
+                                .await?;
+                        }
                         return Ok(if failed {
                             ReconcileOutcome::Failed
                         } else {
@@ -349,7 +366,12 @@ where
                         });
                     }
                     Err(failure) => {
-                        return Ok(if self.persist_failure(&draining, failure).await? {
+                        let failed = self.persist_failure(&draining, failure).await?;
+                        if !failed {
+                            self.restore_admission_after_stale_disable(module_id)
+                                .await?;
+                        }
+                        return Ok(if failed {
                             ReconcileOutcome::Failed
                         } else {
                             ReconcileOutcome::StaleDiscarded
@@ -359,6 +381,8 @@ where
             }
             if !self.revision_is_current(module_id, revision).await? {
                 self.discard_stale(draining).await?;
+                self.restore_admission_after_stale_disable(module_id)
+                    .await?;
                 return Ok(ReconcileOutcome::StaleDiscarded);
             }
             if !matches!(
@@ -376,15 +400,24 @@ where
                 .await?,
                 CasOutcome::Applied(_)
             ) {
+                self.restore_admission_after_stale_disable(module_id)
+                    .await?;
                 return Ok(ReconcileOutcome::StaleDiscarded);
             }
             if !self.revision_is_current(module_id, revision).await? {
                 self.discard_stale(draining).await?;
+                self.restore_admission_after_stale_disable(module_id)
+                    .await?;
                 return Ok(ReconcileOutcome::StaleDiscarded);
             }
         }
         if let Err(failure) = self.lifecycle.stop(module_id).await {
-            return Ok(if self.persist_failure(&draining, failure).await? {
+            let failed = self.persist_failure(&draining, failure).await?;
+            if !failed {
+                self.restore_admission_after_stale_disable(module_id)
+                    .await?;
+            }
+            return Ok(if failed {
                 ReconcileOutcome::Failed
             } else {
                 ReconcileOutcome::StaleDiscarded
@@ -392,6 +425,10 @@ where
         }
         if !self.revision_is_current(module_id, revision).await? {
             self.discard_stale(draining).await?;
+            // `stop` already ran, so admission cannot be restored safely.
+            // Remove the obsolete draining marker; the newer revision will
+            // initialize and republish the module if it resolves to enabled.
+            self.publish(module_id, false, false);
             return Ok(ReconcileOutcome::StaleDiscarded);
         }
         let completed = self
@@ -410,12 +447,44 @@ where
         match completed {
             CasOutcome::Applied(_) => {
                 if !self.revision_is_current(module_id, revision).await? {
+                    self.publish(module_id, false, false);
                     return Ok(ReconcileOutcome::StaleDiscarded);
                 }
                 self.publish(module_id, false, false);
                 Ok(ReconcileOutcome::Disabled)
             }
-            CasOutcome::Stale { .. } => Ok(ReconcileOutcome::StaleDiscarded),
+            CasOutcome::Stale { .. } => {
+                self.publish(module_id, false, false);
+                Ok(ReconcileOutcome::StaleDiscarded)
+            }
+        }
+    }
+
+    /// A superseded disable has not stopped the module yet, so align request
+    /// admission with the latest durable intent instead of leaving the stale
+    /// draining publication in force. Revalidation after each publication
+    /// closes the read/publish race with a concurrent administrator update.
+    async fn restore_admission_after_stale_disable(
+        &self,
+        module_id: ModuleId,
+    ) -> Result<(), RegistryError<R::Error>> {
+        loop {
+            let desired = self
+                .repository
+                .read_desired(module_id)
+                .await
+                .map_err(RegistryError::Repository)?
+                .ok_or(RegistryError::MissingDesiredState(module_id))?;
+            let accepting = desired
+                .mode
+                .resolve(self.catalog.inherited_enabled(module_id));
+            self.publish(module_id, accepting, !accepting);
+            if self
+                .revision_is_current(module_id, desired.revision)
+                .await?
+            {
+                return Ok(());
+            }
         }
     }
 
@@ -549,11 +618,7 @@ where
         outcome_code: Option<&'static str>,
     ) -> ModuleEventRecord {
         ModuleEventRecord {
-            event_id: format!(
-                "{}-{}",
-                self.instance_id,
-                self.event_sequence.fetch_add(1, Ordering::Relaxed)
-            ),
+            event_id: Uuid::now_v7().to_string(),
             module_id: state.module_id,
             event_type,
             revision: state.transition_revision,
@@ -572,11 +637,7 @@ where
         mut event: ModuleEventRecord,
         event_type: ModuleEventType,
     ) -> ModuleEventRecord {
-        event.event_id = format!(
-            "{}-{}",
-            self.instance_id,
-            self.event_sequence.fetch_add(1, Ordering::Relaxed)
-        );
+        event.event_id = Uuid::now_v7().to_string();
         event.event_type = event_type;
         event
     }

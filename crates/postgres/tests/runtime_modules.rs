@@ -1,12 +1,16 @@
-use std::time::SystemTime;
+use std::collections::BTreeSet;
+use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 use diesel::{QueryableByName, sql_query, sql_types::BigInt};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_postgres::{RuntimeModuleRepository, create_pool};
 use nazo_runtime_modules::{
-    CasOutcome, DesiredMode, DesiredStateChange, DesiredStateRecord, InstanceStateChange,
-    InstanceStateMutation, InstanceStateRecord, ModuleEventRecord, ModuleEventState,
-    ModuleEventType, ModuleId, ModuleRevision, ModuleState, ModuleStateRepository,
+    ActiveModuleSnapshot, CasOutcome, CatalogDurations, DesiredMode, DesiredStateChange,
+    DesiredStateRecord, InstanceStateChange, InstanceStateMutation, InstanceStateRecord,
+    ModuleCatalog, ModuleEventRecord, ModuleEventState, ModuleEventType, ModuleId, ModuleRevision,
+    ModuleState, ModuleStateRepository, NoopModuleLifecycle, ReconcileOutcome,
+    RuntimeModuleRegistry,
 };
 use uuid::Uuid;
 
@@ -157,6 +161,83 @@ async fn clear_module(database_url: &str, module_id: &str) {
             .await
             .expect("runtime module fixture should clear");
     }
+}
+
+#[tokio::test]
+async fn registry_generated_transition_events_are_postgresql_compatible() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .expect("migrations should apply");
+    clear_module(&database_url, "authorization_details").await;
+    let pool = create_pool(&database_url, 4).expect("pool should build");
+    let repository = Arc::new(RuntimeModuleRepository::new(pool));
+    let module_id = ModuleId::AuthorizationDetails;
+    repository
+        .compare_and_set_desired(DesiredStateChange {
+            expected_revision: None,
+            next: desired(module_id, DesiredMode::Enabled, 1),
+        })
+        .await
+        .expect("desired state should persist");
+    let short = Duration::from_secs(1);
+    let catalog = ModuleCatalog::fixed(
+        CatalogDurations {
+            device_authorization: short,
+            ciba: short,
+            authorization_code: short,
+            refresh_token: short,
+            session: short,
+        },
+        BTreeSet::new(),
+    )
+    .expect("fixed module catalog should be valid");
+    let registry = RuntimeModuleRegistry::new(
+        Arc::clone(&repository),
+        Arc::new(NoopModuleLifecycle),
+        catalog,
+        "postgres-registry-test".to_owned(),
+        ActiveModuleSnapshot {
+            revision: ModuleRevision::new(0),
+            accepting: BTreeSet::new(),
+            draining: BTreeSet::new(),
+        },
+    );
+
+    assert_eq!(
+        registry.reconcile_once(module_id).await.unwrap(),
+        ReconcileOutcome::Enabled,
+    );
+    assert!(registry.snapshot().admits(module_id));
+    let actual = repository
+        .read_instance("postgres-registry-test", module_id)
+        .await
+        .unwrap()
+        .expect("actual state should persist");
+    assert_eq!(actual.state, ModuleState::Enabled);
+    assert_eq!(actual.applied_revision, Some(ModuleRevision::new(1)));
+
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    assert_eq!(
+        event_type_count(
+            &mut connection,
+            "authorization_details",
+            "transition_started",
+        )
+        .await,
+        1,
+    );
+    assert_eq!(
+        event_type_count(
+            &mut connection,
+            "authorization_details",
+            "transition_completed",
+        )
+        .await,
+        1,
+    );
 }
 
 #[tokio::test]
