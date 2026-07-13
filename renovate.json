@@ -1,0 +1,34 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "enabledManagers": ["custom.regex"],
+  "dependencyDashboard": true,
+  "labels": ["dependencies", "rust-toolchain"],
+  "schedule": ["before 6am on monday"],
+  "timezone": "Asia/Shanghai",
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update the exact Rust stable pin as one reviewable change",
+      "managerFilePatterns": [
+        "/^rust-toolchain\\.toml$/",
+        "/^Containerfile$/",
+        "/^\\.github/workflows/[^/]+\\.yml$/"
+      ],
+      "matchStrings": [
+        "channel\\s*=\\s*\"(?<currentValue>\\d+\\.\\d+\\.\\d+)\"",
+        "FROM\\s+docker\\.io/library/rust:(?<currentValue>\\d+\\.\\d+\\.\\d+)-slim",
+        "uses:\\s*dtolnay/rust-toolchain@(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "rust",
+      "datasourceTemplate": "rust-version"
+    }
+  ],
+  "packageRules": [
+    {
+      "matchPackageNames": ["rust"],
+      "groupName": "Rust stable toolchain",
+      "rangeStrategy": "pin"
+    }
+  ]
+}
