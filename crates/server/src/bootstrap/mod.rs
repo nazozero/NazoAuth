@@ -16,6 +16,7 @@ use crate::domain::{
 use crate::http::profile::oidc_logout::spawn_backchannel_logout_delivery_worker;
 use crate::runtime_modules::RuntimeModules;
 use crate::settings::Settings;
+use crate::support::client_ip::ClientIpConfig;
 use crate::support::sessions::{AdminSessionHandles, SessionHttpConfig};
 use crate::support::{
     configure_password_hash_limits, default_password_hash_max_concurrency,
@@ -107,6 +108,12 @@ pub async fn run() -> anyhow::Result<()> {
         nazo_postgres::UserRepository::new(state.diesel_db.clone()),
         SessionHttpConfig::new(session.session_cookie_name, session.csrf_cookie_name),
     ));
+    let admin_users = web::Data::new(nazo_postgres::UserRepository::new(state.diesel_db.clone()));
+    let endpoint = state.settings.endpoint();
+    let client_ip_config = web::Data::new(ClientIpConfig::new(
+        endpoint.trusted_proxy_cidrs,
+        endpoint.client_ip_header_mode,
+    ));
     spawn_backchannel_logout_delivery_worker(state.clone());
 
     let bind = config.string("BIND", "0.0.0.0:8000");
@@ -150,6 +157,8 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(metadata_handles.clone())
             .app_data(admin_sessions.clone())
             .app_data(resource_server_handles.clone())
+            .app_data(admin_users.clone())
+            .app_data(client_ip_config.clone())
             .configure(|cfg| routes::configure(cfg, &state.settings, perf_metrics_enabled))
     })
     .bind(addr)?

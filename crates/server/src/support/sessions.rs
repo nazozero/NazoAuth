@@ -392,6 +392,21 @@ pub(crate) async fn require_admin_or_forbidden(
     }
 }
 
+pub(crate) async fn require_admin_or_forbidden_with_handles(
+    handles: &AdminSessionHandles,
+    req: &HttpRequest,
+) -> Result<PublicAccount, HttpResponse> {
+    match handles.current_session(req).await {
+        Ok(Some(session)) if session.user.admin_level() > 0 => Ok(session.user),
+        Ok(Some(_)) | Ok(None) => Err(oauth_error(
+            StatusCode::FORBIDDEN,
+            "access_denied",
+            "当前账号无管理权限.",
+        )),
+        Err(error) => Err(session_lookup_error_response(error)),
+    }
+}
+
 fn session_lookup_error_response(error: anyhow::Error) -> HttpResponse {
     tracing::warn!(%error, "failed to resolve current session user");
     oauth_error(

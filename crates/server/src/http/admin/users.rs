@@ -1,28 +1,16 @@
 //! 管理端用户账户接口。
-use crate::domain::AppState;
-#[cfg(test)]
-use crate::domain::DatabaseUserFixture;
-#[cfg(test)]
-use crate::schema::users;
-#[cfg(test)]
-use crate::settings::Settings;
-#[cfg(test)]
+use crate::support::client_ip::{ClientIpConfig, client_ip_with_config};
+use crate::support::responses::has_valid_csrf_token_for_cookies;
+use crate::support::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
 use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, OAuthJsonErrorFields,
-    SessionPayload, valkey_set_ex,
-};
-use crate::support::{
-    admin_user_json, audit_event, audit_fields, blake3_hex, client_ip, csrf_error,
-    has_valid_csrf_token, json_response, oauth_error, pagination, require_admin_or_forbidden,
+    admin_user_json, audit_event, audit_fields, blake3_hex, csrf_error, json_response, oauth_error,
+    pagination,
 };
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json, Query};
 use actix_web::{HttpRequest, HttpResponse};
-#[cfg(test)]
-use chrono::Utc;
-#[cfg(test)]
-use diesel::prelude::*;
 use nazo_identity::PublicAccount;
+use nazo_postgres::UserRepository;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -30,16 +18,17 @@ use uuid::Uuid;
 // 只处理用户列表与用户状态更新，不包含客户端或授权关系逻辑。
 
 pub(crate) async fn admin_users(
-    state: Data<AppState>,
+    admin_sessions: Data<AdminSessionHandles>,
+    users: Data<UserRepository>,
     req: HttpRequest,
     Query(q): Query<HashMap<String, String>>,
 ) -> HttpResponse {
-    let admin = match require_admin_or_forbidden(&state, &req).await {
+    let admin = match require_admin_or_forbidden_with_handles(&admin_sessions, &req).await {
         Ok(admin) => admin,
         Err(response) => return response,
     };
     let (page, page_size, offset) = pagination(&q);
-    let (total, user_rows) = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
+    let (total, user_rows) = match users
         .page(admin.tenant().tenant_id, page_size as i64, offset as i64)
         .await
     {
@@ -74,16 +63,24 @@ pub(crate) struct PatchUserRequest {
 }
 
 pub(crate) async fn admin_patch_user(
-    state: Data<AppState>,
+    admin_sessions: Data<AdminSessionHandles>,
+    users: Data<UserRepository>,
+    client_ip_config: Data<ClientIpConfig>,
     req: HttpRequest,
     path: actix_web::web::Path<Uuid>,
     Json(payload): Json<PatchUserRequest>,
 ) -> HttpResponse {
     let user_id = path.into_inner();
-    if !has_valid_csrf_token(&state, &req, None) {
+    let session_http = admin_sessions.http_config();
+    if !has_valid_csrf_token_for_cookies(
+        &req,
+        None,
+        session_http.session_cookie_name(),
+        session_http.csrf_cookie_name(),
+    ) {
         return csrf_error();
     }
-    let admin = match require_admin_or_forbidden(&state, &req).await {
+    let admin = match require_admin_or_forbidden_with_handles(&admin_sessions, &req).await {
         Ok(admin) => admin,
         Err(response) => return response,
     };
@@ -111,7 +108,7 @@ pub(crate) async fn admin_patch_user(
             );
         }
     };
-    let updated = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
+    let updated = match users
         .admin_update_authorized(
             admin.tenant().tenant_id,
             actor_id,
@@ -149,7 +146,7 @@ pub(crate) async fn admin_patch_user(
                     ("user_id", json!(user.id())),
                     (
                         "source_ip_hash",
-                        json!(blake3_hex(&client_ip(&req, &state.settings))),
+                        json!(blake3_hex(&client_ip_with_config(&req, &client_ip_config))),
                     ),
                 ]),
             );
