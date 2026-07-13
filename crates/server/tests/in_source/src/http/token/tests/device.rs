@@ -7,6 +7,15 @@ use nazo_postgres::create_pool;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+fn device_authorization_service(state: &Data<AppState>) -> Data<ServerAuthorizationService> {
+    let connection = state.valkey_connection();
+    Data::new(ServerAuthorizationService::new(
+        nazo_postgres::AuthorizationFlowRepository::new(state.diesel_db.clone(), DEFAULT_TENANT_ID),
+        nazo_valkey::AuthorizationStateAdapter::new(&connection),
+        state.keyset.clone(),
+    ))
+}
+
 fn form_request() -> HttpRequest {
     TestRequest::default()
         .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
@@ -298,7 +307,8 @@ async fn device_authorization_endpoint_disabled_fails_before_client_lookup() {
     let req = form_request();
 
     let response = device_authorization(
-        state,
+        state.clone(),
+        device_authorization_service(&state),
         req,
         Bytes::from_static(b"client_id=device-client&scope=openid"),
     )

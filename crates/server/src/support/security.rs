@@ -34,9 +34,9 @@ use tokio::time::{Duration, timeout};
 use uuid::Uuid;
 
 pub(crate) mod tokens;
+pub(crate) use tokens::decode_access_claims;
 #[cfg(test)]
 pub(crate) use tokens::{AccessTokenJwtInput, IssuedAccessToken, make_jwt};
-pub(crate) use tokens::{decode_access_claims, sign_response_jwt};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -408,15 +408,6 @@ pub(crate) struct ValidatedClientAssertion {
     exp: i64,
     kid: Option<String>,
     alg: jsonwebtoken::Algorithm,
-}
-
-pub(crate) fn verify_private_key_jwt_claims(
-    state: &AppState,
-    req: &HttpRequest,
-    client: &ClientRow,
-    assertion: &str,
-) -> Result<ValidatedClientAssertion, ClientAssertionError> {
-    verify_private_key_jwt_claims_with_settings(&state.settings, req, client, assertion)
 }
 
 pub(crate) fn verify_private_key_jwt_claims_for_issuer(
