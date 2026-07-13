@@ -1,8 +1,9 @@
 //! RFC 7591 dynamic client registration endpoint.
 
 use crate::domain::{AppState, ClientRow};
-use crate::http::admin::PreparedClientRegistration;
-use crate::http::admin::{CreateClientRequest, InsertClientError};
+use crate::http::admin::clients::create::{
+    CreateClientRequest, InsertClientError, PreparedClientRegistration,
+};
 use crate::support::{
     DEFAULT_TENANT_ID, RateLimitPolicy, audit_event, audit_fields, blake3_hex, client_ip,
     client_secret_digest, constant_time_eq, empty_response, empty_response_no_store,
@@ -192,7 +193,12 @@ pub(crate) async fn dynamic_client_registration(
     {
         Ok(prepared_insert) => {
             let issued_secret = prepared_insert.issued_secret.clone();
-            match crate::http::admin::insert_prepared_client_row(&state, &prepared_insert).await {
+            match crate::http::admin::clients::create::insert_prepared_client_row(
+                &state,
+                &prepared_insert,
+            )
+            .await
+            {
                 Ok(client) => {
                     audit_dynamic_client_event("dynamic_client_registered", &client, &req, &state);
                     dynamic_registration_created_response(
@@ -204,10 +210,10 @@ pub(crate) async fn dynamic_client_registration(
                         Utc::now(),
                     )
                 }
-                Err(crate::http::admin::InsertClientError::InvalidRequest(message)) => {
-                    dynamic_registration_error_response(map_insert_error(message))
-                }
-                Err(crate::http::admin::InsertClientError::Server(message)) => {
+                Err(crate::http::admin::clients::create::InsertClientError::InvalidRequest(
+                    message,
+                )) => dynamic_registration_error_response(map_insert_error(message)),
+                Err(crate::http::admin::clients::create::InsertClientError::Server(message)) => {
                     tracing::warn!(%message, "failed to dynamically register oauth client");
                     oauth_error(
                         StatusCode::SERVICE_UNAVAILABLE,
@@ -217,10 +223,10 @@ pub(crate) async fn dynamic_client_registration(
                 }
             }
         }
-        Err(crate::http::admin::InsertClientError::InvalidRequest(message)) => {
+        Err(crate::http::admin::clients::create::InsertClientError::InvalidRequest(message)) => {
             dynamic_registration_error_response(map_insert_error(message))
         }
-        Err(crate::http::admin::InsertClientError::Server(message)) => {
+        Err(crate::http::admin::clients::create::InsertClientError::Server(message)) => {
             tracing::warn!(%message, "failed to dynamically register oauth client");
             oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -250,7 +256,7 @@ pub(crate) async fn client_configuration_get(
     };
     let response_types = response_types_from_client(&current);
     let registration_access_token = random_urlsafe_token();
-    let (issued_secret, secret_hash) = crate::http::admin::issue_client_secret(
+    let (issued_secret, secret_hash) = crate::http::admin::clients::create::issue_client_secret(
         &current.client_type,
         &current.token_endpoint_auth_method,
         state.settings.protocol().client_secret_pepper,
@@ -429,14 +435,15 @@ pub(crate) async fn prepare_dynamic_client_insert_with_secret_pepper(
     registration_access_token: &str,
     response_signing_algorithms: &[&'static str],
 ) -> Result<PreparedClientRegistration, InsertClientError> {
-    let mut prepared = crate::http::admin::prepare_client_insert_with_secret_pepper(
-        registration.into_create_client_request(),
-        pairwise_subject_secret,
-        client_secret_pepper,
-        issuer,
-        response_signing_algorithms,
-    )
-    .await?;
+    let mut prepared =
+        crate::http::admin::clients::create::prepare_client_insert_with_secret_pepper(
+            registration.into_create_client_request(),
+            pairwise_subject_secret,
+            client_secret_pepper,
+            issuer,
+            response_signing_algorithms,
+        )
+        .await?;
     prepared.registration_access_token_blake3 = Some(blake3_hex(registration_access_token));
     Ok(prepared)
 }

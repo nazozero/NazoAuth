@@ -1,6 +1,6 @@
 //! Pushed Authorization Request endpoint.
 
-use super::{
+use super::jar::{
     apply_request_object, request_object_uses_unsigned_algorithm,
     unverified_signed_request_object_client_id,
 };
@@ -32,7 +32,7 @@ use uuid::Uuid;
 
 pub(crate) const PUSHED_AUTHORIZATION_REQUEST_URI_PREFIX: &str =
     "urn:ietf:params:oauth:request_uri:";
-use crate::http::{
+use crate::http::token::client_auth::{
     consume_token_management_client_assertion, token_management_auth_error,
     verify_confidential_client,
 };

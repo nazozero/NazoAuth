@@ -1,14 +1,18 @@
 use super::*;
+use crate::http::admin::clients::create::{
+    CreateClientRequest, InsertClientError, PreparedClientRegistration,
+    prepare_client_insert_with_secret_pepper,
+};
 use crate::support::{LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER, hash_client_secret};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::json;
 
 async fn prepare_admin_client_insert_for_test(
-    payload: crate::http::admin::CreateClientRequest,
+    payload: CreateClientRequest,
     pairwise_subject_secret: Option<&str>,
     issuer: &str,
-) -> Result<crate::http::admin::PreparedClientRegistration, crate::http::admin::InsertClientError> {
-    crate::http::admin::prepare_client_insert_with_secret_pepper(
+) -> Result<PreparedClientRegistration, InsertClientError> {
+    prepare_client_insert_with_secret_pepper(
         payload,
         pairwise_subject_secret,
         LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
@@ -23,7 +27,7 @@ async fn prepare_dynamic_client_insert_for_test(
     pairwise_subject_secret: Option<&str>,
     issuer: &str,
     registration_access_token: &str,
-) -> Result<crate::http::admin::PreparedClientRegistration, crate::http::admin::InsertClientError> {
+) -> Result<PreparedClientRegistration, InsertClientError> {
     prepare_dynamic_client_insert_with_secret_pepper(
         registration,
         pairwise_subject_secret,

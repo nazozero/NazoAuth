@@ -15,7 +15,7 @@ use std::time::Duration as StdDuration;
 use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
 
-use crate::http::authorization::pushed_authorization_request_key;
+use crate::http::authorization::par::pushed_authorization_request_key;
 
 fn decision_state() -> AppState {
     let mut settings =

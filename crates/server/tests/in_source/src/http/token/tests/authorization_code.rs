@@ -665,7 +665,7 @@ fn authorization_code_token_issue_creates_native_sso_binding_for_device_sso_scop
     assert_eq!(binding.sid, "sid-1");
     assert_eq!(
         binding.ds_hash,
-        crate::http::token::native_sso_device_secret_hash(&binding.device_secret)
+        crate::http::token::native_sso::native_sso_device_secret_hash(&binding.device_secret)
     );
 }
 

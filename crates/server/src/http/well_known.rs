@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 use crate::domain::{KeySnapshot, MetadataConfig, MetadataHandles};
 use crate::http::authorization::BASELINE_ACR_VALUE;
 #[cfg(test)]
-use crate::http::token::CIBA_GRANT_TYPE;
+use crate::http::token::ciba::CIBA_GRANT_TYPE;
 #[cfg(test)]
 use crate::settings::Settings;
 use crate::settings::{AuthorizationServerProfile, CibaSecurityProfile, SubjectType};

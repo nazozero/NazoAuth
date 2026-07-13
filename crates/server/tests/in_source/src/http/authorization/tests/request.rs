@@ -2,7 +2,7 @@ use super::*;
 use std::sync::Arc;
 
 use crate::config::ConfigSource;
-use crate::http::authorization::pushed_authorization_request_key;
+use crate::http::authorization::par::pushed_authorization_request_key;
 use nazo_postgres::create_pool;
 
 use fred::interfaces::ClientLike;

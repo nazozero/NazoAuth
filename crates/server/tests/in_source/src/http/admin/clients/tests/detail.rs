@@ -13,7 +13,7 @@ use std::time::Duration as StdDuration;
 use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
 
-use crate::http::admin::{
+use crate::http::admin::clients::create::{
     CreateClientRequest, InsertClientError, PreparedClientRegistration, insert_prepared_client,
     prepare_client_insert_with_secret_pepper,
 };

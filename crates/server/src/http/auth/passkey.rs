@@ -39,7 +39,7 @@ use serde_json::json;
 #[cfg(test)]
 use uuid::Uuid;
 
-use crate::http::load_user_passkeys;
+use crate::http::profile::passkeys::load_user_passkeys;
 
 #[derive(Deserialize)]
 pub(crate) struct PasskeyLoginBeginRequest {

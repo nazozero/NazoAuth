@@ -874,8 +874,11 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
     let applicant_sid = format!("applicant-{suffix}");
     fixture.store_session(&applicant, &applicant_sid).await;
     let list_request = fixture.admin_get_request(&applicant_sid, "/auth/me/access-requests");
-    let listed =
-        crate::http::profile::my_access_requests(fixture.state.clone(), list_request).await;
+    let listed = crate::http::profile::access_requests::my_access_requests(
+        fixture.state.clone(),
+        list_request,
+    )
+    .await;
     let (list_status, list_body) = json_body(listed).await;
     assert_eq!(list_status, StatusCode::OK);
     let approved_item = list_body["items"]
@@ -898,7 +901,7 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
         .await;
     let other_sid = format!("other-applicant-{suffix}");
     fixture.store_session(&other_applicant, &other_sid).await;
-    let other_list = crate::http::profile::my_access_requests(
+    let other_list = crate::http::profile::access_requests::my_access_requests(
         fixture.state.clone(),
         fixture.admin_get_request(&other_sid, "/auth/me/access-requests"),
     )
@@ -911,7 +914,7 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
             .iter()
             .all(|item| item.get("delivery_token").is_none())
     );
-    let other_claim = crate::http::profile::access_delivery(
+    let other_claim = crate::http::profile::delivery::access_delivery(
         fixture.state.clone(),
         fixture.admin_get_request(
             &other_sid,
@@ -969,7 +972,7 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
         &applicant_sid,
         &format!("/profile/access-delivery?token={delivery_token}"),
     );
-    let delivered = crate::http::profile::access_delivery(
+    let delivered = crate::http::profile::delivery::access_delivery(
         fixture.state.clone(),
         delivery_request,
         Query(HashMap::from([(
@@ -982,7 +985,7 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
     assert_eq!(delivery_status, StatusCode::OK);
     assert!(delivery_body["client_secret"].as_str().is_some());
 
-    let after_claim = crate::http::profile::my_access_requests(
+    let after_claim = crate::http::profile::access_requests::my_access_requests(
         fixture.state.clone(),
         fixture.admin_get_request(&applicant_sid, "/auth/me/access-requests"),
     )
@@ -1001,7 +1004,7 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
         &applicant_sid,
         &format!("/profile/access-delivery?token={delivery_token}"),
     );
-    let replay = crate::http::profile::access_delivery(
+    let replay = crate::http::profile::delivery::access_delivery(
         fixture.state.clone(),
         replay_request,
         Query(HashMap::from([("token".to_owned(), delivery_token)])),
@@ -1353,7 +1356,7 @@ async fn approve_access_request_rolls_back_when_status_write_fails_after_client_
         &applicant_sid,
         &format!("/profile/access-delivery?token={delivery_token}"),
     );
-    let delivery = crate::http::profile::access_delivery(
+    let delivery = crate::http::profile::delivery::access_delivery(
         fixture.state.clone(),
         delivery_request,
         Query(HashMap::from([("token".to_owned(), delivery_token)])),

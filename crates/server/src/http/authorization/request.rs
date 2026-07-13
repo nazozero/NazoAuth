@@ -36,7 +36,7 @@ use super::{
     apply_request_object, is_pushed_authorization_request_uri,
     unverified_signed_request_object_client_id,
 };
-use crate::http::profile::issue_oidc_session_state;
+use crate::http::profile::session_management::issue_oidc_session_state;
 
 mod form;
 mod parameters;

@@ -2,7 +2,8 @@
 
 use super::TokenForm;
 use crate::domain::{AppState, ClientRow, NativeSsoTokenBinding, RefreshTokenPolicy, TokenIssue};
-use crate::http::token::{consume_token_client_assertion, issue_token_response};
+use crate::http::token::client_auth::consume_token_client_assertion;
+use crate::http::token::issue::issue_token_response;
 use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::blake3_hex;

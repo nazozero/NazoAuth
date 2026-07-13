@@ -15,7 +15,7 @@ use fred::prelude::{
 use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
 
-use crate::http::{revoke, userinfo};
+use crate::http::token::{revoke::revoke, userinfo::userinfo};
 use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, RateLimitSettings,
     RequestObjectJtiPolicy, SubjectType,

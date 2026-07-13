@@ -1,6 +1,6 @@
 use super::*;
 use crate::config::ConfigSource;
-use crate::http::TokenForm;
+use crate::http::token::TokenForm;
 use actix_web::test::TestRequest;
 use nazo_postgres::create_pool;
 use std::collections::HashMap;

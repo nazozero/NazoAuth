@@ -11,7 +11,7 @@ use actix_web::{App, HttpServer, dev::Service, middleware::from_fn, web};
 
 use crate::config::{ConfigSource, database_max_connections, database_url};
 use crate::domain::{AppState, MetadataConfig, MetadataHandles};
-use crate::http::spawn_backchannel_logout_delivery_worker;
+use crate::http::profile::oidc_logout::spawn_backchannel_logout_delivery_worker;
 use crate::runtime_modules::RuntimeModules;
 use crate::settings::Settings;
 use crate::support::{

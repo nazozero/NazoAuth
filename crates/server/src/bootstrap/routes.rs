@@ -5,7 +5,80 @@ use actix_web::{HttpResponse, dev::Service, http::header, web};
 use nazo_http_actix::{mfa_json_config, mfa_method_not_allowed, mfa_options};
 use serde_json::json;
 
-use crate::http::*;
+use crate::http::admin::{
+    access_requests::{
+        admin_access_requests, admin_approve_access_request, admin_reject_access_request,
+    },
+    clients::{
+        create::admin_create_client, detail::admin_get_client, list::admin_clients,
+        update::admin_patch_client,
+    },
+    federation::admin_federation_providers,
+    grants::{admin_grants, admin_revoke_grant},
+    runtime_modules::{
+        admin_patch_runtime_module, admin_runtime_module_events, admin_runtime_modules,
+    },
+    users::{admin_patch_user, admin_users},
+};
+use crate::http::auth::{
+    csrf::csrf,
+    email_code::send_code,
+    federation::{
+        federation_provider_callback, federation_provider_list, federation_provider_start,
+        federation_saml_acs,
+    },
+    login::login,
+    passkey::{passkey_login_begin, passkey_login_finish},
+    register::register,
+};
+use crate::http::authorization::{
+    consent::authorize_consent,
+    decision::authorize_decision,
+    par::par,
+    request::{authorize_get, authorize_post},
+};
+use crate::http::dynamic_client_registration::{
+    client_configuration_delete, client_configuration_get, client_configuration_put,
+    dynamic_client_registration,
+};
+use crate::http::fapi_resource::fapi_resource;
+use crate::http::perf_metrics::perf_metrics;
+use crate::http::profile::{
+    access_requests::{create_access_request, my_access_requests},
+    account::{me, update_me},
+    applications::my_applications,
+    avatar::{delete_avatar, get_avatar, upload_avatar},
+    delivery::access_delivery,
+    federation_links::{my_federation_links, unlink_my_federation_link},
+    mfa::{mfa_backup_codes_regenerate, mfa_disable, mfa_totp_begin, mfa_totp_confirm, mfa_verify},
+    oidc_logout::oidc_logout,
+    passkeys::{
+        passkey_delete, passkey_list, passkey_registration_begin, passkey_registration_finish,
+    },
+    session::logout,
+    session_management::{check_session_iframe, check_session_status},
+};
+use crate::http::scim::{
+    scim_create_user, scim_delete_user, scim_get_user, scim_list_users, scim_patch_user,
+    scim_replace_user, scim_resource_types, scim_schemas, scim_service_provider_config,
+};
+use crate::http::token::{
+    ciba::{
+        backchannel_authentication, ciba_automated_decision, ciba_decision, ciba_verification,
+        ciba_verification_page,
+    },
+    device::{
+        device_authorization, device_decision, device_verification, device_verification_page,
+    },
+    dispatch::token,
+    introspect::introspect,
+    revoke::revoke,
+    userinfo::userinfo,
+};
+use crate::http::well_known::{
+    captcha_config, discovery, health, jwks, oauth_authorization_server_metadata,
+    oauth_protected_resource_metadata,
+};
 use crate::settings::Settings;
 
 use super::cors;
