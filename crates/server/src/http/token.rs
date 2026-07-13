@@ -15,8 +15,6 @@ pub(crate) mod revoke;
 pub(crate) mod token_exchange;
 pub(crate) mod userinfo;
 
-#[cfg(test)]
-use authorization_code::token_authorization_code;
 use authorization_code::token_authorization_code_with_service;
 use ciba::{CIBA_GRANT_TYPE, token_ciba};
 use client_auth::{
@@ -44,8 +42,6 @@ pub(crate) use nazo_http_actix::{
     token_management_form_error, token_management_has_conflicting_client_auth,
     token_management_oauth_error,
 };
-#[cfg(test)]
-use refresh::token_refresh;
 use refresh::token_refresh_with_service;
 use token_exchange::{TOKEN_EXCHANGE_GRANT_TYPE, token_exchange};
 

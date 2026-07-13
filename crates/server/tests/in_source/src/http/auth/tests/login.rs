@@ -28,8 +28,6 @@ use fred::{
         Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
     },
 };
-use nazo_postgres::get_conn;
-
 fn login_request(content_type: &'static str) -> HttpRequest {
     actix_web::test::TestRequest::default()
         .insert_header((header::CONTENT_TYPE, content_type))

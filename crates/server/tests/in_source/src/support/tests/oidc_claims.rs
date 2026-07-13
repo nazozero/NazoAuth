@@ -322,6 +322,7 @@ fn compute_subject_for_client_pairwise_uses_sector_host() {
         subject,
         oidc_subject(
             settings
+                .protocol
                 .pairwise_subject_secret
                 .as_ref()
                 .unwrap()

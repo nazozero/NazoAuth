@@ -540,6 +540,7 @@ async fn token_authorization_code_uses_client_pairwise_subject_sector() {
         fixture
             .state
             .settings
+            .protocol
             .pairwise_subject_secret
             .as_ref()
             .expect("pairwise secret should be configured")

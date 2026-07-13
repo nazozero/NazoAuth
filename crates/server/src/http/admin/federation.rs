@@ -20,6 +20,7 @@ pub(crate) async fn admin_federation_providers(
     // client_secret、第三方 access token 或 JWKS 原始内容。
     let providers = state
         .settings
+        .identity
         .federation
         .providers
         .configured_providers()

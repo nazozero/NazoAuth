@@ -108,6 +108,7 @@ pub(crate) async fn introspect_after_rate_limit(
     let use_signed_response = signed_introspection_requested(&req)
         && state
             .settings
+            .protocol
             .authorization_server_profile
             .requires_signed_introspection();
     let token_repository = nazo_postgres::TokenRepository::new(state.diesel_db.clone());

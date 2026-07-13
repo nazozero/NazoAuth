@@ -111,8 +111,8 @@ impl TestAuthorizationDependencies {
                 nazo_valkey::SessionStore::new(&connection),
                 nazo_postgres::UserRepository::new(state.diesel_db.clone()),
                 crate::support::sessions::SessionHttpConfig::new(
-                    session.session_cookie_name,
-                    session.csrf_cookie_name,
+                    &session.session_cookie_name,
+                    &session.csrf_cookie_name,
                     session.cookie_secure,
                 ),
             ),

@@ -213,7 +213,7 @@ async fn live_trusted_proxy_invalid_db_token_state(
 ) -> Option<Data<AppState>> {
     let state = live_valkey_invalid_db_token_state(profile).await?;
     let mut updated = (*state.settings).clone();
-    updated.trusted_proxy_cidrs =
+    updated.endpoint.trusted_proxy_cidrs =
         vec![IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse")];
     Some(Data::new(AppState {
         diesel_db: state.diesel_db.clone(),
@@ -228,7 +228,7 @@ async fn live_trusted_proxy_token_state(
 ) -> Option<Data<AppState>> {
     let state = live_token_state(profile).await?;
     let mut updated = (*state.settings).clone();
-    updated.trusted_proxy_cidrs =
+    updated.endpoint.trusted_proxy_cidrs =
         vec![IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse")];
     Some(Data::new(AppState {
         diesel_db: state.diesel_db.clone(),

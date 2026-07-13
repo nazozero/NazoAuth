@@ -265,6 +265,7 @@ pub(crate) async fn token_with_service(
 
     if state
         .settings
+        .protocol
         .authorization_server_profile
         .requires_fapi2_security()
         && form.grant_type == "password"
@@ -556,6 +557,7 @@ pub(crate) fn validate_token_request_profile(
     auth_method: &str,
 ) -> Result<(), HttpResponse> {
     let profile = if settings
+        .protocol
         .authorization_server_profile
         .requires_fapi2_security()
     {

@@ -54,6 +54,7 @@ pub(crate) fn compute_subject_for_client(
                 .map(ToOwned::to_owned)
                 .unwrap_or_else(|| sector_host_from_redirect_uri(redirect_uri));
             let secret = settings
+                .protocol
                 .pairwise_subject_secret
                 .as_deref()
                 .filter(|secret| secret.len() >= 32)

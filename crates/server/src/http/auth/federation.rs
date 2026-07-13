@@ -63,6 +63,7 @@ pub(crate) async fn federation_provider_list(state: Data<AppState>) -> HttpRespo
     // token endpoint 等配置绝不能出现在前端响应中。
     let providers = state
         .settings
+        .identity
         .federation
         .providers
         .enabled_public_providers()
@@ -83,6 +84,7 @@ pub(crate) async fn federation_provider_start(
     }
     let Some(provider) = state
         .settings
+        .identity
         .federation
         .providers
         .enabled_provider(&provider_id)
@@ -90,9 +92,9 @@ pub(crate) async fn federation_provider_start(
         return unknown_provider_response();
     };
     match &provider.adapter {
-        ExternalLoginProviderAdapter::Oidc(oidc) => start_oidc_provider(&state, oidc).await,
+        ExternalLoginProviderAdapter::Oidc(oidc) => start_oidc_provider(&state, &oidc).await,
         ExternalLoginProviderAdapter::Social(social) => {
-            start_social_provider(&state, &provider.provider_id, social).await
+            start_social_provider(&state, &provider.provider_id, &social).await
         }
     }
 }
@@ -110,6 +112,7 @@ pub(crate) async fn federation_provider_callback(
     }
     let Some(provider) = state
         .settings
+        .identity
         .federation
         .providers
         .enabled_provider(&provider_id)

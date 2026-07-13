@@ -43,6 +43,7 @@ fn fapi_profiles_default_to_required_dpop_nonce_policy() {
         );
         assert!(
             settings
+                .protocol
                 .authorization_server_profile
                 .requires_fapi2_security(),
             "{profile} must inherit FAPI2 Security controls"
@@ -819,6 +820,7 @@ fn federation_provider_registry_parses_enabled_oidc_and_social_modules() {
 
     let settings = Settings::from_config(&config).unwrap();
     let providers = settings
+        .identity
         .federation
         .providers
         .enabled_public_providers()
@@ -845,6 +847,7 @@ fn federation_provider_registry_parses_enabled_oidc_and_social_modules() {
     assert_eq!(providers[1].adapter_type(), "oidc");
     assert!(
         settings
+            .identity
             .federation
             .providers
             .enabled_provider("disabled")

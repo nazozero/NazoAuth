@@ -105,7 +105,7 @@ async fn lost_response_successor_or_mark_reuse(
     retry_started_at: DateTime<Utc>,
 ) -> anyhow::Result<Option<TokenRow>> {
     service
-        .lost_response_successor_or_compromise(token, client_id, retry_started_at)
+        .recover_lost_refresh_response(token, client_id, retry_started_at)
         .await
         .map_err(|error| anyhow::anyhow!("failed to inspect refresh family: {error:?}"))
 }

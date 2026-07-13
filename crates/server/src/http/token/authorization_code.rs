@@ -83,7 +83,7 @@ fn parse_authorization_code_consumption_response(response: &str) -> Authorizatio
     }
 }
 
-async fn load_pending_authorization_code_payload(
+async fn load_pending_authorization_code_payload_with_service(
     service: &ServerTokenService,
     code_hash: &str,
 ) -> Result<Option<Box<CodePayload>>, HttpResponse> {
@@ -239,7 +239,7 @@ fn refresh_token_dpop_binding(
     }
 }
 
-async fn begin_authorization_code_consumption(
+async fn begin_authorization_code_consumption_with_service(
     service: &ServerTokenService,
     code_hash: &str,
 ) -> Result<AuthorizationCodeConsumption, HttpResponse> {
@@ -333,7 +333,8 @@ pub(crate) async fn token_authorization_code_with_service(
     };
     let code_hash = blake3_hex(code);
     let expected_payload =
-        match load_pending_authorization_code_payload(token_service, &code_hash).await {
+        match load_pending_authorization_code_payload_with_service(token_service, &code_hash).await
+        {
             Ok(value) => value,
             Err(response) => return response,
         };
@@ -377,62 +378,63 @@ pub(crate) async fn token_authorization_code_with_service(
     if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
         return response;
     }
-    let payload = match begin_authorization_code_consumption(token_service, &code_hash).await {
-        Ok(AuthorizationCodeConsumption::Consuming(payload)) => payload,
-        Ok(AuthorizationCodeConsumption::Consumed(marker)) => {
-            match revoke_replayed_authorization_code(token_service, marker).await {
-                Ok(true) => {
-                    return oauth_token_error(
-                        StatusCode::BAD_REQUEST,
-                        "invalid_grant",
-                        "授权码已被使用，相关令牌已撤销.",
-                        false,
-                    );
+    let payload =
+        match begin_authorization_code_consumption_with_service(token_service, &code_hash).await {
+            Ok(AuthorizationCodeConsumption::Consuming(payload)) => payload,
+            Ok(AuthorizationCodeConsumption::Consumed(marker)) => {
+                match revoke_replayed_authorization_code(token_service, marker).await {
+                    Ok(true) => {
+                        return oauth_token_error(
+                            StatusCode::BAD_REQUEST,
+                            "invalid_grant",
+                            "授权码已被使用，相关令牌已撤销.",
+                            false,
+                        );
+                    }
+                    Ok(false) => {}
+                    Err(response) => return response,
                 }
-                Ok(false) => {}
-                Err(response) => return response,
+                return oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    "授权码已被使用.",
+                    false,
+                );
             }
-            return oauth_token_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_grant",
-                "授权码已被使用.",
-                false,
-            );
-        }
-        Ok(AuthorizationCodeConsumption::Busy) => {
-            return oauth_token_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_grant",
-                "授权码正在兑换.",
-                false,
-            );
-        }
-        Ok(AuthorizationCodeConsumption::Failed) => {
-            return oauth_token_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_grant",
-                "授权码兑换已失败.",
-                false,
-            );
-        }
-        Ok(AuthorizationCodeConsumption::Missing) => {
-            return oauth_token_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_grant",
-                "授权码无效或已过期.",
-                false,
-            );
-        }
-        Ok(AuthorizationCodeConsumption::Malformed) => {
-            return oauth_token_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "授权码状态无效.",
-                false,
-            );
-        }
-        Err(response) => return response,
-    };
+            Ok(AuthorizationCodeConsumption::Busy) => {
+                return oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    "授权码正在兑换.",
+                    false,
+                );
+            }
+            Ok(AuthorizationCodeConsumption::Failed) => {
+                return oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    "授权码兑换已失败.",
+                    false,
+                );
+            }
+            Ok(AuthorizationCodeConsumption::Missing) => {
+                return oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    "授权码无效或已过期.",
+                    false,
+                );
+            }
+            Ok(AuthorizationCodeConsumption::Malformed) => {
+                return oauth_token_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "授权码状态无效.",
+                    false,
+                );
+            }
+            Err(response) => return response,
+        };
     let payload = *payload;
     if payload.client_id != client.client_id
         || !redirect_uri_matches_authorization_request(&payload, form.redirect_uri.as_deref())
@@ -598,6 +600,32 @@ pub(crate) async fn token_authorization_code_with_service(
 }
 
 #[cfg(test)]
+fn test_token_service(state: &AppState) -> ServerTokenService {
+    ServerTokenService::new(
+        nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
+        nazo_valkey::TokenIssuanceStateAdapter::new(&state.valkey_connection()),
+        state.keyset.clone(),
+    )
+}
+
+#[cfg(test)]
+async fn load_pending_authorization_code_payload(
+    state: &AppState,
+    code_hash: &str,
+) -> Result<Option<Box<CodePayload>>, HttpResponse> {
+    load_pending_authorization_code_payload_with_service(&test_token_service(state), code_hash)
+        .await
+}
+
+#[cfg(test)]
+async fn begin_authorization_code_consumption(
+    state: &AppState,
+    code_hash: &str,
+) -> Result<AuthorizationCodeConsumption, HttpResponse> {
+    begin_authorization_code_consumption_with_service(&test_token_service(state), code_hash).await
+}
+
+#[cfg(test)]
 pub(crate) async fn token_authorization_code(
     state: &AppState,
     req: &HttpRequest,
@@ -605,11 +633,7 @@ pub(crate) async fn token_authorization_code(
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
-    let service = ServerTokenService::new(
-        nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
-        nazo_valkey::TokenIssuanceStateAdapter::new(&state.valkey_connection()),
-        state.keyset.clone(),
-    );
+    let service = test_token_service(state);
     token_authorization_code_with_service(state, &service, req, client, form, client_assertion)
         .await
 }
