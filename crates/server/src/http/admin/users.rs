@@ -7,12 +7,13 @@ pub(crate) async fn admin_users(
     req: HttpRequest,
     Query(q): Query<HashMap<String, String>>,
 ) -> HttpResponse {
-    if let Err(response) = require_admin_or_forbidden(&state, &req).await {
-        return response;
-    }
+    let admin = match require_admin_or_forbidden(&state, &req).await {
+        Ok(admin) => admin,
+        Err(response) => return response,
+    };
     let (page, page_size, offset) = pagination(&q);
     let (total, user_rows) = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
-        .page(page_size as i64, offset as i64)
+        .page(admin.tenant().tenant_id, page_size as i64, offset as i64)
         .await
     {
         Ok(page) => (page.total, page.users),

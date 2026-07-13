@@ -1048,6 +1048,26 @@ async fn authorized_admin_update_serializes_hierarchy_and_audit_in_one_transacti
 }
 
 #[test]
+fn admin_user_page_is_tenant_scoped_at_the_query_boundary() {
+    let source = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/repositories/users.rs"
+    ))
+    .expect("user repository source is readable");
+    let page = source
+        .split("pub async fn page(")
+        .nth(1)
+        .and_then(|source| source.split("pub async fn admin_update_authorized(").next())
+        .expect("page repository function remains present");
+    assert_eq!(
+        page.matches(".filter(users::tenant_id.eq(tenant_id.as_uuid()))")
+            .count(),
+        2,
+        "both count and page rows must be constrained to the authenticated tenant"
+    );
+}
+
+#[test]
 fn server_mfa_verification_does_not_query_migrated_tables_directly() {
     let source = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
