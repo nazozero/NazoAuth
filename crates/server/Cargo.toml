@@ -35,10 +35,7 @@ base64.workspace = true
 blake3.workspace = true
 chrono = { workspace = true, features = ["serde"] }
 diesel = { workspace = true, features = ["postgres", "uuid", "chrono", "serde_json", "64-column-tables"] }
-diesel-async = { workspace = true, features = ["postgres", "deadpool"] }
-diesel_migrations.workspace = true
 ed25519-dalek.workspace = true
-fred = { workspace = true, features = ["i-scripts"] }
 futures-util.workspace = true
 hmac.workspace = true
 jsonwebtoken = { workspace = true, features = ["aws_lc_rs", "use_pem"] }
@@ -74,6 +71,9 @@ uuid = { workspace = true, features = ["v7", "serde"] }
 yaml_serde = "0.10.4"
 
 [dev-dependencies]
+diesel-async = { workspace = true, features = ["postgres", "deadpool"] }
+diesel_migrations.workspace = true
+fred = { workspace = true, features = ["i-scripts"] }
 proptest.workspace = true
 nazo-key-management = { workspace = true, features = ["test-support"] }
 
