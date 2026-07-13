@@ -40,6 +40,27 @@ pub(crate) enum TokenManagementClientAuthError {
     StoreUnavailable,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct ClientAuthConfig<'a> {
+    issuer: &'a str,
+    client_secret_pepper: &'a str,
+    trusted_proxy_cidrs: &'a [crate::support::IpCidr],
+}
+
+impl<'a> ClientAuthConfig<'a> {
+    pub(crate) fn new(
+        issuer: &'a str,
+        client_secret_pepper: &'a str,
+        trusted_proxy_cidrs: &'a [crate::support::IpCidr],
+    ) -> Self {
+        Self {
+            issuer,
+            client_secret_pepper,
+            trusted_proxy_cidrs,
+        }
+    }
+}
+
 fn dummy_client_secret_salt(client_id: Option<&str>) -> String {
     blake3_hex(client_id.unwrap_or(""))
 }
@@ -66,18 +87,14 @@ pub(crate) fn perform_dummy_client_secret_verification(
 
 pub(crate) async fn authenticate_introspection_client_with_dependencies(
     service: &crate::http::authorization::ServerAuthorizationService,
-    issuer: &str,
-    client_secret_pepper: &str,
-    trusted_proxy_cidrs: &[crate::support::IpCidr],
+    config: ClientAuthConfig<'_>,
     req: &HttpRequest,
     client: &ClientRow,
     credentials: &ClientCredentials,
 ) -> Result<(), TokenManagementClientAuthError> {
     let assertion = authenticate_client_with_dependencies(
         service,
-        issuer,
-        client_secret_pepper,
-        trusted_proxy_cidrs,
+        config,
         req,
         client,
         credentials,
@@ -100,18 +117,14 @@ pub(crate) async fn authenticate_introspection_client_with_dependencies(
 
 pub(crate) async fn authenticate_revocation_client_with_dependencies(
     service: &crate::http::authorization::ServerAuthorizationService,
-    issuer: &str,
-    client_secret_pepper: &str,
-    trusted_proxy_cidrs: &[crate::support::IpCidr],
+    config: ClientAuthConfig<'_>,
     req: &HttpRequest,
     client: &ClientRow,
     credentials: &ClientCredentials,
 ) -> Result<(), TokenManagementClientAuthError> {
     let assertion = authenticate_client_with_dependencies(
         service,
-        issuer,
-        client_secret_pepper,
-        trusted_proxy_cidrs,
+        config,
         req,
         client,
         credentials,
@@ -144,9 +157,11 @@ pub(crate) async fn verify_confidential_client(
     );
     let result = authenticate_client_with_dependencies(
         &service,
-        &state.settings.endpoint.issuer,
-        &state.settings.protocol.client_secret_pepper,
-        &state.settings.endpoint.trusted_proxy_cidrs,
+        ClientAuthConfig::new(
+            &state.settings.endpoint.issuer,
+            &state.settings.protocol.client_secret_pepper,
+            &state.settings.endpoint.trusted_proxy_cidrs,
+        ),
         req,
         client,
         credentials,
@@ -170,9 +185,7 @@ fn revocation_public_client_allows_credentials(credentials: &ClientCredentials) 
 
 pub(crate) async fn authenticate_client_with_dependencies(
     service: &crate::http::authorization::ServerAuthorizationService,
-    issuer: &str,
-    client_secret_pepper: &str,
-    trusted_proxy_cidrs: &[crate::support::IpCidr],
+    config: ClientAuthConfig<'_>,
     req: &HttpRequest,
     client: &ClientRow,
     credentials: &ClientCredentials,
@@ -194,7 +207,7 @@ pub(crate) async fn authenticate_client_with_dependencies(
     match requirement {
         ClientAuthenticationRequirement::PublicClient => Ok(None),
         ClientAuthenticationRequirement::PrivateKeyJwt { assertion } => {
-            verify_private_key_jwt_claims_for_issuer(issuer, req, client, assertion)
+            verify_private_key_jwt_claims_for_issuer(config.issuer, req, client, assertion)
                 .map(Some)
                 .map_err(|error| {
                     log_client_auth_rejection(
@@ -210,13 +223,16 @@ pub(crate) async fn authenticate_client_with_dependencies(
             let secret_match = match service.client_secret_salt(client.id).await {
                 Ok(Some(salt)) => {
                     let candidate_digest =
-                        client_secret_digest(secret, client_secret_pepper, &salt);
+                        client_secret_digest(secret, config.client_secret_pepper, &salt);
                     service
                         .client_secret_digest_matches(client.id, &candidate_digest)
                         .await
                 }
                 Ok(None) => {
-                    perform_dummy_client_secret_verification(credentials, client_secret_pepper);
+                    perform_dummy_client_secret_verification(
+                        credentials,
+                        config.client_secret_pepper,
+                    );
                     Ok(false)
                 }
                 Err(error) => Err(error),
@@ -231,7 +247,7 @@ pub(crate) async fn authenticate_client_with_dependencies(
         ClientAuthenticationRequirement::MutualTls { .. } => {
             let trusted = crate::support::client_ip::request_from_trusted_proxy_cidrs(
                 req,
-                trusted_proxy_cidrs,
+                config.trusted_proxy_cidrs,
             );
             let Some(certificate) = trusted
                 .then(|| request_mtls_client_certificate_from_headers(req.headers()))

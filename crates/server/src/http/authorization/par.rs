@@ -290,9 +290,11 @@ async fn par_after_rate_limit_inner(
     };
     let client_assertion = match authenticate_client_with_dependencies(
         context.service,
-        &context.config.issuer,
-        &context.config.client_secret_pepper,
-        &context.config.trusted_proxy_cidrs,
+        crate::http::token::client_auth::ClientAuthConfig::new(
+            &context.config.issuer,
+            &context.config.client_secret_pepper,
+            &context.config.trusted_proxy_cidrs,
+        ),
         &req,
         &client,
         &credentials,

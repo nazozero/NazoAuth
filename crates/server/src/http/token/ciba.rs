@@ -38,7 +38,7 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use super::client_auth::{
-    authenticate_client_with_dependencies,
+    ClientAuthConfig, authenticate_client_with_dependencies,
     consume_token_client_assertion_with_authorization_service,
     consume_token_management_client_assertion_with_authorization_service,
 };
@@ -100,6 +100,33 @@ impl From<&Settings> for CibaHttpConfig {
                 .requires_fapi2_security(),
         }
     }
+}
+
+pub(crate) struct CibaTokenHandles {
+    service: Data<ServerCibaService>,
+    users: Data<nazo_postgres::UserRepository>,
+    config: Data<CibaHttpConfig>,
+}
+
+impl CibaTokenHandles {
+    pub(crate) fn new(
+        service: Data<ServerCibaService>,
+        users: Data<nazo_postgres::UserRepository>,
+        config: Data<CibaHttpConfig>,
+    ) -> Self {
+        Self {
+            service,
+            users,
+            config,
+        }
+    }
+}
+
+pub(crate) struct CibaTokenContext<'request, 'issuance> {
+    pub(crate) token_service: &'request ServerTokenService,
+    pub(crate) issuance: &'request TokenIssuanceContext<'issuance>,
+    pub(crate) handles: &'request CibaTokenHandles,
+    pub(crate) request: &'request HttpRequest,
 }
 
 fn ciba_module_admissible(
@@ -268,9 +295,11 @@ pub(crate) async fn backchannel_authentication(
     }
     let assertion = match authenticate_client_with_dependencies(
         &authorization_service,
-        &config.issuer,
-        &config.client_secret_pepper,
-        &config.trusted_proxy_cidrs,
+        ClientAuthConfig::new(
+            &config.issuer,
+            &config.client_secret_pepper,
+            &config.trusted_proxy_cidrs,
+        ),
         &req,
         &client,
         &credentials,
@@ -1260,17 +1289,21 @@ fn ciba_poll_failure_response(failure: CibaPollFailure) -> HttpResponse {
 }
 
 pub(crate) async fn token_ciba(
-    token_service: &ServerTokenService,
-    issuance: &TokenIssuanceContext<'_>,
-    config: &CibaHttpConfig,
-    ciba_service: &ServerCibaService,
-    users: &nazo_postgres::UserRepository,
-    req: &HttpRequest,
+    context: CibaTokenContext<'_, '_>,
     client: &ClientRow,
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
     auth_method: &str,
 ) -> HttpResponse {
+    let CibaTokenContext {
+        token_service,
+        issuance,
+        handles,
+        request: req,
+    } = context;
+    let config = handles.config.get_ref();
+    let ciba_service = handles.service.get_ref();
+    let users = handles.users.get_ref();
     if !issuance.permits(nazo_runtime_modules::ModuleId::Ciba) {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,

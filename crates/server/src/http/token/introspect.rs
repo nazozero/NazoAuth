@@ -129,9 +129,11 @@ async fn introspect_after_rate_limit_with_dependencies(
     };
     if let Err(error) = authenticate_introspection_client_with_dependencies(
         authorization_service,
-        &config.issuer,
-        &config.client_secret_pepper,
-        &config.trusted_proxy_cidrs,
+        super::client_auth::ClientAuthConfig::new(
+            &config.issuer,
+            &config.client_secret_pepper,
+            &config.trusted_proxy_cidrs,
+        ),
         &req,
         &client,
         &credentials,

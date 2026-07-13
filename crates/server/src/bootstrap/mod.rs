@@ -51,9 +51,10 @@ use crate::http::authorization::{AuthorizationHttpConfig, ServerAuthorizationSer
 #[cfg(not(test))]
 use crate::http::profile::oidc_logout::spawn_backchannel_logout_delivery_worker;
 use crate::http::scim::{ScimConfig, ScimEndpoint, ScimRuntimeAdmission};
-use crate::http::token::ciba::{CibaHttpConfig, ServerCibaService};
-use crate::http::token::device::ServerDeviceGrantService;
+use crate::http::token::ciba::{CibaHttpConfig, CibaTokenHandles, ServerCibaService};
+use crate::http::token::device::{DeviceDecisionHandles, ServerDeviceGrantService};
 use crate::http::token::device_config::DeviceHttpConfig;
+use crate::http::token::dispatch::TokenEndpointHandles;
 use crate::http::token::issue::TokenIssuanceConfig;
 use crate::runtime_modules::{RuntimeModules, ServerRuntimeModuleRegistry};
 use crate::settings::Settings;
@@ -215,6 +216,18 @@ pub async fn run() -> anyhow::Result<()> {
     let authorization_config = web::Data::new(AuthorizationHttpConfig::from(settings.as_ref()));
     let authorization_runtime: web::Data<ServerRuntimeModuleRegistry> =
         web::Data::from(runtime_modules.registry.clone());
+    let token_endpoint_handles = web::Data::new(TokenEndpointHandles::new(
+        token_service.clone(),
+        authorization_service.clone(),
+        CibaTokenHandles::new(
+            ciba_service.clone(),
+            ciba_users.clone(),
+            ciba_config.clone(),
+        ),
+        token_issuance_config.clone(),
+        device_service.clone(),
+        authorization_runtime.clone(),
+    ));
 
     let state = web::Data::new(AppState {
         diesel_db,
@@ -251,6 +264,14 @@ pub async fn run() -> anyhow::Result<()> {
         session_http_config,
         &state.settings.endpoint.issuer,
         state.settings.modules.enable_session_management,
+    ));
+    let device_decision_handles = web::Data::new(DeviceDecisionHandles::new(
+        authorization_service.clone(),
+        device_service.clone(),
+        device_grants.clone(),
+        session_profiles.clone(),
+        device_config.clone(),
+        authorization_runtime.clone(),
     ));
     #[cfg(not(test))]
     let oidc_logout = web::Data::new(OidcLogoutHandles::new(
@@ -478,12 +499,14 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(runtime_modules.clone())
             .app_data(authorization_service.clone())
             .app_data(token_service.clone())
+            .app_data(token_endpoint_handles.clone())
             .app_data(ciba_service.clone())
             .app_data(ciba_users.clone())
             .app_data(ciba_config.clone())
             .app_data(token_issuance_config.clone())
             .app_data(device_service.clone())
             .app_data(device_grants.clone())
+            .app_data(device_decision_handles.clone())
             .app_data(device_config.clone())
             .app_data(userinfo_handles.clone())
             .app_data(authorization_config.clone())

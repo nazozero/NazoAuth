@@ -32,8 +32,9 @@ use serde_json::{Value, json};
 #[cfg(test)]
 use uuid::Uuid;
 // 只负责客户端认证与 grant_type 分派，不直接签发令牌。
+use super::ciba::{CibaTokenContext, CibaTokenHandles};
 use super::client_auth::{
-    TokenManagementClientAuthError, authenticate_client_with_dependencies,
+    ClientAuthConfig, TokenManagementClientAuthError, authenticate_client_with_dependencies,
     perform_dummy_client_secret_verification,
 };
 use super::issue::{TokenIssuanceConfig, TokenIssuanceContext};
@@ -233,20 +234,47 @@ async fn enforce_token_rate_limit(
     Ok(())
 }
 
-pub(crate) async fn token_with_service(
+pub(crate) struct TokenEndpointHandles {
     token_service: Data<ServerTokenService>,
     authorization_service: Data<ServerAuthorizationService>,
-    ciba_service: Data<super::ciba::ServerCibaService>,
-    ciba_users: Data<nazo_postgres::UserRepository>,
-    ciba_config: Data<super::ciba::CibaHttpConfig>,
+    ciba: CibaTokenHandles,
     issuance_config: Data<TokenIssuanceConfig>,
     device_service: Data<super::device::ServerDeviceGrantService>,
     runtime_modules: Data<ServerRuntimeModuleRegistry>,
+}
+
+impl TokenEndpointHandles {
+    pub(crate) fn new(
+        token_service: Data<ServerTokenService>,
+        authorization_service: Data<ServerAuthorizationService>,
+        ciba: CibaTokenHandles,
+        issuance_config: Data<TokenIssuanceConfig>,
+        device_service: Data<super::device::ServerDeviceGrantService>,
+        runtime_modules: Data<ServerRuntimeModuleRegistry>,
+    ) -> Self {
+        Self {
+            token_service,
+            authorization_service,
+            ciba,
+            issuance_config,
+            device_service,
+            runtime_modules,
+        }
+    }
+}
+
+pub(crate) async fn token_with_service(
+    handles: Data<TokenEndpointHandles>,
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
+    let token_service = handles.token_service.get_ref();
+    let authorization_service = handles.authorization_service.get_ref();
+    let issuance_config = handles.issuance_config.get_ref();
+    let device_service = handles.device_service.get_ref();
+    let runtime_modules = handles.runtime_modules.get_ref();
     if let Err(response) =
-        enforce_token_rate_limit(&authorization_service, &issuance_config, &req).await
+        enforce_token_rate_limit(authorization_service, issuance_config, &req).await
     {
         return response;
     }
@@ -352,7 +380,7 @@ pub(crate) async fn token_with_service(
         && !has_assertion
     {
         match mtls_client_credentials_without_client_id(
-            &authorization_service,
+            authorization_service,
             issuance_config.trusted_proxy_cidrs(),
             &req,
         )
@@ -371,8 +399,8 @@ pub(crate) async fn token_with_service(
                 return response;
             }
             if let Some(response) = missing_client_authorization_code_holder_error(
-                &token_service,
-                &authorization_service,
+                token_service,
+                authorization_service,
                 &form,
             )
             .await
@@ -415,10 +443,12 @@ pub(crate) async fn token_with_service(
         return response;
     }
     let client_assertion = match authenticate_client_with_dependencies(
-        &authorization_service,
-        issuance_config.issuer(),
-        issuance_config.client_secret_pepper(),
-        issuance_config.trusted_proxy_cidrs(),
+        authorization_service,
+        ClientAuthConfig::new(
+            issuance_config.issuer(),
+            issuance_config.client_secret_pepper(),
+            issuance_config.trusted_proxy_cidrs(),
+        ),
         &req,
         &client,
         &credentials,
@@ -461,14 +491,14 @@ pub(crate) async fn token_with_service(
     }
     let modules = runtime_modules.snapshot();
     let issuance = TokenIssuanceContext {
-        config: &issuance_config,
+        config: issuance_config,
         modules: &modules,
-        authorization: &authorization_service,
+        authorization: authorization_service,
     };
     match form.grant_type.as_str() {
         "authorization_code" => {
             token_authorization_code_with_service(
-                &token_service,
+                token_service,
                 &issuance,
                 &req,
                 &client,
@@ -479,7 +509,7 @@ pub(crate) async fn token_with_service(
         }
         "refresh_token" => {
             token_refresh_with_service(
-                &token_service,
+                token_service,
                 &issuance,
                 &req,
                 &client,
@@ -490,8 +520,8 @@ pub(crate) async fn token_with_service(
         }
         "client_credentials" => {
             token_client_credentials_with_service(
-                &token_service,
-                &authorization_service,
+                token_service,
+                authorization_service,
                 &issuance,
                 &req,
                 &client,
@@ -502,7 +532,7 @@ pub(crate) async fn token_with_service(
         }
         JWT_BEARER_GRANT_TYPE => {
             token_jwt_bearer_with_service(
-                &token_service,
+                token_service,
                 &issuance,
                 &req,
                 &client,
@@ -513,9 +543,9 @@ pub(crate) async fn token_with_service(
         }
         DEVICE_CODE_GRANT_TYPE => {
             token_device_code_with_service(
-                &token_service,
+                token_service,
                 &issuance,
-                &device_service,
+                device_service,
                 &req,
                 &client,
                 &form,
@@ -525,12 +555,12 @@ pub(crate) async fn token_with_service(
         }
         CIBA_GRANT_TYPE => {
             token_ciba(
-                &token_service,
-                &issuance,
-                &ciba_config,
-                &ciba_service,
-                &ciba_users,
-                &req,
+                CibaTokenContext {
+                    token_service,
+                    issuance: &issuance,
+                    handles: &handles.ciba,
+                    request: &req,
+                },
                 &client,
                 &form,
                 client_assertion.as_ref(),
@@ -540,8 +570,8 @@ pub(crate) async fn token_with_service(
         }
         TOKEN_EXCHANGE_GRANT_TYPE => {
             token_exchange(
-                &token_service,
-                &authorization_service,
+                token_service,
+                authorization_service,
                 &issuance,
                 &req,
                 &client,
@@ -592,14 +622,14 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
         .expect("test runtime module registry should be valid"),
     );
     token_with_service(
-        service,
-        authorization_service,
-        ciba_service,
-        ciba_users,
-        ciba_config,
-        issuance_config,
-        device_service,
-        runtime_modules,
+        Data::new(TokenEndpointHandles::new(
+            service,
+            authorization_service,
+            CibaTokenHandles::new(ciba_service, ciba_users, ciba_config),
+            issuance_config,
+            device_service,
+            runtime_modules,
+        )),
         req,
         body,
     )

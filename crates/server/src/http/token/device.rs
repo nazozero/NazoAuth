@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use super::client_auth::{
-    authenticate_client_with_dependencies,
+    ClientAuthConfig, authenticate_client_with_dependencies,
     consume_token_management_client_assertion_with_authorization_service,
 };
 use super::{device_config::DeviceHttpConfig, token_management_auth_error};
@@ -36,6 +36,35 @@ use nazo_valkey::DeviceStore;
 
 pub(crate) const DEVICE_CODE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 pub(crate) type ServerDeviceGrantService = DeviceGrantService<DeviceStore>;
+
+pub(crate) struct DeviceDecisionHandles {
+    authorization_service: Data<ServerAuthorizationService>,
+    device_service: Data<ServerDeviceGrantService>,
+    grant_repository: Data<nazo_postgres::AuthorizationFlowRepository>,
+    sessions: Data<SessionProfileHandles>,
+    config: Data<DeviceHttpConfig>,
+    runtime: Data<ServerRuntimeModuleRegistry>,
+}
+
+impl DeviceDecisionHandles {
+    pub(crate) fn new(
+        authorization_service: Data<ServerAuthorizationService>,
+        device_service: Data<ServerDeviceGrantService>,
+        grant_repository: Data<nazo_postgres::AuthorizationFlowRepository>,
+        sessions: Data<SessionProfileHandles>,
+        config: Data<DeviceHttpConfig>,
+        runtime: Data<ServerRuntimeModuleRegistry>,
+    ) -> Self {
+        Self {
+            authorization_service,
+            device_service,
+            grant_repository,
+            sessions,
+            config,
+            runtime,
+        }
+    }
+}
 
 fn device_module_admissible(
     runtime: &ServerRuntimeModuleRegistry,
@@ -400,16 +429,17 @@ fn device_verification_uri(config: &DeviceHttpConfig) -> String {
 }
 
 pub(crate) async fn device_decision(
-    authorization_service: Data<ServerAuthorizationService>,
-    device_service: Data<ServerDeviceGrantService>,
-    grant_repository: Data<nazo_postgres::AuthorizationFlowRepository>,
-    sessions: Data<SessionProfileHandles>,
-    config: Data<DeviceHttpConfig>,
-    runtime: Data<ServerRuntimeModuleRegistry>,
+    handles: Data<DeviceDecisionHandles>,
     req: HttpRequest,
     Form(form): Form<DeviceDecisionForm>,
 ) -> HttpResponse {
-    if !device_module_admissible(&runtime, CapabilityAdmission::ExistingTransaction) {
+    let authorization_service = handles.authorization_service.get_ref();
+    let device_service = handles.device_service.get_ref();
+    let grant_repository = handles.grant_repository.get_ref();
+    let sessions = handles.sessions.get_ref();
+    let config = handles.config.get_ref();
+    let runtime = handles.runtime.get_ref();
+    if !device_module_admissible(runtime, CapabilityAdmission::ExistingTransaction) {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -473,7 +503,7 @@ pub(crate) async fn device_decision(
                     );
                 }
             };
-            let subject = match device_authorization_subject(&config, user.id(), &client) {
+            let subject = match device_authorization_subject(config, user.id(), &client) {
                 Ok(subject) => subject,
                 Err(error) => {
                     tracing::warn!(%error, "failed to compute device authorization subject");
@@ -495,7 +525,7 @@ pub(crate) async fn device_decision(
                         oidc_sid: None,
                     },
                     &client,
-                    grant_repository.get_ref(),
+                    grant_repository,
                     Utc::now,
                 )
                 .await
@@ -546,9 +576,11 @@ async fn authenticate_device_authorization_client(
 ) -> Result<(), HttpResponse> {
     let assertion = authenticate_client_with_dependencies(
         authorization_service,
-        &config.issuer,
-        &config.client_secret_pepper,
-        &config.trusted_proxy_cidrs,
+        ClientAuthConfig::new(
+            &config.issuer,
+            &config.client_secret_pepper,
+            &config.trusted_proxy_cidrs,
+        ),
         req,
         client,
         credentials,
@@ -622,8 +654,7 @@ fn device_authorization_subject(
 ) -> anyhow::Result<String> {
     let redirect_uri = client
         .redirect_uris
-        .iter()
-        .next()
+        .first()
         .cloned()
         .unwrap_or_else(|| config.issuer.to_string());
     nazo_auth::oidc_subject_for_client(
