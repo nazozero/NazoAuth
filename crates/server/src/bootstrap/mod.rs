@@ -109,6 +109,10 @@ pub async fn run() -> anyhow::Result<()> {
         SessionHttpConfig::new(session.session_cookie_name, session.csrf_cookie_name),
     ));
     let admin_users = web::Data::new(nazo_postgres::UserRepository::new(state.diesel_db.clone()));
+    let admin_grants = web::Data::new(nazo_postgres::GrantRepository::new(state.diesel_db.clone()));
+    let admin_grant_clients = web::Data::new(nazo_postgres::OAuthClientRepository::new(
+        state.diesel_db.clone(),
+    ));
     let endpoint = state.settings.endpoint();
     let client_ip_config = web::Data::new(ClientIpConfig::new(
         endpoint.trusted_proxy_cidrs,
@@ -158,6 +162,8 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(admin_sessions.clone())
             .app_data(resource_server_handles.clone())
             .app_data(admin_users.clone())
+            .app_data(admin_grants.clone())
+            .app_data(admin_grant_clients.clone())
             .app_data(client_ip_config.clone())
             .configure(|cfg| routes::configure(cfg, &state.settings, perf_metrics_enabled))
     })
