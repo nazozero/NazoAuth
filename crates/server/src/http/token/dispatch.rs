@@ -115,8 +115,11 @@ async fn missing_client_authorization_code_holder_error(
         return None;
     }
     let code = form.code.as_deref()?;
-    let raw = match valkey_get(&state.valkey, authorization_code_key(code)).await {
-        Ok(Some(raw)) => raw,
+    let stored = match nazo_valkey::AuthorizationStore::new(&state.valkey_connection())
+        .load_authorization_code(code)
+        .await
+    {
+        Ok(Some(value)) => value,
         Ok(None) => return None,
         Err(error) => {
             tracing::warn!(%error, "failed to read authorization code before client authentication");
@@ -128,18 +131,9 @@ async fn missing_client_authorization_code_holder_error(
             ));
         }
     };
-    let payload = match pending_authorization_code_payload(&raw) {
-        Ok(Some(payload)) => payload,
-        Ok(None) => return None,
-        Err(error) => {
-            tracing::warn!(%error, "authorization code state is malformed before client authentication");
-            return Some(oauth_token_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "授权码状态无效.",
-                false,
-            ));
-        }
+    let payload = match stored {
+        AuthorizationCodeState::Pending { payload } => payload,
+        _ => return None,
     };
     if let Some(response) = authorization_code_holder_missing_client_error(
         payload.dpop_jkt.is_some(),

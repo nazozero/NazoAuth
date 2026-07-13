@@ -321,19 +321,23 @@ pub(crate) async fn backchannel_authentication(
         retention_expires_at: ciba_retention_deadline(expires_at),
         last_poll_at: None,
     };
-    let auth_req_id =
-        match create_unique_ciba_request(&state.valkey, &state_payload, random_urlsafe_token).await
-        {
-            Ok(auth_req_id) => auth_req_id,
-            Err(error) => {
-                tracing::warn!(%error, "failed to create CIBA auth_req_id");
-                return oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "CIBA failed.",
-                );
-            }
-        };
+    let auth_req_id = match create_unique_ciba_request(
+        &state.valkey_connection(),
+        &state_payload,
+        random_urlsafe_token,
+    )
+    .await
+    {
+        Ok(auth_req_id) => auth_req_id,
+        Err(error) => {
+            tracing::warn!(%error, "failed to create CIBA auth_req_id");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "CIBA failed.",
+            );
+        }
+    };
     audit_event(
         "ciba_authorization_started",
         ciba_start_audit_fields(
@@ -967,14 +971,20 @@ async fn set_ciba_request_decision(
     source_ip_hash: Option<String>,
 ) -> HttpResponse {
     complete_ciba_decision(
-        commit_ciba_decision(&state.valkey, auth_req_id, decision, expected_user_id).await,
+        commit_ciba_decision(
+            &state.valkey_connection(),
+            auth_req_id,
+            decision,
+            expected_user_id,
+        )
+        .await,
         source,
         source_ip_hash,
     )
 }
 
 async fn commit_ciba_decision(
-    valkey: &fred::prelude::Client,
+    valkey: &nazo_valkey::ValkeyConnection,
     auth_req_id: &str,
     decision: CibaDecision,
     expected_user_id: Option<Uuid>,
@@ -997,35 +1007,30 @@ async fn commit_ciba_decision(
                 return Err(CibaDecisionFailure::AlreadyHandled);
             }
             CibaDecisionEvaluation::Expired => {
-                match delete_ciba_request_state(
-                    valkey,
-                    auth_req_id,
-                    &stored.raw,
-                    stored.state.retention_expires_at,
-                )
-                .await
-                .map_err(CibaDecisionFailure::Storage)?
-                {
-                    ValkeyAtomicResult::Applied | ValkeyAtomicResult::DeadlineElapsed => {
-                        return Err(CibaDecisionFailure::Expired);
-                    }
-                    ValkeyAtomicResult::Conflict => continue,
-                }
-            }
-            CibaDecisionEvaluation::Commit(next) => {
-                match replace_ciba_request_state(valkey, auth_req_id, &stored.raw, &next)
+                match delete_ciba_request_state(valkey, auth_req_id, &stored)
                     .await
                     .map_err(CibaDecisionFailure::Storage)?
                 {
-                    ValkeyAtomicResult::Applied => {
+                    CibaAtomicResult::Applied | CibaAtomicResult::DeadlineElapsed => {
+                        return Err(CibaDecisionFailure::Expired);
+                    }
+                    CibaAtomicResult::Conflict => continue,
+                }
+            }
+            CibaDecisionEvaluation::Commit(next) => {
+                match replace_ciba_request_state(valkey, auth_req_id, &stored, &next)
+                    .await
+                    .map_err(CibaDecisionFailure::Storage)?
+                {
+                    CibaAtomicResult::Applied => {
                         return Ok(CommittedCibaDecision {
                             auth_req_id_hash: blake3_hex(auth_req_id),
                             state: next,
                             decision,
                         });
                     }
-                    ValkeyAtomicResult::Conflict => continue,
-                    ValkeyAtomicResult::DeadlineElapsed => {
+                    CibaAtomicResult::Conflict => continue,
+                    CibaAtomicResult::DeadlineElapsed => {
                         return Err(CibaDecisionFailure::Expired);
                     }
                 }
@@ -1126,7 +1131,7 @@ where
 }
 
 async fn commit_ciba_poll(
-    valkey: &fred::prelude::Client,
+    valkey: &nazo_valkey::ValkeyConnection,
     auth_req_id: &str,
     expected_client_id: &str,
     authorized: AuthorizedCibaPoll,
@@ -1138,79 +1143,64 @@ async fn commit_ciba_poll(
         }
         let result = match evaluate_ciba_poll(&stored.state, Utc::now().timestamp()) {
             CibaPollTransition::AuthorizationPending(next) => {
-                match replace_ciba_request_state(valkey, auth_req_id, &stored.raw, &next)
+                match replace_ciba_request_state(valkey, auth_req_id, &stored, &next)
                     .await
                     .map_err(CibaPollFailure::Storage)?
                 {
-                    ValkeyAtomicResult::Applied => {
+                    CibaAtomicResult::Applied => {
                         return Ok(CibaPollCommit::AuthorizationPending);
                     }
                     result => result,
                 }
             }
             CibaPollTransition::SlowDown(next) => {
-                match replace_ciba_request_state(valkey, auth_req_id, &stored.raw, &next)
+                match replace_ciba_request_state(valkey, auth_req_id, &stored, &next)
                     .await
                     .map_err(CibaPollFailure::Storage)?
                 {
-                    ValkeyAtomicResult::Applied => return Ok(CibaPollCommit::SlowDown),
+                    CibaAtomicResult::Applied => return Ok(CibaPollCommit::SlowDown),
                     result => result,
                 }
             }
             CibaPollTransition::Approved => {
-                match delete_ciba_request_state(
-                    valkey,
-                    auth_req_id,
-                    &stored.raw,
-                    stored.state.retention_expires_at,
-                )
-                .await
-                .map_err(CibaPollFailure::Storage)?
+                match delete_ciba_request_state(valkey, auth_req_id, &stored)
+                    .await
+                    .map_err(CibaPollFailure::Storage)?
                 {
-                    ValkeyAtomicResult::Applied => {
+                    CibaAtomicResult::Applied => {
                         return Ok(CibaPollCommit::Approved(stored.state));
                     }
                     result => result,
                 }
             }
             CibaPollTransition::Denied => {
-                match delete_ciba_request_state(
-                    valkey,
-                    auth_req_id,
-                    &stored.raw,
-                    stored.state.retention_expires_at,
-                )
-                .await
-                .map_err(CibaPollFailure::Storage)?
+                match delete_ciba_request_state(valkey, auth_req_id, &stored)
+                    .await
+                    .map_err(CibaPollFailure::Storage)?
                 {
-                    ValkeyAtomicResult::Applied => return Ok(CibaPollCommit::Denied),
+                    CibaAtomicResult::Applied => return Ok(CibaPollCommit::Denied),
                     result => result,
                 }
             }
             CibaPollTransition::Expired => {
-                match delete_ciba_request_state(
-                    valkey,
-                    auth_req_id,
-                    &stored.raw,
-                    stored.state.retention_expires_at,
-                )
-                .await
-                .map_err(CibaPollFailure::Storage)?
+                match delete_ciba_request_state(valkey, auth_req_id, &stored)
+                    .await
+                    .map_err(CibaPollFailure::Storage)?
                 {
-                    ValkeyAtomicResult::Applied => return Ok(CibaPollCommit::Expired),
+                    CibaAtomicResult::Applied => return Ok(CibaPollCommit::Expired),
                     result => result,
                 }
             }
         };
         match result {
-            ValkeyAtomicResult::Conflict => {
+            CibaAtomicResult::Conflict => {
                 stored = load_ciba_request_state(valkey, auth_req_id)
                     .await
                     .map_err(CibaPollFailure::Storage)?
                     .ok_or(CibaPollFailure::Missing)?;
             }
-            ValkeyAtomicResult::DeadlineElapsed => return Ok(CibaPollCommit::Expired),
-            ValkeyAtomicResult::Applied => unreachable!("applied transitions return immediately"),
+            CibaAtomicResult::DeadlineElapsed => return Ok(CibaPollCommit::Expired),
+            CibaAtomicResult::Applied => unreachable!("applied transitions return immediately"),
         }
     }
     Err(CibaPollFailure::Contended)
@@ -1289,7 +1279,7 @@ pub(crate) async fn token_ciba(
         Ok(binding) => binding,
         Err(response) => return response,
     };
-    let initial = match load_ciba_request_state(&state.valkey, auth_req_id).await {
+    let initial = match load_ciba_request_state(&state.valkey_connection(), auth_req_id).await {
         Ok(Some(value)) => value,
         Ok(None) => {
             return oauth_token_error(
@@ -1312,43 +1302,49 @@ pub(crate) async fn token_ciba(
         Ok(authorized) => authorized,
         Err(response) => return response,
     };
-    let ciba =
-        match commit_ciba_poll(&state.valkey, auth_req_id, &client.client_id, authorized).await {
-            Ok(CibaPollCommit::AuthorizationPending) => {
-                return oauth_token_error(
-                    StatusCode::BAD_REQUEST,
-                    "authorization_pending",
-                    "CIBA authorization is pending.",
-                    false,
-                );
-            }
-            Ok(CibaPollCommit::SlowDown) => {
-                return oauth_token_error(
-                    StatusCode::BAD_REQUEST,
-                    "slow_down",
-                    "CIBA polling too fast.",
-                    false,
-                );
-            }
-            Ok(CibaPollCommit::Denied) => {
-                return oauth_token_error(
-                    StatusCode::BAD_REQUEST,
-                    "access_denied",
-                    "CIBA authorization was denied.",
-                    false,
-                );
-            }
-            Ok(CibaPollCommit::Expired) => {
-                return oauth_token_error(
-                    StatusCode::BAD_REQUEST,
-                    "expired_token",
-                    "CIBA auth_req_id is expired.",
-                    false,
-                );
-            }
-            Ok(CibaPollCommit::Approved(ciba)) => ciba,
-            Err(failure) => return ciba_poll_failure_response(failure),
-        };
+    let ciba = match commit_ciba_poll(
+        &state.valkey_connection(),
+        auth_req_id,
+        &client.client_id,
+        authorized,
+    )
+    .await
+    {
+        Ok(CibaPollCommit::AuthorizationPending) => {
+            return oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "authorization_pending",
+                "CIBA authorization is pending.",
+                false,
+            );
+        }
+        Ok(CibaPollCommit::SlowDown) => {
+            return oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "slow_down",
+                "CIBA polling too fast.",
+                false,
+            );
+        }
+        Ok(CibaPollCommit::Denied) => {
+            return oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "access_denied",
+                "CIBA authorization was denied.",
+                false,
+            );
+        }
+        Ok(CibaPollCommit::Expired) => {
+            return oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "expired_token",
+                "CIBA auth_req_id is expired.",
+                false,
+            );
+        }
+        Ok(CibaPollCommit::Approved(ciba)) => ciba,
+        Err(failure) => return ciba_poll_failure_response(failure),
+    };
     let user = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
         .public_account_by_id(
             nazo_identity::TenantId::new(DEFAULT_TENANT_ID).expect("default tenant ID is non-nil"),
@@ -1493,7 +1489,7 @@ async fn load_ciba_request_payload(
     state: &AppState,
     auth_req_id: &str,
 ) -> Result<Option<CibaRequestState>, HttpResponse> {
-    load_ciba_request_state(&state.valkey, auth_req_id)
+    load_ciba_request_state(&state.valkey_connection(), auth_req_id)
         .await
         .map(|stored| stored.map(|stored| stored.state))
         .map_err(ciba_state_error_response)

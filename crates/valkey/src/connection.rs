@@ -15,6 +15,12 @@ pub struct ValkeyConnection {
 }
 
 impl ValkeyConnection {
+    /// Wrap an already initialized Fred client during the server cutover.
+    #[doc(hidden)]
+    pub fn from_existing_client(client: fred::prelude::Client) -> Self {
+        Self { client }
+    }
+
     pub async fn connect(url: &str, command_timeout: Duration) -> Result<Self, Error> {
         let config = Config::from_url(url).map_err(Error::from_fred)?;
         if !matches!(config.server, ServerConfig::Centralized { .. }) {

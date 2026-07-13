@@ -76,20 +76,19 @@ pub(super) async fn persist_consumed_authorization_code(
         refresh_token_family_id,
         consumed_at: Utc::now(),
     };
-    let body = serde_json::to_string(&AuthorizationCodeState::Consumed { marker: payload })?;
     let ttl_seconds = consumed_authorization_code_ttl_seconds(
         state.settings.access_token_ttl_seconds,
         state.settings.refresh_token_ttl_seconds,
         refresh_token_family_id,
     );
-    let result = valkey_eval_string(
-        &state.valkey,
-        MARK_CONSUMED_AUTHORIZATION_CODE_SCRIPT,
-        vec![authorization_code_key_from_hash(code_hash)],
-        vec![body, ttl_seconds.to_string()],
-    )
-    .await?;
-    consumed_authorization_code_transition_result(&result)
+    let result = nazo_valkey::AuthorizationStore::new(&state.valkey_connection())
+        .mark_authorization_code(
+            code_hash,
+            &AuthorizationCodeState::Consumed { marker: payload },
+            ttl_seconds,
+        )
+        .await?;
+    consumed_authorization_code_transition_result(authorization_transition_name(result))
 }
 
 pub(crate) async fn mark_failed_authorization_code(
@@ -97,21 +96,29 @@ pub(crate) async fn mark_failed_authorization_code(
     code_hash: &str,
     error_code: &str,
 ) -> anyhow::Result<()> {
-    let body = serde_json::to_string(&AuthorizationCodeState::Failed {
-        failed_at: Utc::now(),
-        error: error_code.to_owned(),
-    })?;
-    let result = valkey_eval_string(
-        &state.valkey,
-        MARK_FAILED_AUTHORIZATION_CODE_SCRIPT,
-        vec![authorization_code_key_from_hash(code_hash)],
-        vec![
-            body,
-            state.settings.auth_code_ttl_seconds.max(1).to_string(),
-        ],
-    )
-    .await?;
-    failed_authorization_code_transition_result(&result)
+    let result = nazo_valkey::AuthorizationStore::new(&state.valkey_connection())
+        .mark_authorization_code(
+            code_hash,
+            &AuthorizationCodeState::Failed {
+                failed_at: Utc::now(),
+                error: error_code.to_owned(),
+            },
+            state.settings.auth_code_ttl_seconds.max(1),
+        )
+        .await?;
+    failed_authorization_code_transition_result(authorization_transition_name(result))
+}
+
+fn authorization_transition_name(result: nazo_valkey::AuthorizationTransition) -> &'static str {
+    match result {
+        nazo_valkey::AuthorizationTransition::Applied => "ok",
+        nazo_valkey::AuthorizationTransition::Missing => "missing",
+        nazo_valkey::AuthorizationTransition::Malformed => "malformed",
+        nazo_valkey::AuthorizationTransition::Pending => "pending",
+        nazo_valkey::AuthorizationTransition::Consuming => "consuming",
+        nazo_valkey::AuthorizationTransition::Consumed => "consumed",
+        nazo_valkey::AuthorizationTransition::Failed => "failed",
+    }
 }
 
 pub(super) async fn mark_failed_authorization_code_if_needed(

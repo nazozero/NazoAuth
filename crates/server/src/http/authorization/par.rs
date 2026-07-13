@@ -288,15 +288,14 @@ async fn par_after_rate_limit_inner(
         issued_at: now,
         expires_at: now + Duration::seconds(state.settings.par_ttl_seconds as i64),
     };
-    let body = serde_json::to_string(&payload)
-        .expect("pushed authorization request serialization must be infallible");
-    if let Err(error) = valkey_set_ex(
-        &state.valkey,
-        pushed_authorization_request_key(&request_uri),
-        body,
-        state.settings.par_ttl_seconds.max(1),
-    )
-    .await
+    let store = nazo_valkey::AuthorizationStore::new(&state.valkey_connection());
+    if let Err(error) = store
+        .store_par(
+            &request_uri,
+            &payload,
+            state.settings.par_ttl_seconds.max(1),
+        )
+        .await
     {
         tracing::warn!(%error, "failed to persist PAR payload");
         return oauth_error(

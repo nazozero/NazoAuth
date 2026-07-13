@@ -1,7 +1,7 @@
 //! 授权请求入口端点。
 // 该端点只创建 consent 临时状态，不签发授权码。
 use super::{
-    apply_request_object, is_pushed_authorization_request_uri, pushed_authorization_request_key,
+    apply_request_object, is_pushed_authorization_request_uri,
     unverified_signed_request_object_client_id,
 };
 use crate::http::prelude::*;
@@ -72,16 +72,12 @@ async fn authorize_request(
         if !is_pushed_authorization_request_uri(&request_uri) {
             consumed_request_uri_error = Some("request_uri_not_supported");
         } else {
-            let raw = match valkey_get(
-                &state.valkey,
-                pushed_authorization_request_key(&request_uri),
-            )
-            .await
-            {
-                Ok(Some(raw)) => raw,
+            let store = nazo_valkey::AuthorizationStore::new(&state.valkey_connection());
+            let pushed = match store.load_par(&request_uri).await {
+                Ok(Some(pushed)) => Some(pushed),
                 Ok(None) => {
                     consumed_request_uri_error = Some("invalid_request_uri");
-                    String::new()
+                    None
                 }
                 Err(error) => {
                     tracing::warn!(%error, "failed to read PAR request_uri");
@@ -92,18 +88,7 @@ async fn authorize_request(
                     );
                 }
             };
-            if consumed_request_uri_error.is_none() {
-                let pushed = match serde_json::from_str::<PushedAuthorizationRequest>(&raw) {
-                    Ok(pushed) => pushed,
-                    Err(error) => {
-                        tracing::warn!(%error, "PAR payload is malformed");
-                        return oauth_error(
-                            StatusCode::SERVICE_UNAVAILABLE,
-                            "server_error",
-                            "request_uri 状态无效.",
-                        );
-                    }
-                };
+            if let Some(pushed) = pushed {
                 if q.get("client_id")
                     .is_some_and(|client_id| client_id != &pushed.client_id)
                 {
@@ -499,16 +484,10 @@ async fn authorize_request(
             Err(response) => return response,
         }
     }
-    let key = format!("oauth:consent:{request_id}");
-    let body =
-        serde_json::to_string(&payload).expect("consent payload serialization must be infallible");
-    if let Err(error) = valkey_set_ex(
-        &state.valkey,
-        key,
-        body,
-        state.settings.auth_code_ttl_seconds,
-    )
-    .await
+    let store = nazo_valkey::AuthorizationStore::new(&state.valkey_connection());
+    if let Err(error) = store
+        .store_consent(&request_id, &payload, state.settings.auth_code_ttl_seconds)
+        .await
     {
         tracing::warn!(%error, "failed to persist consent request");
         return oauth_error(
@@ -535,22 +514,17 @@ pub(crate) async fn consume_pushed_authorization_request(
     state: &AppState,
     request_uri: &str,
 ) -> Result<(), PushedAuthorizationRequestConsumeError> {
-    let raw =
-        match valkey_getdel(&state.valkey, pushed_authorization_request_key(request_uri)).await {
-            Ok(Some(raw)) => raw,
-            Ok(None) => {
-                return Err(PushedAuthorizationRequestConsumeError::Missing);
-            }
-            Err(error) => {
-                tracing::warn!(%error, "failed to consume PAR request_uri");
-                return Err(PushedAuthorizationRequestConsumeError::ReadFailed);
-            }
-        };
-    if let Err(error) = serde_json::from_str::<PushedAuthorizationRequest>(&raw) {
-        tracing::warn!(%error, "PAR payload is malformed");
-        return Err(PushedAuthorizationRequestConsumeError::Malformed);
+    let store = nazo_valkey::AuthorizationStore::new(&state.valkey_connection());
+    match store.take_par(request_uri).await {
+        Ok(Some(_)) => return Ok(()),
+        Ok(None) => {
+            return Err(PushedAuthorizationRequestConsumeError::Missing);
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to consume PAR request_uri");
+            return Err(PushedAuthorizationRequestConsumeError::ReadFailed);
+        }
     }
-    Ok(())
 }
 
 pub(crate) async fn authorization_oauth_error_redirect(
@@ -743,15 +717,15 @@ fn oauth_json_error(response: &HttpResponse) -> Option<String> {
 
 async fn consume_reauth_nonce(state: &AppState, q: &mut HashMap<String, String>) -> Option<i64> {
     let nonce = q.remove(reauth_nonce_parameter())?;
-    let raw = match valkey_getdel(&state.valkey, reauth_nonce_key(&nonce)).await {
-        Ok(Some(raw)) => raw,
+    let store = nazo_valkey::AuthorizationStore::new(&state.valkey_connection());
+    match store.take_reauth_nonce(&nonce).await {
+        Ok(Some(started_at)) => return (started_at > 0).then_some(started_at),
         Ok(None) => return None,
         Err(error) => {
             tracing::warn!(%error, "failed to consume reauthentication nonce");
             return None;
         }
-    };
-    raw.parse::<i64>().ok().filter(|value| *value > 0)
+    }
 }
 
 async fn authorization_login_url(
@@ -773,22 +747,18 @@ async fn authorization_login_url(
 
 async fn issue_reauth_nonce(state: &AppState) -> Result<String, HttpResponse> {
     let nonce = random_urlsafe_token();
-    let started_at = Utc::now().timestamp().to_string();
-    valkey_set_ex(
-        &state.valkey,
-        reauth_nonce_key(&nonce),
-        started_at,
-        REAUTH_NONCE_TTL_SECONDS,
-    )
-    .await
-    .map_err(|error| {
-        tracing::warn!(%error, "failed to store reauthentication nonce");
-        oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "重新认证状态写入失败.",
-        )
-    })?;
+    let started_at = Utc::now().timestamp();
+    nazo_valkey::AuthorizationStore::new(&state.valkey_connection())
+        .store_reauth_nonce(&nonce, started_at, REAUTH_NONCE_TTL_SECONDS)
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, "failed to store reauthentication nonce");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "重新认证状态写入失败.",
+            )
+        })?;
     Ok(nonce)
 }
 
