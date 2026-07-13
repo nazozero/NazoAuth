@@ -1,9 +1,12 @@
 [package]
 name = "nazo-oauth-server"
 version = "0.1.0"
-edition = "2024"
-license = "AGPL-3.0-or-later"
-repository = "https://github.com/bymoye/NazoAuth"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
 
 [[bin]]
 name = "nazo-oauth-server"
