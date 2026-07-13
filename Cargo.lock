@@ -2162,6 +2162,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nazo-http-actix"
+version = "0.1.0"
+dependencies = [
+ "actix-web",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nazo-http-signatures"
 version = "0.1.0"
 dependencies = [
@@ -2235,6 +2244,7 @@ dependencies = [
  "jsonwebtoken",
  "lettre",
  "nazo-auth",
+ "nazo-http-actix",
  "nazo-http-signatures",
  "nazo-identity",
  "nazo-key-management",

@@ -5,6 +5,7 @@ members = [
     "crates/postgres",
     "crates/server",
     "crates/http-signatures",
+    "crates/http-actix",
     "crates/identity",
     "crates/runtime-modules",
     "crates/resource-server",
