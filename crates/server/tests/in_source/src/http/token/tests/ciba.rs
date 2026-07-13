@@ -342,9 +342,20 @@ async fn ciba_automated_decision_route_accepts_empty_post_without_json_content_t
             Some("test-ciba-automated-decision-token-32".to_owned());
     });
     let settings = Arc::clone(&state.settings);
+    let runtime = crate::runtime_modules::runtime_module_registry_for_test(
+        state.diesel_db.clone(),
+        &settings,
+    )
+    .expect("CIBA runtime registry should initialize");
+    let ciba_service =
+        ServerCibaService::new(nazo_valkey::CibaStore::new(&state.valkey_connection()));
     let app = actix_web::test::init_service(
         actix_web::App::new()
-            .app_data(actix_web::web::Data::new(state))
+            .app_data(actix_web::web::Data::new(ciba_service))
+            .app_data(actix_web::web::Data::new(CibaHttpConfig::from(
+                settings.as_ref(),
+            )))
+            .app_data(actix_web::web::Data::from(runtime))
             .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings, false)),
     )
     .await;
@@ -357,6 +368,57 @@ async fn ciba_automated_decision_route_accepts_empty_post_without_json_content_t
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     let body = actix_web::test::read_body(response).await;
     assert!(body.is_empty());
+}
+
+#[actix_web::test]
+async fn ciba_verification_page_preserves_redirect_and_non_cacheable_headers() {
+    let state = ciba_test_state_with(|settings| {
+        settings.modules.enable_ciba = true;
+        settings.endpoint.frontend_base_url = "https://frontend.example/".to_owned();
+    });
+    let settings = Arc::clone(&state.settings);
+    let runtime = crate::runtime_modules::runtime_module_registry_for_test(
+        state.diesel_db.clone(),
+        &settings,
+    )
+    .expect("CIBA runtime registry should initialize");
+    let app = actix_web::test::init_service(
+        actix_web::App::new()
+            .app_data(actix_web::web::Data::new(CibaHttpConfig::from(
+                settings.as_ref(),
+            )))
+            .app_data(actix_web::web::Data::from(runtime))
+            .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings, false)),
+    )
+    .await;
+
+    let request = actix_web::test::TestRequest::get()
+        .uri("/ciba/auth-request-id")
+        .to_request();
+    let response = actix_web::test::call_service(&app, request).await;
+
+    assert_eq!(response.status(), StatusCode::FOUND);
+    assert_eq!(
+        response
+            .headers()
+            .get(header::LOCATION)
+            .and_then(|value| value.to_str().ok()),
+        Some("https://frontend.example/ciba/auth-request-id")
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get(header::CACHE_CONTROL)
+            .and_then(|value| value.to_str().ok()),
+        Some("no-store")
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get(header::PRAGMA)
+            .and_then(|value| value.to_str().ok()),
+        Some("no-cache")
+    );
 }
 
 #[test]

@@ -6,17 +6,19 @@ use nazo_http_actix::{
     request_uses_form_urlencoded,
 };
 
-use crate::domain::{AppState, ClientRow, RefreshTokenPolicy, TokenIssue};
+#[cfg(test)]
+use crate::domain::AppState;
+use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
 use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID};
 use crate::support::{
     DEFAULT_TENANT_ID, DpopError, DpopErrorContext, ValidatedClientAssertion, audit_event,
-    audit_fields, blake3_hex, client_ip, client_ip_with_context, client_jwt_decoding_key,
-    client_supports_grant, constant_time_eq, current_user_or_login_required, dpop_error_response,
-    extract_client_credentials_with_trusted_proxies, has_basic_authorization_scheme,
-    has_valid_csrf_token, is_subset, parse_scope, random_urlsafe_token,
-    request_mtls_thumbprint_from_trusted_proxy, validate_dpop_proof_with_authorization_service,
+    audit_fields, blake3_hex, client_ip_with_context, client_jwt_decoding_key,
+    client_supports_grant, constant_time_eq, dpop_error_response,
+    extract_client_credentials_with_trusted_proxies, has_basic_authorization_scheme, is_subset,
+    parse_scope, random_urlsafe_token, request_mtls_thumbprint_from_trusted_proxy,
+    validate_dpop_proof_with_authorization_service,
 };
 use actix_web::http::StatusCode;
 use actix_web::http::header;
@@ -31,7 +33,7 @@ use nazo_auth::{
     ProtocolErrorCode, SecurityProfile, SenderConstraintPolicy, ciba_retention_deadline,
     validate_token_request_profile as validate_auth_token_request_profile,
 };
-use nazo_http_actix::{cookie_value, csrf_error};
+use nazo_http_actix::{cookie_value, csrf_error, has_valid_csrf_token_for_cookies};
 use nazo_valkey::CibaStore;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -68,6 +70,7 @@ pub(crate) type ServerCibaService = CibaService<CibaStore>;
 #[derive(Clone)]
 pub(crate) struct CibaHttpConfig {
     issuer: Box<str>,
+    frontend_base_url: Box<str>,
     client_secret_pepper: Box<str>,
     trusted_proxy_cidrs: Vec<IpCidr>,
     client_ip_header_mode: ClientIpHeaderMode,
@@ -75,6 +78,7 @@ pub(crate) struct CibaHttpConfig {
     auth_req_id_ttl_seconds: u64,
     poll_interval_seconds: u64,
     csrf_cookie_name: Box<str>,
+    automated_decision_token: Option<Box<str>>,
     ciba_fapi2_hardening: bool,
     authorization_fapi2_hardening: bool,
 }
@@ -83,6 +87,7 @@ impl From<&Settings> for CibaHttpConfig {
     fn from(settings: &Settings) -> Self {
         Self {
             issuer: settings.endpoint.issuer.as_str().into(),
+            frontend_base_url: settings.endpoint.frontend_base_url.as_str().into(),
             client_secret_pepper: settings.protocol.client_secret_pepper.as_str().into(),
             trusted_proxy_cidrs: settings.endpoint.trusted_proxy_cidrs.clone(),
             client_ip_header_mode: settings.endpoint.client_ip_header_mode,
@@ -90,6 +95,11 @@ impl From<&Settings> for CibaHttpConfig {
             auth_req_id_ttl_seconds: settings.ciba.ciba_auth_req_id_ttl_seconds,
             poll_interval_seconds: settings.ciba.ciba_poll_interval_seconds,
             csrf_cookie_name: settings.session.csrf_cookie_name.as_str().into(),
+            automated_decision_token: settings
+                .ciba
+                .ciba_automated_decision_token
+                .as_deref()
+                .map(Into::into),
             ciba_fapi2_hardening: settings
                 .protocol
                 .ciba_security_profile
@@ -984,19 +994,19 @@ fn non_empty(value: String) -> Option<String> {
 }
 
 pub(crate) async fn ciba_verification_page(
-    state: Data<AppState>,
+    config: Data<CibaHttpConfig>,
+    runtime: Data<ServerRuntimeModuleRegistry>,
     path: actix_web::web::Path<String>,
 ) -> HttpResponse {
-    if !state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::Ciba) {
+    if !ciba_module_admissible(
+        &runtime,
+        nazo_auth::CapabilityAdmission::ExistingTransaction,
+    ) {
         return empty_response(StatusCode::NOT_FOUND);
     }
     let location = format!(
         "{}/ciba/{}",
-        state
-            .settings
-            .endpoint
-            .frontend_base_url
-            .trim_end_matches('/'),
+        config.frontend_base_url.trim_end_matches('/'),
         urlencoding::encode(&path.into_inner())
     );
     HttpResponse::Found()
@@ -1062,15 +1072,19 @@ pub(crate) async fn ciba_verification(
 }
 
 pub(crate) async fn ciba_automated_decision(
-    state: Data<AppState>,
     ciba_service: Data<ServerCibaService>,
+    config: Data<CibaHttpConfig>,
+    runtime: Data<ServerRuntimeModuleRegistry>,
     req: HttpRequest,
     Query(query): Query<CibaAutomatedDecisionQuery>,
 ) -> HttpResponse {
-    if !state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::Ciba) {
+    if !ciba_module_admissible(
+        &runtime,
+        nazo_auth::CapabilityAdmission::ExistingTransaction,
+    ) {
         return empty_response(StatusCode::NOT_FOUND);
     }
-    let Some(expected_token) = state.settings.ciba.ciba_automated_decision_token.as_deref() else {
+    let Some(expected_token) = config.automated_decision_token.as_deref() else {
         return empty_response(StatusCode::NOT_FOUND);
     };
     let Some(actual_token) = query.decision_token.as_deref() else {
@@ -1114,25 +1128,40 @@ pub(crate) async fn ciba_automated_decision(
         decision,
         None,
         CibaDecisionSource::Automation,
-        Some(blake3_hex(&client_ip(&req, &state.settings))),
+        Some(blake3_hex(&client_ip_with_context(
+            &req,
+            config.client_ip_header_mode,
+            &config.trusted_proxy_cidrs,
+        ))),
     )
     .await
 }
 
 pub(crate) async fn ciba_decision(
-    state: Data<AppState>,
     ciba_service: Data<ServerCibaService>,
+    sessions: Data<AdminSessionHandles>,
+    config: Data<CibaHttpConfig>,
+    runtime: Data<ServerRuntimeModuleRegistry>,
     req: HttpRequest,
     path: actix_web::web::Path<String>,
     Json(payload): Json<CibaDecisionRequest>,
 ) -> HttpResponse {
-    if !state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::Ciba) {
+    if !ciba_module_admissible(
+        &runtime,
+        nazo_auth::CapabilityAdmission::ExistingTransaction,
+    ) {
         return empty_response(StatusCode::NOT_FOUND);
     }
-    if !has_valid_csrf_token(&state, &req, payload.csrf_token.as_deref()) {
+    let session_http = sessions.http_config();
+    if !has_valid_csrf_token_for_cookies(
+        &req,
+        payload.csrf_token.as_deref(),
+        session_http.session_cookie_name(),
+        session_http.csrf_cookie_name(),
+    ) {
         return csrf_error();
     }
-    let user = match current_user_or_login_required(&state, &req).await {
+    let user = match sessions.current_user_or_login_required(&req).await {
         Ok(user) => user,
         Err(response) => return response,
     };
@@ -1155,7 +1184,11 @@ pub(crate) async fn ciba_decision(
         decision,
         Some(user.id()),
         CibaDecisionSource::User,
-        Some(blake3_hex(&client_ip(&req, &state.settings))),
+        Some(blake3_hex(&client_ip_with_context(
+            &req,
+            config.client_ip_header_mode,
+            &config.trusted_proxy_cidrs,
+        ))),
     )
     .await
 }

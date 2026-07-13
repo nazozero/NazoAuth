@@ -305,6 +305,34 @@ mod lifecycle_boundary_tests {
     }
 
     #[test]
+    fn ciba_decision_transport_uses_focused_composition_root_dependencies() {
+        let source = include_str!("token/ciba.rs");
+        for forbidden in [
+            "Data<AppState>",
+            "state.permits_existing_module_transaction",
+            "client_ip(&req, &state.settings)",
+            "has_valid_csrf_token(&state",
+            "current_user_or_login_required(&state",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "CIBA decision transport reintroduced composition dependency {forbidden}"
+            );
+        }
+        for required in [
+            "Data<ServerCibaService>",
+            "Data<CibaHttpConfig>",
+            "Data<AdminSessionHandles>",
+            "Data<ServerRuntimeModuleRegistry>",
+        ] {
+            assert!(
+                source.contains(required),
+                "CIBA decision transport lost focused dependency {required}"
+            );
+        }
+    }
+
+    #[test]
     fn device_token_issuance_handoff_uses_focused_context_and_services() {
         let source = include_str!("token/device_issuance.rs");
         assert!(source.contains("device_service: &ServerDeviceGrantService"));
