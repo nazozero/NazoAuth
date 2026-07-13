@@ -35,3 +35,17 @@ fn admin_provider_view_exposes_onboarding_metadata_without_secret_material() {
     assert!(view.get("client_secret").is_none());
     assert!(view.get("access_token").is_none());
 }
+
+#[test]
+fn admin_federation_handler_uses_focused_dependencies() {
+    let source = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/http/admin/federation.rs"
+    ));
+
+    assert!(!source.contains("Data<AppState>"));
+    assert!(!source.contains("diesel_db"));
+    assert!(!source.contains("valkey_connection"));
+    assert!(source.contains("Data<AdminSessionHandles>"));
+    assert!(source.contains("Data<AdminFederationConfig>"));
+}

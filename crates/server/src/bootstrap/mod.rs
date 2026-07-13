@@ -38,6 +38,7 @@ use crate::http::admin::clients::{
     AdminClientConfig, ServerAdminClientCrypto, ServerAdminClientService,
     ServerSectorIdentifierResolver, admin_client_policy,
 };
+use crate::http::admin::federation::AdminFederationConfig;
 use crate::http::auth::csrf::CsrfHttpConfig;
 use crate::http::auth::email_code::EmailCodeHttpConfig;
 use crate::http::auth::federation::{
@@ -212,6 +213,7 @@ pub async fn run() -> anyhow::Result<()> {
         nazo_postgres::UserRepository::new(state.diesel_db.clone()),
         session_http_config.clone(),
     ));
+    let admin_federation = web::Data::new(AdminFederationConfig::from_settings(&state.settings));
     #[cfg(not(test))]
     let session_profiles = web::Data::new(SessionProfileHandles::new(
         nazo_valkey::SessionStore::new(&state.valkey_connection()),
@@ -444,6 +446,7 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(authorization_runtime.clone())
             .app_data(metadata_handles.clone())
             .app_data(admin_sessions.clone())
+            .app_data(admin_federation.clone())
             .app_data(session_profiles.clone())
             .app_data(oidc_logout.clone())
             .app_data(csrf_http_config.clone())

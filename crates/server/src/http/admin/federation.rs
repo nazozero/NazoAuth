@@ -2,31 +2,48 @@
 //! 这里只暴露启停状态、展示信息和回调地址，不返回 secret 或第三方 token。
 use nazo_http_actix::json_response_no_store;
 
-use crate::domain::AppState;
-use crate::settings::ExternalLoginProviderAdapter;
-use crate::support::require_admin_or_forbidden;
+use crate::settings::{ExternalLoginProviderAdapter, Settings};
+use crate::support::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
 use actix_web::web::Data;
 use actix_web::{HttpRequest, HttpResponse};
 use serde_json::{Value, json};
+use std::sync::Arc;
+
+#[derive(Clone)]
+pub(crate) struct AdminFederationConfig {
+    providers: Arc<[Value]>,
+}
+
+impl AdminFederationConfig {
+    pub(crate) fn from_settings(settings: &Settings) -> Self {
+        Self {
+            providers: settings
+                .identity
+                .federation
+                .providers
+                .configured_providers()
+                .map(admin_provider_view)
+                .collect::<Vec<_>>()
+                .into(),
+        }
+    }
+
+    fn providers(&self) -> &[Value] {
+        &self.providers
+    }
+}
 
 pub(crate) async fn admin_federation_providers(
-    state: Data<AppState>,
+    admin_sessions: Data<AdminSessionHandles>,
+    config: Data<AdminFederationConfig>,
     req: HttpRequest,
 ) -> HttpResponse {
-    if let Err(response) = require_admin_or_forbidden(&state, &req).await {
+    if let Err(response) = require_admin_or_forbidden_with_handles(&admin_sessions, &req).await {
         return response;
     }
     // 管理端 onboarding 需要能核对 callback 与 adapter 类型，但不能读取
     // client_secret、第三方 access token 或 JWKS 原始内容。
-    let providers = state
-        .settings
-        .identity
-        .federation
-        .providers
-        .configured_providers()
-        .map(admin_provider_view)
-        .collect::<Vec<_>>();
-    json_response_no_store(json!({ "providers": providers }))
+    json_response_no_store(json!({ "providers": config.providers() }))
 }
 
 fn admin_provider_view(provider: &crate::settings::ExternalLoginProvider) -> Value {
