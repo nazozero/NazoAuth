@@ -21,7 +21,8 @@ use crate::config::ConfigSource;
 use crate::domain::{AppState, DatabaseUserFixture};
 use crate::settings::Settings;
 use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, SessionPayload, valkey_get, valkey_set_ex,
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, SessionPayload, jwt_decoding_key_from_jwk,
+    valkey_get, valkey_set_ex,
 };
 use nazo_postgres::create_pool;
 

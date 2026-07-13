@@ -60,8 +60,6 @@ pub(crate) use mtls::{
 pub(crate) use nazo_key_management::{signing_algorithm_from_name, signing_algorithm_name};
 #[cfg(test)]
 pub(crate) use oauth::authorization_code_key;
-#[cfg(test)]
-pub(crate) use oauth::{ClientMetadata, ClientMtlsMetadata, validate_client_metadata};
 pub(crate) use oauth::{
     RedirectUriError, audiences_allowed, client_jwks_contains_signing_key,
     client_jwks_matching_encryption_key_count, client_supports_grant, encoded_resource_indicators,
@@ -79,35 +77,33 @@ pub(crate) use rate_limit::{
     AuthRequestLimiter, RateLimitPolicy, enforce_rate_limit, enforce_rate_limit_with_store,
     rate_limited_response,
 };
-pub(crate) use sector_identifier::{fetch_sector_identifier_uris, sector_identifier_hostname};
+pub(crate) use sector_identifier::fetch_sector_identifier_uris;
 #[cfg(test)]
 pub(crate) use security::{
     AccessTokenJwtInput, CLIENT_ASSERTION_TYPE_JWT_BEARER, IssuedAccessToken,
     SUPPORTED_CLIENT_JWT_SIGNING_ALGS, make_jwt,
 };
 pub(crate) use security::{
-    BackchannelLogoutTokenInput, ClientAssertionError, ClientCredentials,
-    LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER, PasswordHashingError, PasswordVerificationError,
-    SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
-    ValidatedClientAssertion, access_delivery_token, access_token_tenant_id, blake3_hex,
-    client_jwt_algorithm_from_name, client_jwt_decoding_key, client_secret_digest,
-    configure_password_hash_limits, constant_time_eq, consume_private_key_jwt,
-    consume_private_key_jwt_with_authorization_service, decode_access_claims,
-    default_password_hash_max_concurrency, default_password_hash_queue_timeout_ms,
-    dummy_password_hash, extract_client_credentials,
+    ClientAssertionError, ClientCredentials, LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
+    PasswordHashingError, PasswordVerificationError, SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
+    SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS, ValidatedClientAssertion, access_delivery_token,
+    access_token_tenant_id, blake3_hex, client_jwt_algorithm_from_name, client_jwt_decoding_key,
+    client_secret_digest, configure_password_hash_limits, constant_time_eq,
+    consume_private_key_jwt, consume_private_key_jwt_with_authorization_service,
+    decode_access_claims, default_password_hash_max_concurrency,
+    default_password_hash_queue_timeout_ms, dummy_password_hash, extract_client_credentials,
     extract_client_credentials_with_trusted_proxies, has_basic_authorization_scheme,
     hash_client_secret, hash_password, hash_password_blocking_limited,
-    initialize_dummy_password_hash, jwt_decoding_key_from_jwk, make_backchannel_logout_token,
-    pkce_s256, random_urlsafe_token, sign_response_jwt, supported_client_jwt_algorithm_name,
-    verify_password_blocking_limited, verify_private_key_jwt_claims,
-    verify_private_key_jwt_claims_for_issuer,
+    initialize_dummy_password_hash, jwt_decoding_key_from_jwk, pkce_s256, random_urlsafe_token,
+    sign_response_jwt, supported_client_jwt_algorithm_name, verify_password_blocking_limited,
+    verify_private_key_jwt_claims, verify_private_key_jwt_claims_for_issuer,
 };
 pub(crate) use sessions::{
-    CurrentSession, SessionRotation, current_session, current_user_or_login_required,
-    has_valid_csrf_token, require_admin_or_forbidden,
+    CurrentSession, SessionRotation, current_user_or_login_required, has_valid_csrf_token,
+    require_admin_or_forbidden,
 };
 #[cfg(test)]
-pub(crate) use sessions::{SessionPayload, require_active_session_principal, store_session};
+pub(crate) use sessions::{SessionPayload, current_session};
 #[cfg(test)]
 pub(crate) use tenancy::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID};
 pub(crate) use tenancy::{DEFAULT_TENANT_ID, default_tenant_context};
