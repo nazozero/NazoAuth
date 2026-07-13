@@ -6,6 +6,7 @@
 mod cookies;
 mod cors;
 mod csrf;
+mod dynamic_client_registration;
 mod extract;
 mod fapi_resource;
 mod metadata;
@@ -21,6 +22,13 @@ pub use cors::{
     cors_well_known,
 };
 pub use csrf::{csrf_error, has_valid_csrf_token_for_cookies};
+pub use dynamic_client_registration::{
+    DynamicRegistrationClientStore, DynamicRegistrationDependencyError,
+    DynamicRegistrationEndpoint, DynamicRegistrationEndpointConfig, DynamicRegistrationFuture,
+    DynamicRegistrationRateLimitError, DynamicRegistrationRequestGuard,
+    DynamicRegistrationSecurity, client_configuration_delete, client_configuration_get,
+    client_configuration_put, dynamic_client_registration,
+};
 pub use extract::{
     AccessTokenAuthScheme, ResourceAccessToken, authorization_access_token, mfa_json_config,
     mfa_method_not_allowed, mfa_options, request_uses_form_urlencoded, resource_access_token,

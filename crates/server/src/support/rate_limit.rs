@@ -113,6 +113,7 @@ pub(crate) enum RateLimitPolicy {
     Auth,
     #[cfg(test)]
     Token,
+    #[cfg(test)]
     TokenManagement,
 }
 
@@ -131,6 +132,7 @@ impl RateLimitPolicy {
             Self::Auth => nazo_valkey::RateDimension::Auth,
             #[cfg(test)]
             Self::Token => nazo_valkey::RateDimension::Token,
+            #[cfg(test)]
             Self::TokenManagement => nazo_valkey::RateDimension::TokenManagement,
         }
     }

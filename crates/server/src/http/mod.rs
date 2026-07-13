@@ -1,6 +1,7 @@
 pub(crate) mod admin;
 pub(crate) mod auth;
 pub(crate) mod authorization;
+#[cfg(test)]
 pub(crate) mod dynamic_client_registration;
 pub(crate) mod fapi_resource;
 pub(crate) mod perf_metrics;

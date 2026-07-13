@@ -20,7 +20,11 @@ mod userinfo;
 pub(crate) use database_user_fixture::{
     DatabaseExternalIdentityFixture, DatabasePasskeyFixture, DatabaseUserFixture,
 };
-pub(crate) use dynamic_registration::{DynamicRegistrationConfig, DynamicRegistrationHandles};
+pub(crate) use dynamic_registration::DynamicRegistrationConfig;
+#[cfg(test)]
+pub(crate) use dynamic_registration::DynamicRegistrationHandles;
+#[cfg(not(test))]
+pub(crate) use dynamic_registration::dynamic_registration_endpoint;
 pub(crate) use metadata::{MetadataConfig, ServerMetadataSnapshotSource};
 pub(crate) use mfa::{MfaProfileConfig, MfaProfileHandles};
 #[cfg(test)]
