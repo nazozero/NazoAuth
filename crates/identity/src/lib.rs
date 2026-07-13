@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod access_request;
+mod admin;
 pub mod email;
 pub mod federation;
 pub mod mfa;
@@ -12,6 +13,7 @@ pub mod session;
 pub mod tenancy;
 
 pub use access_request::{AccessRequest, AccessRequestPage, AccessRequestStatus, NewAccessRequest};
+pub use admin::{AdminPolicyError, ResolvedAdminUserUpdate, authorize_admin_update};
 pub use model::{
     AccountIdentity, AuthMethod, AuthenticationContext, AuthenticationIdentity, IdentityModelError,
     LoginIdentity, PasswordHash, PostalAddress, Principal, PublicAccount, SubjectClaims,
