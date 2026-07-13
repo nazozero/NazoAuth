@@ -5,6 +5,7 @@
 mod admin_clients;
 mod admin_grants;
 mod authorization_details;
+mod authorization_request;
 mod authorization_service;
 mod ciba;
 mod claims;
@@ -42,6 +43,12 @@ pub use authorization_details::{
     canonical_authorization_details, deserialize_authorization_details,
     empty_authorization_details, high_risk_authorization_details, normalize_authorization_details,
     parse_authorization_details,
+};
+pub use authorization_request::{
+    AuthorizationRequestError, NormalizedRequestObject, ParAdmission, ParAdmissionPolicy,
+    PushedAuthorizationRequestConsumeError, REQUEST_OBJECT_CLOCK_SKEW_SECONDS,
+    REQUEST_OBJECT_MAX_TTL_SECONDS, RequestObjectClaims, RequestObjectJtiPolicy, RequestObjectMode,
+    RequestObjectPolicy, RequestObjectReplay, normalize_request_object, validate_par_admission,
 };
 pub use authorization_service::{
     AuthorizationFuture, AuthorizationPortError, AuthorizationRateDimension,
