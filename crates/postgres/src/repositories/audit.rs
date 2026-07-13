@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use diesel::{BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_auth::BackchannelLogoutDelivery;
-use nazo_identity::ports::{IdentitySecurityAuditPort, RepositoryError, RepositoryFuture};
+use nazo_identity::ports::RepositoryError;
 use nazo_identity::scim::ScimTokenCredential;
 use nazo_identity::{
     IdentitySecurityEvent, IdentitySecurityEventType, IdentitySecurityOutcome,
@@ -91,14 +91,6 @@ impl AuditRepository {
             })
             .await
             .map_err(map_error)
-    }
-
-    pub async fn record_identity_security_event(
-        &self,
-        event: IdentitySecurityEvent,
-    ) -> Result<(), RepositoryError> {
-        let mut connection = self.connection().await?;
-        insert_identity_security_event(&mut connection, &event).await
     }
 
     pub async fn enqueue_backchannel_logout(
@@ -230,20 +222,14 @@ impl AuditRepository {
     }
 }
 
-impl IdentitySecurityAuditPort for AuditRepository {
-    fn record_identity_security_event<'a>(
-        &'a self,
-        event: IdentitySecurityEvent,
-    ) -> RepositoryFuture<'a, ()> {
-        Box::pin(async move { self.record_identity_security_event(event).await })
-    }
-}
-
 pub(super) async fn insert_identity_security_event(
     connection: &mut AsyncPgConnection,
     event: &IdentitySecurityEvent,
 ) -> Result<(), RepositoryError> {
     for (field, user_id) in [("actor", event.actor_id), ("target", event.target_user_id)] {
+        if field == "target" && event.target_user_id == event.actor_id {
+            continue;
+        }
         if let Some(user_id) = user_id {
             let belongs_to_tenant = users::table
                 .find(user_id.as_uuid())

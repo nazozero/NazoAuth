@@ -183,6 +183,21 @@ impl LiveMfaFixture {
 
 async fn response_json(response: HttpResponse) -> (StatusCode, Value, bool) {
     let status = response.status();
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL),
+        Some(&header::HeaderValue::from_static("no-store")),
+        "every MFA response must prevent persistent caching"
+    );
+    assert_eq!(
+        response.headers().get(header::PRAGMA),
+        Some(&header::HeaderValue::from_static("no-cache")),
+        "legacy intermediaries must also be told not to cache MFA responses"
+    );
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE),
+        Some(&header::HeaderValue::from_static("application/json")),
+        "MFA response media type is part of the HTTP contract"
+    );
     let has_set_cookie = response.headers().contains_key(header::SET_COOKIE);
     let body = actix_web::body::to_bytes(response.into_body())
         .await

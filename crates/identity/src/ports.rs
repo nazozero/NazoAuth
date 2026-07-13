@@ -235,13 +235,6 @@ pub trait MfaRepositoryPort: Send + Sync {
     ) -> RepositoryFuture<'a, ()>;
 }
 
-pub trait IdentitySecurityAuditPort: Send + Sync {
-    fn record_identity_security_event<'a>(
-        &'a self,
-        event: crate::IdentitySecurityEvent,
-    ) -> RepositoryFuture<'a, ()>;
-}
-
 #[derive(Default)]
 pub struct FakeUserRepository {
     principals: Mutex<HashMap<(TenantId, UserId), Principal>>,

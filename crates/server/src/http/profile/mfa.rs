@@ -18,6 +18,10 @@ pub(crate) struct MfaProtectedRequest {
 }
 
 pub(crate) async fn mfa_totp_begin(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
+    no_store(mfa_totp_begin_inner(state, req).await)
+}
+
+async fn mfa_totp_begin_inner(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
     if !has_valid_csrf_token(&state, &req, None) {
         return csrf_error();
     }
@@ -79,6 +83,14 @@ pub(crate) async fn mfa_totp_begin(state: Data<AppState>, req: HttpRequest) -> H
 }
 
 pub(crate) async fn mfa_totp_confirm(
+    state: Data<AppState>,
+    req: HttpRequest,
+    Json(payload): Json<ConfirmTotpRequest>,
+) -> HttpResponse {
+    no_store(mfa_totp_confirm_inner(state, req, Json(payload)).await)
+}
+
+async fn mfa_totp_confirm_inner(
     state: Data<AppState>,
     req: HttpRequest,
     Json(payload): Json<ConfirmTotpRequest>,
@@ -198,6 +210,14 @@ pub(crate) async fn mfa_verify(
     req: HttpRequest,
     Json(payload): Json<MfaChallengeRequest>,
 ) -> HttpResponse {
+    no_store(mfa_verify_inner(state, req, Json(payload)).await)
+}
+
+async fn mfa_verify_inner(
+    state: Data<AppState>,
+    req: HttpRequest,
+    Json(payload): Json<MfaChallengeRequest>,
+) -> HttpResponse {
     if !has_valid_csrf_token(&state, &req, None) {
         return csrf_error();
     }
@@ -296,6 +316,14 @@ pub(crate) async fn mfa_verify(
 }
 
 pub(crate) async fn mfa_backup_codes_regenerate(
+    state: Data<AppState>,
+    req: HttpRequest,
+    Json(payload): Json<MfaProtectedRequest>,
+) -> HttpResponse {
+    no_store(mfa_backup_codes_regenerate_inner(state, req, Json(payload)).await)
+}
+
+async fn mfa_backup_codes_regenerate_inner(
     state: Data<AppState>,
     req: HttpRequest,
     Json(payload): Json<MfaProtectedRequest>,
@@ -408,6 +436,14 @@ pub(crate) async fn mfa_disable(
     req: HttpRequest,
     Json(payload): Json<MfaProtectedRequest>,
 ) -> HttpResponse {
+    no_store(mfa_disable_inner(state, req, Json(payload)).await)
+}
+
+async fn mfa_disable_inner(
+    state: Data<AppState>,
+    req: HttpRequest,
+    Json(payload): Json<MfaProtectedRequest>,
+) -> HttpResponse {
     if !has_valid_csrf_token(&state, &req, None) {
         return csrf_error();
     }
@@ -454,6 +490,18 @@ pub(crate) async fn mfa_disable(
             state.settings.cookie_secure,
         )],
     )
+}
+
+fn no_store(mut response: HttpResponse) -> HttpResponse {
+    response.headers_mut().insert(
+        actix_web::http::header::CACHE_CONTROL,
+        actix_web::http::header::HeaderValue::from_static("no-store"),
+    );
+    response.headers_mut().insert(
+        actix_web::http::header::PRAGMA,
+        actix_web::http::header::HeaderValue::from_static("no-cache"),
+    );
+    response
 }
 
 #[cfg(test)]
