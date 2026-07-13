@@ -15,7 +15,7 @@ pub use access_requests::AccessRequestRepository;
 pub use audit::AuditRepository;
 pub use authorization::AuthorizationRepository;
 pub use authorization_flow::AuthorizationFlowRepository;
-pub use clients::{OAuthClientApplication, OAuthClientRepository};
+pub use clients::OAuthClientRepository;
 pub use federation::FederationRepository;
 pub use grants::{
     GrantAuthorization, GrantPage, GrantProjection, GrantRepository, GrantRevocation,
