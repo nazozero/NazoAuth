@@ -21,6 +21,46 @@ pub(crate) mod test_support {
     use p256::elliptic_curve::{Generate, pkcs8::EncodePrivateKey as _};
     use serde_json::{Value, json};
 
+    pub(crate) fn profile_sessions(
+        state: &crate::domain::AppState,
+    ) -> actix_web::web::Data<crate::support::sessions::SessionProfileHandles> {
+        actix_web::web::Data::new(
+            crate::support::sessions::SessionProfileHandles::from_test_state(state),
+        )
+    }
+
+    pub(crate) fn account_profiles(
+        state: &crate::domain::AppState,
+    ) -> actix_web::web::Data<crate::http::profile::account::AccountProfileService> {
+        actix_web::web::Data::new(crate::http::profile::account::AccountProfileService::new(
+            nazo_postgres::UserRepository::new(state.diesel_db.clone()),
+            nazo_postgres::GrantRepository::new(state.diesel_db.clone()),
+        ))
+    }
+
+    pub(crate) fn access_request_profiles(
+        state: &crate::domain::AppState,
+    ) -> actix_web::web::Data<crate::http::profile::access_requests::AccessRequestProfileService>
+    {
+        actix_web::web::Data::new(
+            crate::http::profile::access_requests::AccessRequestProfileService::new(
+                nazo_postgres::AccessRequestRepository::new(state.diesel_db.clone()),
+                nazo_valkey::DeliveryStore::new(&state.valkey_connection()),
+                state.settings.protocol().client_secret_pepper,
+                &state.settings.frontend_base_url,
+            ),
+        )
+    }
+
+    pub(crate) fn delivery_profiles(
+        state: &crate::domain::AppState,
+    ) -> actix_web::web::Data<crate::http::profile::delivery::DeliveryProfileService> {
+        actix_web::web::Data::new(crate::http::profile::delivery::DeliveryProfileService::new(
+            nazo_postgres::AccessRequestRepository::new(state.diesel_db.clone()),
+            nazo_valkey::DeliveryStore::new(&state.valkey_connection()),
+        ))
+    }
+
     pub(crate) struct ClientSigningFixture {
         algorithm: jsonwebtoken::Algorithm,
         private_pkcs8_der: Vec<u8>,

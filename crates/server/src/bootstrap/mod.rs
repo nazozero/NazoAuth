@@ -17,6 +17,11 @@ use crate::domain::{
 };
 use crate::http::admin::access_requests::AdminAccessRequestConfig;
 use crate::http::admin::clients::AdminClientConfig;
+use crate::http::profile::access_requests::AccessRequestProfileService;
+use crate::http::profile::account::AccountProfileService;
+use crate::http::profile::applications::ApplicationsProfileService;
+use crate::http::profile::delivery::DeliveryProfileService;
+use crate::http::profile::federation_links::FederationProfileService;
 use crate::http::profile::oidc_logout::spawn_backchannel_logout_delivery_worker;
 use crate::http::scim::{ScimConfig, ScimEndpoint, ScimRuntimeAdmission};
 use crate::runtime_modules::RuntimeModules;
@@ -179,6 +184,27 @@ pub async fn run() -> anyhow::Result<()> {
         mfa: nazo_postgres::MfaRepository::new(state.diesel_db.clone()),
         rate_limits: nazo_valkey::RateLimitStore::new(&mfa_rate_limit_connection),
     });
+    let account_profiles = web::Data::new(AccountProfileService::new(
+        nazo_postgres::UserRepository::new(state.diesel_db.clone()),
+        nazo_postgres::GrantRepository::new(state.diesel_db.clone()),
+    ));
+    let applications_profiles = web::Data::new(ApplicationsProfileService::new(
+        nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone()),
+    ));
+    let profile_delivery_store = nazo_valkey::DeliveryStore::new(&state.valkey_connection());
+    let profile_access_requests = web::Data::new(AccessRequestProfileService::new(
+        nazo_postgres::AccessRequestRepository::new(state.diesel_db.clone()),
+        profile_delivery_store.clone(),
+        state.settings.protocol().client_secret_pepper,
+        &state.settings.frontend_base_url,
+    ));
+    let profile_delivery = web::Data::new(DeliveryProfileService::new(
+        nazo_postgres::AccessRequestRepository::new(state.diesel_db.clone()),
+        profile_delivery_store,
+    ));
+    let profile_federation = web::Data::new(FederationProfileService::new(
+        nazo_postgres::FederationRepository::new(state.diesel_db.clone()),
+    ));
     let admin_users = web::Data::new(nazo_postgres::UserRepository::new(state.diesel_db.clone()));
     let admin_grants = web::Data::new(nazo_postgres::GrantRepository::new(state.diesel_db.clone()));
     let oauth_clients = web::Data::new(nazo_postgres::OAuthClientRepository::new(
@@ -247,6 +273,11 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(admin_sessions.clone())
             .app_data(session_profiles.clone())
             .app_data(mfa_profiles.clone())
+            .app_data(account_profiles.clone())
+            .app_data(applications_profiles.clone())
+            .app_data(profile_access_requests.clone())
+            .app_data(profile_delivery.clone())
+            .app_data(profile_federation.clone())
             .app_data(resource_server_handles.clone())
             .app_data(admin_users.clone())
             .app_data(admin_grants.clone())

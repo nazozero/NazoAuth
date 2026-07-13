@@ -1,6 +1,6 @@
 //! 当前用户已授权应用接口。
-use crate::domain::AppState;
-use crate::support::{current_user_or_login_required, json_array_to_strings};
+use crate::support::json_array_to_strings;
+use crate::support::sessions::SessionProfileHandles;
 use actix_web::http::StatusCode;
 use actix_web::web::Data;
 use actix_web::{HttpRequest, HttpResponse};
@@ -10,15 +10,35 @@ use nazo_http_actix::{json_response, oauth_error};
 use serde_json::{Value, json};
 // 只读取当前用户的 OAuth 授权关系。
 
-pub(crate) async fn my_applications(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
-    let user = match current_user_or_login_required(&state, &req).await {
+#[derive(Clone)]
+pub(crate) struct ApplicationsProfileService {
+    clients: nazo_postgres::OAuthClientRepository,
+}
+
+impl ApplicationsProfileService {
+    pub(crate) fn new(clients: nazo_postgres::OAuthClientRepository) -> Self {
+        Self { clients }
+    }
+
+    async fn for_user(
+        &self,
+        user: &nazo_identity::PublicAccount,
+    ) -> Result<Vec<nazo_postgres::OAuthClientApplication>, nazo_identity::ports::RepositoryError>
+    {
+        self.clients.applications_for_user(user.id()).await
+    }
+}
+
+pub(crate) async fn my_applications(
+    sessions: Data<SessionProfileHandles>,
+    applications: Data<ApplicationsProfileService>,
+    req: HttpRequest,
+) -> HttpResponse {
+    let user = match sessions.current_user_or_login_required(&req).await {
         Ok(user) => user,
         Err(response) => return response,
     };
-    let rows = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-        .applications_for_user(user.id())
-        .await
-    {
+    let rows = match applications.for_user(&user).await {
         Ok(rows) => rows,
         Err(error) => {
             tracing::warn!(%error, "failed to load user applications");
