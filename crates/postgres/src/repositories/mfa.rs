@@ -242,6 +242,28 @@ impl MfaRepository {
             .await
             .map_err(MfaAuditError::into_repository)
     }
+    pub async fn record_invalid_totp_attempt(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> Result<(), RepositoryError> {
+        let mut connection = self
+            .pool
+            .get()
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
+        insert_identity_security_event(
+            &mut connection,
+            &mfa_event(
+                tenant_id,
+                user_id,
+                IdentitySecurityEventType::MfaTotpAttempt,
+                IdentitySecurityOutcome::InvalidCredential,
+                IdentitySecurityReason::TotpInvalid,
+            ),
+        )
+        .await
+    }
     pub async fn verify_and_consume_totp(
         &self,
         tenant_id: TenantId,
