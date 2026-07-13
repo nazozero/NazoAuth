@@ -20,8 +20,7 @@ use ciba::{CIBA_GRANT_TYPE, token_ciba};
 use client_auth::{
     TokenManagementClientAuthError, authenticate_introspection_client_with_dependencies,
     authenticate_revocation_client_with_dependencies, consume_token_client_assertion,
-    consume_token_management_client_assertion, token_management_auth_error,
-    token_management_client_auth_error, verify_confidential_client,
+    token_management_auth_error, token_management_client_auth_error,
 };
 use client_credentials::{client_credentials_issue_request, token_client_credentials};
 use device::{DEVICE_CODE_GRANT_TYPE, token_device_code};
@@ -115,6 +114,35 @@ mod lifecycle_boundary_tests {
             assert!(
                 !source.contains(forbidden),
                 "userinfo handler reintroduced forbidden dependency {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn client_authentication_handlers_use_the_focused_authorization_boundary() {
+        for (name, source) in [
+            ("token", include_str!("token/dispatch.rs")),
+            ("ciba", include_str!("token/ciba.rs")),
+            ("device", include_str!("token/device.rs")),
+            ("par", include_str!("authorization/par.rs")),
+            ("introspection", include_str!("token/introspect.rs")),
+            ("revocation", include_str!("token/revoke.rs")),
+        ] {
+            assert!(
+                !source.contains("OAuthClientRepository::new"),
+                "{name} reintroduced a direct PostgreSQL client-auth dependency"
+            );
+        }
+        let auth_source = include_str!("token/client_auth.rs");
+        for forbidden in [
+            "match client.token_endpoint_auth_method.as_str()",
+            ".expect(\"private_key_jwt",
+            ".expect(\"secret-based client credentials",
+            ".expect(\"mTLS client credentials",
+        ] {
+            assert!(
+                !auth_source.contains(forbidden),
+                "client authentication adapter reintroduced policy or panic: {forbidden}"
             );
         }
     }

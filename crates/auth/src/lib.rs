@@ -9,6 +9,7 @@ mod authorization_service;
 mod ciba;
 mod claims;
 mod client;
+mod client_authentication;
 mod client_registration;
 mod device;
 mod error;
@@ -60,6 +61,10 @@ pub use claims::{
     authorization_response_jwt_claims, backchannel_logout_token_claims, id_token_claims,
 };
 pub use client::{ClientProfile, validate_token_request_profile};
+pub use client_authentication::{
+    ClientAuthenticationContext, ClientAuthenticationMethod, ClientAuthenticationPolicyError,
+    ClientAuthenticationRequirement, PresentedClientCredentials, client_authentication_requirement,
+};
 pub use client_registration::{ApprovedClient, OAuthClient, ValidatedClientRegistration};
 pub use device::{
     ApprovedDeviceAuthorization, DeviceAtomicResult, DeviceAuthorizationApproval,
