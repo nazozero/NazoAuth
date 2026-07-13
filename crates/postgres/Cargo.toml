@@ -23,7 +23,7 @@ uuid = { version = "1.23.4", features = ["v7", "serde"] }
 
 [dev-dependencies]
 syn = { version = "2.0.118", features = ["full", "visit"] }
-tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "sync"] }
 
 [lints]
 workspace = true

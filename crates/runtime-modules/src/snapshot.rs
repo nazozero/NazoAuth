@@ -43,6 +43,11 @@ impl SnapshotStore {
         self.current.load()
     }
 
+    #[must_use]
+    pub fn load_full(&self) -> Arc<ActiveModuleSnapshot> {
+        self.current.load_full()
+    }
+
     pub fn compare_and_publish(
         &self,
         expected: ModuleRevision,

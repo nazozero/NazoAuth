@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
+use std::future::poll_fn;
 use std::sync::{Arc, Mutex};
+use std::task::{Poll, Waker};
 
 use crate::{ActiveModuleSnapshot, ModuleId, ModuleRevision};
 
@@ -8,6 +10,7 @@ type GenerationKey = (ModuleId, ModuleRevision);
 #[derive(Default)]
 struct LeaseState {
     active: BTreeMap<GenerationKey, usize>,
+    waiters: BTreeMap<GenerationKey, Vec<Waker>>,
 }
 
 #[derive(Clone, Default)]
@@ -50,6 +53,22 @@ impl RequestLeaseTracker {
             .copied()
             .unwrap_or_default()
     }
+
+    pub async fn wait_until_zero(&self, module_id: ModuleId, generation: ModuleRevision) {
+        let key = (module_id, generation);
+        poll_fn(|context| {
+            let mut state = self.state.lock().expect("request lease lock poisoned");
+            if state.active.get(&key).copied().unwrap_or_default() == 0 {
+                return Poll::Ready(());
+            }
+            let waiters = state.waiters.entry(key).or_default();
+            if !waiters.iter().any(|waker| waker.will_wake(context.waker())) {
+                waiters.push(context.waker().clone());
+            }
+            Poll::Pending
+        })
+        .await;
+    }
 }
 
 pub struct RequestLease {
@@ -74,6 +93,9 @@ impl Drop for RequestLease {
         *active -= 1;
         if *active == 0 {
             state.active.remove(&self.key);
+            for waker in state.waiters.remove(&self.key).unwrap_or_default() {
+                waker.wake();
+            }
         }
     }
 }

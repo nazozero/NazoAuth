@@ -16,6 +16,7 @@ pub struct CatalogDurations {
 pub struct ModuleCatalog {
     specs: BTreeMap<ModuleId, ModuleSpec>,
     inherited_enabled: BTreeSet<ModuleId>,
+    runtime_disable_blocked: BTreeSet<ModuleId>,
 }
 
 impl ModuleCatalog {
@@ -58,7 +59,17 @@ impl ModuleCatalog {
         Ok(Self {
             specs: specs.into_iter().map(|spec| (spec.id, spec)).collect(),
             inherited_enabled,
+            runtime_disable_blocked: BTreeSet::new(),
         })
+    }
+
+    #[must_use]
+    pub fn with_runtime_disable_blocked(
+        mut self,
+        modules: impl IntoIterator<Item = ModuleId>,
+    ) -> Self {
+        self.runtime_disable_blocked.extend(modules);
+        self
     }
 
     #[must_use]
@@ -74,5 +85,22 @@ impl ModuleCatalog {
     #[must_use]
     pub fn inherited_enabled(&self, module_id: ModuleId) -> bool {
         self.inherited_enabled.contains(&module_id)
+    }
+
+    #[must_use]
+    pub fn runtime_disable_blocked(&self, module_id: ModuleId) -> bool {
+        self.runtime_disable_blocked.contains(&module_id)
+    }
+
+    pub fn active_dependents(
+        &self,
+        module_id: ModuleId,
+        active: &BTreeSet<ModuleId>,
+    ) -> Vec<ModuleId> {
+        self.specs
+            .values()
+            .filter(|spec| active.contains(&spec.id) && spec.dependencies.contains(&module_id))
+            .map(|spec| spec.id)
+            .collect()
     }
 }

@@ -375,6 +375,7 @@ impl ModuleStateRepository for InMemoryRepository {
 
     async fn compare_and_set_instance(
         &self,
+        _required_desired_revision: ModuleRevision,
         mutation: InstanceStateMutation,
     ) -> Result<CasOutcome<InstanceStateRecord>, Self::Error> {
         let mut state = self.state.lock().expect("state lock poisoned");
@@ -506,23 +507,29 @@ fn instance_cas_returns_current_on_revision_conflict() {
     let repository = InMemoryRepository::default();
     let starting = instance_record(3, ModuleState::Starting);
     assert_eq!(
-        block_on(repository.compare_and_set_instance(instance_mutation(
-            InstanceStateChange {
-                expected_revision: None,
-                next: starting.clone(),
-            },
-            ModuleEventType::TransitionStarted,
-        ))),
+        block_on(repository.compare_and_set_instance(
+            ModuleRevision::new(3),
+            instance_mutation(
+                InstanceStateChange {
+                    expected_revision: None,
+                    next: starting.clone(),
+                },
+                ModuleEventType::TransitionStarted,
+            )
+        )),
         Ok(CasOutcome::Applied(starting.clone()))
     );
 
-    let stale = block_on(repository.compare_and_set_instance(instance_mutation(
-        InstanceStateChange {
-            expected_revision: Some(ModuleRevision::new(2)),
-            next: instance_record(4, ModuleState::Enabled),
-        },
-        ModuleEventType::TransitionCompleted,
-    )));
+    let stale = block_on(repository.compare_and_set_instance(
+        ModuleRevision::new(4),
+        instance_mutation(
+            InstanceStateChange {
+                expected_revision: Some(ModuleRevision::new(2)),
+                next: instance_record(4, ModuleState::Enabled),
+            },
+            ModuleEventType::TransitionCompleted,
+        ),
+    ));
     assert_eq!(
         stale,
         Ok(CasOutcome::Stale {

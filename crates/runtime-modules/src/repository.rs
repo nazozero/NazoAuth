@@ -112,6 +112,7 @@ pub trait ModuleStateRepository: Send + Sync {
 
     fn compare_and_set_instance(
         &self,
+        required_desired_revision: ModuleRevision,
         mutation: InstanceStateMutation,
     ) -> impl Future<Output = Result<CasOutcome<InstanceStateRecord>, Self::Error>> + Send;
 

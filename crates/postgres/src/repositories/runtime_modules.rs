@@ -178,9 +178,10 @@ impl ModuleStateRepository for RuntimeModuleRepository {
 
     async fn compare_and_set_instance(
         &self,
+        required_desired_revision: ModuleRevision,
         mutation: InstanceStateMutation,
     ) -> Result<CasOutcome<InstanceStateRecord>, Self::Error> {
-        validate_instance_mutation(&mutation)?;
+        validate_instance_mutation(required_desired_revision, &mutation)?;
         let mut connection = self.connection().await?;
         connection
             .transaction::<CasOutcome<InstanceStateRecord>, RuntimeTransactionError, _>(
@@ -192,6 +193,25 @@ impl ModuleStateRepository for RuntimeModuleRepository {
                         module_id(change.next.module_id)
                     );
                     lock_key(connection, &key).await?;
+                    let durable_desired_revision = runtime_module_desired_states::table
+                        .find(module_id(change.next.module_id))
+                        .select(runtime_module_desired_states::revision)
+                        .for_update()
+                        .first::<i64>(connection)
+                        .await
+                        .optional()?;
+                    if durable_desired_revision
+                        != Some(
+                            revision(required_desired_revision)
+                                .map_err(RuntimeTransactionError::Repository)?,
+                        )
+                    {
+                        let current = load_instance(connection, &change.next).await?;
+                        append_runtime_event(connection, &mutation.stale_event)
+                            .await
+                            .map_err(RuntimeTransactionError::Repository)?;
+                        return Ok(CasOutcome::Stale { current });
+                    }
                     let current = runtime_module_instance_states::table
                         .find((
                             change.next.instance_id.as_str(),
@@ -309,8 +329,16 @@ impl ModuleStateRepository for RuntimeModuleRepository {
     }
 }
 
-fn validate_instance_mutation(mutation: &InstanceStateMutation) -> Result<(), RepositoryError> {
+fn validate_instance_mutation(
+    required_desired_revision: ModuleRevision,
+    mutation: &InstanceStateMutation,
+) -> Result<(), RepositoryError> {
     let next = &mutation.change.next;
+    if next.transition_revision != required_desired_revision {
+        return Err(RepositoryError::Consistency(
+            "instance transition must be bound to the required desired revision".to_owned(),
+        ));
+    }
     let applied = &mutation.applied_event;
     let stale = &mutation.stale_event;
     if !matches!(
