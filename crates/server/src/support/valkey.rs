@@ -2,7 +2,7 @@
 // 这里保留最小 Redis 协议操作，业务 key 仍由调用方决定。
 
 use super::prelude::*;
-use fred::prelude::LuaInterface;
+use nazo_valkey::test_support::LuaInterface;
 use std::fmt;
 
 const VALKEY_SNAPSHOT_SCRIPT: &str = r#"
@@ -126,7 +126,7 @@ struct ValkeySnapshotReply {
 }
 
 pub(crate) async fn valkey_set_ex(
-    valkey: &ValkeyClient,
+    valkey: &TestValkeyConnection,
     key: impl Into<String>,
     value: impl Into<String>,
     ttl_seconds: u64,
@@ -143,21 +143,21 @@ pub(crate) async fn valkey_set_ex(
 }
 
 pub(crate) async fn valkey_get(
-    valkey: &ValkeyClient,
+    valkey: &TestValkeyConnection,
     key: impl Into<String>,
 ) -> Result<Option<String>, ValkeyError> {
     valkey.get::<Option<String>, _>(key.into()).await
 }
 
 pub(crate) async fn valkey_del(
-    valkey: &ValkeyClient,
+    valkey: &TestValkeyConnection,
     key: impl Into<String>,
 ) -> Result<i64, ValkeyError> {
     valkey.del::<i64, _>(key.into()).await
 }
 
 pub(crate) async fn valkey_eval_string(
-    valkey: &ValkeyClient,
+    valkey: &TestValkeyConnection,
     script: &'static str,
     keys: Vec<String>,
     args: Vec<String>,
@@ -166,7 +166,7 @@ pub(crate) async fn valkey_eval_string(
 }
 
 pub(crate) async fn valkey_atomic_snapshot(
-    valkey: &ValkeyClient,
+    valkey: &TestValkeyConnection,
     key: &str,
 ) -> Result<Option<ValkeySnapshot>, ValkeyAtomicError> {
     let reply = valkey_eval_string(
@@ -191,7 +191,7 @@ pub(crate) async fn valkey_atomic_snapshot(
 }
 
 pub(crate) async fn valkey_set_nx_at_deadline(
-    valkey: &ValkeyClient,
+    valkey: &TestValkeyConnection,
     key: &str,
     value: &str,
     deadline: i64,
@@ -207,7 +207,7 @@ pub(crate) async fn valkey_set_nx_at_deadline(
 }
 
 pub(crate) async fn valkey_compare_set_at_deadline(
-    valkey: &ValkeyClient,
+    valkey: &TestValkeyConnection,
     key: &str,
     expected: &str,
     replacement: &str,
@@ -228,7 +228,7 @@ pub(crate) async fn valkey_compare_set_at_deadline(
 }
 
 pub(crate) async fn valkey_compare_delete_at_deadline(
-    valkey: &ValkeyClient,
+    valkey: &TestValkeyConnection,
     key: &str,
     expected: &str,
     deadline: i64,

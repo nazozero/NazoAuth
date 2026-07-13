@@ -8,13 +8,6 @@ pub(crate) mod routes;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use actix_web::{App, HttpServer, dev::Service, middleware::from_fn, web};
-#[cfg(test)]
-use fred::{
-    interfaces::ClientLike,
-    prelude::{
-        Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
-    },
-};
 
 use crate::config::{ConfigSource, database_max_connections, database_url};
 use crate::domain::AppState;
@@ -63,20 +56,7 @@ pub async fn run() -> anyhow::Result<()> {
     let valkey =
         nazo_valkey::ValkeyConnection::connect(&valkey_url, valkey_command_timeout).await?;
     #[cfg(test)]
-    let valkey = {
-        let mut builder = ValkeyBuilder::from_config(ValkeyConfig::from_url(&valkey_url)?);
-        builder.with_performance_config(|config: &mut PerformanceConfig| {
-            config.default_command_timeout = valkey_command_timeout;
-        });
-        builder.with_connection_config(|config: &mut ConnectionConfig| {
-            config.connection_timeout = valkey_command_timeout;
-            config.internal_command_timeout = valkey_command_timeout;
-            config.max_command_attempts = 1;
-        });
-        let client = builder.build()?;
-        client.init().await?;
-        client
-    };
+    let valkey = nazo_valkey::test_support::connect(&valkey_url, valkey_command_timeout).await?;
 
     let settings = Arc::new(Settings::from_config(&config)?);
     tokio::fs::create_dir_all(&settings.avatar_storage_dir)
