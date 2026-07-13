@@ -35,7 +35,8 @@ pub(crate) async fn send_code_after_rate_limit(
             "邮件发送未配置.",
         );
     }
-    let dev_response_enabled = state.settings.email_code_dev_response_enabled;
+    let identity = state.settings.identity();
+    let dev_response_enabled = identity.email_code_dev_response_enabled;
     match nazo_postgres::UserRepository::new(state.diesel_db.clone())
         .public_account_by_email(
             nazo_identity::TenantId::new(DEFAULT_TENANT_ID).expect("default tenant ID is non-nil"),
@@ -57,10 +58,7 @@ pub(crate) async fn send_code_after_rate_limit(
     let peer_subject = email_code_peer_subject(&req);
     let store = nazo_valkey::AuthenticationStore::new(&state.valkey_connection());
     match store
-        .reserve_email_peer_send(
-            &peer_subject,
-            state.settings.email.send_peer_cooldown_seconds,
-        )
+        .reserve_email_peer_send(&peer_subject, identity.email.send_peer_cooldown_seconds)
         .await
     {
         Ok(true) => {}
@@ -75,7 +73,7 @@ pub(crate) async fn send_code_after_rate_limit(
     }
 
     match store
-        .reserve_email_send(&email, state.settings.email.send_cooldown_seconds)
+        .reserve_email_send(&email, identity.email.send_cooldown_seconds)
         .await
     {
         Ok(true) => {}
@@ -100,7 +98,7 @@ pub(crate) async fn send_code_after_rate_limit(
         );
     };
     if store
-        .store_email_code(&email, &code_hash, state.settings.email.code_ttl_seconds)
+        .store_email_code(&email, &code_hash, identity.email.code_ttl_seconds)
         .await
         .is_err()
     {

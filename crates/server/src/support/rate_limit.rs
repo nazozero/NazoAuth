@@ -5,6 +5,7 @@
 use super::blake3_hex;
 use super::prelude::*;
 use super::{authorization_error_response, client_ip, oauth_error};
+use crate::settings::RateLimitSettings;
 
 #[derive(Clone, Copy)]
 pub(crate) enum RateLimitPolicy {
@@ -31,11 +32,11 @@ impl RateLimitPolicy {
         }
     }
 
-    fn max_requests(self, settings: &Settings) -> u64 {
+    fn max_requests(self, settings: &RateLimitSettings) -> u64 {
         match self {
-            Self::Auth => settings.rate_limit.auth_max_requests,
-            Self::Token => settings.rate_limit.token_max_requests,
-            Self::TokenManagement => settings.rate_limit.token_management_max_requests,
+            Self::Auth => settings.auth_max_requests,
+            Self::Token => settings.token_max_requests,
+            Self::TokenManagement => settings.token_management_max_requests,
         }
     }
 }
@@ -45,9 +46,10 @@ pub(crate) async fn enforce_rate_limit(
     req: &HttpRequest,
     policy: RateLimitPolicy,
 ) -> Result<(), HttpResponse> {
-    let settings = &state.settings.rate_limit;
+    let identity = state.settings.identity();
+    let settings = identity.rate_limit;
     let window_seconds = settings.window_seconds;
-    let max_requests = policy.max_requests(&state.settings);
+    let max_requests = policy.max_requests(settings);
     let count = nazo_valkey::RateLimitStore::new(&state.valkey_connection())
         .increment(
             policy.dimension(),
@@ -75,7 +77,8 @@ pub(crate) async fn enforce_login_failure_throttle(
     req: &HttpRequest,
     normalized_email: &str,
 ) -> Result<(), HttpResponse> {
-    let settings = &state.settings.rate_limit;
+    let identity = state.settings.identity();
+    let settings = identity.rate_limit;
     let subjects = login_failure_subjects(req, &state.settings, normalized_email);
     let email_count = login_failure_count(
         state,
@@ -105,7 +108,8 @@ pub(crate) async fn record_login_failure(
     req: &HttpRequest,
     normalized_email: &str,
 ) -> Result<(), HttpResponse> {
-    let settings = &state.settings.rate_limit;
+    let identity = state.settings.identity();
+    let settings = identity.rate_limit;
     let subjects = login_failure_subjects(req, &state.settings, normalized_email);
     for (dimension, subject) in [
         (

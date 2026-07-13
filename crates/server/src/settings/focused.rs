@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use super::{EmailSettings, Settings};
+use super::{EmailSettings, FederationSettings, PasskeySettings, RateLimitSettings, Settings};
 use crate::support::{ClientIpHeaderMode, IpCidr};
 
 #[derive(Clone, Copy)]
@@ -31,7 +31,11 @@ pub(crate) struct StorageRuntimeSettings<'a> {
 
 #[derive(Clone, Copy)]
 pub(crate) struct IdentityRuntimeSettings<'a> {
+    pub(crate) rate_limit: &'a RateLimitSettings,
     pub(crate) email: &'a EmailSettings,
+    pub(crate) email_code_dev_response_enabled: bool,
+    pub(crate) passkey: &'a PasskeySettings,
+    pub(crate) federation: &'a FederationSettings,
 }
 
 impl Settings {
@@ -66,7 +70,13 @@ impl Settings {
     }
 
     pub(crate) fn identity(&self) -> IdentityRuntimeSettings<'_> {
-        IdentityRuntimeSettings { email: &self.email }
+        IdentityRuntimeSettings {
+            rate_limit: &self.rate_limit,
+            email: &self.email,
+            email_code_dev_response_enabled: self.email_code_dev_response_enabled,
+            passkey: &self.passkey,
+            federation: &self.federation,
+        }
     }
 }
 
