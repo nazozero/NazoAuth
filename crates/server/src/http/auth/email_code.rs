@@ -17,10 +17,6 @@ use crate::support::{default_tenant_context, normalize_email_address, valkey_get
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json};
 use actix_web::{HttpRequest, HttpResponse};
-#[cfg(test)]
-use diesel_async::RunQueryDsl;
-#[cfg(test)]
-use nazo_postgres::get_conn;
 use serde::Deserialize;
 #[cfg(test)]
 use serde_json::Value;

@@ -15,12 +15,8 @@ use actix_web::web::{Data, Json};
 use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
 use chrono::Utc;
-#[cfg(test)]
-use diesel_async::RunQueryDsl;
 use nazo_http_actix::{json_response_status, oauth_error};
 use nazo_identity::PublicAccount;
-#[cfg(test)]
-use nazo_postgres::get_conn;
 use serde::Deserialize;
 #[cfg(test)]
 use serde_json::Value;

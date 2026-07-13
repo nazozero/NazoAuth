@@ -1,5 +1,7 @@
 use super::*;
+use crate::schema::{access_token_revocations, oauth_tokens};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Jsonb, Nullable, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;

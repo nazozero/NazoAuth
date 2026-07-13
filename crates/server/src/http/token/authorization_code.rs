@@ -3,8 +3,6 @@ use crate::domain::{
     AppState, AuthorizationCodeState, ClientRow, CodePayload, ConsumedAuthorizationCode,
     RefreshTokenPolicy, TokenIssue,
 };
-#[cfg(test)]
-use crate::schema::{access_token_revocations, oauth_tokens};
 use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::{
@@ -29,8 +27,6 @@ use base64::Engine;
 use chrono::Utc;
 #[cfg(test)]
 use chrono::{DateTime, Duration};
-#[cfg(test)]
-use diesel::prelude::*;
 #[cfg(test)]
 use nazo_auth::OidcClaimRequest;
 #[cfg(test)]

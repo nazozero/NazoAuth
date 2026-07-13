@@ -4,8 +4,6 @@ use nazo_http_actix::{json_response, oauth_error};
 use crate::domain::AppState;
 #[cfg(test)]
 use crate::domain::{DatabasePasskeyFixture, DatabaseUserFixture};
-#[cfg(test)]
-use crate::schema::{user_passkey_credentials, users};
 use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::{
@@ -23,15 +21,9 @@ use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::Utc;
-#[cfg(test)]
-use diesel::prelude::*;
-#[cfg(test)]
-use diesel_async::RunQueryDsl;
 use nazo_http_actix::{make_cookie, with_cookie_headers};
 use nazo_identity::PublicAccount;
 use nazo_identity::ports::PasskeyCredential;
-#[cfg(test)]
-use nazo_postgres::get_conn;
 use passkey_auth::AuthenticationResponse;
 use serde::Deserialize;
 #[cfg(test)]

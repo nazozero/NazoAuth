@@ -9,12 +9,14 @@ use actix_web::cookie::Cookie;
 use actix_web::http::header;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Text, Uuid as SqlUuid};
+use diesel_async::RunQueryDsl;
 use fred::{
     interfaces::ClientLike,
     prelude::{
         Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
     },
 };
+use nazo_postgres::get_conn;
 
 fn login_request(content_type: &'static str) -> HttpRequest {
     actix_web::test::TestRequest::default()

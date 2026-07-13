@@ -1,6 +1,11 @@
 use super::*;
 use std::sync::Arc;
 
+use crate::schema::{user_passkey_credentials, users};
+use diesel::prelude::*;
+use diesel_async::RunQueryDsl;
+use nazo_postgres::get_conn;
+
 fn passkey_user_handle(user: &DatabaseUserFixture) -> Vec<u8> {
     crate::support::passkey_user_handle(&user.identity()).expect("test user IDs must be valid")
 }

@@ -7,8 +7,6 @@ use crate::domain::AppState;
 #[cfg(test)]
 use crate::domain::{DatabaseExternalIdentityFixture, DatabaseUserFixture};
 #[cfg(test)]
-use crate::schema::external_identity_links;
-#[cfg(test)]
 use crate::settings::Settings;
 use crate::settings::{
     ExternalLoginProvider, ExternalLoginProviderAdapter, OidcFederationSettings,
@@ -27,14 +25,8 @@ use actix_web::web::Path;
 use actix_web::web::{Data, Json, Query};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::Utc;
-#[cfg(test)]
-use diesel::prelude::*;
-#[cfg(test)]
-use diesel_async::RunQueryDsl;
 use nazo_http_actix::{make_cookie, with_cookie_headers};
 use nazo_identity::PublicAccount;
-#[cfg(test)]
-use nazo_postgres::get_conn;
 use serde::Serialize;
 use serde_json::{Value, json};
 #[cfg(test)]
