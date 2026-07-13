@@ -1,4 +1,9 @@
-use super::*;
+use super::test_support::{
+    ClientMetadataFixture, ClientMtlsMetadataFixture, SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+    validate_metadata_fixture,
+};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use serde_json::{Value, json};
 
 #[allow(clippy::too_many_arguments)]
 fn metadata<'a>(
@@ -9,9 +14,9 @@ fn metadata<'a>(
     grant_types: &'a [String],
     token_endpoint_auth_method: &'a str,
     jwks: Option<&'a Value>,
-    mtls_binding: Option<&'a ClientMtlsMetadata>,
-) -> ClientMetadata<'a> {
-    ClientMetadata {
+    mtls_binding: Option<&'a ClientMtlsMetadataFixture>,
+) -> ClientMetadataFixture<'a> {
+    ClientMetadataFixture {
         client_type,
         redirect_uris,
         post_logout_redirect_uris: &[],
@@ -38,7 +43,7 @@ fn metadata<'a>(
 
 #[test]
 fn client_metadata_rejects_removed_or_unsafe_grants() {
-    let invalid_type = validate_client_metadata(metadata(
+    let invalid_type = validate_metadata_fixture(metadata(
         "native",
         &["https://client.example/callback".to_owned()],
         &["openid".to_owned()],
@@ -55,7 +60,7 @@ fn client_metadata_rejects_removed_or_unsafe_grants() {
             .contains("客户端类型无效")
     );
 
-    let result = validate_client_metadata(metadata(
+    let result = validate_metadata_fixture(metadata(
         "public",
         &["https://client.example/callback".to_owned()],
         &["openid".to_owned()],
@@ -75,7 +80,7 @@ fn client_metadata_rejects_removed_or_unsafe_grants() {
 
 #[test]
 fn client_metadata_accepts_implemented_jwt_bearer_grant() {
-    validate_client_metadata(metadata(
+    validate_metadata_fixture(metadata(
         "confidential",
         &[],
         &["payments".to_owned()],
@@ -90,7 +95,7 @@ fn client_metadata_accepts_implemented_jwt_bearer_grant() {
 
 #[test]
 fn client_metadata_rejects_unsupported_auth_and_unsafe_grant_combinations() {
-    let invalid_auth = validate_client_metadata(metadata(
+    let invalid_auth = validate_metadata_fixture(metadata(
         "confidential",
         &["https://client.example/callback".to_owned()],
         &["openid".to_owned()],
@@ -107,7 +112,7 @@ fn client_metadata_rejects_unsupported_auth_and_unsafe_grant_combinations() {
             .contains("客户端认证方式无效")
     );
 
-    let public_client_credentials = validate_client_metadata(metadata(
+    let public_client_credentials = validate_metadata_fixture(metadata(
         "public",
         &[],
         &["accounts".to_owned()],
@@ -124,7 +129,7 @@ fn client_metadata_rejects_unsupported_auth_and_unsafe_grant_combinations() {
             .contains("public 客户端不能使用 client_credentials 授权类型")
     );
 
-    let client_credentials_openid = validate_client_metadata(metadata(
+    let client_credentials_openid = validate_metadata_fixture(metadata(
         "confidential",
         &[],
         &["openid".to_owned()],
@@ -141,7 +146,7 @@ fn client_metadata_rejects_unsupported_auth_and_unsafe_grant_combinations() {
             .contains("client_credentials 客户端不能申请 openid 作用域")
     );
 
-    let refresh_without_authorization_code = validate_client_metadata(metadata(
+    let refresh_without_authorization_code = validate_metadata_fixture(metadata(
         "confidential",
         &[],
         &["accounts".to_owned()],
@@ -158,7 +163,7 @@ fn client_metadata_rejects_unsupported_auth_and_unsafe_grant_combinations() {
             .contains("refresh_token 授权类型必须与 authorization_code 一起启用")
     );
 
-    let auth_code_without_redirect = validate_client_metadata(metadata(
+    let auth_code_without_redirect = validate_metadata_fixture(metadata(
         "confidential",
         &[],
         &["openid".to_owned()],
@@ -178,7 +183,7 @@ fn client_metadata_rejects_unsupported_auth_and_unsafe_grant_combinations() {
 
 #[test]
 fn client_metadata_rejects_non_loopback_http_redirect_uri() {
-    let result = validate_client_metadata(metadata(
+    let result = validate_metadata_fixture(metadata(
         "public",
         &["http://client.example/callback".to_owned()],
         &["openid".to_owned()],
@@ -200,7 +205,7 @@ fn client_metadata_rejects_non_loopback_http_redirect_uri() {
 
 #[test]
 fn client_metadata_requires_refresh_grant_for_offline_access() {
-    let result = validate_client_metadata(metadata(
+    let result = validate_metadata_fixture(metadata(
         "public",
         &["https://client.example/callback".to_owned()],
         &["openid".to_owned(), "offline_access".to_owned()],
@@ -219,7 +224,7 @@ fn client_metadata_requires_refresh_grant_for_offline_access() {
         "unexpected error: {error}"
     );
 
-    validate_client_metadata(metadata(
+    validate_metadata_fixture(metadata(
         "public",
         &["https://client.example/callback".to_owned()],
         &["openid".to_owned(), "offline_access".to_owned()],
@@ -245,7 +250,7 @@ fn client_metadata_requires_public_jwks_for_private_key_jwt() {
         }]
     });
 
-    let result = validate_client_metadata(metadata(
+    let result = validate_metadata_fixture(metadata(
         "confidential",
         &["https://client.example/callback".to_owned()],
         &["openid".to_owned()],
@@ -273,7 +278,7 @@ fn client_metadata_requires_public_jwks_for_private_key_jwt() {
             "kid": "enc-key"
         }]
     });
-    let result = validate_client_metadata(metadata(
+    let result = validate_metadata_fixture(metadata(
         "confidential",
         &["https://client.example/callback".to_owned()],
         &["openid".to_owned()],
@@ -292,7 +297,7 @@ fn client_metadata_requires_public_jwks_for_private_key_jwt() {
         "unexpected error: {error}"
     );
 
-    validate_client_metadata(metadata(
+    validate_metadata_fixture(metadata(
         "confidential",
         &["https://client.example/callback".to_owned()],
         &["openid".to_owned()],
@@ -304,7 +309,7 @@ fn client_metadata_requires_public_jwks_for_private_key_jwt() {
     ))
     .expect("private_key_jwt with a supported public jwks should be accepted");
 
-    let public_private_key_jwt = validate_client_metadata(metadata(
+    let public_private_key_jwt = validate_metadata_fixture(metadata(
         "public",
         &["https://client.example/callback".to_owned()],
         &["openid".to_owned()],
@@ -324,7 +329,7 @@ fn client_metadata_requires_public_jwks_for_private_key_jwt() {
 
 #[test]
 fn client_metadata_rejects_public_client_secret_and_confidential_none() {
-    let public_with_secret = validate_client_metadata(metadata(
+    let public_with_secret = validate_metadata_fixture(metadata(
         "public",
         &["https://client.example/callback".to_owned()],
         &["openid".to_owned()],
@@ -343,7 +348,7 @@ fn client_metadata_rejects_public_client_secret_and_confidential_none() {
         "unexpected error: {error}"
     );
 
-    let confidential_without_auth = validate_client_metadata(metadata(
+    let confidential_without_auth = validate_metadata_fixture(metadata(
         "confidential",
         &["https://client.example/callback".to_owned()],
         &["openid".to_owned()],
@@ -381,7 +386,7 @@ fn client_metadata_rejects_backchannel_logout_uri_with_fragment_or_insecure_host
     );
     fragment_metadata.backchannel_logout_uri = Some("https://client.example/backchannel#fragment");
 
-    let error = validate_client_metadata(fragment_metadata)
+    let error = validate_metadata_fixture(fragment_metadata)
         .expect_err("backchannel logout URI must reject fragments per OIDC logout security");
     assert!(
         error
@@ -402,7 +407,7 @@ fn client_metadata_rejects_backchannel_logout_uri_with_fragment_or_insecure_host
     );
     insecure_metadata.backchannel_logout_uri = Some("http://client.example/backchannel");
 
-    let error = validate_client_metadata(insecure_metadata)
+    let error = validate_metadata_fixture(insecure_metadata)
         .expect_err("backchannel logout URI must reject non-loopback http");
     assert!(
         error
@@ -427,7 +432,7 @@ fn client_metadata_rejects_backchannel_logout_uri_with_fragment_or_insecure_host
             None,
         );
         loopback_metadata.backchannel_logout_uri = Some(uri);
-        validate_client_metadata(loopback_metadata)
+        validate_metadata_fixture(loopback_metadata)
             .expect("OIDC backchannel logout may use loopback HTTP endpoints for local clients");
     }
 }
@@ -450,7 +455,7 @@ fn client_metadata_rejects_frontchannel_logout_uri_with_fragment_or_insecure_hos
     );
     fragment_metadata.frontchannel_logout_uri = Some("https://client.example/logout#fragment");
 
-    let error = validate_client_metadata(fragment_metadata)
+    let error = validate_metadata_fixture(fragment_metadata)
         .expect_err("front-channel logout URI must reject fragments");
     assert!(
         error
@@ -471,7 +476,7 @@ fn client_metadata_rejects_frontchannel_logout_uri_with_fragment_or_insecure_hos
     );
     insecure_metadata.frontchannel_logout_uri = Some("http://client.example/logout");
 
-    let error = validate_client_metadata(insecure_metadata)
+    let error = validate_metadata_fixture(insecure_metadata)
         .expect_err("front-channel logout URI must reject non-loopback http");
     assert!(
         error
@@ -497,7 +502,7 @@ fn client_metadata_rejects_frontchannel_logout_uri_with_fragment_or_insecure_hos
             None,
         );
         loopback_metadata.frontchannel_logout_uri = Some(uri);
-        validate_client_metadata(loopback_metadata)
+        validate_metadata_fixture(loopback_metadata)
             .expect("OIDC front-channel logout may use HTTPS or loopback HTTP endpoints");
     }
 }
@@ -518,7 +523,7 @@ fn client_metadata_validates_optional_jwks_for_all_auth_methods() {
     for private_member in ["d", "p", "q", "dp", "dq", "qi", "oth", "k"] {
         let mut private_jwks = public_jwks.clone();
         private_jwks["keys"][0][private_member] = json!(URL_SAFE_NO_PAD.encode([8u8; 32]));
-        let result = validate_client_metadata(metadata(
+        let result = validate_metadata_fixture(metadata(
             "confidential",
             &["https://client.example/callback".to_owned()],
             &["openid".to_owned()],
@@ -535,7 +540,7 @@ fn client_metadata_validates_optional_jwks_for_all_auth_methods() {
         );
     }
 
-    validate_client_metadata(metadata(
+    validate_metadata_fixture(metadata(
         "confidential",
         &["https://client.example/callback".to_owned()],
         &["openid".to_owned()],
@@ -577,7 +582,7 @@ fn client_metadata_validates_introspection_jwe_metadata() {
     );
     missing_enc.introspection_encrypted_response_alg = Some("RSA-OAEP-256");
     let error =
-        validate_client_metadata(missing_enc).expect_err("JWE alg without enc must fail closed");
+        validate_metadata_fixture(missing_enc).expect_err("JWE alg without enc must fail closed");
     assert!(
         error
             .to_string()
@@ -597,7 +602,7 @@ fn client_metadata_validates_introspection_jwe_metadata() {
     );
     missing_alg.introspection_encrypted_response_enc = Some("A256GCM");
     let error =
-        validate_client_metadata(missing_alg).expect_err("JWE enc without alg must fail closed");
+        validate_metadata_fixture(missing_alg).expect_err("JWE enc without alg must fail closed");
     assert!(
         error
             .to_string()
@@ -617,7 +622,7 @@ fn client_metadata_validates_introspection_jwe_metadata() {
     );
     unsupported_enc.introspection_encrypted_response_alg = Some("RSA-OAEP-256");
     unsupported_enc.introspection_encrypted_response_enc = Some("A128CBC-HS256");
-    let error = validate_client_metadata(unsupported_enc)
+    let error = validate_metadata_fixture(unsupported_enc)
         .expect_err("unsupported JWE enc must fail closed");
     assert!(
         error
@@ -648,7 +653,7 @@ fn client_metadata_validates_introspection_jwe_metadata() {
     );
     missing_encryption_key.introspection_encrypted_response_alg = Some("RSA-OAEP-256");
     missing_encryption_key.introspection_encrypted_response_enc = Some("A256GCM");
-    let error = validate_client_metadata(missing_encryption_key)
+    let error = validate_metadata_fixture(missing_encryption_key)
         .expect_err("JWE response requires a matching encryption JWK");
     assert!(
         error.to_string().contains("必须配置匹配的 jwks 加密公钥"),
@@ -667,7 +672,7 @@ fn client_metadata_validates_introspection_jwe_metadata() {
     );
     valid.introspection_encrypted_response_alg = Some("RSA-OAEP-256");
     valid.introspection_encrypted_response_enc = Some("A256GCM");
-    validate_client_metadata(valid)
+    validate_metadata_fixture(valid)
         .expect("supported JWE metadata with a matching encryption JWK should be accepted");
 }
 
@@ -708,7 +713,7 @@ fn client_metadata_validates_userinfo_and_authorization_response_crypto_metadata
         } else {
             missing_enc.authorization_encrypted_response_alg = Some("RSA-OAEP-256");
         }
-        let error = validate_client_metadata(missing_enc)
+        let error = validate_metadata_fixture(missing_enc)
             .expect_err("response JWE alg without enc must fail closed");
         assert!(
             error.to_string().contains("必须同时配置"),
@@ -721,7 +726,7 @@ fn client_metadata_validates_userinfo_and_authorization_response_crypto_metadata
         } else {
             missing_alg.authorization_encrypted_response_enc = Some("A256GCM");
         }
-        let error = validate_client_metadata(missing_alg)
+        let error = validate_metadata_fixture(missing_alg)
             .expect_err("response JWE enc without alg must fail closed");
         assert!(
             error.to_string().contains("不能在未设置"),
@@ -734,7 +739,7 @@ fn client_metadata_validates_userinfo_and_authorization_response_crypto_metadata
         } else {
             unsupported_signing.authorization_signed_response_alg = Some("HS256");
         }
-        let error = validate_client_metadata(unsupported_signing)
+        let error = validate_metadata_fixture(unsupported_signing)
             .expect_err("none and symmetric response signing must be rejected");
         assert!(
             error.to_string().contains("签名算法"),
@@ -749,13 +754,13 @@ fn client_metadata_validates_userinfo_and_authorization_response_crypto_metadata
     valid.authorization_signed_response_alg = Some("PS256");
     valid.authorization_encrypted_response_alg = Some("RSA-OAEP-256");
     valid.authorization_encrypted_response_enc = Some("A256GCM");
-    validate_client_metadata(valid)
+    validate_metadata_fixture(valid)
         .expect("supported UserInfo and JARM response crypto metadata should be accepted");
 
     let mut unavailable_signing = base();
     unavailable_signing.response_signing_algorithms = &["PS256"];
     unavailable_signing.userinfo_signed_response_alg = Some("RS256");
-    let error = validate_client_metadata(unavailable_signing)
+    let error = validate_metadata_fixture(unavailable_signing)
         .expect_err("registration must reject algorithms unavailable to the current keyset");
     assert!(
         error
@@ -786,7 +791,7 @@ fn client_metadata_validates_userinfo_and_authorization_response_crypto_metadata
     );
     missing_encryption_key.userinfo_encrypted_response_alg = Some("RSA-OAEP-256");
     missing_encryption_key.userinfo_encrypted_response_enc = Some("A256GCM");
-    let error = validate_client_metadata(missing_encryption_key)
+    let error = validate_metadata_fixture(missing_encryption_key)
         .expect_err("response encryption requires a matching use=enc key");
     assert!(
         error.to_string().contains("必须配置匹配的 jwks 加密公钥"),
@@ -818,7 +823,7 @@ fn client_metadata_validates_userinfo_and_authorization_response_crypto_metadata
     );
     ambiguous_encryption_key.userinfo_encrypted_response_alg = Some("RSA-OAEP-256");
     ambiguous_encryption_key.userinfo_encrypted_response_enc = Some("A256GCM");
-    let error = validate_client_metadata(ambiguous_encryption_key)
+    let error = validate_metadata_fixture(ambiguous_encryption_key)
         .expect_err("response encryption key selection must be unambiguous");
     assert!(
         error

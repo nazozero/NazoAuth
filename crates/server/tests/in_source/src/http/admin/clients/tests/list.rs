@@ -1,5 +1,18 @@
-use super::*;
+use super::{admin_clients, clients_list_response};
+use crate::domain::{AppState, ClientRow, DatabaseUserFixture};
+use crate::http::admin::clients::test_support::{
+    CreateClientRequest, InsertClientError, PreparedClientRegistration, admin_client_service,
+    admin_session_handles, insert_prepared_client, prepare_client_insert_with_secret_pepper,
+};
+use crate::settings::Settings;
+use crate::support::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_set_ex,
+};
 use actix_web::cookie::Cookie;
+use actix_web::http::StatusCode;
+use actix_web::web::{Data, Query};
+use actix_web::{HttpRequest, HttpResponse};
+use chrono::Utc;
 use diesel::sql_query;
 use diesel::sql_types::{Int4, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
@@ -7,16 +20,15 @@ use fred::interfaces::ClientLike;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
+use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_postgres::{create_pool, get_conn};
-
-use crate::http::admin::clients::test_support::{
-    CreateClientRequest, InsertClientError, PreparedClientRegistration, insert_prepared_client,
-    prepare_client_insert_with_secret_pepper,
-};
+use serde_json::{Value, json};
+use uuid::Uuid;
 
 async fn prepare_client_insert_for_test(
     payload: CreateClientRequest,
@@ -324,6 +336,7 @@ fn admin_client_handlers_use_focused_dependencies() {
     .join("\n");
 
     assert!(!handlers.contains("Data<AppState>"));
+    assert!(!handlers.contains("test_dependencies"));
     assert!(!handlers.contains("state.diesel_db"));
     assert!(!handlers.contains("state.valkey"));
     assert!(!handlers.contains("OAuthClientRepository"));
@@ -338,15 +351,18 @@ async fn admin_clients_requires_admin_before_database_lookup() {
     let req = actix_web::test::TestRequest::get()
         .uri("/admin/clients")
         .to_http_request();
-    let dependencies = test_dependencies(&state);
+    let sessions = admin_session_handles(
+        state.diesel_db.clone(),
+        state.valkey_connection(),
+        &state.settings,
+    );
+    let service = admin_client_service(
+        state.diesel_db.clone(),
+        state.keyset.clone(),
+        &state.settings,
+    );
 
-    let response = admin_clients(
-        dependencies.sessions,
-        dependencies.service,
-        req,
-        Query(HashMap::new()),
-    )
-    .await;
+    let response = admin_clients(sessions, service, req, Query(HashMap::new())).await;
 
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     assert_eq!(
@@ -369,10 +385,19 @@ async fn admin_clients_lists_persisted_clients_for_admin_without_secret_hashes()
     let first = fixture.insert_client(&format!("First {suffix}")).await;
     let second = fixture.insert_client(&format!("Second {suffix}")).await;
 
-    let dependencies = test_dependencies(&fixture.state);
+    let sessions = admin_session_handles(
+        fixture.state.diesel_db.clone(),
+        fixture.state.valkey_connection(),
+        &fixture.state.settings,
+    );
+    let service = admin_client_service(
+        fixture.state.diesel_db.clone(),
+        fixture.state.keyset.clone(),
+        &fixture.state.settings,
+    );
     let response = admin_clients(
-        dependencies.sessions,
-        dependencies.service,
+        sessions,
+        service,
         fixture.admin_get_request(&sid, "/admin/clients?page=1&page_size=100"),
         Query(HashMap::from([
             ("page".to_owned(), "1".to_owned()),

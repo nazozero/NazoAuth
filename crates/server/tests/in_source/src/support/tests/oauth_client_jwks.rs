@@ -1,4 +1,63 @@
-use super::*;
+use super::{validate_client_jwks, validate_self_signed_mtls_jwks};
+use base64::Engine;
+use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
+use chrono::Utc;
+use openssl::asn1::Asn1Time;
+use openssl::hash::MessageDigest;
+use openssl::nid::Nid;
+use openssl::pkey::{PKey, Private};
+use openssl::rsa::Rsa;
+use openssl::x509::{X509Builder, X509Name};
+use serde_json::json;
+
+fn test_x5c(common_name: &str, not_before_offset: i64, not_after_offset: i64) -> String {
+    let key: PKey<Private> =
+        PKey::from_rsa(Rsa::generate(2048).expect("test rsa key")).expect("test pkey");
+    let mut name = X509Name::builder().expect("x509 name builder");
+    name.append_entry_by_nid(Nid::COMMONNAME, common_name)
+        .expect("test common name");
+    let name = name.build();
+    let mut builder = X509Builder::new().expect("x509 builder");
+    builder.set_version(2).expect("x509 version");
+    builder.set_subject_name(&name).expect("x509 subject");
+    builder.set_issuer_name(&name).expect("x509 issuer");
+    builder.set_pubkey(&key).expect("x509 pubkey");
+    let now = Utc::now().timestamp();
+    let not_before = Asn1Time::from_unix(now + not_before_offset).expect("x509 not_before");
+    let not_after = Asn1Time::from_unix(now + not_after_offset).expect("x509 not_after");
+    builder
+        .set_not_before(&not_before)
+        .expect("set x509 not_before");
+    builder
+        .set_not_after(&not_after)
+        .expect("set x509 not_after");
+    builder
+        .sign(&key, MessageDigest::sha256())
+        .expect("sign test cert");
+    STANDARD.encode(builder.build().to_der().expect("cert der"))
+}
+
+#[test]
+fn self_signed_mtls_jwks_requires_a_current_parseable_x5c_certificate() {
+    let invalid = json!({ "keys": [{ "kid": "invalid", "x5c": ["not-a-certificate"] }] });
+    assert!(!validate_self_signed_mtls_jwks(&invalid));
+
+    let current = json!({
+        "keys": [{
+            "kid": "current",
+            "x5c": [test_x5c("client-current", -60, 3600)]
+        }]
+    });
+    assert!(validate_self_signed_mtls_jwks(&current));
+
+    let expired = json!({
+        "keys": [{
+            "kid": "expired",
+            "x5c": [test_x5c("client-expired", -7200, -3600)]
+        }]
+    });
+    assert!(!validate_self_signed_mtls_jwks(&expired));
+}
 
 #[test]
 fn client_jwks_requires_non_empty_unique_kids() {

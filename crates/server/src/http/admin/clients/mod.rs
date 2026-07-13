@@ -108,40 +108,12 @@ impl AdminClientCryptoPort for ServerAdminClientCrypto {
 }
 
 #[cfg(test)]
-pub(crate) struct AdminClientTestDependencies {
-    pub(crate) sessions: actix_web::web::Data<crate::support::sessions::AdminSessionHandles>,
-    pub(crate) service: actix_web::web::Data<ServerAdminClientService>,
-    pub(crate) config: actix_web::web::Data<AdminClientConfig>,
-}
-
-#[cfg(test)]
-pub(crate) fn test_dependencies(
-    state: &actix_web::web::Data<crate::domain::AppState>,
-) -> AdminClientTestDependencies {
-    let session = &state.settings.session;
-    AdminClientTestDependencies {
-        sessions: actix_web::web::Data::new(crate::support::sessions::AdminSessionHandles::new(
-            nazo_valkey::SessionStore::new(&state.valkey_connection()),
-            nazo_postgres::UserRepository::new(state.diesel_db.clone()),
-            crate::support::sessions::SessionHttpConfig::new(
-                &session.session_cookie_name,
-                &session.csrf_cookie_name,
-                session.cookie_secure,
-            ),
-        )),
-        service: actix_web::web::Data::new(ServerAdminClientService::new(
-            nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone()),
-            ServerSectorIdentifierResolver,
-            ServerAdminClientCrypto::new(state.keyset.clone()),
-            admin_client_policy(&state.settings),
-        )),
-        config: actix_web::web::Data::new(AdminClientConfig::from_settings(&state.settings)),
-    }
-}
-
-#[cfg(test)]
 pub(crate) mod test_support {
-    use super::ServerSectorIdentifierResolver;
+    use super::{
+        AdminClientConfig, ServerAdminClientCrypto, ServerAdminClientService,
+        ServerSectorIdentifierResolver, admin_client_policy,
+    };
+    use crate::settings::Settings;
     use crate::support::{
         client_jwks_contains_signing_key, client_jwks_matching_encryption_key_count,
         hash_client_secret, random_urlsafe_token, validate_client_jwks_with_missing_kid_policy,
@@ -153,6 +125,42 @@ pub(crate) mod test_support {
     pub(crate) use nazo_auth::{
         AdminClientError as InsertClientError, CreateClientRequest, PreparedClientRegistration,
     };
+
+    pub(crate) fn admin_session_handles(
+        database: nazo_postgres::DbPool,
+        valkey: nazo_valkey::ValkeyConnection,
+        settings: &Settings,
+    ) -> actix_web::web::Data<crate::support::sessions::AdminSessionHandles> {
+        let session = &settings.session;
+        actix_web::web::Data::new(crate::support::sessions::AdminSessionHandles::new(
+            nazo_valkey::SessionStore::new(&valkey),
+            nazo_postgres::UserRepository::new(database),
+            crate::support::sessions::SessionHttpConfig::new(
+                &session.session_cookie_name,
+                &session.csrf_cookie_name,
+                session.cookie_secure,
+            ),
+        ))
+    }
+
+    pub(crate) fn admin_client_service(
+        database: nazo_postgres::DbPool,
+        keyset: nazo_key_management::KeyManager,
+        settings: &Settings,
+    ) -> actix_web::web::Data<ServerAdminClientService> {
+        actix_web::web::Data::new(ServerAdminClientService::new(
+            nazo_postgres::OAuthClientRepository::new(database),
+            ServerSectorIdentifierResolver,
+            ServerAdminClientCrypto::new(keyset),
+            admin_client_policy(settings),
+        ))
+    }
+
+    pub(crate) fn admin_client_config(
+        settings: &Settings,
+    ) -> actix_web::web::Data<AdminClientConfig> {
+        actix_web::web::Data::new(AdminClientConfig::from_settings(settings))
+    }
 
     pub(crate) async fn prepare_client_insert_with_secret_pepper(
         payload: CreateClientRequest,
@@ -262,6 +270,7 @@ mod boundary_tests {
                 "ClientRow",
                 "KeyManager",
                 "Data<AppState>",
+                "test_dependencies",
             ] {
                 assert!(!source.contains(forbidden), "{name} contains {forbidden}");
             }
