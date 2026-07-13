@@ -258,7 +258,7 @@ async fn approved_device_code_has_exactly_one_consumer() {
 
     let approved = [&first, &second]
         .into_iter()
-        .filter(|result| matches!(result, Ok(DevicePollCommit::Approved { .. })))
+        .filter(|result| matches!(result, Ok(DevicePollCommit::Approved(_))))
         .count();
     let missing = [&first, &second]
         .into_iter()

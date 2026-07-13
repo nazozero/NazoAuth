@@ -326,13 +326,16 @@ pub enum DevicePollTransition {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct ApprovedDeviceAuthorization {
+    pub payload: DeviceAuthorizationPayload,
+    pub approval: DeviceAuthorizationApproval,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum DevicePollCommit {
     AuthorizationPending,
     SlowDown,
-    Approved {
-        payload: DeviceAuthorizationPayload,
-        approval: DeviceAuthorizationApproval,
-    },
+    Approved(Box<ApprovedDeviceAuthorization>),
     AccessDenied,
     Expired,
     Consumed,
@@ -472,7 +475,9 @@ where
                         .map_err(DevicePollFailure::Storage)?
                     {
                         DeviceAtomicResult::Applied => {
-                            return Ok(DevicePollCommit::Approved { payload, approval });
+                            return Ok(DevicePollCommit::Approved(Box::new(
+                                ApprovedDeviceAuthorization { payload, approval },
+                            )));
                         }
                         DeviceAtomicResult::Conflict => continue,
                         DeviceAtomicResult::DeadlineElapsed => {

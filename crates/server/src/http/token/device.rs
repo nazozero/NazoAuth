@@ -361,7 +361,8 @@ pub(crate) async fn token_device_code(
             "device_code 已使用.",
             false,
         ),
-        Ok(DevicePollCommit::Approved { payload, approval }) => {
+        Ok(DevicePollCommit::Approved(approved)) => {
+            let nazo_auth::ApprovedDeviceAuthorization { payload, approval } = *approved;
             issue_token_response(
                 state,
                 client,
