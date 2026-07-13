@@ -285,26 +285,6 @@ pub(crate) mod test_support {
             jsonwebtoken::encode(header, claims, &encoding_key)
                 .expect("client fixture JWT should sign")
         }
-
-        pub(crate) fn sign_http_message(&self, signing_input: &[u8]) -> Vec<u8> {
-            let encoding_key = match self.algorithm {
-                jsonwebtoken::Algorithm::EdDSA => {
-                    jsonwebtoken::EncodingKey::from_ed_der(&self.private_pkcs8_der)
-                }
-                jsonwebtoken::Algorithm::RS256 | jsonwebtoken::Algorithm::PS256 => {
-                    jsonwebtoken::EncodingKey::from_rsa_der(&self.private_pkcs8_der)
-                }
-                jsonwebtoken::Algorithm::ES256 => {
-                    jsonwebtoken::EncodingKey::from_ec_der(&self.private_pkcs8_der)
-                }
-                _ => panic!("unsupported client signing fixture algorithm"),
-            };
-            let encoded = jsonwebtoken::crypto::sign(signing_input, &encoding_key, self.algorithm)
-                .expect("client fixture HTTP message should sign");
-            URL_SAFE_NO_PAD
-                .decode(encoded)
-                .expect("fixture signature must be base64url")
-        }
     }
 
     pub(crate) fn client_signing_fixture(
@@ -327,15 +307,6 @@ pub(crate) mod test_support {
         nazo_key_management::KeyManager::for_test_behavior(
             jsonwebtoken::Algorithm::EdDSA,
             nazo_key_management::TestSigningBehavior::Failing,
-        )
-    }
-
-    pub(crate) fn external_failure_key_manager(stderr: &str) -> nazo_key_management::KeyManager {
-        nazo_key_management::KeyManager::for_test_behavior(
-            jsonwebtoken::Algorithm::EdDSA,
-            nazo_key_management::TestSigningBehavior::ExternalFailure {
-                stderr: stderr.to_owned(),
-            },
         )
     }
 

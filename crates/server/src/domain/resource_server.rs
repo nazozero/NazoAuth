@@ -28,31 +28,10 @@ impl From<&Settings> for ResourceServerConfig {
     }
 }
 
-#[cfg(test)]
-#[derive(Clone)]
-pub(crate) struct ResourceServerHandles {
-    pub(crate) config: ResourceServerConfig,
-    pub(crate) keyset: nazo_key_management::KeyManager,
-    pub(crate) tokens: nazo_postgres::TokenRepository,
-    pub(crate) clients: nazo_postgres::OAuthClientRepository,
-    pub(crate) replay: nazo_valkey::ReplayStore,
-    #[cfg(test)]
-    pub(crate) http_message_signatures_enabled: bool,
-}
-
-#[cfg(test)]
-impl ResourceServerHandles {
-    pub(crate) fn accepts_http_message_signatures(&self) -> bool {
-        self.http_message_signatures_enabled
-    }
-}
-
-#[cfg(not(test))]
 mod production {
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     use actix_web::HttpRequest;
-    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
     use jsonwebtoken::Algorithm;
     use nazo_http_actix::{
         FapiAuthorizationError, FapiFuture, FapiHttpMessageSignatures, FapiMtlsThumbprintResolver,
@@ -60,28 +39,38 @@ mod production {
         FapiSignatureVerificationError,
     };
     use nazo_http_signatures::VerifiedInput;
-    use nazo_key_management::HttpSigningLease;
+    use nazo_key_management::{HttpSigningLease, KeySnapshot};
     use nazo_resource_server::{
-        ConfirmationPolicy, DpopProofVerifier, DpopProofVerifierConfig,
-        ProtectedResourceAuthorizationContext, ProtectedResourceAuthorizationRequest,
-        ProtectedResourceAuthorizationResult, ProtectedResourceAuthorizationService,
-        ResourceServerVerifier, ResourceServerVerifierConfig,
+        ConfirmationPolicy, DpopNoncePolicy as ResourceDpopNoncePolicy, DpopProofVerifier,
+        DpopProofVerifierConfig, ProtectedResourceAuthorizationContext,
+        ProtectedResourceAuthorizationRequest, ProtectedResourceAuthorizationResult,
+        ProtectedResourceAuthorizationService, ResourceServerVerifier,
+        ResourceServerVerifierConfig,
     };
     use nazo_runtime_modules::ModuleId;
-    use serde::Deserialize;
 
     use crate::{
-        runtime_modules::ServerRuntimeModuleRegistry,
-        settings::DpopNoncePolicy,
-        support::{
-            fapi_http_signatures::verify_client_http_message,
-            mtls::request_mtls_thumbprint_from_trusted_proxy, security::random_urlsafe_token,
-        },
+        runtime_modules::ServerRuntimeModuleRegistry, settings::DpopNoncePolicy,
+        support::mtls::request_mtls_thumbprint_from_trusted_proxy,
     };
 
     use super::ResourceServerConfig;
 
-    const DPOP_NONCE_TTL_SECONDS: u64 = 300;
+    type ServerResourceAuthorizationService = ProtectedResourceAuthorizationService<
+        nazo_postgres::TokenRepository,
+        nazo_valkey::ReplayStore,
+    >;
+
+    struct CachedResourceAuthorizationService {
+        keys: Arc<KeySnapshot>,
+        service: Arc<ServerResourceAuthorizationService>,
+    }
+
+    fn same_key_generation(cached: &Arc<KeySnapshot>, current: &Arc<KeySnapshot>) -> bool {
+        // The cache entry strongly owns `cached`, so its allocation cannot be
+        // freed or have its address reused while this comparison executes.
+        Arc::ptr_eq(cached, current)
+    }
 
     #[derive(Clone)]
     pub(crate) struct ServerFapiResourceAuthorizer {
@@ -89,6 +78,7 @@ mod production {
         keyset: nazo_key_management::KeyManager,
         tokens: nazo_postgres::TokenRepository,
         replay: nazo_valkey::ReplayStore,
+        service_cache: Arc<Mutex<Option<CachedResourceAuthorizationService>>>,
     }
 
     impl ServerFapiResourceAuthorizer {
@@ -103,25 +93,33 @@ mod production {
                 keyset,
                 tokens,
                 replay,
+                service_cache: Arc::new(Mutex::new(None)),
             }
         }
 
         fn service(
             &self,
-        ) -> Result<
-            ProtectedResourceAuthorizationService<
-                nazo_postgres::TokenRepository,
-                nazo_valkey::ReplayStore,
-            >,
-            FapiAuthorizationError,
-        > {
+        ) -> Result<Arc<ServerResourceAuthorizationService>, FapiAuthorizationError> {
+            let keys = self.keyset.snapshot();
+            let mut cache = self.service_cache.lock().map_err(|_| {
+                FapiAuthorizationError::Protocol(
+                    nazo_resource_server::ProtectedResourceAuthorizationError::InvalidToken(
+                        nazo_resource_server::ResourceServerVerifierError::MissingJwks,
+                    ),
+                )
+            })?;
+            if let Some(cached) = cache.as_ref()
+                && same_key_generation(&cached.keys, &keys)
+            {
+                return Ok(cached.service.clone());
+            }
             let verifier = ResourceServerVerifier::new(ResourceServerVerifierConfig {
                 issuer: self.config.issuer.clone(),
                 audiences: vec![
                     self.config.default_audience.clone(),
                     self.config.protected_resource_identifier.clone(),
                 ],
-                jwks: self.keyset.snapshot().jwks(),
+                jwks: keys.jwks(),
                 required_scopes: Vec::new(),
                 confirmation: ConfirmationPolicy::Optional,
                 allowed_algs: vec![
@@ -137,41 +135,28 @@ mod production {
                     nazo_resource_server::ProtectedResourceAuthorizationError::InvalidToken(error),
                 )
             })?;
-            Ok(ProtectedResourceAuthorizationService::new(
-                verifier,
-                DpopProofVerifier::new(DpopProofVerifierConfig {
-                    allowed_algs: vec![Algorithm::EdDSA, Algorithm::ES256],
-                    clock_skew_seconds: 30,
-                    max_age_seconds: 300,
-                    required_nonce: None,
+            let service = Arc::new(
+                ProtectedResourceAuthorizationService::new(
+                    verifier,
+                    DpopProofVerifier::new(DpopProofVerifierConfig {
+                        allowed_algs: vec![Algorithm::EdDSA, Algorithm::ES256],
+                        clock_skew_seconds: 30,
+                        max_age_seconds: 300,
+                        required_nonce: None,
+                    }),
+                    self.tokens.clone(),
+                    self.replay.clone(),
+                )
+                .with_dpop_nonce_policy(match self.config.dpop_nonce_policy {
+                    DpopNoncePolicy::Required => ResourceDpopNoncePolicy::Required,
+                    DpopNoncePolicy::Optional => ResourceDpopNoncePolicy::Optional,
                 }),
-                self.tokens.clone(),
-                self.replay.clone(),
-            ))
-        }
-
-        async fn validate_nonce(&self, proof: Option<&str>) -> Result<(), FapiAuthorizationError> {
-            let nonce = proof.and_then(dpop_nonce);
-            let Some(nonce) = nonce else {
-                if self.config.dpop_nonce_policy == DpopNoncePolicy::Required {
-                    return Err(self.issue_nonce().await?);
-                }
-                return Ok(());
-            };
-            match self.replay.consume_dpop_nonce(&nonce).await {
-                Ok(true) => Ok(()),
-                Ok(false) => Err(self.issue_nonce().await?),
-                Err(_) => Err(FapiAuthorizationError::DpopNonceUnavailable),
-            }
-        }
-
-        async fn issue_nonce(&self) -> Result<FapiAuthorizationError, FapiAuthorizationError> {
-            let nonce = random_urlsafe_token();
-            self.replay
-                .issue_dpop_nonce(&nonce, DPOP_NONCE_TTL_SECONDS)
-                .await
-                .map_err(|_| FapiAuthorizationError::DpopNonceUnavailable)?;
-            Ok(FapiAuthorizationError::UseDpopNonce(nonce))
+            );
+            *cache = Some(CachedResourceAuthorizationService {
+                keys,
+                service: service.clone(),
+            });
+            Ok(service)
         }
     }
 
@@ -188,9 +173,6 @@ mod production {
                     .authorize(request, context)
                     .await
                     .map_err(FapiAuthorizationError::Protocol)?;
-                if request.scheme == nazo_resource_server::AccessTokenScheme::Dpop {
-                    self.validate_nonce(request.dpop_proof).await?;
-                }
                 Ok(result)
             })
         }
@@ -267,10 +249,15 @@ mod production {
                     .map_err(|_| FapiSignatureVerificationError::LookupUnavailable)?
                     .filter(|client| client.is_active)
                     .ok_or(FapiSignatureVerificationError::Invalid)?;
-                verify_client_http_message(
-                    &client,
-                    tenant_id,
-                    client_id,
+                if client.tenant_id != tenant_id || client.client_id != client_id {
+                    return Err(FapiSignatureVerificationError::Invalid);
+                }
+                let jwks = client
+                    .jwks
+                    .as_ref()
+                    .ok_or(FapiSignatureVerificationError::Invalid)?;
+                nazo_http_signatures::verify_jwk_signature(
+                    jwks,
                     input.keyid(),
                     input.algorithm(),
                     input.signature_base(),
@@ -324,22 +311,30 @@ mod production {
         }
     }
 
-    #[derive(Deserialize)]
-    struct DpopNonceClaims {
-        nonce: Option<String>,
-    }
+    #[cfg(test)]
+    mod tests {
+        use std::sync::Arc;
 
-    fn dpop_nonce(proof: &str) -> Option<String> {
-        let payload = proof.split('.').nth(1)?;
-        let payload = URL_SAFE_NO_PAD.decode(payload).ok()?;
-        serde_json::from_slice::<DpopNonceClaims>(&payload)
-            .ok()?
-            .nonce
-            .filter(|nonce| !nonce.is_empty())
+        use super::same_key_generation;
+
+        #[test]
+        fn verifier_cache_hits_only_the_same_live_snapshot_generation() {
+            let original_manager = crate::test_support::test_key_manager();
+            let original = original_manager.snapshot();
+            let same_generation = original_manager.snapshot();
+            assert!(same_key_generation(&original, &same_generation));
+
+            // Test managers intentionally reuse the same public kid. Distinct
+            // key material must still be treated as a rotation and miss.
+            let rotated = crate::test_support::test_key_manager().snapshot();
+            assert_eq!(original.active_kid, rotated.active_kid);
+            assert!(!Arc::ptr_eq(&original, &rotated));
+            assert_ne!(original.jwks(), rotated.jwks());
+            assert!(!same_key_generation(&original, &rotated));
+        }
     }
 }
 
-#[cfg(not(test))]
 pub(crate) use production::{
     ServerFapiHttpMessageSignatures, ServerFapiMtlsResolver, ServerFapiResourceAuthorizer,
 };

@@ -50,9 +50,6 @@ pub(crate) use oidc_logout::{OidcLogoutConfig, OidcLogoutHandles};
 pub(crate) use password_login::ServerPasswordLoginOperations;
 pub(crate) use profile_account::ServerProfileAccountOperations;
 pub(crate) use resource_server::ResourceServerConfig;
-#[cfg(test)]
-pub(crate) use resource_server::ResourceServerHandles;
-#[cfg(not(test))]
 pub(crate) use resource_server::{
     ServerFapiHttpMessageSignatures, ServerFapiMtlsResolver, ServerFapiResourceAuthorizer,
 };

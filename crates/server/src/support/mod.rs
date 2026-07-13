@@ -5,7 +5,6 @@ pub(crate) mod client_ip;
 pub(crate) mod dpop;
 pub(crate) mod email;
 mod email_templates;
-pub(crate) mod fapi_http_signatures;
 pub(crate) mod jwe;
 pub(crate) mod mtls;
 pub(crate) mod oauth;

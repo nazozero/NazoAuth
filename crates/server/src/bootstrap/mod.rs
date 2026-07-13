@@ -29,6 +29,8 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 use actix_web::{App, HttpServer, dev::Service, middleware::from_fn, web};
 
 use crate::config::{ConfigSource, database_max_connections, database_url};
+#[cfg(test)]
+use crate::domain::DynamicRegistrationHandles;
 use crate::domain::{
     DynamicRegistrationConfig, MFA_REMEMBERED_COOKIE_NAME, MFA_REMEMBERED_TTL_SECONDS,
     MetadataConfig, OidcLogoutConfig, OidcLogoutHandles, ResourceServerConfig,
@@ -37,11 +39,11 @@ use crate::domain::{
     ServerMfaSecretHasher, ServerPasswordLoginOperations, ServerProfileAccountOperations,
     UserinfoConfig, UserinfoHandles,
 };
-#[cfg(test)]
-use crate::domain::{DynamicRegistrationHandles, ResourceServerHandles};
-#[cfg(not(test))]
 use crate::domain::{
     ServerFapiHttpMessageSignatures, ServerFapiMtlsResolver, ServerFapiResourceAuthorizer,
+};
+#[cfg(not(test))]
+use crate::domain::{
     ServerScimBootstrapPasswordProvider, ServerScimCursorProtector, ServerScimRequestAuthorizer,
     ServerTokenManagementOperations, ServerTokenManagementRequestGuard, ServerUserinfoOperations,
     dynamic_registration_endpoint,
@@ -146,16 +148,6 @@ pub async fn run() -> anyhow::Result<()> {
     let resource_replay_connection =
         nazo_valkey::ValkeyConnection::from_existing_client(valkey.clone());
     let resource_server_config = ResourceServerConfig::from(settings.as_ref());
-    #[cfg(test)]
-    let resource_server_http_data = web::Data::new(ResourceServerHandles {
-        config: resource_server_config,
-        keyset: keyset.clone(),
-        tokens: nazo_postgres::TokenRepository::new(diesel_db.clone()),
-        clients: nazo_postgres::OAuthClientRepository::new(diesel_db.clone()),
-        replay: nazo_valkey::ReplayStore::new(&resource_replay_connection),
-        http_message_signatures_enabled: settings.modules.enable_fapi_http_signatures,
-    });
-    #[cfg(not(test))]
     let resource_server_http_data = {
         let replay = nazo_valkey::ReplayStore::new(&resource_replay_connection);
         let authorizer = Arc::new(ServerFapiResourceAuthorizer::new(
