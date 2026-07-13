@@ -12,7 +12,8 @@ use url::Url;
 
 use crate::config::ConfigSource;
 use crate::support::{
-    ClientIpHeaderMode, IpCidr, LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER, parse_trusted_proxy_cidrs,
+    client_ip::ClientIpHeaderMode, client_ip::IpCidr, client_ip::parse_trusted_proxy_cidrs,
+    security::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
 };
 
 mod email;

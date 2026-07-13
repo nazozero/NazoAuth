@@ -22,7 +22,7 @@ use crate::settings::{
     OidcFederationSettings, SamlGatewaySettings, SocialProviderSettings,
 };
 use crate::support::client_ip::{ClientIpConfig, client_ip_with_config};
-use crate::support::{AuthRequestLimiter, normalize_email_address};
+use crate::support::{email::normalize_email_address, rate_limit::AuthRequestLimiter};
 
 mod oidc;
 mod saml;

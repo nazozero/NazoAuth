@@ -7,15 +7,17 @@ use crate::domain::{
 };
 #[cfg(test)]
 use crate::settings::Settings;
+use crate::support::{
+    dpop::DpopError, dpop::DpopErrorContext, dpop::dpop_error_response,
+    dpop::validate_dpop_proof_with_authorization_service,
+    mtls::request_mtls_thumbprint_from_trusted_proxy, oauth::audiences_allowed, oauth::is_subset,
+    oauth::is_valid_pkce_value, security::ValidatedClientAssertion, security::blake3_hex,
+    security::constant_time_eq, security::pkce_s256,
+};
 #[cfg(test)]
 use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, authorization_code_key,
-    valkey_get, valkey_set_ex,
-};
-use crate::support::{
-    DpopError, DpopErrorContext, ValidatedClientAssertion, audiences_allowed, blake3_hex,
-    constant_time_eq, dpop_error_response, is_subset, is_valid_pkce_value, pkce_s256,
-    request_mtls_thumbprint_from_trusted_proxy, validate_dpop_proof_with_authorization_service,
+    oauth::authorization_code_key, tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID,
+    tenancy::DEFAULT_TENANT_ID, valkey::valkey_get, valkey::valkey_set_ex,
 };
 use actix_web::http::StatusCode;
 #[cfg(test)]

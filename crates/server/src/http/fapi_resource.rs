@@ -4,14 +4,17 @@ use crate::domain::{ClientRow, ResourceServerConfig, ResourceServerHandles};
 use crate::support::dpop::validate_dpop_proof_with_store;
 use crate::support::mtls::request_mtls_thumbprint_from_trusted_proxy;
 use crate::support::security::tokens::decode_access_claims_with;
-use crate::support::{
-    AccessTokenAuthScheme, DpopError, DpopErrorContext, access_token_tenant_id, constant_time_eq,
-    dpop_error_response, verify_client_http_message,
-};
 #[cfg(test)]
 use crate::support::{
-    AccessTokenJwtInput, ClientIpHeaderMode, DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID,
-    DEFAULT_TENANT_ID, IssuedAccessToken, blake3_hex, make_jwt, parse_trusted_proxy_cidrs,
+    client_ip::ClientIpHeaderMode, client_ip::parse_trusted_proxy_cidrs,
+    security::AccessTokenJwtInput, security::IssuedAccessToken, security::blake3_hex,
+    security::make_jwt, tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID,
+    tenancy::DEFAULT_TENANT_ID,
+};
+use crate::support::{
+    dpop::AccessTokenAuthScheme, dpop::DpopError, dpop::DpopErrorContext,
+    dpop::dpop_error_response, fapi_http_signatures::verify_client_http_message,
+    security::access_token_tenant_id, security::constant_time_eq,
 };
 #[cfg(test)]
 use crate::{domain::AppState, settings::Settings};

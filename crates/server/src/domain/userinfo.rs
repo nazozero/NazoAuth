@@ -5,7 +5,8 @@ use serde_json::Value;
 
 use crate::settings::{DpopNoncePolicy, Settings};
 use crate::support::{
-    DpopError, IpCidr, request_mtls_thumbprint_from_trusted_proxy, validate_dpop_proof_with_store,
+    client_ip::IpCidr, dpop::DpopError, dpop::validate_dpop_proof_with_store,
+    mtls::request_mtls_thumbprint_from_trusted_proxy,
 };
 
 #[derive(Clone)]
@@ -96,7 +97,7 @@ impl UserinfoHandles {
     }
 
     pub(crate) async fn issue_dpop_nonce(&self) -> Result<String, DpopError> {
-        crate::support::issue_dpop_nonce_with_store(&self.replay).await
+        crate::support::dpop::issue_dpop_nonce_with_store(&self.replay).await
     }
 
     pub(crate) fn request_mtls_thumbprint(&self, req: &HttpRequest) -> Option<String> {

@@ -14,7 +14,7 @@ use nazo_identity::PublicAccount;
 use nazo_postgres::DbPool;
 use nazo_postgres::MfaRepository;
 
-use super::{blake3_hex, hash_password, random_urlsafe_token};
+use super::{security::blake3_hex, security::hash_password, security::random_urlsafe_token};
 
 pub(crate) const MFA_REMEMBERED_COOKIE_NAME: &str = "nazo_oauth_mfa_remembered";
 pub(crate) const MFA_REMEMBERED_TTL_SECONDS: u64 = 2_592_000;

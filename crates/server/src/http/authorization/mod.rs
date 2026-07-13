@@ -101,7 +101,7 @@ impl TestAuthorizationDependencies {
             service: ServerAuthorizationService::new(
                 nazo_postgres::AuthorizationFlowRepository::new(
                     state.diesel_db.clone(),
-                    crate::support::DEFAULT_TENANT_ID,
+                    crate::support::tenancy::DEFAULT_TENANT_ID,
                 ),
                 nazo_valkey::AuthorizationStateAdapter::new(&connection),
                 state.keyset.clone(),

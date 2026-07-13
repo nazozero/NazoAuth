@@ -6,9 +6,10 @@ pub(crate) mod update;
 
 use crate::settings::Settings;
 use crate::support::{
-    client_jwks_contains_signing_key, client_jwks_matching_encryption_key_count,
-    fetch_sector_identifier_uris, hash_client_secret, random_urlsafe_token,
-    validate_client_jwks_with_missing_kid_policy, validate_self_signed_mtls_jwks,
+    oauth::client_jwks_contains_signing_key, oauth::client_jwks_matching_encryption_key_count,
+    oauth::validate_client_jwks_with_missing_kid_policy, oauth::validate_self_signed_mtls_jwks,
+    sector_identifier::fetch_sector_identifier_uris, security::hash_client_secret,
+    security::random_urlsafe_token,
 };
 use nazo_auth::{
     AdminClientCryptoPort, AdminClientPolicy, SectorIdentifierFuture, SectorIdentifierResolverPort,
@@ -115,9 +116,9 @@ pub(crate) mod test_support {
     };
     use crate::settings::Settings;
     use crate::support::{
-        client_jwks_contains_signing_key, client_jwks_matching_encryption_key_count,
-        hash_client_secret, random_urlsafe_token, validate_client_jwks_with_missing_kid_policy,
-        validate_self_signed_mtls_jwks,
+        oauth::client_jwks_contains_signing_key, oauth::client_jwks_matching_encryption_key_count,
+        oauth::validate_client_jwks_with_missing_kid_policy, oauth::validate_self_signed_mtls_jwks,
+        security::hash_client_secret, security::random_urlsafe_token,
     };
     use nazo_auth::AdminClientCryptoPort;
     use serde_json::Value;
@@ -244,8 +245,8 @@ pub(crate) mod test_support {
             &nazo_auth::AdminClientPolicy {
                 tenant: nazo_identity::TenantContext::default_system(),
                 pairwise_subject_secret: pairwise_subject_secret.map(ToOwned::to_owned),
-                client_secret_pepper: crate::support::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER
-                    .to_owned(),
+                client_secret_pepper:
+                    crate::support::security::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER.to_owned(),
             },
             &ServerSectorIdentifierResolver,
             &crypto,

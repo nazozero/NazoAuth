@@ -1,9 +1,11 @@
 //! RFC 8628 Device Authorization Grant.
 use crate::domain::ClientRow;
 use crate::support::{
-    ClientCredentials, TokenManagementRequestLimiter, audit_event, audit_fields, blake3_hex,
-    client_ip_with_context, client_supports_grant, extract_client_credentials_with_trusted_proxies,
-    has_basic_authorization_scheme, parse_resource_indicators, parse_scope, random_urlsafe_token,
+    audit::audit_event, audit::audit_fields, client_ip::client_ip_with_context,
+    oauth::client_supports_grant, oauth::parse_resource_indicators, oauth::parse_scope,
+    rate_limit::TokenManagementRequestLimiter, security::ClientCredentials, security::blake3_hex,
+    security::extract_client_credentials_with_trusted_proxies,
+    security::has_basic_authorization_scheme, security::random_urlsafe_token,
 };
 use actix_web::http::StatusCode;
 use actix_web::http::header;

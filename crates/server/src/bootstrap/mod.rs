@@ -59,13 +59,14 @@ use crate::http::token::issue::TokenIssuanceConfig;
 use crate::runtime_modules::{RuntimeModules, ServerRuntimeModuleRegistry};
 use crate::settings::Settings;
 use crate::support::client_ip::ClientIpConfig;
-use crate::support::sessions::{AdminSessionHandles, SessionHttpConfig, SessionProfileHandles};
-use crate::support::{
-    AuthRequestLimiter, SmtpVerificationEmailDelivery, TokenManagementRequestLimiter,
+use crate::support::email::{SmtpVerificationEmailDelivery, email_delivery_configured};
+use crate::support::rate_limit::{AuthRequestLimiter, TokenManagementRequestLimiter};
+use crate::support::security::{
     configure_password_hash_limits, default_password_hash_max_concurrency,
-    default_password_hash_queue_timeout_ms, default_tenant_context, dummy_password_hash,
-    email_delivery_configured, initialize_dummy_password_hash,
+    default_password_hash_queue_timeout_ms, dummy_password_hash, initialize_dummy_password_hash,
 };
+use crate::support::sessions::{AdminSessionHandles, SessionHttpConfig, SessionProfileHandles};
+use crate::support::tenancy::{DEFAULT_TENANT_ID, default_tenant_context};
 #[cfg(test)]
 use actix_web::http::header;
 use nazo_http_actix::security_headers;
@@ -181,10 +182,7 @@ pub async fn run() -> anyhow::Result<()> {
     #[cfg(test)]
     let valkey_connection = nazo_valkey::ValkeyConnection::from_existing_client(valkey.clone());
     let authorization_service = web::Data::new(ServerAuthorizationService::new(
-        nazo_postgres::AuthorizationFlowRepository::new(
-            diesel_db.clone(),
-            crate::support::DEFAULT_TENANT_ID,
-        ),
+        nazo_postgres::AuthorizationFlowRepository::new(diesel_db.clone(), DEFAULT_TENANT_ID),
         nazo_valkey::AuthorizationStateAdapter::new(&valkey_connection),
         keyset.clone(),
     ));
@@ -204,7 +202,7 @@ pub async fn run() -> anyhow::Result<()> {
     ));
     let device_grants = web::Data::new(nazo_postgres::AuthorizationFlowRepository::new(
         diesel_db.clone(),
-        crate::support::DEFAULT_TENANT_ID,
+        DEFAULT_TENANT_ID,
     ));
     let device_config = web::Data::new(DeviceHttpConfig::from(settings.as_ref()));
     let userinfo_handles = web::Data::new(UserinfoHandles::new(
@@ -379,7 +377,7 @@ pub async fn run() -> anyhow::Result<()> {
         nazo_valkey::SessionStore::new(&valkey_connection),
         TracingAuthenticationAudit,
         nazo_identity::AuthenticationServiceConfig {
-            tenant_id: nazo_identity::TenantId::new(crate::support::DEFAULT_TENANT_ID)
+            tenant_id: nazo_identity::TenantId::new(DEFAULT_TENANT_ID)
                 .expect("default tenant ID is valid"),
             dummy_password_hash: nazo_identity::PasswordHash::new(dummy_password_hash()?)?,
             failure_window_seconds: identity.rate_limit.login_failure_window_seconds,
@@ -405,7 +403,7 @@ pub async fn run() -> anyhow::Result<()> {
         nazo_valkey::SessionStore::new(&valkey_connection),
         TracingPasskeyAudit,
         nazo_identity::PasskeyServiceConfig {
-            tenant_id: nazo_identity::TenantId::new(crate::support::DEFAULT_TENANT_ID)
+            tenant_id: nazo_identity::TenantId::new(DEFAULT_TENANT_ID)
                 .expect("default tenant ID is valid"),
             rp_id: passkey.rp_id.to_owned(),
             rp_name: passkey.rp_name.to_owned(),

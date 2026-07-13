@@ -176,7 +176,7 @@ async fn require_runtime_admin(
     admin_sessions: &AdminSessionHandles,
     req: &HttpRequest,
     require_recent_mfa: bool,
-) -> Result<crate::support::CurrentSession, HttpResponse> {
+) -> Result<crate::support::sessions::CurrentSession, HttpResponse> {
     let session = match admin_sessions.current_session(req).await {
         Ok(Some(session)) => session,
         Ok(None) => {
@@ -212,7 +212,7 @@ async fn require_runtime_admin(
     Ok(session)
 }
 
-fn recent_mfa(session: &crate::support::CurrentSession, now: i64) -> bool {
+fn recent_mfa(session: &crate::support::sessions::CurrentSession, now: i64) -> bool {
     recent_mfa_values(&session.amr, session.auth_time, now)
 }
 

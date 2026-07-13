@@ -1,112 +1,56 @@
 //! 跨 HTTP handler 复用的领域支撑模块。
 // 子模块按职责拆分；调用方显式导入所需能力。
-mod audit;
+pub(crate) mod audit;
 pub(crate) mod client_ip;
 pub(crate) mod dpop;
-mod email;
+pub(crate) mod email;
 mod email_templates;
-mod fapi_http_signatures;
-mod jwe;
-mod mfa;
+pub(crate) mod fapi_http_signatures;
+pub(crate) mod jwe;
+pub(crate) mod mfa;
 pub(crate) mod mtls;
-mod oauth;
-mod oidc_claims;
-mod rate_limit;
-mod sector_identifier;
+pub(crate) mod oauth;
+pub(crate) mod oidc_claims;
+pub(crate) mod rate_limit;
+pub(crate) mod sector_identifier;
 pub(crate) mod security;
 pub(crate) mod sessions;
-mod tenancy;
+pub(crate) mod tenancy;
 #[cfg(test)]
-mod valkey;
-mod views;
+pub(crate) mod valkey;
+pub(crate) mod views;
 
 #[cfg(test)]
 pub(crate) use crate::test_support::{ClientSigningFixture, client_signing_fixture};
-pub(crate) use audit::{audit_event, audit_fields};
-pub(crate) use client_ip::{
-    ClientIpConfig, ClientIpHeaderMode, IpCidr, client_ip_with_config, client_ip_with_context,
-    parse_trusted_proxy_cidrs,
-};
-pub(crate) use dpop::{
-    AccessTokenAuthScheme, DpopError, DpopErrorContext, dpop_error_response, dpop_proof_present,
-    issue_dpop_nonce_with_authorization_service, issue_dpop_nonce_with_store,
-    validate_dpop_proof_with_authorization_service, validate_dpop_proof_with_store,
-};
-pub(crate) use email::{
-    SmtpVerificationEmailDelivery, email_delivery_configured, normalize_email_address,
-};
-pub(crate) use fapi_http_signatures::verify_client_http_message;
-pub(crate) use jwe::{ClientJweKey, JwePayloadKind, client_jwe_key, encrypt_compact_jwe};
 #[cfg(test)]
-pub(crate) use mfa::MFA_BACKUP_CODE_COUNT;
-pub(crate) use mfa::{
-    MFA_REMEMBERED_COOKIE_NAME, MFA_REMEMBERED_TTL_SECONDS, MFA_TOTP_DIGITS,
-    MFA_TOTP_PERIOD_SECONDS, MfaVerificationMethod, clear_user_mfa_state_with_repository,
-    generate_backup_codes_and_hashes, remember_mfa_device_with_repository,
-    replace_backup_codes_with_repository, verify_user_mfa_code_with_repository,
-};
+pub(crate) use client_ip::IpCidr;
+#[cfg(test)]
+pub(crate) use email::normalize_email_address;
 #[cfg(test)]
 pub(crate) use mfa::{
-    remember_mfa_device, remembered_mfa_device_valid, replace_backup_codes, verify_user_mfa_code,
+    MFA_REMEMBERED_COOKIE_NAME, remember_mfa_device, replace_backup_codes, verify_user_mfa_code,
 };
 #[cfg(test)]
 pub(crate) use mtls::request_mtls_thumbprint;
-pub(crate) use mtls::{
-    client_mtls_certificate_matches, request_mtls_client_certificate_from_headers,
-    request_mtls_client_certificate_from_trusted_proxy, request_mtls_thumbprint_from_trusted_proxy,
-};
-pub(crate) use nazo_key_management::{signing_algorithm_from_name, signing_algorithm_name};
 #[cfg(test)]
-pub(crate) use oauth::authorization_code_key;
-pub(crate) use oauth::{
-    RedirectUriError, audiences_allowed, client_jwks_contains_signing_key,
-    client_jwks_matching_encryption_key_count, client_supports_grant, is_subset,
-    is_valid_pkce_value, json_array_to_strings, parse_resource_indicators, parse_scope,
-    registered_redirect_uri, validate_client_jwks_with_missing_kid_policy,
-    validate_self_signed_mtls_jwks,
-};
+pub(crate) use oauth::json_array_to_strings;
 #[cfg(test)]
 pub(crate) use oidc_claims::oidc_subject;
-pub(crate) use oidc_claims::{oidc_id_token_user_claims, oidc_user_claims, supported_user_claim};
 #[cfg(test)]
-pub(crate) use rate_limit::enforce_rate_limit;
-pub(crate) use rate_limit::{
-    AuthRequestLimiter, RateLimitPolicy, TokenManagementRequestLimiter,
-    enforce_rate_limit_with_store, rate_limited_response,
-};
-pub(crate) use sector_identifier::fetch_sector_identifier_uris;
+pub(crate) use rate_limit::{RateLimitPolicy, TokenManagementRequestLimiter, enforce_rate_limit};
 #[cfg(test)]
 pub(crate) use security::{
-    AccessTokenJwtInput, CLIENT_ASSERTION_TYPE_JWT_BEARER, IssuedAccessToken,
-    SUPPORTED_CLIENT_JWT_SIGNING_ALGS, make_jwt,
+    LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER, SUPPORTED_CLIENT_JWT_SIGNING_ALGS, blake3_hex,
+    client_secret_digest, hash_client_secret, hash_password, jwt_decoding_key_from_jwk, pkce_s256,
+    random_urlsafe_token,
 };
-pub(crate) use security::{
-    ClientAssertionError, ClientCredentials, LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
-    PasswordHashingError, PasswordVerificationError, SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
-    SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS, ValidatedClientAssertion, access_delivery_token,
-    access_token_tenant_id, blake3_hex, client_jwt_algorithm_from_name, client_jwt_decoding_key,
-    client_secret_digest, configure_password_hash_limits, constant_time_eq,
-    consume_private_key_jwt_with_authorization_service, default_password_hash_max_concurrency,
-    default_password_hash_queue_timeout_ms, dummy_password_hash,
-    extract_client_credentials_with_trusted_proxies, has_basic_authorization_scheme,
-    hash_client_secret, hash_password, hash_password_blocking_limited,
-    initialize_dummy_password_hash, jwt_decoding_key_from_jwk, pkce_s256, random_urlsafe_token,
-    supported_client_jwt_algorithm_name, verify_password_blocking_limited,
-    verify_private_key_jwt_claims_for_issuer,
-};
-#[cfg(test)]
-pub(crate) use security::{consume_private_key_jwt, decode_access_claims};
-pub(crate) use sessions::{CurrentSession, SessionRotation};
 #[cfg(test)]
 pub(crate) use sessions::{SessionPayload, current_session};
 #[cfg(test)]
-pub(crate) use tenancy::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID};
-pub(crate) use tenancy::{DEFAULT_TENANT_ID, default_tenant_context};
+pub(crate) use tenancy::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, default_tenant_context,
+};
 #[cfg(test)]
 pub(crate) use valkey::{
     valkey_atomic_snapshot, valkey_del, valkey_eval_string, valkey_get, valkey_set_ex,
-};
-pub(crate) use views::{
-    admin_user_json, append_query, auth_me_json_with_count, client_json, is_cross_site_fetch,
-    pagination,
 };

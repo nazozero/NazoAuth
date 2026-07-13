@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 #[cfg(test)]
 use crate::domain::AppState;
-use crate::support::signing_algorithm_name;
+use nazo_key_management::signing_algorithm_name;
 
 #[cfg(test)]
 pub(crate) struct AccessTokenJwtInput<'a> {

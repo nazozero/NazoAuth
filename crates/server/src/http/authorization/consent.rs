@@ -8,7 +8,10 @@ use crate::runtime_modules::ServerRuntimeModuleRegistry;
 use crate::settings::Settings;
 use crate::support::sessions::AdminSessionHandles;
 #[cfg(test)]
-use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, valkey_set_ex};
+use crate::support::{
+    tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
+    valkey::valkey_set_ex,
+};
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Query};
 use actix_web::{HttpRequest, HttpResponse};

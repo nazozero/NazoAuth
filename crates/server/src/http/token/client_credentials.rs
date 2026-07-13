@@ -4,12 +4,15 @@ use crate::domain::AppState;
 use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
 #[cfg(test)]
 use crate::settings::Settings;
-#[cfg(test)]
-use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
 use crate::support::{
-    DpopError, DpopErrorContext, ValidatedClientAssertion, audiences_allowed, dpop_error_response,
-    is_subset, parse_scope, request_mtls_thumbprint_from_trusted_proxy,
-    validate_dpop_proof_with_authorization_service,
+    dpop::DpopError, dpop::DpopErrorContext, dpop::dpop_error_response,
+    dpop::validate_dpop_proof_with_authorization_service,
+    mtls::request_mtls_thumbprint_from_trusted_proxy, oauth::audiences_allowed, oauth::is_subset,
+    oauth::parse_scope, security::ValidatedClientAssertion,
+};
+#[cfg(test)]
+use crate::support::{
+    tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
 };
 use actix_web::http::StatusCode;
 #[cfg(test)]

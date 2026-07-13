@@ -13,15 +13,19 @@ use crate::runtime_modules::ServerRuntimeModuleRegistry;
 #[cfg(test)]
 use crate::settings::Settings;
 #[cfg(test)]
-use crate::support::blake3_hex;
+use crate::support::security::blake3_hex;
 use crate::support::sessions::AdminSessionHandles;
-#[cfg(test)]
-use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, valkey_get};
 use crate::support::{
-    DpopError, DpopErrorContext, RedirectUriError, audiences_allowed, dpop_error_response,
-    extract_client_credentials_with_trusted_proxies, has_basic_authorization_scheme,
-    random_urlsafe_token, rate_limited_response, registered_redirect_uri,
-    request_mtls_thumbprint_from_trusted_proxy,
+    dpop::DpopError, dpop::DpopErrorContext, dpop::dpop_error_response,
+    mtls::request_mtls_thumbprint_from_trusted_proxy, oauth::RedirectUriError,
+    oauth::audiences_allowed, oauth::registered_redirect_uri, rate_limit::rate_limited_response,
+    security::extract_client_credentials_with_trusted_proxies,
+    security::has_basic_authorization_scheme, security::random_urlsafe_token,
+};
+#[cfg(test)]
+use crate::support::{
+    tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
+    valkey::valkey_get,
 };
 use actix_web::http::StatusCode;
 use actix_web::http::header;
@@ -70,7 +74,7 @@ async fn enforce_par_rate_limit(
     context: &AuthorizationRequestContext<'_>,
     req: &HttpRequest,
 ) -> Result<(), HttpResponse> {
-    let subject = crate::support::client_ip_with_context(
+    let subject = crate::support::client_ip::client_ip_with_context(
         req,
         context.config.client_ip_header_mode,
         &context.config.trusted_proxy_cidrs,

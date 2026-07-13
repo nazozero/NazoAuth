@@ -1,8 +1,8 @@
 use serde_json::json;
 
 use crate::support::{
-    PasswordHashingError, audit_event, audit_fields, blake3_hex, hash_password_blocking_limited,
-    random_urlsafe_token,
+    audit::audit_event, audit::audit_fields, security::PasswordHashingError, security::blake3_hex,
+    security::hash_password_blocking_limited, security::random_urlsafe_token,
 };
 
 #[derive(Clone, Copy)]

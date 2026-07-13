@@ -1,8 +1,8 @@
 use serde_json::json;
 
 use crate::support::{
-    PasswordVerificationError, audit_event, audit_fields, blake3_hex,
-    verify_password_blocking_limited,
+    audit::audit_event, audit::audit_fields, security::PasswordVerificationError,
+    security::blake3_hex, security::verify_password_blocking_limited,
 };
 
 #[derive(Clone, Copy)]

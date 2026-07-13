@@ -8,13 +8,14 @@ use crate::domain::{ClientRow, NativeSsoTokenBinding, RefreshTokenPolicy, TokenI
 use crate::http::token::client_auth::consume_token_client_assertion_with_authorization_service;
 use crate::http::token::issue::{TokenIssuanceContext, issue_token_response_with_service};
 #[cfg(test)]
-use crate::support::blake3_hex;
+use crate::support::security::blake3_hex;
 #[cfg(test)]
-use crate::support::jwt_decoding_key_from_jwk;
+use crate::support::security::jwt_decoding_key_from_jwk;
 use crate::support::{
-    DpopError, DpopErrorContext, ValidatedClientAssertion, dpop_error_response, is_subset,
-    parse_scope, random_urlsafe_token, request_mtls_thumbprint_from_trusted_proxy,
-    validate_dpop_proof_with_authorization_service,
+    dpop::DpopError, dpop::DpopErrorContext, dpop::dpop_error_response,
+    dpop::validate_dpop_proof_with_authorization_service,
+    mtls::request_mtls_thumbprint_from_trusted_proxy, oauth::is_subset, oauth::parse_scope,
+    security::ValidatedClientAssertion, security::random_urlsafe_token,
 };
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse};

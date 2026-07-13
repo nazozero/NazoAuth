@@ -10,18 +10,21 @@ use crate::domain::MfaProfileHandles;
 #[cfg(test)]
 use crate::settings::Settings;
 #[cfg(test)]
-use crate::support::MFA_BACKUP_CODE_COUNT;
+use crate::support::mfa::MFA_BACKUP_CODE_COUNT;
+use crate::support::{
+    audit::audit_event, audit::audit_fields, mfa::MFA_REMEMBERED_COOKIE_NAME,
+    mfa::MFA_REMEMBERED_TTL_SECONDS, mfa::MFA_TOTP_DIGITS, mfa::MFA_TOTP_PERIOD_SECONDS,
+    mfa::MfaVerificationMethod, mfa::clear_user_mfa_state_with_repository,
+    mfa::generate_backup_codes_and_hashes, mfa::remember_mfa_device_with_repository,
+    mfa::replace_backup_codes_with_repository, mfa::verify_user_mfa_code_with_repository,
+    rate_limit::RateLimitPolicy, rate_limit::enforce_rate_limit_with_store,
+    sessions::SessionRotation,
+};
 #[cfg(test)]
 use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload,
-    remembered_mfa_device_valid, valkey_get, valkey_set_ex,
-};
-use crate::support::{
-    MFA_REMEMBERED_COOKIE_NAME, MFA_REMEMBERED_TTL_SECONDS, MFA_TOTP_DIGITS,
-    MFA_TOTP_PERIOD_SECONDS, MfaVerificationMethod, RateLimitPolicy, SessionRotation, audit_event,
-    audit_fields, clear_user_mfa_state_with_repository, enforce_rate_limit_with_store,
-    generate_backup_codes_and_hashes, remember_mfa_device_with_repository,
-    replace_backup_codes_with_repository, verify_user_mfa_code_with_repository,
+    mfa::remembered_mfa_device_valid, sessions::SessionPayload, tenancy::DEFAULT_ORGANIZATION_ID,
+    tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID, valkey::valkey_get,
+    valkey::valkey_set_ex,
 };
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json};

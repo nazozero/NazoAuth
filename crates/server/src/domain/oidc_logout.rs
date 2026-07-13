@@ -14,8 +14,9 @@ use uuid::Uuid;
 #[cfg(not(test))]
 use crate::runtime_modules::ServerRuntimeModuleRegistry;
 use crate::settings::Settings;
+use crate::support::security::jwt_decoding_key_from_jwk;
 use crate::support::sessions::{CurrentSession, SessionHttpConfig, SessionProfileHandles};
-use crate::support::{jwt_decoding_key_from_jwk, signing_algorithm_name};
+use nazo_key_management::signing_algorithm_name;
 
 #[derive(Clone)]
 pub(crate) struct OidcLogoutConfig {

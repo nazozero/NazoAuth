@@ -10,16 +10,19 @@ use nazo_http_actix::{
 use crate::domain::AppState;
 use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
 use crate::settings::Settings;
-#[cfg(test)]
-use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID};
 use crate::support::{
-    DEFAULT_TENANT_ID, DpopError, DpopErrorContext, ValidatedClientAssertion, audit_event,
-    audit_fields, blake3_hex, client_ip_with_context, client_jwt_decoding_key,
-    client_supports_grant, constant_time_eq, dpop_error_response,
-    extract_client_credentials_with_trusted_proxies, has_basic_authorization_scheme, is_subset,
-    parse_scope, random_urlsafe_token, request_mtls_thumbprint_from_trusted_proxy,
-    validate_dpop_proof_with_authorization_service,
+    audit::audit_event, audit::audit_fields, client_ip::client_ip_with_context, dpop::DpopError,
+    dpop::DpopErrorContext, dpop::dpop_error_response,
+    dpop::validate_dpop_proof_with_authorization_service,
+    mtls::request_mtls_thumbprint_from_trusted_proxy, oauth::client_supports_grant,
+    oauth::is_subset, oauth::parse_scope, security::ValidatedClientAssertion, security::blake3_hex,
+    security::client_jwt_decoding_key, security::constant_time_eq,
+    security::extract_client_credentials_with_trusted_proxies,
+    security::has_basic_authorization_scheme, security::random_urlsafe_token,
+    tenancy::DEFAULT_TENANT_ID,
 };
+#[cfg(test)]
+use crate::support::{tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID};
 use actix_web::http::StatusCode;
 use actix_web::http::header;
 use actix_web::http::header::HeaderValue;
@@ -54,7 +57,7 @@ use super::{
 use crate::http::authorization::ServerAuthorizationService;
 use crate::runtime_modules::ServerRuntimeModuleRegistry;
 use crate::support::sessions::AdminSessionHandles;
-use crate::support::{ClientIpHeaderMode, IpCidr};
+use crate::support::{client_ip::ClientIpHeaderMode, client_ip::IpCidr};
 use actix_web::web::Payload;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use nazo_auth::ClientAuthenticationContext;

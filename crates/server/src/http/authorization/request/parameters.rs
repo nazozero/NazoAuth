@@ -1,6 +1,6 @@
 use crate::domain::ClientRow;
 use crate::http::authorization::BASELINE_ACR_VALUE;
-use crate::support::supported_user_claim;
+use crate::support::oidc_claims::supported_user_claim;
 use nazo_auth::{OidcClaimRequest, is_valid_pkce_value};
 use serde_json::Value;
 #[cfg(test)]

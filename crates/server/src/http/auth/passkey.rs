@@ -12,7 +12,9 @@ use serde_json::json;
 
 use crate::bootstrap::LocalPasskeyService;
 use crate::support::client_ip::{ClientIpConfig, client_ip_with_config};
-use crate::support::{AuthRequestLimiter, MFA_REMEMBERED_COOKIE_NAME, blake3_hex};
+use crate::support::{
+    mfa::MFA_REMEMBERED_COOKIE_NAME, rate_limit::AuthRequestLimiter, security::blake3_hex,
+};
 
 #[derive(Clone)]
 pub(crate) struct PasskeyHttpConfig {

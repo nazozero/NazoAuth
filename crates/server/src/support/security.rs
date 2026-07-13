@@ -1,8 +1,12 @@
 //! 密码、哈希、客户端认证和客户端 JWT 验证工具。
 
+use super::{
+    audit::audit_event, audit::audit_fields, mtls::request_mtls_client_certificate_from_headers,
+};
 #[cfg(test)]
-use super::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
-use super::{audit_event, audit_fields, request_mtls_client_certificate_from_headers};
+use super::{
+    tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
+};
 #[cfg(test)]
 use crate::domain::AppState;
 use crate::domain::ClientRow;
@@ -307,7 +311,7 @@ pub(crate) fn extract_client_credentials(
 
 pub(crate) fn extract_client_credentials_with_trusted_proxies(
     req: &HttpRequest,
-    trusted_proxy_cidrs: &[crate::support::IpCidr],
+    trusted_proxy_cidrs: &[crate::support::client_ip::IpCidr],
     form_client_id: Option<&str>,
     form_secret: Option<&str>,
     form_assertion_type: Option<&str>,

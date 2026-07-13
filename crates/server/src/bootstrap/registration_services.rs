@@ -1,6 +1,7 @@
 use crate::support::{
-    PasswordHashingError, PasswordVerificationError, SmtpVerificationEmailDelivery,
-    hash_password_blocking_limited, verify_password_blocking_limited,
+    email::SmtpVerificationEmailDelivery, security::PasswordHashingError,
+    security::PasswordVerificationError, security::hash_password_blocking_limited,
+    security::verify_password_blocking_limited,
 };
 
 #[derive(Clone, Copy)]

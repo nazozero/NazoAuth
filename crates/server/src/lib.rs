@@ -78,12 +78,12 @@ pub(crate) mod test_support {
             nazo_postgres::UserRepository::new(state.diesel_db.clone()),
             nazo_valkey::AuthenticationStore::new(&state.valkey_connection()),
             crate::bootstrap::RegistrationSecretHasher,
-            crate::support::SmtpVerificationEmailDelivery::new(state.settings.clone()),
-            crate::support::default_tenant_context()
+            crate::support::email::SmtpVerificationEmailDelivery::new(state.settings.clone()),
+            crate::support::tenancy::default_tenant_context()
                 .as_identity_context()
                 .expect("default tenant identifiers are valid"),
             nazo_identity::RegistrationServiceConfig {
-                delivery_enabled: crate::support::email_delivery_configured(&state.settings),
+                delivery_enabled: crate::support::email::email_delivery_configured(&state.settings),
                 send_peer_cooldown_seconds: identity.email.send_peer_cooldown_seconds,
                 send_cooldown_seconds: identity.email.send_cooldown_seconds,
                 code_ttl_seconds: identity.email.code_ttl_seconds,
@@ -112,9 +112,10 @@ pub(crate) mod test_support {
             nazo_valkey::SessionStore::new(&state.valkey_connection()),
             crate::bootstrap::TracingAuthenticationAudit,
             nazo_identity::AuthenticationServiceConfig {
-                tenant_id: nazo_identity::TenantId::new(crate::support::DEFAULT_TENANT_ID).unwrap(),
+                tenant_id: nazo_identity::TenantId::new(crate::support::tenancy::DEFAULT_TENANT_ID)
+                    .unwrap(),
                 dummy_password_hash: nazo_identity::PasswordHash::new(
-                    crate::support::dummy_password_hash().unwrap(),
+                    crate::support::security::dummy_password_hash().unwrap(),
                 )
                 .unwrap(),
                 failure_window_seconds: identity.rate_limit.login_failure_window_seconds,
@@ -154,7 +155,8 @@ pub(crate) mod test_support {
             nazo_valkey::SessionStore::new(&state.valkey_connection()),
             crate::bootstrap::TracingPasskeyAudit,
             nazo_identity::PasskeyServiceConfig {
-                tenant_id: nazo_identity::TenantId::new(crate::support::DEFAULT_TENANT_ID).unwrap(),
+                tenant_id: nazo_identity::TenantId::new(crate::support::tenancy::DEFAULT_TENANT_ID)
+                    .unwrap(),
                 rp_id: passkey.rp_id.to_owned(),
                 rp_name: passkey.rp_name.to_owned(),
                 origin: passkey.origin.to_owned(),
@@ -189,7 +191,7 @@ pub(crate) mod test_support {
             nazo_valkey::SessionStore::new(&state.valkey_connection()),
             crate::bootstrap::TracingFederationAudit,
             nazo_identity::FederationServiceConfig {
-                tenant: crate::support::default_tenant_context()
+                tenant: crate::support::tenancy::default_tenant_context()
                     .as_identity_context()
                     .unwrap(),
                 state_ttl_seconds: crate::http::auth::federation::FEDERATION_STATE_TTL_SECONDS,
@@ -216,9 +218,9 @@ pub(crate) mod test_support {
 
     pub(crate) fn auth_request_limiter(
         state: &crate::domain::AppState,
-    ) -> actix_web::web::Data<crate::support::AuthRequestLimiter> {
+    ) -> actix_web::web::Data<crate::support::rate_limit::AuthRequestLimiter> {
         let rate_limit = &state.settings.identity.rate_limit;
-        actix_web::web::Data::new(crate::support::AuthRequestLimiter::new(
+        actix_web::web::Data::new(crate::support::rate_limit::AuthRequestLimiter::new(
             nazo_valkey::RateLimitStore::new(&state.valkey_connection()),
             rate_limit.window_seconds,
             rate_limit.auth_max_requests,

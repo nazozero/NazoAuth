@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::domain::ClientRow;
 
-use super::jwt_decoding_key_from_jwk;
+use super::security::jwt_decoding_key_from_jwk;
 
 fn jwt_algorithm(algorithm: &str) -> anyhow::Result<jsonwebtoken::Algorithm> {
     match algorithm {

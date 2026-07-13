@@ -1,6 +1,6 @@
 //! Current-user avatar HTTP transport.
-use crate::support::auth_me_json_with_count;
-use crate::support::{is_cross_site_fetch, sessions::SessionProfileHandles};
+use crate::support::views::auth_me_json_with_count;
+use crate::support::{sessions::SessionProfileHandles, views::is_cross_site_fetch};
 use actix_multipart::Multipart;
 use actix_web::http::header::HeaderValue;
 use actix_web::{

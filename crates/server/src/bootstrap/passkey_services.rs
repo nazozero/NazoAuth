@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use crate::support::{audit_event, audit_fields, blake3_hex};
+use crate::support::{audit::audit_event, audit::audit_fields, security::blake3_hex};
 
 pub(crate) const PASSKEY_CEREMONY_TTL_SECONDS: u64 = 300;
 

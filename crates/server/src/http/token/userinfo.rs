@@ -4,14 +4,16 @@ use super::ServerTokenService;
 use crate::domain::DatabaseUserFixture;
 use crate::domain::UserinfoHandles;
 use crate::support::{
-    AccessTokenAuthScheme, DpopError, DpopErrorContext, JwePayloadKind, access_token_tenant_id,
-    blake3_hex, client_jwe_key, constant_time_eq, dpop_error_response, encrypt_compact_jwe,
-    oidc_user_claims, parse_scope, signing_algorithm_from_name,
+    dpop::AccessTokenAuthScheme, dpop::DpopError, dpop::DpopErrorContext,
+    dpop::dpop_error_response, jwe::JwePayloadKind, jwe::client_jwe_key, jwe::encrypt_compact_jwe,
+    oauth::parse_scope, oidc_claims::oidc_user_claims, security::access_token_tenant_id,
+    security::blake3_hex, security::constant_time_eq,
 };
 #[cfg(test)]
 use crate::support::{
-    AccessTokenJwtInput, DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID,
-    IssuedAccessToken, jwt_decoding_key_from_jwk, make_jwt,
+    security::AccessTokenJwtInput, security::IssuedAccessToken,
+    security::jwt_decoding_key_from_jwk, security::make_jwt, tenancy::DEFAULT_ORGANIZATION_ID,
+    tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
 };
 use actix_web::http::StatusCode;
 use actix_web::http::header;
@@ -25,6 +27,7 @@ use nazo_auth::{Claims, OAuthClient};
 use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_http_actix::{ResourceAccessToken, resource_access_token};
 use nazo_http_actix::{json_response_no_store, oauth_bearer_error};
+use nazo_key_management::signing_algorithm_from_name;
 use serde_json::{Value, json};
 use uuid::Uuid;
 // 根据 Bearer/DPoP access token 返回用户声明；DPoP-bound token 必须携带有效 proof。

@@ -13,12 +13,15 @@ use crate::domain::AppState;
 use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
 #[cfg(test)]
 use crate::settings::Settings;
-#[cfg(test)]
-use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
 use crate::support::{
-    DpopError, DpopErrorContext, ValidatedClientAssertion, client_jwt_decoding_key,
-    dpop_error_response, request_mtls_thumbprint_from_trusted_proxy,
-    validate_dpop_proof_with_authorization_service,
+    dpop::DpopError, dpop::DpopErrorContext, dpop::dpop_error_response,
+    dpop::validate_dpop_proof_with_authorization_service,
+    mtls::request_mtls_thumbprint_from_trusted_proxy, security::ValidatedClientAssertion,
+    security::client_jwt_decoding_key,
+};
+#[cfg(test)]
+use crate::support::{
+    tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
 };
 #[cfg(test)]
 use crate::test_support::{ClientSigningFixture, client_signing_fixture};

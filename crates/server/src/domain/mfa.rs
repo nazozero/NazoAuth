@@ -1,6 +1,6 @@
 use crate::settings::Settings;
 use crate::support::sessions::SessionProfileHandles;
-use crate::support::{ClientIpHeaderMode, IpCidr};
+use crate::support::{client_ip::ClientIpHeaderMode, client_ip::IpCidr};
 
 #[derive(Clone)]
 pub(crate) struct MfaProfileConfig {

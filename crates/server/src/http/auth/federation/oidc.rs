@@ -1,6 +1,6 @@
 #[cfg(test)]
-use crate::support::blake3_hex;
-use crate::support::{jwt_decoding_key_from_jwk, pkce_s256};
+use crate::support::security::blake3_hex;
+use crate::support::{security::jwt_decoding_key_from_jwk, security::pkce_s256};
 use chrono::Utc;
 use serde::Deserialize;
 use serde_json::Value;

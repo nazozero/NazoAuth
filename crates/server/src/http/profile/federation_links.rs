@@ -4,10 +4,10 @@ use nazo_http_actix::{empty_response_no_store, json_response_no_store, oauth_err
 
 #[cfg(test)]
 use crate::domain::DatabaseExternalIdentityFixture;
-#[cfg(test)]
-use crate::support::DEFAULT_TENANT_ID;
 use crate::support::sessions::SessionProfileHandles;
-use crate::support::{audit_event, audit_fields};
+#[cfg(test)]
+use crate::support::tenancy::DEFAULT_TENANT_ID;
+use crate::support::{audit::audit_event, audit::audit_fields};
 use actix_web::http::StatusCode;
 use actix_web::web::Data;
 use actix_web::web::Path;

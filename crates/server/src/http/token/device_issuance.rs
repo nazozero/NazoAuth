@@ -7,8 +7,9 @@
 //! the issuance context.
 use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
 use crate::support::{
-    DpopError, DpopErrorContext, ValidatedClientAssertion, dpop_error_response,
-    request_mtls_thumbprint_from_trusted_proxy, validate_dpop_proof_with_authorization_service,
+    dpop::DpopError, dpop::DpopErrorContext, dpop::dpop_error_response,
+    dpop::validate_dpop_proof_with_authorization_service,
+    mtls::request_mtls_thumbprint_from_trusted_proxy, security::ValidatedClientAssertion,
 };
 use actix_web::{HttpRequest, HttpResponse, http::StatusCode};
 use chrono::Utc;

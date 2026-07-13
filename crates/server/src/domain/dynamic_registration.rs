@@ -4,7 +4,7 @@ use std::sync::Arc;
 #[cfg(not(test))]
 use crate::runtime_modules::ServerRuntimeModuleRegistry;
 use crate::settings::Settings;
-use crate::support::{ClientIpHeaderMode, IpCidr};
+use crate::support::{client_ip::ClientIpHeaderMode, client_ip::IpCidr};
 
 #[derive(Clone)]
 pub(crate) struct DynamicRegistrationConfig {

@@ -3,11 +3,12 @@
 use crate::domain::DatabaseUserFixture;
 #[cfg(test)]
 use crate::settings::Settings;
-use crate::support::auth_me_json_with_count;
 use crate::support::sessions::SessionProfileHandles;
+use crate::support::views::auth_me_json_with_count;
 #[cfg(test)]
 use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_set_ex,
+    sessions::SessionPayload, tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID,
+    tenancy::DEFAULT_TENANT_ID, valkey::valkey_set_ex,
 };
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json};

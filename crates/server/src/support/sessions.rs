@@ -1,6 +1,6 @@
 //! 会话用户与权限解析。
 #[cfg(test)]
-use super::valkey_get;
+use super::valkey::valkey_get;
 #[cfg(test)]
 use crate::domain::AppState;
 #[cfg(test)]
@@ -19,8 +19,8 @@ use uuid::Uuid;
 // 只处理从请求 Cookie 到当前用户/管理员身份的解析。
 
 #[cfg(test)]
-use super::valkey_set_ex;
-use super::{DEFAULT_TENANT_ID, random_urlsafe_token};
+use super::valkey::valkey_set_ex;
+use super::{security::random_urlsafe_token, tenancy::DEFAULT_TENANT_ID};
 use nazo_http_actix::{
     clear_cookie, cookie_value, has_valid_csrf_token_for_cookies, with_cookie_headers,
 };

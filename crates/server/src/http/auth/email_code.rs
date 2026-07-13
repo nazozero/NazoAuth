@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::bootstrap::LocalRegistrationService;
-use crate::support::{AuthRequestLimiter, normalize_email_address};
+use crate::support::{email::normalize_email_address, rate_limit::AuthRequestLimiter};
 
 #[derive(Clone, Copy)]
 pub(crate) struct EmailCodeHttpConfig {
@@ -101,7 +101,7 @@ pub(crate) async fn send_code_after_rate_limit(
 fn email_code_peer_cooldown_key(req: &HttpRequest) -> String {
     format!(
         "oauth:email_verify:peer_send:{}",
-        crate::support::blake3_hex(&email_code_peer_subject(req))
+        crate::support::security::blake3_hex(&email_code_peer_subject(req))
     )
 }
 

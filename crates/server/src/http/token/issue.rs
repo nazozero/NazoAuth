@@ -3,13 +3,15 @@
 use crate::domain::AppState;
 use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
 use crate::settings::{AuthorizationServerProfile, DpopNoncePolicy, Settings};
-use crate::support::{ClientIpHeaderMode, IpCidr};
-#[cfg(test)]
-use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
 use crate::support::{
-    DpopErrorContext, audit_event, audit_fields, blake3_hex, dpop_error_response,
-    issue_dpop_nonce_with_authorization_service, oidc_id_token_user_claims, random_urlsafe_token,
-    signing_algorithm_name,
+    audit::audit_event, audit::audit_fields, dpop::DpopErrorContext, dpop::dpop_error_response,
+    dpop::issue_dpop_nonce_with_authorization_service, oidc_claims::oidc_id_token_user_claims,
+    security::blake3_hex, security::random_urlsafe_token,
+};
+use crate::support::{client_ip::ClientIpHeaderMode, client_ip::IpCidr};
+#[cfg(test)]
+use crate::support::{
+    tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
 };
 use actix_web::HttpResponse;
 use actix_web::http::StatusCode;
@@ -22,6 +24,7 @@ use nazo_auth::normalize_authorization_details;
 #[cfg(test)]
 use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_http_actix::{json_response_no_store, oauth_token_error};
+use nazo_key_management::signing_algorithm_name;
 #[cfg(test)]
 use serde_json::Value;
 use serde_json::json;

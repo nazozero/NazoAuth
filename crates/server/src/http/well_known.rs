@@ -9,10 +9,11 @@ use crate::http::token::ciba::CIBA_GRANT_TYPE;
 use crate::settings::Settings;
 use crate::settings::{AuthorizationServerProfile, CibaSecurityProfile, SubjectType};
 use crate::support::{
-    SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
-    signing_algorithm_name,
+    security::SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
+    security::SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
 };
 use nazo_auth::MetadataCapabilities;
+use nazo_key_management::signing_algorithm_name;
 
 const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
 const DPOP_SIGNING_ALGS: [&str; 2] = ["EdDSA", "ES256"];

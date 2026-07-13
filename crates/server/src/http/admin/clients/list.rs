@@ -1,7 +1,7 @@
 //! 管理端客户端列表端点。
 use super::ServerAdminClientService;
 use crate::support::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
-use crate::support::{client_json, pagination};
+use crate::support::{views::client_json, views::pagination};
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Query};
 use actix_web::{HttpRequest, HttpResponse};

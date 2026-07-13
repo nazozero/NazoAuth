@@ -4,7 +4,7 @@ use std::sync::Arc;
 #[cfg(not(test))]
 use crate::runtime_modules::ServerRuntimeModuleRegistry;
 use crate::settings::{DpopNoncePolicy, Settings};
-use crate::support::IpCidr;
+use crate::support::client_ip::IpCidr;
 
 #[derive(Clone)]
 pub(crate) struct ResourceServerConfig {

@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::bootstrap::LocalRegistrationService;
-use crate::support::{AuthRequestLimiter, normalize_email_address};
+use crate::support::{email::normalize_email_address, rate_limit::AuthRequestLimiter};
 
 #[derive(Deserialize)]
 pub(crate) struct RegisterRequest {

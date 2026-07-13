@@ -6,7 +6,8 @@ use crate::http::authorization::request::{
     consume_pushed_authorization_request_with_context,
 };
 use crate::support::{
-    audit_event, audit_fields, blake3_hex, client_ip_with_config, random_urlsafe_token,
+    audit::audit_event, audit::audit_fields, client_ip::client_ip_with_config,
+    security::blake3_hex, security::random_urlsafe_token,
 };
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse};

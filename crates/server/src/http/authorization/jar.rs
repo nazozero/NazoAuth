@@ -11,9 +11,13 @@ use crate::http::authorization::AuthorizationRequestContext;
 use crate::settings::RequestObjectJtiPolicy;
 #[cfg(test)]
 use crate::settings::Settings;
+use crate::support::{
+    security::client_jwt_decoding_key, security::supported_client_jwt_algorithm_name,
+};
 #[cfg(test)]
-use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
-use crate::support::{client_jwt_decoding_key, supported_client_jwt_algorithm_name};
+use crate::support::{
+    tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
+};
 use actix_web::HttpResponse;
 use actix_web::http::StatusCode;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};

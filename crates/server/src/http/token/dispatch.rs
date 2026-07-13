@@ -4,16 +4,18 @@ use crate::domain::{AppState, CodePayload};
 use crate::domain::{AuthorizationCodeState, ClientRow};
 #[cfg(test)]
 use crate::settings::Settings;
+use crate::support::{
+    client_ip::client_ip_with_context, dpop::dpop_proof_present,
+    mtls::client_mtls_certificate_matches,
+    mtls::request_mtls_client_certificate_from_trusted_proxy, rate_limit::rate_limited_response,
+    security::ClientCredentials, security::blake3_hex,
+    security::extract_client_credentials_with_trusted_proxies,
+    security::has_basic_authorization_scheme,
+};
 #[cfg(test)]
 use crate::support::{
-    CLIENT_ASSERTION_TYPE_JWT_BEARER, DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID,
-    authorization_code_key,
-};
-use crate::support::{
-    ClientCredentials, blake3_hex, client_ip_with_context, client_mtls_certificate_matches,
-    dpop_proof_present, extract_client_credentials_with_trusted_proxies,
-    has_basic_authorization_scheme, rate_limited_response,
-    request_mtls_client_certificate_from_trusted_proxy,
+    oauth::authorization_code_key, security::CLIENT_ASSERTION_TYPE_JWT_BEARER,
+    tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
 };
 use actix_web::http::StatusCode;
 #[cfg(test)]
@@ -79,7 +81,7 @@ fn mtls_client_credentials(client_id: String) -> ClientCredentials {
 
 async fn mtls_client_credentials_without_client_id(
     service: &ServerAuthorizationService,
-    trusted_proxy_cidrs: &[crate::support::IpCidr],
+    trusted_proxy_cidrs: &[crate::support::client_ip::IpCidr],
     req: &HttpRequest,
 ) -> Result<Option<ClientCredentials>, HttpResponse> {
     let Some(certificate) =

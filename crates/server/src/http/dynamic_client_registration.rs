@@ -7,9 +7,10 @@ use nazo_http_actix::{
 use crate::domain::{ClientRow, DynamicRegistrationHandles};
 use crate::http::admin::clients::ServerSectorIdentifierResolver;
 use crate::support::{
-    DEFAULT_TENANT_ID, RateLimitPolicy, audit_event, audit_fields, blake3_hex,
-    client_ip_with_context, client_secret_digest, constant_time_eq, enforce_rate_limit_with_store,
-    hash_client_secret, random_urlsafe_token,
+    audit::audit_event, audit::audit_fields, client_ip::client_ip_with_context,
+    rate_limit::RateLimitPolicy, rate_limit::enforce_rate_limit_with_store, security::blake3_hex,
+    security::client_secret_digest, security::constant_time_eq, security::hash_client_secret,
+    security::random_urlsafe_token, tenancy::DEFAULT_TENANT_ID,
 };
 use actix_web::http::StatusCode;
 use actix_web::http::header;
@@ -483,20 +484,20 @@ impl AdminClientCryptoPort for DynamicRegistrationCrypto<'_> {
     }
 
     fn validate_jwks(&self, jwks: &Value, allow_missing_kid: bool) -> Result<(), String> {
-        crate::support::validate_client_jwks_with_missing_kid_policy(jwks, allow_missing_kid)
+        crate::support::oauth::validate_client_jwks_with_missing_kid_policy(jwks, allow_missing_kid)
             .map_err(|error| error.to_string())
     }
 
     fn matching_encryption_key_count(&self, jwks: &Value, algorithm: &str) -> usize {
-        crate::support::client_jwks_matching_encryption_key_count(jwks, algorithm)
+        crate::support::oauth::client_jwks_matching_encryption_key_count(jwks, algorithm)
     }
 
     fn contains_signing_key(&self, jwks: &Value) -> bool {
-        crate::support::client_jwks_contains_signing_key(jwks)
+        crate::support::oauth::client_jwks_contains_signing_key(jwks)
     }
 
     fn valid_self_signed_mtls_jwks(&self, jwks: &Value) -> bool {
-        crate::support::validate_self_signed_mtls_jwks(jwks)
+        crate::support::oauth::validate_self_signed_mtls_jwks(jwks)
     }
 }
 

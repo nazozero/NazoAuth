@@ -58,7 +58,7 @@ pub(crate) type ServerTokenService = nazo_auth::TokenService<
 >;
 
 #[cfg(test)]
-use crate::support::CLIENT_ASSERTION_TYPE_JWT_BEARER;
+use crate::support::security::CLIENT_ASSERTION_TYPE_JWT_BEARER;
 #[cfg(test)]
 use actix_web::{
     HttpRequest, HttpResponse,

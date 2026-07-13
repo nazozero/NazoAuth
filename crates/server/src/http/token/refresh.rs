@@ -4,15 +4,18 @@ use crate::domain::AppState;
 use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue, TokenRow};
 #[cfg(test)]
 use crate::settings::Settings;
+use crate::support::{
+    audit::audit_event, audit::audit_fields, client_ip::client_ip_with_context,
+    dpop::DpopErrorContext, dpop::dpop_error_response, dpop::dpop_proof_present,
+    dpop::validate_dpop_proof_with_authorization_service,
+    mtls::request_mtls_thumbprint_from_trusted_proxy, oauth::audiences_allowed, oauth::is_subset,
+    oauth::json_array_to_strings, oauth::parse_scope, security::ValidatedClientAssertion,
+    security::blake3_hex, security::constant_time_eq,
+};
 #[cfg(test)]
 use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, decode_access_claims,
-};
-use crate::support::{
-    DpopErrorContext, ValidatedClientAssertion, audiences_allowed, audit_event, audit_fields,
-    blake3_hex, client_ip_with_context, constant_time_eq, dpop_error_response, dpop_proof_present,
-    is_subset, json_array_to_strings, parse_scope, request_mtls_thumbprint_from_trusted_proxy,
-    validate_dpop_proof_with_authorization_service,
+    security::decode_access_claims, tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID,
+    tenancy::DEFAULT_TENANT_ID,
 };
 use actix_web::http::StatusCode;
 #[cfg(test)]

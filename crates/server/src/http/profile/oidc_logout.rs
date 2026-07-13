@@ -6,7 +6,10 @@ use nazo_http_actix::{
 };
 
 use crate::domain::{ClientRow, OidcLogoutHandles};
-use crate::support::{CurrentSession, DEFAULT_TENANT_ID, audit_event, audit_fields, blake3_hex};
+use crate::support::{
+    audit::audit_event, audit::audit_fields, security::blake3_hex, sessions::CurrentSession,
+    tenancy::DEFAULT_TENANT_ID,
+};
 use actix_web::http::StatusCode;
 use actix_web::http::header;
 use actix_web::web::Payload;

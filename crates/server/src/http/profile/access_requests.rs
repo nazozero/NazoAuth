@@ -6,7 +6,8 @@ use crate::settings::Settings;
 use crate::support::sessions::SessionProfileHandles;
 #[cfg(test)]
 use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_set_ex,
+    sessions::SessionPayload, tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID,
+    tenancy::DEFAULT_TENANT_ID, valkey::valkey_set_ex,
 };
 use actix_web::http::StatusCode;
 #[cfg(test)]

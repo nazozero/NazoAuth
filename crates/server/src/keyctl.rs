@@ -6,7 +6,7 @@ use anyhow::bail;
 
 use crate::config::ConfigSource;
 use crate::settings::Settings;
-use crate::support::signing_algorithm_from_name;
+use nazo_key_management::signing_algorithm_from_name;
 
 pub async fn run(args: impl IntoIterator<Item = String>) -> anyhow::Result<()> {
     let mut args = args.into_iter();

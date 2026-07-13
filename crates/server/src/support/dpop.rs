@@ -22,8 +22,9 @@ use sha2::Sha256;
 use nazo_auth::is_valid_dpop_jkt;
 
 use super::{
-    audit_event, audit_fields, blake3_hex, client_jwt_algorithm_from_name,
-    jwt_decoding_key_from_jwk, random_urlsafe_token,
+    audit::audit_event, audit::audit_fields, security::blake3_hex,
+    security::client_jwt_algorithm_from_name, security::jwt_decoding_key_from_jwk,
+    security::random_urlsafe_token,
 };
 use crate::settings::DpopNoncePolicy;
 

@@ -3,10 +3,12 @@ use nazo_http_actix::{empty_response, json_response, json_response_status};
 
 #[cfg(test)]
 use crate::domain::DatabaseUserFixture;
-#[cfg(test)]
-use crate::support::blake3_hex;
 use crate::support::client_ip::ClientIpConfig;
-use crate::support::{default_tenant_context, hash_password, random_urlsafe_token};
+#[cfg(test)]
+use crate::support::security::blake3_hex;
+use crate::support::{
+    security::hash_password, security::random_urlsafe_token, tenancy::default_tenant_context,
+};
 use actix_web::http::StatusCode;
 #[cfg(test)]
 use actix_web::http::header;

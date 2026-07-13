@@ -1,7 +1,7 @@
 use super::*;
 use chrono::DateTime;
 
-use crate::support::client_supports_grant;
+use crate::support::oauth::client_supports_grant;
 pub(super) use nazo_auth::RefreshTokenPersistResult as RefreshPersistResult;
 
 pub(super) struct PendingRefreshToken {

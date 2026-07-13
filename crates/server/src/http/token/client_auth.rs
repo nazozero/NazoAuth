@@ -9,14 +9,17 @@ use crate::domain::ClientRow;
 #[cfg(test)]
 use crate::settings::Settings;
 #[cfg(test)]
-use crate::support::consume_private_key_jwt;
+use crate::support::security::consume_private_key_jwt;
 use crate::support::{
-    ClientAssertionError, ClientCredentials, ValidatedClientAssertion, blake3_hex,
-    client_mtls_certificate_matches, client_secret_digest,
-    request_mtls_client_certificate_from_headers, verify_private_key_jwt_claims_for_issuer,
+    mtls::client_mtls_certificate_matches, mtls::request_mtls_client_certificate_from_headers,
+    security::ClientAssertionError, security::ClientCredentials,
+    security::ValidatedClientAssertion, security::blake3_hex, security::client_secret_digest,
+    security::verify_private_key_jwt_claims_for_issuer,
 };
 #[cfg(test)]
-use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
+use crate::support::{
+    tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
+};
 use actix_web::http::StatusCode;
 #[cfg(test)]
 use actix_web::http::header;
@@ -44,14 +47,14 @@ pub(crate) enum TokenManagementClientAuthError {
 pub(crate) struct ClientAuthConfig<'a> {
     issuer: &'a str,
     client_secret_pepper: &'a str,
-    trusted_proxy_cidrs: &'a [crate::support::IpCidr],
+    trusted_proxy_cidrs: &'a [crate::support::client_ip::IpCidr],
 }
 
 impl<'a> ClientAuthConfig<'a> {
     pub(crate) fn new(
         issuer: &'a str,
         client_secret_pepper: &'a str,
-        trusted_proxy_cidrs: &'a [crate::support::IpCidr],
+        trusted_proxy_cidrs: &'a [crate::support::client_ip::IpCidr],
     ) -> Self {
         Self {
             issuer,
@@ -150,7 +153,7 @@ pub(crate) async fn verify_confidential_client(
     let service = crate::http::authorization::ServerAuthorizationService::new(
         nazo_postgres::AuthorizationFlowRepository::new(
             state.diesel_db.clone(),
-            crate::support::DEFAULT_TENANT_ID,
+            crate::support::tenancy::DEFAULT_TENANT_ID,
         ),
         nazo_valkey::AuthorizationStateAdapter::new(&connection),
         state.keyset.clone(),
@@ -345,9 +348,11 @@ pub(crate) async fn consume_token_management_client_assertion_with_authorization
     let Some(assertion) = assertion else {
         return Ok(());
     };
-    crate::support::consume_private_key_jwt_with_authorization_service(service, client, assertion)
-        .await
-        .map_err(token_management_client_assertion_error)
+    crate::support::security::consume_private_key_jwt_with_authorization_service(
+        service, client, assertion,
+    )
+    .await
+    .map_err(token_management_client_assertion_error)
 }
 
 fn token_management_client_assertion_error(
@@ -369,9 +374,11 @@ pub(crate) async fn consume_token_client_assertion_with_authorization_service(
     let Some(assertion) = assertion else {
         return Ok(());
     };
-    crate::support::consume_private_key_jwt_with_authorization_service(service, client, assertion)
-        .await
-        .map_err(token_client_assertion_error)
+    crate::support::security::consume_private_key_jwt_with_authorization_service(
+        service, client, assertion,
+    )
+    .await
+    .map_err(token_client_assertion_error)
 }
 
 fn token_client_assertion_error(error: ClientAssertionError) -> HttpResponse {

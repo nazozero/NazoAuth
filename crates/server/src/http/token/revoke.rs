@@ -1,12 +1,14 @@
 //! token revoke 端点。
+use crate::support::{
+    audit::audit_event, audit::audit_fields, client_ip::client_ip_with_config,
+    rate_limit::rate_limited_response, security::blake3_hex,
+    security::extract_client_credentials_with_trusted_proxies,
+    security::has_basic_authorization_scheme,
+};
 #[cfg(test)]
 use crate::support::{
-    AccessTokenJwtInput, DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, IssuedAccessToken, make_jwt,
-};
-use crate::support::{
-    audit_event, audit_fields, blake3_hex, client_ip_with_config,
-    extract_client_credentials_with_trusted_proxies, has_basic_authorization_scheme,
-    rate_limited_response,
+    security::AccessTokenJwtInput, security::IssuedAccessToken, security::make_jwt,
+    tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID,
 };
 use actix_web::http::StatusCode;
 #[cfg(test)]

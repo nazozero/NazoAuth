@@ -4,13 +4,10 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde_json::Value;
 
-use super::{
-    mtls::certificate_x5c_thumbprint,
-    security::{
-        SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS, SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
-        client_jwt_algorithm_from_name, jwt_decoding_key_from_jwk,
-        supported_client_jwt_algorithm_name,
-    },
+use super::mtls::certificate_x5c_thumbprint;
+use super::security::{
+    SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS, SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+    client_jwt_algorithm_from_name, jwt_decoding_key_from_jwk, supported_client_jwt_algorithm_name,
 };
 pub(crate) use nazo_auth::{
     RedirectUriError, is_subset, is_valid_pkce_value, parse_resource_indicators, parse_scope,
