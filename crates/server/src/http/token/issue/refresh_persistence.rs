@@ -19,12 +19,12 @@ pub(crate) fn should_issue_refresh_token(client: &ClientRow, scopes: &[String]) 
 }
 
 pub(super) async fn persist_refresh_token(
-    state: &AppState,
+    service: &ServerTokenService,
     client: &ClientRow,
     issue: &TokenIssue,
     refresh: &PendingRefreshToken,
 ) -> anyhow::Result<RefreshPersistResult> {
-    nazo_postgres::TokenRepository::new(state.diesel_db.clone())
+    service
         .persist_refresh_token(nazo_auth::NewRefreshToken {
             raw_token: refresh.raw.clone(),
             tenant_id: client.tenant_id,
@@ -48,7 +48,7 @@ pub(super) async fn persist_refresh_token(
             mtls_x5t_s256: issue.refresh_token_mtls_x5t_s256.clone(),
         })
         .await
-        .map_err(|error| anyhow::anyhow!("failed to persist refresh token: {error}"))
+        .map_err(|error| anyhow::anyhow!("failed to persist refresh token: {error:?}"))
 }
 
 #[cfg(test)]

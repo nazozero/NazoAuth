@@ -32,9 +32,10 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 // 只负责客户端认证与 grant_type 分派，不直接签发令牌。
 use super::{
-    CIBA_GRANT_TYPE, DEVICE_CODE_GRANT_TYPE, JWT_BEARER_GRANT_TYPE, TOKEN_EXCHANGE_GRANT_TYPE,
-    TokenForm, TokenFormError, parse_token_form, token_authorization_code, token_ciba,
-    token_client_credentials, token_device_code, token_exchange, token_jwt_bearer, token_refresh,
+    CIBA_GRANT_TYPE, DEVICE_CODE_GRANT_TYPE, JWT_BEARER_GRANT_TYPE, ServerTokenService,
+    TOKEN_EXCHANGE_GRANT_TYPE, TokenForm, TokenFormError, parse_token_form,
+    token_authorization_code_with_service, token_ciba, token_client_credentials, token_device_code,
+    token_exchange, token_jwt_bearer, token_refresh_with_service,
 };
 use nazo_auth::{
     ClientProfile, ProtocolErrorCode, SecurityProfile, SenderConstraintPolicy,
@@ -197,7 +198,12 @@ async fn missing_client_authorization_code_holder_error(
     }
 }
 
-pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
+pub(crate) async fn token_with_service(
+    state: Data<AppState>,
+    token_service: Data<ServerTokenService>,
+    req: HttpRequest,
+    body: Bytes,
+) -> HttpResponse {
     if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Token).await {
         return response;
     }
@@ -462,10 +468,26 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
     }
     match form.grant_type.as_str() {
         "authorization_code" => {
-            token_authorization_code(&state, &req, &client, &form, client_assertion.as_ref()).await
+            token_authorization_code_with_service(
+                &state,
+                &token_service,
+                &req,
+                &client,
+                &form,
+                client_assertion.as_ref(),
+            )
+            .await
         }
         "refresh_token" => {
-            token_refresh(&state, &req, &client, &form, client_assertion.as_ref()).await
+            token_refresh_with_service(
+                &state,
+                &token_service,
+                &req,
+                &client,
+                &form,
+                client_assertion.as_ref(),
+            )
+            .await
         }
         "client_credentials" => {
             token_client_credentials(&state, &req, &client, &form, client_assertion.as_ref()).await
@@ -497,6 +519,19 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
             false,
         ),
     }
+}
+
+#[cfg(not(test))]
+pub(crate) use token_with_service as token;
+
+#[cfg(test)]
+pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
+    let service = Data::new(ServerTokenService::new(
+        nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
+        nazo_valkey::TokenIssuanceStateAdapter::new(&state.valkey_connection()),
+        state.keyset.clone(),
+    ));
+    token_with_service(state, service, req, body).await
 }
 
 fn validate_token_client_enabled(client: &ClientRow, grant_type: &str) -> Result<(), HttpResponse> {
