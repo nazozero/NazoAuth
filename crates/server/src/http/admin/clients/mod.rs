@@ -5,16 +5,10 @@ pub(crate) mod list;
 pub(crate) mod update;
 
 use crate::settings::Settings;
-use crate::support::{
-    oauth::client_jwks_contains_signing_key, oauth::client_jwks_matching_encryption_key_count,
-    oauth::validate_client_jwks_with_missing_kid_policy, oauth::validate_self_signed_mtls_jwks,
-    sector_identifier::fetch_sector_identifier_uris, security::hash_client_secret,
-    security::random_urlsafe_token,
-};
-use nazo_auth::{
-    AdminClientCryptoPort, AdminClientPolicy, SectorIdentifierFuture, SectorIdentifierResolverPort,
-};
-use serde_json::Value;
+use crate::support::sector_identifier::fetch_sector_identifier_uris;
+use nazo_auth::{AdminClientPolicy, SectorIdentifierFuture, SectorIdentifierResolverPort};
+
+pub(crate) use nazo_key_management::ClientRegistrationCrypto as ServerAdminClientCrypto;
 
 pub(crate) type ServerAdminClientService = nazo_auth::AdminClientService<
     nazo_postgres::OAuthClientRepository,
@@ -60,51 +54,6 @@ impl SectorIdentifierResolverPort for ServerSectorIdentifierResolver {
                 .await
                 .map_err(|error| format!("{error:?}"))
         })
-    }
-}
-
-#[derive(Clone)]
-pub(crate) struct ServerAdminClientCrypto {
-    keyset: nazo_key_management::KeyManager,
-}
-
-impl ServerAdminClientCrypto {
-    pub(crate) fn new(keyset: nazo_key_management::KeyManager) -> Self {
-        Self { keyset }
-    }
-}
-
-impl AdminClientCryptoPort for ServerAdminClientCrypto {
-    fn response_signing_algorithms(&self) -> Vec<String> {
-        self.keyset
-            .snapshot()
-            .response_signing_alg_values_supported()
-            .into_iter()
-            .map(ToOwned::to_owned)
-            .collect()
-    }
-
-    fn issue_client_secret(&self, pepper: &str) -> (String, String) {
-        let secret = random_urlsafe_token();
-        let digest = hash_client_secret(&secret, pepper);
-        (secret, digest)
-    }
-
-    fn validate_jwks(&self, jwks: &Value, allow_missing_kid: bool) -> Result<(), String> {
-        validate_client_jwks_with_missing_kid_policy(jwks, allow_missing_kid)
-            .map_err(|error| error.to_string())
-    }
-
-    fn matching_encryption_key_count(&self, jwks: &Value, algorithm: &str) -> usize {
-        client_jwks_matching_encryption_key_count(jwks, algorithm)
-    }
-
-    fn contains_signing_key(&self, jwks: &Value) -> bool {
-        client_jwks_contains_signing_key(jwks)
-    }
-
-    fn valid_self_signed_mtls_jwks(&self, jwks: &Value) -> bool {
-        validate_self_signed_mtls_jwks(jwks)
     }
 }
 

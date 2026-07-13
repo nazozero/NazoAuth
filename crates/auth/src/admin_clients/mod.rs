@@ -423,8 +423,8 @@ pub async fn prepare_client_registration<S, C>(
     crypto: &C,
 ) -> Result<PreparedClientRegistration, AdminClientError>
 where
-    S: SectorIdentifierResolverPort,
-    C: AdminClientCryptoPort,
+    S: SectorIdentifierResolverPort + ?Sized,
+    C: AdminClientCryptoPort + ?Sized,
 {
     validate_pkce_compatibility_policy(
         request.allow_authorization_code_without_pkce,
@@ -527,8 +527,8 @@ pub async fn prepare_client_patch<S, C>(
     crypto: &C,
 ) -> Result<OAuthClient, AdminClientError>
 where
-    S: SectorIdentifierResolverPort,
-    C: AdminClientCryptoPort,
+    S: SectorIdentifierResolverPort + ?Sized,
+    C: AdminClientCryptoPort + ?Sized,
 {
     let redirect_uris_changed = request.redirect_uris.is_some();
     if let Some(value) = request.client_name {
@@ -695,7 +695,7 @@ where
     Ok(client)
 }
 
-async fn pairwise_subject<S: SectorIdentifierResolverPort>(
+async fn pairwise_subject<S: SectorIdentifierResolverPort + ?Sized>(
     subject_type: &str,
     sector_identifier_uri: Option<String>,
     redirect_uris: &[String],

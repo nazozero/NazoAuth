@@ -182,6 +182,7 @@ pub(crate) async fn hash_password_blocking_limited(
         .map_err(|_| PasswordHashingError::HashFailed)
 }
 
+#[cfg(test)]
 pub(crate) fn hash_client_secret(secret: &str, pepper: &str) -> String {
     let salt = random_urlsafe_token();
     client_secret_digest(secret, pepper, &salt)
@@ -265,6 +266,7 @@ pub(crate) const CLIENT_ASSERTION_TYPE_JWT_BEARER: &str =
 const CLIENT_ASSERTION_MAX_TTL_SECONDS: i64 = 300;
 const CLIENT_ASSERTION_CLOCK_SKEW_SECONDS: i64 = 30;
 const MAX_CLIENT_ASSERTION_JTI_BYTES: usize = 128;
+#[cfg(test)]
 pub(crate) const SUPPORTED_CLIENT_JWT_SIGNING_ALGS: &[&str] = &["EdDSA", "RS256", "ES256", "PS256"];
 pub(crate) const SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS: &[&str] = &["RSA-OAEP-256"];
 pub(crate) const SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS: &[&str] = &["A256GCM"];

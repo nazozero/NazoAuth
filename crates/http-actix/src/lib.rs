@@ -26,11 +26,14 @@ pub use cors::{
 };
 pub use csrf::{csrf_error, has_valid_csrf_token_for_cookies};
 pub use dynamic_client_registration::{
-    DynamicRegistrationClientStore, DynamicRegistrationDependencyError,
-    DynamicRegistrationEndpoint, DynamicRegistrationEndpointConfig, DynamicRegistrationFuture,
+    ClientIpConfig, ClientIpHeaderMode, ClientIpParseError, DynamicRegistrationClientStore,
+    DynamicRegistrationDependencyError, DynamicRegistrationEndpoint,
+    DynamicRegistrationEndpointConfig, DynamicRegistrationFuture,
     DynamicRegistrationRateLimitError, DynamicRegistrationRequestGuard,
-    DynamicRegistrationSecurity, client_configuration_delete, client_configuration_get,
-    client_configuration_put, dynamic_client_registration,
+    DynamicRegistrationSecurity, IpCidr, client_configuration_delete, client_configuration_get,
+    client_configuration_put, client_ip_with_config, client_ip_with_context,
+    dynamic_client_registration, parse_forwarded_for_value, parse_trusted_proxy_cidrs,
+    request_from_trusted_proxy_cidrs,
 };
 pub use extract::{
     AccessTokenAuthScheme, ResourceAccessToken, authorization_access_token, mfa_json_config,

@@ -1,4 +1,11 @@
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::{
+    error::Error,
+    fmt,
+    future::Future,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    pin::Pin,
+    sync::Arc,
+};
 
 use actix_web::{
     FromRequest, HttpRequest, HttpResponse,
@@ -7,85 +14,24 @@ use actix_web::{
 };
 use chrono::Utc;
 use nazo_auth::{
-    AdminClientError, AdminClientPolicy, CreateClientRequest, DynamicClientRegistrationRequest,
-    DynamicRegistrationError, DynamicRegistrationPolicy, OAuthClient, PreparedClientRegistration,
-    parse_client_configuration_update, prepare_dynamic_client_registration,
-    response_types_from_client,
+    AdminClientCryptoPort, AdminClientError, AdminClientPolicy, ClientSecretDigesterPort,
+    DynamicClientRegistrationRequest, DynamicRegistrationError, DynamicRegistrationPolicy,
+    DynamicRegistrationSecretPort, OAuthClient, PreparedClientRegistration,
+    SectorIdentifierResolverPort, parse_client_configuration_update,
+    prepare_dynamic_client_registration, response_types_from_client,
 };
 use nazo_identity::TenantContext;
 use serde_json::{Value, json};
-use uuid::Uuid;
 
 use crate::{
     authorization_error_response, empty_response, empty_response_no_store, json_response_no_store,
     json_response_status_no_store, oauth_bearer_error, oauth_error,
 };
 
-pub type DynamicRegistrationFuture<'a, T> =
-    Pin<Box<dyn Future<Output = Result<T, DynamicRegistrationDependencyError>> + Send + 'a>>;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum DynamicRegistrationDependencyError {
-    Unavailable,
-}
-
-pub trait DynamicRegistrationClientStore: Send + Sync {
-    fn insert<'a>(
-        &'a self,
-        prepared: &'a PreparedClientRegistration,
-    ) -> DynamicRegistrationFuture<'a, OAuthClient>;
-
-    fn by_registration_access_token<'a>(
-        &'a self,
-        tenant_id: Uuid,
-        client_id: &'a str,
-        token_hash: &'a str,
-    ) -> DynamicRegistrationFuture<'a, Option<OAuthClient>>;
-
-    fn has_client_secret(&self, client_id: Uuid) -> DynamicRegistrationFuture<'_, bool>;
-
-    fn client_secret_salt(&self, client_id: Uuid) -> DynamicRegistrationFuture<'_, Option<String>>;
-
-    fn client_secret_digest_matches<'a>(
-        &'a self,
-        client_id: Uuid,
-        candidate_digest: &'a str,
-    ) -> DynamicRegistrationFuture<'a, bool>;
-
-    fn rotate_credentials<'a>(
-        &'a self,
-        tenant_id: Uuid,
-        client_id: Uuid,
-        client_secret_hash: Option<&'a str>,
-        registration_access_token_hash: &'a str,
-    ) -> DynamicRegistrationFuture<'a, OAuthClient>;
-
-    fn replace_registration<'a>(
-        &'a self,
-        client: &'a OAuthClient,
-        client_secret_hash: Option<&'a str>,
-        registration_access_token_hash: Option<&'a str>,
-    ) -> DynamicRegistrationFuture<'a, OAuthClient>;
-
-    fn deactivate(&self, tenant_id: Uuid, client_id: Uuid) -> DynamicRegistrationFuture<'_, bool>;
-}
-
-pub trait DynamicRegistrationSecurity: Send + Sync {
-    fn prepare_registration<'a>(
-        &'a self,
-        request: CreateClientRequest,
-        policy: AdminClientPolicy,
-        registration_access_token: &'a str,
-    ) -> Pin<
-        Box<dyn Future<Output = Result<PreparedClientRegistration, AdminClientError>> + Send + 'a>,
-    >;
-
-    fn random_token(&self) -> String;
-    fn token_hash(&self, token: &str) -> String;
-    fn issue_client_secret(&self, pepper: &str) -> (String, String);
-    fn client_secret_digest(&self, secret: &str, pepper: &str, salt: &str) -> String;
-    fn constant_time_eq(&self, left: &[u8], right: &[u8]) -> bool;
-}
+pub use nazo_auth::DynamicRegistrationSecretPort as DynamicRegistrationSecurity;
+pub use nazo_auth::{
+    DynamicRegistrationClientStore, DynamicRegistrationDependencyError, DynamicRegistrationFuture,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DynamicRegistrationRateLimitError {
@@ -98,10 +44,10 @@ pub trait DynamicRegistrationRequestGuard: Send + Sync {
 
     fn enforce_rate_limit<'a>(
         &'a self,
-        request: &'a HttpRequest,
+        source_ip: &'a str,
     ) -> Pin<Box<dyn Future<Output = Result<(), DynamicRegistrationRateLimitError>> + Send + 'a>>;
 
-    fn audit(&self, event: &'static str, client: &OAuthClient, request: &HttpRequest);
+    fn audit(&self, event: &'static str, client: &OAuthClient, source_ip: &str);
 }
 
 #[derive(Clone)]
@@ -111,30 +57,144 @@ pub struct DynamicRegistrationEndpointConfig {
     pub pairwise_subject_secret: Option<String>,
     pub client_secret_pepper: String,
     pub initial_access_token: Option<String>,
+    pub client_ip_header_mode: ClientIpHeaderMode,
+    pub trusted_proxy_cidrs: Vec<IpCidr>,
 }
 
 #[derive(Clone)]
 pub struct DynamicRegistrationEndpoint {
     config: DynamicRegistrationEndpointConfig,
     clients: Arc<dyn DynamicRegistrationClientStore>,
-    security: Arc<dyn DynamicRegistrationSecurity>,
+    sector_identifiers: Arc<dyn SectorIdentifierResolverPort>,
+    crypto: Arc<dyn AdminClientCryptoPort>,
+    secret_digester: Arc<dyn ClientSecretDigesterPort>,
+    secrets: Arc<dyn DynamicRegistrationSecretPort>,
     request_guard: Arc<dyn DynamicRegistrationRequestGuard>,
+    client_ip: ClientIpConfig,
 }
 
 impl DynamicRegistrationEndpoint {
     pub fn new(
         config: DynamicRegistrationEndpointConfig,
         clients: Arc<dyn DynamicRegistrationClientStore>,
-        security: Arc<dyn DynamicRegistrationSecurity>,
+        sector_identifiers: Arc<dyn SectorIdentifierResolverPort>,
+        crypto: Arc<dyn AdminClientCryptoPort>,
+        secret_digester: Arc<dyn ClientSecretDigesterPort>,
+        secrets: Arc<dyn DynamicRegistrationSecretPort>,
         request_guard: Arc<dyn DynamicRegistrationRequestGuard>,
     ) -> Self {
+        let client_ip =
+            ClientIpConfig::new(&config.trusted_proxy_cidrs, config.client_ip_header_mode);
         Self {
             config,
             clients,
-            security,
+            sector_identifiers,
+            crypto,
+            secret_digester,
+            secrets,
             request_guard,
+            client_ip,
         }
     }
+}
+
+#[derive(Clone)]
+pub struct ClientIpConfig {
+    trusted_proxy_cidrs: Box<[IpCidr]>,
+    header_mode: ClientIpHeaderMode,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ClientIpHeaderMode {
+    None,
+    Forwarded,
+    XForwardedFor,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IpCidr {
+    addr: IpAddr,
+    prefix: u8,
+}
+
+impl ClientIpConfig {
+    #[must_use]
+    pub fn new(trusted_proxy_cidrs: &[IpCidr], header_mode: ClientIpHeaderMode) -> Self {
+        Self {
+            trusted_proxy_cidrs: trusted_proxy_cidrs.into(),
+            header_mode,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClientIpParseError(String);
+
+impl fmt::Display for ClientIpParseError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl Error for ClientIpParseError {}
+
+impl ClientIpHeaderMode {
+    pub fn parse(value: &str) -> Result<Self, ClientIpParseError> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "none" => Ok(Self::None),
+            "forwarded" => Ok(Self::Forwarded),
+            "x-forwarded-for" => Ok(Self::XForwardedFor),
+            value => Err(ClientIpParseError(format!(
+                "CLIENT_IP_HEADER_MODE must be none, forwarded, or x-forwarded-for, got {value}"
+            ))),
+        }
+    }
+}
+
+impl IpCidr {
+    pub fn parse(value: &str) -> Result<Self, ClientIpParseError> {
+        let (addr, prefix) = value.trim().split_once('/').ok_or_else(|| {
+            ClientIpParseError("trusted proxy CIDR must include prefix length".to_owned())
+        })?;
+        let addr = addr
+            .parse::<IpAddr>()
+            .map_err(|_| ClientIpParseError("trusted proxy CIDR address is invalid".to_owned()))?;
+        let prefix = prefix
+            .parse::<u8>()
+            .map_err(|_| ClientIpParseError("trusted proxy CIDR prefix is invalid".to_owned()))?;
+        let max_prefix = match addr {
+            IpAddr::V4(_) => 32,
+            IpAddr::V6(_) => 128,
+        };
+        if prefix > max_prefix {
+            return Err(ClientIpParseError(
+                "trusted proxy CIDR prefix is out of range".to_owned(),
+            ));
+        }
+        Ok(Self { addr, prefix })
+    }
+
+    #[must_use]
+    pub fn contains(&self, ip: IpAddr) -> bool {
+        match (self.addr, ip) {
+            (IpAddr::V4(network), IpAddr::V4(ip)) => {
+                ipv4_prefix_value(network, self.prefix) == ipv4_prefix_value(ip, self.prefix)
+            }
+            (IpAddr::V6(network), IpAddr::V6(ip)) => {
+                ipv6_prefix_value(network, self.prefix) == ipv6_prefix_value(ip, self.prefix)
+            }
+            _ => false,
+        }
+    }
+}
+
+pub fn parse_trusted_proxy_cidrs(raw: Option<String>) -> Result<Vec<IpCidr>, ClientIpParseError> {
+    raw.unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(IpCidr::parse)
+        .collect()
 }
 
 pub async fn dynamic_client_registration(
@@ -151,11 +211,12 @@ pub async fn dynamic_client_registration(
             Ok(payload) => payload,
             Err(error) => return error.error_response(),
         };
-    if let Err(response) = enforce_rate_limit(&endpoint, &request).await {
-        return response;
-    }
+    let source_ip = match enforce_rate_limit(&endpoint, &request).await {
+        Ok(source_ip) => source_ip,
+        Err(response) => return response,
+    };
     if !initial_access_token_authorized(
-        endpoint.security.as_ref(),
+        endpoint.secrets.as_ref(),
         request
             .headers()
             .get(header::AUTHORIZATION)
@@ -179,7 +240,7 @@ pub async fn dynamic_client_registration(
         Err(error) => return dynamic_registration_error_response(error),
     };
     let response_types = prepared.response_types.clone();
-    let registration_access_token = endpoint.security.random_token();
+    let registration_access_token = endpoint.secrets.random_token();
     let prepared_insert =
         match prepare_insert(&endpoint, prepared, &registration_access_token).await {
             Ok(prepared) => prepared,
@@ -199,7 +260,7 @@ pub async fn dynamic_client_registration(
         Ok(client) => {
             endpoint
                 .request_guard
-                .audit("dynamic_client_registered", &client, &request);
+                .audit("dynamic_client_registered", &client, &source_ip);
             dynamic_registration_created_response(
                 &client,
                 &response_types,
@@ -224,15 +285,16 @@ pub async fn client_configuration_get(
     if !endpoint.request_guard.accepts_new_requests() {
         return empty_response(StatusCode::NOT_FOUND);
     }
-    if let Err(response) = enforce_rate_limit(&endpoint, &request).await {
-        return response;
-    }
+    let source_ip = match enforce_rate_limit(&endpoint, &request).await {
+        Ok(source_ip) => source_ip,
+        Err(response) => return response,
+    };
     let current = match authenticate_registration_client(&endpoint, &request, &path).await {
         Ok(client) => client,
         Err(response) => return response,
     };
     let response_types = response_types_from_client(&current);
-    let registration_access_token = endpoint.security.random_token();
+    let registration_access_token = endpoint.secrets.random_token();
     let (issued_secret, client_secret_hash) = issue_client_secret(&endpoint, &current);
     let client = match endpoint
         .clients
@@ -240,7 +302,7 @@ pub async fn client_configuration_get(
             current.tenant_id,
             current.id,
             client_secret_hash.as_deref(),
-            &endpoint.security.token_hash(&registration_access_token),
+            &endpoint.secrets.token_hash(&registration_access_token),
         )
         .await
     {
@@ -255,7 +317,7 @@ pub async fn client_configuration_get(
     };
     endpoint
         .request_guard
-        .audit("dynamic_client_configuration_read", &client, &request);
+        .audit("dynamic_client_configuration_read", &client, &source_ip);
     json_response_no_store(dynamic_registration_response(
         &client,
         &response_types,
@@ -279,9 +341,10 @@ pub async fn client_configuration_put(
         Ok(payload) => payload,
         Err(error) => return error.error_response(),
     };
-    if let Err(response) = enforce_rate_limit(&endpoint, &request).await {
-        return response;
-    }
+    let source_ip = match enforce_rate_limit(&endpoint, &request).await {
+        Ok(source_ip) => source_ip,
+        Err(response) => return response,
+    };
     let current = match authenticate_registration_client(&endpoint, &request, &path).await {
         Ok(client) => client,
         Err(response) => return response,
@@ -313,7 +376,7 @@ pub async fn client_configuration_put(
         Err(error) => return dynamic_registration_error_response(error),
     };
     let response_types = registration.response_types.clone();
-    let registration_access_token = endpoint.security.random_token();
+    let registration_access_token = endpoint.secrets.random_token();
     let prepared = match prepare_insert(&endpoint, registration, &registration_access_token).await {
         Ok(prepared) => prepared,
         Err(AdminClientError::InvalidRequest(message)) => {
@@ -357,7 +420,7 @@ pub async fn client_configuration_put(
     };
     endpoint
         .request_guard
-        .audit("dynamic_client_configuration_updated", &client, &request);
+        .audit("dynamic_client_configuration_updated", &client, &source_ip);
     json_response_no_store(dynamic_registration_response(
         &client,
         &response_types,
@@ -375,9 +438,10 @@ pub async fn client_configuration_delete(
     if !endpoint.request_guard.accepts_new_requests() {
         return empty_response(StatusCode::NOT_FOUND);
     }
-    if let Err(response) = enforce_rate_limit(&endpoint, &request).await {
-        return response;
-    }
+    let source_ip = match enforce_rate_limit(&endpoint, &request).await {
+        Ok(source_ip) => source_ip,
+        Err(response) => return response,
+    };
     let current = match authenticate_registration_client(&endpoint, &request, &path).await {
         Ok(client) => client,
         Err(response) => return response,
@@ -398,7 +462,7 @@ pub async fn client_configuration_delete(
     }
     endpoint
         .request_guard
-        .audit("dynamic_client_deleted", &current, &request);
+        .audit("dynamic_client_deleted", &current, &source_ip);
     empty_response_no_store(StatusCode::NO_CONTENT)
 }
 
@@ -412,14 +476,16 @@ async fn prepare_insert(
         pairwise_subject_secret: endpoint.config.pairwise_subject_secret.clone(),
         client_secret_pepper: endpoint.config.client_secret_pepper.clone(),
     };
-    endpoint
-        .security
-        .prepare_registration(
-            registration.into_create_client_request(),
-            policy,
-            registration_access_token,
-        )
-        .await
+    let mut prepared = nazo_auth::prepare_client_registration(
+        registration.into_create_client_request(),
+        &policy,
+        endpoint.sector_identifiers.as_ref(),
+        endpoint.crypto.as_ref(),
+    )
+    .await?;
+    prepared.registration_access_token_blake3 =
+        Some(endpoint.secrets.token_hash(registration_access_token));
+    Ok(prepared)
 }
 
 async fn authenticate_registration_client(
@@ -435,7 +501,7 @@ async fn authenticate_registration_client(
         .by_registration_access_token(
             TenantContext::default_system().tenant_id.as_uuid(),
             client_id,
-            &endpoint.security.token_hash(token),
+            &endpoint.secrets.token_hash(token),
         )
         .await
     {
@@ -456,7 +522,7 @@ async fn submitted_secret_matches(
     let Some(salt) = endpoint.clients.client_secret_salt(current.id).await? else {
         return Ok(false);
     };
-    let candidate = endpoint.security.client_secret_digest(
+    let candidate = endpoint.secret_digester.client_secret_digest(
         secret,
         &endpoint.config.client_secret_pepper,
         &salt,
@@ -480,7 +546,7 @@ fn issue_client_secret(
         return (None, None);
     }
     let (secret, digest) = endpoint
-        .security
+        .crypto
         .issue_client_secret(&endpoint.config.client_secret_pepper);
     (Some(secret), Some(digest))
 }
@@ -488,9 +554,10 @@ fn issue_client_secret(
 async fn enforce_rate_limit(
     endpoint: &DynamicRegistrationEndpoint,
     request: &HttpRequest,
-) -> Result<(), HttpResponse> {
-    match endpoint.request_guard.enforce_rate_limit(request).await {
-        Ok(()) => Ok(()),
+) -> Result<String, HttpResponse> {
+    let source_ip = client_ip_with_config(request, &endpoint.client_ip);
+    match endpoint.request_guard.enforce_rate_limit(&source_ip).await {
+        Ok(()) => Ok(source_ip),
         Err(DynamicRegistrationRateLimitError::Unavailable) => Err(oauth_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "server_error",
@@ -512,8 +579,140 @@ async fn enforce_rate_limit(
     }
 }
 
+#[must_use]
+pub fn client_ip_with_config(request: &HttpRequest, config: &ClientIpConfig) -> String {
+    client_ip_with_context(request, config.header_mode, &config.trusted_proxy_cidrs)
+}
+
+#[must_use]
+pub fn client_ip_with_context(
+    request: &HttpRequest,
+    header_mode: ClientIpHeaderMode,
+    trusted_proxy_cidrs: &[IpCidr],
+) -> String {
+    let Some(peer_ip) = request.peer_addr().map(|address| address.ip()) else {
+        return "unknown".to_owned();
+    };
+    if header_mode == ClientIpHeaderMode::None
+        || !trusted_proxy_peer_ip(peer_ip, trusted_proxy_cidrs)
+    {
+        return peer_ip.to_string();
+    }
+    let parsed = match header_mode {
+        ClientIpHeaderMode::None => None,
+        ClientIpHeaderMode::Forwarded => forwarded_ip_chain(request)
+            .and_then(|chain| nearest_untrusted_hop(chain, peer_ip, trusted_proxy_cidrs)),
+        ClientIpHeaderMode::XForwardedFor => x_forwarded_for_ip_chain(request)
+            .and_then(|chain| nearest_untrusted_hop(chain, peer_ip, trusted_proxy_cidrs)),
+    };
+    parsed.unwrap_or(peer_ip).to_string()
+}
+
+#[must_use]
+pub fn request_from_trusted_proxy_cidrs(
+    request: &HttpRequest,
+    trusted_proxy_cidrs: &[IpCidr],
+) -> bool {
+    request
+        .peer_addr()
+        .is_some_and(|address| trusted_proxy_peer_ip(address.ip(), trusted_proxy_cidrs))
+}
+
+fn trusted_proxy_peer_ip(peer_ip: IpAddr, trusted_proxy_cidrs: &[IpCidr]) -> bool {
+    trusted_proxy_cidrs
+        .iter()
+        .any(|cidr| cidr.contains(peer_ip))
+}
+
+fn forwarded_ip_chain(request: &HttpRequest) -> Option<Vec<IpAddr>> {
+    let mut values = request.headers().get_all("forwarded");
+    let raw = values.next()?.to_str().ok()?;
+    if values.next().is_some() {
+        return None;
+    }
+    let mut chain = Vec::new();
+    for element in raw.split(',') {
+        if element.trim().is_empty() {
+            return None;
+        }
+        let mut forwarded_for = None;
+        for parameter in element.split(';') {
+            let (name, value) = parameter.trim().split_once('=')?;
+            if name.trim().eq_ignore_ascii_case("for") {
+                if forwarded_for.is_some() {
+                    return None;
+                }
+                forwarded_for = Some(parse_forwarded_for_value(value.trim())?);
+            }
+        }
+        chain.push(forwarded_for?);
+    }
+    (!chain.is_empty()).then_some(chain)
+}
+
+#[must_use]
+pub fn parse_forwarded_for_value(value: &str) -> Option<IpAddr> {
+    let value = match (value.strip_prefix('"'), value.strip_suffix('"')) {
+        (Some(without_prefix), Some(_)) => without_prefix.strip_suffix('"')?,
+        (None, None) => value,
+        _ => return None,
+    };
+    if let Some(ip) = value
+        .strip_prefix('[')
+        .and_then(|rest| rest.split_once(']').map(|(ip, _)| ip))
+    {
+        return ip.parse().ok();
+    }
+    let host = value.rsplit_once(':').and_then(|(host, port)| {
+        port.parse::<u16>().ok()?;
+        Some(host)
+    });
+    host.unwrap_or(value).parse().ok()
+}
+
+fn x_forwarded_for_ip_chain(request: &HttpRequest) -> Option<Vec<IpAddr>> {
+    let mut values = request.headers().get_all("x-forwarded-for");
+    let raw = values.next()?.to_str().ok()?;
+    if values.next().is_some() {
+        return None;
+    }
+    let chain = raw
+        .split(',')
+        .map(str::trim)
+        .map(str::parse::<IpAddr>)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    (!chain.is_empty()).then_some(chain)
+}
+
+fn nearest_untrusted_hop(
+    chain: Vec<IpAddr>,
+    peer_ip: IpAddr,
+    trusted_proxy_cidrs: &[IpCidr],
+) -> Option<IpAddr> {
+    chain
+        .into_iter()
+        .chain(std::iter::once(peer_ip))
+        .rev()
+        .find(|ip| !trusted_proxy_peer_ip(*ip, trusted_proxy_cidrs))
+}
+
+fn ipv4_prefix_value(ip: Ipv4Addr, prefix: u8) -> u32 {
+    if prefix == 0 {
+        return 0;
+    }
+    u32::from(ip) >> (32 - prefix)
+}
+
+fn ipv6_prefix_value(ip: Ipv6Addr, prefix: u8) -> u128 {
+    if prefix == 0 {
+        return 0;
+    }
+    u128::from(ip) >> (128 - prefix)
+}
+
 fn initial_access_token_authorized(
-    security: &dyn DynamicRegistrationSecurity,
+    secrets: &dyn DynamicRegistrationSecretPort,
     authorization_header: Option<&str>,
     expected_token: Option<&str>,
 ) -> bool {
@@ -523,7 +722,7 @@ fn initial_access_token_authorized(
     let Some(actual) = authorization_header.and_then(parse_bearer) else {
         return false;
     };
-    security.constant_time_eq(actual.as_bytes(), expected_token.as_bytes())
+    secrets.constant_time_eq(actual.as_bytes(), expected_token.as_bytes())
 }
 
 fn bearer_token(request: &HttpRequest) -> Option<&str> {
@@ -678,10 +877,11 @@ mod tests {
 
     use actix_web::{App, http::header, test, web};
     use nazo_auth::{
-        AdminClientCryptoPort, CreateClientRequest, SectorIdentifierFuture,
-        SectorIdentifierResolverPort, ValidatedClientRegistration,
+        AdminClientCryptoPort, SectorIdentifierFuture, SectorIdentifierResolverPort,
+        ValidatedClientRegistration,
     };
     use serde_json::{Value, json};
+    use uuid::Uuid;
 
     use super::*;
 
@@ -818,27 +1018,6 @@ mod tests {
     }
 
     impl DynamicRegistrationSecurity for FakeSecurity {
-        fn prepare_registration<'a>(
-            &'a self,
-            request: CreateClientRequest,
-            policy: AdminClientPolicy,
-            registration_access_token: &'a str,
-        ) -> Pin<
-            Box<
-                dyn Future<Output = Result<PreparedClientRegistration, AdminClientError>>
-                    + Send
-                    + 'a,
-            >,
-        > {
-            Box::pin(async move {
-                let mut prepared =
-                    nazo_auth::prepare_client_registration(request, &policy, self, self).await?;
-                prepared.registration_access_token_blake3 =
-                    Some(self.token_hash(registration_access_token));
-                Ok(prepared)
-            })
-        }
-
         fn random_token(&self) -> String {
             "registration-token".to_owned()
         }
@@ -847,16 +1026,14 @@ mod tests {
             format!("token-hash:{token}")
         }
 
-        fn issue_client_secret(&self, pepper: &str) -> (String, String) {
-            <Self as AdminClientCryptoPort>::issue_client_secret(self, pepper)
-        }
-
-        fn client_secret_digest(&self, secret: &str, pepper: &str, salt: &str) -> String {
-            format!("digest:{secret}:{pepper}:{salt}")
-        }
-
         fn constant_time_eq(&self, left: &[u8], right: &[u8]) -> bool {
             left == right
+        }
+    }
+
+    impl ClientSecretDigesterPort for FakeSecurity {
+        fn client_secret_digest(&self, secret: &str, pepper: &str, salt: &str) -> String {
+            format!("digest:{secret}:{pepper}:{salt}")
         }
     }
 
@@ -873,14 +1050,14 @@ mod tests {
 
         fn enforce_rate_limit<'a>(
             &'a self,
-            _request: &'a HttpRequest,
+            _source_ip: &'a str,
         ) -> Pin<Box<dyn Future<Output = Result<(), DynamicRegistrationRateLimitError>> + Send + 'a>>
         {
             let result = self.rate_limit.map_or(Ok(()), Err);
             Box::pin(async move { result })
         }
 
-        fn audit(&self, _event: &'static str, _client: &OAuthClient, _request: &HttpRequest) {}
+        fn audit(&self, _event: &'static str, _client: &OAuthClient, _source_ip: &str) {}
     }
 
     fn endpoint(enabled: bool) -> DynamicRegistrationEndpoint {
@@ -891,8 +1068,13 @@ mod tests {
                 pairwise_subject_secret: None,
                 client_secret_pepper: "pepper".to_owned(),
                 initial_access_token: Some("initial-token".to_owned()),
+                client_ip_header_mode: ClientIpHeaderMode::None,
+                trusted_proxy_cidrs: Vec::new(),
             },
             Arc::new(FakeStore::new()),
+            Arc::new(FakeSecurity),
+            Arc::new(FakeSecurity),
+            Arc::new(FakeSecurity),
             Arc::new(FakeSecurity),
             Arc::new(FakeGuard {
                 enabled,
@@ -909,6 +1091,34 @@ mod tests {
                 .route(web::put().to(client_configuration_put))
                 .route(web::delete().to(client_configuration_delete)),
         );
+    }
+
+    #[actix_web::test]
+    async fn untrusted_peer_cannot_spoof_forwarded_source_ip() {
+        let config = ClientIpConfig::new(
+            &[IpCidr::parse("192.0.2.0/24").expect("network")],
+            ClientIpHeaderMode::XForwardedFor,
+        );
+        let request = test::TestRequest::default()
+            .peer_addr("198.51.100.10:443".parse().expect("peer"))
+            .insert_header(("x-forwarded-for", "203.0.113.9"))
+            .to_http_request();
+
+        assert_eq!(client_ip_with_config(&request, &config), "198.51.100.10");
+    }
+
+    #[actix_web::test]
+    async fn trusted_proxy_chain_selects_nearest_untrusted_hop() {
+        let config = ClientIpConfig::new(
+            &[IpCidr::parse("192.0.2.0/24").expect("network")],
+            ClientIpHeaderMode::XForwardedFor,
+        );
+        let request = test::TestRequest::default()
+            .peer_addr("192.0.2.10:443".parse().expect("peer"))
+            .insert_header(("x-forwarded-for", "203.0.113.9, 192.0.2.20"))
+            .to_http_request();
+
+        assert_eq!(client_ip_with_config(&request, &config), "203.0.113.9");
     }
 
     #[actix_web::test]

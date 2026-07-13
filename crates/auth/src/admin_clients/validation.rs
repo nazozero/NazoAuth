@@ -231,7 +231,7 @@ impl<'a> ClientMetadata<'a> {
     }
 }
 
-pub(super) fn validate_client_metadata<C: AdminClientCryptoPort>(
+pub(super) fn validate_client_metadata<C: AdminClientCryptoPort + ?Sized>(
     metadata: ClientMetadata<'_>,
     response_signing_algorithms: &[String],
     crypto: &C,
@@ -376,7 +376,7 @@ pub(super) fn validate_client_metadata<C: AdminClientCryptoPort>(
     Ok(())
 }
 
-fn validate_jwe_metadata<C: AdminClientCryptoPort>(
+fn validate_jwe_metadata<C: AdminClientCryptoPort + ?Sized>(
     response_name: &str,
     algorithm: Option<&str>,
     encryption: Option<&str>,
@@ -422,7 +422,7 @@ fn validate_jwe_metadata<C: AdminClientCryptoPort>(
     }
 }
 
-fn validate_response_crypto_metadata<C: AdminClientCryptoPort>(
+fn validate_response_crypto_metadata<C: AdminClientCryptoPort + ?Sized>(
     response_name: &str,
     signing_algorithm: Option<&str>,
     encryption_algorithm: Option<&str>,
