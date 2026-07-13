@@ -2,12 +2,14 @@
 #[cfg(test)]
 use crate::domain::AppState;
 use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
-use crate::settings::Settings;
+use crate::settings::{DpopNoncePolicy, Settings};
+use crate::support::IpCidr;
 #[cfg(test)]
 use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
 use crate::support::{
-    DpopErrorContext, audit_event, audit_fields, blake3_hex, dpop_error_response, issue_dpop_nonce,
-    oidc_id_token_user_claims, random_urlsafe_token, signing_algorithm_name,
+    DpopErrorContext, audit_event, audit_fields, blake3_hex, dpop_error_response,
+    issue_dpop_nonce_with_authorization_service, oidc_id_token_user_claims, random_urlsafe_token,
+    signing_algorithm_name,
 };
 use actix_web::HttpResponse;
 use actix_web::http::StatusCode;
@@ -34,6 +36,10 @@ use super::{ServerTokenService, persist_native_sso_device_secret};
 #[derive(Clone)]
 pub(crate) struct TokenIssuanceConfig {
     issuer: Box<str>,
+    mtls_endpoint_base_url: Box<str>,
+    dpop_nonce_policy: DpopNoncePolicy,
+    trusted_proxy_cidrs: Box<[IpCidr]>,
+    default_audience: Box<str>,
     auth_code_ttl_seconds: u64,
     access_token_ttl_seconds: i64,
     id_token_ttl_seconds: i64,
@@ -44,6 +50,10 @@ impl From<&Settings> for TokenIssuanceConfig {
     fn from(settings: &Settings) -> Self {
         Self {
             issuer: settings.endpoint.issuer.as_str().into(),
+            mtls_endpoint_base_url: settings.endpoint.mtls_endpoint_base_url.as_str().into(),
+            dpop_nonce_policy: settings.protocol.dpop_nonce_policy,
+            trusted_proxy_cidrs: settings.endpoint.trusted_proxy_cidrs.clone().into(),
+            default_audience: settings.protocol.default_audience.as_str().into(),
             auth_code_ttl_seconds: settings.protocol.auth_code_ttl_seconds,
             access_token_ttl_seconds: settings.protocol.access_token_ttl_seconds,
             id_token_ttl_seconds: settings.protocol.id_token_ttl_seconds,
@@ -56,15 +66,40 @@ impl TokenIssuanceConfig {
     pub(crate) fn issuer(&self) -> &str {
         &self.issuer
     }
+
+    pub(crate) fn mtls_endpoint_base_url(&self) -> &str {
+        &self.mtls_endpoint_base_url
+    }
+
+    pub(crate) fn dpop_nonce_policy(&self) -> DpopNoncePolicy {
+        self.dpop_nonce_policy
+    }
+
+    pub(crate) fn trusted_proxy_cidrs(&self) -> &[IpCidr] {
+        &self.trusted_proxy_cidrs
+    }
+
+    pub(crate) fn default_audience(&self) -> &str {
+        &self.default_audience
+    }
 }
 
 pub(crate) struct TokenIssuanceContext<'a> {
     pub(crate) config: &'a TokenIssuanceConfig,
     pub(crate) modules: &'a nazo_runtime_modules::ActiveModuleSnapshot,
+    pub(crate) authorization: &'a crate::http::authorization::ServerAuthorizationService,
 }
 
 impl TokenIssuanceContext<'_> {
-    fn permits(&self, module: nazo_runtime_modules::ModuleId) -> bool {
+    pub(crate) fn accepts(&self, module: nazo_runtime_modules::ModuleId) -> bool {
+        nazo_auth::module_admissible(
+            self.modules,
+            module,
+            nazo_auth::CapabilityAdmission::NewRequest,
+        )
+    }
+
+    pub(crate) fn permits(&self, module: nazo_runtime_modules::ModuleId) -> bool {
         nazo_auth::module_admissible(
             self.modules,
             module,
@@ -232,7 +267,7 @@ pub(crate) async fn issue_token_response_with_service(
     }
     let now = Utc::now();
     let next_dpop_nonce = if issue.dpop_jkt.is_some() {
-        match issue_dpop_nonce(state).await {
+        match issue_dpop_nonce_with_authorization_service(context.authorization).await {
             Ok(nonce) => Some(nonce),
             Err(error) => {
                 mark_failed_authorization_code_if_needed(
@@ -519,7 +554,8 @@ pub(crate) async fn issue_token_response_with_service(
             );
         };
         if let Err(error) = persist_native_sso_device_secret(
-            state,
+            token_service,
+            context.config.refresh_token_ttl_seconds,
             client,
             &issue,
             native_sso,
@@ -607,6 +643,18 @@ pub(crate) async fn issue_token_response_with_service(
 }
 
 #[cfg(test)]
+pub(crate) fn test_authorization_service(
+    state: &AppState,
+) -> crate::http::authorization::ServerAuthorizationService {
+    let connection = state.valkey_connection();
+    crate::http::authorization::ServerAuthorizationService::new(
+        nazo_postgres::AuthorizationFlowRepository::new(state.diesel_db.clone(), DEFAULT_TENANT_ID),
+        nazo_valkey::AuthorizationStateAdapter::new(&connection),
+        state.keyset.clone(),
+    )
+}
+
+#[cfg(test)]
 pub(crate) async fn issue_token_response(
     state: &AppState,
     client: &ClientRow,
@@ -619,10 +667,12 @@ pub(crate) async fn issue_token_response(
     );
     let config = TokenIssuanceConfig::from(state.settings.as_ref());
     let modules = state.active_module_snapshot();
+    let authorization = test_authorization_service(state);
     issue_token_response_with_service(
         &TokenIssuanceContext {
             config: &config,
             modules: &modules,
+            authorization: &authorization,
         },
         &service,
         client,

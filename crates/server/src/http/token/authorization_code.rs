@@ -639,12 +639,14 @@ pub(crate) async fn token_authorization_code(
     let service = test_token_service(state);
     let config = TokenIssuanceConfig::from(state.settings.as_ref());
     let modules = state.active_module_snapshot();
+    let authorization = super::issue::test_authorization_service(state);
     token_authorization_code_with_service(
         state,
         &service,
         &TokenIssuanceContext {
             config: &config,
             modules: &modules,
+            authorization: &authorization,
         },
         req,
         client,

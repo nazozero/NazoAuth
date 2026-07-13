@@ -181,6 +181,20 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
         })
     }
 
+    fn consume_jwt_bearer<'a>(
+        &'a self,
+        client_id: &'a str,
+        jti: &'a str,
+        ttl_seconds: u64,
+    ) -> AuthorizationFuture<'a, bool> {
+        Box::pin(async move {
+            self.replay
+                .consume_jwt_bearer(client_id, jti, ttl_seconds)
+                .await
+                .map_err(map_error)
+        })
+    }
+
     fn consume_dpop<'a>(
         &'a self,
         thumbprint: &'a str,

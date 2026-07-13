@@ -330,6 +330,12 @@ pub(crate) async fn issue_dpop_nonce_with_store(
     issue_dpop_nonce_with_replay(&DpopReplay::Store(replay_store)).await
 }
 
+pub(crate) async fn issue_dpop_nonce_with_authorization_service(
+    service: &crate::http::authorization::ServerAuthorizationService,
+) -> Result<String, DpopError> {
+    issue_dpop_nonce_with_replay(&DpopReplay::Authorization(service)).await
+}
+
 async fn issue_dpop_nonce_with_replay(replay: &DpopReplay<'_>) -> Result<String, DpopError> {
     let nonce = random_urlsafe_token();
     replay

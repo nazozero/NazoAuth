@@ -1,11 +1,13 @@
 //! client_credentials grant 处理。
 use crate::domain::{AppState, ClientRow, RefreshTokenPolicy, TokenIssue};
+#[cfg(test)]
 use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
 use crate::support::{
     DpopError, DpopErrorContext, ValidatedClientAssertion, audiences_allowed, dpop_error_response,
-    is_subset, json_array_to_strings, parse_scope, request_mtls_thumbprint, validate_dpop_proof,
+    is_subset, json_array_to_strings, parse_scope, request_mtls_thumbprint_from_trusted_proxy,
+    validate_dpop_proof_with_authorization_service,
 };
 use actix_web::http::StatusCode;
 #[cfg(test)]
@@ -19,7 +21,9 @@ use serde_json::json;
 use uuid::Uuid;
 // 只为机密客户端签发无用户主体的访问令牌。
 use super::issue::{TokenIssuanceContext, issue_token_response_with_service};
-use super::{ServerTokenService, TokenForm, consume_token_client_assertion};
+use super::{
+    ServerTokenService, TokenForm, consume_token_client_assertion_with_authorization_service,
+};
 
 #[derive(Debug)]
 pub(super) struct ClientCredentialsIssue {
@@ -39,8 +43,8 @@ fn reject_non_confidential_client_credentials_client(client: &ClientRow) -> Opti
     ))
 }
 
-pub(super) fn client_credentials_issue_request(
-    settings: &Settings,
+pub(super) fn client_credentials_issue_request_with_default_audience(
+    default_audience: &str,
     client: &ClientRow,
     form: &TokenForm,
 ) -> Result<ClientCredentialsIssue, HttpResponse> {
@@ -68,7 +72,7 @@ pub(super) fn client_credentials_issue_request(
         ));
     }
     let audiences = if form.audiences.is_empty() {
-        vec![settings.protocol.default_audience.clone()]
+        vec![default_audience.to_owned()]
     } else {
         form.audiences.clone()
     };
@@ -83,9 +87,22 @@ pub(super) fn client_credentials_issue_request(
     Ok(ClientCredentialsIssue { scopes, audiences })
 }
 
+#[cfg(test)]
+pub(super) fn client_credentials_issue_request(
+    settings: &Settings,
+    client: &ClientRow,
+    form: &TokenForm,
+) -> Result<ClientCredentialsIssue, HttpResponse> {
+    client_credentials_issue_request_with_default_audience(
+        &settings.protocol.default_audience,
+        client,
+        form,
+    )
+}
+
 pub(crate) async fn token_client_credentials_with_service(
-    state: &AppState,
     token_service: &ServerTokenService,
+    authorization_service: &crate::http::authorization::ServerAuthorizationService,
     issuance: &TokenIssuanceContext<'_>,
     req: &HttpRequest,
     client: &ClientRow,
@@ -95,7 +112,17 @@ pub(crate) async fn token_client_credentials_with_service(
     if let Some(response) = reject_non_confidential_client_credentials_client(client) {
         return response;
     }
-    let dpop_jkt = match validate_dpop_proof(state, req, None, None).await {
+    let dpop_jkt = match validate_dpop_proof_with_authorization_service(
+        authorization_service,
+        issuance.config.issuer(),
+        issuance.config.mtls_endpoint_base_url(),
+        issuance.config.dpop_nonce_policy(),
+        req,
+        None,
+        None,
+    )
+    .await
+    {
         Ok(value) => value,
         Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
     };
@@ -103,7 +130,8 @@ pub(crate) async fn token_client_credentials_with_service(
         return dpop_error_response(DpopError::MissingProof, DpopErrorContext::TokenEndpoint);
     }
     let mtls_x5t_s256 = if client.require_mtls_bound_tokens {
-        match request_mtls_thumbprint(req, &state.settings) {
+        match request_mtls_thumbprint_from_trusted_proxy(req, issuance.config.trusted_proxy_cidrs())
+        {
             Some(value) => Some(value),
             None => {
                 return oauth_token_error(
@@ -117,10 +145,20 @@ pub(crate) async fn token_client_credentials_with_service(
     } else {
         None
     };
-    if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
+    if let Err(response) = consume_token_client_assertion_with_authorization_service(
+        authorization_service,
+        client,
+        client_assertion,
+    )
+    .await
+    {
         return response;
     }
-    let issue_request = match client_credentials_issue_request(&state.settings, client, form) {
+    let issue_request = match client_credentials_issue_request_with_default_audience(
+        issuance.config.default_audience(),
+        client,
+        form,
+    ) {
         Ok(issue_request) => issue_request,
         Err(response) => return response,
     };
@@ -174,12 +212,18 @@ pub(crate) async fn token_client_credentials(
     );
     let config = super::issue::TokenIssuanceConfig::from(state.settings.as_ref());
     let modules = state.active_module_snapshot();
+    let authorization_service = crate::http::authorization::ServerAuthorizationService::new(
+        nazo_postgres::AuthorizationFlowRepository::new(state.diesel_db.clone(), DEFAULT_TENANT_ID),
+        nazo_valkey::AuthorizationStateAdapter::new(&connection),
+        state.keyset.clone(),
+    );
     token_client_credentials_with_service(
-        state,
         &service,
+        &authorization_service,
         &TokenIssuanceContext {
             config: &config,
             modules: &modules,
+            authorization: &authorization_service,
         },
         req,
         client,
