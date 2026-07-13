@@ -17,7 +17,7 @@ use crate::http::profile::oidc_logout::spawn_backchannel_logout_delivery_worker;
 use crate::runtime_modules::RuntimeModules;
 use crate::settings::Settings;
 use crate::support::client_ip::ClientIpConfig;
-use crate::support::sessions::{AdminSessionHandles, SessionHttpConfig};
+use crate::support::sessions::{AdminSessionHandles, SessionHttpConfig, SessionProfileHandles};
 use crate::support::{
     configure_password_hash_limits, default_password_hash_max_concurrency,
     default_password_hash_queue_timeout_ms, initialize_dummy_password_hash,
@@ -103,10 +103,31 @@ pub async fn run() -> anyhow::Result<()> {
         runtime_modules: runtime_modules.registry.clone(),
     });
     let session = state.settings.session();
+    let session_http_config = SessionHttpConfig::new(
+        session.session_cookie_name,
+        session.csrf_cookie_name,
+        session.cookie_secure,
+    );
     let admin_sessions = web::Data::new(AdminSessionHandles::new(
         nazo_valkey::SessionStore::new(&state.valkey_connection()),
         nazo_postgres::UserRepository::new(state.diesel_db.clone()),
-        SessionHttpConfig::new(session.session_cookie_name, session.csrf_cookie_name),
+        session_http_config.clone(),
+    ));
+    #[cfg(not(test))]
+    let session_profiles = web::Data::new(SessionProfileHandles::new(
+        nazo_valkey::SessionStore::new(&state.valkey_connection()),
+        nazo_postgres::UserRepository::new(state.diesel_db.clone()),
+        session_http_config,
+        &state.settings.issuer,
+        runtime_modules.registry.clone(),
+    ));
+    #[cfg(test)]
+    let session_profiles = web::Data::new(SessionProfileHandles::new(
+        nazo_valkey::SessionStore::new(&state.valkey_connection()),
+        nazo_postgres::UserRepository::new(state.diesel_db.clone()),
+        session_http_config,
+        &state.settings.issuer,
+        state.settings.modules().enable_session_management,
     ));
     let admin_users = web::Data::new(nazo_postgres::UserRepository::new(state.diesel_db.clone()));
     let admin_grants = web::Data::new(nazo_postgres::GrantRepository::new(state.diesel_db.clone()));
@@ -160,6 +181,7 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(runtime_modules.clone())
             .app_data(metadata_handles.clone())
             .app_data(admin_sessions.clone())
+            .app_data(session_profiles.clone())
             .app_data(resource_server_handles.clone())
             .app_data(admin_users.clone())
             .app_data(admin_grants.clone())

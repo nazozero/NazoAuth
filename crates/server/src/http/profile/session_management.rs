@@ -1,8 +1,8 @@
 //! OpenID Connect Session Management support.
 
-use crate::domain::AppState;
+use crate::support::sessions::SessionProfileHandles;
 use crate::support::{
-    constant_time_eq, current_session, empty_response, json_response_no_store, random_urlsafe_token,
+    constant_time_eq, empty_response, json_response_no_store, random_urlsafe_token,
 };
 use actix_web::http::StatusCode;
 use actix_web::http::header;
@@ -69,12 +69,11 @@ fn escape_js_string(value: &str) -> String {
         .replace('&', "\\u0026")
 }
 
-pub(crate) async fn check_session_iframe(state: Data<AppState>) -> HttpResponse {
-    if !state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::SessionManagement)
-    {
+pub(crate) async fn check_session_iframe(handles: Data<SessionProfileHandles>) -> HttpResponse {
+    if !handles.permits_existing_session_management_transaction() {
         return empty_response(StatusCode::NOT_FOUND);
     }
-    let status_endpoint = format!("{}/check_session/status", state.settings.issuer);
+    let status_endpoint = format!("{}/check_session/status", handles.issuer());
     HttpResponse::Ok()
         .insert_header((header::CACHE_CONTROL, "no-store"))
         .insert_header((header::PRAGMA, "no-cache"))
@@ -90,18 +89,17 @@ pub(crate) struct CheckSessionStatusQuery {
 }
 
 pub(crate) async fn check_session_status(
-    state: Data<AppState>,
+    handles: Data<SessionProfileHandles>,
     req: HttpRequest,
     Query(query): Query<CheckSessionStatusQuery>,
 ) -> HttpResponse {
-    if !state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::SessionManagement)
-    {
+    if !handles.permits_existing_session_management_transaction() {
         return empty_response(StatusCode::NOT_FOUND);
     }
     let Some((_, salt)) = query.session_state.rsplit_once('.') else {
         return json_response_no_store(json!({"status": "error"}));
     };
-    let status = match current_session(&state, &req).await {
+    let status = match handles.current_session(&req).await {
         Ok(Some(session)) => {
             let expected =
                 oidc_session_state(&query.client_id, &query.origin, &session.oidc_sid, salt);

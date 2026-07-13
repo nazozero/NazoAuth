@@ -24,6 +24,12 @@ use nazo_identity::session::add_amr;
 use nazo_postgres::UserRepository;
 use nazo_valkey::SessionStore;
 
+#[cfg(not(test))]
+use std::sync::Arc;
+
+#[cfg(not(test))]
+use crate::runtime_modules::ServerRuntimeModuleRegistry;
+
 #[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct SessionPayload {
     pub(crate) user_id: Uuid,
@@ -52,16 +58,39 @@ pub(crate) struct AdminSessionHandles {
     http: SessionHttpConfig,
 }
 
+/// Profile session endpoint dependencies assembled at the composition root.
+///
+/// The profile transport only receives the concrete session/user stores and the
+/// small amount of HTTP/runtime configuration it consumes. It cannot reach the
+/// application database pool, raw Valkey connection, keyset, or complete settings.
+pub(crate) struct SessionProfileHandles {
+    sessions: SessionStore,
+    users: UserRepository,
+    http: SessionHttpConfig,
+    issuer: Box<str>,
+    #[cfg(not(test))]
+    runtime_modules: Arc<ServerRuntimeModuleRegistry>,
+    #[cfg(test)]
+    session_management_enabled: bool,
+}
+
+#[derive(Clone)]
 pub(crate) struct SessionHttpConfig {
     session_cookie_name: Box<str>,
     csrf_cookie_name: Box<str>,
+    cookie_secure: bool,
 }
 
 impl SessionHttpConfig {
-    pub(crate) fn new(session_cookie_name: &str, csrf_cookie_name: &str) -> Self {
+    pub(crate) fn new(
+        session_cookie_name: &str,
+        csrf_cookie_name: &str,
+        cookie_secure: bool,
+    ) -> Self {
         Self {
             session_cookie_name: session_cookie_name.into(),
             csrf_cookie_name: csrf_cookie_name.into(),
+            cookie_secure,
         }
     }
 
@@ -71,6 +100,10 @@ impl SessionHttpConfig {
 
     pub(crate) fn csrf_cookie_name(&self) -> &str {
         &self.csrf_cookie_name
+    }
+
+    pub(crate) fn cookie_secure(&self) -> bool {
+        self.cookie_secure
     }
 }
 
@@ -102,6 +135,87 @@ impl AdminSessionHandles {
             req,
         )
         .await
+    }
+}
+
+impl SessionProfileHandles {
+    #[cfg(not(test))]
+    pub(crate) fn new(
+        sessions: SessionStore,
+        users: UserRepository,
+        http: SessionHttpConfig,
+        issuer: &str,
+        runtime_modules: Arc<ServerRuntimeModuleRegistry>,
+    ) -> Self {
+        Self {
+            sessions,
+            users,
+            http,
+            issuer: issuer.into(),
+            runtime_modules,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new(
+        sessions: SessionStore,
+        users: UserRepository,
+        http: SessionHttpConfig,
+        issuer: &str,
+        session_management_enabled: bool,
+    ) -> Self {
+        Self {
+            sessions,
+            users,
+            http,
+            issuer: issuer.into(),
+            session_management_enabled,
+        }
+    }
+
+    pub(crate) fn http_config(&self) -> &SessionHttpConfig {
+        &self.http
+    }
+
+    pub(crate) fn issuer(&self) -> &str {
+        &self.issuer
+    }
+
+    pub(crate) async fn delete_request_session(
+        &self,
+        req: &HttpRequest,
+    ) -> Result<(), nazo_valkey::Error> {
+        if let Some(session_id) = cookie_value(req, self.http.session_cookie_name()) {
+            self.sessions.delete(&session_id).await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn current_session(
+        &self,
+        req: &HttpRequest,
+    ) -> anyhow::Result<Option<CurrentSession>> {
+        current_session_from_handles(
+            &self.sessions,
+            &self.users,
+            self.http.session_cookie_name(),
+            req,
+        )
+        .await
+    }
+
+    #[cfg(not(test))]
+    pub(crate) fn permits_existing_session_management_transaction(&self) -> bool {
+        nazo_auth::module_admissible(
+            &self.runtime_modules.snapshot(),
+            nazo_runtime_modules::ModuleId::SessionManagement,
+            nazo_auth::CapabilityAdmission::ExistingTransaction,
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn permits_existing_session_management_transaction(&self) -> bool {
+        self.session_management_enabled
     }
 }
 
@@ -194,7 +308,7 @@ async fn current_session_from_handles(
     };
     let stored = match sessions.load(&sid).await {
         Ok(stored) => stored,
-        Err(error) if error.kind() == nazo_valkey::ErrorKind::Protocol => {
+        Err(error) if error.kind() == nazo_valkey::ErrorKind::CorruptData => {
             tracing::warn!(%error, "session payload is malformed");
             let _ = sessions.delete(&sid).await;
             return Ok(None);
@@ -229,7 +343,7 @@ pub(crate) async fn current_pending_mfa_session(
     let store = nazo_valkey::SessionStore::new(&state.valkey_connection());
     let stored = match store.load(&sid).await {
         Ok(stored) => stored,
-        Err(error) if error.kind() == nazo_valkey::ErrorKind::Protocol => {
+        Err(error) if error.kind() == nazo_valkey::ErrorKind::CorruptData => {
             tracing::warn!(%error, "pending MFA session payload is malformed");
             let _ = store.delete(&sid).await;
             return Ok(None);
@@ -283,7 +397,7 @@ async fn record_mfa_step_up(
     let store = nazo_valkey::SessionStore::new(&state.valkey_connection());
     let stored = match store.load(&sid).await {
         Ok(stored) => stored,
-        Err(error) if error.kind() == nazo_valkey::ErrorKind::Protocol => {
+        Err(error) if error.kind() == nazo_valkey::ErrorKind::CorruptData => {
             tracing::warn!(%error, "MFA session payload is malformed");
             let _ = store.delete(&sid).await;
             return Ok(None);

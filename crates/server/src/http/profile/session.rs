@@ -1,7 +1,6 @@
 //! 当前用户会话接口。
-use crate::domain::AppState;
-use crate::settings::Settings;
-use crate::support::{clear_cookie, cookie_value, json_response, with_cookie_headers};
+use crate::support::sessions::{SessionHttpConfig, SessionProfileHandles};
+use crate::support::{clear_cookie, json_response, with_cookie_headers};
 #[cfg(test)]
 use actix_web::http::StatusCode;
 #[cfg(test)]
@@ -13,21 +12,19 @@ use serde_json::Value;
 use serde_json::json;
 // 只处理登出和会话/CSRF Cookie 清理。
 
-pub(crate) async fn logout(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
-    if let Some(session_id) = cookie_value(&req, state.settings.session().session_cookie_name) {
-        let _ = nazo_valkey::SessionStore::new(&state.valkey_connection())
-            .delete(&session_id)
-            .await;
+pub(crate) async fn logout(handles: Data<SessionProfileHandles>, req: HttpRequest) -> HttpResponse {
+    if let Err(error) = handles.delete_request_session(&req).await {
+        tracing::warn!(%error, "failed to delete session during logout");
     }
-    logout_response(&state.settings)
+    logout_response(handles.http_config())
 }
 
-fn logout_response(settings: &Settings) -> HttpResponse {
+fn logout_response(config: &SessionHttpConfig) -> HttpResponse {
     with_cookie_headers(
         json_response(json!({"success": true})),
         &[
-            clear_cookie(&settings.session_cookie_name, settings.cookie_secure),
-            clear_cookie(&settings.csrf_cookie_name, settings.cookie_secure),
+            clear_cookie(config.session_cookie_name(), config.cookie_secure()),
+            clear_cookie(config.csrf_cookie_name(), config.cookie_secure()),
         ],
     )
 }

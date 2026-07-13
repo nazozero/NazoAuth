@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, PasskeySettings,
-    RateLimitSettings, RequestObjectJtiPolicy, SubjectType,
+    RateLimitSettings, RequestObjectJtiPolicy, Settings, SubjectType,
 };
 use crate::support::{ClientIpHeaderMode, IpCidr};
 
@@ -96,7 +96,14 @@ fn settings() -> Settings {
 
 #[actix_web::test]
 async fn logout_response_clears_session_and_csrf_cookies_without_cacheable_state() {
-    let response = logout_response(&settings());
+    let settings = settings();
+    let session = settings.session();
+    let config = SessionHttpConfig::new(
+        session.session_cookie_name,
+        session.csrf_cookie_name,
+        session.cookie_secure,
+    );
+    let response = logout_response(&config);
 
     assert_eq!(response.status(), StatusCode::OK);
     let set_cookie = response
