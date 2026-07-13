@@ -1,4 +1,5 @@
 use super::*;
+use base64::engine::general_purpose::STANDARD;
 
 #[test]
 fn basic_client_credentials_scheme_is_case_insensitive() {
@@ -31,7 +32,7 @@ fn malformed_basic_authorization_scheme_is_detected() {
 }
 
 #[test]
-fn malformed_basic_authorization_is_not_decoded_as_basic_credentials() {
+fn malformed_basic_authorization_fails_closed_as_basic_credentials() {
     let req = TestRequest::default()
         .insert_header((header::AUTHORIZATION, "Basic not-base64 with-space"))
         .to_http_request();
@@ -39,7 +40,7 @@ fn malformed_basic_authorization_is_not_decoded_as_basic_credentials() {
 
     let credentials = extract_client_credentials(&req, &settings, None, None, None, None);
 
-    assert_eq!(credentials.method, "none");
+    assert_eq!(credentials.method, "client_secret_basic");
     assert!(credentials.client_id.is_none());
     assert!(credentials.client_secret.is_none());
 }
@@ -56,5 +57,5 @@ fn non_utf8_basic_authorization_scheme_is_detected() {
 
     assert!(has_basic_authorization_scheme(req.headers()));
     let credentials = extract_client_credentials(&req, &settings, None, None, None, None);
-    assert_eq!(credentials.method, "none");
+    assert_eq!(credentials.method, "client_secret_basic");
 }

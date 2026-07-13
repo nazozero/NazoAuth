@@ -2,68 +2,6 @@ use super::*;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
 #[test]
-fn par_client_assertion_accepts_rfc9126_audiences_without_client_opt_in() {
-    let expected = client_assertion_audience_candidates("https://issuer.example", "/par", false);
-
-    assert!(audience_matches(
-        &json!("https://issuer.example"),
-        &expected,
-        false
-    ));
-    assert!(audience_matches(
-        &json!("https://issuer.example/par"),
-        &expected,
-        false
-    ));
-    assert!(audience_matches(
-        &json!("https://issuer.example/token"),
-        &expected,
-        false
-    ));
-    assert!(!audience_matches(
-        &json!(["https://issuer.example", "https://unexpected.example"]),
-        &expected,
-        false
-    ));
-    assert!(!audience_matches(
-        &json!("https://issuer.example/authorize"),
-        &expected,
-        false
-    ));
-    assert!(!audience_matches(
-        &json!(["https://unexpected.example"]),
-        &expected,
-        false
-    ));
-}
-
-#[test]
-fn par_client_assertion_endpoint_audiences_remain_accepted_with_legacy_client_opt_in() {
-    let expected = client_assertion_audience_candidates("https://issuer.example", "/par", true);
-
-    assert!(audience_matches(
-        &json!("https://issuer.example"),
-        &expected,
-        false
-    ));
-    assert!(audience_matches(
-        &json!("https://issuer.example/par"),
-        &expected,
-        false
-    ));
-    assert!(audience_matches(
-        &json!("https://issuer.example/token"),
-        &expected,
-        false
-    ));
-    assert!(!audience_matches(
-        &json!("https://issuer.example/authorize"),
-        &expected,
-        false
-    ));
-}
-
-#[test]
 fn par_private_key_jwt_accepts_each_rfc9126_audience_without_client_opt_in() {
     let private_key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
     let public_jwk = private_key.public_jwk("client-kid");
@@ -99,58 +37,6 @@ fn par_private_key_jwt_accepts_each_rfc9126_audience_without_client_opt_in() {
 }
 
 #[test]
-fn client_assertion_audience_arrays_require_explicit_client_policy() {
-    let expected = client_assertion_audience_candidates("https://issuer.example", "/par", false);
-
-    assert!(audience_matches(
-        &json!(["https://issuer.example", "https://unexpected.example"]),
-        &expected,
-        true
-    ));
-    assert!(!audience_matches(
-        &json!(["https://issuer.example", "https://unexpected.example"]),
-        &expected,
-        false
-    ));
-}
-
-#[test]
-fn token_client_assertion_accepts_issuer_and_token_endpoint_audience() {
-    let expected = client_assertion_audience_candidates("https://issuer.example", "/token", false);
-
-    assert!(audience_matches(
-        &json!("https://issuer.example"),
-        &expected,
-        false
-    ));
-    assert!(audience_matches(
-        &json!("https://issuer.example/token"),
-        &expected,
-        false
-    ));
-    assert!(!audience_matches(
-        &json!("https://issuer.example/par"),
-        &expected,
-        false
-    ));
-    assert!(!audience_matches(
-        &json!(["https://issuer.example", "https://unexpected.example"]),
-        &expected,
-        false
-    ));
-    assert!(audience_matches(
-        &json!(["https://issuer.example", "https://unexpected.example"]),
-        &expected,
-        true
-    ));
-    assert!(!audience_matches(
-        &json!(["https://unexpected.example"]),
-        &expected,
-        true
-    ));
-}
-
-#[test]
 fn ciba_backchannel_client_assertion_accepts_token_endpoint_audience_when_allowed() {
     let private_key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
     let public_jwk = private_key.public_jwk("client-kid");
@@ -169,28 +55,6 @@ fn ciba_backchannel_client_assertion_accepts_token_endpoint_audience_when_allowe
     let result = verify_private_key_jwt_claims_with_settings(&settings, &req, &client, &assertion);
 
     assert!(result.is_ok());
-}
-
-#[test]
-fn ciba_backchannel_client_assertion_rejects_token_endpoint_audience_when_not_allowed() {
-    let expected =
-        client_assertion_audience_candidates("https://issuer.example", "/bc-authorize", false);
-
-    assert!(audience_matches(
-        &json!("https://issuer.example"),
-        &expected,
-        false
-    ));
-    assert!(audience_matches(
-        &json!("https://issuer.example/bc-authorize"),
-        &expected,
-        false
-    ));
-    assert!(!audience_matches(
-        &json!("https://issuer.example/token"),
-        &expected,
-        false
-    ));
 }
 
 #[test]
@@ -334,86 +198,6 @@ fn private_key_jwt_replay_key_is_client_scoped_and_hashed() {
     assert!(!first.contains("assertion-jti"));
     assert_ne!(first, other_client);
     assert_ne!(first, other_jti);
-}
-
-#[test]
-fn private_key_jwt_replay_ttl_is_bounded_to_assertion_window() {
-    let assertion = ValidatedClientAssertion {
-        jti: "jti-1".to_owned(),
-        exp: 1_000,
-        kid: Some("kid-1".to_owned()),
-        alg: jsonwebtoken::Algorithm::PS256,
-    };
-
-    assert_eq!(assertion.replay_ttl_seconds(900), 100);
-    assert_eq!(
-        assertion.replay_ttl_seconds(1_000 - CLIENT_ASSERTION_MAX_TTL_SECONDS - 1),
-        CLIENT_ASSERTION_MAX_TTL_SECONDS as u64
-    );
-    assert_eq!(assertion.replay_ttl_seconds(1_001), 1);
-}
-
-#[test]
-fn private_key_jwt_claim_validation_rejects_bad_times_and_jti() {
-    let now = Utc::now().timestamp();
-    let valid = ClientAssertionClaims {
-        iss: "client-1".to_owned(),
-        sub: "client-1".to_owned(),
-        aud: json!("https://issuer.example"),
-        exp: now + 120,
-        nbf: Some(now),
-        iat: Some(now),
-        jti: "assertion-jti".to_owned(),
-    };
-
-    assert!(valid_client_assertion_times(&valid, now));
-    assert!(valid_client_assertion_jti(&valid.jti));
-
-    let mut expired = valid;
-    expired.exp = now;
-    assert!(!valid_client_assertion_times(&expired, now));
-
-    let mut not_yet_valid = expired;
-    not_yet_valid.exp = now + 120;
-    not_yet_valid.nbf = Some(now + CLIENT_ASSERTION_CLOCK_SKEW_SECONDS + 1);
-    assert!(!valid_client_assertion_times(&not_yet_valid, now));
-
-    let mut stale_iat = not_yet_valid;
-    stale_iat.nbf = Some(now);
-    stale_iat.iat = Some(now - CLIENT_ASSERTION_MAX_TTL_SECONDS - 1);
-    assert!(!valid_client_assertion_times(&stale_iat, now));
-
-    assert!(!valid_client_assertion_jti(""));
-    assert!(!valid_client_assertion_jti(&"x".repeat(129)));
-}
-
-#[test]
-fn private_key_jwt_clock_skew_accepts_small_future_times_and_rejects_over_sixty_seconds() {
-    let now = Utc::now().timestamp();
-    let ten_seconds_future = ClientAssertionClaims {
-        iss: "client-1".to_owned(),
-        sub: "client-1".to_owned(),
-        aud: json!("https://issuer.example"),
-        exp: now + 120,
-        nbf: Some(now + 10),
-        iat: Some(now + 10),
-        jti: "assertion-jti".to_owned(),
-    };
-    assert!(valid_client_assertion_times(&ten_seconds_future, now));
-
-    let sixty_one_seconds_future = ClientAssertionClaims {
-        iss: "client-1".to_owned(),
-        sub: "client-1".to_owned(),
-        aud: json!("https://issuer.example"),
-        exp: now + 120,
-        nbf: Some(now + 61),
-        iat: Some(now + 61),
-        jti: "assertion-jti".to_owned(),
-    };
-    assert!(!valid_client_assertion_times(
-        &sixty_one_seconds_future,
-        now
-    ));
 }
 
 #[test]

@@ -9,13 +9,11 @@ use crate::support::{
     mtls::client_mtls_certificate_matches,
     mtls::request_mtls_client_certificate_from_trusted_proxy, rate_limit::rate_limited_response,
     security::ClientCredentials, security::blake3_hex,
-    security::extract_client_credentials_with_trusted_proxies,
-    security::has_basic_authorization_scheme,
 };
 #[cfg(test)]
 use crate::support::{
-    oauth::authorization_code_key, security::CLIENT_ASSERTION_TYPE_JWT_BEARER,
-    tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
+    oauth::authorization_code_key, tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID,
+    tenancy::DEFAULT_TENANT_ID,
 };
 use actix_web::http::StatusCode;
 #[cfg(test)]
@@ -28,7 +26,7 @@ use base64::Engine;
 use chrono::{Duration, Utc};
 #[cfg(test)]
 use nazo_http_actix::OAuthJsonErrorFields;
-use nazo_http_actix::oauth_token_error;
+use nazo_http_actix::{TokenClientAuthForm, oauth_token_error, token_client_auth_transport_facts};
 #[cfg(test)]
 use serde_json::{Value, json};
 #[cfg(test)]
@@ -50,8 +48,10 @@ use super::{
 use crate::http::authorization::ServerAuthorizationService;
 use crate::runtime_modules::ServerRuntimeModuleRegistry;
 use nazo_auth::{
-    ClientAuthenticationContext, ClientProfile, ProtocolErrorCode, SecurityProfile,
-    SenderConstraintPolicy, validate_token_request_profile as validate_auth_token_request_profile,
+    CLIENT_ASSERTION_TYPE_JWT_BEARER, ClientAuthenticationContext, ClientProfile,
+    ProtocolErrorCode, SecurityProfile, SenderConstraintPolicy,
+    token_client_authentication_context, unverified_client_assertion_client_id,
+    validate_token_request_profile as validate_auth_token_request_profile,
 };
 
 #[cfg(test)]
@@ -60,14 +60,6 @@ fn pending_authorization_code_payload(raw: &str) -> Result<Option<CodePayload>, 
         AuthorizationCodeState::Pending { payload } => Ok(Some(payload)),
         _ => Ok(None),
     }
-}
-
-fn token_request_has_client_auth_material(has_basic: bool, form: &TokenForm) -> bool {
-    has_basic
-        || form.client_id.is_some()
-        || form.client_secret.is_some()
-        || form.client_assertion_type.is_some()
-        || form.client_assertion.is_some()
 }
 
 fn mtls_client_credentials(client_id: String) -> ClientCredentials {
@@ -348,38 +340,54 @@ pub(crate) async fn token_with_service(
             false,
         );
     }
-    let has_basic = has_basic_authorization_scheme(req.headers());
-    let has_assertion = form.client_assertion_type.is_some() || form.client_assertion.is_some();
-    let has_client_auth_material = token_request_has_client_auth_material(has_basic, &form);
-    if has_basic && (form.client_id.is_some() || form.client_secret.is_some() || has_assertion) {
-        return oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "同一 token 请求不能同时使用多种客户端认证方式.",
-            false,
-        );
-    }
-    if has_assertion && form.client_secret.is_some() {
-        return oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "同一 token 请求不能同时使用多种客户端认证方式.",
-            false,
-        );
-    }
-    let mut credentials = extract_client_credentials_with_trusted_proxies(
+    let auth_facts = token_client_auth_transport_facts(
         &req,
-        issuance_config.trusted_proxy_cidrs(),
-        form.client_id.as_deref(),
-        form.client_secret.as_deref(),
-        form.client_assertion_type.as_deref(),
-        form.client_assertion.as_deref(),
+        TokenClientAuthForm {
+            client_id: form.client_id.as_deref(),
+            client_secret: form.client_secret.as_deref(),
+            client_assertion_type: form.client_assertion_type.as_deref(),
+            client_assertion: form.client_assertion.as_deref(),
+        },
     );
+    let client_auth_context = match token_client_authentication_context(auth_facts.presentation()) {
+        Ok(context) => context,
+        Err(_) => {
+            return oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "同一 token 请求不能同时使用多种客户端认证方式.",
+                false,
+            );
+        }
+    };
+    let has_basic = client_auth_context.http_basic;
+    let has_client_auth_material = client_auth_context.has_any_client_auth_material;
+    let assertion_client_id = auth_facts
+        .client_assertion()
+        .filter(|_| auth_facts.client_assertion_type() == Some(CLIENT_ASSERTION_TYPE_JWT_BEARER))
+        .and_then(unverified_client_assertion_client_id);
+    let form_mtls_client_id =
+        if !has_basic && !client_auth_context.has_assertion && form.client_secret.is_none() {
+            form.client_id
+                .as_ref()
+                .filter(|_| {
+                    request_mtls_client_certificate_from_trusted_proxy(
+                        &req,
+                        issuance_config.trusted_proxy_cidrs(),
+                    )
+                    .is_some()
+                })
+                .cloned()
+        } else {
+            None
+        };
+    let mut credentials =
+        auth_facts.presented_credentials(assertion_client_id, form_mtls_client_id);
     if credentials.client_id.is_none()
         && !has_basic
         && credentials.method == "none"
         && form.client_secret.is_none()
-        && !has_assertion
+        && !client_auth_context.has_assertion
     {
         match mtls_client_credentials_without_client_id(
             authorization_service,
