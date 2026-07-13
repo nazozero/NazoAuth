@@ -7,6 +7,7 @@ use super::client_ip::client_ip;
 use super::client_ip::{ClientIpConfig, client_ip_with_config};
 #[cfg(test)]
 use super::security::blake3_hex;
+#[cfg(test)]
 use super::{client_ip::ClientIpHeaderMode, client_ip::IpCidr, client_ip::client_ip_with_context};
 #[cfg(test)]
 use crate::{domain::AppState, settings::RateLimitSettings, settings::Settings};
@@ -108,6 +109,7 @@ impl AuthRateLimitConfig {
     }
 }
 
+#[cfg(test)]
 #[derive(Clone, Copy)]
 pub(crate) enum RateLimitPolicy {
     Auth,
@@ -117,6 +119,7 @@ pub(crate) enum RateLimitPolicy {
     TokenManagement,
 }
 
+#[cfg(test)]
 impl RateLimitPolicy {
     #[cfg(test)]
     fn name(self) -> &'static str {
@@ -167,6 +170,7 @@ pub(crate) async fn enforce_rate_limit(
     .await
 }
 
+#[cfg(test)]
 pub(crate) async fn enforce_rate_limit_with_store(
     store: &nazo_valkey::RateLimitStore,
     req: &HttpRequest,

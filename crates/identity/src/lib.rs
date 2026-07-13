@@ -8,6 +8,7 @@ mod avatar;
 pub mod email;
 pub mod federation;
 pub mod mfa;
+mod mfa_service;
 mod model;
 pub mod passkey;
 pub mod ports;
@@ -37,6 +38,10 @@ pub use federation::{
     FederationAuditEvent, FederationError, FederationService, FederationServiceConfig,
     OidcFederationStart, OidcFederationState, SocialFederationStart, SocialFederationState,
     VerifiedExternalIdentity,
+};
+pub use mfa_service::{
+    MfaService, MfaServiceError, MfaServiceErrorKind, PreparedTotpConfirmation,
+    TotpConfirmationOutcome, TotpEnrollmentStart,
 };
 pub use model::{
     AccountIdentity, AuthMethod, AuthenticationContext, AuthenticationIdentity, IdentityModelError,

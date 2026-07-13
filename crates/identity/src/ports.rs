@@ -16,6 +16,7 @@ pub type AvatarStorageFuture<'a, T> =
     Pin<Box<dyn Future<Output = Result<T, AvatarStorageError>> + Send + 'a>>;
 pub type SecretVerifyFuture<'a> =
     Pin<Box<dyn Future<Output = Result<bool, SecretVerifyError>> + Send + 'a>>;
+pub type MfaHashFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, MfaHashError>> + Send + 'a>>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RepositoryError {
@@ -64,6 +65,46 @@ pub enum TotpVerificationOutcome {
     Accepted,
     Invalid,
     Replay,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EncodedSecretHash(String);
+
+impl EncodedSecretHash {
+    pub fn new(value: impl Into<String>) -> Result<Self, IdentityModelError> {
+        let value = value.into();
+        if value.trim().is_empty() {
+            return Err(IdentityModelError::EmptyPasswordHash);
+        }
+        Ok(Self(value))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BackupCodeCandidate {
+    pub id: Uuid,
+    pub hash: EncodedSecretHash,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MfaHashError {
+    Busy,
+    Failed,
+}
+
+pub trait MfaSecretHashPort: Send + Sync {
+    fn hash_secrets(&self, secrets: Vec<String>) -> MfaHashFuture<'_, Vec<EncodedSecretHash>>;
+
+    fn find_matching_secret(
+        &self,
+        secret: String,
+        candidates: Vec<EncodedSecretHash>,
+    ) -> MfaHashFuture<'_, Option<usize>>;
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -792,6 +833,43 @@ pub trait PasskeyAuditPort: Send + Sync {
 }
 
 pub trait MfaRepositoryPort: Send + Sync {
+    fn totp_enrollment<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> RepositoryFuture<'a, Option<TotpEnrollment>>;
+
+    fn begin_totp_enrollment(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        secret: String,
+        label: String,
+    ) -> RepositoryFuture<'_, ()>;
+
+    fn verify_and_confirm_totp<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        code: &'a str,
+        timestamp: i64,
+        hashes: Vec<EncodedSecretHash>,
+    ) -> RepositoryFuture<'a, TotpVerificationOutcome>;
+
+    fn record_invalid_totp_attempt(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> RepositoryFuture<'_, ()>;
+
+    fn verify_and_consume_totp<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        code: &'a str,
+        timestamp: i64,
+    ) -> RepositoryFuture<'a, TotpVerificationOutcome>;
+
     fn totp_credential<'a>(
         &'a self,
         tenant_id: TenantId,
@@ -804,18 +882,30 @@ pub trait MfaRepositoryPort: Send + Sync {
         step: i64,
     ) -> RepositoryFuture<'a, bool>;
 
-    fn consume_backup_code<'a>(
-        &'a self,
+    fn backup_code_candidates(
+        &self,
         tenant_id: TenantId,
         user_id: UserId,
-        normalized_code: &'a str,
-    ) -> RepositoryFuture<'a, bool>;
+    ) -> RepositoryFuture<'_, Vec<BackupCodeCandidate>>;
+
+    fn consume_backup_code_candidate(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        candidate_id: Uuid,
+    ) -> RepositoryFuture<'_, bool>;
+
+    fn record_invalid_backup_code_attempt(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> RepositoryFuture<'_, ()>;
 
     fn replace_backup_code_hashes<'a>(
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
-        hashes: Vec<String>,
+        hashes: Vec<EncodedSecretHash>,
     ) -> RepositoryFuture<'a, ()>;
 
     fn clear_mfa_state<'a>(
@@ -823,6 +913,15 @@ pub trait MfaRepositoryPort: Send + Sync {
         tenant_id: TenantId,
         user_id: UserId,
     ) -> RepositoryFuture<'a, ()>;
+
+    fn remember_device(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        token_hash: String,
+        user_agent_hash: Option<String>,
+        expires_at: DateTime<Utc>,
+    ) -> RepositoryFuture<'_, ()>;
 }
 
 #[derive(Default)]

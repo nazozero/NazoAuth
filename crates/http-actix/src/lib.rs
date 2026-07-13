@@ -13,6 +13,7 @@ mod extract;
 mod fapi_resource;
 mod local_registration;
 mod metadata;
+mod mfa_profile;
 mod middleware;
 mod password_login;
 mod presenter;
@@ -66,6 +67,14 @@ pub use local_registration::{
 pub use metadata::{
     MetadataEndpointConfig, MetadataHandles, MetadataSnapshot, MetadataSnapshotSource, discovery,
     jwks, oauth_authorization_server_metadata, oauth_protected_resource_metadata,
+};
+pub use mfa_profile::{
+    MfaBackupCodesRegenerated, MfaChallengeCommand, MfaChallengeSuccess, MfaCodeCommand,
+    MfaProfileConfig, MfaProfileEndpoint, MfaProfileError, MfaProfileErrorKind, MfaProfileFuture,
+    MfaProfileOperations, MfaRequestContext, MfaSessionRotation, MfaStepUpSuccess,
+    MfaTotpConfirmation, MfaTotpEnrollment, configure_mfa_challenge_route,
+    configure_mfa_profile_routes, mfa_backup_codes_regenerate, mfa_disable, mfa_step_up,
+    mfa_totp_begin, mfa_totp_confirm, mfa_verify,
 };
 pub use middleware::{apply_security_headers, security_headers};
 pub use password_login::{

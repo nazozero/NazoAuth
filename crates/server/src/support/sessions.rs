@@ -19,11 +19,14 @@ use uuid::Uuid;
 // 只处理从请求 Cookie 到当前用户/管理员身份的解析。
 
 #[cfg(test)]
+use super::security::random_urlsafe_token;
+use super::tenancy::DEFAULT_TENANT_ID;
+#[cfg(test)]
 use super::valkey::valkey_set_ex;
-use super::{security::random_urlsafe_token, tenancy::DEFAULT_TENANT_ID};
 use nazo_http_actix::{
     clear_cookie, cookie_value, has_valid_csrf_token_for_cookies, with_cookie_headers,
 };
+#[cfg(test)]
 use nazo_identity::session::add_amr;
 use nazo_postgres::UserRepository;
 use nazo_valkey::SessionStore;
@@ -294,58 +297,6 @@ impl SessionProfileHandles {
         .await
     }
 
-    pub(crate) async fn current_pending_mfa_session(
-        &self,
-        req: &HttpRequest,
-    ) -> anyhow::Result<Option<CurrentSession>> {
-        current_pending_mfa_session_from_handles(
-            &self.sessions,
-            &self.users,
-            self.http.session_cookie_name(),
-            req,
-        )
-        .await
-    }
-
-    pub(crate) async fn complete_mfa_session(
-        &self,
-        req: &HttpRequest,
-        method: &str,
-        session_ttl_seconds: u64,
-    ) -> anyhow::Result<Option<SessionRotation>> {
-        record_mfa_step_up_with_store(
-            &self.sessions,
-            self.http.session_cookie_name(),
-            session_ttl_seconds,
-            req,
-            method,
-            true,
-        )
-        .await
-    }
-
-    pub(crate) async fn step_up_current_session(
-        &self,
-        req: &HttpRequest,
-        method: &str,
-        session_ttl_seconds: u64,
-    ) -> anyhow::Result<Option<SessionRotation>> {
-        record_mfa_step_up_with_store(
-            &self.sessions,
-            self.http.session_cookie_name(),
-            session_ttl_seconds,
-            req,
-            method,
-            false,
-        )
-        .await
-    }
-
-    pub(crate) async fn discard_rotation(&self, rotation: &SessionRotation) -> anyhow::Result<()> {
-        self.sessions.delete(&rotation.session_id).await?;
-        Ok(())
-    }
-
     #[cfg(not(test))]
     pub(crate) fn permits_existing_session_management_transaction(&self) -> bool {
         nazo_auth::module_admissible(
@@ -361,12 +312,14 @@ impl SessionProfileHandles {
     }
 }
 
+#[cfg(test)]
 pub(crate) struct SessionRotation {
     pub(crate) session_id: String,
     pub(crate) csrf_token: String,
 }
 
 impl SessionPayload {
+    #[cfg(test)]
     fn to_record(&self) -> anyhow::Result<nazo_identity::session::SessionRecord> {
         Ok(nazo_identity::session::SessionRecord::new(
             nazo_identity::UserId::new(self.user_id)?,
@@ -466,6 +419,7 @@ pub(crate) async fn current_pending_mfa_session(
     .await
 }
 
+#[cfg(test)]
 async fn current_pending_mfa_session_from_handles(
     store: &SessionStore,
     users: &UserRepository,
@@ -539,6 +493,7 @@ async fn record_mfa_step_up(
     .await
 }
 
+#[cfg(test)]
 async fn record_mfa_step_up_with_store(
     store: &SessionStore,
     session_cookie_name: &str,

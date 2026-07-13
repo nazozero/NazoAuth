@@ -3,7 +3,6 @@ use crate::{
     repositories::audit::insert_identity_security_event,
     schema::{user_mfa_backup_codes, user_mfa_remembered_devices, user_totp_credentials, users},
 };
-use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use diesel::{BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl, dsl::now};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_identity::{
@@ -11,8 +10,8 @@ use nazo_identity::{
     IdentitySecurityReason, TenantId, UserId,
     mfa::{MFA_BACKUP_CODE_COUNT, verified_totp_step},
     ports::{
-        MfaRepositoryPort, RepositoryError, RepositoryFuture, TotpCredential, TotpEnrollment,
-        TotpVerificationOutcome,
+        BackupCodeCandidate, EncodedSecretHash, MfaRepositoryPort, RepositoryError,
+        RepositoryFuture, TotpCredential, TotpEnrollment, TotpVerificationOutcome,
     },
 };
 
@@ -419,18 +418,17 @@ impl MfaRepository {
             .await
             .map_err(MfaAuditError::into_repository)
     }
-    pub async fn consume_backup_code(
+    pub async fn backup_code_candidates(
         &self,
         tenant_id: TenantId,
         user_id: UserId,
-        normalized_code: &str,
-    ) -> Result<bool, RepositoryError> {
+    ) -> Result<Vec<BackupCodeCandidate>, RepositoryError> {
         let mut connection = self
             .pool
             .get()
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        let candidates = user_mfa_backup_codes::table
+        let rows = user_mfa_backup_codes::table
             .filter(user_mfa_backup_codes::tenant_id.eq(tenant_id.as_uuid()))
             .filter(user_mfa_backup_codes::user_id.eq(user_id.as_uuid()))
             .filter(user_mfa_backup_codes::used_at.is_null())
@@ -439,43 +437,42 @@ impl MfaRepository {
             .load::<(uuid::Uuid, String)>(&mut connection)
             .await
             .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
-        if candidates.len() > MFA_BACKUP_CODE_COUNT {
+        if rows.len() > MFA_BACKUP_CODE_COUNT {
             return Err(RepositoryError::Consistency(
-                "persisted backup-code count exceeds the supported maximum".into(),
+                "persisted backup-code count exceeds the supported maximum".to_owned(),
             ));
         }
-        let normalized_code = normalized_code.to_owned();
-        let matched_id = tokio::task::spawn_blocking(move || {
-            candidates.into_iter().find_map(|(id, hash)| {
-                PasswordHash::new(&hash).ok().and_then(|parsed| {
-                    Argon2::default()
-                        .verify_password(normalized_code.as_bytes(), &parsed)
-                        .is_ok()
-                        .then_some(id)
-                })
+        rows.into_iter()
+            .map(|(id, hash)| {
+                EncodedSecretHash::new(hash)
+                    .map(|hash| BackupCodeCandidate { id, hash })
+                    .map_err(|_| {
+                        RepositoryError::Consistency(
+                            "persisted backup-code hash is empty".to_owned(),
+                        )
+                    })
             })
-        })
-        .await
-        .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
-        let Some(id) = matched_id else {
-            insert_identity_security_event(
-                &mut connection,
-                &mfa_event(
-                    tenant_id,
-                    user_id,
-                    IdentitySecurityEventType::MfaBackupCodeAttempt,
-                    IdentitySecurityOutcome::InvalidCredential,
-                    IdentitySecurityReason::BackupCodeInvalid,
-                ),
-            )
-            .await?;
-            return Ok(false);
-        };
+            .collect()
+    }
+
+    pub async fn consume_backup_code_candidate(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        candidate_id: uuid::Uuid,
+    ) -> Result<bool, RepositoryError> {
+        let mut connection = self
+            .pool
+            .get()
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
         connection
             .transaction::<bool, MfaAuditError, _>(async |connection| {
                 let changed = diesel::update(
                     user_mfa_backup_codes::table
-                        .find(id)
+                        .find(candidate_id)
+                        .filter(user_mfa_backup_codes::tenant_id.eq(tenant_id.as_uuid()))
+                        .filter(user_mfa_backup_codes::user_id.eq(user_id.as_uuid()))
                         .filter(user_mfa_backup_codes::used_at.is_null()),
                 )
                 .set(user_mfa_backup_codes::used_at.eq(now))
@@ -506,6 +503,29 @@ impl MfaRepository {
             })
             .await
             .map_err(MfaAuditError::into_repository)
+    }
+
+    pub async fn record_invalid_backup_code_attempt(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> Result<(), RepositoryError> {
+        let mut connection = self
+            .pool
+            .get()
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
+        insert_identity_security_event(
+            &mut connection,
+            &mfa_event(
+                tenant_id,
+                user_id,
+                IdentitySecurityEventType::MfaBackupCodeAttempt,
+                IdentitySecurityOutcome::InvalidCredential,
+                IdentitySecurityReason::BackupCodeInvalid,
+            ),
+        )
+        .await
     }
     pub async fn replace_backup_code_hashes(
         &self,
@@ -748,6 +768,71 @@ fn map_mfa_error(error: diesel::result::Error) -> RepositoryError {
 }
 
 impl MfaRepositoryPort for MfaRepository {
+    fn totp_enrollment<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> RepositoryFuture<'a, Option<TotpEnrollment>> {
+        Box::pin(async move { self.totp_enrollment(tenant_id, user_id).await })
+    }
+
+    fn begin_totp_enrollment(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        secret: String,
+        label: String,
+    ) -> RepositoryFuture<'_, ()> {
+        Box::pin(async move {
+            self.begin_totp_enrollment(tenant_id, user_id, secret, label)
+                .await
+        })
+    }
+
+    fn verify_and_confirm_totp<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        code: &'a str,
+        timestamp: i64,
+        hashes: Vec<EncodedSecretHash>,
+    ) -> RepositoryFuture<'a, TotpVerificationOutcome> {
+        Box::pin(async move {
+            self.verify_and_confirm_totp(
+                tenant_id,
+                user_id,
+                code,
+                timestamp,
+                hashes
+                    .into_iter()
+                    .map(|hash| hash.as_str().to_owned())
+                    .collect(),
+            )
+            .await
+        })
+    }
+
+    fn record_invalid_totp_attempt(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> RepositoryFuture<'_, ()> {
+        Box::pin(async move { self.record_invalid_totp_attempt(tenant_id, user_id).await })
+    }
+
+    fn verify_and_consume_totp<'a>(
+        &'a self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        code: &'a str,
+        timestamp: i64,
+    ) -> RepositoryFuture<'a, TotpVerificationOutcome> {
+        Box::pin(async move {
+            self.verify_and_consume_totp(tenant_id, user_id, code, timestamp)
+                .await
+        })
+    }
+
     fn totp_credential<'a>(
         &'a self,
         tenant_id: TenantId,
@@ -766,26 +851,53 @@ impl MfaRepositoryPort for MfaRepository {
                 .await
         })
     }
-    fn consume_backup_code<'a>(
-        &'a self,
+    fn backup_code_candidates(
+        &self,
         tenant_id: TenantId,
         user_id: UserId,
-        normalized_code: &'a str,
-    ) -> RepositoryFuture<'a, bool> {
+    ) -> RepositoryFuture<'_, Vec<BackupCodeCandidate>> {
+        Box::pin(async move { self.backup_code_candidates(tenant_id, user_id).await })
+    }
+
+    fn consume_backup_code_candidate(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        candidate_id: uuid::Uuid,
+    ) -> RepositoryFuture<'_, bool> {
         Box::pin(async move {
-            self.consume_backup_code(tenant_id, user_id, normalized_code)
+            self.consume_backup_code_candidate(tenant_id, user_id, candidate_id)
                 .await
         })
     }
+
+    fn record_invalid_backup_code_attempt(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> RepositoryFuture<'_, ()> {
+        Box::pin(async move {
+            self.record_invalid_backup_code_attempt(tenant_id, user_id)
+                .await
+        })
+    }
+
     fn replace_backup_code_hashes<'a>(
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
-        hashes: Vec<String>,
+        hashes: Vec<EncodedSecretHash>,
     ) -> RepositoryFuture<'a, ()> {
         Box::pin(async move {
-            self.replace_backup_code_hashes(tenant_id, user_id, hashes)
-                .await
+            self.replace_backup_code_hashes(
+                tenant_id,
+                user_id,
+                hashes
+                    .into_iter()
+                    .map(|hash| hash.as_str().to_owned())
+                    .collect(),
+            )
+            .await
         })
     }
     fn clear_mfa_state<'a>(
@@ -794,6 +906,20 @@ impl MfaRepositoryPort for MfaRepository {
         user_id: UserId,
     ) -> RepositoryFuture<'a, ()> {
         Box::pin(async move { self.clear_mfa_state(tenant_id, user_id).await })
+    }
+
+    fn remember_device(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+        token_hash: String,
+        user_agent_hash: Option<String>,
+        expires_at: chrono::DateTime<chrono::Utc>,
+    ) -> RepositoryFuture<'_, ()> {
+        Box::pin(async move {
+            self.remember_device(tenant_id, user_id, token_hash, user_agent_hash, expires_at)
+                .await
+        })
     }
 }
 

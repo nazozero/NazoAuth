@@ -7,7 +7,7 @@ mod database_user_fixture;
 mod dynamic_registration;
 mod local_registration;
 mod metadata;
-mod mfa;
+mod mfa_profile;
 mod oauth;
 mod oidc_logout;
 mod password_login;
@@ -36,7 +36,10 @@ pub(crate) use local_registration::{
     ServerAuthenticationRateLimit, ServerLocalRegistrationOperations,
 };
 pub(crate) use metadata::{MetadataConfig, ServerMetadataSnapshotSource};
-pub(crate) use mfa::{MfaProfileConfig, MfaProfileHandles};
+pub(crate) use mfa_profile::{
+    MFA_REMEMBERED_COOKIE_NAME, MFA_REMEMBERED_TTL_SECONDS, ServerMfaProfileOperations,
+    ServerMfaSecretHasher,
+};
 #[cfg(test)]
 pub(crate) use nazo_key_management::KeySnapshot;
 pub(crate) use oauth::{

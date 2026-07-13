@@ -2,12 +2,14 @@ use super::*;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
-use crate::domain::{AppState, DatabasePasskeyFixture, DatabaseUserFixture};
+use crate::domain::{
+    AppState, DatabasePasskeyFixture, DatabaseUserFixture, MFA_REMEMBERED_COOKIE_NAME,
+    MFA_REMEMBERED_TTL_SECONDS, ServerMfaSecretHasher,
+};
 use crate::schema::{user_passkey_credentials, users};
 use crate::settings::Settings;
 use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, MFA_REMEMBERED_COOKIE_NAME,
-    SessionPayload, remember_mfa_device, valkey_get,
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload, valkey_get,
 };
 use actix_web::http::header;
 use actix_web::web::{Data, Json};
@@ -31,6 +33,34 @@ use uuid::Uuid;
 
 use crate::config::ConfigSource;
 use nazo_postgres::create_pool;
+
+async fn remember_mfa_device(
+    state: &AppState,
+    request: &HttpRequest,
+    user: &PublicAccount,
+) -> anyhow::Result<String> {
+    let user_agent_hash = request
+        .headers()
+        .get(header::USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(crate::support::security::blake3_hex);
+    nazo_identity::MfaService::new(
+        Arc::new(nazo_postgres::MfaRepository::new(state.diesel_db.clone())),
+        Arc::new(ServerMfaSecretHasher),
+    )
+    .remember_device(
+        user,
+        user_agent_hash,
+        chrono::Utc::now()
+            + chrono::Duration::seconds(
+                i64::try_from(MFA_REMEMBERED_TTL_SECONDS).expect("MFA TTL fits i64"),
+            ),
+    )
+    .await
+    .map_err(|error| anyhow::anyhow!("failed to remember MFA device: {error:?}"))
+}
 
 #[test]
 fn passkey_login_transport_has_no_identity_or_storage_orchestration() {

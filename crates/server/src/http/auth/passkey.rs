@@ -11,10 +11,9 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::bootstrap::LocalPasskeyService;
+use crate::domain::MFA_REMEMBERED_COOKIE_NAME;
 use crate::support::client_ip::{ClientIpConfig, client_ip_with_config};
-use crate::support::{
-    mfa::MFA_REMEMBERED_COOKIE_NAME, rate_limit::AuthRequestLimiter, security::blake3_hex,
-};
+use crate::support::{rate_limit::AuthRequestLimiter, security::blake3_hex};
 
 #[derive(Clone)]
 pub(crate) struct PasskeyHttpConfig {

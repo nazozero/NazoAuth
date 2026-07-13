@@ -2261,6 +2261,7 @@ version = "0.1.0"
 dependencies = [
  "argon2",
  "base64",
+ "blake3",
  "chrono",
  "hmac 0.13.0",
  "lettre",
@@ -2383,6 +2384,7 @@ dependencies = [
  "jsonwebtoken",
  "openssl",
  "p256 0.14.0",
+ "rand 0.10.2",
  "serde",
  "serde_json",
  "sha2 0.11.0",

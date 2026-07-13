@@ -7,7 +7,6 @@ pub(crate) mod email;
 mod email_templates;
 pub(crate) mod fapi_http_signatures;
 pub(crate) mod jwe;
-pub(crate) mod mfa;
 pub(crate) mod mtls;
 pub(crate) mod oauth;
 pub(crate) mod oidc_claims;
@@ -26,10 +25,6 @@ pub(crate) use crate::test_support::{ClientSigningFixture, client_signing_fixtur
 pub(crate) use client_ip::IpCidr;
 #[cfg(test)]
 pub(crate) use email::normalize_email_address;
-#[cfg(test)]
-pub(crate) use mfa::{
-    MFA_REMEMBERED_COOKIE_NAME, remember_mfa_device, replace_backup_codes, verify_user_mfa_code,
-};
 #[cfg(test)]
 pub(crate) use mtls::request_mtls_thumbprint;
 #[cfg(test)]

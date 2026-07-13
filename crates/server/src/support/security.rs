@@ -17,10 +17,8 @@ use actix_web::http::header;
 use actix_web::http::header::{HeaderMap, HeaderValue};
 use anyhow::{anyhow, bail};
 use argon2::Argon2;
-#[cfg(test)]
 use argon2::PasswordHash;
 use argon2::PasswordHasher;
-#[cfg(test)]
 use argon2::PasswordVerifier;
 use argon2::password_hash::SaltString;
 use argon2::password_hash::rand_core::OsRng;
@@ -180,6 +178,29 @@ pub(crate) async fn hash_password_blocking_limited(
         .await
         .map_err(|_| PasswordHashingError::WorkerFailed)?
         .map_err(|_| PasswordHashingError::HashFailed)
+}
+
+pub(crate) async fn verify_encoded_hashes_blocking_limited(
+    secret: String,
+    candidates: Vec<nazo_identity::ports::EncodedSecretHash>,
+) -> Result<Option<usize>, PasswordVerificationError> {
+    let acquire = password_hash_concurrency_limit().clone().acquire_owned();
+    let Ok(Ok(_permit)) = timeout(password_hash_queue_timeout(), acquire).await else {
+        return Err(PasswordVerificationError::Saturated);
+    };
+
+    tokio::task::spawn_blocking(move || {
+        candidates.into_iter().position(|candidate| {
+            let Ok(parsed) = PasswordHash::new(candidate.as_str()) else {
+                return false;
+            };
+            password_hasher()
+                .verify_password(secret.as_bytes(), &parsed)
+                .is_ok()
+        })
+    })
+    .await
+    .map_err(|_| PasswordVerificationError::WorkerFailed)
 }
 
 #[cfg(test)]

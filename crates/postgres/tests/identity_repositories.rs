@@ -660,9 +660,17 @@ async fn backup_code_is_consumed_once_atomically() {
         .replace_backup_code_hashes(tenant.tenant_id, user_id, vec![hash])
         .await
         .unwrap();
+    let candidate_id = repository
+        .backup_code_candidates(tenant.tenant_id, user_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap()
+        .id;
     let (left, right) = tokio::join!(
-        repository.consume_backup_code(tenant.tenant_id, user_id, code),
-        repository.consume_backup_code(tenant.tenant_id, user_id, code)
+        repository.consume_backup_code_candidate(tenant.tenant_id, user_id, candidate_id),
+        repository.consume_backup_code_candidate(tenant.tenant_id, user_id, candidate_id)
     );
     assert_ne!(left.unwrap(), right.unwrap());
     let events = identity_security_events(&pool, user_id).await;
@@ -953,7 +961,7 @@ async fn mfa_backup_code_bounds_and_enrollment_conflict_are_explicit() {
     drop(connection);
     assert!(matches!(
         repository
-            .consume_backup_code(tenant.tenant_id, user_id, "candidate")
+            .backup_code_candidates(tenant.tenant_id, user_id)
             .await,
         Err(RepositoryError::Consistency(_))
     ));

@@ -8,7 +8,6 @@ pub(crate) mod applications;
 pub(crate) mod avatar;
 pub(crate) mod delivery;
 pub(crate) mod federation_links;
-pub(crate) mod mfa;
 pub(crate) mod oidc_logout;
 pub(crate) mod passkeys;
 pub(crate) mod session_management;

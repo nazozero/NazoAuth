@@ -30,10 +30,11 @@ use actix_web::{App, HttpServer, dev::Service, middleware::from_fn, web};
 
 use crate::config::{ConfigSource, database_max_connections, database_url};
 use crate::domain::{
-    DynamicRegistrationConfig, MetadataConfig, MfaProfileConfig, MfaProfileHandles,
-    OidcLogoutConfig, OidcLogoutHandles, ResourceServerConfig, ServerAuthenticationRateLimit,
-    ServerAuthorizationDecisionOperations, ServerLocalRegistrationOperations,
-    ServerMetadataSnapshotSource, ServerPasswordLoginOperations, ServerProfileAccountOperations,
+    DynamicRegistrationConfig, MFA_REMEMBERED_COOKIE_NAME, MFA_REMEMBERED_TTL_SECONDS,
+    MetadataConfig, OidcLogoutConfig, OidcLogoutHandles, ResourceServerConfig,
+    ServerAuthenticationRateLimit, ServerAuthorizationDecisionOperations,
+    ServerLocalRegistrationOperations, ServerMetadataSnapshotSource, ServerMfaProfileOperations,
+    ServerMfaSecretHasher, ServerPasswordLoginOperations, ServerProfileAccountOperations,
     UserinfoConfig, UserinfoHandles,
 };
 #[cfg(test)]
@@ -72,7 +73,6 @@ use crate::runtime_modules::{RuntimeModules, ServerRuntimeModuleRegistry};
 use crate::settings::Settings;
 use crate::support::client_ip::ClientIpConfig;
 use crate::support::email::{SmtpVerificationEmailDelivery, email_delivery_configured};
-use crate::support::mfa::MFA_REMEMBERED_COOKIE_NAME;
 use crate::support::rate_limit::{AuthRequestLimiter, TokenManagementRequestLimiter};
 use crate::support::security::{
     configure_password_hash_limits, default_password_hash_max_concurrency,
@@ -83,9 +83,9 @@ use crate::support::tenancy::{DEFAULT_TENANT_ID, default_tenant_context};
 #[cfg(test)]
 use actix_web::http::header;
 use nazo_http_actix::{
-    AuthorizationDecisionEndpoint, LocalRegistrationEndpoint, PasswordLoginConfig,
-    PasswordLoginEndpoint, ProfileAccountEndpoint, RuntimeModuleAdminEndpoint, SessionCookieConfig,
-    SessionLogoutEndpoint, security_headers,
+    AuthorizationDecisionEndpoint, LocalRegistrationEndpoint, MfaProfileConfig, MfaProfileEndpoint,
+    PasswordLoginConfig, PasswordLoginEndpoint, ProfileAccountEndpoint, RuntimeModuleAdminEndpoint,
+    SessionCookieConfig, SessionLogoutEndpoint, security_headers,
 };
 use nazo_postgres::create_pool;
 use tracing::Instrument;
@@ -394,18 +394,11 @@ pub async fn run() -> anyhow::Result<()> {
         OidcLogoutConfig::from(settings.as_ref()),
         settings.modules.enable_frontchannel_logout,
     ));
-    let mfa_rate_limit_connection = valkey_connection.clone();
     let csrf_http_config = web::Data::new(CsrfHttpConfig::new(
         session.csrf_cookie_name.as_str(),
         session.session_ttl_seconds,
         session.cookie_secure,
     ));
-    let mfa_profiles = web::Data::new(MfaProfileHandles {
-        config: MfaProfileConfig::from(settings.as_ref()),
-        sessions: session_profiles.get_ref().clone(),
-        mfa: nazo_postgres::MfaRepository::new(diesel_db.clone()),
-        rate_limits: nazo_valkey::RateLimitStore::new(&mfa_rate_limit_connection),
-    });
     let account_profile_service = AccountProfileService::new(
         nazo_postgres::UserRepository::new(diesel_db.clone()),
         nazo_postgres::GrantRepository::new(diesel_db.clone()),
@@ -463,7 +456,7 @@ pub async fn run() -> anyhow::Result<()> {
     let authorization_decision_endpoint = web::Data::new(AuthorizationDecisionEndpoint::new(
         Arc::new(ServerAuthorizationDecisionOperations::new(
             authorization_service.clone().into_inner(),
-            identity_session_service,
+            identity_session_service.clone(),
             authorization_config.clone().into_inner(),
             runtime_modules.registry.clone(),
         )),
@@ -503,6 +496,28 @@ pub async fn run() -> anyhow::Result<()> {
         nazo_valkey::RateLimitStore::new(&valkey_connection),
         identity.rate_limit.window_seconds,
         identity.rate_limit.auth_max_requests,
+    ));
+    let mfa_profiles = web::Data::new(MfaProfileEndpoint::new(
+        Arc::new(ServerMfaProfileOperations::new(
+            nazo_identity::MfaService::new(
+                Arc::new(nazo_postgres::MfaRepository::new(diesel_db.clone())),
+                Arc::new(ServerMfaSecretHasher),
+            ),
+            identity_session_service,
+            authentication_rate_limit.clone(),
+            settings.endpoint.issuer.as_str(),
+            session.session_ttl_seconds,
+            MFA_REMEMBERED_TTL_SECONDS,
+        )),
+        client_ip_config.get_ref().clone(),
+        MfaProfileConfig::new(
+            session.session_cookie_name.as_str(),
+            session.csrf_cookie_name.as_str(),
+            MFA_REMEMBERED_COOKIE_NAME,
+            session.session_ttl_seconds,
+            MFA_REMEMBERED_TTL_SECONDS,
+            session.cookie_secure,
+        ),
     ));
     let local_registration_endpoint = web::Data::new(LocalRegistrationEndpoint::new(
         Arc::new(ServerLocalRegistrationOperations::new(registration)),
