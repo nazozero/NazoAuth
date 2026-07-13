@@ -1,11 +1,17 @@
 use std::collections::HashMap;
 
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use jsonwebtoken::{Validation, decode, decode_header};
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
     AuthorizationPortError, RedirectUriError, is_subset, parse_resource_indicator_parameter,
     resolve_registered_redirect_uri,
+};
+use crate::{
+    OAuthClient,
+    client_assertion::{client_jwt_decoding_key, supported_client_jwt_algorithm_name},
 };
 
 pub const REQUEST_OBJECT_MAX_TTL_SECONDS: i64 = 300;
@@ -44,7 +50,7 @@ pub enum RequestObjectJtiPolicy {
     RequiredForSignedJar,
 }
 
-/// Claims obtained after the transport adapter has decoded and, for signed
+/// Claims obtained after the protocol core has decoded and, for signed
 /// request objects, cryptographically verified the compact JWT.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct RequestObjectClaims {
@@ -69,6 +75,165 @@ pub struct RequestObjectPolicy<'a> {
     pub unsigned_request_object_allowed: bool,
     pub require_integrity_protected_parameters: bool,
     pub now: i64,
+}
+
+#[derive(Clone, Copy)]
+pub struct RequestObjectVerificationInput<'a> {
+    pub request_object: &'a str,
+    pub client: &'a OAuthClient,
+    pub profile_disallows_unsigned_request_object: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct VerifiedRequestObject {
+    pub claims: RequestObjectClaims,
+    pub mode: RequestObjectMode,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RequestObjectVerificationError {
+    InvalidCompact,
+    InvalidHeader,
+    InvalidClaims,
+    InvalidAlgorithm,
+    MissingKeyId,
+    InvalidKey,
+    InvalidSignature,
+    SigningPolicy,
+}
+
+#[derive(Deserialize)]
+struct RequestObjectHeader {
+    alg: String,
+}
+
+/// Parses and verifies a compact authorization Request Object.
+///
+/// All protocol cryptography and JWK policy live here. The caller supplies an
+/// already loaded client and remains responsible for runtime-module admission
+/// and committing the replay marker through [`crate::AuthorizationService`].
+pub fn verify_request_object(
+    input: RequestObjectVerificationInput<'_>,
+) -> Result<VerifiedRequestObject, RequestObjectVerificationError> {
+    let (header_part, payload_part, signature_part) = split_compact_jwt(input.request_object)
+        .ok_or(RequestObjectVerificationError::InvalidCompact)?;
+    let decoded_header = decode_request_object_header(header_part)?;
+    let (claims, mode) = if decoded_header.alg == "none" {
+        if payload_part.is_empty() || !signature_part.is_empty() {
+            return Err(RequestObjectVerificationError::InvalidAlgorithm);
+        }
+        (
+            decode_request_object_claims(payload_part)?,
+            RequestObjectMode::BasicOidc,
+        )
+    } else {
+        if signature_part.is_empty() {
+            return Err(RequestObjectVerificationError::InvalidAlgorithm);
+        }
+        let header = decode_header(input.request_object)
+            .map_err(|_| RequestObjectVerificationError::InvalidAlgorithm)?;
+        if supported_client_jwt_algorithm_name(header.alg).is_none() {
+            return Err(RequestObjectVerificationError::InvalidAlgorithm);
+        }
+        let kid = header
+            .kid
+            .as_deref()
+            .ok_or(RequestObjectVerificationError::MissingKeyId)?;
+        if kid.trim().is_empty() || kid.trim() != kid {
+            return Err(RequestObjectVerificationError::InvalidKey);
+        }
+        let decoding_key = client_jwt_decoding_key(input.client, kid, header.alg)
+            .ok_or(RequestObjectVerificationError::InvalidKey)?;
+        let mut validation = Validation::new(header.alg);
+        validation.validate_aud = false;
+        validation.validate_exp = false;
+        validation.validate_nbf = false;
+        validation.set_required_spec_claims::<&str>(&[]);
+        let claims =
+            decode::<RequestObjectClaims>(input.request_object, &decoding_key, &validation)
+                .map_err(|_| RequestObjectVerificationError::InvalidSignature)?
+                .claims;
+        (claims, RequestObjectMode::SignedJar)
+    };
+    if !request_object_mode_allowed(
+        input.client,
+        mode,
+        input.profile_disallows_unsigned_request_object,
+    ) {
+        return Err(RequestObjectVerificationError::SigningPolicy);
+    }
+    Ok(VerifiedRequestObject { claims, mode })
+}
+
+#[must_use]
+pub fn request_object_uses_unsigned_algorithm(request_object: &str) -> bool {
+    let Some((header, _payload, signature)) = split_compact_jwt(request_object) else {
+        return false;
+    };
+    let Ok(header) = decode_request_object_header(header) else {
+        return false;
+    };
+    header.alg == "none" && signature.is_empty()
+}
+
+#[must_use]
+pub fn unverified_signed_request_object_client_id(request_object: &str) -> Option<String> {
+    let (header, payload, signature) = split_compact_jwt(request_object)?;
+    let header = decode_request_object_header(header).ok()?;
+    if header.alg == "none" || signature.is_empty() {
+        return None;
+    }
+    let claims = decode_request_object_claims(payload).ok()?;
+    let issuer_matches = claims
+        .iss
+        .as_deref()
+        .is_none_or(|issuer| issuer == claims.client_id);
+    let subject_matches = claims
+        .sub
+        .as_deref()
+        .is_none_or(|subject| subject == claims.client_id);
+    (issuer_matches && subject_matches && !claims.client_id.trim().is_empty())
+        .then_some(claims.client_id)
+}
+
+fn split_compact_jwt(token: &str) -> Option<(&str, &str, &str)> {
+    let mut parts = token.split('.');
+    let header = parts.next()?;
+    let payload = parts.next()?;
+    let signature = parts.next()?;
+    parts
+        .next()
+        .is_none()
+        .then_some((header, payload, signature))
+}
+
+fn decode_request_object_header(
+    header: &str,
+) -> Result<RequestObjectHeader, RequestObjectVerificationError> {
+    let bytes = URL_SAFE_NO_PAD
+        .decode(header)
+        .map_err(|_| RequestObjectVerificationError::InvalidHeader)?;
+    serde_json::from_slice(&bytes).map_err(|_| RequestObjectVerificationError::InvalidHeader)
+}
+
+fn decode_request_object_claims(
+    payload: &str,
+) -> Result<RequestObjectClaims, RequestObjectVerificationError> {
+    let bytes = URL_SAFE_NO_PAD
+        .decode(payload)
+        .map_err(|_| RequestObjectVerificationError::InvalidClaims)?;
+    serde_json::from_slice(&bytes).map_err(|_| RequestObjectVerificationError::InvalidClaims)
+}
+
+fn request_object_mode_allowed(
+    client: &OAuthClient,
+    mode: RequestObjectMode,
+    profile_disallows_unsigned_request_object: bool,
+) -> bool {
+    !((client.require_dpop_bound_tokens
+        || client.require_par_request_object
+        || profile_disallows_unsigned_request_object)
+        && mode == RequestObjectMode::BasicOidc)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -482,8 +647,103 @@ pub(crate) fn classify_request_object_replay(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ed25519_dalek::{Signer as _, SigningKey};
     use proptest::prelude::*;
     use serde_json::json;
+    use uuid::Uuid;
+
+    use crate::ValidatedClientRegistration;
+
+    const JAR_SIGNING_KEY: [u8; 32] = [29; 32];
+
+    fn request_object_client(jwks: Value) -> OAuthClient {
+        OAuthClient {
+            id: Uuid::from_u128(1),
+            tenant_id: Uuid::from_u128(2),
+            realm_id: Uuid::from_u128(3),
+            organization_id: Uuid::from_u128(4),
+            registration: ValidatedClientRegistration {
+                client_id: "client".to_owned(),
+                client_name: "Client".to_owned(),
+                client_type: "confidential".to_owned(),
+                redirect_uris: vec!["https://client.example/cb".to_owned()],
+                post_logout_redirect_uris: Vec::new(),
+                scopes: vec!["openid".to_owned()],
+                allowed_audiences: Vec::new(),
+                grant_types: vec!["authorization_code".to_owned()],
+                token_endpoint_auth_method: "private_key_jwt".to_owned(),
+                subject_type: "public".to_owned(),
+                sector_identifier_uri: None,
+                sector_identifier_host: None,
+                require_dpop_bound_tokens: false,
+                allow_client_assertion_audience_array: false,
+                allow_client_assertion_endpoint_audience: false,
+                require_par_request_object: false,
+                allow_authorization_code_without_pkce: false,
+                backchannel_logout_uri: None,
+                backchannel_logout_session_required: true,
+                frontchannel_logout_uri: None,
+                frontchannel_logout_session_required: true,
+                tls_client_auth_subject_dn: None,
+                tls_client_auth_cert_sha256: None,
+                tls_client_auth_san_dns: Vec::new(),
+                tls_client_auth_san_uri: Vec::new(),
+                tls_client_auth_san_ip: Vec::new(),
+                tls_client_auth_san_email: Vec::new(),
+                jwks: Some(jwks),
+                introspection_encrypted_response_alg: None,
+                introspection_encrypted_response_enc: None,
+                userinfo_signed_response_alg: None,
+                userinfo_encrypted_response_alg: None,
+                userinfo_encrypted_response_enc: None,
+                authorization_signed_response_alg: None,
+                authorization_encrypted_response_alg: None,
+                authorization_encrypted_response_enc: None,
+            },
+            require_mtls_bound_tokens: false,
+            is_active: true,
+        }
+    }
+
+    fn request_object_public_jwk() -> Value {
+        let verifying_key = SigningKey::from_bytes(&JAR_SIGNING_KEY).verifying_key();
+        json!({
+            "kid": "jar-key",
+            "kty": "OKP",
+            "crv": "Ed25519",
+            "alg": "EdDSA",
+            "use": "sig",
+            "key_ops": ["verify"],
+            "x": URL_SAFE_NO_PAD.encode(verifying_key.as_bytes()),
+        })
+    }
+
+    fn signed_request_object(claims: &Value, header: Value) -> String {
+        let header = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header).unwrap());
+        let payload = URL_SAFE_NO_PAD.encode(serde_json::to_vec(claims).unwrap());
+        let signing_input = format!("{header}.{payload}");
+        let signature = SigningKey::from_bytes(&JAR_SIGNING_KEY).sign(signing_input.as_bytes());
+        format!(
+            "{signing_input}.{}",
+            URL_SAFE_NO_PAD.encode(signature.to_bytes())
+        )
+    }
+
+    fn signed_request_object_json(now: i64) -> Value {
+        json!({
+            "client_id": "client",
+            "iss": "client",
+            "sub": "client",
+            "aud": "https://issuer.example",
+            "exp": now + 120,
+            "nbf": now,
+            "iat": now,
+            "jti": "unique",
+            "response_type": "code",
+            "redirect_uri": "https://client.example/cb",
+            "scope": "openid"
+        })
+    }
 
     fn signed_policy(now: i64) -> RequestObjectPolicy<'static> {
         RequestObjectPolicy {
@@ -537,6 +797,173 @@ mod tests {
             normalized.replay.expect("replay instruction").ttl_seconds,
             120
         );
+    }
+
+    #[test]
+    fn signed_request_object_crypto_uses_strict_shared_client_jwk_policy() {
+        let now = 1_700_000_000;
+        let token = signed_request_object(
+            &signed_request_object_json(now),
+            json!({"alg": "EdDSA", "kid": "jar-key"}),
+        );
+        let client = request_object_client(json!({"keys": [request_object_public_jwk()]}));
+        let verified = verify_request_object(RequestObjectVerificationInput {
+            request_object: &token,
+            client: &client,
+            profile_disallows_unsigned_request_object: true,
+        })
+        .expect("valid signed Request Object");
+        assert_eq!(verified.mode, RequestObjectMode::SignedJar);
+        assert_eq!(verified.claims.client_id, "client");
+
+        let duplicate = request_object_client(json!({
+            "keys": [request_object_public_jwk(), request_object_public_jwk()]
+        }));
+        assert_eq!(
+            verify_request_object(RequestObjectVerificationInput {
+                request_object: &token,
+                client: &duplicate,
+                profile_disallows_unsigned_request_object: true,
+            }),
+            Err(RequestObjectVerificationError::InvalidKey)
+        );
+
+        for (member, value) in [
+            ("d", json!("private")),
+            ("k", json!("symmetric")),
+            ("key_ops", json!(["sign", "verify"])),
+            ("use", json!("enc")),
+        ] {
+            let mut key = request_object_public_jwk();
+            key[member] = value;
+            let client = request_object_client(json!({"keys": [key]}));
+            assert_eq!(
+                verify_request_object(RequestObjectVerificationInput {
+                    request_object: &token,
+                    client: &client,
+                    profile_disallows_unsigned_request_object: true,
+                }),
+                Err(RequestObjectVerificationError::InvalidKey),
+                "accepted invalid JWK member {member}"
+            );
+        }
+    }
+
+    #[test]
+    fn signed_request_object_crypto_defers_time_policy_to_injected_clock() {
+        let now = 1_700_000_000;
+        let token = signed_request_object(
+            &signed_request_object_json(now),
+            json!({"alg": "EdDSA", "kid": "jar-key"}),
+        );
+        let client = request_object_client(json!({"keys": [request_object_public_jwk()]}));
+        let verified = verify_request_object(RequestObjectVerificationInput {
+            request_object: &token,
+            client: &client,
+            profile_disallows_unsigned_request_object: true,
+        })
+        .expect("signature verification must not use the process wall clock");
+        assert!(
+            normalize_request_object(&HashMap::new(), &verified.claims, signed_policy(now)).is_ok()
+        );
+        assert_eq!(
+            normalize_request_object(&HashMap::new(), &verified.claims, signed_policy(now + 121)),
+            Err(AuthorizationRequestError::RequestObjectClaims)
+        );
+    }
+
+    #[test]
+    fn compact_shape_algorithm_key_and_signature_errors_remain_distinct() {
+        let now = 1_700_000_000;
+        let claims = signed_request_object_json(now);
+        let client = request_object_client(json!({"keys": [request_object_public_jwk()]}));
+        for (request_object, expected) in [
+            ("one.two", RequestObjectVerificationError::InvalidCompact),
+            ("!.payload.", RequestObjectVerificationError::InvalidHeader),
+            (
+                &signed_request_object(&claims, json!({"alg": "HS256", "kid": "jar-key"})),
+                RequestObjectVerificationError::InvalidAlgorithm,
+            ),
+            (
+                &signed_request_object(&claims, json!({"alg": "EdDSA"})),
+                RequestObjectVerificationError::MissingKeyId,
+            ),
+            (
+                &signed_request_object(&claims, json!({"alg": "EdDSA", "kid": " "})),
+                RequestObjectVerificationError::InvalidKey,
+            ),
+        ] {
+            assert_eq!(
+                verify_request_object(RequestObjectVerificationInput {
+                    request_object,
+                    client: &client,
+                    profile_disallows_unsigned_request_object: false,
+                }),
+                Err(expected)
+            );
+        }
+        let valid = signed_request_object(&claims, json!({"alg": "EdDSA", "kid": "jar-key"}));
+        let signing_input = valid.rsplit_once('.').unwrap().0;
+        let invalid_signature = format!("{signing_input}.{}", URL_SAFE_NO_PAD.encode([0; 64]));
+        assert_eq!(
+            verify_request_object(RequestObjectVerificationInput {
+                request_object: &invalid_signature,
+                client: &client,
+                profile_disallows_unsigned_request_object: false,
+            }),
+            Err(RequestObjectVerificationError::InvalidSignature)
+        );
+    }
+
+    #[test]
+    fn unsigned_request_objects_preserve_mode_policy_and_client_id_discovery() {
+        let claims = signed_request_object_json(1_700_000_000);
+        let unsigned = format!(
+            "{}.{}.",
+            URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!({"alg": "none"})).unwrap()),
+            URL_SAFE_NO_PAD.encode(serde_json::to_vec(&claims).unwrap())
+        );
+        let client = request_object_client(json!({"keys": [request_object_public_jwk()]}));
+        assert!(request_object_uses_unsigned_algorithm(&unsigned));
+        assert_eq!(
+            verify_request_object(RequestObjectVerificationInput {
+                request_object: &unsigned,
+                client: &client,
+                profile_disallows_unsigned_request_object: true,
+            }),
+            Err(RequestObjectVerificationError::SigningPolicy)
+        );
+        let mut sender_constrained = client.clone();
+        sender_constrained.require_dpop_bound_tokens = true;
+        assert_eq!(
+            verify_request_object(RequestObjectVerificationInput {
+                request_object: &unsigned,
+                client: &sender_constrained,
+                profile_disallows_unsigned_request_object: false,
+            }),
+            Err(RequestObjectVerificationError::SigningPolicy)
+        );
+        let mut par_required = client.clone();
+        par_required.require_par_request_object = true;
+        assert_eq!(
+            verify_request_object(RequestObjectVerificationInput {
+                request_object: &unsigned,
+                client: &par_required,
+                profile_disallows_unsigned_request_object: false,
+            }),
+            Err(RequestObjectVerificationError::SigningPolicy)
+        );
+        let signed = signed_request_object(&claims, json!({"alg": "EdDSA", "kid": "jar-key"}));
+        assert_eq!(
+            unverified_signed_request_object_client_id(&signed).as_deref(),
+            Some("client")
+        );
+        let unsupported = signed_request_object(&claims, json!({"alg": "HS256", "kid": "jar-key"}));
+        assert_eq!(
+            unverified_signed_request_object_client_id(&unsupported).as_deref(),
+            Some("client")
+        );
+        assert_eq!(unverified_signed_request_object_client_id(&unsigned), None);
     }
 
     #[test]

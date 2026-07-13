@@ -231,7 +231,7 @@ fn private_key_jwt_decode_accepts_small_future_nbf_and_iat() {
 #[test]
 fn client_jwt_algorithm_and_jwk_decoder_fail_closed_for_unsupported_shapes() {
     assert!(client_jwt_algorithm_from_name("HS256").is_none());
-    assert!(supported_client_jwt_algorithm_name(jsonwebtoken::Algorithm::HS256).is_none());
+    assert!(supported_client_jwt_algorithm(jsonwebtoken::Algorithm::HS256).is_none());
 
     let mut wrong_alg = json!({
         "kty": "OKP",

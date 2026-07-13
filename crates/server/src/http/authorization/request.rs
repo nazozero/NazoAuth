@@ -51,8 +51,6 @@ mod parameters;
 mod prompt_none;
 
 use form::*;
-#[cfg(test)]
-pub(crate) use parameters::AUTHORIZED_REQUEST_PARAMETERS;
 use parameters::*;
 use prompt_none::*;
 

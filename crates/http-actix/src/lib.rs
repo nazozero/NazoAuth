@@ -4,6 +4,7 @@
 //! access remain in their focused crates.
 
 mod authorization_decision;
+mod authorization_request_object;
 mod cookies;
 mod cors;
 mod csrf;
@@ -31,6 +32,9 @@ pub use authorization_decision::{
     AuthorizationDecisionCommand, AuthorizationDecisionEndpoint, AuthorizationDecisionError,
     AuthorizationDecisionForm, AuthorizationDecisionFuture, AuthorizationDecisionOperations,
     AuthorizationDecisionRedirect, authorize_decision,
+};
+pub use authorization_request_object::{
+    request_object_policy_error, request_object_verification_error,
 };
 pub use cookies::{clear_cookie, cookie_value, make_cookie, with_cookie_headers};
 pub use cors::{

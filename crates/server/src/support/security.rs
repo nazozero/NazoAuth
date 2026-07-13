@@ -511,12 +511,6 @@ fn client_assertion_replay_key(client_id: &str, jti: &str) -> String {
     )
 }
 
-pub(crate) fn supported_client_jwt_algorithm_name(
-    alg: jsonwebtoken::Algorithm,
-) -> Option<&'static str> {
-    supported_client_jwt_algorithm(alg).map(|(name, _)| name)
-}
-
 #[cfg(test)]
 pub(crate) fn client_jwt_algorithm_from_name(value: &str) -> Option<jsonwebtoken::Algorithm> {
     match value {

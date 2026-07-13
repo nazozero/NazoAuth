@@ -66,7 +66,10 @@ pub use authorization_request::{
     ParAdmissionError, PushedAuthorizationRequestConsumeError, REQUEST_OBJECT_CLOCK_SKEW_SECONDS,
     REQUEST_OBJECT_MAX_TTL_SECONDS, RawParAdmissionPolicy, RequestObjectClaims,
     RequestObjectJtiPolicy, RequestObjectMode, RequestObjectPolicy, RequestObjectReplay,
-    normalize_request_object, validate_expanded_par_admission, validate_raw_par_admission,
+    RequestObjectVerificationError, RequestObjectVerificationInput, VerifiedRequestObject,
+    normalize_request_object, request_object_uses_unsigned_algorithm,
+    unverified_signed_request_object_client_id, validate_expanded_par_admission,
+    validate_raw_par_admission, verify_request_object,
 };
 pub use authorization_service::{
     AuthorizationApprovalCommitError, AuthorizationApprovalError, AuthorizationApprovalInput,
