@@ -8,9 +8,13 @@ use nazo_http_actix::{
     json_response, json_response_no_store, make_cookie, oauth_error, redirect_found,
     with_cookie_headers,
 };
+#[cfg(test)]
+use nazo_identity::PublicAccount;
 use nazo_identity::{FederationError, LoginSuccess, VerifiedExternalIdentity};
 use serde::{Serialize, de::DeserializeOwned};
-use serde_json::{Value, json};
+#[cfg(test)]
+use serde_json::Value;
+use serde_json::json;
 
 use crate::bootstrap::LocalFederationService;
 use crate::settings::{

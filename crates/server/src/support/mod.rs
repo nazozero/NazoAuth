@@ -99,10 +99,11 @@ pub(crate) use security::{
     verify_private_key_jwt_claims_for_issuer,
 };
 pub(crate) use sessions::{
-    CurrentSession, SessionPayload, SessionRotation, current_session,
-    current_user_or_login_required, has_valid_csrf_token, require_active_session_principal,
-    require_admin_or_forbidden, store_session,
+    CurrentSession, SessionRotation, current_session, current_user_or_login_required,
+    has_valid_csrf_token, require_admin_or_forbidden,
 };
+#[cfg(test)]
+pub(crate) use sessions::{SessionPayload, require_active_session_principal, store_session};
 #[cfg(test)]
 pub(crate) use tenancy::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID};
 pub(crate) use tenancy::{DEFAULT_TENANT_ID, default_tenant_context};

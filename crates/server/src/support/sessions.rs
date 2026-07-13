@@ -395,6 +395,7 @@ impl SessionPayload {
     }
 }
 
+#[cfg(test)]
 pub(crate) async fn store_session(
     state: &AppState,
     session_id: &str,
@@ -411,6 +412,7 @@ pub(crate) async fn store_session(
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) fn require_active_session_principal(user: &PublicAccount) -> Result<(), HttpResponse> {
     if user.principal.active {
         return Ok(());
